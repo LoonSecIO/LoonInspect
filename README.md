@@ -1,8 +1,8 @@
 # 🦅 LoonInspect
 
-**A self-hosted, open-source vulnerability scanner and MDM inventory engine for enterprise Mac environments.**
+**A self-hosted, open-source vulnerability scanner and MDM inventory engine for enterprise Apple environments.**
 
-LoonInspect bridges the gap between your Mac Mobile Device Management (MDM) platforms and your security operations. It pulls raw app inventory from MDMs like Jamf Pro, generates O(1) hashed fingerprints, maps them against real-time CVE intelligence, and streams the delta events directly into your SIEM (Splunk, RunReveal, Datadog). 
+LoonInspect bridges the gap between your Apple Mobile Device Management (MDM) platforms and your security operations. It pulls raw app inventory from MDMs like Jamf Pro, generates O(1) hashed fingerprints, maps them against real-time CVE intelligence, and streams the delta events directly into your SIEM (Splunk, RunReveal, Datadog). 
 
 All without bloating your local database or grinding your MDM APIs to a halt.
 
@@ -23,12 +23,11 @@ All without bloating your local database or grinding your MDM APIs to a halt.
 
 LoonInspect is designed around a **"Diff, Stream, Commit"** pipeline to keep local storage requirements microscopic while delivering enterprise-grade telemetry:
 
-1. **Ingest:** Receives a webhook or runs an API pagination sweep from your MDM.
+1. **Ingest:** Receives a webhook, chron, or event system.
 2. **Fingerprint:** Deduplicates raw app strings into cryptographic `FullHashes`.
 3. **Analyze:** Checks hashes against the local SQLite database to determine what changed.
-4. **Enrich (Optional):** Sends unseen hashes to the LoonVD AWS Gateway to retrieve real-time EPSS scores, CVE mappings, and patch manifests.
-5. **Stream:** Emits the calculated delta directly to your SIEM.
-6. **Commit:** Overwrites the local SQLite database to update the React UI dashboard.
+4. **Enrich (Optional):** Sends unseen hashes to the LoonVD AWS Gateway to retrieve real-time EPSS scores, CVE mappings, and patch manifests. Whether you use Munki, Jamf's App Installers, or other patching service.
+5. **Stream:** Emits the calculated delta directly to your SIEM for logging, compliance, and eventing.
 
 ---
 
@@ -40,3 +39,5 @@ LoonInspect is deployed as a single, multi-architecture container containing bot
 ```bash
 git clone [https://github.com/your-org/LoonInspect.git](https://github.com/your-org/LoonInspect.git)
 cd LoonInspect
+```
+
