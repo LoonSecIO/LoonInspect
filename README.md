@@ -59,7 +59,13 @@ cd LoonInspect
 cp backend/.env.example .env
 ```
 
-Edit `.env` to add MDM credentials (Jamf/SimpleMDM) and a SIEM webhook URL if you have them — everything is optional for a first run.
+Generate an `ENCRYPTION_KEY` and add it to `.env` (used to encrypt MDM connection secrets at rest — required, the app won't start without it):
+
+```bash
+python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+A SIEM webhook URL is optional for a first run. MDM connections (Jamf, SimpleMDM, etc.) aren't configured via `.env` — add them from the app itself once it's running, at `/api/mdm/connections` or the Settings page.
 
 ### 3. Build and run
 

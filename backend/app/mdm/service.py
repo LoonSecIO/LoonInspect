@@ -8,7 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models.schema import Device, InstalledApp, MdmSyncState
+from app.mdm.patch.factory import get_patch_provider
+from app.models.schema import Device, DeviceExtensionAttribute, InstalledApp, MdmConnection, MdmSyncState
 from app.schemas.payload import (
     InventoryChangedEvent,
     NormalizedApp,
@@ -33,15 +34,19 @@ async def stream_event(event: InventoryChangedEvent) -> None:
         await client.post(settings.siem_webhook_url, json=payload)
 
 
-async def sync_state(db: AsyncSession, provider: str) -> None:
-    result = await db.execute(select(MdmSyncState).where(MdmSyncState.provider == provider))
+async def sync_state(db: AsyncSession, connection: MdmConnection) -> None:
+    result = await db.execute(
+        select(MdmSyncState).where(MdmSyncState.mdm_connection_id == connection.id)
+    )
     state = result.scalar_one_or_none()
 
-    device_count_result = await db.execute(select(Device).where(Device.mdm_provider == provider))
+    device_count_result = await db.execute(
+        select(Device).where(Device.mdm_connection_id == connection.id)
+    )
     device_count = len(device_count_result.scalars().all())
 
     if state is None:
-        state = MdmSyncState(provider=provider)
+        state = MdmSyncState(mdm_connection_id=connection.id, provider=connection.provider)
         db.add(state)
 
     state.last_sync_at = datetime.now(timezone.utc)
@@ -49,16 +54,55 @@ async def sync_state(db: AsyncSession, provider: str) -> None:
     state.device_count = device_count
 
 
-async def process_sync(db: AsyncSession, device: NormalizedDevice) -> InventoryChangedEvent | None:
+async def _apply_patch_status(existing: Device, connection: MdmConnection) -> None:
+    patch_provider = get_patch_provider(connection)
+    if patch_provider is None:
+        return
+
+    apps = [
+        NormalizedApp(name=row.name, bundle_id=row.bundle_id, version=row.version, full_hash=row.full_hash)
+        for row in existing.apps
+    ]
+
+    try:
+        results = await patch_provider.check_apps(apps)
+    except NotImplementedError:
+        return
+
+    results_by_hash = {result.full_hash: result for result in results}
+    now = datetime.now(timezone.utc)
+
+    for row in existing.apps:
+        result = results_by_hash.get(row.full_hash)
+        if result is None:
+            continue
+
+        was_available = row.patch_available
+        row.is_compliant = result.is_compliant
+        row.patch_available = result.patch_available
+        row.last_patch_check_at = now
+        if result.patch_available and not was_available:
+            row.patch_available_since = now
+
+
+async def process_sync(
+    db: AsyncSession, device: NormalizedDevice, connection: MdmConnection
+) -> InventoryChangedEvent | None:
     for app in device.apps:
         app.full_hash = compute_full_hash(app)
 
-    result = await db.execute(select(Device).where(Device.external_id == device.external_id))
+    result = await db.execute(
+        select(Device).where(
+            Device.mdm_connection_id == connection.id,
+            Device.external_id == device.external_id,
+        )
+    )
     existing = result.scalar_one_or_none()
 
     previous_hashes: dict[str, InstalledApp] = {}
     if existing is None:
         existing = Device(
+            mdm_connection_id=connection.id,
             mdm_provider=device.mdm_provider.value,
             external_id=device.external_id,
             serial_number=device.serial_number,
@@ -71,6 +115,17 @@ async def process_sync(db: AsyncSession, device: NormalizedDevice) -> InventoryC
     existing.hostname = device.hostname
     existing.serial_number = device.serial_number
     existing.last_seen_at = datetime.now(timezone.utc)
+    existing.managed = device.managed
+    existing.supervised = device.supervised
+    existing.os_version = device.os_version
+    existing.site = device.site
+    existing.building = device.building
+    existing.department = device.department
+    existing.last_check_in = device.last_check_in
+    existing.last_inventory_at = device.last_inventory_at
+    existing.extension_attributes = [
+        DeviceExtensionAttribute(key=ea.key, value=ea.value) for ea in device.extension_attributes
+    ]
 
     incoming_hashes = {app.full_hash: app for app in device.apps if app.full_hash}
 
@@ -92,7 +147,8 @@ async def process_sync(db: AsyncSession, device: NormalizedDevice) -> InventoryC
         )
 
     await db.flush()
-    await sync_state(db, device.mdm_provider.value)
+    await _apply_patch_status(existing, connection)
+    await sync_state(db, connection)
 
     if not added and not removed_rows:
         await db.commit()

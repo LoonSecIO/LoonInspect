@@ -28,12 +28,26 @@ class NormalizedApp(BaseModel):
     full_hash: str | None = None
 
 
+class NormalizedExtensionAttribute(BaseModel):
+    key: str
+    value: str | None = None
+
+
 class NormalizedDevice(BaseModel):
     mdm_provider: MdmProvider
     external_id: str
     serial_number: str
     hostname: str
+    managed: bool | None = None
+    supervised: bool | None = None
+    os_version: str | None = None
+    site: str | None = None
+    building: str | None = None
+    department: str | None = None
+    last_check_in: datetime | None = None
+    last_inventory_at: datetime | None = None
     apps: list[NormalizedApp] = []
+    extension_attributes: list[NormalizedExtensionAttribute] = []
 
 
 class MdmSyncStatusOut(BaseModel):

@@ -21,7 +21,8 @@
     "tailwind-merge": "latest",
     "tailwindcss": "latest",
     "@tailwindcss/vite": "latest",
-    "zustand": "latest"
+    "zustand": "latest",
+    "react-router": "latest"
   },
   "devDependencies": {
     "@types/node": "latest",

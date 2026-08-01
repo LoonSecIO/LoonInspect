@@ -1,27 +1,12 @@
 import { AlertTriangle, Database, Home, Settings } from "lucide-react";
+import { NavLink } from "react-router";
 import { cn } from "@/lib/utils";
 
 const navigationItems = [
-  {
-    label: "Overview",
-    icon: Home,
-    href: "#"
-  },
-  {
-    label: "MDM",
-    icon: Database,
-    href: "#"
-  },
-  {
-    label: "Vulnerabilities",
-    icon: AlertTriangle,
-    href: "#"
-  },
-  {
-    label: "Settings",
-    icon: Settings,
-    href: "#"
-  }
+  { label: "Overview", icon: Home, to: "/", end: true },
+  { label: "Devices", icon: Database, to: "/devices", end: false },
+  { label: "Vulnerabilities", icon: AlertTriangle, to: "/vulnerabilities", end: false },
+  { label: "Settings", icon: Settings, to: "/settings/connections", end: false }
 ];
 
 export function Sidebar() {
@@ -32,17 +17,22 @@ export function Sidebar() {
           const Icon = item.icon;
 
           return (
-            <a
+            <NavLink
               key={item.label}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors",
-                "hover:bg-accent hover:text-accent-foreground"
-              )}
+              to={item.to}
+              end={item.end}
+              className={({ isActive }) =>
+                cn(
+                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                  isActive
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                )
+              }
             >
               <Icon className="h-4 w-4" />
               {item.label}
-            </a>
+            </NavLink>
           );
         })}
       </nav>

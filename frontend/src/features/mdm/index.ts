@@ -1,8 +1,1 @@
-export type MdmProvider = "jamf" | "simplemdm" | "addigy" | "fleet" | "nano";
-
-export interface MdmSyncStatus {
-  provider: MdmProvider;
-  lastSyncAt: string | null;
-  status: "idle" | "syncing" | "failed";
-  deviceCount: number;
-}
+export type { MdmProviderType, PatchManagementProvider, MdmSyncStatus, MdmConnection, MdmConnectionInput } from "@/features/mdm/types";

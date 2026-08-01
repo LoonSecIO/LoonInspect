@@ -5,11 +5,7 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: sqlite+aiosqlite:////app/data/looninspect.db
-      JAMF_BASE_URL: ${JAMF_BASE_URL:-}
-      JAMF_CLIENT_ID: ${JAMF_CLIENT_ID:-}
-      JAMF_CLIENT_SECRET: ${JAMF_CLIENT_SECRET:-}
-      JAMF_WEBHOOK_SECRET: ${JAMF_WEBHOOK_SECRET:-}
-      SIMPLEMDM_API_KEY: ${SIMPLEMDM_API_KEY:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env — see backend/.env.example}
       SIEM_WEBHOOK_URL: ${SIEM_WEBHOOK_URL:-}
     volumes:
       - looninspect-data:/app/data

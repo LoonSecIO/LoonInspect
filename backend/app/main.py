@@ -5,25 +5,44 @@ from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from sqlalchemy import select
 
+from app.api.connections import router as connections_router
+from app.api.devices import router as devices_router
 from app.api.routes import router as api_router
 from app.api.webhooks import router as webhooks_router
 from app.core.config import settings
-from app.core.database import init_db
+from app.core.crypto import validate_encryption_key
+from app.core.database import async_session_factory, init_db
+from app.mdm.factory import get_mdm_client
+from app.mdm.service import process_sync
+from app.models.schema import MdmConnection
 
 scheduler = AsyncIOScheduler(timezone=settings.sync_timezone)
 
 
 async def nightly_sync_sweep() -> None:
-    # TODO: iterate configured MDM clients and process_sync() any devices missed by webhooks.
-    pass
+    async with async_session_factory() as db:
+        result = await db.execute(select(MdmConnection).where(MdmConnection.is_active.is_(True)))
+        connections = result.scalars().all()
+
+        for connection in connections:
+            try:
+                client = get_mdm_client(connection)
+                devices = await client.fetch_devices()
+            except NotImplementedError:
+                continue
+
+            for device in devices:
+                await process_sync(db, device, connection)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_encryption_key()
     await init_db()
 
     if settings.scheduler_enabled:
@@ -53,7 +72,21 @@ app.add_middleware(
 
 app.include_router(api_router)
 app.include_router(webhooks_router)
+app.include_router(connections_router)
+app.include_router(devices_router)
 
 static_dir = Path(__file__).parent / "static"
+
 if static_dir.exists():
-    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+    # Catch-all so client-side routes (e.g. /devices) resolve to the SPA shell on a
+    # direct navigation/refresh, not a 404 — real static assets are served as-is.
+    # Unmatched /api or /webhooks paths still 404 instead of silently returning HTML.
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str) -> FileResponse:
+        if full_path.startswith("api/") or full_path.startswith("webhooks/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+
+        candidate = static_dir / full_path
+        if full_path and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(static_dir / "index.html")

@@ -13,15 +13,9 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:5173"]
 
-    jamf_base_url: str | None = None
-    jamf_client_id: str | None = None
-    jamf_client_secret: str | None = None
-    jamf_webhook_secret: str | None = None
-
-    simplemdm_api_key: str | None = None
+    encryption_key: str | None = None
 
     siem_webhook_url: str | None = None
-    loonvd_gateway_url: str | None = None
 
     scheduler_enabled: bool = True
     sync_hour: int = 1

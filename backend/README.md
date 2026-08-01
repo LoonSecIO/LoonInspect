@@ -25,7 +25,7 @@ backend/
     ├── main.py            # FastAPI initialization and cron scheduler
     ├── api/               # HTTP Routers (UI endpoints, Webhook receivers)
     ├── core/              # DB setup and environment config (Pydantic Settings)
-    ├── models/            # SQLAlchemy Database schemas (User, Device, App)
+    ├── models/            # SQLAlchemy Database schemas (MdmConnection, Device, InstalledApp)
     ├── schemas/           # Pydantic validation schemas (JSON payload validation)
     └── mdm/               # Business Logic & Diff Engine
         ├── base.py        # Abstract Base Class for MDMs
@@ -61,7 +61,20 @@ Navigate to the `backend/` directory and run a sync. `uv` will automatically rea
 uv sync
 ```
 
-### 3. Run the development server
+### 3. Set an encryption key
+
+MDM connection secrets (Jamf client secret, LoonSecIO license key, etc.) are encrypted at rest. Generate a key and put it in `.env`:
+
+```bash
+uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+```bash
+cp .env.example .env
+# then paste the generated key as ENCRYPTION_KEY=...
+```
+
+### 4. Run the development server
 
 FastAPI standardized its CLI. Instead of calling `uvicorn` directly, use the modern `fastapi dev` command wrapped via `uv run`:
 
@@ -69,9 +82,11 @@ FastAPI standardized its CLI. Instead of calling `uvicorn` directly, use the mod
 uv run fastapi dev app/main.py
 ```
 
-This starts the server at <http://127.0.0.1:8000> with hot-reloading enabled.
+This starts the server at <http://127.0.0.1:8000> with hot-reloading enabled. On startup it automatically applies any pending Alembic migrations (`app/core/database.py::init_db()`) — there's no separate manual migration step for local dev.
 
-### 4. View API documentation
+MDM connections (Jamf, SimpleMDM, etc.) are configured through the API/UI (`/api/mdm/connections`) and stored in the database, not via environment variables.
+
+### 5. View API documentation
 
 FastAPI automatically generates interactive Swagger documentation. While the server is running, visit:
 
