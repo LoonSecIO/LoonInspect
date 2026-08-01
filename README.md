@@ -35,9 +35,41 @@ LoonInspect is designed around a **"Diff, Stream, Commit"** pipeline to keep loc
 
 LoonInspect is deployed as a single, multi-architecture container containing both the React frontend and the FastAPI backend.
 
+```text
+LoonInspect/
+├── backend/
+│   └── pyproject.toml
+├── frontend/
+│   └── package.json
+├── .gitignore
+├── docker-compose.yml
+└── Dockerfile
+```
+
 ### 1. Clone the repository
+
 ```bash
-git clone [https://github.com/your-org/LoonInspect.git](https://github.com/your-org/LoonInspect.git)
+git clone https://github.com/your-org/LoonInspect.git
 cd LoonInspect
 ```
+
+### 2. Configure environment variables
+
+```bash
+cp backend/.env.example .env
+```
+
+Edit `.env` to add MDM credentials (Jamf/SimpleMDM) and a SIEM webhook URL if you have them — everything is optional for a first run.
+
+### 3. Build and run
+
+```bash
+docker compose up --build
+```
+
+This builds the frontend, bundles it into the FastAPI image, and starts the app at <http://localhost:8000>. API docs are at <http://localhost:8000/docs>.
+
+> **Note:** the container logs and `docker ps` will show the address as `0.0.0.0:8000` — that's the server listening on all interfaces, not a URL you can open. Use `http://localhost:8000` (or `127.0.0.1:8000`) in your browser instead; some browsers will refuse to navigate to `0.0.0.0` directly.
+
+For day-to-day development with hot-reloading instead, see [backend/README.md](backend/README.md) and run the frontend separately with `npm run dev` inside `frontend/` (proxies `/api` to the backend on port 8000).
 

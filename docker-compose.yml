@@ -1,0 +1,18 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: sqlite+aiosqlite:////app/data/looninspect.db
+      JAMF_BASE_URL: ${JAMF_BASE_URL:-}
+      JAMF_CLIENT_ID: ${JAMF_CLIENT_ID:-}
+      JAMF_CLIENT_SECRET: ${JAMF_CLIENT_SECRET:-}
+      JAMF_WEBHOOK_SECRET: ${JAMF_WEBHOOK_SECRET:-}
+      SIMPLEMDM_API_KEY: ${SIMPLEMDM_API_KEY:-}
+      SIEM_WEBHOOK_URL: ${SIEM_WEBHOOK_URL:-}
+    volumes:
+      - looninspect-data:/app/data
+
+volumes:
+  looninspect-data:
