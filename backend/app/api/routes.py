@@ -5,7 +5,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.mdm.credentials import CREDENTIAL_SCHEMAS, field_specs
 from app.models.schema import MdmSyncState
+from app.schemas.connections import ProviderCredentialField, ProviderInfo
 from app.schemas.payload import MdmSyncStatusOut
 
 router = APIRouter(prefix="/api", tags=["mdm"])
@@ -20,3 +22,14 @@ async def health() -> dict[str, str]:
 async def mdm_status(db: AsyncSession = Depends(get_db)) -> list[MdmSyncState]:
     result = await db.execute(select(MdmSyncState))
     return list(result.scalars().all())
+
+
+@router.get("/mdm/providers", response_model=list[ProviderInfo])
+async def list_providers() -> list[ProviderInfo]:
+    return [
+        ProviderInfo(
+            provider=provider,
+            credential_fields=[ProviderCredentialField(**spec) for spec in field_specs(schema)],
+        )
+        for provider, schema in CREDENTIAL_SCHEMAS.items()
+    ]

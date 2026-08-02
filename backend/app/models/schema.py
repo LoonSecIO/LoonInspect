@@ -22,14 +22,30 @@ class MdmConnection(Base):
     base_url: Mapped[str] = mapped_column(String(512))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    client_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    client_secret_encrypted: Mapped[str | None] = mapped_column(EncryptedString(1024), nullable=True)
-    api_key_encrypted: Mapped[str | None] = mapped_column(EncryptedString(1024), nullable=True)
+    # Provider-specific auth (Jamf's client_id/client_secret, SimpleMDM's api_key, etc.) —
+    # shape is defined per-provider in app.mdm.credentials, stored as one JSON blob so
+    # adding a new provider's auth fields never requires a schema migration.
+    credentials_encrypted: Mapped[str | None] = mapped_column(EncryptedString(2048), nullable=True)
     webhook_secret_encrypted: Mapped[str | None] = mapped_column(EncryptedString(1024), nullable=True)
 
     patch_management_provider: Mapped[str] = mapped_column(String(16), default="none")
     loonsecio_license_key_encrypted: Mapped[str | None] = mapped_column(EncryptedString(1024), nullable=True)
     loonsecio_data_sharing_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    user_agent_override: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # What LoonInspect uses this connection for. Devices/Users are CRUD (LoonInspect
+    # creates/updates/deletes its own records from the synced data); callback Webhooks
+    # and Jamf Pro (patch reporting) are read-only. Devices defaults on since that's the
+    # common case; everything else is opt-in.
+    capability_devices: Mapped[bool] = mapped_column(Boolean, default=True)
+    capability_users: Mapped[bool] = mapped_column(Boolean, default=False)
+    capability_webhooks: Mapped[bool] = mapped_column(Boolean, default=False)
+    capability_jamf_pro: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    last_successful_auth_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    credentials_rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    credentials_fingerprint: Mapped[str | None] = mapped_column(String(3), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)

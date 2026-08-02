@@ -17,6 +17,8 @@ class Settings(BaseSettings):
 
     siem_webhook_url: str | None = None
 
+    user_agent_product_name: str = "LoonSecIO"
+
     scheduler_enabled: bool = True
     sync_hour: int = 1
     sync_minute: int = 0

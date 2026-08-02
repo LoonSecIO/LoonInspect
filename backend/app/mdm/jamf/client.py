@@ -4,6 +4,7 @@ from datetime import datetime
 
 import httpx
 
+from app.core.user_agent import build_user_agent
 from app.mdm.base import MdmClient
 from app.schemas.payload import (
     MdmProvider,
@@ -18,11 +19,21 @@ INVENTORY_SECTIONS = "GENERAL,HARDWARE,USER_AND_LOCATION,APPLICATIONS,EXTENSION_
 class JamfClient(MdmClient):
     provider = MdmProvider.jamf.value
 
-    def __init__(self, base_url: str, client_id: str, client_secret: str) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        client_id: str,
+        client_secret: str,
+        user_agent_override: str | None = None,
+    ) -> None:
         self._base_url = base_url.rstrip("/")
         self._client_id = client_id
         self._client_secret = client_secret
+        self._user_agent_override = user_agent_override
         self._token: str | None = None
+
+    def _user_agent(self, comment: str) -> str:
+        return build_user_agent(comment, self._user_agent_override)
 
     async def _authenticate(self, client: httpx.AsyncClient) -> str:
         if self._token:
@@ -35,10 +46,29 @@ class JamfClient(MdmClient):
                 "client_id": self._client_id,
                 "client_secret": self._client_secret,
             },
+            headers={"User-Agent": self._user_agent("auth")},
         )
         response.raise_for_status()
         self._token = response.json()["access_token"]
         return self._token
+
+    async def test_connection(self) -> dict:
+        """Attempt the OAuth client-credentials exchange. Raises on failure (the caller
+        inspects the response body/status for diagnostics). Returns the token response
+        with `access_token` stripped out — never surface the token itself to the UI."""
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(
+                f"{self._base_url}/api/oauth/token",
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": self._client_id,
+                    "client_secret": self._client_secret,
+                },
+                headers={"User-Agent": self._user_agent("auth")},
+            )
+            response.raise_for_status()
+            body = response.json()
+            return {key: value for key, value in body.items() if key != "access_token"}
 
     async def fetch_devices(self) -> list[NormalizedDevice]:
         devices: list[NormalizedDevice] = []
@@ -46,7 +76,11 @@ class JamfClient(MdmClient):
 
         async with httpx.AsyncClient(timeout=30) as client:
             token = await self._authenticate(client)
-            headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json",
+                "User-Agent": self._user_agent("inventory"),
+            }
 
             page = 0
             while True:

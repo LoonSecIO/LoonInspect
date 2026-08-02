@@ -22,6 +22,19 @@ def validate_loonsecio_requirement(
         raise ValueError("LoonSecIO requires a license key and/or data_sharing_enabled=true")
 
 
+def validate_jamf_specific_fields(
+    mdm_provider: MdmProvider,
+    patch_management_provider: PatchManagementProvider,
+    capability_jamf_pro: bool,
+) -> None:
+    if mdm_provider == MdmProvider.jamf:
+        return
+    if patch_management_provider == PatchManagementProvider.jamf:
+        raise ValueError("Jamf patch management requires the connection's provider to be Jamf")
+    if capability_jamf_pro:
+        raise ValueError("The Jamf Pro capability requires the connection's provider to be Jamf")
+
+
 class MdmConnectionCreate(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
@@ -29,19 +42,23 @@ class MdmConnectionCreate(BaseModel):
     provider: MdmProvider
     base_url: str
     is_active: bool = True
-    client_id: str | None = None
-    client_secret: str | None = None
-    api_key: str | None = None
+    credentials: dict[str, str] = {}
     webhook_secret: str | None = None
     patch_management_provider: PatchManagementProvider = PatchManagementProvider.none
     loonsecio_license_key: str | None = None
     loonsecio_data_sharing_enabled: bool = False
+    user_agent_override: str | None = None
+    capability_devices: bool = True
+    capability_users: bool = False
+    capability_webhooks: bool = False
+    capability_jamf_pro: bool = False
 
     @model_validator(mode="after")
     def _check_loonsecio(self) -> "MdmConnectionCreate":
         validate_loonsecio_requirement(
             self.patch_management_provider, self.loonsecio_license_key, self.loonsecio_data_sharing_enabled
         )
+        validate_jamf_specific_fields(self.provider, self.patch_management_provider, self.capability_jamf_pro)
         return self
 
 
@@ -52,13 +69,35 @@ class MdmConnectionUpdate(BaseModel):
     provider: MdmProvider | None = None
     base_url: str | None = None
     is_active: bool | None = None
-    client_id: str | None = None
-    client_secret: str | None = None
-    api_key: str | None = None
+    credentials: dict[str, str] | None = None
     webhook_secret: str | None = None
     patch_management_provider: PatchManagementProvider | None = None
     loonsecio_license_key: str | None = None
     loonsecio_data_sharing_enabled: bool | None = None
+    user_agent_override: str | None = None
+    capability_devices: bool | None = None
+    capability_users: bool | None = None
+    capability_webhooks: bool | None = None
+    capability_jamf_pro: bool | None = None
+
+
+class MdmConnectionTestRequest(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    connection_id: int | None = None
+    provider: MdmProvider
+    base_url: str
+    client_id: str
+    client_secret: str | None = None
+    user_agent_override: str | None = None
+
+
+class MdmConnectionTestResult(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    success: bool
+    message: str
+    detail: str | None = None
 
 
 class MdmConnectionOut(BaseModel):
@@ -71,9 +110,31 @@ class MdmConnectionOut(BaseModel):
     is_active: bool
     patch_management_provider: PatchManagementProvider
     loonsecio_data_sharing_enabled: bool
-    has_client_secret: bool
-    has_api_key: bool
+    credential_fields_set: list[str]
     has_webhook_secret: bool
     has_loonsecio_license_key: bool
+    user_agent_override: str | None
+    capability_devices: bool
+    capability_users: bool
+    capability_webhooks: bool
+    capability_jamf_pro: bool
+    last_successful_auth_at: datetime | None
+    credentials_rotated_at: datetime | None
+    credentials_fingerprint: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class ProviderCredentialField(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    key: str
+    label: str
+    secret: bool
+
+
+class ProviderInfo(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    provider: MdmProvider
+    credential_fields: list[ProviderCredentialField]

@@ -10,6 +10,8 @@ export function ConnectionsPage() {
   const [connections, setConnections] = useState<MdmConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [formMode, setFormMode] = useState<FormMode>("closed");
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function refresh() {
     setLoading(true);
@@ -25,9 +27,14 @@ export function ConnectionsPage() {
   }, []);
 
   async function handleDelete(id: number) {
-    if (!window.confirm("Delete this connection?")) return;
-    await deleteConnection(id);
-    await refresh();
+    setDeleting(true);
+    try {
+      await deleteConnection(id);
+      setPendingDeleteId(null);
+      await refresh();
+    } finally {
+      setDeleting(false);
+    }
   }
 
   const editingConnection =
@@ -89,14 +96,36 @@ export function ConnectionsPage() {
                 <td className="px-4 py-2">{connection.patchManagementProvider}</td>
                 <td className="px-4 py-2">{connection.isActive ? "Active" : "Inactive"}</td>
                 <td className="px-4 py-2">
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setFormMode(connection.id)}>
-                      Edit
-                    </Button>
-                    <Button variant="destructive" size="sm" onClick={() => handleDelete(connection.id)}>
-                      Delete
-                    </Button>
-                  </div>
+                  {pendingDeleteId === connection.id ? (
+                    <div className="flex items-center justify-end gap-2">
+                      <span className="text-xs text-muted-foreground">Delete "{connection.name}"?</span>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={deleting}
+                        onClick={() => handleDelete(connection.id)}
+                      >
+                        {deleting ? "Deleting..." : "Confirm"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={deleting}
+                        onClick={() => setPendingDeleteId(null)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setFormMode(connection.id)}>
+                        Edit
+                      </Button>
+                      <Button variant="destructive" size="sm" onClick={() => setPendingDeleteId(connection.id)}>
+                        Delete
+                      </Button>
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}

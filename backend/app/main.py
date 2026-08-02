@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -35,6 +36,9 @@ async def nightly_sync_sweep() -> None:
                 devices = await client.fetch_devices()
             except NotImplementedError:
                 continue
+
+            connection.last_successful_auth_at = datetime.now(timezone.utc)
+            await db.commit()
 
             for device in devices:
                 await process_sync(db, device, connection)
