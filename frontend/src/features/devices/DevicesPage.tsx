@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router";
 import { FilterBar } from "@/features/devices/FilterBar";
 import { listDevices } from "@/features/devices/api";
 import type { Device, DeviceFilters, VersionOperator } from "@/features/devices/types";
+import { useLocale } from "@/i18n/LocaleContext";
 
 function filtersFromSearchParams(params: URLSearchParams): DeviceFilters {
   const managed = params.get("managed");
@@ -40,6 +41,7 @@ function searchParamsFromFilters(filters: DeviceFilters): URLSearchParams {
 }
 
 export function DevicesPage() {
+  const { t } = useLocale();
   const [searchParams, setSearchParams] = useSearchParams();
   const filters = useMemo(() => filtersFromSearchParams(searchParams), [searchParams]);
 
@@ -60,7 +62,7 @@ export function DevicesPage() {
         setTotal(response.total);
       })
       .catch(() => {
-        if (!cancelled) setError("Failed to load devices.");
+        if (!cancelled) setError(t.devices.errorLoading);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -69,13 +71,13 @@ export function DevicesPage() {
     return () => {
       cancelled = true;
     };
-  }, [filters]);
+  }, [filters, t]);
 
   return (
     <section className="space-y-6">
       <div>
-        <p className="text-sm font-medium text-muted-foreground">Inventory</p>
-        <h1 className="text-3xl font-bold tracking-tight">Devices</h1>
+        <p className="text-sm font-medium text-muted-foreground">{t.devices.eyebrow}</p>
+        <h1 className="text-3xl font-bold tracking-tight">{t.devices.title}</h1>
       </div>
 
       <FilterBar filters={filters} onChange={(next) => setSearchParams(searchParamsFromFilters(next))} />
@@ -84,21 +86,21 @@ export function DevicesPage() {
         <table className="w-full text-sm">
           <thead className="border-b bg-muted/30 text-left text-muted-foreground">
             <tr>
-              <th className="px-4 py-2 font-medium">Hostname</th>
-              <th className="px-4 py-2 font-medium">Serial</th>
-              <th className="px-4 py-2 font-medium">OS Version</th>
-              <th className="px-4 py-2 font-medium">Site</th>
-              <th className="px-4 py-2 font-medium">Department</th>
-              <th className="px-4 py-2 font-medium">Managed</th>
-              <th className="px-4 py-2 font-medium">Supervised</th>
-              <th className="px-4 py-2 font-medium">Last check-in</th>
+              <th className="px-4 py-2 font-medium">{t.devices.tableHostname}</th>
+              <th className="px-4 py-2 font-medium">{t.devices.tableSerial}</th>
+              <th className="px-4 py-2 font-medium">{t.devices.tableOsVersion}</th>
+              <th className="px-4 py-2 font-medium">{t.devices.tableSite}</th>
+              <th className="px-4 py-2 font-medium">{t.devices.tableDepartment}</th>
+              <th className="px-4 py-2 font-medium">{t.devices.tableManaged}</th>
+              <th className="px-4 py-2 font-medium">{t.devices.tableSupervised}</th>
+              <th className="px-4 py-2 font-medium">{t.devices.tableLastCheckIn}</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
                 <td className="px-4 py-4 text-muted-foreground" colSpan={8}>
-                  Loading...
+                  {t.devices.loading}
                 </td>
               </tr>
             )}
@@ -112,7 +114,7 @@ export function DevicesPage() {
             {!loading && !error && devices.length === 0 && (
               <tr>
                 <td className="px-4 py-4 text-muted-foreground" colSpan={8}>
-                  No devices match these filters.
+                  {t.devices.empty}
                 </td>
               </tr>
             )}
@@ -123,9 +125,11 @@ export function DevicesPage() {
                 <td className="px-4 py-2">{device.osVersion ?? "—"}</td>
                 <td className="px-4 py-2">{device.site ?? "—"}</td>
                 <td className="px-4 py-2">{device.department ?? "—"}</td>
-                <td className="px-4 py-2">{device.managed === null ? "—" : device.managed ? "Yes" : "No"}</td>
                 <td className="px-4 py-2">
-                  {device.supervised === null ? "—" : device.supervised ? "Yes" : "No"}
+                  {device.managed === null ? "—" : device.managed ? t.devices.yes : t.devices.no}
+                </td>
+                <td className="px-4 py-2">
+                  {device.supervised === null ? "—" : device.supervised ? t.devices.yes : t.devices.no}
                 </td>
                 <td className="px-4 py-2">
                   {device.lastCheckIn ? new Date(device.lastCheckIn).toLocaleString() : "—"}
@@ -136,9 +140,7 @@ export function DevicesPage() {
         </table>
       </div>
 
-      <p className="text-sm text-muted-foreground">
-        {total} device{total === 1 ? "" : "s"} total
-      </p>
+      <p className="text-sm text-muted-foreground">{t.devices.total(total)}</p>
     </section>
   );
 }

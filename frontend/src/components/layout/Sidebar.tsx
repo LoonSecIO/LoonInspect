@@ -1,38 +1,99 @@
-import { AlertTriangle, Database, Home, Settings } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { AlertTriangle, AppWindow, Database, Home, Layers, Plug, Settings, ShieldCheck, Users } from "lucide-react";
 import { NavLink } from "react-router";
 import { cn } from "@/lib/utils";
+import { useLocale } from "@/i18n/LocaleContext";
+import type { Translations } from "@/i18n/en";
+import { useSidebarMode } from "@/hooks/SidebarModeContext";
 
-const navigationItems = [
-  { label: "Overview", icon: Home, to: "/", end: true },
-  { label: "Devices", icon: Database, to: "/devices", end: false },
-  { label: "Vulnerabilities", icon: AlertTriangle, to: "/vulnerabilities", end: false },
-  { label: "Settings", icon: Settings, to: "/settings/connections", end: false }
+type NavKey = keyof Translations["nav"];
+
+interface NavItem {
+  labelKey: NavKey;
+  icon: LucideIcon;
+  to: string;
+  end: boolean;
+  children?: NavItem[];
+}
+
+const navigationItems: NavItem[] = [
+  { labelKey: "overview", icon: Home, to: "/", end: true },
+  {
+    labelKey: "devices",
+    icon: Database,
+    to: "/devices",
+    end: false,
+    children: [
+      { labelKey: "applications", icon: AppWindow, to: "/devices/applications", end: false },
+      { labelKey: "groups", icon: Layers, to: "/devices/groups", end: false },
+      { labelKey: "compliance", icon: ShieldCheck, to: "/devices/compliance", end: false }
+    ]
+  },
+  { labelKey: "users", icon: Users, to: "/users", end: false },
+  { labelKey: "vulnerabilities", icon: AlertTriangle, to: "/vulnerabilities", end: false },
+  { labelKey: "integrations", icon: Plug, to: "/integrations", end: false },
+  { labelKey: "settings", icon: Settings, to: "/settings/connections", end: false }
 ];
 
+const linkClasses =
+  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors";
+const linkStateClasses = (isActive: boolean) =>
+  isActive
+    ? "bg-accent text-accent-foreground"
+    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground";
+
 export function Sidebar() {
+  const { t } = useLocale();
+  const { sidebarMode } = useSidebarMode();
+
+  if (sidebarMode === "hidden") return null;
+
+  const collapsed = sidebarMode === "collapsed";
+
   return (
-    <aside className="hidden min-h-[calc(100vh-3.5rem)] w-64 border-r bg-muted/30 p-4 md:block">
+    <aside
+      className={cn(
+        "hidden min-h-[calc(100vh-3.5rem)] border-r bg-muted/30 p-4 md:block",
+        collapsed ? "w-16" : "w-64"
+      )}
+    >
       <nav className="space-y-1">
         {navigationItems.map((item) => {
           const Icon = item.icon;
 
           return (
-            <NavLink
-              key={item.label}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                  isActive
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                )
-              }
-            >
-              <Icon className="h-4 w-4" />
-              {item.label}
-            </NavLink>
+            <div key={item.labelKey}>
+              <NavLink
+                to={item.to}
+                end={item.end}
+                title={collapsed ? t.nav[item.labelKey] : undefined}
+                className={({ isActive }) =>
+                  cn(linkClasses, linkStateClasses(isActive), collapsed && "justify-center px-2")
+                }
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                {!collapsed && t.nav[item.labelKey]}
+              </NavLink>
+              {!collapsed && item.children && (
+                <div className="ml-4 mt-1 space-y-1 border-l pl-3">
+                  {item.children.map((child) => {
+                    const ChildIcon = child.icon;
+
+                    return (
+                      <NavLink
+                        key={child.labelKey}
+                        to={child.to}
+                        end={child.end}
+                        className={({ isActive }) => cn(linkClasses, linkStateClasses(isActive))}
+                      >
+                        <ChildIcon className="h-4 w-4 shrink-0" />
+                        {t.nav[child.labelKey]}
+                      </NavLink>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           );
         })}
       </nav>

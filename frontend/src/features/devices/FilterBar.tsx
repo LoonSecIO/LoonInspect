@@ -1,4 +1,5 @@
 import type { DeviceFilters, VersionOperator } from "@/features/devices/types";
+import { useLocale } from "@/i18n/LocaleContext";
 
 interface FilterBarProps {
   filters: DeviceFilters;
@@ -7,15 +8,6 @@ interface FilterBarProps {
 
 const inputClasses =
   "rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
-
-const versionOperatorLabels: Record<VersionOperator, string> = {
-  eq: "is",
-  lt: "older than",
-  lte: "at or older than",
-  gt: "newer than",
-  gte: "at or newer than",
-  regex: "matches regex"
-};
 
 function triState(value: boolean | undefined): string {
   if (value === undefined) return "any";
@@ -28,6 +20,8 @@ function fromTriState(value: string): boolean | undefined {
 }
 
 export function FilterBar({ filters, onChange }: FilterBarProps) {
+  const { t } = useLocale();
+
   function update(patch: Partial<DeviceFilters>) {
     onChange({ ...filters, ...patch, page: 1 });
   }
@@ -37,20 +31,18 @@ export function FilterBar({ filters, onChange }: FilterBarProps) {
       <div className="flex flex-wrap gap-3">
         <input
           className={`${inputClasses} min-w-[200px] flex-1`}
-          placeholder="Search hostname or serial number..."
+          placeholder={t.devices.searchPlaceholder}
           value={filters.q ?? ""}
           onChange={(e) => update({ q: e.target.value || undefined })}
         />
         <div className="min-w-[200px] flex-1 space-y-1">
           <input
             className={`${inputClasses} w-full`}
-            placeholder="Ask AI to filter devices..."
+            placeholder={t.devices.aiPlaceholder}
             value={filters.ai ?? ""}
             onChange={(e) => update({ ai: e.target.value || undefined })}
           />
-          <p className="text-xs text-muted-foreground">
-            Natural-language filtering is coming soon — this doesn't affect results yet.
-          </p>
+          <p className="text-xs text-muted-foreground">{t.devices.aiHint}</p>
         </div>
       </div>
 
@@ -61,61 +53,61 @@ export function FilterBar({ filters, onChange }: FilterBarProps) {
             value={filters.osVersionOperator ?? "eq"}
             onChange={(e) => update({ osVersionOperator: e.target.value as VersionOperator })}
           >
-            {(Object.keys(versionOperatorLabels) as VersionOperator[]).map((operator) => (
+            {(Object.keys(t.devices.osVersionOperators) as VersionOperator[]).map((operator) => (
               <option key={operator} value={operator}>
-                OS version {versionOperatorLabels[operator]}
+                {t.devices.osVersionPrefix} {t.devices.osVersionOperators[operator]}
               </option>
             ))}
           </select>
           <input
             className={inputClasses}
-            placeholder={filters.osVersionOperator === "regex" ? "Regex, e.g. ^14\\." : "e.g. 14.5"}
+            placeholder={filters.osVersionOperator === "regex" ? t.devices.osVersionRegexPlaceholder : t.devices.osVersionPlaceholder}
             value={filters.osVersion ?? ""}
             onChange={(e) => update({ osVersion: e.target.value || undefined })}
           />
         </div>
         <input
           className={inputClasses}
-          placeholder="Site"
+          placeholder={t.devices.sitePlaceholder}
           value={filters.site ?? ""}
           onChange={(e) => update({ site: e.target.value || undefined })}
         />
         <input
           className={inputClasses}
-          placeholder="Building"
+          placeholder={t.devices.buildingPlaceholder}
           value={filters.building ?? ""}
           onChange={(e) => update({ building: e.target.value || undefined })}
         />
         <input
           className={inputClasses}
-          placeholder="Department"
+          placeholder={t.devices.departmentPlaceholder}
           value={filters.department ?? ""}
           onChange={(e) => update({ department: e.target.value || undefined })}
         />
 
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          Managed
+          {t.devices.managed}
           <select
             className={inputClasses}
             value={triState(filters.managed)}
             onChange={(e) => update({ managed: fromTriState(e.target.value) })}
           >
-            <option value="any">Any</option>
-            <option value="true">Yes</option>
-            <option value="false">No</option>
+            <option value="any">{t.devices.any}</option>
+            <option value="true">{t.devices.yes}</option>
+            <option value="false">{t.devices.no}</option>
           </select>
         </label>
 
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          Supervised
+          {t.devices.supervised}
           <select
             className={inputClasses}
             value={triState(filters.supervised)}
             onChange={(e) => update({ supervised: fromTriState(e.target.value) })}
           >
-            <option value="any">Any</option>
-            <option value="true">Yes</option>
-            <option value="false">No</option>
+            <option value="any">{t.devices.any}</option>
+            <option value="true">{t.devices.yes}</option>
+            <option value="false">{t.devices.no}</option>
           </select>
         </label>
       </div>

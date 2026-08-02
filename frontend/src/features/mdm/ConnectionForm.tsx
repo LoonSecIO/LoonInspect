@@ -10,6 +10,7 @@ import type {
   ProviderCredentialField,
   ProviderInfo
 } from "@/features/mdm/types";
+import { useLocale } from "@/i18n/LocaleContext";
 
 interface ConnectionFormProps {
   connection?: MdmConnection;
@@ -18,12 +19,6 @@ interface ConnectionFormProps {
 }
 
 const providerOptions: MdmProviderType[] = ["jamf", "simplemdm", "addigy", "fleet", "nano"];
-
-const patchProviderLabels: Record<PatchManagementProvider, string> = {
-  none: "None",
-  jamf: "Jamf",
-  loonsecio: "LoonSecIO"
-};
 
 const inputClasses =
   "w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -35,6 +30,9 @@ function toCamel(key: string): string {
 }
 
 export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionFormProps) {
+  const { t } = useLocale();
+  const patchProviderLabels = t.connectionForm.patchProviderLabels;
+
   const [name, setName] = useState(connection?.name ?? "");
   const [provider, setProvider] = useState<MdmProviderType>(connection?.provider ?? "jamf");
   const [baseUrl, setBaseUrl] = useState(connection?.baseUrl ?? "");
@@ -99,10 +97,10 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
 
       if (typeof parsed.client_name === "string" && !name) setName(parsed.client_name);
       if (!matchedAny) {
-        setJsonParseError(`Didn't find any of this provider's fields (${credentialFields.map((f) => f.key).join(", ")}) in that JSON.`);
+        setJsonParseError(t.connectionForm.jsonNoMatch(credentialFields.map((f) => f.key).join(", ")));
       }
     } catch {
-      setJsonParseError("Couldn't parse JSON — check the format.");
+      setJsonParseError(t.connectionForm.jsonParseError);
     }
   }
 
@@ -126,7 +124,7 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
       setTestDetail(result.detail ?? null);
     } catch {
       setTestStatus("failure");
-      setTestMessage("Test request failed.");
+      setTestMessage(t.connectionForm.testRequestFailed);
     }
   }
 
@@ -168,7 +166,7 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
       }
       onSaved();
     } catch {
-      setError("Failed to save connection. Check the values and try again.");
+      setError(t.connectionForm.saveError);
     } finally {
       setSubmitting(false);
     }
@@ -178,12 +176,12 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
     <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border bg-card p-6">
       <div className="grid grid-cols-2 gap-4">
         <label className="space-y-1 text-sm">
-          <span className="font-medium">Name</span>
+          <span className="font-medium">{t.connectionForm.name}</span>
           <input className={inputClasses} value={name} onChange={(e) => setName(e.target.value)} required />
         </label>
 
         <label className="space-y-1 text-sm">
-          <span className="font-medium">Provider</span>
+          <span className="font-medium">{t.connectionForm.provider}</span>
           <select
             className={inputClasses}
             value={provider}
@@ -207,12 +205,12 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
         </label>
 
         <label className="col-span-2 space-y-1 text-sm">
-          <span className="font-medium">Base URL</span>
+          <span className="font-medium">{t.connectionForm.baseUrl}</span>
           <input
             className={inputClasses}
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder="https://your-org.jamfcloud.com"
+            placeholder={t.connectionForm.baseUrlPlaceholder}
             required
           />
         </label>
@@ -220,13 +218,13 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
 
       <div className="space-y-2 rounded-md border p-3">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">Credentials</span>
+          <span className="text-sm font-medium">{t.connectionForm.credentials}</span>
           <button
             type="button"
             className="text-xs font-medium text-primary underline-offset-2 hover:underline"
             onClick={() => setCredentialsJsonMode((current) => !current)}
           >
-            {credentialsJsonMode ? "Enter fields manually" : "Paste JSON instead"}
+            {credentialsJsonMode ? t.connectionForm.enterManually : t.connectionForm.pasteJson}
           </button>
         </div>
 
@@ -234,17 +232,17 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
           <div className="space-y-1">
             <textarea
               className={`${inputClasses} h-24 font-mono text-xs`}
-              placeholder='{"client_id": "...", "client_secret": "...", ...}'
+              placeholder={t.connectionForm.jsonPlaceholder}
               value={credentialsJson}
               onChange={(e) => handleCredentialsJsonChange(e.target.value)}
             />
             {jsonParseError && <p className="text-xs text-destructive">{jsonParseError}</p>}
             {!jsonParseError && Object.keys(credentials).length > 0 && (
-              <p className="text-xs text-muted-foreground">Parsed fields from JSON.</p>
+              <p className="text-xs text-muted-foreground">{t.connectionForm.jsonParsedHint}</p>
             )}
           </div>
         ) : credentialFields.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Loading fields for this provider...</p>
+          <p className="text-xs text-muted-foreground">{t.connectionForm.loadingFields}</p>
         ) : (
           <div className="grid grid-cols-2 gap-4">
             {credentialFields.map((field) => (
@@ -252,7 +250,7 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
                 <span className="font-medium">
                   {field.label}
                   {connection?.credentialFieldsSet.includes(field.key) && (
-                    <span className="ml-1 text-xs text-muted-foreground">(set — leave blank to keep)</span>
+                    <span className="ml-1 text-xs text-muted-foreground">{t.connectionForm.setLeaveBlank}</span>
                   )}
                 </span>
                 <input
@@ -276,10 +274,10 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
           >
             {testStatus === "testing" ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Testing...
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t.connectionForm.testing}
               </>
             ) : (
-              "Test connection"
+              t.connectionForm.testConnection
             )}
           </Button>
 
@@ -297,7 +295,7 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
           {testDetail && (
             <button
               type="button"
-              title="View the raw response from Jamf"
+              title={t.connectionForm.viewRawResponse}
               className="text-muted-foreground hover:text-foreground"
               onClick={() => setShowTestDetail((current) => !current)}
             >
@@ -311,12 +309,12 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
         )}
 
         {provider !== "jamf" && (
-          <p className="text-xs text-muted-foreground">Testing is currently only supported for Jamf connections.</p>
+          <p className="text-xs text-muted-foreground">{t.connectionForm.testingOnlyJamf}</p>
         )}
       </div>
 
       <div className="space-y-2">
-        <span className="text-sm font-medium">Patch management</span>
+        <span className="text-sm font-medium">{t.connectionForm.patchManagement}</span>
         <div className="flex gap-4">
           {(Object.keys(patchProviderLabels) as PatchManagementProvider[])
             .filter((option) => option !== "jamf" || provider === "jamf")
@@ -334,18 +332,16 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
             ))}
         </div>
         {provider !== "jamf" && (
-          <p className="text-xs text-muted-foreground">
-            Jamf patch management is only available for Jamf connections.
-          </p>
+          <p className="text-xs text-muted-foreground">{t.connectionForm.patchOnlyJamf}</p>
         )}
 
         {patchManagementProvider === "loonsecio" && (
           <div className="space-y-2 rounded-md border border-dashed p-3">
             <label className="space-y-1 text-sm">
               <span className="font-medium">
-                LoonSecIO license key
+                {t.connectionForm.loonsecioLicenseKey}
                 {connection?.hasLoonsecioLicenseKey && (
-                  <span className="ml-1 text-xs text-muted-foreground">(set — leave blank to keep)</span>
+                  <span className="ml-1 text-xs text-muted-foreground">{t.connectionForm.setLeaveBlank}</span>
                 )}
               </span>
               <input
@@ -361,11 +357,9 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
                 checked={loonsecioDataSharingEnabled}
                 onChange={(e) => setLoonsecioDataSharingEnabled(e.target.checked)}
               />
-              Enable data sharing
+              {t.connectionForm.enableDataSharing}
             </label>
-            <p className="text-xs text-muted-foreground">
-              LoonSecIO requires a license key and/or data sharing enabled.
-            </p>
+            <p className="text-xs text-muted-foreground">{t.connectionForm.loonsecioHint}</p>
           </div>
         )}
       </div>
@@ -376,29 +370,26 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
           className="text-xs font-medium text-primary underline-offset-2 hover:underline"
           onClick={() => setShowAdvanced((current) => !current)}
         >
-          {showAdvanced ? "Hide advanced settings" : "Advanced settings"}
+          {showAdvanced ? t.connectionForm.hideAdvancedSettings : t.connectionForm.advancedSettings}
         </button>
 
         {showAdvanced && (
           <div className="space-y-4 rounded-md border p-3">
             {provider === "jamf" && (
               <label className="space-y-1 text-sm">
-                <span className="font-medium">User-Agent override</span>
+                <span className="font-medium">{t.connectionForm.userAgentOverride}</span>
                 <input
                   className={inputClasses}
                   value={userAgentOverride}
                   onChange={(e) => setUserAgentOverride(e.target.value)}
-                  placeholder="LoonSecIO (default)"
+                  placeholder={t.connectionForm.userAgentPlaceholder}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Sent as the product name in the User-Agent header on every request to Jamf Pro
-                  (e.g. "LoonSecIO/0.1.0 auth"). Leave blank to use the instance default.
-                </p>
+                <p className="text-xs text-muted-foreground">{t.connectionForm.userAgentHint}</p>
               </label>
             )}
 
             <div className="space-y-2">
-              <span className="text-sm font-medium">What this connection is used for</span>
+              <span className="text-sm font-medium">{t.connectionForm.whatUsedFor}</span>
               <div className="grid grid-cols-2 gap-2">
                 <label className="flex items-center gap-2 text-sm">
                   <input
@@ -406,7 +397,8 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
                     checked={capabilityDevices}
                     onChange={(e) => setCapabilityDevices(e.target.checked)}
                   />
-                  Devices <span className="text-xs text-muted-foreground">(CRUD)</span>
+                  {t.connectionForm.capabilityDevices}{" "}
+                  <span className="text-xs text-muted-foreground">{t.connectionForm.crud}</span>
                 </label>
                 <label className="flex items-center gap-2 text-sm">
                   <input
@@ -414,7 +406,8 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
                     checked={capabilityUsers}
                     onChange={(e) => setCapabilityUsers(e.target.checked)}
                   />
-                  Users <span className="text-xs text-muted-foreground">(CRUD)</span>
+                  {t.connectionForm.capabilityUsers}{" "}
+                  <span className="text-xs text-muted-foreground">{t.connectionForm.crud}</span>
                 </label>
                 <label className="flex items-center gap-2 text-sm">
                   <input
@@ -422,7 +415,8 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
                     checked={capabilityWebhooks}
                     onChange={(e) => setCapabilityWebhooks(e.target.checked)}
                   />
-                  Callback webhooks <span className="text-xs text-muted-foreground">(read)</span>
+                  {t.connectionForm.capabilityWebhooks}{" "}
+                  <span className="text-xs text-muted-foreground">{t.connectionForm.readOnly}</span>
                 </label>
                 {provider === "jamf" && (
                   <label className="flex items-center gap-2 text-sm">
@@ -431,7 +425,8 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
                       checked={capabilityJamfPro}
                       onChange={(e) => setCapabilityJamfPro(e.target.checked)}
                     />
-                    Jamf Pro <span className="text-xs text-muted-foreground">(read)</span>
+                    {t.connectionForm.capabilityJamfPro}{" "}
+                    <span className="text-xs text-muted-foreground">{t.connectionForm.readOnly}</span>
                   </label>
                 )}
               </div>
@@ -440,17 +435,18 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
             {connection && (
               <div className="space-y-1 text-xs text-muted-foreground">
                 <p>
-                  Last successful authentication:{" "}
+                  {t.connectionForm.lastSuccessfulAuth}{" "}
                   {connection.lastSuccessfulAuthAt
                     ? new Date(connection.lastSuccessfulAuthAt).toLocaleString()
-                    : "Never"}
+                    : t.connectionForm.never}
                 </p>
                 <p>
-                  Credentials last rotated:{" "}
+                  {t.connectionForm.credentialsRotated}{" "}
                   {connection.credentialsRotatedAt
                     ? new Date(connection.credentialsRotatedAt).toLocaleString()
-                    : "Never"}
-                  {connection.credentialsFingerprint && ` (starts with "${connection.credentialsFingerprint}")`}
+                    : t.connectionForm.never}
+                  {connection.credentialsFingerprint &&
+                    ` ${t.connectionForm.startsWithFingerprint(connection.credentialsFingerprint)}`}
                 </p>
               </div>
             )}
@@ -462,10 +458,10 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
 
       <div className="flex gap-2">
         <Button type="submit" disabled={submitting}>
-          {connection ? "Save changes" : "Add connection"}
+          {connection ? t.connectionForm.saveChanges : t.connectionForm.addConnectionButton}
         </Button>
         <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
+          {t.connectionForm.cancel}
         </Button>
       </div>
     </form>
