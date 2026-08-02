@@ -1,0 +1,250 @@
+import type { Translations } from "@/i18n/en";
+
+export const de: Translations = {
+  common: {
+    darkMode: "Dunkelmodus",
+    lightMode: "Hellmodus",
+    language: "Sprache",
+    manage: "Verwalten",
+    comingSoon: "Demnächst verfügbar",
+    previewBanner: "Vorschaudaten. Diese Seite ist noch nicht mit synchronisierten MDM-Daten verbunden.",
+    sidebar: "Seitenleiste",
+    sidebarExpanded: "Symbole + Text",
+    sidebarCollapsed: "Nur Symbole",
+    sidebarHidden: "Ausgeblendet"
+  },
+  nav: {
+    overview: "Übersicht",
+    devices: "Geräte",
+    applications: "Anwendungen",
+    groups: "Gruppen",
+    compliance: "Compliance",
+    users: "Benutzer",
+    vulnerabilities: "Schwachstellen",
+    integrations: "Integrationen",
+    settings: "Einstellungen"
+  },
+  overview: {
+    eyebrow: "LoonInspect",
+    title: "Backend-Sicherheitsdashboard",
+    description:
+      "Überwachen Sie den MDM-Synchronisierungsstatus, Schwachstellenberichte und das Anwendungsinventar der Endgeräte.",
+    apiConnectionTitle: "API-Verbindung",
+    apiConnectionPrefix: "Der Vite-Dev-Server leitet Frontend-Anfragen von",
+    apiConnectionSuffix: "an FastAPI weiter.",
+    checkApiStatus: "API-Status prüfen"
+  },
+  vulnerabilities: {
+    eyebrow: "Sicherheit",
+    title: "Schwachstellen",
+    description:
+      "CVE- und Patch-Compliance-Berichte erscheinen hier, sobald in den Einstellungen ein Patch-Management-Anbieter (Jamf oder LoonSecIO) für eine Verbindung konfiguriert ist."
+  },
+  devices: {
+    eyebrow: "Inventar",
+    title: "Geräte",
+    searchPlaceholder: "Hostname oder Seriennummer suchen...",
+    aiPlaceholder: "KI bitten, Geräte zu filtern...",
+    aiHint: "Filterung in natürlicher Sprache folgt in Kürze — hat derzeit keinen Einfluss auf die Ergebnisse.",
+    osVersionPrefix: "Betriebssystemversion",
+    osVersionOperators: {
+      eq: "ist",
+      lt: "älter als",
+      lte: "gleich oder älter als",
+      gt: "neuer als",
+      gte: "gleich oder neuer als",
+      regex: "entspricht Regex"
+    },
+    osVersionPlaceholder: "z. B. 14.5",
+    osVersionRegexPlaceholder: "Regex, z. B. ^14\\.",
+    sitePlaceholder: "Standort",
+    buildingPlaceholder: "Gebäude",
+    departmentPlaceholder: "Abteilung",
+    managed: "Verwaltet",
+    supervised: "Überwacht",
+    any: "Alle",
+    yes: "Ja",
+    no: "Nein",
+    tableHostname: "Hostname",
+    tableSerial: "Seriennummer",
+    tableOsVersion: "Betriebssystemversion",
+    tableSite: "Standort",
+    tableDepartment: "Abteilung",
+    tableManaged: "Verwaltet",
+    tableSupervised: "Überwacht",
+    tableLastCheckIn: "Letzte Anmeldung",
+    loading: "Lädt...",
+    errorLoading: "Geräte konnten nicht geladen werden.",
+    empty: "Keine Geräte entsprechen diesen Filtern.",
+    total: (n: number) => `${n} Gerät${n === 1 ? "" : "e"} insgesamt`
+  },
+  users: {
+    eyebrow: "Inventar",
+    title: "Benutzer",
+    description:
+      "Von Ihren verbundenen MDM-Plattformen erkannte Benutzer — zugewiesene Benutzer, angemeldete Benutzer und die ihnen zugeordneten Geräte.",
+    tableName: "Name",
+    tableUsername: "Benutzername",
+    tableEmail: "E-Mail",
+    tableDepartment: "Abteilung",
+    tableSource: "Quelle",
+    tableAssignedDevices: "Zugewiesene Geräte",
+    tableLoggedInDevices: "Angemeldete Geräte",
+    tableLastSeen: "Zuletzt gesehen",
+    empty: "Noch keine Benutzer erkannt.",
+    total: (n: number) => `${n} Benutzer insgesamt`
+  },
+  applications: {
+    eyebrow: "Geräte",
+    title: "Anwendungen",
+    description: "Über Ihre Flotte installierte Anwendungen, aggregiert aus dem synchronisierten Geräteinventar.",
+    tableName: "Name",
+    tableBundleId: "Bundle-ID",
+    tableVersion: "Version",
+    tableInstalls: "Installationen",
+    tableCompliant: "Konform",
+    tablePatchAvailable: "Patch verfügbar",
+    empty: "Noch keine Anwendungen erkannt.",
+    total: (n: number) => `${n} Anwendung${n === 1 ? "" : "en"} insgesamt`
+  },
+  groups: {
+    eyebrow: "Geräte",
+    title: "Gruppen",
+    description: "Smarte und statische Gerätegruppen, synchronisiert von Ihren MDM-Plattformen.",
+    tableName: "Name",
+    tableType: "Typ",
+    tableDescription: "Beschreibung",
+    tableDevices: "Geräte",
+    tableSource: "Quelle",
+    typeSmart: "Smart",
+    typeStatic: "Statisch",
+    empty: "Noch keine Gruppen erkannt.",
+    total: (n: number) => `${n} Gruppe${n === 1 ? "" : "n"} insgesamt`
+  },
+  compliance: {
+    eyebrow: "Geräte",
+    title: "Compliance",
+    description: "Patch-Compliance der gesamten Flotte, aufgeschlüsselt nach Anwendung.",
+    tableApplication: "Anwendung",
+    tableCompliantDevices: "Konforme Geräte",
+    tableNonCompliantDevices: "Nicht konforme Geräte",
+    tableComplianceRate: "Compliance-Rate",
+    empty: "Noch keine Compliance-Daten."
+  },
+  integrations: {
+    eyebrow: "Integrationen",
+    title: "Integrationen",
+    description: "Verbinden Sie LoonInspect mit Ihren MDM-, SIEM-, Speicher- und Messaging-Plattformen.",
+    groups: {
+      mdm: "MDM",
+      siem: "SIEM",
+      storage: "Speicher",
+      messaging: "Messaging",
+      metadata: "Metadaten"
+    },
+    vendors: {
+      jamf: { name: "Jamf", subtitle: "", description: "Apple-Gerätemanagement, Inventar und Patch-Reporting." },
+      fleet: {
+        name: "Fleet",
+        subtitle: "Geräteverwaltung",
+        description: "Open-Source-Geräteverwaltung und osquery-basiertes Inventar."
+      },
+      simplemdm: { name: "SimpleMDM", subtitle: "", description: "Apple-MDM für wachsende Teams." },
+      addigy: { name: "Addigy", subtitle: "", description: "Plattform für Apple-Geräteverwaltung." },
+      runreveal: {
+        name: "RunReveal",
+        subtitle: "",
+        description: "Erkennung und Reaktion auf Basis Ihrer Gerätedaten."
+      },
+      splunk: { name: "Splunk", subtitle: "", description: "Maschinendaten durchsuchen, überwachen und analysieren." },
+      datadog: { name: "Datadog", subtitle: "", description: "Cloud-Monitoring und -Sicherheit." },
+      webhook: { name: "Webhook", subtitle: "", description: "Ereignisse an einen benutzerdefinierten HTTP-Endpunkt senden." },
+      snowflake: { name: "Snowflake", subtitle: "", description: "Daten in ein Snowflake-Warehouse exportieren." },
+      postgres: { name: "PostgreSQL", subtitle: "", description: "Daten in eine Postgres-Datenbank exportieren." },
+      slack: { name: "Slack", subtitle: "", description: "Warnungen und Benachrichtigungen an Slack senden." },
+      discord: { name: "Discord", subtitle: "", description: "Warnungen und Benachrichtigungen an Discord senden." },
+      "jamf-metadata": {
+        name: "Jamf",
+        subtitle: "Patch-Reporting",
+        description: "Patch-Reporting- und Software-Update-Daten von Jamf Pro."
+      },
+      nvd: {
+        name: "NVD",
+        subtitle: "National Vulnerability Database",
+        description: "CVE- und Schwachstellendaten aus der National Vulnerability Database."
+      },
+      loonsecio: {
+        name: "LoonSecIO",
+        subtitle: "",
+        description: "CVE- und Patch-Verfügbarkeitsabfragen anhand des App-Hashes."
+      }
+    }
+  },
+  settings: {
+    eyebrow: "Einstellungen",
+    title: "MDM-Verbindungen",
+    addConnection: "Verbindung hinzufügen",
+    tableName: "Name",
+    tableProvider: "Anbieter",
+    tableBaseUrl: "Basis-URL",
+    tablePatchMgmt: "Patch-Verwaltung",
+    tableStatus: "Status",
+    loading: "Lädt...",
+    empty: "Noch keine Verbindungen.",
+    active: "Aktiv",
+    inactive: "Inaktiv",
+    deleteConfirm: (name: string) => `"${name}" löschen?`,
+    deleting: "Wird gelöscht...",
+    confirm: "Bestätigen",
+    cancel: "Abbrechen",
+    edit: "Bearbeiten",
+    delete: "Löschen"
+  },
+  connectionForm: {
+    name: "Name",
+    provider: "Anbieter",
+    baseUrl: "Basis-URL",
+    baseUrlPlaceholder: "https://ihre-org.jamfcloud.com",
+    credentials: "Anmeldedaten",
+    pasteJson: "Stattdessen JSON einfügen",
+    enterManually: "Felder manuell eingeben",
+    jsonPlaceholder: '{"client_id": "...", "client_secret": "...", ...}',
+    jsonParsedHint: "Felder aus JSON übernommen.",
+    loadingFields: "Felder für diesen Anbieter werden geladen...",
+    setLeaveBlank: "(gesetzt — leer lassen, um beizubehalten)",
+    testConnection: "Verbindung testen",
+    testing: "Wird getestet...",
+    testRequestFailed: "Testanfrage fehlgeschlagen.",
+    testingOnlyJamf: "Das Testen wird derzeit nur für Jamf-Verbindungen unterstützt.",
+    viewRawResponse: "Die Rohantwort von Jamf anzeigen",
+    patchManagement: "Patch-Verwaltung",
+    patchOnlyJamf: "Jamf-Patch-Verwaltung ist nur für Jamf-Verbindungen verfügbar.",
+    patchProviderLabels: { none: "Keine", jamf: "Jamf", loonsecio: "LoonSecIO" },
+    loonsecioLicenseKey: "LoonSecIO-Lizenzschlüssel",
+    enableDataSharing: "Datenfreigabe aktivieren",
+    loonsecioHint: "LoonSecIO benötigt einen Lizenzschlüssel und/oder aktivierte Datenfreigabe.",
+    advancedSettings: "Erweiterte Einstellungen",
+    hideAdvancedSettings: "Erweiterte Einstellungen ausblenden",
+    userAgentOverride: "User-Agent-Override",
+    userAgentPlaceholder: "LoonSecIO (Standard)",
+    userAgentHint:
+      'Wird als Produktname im User-Agent-Header bei jeder Anfrage an Jamf Pro gesendet (z. B. "LoonSecIO/0.1.0 auth"). Leer lassen, um den Instanzstandard zu verwenden.',
+    whatUsedFor: "Wofür diese Verbindung verwendet wird",
+    capabilityDevices: "Geräte",
+    capabilityUsers: "Benutzer",
+    capabilityWebhooks: "Callback-Webhooks",
+    capabilityJamfPro: "Jamf Pro",
+    crud: "(CRUD)",
+    readOnly: "(lesend)",
+    lastSuccessfulAuth: "Letzte erfolgreiche Authentifizierung:",
+    never: "Nie",
+    credentialsRotated: "Anmeldedaten zuletzt rotiert:",
+    startsWithFingerprint: (fp: string) => `(beginnt mit "${fp}")`,
+    saveChanges: "Änderungen speichern",
+    addConnectionButton: "Verbindung hinzufügen",
+    cancel: "Abbrechen",
+    saveError: "Verbindung konnte nicht gespeichert werden. Werte prüfen und erneut versuchen.",
+    jsonNoMatch: (fields: string) => `Keines der Felder dieses Anbieters (${fields}) wurde in diesem JSON gefunden.`,
+    jsonParseError: "JSON konnte nicht geparst werden — Format prüfen."
+  }
+};
