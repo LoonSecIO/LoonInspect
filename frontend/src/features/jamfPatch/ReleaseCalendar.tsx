@@ -3,7 +3,6 @@ import type { JamfPatchVersion } from "@/features/jamfPatch/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
 const WEEKS = 53;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 // Sequential blue ramp (mode-agnostic hex, per the dataviz palette): light mode
 // reads low->high as light->dark, dark mode flips anchor so low->high reads
@@ -19,13 +18,22 @@ const CELL_CLASSES: Record<0 | 1 | 2 | 3 | 4, string> = {
 
 interface DayCell {
   date: Date;
-  isoDate: string;
+  key: string;
   count: number;
   bucket: 0 | 1 | 2 | 3 | 4;
 }
 
-function isoDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
+/** Local calendar-day key (YYYY-MM-DD).
+ *
+ * Deliberately not `toISOString()`: that reports the UTC day, so for viewers
+ * east of UTC a cell rendered as local "Aug 3" would look up "Aug 2" and bucket
+ * releases onto the wrong square. Release timestamps are bucketed by the same
+ * local key, which also keeps the calendar consistent with the version table
+ * below it (that renders dates via toLocaleDateString). */
+function dayKey(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 function bucketFor(count: number, max: number): 0 | 1 | 2 | 3 | 4 {
@@ -38,27 +46,40 @@ function bucketFor(count: number, max: number): 0 | 1 | 2 | 3 | 4 {
   return 4;
 }
 
-function buildWeeks(countsByDay: Map<string, number>): DayCell[][] {
+function buildCalendar(countsByDay: Map<string, number>): { weeks: DayCell[][]; windowTotal: number } {
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const endOfWeek = new Date(today.getTime() + (6 - today.getDay()) * DAY_MS);
   const totalDays = WEEKS * 7;
-  const start = new Date(endOfWeek.getTime() - (totalDays - 1) * DAY_MS);
 
-  const max = Math.max(0, ...countsByDay.values());
-  const days: DayCell[] = [];
+  // Step through calendar days via the Date constructor rather than adding a
+  // fixed 24h in milliseconds: across a DST transition a fixed offset drifts
+  // off local midnight, which duplicates one day and skips another each year.
+  // Out-of-range day values are normalized by the constructor, so counting
+  // backwards from the end of the current week is safe.
+  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + (6 - today.getDay()));
+  const startDay = end.getDate() - (totalDays - 1);
+
+  const days: Omit<DayCell, "bucket">[] = [];
+  let windowTotal = 0;
+
   for (let i = 0; i < totalDays; i++) {
-    const date = new Date(start.getTime() + i * DAY_MS);
-    const key = isoDate(date);
+    const date = new Date(end.getFullYear(), end.getMonth(), startDay + i);
+    const key = dayKey(date);
     const count = countsByDay.get(key) ?? 0;
-    days.push({ date, isoDate: key, count, bucket: bucketFor(count, max) });
+    windowTotal += count;
+    days.push({ date, key, count });
   }
+
+  // Scale against the busiest day actually rendered, not the all-time max — a
+  // spike outside the window would otherwise compress every visible cell and
+  // can leave the darkest step of the ramp unreachable.
+  const windowMax = days.reduce((max, day) => (day.count > max ? day.count : max), 0);
 
   const weeks: DayCell[][] = [];
   for (let i = 0; i < days.length; i += 7) {
-    weeks.push(days.slice(i, i + 7));
+    weeks.push(days.slice(i, i + 7).map((day) => ({ ...day, bucket: bucketFor(day.count, windowMax) })));
   }
-  return weeks;
+
+  return { weeks, windowTotal };
 }
 
 export function ReleaseCalendar({ patches }: { patches: JamfPatchVersion[] }) {
@@ -70,19 +91,13 @@ export function ReleaseCalendar({ patches }: { patches: JamfPatchVersion[] }) {
       if (!patch.releaseDate) continue;
       const parsed = new Date(patch.releaseDate);
       if (Number.isNaN(parsed.getTime())) continue;
-      const key = isoDate(parsed);
+      const key = dayKey(parsed);
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
     return counts;
   }, [patches]);
 
-  const weeks = useMemo(() => buildWeeks(countsByDay), [countsByDay]);
-
-  const totalReleases = useMemo(() => {
-    let sum = 0;
-    for (const count of countsByDay.values()) sum += count;
-    return sum;
-  }, [countsByDay]);
+  const { weeks, windowTotal } = useMemo(() => buildCalendar(countsByDay), [countsByDay]);
 
   const monthLabels = useMemo(() => {
     let lastMonth = -1;
@@ -114,11 +129,11 @@ export function ReleaseCalendar({ patches }: { patches: JamfPatchVersion[] }) {
         <div
           className="inline-flex flex-col gap-1"
           role="img"
-          aria-label={t.jamfPatch.detail.calendarAriaLabel(totalReleases)}
+          aria-label={t.jamfPatch.detail.calendarAriaLabel(windowTotal)}
         >
           <div className="flex h-4 gap-1 pl-6 text-xs text-muted-foreground">
             {weeks.map((week, index) => (
-              <div key={week[0].isoDate} className="relative w-[11px] shrink-0">
+              <div key={week[0].key} className="relative w-[11px] shrink-0">
                 {monthLabels[index] && (
                   <span className="absolute left-0 top-0 whitespace-nowrap">{monthLabels[index]}</span>
                 )}
@@ -136,9 +151,9 @@ export function ReleaseCalendar({ patches }: { patches: JamfPatchVersion[] }) {
               <span />
             </div>
             {weeks.map((week) => (
-              <div key={week[0].isoDate} className="flex flex-col gap-1">
+              <div key={week[0].key} className="flex flex-col gap-1">
                 {week.map((day, dayIndex) => (
-                  <div key={day.isoDate} className="group relative">
+                  <div key={day.key} className="group relative">
                     <div className={`h-[11px] w-[11px] rounded-sm ${CELL_CLASSES[day.bucket]}`} />
                     <div
                       className={`pointer-events-none absolute left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md group-hover:block ${
