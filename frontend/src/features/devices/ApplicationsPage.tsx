@@ -1,13 +1,51 @@
-import { MOCK_APPLICATIONS } from "@/features/devices/applicationsMockData";
+import { useEffect, useState } from "react";
+import { NavLink, Outlet } from "react-router";
+import { listConnections } from "@/features/mdm/api";
+import { listFeatureFlags } from "@/features/settings/api";
+import { cn } from "@/lib/utils";
 import { useLocale } from "@/i18n/LocaleContext";
+
+const tabClasses = "border-b-2 px-1 pb-2 text-sm font-medium transition-colors";
+const tabStateClasses = (isActive: boolean) =>
+  isActive
+    ? "border-primary text-foreground"
+    : "border-transparent text-muted-foreground hover:text-foreground";
 
 export function ApplicationsPage() {
   const { t } = useLocale();
+  const [hasJamfProCapability, setHasJamfProCapability] = useState(false);
+  const [jamfPatchFlagEnabled, setJamfPatchFlagEnabled] = useState(false);
 
-  function triStateLabel(value: boolean | null): string {
-    if (value === null) return "—";
-    return value ? t.devices.yes : t.devices.no;
-  }
+  // A connection's Jamf Pro capability normally gates the tab, but the
+  // jamf_patch feature flag (Settings > Feature Flags) can force it visible
+  // regardless — e.g. to preview the feed before wiring up a real connection.
+  const jamfPatchEnabled = hasJamfProCapability || jamfPatchFlagEnabled;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    listConnections()
+      .then((connections) => {
+        if (cancelled) return;
+        setHasJamfProCapability(connections.some((c) => c.isActive && c.capabilityJamfPro));
+      })
+      .catch(() => {
+        if (!cancelled) setHasJamfProCapability(false);
+      });
+
+    listFeatureFlags()
+      .then((flags) => {
+        if (cancelled) return;
+        setJamfPatchFlagEnabled(flags.some((flag) => flag.key === "jamf_patch" && flag.enabled));
+      })
+      .catch(() => {
+        if (!cancelled) setJamfPatchFlagEnabled(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <section className="space-y-6">
@@ -17,45 +55,21 @@ export function ApplicationsPage() {
         <p className="mt-1 text-sm text-muted-foreground">{t.applications.description}</p>
       </div>
 
-      <div className="rounded-lg border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground">
-        {t.common.previewBanner}
+      <div className="flex gap-4 border-b">
+        <NavLink to="/devices/applications" end className={({ isActive }) => cn(tabClasses, tabStateClasses(isActive))}>
+          {t.applications.tabInstalled}
+        </NavLink>
+        {jamfPatchEnabled && (
+          <NavLink
+            to="/devices/applications/jamf-patch"
+            className={({ isActive }) => cn(tabClasses, tabStateClasses(isActive))}
+          >
+            {t.jamfPatch.tabLabel}
+          </NavLink>
+        )}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border bg-card">
-        <table className="w-full text-sm">
-          <thead className="border-b bg-muted/30 text-left text-muted-foreground">
-            <tr>
-              <th className="px-4 py-2 font-medium">{t.applications.tableName}</th>
-              <th className="px-4 py-2 font-medium">{t.applications.tableBundleId}</th>
-              <th className="px-4 py-2 font-medium">{t.applications.tableVersion}</th>
-              <th className="px-4 py-2 font-medium">{t.applications.tableInstalls}</th>
-              <th className="px-4 py-2 font-medium">{t.applications.tableCompliant}</th>
-              <th className="px-4 py-2 font-medium">{t.applications.tablePatchAvailable}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {MOCK_APPLICATIONS.length === 0 && (
-              <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={6}>
-                  {t.applications.empty}
-                </td>
-              </tr>
-            )}
-            {MOCK_APPLICATIONS.map((app) => (
-              <tr key={app.id} className="border-b last:border-0">
-                <td className="px-4 py-2 font-medium">{app.name}</td>
-                <td className="px-4 py-2">{app.bundleId}</td>
-                <td className="px-4 py-2">{app.version}</td>
-                <td className="px-4 py-2">{app.installCount}</td>
-                <td className="px-4 py-2">{triStateLabel(app.compliant)}</td>
-                <td className="px-4 py-2">{triStateLabel(app.patchAvailable)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <p className="text-sm text-muted-foreground">{t.applications.total(MOCK_APPLICATIONS.length)}</p>
+      <Outlet />
     </section>
   );
 }

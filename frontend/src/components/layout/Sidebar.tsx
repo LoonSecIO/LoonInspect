@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, AppWindow, Database, Home, Layers, Plug, Settings, ShieldCheck, Users } from "lucide-react";
+import { AlertTriangle, AppWindow, Database, Flag, Home, Layers, Plug, Settings, ShieldCheck, Users } from "lucide-react";
 import { NavLink } from "react-router";
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -32,7 +32,16 @@ const navigationItems: NavItem[] = [
   { labelKey: "users", icon: Users, to: "/users", end: false },
   { labelKey: "vulnerabilities", icon: AlertTriangle, to: "/vulnerabilities", end: false },
   { labelKey: "integrations", icon: Plug, to: "/integrations", end: false },
-  { labelKey: "settings", icon: Settings, to: "/settings/connections", end: false }
+  {
+    labelKey: "settings",
+    icon: Settings,
+    to: "/settings/connections",
+    end: false,
+    children: [
+      { labelKey: "connections", icon: Plug, to: "/settings/connections", end: false },
+      { labelKey: "featureFlags", icon: Flag, to: "/settings/feature-flags", end: false }
+    ]
+  }
 ];
 
 const linkClasses =

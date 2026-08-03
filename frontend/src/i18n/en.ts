@@ -20,7 +20,9 @@ export const en = {
     users: "Users",
     vulnerabilities: "Vulnerabilities",
     integrations: "Integrations",
-    settings: "Settings"
+    settings: "Settings",
+    connections: "Connections",
+    featureFlags: "Feature Flags"
   },
   overview: {
     eyebrow: "LoonInspect",
@@ -95,6 +97,7 @@ export const en = {
     eyebrow: "Devices",
     title: "Applications",
     description: "Applications installed across your fleet, aggregated from synced device inventory.",
+    tabInstalled: "Installed Apps",
     tableName: "Name",
     tableBundleId: "Bundle ID",
     tableVersion: "Version",
@@ -103,6 +106,37 @@ export const en = {
     tablePatchAvailable: "Patch available",
     empty: "No applications detected yet.",
     total: (n: number) => `${n} application${n === 1 ? "" : "s"} total`
+  },
+  jamfPatch: {
+    tabLabel: "Jamf Patch",
+    eyebrow: "Devices › Applications",
+    title: "Jamf Patch",
+    description: "Software titles tracked by Jamf's patch catalog, synced hourly.",
+    tableName: "Name",
+    tablePublisher: "Publisher",
+    tableBundleId: "Bundle ID",
+    tableCurrentVersion: "Current version",
+    tableDeviceCount: "Devices with app",
+    tableDevicesOnLatest: "Devices on latest",
+    tableLastModified: "Last modified",
+    tableSyncedAt: "Last synced",
+    syncNow: "Sync now",
+    syncing: "Syncing...",
+    syncError: "Sync failed. Try again.",
+    loading: "Loading...",
+    errorLoading: "Failed to load Jamf Patch titles.",
+    empty: "No Jamf Patch titles synced yet.",
+    total: (n: number) => `${n} title${n === 1 ? "" : "s"} total`,
+    detail: {
+      back: "← Back to Jamf Patch",
+      loading: "Loading...",
+      errorLoading: "Failed to load this title.",
+      notFound: "Title not found.",
+      tableVersion: "Version",
+      tableReleaseDate: "Release date",
+      empty: "No version history recorded for this title.",
+      versionsTotal: (n: number) => `${n} version${n === 1 ? "" : "s"}`
+    }
   },
   groups: {
     eyebrow: "Devices",
@@ -196,6 +230,16 @@ export const en = {
     cancel: "Cancel",
     edit: "Edit",
     delete: "Delete"
+  },
+  featureFlags: {
+    title: "Feature Flags",
+    description: "Force-enable features that are normally gated behind connection capabilities or other business conditions.",
+    loading: "Loading...",
+    empty: "No feature flags defined yet.",
+    errorLoading: "Failed to load feature flags.",
+    errorUpdating: "Failed to update that flag. Try again.",
+    on: "On",
+    off: "Off"
   },
   connectionForm: {
     name: "Name",

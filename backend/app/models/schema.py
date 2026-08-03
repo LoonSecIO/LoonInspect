@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.crypto import EncryptedString
@@ -121,3 +121,34 @@ class MdmSyncState(Base):
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="idle")
     device_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class JamfPatchTitle(Base):
+    """A cached title from Jamf's public patch definition catalog (jamf-patch.jamfcloud.com),
+    refreshed hourly. Global — not tied to any one MdmConnection since the catalog itself
+    carries no tenant credentials or scoping."""
+
+    __tablename__ = "jamf_patch_titles"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    publisher: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    app_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    bundle_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    current_version: Mapped[str] = mapped_column(String(64))
+    last_modified: Mapped[str] = mapped_column(String(64))
+    patches: Mapped[list] = mapped_column(JSON, default=list)
+    requirements: Mapped[list] = mapped_column(JSON, default=list)
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class FeatureFlag(Base):
+    """Admin overrides for features that are otherwise gated behind normal business
+    conditions (e.g. a connection's capability flags). A flag being on here forces
+    the feature visible regardless of that underlying condition."""
+
+    __tablename__ = "feature_flags"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
