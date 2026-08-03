@@ -11,7 +11,6 @@ class MdmProvider(str, Enum):
     jamf = "jamf"
     simplemdm = "simplemdm"
     addigy = "addigy"
-    fleet = "fleet"
     nano = "nano"
 
 

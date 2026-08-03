@@ -1,4 +1,4 @@
-export type MdmProviderType = "jamf" | "simplemdm" | "addigy" | "fleet" | "nano";
+export type MdmProviderType = "jamf" | "simplemdm" | "addigy" | "nano";
 export type PatchManagementProvider = "none" | "jamf" | "loonsecio";
 
 export interface MdmSyncStatus {
