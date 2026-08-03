@@ -22,7 +22,9 @@ export const de: Translations = {
     users: "Benutzer",
     vulnerabilities: "Schwachstellen",
     integrations: "Integrationen",
-    settings: "Einstellungen"
+    settings: "Einstellungen",
+    connections: "Verbindungen",
+    featureFlags: "Feature-Flags"
   },
   overview: {
     eyebrow: "LoonInspect",
@@ -98,6 +100,7 @@ export const de: Translations = {
     eyebrow: "Geräte",
     title: "Anwendungen",
     description: "Über Ihre Flotte installierte Anwendungen, aggregiert aus dem synchronisierten Geräteinventar.",
+    tabInstalled: "Installierte Apps",
     tableName: "Name",
     tableBundleId: "Bundle-ID",
     tableVersion: "Version",
@@ -106,6 +109,37 @@ export const de: Translations = {
     tablePatchAvailable: "Patch verfügbar",
     empty: "Noch keine Anwendungen erkannt.",
     total: (n: number) => `${n} Anwendung${n === 1 ? "" : "en"} insgesamt`
+  },
+  jamfPatch: {
+    tabLabel: "Jamf Patch",
+    eyebrow: "Geräte › Anwendungen",
+    title: "Jamf Patch",
+    description: "Software-Titel aus dem Jamf-Patch-Katalog, stündlich synchronisiert.",
+    tableName: "Name",
+    tablePublisher: "Herausgeber",
+    tableBundleId: "Bundle-ID",
+    tableCurrentVersion: "Aktuelle Version",
+    tableDeviceCount: "Geräte mit App",
+    tableDevicesOnLatest: "Geräte auf neuester Version",
+    tableLastModified: "Zuletzt geändert",
+    tableSyncedAt: "Zuletzt synchronisiert",
+    syncNow: "Jetzt synchronisieren",
+    syncing: "Synchronisiert...",
+    syncError: "Synchronisierung fehlgeschlagen. Bitte erneut versuchen.",
+    loading: "Lädt...",
+    errorLoading: "Jamf-Patch-Titel konnten nicht geladen werden.",
+    empty: "Noch keine Jamf-Patch-Titel synchronisiert.",
+    total: (n: number) => `${n} Titel insgesamt`,
+    detail: {
+      back: "← Zurück zu Jamf Patch",
+      loading: "Lädt...",
+      errorLoading: "Dieser Titel konnte nicht geladen werden.",
+      notFound: "Titel nicht gefunden.",
+      tableVersion: "Version",
+      tableReleaseDate: "Veröffentlichungsdatum",
+      empty: "Für diesen Titel ist keine Versionshistorie vorhanden.",
+      versionsTotal: (n: number) => `${n} Version${n === 1 ? "" : "en"}`
+    }
   },
   groups: {
     eyebrow: "Geräte",
@@ -199,6 +233,17 @@ export const de: Translations = {
     cancel: "Abbrechen",
     edit: "Bearbeiten",
     delete: "Löschen"
+  },
+  featureFlags: {
+    title: "Feature-Flags",
+    description:
+      "Erzwingen Sie Funktionen, die normalerweise hinter Verbindungsfähigkeiten oder anderen Bedingungen verborgen sind.",
+    loading: "Lädt...",
+    empty: "Noch keine Feature-Flags definiert.",
+    errorLoading: "Feature-Flags konnten nicht geladen werden.",
+    errorUpdating: "Dieses Flag konnte nicht aktualisiert werden. Bitte erneut versuchen.",
+    on: "An",
+    off: "Aus"
   },
   connectionForm: {
     name: "Name",

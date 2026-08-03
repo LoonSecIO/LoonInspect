@@ -13,12 +13,15 @@ from sqlalchemy import select
 
 from app.api.connections import router as connections_router
 from app.api.devices import router as devices_router
+from app.api.feature_flags import router as feature_flags_router
+from app.api.jamf_patch import router as jamf_patch_router
 from app.api.routes import router as api_router
 from app.api.webhooks import router as webhooks_router
 from app.core.config import settings
 from app.core.crypto import validate_encryption_key
 from app.core.database import async_session_factory, init_db
 from app.mdm.factory import get_mdm_client
+from app.mdm.patch.jamf_catalog import sync_catalog
 from app.mdm.service import process_sync
 from app.models.schema import MdmConnection
 
@@ -44,6 +47,11 @@ async def nightly_sync_sweep() -> None:
                 await process_sync(db, device, connection)
 
 
+async def hourly_jamf_patch_sync() -> None:
+    async with async_session_factory() as db:
+        await sync_catalog(db)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     validate_encryption_key()
@@ -54,6 +62,12 @@ async def lifespan(app: FastAPI):
             nightly_sync_sweep,
             CronTrigger(hour=settings.sync_hour, minute=settings.sync_minute),
             id="nightly_sync_sweep",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            hourly_jamf_patch_sync,
+            CronTrigger(minute=0),
+            id="hourly_jamf_patch_sync",
             replace_existing=True,
         )
         scheduler.start()
@@ -78,6 +92,8 @@ app.include_router(api_router)
 app.include_router(webhooks_router)
 app.include_router(connections_router)
 app.include_router(devices_router)
+app.include_router(jamf_patch_router)
+app.include_router(feature_flags_router)
 
 static_dir = Path(__file__).parent / "static"
 
