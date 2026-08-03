@@ -28,7 +28,7 @@ async def list_titles(
     db: AsyncSession = Depends(get_db),
     q: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=50, ge=1, le=200, alias="pageSize"),
+    page_size: int = Query(default=50, ge=1, le=5000, alias="pageSize"),
 ) -> JamfPatchTitleListResponse:
     stmt = select(JamfPatchTitle)
     if q:
