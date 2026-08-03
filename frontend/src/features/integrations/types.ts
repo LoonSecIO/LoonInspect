@@ -9,6 +9,7 @@ export interface IntegrationVendor {
   status: IntegrationStatus;
   href?: string;
   logoUrl?: string;
+  logoUrlDark?: string;
 }
 
 export interface IntegrationGroup {

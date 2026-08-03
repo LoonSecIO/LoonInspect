@@ -4,18 +4,18 @@ export const INTEGRATION_GROUPS: IntegrationGroup[] = [
   {
     id: "mdm",
     vendors: [
-      { id: "jamf", status: "available", href: "/settings/connections" },
-      { id: "fleet", status: "available", href: "/settings/connections" },
+      { id: "jamf", status: "available", href: "/settings/connections", logoUrl: "/logos/jamf.svg" },
       { id: "simplemdm", status: "available", href: "/settings/connections" },
-      { id: "addigy", status: "available", href: "/settings/connections" }
+      { id: "addigy", status: "available", href: "/settings/connections", logoUrl: "/logos/addigy.svg" }
     ]
   },
   {
     id: "siem",
     vendors: [
       { id: "runreveal", status: "comingSoon", logoUrl: "/logos/runreveal.svg" },
+      { id: "elastic", status: "comingSoon" },
       { id: "splunk", status: "comingSoon" },
-      { id: "datadog", status: "comingSoon" },
+      { id: "datadog", status: "comingSoon", logoUrl: "/logos/datadog.svg", logoUrlDark: "/logos/datadog.png" },
       { id: "webhook", status: "comingSoon" }
     ]
   },
@@ -30,13 +30,14 @@ export const INTEGRATION_GROUPS: IntegrationGroup[] = [
     id: "messaging",
     vendors: [
       { id: "slack", status: "comingSoon" },
-      { id: "discord", status: "comingSoon" }
+      { id: "discord", status: "comingSoon" },
+      { id: "teams", status: "comingSoon" }
     ]
   },
   {
     id: "metadata",
     vendors: [
-      { id: "jamf-metadata", status: "available", href: "/settings/connections" },
+      { id: "jamf-metadata", status: "available", href: "/settings/connections", logoUrl: "/logos/jamf.svg" },
       { id: "nvd", status: "comingSoon" },
       { id: "loonsecio", status: "available", href: "/settings/connections" }
     ]

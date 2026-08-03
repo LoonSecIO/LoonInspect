@@ -32,13 +32,6 @@ class AddigyCredentials(_CredentialsBase):
     FINGERPRINT_FIELD: ClassVar[str] = "api_key"
 
 
-class FleetCredentials(_CredentialsBase):
-    # Not implemented yet — placeholder shape, adjust once a real Fleet client exists.
-    api_token: str = Field(description="API Token", json_schema_extra={"secret": True})
-
-    FINGERPRINT_FIELD: ClassVar[str] = "api_token"
-
-
 class NanoCredentials(_CredentialsBase):
     # Not implemented yet — placeholder shape, adjust once a real Nano MDM client exists.
     api_key: str = Field(description="API Key", json_schema_extra={"secret": True})
@@ -50,7 +43,6 @@ CREDENTIAL_SCHEMAS: dict[MdmProvider, type[_CredentialsBase]] = {
     MdmProvider.jamf: JamfCredentials,
     MdmProvider.simplemdm: SimpleMdmCredentials,
     MdmProvider.addigy: AddigyCredentials,
-    MdmProvider.fleet: FleetCredentials,
     MdmProvider.nano: NanoCredentials,
 }
 

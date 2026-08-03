@@ -224,13 +224,13 @@ export const de: Translations = {
     },
     vendors: {
       jamf: { name: "Jamf", subtitle: "", description: "Apple-Gerätemanagement, Inventar und Patch-Reporting." },
-      fleet: {
-        name: "Fleet",
-        subtitle: "Geräteverwaltung",
-        description: "Open-Source-Geräteverwaltung und osquery-basiertes Inventar."
-      },
       simplemdm: { name: "SimpleMDM", subtitle: "", description: "Apple-MDM für wachsende Teams." },
       addigy: { name: "Addigy", subtitle: "", description: "Plattform für Apple-Geräteverwaltung." },
+      elastic: {
+        name: "Elastic",
+        subtitle: "",
+        description: "Geräte- und Sicherheitsereignisse an Elastic SIEM senden, mit Dashboards in Kibana."
+      },
       runreveal: {
         name: "RunReveal",
         subtitle: "",
@@ -243,6 +243,7 @@ export const de: Translations = {
       postgres: { name: "PostgreSQL", subtitle: "", description: "Daten in eine Postgres-Datenbank exportieren." },
       slack: { name: "Slack", subtitle: "", description: "Warnungen und Benachrichtigungen an Slack senden." },
       discord: { name: "Discord", subtitle: "", description: "Warnungen und Benachrichtigungen an Discord senden." },
+      teams: { name: "Microsoft Teams", subtitle: "", description: "Warnungen und Benachrichtigungen an Microsoft Teams senden." },
       "jamf-metadata": {
         name: "Jamf",
         subtitle: "Patch-Reporting",

@@ -18,7 +18,10 @@ export function IntegrationCard({ vendor }: { vendor: IntegrationVendor }) {
       <div className="flex items-start gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted text-sm font-semibold text-muted-foreground">
           {vendor.logoUrl ? (
-            <img src={vendor.logoUrl} alt="" className="h-6 w-6 object-contain" />
+            <>
+              <img src={vendor.logoUrl} alt="" className={`h-6 w-6 object-contain${vendor.logoUrlDark ? " dark:hidden" : ""}`} />
+              {vendor.logoUrlDark && <img src={vendor.logoUrlDark} alt="" className="h-6 w-6 object-contain hidden dark:block" />}
+            </>
           ) : (
             initials(copy.name)
           )}

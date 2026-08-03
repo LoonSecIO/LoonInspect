@@ -218,13 +218,13 @@ export const en = {
     },
     vendors: {
       jamf: { name: "Jamf", subtitle: "", description: "Apple device management, inventory, and patch reporting." },
-      fleet: {
-        name: "Fleet",
-        subtitle: "Device Management",
-        description: "Open-source device management and osquery-based inventory."
-      },
       simplemdm: { name: "SimpleMDM", subtitle: "", description: "Apple MDM for growing teams." },
       addigy: { name: "Addigy", subtitle: "", description: "Apple device management platform." },
+      elastic: {
+        name: "Elastic",
+        subtitle: "",
+        description: "Ship device and security events to Elastic SIEM, with dashboards in Kibana."
+      },
       runreveal: {
         name: "RunReveal",
         subtitle: "",
@@ -237,6 +237,7 @@ export const en = {
       postgres: { name: "PostgreSQL", subtitle: "", description: "Export data to a Postgres database." },
       slack: { name: "Slack", subtitle: "", description: "Post alerts and notifications to Slack." },
       discord: { name: "Discord", subtitle: "", description: "Post alerts and notifications to Discord." },
+      teams: { name: "Microsoft Teams", subtitle: "", description: "Post alerts and notifications to Microsoft Teams." },
       "jamf-metadata": {
         name: "Jamf",
         subtitle: "Patch reporting",
