@@ -45,6 +45,14 @@ class AuditAction(StrEnum):
     TOKEN_CREATED = "token.created"
     TOKEN_REVOKED = "token.revoked"
 
+    ACCOUNT_CREATED = "account.created"
+    ACCOUNT_UPDATED = "account.updated"
+    ACCOUNT_DISABLED = "account.disabled"
+    ACCOUNT_ENABLED = "account.enabled"
+    ACCOUNT_ROLES_CHANGED = "account.roles.changed"
+    PASSWORD_CHANGED = "account.password.changed"
+    PASSWORD_RESET = "account.password.reset"
+
 
 class _SecureTimedRotatingFileHandler(TimedRotatingFileHandler):
     """Forces 0600 on the audit file, including the ones rotation creates.

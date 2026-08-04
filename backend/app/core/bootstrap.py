@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+from collections.abc import Iterable
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
@@ -34,7 +35,7 @@ async def create_account(
     email: str,
     display_name: str,
     password: str,
-    role: str = "admin",
+    roles: Iterable[str] = ("admin",),
 ) -> tuple[Account, AuthIdentity]:
     now = datetime.now(timezone.utc)
     account = Account(
@@ -57,7 +58,8 @@ async def create_account(
         password_changed_at=now,
     )
     db.add(identity)
-    db.add(AccountRole(account_id=account.id, role=role, source="manual"))
+    for role in dict.fromkeys(roles):  # de-duplicated, order preserved
+        db.add(AccountRole(account_id=account.id, role=role, source="manual"))
     await db.flush()
     return account, identity
 

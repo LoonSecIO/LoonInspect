@@ -13,4 +13,6 @@ RUN uv sync
 COPY --from=frontend-build /app/frontend/dist ./app/static
 
 EXPOSE 8000
-CMD ["uv", "run", "fastapi", "run", "app/main.py", "--host", "0.0.0.0", "--port", "8000"]
+# app.serve rather than `fastapi run`: it decides TLS mode before binding and gets
+# logging configured before uvicorn's first line. See backend/app/serve.py.
+CMD ["uv", "run", "python", "-m", "app.serve"]

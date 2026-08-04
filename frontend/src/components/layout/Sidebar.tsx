@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, AppWindow, Database, Flag, Home, KeyRound, Layers, Plug, Settings, ShieldCheck, Users } from "lucide-react";
+import { AlertTriangle, AppWindow, Database, Flag, Home, KeyRound, Layers, Plug, Settings, ShieldCheck, UserCircle, UserCog, Users } from "lucide-react";
 import { NavLink } from "react-router";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/features/auth/store";
@@ -63,7 +63,16 @@ const navigationItems: NavItem[] = [
         to: "/settings/api-tokens",
         end: false,
         permission: PERMISSIONS.TOKEN_CREATE
-      }
+      },
+      {
+        labelKey: "accounts",
+        icon: UserCog,
+        to: "/settings/accounts",
+        end: false,
+        permission: PERMISSIONS.ACCOUNT_READ
+      },
+      // Ungated: everyone has a profile and a password to change.
+      { labelKey: "myAccount", icon: UserCircle, to: "/settings/my-account", end: false }
     ]
   }
 ];

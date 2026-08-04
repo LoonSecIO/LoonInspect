@@ -79,3 +79,73 @@ This builds the frontend, bundles it into the FastAPI image, and starts the app 
 
 For day-to-day development with hot-reloading instead, see [backend/README.md](backend/README.md) and run the frontend separately with `npm run dev` inside `frontend/` (proxies `/api` to the backend on port 8000).
 
+
+---
+
+## 🔐 Is everything encrypted?
+
+A fair question, and one that comes up in every security review. The honest answer has
+two halves.
+
+**At rest.** MDM credentials, webhook secrets, and license keys are encrypted with
+Fernet (AES-128-CBC + HMAC) using the `ENCRYPTION_KEY` you generate at install. The
+database itself is plain SQLite on the data volume — encrypt the volume if your threat
+model needs that.
+
+**In transit.** Configurable, because deployments differ:
+
+| `TLS_MODE` | Behaviour | Use when |
+| --- | --- | --- |
+| `off` (default) | Plain HTTP on 8000 | Local use, or something in front already terminates TLS and you're content with a plaintext hop inside your own network |
+| `self-signed` | Generates a certificate on first boot, persists it on the data volume, serves HTTPS | You need TLS all the way to the application process — typically to satisfy a review that asks about the load-balancer-to-container hop |
+| `provided` | Serves HTTPS from a certificate and key you mount in | You have a real certificate for the hostname, or an internal CA |
+
+```bash
+TLS_MODE=self-signed docker compose up -d
+```
+
+The self-signed certificate is **not trusted by browsers** — that's inherent, not a
+defect. It exists so the hop between your load balancer and this container is encrypted
+and you can say so plainly. Browsers, and anything else that validates chains, need
+`TLS_MODE=provided` with a real certificate.
+
+**Behind a reverse proxy**, set `FORWARDED_ALLOW_IPS` to the proxy's address. Otherwise
+the audit log records the proxy's IP for every event instead of the real client's, and
+`X-Forwarded-For` is left untrusted by default because anything that can reach the port
+could otherwise forge it.
+
+**One thing to watch:** session cookies are marked `Secure` by default, and browsers
+discard `Secure` cookies over plain HTTP on any hostname other than `localhost`. If you
+serve plain HTTP on a real hostname, sign-in will fail silently — the login succeeds,
+the cookie is dropped, and everything afterwards looks logged out. The startup logs
+warn about this. Either terminate TLS in front, use `TLS_MODE=self-signed`, or set
+`SECURE_COOKIES=false` if you genuinely intend to run without TLS.
+
+---
+
+## 👥 Accounts and roles
+
+The first administrator is created either through the first-run wizard (a claim token
+is printed to `docker compose logs` on first boot) or non-interactively:
+
+```bash
+INITIAL_ADMIN_EMAIL=you@corp.com INITIAL_ADMIN_PASSWORD=a-long-passphrase docker compose up -d
+```
+
+After that, **Settings → Accounts** manages everyone else. Four roles:
+
+| Role | Sees | Can change |
+| --- | --- | --- |
+| **Viewer** | Devices, applications, vulnerabilities | Nothing |
+| **Analyst** | The above, plus connection config and audit history | Can trigger a patch-catalog sync |
+| **Auditor** | The above, plus accounts and roles | Nothing — read-only by design |
+| **Admin** | Everything, including credential values | Everything |
+
+Auditor is a strict subset of Admin with no write permission and no access to secret
+values, which is what makes it safe to hand to someone outside the team for a review.
+
+Accounts are never deleted, only disabled — past audit records stay attributable to a
+real account. Disabling revokes that account's sessions and API tokens immediately
+rather than waiting for them to expire. There is no email delivery, so new accounts get
+an initial password set by an administrator, and an administrator can reset a forgotten
+one from the same page.

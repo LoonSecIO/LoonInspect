@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import (
@@ -24,8 +24,9 @@ from app.core.bootstrap import account_count, consume_claim_token, create_accoun
 from app.core.context import Actor
 from app.core.database import get_db
 from app.core.permissions import Permission, permissions_for
-from app.core.security import tokens_equal, verify_password
-from app.models.schema import Account, LoginAttempt
+from app.core.security import hash_password, tokens_equal, verify_password
+from app.models.schema import Account, AuthIdentity, LoginAttempt, UserSession
+from app.schemas.accounts import PasswordChangeRequest
 from app.schemas.auth import AccountOut, AuthStatusOut, LoginRequest, Role, SetupRequest
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -127,7 +128,7 @@ async def setup(
         email=payload.email,
         display_name=payload.display_name,
         password=payload.password,
-        role=Role.admin.value,
+        roles=[Role.admin.value],
     )
 
     session, raw_token = await create_session(
@@ -292,6 +293,65 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)) -> Respon
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     clear_session_cookies(response)
     return response
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    payload: PasswordChangeRequest,
+    principal: Principal = Depends(current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    # Session only. Allowing a bearer token to change its owner's password would let a
+    # leaked token lock the actual owner out of their own account.
+    if principal.auth_method != "session":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Password changes require a signed-in browser session",
+        )
+
+    result = await db.execute(
+        select(AuthIdentity).where(
+            AuthIdentity.account_id == principal.account.id, AuthIdentity.provider == "local"
+        )
+    )
+    identity = result.scalar_one_or_none()
+
+    if identity is None or not verify_password(identity.secret_hash, payload.current_password):
+        audit(
+            AuditAction.PASSWORD_CHANGED,
+            outcome="failure",
+            target_type="account",
+            target_id=principal.account.id,
+            reason="current_password_incorrect",
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Current password is incorrect")
+
+    now = datetime.now(timezone.utc)
+    identity.secret_hash = hash_password(payload.new_password)
+    identity.password_changed_at = now
+
+    # Every other session dies; this one survives so the user isn't logged out by their
+    # own password change. API tokens are deliberately left alone — a routine rotation
+    # shouldn't silently break the macOS client and every CI job. Revoking those is a
+    # separate, explicit action on the API Tokens page.
+    await db.execute(
+        update(UserSession)
+        .where(
+            UserSession.account_id == principal.account.id,
+            UserSession.id != (principal.session.id if principal.session else ""),
+            UserSession.revoked_at.is_(None),
+        )
+        .values(revoked_at=now)
+    )
+    await db.commit()
+
+    audit(
+        AuditAction.PASSWORD_CHANGED,
+        target_type="account",
+        target_id=principal.account.id,
+        email=principal.account.email,
+    )
+    logger.info("password changed", extra={"account_id": principal.account.id})
 
 
 @router.get("/me", response_model=AccountOut)

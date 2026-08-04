@@ -13,6 +13,7 @@ from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from sqlalchemy import delete, or_, select
 
+from app.api.accounts import router as accounts_router
 from app.api.auth import router as auth_router
 from app.api.connections import router as connections_router
 from app.api.devices import router as devices_router
@@ -220,6 +221,7 @@ app.add_middleware(
 app.add_middleware(RequestContextMiddleware)
 
 app.include_router(auth_router)
+app.include_router(accounts_router)
 app.include_router(tokens_router)
 app.include_router(api_router)
 app.include_router(webhooks_router)
@@ -245,6 +247,29 @@ async def redoc_ui() -> HTMLResponse:
 
 static_dir = Path(__file__).parent / "static"
 
+
+def _resolve_static_asset(full_path: str) -> Path | None:
+    """Resolve a request path to a file inside static_dir, or None.
+
+    The containment check is the whole point. `static_dir / full_path` happily escapes
+    the directory when full_path contains `..` (or is absolute, since that discards the
+    left operand entirely), which turns this route into an unauthenticated read of any
+    file the process can open — including the SQLite database and the audit log. The
+    path is resolved first so `..` segments and symlinks are collapsed before the
+    comparison, rather than pattern-matching on the raw string.
+    """
+    if not full_path:
+        return None
+
+    root = static_dir.resolve()
+    candidate = (root / full_path).resolve()
+
+    if not candidate.is_relative_to(root) or not candidate.is_file():
+        return None
+
+    return candidate
+
+
 if static_dir.exists():
     # Catch-all so client-side routes (e.g. /devices) resolve to the SPA shell on a
     # direct navigation/refresh, not a 404 — real static assets are served as-is.
@@ -254,7 +279,10 @@ if static_dir.exists():
         if full_path.startswith("api/") or full_path.startswith("webhooks/"):
             raise HTTPException(status_code=404, detail="Not Found")
 
-        candidate = static_dir / full_path
-        if full_path and candidate.is_file():
-            return FileResponse(candidate)
+        asset = _resolve_static_asset(full_path)
+        if asset is not None:
+            return FileResponse(asset)
+
+        # Anything else is a client-side route; the SPA shell resolves it. A traversal
+        # attempt lands here too, and gets the same harmless HTML as a typo.
         return FileResponse(static_dir / "index.html")
