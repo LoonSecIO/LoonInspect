@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
@@ -11,6 +12,10 @@ from app.core.database import Base
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _uuid() -> str:
+    return str(uuid.uuid4())
 
 
 class MdmConnection(Base):
@@ -152,3 +157,191 @@ class FeatureFlag(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class Account(Base):
+    """A LoonInspect operator — someone who signs into this application.
+
+    Deliberately separate from the MDM-synced people on the Users page: those are
+    device owners pulled from Jamf, these are the humans administering LoonInspect.
+    Conflating the two would mean an MDM sync could create login accounts.
+
+    Carries no credential columns. Authentication material lives in AuthIdentity so
+    that an account can hold a password *and* an SSO identity at once — which is
+    exactly what a break-glass account needs once SSO enforcement is on.
+    """
+
+    __tablename__ = "accounts"
+    __table_args__ = (
+        UniqueConstraint("external_source", "external_id", name="uq_account_external_identity"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)
+
+    # SCIM's required unique login identifier. Usually the email, but an IdP can map it
+    # to samAccountName or a UPN, so it can't be assumed equal. Unused until SCIM lands;
+    # carried now because backfilling it after duplicate accounts appear is far worse.
+    username: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True, index=True)
+
+    # Keeps local password login even under SSO enforcement. Every authentication by
+    # one of these is logged at WARNING so the exemption can't be used quietly.
+    is_break_glass: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Non-human principals — the future SCIM bearer token's owner, CI, the macOS app.
+    # Never authenticate interactively and are never IdP-managed, so an IdP can't
+    # deprovision the credential it uses to talk to us.
+    is_service_account: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Set when an external system owns this record's lifecycle, plus that system's own
+    # identifier for the user (SCIM `externalId`) — which is not the OIDC `sub`.
+    external_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    external_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    identities: Mapped[list["AuthIdentity"]] = relationship(
+        back_populates="account", cascade="all, delete-orphan", lazy="selectin"
+    )
+    roles: Mapped[list["AccountRole"]] = relationship(
+        back_populates="account", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+
+class AuthIdentity(Base):
+    """One way an account can authenticate.
+
+    Only `local` rows exist today. An OIDC row joins the same account later with no
+    change to Account itself — keyed on (provider, subject) rather than email, because
+    IdPs rewrite emails and matching on one is an account-takeover path.
+    """
+
+    __tablename__ = "auth_identities"
+    __table_args__ = (UniqueConstraint("provider", "subject", name="uq_auth_identity_provider_subject"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), index=True)
+
+    provider: Mapped[str] = mapped_column(String(64), default="local")
+    subject: Mapped[str] = mapped_column(String(255))
+
+    # argon2id. Null for non-password providers, which is the whole reason this lives
+    # here rather than as a column on Account.
+    secret_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    account: Mapped[Account] = relationship(back_populates="identities")
+
+
+class AccountRole(Base):
+    """A role grant, carrying where it came from.
+
+    `source` is what lets a future IdP group sync reconcile only the rows it owns,
+    instead of clobbering a manually granted role — including the break-glass admin's.
+    Enforcement arrives with RBAC; this phase only records the grant.
+    """
+
+    __tablename__ = "account_roles"
+
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), primary_key=True)
+    role: Mapped[str] = mapped_column(String(32), primary_key=True)
+    source: Mapped[str] = mapped_column(String(16), primary_key=True, default="manual")
+
+    granted_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    account: Mapped[Account] = relationship(back_populates="roles")
+
+
+class UserSession(Base):
+    """A browser session. Named UserSession to stay clearly distinct from a SQLAlchemy
+    session in a codebase where `session` already means the database.
+
+    Opaque and server-side rather than a JWT: revocation has to be immediate (account
+    disabled, password changed, admin action), and a JWT denylist is this table with
+    extra steps.
+    """
+
+    __tablename__ = "sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    # sha256 of the cookie value. The raw token is never stored, so a database leak
+    # doesn't hand over live sessions.
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), index=True)
+    identity_id: Mapped[str | None] = mapped_column(ForeignKey("auth_identities.id"), nullable=True)
+    auth_method: Mapped[str] = mapped_column(String(32), default="password")
+
+    csrf_token: Mapped[str] = mapped_column(String(64))
+
+    # Reserved for OIDC backchannel logout: the IdP reports its own session id, and
+    # ending it has to end ours.
+    idp_session_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    # Null means the session never idles out — the operator chose an unlimited lifetime.
+    # Revocation still applies; only the passive timer is gone.
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ApiToken(Base):
+    """A personal access token — the non-browser authentication path, for the macOS
+    client, CI, and scripts.
+
+    May belong to a service account rather than a person, which is how an automation
+    credential avoids dying when its creator leaves.
+    """
+
+    __tablename__ = "api_tokens"
+
+    # Doubles as the lookup key embedded in the token string, so verifying a request
+    # is a primary-key hit rather than a scan over every token's hash.
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+
+    # sha256 of the secret half. Fast on purpose, unlike a password: the secret is 256
+    # bits of CSPRNG output with nothing to brute-force, and it's verified on every
+    # single request — argon2 here would be a self-inflicted denial of service.
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+
+    # Empty means "inherit whatever the owner currently has". A non-empty list narrows
+    # that set — it can never widen it, since the two are intersected at auth time.
+    scopes: Mapped[list] = mapped_column(JSON, default=list)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class LoginAttempt(Base):
+    """Failed-login counter backing the lockout in the login route.
+
+    In the database rather than in process memory so it survives a restart — otherwise
+    `docker compose restart` is a lockout bypass.
+    """
+
+    __tablename__ = "login_attempts"
+    __table_args__ = (UniqueConstraint("identifier", "ip", name="uq_login_attempt_identifier_ip"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    identifier: Mapped[str] = mapped_column(String(320), index=True)  # lowercased email
+    ip: Mapped[str] = mapped_column(String(64))
+
+    failure_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_failure_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

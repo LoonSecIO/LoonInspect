@@ -4,6 +4,9 @@ import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+
+from app.core.auth import require
+from app.core.permissions import Permission
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -18,7 +21,14 @@ from app.schemas.devices import (
     VersionOperator,
 )
 
-router = APIRouter(prefix="/api/devices", tags=["devices"])
+# Applied at router level rather than per route: every endpoint here reads device
+# inventory, so a route added later inherits the requirement instead of needing it
+# remembered.
+router = APIRouter(
+    prefix="/api/devices",
+    tags=["devices"],
+    dependencies=[Depends(require(Permission.DEVICE_READ))],
+)
 
 
 def _parse_ea_filters(ea: list[str] | None) -> list[ExtensionAttributeFilter]:

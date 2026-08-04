@@ -11,7 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from pydantic.alias_generators import to_camel
 
+from app.core.audit import AuditAction, audit
+from app.core.auth import require
 from app.core.database import get_db
+from app.core.permissions import Permission
 from app.mdm.credentials import CREDENTIAL_SCHEMAS, fingerprint_field
 from app.mdm.jamf.client import JamfClient
 from app.models.schema import MdmConnection
@@ -98,7 +101,12 @@ async def _get_or_404(connection_id: int, db: AsyncSession) -> MdmConnection:
     return connection
 
 
-@router.post("", response_model=MdmConnectionOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=MdmConnectionOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require(Permission.CONNECTION_WRITE))],
+)
 async def create_connection(
     payload: MdmConnectionCreate, db: AsyncSession = Depends(get_db)
 ) -> MdmConnectionOut:
@@ -129,10 +137,33 @@ async def create_connection(
     db.add(connection)
     await db.commit()
     await db.refresh(connection)
+
+    audit(
+        AuditAction.CONNECTION_CREATED,
+        target_type="mdm_connection",
+        target_id=connection.id,
+        name=connection.name,
+        provider=connection.provider,
+        # Field *names* only. Deliberately not called `credential_fields_set`: redact()
+        # matches on "credential" and would blank out the one detail worth keeping.
+        #
+        # credentials_fingerprint is NOT recorded: it's the first three characters of
+        # the plaintext secret, and writing secret-derived material into a long-lived
+        # file on a shared volume is the exact thing this log must not do. The field
+        # names already answer which credentials were set.
+        fields_set=sorted(validated_credentials.keys()),
+    )
     return _to_out(connection)
 
 
-@router.post("/test", response_model=MdmConnectionTestResult)
+# Credential-tier, not write-tier: this exercises the live secret and will fall back
+# to the *stored* one when the payload omits it, so it lets the caller use a credential
+# they may not be able to see. That's the line CONNECTION_CREDENTIAL_READ draws.
+@router.post(
+    "/test",
+    response_model=MdmConnectionTestResult,
+    dependencies=[Depends(require(Permission.CONNECTION_CREDENTIAL_READ))],
+)
 async def test_connection(
     payload: MdmConnectionTestRequest, db: AsyncSession = Depends(get_db)
 ) -> MdmConnectionTestResult:
@@ -152,6 +183,22 @@ async def test_connection(
     if not client_secret:
         return MdmConnectionTestResult(success=False, message="Enter a client secret to test.")
 
+    # Recorded because it's the case where the caller exercised a credential they were
+    # never shown — the reason this endpoint sits behind CONNECTION_CREDENTIAL_READ.
+    used_stored_secret = not payload.client_secret
+
+    def _audit_test(outcome: str, **extra: object) -> None:
+        audit(
+            AuditAction.CONNECTION_TESTED,
+            outcome=outcome,
+            target_type="mdm_connection",
+            target_id=payload.connection_id,
+            provider=payload.provider.value,
+            base_url=payload.base_url,
+            used_stored_secret=used_stored_secret,
+            **extra,
+        )
+
     user_agent_override = payload.user_agent_override or (existing.user_agent_override if existing else None)
     jamf_client = JamfClient(
         base_url=payload.base_url,
@@ -163,12 +210,14 @@ async def test_connection(
     try:
         token_info = await jamf_client.test_connection()
     except httpx.HTTPStatusError as exc:
+        _audit_test("failure", reason="rejected", status_code=exc.response.status_code)
         return MdmConnectionTestResult(
             success=False,
             message=f"Jamf rejected the request ({exc.response.status_code}).",
             detail=f"HTTP {exc.response.status_code}\n{exc.response.text}",
         )
     except httpx.RequestError as exc:
+        _audit_test("failure", reason="unreachable")
         return MdmConnectionTestResult(
             success=False, message=f"Could not reach {payload.base_url}.", detail=str(exc)
         )
@@ -177,6 +226,7 @@ async def test_connection(
         existing.last_successful_auth_at = _utcnow()
         await db.commit()
 
+    _audit_test("success")
     return MdmConnectionTestResult(
         success=True,
         message="Connected — received a short-lived access token.",
@@ -184,19 +234,31 @@ async def test_connection(
     )
 
 
-@router.get("", response_model=list[MdmConnectionOut])
+@router.get(
+    "",
+    response_model=list[MdmConnectionOut],
+    dependencies=[Depends(require(Permission.CONNECTION_READ))],
+)
 async def list_connections(db: AsyncSession = Depends(get_db)) -> list[MdmConnectionOut]:
     result = await db.execute(select(MdmConnection))
     return [_to_out(conn) for conn in result.scalars().all()]
 
 
-@router.get("/{connection_id}", response_model=MdmConnectionOut)
+@router.get(
+    "/{connection_id}",
+    response_model=MdmConnectionOut,
+    dependencies=[Depends(require(Permission.CONNECTION_READ))],
+)
 async def get_connection(connection_id: int, db: AsyncSession = Depends(get_db)) -> MdmConnectionOut:
     connection = await _get_or_404(connection_id, db)
     return _to_out(connection)
 
 
-@router.patch("/{connection_id}", response_model=MdmConnectionOut)
+@router.patch(
+    "/{connection_id}",
+    response_model=MdmConnectionOut,
+    dependencies=[Depends(require(Permission.CONNECTION_WRITE))],
+)
 async def update_connection(
     connection_id: int, payload: MdmConnectionUpdate, db: AsyncSession = Depends(get_db)
 ) -> MdmConnectionOut:
@@ -230,12 +292,18 @@ async def update_connection(
     if "capability_jamf_pro" in data:
         connection.capability_jamf_pro = data["capability_jamf_pro"]
 
+    credential_fields_changed: list[str] = []
+
     if data.get("credentials"):
         provider = MdmProvider(connection.provider)
         existing_credentials = _credentials_dict(connection)
         incoming = _normalize_credential_keys(provider, {k: v for k, v in data["credentials"].items() if v})
         merged = {**existing_credentials, **incoming}
         validated = _validate_credentials(provider, merged)
+
+        credential_fields_changed = sorted(
+            key for key, value in incoming.items() if existing_credentials.get(key) != value
+        )
 
         fp_field = fingerprint_field(provider)
         if fp_field and validated.get(fp_field) != existing_credentials.get(fp_field):
@@ -260,11 +328,46 @@ async def update_connection(
 
     await db.commit()
     await db.refresh(connection)
+
+    audit(
+        AuditAction.CONNECTION_UPDATED,
+        target_type="mdm_connection",
+        target_id=connection.id,
+        name=connection.name,
+        changed=sorted(data.keys()),
+    )
+
+    if credential_fields_changed:
+        # Separate event, and a higher-signal one: rotating a Jamf secret is the kind
+        # of thing a detection rule should fire on independently of routine edits.
+        # Field names only — never values, and never the fingerprint (see above).
+        audit(
+            AuditAction.CONNECTION_CREDENTIALS_UPDATED,
+            target_type="mdm_connection",
+            target_id=connection.id,
+            name=connection.name,
+            changed_fields=credential_fields_changed,
+        )
+
     return _to_out(connection)
 
 
-@router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{connection_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require(Permission.CONNECTION_WRITE))],
+)
 async def delete_connection(connection_id: int, db: AsyncSession = Depends(get_db)) -> None:
     connection = await _get_or_404(connection_id, db)
+    name, provider = connection.name, connection.provider
+
     await db.delete(connection)
     await db.commit()
+
+    audit(
+        AuditAction.CONNECTION_DELETED,
+        target_type="mdm_connection",
+        target_id=connection_id,
+        name=name,
+        provider=provider,
+    )

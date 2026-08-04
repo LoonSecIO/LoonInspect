@@ -26,6 +26,8 @@ def _run_migrations() -> None:
     # Alembic's command API is sync and internally does its own asyncio.run() for the
     # async engine, so this must run off the main event loop thread (see init_db()).
     config = Config(str(_BACKEND_DIR / "alembic.ini"))
+    # Tells migrations/env.py to leave logging alone — see the comment there.
+    config.attributes["configure_logger"] = False
     command.upgrade(config, "head")
 
 

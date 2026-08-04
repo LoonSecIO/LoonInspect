@@ -4,14 +4,21 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import AuditAction, audit
+from app.core.auth import require
 from app.core.database import get_db
 from app.core.feature_flags import FEATURE_FLAG_REGISTRY
+from app.core.permissions import Permission
 from app.models.schema import FeatureFlag
 from app.schemas.feature_flags import FeatureFlagOut, FeatureFlagUpdate
 
 router = APIRouter(prefix="/api/feature-flags", tags=["feature-flags"])
 
 
+# Readable by any authenticated caller, with no permission of its own: the SPA reads
+# flags to decide which tabs to render (see ApplicationsPage), so gating this would
+# break navigation for every non-admin rather than protecting anything — flag names
+# and states aren't sensitive. Writing them is another matter.
 @router.get("", response_model=list[FeatureFlagOut])
 async def list_feature_flags(db: AsyncSession = Depends(get_db)) -> list[FeatureFlagOut]:
     result = await db.execute(select(FeatureFlag))
@@ -23,7 +30,11 @@ async def list_feature_flags(db: AsyncSession = Depends(get_db)) -> list[Feature
     ]
 
 
-@router.patch("/{key}", response_model=FeatureFlagOut)
+@router.patch(
+    "/{key}",
+    response_model=FeatureFlagOut,
+    dependencies=[Depends(require(Permission.FEATURE_FLAG_WRITE))],
+)
 async def update_feature_flag(
     key: str, payload: FeatureFlagUpdate, db: AsyncSession = Depends(get_db)
 ) -> FeatureFlagOut:
@@ -39,4 +50,11 @@ async def update_feature_flag(
         flag.enabled = payload.enabled
 
     await db.commit()
+
+    audit(
+        AuditAction.FEATURE_FLAG_UPDATED,
+        target_type="feature_flag",
+        target_id=key,
+        enabled=flag.enabled,
+    )
     return FeatureFlagOut(key=key, label=meta["label"], description=meta["description"], enabled=flag.enabled)

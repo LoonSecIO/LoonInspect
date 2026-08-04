@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+
+from app.core.auth import require
+from app.core.permissions import Permission
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,13 +20,21 @@ from app.schemas.jamf_patch import (
 router = APIRouter(prefix="/api/jamf-patch", tags=["jamf-patch"])
 
 
-@router.post("/sync", response_model=JamfPatchSyncResult)
+@router.post(
+    "/sync",
+    response_model=JamfPatchSyncResult,
+    dependencies=[Depends(require(Permission.PATCH_CATALOG_SYNC))],
+)
 async def sync_titles(db: AsyncSession = Depends(get_db)) -> JamfPatchSyncResult:
     synced = await sync_catalog(db)
     return JamfPatchSyncResult(synced=synced)
 
 
-@router.get("/titles", response_model=JamfPatchTitleListResponse)
+@router.get(
+    "/titles",
+    response_model=JamfPatchTitleListResponse,
+    dependencies=[Depends(require(Permission.APP_READ))],
+)
 async def list_titles(
     db: AsyncSession = Depends(get_db),
     q: str | None = Query(default=None),
@@ -45,7 +56,11 @@ async def list_titles(
     return JamfPatchTitleListResponse(items=[JamfPatchTitleOut.model_validate(title) for title in titles], total=total)
 
 
-@router.get("/titles/{title_id}", response_model=JamfPatchTitleDetailOut)
+@router.get(
+    "/titles/{title_id}",
+    response_model=JamfPatchTitleDetailOut,
+    dependencies=[Depends(require(Permission.APP_READ))],
+)
 async def get_title(title_id: str, db: AsyncSession = Depends(get_db)) -> JamfPatchTitleDetailOut:
     title = await db.get(JamfPatchTitle, title_id)
     if title is None:
