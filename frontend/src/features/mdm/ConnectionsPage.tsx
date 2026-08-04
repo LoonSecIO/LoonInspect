@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConnectionForm } from "@/features/mdm/ConnectionForm";
+import { useHasPermission } from "@/features/auth/store";
+import { PERMISSIONS } from "@/features/auth/types";
 import { deleteConnection, listConnections } from "@/features/mdm/api";
 import type { MdmConnection } from "@/features/mdm/types";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -9,6 +11,9 @@ type FormMode = "closed" | "create" | number;
 
 export function ConnectionsPage() {
   const { t } = useLocale();
+  // Auditors reach this page with CONNECTION_READ but can't write. The API refuses
+  // regardless; hiding the controls keeps them from discovering that via a 403.
+  const canWrite = useHasPermission(PERMISSIONS.CONNECTION_WRITE);
   const [connections, setConnections] = useState<MdmConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [formMode, setFormMode] = useState<FormMode>("closed");
@@ -49,7 +54,9 @@ export function ConnectionsPage() {
           <p className="text-sm font-medium text-muted-foreground">{t.settings.eyebrow}</p>
           <h1 className="text-3xl font-bold tracking-tight">{t.settings.title}</h1>
         </div>
-        {formMode === "closed" && <Button onClick={() => setFormMode("create")}>{t.settings.addConnection}</Button>}
+        {canWrite && formMode === "closed" && (
+          <Button onClick={() => setFormMode("create")}>{t.settings.addConnection}</Button>
+        )}
       </div>
 
       {formMode !== "closed" && (
@@ -119,14 +126,16 @@ export function ConnectionsPage() {
                       </Button>
                     </div>
                   ) : (
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" size="sm" onClick={() => setFormMode(connection.id)}>
-                        {t.settings.edit}
-                      </Button>
-                      <Button variant="destructive" size="sm" onClick={() => setPendingDeleteId(connection.id)}>
-                        {t.settings.delete}
-                      </Button>
-                    </div>
+                    canWrite && (
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" onClick={() => setFormMode(connection.id)}>
+                          {t.settings.edit}
+                        </Button>
+                        <Button variant="destructive" size="sm" onClick={() => setPendingDeleteId(connection.id)}>
+                          {t.settings.delete}
+                        </Button>
+                      </div>
+                    )
                   )}
                 </td>
               </tr>

@@ -17,7 +17,13 @@ config = context.config
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
-if config.config_file_name is not None:
+#
+# Skipped when the app runs migrations in-process (app.core.database sets the flag):
+# fileConfig() reconfigures logging *globally*, so alembic.ini's console handler and
+# WARNING root level would replace the structured logging configured at startup — and
+# every log line after the first migration would silently change format and level.
+# The alembic CLI still gets its own config, since nothing sets the flag there.
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
     fileConfig(config.config_file_name)
 
 config.set_main_option("sqlalchemy.url", settings.database_url)

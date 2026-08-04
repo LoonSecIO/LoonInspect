@@ -1,7 +1,10 @@
+import { useMemo } from "react";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, AppWindow, Database, Flag, Home, Layers, Plug, Settings, ShieldCheck, Users } from "lucide-react";
+import { AlertTriangle, AppWindow, Database, Flag, Home, KeyRound, Layers, Plug, Settings, ShieldCheck, Users } from "lucide-react";
 import { NavLink } from "react-router";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/features/auth/store";
+import { PERMISSIONS, type PermissionName } from "@/features/auth/types";
 import { useLocale } from "@/i18n/LocaleContext";
 import type { Translations } from "@/i18n/en";
 import { useSidebarMode } from "@/hooks/SidebarModeContext";
@@ -13,6 +16,8 @@ interface NavItem {
   icon: LucideIcon;
   to: string;
   end: boolean;
+  /** Omitted where every role can see the page. */
+  permission?: PermissionName;
   children?: NavItem[];
 }
 
@@ -38,8 +43,27 @@ const navigationItems: NavItem[] = [
     to: "/settings/connections",
     end: false,
     children: [
-      { labelKey: "connections", icon: Plug, to: "/settings/connections", end: false },
-      { labelKey: "featureFlags", icon: Flag, to: "/settings/feature-flags", end: false }
+      {
+        labelKey: "connections",
+        icon: Plug,
+        to: "/settings/connections",
+        end: false,
+        permission: PERMISSIONS.CONNECTION_READ
+      },
+      {
+        labelKey: "featureFlags",
+        icon: Flag,
+        to: "/settings/feature-flags",
+        end: false,
+        permission: PERMISSIONS.FEATURE_FLAG_WRITE
+      },
+      {
+        labelKey: "apiTokens",
+        icon: KeyRound,
+        to: "/settings/api-tokens",
+        end: false,
+        permission: PERMISSIONS.TOKEN_CREATE
+      }
     ]
   }
 ];
@@ -54,6 +78,29 @@ const linkStateClasses = (isActive: boolean) =>
 export function Sidebar() {
   const { t } = useLocale();
   const { sidebarMode } = useSidebarMode();
+  const permissions = useAuthStore((state) => state.user?.permissions);
+
+  const visibleItems = useMemo(() => {
+    const granted = new Set(permissions ?? []);
+    const allowed = (item: NavItem) => !item.permission || granted.has(item.permission);
+
+    return navigationItems.filter(allowed).flatMap((item) => {
+      if (!item.children) return [item];
+
+      const children = item.children.filter(allowed);
+      // A section whose every child is hidden has nothing left to show.
+      if (children.length === 0) return [];
+
+      // The parent's own target may itself be one of the hidden children (Settings
+      // points at Connections). Re-point it rather than linking somewhere this
+      // account will just be refused.
+      const ownTargetHidden = item.children.some(
+        (child) => child.to === item.to && !allowed(child)
+      );
+
+      return [{ ...item, children, to: ownTargetHidden ? children[0].to : item.to }];
+    });
+  }, [permissions]);
 
   if (sidebarMode === "hidden") return null;
 
@@ -67,7 +114,7 @@ export function Sidebar() {
       )}
     >
       <nav className="space-y-1">
-        {navigationItems.map((item) => {
+        {visibleItems.map((item) => {
           const Icon = item.icon;
 
           return (

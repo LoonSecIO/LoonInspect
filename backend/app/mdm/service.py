@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from datetime import datetime, timezone
 
 import httpx
@@ -17,6 +18,8 @@ from app.schemas.payload import (
     SyncStatus,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def compute_full_hash(app: NormalizedApp) -> str:
     payload = f"{app.bundle_id}:{app.version}".encode()
@@ -27,11 +30,27 @@ async def stream_event(event: InventoryChangedEvent) -> None:
     payload = event.model_dump(mode="json")
 
     if not settings.siem_webhook_url:
-        print(f"[siem] {payload}")
+        logger.info("siem event not delivered, no webhook configured", extra={"siem_event": payload})
         return
 
-    async with httpx.AsyncClient(timeout=10) as client:
-        await client.post(settings.siem_webhook_url, json=payload)
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(settings.siem_webhook_url, json=payload)
+            response.raise_for_status()
+    except httpx.HTTPError:
+        # The device data behind this event is already committed, so a SIEM outage
+        # must not fail the sync that produced it. Log the whole event so it can be
+        # replayed by hand rather than being lost with the exception.
+        logger.exception("siem delivery failed", extra={"siem_event": payload})
+    else:
+        logger.info(
+            "siem event delivered",
+            extra={
+                "device_external_id": event.device_external_id,
+                "added": len(event.added_apps),
+                "removed": len(event.removed_apps),
+            },
+        )
 
 
 async def sync_state(db: AsyncSession, connection: MdmConnection) -> None:
