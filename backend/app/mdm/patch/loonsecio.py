@@ -9,8 +9,12 @@ class LoonSecIoClient(PatchProvider):
 
     Not implemented yet. The intended real call:
         POST https://api.loonsec.io/v1/hashes/lookup
-        {"license_key": ..., "data_sharing_enabled": ..., "hashes": [full_hash, ...]}
+        {"license_key": ..., "data_sharing_enabled": ..., "hashes": [version_hash, ...]}
     returning per-hash is_compliant/patch_available booleans.
+
+    The hashes sent are version hashes (app.core.hashing.compute_version_hash) — the
+    DynamoDB partition key on the Global API side. They must be produced by exactly the
+    same construction there, or every lookup misses silently.
     """
 
     provider = "loonsecio"

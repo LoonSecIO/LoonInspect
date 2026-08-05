@@ -53,6 +53,29 @@ class Settings(BaseSettings):
     audit_log_path: str = "./data/audit/audit.jsonl"
     audit_retention_days: int = 30
 
+    host: str = "0.0.0.0"
+    port: int = 8000
+
+    # off          plain HTTP (default — unchanged behaviour)
+    # self-signed  generate a certificate on first boot and persist it
+    # provided     serve from a mounted certificate and key
+    tls_mode: Literal["off", "self-signed", "provided"] = "off"
+    tls_cert_path: str = "./data/certs/server.crt"
+    tls_key_path: str = "./data/certs/server.key"
+    tls_hostname: str = "localhost"
+
+    # Which peer addresses may set X-Forwarded-For/-Proto. Defaults to uvicorn's own
+    # default of localhost only: trusting an arbitrary peer's forwarded headers lets
+    # anyone who can reach the port forge the client IP recorded in the audit log.
+    # Behind a reverse proxy, set this to the proxy's address.
+    forwarded_allow_ips: str = "127.0.0.1"
+
+    # Marks the session cookie Secure. On by default because the alternative fails
+    # silently in the dangerous direction. Browsers refuse Secure cookies over plain
+    # HTTP everywhere except localhost, so turn this off *only* for a deliberate
+    # plain-HTTP deployment — see the startup warning in app.serve.
+    secure_cookies: bool = True
+
     @field_validator("log_level")
     @classmethod
     def _normalize_log_level(cls, value: str) -> str:
@@ -77,10 +100,6 @@ class Settings(BaseSettings):
             "session_lifetime_seconds must be 0 (never idle out) or between 60 and "
             f"{_MAX_SESSION_LIFETIME_SECONDS} (14 days)"
         )
-
-    @property
-    def secure_cookies(self) -> bool:
-        return not self.debug
 
     @property
     def resolved_log_format(self) -> str:

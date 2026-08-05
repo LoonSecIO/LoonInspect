@@ -12,6 +12,20 @@ services:
       # use the wizard instead (the claim token is printed to `docker compose logs`).
       INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
+      # off | self-signed | provided. See README "Is everything encrypted?".
+      TLS_MODE: ${TLS_MODE:-off}
+      TLS_HOSTNAME: ${TLS_HOSTNAME:-localhost}
+      # Only read when TLS_MODE=provided; mount the files in via the volumes below.
+      TLS_CERT_PATH: ${TLS_CERT_PATH:-./data/certs/server.crt}
+      TLS_KEY_PATH: ${TLS_KEY_PATH:-./data/certs/server.key}
+      # Whose X-Forwarded-For is believed. Set to your reverse proxy's address (or "*"
+      # when nothing but the proxy can reach this port) so the audit log records real
+      # client IPs instead of the proxy's.
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
+      # Leave on unless you are deliberately serving plain HTTP on a non-localhost
+      # hostname — Secure cookies are dropped by browsers over HTTP, which breaks
+      # sign-in silently.
+      SECURE_COOKIES: ${SECURE_COOKIES:-true}
     volumes:
       - looninspect-data:/app/data
 

@@ -108,7 +108,16 @@ class InstalledApp(Base):
     name: Mapped[str] = mapped_column(String(255))
     bundle_id: Mapped[str] = mapped_column(String(255), index=True)
     version: Mapped[str] = mapped_column(String(64))
-    full_hash: Mapped[str] = mapped_column(String(32), index=True)
+    short_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # md5(name:bundle_id) — the application, independent of version. Indexed because
+    # it's the grouping key behind the Applications page's per-app device counts.
+    app_hash: Mapped[str] = mapped_column(String(32), index=True)
+
+    # md5(name:bundle_id:version[:short_version]) — a specific build, and the lookup
+    # key sent to the LoonSec Global API. Also what inventory deltas are computed on:
+    # a version change is a change.
+    version_hash: Mapped[str] = mapped_column(String(32), index=True)
 
     is_compliant: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     patch_available: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

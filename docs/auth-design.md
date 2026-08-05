@@ -490,8 +490,73 @@ The existing `features/auth/index.ts` stub already has the right shape (`AuthSta
 | **2** ✅ | Permissions, roles, per-endpoint enforcement, nav gating | Needs Phase 1's principal to enforce against |
 | **3** ✅ | Audit events → JSONL file, 30d rotation, redaction | Needs both a principal and the logging foundation |
 | **4** ✅ | API tokens + management UI | Unblocks the macOS client |
+| **5** ✅ | Account management: create/disable, role assignment, password reset and self-change | RBAC was unusable without it — four roles and no way to grant any of them |
+| **6** ✅ | TLS modes (`off` / `self-signed` / `provided`), proxy-header trust | Phase 1 made HTTPS load-bearing; see below |
 | **Later** | OIDC/Okta, SCIM, TOTP → WebAuthn | Additive by construction if §3.1 holds |
 | **Deferred** | Webhook header auth (§4.7) | Separate iteration; stubbed for pre-release |
+
+### Phase 5 notes — account management
+
+The deactivation cascade designed in §3.5 is now actually wired: disabling an account
+sets `status='disabled'` *and* revokes every session and API token synchronously.
+Verified that a disabled operator's live session and bearer token both stop working
+immediately, and that re-enabling does not resurrect them — they were revoked, not
+merely refused.
+
+**Guards**, in priority order. Self-demotion is checked *before* the last-admin rule,
+because an admin removing their own admin role in a two-admin system passes the
+last-admin check and still locks themselves out of the page they'd need to undo it:
+
+- An admin cannot disable their own account.
+- An admin cannot remove their own admin role.
+- The last active admin cannot be demoted or disabled by any path.
+
+**Password flows are deliberately asymmetric:**
+
+| | Self change | Admin reset |
+| --- | --- | --- |
+| Requires current password | ✅ | — (it's the recovery path) |
+| Your own session | kept | revoked |
+| Other sessions | revoked | revoked |
+| API tokens | **survive** | revoked |
+
+Tokens surviving a self-change is the debatable one, and it's intentional: a routine
+password rotation shouldn't silently break the macOS client and every CI job. An
+administrative reset is a compromise-recovery action, so it severs everything. The UI
+states which is which rather than leaving it as a surprise.
+
+Password changes require a session — a bearer token cannot change its owner's password,
+or a leaked token could lock the actual owner out of their own account.
+
+### Phase 6 notes — TLS
+
+Three modes, selected by `TLS_MODE`. Self-signed certificates are generated with the
+`cryptography` dependency that was already present, persisted to the data volume (a new
+fingerprint on every restart would train operators to click through certificate
+warnings), and written with the key at `0600`.
+
+**Why self-signed is worth supporting at all:** buyers ask whether everything is
+encrypted and get stuck on the load-balancer-to-container hop, even when the ALB
+already terminated public TLS and the remaining hop is inside a VPC. Serving TLS at the
+application process answers that without an argument. Confirmed during verification
+that browsers reject the certificate with `ERR_CERT_AUTHORITY_INVALID` — that is
+inherent to self-signed and exactly why `provided` exists.
+
+**Two bugs from earlier phases fixed here:**
+
+- `secure_cookies` was derived from `debug`, conflating two unrelated things. It is now
+  its own setting, defaulting to on, with a startup warning that names the exact
+  failure mode — serving plain HTTP off-localhost drops the session cookie and sign-in
+  fails silently.
+- Audit events recorded the reverse proxy's address as the client IP. `proxy_headers`
+  is now on with `FORWARDED_ALLOW_IPS` deciding whose `X-Forwarded-For` is believed,
+  defaulting to localhost only so the header can't be forged by anything that reaches
+  the port.
+
+**Bonus:** replacing `fastapi run` with `app/serve.py` (which calls
+`configure_logging()` before `uvicorn.run(..., log_config=None)`) eliminated the
+non-JSON startup lines documented in §11. Every line the process emits is now
+structured, including uvicorn's own.
 
 MFA was explicitly out of scope for v1. The model above doesn't block it: TOTP secrets become another `auth_identity` row (encrypted with the existing `EncryptedString`), and `session.auth_method` already carries what's needed for step-up.
 

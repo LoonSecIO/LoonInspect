@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,23 +12,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic.alias_generators import to_camel
 
 from app.core.audit import AuditAction, audit
-from app.core.auth import require
-from app.core.database import get_db
+from app.core.auth import Principal, current_principal, require
+from app.core.context import Actor, reset_actor, set_actor
+from app.core.database import async_session_factory, get_db
 from app.core.permissions import Permission
 from app.mdm.credentials import CREDENTIAL_SCHEMAS, fingerprint_field
 from app.mdm.jamf.client import JamfClient
-from app.models.schema import MdmConnection
+from app.mdm.service import set_sync_status, sync_connection
+from app.models.schema import MdmConnection, MdmSyncState
 from app.schemas.connections import (
     MdmConnectionCreate,
     MdmConnectionOut,
     MdmConnectionTestRequest,
     MdmConnectionTestResult,
     MdmConnectionUpdate,
+    MdmSyncTriggerResult,
     PatchManagementProvider,
     validate_jamf_specific_fields,
     validate_loonsecio_requirement,
 )
-from app.schemas.payload import MdmProvider
+from app.schemas.payload import MdmProvider, SyncStatus
 
 router = APIRouter(prefix="/api/mdm/connections", tags=["connections"])
 
@@ -350,6 +353,76 @@ async def update_connection(
         )
 
     return _to_out(connection)
+
+
+async def _run_connection_sync(connection_id: int, actor: Actor) -> None:
+    """Background worker for a manually triggered sync.
+
+    Runs outside the request, so it opens its own session — the request's is closed by
+    the time this executes — and re-establishes the triggering actor, which otherwise
+    would not survive into the background task's context and would leave the sync's
+    audit trail attributed to nobody.
+    """
+    token = set_actor(actor)
+    try:
+        async with async_session_factory() as db:
+            connection = await db.get(MdmConnection, connection_id)
+            if connection is None:
+                return
+            await sync_connection(db, connection)
+    finally:
+        reset_actor(token)
+
+
+@router.post(
+    "/{connection_id}/sync",
+    response_model=MdmSyncTriggerResult,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require(Permission.DEVICE_SYNC))],
+)
+async def trigger_sync(
+    connection_id: int,
+    background_tasks: BackgroundTasks,
+    principal: Principal = Depends(current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> MdmSyncTriggerResult:
+    """Pull inventory now instead of waiting for the nightly sweep.
+
+    Returns 202 immediately and runs in the background: a full fleet pull paginates
+    through every device and would otherwise hold the request open past any sensible
+    timeout. Poll /api/mdm/status for progress.
+    """
+    connection = await _get_or_404(connection_id, db)
+
+    if not connection.is_active:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Connection is not active")
+
+    state = await db.get(MdmSyncState, connection_id)
+    if state is not None and state.status == SyncStatus.syncing.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A sync is already running for this connection",
+        )
+
+    # Published before the task is queued so a second request racing this one sees
+    # 'syncing' and is rejected rather than starting a duplicate pull.
+    await set_sync_status(db, connection, SyncStatus.syncing)
+
+    audit(
+        AuditAction.CONNECTION_SYNC_TRIGGERED,
+        target_type="mdm_connection",
+        target_id=connection.id,
+        name=connection.name,
+        provider=connection.provider,
+    )
+
+    background_tasks.add_task(
+        _run_connection_sync,
+        connection.id,
+        Actor(type="account", id=principal.account.id, label=principal.account.email),
+    )
+
+    return MdmSyncTriggerResult(connection_id=connection.id, status=SyncStatus.syncing.value)
 
 
 @router.delete(

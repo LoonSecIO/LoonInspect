@@ -39,11 +39,20 @@ class AuditAction(StrEnum):
     CONNECTION_DELETED = "connection.deleted"
     CONNECTION_CREDENTIALS_UPDATED = "connection.credentials.updated"
     CONNECTION_TESTED = "connection.tested"
+    CONNECTION_SYNC_TRIGGERED = "connection.sync.triggered"
 
     FEATURE_FLAG_UPDATED = "feature-flag.updated"
 
     TOKEN_CREATED = "token.created"
     TOKEN_REVOKED = "token.revoked"
+
+    ACCOUNT_CREATED = "account.created"
+    ACCOUNT_UPDATED = "account.updated"
+    ACCOUNT_DISABLED = "account.disabled"
+    ACCOUNT_ENABLED = "account.enabled"
+    ACCOUNT_ROLES_CHANGED = "account.roles.changed"
+    PASSWORD_CHANGED = "account.password.changed"
+    PASSWORD_RESET = "account.password.reset"
 
 
 class _SecureTimedRotatingFileHandler(TimedRotatingFileHandler):

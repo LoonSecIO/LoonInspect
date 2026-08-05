@@ -1,5 +1,7 @@
 import { Route, Routes } from "react-router";
 import { App } from "@/App";
+import { AccountsPage } from "@/features/accounts/AccountsPage";
+import { MyAccountPage } from "@/features/accounts/MyAccountPage";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { RequireAuth } from "@/features/auth/RequireAuth";
 import { RequirePermission } from "@/features/auth/RequirePermission";
@@ -51,6 +53,11 @@ export function AppRoutes() {
         <Route element={<RequirePermission permission={PERMISSIONS.TOKEN_CREATE} />}>
           <Route path="settings/api-tokens" element={<ApiTokensPage />} />
         </Route>
+        <Route element={<RequirePermission permission={PERMISSIONS.ACCOUNT_READ} />}>
+          <Route path="settings/accounts" element={<AccountsPage />} />
+        </Route>
+        {/* No permission gate — everyone manages their own profile. */}
+        <Route path="settings/my-account" element={<MyAccountPage />} />
         <Route path="vulnerabilities" element={<VulnerabilitiesPage />} />
         </Route>
       </Route>

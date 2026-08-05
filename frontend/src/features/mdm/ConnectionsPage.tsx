@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConnectionForm } from "@/features/mdm/ConnectionForm";
+import { RefreshCw } from "lucide-react";
+import { ApiError } from "@/config/api";
 import { useHasPermission } from "@/features/auth/store";
 import { PERMISSIONS } from "@/features/auth/types";
-import { deleteConnection, listConnections } from "@/features/mdm/api";
-import type { MdmConnection } from "@/features/mdm/types";
+import { deleteConnection, listConnections, listSyncStatus, syncConnection } from "@/features/mdm/api";
+import type { MdmConnection, MdmSyncStatus } from "@/features/mdm/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
 type FormMode = "closed" | "create" | number;
@@ -14,16 +16,22 @@ export function ConnectionsPage() {
   // Auditors reach this page with CONNECTION_READ but can't write. The API refuses
   // regardless; hiding the controls keeps them from discovering that via a 403.
   const canWrite = useHasPermission(PERMISSIONS.CONNECTION_WRITE);
+  const canSync = useHasPermission(PERMISSIONS.DEVICE_SYNC);
   const [connections, setConnections] = useState<MdmConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [formMode, setFormMode] = useState<FormMode>("closed");
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [syncStatuses, setSyncStatuses] = useState<Record<number, MdmSyncStatus>>({});
+  const [syncingId, setSyncingId] = useState<number | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   async function refresh() {
     setLoading(true);
     try {
-      setConnections(await listConnections());
+      const [rows, statuses] = await Promise.all([listConnections(), listSyncStatus()]);
+      setConnections(rows);
+      setSyncStatuses(Object.fromEntries(statuses.map((s) => [s.mdmConnectionId, s])));
     } finally {
       setLoading(false);
     }
@@ -32,6 +40,37 @@ export function ConnectionsPage() {
   useEffect(() => {
     refresh();
   }, []);
+
+  // A manual sync runs in the background, so the only way to see it finish is to keep
+  // asking. Polling stops as soon as nothing is in flight rather than running forever.
+  const anySyncing = Object.values(syncStatuses).some((s) => s.status === "syncing");
+  useEffect(() => {
+    if (!anySyncing) return;
+    const handle = setInterval(() => {
+      listSyncStatus()
+        .then((statuses) =>
+          setSyncStatuses(Object.fromEntries(statuses.map((s) => [s.mdmConnectionId, s])))
+        )
+        .catch(() => undefined);
+    }, 3000);
+    return () => clearInterval(handle);
+  }, [anySyncing]);
+
+  async function handleSync(id: number) {
+    setSyncingId(id);
+    setSyncError(null);
+    try {
+      await syncConnection(id);
+      const statuses = await listSyncStatus();
+      setSyncStatuses(Object.fromEntries(statuses.map((s) => [s.mdmConnectionId, s])));
+    } catch (caught) {
+      setSyncError(
+        caught instanceof ApiError && caught.detail ? caught.detail : t.settings.syncError
+      );
+    } finally {
+      setSyncingId(null);
+    }
+  }
 
   async function handleDelete(id: number) {
     setDeleting(true);
@@ -59,6 +98,12 @@ export function ConnectionsPage() {
         )}
       </div>
 
+      {syncError && (
+        <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          {syncError}
+        </p>
+      )}
+
       {formMode !== "closed" && (
         <ConnectionForm
           connection={editingConnection}
@@ -79,20 +124,21 @@ export function ConnectionsPage() {
               <th className="px-4 py-2 font-medium">{t.settings.tableBaseUrl}</th>
               <th className="px-4 py-2 font-medium">{t.settings.tablePatchMgmt}</th>
               <th className="px-4 py-2 font-medium">{t.settings.tableStatus}</th>
+              <th className="px-4 py-2 font-medium">{t.settings.tableLastSync}</th>
               <th className="px-4 py-2" />
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={6}>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={7}>
                   {t.settings.loading}
                 </td>
               </tr>
             )}
             {!loading && connections.length === 0 && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={6}>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={7}>
                   {t.settings.empty}
                 </td>
               </tr>
@@ -104,6 +150,22 @@ export function ConnectionsPage() {
                 <td className="px-4 py-2">{connection.baseUrl}</td>
                 <td className="px-4 py-2">{connection.patchManagementProvider}</td>
                 <td className="px-4 py-2">{connection.isActive ? t.settings.active : t.settings.inactive}</td>
+                <td className="px-4 py-2 text-xs">
+                  {(() => {
+                    const state = syncStatuses[connection.id];
+                    if (!state) return <span className="text-muted-foreground">{t.settings.syncNever}</span>;
+                    if (state.status === "syncing")
+                      return <span className="text-primary">{t.settings.syncRunning}</span>;
+                    if (state.status === "failed")
+                      return <span className="text-destructive">{t.settings.syncFailed}</span>;
+                    return (
+                      <span className="text-muted-foreground">
+                        {state.lastSyncAt ? new Date(state.lastSyncAt).toLocaleString() : t.settings.syncNever}
+                        {` · ${t.settings.syncDeviceCount(state.deviceCount)}`}
+                      </span>
+                    );
+                  })()}
+                </td>
                 <td className="px-4 py-2">
                   {pendingDeleteId === connection.id ? (
                     <div className="flex items-center justify-end gap-2">
@@ -126,16 +188,39 @@ export function ConnectionsPage() {
                       </Button>
                     </div>
                   ) : (
-                    canWrite && (
-                      <div className="flex justify-end gap-2">
-                        <Button variant="outline" size="sm" onClick={() => setFormMode(connection.id)}>
-                          {t.settings.edit}
+                    <div className="flex justify-end gap-2">
+                      {canSync && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={
+                            syncingId === connection.id ||
+                            syncStatuses[connection.id]?.status === "syncing" ||
+                            !connection.isActive
+                          }
+                          onClick={() => handleSync(connection.id)}
+                        >
+                          <RefreshCw
+                            className={
+                              syncStatuses[connection.id]?.status === "syncing"
+                                ? "mr-1 h-3 w-3 animate-spin"
+                                : "mr-1 h-3 w-3"
+                            }
+                          />
+                          {t.settings.syncNow}
                         </Button>
-                        <Button variant="destructive" size="sm" onClick={() => setPendingDeleteId(connection.id)}>
-                          {t.settings.delete}
-                        </Button>
-                      </div>
-                    )
+                      )}
+                      {canWrite && (
+                        <>
+                          <Button variant="outline" size="sm" onClick={() => setFormMode(connection.id)}>
+                            {t.settings.edit}
+                          </Button>
+                          <Button variant="destructive" size="sm" onClick={() => setPendingDeleteId(connection.id)}>
+                            {t.settings.delete}
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   )}
                 </td>
               </tr>

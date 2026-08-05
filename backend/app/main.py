@@ -11,8 +11,10 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, or_, select, update
 
+from app.api.accounts import router as accounts_router
+from app.api.applications import router as applications_router
 from app.api.auth import router as auth_router
 from app.api.connections import router as connections_router
 from app.api.devices import router as devices_router
@@ -30,10 +32,10 @@ from app.core.crypto import validate_encryption_key
 from app.core.database import async_session_factory, init_db
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
-from app.mdm.factory import get_mdm_client
 from app.mdm.patch.jamf_catalog import sync_catalog
-from app.mdm.service import process_sync
-from app.models.schema import MdmConnection, UserSession
+from app.mdm.service import sync_connection
+from app.models.schema import MdmConnection, MdmSyncState, UserSession
+from app.schemas.payload import SyncStatus
 
 # Before anything else in the process emits a line, so migration output and startup
 # failures are formatted the same way as request logs rather than escaping as plain
@@ -56,33 +58,27 @@ async def nightly_sync_sweep() -> None:
 
             logger.info("sync sweep started", extra={"connection_count": len(connections)})
 
-            for connection in connections:
-                try:
-                    client = get_mdm_client(connection)
-                    devices = await client.fetch_devices()
-                except NotImplementedError:
-                    logger.debug(
-                        "sync skipped, provider not implemented",
-                        extra={"connection_id": connection.id, "provider": connection.provider},
-                    )
-                    continue
+            results = [await sync_connection(db, connection) for connection in connections]
+            failed = [result for result in results if not result.ok]
 
-                connection.last_successful_auth_at = datetime.now(timezone.utc)
-                await db.commit()
+            # One bad credential no longer takes the run down — sync_connection absorbs
+            # per-connection failures so every remaining connection still gets swept.
+            logger.info(
+                "sync sweep finished",
+                extra={
+                    "connections": len(results),
+                    "succeeded": sum(1 for r in results if r.ok and not r.skipped),
+                    "skipped": sum(1 for r in results if r.skipped),
+                    "failed": len(failed),
+                    "devices": sum(r.device_count for r in results),
+                },
+            )
 
-                for device in devices:
-                    await process_sync(db, device, connection)
-
-                logger.info(
-                    "connection synced",
-                    extra={
-                        "connection_id": connection.id,
-                        "provider": connection.provider,
-                        "device_count": len(devices),
-                    },
+            if failed:
+                logger.warning(
+                    "some connections failed to sync",
+                    extra={"connection_ids": [r.connection_id for r in failed]},
                 )
-
-            logger.info("sync sweep finished")
     finally:
         reset_actor(actor_token)
 
@@ -153,6 +149,21 @@ async def lifespan(app: FastAPI):
     async with async_session_factory() as db:
         await bootstrap_accounts(db)
 
+        # A process that died mid-sync leaves its connection marked 'syncing', and the
+        # manual trigger refuses to start while one is in flight — so without this the
+        # only recovery from a crash or a restart is editing the database by hand.
+        stuck = await db.execute(
+            update(MdmSyncState)
+            .where(MdmSyncState.status == SyncStatus.syncing.value)
+            .values(status=SyncStatus.failed.value)
+        )
+        await db.commit()
+        if stuck.rowcount:
+            logger.warning(
+                "reset connections left mid-sync by a previous run",
+                extra={"count": stuck.rowcount},
+            )
+
     if settings.scheduler_enabled:
         scheduler.add_job(
             nightly_sync_sweep,
@@ -220,11 +231,13 @@ app.add_middleware(
 app.add_middleware(RequestContextMiddleware)
 
 app.include_router(auth_router)
+app.include_router(accounts_router)
 app.include_router(tokens_router)
 app.include_router(api_router)
 app.include_router(webhooks_router)
 app.include_router(connections_router)
 app.include_router(devices_router)
+app.include_router(applications_router)
 app.include_router(jamf_patch_router)
 app.include_router(feature_flags_router)
 
@@ -245,6 +258,29 @@ async def redoc_ui() -> HTMLResponse:
 
 static_dir = Path(__file__).parent / "static"
 
+
+def _resolve_static_asset(full_path: str) -> Path | None:
+    """Resolve a request path to a file inside static_dir, or None.
+
+    The containment check is the whole point. `static_dir / full_path` happily escapes
+    the directory when full_path contains `..` (or is absolute, since that discards the
+    left operand entirely), which turns this route into an unauthenticated read of any
+    file the process can open — including the SQLite database and the audit log. The
+    path is resolved first so `..` segments and symlinks are collapsed before the
+    comparison, rather than pattern-matching on the raw string.
+    """
+    if not full_path:
+        return None
+
+    root = static_dir.resolve()
+    candidate = (root / full_path).resolve()
+
+    if not candidate.is_relative_to(root) or not candidate.is_file():
+        return None
+
+    return candidate
+
+
 if static_dir.exists():
     # Catch-all so client-side routes (e.g. /devices) resolve to the SPA shell on a
     # direct navigation/refresh, not a 404 — real static assets are served as-is.
@@ -254,7 +290,10 @@ if static_dir.exists():
         if full_path.startswith("api/") or full_path.startswith("webhooks/"):
             raise HTTPException(status_code=404, detail="Not Found")
 
-        candidate = static_dir / full_path
-        if full_path and candidate.is_file():
-            return FileResponse(candidate)
+        asset = _resolve_static_asset(full_path)
+        if asset is not None:
+            return FileResponse(asset)
+
+        # Anything else is a client-side route; the SPA shell resolves it. A traversal
+        # attempt lands here too, and gets the same harmless HTML as a typo.
         return FileResponse(static_dir / "index.html")

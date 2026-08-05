@@ -24,7 +24,15 @@ class NormalizedApp(BaseModel):
     name: str
     bundle_id: str
     version: str
-    full_hash: str | None = None
+    # CFBundleVersion vs CFBundleShortVersionString. Jamf's inventory API exposes only
+    # one version field, so this is null for recon and manual syncs and populated only
+    # where the source carries both.
+    short_version: str | None = None
+
+    # Populated by process_sync, not by the MDM clients — every ingest path funnels
+    # through there, so hashing happens in exactly one place.
+    app_hash: str | None = None
+    version_hash: str | None = None
 
 
 class NormalizedExtensionAttribute(BaseModel):
@@ -52,6 +60,9 @@ class NormalizedDevice(BaseModel):
 class MdmSyncStatusOut(BaseModel):
     model_config = ConfigDict(from_attributes=True, alias_generator=to_camel, populate_by_name=True)
 
+    # Without this the UI can't tell which connection a status row belongs to, which
+    # makes per-connection sync state unrenderable.
+    mdm_connection_id: int
     provider: MdmProvider
     last_sync_at: datetime | None
     status: SyncStatus
