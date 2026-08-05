@@ -7,6 +7,7 @@ from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
@@ -17,6 +18,7 @@ from app.api.accounts import router as accounts_router
 from app.api.applications import router as applications_router
 from app.api.auth import router as auth_router
 from app.api.connections import router as connections_router
+from app.api.destinations import router as destinations_router
 from app.api.devices import router as devices_router
 from app.api.feature_flags import router as feature_flags_router
 from app.api.jamf_patch import router as jamf_patch_router
@@ -25,13 +27,14 @@ from app.api.tokens import router as tokens_router
 from app.api.webhooks import router as webhooks_router
 from app.core.audit import configure_audit_logging
 from app.core.auth import authenticate
-from app.core.bootstrap import bootstrap_accounts
+from app.core.bootstrap import bootstrap_accounts, migrate_legacy_siem_webhook
 from app.core.config import settings
 from app.core.context import SYSTEM, reset_actor, set_actor
 from app.core.crypto import validate_encryption_key
 from app.core.database import async_session_factory, init_db
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
+from app.core.outbox import deliver_pending, fan_out_pending, purge_delivered_events
 from app.mdm.patch.jamf_catalog import sync_catalog
 from app.mdm.service import sync_connection
 from app.models.schema import MdmConnection, MdmSyncState, UserSession
@@ -118,6 +121,36 @@ async def hourly_session_cleanup() -> None:
         reset_actor(actor_token)
 
 
+async def outbox_worker_tick() -> None:
+    """Fan out newly-produced events to subscribed destinations, then attempt every
+    delivery that's due. Runs frequently and independently of every sync job — that
+    decoupling is the entire point: a slow or dead destination here can never slow
+    down a device sync, and (once it exists) can never delay an inbound webhook's ACK
+    to its sender.
+    """
+    actor_token = set_actor(SYSTEM)
+    try:
+        async with async_session_factory() as db:
+            await fan_out_pending(db)
+            await deliver_pending(db)
+    finally:
+        reset_actor(actor_token)
+
+
+async def outbox_cleanup() -> None:
+    """Purges outbox events whose deliveries are all terminal and past retention.
+    Without this the table grows without bound once events are continuous rather than
+    nightly-batched."""
+    actor_token = set_actor(SYSTEM)
+    try:
+        async with async_session_factory() as db:
+            purged = await purge_delivered_events(db, settings.event_outbox_retention_days)
+        if purged:
+            logger.info("purged old outbox events", extra={"count": purged})
+    finally:
+        reset_actor(actor_token)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Deliberately called again here, not just at import. fastapi-cli imports this
@@ -148,6 +181,7 @@ async def lifespan(app: FastAPI):
 
     async with async_session_factory() as db:
         await bootstrap_accounts(db)
+        await migrate_legacy_siem_webhook(db)
 
         # A process that died mid-sync leaves its connection marked 'syncing', and the
         # manual trigger refuses to start while one is in flight — so without this the
@@ -181,6 +215,21 @@ async def lifespan(app: FastAPI):
             hourly_session_cleanup,
             CronTrigger(minute=30),
             id="hourly_session_cleanup",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            outbox_worker_tick,
+            IntervalTrigger(seconds=30),
+            id="outbox_worker_tick",
+            # APScheduler's default max_instances=1 per job already prevents a tick
+            # from overlapping a still-running one; nothing here relies on that as
+            # anything more than "don't double-attempt the same delivery."
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            outbox_cleanup,
+            CronTrigger(hour=2, minute=45),
+            id="outbox_cleanup",
             replace_existing=True,
         )
         scheduler.start()
@@ -236,6 +285,7 @@ app.include_router(tokens_router)
 app.include_router(api_router)
 app.include_router(webhooks_router)
 app.include_router(connections_router)
+app.include_router(destinations_router)
 app.include_router(devices_router)
 app.include_router(applications_router)
 app.include_router(jamf_patch_router)

@@ -22,7 +22,14 @@ class Settings(BaseSettings):
 
     encryption_key: str | None = None
 
+    # Legacy, single-destination path. Read once at first boot to auto-create an
+    # equivalent Destination row if none exist yet (see bootstrap.migrate_legacy_siem_
+    # webhook) — the `destinations` table is the source of truth for everything after
+    # that, including this one. Kept as a setting rather than removed so that
+    # migration path keeps working for anyone upgrading with it already set.
     siem_webhook_url: str | None = None
+
+    event_outbox_retention_days: int = 7
 
     user_agent_product_name: str = "LoonSecIO"
 
@@ -90,6 +97,13 @@ class Settings(BaseSettings):
         if 1 <= value <= 3650:
             return value
         raise ValueError("audit_retention_days must be between 1 and 3650")
+
+    @field_validator("event_outbox_retention_days")
+    @classmethod
+    def _validate_outbox_retention(cls, value: int) -> int:
+        if 1 <= value <= 3650:
+            return value
+        raise ValueError("event_outbox_retention_days must be between 1 and 3650")
 
     @field_validator("session_lifetime_seconds")
     @classmethod

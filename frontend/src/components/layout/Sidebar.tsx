@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, AppWindow, Database, Flag, Home, KeyRound, Layers, Plug, Settings, ShieldCheck, UserCircle, UserCog, Users } from "lucide-react";
+import { AlertTriangle, AppWindow, Database, Flag, Home, KeyRound, Layers, Plug, Send, Settings, ShieldCheck, UserCircle, UserCog, Users } from "lucide-react";
 import { NavLink } from "react-router";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/features/auth/store";
@@ -63,6 +63,13 @@ const navigationItems: NavItem[] = [
         to: "/settings/api-tokens",
         end: false,
         permission: PERMISSIONS.TOKEN_CREATE
+      },
+      {
+        labelKey: "destinations",
+        icon: Send,
+        to: "/settings/destinations",
+        end: false,
+        permission: PERMISSIONS.DESTINATION_READ
       },
       {
         labelKey: "accounts",

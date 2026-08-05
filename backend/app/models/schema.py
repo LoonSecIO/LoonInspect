@@ -337,6 +337,101 @@ class ApiToken(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class Destination(Base):
+    """Where processed events get delivered — a SIEM, a customer-run webhook receiver,
+    or an ingestion endpoint in front of a warehouse like Snowflake. Deliberately one
+    flexible type rather than a menu of named vendor integrations: from here it is
+    always an HTTPS POST, and vendor differences live almost entirely in the auth
+    header, which `auth_type` covers. Splunk gets its own `type` because HEC has a
+    fixed envelope shape, not because its transport is actually different.
+    """
+
+    __tablename__ = "destinations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    # "generic_webhook" | "splunk_hec"
+    type: Mapped[str] = mapped_column(String(32), default="generic_webhook")
+    url: Mapped[str] = mapped_column(String(1024))
+
+    # none | bearer | header | splunk_hec. "header" covers anything behind an API
+    # gateway or a vendor's own REST ingestion (e.g. Snowpipe) that expects its own
+    # named header rather than a standard Authorization convention.
+    auth_type: Mapped[str] = mapped_column(String(16), default="none")
+    auth_header_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    auth_secret_encrypted: Mapped[str | None] = mapped_column(EncryptedString(1024), nullable=True)
+
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Event types this destination receives. Null/empty means all — the default, and
+    # what makes the legacy SIEM_WEBHOOK_URL migration behave identically to today
+    # (that env var currently receives every event, unfiltered).
+    subscribed_events: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class EventOutbox(Base):
+    """One row per event produced anywhere in the app — inventory deltas today, group
+    membership changes and enrichment results later. Written in the same transaction
+    as the state change that produced it, so 'we updated the database' and 'we queued
+    the event' can never drift apart from a partial failure mid-request.
+
+    Destination-agnostic by design. Producers (process_sync, and later group sync and
+    the inbound webhook handler) only record that something happened; they don't need
+    to know which destinations exist or care if that set changes later. Fan-out to
+    specific destinations happens in the delivery worker, on its own schedule — which
+    is what lets a slow or down destination be handled without ever blocking whatever
+    produced the event.
+    """
+
+    __tablename__ = "event_outbox"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    payload: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+    # Ties a delivery back to the request or job that produced it, for tracing through
+    # the application log.
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # Set once OutboxDelivery rows exist for this event. Lets the worker find only new
+    # events instead of re-scanning ones it has already fanned out.
+    fanned_out: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+
+
+class OutboxDelivery(Base):
+    """Delivery state of one event to one destination.
+
+    Split from EventOutbox because one event fanning out to three destinations needs
+    three independent retry histories — a dead destination must never block or get
+    conflated with a healthy one's delivery.
+    """
+
+    __tablename__ = "outbox_deliveries"
+    __table_args__ = (
+        UniqueConstraint("outbox_event_id", "destination_id", name="uq_outbox_delivery_event_destination"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    outbox_event_id: Mapped[int] = mapped_column(ForeignKey("event_outbox.id"), index=True)
+    destination_id: Mapped[int] = mapped_column(ForeignKey("destinations.id"), index=True)
+
+    # pending | delivered | failed (failed = exhausted retries, dead-lettered)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+    last_attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class LoginAttempt(Base):
     """Failed-login counter backing the lockout in the login route.
 
