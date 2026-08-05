@@ -4,6 +4,8 @@ import type {
   MdmConnectionInput,
   MdmConnectionTestInput,
   MdmConnectionTestResult,
+  MdmSyncStatus,
+  MdmSyncTriggerResult,
   ProviderInfo
 } from "@/features/mdm/types";
 
@@ -32,4 +34,14 @@ export function deleteConnection(id: number): Promise<void> {
 
 export function testConnection(input: MdmConnectionTestInput): Promise<MdmConnectionTestResult> {
   return apiRequest<MdmConnectionTestResult>("/mdm/connections/test", { method: "POST", json: input });
+}
+
+export function listSyncStatus(): Promise<MdmSyncStatus[]> {
+  return apiRequest<MdmSyncStatus[]>("/mdm/status");
+}
+
+/** Returns as soon as the pull is queued, not when it finishes — poll listSyncStatus
+ *  for progress. */
+export function syncConnection(id: number): Promise<MdmSyncTriggerResult> {
+  return apiRequest<MdmSyncTriggerResult>(`/mdm/connections/${id}/sync`, { method: "POST" });
 }

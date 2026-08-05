@@ -39,6 +39,7 @@ class AuditAction(StrEnum):
     CONNECTION_DELETED = "connection.deleted"
     CONNECTION_CREDENTIALS_UPDATED = "connection.credentials.updated"
     CONNECTION_TESTED = "connection.tested"
+    CONNECTION_SYNC_TRIGGERED = "connection.sync.triggered"
 
     FEATURE_FLAG_UPDATED = "feature-flag.updated"
 

@@ -92,6 +92,13 @@ class MdmConnectionTestRequest(BaseModel):
     user_agent_override: str | None = None
 
 
+class MdmSyncTriggerResult(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    connection_id: int
+    status: str
+
+
 class MdmConnectionTestResult(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 

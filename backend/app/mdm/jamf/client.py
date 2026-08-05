@@ -13,7 +13,11 @@ from app.schemas.payload import (
     NormalizedExtensionAttribute,
 )
 
-INVENTORY_SECTIONS = "GENERAL,HARDWARE,USER_AND_LOCATION,APPLICATIONS,EXTENSION_ATTRIBUTES"
+# OPERATING_SYSTEM is required for os_version — it lives in its own section, not under
+# HARDWARE. Omitting it meant the field could never populate regardless of the mapping.
+INVENTORY_SECTIONS = (
+    "GENERAL,HARDWARE,OPERATING_SYSTEM,USER_AND_LOCATION,APPLICATIONS,EXTENSION_ATTRIBUTES"
+)
 
 
 class JamfClient(MdmClient):
@@ -109,6 +113,7 @@ class JamfClient(MdmClient):
         # tenant once live credentials are available (built to spec, not yet tested live).
         general = computer.get("general", computer)
         hardware = computer.get("hardware", {})
+        operating_system = computer.get("operatingSystem", {})
         user_and_location = computer.get("userAndLocation", {})
         applications = computer.get("applications", [])
         extension_attributes = computer.get("extensionAttributes", [])
@@ -119,11 +124,19 @@ class JamfClient(MdmClient):
         return NormalizedDevice(
             mdm_provider=MdmProvider.jamf,
             external_id=str(general.get("id") or computer.get("id")),
-            serial_number=general.get("serialNumber") or computer.get("serialNumber", ""),
+            # Verified against a live tenant: the serial is under HARDWARE, not GENERAL,
+            # and the OS version is under OPERATING_SYSTEM, not HARDWARE. The webhook
+            # fallbacks stay because a HEC payload is shaped differently from an
+            # inventory record.
+            serial_number=(
+                hardware.get("serialNumber")
+                or general.get("serialNumber")
+                or computer.get("serialNumber", "")
+            ),
             hostname=general.get("name") or computer.get("name", ""),
             managed=remote_management.get("managed"),
             supervised=general.get("supervised"),
-            os_version=hardware.get("osVersion"),
+            os_version=operating_system.get("version") or hardware.get("osVersion"),
             site=site.get("name"),
             building=user_and_location.get("building"),
             department=user_and_location.get("department"),
@@ -134,6 +147,11 @@ class JamfClient(MdmClient):
                     name=app.get("name", ""),
                     bundle_id=app.get("bundleId") or app.get("name", ""),
                     version=app.get("version", ""),
+                    # Jamf's inventory APPLICATIONS section exposes a single `version`
+                    # field, with no separate CFBundleVersion. Left null rather than
+                    # duplicated, so the version hash isn't given false precision —
+                    # a source that carries both will produce a distinct hash.
+                    short_version=None,
                 )
                 for app in applications
             ],

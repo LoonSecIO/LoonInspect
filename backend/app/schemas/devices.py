@@ -56,7 +56,9 @@ class InstalledAppOut(BaseModel):
     name: str
     bundle_id: str
     version: str
-    full_hash: str
+    short_version: str | None
+    app_hash: str
+    version_hash: str
     is_compliant: bool | None
     patch_available: bool | None
     patch_available_since: datetime | None

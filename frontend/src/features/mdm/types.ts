@@ -73,3 +73,18 @@ export interface MdmConnectionTestResult {
   message: string;
   detail?: string;
 }
+
+export type SyncStatusValue = "idle" | "syncing" | "failed";
+
+export interface MdmSyncStatus {
+  mdmConnectionId: number;
+  provider: MdmProviderType;
+  lastSyncAt: string | null;
+  status: SyncStatusValue;
+  deviceCount: number;
+}
+
+export interface MdmSyncTriggerResult {
+  connectionId: number;
+  status: SyncStatusValue;
+}

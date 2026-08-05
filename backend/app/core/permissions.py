@@ -37,6 +37,11 @@ class Permission(StrEnum):
     # fire in a loop.
     PATCH_CATALOG_SYNC = "patch:catalog-sync"
 
+    # Trigger an on-demand inventory pull from an MDM. Not a configuration change, so
+    # it isn't CONNECTION_WRITE — but it does hit a third-party API and write inventory,
+    # so it stays off the read-only roles.
+    DEVICE_SYNC = "device:sync"
+
     FEATURE_FLAG_WRITE = "feature-flag:write"
 
     ACCOUNT_READ = "account:read"
@@ -64,6 +69,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
     | {
         Permission.CONNECTION_READ,
         Permission.PATCH_CATALOG_SYNC,
+        Permission.DEVICE_SYNC,
         Permission.AUDIT_READ,
         Permission.TOKEN_CREATE,
     },
