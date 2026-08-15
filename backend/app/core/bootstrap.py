@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import hash_password
-from app.models.schema import Account, AccountRole, AuthIdentity
+from app.models.schema import Account, AccountRole, AuthIdentity, Destination
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +101,35 @@ async def bootstrap_accounts(db: AsyncSession) -> None:
         "claim token to create the first administrator: %s",
         _claim_token,
     )
+
+
+async def migrate_legacy_siem_webhook(db: AsyncSession) -> None:
+    """One-time migration for anyone with SIEM_WEBHOOK_URL already configured before
+    the destinations model existed.
+
+    Runs every boot but is a no-op the moment any destination exists — including one
+    a user creates or deletes by hand afterward — so it can never fight with, resurrect,
+    or duplicate something the operator has since changed.
+    """
+    if not settings.siem_webhook_url:
+        return
+
+    existing = await db.scalar(select(func.count()).select_from(Destination))
+    if existing:
+        return
+
+    db.add(
+        Destination(
+            name="Legacy SIEM webhook",
+            type="generic_webhook",
+            url=settings.siem_webhook_url,
+            auth_type="none",
+            enabled=True,
+            subscribed_events=None,
+        )
+    )
+    await db.commit()
+    logger.info("migrated SIEM_WEBHOOK_URL into a destination row")
 
 
 def consume_claim_token() -> None:

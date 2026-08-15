@@ -54,6 +54,13 @@ class Permission(StrEnum):
     # keep long-lived credentials off accounts with no automation story.
     TOKEN_CREATE = "token:create"
 
+    # Where processed events get delivered (SIEM, warehouse, generic webhook). Split
+    # read/write for the same reason as connections: an analyst should be able to see
+    # that a destination exists and whether it's healthy without being able to point
+    # events at a URL of their choosing or rotate its credential.
+    DESTINATION_READ = "destination:read"
+    DESTINATION_WRITE = "destination:write"
+
 
 _INVENTORY_READ = frozenset(
     {
@@ -72,6 +79,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
         Permission.DEVICE_SYNC,
         Permission.AUDIT_READ,
         Permission.TOKEN_CREATE,
+        Permission.DESTINATION_READ,
     },
     # Read-only admin: sees configuration, accounts, and history, writes nothing, and
     # never touches a live secret. A strict subset of admin, which is what makes it
@@ -82,6 +90,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
         Permission.ACCOUNT_READ,
         Permission.AUDIT_READ,
         Permission.TOKEN_CREATE,
+        Permission.DESTINATION_READ,
     },
     # Every permission, including ones added after this line was written — a new
     # permission silently locking admins out of a feature would be the worse failure.

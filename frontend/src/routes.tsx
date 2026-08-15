@@ -18,6 +18,7 @@ import { IntegrationsPage } from "@/features/integrations/IntegrationsPage";
 import { ConnectionsPage } from "@/features/mdm/ConnectionsPage";
 import { FeatureFlagsPage } from "@/features/settings/FeatureFlagsPage";
 import { ApiTokensPage } from "@/features/tokens/ApiTokensPage";
+import { DestinationsPage } from "@/features/destinations/DestinationsPage";
 import { VulnerabilitiesPage } from "@/features/vulnerabilities/VulnerabilitiesPage";
 import { JamfPatchPage } from "@/features/jamfPatch/JamfPatchPage";
 import { JamfPatchDetailPage } from "@/features/jamfPatch/JamfPatchDetailPage";
@@ -55,6 +56,9 @@ export function AppRoutes() {
         </Route>
         <Route element={<RequirePermission permission={PERMISSIONS.ACCOUNT_READ} />}>
           <Route path="settings/accounts" element={<AccountsPage />} />
+        </Route>
+        <Route element={<RequirePermission permission={PERMISSIONS.DESTINATION_READ} />}>
+          <Route path="settings/destinations" element={<DestinationsPage />} />
         </Route>
         {/* No permission gate — everyone manages their own profile. */}
         <Route path="settings/my-account" element={<MyAccountPage />} />

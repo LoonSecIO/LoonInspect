@@ -54,6 +54,11 @@ class AuditAction(StrEnum):
     PASSWORD_CHANGED = "account.password.changed"
     PASSWORD_RESET = "account.password.reset"
 
+    DESTINATION_CREATED = "destination.created"
+    DESTINATION_UPDATED = "destination.updated"
+    DESTINATION_DELETED = "destination.deleted"
+    DELIVERY_DEAD_LETTERED = "destination.delivery.dead_lettered"
+
 
 class _SecureTimedRotatingFileHandler(TimedRotatingFileHandler):
     """Forces 0600 on the audit file, including the ones rotation creates.

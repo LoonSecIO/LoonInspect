@@ -4,13 +4,13 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.config import settings
+from app.core.context import get_request_id
 from app.core.hashing import compute_app_hash, compute_version_hash
+from app.core.outbox import enqueue_event
 from app.mdm.factory import get_mdm_client
 from app.mdm.patch.factory import get_patch_provider
 from app.models.schema import Device, DeviceExtensionAttribute, InstalledApp, MdmConnection, MdmSyncState
@@ -36,33 +36,6 @@ def apply_hashes(app: NormalizedApp) -> NormalizedApp:
         app.name, app.bundle_id, app.version, app.short_version
     )
     return app
-
-
-async def stream_event(event: InventoryChangedEvent) -> None:
-    payload = event.model_dump(mode="json")
-
-    if not settings.siem_webhook_url:
-        logger.info("siem event not delivered, no webhook configured", extra={"siem_event": payload})
-        return
-
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.post(settings.siem_webhook_url, json=payload)
-            response.raise_for_status()
-    except httpx.HTTPError:
-        # The device data behind this event is already committed, so a SIEM outage
-        # must not fail the sync that produced it. Log the whole event so it can be
-        # replayed by hand rather than being lost with the exception.
-        logger.exception("siem delivery failed", extra={"siem_event": payload})
-    else:
-        logger.info(
-            "siem event delivered",
-            extra={
-                "device_external_id": event.device_external_id,
-                "added": len(event.added_apps),
-                "removed": len(event.removed_apps),
-            },
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -303,11 +276,25 @@ async def process_sync(
         device_external_id=device.external_id,
         added_apps=added,
         removed_apps=[
-            NormalizedApp(name=row.name, bundle_id=row.bundle_id, version=row.version, full_hash=row.full_hash)
+            NormalizedApp(
+                name=row.name,
+                bundle_id=row.bundle_id,
+                version=row.version,
+                short_version=row.short_version,
+                app_hash=row.app_hash,
+                version_hash=row.version_hash,
+            )
             for row in removed_rows
         ],
         occurred_at=datetime.now(timezone.utc),
     )
+
+    # Enqueued in the same transaction as the device/app state change below, so "we
+    # updated the database" and "we recorded the event" can never drift apart from a
+    # partial failure. Delivery itself happens later, on the outbox worker's own
+    # schedule — a slow or down destination must never be able to block a sync.
+    await enqueue_event(
+        db, event.event, event.model_dump(mode="json"), request_id=get_request_id()
+    )
     await db.commit()
-    await stream_event(event)
     return event
