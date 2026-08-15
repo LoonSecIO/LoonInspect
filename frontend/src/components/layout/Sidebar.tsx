@@ -1,8 +1,8 @@
-import { useMemo } from "react";
-import type { LucideIcon } from "lucide-react";
+import { useMemo, type ComponentType } from "react";
 import { AlertTriangle, AppWindow, Database, Flag, Home, KeyRound, Layers, Plug, Send, Settings, ShieldCheck, UserCircle, UserCog, Users } from "lucide-react";
 import { NavLink } from "react-router";
 import { cn } from "@/lib/utils";
+import { FlaskLogo } from "@/components/icons/FlaskLogo";
 import { useAuthStore } from "@/features/auth/store";
 import { PERMISSIONS, type PermissionName } from "@/features/auth/types";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -11,9 +11,14 @@ import { useSidebarMode } from "@/hooks/SidebarModeContext";
 
 type NavKey = keyof Translations["nav"];
 
+// Loosened from lucide-react's own LucideIcon type so FlaskLogo — a plain custom SVG
+// component, not a lucide icon — can be used interchangeably. Every render site here
+// only ever passes className, so this is the actual shared contract.
+type NavIcon = ComponentType<{ className?: string }>;
+
 interface NavItem {
   labelKey: NavKey;
-  icon: LucideIcon;
+  icon: NavIcon;
   to: string;
   end: boolean;
   /** Omitted where every role can see the page. */
@@ -37,6 +42,7 @@ const navigationItems: NavItem[] = [
   { labelKey: "users", icon: Users, to: "/users", end: false },
   { labelKey: "vulnerabilities", icon: AlertTriangle, to: "/vulnerabilities", end: false },
   { labelKey: "integrations", icon: Plug, to: "/integrations", end: false },
+  { labelKey: "ai", icon: FlaskLogo, to: "/ai", end: false },
   {
     labelKey: "settings",
     icon: Settings,
