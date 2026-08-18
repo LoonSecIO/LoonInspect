@@ -7,8 +7,8 @@ from dataclasses import dataclass
 # every line emitted while handling a request carries the same id without any call
 # site having to thread it through.
 _request_id: ContextVar[str | None] = ContextVar("request_id", default=None)
-_actor: ContextVar["Actor | None"] = ContextVar("actor", default=None)
-_client: ContextVar["ClientInfo | None"] = ContextVar("client", default=None)
+_actor: ContextVar[Actor | None] = ContextVar("actor", default=None)
+_client: ContextVar[ClientInfo | None] = ContextVar("client", default=None)
 
 
 @dataclass(frozen=True, slots=True)

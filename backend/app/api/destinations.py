@@ -112,7 +112,7 @@ async def update_destination(
         AuditAction.DESTINATION_UPDATED,
         target_type="destination",
         target_id=destination.id,
-        changed=sorted(k for k in data.keys() if k != "auth_secret"),
+        changed=sorted(k for k in data if k != "auth_secret"),
         secret_rotated=bool(data.get("auth_secret")),
     )
     return _to_out(destination)

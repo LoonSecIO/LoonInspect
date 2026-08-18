@@ -77,6 +77,23 @@ This builds the frontend, bundles it into the FastAPI image, and starts the app 
 
 > **Note:** the container logs and `docker ps` will show the address as `0.0.0.0:8000` — that's the server listening on all interfaces, not a URL you can open. Use `http://localhost:8000` (or `127.0.0.1:8000`) in your browser instead; some browsers will refuse to navigate to `0.0.0.0` directly.
 
+### Upgrading an existing install
+
+The container now runs as a non-root user (`looninspect`, uid 10001) rather than
+as root. A data volume created by an earlier version is owned by root, and the
+new container cannot write to it — it will exit at startup with
+`PermissionError: [Errno 13] Permission denied: 'data/audit'`.
+
+Fix it once, with the stack stopped:
+
+```bash
+docker run --rm -v looninspect_looninspect-data:/data alpine chown -R 10001:10001 /data
+```
+
+Substitute your own volume name if it differs; `docker volume ls` will show it.
+Volumes created from this version onward inherit the right ownership and need
+nothing.
+
 For day-to-day development with hot-reloading instead, see [backend/README.md](backend/README.md) and run the frontend separately with `npm run dev` inside `frontend/` (proxies `/api` to the backend on port 8000).
 
 

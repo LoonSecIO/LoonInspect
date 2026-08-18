@@ -1,0 +1,37 @@
+# Keep the build context to source only. Everything here is either rebuilt
+# inside the image, machine-local state, or must never reach a layer.
+
+# Dependency trees — reinstalled from the lockfiles during the build
+**/node_modules
+**/.venv
+
+# Build output — the image builds its own
+frontend/dist
+**/*.egg-info
+**/__pycache__
+**/*.py[cod]
+
+# Local state and secrets
+.env
+.env.*
+!.env.example
+**/*.db
+**/*.sqlite3
+backend/data
+backend/logs
+
+# VCS, editors, OS
+.git
+.gitignore
+.github
+.idea
+.vscode
+.claude
+**/.DS_Store
+
+# Docs and meta — not needed to build or run
+docs
+LICENSE
+README.md
+**/*.md
+!backend/README.md

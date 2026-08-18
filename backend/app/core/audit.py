@@ -67,7 +67,7 @@ class _SecureTimedRotatingFileHandler(TimedRotatingFileHandler):
     audit trail readable by everything else sharing the volume.
     """
 
-    def _open(self):  # noqa: ANN202 - matches the stdlib signature
+    def _open(self):
         stream = super()._open()
         try:
             os.chmod(self.baseFilename, 0o600)

@@ -54,7 +54,7 @@ class MdmConnectionCreate(BaseModel):
     capability_jamf_pro: bool = False
 
     @model_validator(mode="after")
-    def _check_loonsecio(self) -> "MdmConnectionCreate":
+    def _check_loonsecio(self) -> MdmConnectionCreate:
         validate_loonsecio_requirement(
             self.patch_management_provider, self.loonsecio_license_key, self.loonsecio_data_sharing_enabled
         )
