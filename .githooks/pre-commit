@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+#
+# Scans staged changes for live secrets before the commit is created.
+#
+# This is the preventive half of CM-03. The CI job in
+# .github/workflows/secret-scan.yml only detects — by the time it fails, the
+# secret is in remote history and has to be rotated. This hook stops it earlier,
+# which is the closest available substitute for the GitHub push protection that
+# docs/BRANCHING.md §8.1 records as blocked.
+#
+# Opt in per clone and per worktree:
+#
+#   git config core.hooksPath .githooks
+#
+# Requires either the trufflehog binary on PATH or Docker. If neither is
+# present the hook says so and lets the commit through, because a hook that
+# blocks work on a machine without the tool gets disabled and then protects
+# nobody.
+set -euo pipefail
+
+RED=$'\033[31m'; YEL=$'\033[33m'; RST=$'\033[0m'
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[[ -z "$staged" ]] && exit 0
+
+scan_dir=$(mktemp -d)
+trap 'rm -rf "$scan_dir"' EXIT
+
+# Scan the staged content itself, not the working tree — they differ whenever
+# something is partially staged, and the staged version is what gets committed.
+while IFS= read -r f; do
+  mkdir -p "$scan_dir/$(dirname "$f")"
+  git show ":$f" > "$scan_dir/$f" 2>/dev/null || true
+done <<< "$staged"
+
+if command -v trufflehog >/dev/null 2>&1; then
+  output=$(trufflehog filesystem "$scan_dir" --only-verified --no-update 2>/dev/null || true)
+elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  output=$(docker run --rm -v "$scan_dir":/scan \
+             ghcr.io/trufflesecurity/trufflehog:3.97.0 \
+             filesystem /scan --only-verified 2>/dev/null || true)
+else
+  printf '%s! pre-commit: trufflehog and docker both unavailable, skipping secret scan%s\n' "$YEL" "$RST" >&2
+  exit 0
+fi
+
+if grep -q "Found verified result" <<<"$output"; then
+  printf '\n%sVerified secret found in staged changes — commit blocked.%s\n\n' "$RED" "$RST" >&2
+  printf '%s\n\n' "$output" >&2
+  printf 'If this is a false positive, commit with --no-verify.\n' >&2
+  printf 'If it is real, the credential is compromised on this machine and\n' >&2
+  printf 'needs rotating even though it was never pushed.\n\n' >&2
+  exit 1
+fi
+
+exit 0

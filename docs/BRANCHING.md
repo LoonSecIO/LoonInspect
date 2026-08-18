@@ -281,7 +281,7 @@ and is never reused.
 | --- | --- | --- | --- | --- |
 | CM-01 | Pull request title matches the squash-subject format in §5 | `ci` | block | proposed |
 | CM-02 | No branch contains consecutive commits with identical subjects | `ci` | warn | proposed |
-| CM-03 | No secret material or local state is committed (`.env`, `*.db`, keys, tokens) | `ci` | block | proposed |
+| CM-03 | No secret material or local state is committed (`.env`, `*.db`, keys, tokens) | `ci` | block | active (detection); prevention `blocked` — see §8.3 |
 | CM-04 | Diff excludes editor and OS artefacts (`.idea/`, `.vscode/`, `.DS_Store`) | `ci` | block | proposed |
 
 ### 6.3 Pull request controls
@@ -539,22 +539,99 @@ same way. The definition and the script are complete and correct; nothing in
 them needs revisiting when the constraint lifts, which is why the affected
 controls are `blocked` rather than `proposed`.
 
-Two ways out, and the choice is exposure against cost rather than capability:
+**This resolves itself.** The repository goes public during the release
+schedule in §8.2. Every blocked control here becomes available at no cost at the
+flip, because the constraint is the combination of *private* and *free* rather
+than either alone. Paying for GitHub Team to unblock rulesets sooner would buy
+about four weeks and would not cover secret scanning, which needs Advanced
+Security on top; it is not worth it.
 
-| Option | Unblocks | Cost |
-| --- | --- | --- |
-| Make the repository public | Rulesets, branch protection, secret scanning, push protection | None |
-| GitHub Team | Rulesets, branch protection | Per-seat; secret scanning still needs Advanced Security |
-
-Going public is the larger decision of the two and is not purely financial. The
-README already describes LoonInspect as open source and the repository carries a
-licence, so it is a plausible end state — but it also publishes the security
-posture of a tool that holds encrypted MDM credentials, and §3.2's dev instance
-becomes a more attractive target once the source describing it is readable. That
-trade-off deserves its own decision, and by §3.1 it is a `spike/`, not an issue.
+The controls are therefore `blocked` in the same sense SF-01 is: agreed,
+implemented, waiting on something with a known date. Running
+`apply-repo-config.sh` again after the flip is the whole of the remaining work,
+and §8.2 places it in the quiet window rather than at the announcement.
 
 What is enforced today: BR-04 and MG-01 through repository settings, and PR-04
 through the CI workflow. Everything else in step 1 is `blocked`.
+
+### 8.2 The release schedule
+
+Four phases, of which only the last has a fixed date:
+
+| Phase | Ends | What it is |
+| --- | --- | --- |
+| Feature work | ~2026-09-07 | Ordinary development |
+| Cleanup | ~2026-09-15 | No new features; the work in the pre-publication checklist |
+| Quiet public | before 2026-09-17 | Repository made public, deliberately unannounced |
+| Announcement | **2026-09-17** | Fixed date |
+
+**The announcement date is fixed and the flip date is not**, so schedule
+pressure lands on cleanup. When cleanup runs long the correct response is to
+shorten the quiet window, never to skip an item in it — the checklist exists
+because those items cannot be done after publication.
+
+**The quiet window is a control, not a gap.** It is the only period in which the
+repository is public but not yet attracting attention, so a mistake found then
+is cheap. Everything that needs the repository to be public — re-running
+`apply-repo-config.sh`, enabling native secret scanning and push protection,
+confirming the ruleset was actually accepted — belongs in that window, not after
+the announcement. Do not shorten it to nothing.
+
+**Publishing is a history event, not a state change.** It exposes every ref the
+remote holds — all branches, and `refs/pull/*` for every pull request ever
+opened, including those whose branches were deleted. A credential committed once
+and removed in the next commit is still published. This is the failure mode that
+cannot be fixed after the fact: rotation is the only remedy, and it has to
+happen before the flip rather than after.
+
+CM-03's scanner (§8.3) is what makes this checkable. A full-history scan of a
+mirror clone on 2026-08-18 found **0 verified secrets across all 20 refs**, and
+`.env` has never been committed on any ref. That is the baseline; it must be
+re-established during cleanup, not inherited from this document.
+
+```bash
+git clone --mirror https://github.com/LoonSecIO/LoonInspect.git audit.git
+# trufflehog needs a work tree, so present the mirror as one
+mkdir audit && mv audit.git audit/.git && git -C audit config core.bare false
+git -C audit reset --mixed
+docker run --rm -v "$PWD/audit":/repo ghcr.io/trufflesecurity/trufflehog:3.97.0 \
+  git file:///repo
+```
+
+Note that this is deliberately run without `--only-verified`: an expired or
+already-rotated credential still tells you a practice existed, and a detector
+that cannot reach its provider reports unverified rather than nothing.
+
+### 8.3 Secret scanning
+
+CM-03 requires a scanner over diff *content*; the path exclusions in the policy
+workflow do not satisfy it on their own. GitHub's own scanning is blocked with
+the rest of §8.1, so `.github/workflows/secret-scan.yml` runs TruffleHog on
+every pull request, on pushes to `main`, and weekly over full history.
+
+**It detects; it does not prevent.** By the time the job fails, the secret is in
+remote history and must be rotated. `.githooks/pre-commit` is the preventive
+half and is the closer analogue to the push protection that is blocked — it is
+opt-in per clone, and per worktree, which matters given §4:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+CM-03 is therefore recorded as `active` for detection with prevention still
+`blocked`, rather than as a single satisfied control.
+
+The blocking jobs use `--only-verified`, which reports a candidate only once it
+proves live against its provider. This is not noise-aversion for its own sake:
+the first full scan flagged a `sha256` package hash in `backend/uv.lock` as a
+Sentry token, and a blocking check that fails on every lockfile change is one
+people learn to bypass. The cost is that verification sends candidate secrets to
+third-party APIs, which is a deliberate trade rather than an oversight.
+
+Once the repository is public, GitHub's native scanning and push protection
+become available and should be enabled alongside this rather than instead of it:
+push protection closes the prevention gap, and TruffleHog's verification covers
+detectors GitHub's partner program does not.
 
 ## 9. Exceptions
 
@@ -592,3 +669,4 @@ compliance:
 | v1.3 | 2026-08-18 | Recorded SF-01 as blocked on an undecided deploy target |
 | v1.4 | 2026-08-18 | GitHub Issues as ticket source of truth; added BR-08, PR-09 |
 | v1.5 | 2026-08-18 | Added `active`/`blocked` status values; recorded rulesets as blocked on the GitHub plan (§8.1); marked BR-04, MG-01, PR-04 active |
+| v1.6 | 2026-08-18 | Added §8.2 (release schedule and history exposure) and §8.3 (secret scanning); CM-03 active for detection; public flip recorded as the unblock date for §8.1 |
