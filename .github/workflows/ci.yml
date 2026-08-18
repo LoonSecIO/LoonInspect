@@ -92,11 +92,44 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # The image needs a database to reach `healthy` now, and this job runs it
+      # standalone rather than through compose — so the database is stood up here
+      # explicitly. Without it the app never finishes startup and the job fails on a
+      # timeout that looks like a Docker problem rather than a missing dependency.
+      - name: Start Postgres
+        run: |
+          docker network create smoke-net
+          # Ephemeral and never published to the host; generated rather than literal
+          # so no credential-shaped string lives in the workflow.
+          {
+            echo "PG_SUPERUSER_PASSWORD=$(openssl rand -hex 16)"
+            echo "PG_APP_PASSWORD=$(openssl rand -hex 16)"
+          } >> "$GITHUB_ENV"
+
       - name: Smoke test the image
         run: |
+          docker run -d --name smoke-db --network smoke-net \
+            -e POSTGRES_DB=looninspect \
+            -e POSTGRES_USER=looninspect \
+            -e POSTGRES_PASSWORD="$PG_SUPERUSER_PASSWORD" \
+            -e POSTGRES_APP_USER=looninspect_app \
+            -e POSTGRES_APP_PASSWORD="$PG_APP_PASSWORD" \
+            -v "$PWD/ops/postgres/initdb:/docker-entrypoint-initdb.d:ro" \
+            postgres:17-alpine
+
+          for i in $(seq 1 30); do
+            docker exec smoke-db pg_isready -U looninspect -d looninspect >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec smoke-db pg_isready -U looninspect -d looninspect || {
+            echo "::error::database never became ready"; docker logs smoke-db; exit 1; }
+
           KEY=$(docker run --rm looninspect:ci uv run --frozen --no-dev \
                   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
-          docker run -d --name smoke -e ENCRYPTION_KEY="$KEY" -p 8000:8000 looninspect:ci
+          docker run -d --name smoke --network smoke-net \
+            -e ENCRYPTION_KEY="$KEY" \
+            -e DATABASE_URL="postgresql+asyncpg://looninspect_app:${PG_APP_PASSWORD}@smoke-db:5432/looninspect" \
+            -p 8000:8000 looninspect:ci
           for i in $(seq 1 30); do
             status=$(docker inspect --format '{{.State.Health.Status}}' smoke)
             [ "$status" = healthy ] && break
@@ -106,5 +139,27 @@ jobs:
           echo "health: $status"
           docker exec smoke id | tee /dev/stderr | grep -q 'uid=10001' || {
             echo "::error::image is not running as the non-root looninspect user"; exit 1; }
-          [ "$status" = healthy ] || { docker logs smoke; exit 1; }
+          [ "$status" = healthy ] || { docker logs smoke; docker logs smoke-db; exit 1; }
           curl -fsS http://localhost:8000/api/health
+
+      # A superuser bypasses row-level security without erroring, so "the policies
+      # exist" is not the same claim as "the policies apply". This asserts both: that
+      # the role the app connects as cannot bypass them, and that every tenant-scoped
+      # table carries an enabled, forced policy.
+      - name: Assert tenant isolation is enforceable
+        run: |
+          docker exec smoke-db psql -U looninspect -d looninspect -tAc \
+            "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = 'looninspect_app'" \
+            | grep -qx f || {
+              echo "::error::looninspect_app can bypass RLS — tenant policies would not apply"; exit 1; }
+
+          unforced=$(docker exec smoke-db psql -U looninspect -d looninspect -tAc \
+            "SELECT count(*) FROM pg_class c
+               JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE n.nspname = 'public'
+                AND c.relkind = 'r'
+                AND EXISTS (SELECT 1 FROM pg_attribute a
+                             WHERE a.attrelid = c.oid AND a.attname = 'tenant_id' AND a.attnum > 0)
+                AND NOT (c.relrowsecurity AND c.relforcerowsecurity)")
+          [ "$unforced" = 0 ] || {
+            echo "::error::$unforced table(s) with tenant_id are missing forced row-level security"; exit 1; }

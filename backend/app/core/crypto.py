@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy import String
+from sqlalchemy import Text
 from sqlalchemy.types import TypeDecorator
 
 from app.core.config import settings
@@ -30,7 +30,20 @@ def validate_encryption_key() -> None:
 
 
 class EncryptedString(TypeDecorator):
-    impl = String
+    """Fernet-encrypted at rest, transparent to every reader and writer.
+
+    Stored as TEXT rather than a bounded VARCHAR, and that is not cosmetic. What
+    lands in the column is a Fernet token — base64 of a 57-byte envelope plus the
+    plaintext padded to the AES block size — so a 2048-character secret needs about
+    2830 characters of storage. Under SQLite the declared length was decoration
+    (VARCHAR(n) is not enforced there), so the columns were sized against the
+    plaintext and nothing ever complained. Postgres enforces it, and would have
+    started rejecting the longest credential blobs with `value too long` on write.
+    TEXT has no length to get wrong and costs nothing: Postgres stores TEXT and
+    VARCHAR identically.
+    """
+
+    impl = Text
     cache_ok = True
 
     def process_bind_param(self, value: str | None, dialect) -> str | None:

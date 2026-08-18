@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import uuid
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -13,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from sqlalchemy import delete, or_, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.accounts import router as accounts_router
 from app.api.applications import router as applications_router
@@ -27,17 +30,18 @@ from app.api.tokens import router as tokens_router
 from app.api.webhooks import router as webhooks_router
 from app.core.audit import configure_audit_logging
 from app.core.auth import authenticate
-from app.core.bootstrap import bootstrap_accounts, migrate_legacy_siem_webhook
+from app.core.bootstrap import bootstrap_accounts, bootstrap_tenants, migrate_legacy_siem_webhook
 from app.core.config import settings
 from app.core.context import SYSTEM, reset_actor, set_actor
 from app.core.crypto import validate_encryption_key
-from app.core.database import async_session_factory, init_db
+from app.core.database import init_db, session_for_tenant, unscoped_session
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
 from app.core.outbox import deliver_pending, fan_out_pending, purge_delivered_events
+from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
 from app.mdm.patch.jamf_catalog import sync_catalog
 from app.mdm.service import sync_connection
-from app.models.schema import MdmConnection, MdmSyncState, UserSession
+from app.models.schema import MdmConnection, MdmSyncState, Tenant, UserSession
 from app.schemas.payload import SyncStatus
 
 # Before anything else in the process emits a line, so migration output and startup
@@ -50,46 +54,91 @@ logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler(timezone=settings.sync_timezone)
 
 
-async def nightly_sync_sweep() -> None:
-    # Scheduler jobs have no requesting user, so they run as the system actor rather
-    # than falling through to anonymous.
+async def operational_tenant_ids() -> list[uuid.UUID]:
+    """Every tenant a background job has work to do for.
+
+    Scheduler jobs have no request to inherit a tenant from, and row-level security
+    gives them no way to sweep all tenants in one query — which is the point, not a
+    limitation to work around. They enumerate here and then do one tenant's work per
+    session, so a job that forgets to is a job that fails rather than one that
+    quietly crosses a boundary.
+    """
+    async with unscoped_session() as db:
+        result = await db.execute(
+            select(Tenant.id).where(Tenant.kind == "operational").order_by(Tenant.slug)
+        )
+        return list(result.scalars().all())
+
+
+@asynccontextmanager
+async def tenant_job(tenant_id: uuid.UUID) -> AsyncGenerator[AsyncSession, None]:
+    """One tenant's slice of a scheduler job.
+
+    Establishes both halves of the job's identity: the system actor, since there is no
+    requesting user to attribute the work to, and the tenant, which the session then
+    pushes into the Postgres GUC that every RLS policy reads.
+    """
     actor_token = set_actor(SYSTEM)
+    tenant_token = set_tenant_id(tenant_id)
     try:
-        async with async_session_factory() as db:
-            result = await db.execute(select(MdmConnection).where(MdmConnection.is_active.is_(True)))
-            connections = result.scalars().all()
-
-            logger.info("sync sweep started", extra={"connection_count": len(connections)})
-
-            results = [await sync_connection(db, connection) for connection in connections]
-            failed = [result for result in results if not result.ok]
-
-            # One bad credential no longer takes the run down — sync_connection absorbs
-            # per-connection failures so every remaining connection still gets swept.
-            logger.info(
-                "sync sweep finished",
-                extra={
-                    "connections": len(results),
-                    "succeeded": sum(1 for r in results if r.ok and not r.skipped),
-                    "skipped": sum(1 for r in results if r.skipped),
-                    "failed": len(failed),
-                    "devices": sum(r.device_count for r in results),
-                },
-            )
-
-            if failed:
-                logger.warning(
-                    "some connections failed to sync",
-                    extra={"connection_ids": [r.connection_id for r in failed]},
-                )
+        async with session_for_tenant(tenant_id) as db:
+            yield db
     finally:
+        reset_tenant_id(tenant_token)
         reset_actor(actor_token)
 
 
+async def _sweep_tenant(db: AsyncSession, tenant_id: uuid.UUID) -> None:
+    result = await db.execute(select(MdmConnection).where(MdmConnection.is_active.is_(True)))
+    connections = result.scalars().all()
+    if not connections:
+        return
+
+    logger.info(
+        "sync sweep started",
+        extra={"tenant_id": str(tenant_id), "connection_count": len(connections)},
+    )
+
+    results = [await sync_connection(db, connection) for connection in connections]
+    failed = [result for result in results if not result.ok]
+
+    # One bad credential no longer takes the run down — sync_connection absorbs
+    # per-connection failures so every remaining connection still gets swept.
+    logger.info(
+        "sync sweep finished",
+        extra={
+            "tenant_id": str(tenant_id),
+            "connections": len(results),
+            "succeeded": sum(1 for r in results if r.ok and not r.skipped),
+            "skipped": sum(1 for r in results if r.skipped),
+            "failed": len(failed),
+            "devices": sum(r.device_count for r in results),
+        },
+    )
+
+    if failed:
+        logger.warning(
+            "some connections failed to sync",
+            extra={
+                "tenant_id": str(tenant_id),
+                "connection_ids": [r.connection_id for r in failed],
+            },
+        )
+
+
+async def nightly_sync_sweep() -> None:
+    for tenant_id in await operational_tenant_ids():
+        async with tenant_job(tenant_id) as db:
+            await _sweep_tenant(db, tenant_id)
+
+
 async def hourly_jamf_patch_sync() -> None:
+    # The one job with no tenant: the Jamf patch catalog is the global app corpus,
+    # deliberately outside tenancy because it carries no customer data and no
+    # per-tenant credentials. An unscoped session can reach it and nothing else.
     actor_token = set_actor(SYSTEM)
     try:
-        async with async_session_factory() as db:
+        async with unscoped_session() as db:
             await sync_catalog(db)
         logger.info("jamf patch catalog synced")
     finally:
@@ -99,12 +148,12 @@ async def hourly_jamf_patch_sync() -> None:
 async def hourly_session_cleanup() -> None:
     """Expired and revoked sessions are dead weight once they're past use — without
     this the table grows for the life of the deployment."""
-    actor_token = set_actor(SYSTEM)
-    try:
-        # A day's grace after expiry, so a session row still exists long enough to be
-        # useful when investigating "I was logged out, what happened?".
-        cutoff = datetime.now(timezone.utc) - timedelta(days=1)
-        async with async_session_factory() as db:
+    # A day's grace after expiry, so a session row still exists long enough to be
+    # useful when investigating "I was logged out, what happened?".
+    cutoff = datetime.now(timezone.utc) - timedelta(days=1)
+
+    for tenant_id in await operational_tenant_ids():
+        async with tenant_job(tenant_id) as db:
             result = await db.execute(
                 delete(UserSession).where(
                     or_(
@@ -115,10 +164,11 @@ async def hourly_session_cleanup() -> None:
             )
             await db.commit()
 
-        if result.rowcount:
-            logger.info("stale sessions purged", extra={"count": result.rowcount})
-    finally:
-        reset_actor(actor_token)
+            if result.rowcount:
+                logger.info(
+                    "stale sessions purged",
+                    extra={"tenant_id": str(tenant_id), "count": result.rowcount},
+                )
 
 
 async def outbox_worker_tick() -> None:
@@ -128,27 +178,30 @@ async def outbox_worker_tick() -> None:
     down a device sync, and (once it exists) can never delay an inbound webhook's ACK
     to its sender.
     """
-    actor_token = set_actor(SYSTEM)
-    try:
-        async with async_session_factory() as db:
+    # Per tenant, and that is the load-bearing detail. fan_out_pending() is the one
+    # place that knows which destinations exist, so it is also the one place a missing
+    # tenant predicate would deliver tenant A's device inventory to tenant B's SIEM —
+    # silently, outbound, to a third party, with no API request involved. The
+    # predicate is the RLS policy on `destinations`, which only applies to a session
+    # that named a tenant, which is what this loop does.
+    for tenant_id in await operational_tenant_ids():
+        async with tenant_job(tenant_id) as db:
             await fan_out_pending(db)
             await deliver_pending(db)
-    finally:
-        reset_actor(actor_token)
 
 
 async def outbox_cleanup() -> None:
     """Purges outbox events whose deliveries are all terminal and past retention.
     Without this the table grows without bound once events are continuous rather than
     nightly-batched."""
-    actor_token = set_actor(SYSTEM)
-    try:
-        async with async_session_factory() as db:
+    for tenant_id in await operational_tenant_ids():
+        async with tenant_job(tenant_id) as db:
             purged = await purge_delivered_events(db, settings.event_outbox_retention_days)
         if purged:
-            logger.info("purged old outbox events", extra={"count": purged})
-    finally:
-        reset_actor(actor_token)
+            logger.info(
+                "purged old outbox events",
+                extra={"tenant_id": str(tenant_id), "count": purged},
+            )
 
 
 @asynccontextmanager
@@ -166,8 +219,9 @@ async def lifespan(app: FastAPI):
         extra={
             "app": settings.app_name,
             "debug": settings.debug,
-            # Dialect only. A non-SQLite DATABASE_URL carries a password, and startup
-            # banners are exactly where connection strings get copied out of.
+            # Dialect only. The DATABASE_URL carries a password now that the
+            # database is a separate service, and startup banners are exactly where
+            # connection strings get copied out of.
             "database_dialect": settings.database_url.split("://", 1)[0],
             "log_format": settings.resolved_log_format,
             "scheduler_enabled": settings.scheduler_enabled,
@@ -179,24 +233,36 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("database ready, migrations applied")
 
-    async with async_session_factory() as db:
+    # Before anything else touches the database: every other table's row-level
+    # security compares against a tenant id, and these are the rows that make one
+    # exist.
+    async with unscoped_session() as db:
+        await bootstrap_tenants(db)
+
+    # First-run setup is a property of the deployment rather than of a tenant — there
+    # is one claim token and one first administrator — so it runs against the single
+    # operational tenant rather than the loop below. #30's management surface is what
+    # turns this into a per-tenant action.
+    async with tenant_job(OPERATIONAL_TENANT_ID) as db:
         await bootstrap_accounts(db)
         await migrate_legacy_siem_webhook(db)
 
-        # A process that died mid-sync leaves its connection marked 'syncing', and the
-        # manual trigger refuses to start while one is in flight — so without this the
-        # only recovery from a crash or a restart is editing the database by hand.
-        stuck = await db.execute(
-            update(MdmSyncState)
-            .where(MdmSyncState.status == SyncStatus.syncing.value)
-            .values(status=SyncStatus.failed.value)
-        )
-        await db.commit()
-        if stuck.rowcount:
-            logger.warning(
-                "reset connections left mid-sync by a previous run",
-                extra={"count": stuck.rowcount},
+    # A process that died mid-sync leaves its connection marked 'syncing', and the
+    # manual trigger refuses to start while one is in flight — so without this the
+    # only recovery from a crash or a restart is editing the database by hand.
+    for tenant_id in await operational_tenant_ids():
+        async with tenant_job(tenant_id) as db:
+            stuck = await db.execute(
+                update(MdmSyncState)
+                .where(MdmSyncState.status == SyncStatus.syncing.value)
+                .values(status=SyncStatus.failed.value)
             )
+            await db.commit()
+            if stuck.rowcount:
+                logger.warning(
+                    "reset connections left mid-sync by a previous run",
+                    extra={"tenant_id": str(tenant_id), "count": stuck.rowcount},
+                )
 
     if settings.scheduler_enabled:
         scheduler.add_job(
@@ -315,9 +381,9 @@ def _resolve_static_asset(full_path: str) -> Path | None:
     The containment check is the whole point. `static_dir / full_path` happily escapes
     the directory when full_path contains `..` (or is absolute, since that discards the
     left operand entirely), which turns this route into an unauthenticated read of any
-    file the process can open — including the SQLite database and the audit log. The
-    path is resolved first so `..` segments and symlinks are collapsed before the
-    comparison, rather than pattern-matching on the raw string.
+    file the process can open — the audit log, a mounted TLS key, the container's own
+    environment. The path is resolved first so `..` segments and symlinks are collapsed
+    before the comparison, rather than pattern-matching on the raw string.
     """
     if not full_path:
         return None

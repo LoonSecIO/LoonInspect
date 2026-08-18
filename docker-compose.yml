@@ -1,10 +1,47 @@
 services:
+  # "In-container Postgres" read as "in the bundle we ship" — a second service rather
+  # than a supervised process inside the application image. The alternative is one
+  # literal container, but it means a process supervisor in an image that has a single
+  # CMD today, and it breaks the non-root story: the app runs as uid 10001 and
+  # Postgres insists on owning its data directory. This keeps both images
+  # single-purpose. Nothing is published to the host: the database is reachable only
+  # over the compose network.
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: looninspect
+      # The bootstrap superuser. Not what the application connects as — see the init
+      # script — because a superuser bypasses row-level security silently, which would
+      # turn every tenant isolation policy into decoration.
+      POSTGRES_USER: looninspect
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env — see backend/.env.example}
+      # Read by ops/postgres/initdb/10-app-role.sh on first boot only.
+      POSTGRES_APP_USER: looninspect_app
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?set POSTGRES_APP_PASSWORD in .env — see backend/.env.example}
+    volumes:
+      - looninspect-db:/var/lib/postgresql/data
+      # Runs once, against an empty data directory. Changing it later has no effect
+      # without also removing the volume.
+      - ./ops/postgres/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # -U/-d matter: bare pg_isready reports ready during initdb's own temporary
+      # server, which is exactly the window this is meant to exclude.
+      test: ["CMD-SHELL", "pg_isready -U looninspect -d looninspect"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    restart: unless-stopped
+
   app:
     build: .
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: sqlite+aiosqlite:////app/data/looninspect.db
+      DATABASE_URL: postgresql+asyncpg://looninspect_app:${POSTGRES_APP_PASSWORD}@db:5432/looninspect
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env — see backend/.env.example}
       SIEM_WEBHOOK_URL: ${SIEM_WEBHOOK_URL:-}
       # Optional non-interactive bootstrap: set both to skip the first-run claim-token
@@ -27,7 +64,11 @@ services:
       # sign-in silently.
       SECURE_COOKIES: ${SECURE_COOKIES:-true}
     volumes:
+      # Audit log and TLS material. Application state lives in the database now, not
+      # here.
       - looninspect-data:/app/data
+    restart: unless-stopped
 
 volumes:
   looninspect-data:
+  looninspect-db:

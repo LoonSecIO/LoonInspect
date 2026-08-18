@@ -212,8 +212,11 @@ Three things do **not** come along with a worktree, because they are gitignored,
 and each session needs its own:
 
 - `.env` — copy from the primary checkout and adjust.
-- `backend/looninspect.db` — a separate SQLite file per worktree; sharing one
-  produces migration and fixture interference that is very hard to attribute.
+- **A distinct compose project name and database volume.** The database is a
+  container now, not a file, so two worktrees running `docker compose up` from
+  the same project name attach to the same volume — producing migration and
+  fixture interference that is very hard to attribute. Set `COMPOSE_PROJECT_NAME`
+  in the worktree's `.env` (it namespaces the volumes as well as the containers).
 - **A distinct backend port.** The default 8000 is baked into
   `.claude/launch.json` and the permission allowlist; a second session on 8000
   fails at bind, usually silently from the agent's perspective.
@@ -315,7 +318,7 @@ becomes enforceable as a required approval once a second maintainer exists.
 | ID | Control | Enforcement | Severity | Status |
 | --- | --- | --- | --- | --- |
 | AG-01 | Concurrent agent sessions use separate worktrees on separate branches | `review` | manual | proposed |
-| AG-02 | Each worktree has its own `.env`, database file, and backend port | `review` | manual | proposed |
+| AG-02 | Each worktree has its own `.env`, compose project name, and backend port | `review` | manual | proposed |
 | AG-03 | No agent session commits directly to `main` | `ruleset` | block | blocked |
 
 ---

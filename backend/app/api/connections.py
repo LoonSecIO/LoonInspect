@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import datetime, timezone
 
 import httpx
@@ -13,8 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import AuditAction, audit
 from app.core.auth import Principal, current_principal, require
 from app.core.context import Actor, reset_actor, set_actor
-from app.core.database import async_session_factory, get_db
+from app.core.database import get_db, session_for_tenant
 from app.core.permissions import Permission
+from app.core.tenancy import get_tenant_id, reset_tenant_id, set_tenant_id
 from app.mdm.credentials import CREDENTIAL_SCHEMAS, fingerprint_field
 from app.mdm.jamf.client import JamfClient
 from app.mdm.service import set_sync_status, sync_connection
@@ -354,22 +356,30 @@ async def update_connection(
     return _to_out(connection)
 
 
-async def _run_connection_sync(connection_id: int, actor: Actor) -> None:
+async def _run_connection_sync(connection_id: int, actor: Actor, tenant_id: uuid.UUID) -> None:
     """Background worker for a manually triggered sync.
 
     Runs outside the request, so it opens its own session — the request's is closed by
     the time this executes — and re-establishes the triggering actor, which otherwise
     would not survive into the background task's context and would leave the sync's
     audit trail attributed to nobody.
+
+    The tenant is passed in for the same reason and carries more weight: the request's
+    context is gone by now, so a session opened here would reach the database with no
+    tenant bound and every query against a tenant-scoped table would fail. Taking it
+    as an argument means the tenant the sync runs as is the tenant that asked for it,
+    fixed at enqueue time.
     """
     token = set_actor(actor)
+    tenant_token = set_tenant_id(tenant_id)
     try:
-        async with async_session_factory() as db:
+        async with session_for_tenant(tenant_id) as db:
             connection = await db.get(MdmConnection, connection_id)
             if connection is None:
                 return
             await sync_connection(db, connection)
     finally:
+        reset_tenant_id(tenant_token)
         reset_actor(token)
 
 
@@ -419,6 +429,7 @@ async def trigger_sync(
         _run_connection_sync,
         connection.id,
         Actor(type="account", id=principal.account.id, label=principal.account.email),
+        get_tenant_id(),
     )
 
     return MdmSyncTriggerResult(connection_id=connection.id, status=SyncStatus.syncing.value)

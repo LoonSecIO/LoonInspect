@@ -10,6 +10,7 @@ from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.context import ClientInfo, reset_client, reset_request_id, set_client, set_request_id
+from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
 
 logger = logging.getLogger("app.request")
 
@@ -76,6 +77,15 @@ class RequestContextMiddleware:
         request_id = _resolve_request_id(scope)
         token = set_request_id(request_id)
         client_token = set_client(_resolve_client(scope))
+        # Bound here, once, before anything can open a database session — including
+        # the global authenticate() dependency, which queries tenant-scoped tables
+        # itself and so cannot be the thing that establishes the tenant.
+        #
+        # v0 has one operational tenant and no per-session binding yet: #30 resolves
+        # the tenant from UserSession at authentication and sets it here instead.
+        # Everything downstream already reads it from context rather than choosing
+        # one, so that change lands in this line and nowhere else.
+        tenant_token = set_tenant_id(OPERATIONAL_TENANT_ID)
         started = time.perf_counter()
         status_code = 500
 
@@ -113,5 +123,6 @@ class RequestContextMiddleware:
         else:
             logger.log(_level_for(path, status_code), "request", extra=fields())
         finally:
+            reset_tenant_id(tenant_token)
             reset_client(client_token)
             reset_request_id(token)
