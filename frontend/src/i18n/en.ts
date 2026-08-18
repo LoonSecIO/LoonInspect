@@ -34,6 +34,7 @@ export const en = {
     invalidClaimToken: "That claim token is not valid.",
     setupAlreadyDone: "This instance has already been set up. Sign in instead.",
     passwordTooShort: "Password must be at least 12 characters.",
+    validationFailed: "Some of those details weren't accepted. Check the form and try again.",
     noAccessTitle: "You don't have access to this page",
     noAccessDescription:
       "Your account's role doesn't include permission for this area. Ask an administrator if you need it."

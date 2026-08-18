@@ -37,6 +37,15 @@ export function SetupPage() {
     setSubmitting(true);
     setError(null);
 
+    // The password field carries minLength, so the browser normally catches this
+    // before submit. Checking here too keeps the specific message available when
+    // native validation is bypassed.
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setError(t.auth.passwordTooShort);
+      setSubmitting(false);
+      return;
+    }
+
     try {
       await completeSetup({ claimToken, email, displayName, password });
       navigate("/", { replace: true });
@@ -46,7 +55,9 @@ export function SetupPage() {
       } else if (caught instanceof ApiError && caught.status === 409) {
         setError(t.auth.setupAlreadyDone);
       } else if (caught instanceof ApiError && caught.status === 422) {
-        setError(t.auth.passwordTooShort);
+        // Any field can fail server-side validation here, so report what the server
+        // actually rejected instead of naming a field at random.
+        setError(caught.detail ?? t.auth.validationFailed);
       } else {
         setError(t.auth.genericError);
       }

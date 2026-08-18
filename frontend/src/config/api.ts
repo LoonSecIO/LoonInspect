@@ -65,7 +65,22 @@ export async function apiRequest<TResponse>(
     let detail: string | null = null;
     try {
       const body = await response.json();
-      if (body && typeof body.detail === "string") detail = body.detail;
+      if (body && typeof body.detail === "string") {
+        detail = body.detail;
+      } else if (Array.isArray(body?.detail)) {
+        // FastAPI reports request validation failures as a list of
+        // {loc, msg, type} objects rather than a string. Without this branch every
+        // 422 arrives with a null detail, leaving callers nothing to show but a
+        // guess at which field was actually rejected.
+        const messages = body.detail
+          .map((item: unknown) =>
+            item && typeof (item as { msg?: unknown }).msg === "string"
+              ? (item as { msg: string }).msg
+              : null
+          )
+          .filter((msg: string | null): msg is string => msg !== null);
+        if (messages.length > 0) detail = messages.join(" ");
+      }
     } catch {
       // Non-JSON error body; the status alone is enough to act on.
     }
