@@ -539,33 +539,55 @@ same way. The definition and the script are complete and correct; nothing in
 them needs revisiting when the constraint lifts, which is why the affected
 controls are `blocked` rather than `proposed`.
 
-**This resolves itself.** The repository is planned to go public around
-**2026-09-07**, preceded by a deliberate cleanup. Every blocked control here
-becomes available at no cost on that date, because the constraint is the
-combination of *private* and *free* rather than either alone. Paying for GitHub
-Team to unblock rulesets sooner would buy roughly three weeks and would not
-cover secret scanning, which needs Advanced Security on top; it is not worth it.
+**This resolves itself.** The repository goes public during the release
+schedule in §8.2. Every blocked control here becomes available at no cost at the
+flip, because the constraint is the combination of *private* and *free* rather
+than either alone. Paying for GitHub Team to unblock rulesets sooner would buy
+about four weeks and would not cover secret scanning, which needs Advanced
+Security on top; it is not worth it.
 
 The controls are therefore `blocked` in the same sense SF-01 is: agreed,
 implemented, waiting on something with a known date. Running
-`apply-repo-config.sh` again after the flip is the whole of the remaining work.
+`apply-repo-config.sh` again after the flip is the whole of the remaining work,
+and §8.2 places it in the quiet window rather than at the announcement.
 
 What is enforced today: BR-04 and MG-01 through repository settings, and PR-04
 through the CI workflow. Everything else in step 1 is `blocked`.
 
-### 8.2 Going public is a history event, not a state change
+### 8.2 The release schedule
 
-Publishing exposes every ref the remote holds — all branches, and `refs/pull/*`
-for every pull request ever opened, including those whose branches were deleted.
-A credential committed once and removed in the next commit is still published.
-This is the failure mode that cannot be fixed after the fact: rotation is the
-only remedy, and it has to happen before the flip rather than after.
+Four phases, of which only the last has a fixed date:
+
+| Phase | Ends | What it is |
+| --- | --- | --- |
+| Feature work | ~2026-09-07 | Ordinary development |
+| Cleanup | ~2026-09-15 | No new features; the work in the pre-publication checklist |
+| Quiet public | before 2026-09-17 | Repository made public, deliberately unannounced |
+| Announcement | **2026-09-17** | Fixed date |
+
+**The announcement date is fixed and the flip date is not**, so schedule
+pressure lands on cleanup. When cleanup runs long the correct response is to
+shorten the quiet window, never to skip an item in it — the checklist exists
+because those items cannot be done after publication.
+
+**The quiet window is a control, not a gap.** It is the only period in which the
+repository is public but not yet attracting attention, so a mistake found then
+is cheap. Everything that needs the repository to be public — re-running
+`apply-repo-config.sh`, enabling native secret scanning and push protection,
+confirming the ruleset was actually accepted — belongs in that window, not after
+the announcement. Do not shorten it to nothing.
+
+**Publishing is a history event, not a state change.** It exposes every ref the
+remote holds — all branches, and `refs/pull/*` for every pull request ever
+opened, including those whose branches were deleted. A credential committed once
+and removed in the next commit is still published. This is the failure mode that
+cannot be fixed after the fact: rotation is the only remedy, and it has to
+happen before the flip rather than after.
 
 CM-03's scanner (§8.3) is what makes this checkable. A full-history scan of a
 mirror clone on 2026-08-18 found **0 verified secrets across all 20 refs**, and
 `.env` has never been committed on any ref. That is the baseline; it must be
-re-established immediately before the repository is made public, not inherited
-from this document.
+re-established during cleanup, not inherited from this document.
 
 ```bash
 git clone --mirror https://github.com/LoonSecIO/LoonInspect.git audit.git
@@ -647,4 +669,4 @@ compliance:
 | v1.3 | 2026-08-18 | Recorded SF-01 as blocked on an undecided deploy target |
 | v1.4 | 2026-08-18 | GitHub Issues as ticket source of truth; added BR-08, PR-09 |
 | v1.5 | 2026-08-18 | Added `active`/`blocked` status values; recorded rulesets as blocked on the GitHub plan (§8.1); marked BR-04, MG-01, PR-04 active |
-| v1.6 | 2026-08-18 | Recorded the ~2026-09-07 public flip as the unblock date; added §8.2 (history exposure) and §8.3 (secret scanning); CM-03 active for detection |
+| v1.6 | 2026-08-18 | Added §8.2 (release schedule and history exposure) and §8.3 (secret scanning); CM-03 active for detection; public flip recorded as the unblock date for §8.1 |
