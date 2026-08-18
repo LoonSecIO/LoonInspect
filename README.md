@@ -25,7 +25,7 @@ LoonInspect is designed around a **"Diff, Stream, Commit"** pipeline to keep loc
 
 1. **Ingest:** Receives a webhook, chron, or event system.
 2. **Fingerprint:** Deduplicates raw app strings into cryptographic `FullHashes`.
-3. **Analyze:** Checks hashes against the local SQLite database to determine what changed.
+3. **Analyze:** Checks hashes against the local Postgres database to determine what changed.
 4. **Enrich (Optional):** Sends unseen hashes to the LoonVD AWS Gateway to retrieve real-time EPSS scores, CVE mappings, and patch manifests. Whether you use Munki, Jamf's App Installers, or other patching service.
 5. **Stream:** Emits the calculated delta directly to your SIEM for logging, compliance, and eventing.
 
@@ -33,7 +33,10 @@ LoonInspect is designed around a **"Diff, Stream, Commit"** pipeline to keep loc
 
 ## 🛠 Quick Start (Docker Compose)
 
-LoonInspect is deployed as a single, multi-architecture container containing both the React frontend and the FastAPI backend.
+LoonInspect is deployed as two containers: the application — one multi-architecture image
+carrying both the React frontend and the FastAPI backend — and a Postgres alongside it.
+Both are in the bundle; nothing external is required, and the database port is never
+published to the host.
 
 ```text
 LoonInspect/
@@ -41,6 +44,8 @@ LoonInspect/
 │   └── pyproject.toml
 ├── frontend/
 │   └── package.json
+├── ops/
+│   └── postgres/initdb/     # creates the non-superuser role the app connects as
 ├── .gitignore
 ├── docker-compose.yml
 └── Dockerfile
@@ -64,6 +69,20 @@ Generate an `ENCRYPTION_KEY` and add it to `.env` (used to encrypt MDM connectio
 ```bash
 python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
+
+Then set the two database passwords, which are also required. Hex rather than base64:
+these end up inside a connection URL, where a `@` or `/` truncates the string instead of
+failing.
+
+```bash
+printf 'POSTGRES_PASSWORD=%s\nPOSTGRES_APP_PASSWORD=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" >> .env
+```
+
+Two of them because the application deliberately does not connect as a superuser: a
+superuser bypasses row-level security silently, which would leave every tenant isolation
+policy attached and enforcing nothing. `POSTGRES_PASSWORD` creates the database;
+`POSTGRES_APP_PASSWORD` belongs to `looninspect_app`, which the app actually uses. Both
+are read once, when the database volume is first created.
 
 A SIEM webhook URL is optional for a first run. MDM connections (Jamf, SimpleMDM, etc.) aren't configured via `.env` — add them from the app itself once it's running, at `/api/mdm/connections` or the Settings page.
 
@@ -106,8 +125,8 @@ two halves.
 
 **At rest.** MDM credentials, webhook secrets, and license keys are encrypted with
 Fernet (AES-128-CBC + HMAC) using the `ENCRYPTION_KEY` you generate at install. The
-database itself is plain SQLite on the data volume — encrypt the volume if your threat
-model needs that.
+database itself is an unencrypted Postgres on its own volume — encrypt the volume if
+your threat model needs that.
 
 **In transit.** Configurable, because deployments differ:
 

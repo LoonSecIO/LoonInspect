@@ -41,6 +41,10 @@ RUN uv sync --frozen --no-install-project --no-dev
 COPY backend/ ./
 RUN uv sync --frozen --no-dev
 
+# Lands inside the `app` package, which uv installed as an editable pointer to /app —
+# so the built SPA is picked up from the source tree with no reinstall. It does change
+# the directory uv hashed when it installed the project, which is why both `uv run`
+# invocations below pass --no-sync.
 COPY --from=frontend-build /app/frontend/dist ./app/static
 
 # Run as a non-root account. /app/data is created here so a fresh named volume
@@ -56,8 +60,11 @@ EXPOSE 8000
 
 # TLS_MODE decides the scheme the server binds with, so the probe follows it.
 # A self-signed certificate is expected here, hence the unverified context.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD ["uv", "run", "--frozen", "--no-dev", "python", "-c", \
+#
+# --start-period is 45s rather than 20s: the app now waits for a separate database
+# container, and a first boot has to run migrations against an empty one.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
+    CMD ["uv", "run", "--frozen", "--no-sync", "--no-dev", "python", "-c", \
          "import os,ssl,urllib.request;\
 m=os.environ.get('TLS_MODE','off');\
 s='https' if m!='off' else 'http';\
@@ -67,4 +74,12 @@ urllib.request.urlopen(f'{s}://127.0.0.1:{p}/api/health',timeout=4,context=c).re
 
 # app.serve rather than `fastapi run`: it decides TLS mode before binding and gets
 # logging configured before uvicorn's first line. See backend/app/serve.py.
-CMD ["uv", "run", "--frozen", "--no-dev", "python", "-m", "app.serve"]
+#
+# --no-sync is load-bearing, not tidiness. Without it `uv run` revalidates the project
+# on every container start, decides the editable install is stale because ./app/static
+# was copied in after `uv sync`, and tries to reinstall it — which needs hatchling from
+# `build-system.requires`, which needs PyPI. A container that reaches for the network
+# to start is a container that will not start on a segmented network, behind a proxy,
+# or in an air gap, and it fails at boot rather than at build. The environment in this
+# image is already complete and frozen; this says so.
+CMD ["uv", "run", "--frozen", "--no-sync", "--no-dev", "python", "-m", "app.serve"]

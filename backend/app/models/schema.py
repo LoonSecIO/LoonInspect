@@ -3,11 +3,13 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, Uuid, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.crypto import EncryptedString
 from app.core.database import Base
+from app.core.tenancy import TENANT_GUC
 
 
 def _utcnow() -> datetime:
@@ -18,11 +20,59 @@ def _uuid() -> str:
     return str(uuid.uuid4())
 
 
+def tenant_id_column(**kwargs) -> Mapped[uuid.UUID]:
+    """The owning tenant, on every table that holds customer data.
+
+    Never written by application code, and deliberately given no Python-side default:
+    the column default reads the per-transaction `looninspect.tenant_id` GUC that
+    app.core.database binds from the request or job context, and each table's RLS
+    policy re-checks the result on write. A tenant the database stamps from the
+    session it was bound to cannot be forgotten at a call site, cannot be overridden
+    by a request body, and does not need threading through a service signature — which
+    is what makes "injected via context object, never inferred" hold all the way down
+    to storage rather than only at the API edge.
+    """
+    return mapped_column(
+        Uuid,
+        ForeignKey("tenants.id", ondelete="RESTRICT"),
+        nullable=False,
+        server_default=text(f"current_setting('{TENANT_GUC}')::uuid"),
+        **kwargs,
+    )
+
+
+class Tenant(Base):
+    """An isolation boundary. Two exist from install time — a management-only root and
+    one operational child — and everything else in this file belongs to one of them.
+
+    Outside its own tenancy: this is the table that says which tenants exist, so
+    scoping it to the tenant asking would make it unreadable. Nothing here is customer
+    data; the rows are created at bootstrap and read to resolve a name.
+    """
+
+    __tablename__ = "tenants"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(255))
+
+    # root | operational. Kept as data rather than inferred from the id so a second
+    # operational tenant is a row insert, not a code change.
+    kind: Mapped[str] = mapped_column(String(16), default="operational", index=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
 class MdmConnection(Base):
     __tablename__ = "mdm_connections"
+    # Per-tenant rather than global: two tenants both calling their connection
+    # "Production" is the normal case, not a conflict.
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_mdm_connection_tenant_name"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
     provider: Mapped[str] = mapped_column(String(32), index=True)
     base_url: Mapped[str] = mapped_column(String(512))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -30,11 +80,11 @@ class MdmConnection(Base):
     # Provider-specific auth (Jamf's client_id/client_secret, SimpleMDM's api_key, etc.) —
     # shape is defined per-provider in app.mdm.credentials, stored as one JSON blob so
     # adding a new provider's auth fields never requires a schema migration.
-    credentials_encrypted: Mapped[str | None] = mapped_column(EncryptedString(2048), nullable=True)
-    webhook_secret_encrypted: Mapped[str | None] = mapped_column(EncryptedString(1024), nullable=True)
+    credentials_encrypted: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
+    webhook_secret_encrypted: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
 
     patch_management_provider: Mapped[str] = mapped_column(String(16), default="none")
-    loonsecio_license_key_encrypted: Mapped[str | None] = mapped_column(EncryptedString(1024), nullable=True)
+    loonsecio_license_key_encrypted: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
     loonsecio_data_sharing_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
 
     user_agent_override: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -63,6 +113,7 @@ class Device(Base):
     __table_args__ = (UniqueConstraint("mdm_connection_id", "external_id", name="uq_device_connection_external_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     mdm_connection_id: Mapped[int | None] = mapped_column(ForeignKey("mdm_connections.id"), index=True)
     mdm_provider: Mapped[str] = mapped_column(String(32), index=True)
     external_id: Mapped[str] = mapped_column(String(255), index=True)
@@ -93,6 +144,7 @@ class DeviceExtensionAttribute(Base):
     __table_args__ = (UniqueConstraint("device_id", "key", name="uq_device_extension_attribute_key"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     device_id: Mapped[int] = mapped_column(ForeignKey("devices.id"), index=True)
     key: Mapped[str] = mapped_column(String(255), index=True)
     value: Mapped[str | None] = mapped_column(String(1024), nullable=True, index=True)
@@ -104,6 +156,7 @@ class InstalledApp(Base):
     __tablename__ = "installed_apps"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     device_id: Mapped[int] = mapped_column(ForeignKey("devices.id"))
     name: Mapped[str] = mapped_column(String(255))
     bundle_id: Mapped[str] = mapped_column(String(255), index=True)
@@ -131,6 +184,7 @@ class MdmSyncState(Base):
     __tablename__ = "mdm_sync_state"
 
     mdm_connection_id: Mapped[int] = mapped_column(ForeignKey("mdm_connections.id"), primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     provider: Mapped[str] = mapped_column(String(32), index=True)
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="idle")
@@ -151,8 +205,14 @@ class JamfPatchTitle(Base):
     bundle_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     current_version: Mapped[str] = mapped_column(String(64))
     last_modified: Mapped[str] = mapped_column(String(64))
-    patches: Mapped[list] = mapped_column(JSON, default=list)
-    requirements: Mapped[list] = mapped_column(JSON, default=list)
+    # JSONB, not JSON. `requirements` carries the Jamf Patch matching criteria and
+    # matching against it is a query — bundle_id above only narrows the candidates.
+    # JSON would store the raw text and force every row to be parsed per predicate;
+    # JSONB is parsed once on write and is the only one of the two that can be
+    # indexed. `patches` follows it because nothing here depends on key order or
+    # whitespace being preserved, which is the sole reason to prefer JSON.
+    patches: Mapped[list] = mapped_column(JSONB, default=list)
+    requirements: Mapped[list] = mapped_column(JSONB, default=list)
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
@@ -163,6 +223,9 @@ class FeatureFlag(Base):
 
     __tablename__ = "feature_flags"
 
+    # Part of the primary key rather than a plain column: a flag is a per-tenant
+    # override, so the same key has to be able to hold a different value in each.
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(primary_key=True)
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
@@ -181,19 +244,30 @@ class Account(Base):
     """
 
     __tablename__ = "accounts"
+    # Identity is scoped to the tenant, not global to the deployment. #30 leaves this
+    # open; per-tenant is the answer that does not create a cross-tenant oracle — a
+    # global unique index rejects a signup with an email already used in *another*
+    # tenant, and that rejection is itself a disclosure no RLS policy can take back.
+    # The cost is that one human administering two tenants holds two accounts, which
+    # is the correct shape anyway while roles are granted per tenant.
     __table_args__ = (
-        UniqueConstraint("external_source", "external_id", name="uq_account_external_identity"),
+        UniqueConstraint("tenant_id", "email", name="uq_account_tenant_email"),
+        UniqueConstraint("tenant_id", "username", name="uq_account_tenant_username"),
+        UniqueConstraint(
+            "tenant_id", "external_source", "external_id", name="uq_account_external_identity"
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    email: Mapped[str] = mapped_column(String(320), index=True)
     display_name: Mapped[str] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(16), default="active", index=True)
 
     # SCIM's required unique login identifier. Usually the email, but an IdP can map it
     # to samAccountName or a UPN, so it can't be assumed equal. Unused until SCIM lands;
     # carried now because backfilling it after duplicate accounts appear is far worse.
-    username: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True, index=True)
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
 
     # Keeps local password login even under SSO enforcement. Every authentication by
     # one of these is logged at WARNING so the exemption can't be used quietly.
@@ -230,9 +304,14 @@ class AuthIdentity(Base):
     """
 
     __tablename__ = "auth_identities"
-    __table_args__ = (UniqueConstraint("provider", "subject", name="uq_auth_identity_provider_subject"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "provider", "subject", name="uq_auth_identity_provider_subject"
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), index=True)
 
     provider: Mapped[str] = mapped_column(String(64), default="local")
@@ -261,6 +340,7 @@ class AccountRole(Base):
 
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), primary_key=True)
     role: Mapped[str] = mapped_column(String(32), primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     source: Mapped[str] = mapped_column(String(16), primary_key=True, default="manual")
 
     granted_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
@@ -281,8 +361,13 @@ class UserSession(Base):
     __tablename__ = "sessions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    # Which tenant this session acts for. #30 resolves it at authentication from the
+    # account; until then it is the deployment's single operational tenant, and it is
+    # already stored here so that change is a write at login rather than a migration.
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     # sha256 of the cookie value. The raw token is never stored, so a database leak
-    # doesn't hand over live sessions.
+    # doesn't hand over live sessions. Unique across the deployment rather than per
+    # tenant: a collision between two tenants' tokens is a collision, not a namespace.
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
 
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), index=True)
@@ -319,6 +404,7 @@ class ApiToken(Base):
     # Doubles as the lookup key embedded in the token string, so verifying a request
     # is a primary-key hit rather than a scan over every token's hash.
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), index=True)
     name: Mapped[str] = mapped_column(String(255))
 
@@ -329,7 +415,7 @@ class ApiToken(Base):
 
     # Empty means "inherit whatever the owner currently has". A non-empty list narrows
     # that set — it can never widen it, since the two are intersected at auth time.
-    scopes: Mapped[list] = mapped_column(JSON, default=list)
+    scopes: Mapped[list] = mapped_column(JSONB, default=list)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
@@ -349,6 +435,7 @@ class Destination(Base):
     __tablename__ = "destinations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     name: Mapped[str] = mapped_column(String(255))
     # "generic_webhook" | "splunk_hec"
     type: Mapped[str] = mapped_column(String(32), default="generic_webhook")
@@ -359,14 +446,14 @@ class Destination(Base):
     # named header rather than a standard Authorization convention.
     auth_type: Mapped[str] = mapped_column(String(16), default="none")
     auth_header_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    auth_secret_encrypted: Mapped[str | None] = mapped_column(EncryptedString(1024), nullable=True)
+    auth_secret_encrypted: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
 
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Event types this destination receives. Null/empty means all — the default, and
     # what makes the legacy SIEM_WEBHOOK_URL migration behave identically to today
     # (that env var currently receives every event, unfiltered).
-    subscribed_events: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    subscribed_events: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -392,8 +479,9 @@ class EventOutbox(Base):
     __tablename__ = "event_outbox"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     event_type: Mapped[str] = mapped_column(String(64), index=True)
-    payload: Mapped[dict] = mapped_column(JSON)
+    payload: Mapped[dict] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
     # Ties a delivery back to the request or job that produced it, for tracing through
     # the application log.
@@ -418,6 +506,7 @@ class OutboxDelivery(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     outbox_event_id: Mapped[int] = mapped_column(ForeignKey("event_outbox.id"), index=True)
     destination_id: Mapped[int] = mapped_column(ForeignKey("destinations.id"), index=True)
 
@@ -440,9 +529,12 @@ class LoginAttempt(Base):
     """
 
     __tablename__ = "login_attempts"
-    __table_args__ = (UniqueConstraint("identifier", "ip", name="uq_login_attempt_identifier_ip"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "identifier", "ip", name="uq_login_attempt_identifier_ip"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     identifier: Mapped[str] = mapped_column(String(320), index=True)  # lowercased email
     ip: Mapped[str] = mapped_column(String(64))
 

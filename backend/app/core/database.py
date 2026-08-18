@@ -1,25 +1,102 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
+import uuid
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from sqlalchemy import event, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import Session as SyncSession
 
 from app.core.config import settings
+from app.core.tenancy import TENANT_GUC, get_tenant_id
+
+logger = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
     pass
 
 
-engine = create_async_engine(settings.database_url, echo=settings.debug)
-async_session_factory = async_sessionmaker(engine, expire_on_commit=False)
+# pool_pre_ping because the database is now a separate container with its own restart
+# and upgrade lifecycle: a pooled connection can be dead while the process is fine,
+# and without this the first request after a `docker compose restart db` fails rather
+# than reconnecting.
+engine = create_async_engine(settings.database_url, echo=settings.debug, pool_pre_ping=True)
+_session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
 _BACKEND_DIR = Path(__file__).resolve().parents[2]
+
+# How long startup waits for the database to accept connections. `depends_on` with a
+# health condition already sequences compose, but nothing sequences a `docker restart`
+# of the database under a running app, and an operator running the image by hand has
+# no compose at all.
+_DB_WAIT_TIMEOUT_SECONDS = 60.0
+_DB_WAIT_INTERVAL_SECONDS = 1.0
+
+
+@event.listens_for(SyncSession, "after_begin")
+def _bind_tenant_to_transaction(session: SyncSession, transaction, connection) -> None:
+    """Publish the session's tenant into the Postgres GUC that RLS policies read.
+
+    On `after_begin` rather than once per session, because a session that commits and
+    then keeps working starts a *new* transaction, and `set_config(..., true)` is
+    scoped to the transaction that set it. Binding here means the value can never be
+    missing for part of a session's life, and can never leak into the next borrower of
+    a pooled connection.
+
+    Sessions with no tenant leave the GUC unset on purpose. Every policy compares
+    against `current_setting(...)` without the missing-ok flag, so an unbound session
+    touching a tenant-scoped table raises rather than quietly returning no rows —
+    loud, and the same failure in development as in production.
+    """
+    tenant_id = session.info.get("tenant_id")
+    if tenant_id is None:
+        return
+    connection.execute(
+        text("SELECT set_config(:name, :value, true)"),
+        {"name": TENANT_GUC, "value": str(tenant_id)},
+    )
+
+
+def session_for_tenant(tenant_id: uuid.UUID) -> AsyncSession:
+    """A session whose every transaction is scoped to one tenant by the database.
+
+    The explicit entry point for background work — scheduler jobs have no request to
+    inherit a tenant from, so they name the one they are acting for.
+    """
+    return _session_factory(info={"tenant_id": str(tenant_id)})
+
+
+def unscoped_session() -> AsyncSession:
+    """A session with no tenant bound.
+
+    Only for the handful of tables that are deliberately outside tenancy: `tenants`
+    itself, and the global Jamf patch corpus. Touching anything else through one of
+    these raises, which is the intent — this is not an escape hatch for cross-tenant
+    reads.
+    """
+    return _session_factory()
+
+
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """Request-scoped session, bound to the tenant the middleware put in context.
+
+    The tenant is read from context rather than accepted as an argument, so no route
+    or service function is in a position to choose one — which is the whole of
+    "injected via context object, never inferred" as it applies to storage.
+    """
+    tenant_id = get_tenant_id()
+    session = _session_factory(info={"tenant_id": str(tenant_id)} if tenant_id else None)
+    async with session:
+        yield session
 
 
 def _run_migrations() -> None:
@@ -31,10 +108,35 @@ def _run_migrations() -> None:
     command.upgrade(config, "head")
 
 
+async def _wait_for_database() -> None:
+    """Block until the database answers, or give up loudly.
+
+    Postgres accepts TCP connections a moment before it accepts queries, and refuses
+    both for a while on a first boot that has to run initdb. Retrying here turns that
+    race into a few seconds of startup latency instead of a crash loop whose logs
+    blame the application.
+    """
+    deadline = time.monotonic() + _DB_WAIT_TIMEOUT_SECONDS
+    attempt = 0
+
+    while True:
+        attempt += 1
+        try:
+            async with engine.connect() as connection:
+                await connection.execute(text("SELECT 1"))
+            if attempt > 1:
+                logger.info("database accepted connections", extra={"attempts": attempt})
+            return
+        except (OSError, SQLAlchemyError) as exc:
+            if time.monotonic() >= deadline:
+                raise RuntimeError(
+                    f"database did not accept connections within {_DB_WAIT_TIMEOUT_SECONDS:.0f}s: {exc}"
+                ) from exc
+            if attempt == 1:
+                logger.info("waiting for the database")
+            await asyncio.sleep(_DB_WAIT_INTERVAL_SECONDS)
+
+
 async def init_db() -> None:
+    await _wait_for_database()
     await asyncio.to_thread(_run_migrations)
-
-
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    async with async_session_factory() as session:
-        yield session

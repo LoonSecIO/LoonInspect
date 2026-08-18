@@ -128,10 +128,15 @@ async def list_devices(
             )
         )
 
-    # SQLite has no semantic version comparison, and plain string comparison misorders
-    # multi-digit segments (e.g. "14.9" > "14.10"), so lt/lte/gt/gte/regex are evaluated
-    # in Python over the SQL-filtered set instead of pushed into the WHERE clause. The
-    # eq case (the default) stays a normal indexed SQL filter above.
+    # os_version is a free-text string, and comparing it as one misorders multi-digit
+    # segments (e.g. "14.9" > "14.10"), so lt/lte/gt/gte/regex are evaluated in Python
+    # over the SQL-filtered set instead of pushed into the WHERE clause. Postgres could
+    # express this natively — string_to_array(os_version, '.')::int[] compares
+    # correctly and is indexable — but only for values that are strictly numeric dotted
+    # segments, and MDM-reported versions are not reliably that ("14.5 (23F79)",
+    # "10.15.7 Beta"). A cast that raises on one device's version string would take out
+    # the whole page. Revisit if this list ever gets large enough for the in-Python
+    # pass to matter. The eq case (the default) stays a normal indexed SQL filter.
     needs_python_version_filter = bool(os_version) and os_version_operator != VersionOperator.eq
 
     if needs_python_version_filter:

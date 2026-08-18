@@ -42,7 +42,10 @@ async def update_feature_flag(
     if meta is None:
         raise HTTPException(status_code=404, detail="Unknown feature flag")
 
-    flag = await db.get(FeatureFlag, key)
+    # Selected rather than db.get(): the primary key is (tenant_id, key) now, and
+    # the tenant half is the session's, not something this route should be naming.
+    # RLS narrows this to one row.
+    flag = (await db.execute(select(FeatureFlag).where(FeatureFlag.key == key))).scalar_one_or_none()
     if flag is None:
         flag = FeatureFlag(key=key, enabled=payload.enabled)
         db.add(flag)

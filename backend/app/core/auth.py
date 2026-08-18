@@ -60,10 +60,11 @@ _PROTECTED_NON_API = frozenset({"/docs", "/redoc", "/openapi.json", "/docs/oauth
 def as_utc(value: datetime | None) -> datetime | None:
     """Re-attach UTC to a datetime read back from the database.
 
-    SQLite has no timezone type, so `DateTime(timezone=True)` round-trips as a naive
-    value and comparing it against an aware `datetime.now(timezone.utc)` raises
-    TypeError. Everything is written in UTC, so attaching the tzinfo is restoring
-    known information rather than guessing at it.
+    A no-op on Postgres, which has a real timezone type and returns aware values from
+    `DateTime(timezone=True)`. Kept because it costs nothing and every comparison
+    against a stored timestamp already routes through it — session expiry, the sliding
+    refresh, the lockout check — so removing it would be a wide edit that trades a
+    guaranteed-aware value for an assumed one.
     """
     if value is None:
         return None

@@ -16,7 +16,20 @@ class Settings(BaseSettings):
     app_name: str = "LoonInspect"
     debug: bool = False
 
-    database_url: str = "sqlite+aiosqlite:///./looninspect.db"
+    # Postgres only. The default targets a locally-run database on the conventional
+    # port so `alembic` and a bare `uvicorn` work without env plumbing; docker compose
+    # supplies the real one. There is no embedded file database to fall back to any
+    # more — row-level security, the run mutex, and a queryable run log are all things
+    # SQLite cannot express, which is why it was retired rather than kept as an option.
+    database_url: str = "postgresql+asyncpg://looninspect_app@localhost:5432/looninspect"
+
+    # bundled   the Postgres service shipped alongside the app in docker-compose.yml.
+    # external  an operator-run database. Stubbed deliberately: the seam is named here
+    #           so the choice is explicit in configuration rather than inferred from
+    #           whatever DATABASE_URL happens to point at, but v0 ships the bundled
+    #           service only and startup refuses the other value rather than half
+    #           supporting it. See #29.
+    database_mode: Literal["bundled", "external"] = "bundled"
 
     cors_origins: list[str] = ["http://localhost:5173"]
 
@@ -82,6 +95,26 @@ class Settings(BaseSettings):
     # HTTP everywhere except localhost, so turn this off *only* for a deliberate
     # plain-HTTP deployment — see the startup warning in app.serve.
     secure_cookies: bool = True
+
+    @field_validator("database_url")
+    @classmethod
+    def _require_asyncpg(cls, value: str) -> str:
+        if value.startswith("postgresql+asyncpg://"):
+            return value
+        raise ValueError(
+            "database_url must be a postgresql+asyncpg:// URL. SQLite is no longer "
+            f"supported (see #29); got {value.split('://', 1)[0]!r}"
+        )
+
+    @field_validator("database_mode")
+    @classmethod
+    def _reject_external_database(cls, value: str) -> str:
+        if value == "bundled":
+            return value
+        raise ValueError(
+            "database_mode='external' is not supported in v0 — only the Postgres "
+            "service bundled in docker-compose.yml is shipped. Leave this at 'bundled'."
+        )
 
     @field_validator("log_level")
     @classmethod

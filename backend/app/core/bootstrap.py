@@ -10,7 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import hash_password
-from app.models.schema import Account, AccountRole, AuthIdentity, Destination
+from app.core.tenancy import (
+    OPERATIONAL_TENANT_ID,
+    OPERATIONAL_TENANT_SLUG,
+    ROOT_TENANT_ID,
+    ROOT_TENANT_SLUG,
+)
+from app.models.schema import Account, AccountRole, AuthIdentity, Destination, Tenant
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +28,41 @@ _claim_token: str | None = None
 
 def get_claim_token() -> str | None:
     return _claim_token
+
+
+# (id, slug, name, kind) for the two tenants every install starts with. Root is
+# management-only and owns no operational data; the child is what a single-tenant
+# deployment's devices, connections, accounts, and events all belong to.
+_BOOTSTRAP_TENANTS = (
+    (ROOT_TENANT_ID, ROOT_TENANT_SLUG, "Root", "root"),
+    (OPERATIONAL_TENANT_ID, OPERATIONAL_TENANT_SLUG, "Default", "operational"),
+)
+
+
+async def bootstrap_tenants(db: AsyncSession) -> None:
+    """Create the root and operational tenants if they are not already there.
+
+    Runs before anything else at startup and takes an *unscoped* session: every other
+    table's row-level security reads a tenant that does not exist yet at this point,
+    so this has to happen first, and `tenants` is deliberately outside that policy set
+    for exactly this reason.
+
+    Idempotent by id rather than by count, so adding a third tenant later can never
+    make this decide the install is unbootstrapped.
+    """
+    existing = set(
+        (await db.execute(select(Tenant.id).where(Tenant.id.in_([row[0] for row in _BOOTSTRAP_TENANTS]))))
+        .scalars()
+        .all()
+    )
+
+    created = [row for row in _BOOTSTRAP_TENANTS if row[0] not in existing]
+    for tenant_id, slug, name, kind in created:
+        db.add(Tenant(id=tenant_id, slug=slug, name=name, kind=kind))
+
+    if created:
+        await db.commit()
+        logger.info("tenants bootstrapped", extra={"slugs": [row[1] for row in created]})
 
 
 async def account_count(db: AsyncSession) -> int:
