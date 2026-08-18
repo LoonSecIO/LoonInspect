@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# A superseded run tells you nothing, so cancel it rather than pay for it.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend (typecheck + lint)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # `npm ci` fails when package.json and package-lock.json disagree, so this
+      # step doubles as the check that the lockfile is current.
+      - run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npx tsc -b --noEmit
+
+      - name: Lint
+        run: npx eslint .
+
+      - name: Build
+        run: npm run build
+
+  backend:
+    name: Backend (ruff)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.9.30'
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: backend/.python-version
+
+      # --frozen fails if uv.lock is stale against pyproject.toml, which is the
+      # backend half of the lockfile-currency check.
+      - name: Install
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run --frozen ruff check --output-format=github .
+
+      # `ruff format --check` is deliberately absent: adopting it today would
+      # reformat 20 files across feature modules. Tracked in #16.
+
+  image:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Proves the multi-stage build still works end to end, including that both
+      # lockfiles install cleanly under --frozen / `npm ci`.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: looninspect:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test the image
+        run: |
+          KEY=$(docker run --rm looninspect:ci uv run --frozen --no-dev \
+                  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+          docker run -d --name smoke -e ENCRYPTION_KEY="$KEY" -p 8000:8000 looninspect:ci
+          for i in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' smoke)
+            [ "$status" = healthy ] && break
+            [ "$status" = unhealthy ] && break
+            sleep 2
+          done
+          echo "health: $status"
+          docker exec smoke id | tee /dev/stderr | grep -q 'uid=10001' || {
+            echo "::error::image is not running as the non-root looninspect user"; exit 1; }
+          [ "$status" = healthy ] || { docker logs smoke; exit 1; }
+          curl -fsS http://localhost:8000/api/health

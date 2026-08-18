@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import AuditAction, audit
 from app.core.auth import (
     SESSION_COOKIE,
     Principal,
@@ -19,7 +20,6 @@ from app.core.auth import (
     revoke_session,
     set_session_cookies,
 )
-from app.core.audit import AuditAction, audit
 from app.core.bootstrap import account_count, consume_claim_token, create_account, get_claim_token
 from app.core.context import Actor
 from app.core.database import get_db

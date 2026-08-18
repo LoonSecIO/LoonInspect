@@ -55,7 +55,7 @@ class MdmConnection(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
-    devices: Mapped[list["Device"]] = relationship(back_populates="connection")
+    devices: Mapped[list[Device]] = relationship(back_populates="connection")
 
 
 class Device(Base):
@@ -80,10 +80,10 @@ class Device(Base):
     department: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     connection: Mapped[MdmConnection | None] = relationship(back_populates="devices")
-    apps: Mapped[list["InstalledApp"]] = relationship(
+    apps: Mapped[list[InstalledApp]] = relationship(
         back_populates="device", cascade="all, delete-orphan"
     )
-    extension_attributes: Mapped[list["DeviceExtensionAttribute"]] = relationship(
+    extension_attributes: Mapped[list[DeviceExtensionAttribute]] = relationship(
         back_populates="device", cascade="all, delete-orphan"
     )
 
@@ -213,10 +213,10 @@ class Account(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    identities: Mapped[list["AuthIdentity"]] = relationship(
+    identities: Mapped[list[AuthIdentity]] = relationship(
         back_populates="account", cascade="all, delete-orphan", lazy="selectin"
     )
-    roles: Mapped[list["AccountRole"]] = relationship(
+    roles: Mapped[list[AccountRole]] = relationship(
         back_populates="account", cascade="all, delete-orphan", lazy="selectin"
     )
 

@@ -108,7 +108,7 @@ async def sync_catalog(db: AsyncSession) -> int:
     now = datetime.now(timezone.utc)
     synced = 0
 
-    for summary, detail in zip(to_refresh, details):
+    for summary, detail in zip(to_refresh, details, strict=True):
         if isinstance(detail, BaseException) or not detail:
             continue
 

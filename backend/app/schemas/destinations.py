@@ -53,7 +53,7 @@ class DestinationCreate(_CamelModel):
     subscribed_events: list[str] | None = None
 
     @model_validator(mode="after")
-    def _validate(self) -> "DestinationCreate":
+    def _validate(self) -> DestinationCreate:
         if self.type not in _VALID_TYPES:
             raise ValueError(f"type must be one of {sorted(_VALID_TYPES)}")
         if self.auth_type not in _VALID_AUTH_TYPES:
@@ -78,7 +78,7 @@ class DestinationUpdate(_CamelModel):
     subscribed_events: list[str] | None = None
 
     @model_validator(mode="after")
-    def _validate(self) -> "DestinationUpdate":
+    def _validate(self) -> DestinationUpdate:
         if self.auth_type is not None and self.auth_type not in _VALID_AUTH_TYPES:
             raise ValueError(f"authType must be one of {sorted(_VALID_AUTH_TYPES)}")
         if self.auth_type == "header" and not self.auth_header_name:

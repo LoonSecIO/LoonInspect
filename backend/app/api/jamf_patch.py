@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-
-from app.core.auth import require
-from app.core.permissions import Permission
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import require
 from app.core.database import get_db
+from app.core.permissions import Permission
 from app.mdm.patch.jamf_catalog import sync_catalog
 from app.models.schema import JamfPatchTitle
 from app.schemas.jamf_patch import (
