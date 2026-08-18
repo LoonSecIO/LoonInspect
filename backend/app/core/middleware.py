@@ -10,7 +10,7 @@ from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.context import ClientInfo, reset_client, reset_request_id, set_client, set_request_id
-from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
+from app.core.tenancy import IDENTITY_RESOLUTION_TENANT_ID, reset_tenant_id, set_tenant_id
 
 logger = logging.getLogger("app.request")
 
@@ -77,15 +77,15 @@ class RequestContextMiddleware:
         request_id = _resolve_request_id(scope)
         token = set_request_id(request_id)
         client_token = set_client(_resolve_client(scope))
-        # Bound here, once, before anything can open a database session — including
-        # the global authenticate() dependency, which queries tenant-scoped tables
-        # itself and so cannot be the thing that establishes the tenant.
+        # The resolution scope, not the acting tenant. Something has to be bound
+        # before authenticate() can read the `sessions` table to find out which tenant
+        # the caller actually acts for; authentication then replaces this with the one
+        # the session row names, for both the context and the open database session.
         #
-        # v0 has one operational tenant and no per-session binding yet: #30 resolves
-        # the tenant from UserSession at authentication and sets it here instead.
-        # Everything downstream already reads it from context rather than choosing
-        # one, so that change lands in this line and nowhere else.
-        tenant_token = set_tenant_id(OPERATIONAL_TENANT_ID)
+        # An unauthenticated request keeps this value for its whole life, which is
+        # correct: the public routes either touch no tenant-scoped table (health) or
+        # are the ones establishing identity in the first place (login, setup).
+        tenant_token = set_tenant_id(IDENTITY_RESOLUTION_TENANT_ID)
         started = time.perf_counter()
         status_code = 500
 

@@ -31,6 +31,23 @@ OPERATIONAL_TENANT_ID = uuid.UUID("00000000-0000-0000-0000-000000000002")
 ROOT_TENANT_SLUG = "root"
 OPERATIONAL_TENANT_SLUG = "default"
 
+# The tenant a request is scoped to *before* it has been authenticated.
+#
+# Resolving a session means reading the `sessions` table, which is tenant-scoped like
+# everything else — so something has to be bound before the acting tenant can be known.
+# This is that something, and it is deliberately not the same idea as the acting
+# tenant: it is only wide enough to find the session row, and authentication replaces
+# it with whatever that row names (see app.core.auth.authenticate).
+#
+# It works because v0 has exactly one operational tenant, so the scope that can find
+# any session and the tenant that session acts for are the same. A second operational
+# tenant breaks that, and the fix is not a wider scope here — it is resolving identity
+# outside tenant scope altogether, which needs a narrow, deliberate RLS bypass
+# (a SECURITY DEFINER lookup owned by a role that has it, taking a token hash and
+# returning only a tenant id). That is a security-sensitive primitive and is left to
+# the change that actually needs it rather than added speculatively.
+IDENTITY_RESOLUTION_TENANT_ID = OPERATIONAL_TENANT_ID
+
 _tenant_id: ContextVar[uuid.UUID | None] = ContextVar("tenant_id", default=None)
 
 

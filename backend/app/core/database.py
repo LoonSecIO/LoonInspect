@@ -75,6 +75,28 @@ def session_for_tenant(tenant_id: uuid.UUID) -> AsyncSession:
     return _session_factory(info={"tenant_id": str(tenant_id)})
 
 
+async def rebind_tenant(session: AsyncSession, tenant_id: uuid.UUID) -> None:
+    """Move an open session onto a different tenant.
+
+    Authentication is the reason this exists. Finding the session row is itself a read
+    of a tenant-scoped table, so a tenant has to be bound *before* the acting tenant is
+    known — the request opens under a resolution scope, and this narrows it to the one
+    the session row actually names. Called with the same tenant it already had, which
+    is the single-tenant case, it is a cheap no-op that still keeps the two in step.
+
+    Both halves matter. `session.info` is what the after_begin listener reads, so it
+    governs every transaction from here on; the immediate set_config covers the
+    transaction already in flight, which began during identity resolution and would
+    otherwise keep the old value until the next commit.
+    """
+    session.info["tenant_id"] = str(tenant_id)
+    if session.in_transaction():
+        await session.execute(
+            text("SELECT set_config(:name, :value, true)"),
+            {"name": TENANT_GUC, "value": str(tenant_id)},
+        )
+
+
 def unscoped_session() -> AsyncSession:
     """A session with no tenant bound.
 

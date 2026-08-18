@@ -16,7 +16,7 @@ from app.core.auth import Principal, current_principal, require
 from app.core.context import Actor, reset_actor, set_actor
 from app.core.database import get_db, session_for_tenant
 from app.core.permissions import Permission
-from app.core.tenancy import get_tenant_id, reset_tenant_id, set_tenant_id
+from app.core.tenancy import reset_tenant_id, set_tenant_id
 from app.mdm.credentials import CREDENTIAL_SCHEMAS, fingerprint_field
 from app.mdm.jamf.client import JamfClient
 from app.mdm.service import set_sync_status, sync_connection
@@ -428,8 +428,13 @@ async def trigger_sync(
     background_tasks.add_task(
         _run_connection_sync,
         connection.id,
-        Actor(type="account", id=principal.account.id, label=principal.account.email),
-        get_tenant_id(),
+        Actor(
+            type="account",
+            id=principal.account.id,
+            label=principal.account.email,
+            tenant_id=principal.tenant_id,
+        ),
+        principal.tenant_id,
     )
 
     return MdmSyncTriggerResult(connection_id=connection.id, status=SyncStatus.syncing.value)
