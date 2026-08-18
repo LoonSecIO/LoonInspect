@@ -46,7 +46,7 @@ All branch names are lowercase and match:
 
 | Prefix | Use for | Example |
 | --- | --- | --- |
-| `inspect-NNNN/` | Tracked work with an INSPECT ticket | `inspect-0006/device-table-pagination` |
+| `inspect-NNNN/` | Tracked work, where NNNN is a GitHub issue number | `inspect-0012/device-table-pagination` |
 | `fix/` | Untracked defect repair | `fix/jamf-patch-sort-crash` |
 | `chore/` | Dependencies, tooling, config, CI | `chore/bump-fastapi` |
 | `docs/` | Documentation only | `docs/branching-strategy` |
@@ -57,6 +57,24 @@ safe key on the macOS and Linux filesystems both used here, and it removes the
 class of near-miss typos that case-mixed names invite. The slug is
 kebab-case, describes the outcome rather than the activity, and is short enough
 to read in a branch picker.
+
+**Ticket numbers come from GitHub Issues and are never assigned by hand.** The
+`NNNN` in an `inspect-NNNN/` branch is the issue's number, zero-padded to four
+digits. Padding is what makes branches sort correctly in a listing; it is not
+decoration, and an unpadded number fails BR-01.
+
+Hand-assigned numbers are the specific failure this replaces. Picking the next
+number by eye is how `INSPECT-0005` came to carry four pull requests — minting a
+number by inspection is harder than reusing one you can already see. It is worse
+still for agent sessions, which cannot observe what a parallel session has
+claimed and will confidently choose a number already in use. `gh issue create`
+returns a number atomically and settles the question.
+
+Two consequences worth expecting. GitHub draws issues and pull requests from a
+single counter, so issue numbers skip wherever a pull request took one; gaps are
+harmless, since the property required is uniqueness, not contiguity. And numbers
+below the counter's value at adoption do not correspond to issues at all — see
+§10.
 
 `spike/` branches are exempt from the pull request controls in §6.3 because their
 code is never merged. They are time-boxed and terminate through the conversion
@@ -209,10 +227,10 @@ git worktree remove ../LoonInspect-0006
 ## 5. Merge mechanics
 
 - **Squash merge only.** Merge commits and rebase-merge are disabled at the
-  repository level. One ticket produces one commit on `main`.
+  repository level. One issue produces one commit on `main`.
 - **The squash commit subject is the pull request title**, so the title carries
-  the ticket reference and is written as a real commit subject
-  (`INSPECT-0006: paginate the device table`), not as a chat message.
+  the issue reference and is written as a real commit subject
+  (`INSPECT-0012: paginate the device table`), not as a chat message.
 - **Linear history.** `main` never contains a merge commit.
 - **Up to date before merge.** The branch must include current `main` before it
   can merge, so required checks are evaluated against the tree that will exist
@@ -250,6 +268,7 @@ records a reviewer decision.
 | BR-05 | A branch name that has previously merged is never reused | `ci` | block | proposed |
 | BR-06 | `main` accepts no direct pushes; all changes arrive by pull request | `ruleset` | block | proposed |
 | BR-07 | `main` cannot be force-pushed or deleted | `ruleset` | block | proposed |
+| BR-08 | An `inspect-NNNN/` branch's number is an open GitHub issue, zero-padded to four digits | `ci` | block | proposed |
 
 ### 6.2 Commit and content controls
 
@@ -272,6 +291,7 @@ records a reviewer decision.
 | PR-06 | Schema changes ship with an Alembic migration | `ci` | warn | proposed |
 | PR-07 | Every required status check passes before merge is available | `ruleset` | block | proposed |
 | PR-08 | Agent-authored changes are read in full by a human before merge | `review` | manual | proposed |
+| PR-09 | An `inspect-NNNN/` pull request body closes its issue with `Closes #NNNN` | `ci` | block | proposed |
 
 PR-08 has no automated form and is deliberately listed anyway. Recording it as a
 control means its absence is a known gap rather than an oversight, and it
@@ -315,8 +335,8 @@ are its judgement-dependent half and are listed as `manual` rather than omitted.
 | ID | Control | Enforcement | Severity | Status |
 | --- | --- | --- | --- | --- |
 | SF-01 | A merge to `main` deploys to the dev instance with no manual step | `ci` | block | proposed |
-| SF-02 | A branch remediating a finding names the finding ID in its PR description | `ci` | block | proposed |
-| SF-03 | Reported findings are triaged to a branch, a backlog ticket, or an accepted risk within 5 days | `scheduled` | warn | proposed |
+| SF-02 | A branch remediating a finding closes the issue that records it | `ci` | block | proposed |
+| SF-03 | Reported findings are filed as `security`-labelled issues and triaged within 5 days | `scheduled` | warn | proposed |
 | SF-04 | A finding is closed only after a rescan of the redeployed dev instance | `review` | manual | proposed |
 | SF-05 | The dev instance holds no production data, live MDM credentials, or real encryption key | `review` | manual | proposed |
 | SF-06 | Security-domain changes carry the `security` label regardless of branch prefix | `ci` | warn | proposed |
@@ -337,7 +357,7 @@ redeploy step; it is not a precondition for the loop, and the rest of §6.7
 should not wait on it.
 
 The deployment target is a decision with real trade-offs and no code output,
-which makes it a `spike/` by §3.1 rather than a ticket. The material difference
+which makes it a `spike/` by §3.1 rather than an issue. The material difference
 is exposure, not cost: an AWS target can be isolated in its own VPC, whereas a
 QNAP sits on a network with other hosts on it, and SF-05 becomes materially
 harder to satisfy when the continuously-attacked instance shares a LAN with
@@ -410,6 +430,20 @@ this and should be enabled as the first increment.
 ```
 github.event.pull_request.additions + .deletions, minus paths matching
 package-lock.json, *.lock, migrations/versions/*
+```
+
+**BR-08** — branch number is a real open issue
+
+```bash
+n=$(sed -E 's|^inspect-0*([0-9]+)/.*|\1|' <<<"$HEAD_REF")
+test "$(gh issue view "$n" --json state --jq .state)" = OPEN
+```
+
+**PR-09** — pull request closes its issue
+
+```bash
+n=$(sed -E 's|^inspect-0*([0-9]+)/.*|\1|' <<<"$HEAD_REF")
+gh pr view "$PR" --json body --jq .body | grep -Eq "(Closes|Fixes|Resolves) #$n\b"
 ```
 
 **PR-03** — agent label
@@ -505,6 +539,11 @@ compliance:
 - Merged branches were not deleted; `INSPECT-0005-AUTHLAYER` remains on `origin`.
 - Merges to date are merge commits, not squashes, violating MG-01 and MG-02.
   Existing history is grandfathered; these controls apply from adoption forward.
+- `INSPECT-0001` through `INSPECT-0005` were assigned by hand before GitHub
+  Issues became the source of truth and correspond to no issue. They are
+  historical labels only. Real numbering begins at whatever value the repository
+  counter holds when the first issue is filed, which is above the pull request
+  numbers already consumed (#1–#9).
 
 ## Change log
 
@@ -514,3 +553,4 @@ compliance:
 | v1.1 | 2026-08-18 | Added spike lifecycle and conversion workflow (§3.1), SP-01–SP-05, `scheduled` enforcement point |
 | v1.2 | 2026-08-18 | Added security feedback loop (§3.2) and SF-01–SF-06 |
 | v1.3 | 2026-08-18 | Recorded SF-01 as blocked on an undecided deploy target |
+| v1.4 | 2026-08-18 | GitHub Issues as ticket source of truth; added BR-08, PR-09 |
