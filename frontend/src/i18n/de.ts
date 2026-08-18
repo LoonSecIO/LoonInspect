@@ -36,6 +36,8 @@ export const de: Translations = {
     invalidClaimToken: "Dieser Freischaltcode ist ungültig.",
     setupAlreadyDone: "Diese Instanz wurde bereits eingerichtet. Bitte melden Sie sich an.",
     passwordTooShort: "Das Passwort muss mindestens 12 Zeichen lang sein.",
+    validationFailed:
+      "Einige dieser Angaben wurden nicht akzeptiert. Bitte prüfen Sie das Formular und versuchen Sie es erneut.",
     noAccessTitle: "Sie haben keinen Zugriff auf diese Seite",
     noAccessDescription:
       "Die Rolle Ihres Kontos umfasst keine Berechtigung für diesen Bereich. Wenden Sie sich an eine Administratorin oder einen Administrator, falls Sie ihn benötigen."
