@@ -47,6 +47,7 @@ export const en = {
     users: "Users",
     vulnerabilities: "Vulnerabilities",
     integrations: "Integrations",
+    ai: "AI",
     settings: "Settings",
     connections: "Connections",
     featureFlags: "Feature Flags",
@@ -422,6 +423,21 @@ export const en = {
         subtitle: "",
         description: "CVE and patch-availability lookups by app hash."
       }
+    }
+  },
+  ai: {
+    eyebrow: "AI",
+    title: "AI Workflows",
+    description: "Automated actions triggered from device and inventory events.",
+    previewBanner: "Preview. Nothing here is wired up yet — visual only.",
+    enable: "Enable",
+    enabled: "Enabled",
+    test: "Test",
+    testStubMessage: "Stub only — no test has actually run yet.",
+    appleAi: {
+      name: "Apple AI",
+      subtitle: "Local, on-device",
+      description: "Runs on the host Mac via a proxied terminal command. Not connected yet."
     }
   },
   settings: {

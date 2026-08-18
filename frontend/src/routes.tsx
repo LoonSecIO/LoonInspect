@@ -15,6 +15,7 @@ import { GroupsPage } from "@/features/devices/GroupsPage";
 import { CompliancePage } from "@/features/devices/CompliancePage";
 import { UsersPage } from "@/features/users/UsersPage";
 import { IntegrationsPage } from "@/features/integrations/IntegrationsPage";
+import { AIPage } from "@/features/ai/AIPage";
 import { ConnectionsPage } from "@/features/mdm/ConnectionsPage";
 import { FeatureFlagsPage } from "@/features/settings/FeatureFlagsPage";
 import { ApiTokensPage } from "@/features/tokens/ApiTokensPage";
@@ -45,6 +46,7 @@ export function AppRoutes() {
         <Route path="devices/compliance" element={<CompliancePage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="integrations" element={<IntegrationsPage />} />
+        <Route path="ai" element={<AIPage />} />
         <Route element={<RequirePermission permission={PERMISSIONS.CONNECTION_READ} />}>
           <Route path="settings/connections" element={<ConnectionsPage />} />
         </Route>

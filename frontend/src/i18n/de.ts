@@ -49,6 +49,7 @@ export const de: Translations = {
     users: "Benutzer",
     vulnerabilities: "Schwachstellen",
     integrations: "Integrationen",
+    ai: "KI",
     settings: "Einstellungen",
     connections: "Verbindungen",
     featureFlags: "Feature-Flags",
@@ -428,6 +429,21 @@ export const de: Translations = {
         subtitle: "",
         description: "CVE- und Patch-Verfügbarkeitsabfragen anhand des App-Hashes."
       }
+    }
+  },
+  ai: {
+    eyebrow: "KI",
+    title: "KI-Workflows",
+    description: "Automatisierte Aktionen, ausgelöst durch Geräte- und Inventarereignisse.",
+    previewBanner: "Vorschau. Hier ist noch nichts angebunden — nur visuell.",
+    enable: "Aktivieren",
+    enabled: "Aktiviert",
+    test: "Testen",
+    testStubMessage: "Nur ein Platzhalter — es wurde noch kein Test ausgeführt.",
+    appleAi: {
+      name: "Apple AI",
+      subtitle: "Lokal, auf dem Gerät",
+      description: "Läuft über einen weitergeleiteten Terminalbefehl auf dem Host-Mac. Noch nicht verbunden."
     }
   },
   settings: {
