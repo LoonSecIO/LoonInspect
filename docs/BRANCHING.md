@@ -257,6 +257,11 @@ ID and is marked `retired` rather than being reused or renumbered.
 **Severity** — `block` prevents merge · `warn` annotates the PR · `manual`
 records a reviewer decision.
 
+**Status** — `proposed` is agreed but not yet implemented · `active` is
+mechanically enforced today · `blocked` is agreed and implemented, but prevented
+from taking effect by something outside the repository · `retired` keeps its ID
+and is never reused.
+
 ### 6.1 Branch controls
 
 | ID | Control | Enforcement | Severity | Status |
@@ -264,10 +269,10 @@ records a reviewer decision.
 | BR-01 | Branch name matches the canonical pattern in §2 | `ci` | block | proposed |
 | BR-02 | Pull request base is `main` | `ci` | block | proposed |
 | BR-03 | Branch is merged within 5 calendar days of its first commit | `ci` | warn | proposed |
-| BR-04 | Head branch is deleted automatically on merge | `repo-setting` | block | proposed |
+| BR-04 | Head branch is deleted automatically on merge | `repo-setting` | block | active |
 | BR-05 | A branch name that has previously merged is never reused | `ci` | block | proposed |
-| BR-06 | `main` accepts no direct pushes; all changes arrive by pull request | `ruleset` | block | proposed |
-| BR-07 | `main` cannot be force-pushed or deleted | `ruleset` | block | proposed |
+| BR-06 | `main` accepts no direct pushes; all changes arrive by pull request | `ruleset` | block | blocked |
+| BR-07 | `main` cannot be force-pushed or deleted | `ruleset` | block | blocked |
 | BR-08 | An `inspect-NNNN/` branch's number is an open GitHub issue, zero-padded to four digits | `ci` | block | proposed |
 
 ### 6.2 Commit and content controls
@@ -286,10 +291,10 @@ records a reviewer decision.
 | PR-01 | Changed lines, excluding lockfiles and generated output, are under 400 | `ci` | warn | proposed |
 | PR-02 | Description states scope and the verification actually performed | `ci` | warn | proposed |
 | PR-03 | Agent-assisted pull requests carry the `agent-authored` label | `ci` | block | proposed |
-| PR-04 | Frontend typechecks and lints clean | `ci` | block | proposed |
+| PR-04 | Frontend typechecks and lints clean | `ci` | block | active |
 | PR-05 | Backend test suite passes | `ci` | block | proposed |
 | PR-06 | Schema changes ship with an Alembic migration | `ci` | warn | proposed |
-| PR-07 | Every required status check passes before merge is available | `ruleset` | block | proposed |
+| PR-07 | Every required status check passes before merge is available | `ruleset` | block | blocked |
 | PR-08 | Agent-authored changes are read in full by a human before merge | `review` | manual | proposed |
 | PR-09 | An `inspect-NNNN/` pull request body closes its issue with `Closes #NNNN` | `ci` | block | proposed |
 
@@ -301,9 +306,9 @@ becomes enforceable as a required approval once a second maintainer exists.
 
 | ID | Control | Enforcement | Severity | Status |
 | --- | --- | --- | --- | --- |
-| MG-01 | Squash is the only permitted merge method | `repo-setting` | block | proposed |
-| MG-02 | `main` maintains linear history | `ruleset` | block | proposed |
-| MG-03 | Branch is up to date with `main` before merge | `ruleset` | block | proposed |
+| MG-01 | Squash is the only permitted merge method | `repo-setting` | block | active |
+| MG-02 | `main` maintains linear history | `ruleset` | block | blocked |
+| MG-03 | Branch is up to date with `main` before merge | `ruleset` | block | blocked |
 
 ### 6.5 Agent isolation controls
 
@@ -311,7 +316,7 @@ becomes enforceable as a required approval once a second maintainer exists.
 | --- | --- | --- | --- | --- |
 | AG-01 | Concurrent agent sessions use separate worktrees on separate branches | `review` | manual | proposed |
 | AG-02 | Each worktree has its own `.env`, database file, and backend port | `review` | manual | proposed |
-| AG-03 | No agent session commits directly to `main` | `ruleset` | block | proposed |
+| AG-03 | No agent session commits directly to `main` | `ruleset` | block | blocked |
 
 ---
 
@@ -493,16 +498,15 @@ done
 
 ## 8. Enforcement roadmap
 
-No control in this document is currently enforced. The repository has no
-rulesets, no required checks, and no `.github/workflows`. Sequencing matters
-less than starting, but this order front-loads the controls that prevent damage
-over those that enforce tidiness:
+Sequencing matters less than starting, but this order front-loads the controls
+that prevent damage over those that enforce tidiness:
 
 1. **Repository settings and rulesets** — BR-04, BR-06, BR-07, MG-01, MG-02,
    MG-03, AG-03, plus secret push protection. These are configuration changes
    with no code to write and they close the irreversible failure modes.
+   *Partially done — see [Repository configuration](#81-repository-configuration).*
 2. **A build-and-test workflow** — PR-04, PR-05, wired as required checks to
-   activate PR-07.
+   activate PR-07. *PR-04 done; PR-05 waits on a test suite.*
 3. **A policy workflow** — BR-01, BR-02, BR-05, CM-01, CM-03, CM-04 as blocking;
    BR-03, CM-02, PR-01 as annotations.
 4. **Spike enforcement** — SP-01 and SP-04 join the policy workflow; SP-02 needs
@@ -518,6 +522,39 @@ over those that enforce tidiness:
 A machine-readable manifest of this register (control ID, severity, enforcement
 point, check definition) should be added as `docs/controls.yml` when step 3
 begins, so the workflow and this document cannot drift.
+
+### 8.1 Repository configuration
+
+The configuration in step 1 is version-controlled rather than clicked in, so it
+is reviewable and reproducible:
+
+- `.github/rulesets/main.json` — the ruleset definition for `main`.
+- `.github/scripts/apply-repo-config.sh` — applies it, plus the plain repository
+  settings, idempotently. `--dry-run` shows what would change.
+
+**Rulesets are blocked on the GitHub plan.** `LoonSecIO` is on the free plan and
+this repository is private, a combination for which the rulesets and branch
+protection APIs return `403`. Secret scanning and push protection are gated the
+same way. The definition and the script are complete and correct; nothing in
+them needs revisiting when the constraint lifts, which is why the affected
+controls are `blocked` rather than `proposed`.
+
+Two ways out, and the choice is exposure against cost rather than capability:
+
+| Option | Unblocks | Cost |
+| --- | --- | --- |
+| Make the repository public | Rulesets, branch protection, secret scanning, push protection | None |
+| GitHub Team | Rulesets, branch protection | Per-seat; secret scanning still needs Advanced Security |
+
+Going public is the larger decision of the two and is not purely financial. The
+README already describes LoonInspect as open source and the repository carries a
+licence, so it is a plausible end state — but it also publishes the security
+posture of a tool that holds encrypted MDM credentials, and §3.2's dev instance
+becomes a more attractive target once the source describing it is readable. That
+trade-off deserves its own decision, and by §3.1 it is a `spike/`, not an issue.
+
+What is enforced today: BR-04 and MG-01 through repository settings, and PR-04
+through the CI workflow. Everything else in step 1 is `blocked`.
 
 ## 9. Exceptions
 
@@ -554,3 +591,4 @@ compliance:
 | v1.2 | 2026-08-18 | Added security feedback loop (§3.2) and SF-01–SF-06 |
 | v1.3 | 2026-08-18 | Recorded SF-01 as blocked on an undecided deploy target |
 | v1.4 | 2026-08-18 | GitHub Issues as ticket source of truth; added BR-08, PR-09 |
+| v1.5 | 2026-08-18 | Added `active`/`blocked` status values; recorded rulesets as blocked on the GitHub plan (§8.1); marked BR-04, MG-01, PR-04 active |
