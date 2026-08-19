@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -12,9 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import AuditAction, audit
 from app.core.config import settings
 from app.core.context import Actor, set_actor
-from app.core.database import get_db
+from app.core.database import get_db, rebind_tenant
 from app.core.permissions import Permission, permissions_for
 from app.core.security import generate_token, hash_token, tokens_equal
+from app.core.tenancy import set_tenant_id
 from app.core.tokens import parse_token
 from app.models.schema import Account, ApiToken, UserSession
 
@@ -92,6 +94,18 @@ class Principal:
     auth_method: str  # "session" | "api_token"
     session: UserSession | None = None
     token: ApiToken | None = None
+
+    @property
+    def tenant_id(self) -> uuid.UUID:
+        """The tenant this caller acts for.
+
+        Taken from the credential rather than the account, because the credential is
+        what the request actually presented — a session or token that outlives a move
+        between tenants must keep acting for the one it was issued under until it is
+        replaced, not silently follow the account.
+        """
+        credential = self.session or self.token
+        return credential.tenant_id if credential is not None else self.account.tenant_id
 
 
 def session_expiry(now: datetime) -> datetime | None:
@@ -267,6 +281,14 @@ async def authenticate(request: Request, db: AsyncSession = Depends(get_db)) -> 
 
     request.state.principal = principal
 
+    # The acting tenant, now that it is known. Until this line the request has been
+    # scoped to whatever was wide enough to find the credential; from here it is
+    # scoped to the tenant that credential names, in the context every later session
+    # reads from *and* in the session already open for this request.
+    tenant_id = principal.tenant_id
+    set_tenant_id(tenant_id)
+    await rebind_tenant(db, tenant_id)
+
     if principal.token is not None:
         set_actor(
             Actor(
@@ -275,10 +297,18 @@ async def authenticate(request: Request, db: AsyncSession = Depends(get_db)) -> 
                 # Names both the token and its owner: an audit line saying only "a
                 # token did this" leaves the reader with more work than it saved.
                 label=f"{principal.account.email} via token {principal.token.name!r}",
+                tenant_id=tenant_id,
             )
         )
     else:
-        set_actor(Actor(type="account", id=principal.account.id, label=principal.account.email))
+        set_actor(
+            Actor(
+                type="account",
+                id=principal.account.id,
+                label=principal.account.email,
+                tenant_id=tenant_id,
+            )
+        )
 
 
 async def _authenticate_session(db: AsyncSession, request: Request) -> Principal | None:

@@ -155,7 +155,7 @@ async def setup(
     )
     audit(
         AuditAction.SETUP_COMPLETED,
-        actor=Actor(type="account", id=account.id, label=account.email),
+        actor=Actor(type="account", id=account.id, label=account.email, tenant_id=account.tenant_id),
         target_type="account",
         target_id=account.id,
         role=Role.admin.value,
@@ -252,7 +252,7 @@ async def login(
         AuditAction.LOGIN_SUCCEEDED,
         # Explicit actor: the global dependency skips public paths, so nothing has
         # populated the request context by the time a login is being recorded.
-        actor=Actor(type="account", id=account.id, label=account.email),
+        actor=Actor(type="account", id=account.id, label=account.email, tenant_id=account.tenant_id),
         target_type="account",
         target_id=account.id,
         auth_method="password",
@@ -283,6 +283,9 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)) -> Respon
                     type="account",
                     id=session.account_id,
                     label=account.email if account else session.account_id,
+                    # From the session rather than the account: the session is what is
+                    # being ended, and it may outlive the account row being readable.
+                    tenant_id=session.tenant_id,
                 ),
                 target_type="session",
                 target_id=session.id,

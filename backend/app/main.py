@@ -32,7 +32,7 @@ from app.core.audit import configure_audit_logging
 from app.core.auth import authenticate
 from app.core.bootstrap import bootstrap_accounts, bootstrap_tenants, migrate_legacy_siem_webhook
 from app.core.config import settings
-from app.core.context import SYSTEM, reset_actor, set_actor
+from app.core.context import SYSTEM, reset_actor, set_actor, system_actor_for
 from app.core.crypto import validate_encryption_key
 from app.core.database import init_db, session_for_tenant, unscoped_session
 from app.core.logging import configure_logging
@@ -78,7 +78,7 @@ async def tenant_job(tenant_id: uuid.UUID) -> AsyncGenerator[AsyncSession, None]
     requesting user to attribute the work to, and the tenant, which the session then
     pushes into the Postgres GUC that every RLS policy reads.
     """
-    actor_token = set_actor(SYSTEM)
+    actor_token = set_actor(system_actor_for(tenant_id))
     tenant_token = set_tenant_id(tenant_id)
     try:
         async with session_for_tenant(tenant_id) as db:

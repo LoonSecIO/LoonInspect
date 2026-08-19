@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     initial_admin_email: str | None = None
     initial_admin_password: str | None = None
 
+    # A template, not a literal path: the tenant is inserted as a directory above the
+    # filename, so this becomes ./data/audit/<tenant-id>/audit.jsonl, with a `system`
+    # directory for records belonging to no tenant. See app.core.audit.audit_path_for.
+    #
     # Relative on purpose. The container's WORKDIR is /app and the data volume mounts
     # at /app/data, so this resolves onto the volume with no env var needed — which
     # matters, because audit written anywhere else is destroyed on the next

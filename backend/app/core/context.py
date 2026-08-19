@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import uuid
 from contextvars import ContextVar, Token
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 # Set once per request by RequestContextMiddleware and read by the log formatters, so
 # every line emitted while handling a request carries the same id without any call
@@ -13,18 +14,23 @@ _client: ContextVar[ClientInfo | None] = ContextVar("client", default=None)
 
 @dataclass(frozen=True, slots=True)
 class Actor:
-    """Who is responsible for the current unit of work.
+    """Who is responsible for the current unit of work, and which tenant they act for.
 
-    Auth populates this in a later phase; for now everything is SYSTEM (scheduler
-    jobs, startup) or ANONYMOUS (inbound requests). Carrying `label` alongside `id`
-    is deliberate — audit records need to stay readable after an account is renamed
-    or an IdP rewrites an email, so the human-facing value is captured at the moment
-    of the action rather than resolved later.
+    Carrying `label` alongside `id` is deliberate — audit records need to stay readable
+    after an account is renamed or an IdP rewrites an email, so the human-facing value
+    is captured at the moment of the action rather than resolved later.
+
+    `tenant_id` is here for the audit trail's benefit: an audit record has to say which
+    tenant an action belonged to, and reading it off the actor keeps that out of every
+    call site. It is not what scopes database access — app.core.tenancy holds that, and
+    app.core.database is the only reader — but the two are set together at
+    authentication and must agree.
     """
 
     type: str  # account | api_token | system | anonymous
     id: str | None = None
     label: str = "-"
+    tenant_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +48,17 @@ class ClientInfo:
 SYSTEM = Actor(type="system", label="system")
 ANONYMOUS = Actor(type="anonymous", label="-")
 NO_CLIENT = ClientInfo()
+
+
+def system_actor_for(tenant_id: uuid.UUID) -> Actor:
+    """The system actor, acting for one tenant.
+
+    Scheduler jobs have no requesting user but they do have a tenant, and an audit
+    record saying "system did this" without saying whose data it touched is not much of
+    a record. The catalog refresh is the one job that correctly uses bare SYSTEM: it
+    touches only the global app corpus.
+    """
+    return replace(SYSTEM, tenant_id=tenant_id)
 
 
 def get_request_id() -> str | None:
