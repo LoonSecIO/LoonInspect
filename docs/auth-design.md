@@ -271,7 +271,7 @@ PUBLIC_PATHS = ("/api/health", "/api/auth/login", "/api/auth/setup", "/webhooks/
 
 A new router is protected the moment it's mounted. Making a route public is then a visible, reviewable diff against the allowlist.
 
-"Public" here means *exempt from session auth*, not unauthenticated. `/webhooks/` is on the list because it authenticates with its own per-connection header credential (§4.7) — during pre-release that check is stubbed, which is the one knowingly-open path in this design.
+"Public" here means *exempt from session auth*, not unauthenticated. `/webhooks/` is on the list because it authenticates with its own per-connection header credential (§4.7), implemented in #14.
 
 ### 4.5 Bootstrap (first run)
 
@@ -294,16 +294,16 @@ NIST SP 800-63B alignment, which is mostly about *removing* rules:
 - **Cap input at 128 characters before hashing.** Uncapped input to a memory-hard KDF is a cheap DoS — an unauthenticated endpoint that will happily argon2 a 10 MB request body is a gift. Easy to miss because it looks like a validation nicety rather than a control.
 - Breach-list checking is skipped: it needs a bundled corpus or an outbound API call, and air-gapped installs are a target deployment.
 
-### 4.7 Webhook authenticity — deferred, stubbed for pre-release
+### 4.7 Webhook authenticity — implemented (#14)
 
-`/webhooks/jamf/{connection_id}` currently accepts any POST from anyone who can guess an integer. **Out of scope for this effort**; the real design lands in a later iteration. Recording the intended shape here so the auth model doesn't accidentally foreclose it:
+`/webhooks/jamf/{connection_id}` authenticates with a per-connection shared secret as of #14. It previously accepted any POST from anyone who could guess an integer. The shape below is what shipped, except where noted:
 
 LoonInspect generates a high-entropy header credential per connection. The admin pastes it into Jamf Pro's webhook configuration (Jamf Pro supports Header Authentication natively — a header name and static value). Inbound webhooks present it as `X-API-Key` or similar, and it's stored in the existing, currently-unused `MdmConnection.webhook_secret_encrypted`.
 
 Three things that shape the eventual implementation, worth knowing now:
 
 - **This authenticates the caller, not the payload.** Unlike an HMAC signature over the body, a static header value gives no body integrity and no replay protection. That's an acceptable trade for Jamf compatibility, but it means TLS is load-bearing rather than defense-in-depth — the value is replayable verbatim if intercepted.
-- **Rotation needs two live values.** One column can't rotate without downtime: the moment you write the new secret, Jamf is still sending the old one until someone updates it by hand. Either accept a brief gap, or add a `previous_secret` + grace window. Worth deciding before it ships, since retrofitting it means a migration.
+- **Rotation needs two live values — still open, and still cheaper to add before real deployments exist.** One column can't rotate without downtime: the moment you write the new secret, Jamf is still sending the old one until someone updates it by hand. Either accept a brief gap, or add a `previous_secret` + grace window. Worth deciding before it ships, since retrofitting it means a migration.
 - **The secret must stay re-readable, unlike API tokens.** Admins need to paste it into Jamf Pro, possibly weeks after creating the connection, so the show-once rule from §4.3 can't apply. Gate re-reveal behind `CONNECTION_CREDENTIAL_READ` (Admin only) and audit each reveal — which the permission model in §5.1 already supports without additions.
 
 Comparison must be constant-time, and the response must be identical whether the connection exists or the credential is wrong, so the enumerable integer in the path can't be used as an existence oracle.
