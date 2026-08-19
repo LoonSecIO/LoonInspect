@@ -295,7 +295,7 @@ and is never reused.
 | PR-02 | Description states scope and the verification actually performed | `ci` | warn | proposed |
 | PR-03 | Agent-assisted pull requests carry the `agent-authored` label | `ci` | block | proposed |
 | PR-04 | Frontend typechecks and lints clean | `ci` | block | active |
-| PR-05 | Backend test suite passes | `ci` | block | proposed |
+| PR-05 | Backend test suite passes | `ci` | block | active |
 | PR-06 | Schema changes ship with an Alembic migration | `ci` | warn | proposed |
 | PR-07 | Every required status check passes before merge is available | `ruleset` | block | blocked |
 | PR-08 | Agent-authored changes are read in full by a human before merge | `review` | manual | proposed |
@@ -464,7 +464,7 @@ gh pr view "$PR" --json labels --jq '.labels[].name' | grep -qx 'agent-authored'
 
 ```bash
 cd frontend && npx tsc --noEmit && npx eslint .
-cd backend  && python -m pytest
+cd backend  && uv run --frozen pytest
 ```
 
 **PR-06** — migration accompanies schema change
@@ -509,7 +509,7 @@ that prevent damage over those that enforce tidiness:
    with no code to write and they close the irreversible failure modes.
    *Partially done — see [Repository configuration](#81-repository-configuration).*
 2. **A build-and-test workflow** — PR-04, PR-05, wired as required checks to
-   activate PR-07. *PR-04 done; PR-05 waits on a test suite.*
+   activate PR-07. *PR-04 and PR-05 done; see #11 for what the suite covers.*
 3. **A policy workflow** — BR-01, BR-02, BR-05, CM-01, CM-03, CM-04 as blocking;
    BR-03, CM-02, PR-01 as annotations.
 4. **Spike enforcement** — SP-01 and SP-04 join the policy workflow; SP-02 needs
