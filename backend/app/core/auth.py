@@ -49,8 +49,8 @@ _PUBLIC_EXACT = frozenset(
 )
 
 # Webhooks authenticate with their own per-connection credential rather than a session
-# (that check is still stubbed — see docs/auth-design.md §4.7). Exempt from session
-# auth, not unauthenticated.
+# (see docs/auth-design.md §4.7 and app.api.webhooks). Exempt from session auth, not
+# unauthenticated.
 _PUBLIC_PREFIXES = ("/webhooks/",)
 
 # FastAPI's generated docs enumerate the entire API surface, which is free
