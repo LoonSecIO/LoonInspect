@@ -44,7 +44,11 @@ jobs:
         run: npm run build
 
   backend:
-    name: Backend (ruff)
+    # Renamed from "Backend (ruff)" when the test suite landed. The job's display name
+    # is the required-status-check context in .github/rulesets/main.json, so the two
+    # have to change together or the ruleset waits forever on a context that no longer
+    # reports.
+    name: Backend (ruff + pytest)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -72,6 +76,12 @@ jobs:
 
       # `ruff format --check` is deliberately absent: adopting it today would
       # reformat 20 files across feature modules. Tracked in #16.
+
+      # PR-05. Needs no database service: everything covered so far is pure logic, and
+      # `create_async_engine` is lazy, so importing the modules under test never opens
+      # a connection. Add a `services: postgres` block here when DB-backed tests land.
+      - name: Test
+        run: uv run --frozen pytest -q
 
   image:
     name: Docker image

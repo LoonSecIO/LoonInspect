@@ -19,7 +19,19 @@ dependencies = [
 [dependency-groups]
 dev = [
     "ruff>=0.14",
+    "pytest>=8.4",
+    # No async tests yet — everything covered so far is pure and synchronous. Added
+    # now because the next tranche (anything touching a session) is async by
+    # construction, and because #11 scopes it here.
+    "pytest-asyncio>=1.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Tests import `app.*` directly rather than through an installed distribution, so the
+# backend/ directory itself has to be on the path.
+pythonpath = ["."]
+asyncio_mode = "auto"
 
 [tool.ruff]
 # 130 is descriptive of the code as written rather than a target to converge on;
