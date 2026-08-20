@@ -5,6 +5,7 @@ import { VersionBadge } from "@/features/auth/VersionBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/config/api";
+import { updateDataSharing } from "@/features/system/api";
 import { useAuthStore } from "@/features/auth/store";
 import { useLocale } from "@/i18n/LocaleContext";
 
@@ -22,6 +23,7 @@ export function SetupPage() {
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
+  const [share, setShare] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -49,6 +51,16 @@ export function SetupPage() {
 
     try {
       await completeSetup({ claimToken, email, displayName, password });
+      if (!share) {
+        // The stored default is "reveal", which is exactly what a checked box means —
+        // so only an unchecked box needs a write. Best-effort: if it fails, the
+        // Data Sharing settings page shows and can correct the actual state.
+        try {
+          await updateDataSharing({ tier: "off" });
+        } catch {
+          // Non-fatal by design.
+        }
+      }
       navigate("/", { replace: true });
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 403) {
@@ -137,6 +149,16 @@ export function SetupPage() {
             />
             <p className="text-xs text-muted-foreground">{t.auth.passwordHelp}</p>
           </div>
+
+          <label className="flex items-start gap-2 rounded-md border border-input p-3">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={share}
+              onChange={(event) => setShare(event.target.checked)}
+            />
+            <span className="text-xs text-muted-foreground">{t.auth.sharingChoice}</span>
+          </label>
 
           {error && (
             <p role="alert" className="text-sm text-destructive">

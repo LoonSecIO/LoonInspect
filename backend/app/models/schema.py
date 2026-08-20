@@ -222,6 +222,32 @@ class JamfPatchTitle(Base):
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class DataSharingSettings(Base):
+    """One row per tenant: the community data-sharing consent state
+    (docs/data-sharing.md). Created lazily on first access; an absent row means the
+    defaults — tier "reveal", no exclusions — which is also what the first-run
+    wizard's pre-checked choice writes.
+    """
+
+    __tablename__ = "data_sharing_settings"
+
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(primary_key=True)
+
+    # off | keys | reveal — app.schemas.system.SharingTier is the source of truth.
+    tier: Mapped[str] = mapped_column(String(16), default="reveal")
+
+    # The pseudonymous dedup identity on the wire. Per tenant, not per instance, so
+    # the server cannot tell which tenants co-reside on one box; resettable because
+    # the disclosure page promises it is.
+    submission_uuid: Mapped[uuid.UUID] = mapped_column(Uuid, default=uuid.uuid4)
+
+    # Operator's own filter, ahead of any server-side rule: bundle_id globs whose
+    # tuples never enter a snapshot at all (e.g. "com.acme.*").
+    exclude_globs: Mapped[list] = mapped_column(JSONB, default=list)
+
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class FeatureFlag(Base):
     """Admin overrides for features that are otherwise gated behind normal business
     conditions (e.g. a connection's capability flags). A flag being on here forces
