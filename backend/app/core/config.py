@@ -46,6 +46,11 @@ class Settings(BaseSettings):
 
     user_agent_product_name: str = "LoonSecIO"
 
+    # Hard kill switch for community data sharing (docs/data-sharing.md), for fleet
+    # and air-gapped deployments: false wins over any tier stored in the database,
+    # and the UI shows the override as the reason the control is locked.
+    community_sharing: bool = True
+
     # Daily check against main's HEAD so the UI can say a newer build exists.
     # UPDATE_CHECK=false turns the outbound call off entirely (see issue #43).
     update_check: bool = True

@@ -32,7 +32,8 @@ export const PERMISSIONS = {
   TOKEN_CREATE: "token:create",
   DESTINATION_READ: "destination:read",
   DESTINATION_WRITE: "destination:write",
-  SYSTEM_READ: "system:read"
+  SYSTEM_READ: "system:read",
+  SYSTEM_WRITE: "system:write"
 } as const;
 
 export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

@@ -180,6 +180,27 @@ indistinguishable from being up to date.
 
 ---
 
+## 🤝 Community data sharing
+
+LoonInspect's patching and vulnerability feeds are built from anonymous community
+inventory, and participating instances are what keep them accurate. Once a day, a
+sharing instance sends per-tenant **content-hash keys** of installed applications with
+aggregated install counts (plus OS and hardware tuples) — never per-device rows, and
+never device identifiers, serials, hostnames, user names, file paths, or anything from
+the accounts and credential tables. App *names* cross the wire only when the instance
+answers an explicit request for a title already seen at 5+ independent contributors,
+and only in the default tier; internal, company-specific apps are never revealed. The
+full design — including exactly what the k-threshold does and doesn't guarantee — is
+in [docs/data-sharing.md](docs/data-sharing.md).
+
+The choice is presented during first-run setup and lives under **Settings → Data
+Sharing** afterwards, alongside a button that renders the literal next payload from
+live data. `COMMUNITY_SHARING=false` in `.env` hard-disables sharing regardless of the
+UI. Air-gapped instances can leave it on — a failed exchange is silent and logged
+locally only.
+
+---
+
 ## 👥 Accounts and roles
 
 The first administrator is created either through the first-run wizard (a claim token

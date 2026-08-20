@@ -55,6 +55,9 @@ class AuditAction(StrEnum):
 
     FEATURE_FLAG_UPDATED = "feature-flag.updated"
 
+    SHARING_SETTINGS_UPDATED = "sharing.settings.updated"
+    SHARING_UUID_RESET = "sharing.uuid.reset"
+
     TOKEN_CREATED = "token.created"
     TOKEN_REVOKED = "token.revoked"
 
