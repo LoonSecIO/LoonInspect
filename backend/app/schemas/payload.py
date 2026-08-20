@@ -33,6 +33,8 @@ class NormalizedApp(BaseModel):
     # through there, so hashing happens in exactly one place.
     app_hash: str | None = None
     version_hash: str | None = None
+    key_title: str | None = None
+    key_full: str | None = None
 
 
 class NormalizedExtensionAttribute(BaseModel):

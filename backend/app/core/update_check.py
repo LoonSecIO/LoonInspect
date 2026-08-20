@@ -102,11 +102,8 @@ async def get_update_status() -> UpdateStatus:
 
 
 def _status_from(version: str, current_sha: str, entry: _CacheEntry) -> UpdateStatus:
-    if entry.latest_sha is None:
-        available = None
-    else:
-        # The build stamp is the short sha; GitHub returns the full one.
-        available = not entry.latest_sha.startswith(current_sha)
+    # The build stamp is the short sha; GitHub returns the full one.
+    available = None if entry.latest_sha is None else not entry.latest_sha.startswith(current_sha)
     return UpdateStatus(
         enabled=True,
         current_version=version,

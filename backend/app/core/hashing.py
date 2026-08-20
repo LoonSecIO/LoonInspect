@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import hashlib
 
-# These two values are external contract, not an implementation detail: the version
-# hash is the DynamoDB key used by the LoonSec Global API for patch and vulnerability
-# lookups. Changing the algorithm, the field order, the separator, or the treatment of
-# missing values silently breaks every lookup — misses look identical to "no data".
-# Any change here needs a matching change on the producer side and a re-hash of stored
-# rows.
+# Internal keys: app_hash groups the Applications page, version_hash drives inventory
+# deltas. Their former wire role — the lookup key sent to the LoonSec Global API —
+# moved to app.core.content_keys (v1, SHA-256; see docs/data-sharing.md). Changing
+# these still reshuffles deltas on the next sync, so they stay stable, but they are
+# no longer cross-codebase contract.
 
 _SEPARATOR = ":"
 

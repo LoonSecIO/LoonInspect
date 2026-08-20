@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.content_keys import app_full_key, app_title_key
 from app.core.context import get_request_id
 from app.core.hashing import compute_app_hash, compute_version_hash
 from app.core.outbox import enqueue_event
@@ -35,6 +36,8 @@ def apply_hashes(app: NormalizedApp) -> NormalizedApp:
     app.version_hash = compute_version_hash(
         app.name, app.bundle_id, app.version, app.short_version
     )
+    app.key_title = app_title_key(app.name, app.bundle_id)
+    app.key_full = app_full_key(app.name, app.bundle_id, app.version, app.short_version)
     return app
 
 
@@ -260,6 +263,8 @@ async def process_sync(
                 short_version=app.short_version,
                 app_hash=app.app_hash,
                 version_hash=app.version_hash,
+                key_title=app.key_title,
+                key_full=app.key_full,
             )
         )
 
