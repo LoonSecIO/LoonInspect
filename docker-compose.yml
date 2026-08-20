@@ -68,6 +68,13 @@ services:
       # hostname — Secure cookies are dropped by browsers over HTTP, which breaks
       # sign-in silently.
       SECURE_COOKIES: ${SECURE_COOKIES:-true}
+      # Daily check against GitHub for a newer build of main, surfaced as a banner
+      # to signed-in operators. Set false to disable the outbound call entirely
+      # (air-gapped instances can also just leave it on — failure is silent).
+      UPDATE_CHECK: ${UPDATE_CHECK:-true}
+      # Alternate provider for the update check; empty uses GitHub. Exists for the
+      # future api.loonsec.io endpoint and for testing against a mock.
+      UPDATE_CHECK_URL: ${UPDATE_CHECK_URL:-}
     volumes:
       # Audit log and TLS material. Application state lives in the database now, not
       # here.

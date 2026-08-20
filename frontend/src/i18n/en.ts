@@ -1,4 +1,8 @@
 export const en = {
+  system: {
+    updateAvailable: "A newer build of LoonInspect is available",
+    dismissUpdate: "Dismiss update notice"
+  },
   common: {
     darkMode: "Dark mode",
     lightMode: "Light mode",

@@ -61,6 +61,11 @@ class Permission(StrEnum):
     DESTINATION_READ = "destination:read"
     DESTINATION_WRITE = "destination:write"
 
+    # Instance-level status: currently just "is this build behind main". Not
+    # sensitive among signed-in users, but deliberately absent pre-auth — the
+    # sign-in page must not advertise that an instance runs known-old code.
+    SYSTEM_READ = "system:read"
+
 
 _INVENTORY_READ = frozenset(
     {
@@ -80,6 +85,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
         Permission.AUDIT_READ,
         Permission.TOKEN_CREATE,
         Permission.DESTINATION_READ,
+        Permission.SYSTEM_READ,
     },
     # Read-only admin: sees configuration, accounts, and history, writes nothing, and
     # never touches a live secret. A strict subset of admin, which is what makes it
@@ -91,6 +97,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
         Permission.AUDIT_READ,
         Permission.TOKEN_CREATE,
         Permission.DESTINATION_READ,
+        Permission.SYSTEM_READ,
     },
     # Every permission, including ones added after this line was written — a new
     # permission silently locking admins out of a feature would be the worse failure.

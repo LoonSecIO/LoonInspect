@@ -26,6 +26,7 @@ from app.api.devices import router as devices_router
 from app.api.feature_flags import router as feature_flags_router
 from app.api.jamf_patch import router as jamf_patch_router
 from app.api.routes import router as api_router
+from app.api.system import router as system_router
 from app.api.tokens import router as tokens_router
 from app.api.webhooks import router as webhooks_router
 from app.core.audit import configure_audit_logging
@@ -352,6 +353,7 @@ app.include_router(api_router)
 app.include_router(webhooks_router)
 app.include_router(connections_router)
 app.include_router(destinations_router)
+app.include_router(system_router)
 app.include_router(devices_router)
 app.include_router(applications_router)
 app.include_router(jamf_patch_router)

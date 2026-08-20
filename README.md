@@ -159,6 +159,27 @@ warn about this. Either terminate TLS in front, use `TLS_MODE=self-signed`, or s
 
 ---
 
+## 🔔 Update notifications
+
+Once a day, the backend asks GitHub for the newest commit on `main`
+(`api.github.com/repos/LoonSecIO/LoonInspect/commits/main`) and compares it with the
+sha this build was stamped with. Nothing is sent beyond the request itself — no
+instance ID, no telemetry, no inventory. When a newer build exists, signed-in
+operators see a banner with the update command; the sign-in page deliberately shows
+nothing, so an outdated instance never advertises that fact to strangers.
+
+The check never performs the update. Updating stays a host-side decision:
+
+```
+git pull && GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build
+```
+
+Set `UPDATE_CHECK=false` in `.env` to disable the outbound call entirely. Air-gapped
+deployments can also simply leave it on — an unreachable check fails silently and is
+indistinguishable from being up to date.
+
+---
+
 ## 👥 Accounts and roles
 
 The first administrator is created either through the first-run wizard (a claim token
