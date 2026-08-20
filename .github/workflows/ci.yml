@@ -63,7 +63,7 @@ jobs:
         env:
           POSTGRES_USER: looninspect
           POSTGRES_PASSWORD: looninspect
-          POSTGRES_DB: looninspect_test
+          POSTGRES_DB: looninspect
         ports:
           - 5432:5432
         options: >-
@@ -96,6 +96,19 @@ jobs:
       # `ruff format --check` is deliberately absent: adopting it today would
       # reformat 20 files across feature modules. Tracked in #16.
 
+      # The app must NOT connect as POSTGRES_USER. initdb creates that role as a
+      # superuser, and a superuser bypasses row-level security entirely and silently
+      # — every policy stays attached, shows up in \d, and enforces nothing. That is
+      # what ops/postgres/initdb/10-app-role.sh exists to prevent in a deployment,
+      # and CI has to mirror it or the tenancy sweep passes against no isolation at
+      # all. (Verified the hard way: the first run of this job connected as the
+      # superuser, and the sweep correctly reported cross-tenant reads returning 200.)
+      - name: Create the non-superuser application role
+        run: |
+          PGPASSWORD=looninspect psql -h localhost -U looninspect -d looninspect \
+            -c "CREATE ROLE looninspect_app LOGIN PASSWORD 'looninspect_app' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS" \
+            -c "CREATE DATABASE looninspect_test OWNER looninspect_app"
+
       # RUN_DB_TESTS opts the tenancy sweep in; without it those tests skip, which is
       # what keeps the suite runnable on a laptop with no database. ENCRYPTION_KEY is
       # a throwaway generated per run — the sweep writes credential columns through
@@ -103,7 +116,7 @@ jobs:
       - name: Test
         env:
           RUN_DB_TESTS: '1'
-          DATABASE_URL: postgresql+asyncpg://looninspect:looninspect@localhost:5432/looninspect_test
+          DATABASE_URL: postgresql+asyncpg://looninspect_app:looninspect_app@localhost:5432/looninspect_test
         run: |
           export ENCRYPTION_KEY="$(uv run --frozen python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
           uv run --frozen pytest -q
