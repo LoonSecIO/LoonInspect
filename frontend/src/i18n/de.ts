@@ -41,6 +41,9 @@ export const de: Translations = {
         "Glob-Muster, eines pro Zeile. Passende Anwendungen gelangen nie in einen Snapshot — gefiltert vor der Aggregation, vor jeder serverseitigen Regel.",
       lastExchange: "Letzter Austausch",
       neverExchanged: "nie — der Austausch-Job ist noch nicht aktiv",
+      logHeading: "Freigabeprotokoll",
+      logHelp: "Jeder Austauschversuch mit der wörtlich übertragenen Payload — byte-genaue Historie dessen, was diese Instanz verlassen hat. 90 Tage aufbewahrt.",
+      downloadLog: "Herunterladen (NDJSON)",
       loadFailed: "Datenfreigabe-Einstellungen konnten nicht geladen werden.",
       saveFailed: "Speichern fehlgeschlagen. Berechtigungen prüfen und erneut versuchen."
     }

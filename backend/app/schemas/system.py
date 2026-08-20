@@ -35,8 +35,8 @@ class DataSharingOut(BaseModel):
     # COMMUNITY_SHARING=false wins over the stored tier; the UI shows this as the
     # reason the control is locked rather than silently reporting tier "off".
     env_disabled: bool
-    # Stub until the exchange job (INSPECT-0048) writes the share log.
     last_exchange_at: datetime | None = None
+    last_exchange_outcome: str | None = None
 
 
 class DataSharingUpdate(BaseModel):

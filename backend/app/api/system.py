@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import PlainTextResponse
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditAction, audit
@@ -13,6 +15,7 @@ from app.core.database import get_db
 from app.core.permissions import Permission
 from app.core.sharing import build_exchange_request, get_or_create_settings
 from app.core.update_check import get_update_status
+from app.models.schema import ShareLog
 from app.schemas.system import DataSharingOut, DataSharingUpdate, UpdateStatusOut
 
 router = APIRouter(prefix="/api/system", tags=["system"])
@@ -36,12 +39,17 @@ async def update_status() -> UpdateStatusOut:
     )
 
 
-def _sharing_out(row) -> DataSharingOut:
+async def _sharing_out(db: AsyncSession, row) -> DataSharingOut:
+    last = (
+        await db.execute(select(ShareLog).order_by(desc(ShareLog.occurred_at)).limit(1))
+    ).scalar_one_or_none()
     return DataSharingOut(
         tier=row.tier,
         submission_uuid=str(row.submission_uuid),
         exclude_globs=list(row.exclude_globs or []),
         env_disabled=not settings.community_sharing,
+        last_exchange_at=last.occurred_at if last else None,
+        last_exchange_outcome=last.outcome if last else None,
     )
 
 
@@ -51,7 +59,7 @@ def _sharing_out(row) -> DataSharingOut:
     dependencies=[Depends(require(Permission.SYSTEM_READ))],
 )
 async def get_data_sharing(db: AsyncSession = Depends(get_db)) -> DataSharingOut:
-    return _sharing_out(await get_or_create_settings(db))
+    return await _sharing_out(db, await get_or_create_settings(db))
 
 
 @router.put(
@@ -79,7 +87,7 @@ async def update_data_sharing(
         tier=row.tier,
         exclude_glob_count=len(row.exclude_globs or []),
     )
-    return _sharing_out(row)
+    return await _sharing_out(db, row)
 
 
 @router.post(
@@ -96,7 +104,7 @@ async def reset_submission_uuid(db: AsyncSession = Depends(get_db)) -> DataShari
     await db.commit()
 
     audit(AuditAction.SHARING_UUID_RESET, target_type="data_sharing")
-    return _sharing_out(row)
+    return await _sharing_out(db, row)
 
 
 @router.get(
@@ -108,3 +116,49 @@ async def preview_exchange(db: AsyncSession = Depends(get_db)) -> dict:
     the exchange job uses — the preview cannot drift from the wire."""
     row = await get_or_create_settings(db)
     return await build_exchange_request(db, row)
+
+
+@router.get(
+    "/share-log",
+    response_class=PlainTextResponse,
+    dependencies=[Depends(require(Permission.AUDIT_READ))],
+)
+async def download_share_log(
+    days: int = Query(default=90, ge=1, le=90),
+    db: AsyncSession = Depends(get_db),
+) -> PlainTextResponse:
+    """The share log as NDJSON — byte-accurate history of what left this tenant.
+    AUDIT_READ on purpose: the auditor role exists precisely for "prove to me what
+    this thing does", and nothing in here is secret (it already left)."""
+    import json
+
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = (
+        (
+            await db.execute(
+                select(ShareLog).where(ShareLog.occurred_at >= since).order_by(ShareLog.occurred_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    lines = [
+        json.dumps(
+            {
+                "occurredAt": row.occurred_at.isoformat(),
+                "tier": row.tier,
+                "endpoint": row.endpoint,
+                "outcome": row.outcome,
+                "payload": row.payload,
+                "revealRequests": row.reveal_requests,
+                "error": row.error,
+            },
+            separators=(",", ":"),
+        )
+        for row in rows
+    ]
+    return PlainTextResponse(
+        "\n".join(lines) + ("\n" if lines else ""),
+        media_type="application/x-ndjson",
+        headers={"Content-Disposition": 'attachment; filename="share-log.ndjson"'},
+    )

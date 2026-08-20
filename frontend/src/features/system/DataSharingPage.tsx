@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { Download, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PERMISSIONS } from "@/features/auth/types";
 import { useHasPermission } from "@/features/auth/store";
@@ -11,6 +11,7 @@ import {
   type DataSharingSettings,
   type SharingTier
 } from "@/features/system/api";
+import { env } from "@/config/env";
 import { useLocale } from "@/i18n/LocaleContext";
 
 const TIERS: SharingTier[] = ["reveal", "keys", "off"];
@@ -50,6 +51,24 @@ export function DataSharingPage() {
       setSettings(await resetSubmissionUuid());
     } catch {
       setError(t.system.sharing.saveFailed);
+    }
+  }
+
+  async function handleDownloadLog() {
+    try {
+      setError(null);
+      // Raw fetch rather than apiRequest: the endpoint streams NDJSON, not JSON.
+      const response = await fetch(`${env.apiBaseUrl}/system/share-log`, { credentials: "include" });
+      if (!response.ok) throw new Error(String(response.status));
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "share-log.ndjson";
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError(t.system.sharing.loadFailed);
     }
   }
 
@@ -178,10 +197,20 @@ export function DataSharingPage() {
         />
       </section>
 
-      <p className="text-xs text-muted-foreground">
-        {t.system.sharing.lastExchange}:{" "}
-        {settings.lastExchangeAt ?? t.system.sharing.neverExchanged}
-      </p>
+      <section className="space-y-3 rounded-lg border bg-card p-6">
+        <h2 className="font-semibold">{t.system.sharing.logHeading}</h2>
+        <p className="text-sm text-muted-foreground">
+          {t.system.sharing.lastExchange}:{" "}
+          {settings.lastExchangeAt
+            ? `${new Date(settings.lastExchangeAt).toLocaleString()} (${settings.lastExchangeOutcome ?? "?"})`
+            : t.system.sharing.neverExchanged}
+        </p>
+        <p className="text-sm text-muted-foreground">{t.system.sharing.logHelp}</p>
+        <Button type="button" variant="outline" onClick={handleDownloadLog}>
+          <Download aria-hidden="true" className="mr-1.5 h-4 w-4" />
+          {t.system.sharing.downloadLog}
+        </Button>
+      </section>
     </div>
   );
 }

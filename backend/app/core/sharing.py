@@ -10,14 +10,20 @@ until it lands this module has exactly one caller, the preview endpoint.
 
 from __future__ import annotations
 
+import asyncio
+import logging
+from datetime import datetime, timedelta, timezone
 from fnmatch import fnmatch
 
-from sqlalchemy import distinct, func, select
+import httpx
+from sqlalchemy import delete, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings as app_settings
 from app.core.content_keys import os_key
+from app.core.user_agent import build_user_agent
 from app.core.version import get_app_version
-from app.models.schema import DataSharingSettings, Device, InstalledApp
+from app.models.schema import DataSharingSettings, Device, InstalledApp, ShareLog
 
 CONTRACT_VERSION = "v1"
 
@@ -89,3 +95,186 @@ async def build_exchange_request(db: AsyncSession, settings_row: DataSharingSett
         "snapshot": {"apps": apps, "os": os_tuples, "hardware": []},
         "reveals": [],
     }
+
+
+# --- The daily exchange -----------------------------------------------------------
+#
+# One conversation per tenant per day (docs/data-sharing.md): the snapshot above goes
+# up, whatever the server currently implements comes back. Reveal requests are stored
+# and answered in the NEXT exchange; a collector answering {} is a valid peer.
+
+logger = logging.getLogger(__name__)
+
+_RETRY_DELAYS = (2, 8, 30)
+_LOG_RETENTION = timedelta(days=90)
+
+
+async def build_reveals(db: AsyncSession, settings_row: DataSharingSettings) -> list[dict]:
+    """Answers to the previous response's requests — plaintext for the title keys the
+    server asked about, version tuples included. Empty unless the tier permits."""
+    pending = list(settings_row.pending_reveal_keys or [])
+    if settings_row.tier != "reveal" or not pending:
+        return []
+
+    rows = (
+        await db.execute(
+            select(
+                InstalledApp.key_title,
+                InstalledApp.name,
+                InstalledApp.bundle_id,
+                InstalledApp.version,
+                InstalledApp.short_version,
+                func.count(distinct(InstalledApp.device_id)).label("count"),
+            )
+            .where(InstalledApp.key_title.in_(pending))
+            .group_by(
+                InstalledApp.key_title,
+                InstalledApp.name,
+                InstalledApp.bundle_id,
+                InstalledApp.version,
+                InstalledApp.short_version,
+            )
+        )
+    ).all()
+
+    by_title: dict[str, dict] = {}
+    for row in rows:
+        entry = by_title.setdefault(
+            row.key_title,
+            {"title": row.key_title, "app_name": row.name, "bundle_id": row.bundle_id, "versions": []},
+        )
+        entry["versions"].append(
+            {"version": row.version, "short_version": row.short_version, "count": row.count}
+        )
+    return list(by_title.values())
+
+
+def apply_response(settings_row: DataSharingSettings, response: dict) -> None:
+    """Response semantics, tolerant by contract: every field optional, unknown fields
+    ignored, absent capabilities mean "nothing today" — never an error."""
+    if response.get("revoke") is True:
+        # Server-side kill switch: stop sharing until an admin re-consents.
+        settings_row.tier = "off"
+        settings_row.pending_reveal_keys = []
+        return
+
+    requests = response.get("reveal_requests")
+    if settings_row.tier == "reveal" and isinstance(requests, list):
+        settings_row.pending_reveal_keys = [k for k in requests if isinstance(k, str)][:1000]
+    else:
+        # Answered (or tier forbids answering); either way yesterday's asks are done.
+        settings_row.pending_reveal_keys = []
+
+    # response["verdicts"] is deliberately untouched: reserved in the v1 contract,
+    # schema unsettled, activated server-side post-V0. Parsing it here would freeze
+    # a shape the design doc explicitly leaves open.
+
+
+async def post_exchange(
+    request_body: dict, *, transport: httpx.AsyncBaseTransport | None = None
+) -> dict:
+    """POST with in-run backoff. A 413 drops the reveals and retries once, per the
+    contract; anything else exhausts the delays and raises to the caller, whose job
+    is to log a failed attempt and wait for tomorrow."""
+    headers = {"User-Agent": build_user_agent("exchange")}
+    async with httpx.AsyncClient(timeout=10.0, transport=transport) as client:
+        body = request_body
+        last_error: Exception | None = None
+        for delay in (0, *_RETRY_DELAYS):
+            if delay:
+                await asyncio.sleep(delay)
+            try:
+                response = await client.post(app_settings.sharing_endpoint, json=body, headers=headers)
+                if response.status_code == 413 and body.get("reveals"):
+                    body = {**body, "reveals": []}
+                    continue
+                response.raise_for_status()
+                return response.json() if response.content else {}
+            except httpx.HTTPError as exc:
+                last_error = exc
+        raise last_error if last_error else RuntimeError("exchange failed")
+
+
+def _jitter_minute_of_day(settings_row: DataSharingSettings) -> int:
+    """Stable per-tenant minute in [0, 1440): the herd-prevention the contract
+    promises, derived from the submission UUID so operators never schedule to the
+    minute themselves."""
+    return settings_row.submission_uuid.int % 1440
+
+
+async def _last_attempt_at(db: AsyncSession) -> datetime | None:
+    row = (
+        await db.execute(select(func.max(ShareLog.occurred_at)))
+    ).scalar_one_or_none()
+    return row
+
+
+def _due(now: datetime, last: datetime | None, minute_of_day: int) -> bool:
+    """Due once per day, at or after the jittered minute. A container that was down
+    at its slot sends at the first tick after it; one that already attempted today
+    (any outcome) waits for tomorrow."""
+    target = now.replace(hour=minute_of_day // 60, minute=minute_of_day % 60, second=0, microsecond=0)
+    if now < target:
+        return False
+    return last is None or last < target
+
+
+async def run_exchange(db: AsyncSession, *, transport: httpx.AsyncBaseTransport | None = None) -> None:
+    """One tenant's daily exchange, called from the scheduler tick with a
+    tenant-bound session. Assumes due-ness was already decided."""
+    settings_row = await get_or_create_settings(db)
+    if settings_row.tier == "off":
+        return
+
+    now = datetime.now(timezone.utc)
+
+    if not app_settings.community_sharing:
+        # The env override wins, visibly: one skipped row per day keeps the share
+        # log honest about why nothing is leaving.
+        db.add(
+            ShareLog(
+                occurred_at=now,
+                tier=settings_row.tier,
+                endpoint=app_settings.sharing_endpoint,
+                outcome="skipped_env",
+            )
+        )
+        await db.commit()
+        return
+
+    request_body = await build_exchange_request(db, settings_row)
+    request_body["reveals"] = await build_reveals(db, settings_row)
+
+    log = ShareLog(
+        occurred_at=now,
+        tier=settings_row.tier,
+        endpoint=app_settings.sharing_endpoint,
+        payload=request_body,
+        outcome="failed",
+    )
+    try:
+        response = await post_exchange(request_body, transport=transport)
+    except httpx.HTTPError as exc:
+        # Debug, not warning: an air-gapped instance with sharing left on is a
+        # supported configuration, not a daily fault.
+        logger.debug("exchange failed: %s", exc)
+        log.error = str(exc)[:2000]
+    else:
+        log.outcome = "sent"
+        log.reveal_requests = response.get("reveal_requests") if isinstance(response, dict) else None
+        apply_response(settings_row, response if isinstance(response, dict) else {})
+
+    db.add(log)
+    await db.execute(delete(ShareLog).where(ShareLog.occurred_at < now - _LOG_RETENTION))
+    await db.commit()
+
+
+async def exchange_due(db: AsyncSession) -> bool:
+    settings_row = await get_or_create_settings(db)
+    if settings_row.tier == "off":
+        return False
+    return _due(
+        datetime.now(timezone.utc),
+        await _last_attempt_at(db),
+        _jitter_minute_of_day(settings_row),
+    )

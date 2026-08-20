@@ -46,6 +46,10 @@ class Settings(BaseSettings):
 
     user_agent_product_name: str = "LoonSecIO"
 
+    # Where the daily exchange posts. The default is the production collector; tests
+    # and the future api.loonsec.io consolidation point it elsewhere.
+    sharing_endpoint: str = "https://api.loonsec.io/v1/exchange"
+
     # Hard kill switch for community data sharing (docs/data-sharing.md), for fleet
     # and air-gapped deployments: false wins over any tier stored in the database,
     # and the UI shows the override as the reason the control is locked.
