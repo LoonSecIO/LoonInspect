@@ -167,10 +167,16 @@ class InstalledApp(Base):
     # it's the grouping key behind the Applications page's per-app device counts.
     app_hash: Mapped[str] = mapped_column(String(32), index=True)
 
-    # md5(name:bundle_id:version[:short_version]) — a specific build, and the lookup
-    # key sent to the LoonSec Global API. Also what inventory deltas are computed on:
-    # a version change is a change.
+    # md5(name:bundle_id:version[:short_version]) — a specific build. Internal only:
+    # inventory deltas are computed on it (a version change is a change). Its former
+    # wire role belongs to key_full below.
     version_hash: Mapped[str] = mapped_column(String(32), index=True)
+
+    # v1 canonical content keys (app.core.content_keys) — the wire vocabulary for
+    # community data sharing and feed lookups (docs/data-sharing.md). Materialized
+    # because they are recomputed never and joined on daily: "v1:" + 64 hex chars.
+    key_title: Mapped[str] = mapped_column(String(67), index=True)
+    key_full: Mapped[str] = mapped_column(String(67), index=True)
 
     is_compliant: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     patch_available: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
