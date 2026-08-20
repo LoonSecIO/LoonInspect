@@ -1,5 +1,5 @@
 import { useMemo, type ComponentType } from "react";
-import { AlertTriangle, AppWindow, Database, Flag, Home, KeyRound, Layers, Plug, Send, Settings, ShieldCheck, UserCircle, UserCog, Users } from "lucide-react";
+import { AlertTriangle, AppWindow, Database, Flag, Home, KeyRound, Layers, Plug, Send, Settings, ShieldCheck, UserCircle, UserCog, Users, Share2 } from "lucide-react";
 import { NavLink } from "react-router";
 import { cn } from "@/lib/utils";
 import { FlaskLogo } from "@/components/icons/FlaskLogo";
@@ -69,6 +69,13 @@ const navigationItems: NavItem[] = [
         to: "/settings/api-tokens",
         end: false,
         permission: PERMISSIONS.TOKEN_CREATE
+      },
+      {
+        labelKey: "dataSharing",
+        icon: Share2,
+        to: "/settings/data-sharing",
+        end: false,
+        permission: PERMISSIONS.SYSTEM_READ
       },
       {
         labelKey: "destinations",

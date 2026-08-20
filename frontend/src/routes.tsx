@@ -18,6 +18,7 @@ import { IntegrationsPage } from "@/features/integrations/IntegrationsPage";
 import { AIPage } from "@/features/ai/AIPage";
 import { ConnectionsPage } from "@/features/mdm/ConnectionsPage";
 import { FeatureFlagsPage } from "@/features/settings/FeatureFlagsPage";
+import { DataSharingPage } from "@/features/system/DataSharingPage";
 import { ApiTokensPage } from "@/features/tokens/ApiTokensPage";
 import { DestinationsPage } from "@/features/destinations/DestinationsPage";
 import { VulnerabilitiesPage } from "@/features/vulnerabilities/VulnerabilitiesPage";
@@ -52,6 +53,7 @@ export function AppRoutes() {
         </Route>
         <Route element={<RequirePermission permission={PERMISSIONS.FEATURE_FLAG_WRITE} />}>
           <Route path="settings/feature-flags" element={<FeatureFlagsPage />} />
+          <Route path="settings/data-sharing" element={<DataSharingPage />} />
         </Route>
         <Route element={<RequirePermission permission={PERMISSIONS.TOKEN_CREATE} />}>
           <Route path="settings/api-tokens" element={<ApiTokensPage />} />

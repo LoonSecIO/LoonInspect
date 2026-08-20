@@ -66,6 +66,11 @@ class Permission(StrEnum):
     # sign-in page must not advertise that an instance runs known-old code.
     SYSTEM_READ = "system:read"
 
+    # Consent changes for community data sharing. Granted to no role explicitly, so
+    # only admin (which holds every permission) can flip a tenant's tier — a consent
+    # decision, not an operational one.
+    SYSTEM_WRITE = "system:write"
+
 
 _INVENTORY_READ = frozenset(
     {

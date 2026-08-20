@@ -3,7 +3,47 @@ import type { Translations } from "@/i18n/en";
 export const de: Translations = {
   system: {
     updateAvailable: "Ein neuerer Build von LoonInspect ist verfügbar",
-    dismissUpdate: "Update-Hinweis ausblenden"
+    dismissUpdate: "Update-Hinweis ausblenden",
+    sharing: {
+      pageDescription:
+        "Die Patch- und Schwachstellen-Feeds von LoonInspect entstehen aus anonymem Community-Inventar. Was diese Instanz beiträgt — und ob überhaupt — wird hier festgelegt.",
+      envLocked:
+        "COMMUNITY_SHARING=false ist in der Umgebung gesetzt. Unabhängig von der Auswahl unten wird nichts geteilt; diese Einstellungen sind gesperrt, bis die Vorgabe entfernt wird.",
+      tierHeading: "Teilnahme",
+      tierReveal: "Teilen und verbreitete Titel offenlegen (empfohlen)",
+      tierRevealHelp:
+        "Täglich anonyme Inventarschlüssel mit Installationszahlen. App-Namen werden nur offengelegt, wenn LoonSec nach einem Titel fragt, der bei mindestens 5 unabhängigen Teilnehmern vorkommt — interne, firmenspezifische Apps werden nie offengelegt.",
+      tierKeys: "Nur Schlüssel teilen",
+      tierKeysHelp:
+        "Täglich anonyme Inventarschlüssel mit Installationszahlen. Anfragen nach App-Namen werden nie beantwortet — es wird ausschließlich Verbreitungssignal beigetragen.",
+      tierOff: "Aus",
+      tierOffHelp:
+        "Es wird nichts geteilt, und diese Instanz erhält die aus der Community aufgebauten Patch- und Schwachstellen-Feeds nicht mehr.",
+      disclosureHeading: "Was geteilt wird",
+      disclosureShared:
+        "Täglich pro Tenant geteilt: Content-Hash-Schlüssel installierter Anwendungen mit Installationszahlen, OS-Versions-Tupel, Hardware-Modell-Tupel, die pseudonyme Übermittlungs-ID unten und die Build-Version dieses Containers. Zahlen werden vor dem Versand über Geräte summiert — nie einzelne Gerätezeilen.",
+      disclosureNever:
+        "Nie geteilt: Gerätekennungen, Seriennummern, Hostnamen, Benutzernamen, Dateipfade, Extension Attributes, Verbindungs- oder Tenant-Namen, Konten, Zugangsdaten oder Audit-Historie. LoonSec speichert auf diesem Pfad keine Quell-IP-Adressen.",
+      disclosureReveals:
+        "App-Namen verlassen diese Instanz nur als Antwort auf eine ausdrückliche Anfrage zu einem Titel, der bereits bei 5+ unabhängigen Teilnehmern vorkommt (nur Stufe „Offenlegen“). Diese Schwelle ist LoonSecs veröffentlichte Regel; sie ist von dieser Seite aus nicht überprüfbar — dafür gibt es die Nur-Schlüssel-Stufe.",
+      disclosurePseudonym:
+        "Übermittlungen sind pseudonym, nicht anonym: Snapshots dieses Tenants sind über die Übermittlungs-ID miteinander verknüpfbar (so ersetzen erneute Übermittlungen ältere, statt doppelt gezählt zu werden). Die ID ist zufällig, an nichts gebunden und unten zurücksetzbar.",
+      previewHeading: "Genau das, was gesendet würde",
+      previewHelp:
+        "Zeigt die wörtliche nächste Übertragung aus den Live-Daten dieser Instanz — über denselben Codepfad wie der tägliche Austausch.",
+      previewButton: "Payload anzeigen",
+      identityHeading: "Übermittlungsidentität",
+      identityHelp:
+        "Die Zufalls-ID, mit der LoonSec den vorherigen Snapshot dieses Tenants ersetzt, statt ihn doppelt zu zählen. Ein Zurücksetzen trennt die Verbindung zu allem zuvor Gesendeten.",
+      resetUuid: "Zurücksetzen",
+      excludeHeading: "Ausgeschlossene Bundle-IDs",
+      excludeHelp:
+        "Glob-Muster, eines pro Zeile. Passende Anwendungen gelangen nie in einen Snapshot — gefiltert vor der Aggregation, vor jeder serverseitigen Regel.",
+      lastExchange: "Letzter Austausch",
+      neverExchanged: "nie — der Austausch-Job ist noch nicht aktiv",
+      loadFailed: "Datenfreigabe-Einstellungen konnten nicht geladen werden.",
+      saveFailed: "Speichern fehlgeschlagen. Berechtigungen prüfen und erneut versuchen."
+    }
   },
   common: {
     darkMode: "Dunkelmodus",
@@ -39,6 +79,8 @@ export const de: Translations = {
     createAdmin: "Administrator erstellen",
     creating: "Wird erstellt…",
     invalidClaimToken: "Dieser Freischaltcode ist ungültig.",
+    sharingChoice:
+      "Anonyme App-, OS- und Hardware-Verbreitung zu den Community-Patch- und Schwachstellen-Feeds beitragen. Nur aggregierte Zahlen und Content-Hashes — nie Geräte-, Benutzer- oder firmenidentifizierende Daten. Jederzeit einsehbar unter Einstellungen \u2192 Datenfreigabe.",
     setupAlreadyDone: "Diese Instanz wurde bereits eingerichtet. Bitte melden Sie sich an.",
     passwordTooShort: "Das Passwort muss mindestens 12 Zeichen lang sein.",
     validationFailed:
@@ -60,6 +102,7 @@ export const de: Translations = {
     settings: "Einstellungen",
     connections: "Verbindungen",
     featureFlags: "Feature-Flags",
+    dataSharing: "Datenfreigabe",
     apiTokens: "API-Token",
     accounts: "Konten",
     myAccount: "Mein Konto",

@@ -1,7 +1,47 @@
 export const en = {
   system: {
     updateAvailable: "A newer build of LoonInspect is available",
-    dismissUpdate: "Dismiss update notice"
+    dismissUpdate: "Dismiss update notice",
+    sharing: {
+      pageDescription:
+        "LoonInspect's patching and vulnerability feeds are built from anonymous community inventory. What this instance contributes — and whether it contributes at all — is controlled here.",
+      envLocked:
+        "COMMUNITY_SHARING=false is set in the environment. Nothing is shared regardless of the choice below, and these controls are locked until the override is removed.",
+      tierHeading: "Participation",
+      tierReveal: "Share, and reveal common titles (recommended)",
+      tierRevealHelp:
+        "Daily anonymous inventory keys with install counts. App names are revealed only when LoonSec asks about a title seen at 5 or more independent contributors — internal, company-specific apps are never revealed.",
+      tierKeys: "Share keys only",
+      tierKeysHelp:
+        "Daily anonymous inventory keys with install counts. Never answers requests for app names — contributes prevalence signal only.",
+      tierOff: "Off",
+      tierOffHelp:
+        "Nothing is shared, and this instance stops receiving the community-built patching and vulnerability feeds.",
+      disclosureHeading: "What is shared",
+      disclosureShared:
+        "Shared daily, per tenant: content-hash keys of installed applications with install counts, OS version tuples, hardware model tuples, the pseudonymous submission ID below, and this container's build version. Counts are summed across devices before anything leaves — never per-device rows.",
+      disclosureNever:
+        "Never shared: device identifiers, serial numbers, hostnames, user names, file paths, extension attributes, connection or tenant names, accounts, credentials, or audit history. LoonSec does not store source IP addresses on this path.",
+      disclosureReveals:
+        "App names cross the wire only when this instance answers an explicit request for a title already seen at 5+ independent contributors ('reveal' tier only). That threshold is LoonSec's published rule; it cannot be verified from this side, which is why the keys-only tier exists.",
+      disclosurePseudonym:
+        "Submissions are pseudonymous, not anonymous: snapshots from this tenant are linkable to each other through the submission ID (that is how re-submissions replace older ones instead of double-counting). The ID is random, tied to nothing, and resettable below.",
+      previewHeading: "Exactly what would be sent",
+      previewHelp:
+        "Renders the literal next payload from this instance's live data, through the same code path the daily exchange uses.",
+      previewButton: "Show the payload",
+      identityHeading: "Submission identity",
+      identityHelp:
+        "The random ID that lets LoonSec replace this tenant's previous snapshot instead of counting it twice. Resetting it severs the link to everything sent before.",
+      resetUuid: "Reset",
+      excludeHeading: "Excluded bundle IDs",
+      excludeHelp:
+        "Glob patterns, one per line. Matching applications never enter a snapshot at all — filtered before aggregation, ahead of any server-side rule.",
+      lastExchange: "Last exchange",
+      neverExchanged: "never — the exchange job is not active yet",
+      loadFailed: "Could not load data-sharing settings.",
+      saveFailed: "Could not save. Check your permissions and try again."
+    }
   },
   common: {
     darkMode: "Dark mode",
@@ -37,6 +77,8 @@ export const en = {
     createAdmin: "Create administrator",
     creating: "Creating…",
     invalidClaimToken: "That claim token is not valid.",
+    sharingChoice:
+      "Contribute anonymous app, OS, and hardware prevalence to the community patching and vulnerability feeds. Aggregated counts and content hashes only — never device, user, or company-identifying data. Reviewable any time under Settings \u2192 Data Sharing.",
     setupAlreadyDone: "This instance has already been set up. Sign in instead.",
     passwordTooShort: "Password must be at least 12 characters.",
     validationFailed: "Some of those details weren't accepted. Check the form and try again.",
@@ -57,6 +99,7 @@ export const en = {
     settings: "Settings",
     connections: "Connections",
     featureFlags: "Feature Flags",
+    dataSharing: "Data Sharing",
     apiTokens: "API Tokens",
     accounts: "Accounts",
     myAccount: "My Account",
