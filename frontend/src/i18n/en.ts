@@ -39,6 +39,9 @@ export const en = {
         "Glob patterns, one per line. Matching applications never enter a snapshot at all — filtered before aggregation, ahead of any server-side rule.",
       lastExchange: "Last exchange",
       neverExchanged: "never — the exchange job is not active yet",
+      logHeading: "Share log",
+      logHelp: "Every exchange attempt, with the verbatim payload as transmitted — byte-accurate history of what left this instance. Retained for 90 days.",
+      downloadLog: "Download (NDJSON)",
       loadFailed: "Could not load data-sharing settings.",
       saveFailed: "Could not save. Check your permissions and try again."
     }

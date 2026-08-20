@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, Uuid, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Uuid, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -246,6 +246,30 @@ class DataSharingSettings(Base):
     exclude_globs: Mapped[list] = mapped_column(JSONB, default=list)
 
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Title keys the server asked to have revealed, carried to the NEXT exchange —
+    # the reveal-lag the contract specifies. Only ever populated on the reveal tier.
+    pending_reveal_keys: Mapped[list] = mapped_column(JSONB, default=list)
+
+
+class ShareLog(Base):
+    """One row per exchange attempt: exactly what left the box, verbatim
+    (docs/data-sharing.md). Plain JSONB and not EncryptedString on purpose — the
+    payload has already left; the log's whole value is that it is inspectable, and
+    pretending it is secret would be theater. Pruned past 90 days on write."""
+
+    __tablename__ = "share_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    tier: Mapped[str] = mapped_column(String(16))
+    endpoint: Mapped[str] = mapped_column(String(255))
+    # sent | failed | skipped_env
+    outcome: Mapped[str] = mapped_column(String(16))
+    payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    reveal_requests: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class FeatureFlag(Base):

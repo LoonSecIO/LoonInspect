@@ -39,6 +39,7 @@ from app.core.database import init_db, session_for_tenant, unscoped_session
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
 from app.core.outbox import deliver_pending, fan_out_pending, purge_delivered_events
+from app.core.sharing import exchange_due, run_exchange
 from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
 from app.mdm.patch.jamf_catalog import sync_catalog
 from app.mdm.service import sync_connection
@@ -144,6 +145,22 @@ async def hourly_jamf_patch_sync() -> None:
         logger.info("jamf patch catalog synced")
     finally:
         reset_actor(actor_token)
+
+
+async def sharing_exchange_tick() -> None:
+    """Community data-sharing exchange (docs/data-sharing.md). Runs every five
+    minutes but sends at most once per tenant per day, at a minute-of-day derived
+    from the tenant's submission UUID — herd prevention without operator-facing
+    scheduling. A tick that isn't due touches one settings row and stops."""
+    for tenant_id in await operational_tenant_ids():
+        async with tenant_job(tenant_id) as db:
+            try:
+                if await exchange_due(db):
+                    await run_exchange(db)
+            except Exception:
+                # A failure here must never take the scheduler down with it; the
+                # share log carries the per-attempt record.
+                logger.exception("sharing exchange tick failed", extra={"tenant_id": str(tenant_id)})
 
 
 async def hourly_session_cleanup() -> None:
@@ -282,6 +299,12 @@ async def lifespan(app: FastAPI):
             hourly_session_cleanup,
             CronTrigger(minute=30),
             id="hourly_session_cleanup",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            sharing_exchange_tick,
+            IntervalTrigger(minutes=5),
+            id="sharing_exchange_tick",
             replace_existing=True,
         )
         scheduler.add_job(

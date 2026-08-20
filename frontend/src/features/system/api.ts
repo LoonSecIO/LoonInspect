@@ -23,6 +23,7 @@ export interface DataSharingSettings {
   /** COMMUNITY_SHARING=false wins over the stored tier; shown as the lock reason. */
   envDisabled: boolean;
   lastExchangeAt: string | null;
+  lastExchangeOutcome: string | null;
 }
 
 export function getDataSharing(): Promise<DataSharingSettings> {
