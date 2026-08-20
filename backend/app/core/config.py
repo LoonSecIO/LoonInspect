@@ -46,6 +46,14 @@ class Settings(BaseSettings):
 
     user_agent_product_name: str = "LoonSecIO"
 
+    # Daily check against main's HEAD so the UI can say a newer build exists.
+    # UPDATE_CHECK=false turns the outbound call off entirely (see issue #43).
+    update_check: bool = True
+    # Where that check asks. Empty means the default provider (GitHub's commits API);
+    # the api.loonsec.io flip (#43) and tests point this elsewhere. The response just
+    # needs a JSON body with a "sha" key.
+    update_check_url: str = ""
+
     scheduler_enabled: bool = True
     sync_hour: int = 1
     sync_minute: int = 0

@@ -1,6 +1,10 @@
 import type { Translations } from "@/i18n/en";
 
 export const de: Translations = {
+  system: {
+    updateAvailable: "Ein neuerer Build von LoonInspect ist verfügbar",
+    dismissUpdate: "Update-Hinweis ausblenden"
+  },
   common: {
     darkMode: "Dunkelmodus",
     lightMode: "Hellmodus",
