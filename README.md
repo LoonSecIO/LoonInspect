@@ -89,7 +89,7 @@ A SIEM webhook URL is optional for a first run. MDM connections (Jamf, SimpleMDM
 ### 3. Build and run
 
 ```bash
-docker compose up --build
+GIT_SHA=$(git rev-parse --short HEAD) docker compose up --build
 ```
 
 This builds the frontend, bundles it into the FastAPI image, and starts the app at <http://localhost:8000>. API docs are at <http://localhost:8000/docs>.

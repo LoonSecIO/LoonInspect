@@ -12,6 +12,7 @@ export const en = {
     sidebarHidden: "Hidden"
   },
   auth: {
+    versionLabel: "Version",
     loading: "Loading…",
     loginTitle: "Sign in",
     loginDescription: "Sign in to your LoonInspect instance.",

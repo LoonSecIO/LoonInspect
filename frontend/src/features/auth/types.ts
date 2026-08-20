@@ -39,6 +39,8 @@ export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 export interface AuthStatusResponse {
   setupRequired: boolean;
   authenticated: boolean;
+  /** The running build, e.g. "2026.08.20+99361ed", or the dev sentinel. */
+  version: string;
 }
 
 export interface SetupInput {

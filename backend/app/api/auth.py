@@ -25,6 +25,7 @@ from app.core.context import Actor
 from app.core.database import get_db
 from app.core.permissions import Permission, permissions_for
 from app.core.security import hash_password, tokens_equal, verify_password
+from app.core.version import get_app_version
 from app.models.schema import Account, AuthIdentity, LoginAttempt, UserSession
 from app.schemas.accounts import PasswordChangeRequest
 from app.schemas.auth import AccountOut, AuthStatusOut, LoginRequest, Role, SetupRequest
@@ -99,7 +100,7 @@ async def auth_status(request: Request, db: AsyncSession = Depends(get_db)) -> A
     if raw_token:
         authenticated = await resolve_session(db, raw_token) is not None
 
-    return AuthStatusOut(setup_required=total == 0, authenticated=authenticated)
+    return AuthStatusOut(setup_required=total == 0, authenticated=authenticated, version=get_app_version())
 
 
 @router.post("/setup", response_model=AccountOut, status_code=status.HTTP_201_CREATED)

@@ -34,7 +34,12 @@ services:
     restart: unless-stopped
 
   app:
-    build: .
+    build:
+      context: .
+      args:
+        # Stamped into the image as part of the version string. Set it when building:
+        #   GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build
+        GIT_SHA: ${GIT_SHA:-}
     depends_on:
       db:
         condition: service_healthy
