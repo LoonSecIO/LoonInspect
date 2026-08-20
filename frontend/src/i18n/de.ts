@@ -14,6 +14,7 @@ export const de: Translations = {
     sidebarHidden: "Ausgeblendet"
   },
   auth: {
+    versionLabel: "Version",
     loading: "Wird geladen…",
     loginTitle: "Anmelden",
     loginDescription: "Melden Sie sich bei Ihrer LoonInspect-Instanz an.",

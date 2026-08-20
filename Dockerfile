@@ -41,6 +41,13 @@ RUN uv sync --frozen --no-install-project --no-dev
 COPY backend/ ./
 RUN uv sync --frozen --no-dev
 
+# Which build this is: CalVer date of the build plus the commit it was built from.
+# GIT_SHA arrives as a build arg because .dockerignore keeps .git out of the context
+# (deliberately). An empty or missing arg degrades to "unknown" rather than failing:
+# the date still identifies the build to the day.
+ARG GIT_SHA
+RUN printf '{"version": "%s+%s"}\n' "$(date -u +%Y.%m.%d)" "${GIT_SHA:-unknown}" > app/build_info.json
+
 # Lands inside the `app` package, which uv installed as an editable pointer to /app —
 # so the built SPA is picked up from the source tree with no reinstall. It does change
 # the directory uv hashed when it installed the project, which is why both `uv run`

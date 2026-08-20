@@ -36,6 +36,9 @@ class AuthStatusOut(_CamelModel):
 
     setup_required: bool
     authenticated: bool
+    # The running build, e.g. "2026.08.20+99361ed" — or the dev sentinel. Shown on
+    # the sign-in screen; deliberately exposed unauthenticated (see issue #41).
+    version: str
 
 
 class AccountOut(_CamelModel):

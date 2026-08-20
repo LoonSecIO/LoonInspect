@@ -6,6 +6,8 @@ import type { AuthStatus, AuthUser, PermissionName, SetupInput } from "@/feature
 interface AuthStore {
   status: AuthStatus;
   user: AuthUser | null;
+  /** Backend build version from /auth/status; null until the probe returns. */
+  version: string | null;
   bootstrap: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   completeSetup: (input: SetupInput) => Promise<void>;
@@ -15,12 +17,14 @@ interface AuthStore {
 export const useAuthStore = create<AuthStore>((set) => ({
   status: "unknown",
   user: null,
+  version: null,
 
   /** Resolves which of the three entry states the app is in, before any route renders.
    *  Called once on mount; /auth/status is public so it works while signed out. */
   async bootstrap() {
     try {
       const status = await authApi.getAuthStatus();
+      set({ version: status.version });
 
       if (status.setupRequired) {
         set({ status: "setup-required", user: null });
