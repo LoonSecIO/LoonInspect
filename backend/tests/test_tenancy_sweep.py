@@ -272,6 +272,30 @@ async def test_foreign_collection_404_and_untouched(client, seeded) -> None:
     assert (await client.get(f"/api/mdm/collections/{seeded['t1']['collection_id']}")).status_code == 200
 
 
+async def test_change_feed_and_policy_are_tenant_scoped(client, seeded) -> None:
+    """The change feed lists only this tenant's rows, and the policy is per tenant: a PUT
+    from tenant 1 must not alter what tenant 2 derives under."""
+    from app.core.database import session_for_tenant
+    from app.models.schema import ChangePolicy
+
+    feed = await client.get("/api/changes?pageSize=5")
+    assert feed.status_code == 200
+    assert all(row["mdmConnectionId"] != seeded["t2"]["connection_id"] for row in feed.json()["items"])
+
+    before = await client.get("/api/changes/policy")
+    assert before.status_code == 200 and before.json()["minimumLevel"] == "normal"
+
+    saved = await client.put("/api/changes/policy", json={"minimumLevel": "high", "fields": {"general.name": True}})
+    assert saved.status_code == 200 and saved.json()["minimumLevel"] == "high"
+
+    async with session_for_tenant(seeded["t2"]["tenant_id"]) as db:
+        rows = (await db.execute(select(ChangePolicy))).scalars().all()
+        assert rows == [], "tenant 2 must not see or inherit tenant 1's policy row"
+
+    # Restore the default for the next run on a shared local database.
+    assert (await client.put("/api/changes/policy", json={"minimumLevel": "normal"})).status_code == 200
+
+
 async def test_foreign_device_account_token_404(client, seeded) -> None:
     assert (await client.get(f"/api/devices/{seeded['t2']['device_id']}")).status_code == 404
     assert (await client.get(f"/api/accounts/{seeded['t2']['account_id']}")).status_code == 404

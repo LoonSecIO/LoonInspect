@@ -58,6 +58,8 @@ class AuditAction(StrEnum):
     COLLECTION_DELETED = "collection.deleted"
     COLLECTION_RUN_TRIGGERED = "collection.run.triggered"
 
+    CHANGE_POLICY_UPDATED = "change-policy.updated"
+
     FEATURE_FLAG_UPDATED = "feature-flag.updated"
 
     SHARING_SETTINGS_UPDATED = "sharing.settings.updated"
