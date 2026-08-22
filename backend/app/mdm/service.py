@@ -26,6 +26,7 @@ from app.mdm.jamf.contract import (
     canonicalize_smart_group,
 )
 from app.mdm.patch.factory import get_patch_provider
+from app.mdm.patch.matching import apply_catalog_matches
 from app.models.schema import Collection, Device, DeviceExtensionAttribute, InstalledApp, MdmConnection, MdmSyncState
 from app.observations.ledger import (
     RecordResult,
@@ -647,6 +648,15 @@ async def process_sync(
         )
 
     await db.flush()
+    # The Jamf Patch answer for every installed app — which title, is it the latest, has Jamf
+    # seen the version — from the global catalog, for every connection; then whatever the
+    # connection's own patch provider adds on top.
+    await apply_catalog_matches(
+        db,
+        existing,
+        os_version=device.os_version,
+        extension_attributes={ea.key: ea.value for ea in device.extension_attributes},
+    )
     await _apply_patch_status(existing, connection)
 
     if not added and not removed_rows:

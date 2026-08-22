@@ -55,6 +55,15 @@ function VulnerabilityStubCell({ t }: { t: Translations }) {
   );
 }
 
+/** Devices matched to the title whose installed version Jamf has not listed — ahead of the
+ *  catalog (a beta) or a build Jamf never recorded. */
+function unlistedDevices(title: JamfPatchTitleDetail): number {
+  const listed = new Set(title.patches.map((patch) => patch.version));
+  return Object.entries(title.versionDeviceCounts)
+    .filter(([version]) => !listed.has(version))
+    .reduce((sum, [, count]) => sum + count, 0);
+}
+
 export function JamfPatchDetailPage() {
   const { t } = useLocale();
   const { titleId } = useParams<{ titleId: string }>();
@@ -107,6 +116,9 @@ export function JamfPatchDetailPage() {
             <p className="mt-1 text-sm text-muted-foreground">
               {title.publisher ?? "—"} · {title.bundleId ?? "—"} · {t.jamfPatch.tableCurrentVersion}:{" "}
               {title.currentVersion}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t.jamfPatch.detail.deviceSummary(title.deviceCount, title.devicesOnLatest)}
             </p>
           </div>
 
@@ -173,8 +185,9 @@ export function JamfPatchDetailPage() {
                           <td className="px-4 py-2">
                             {patch.releaseDate ? new Date(patch.releaseDate).toLocaleDateString() : "—"}
                           </td>
-                          {/* Stub — not wired to real device-inventory counts yet. */}
-                          <td className="px-4 py-2 text-muted-foreground">—</td>
+                          <td className="px-4 py-2 tabular-nums">
+                            {title.versionDeviceCounts[patch.version] ?? 0}
+                          </td>
                           {/* Stub — requires the LoonSecIO integration to be enabled. */}
                           <td className="px-4 py-2">
                             <VulnerabilityStubCell t={t} />
@@ -186,6 +199,9 @@ export function JamfPatchDetailPage() {
                 </div>
 
                 <p className="text-sm text-muted-foreground">{t.jamfPatch.detail.versionsTotal(title.patches.length)}</p>
+                {unlistedDevices(title) > 0 && (
+                  <p className="text-sm text-muted-foreground">{t.jamfPatch.detail.unlistedVersions(unlistedDevices(title))}</p>
+                )}
               </>
             )}
           </div>

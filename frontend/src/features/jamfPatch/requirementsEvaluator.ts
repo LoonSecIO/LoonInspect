@@ -44,9 +44,11 @@ function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-function compareOperator(operator: string, actual: string, expected: string): boolean {
-  const a = actual.toLowerCase();
-  const e = expected.toLowerCase();
+// Mirrors backend/app/mdm/patch/requirements.py — the same rule the device process applies.
+// `null` means the operator is not one we know: not applicable rather than a failure.
+function compareOperator(operator: string, actual: string, expected: string): boolean | null {
+  const a = actual.trim().toLowerCase();
+  const e = expected.trim().toLowerCase();
 
   switch (operator) {
     case "is":
@@ -54,6 +56,7 @@ function compareOperator(operator: string, actual: string, expected: string): bo
     case "is not":
       return a !== e;
     case "like":
+    case "has":
       return a.includes(e);
     case "not like":
       return !a.includes(e);
@@ -78,8 +81,13 @@ function compareOperator(operator: string, actual: string, expected: string): bo
     case "less than or equal":
       return compareVersions(actual, expected) <= 0;
     default:
-      return false;
+      return null;
   }
+}
+
+function outcomeOf(result: boolean | null): TestOutcome {
+  if (result === null) return "not_applicable";
+  return result ? "pass" : "fail";
 }
 
 export function evaluateTest(test: JamfPatchRequirementTest, facts: TestFacts): TestOutcome {
@@ -87,18 +95,20 @@ export function evaluateTest(test: JamfPatchRequirementTest, facts: TestFacts): 
     if (!facts.extensionAttributeName || facts.extensionAttributeName.toLowerCase() !== test.name.toLowerCase()) {
       return "not_applicable";
     }
-    return compareOperator(test.operator, facts.extensionAttributeValue, test.value) ? "pass" : "fail";
+    return outcomeOf(compareOperator(test.operator, facts.extensionAttributeValue, test.value));
   }
 
   switch (test.name) {
     case "Application Bundle ID":
-      return compareOperator(test.operator, facts.bundleId, test.value) ? "pass" : "fail";
+      return outcomeOf(compareOperator(test.operator, facts.bundleId, test.value));
     case "Application Title":
-      return compareOperator(test.operator, facts.appName, test.value) ? "pass" : "fail";
+      return outcomeOf(compareOperator(test.operator, facts.appName, test.value));
     case "Application Version": {
-      const shortMatches = compareOperator(test.operator, facts.shortVersion, test.value);
-      const bundleMatches = compareOperator(test.operator, facts.bundleVersion, test.value);
-      return shortMatches || bundleMatches ? "pass" : "fail";
+      const results = [facts.shortVersion, facts.bundleVersion]
+        .filter((version) => version !== "")
+        .map((version) => compareOperator(test.operator, version, test.value));
+      if (results.length === 0 || results.every((result) => result === null)) return "not_applicable";
+      return results.some((result) => result === true) ? "pass" : "fail";
     }
     default:
       // e.g. "Operating System Version" — no input field is collected for this,
@@ -107,10 +117,13 @@ export function evaluateTest(test: JamfPatchRequirementTest, facts: TestFacts): 
   }
 }
 
+// A group is matched only when every test passed; anything not applicable leaves it
+// inconclusive, and one failure rules it out. Same rule as the backend.
 function verdictForGroup(tests: TestResult[]): GroupVerdict {
+  if (tests.length === 0) return "not_matched";
   if (tests.some((t) => t.outcome === "fail")) return "not_matched";
-  if (tests.some((t) => t.outcome === "pass")) return "matched";
-  return "inconclusive";
+  if (tests.some((t) => t.outcome === "not_applicable")) return "inconclusive";
+  return "matched";
 }
 
 export function evaluateRequirements(groups: JamfPatchRequirementGroup[], facts: TestFacts): EvaluationResult {

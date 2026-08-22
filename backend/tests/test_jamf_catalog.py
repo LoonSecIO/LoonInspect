@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from app.mdm.patch.jamf_catalog import (
     _convert_requirements,
+    _extension_attributes,
     _needs_refresh,
     _remove_embedded_cert,
     _strip_patch_entry,
@@ -43,16 +44,19 @@ class TestRemoveEmbeddedCert:
     def test_returns_empty_for_malformed_json(self) -> None:
         assert _remove_embedded_cert('{"a":[1,,2]}') == {}
 
-    def test_discards_valid_json_not_ending_in_a_closing_array(self) -> None:
-        """Documents current behaviour, which is sharper than it looks.
+    def test_keeps_valid_json_whatever_its_last_key_is(self) -> None:
+        """The old right-hand trim walked back to `]}` and discarded a document whose final
+        key was not an array; the first JSON object is now parsed as-is."""
+        assert _remove_embedded_cert('{"name":"Slack","patches":{}}') == {"name": "Slack", "patches": {}}
 
-        The right-hand trim walks back to `]}`, so a detail payload whose final key is
-        not an array is discarded whole — here a syntactically valid document returns
-        `{}`. `sync_catalog` then skips it via `or not detail`, so the title silently
-        never syncs. Safe only while Jamf keeps `patches` last in the response; nothing
-        in JSON guarantees key order, and nothing here would report it if that changed.
-        """
-        assert _remove_embedded_cert('{"name":"Slack","patches":{}}') == {}
+    def test_ignores_a_trailing_certificate_that_itself_contains_the_closing_bytes(self) -> None:
+        """Six real titles (Audio Hijack, JetBrains Gateway, ESET, …) were silently skipped
+        because the signature after the JSON happened to contain `]}`."""
+        body = '\x30\x82{"id":"5BE","name":"Audio Hijack","patches":[{"version":"4.5.0"}]}\x00\x82]}\x1f\x10'
+        assert _remove_embedded_cert(body) == {"id": "5BE", "name": "Audio Hijack", "patches": [{"version": "4.5.0"}]}
+
+    def test_skips_a_false_start_in_the_envelope(self) -> None:
+        assert _remove_embedded_cert('junk{"nope  {"name":"Slack","patches":[]}') == {"name": "Slack", "patches": []}
 
 
 class TestConvertRequirements:
@@ -126,7 +130,7 @@ class TestNeedsRefresh:
     def test_an_unchanged_title_does_not(self) -> None:
         """The whole point of the check: without it every hourly tick re-fetches the
         full detail payload for every title in the catalog."""
-        existing = JamfPatchTitle(id="slack", last_modified="1", current_version="4.0.1")
+        existing = JamfPatchTitle(id="slack", last_modified="1", current_version="4.0.1", extension_attributes=[])
 
         assert _needs_refresh(existing, {"id": "slack", "lastModified": "1", "currentVersion": "4.0.1"}) is False
 
@@ -139,3 +143,22 @@ class TestNeedsRefresh:
         existing = JamfPatchTitle(id="slack", last_modified="1", current_version="4.0.1")
 
         assert _needs_refresh(existing, {"id": "slack", "lastModified": "1", "currentVersion": "4.1.0"}) is True
+
+    def test_a_row_without_extension_attributes_is_refreshed_once(self) -> None:
+        """Null marks a row fetched before the column existed; the next sync fills it."""
+        existing = JamfPatchTitle(id="slack", last_modified="1", current_version="4.0.1", extension_attributes=None)
+        summary = {"id": "slack", "lastModified": "1", "currentVersion": "4.0.1"}
+        assert _needs_refresh(existing, summary) is True
+        existing.extension_attributes = []
+        assert _needs_refresh(existing, summary) is False
+
+
+class TestExtensionAttributes:
+    def test_keeps_key_and_display_name_and_drops_the_script(self) -> None:
+        definition = {"key": "jamf-patch-nodejs-14", "displayName": "Node.js 14 Version", "value": "IyEvYmlu"}
+        detail = {"extensionAttributes": [definition]}
+        assert _extension_attributes(detail) == [{"key": "jamf-patch-nodejs-14", "displayName": "Node.js 14 Version"}]
+
+    def test_missing_or_malformed_is_empty(self) -> None:
+        assert _extension_attributes({}) == []
+        assert _extension_attributes({"extensionAttributes": [{"displayName": "no key"}, "x"]}) == []

@@ -17,19 +17,22 @@ _STRIP_PATCH_KEYS = ("standalone", "minimumOperatingSystem", "reboot", "killApps
 
 
 def _remove_embedded_cert(body: str) -> dict:
-    """Jamf's public patch server wraps each patch definition's JSON body in an
-    embedded certificate blob; trim down to the outermost {...} before parsing."""
-    s = body
-    while s and not s.startswith('{"'):
-        s = s[1:]
-    while s and not s.endswith("]}"):
-        s = s[:-1]
-    if not s:
-        return {}
-    try:
-        return json.loads(s)
-    except json.JSONDecodeError:
-        return {}
+    """Jamf's public patch server wraps each definition in a signed envelope: bytes before the
+    JSON and a certificate after it. Parse the first JSON object that starts at `{"` and ignore
+    whatever follows. Trimming the tail back to the last `]}` looked equivalent and was not —
+    the trailing certificate can itself contain `]}`, which silently dropped six titles."""
+    decoder = json.JSONDecoder()
+    start = body.find('{"')
+    attempts = 0
+    while start >= 0 and attempts < 8:
+        attempts += 1
+        try:
+            parsed, _ = decoder.raw_decode(body, start)
+        except json.JSONDecodeError:
+            start = body.find('{"', start + 1)
+            continue
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
 
 
 async def _fetch_current_titles(client: httpx.AsyncClient) -> list[dict]:
@@ -46,6 +49,17 @@ async def _fetch_title_detail(client: httpx.AsyncClient, title_id: str) -> dict:
 
 def _strip_patch_entry(patch: dict) -> dict:
     return {key: value for key, value in patch.items() if key not in _STRIP_PATCH_KEYS}
+
+
+def _extension_attributes(detail: dict) -> list[dict]:
+    """The attribute definitions a title ships, without the script: the requirement names the
+    `key`, Jamf Pro creates the attribute under the `displayName`, and the matcher accepts
+    either name on the device."""
+    return [
+        {"key": ea.get("key"), "displayName": ea.get("displayName")}
+        for ea in detail.get("extensionAttributes") or []
+        if isinstance(ea, dict) and ea.get("key")
+    ]
 
 
 def _convert_requirements(requirements: list[dict]) -> list[dict]:
@@ -80,6 +94,8 @@ def _needs_refresh(existing: JamfPatchTitle | None, title_summary: dict) -> bool
     return (
         existing.last_modified != title_summary.get("lastModified")
         or existing.current_version != title_summary.get("currentVersion")
+        # Fetched before extension_attributes existed: one more fetch fills it.
+        or existing.extension_attributes is None
     )
 
 
@@ -126,6 +142,7 @@ async def sync_catalog(db: AsyncSession) -> int:
         row.last_modified = detail.get("lastModified", "")
         row.patches = [_strip_patch_entry(patch) for patch in detail.get("patches", [])]
         row.requirements = _convert_requirements(detail.get("requirements", []))
+        row.extension_attributes = _extension_attributes(detail)
         row.synced_at = now
         synced += 1
 

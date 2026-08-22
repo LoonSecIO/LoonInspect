@@ -7,6 +7,9 @@ export interface JamfPatchTitle {
   currentVersion: string;
   lastModified: string;
   syncedAt: string;
+  /** Tenant-scoped: distinct devices with an app matched to this title, and how many are on currentVersion. */
+  deviceCount: number;
+  devicesOnLatest: number;
 }
 
 export interface JamfPatchTitleListResponse {
@@ -36,7 +39,15 @@ export interface JamfPatchRequirementGroup {
   tests: JamfPatchRequirementTest[];
 }
 
+export interface JamfPatchExtensionAttribute {
+  key: string;
+  displayName?: string | null;
+}
+
 export interface JamfPatchTitleDetail extends JamfPatchTitle {
   patches: JamfPatchVersion[];
   requirements: JamfPatchRequirementGroup[];
+  extensionAttributes?: JamfPatchExtensionAttribute[] | null;
+  /** Installed version → distinct devices, for the apps matched to this title. */
+  versionDeviceCounts: Record<string, number>;
 }
