@@ -183,6 +183,17 @@ class InstalledApp(Base):
     patch_available_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_patch_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # The Jamf Patch answer for this build, derived at device process from the catalog
+    # (app.mdm.patch.matching): the titles it belongs to, the rolling title's state and latest
+    # version, and whether Jamf has listed this version. One row per (app, title) in
+    # installed_app_patch_matches carries the detail; is_compliant / patch_available /
+    # patch_available_since above are the same answer folded into the older columns.
+    jamf_title_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    patch_state: Mapped[str | None] = mapped_column(String(16), nullable=True)  # latest | behind | ahead | unknown
+    this_version_seen: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    latest_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    latest_released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     device: Mapped[Device] = relationship(back_populates="apps")
 
 
@@ -219,7 +230,45 @@ class JamfPatchTitle(Base):
     # whitespace being preserved, which is the sole reason to prefer JSON.
     patches: Mapped[list] = mapped_column(JSONB, default=list)
     requirements: Mapped[list] = mapped_column(JSONB, default=list)
+    # The extension-attribute definitions the title ships, key + displayName only (the script
+    # is not kept): a requirement names the key, Jamf Pro creates the attribute under the display
+    # name. Null marks a row fetched before the column existed; the next sync re-fetches it.
+    extension_attributes: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class InstalledAppPatchMatch(Base):
+    """One installed app matched to one Jamf Patch title, with the version answers — written
+    at device process by app.mdm.patch.matching and replaced wholesale each time the device is
+    processed. An app can belong to more than one title (a versioned line and the rolling
+    title), which is why this is a row per pair rather than a column on the app.
+
+    `basis` says how the title was decided: `requirements` (every criterion evaluated and met)
+    or `ea_assumed` (an extension attribute this device does not carry was resolved TRUE —
+    Jamf's scoping device, not a fact about the app). `state` is latest | behind | ahead | unknown.
+    """
+
+    __tablename__ = "installed_app_patch_matches"
+    __table_args__ = (
+        UniqueConstraint("installed_app_id", "title_id", name="uq_installed_app_patch_match"),
+        Index("ix_installed_app_patch_matches_title", "tenant_id", "title_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    installed_app_id: Mapped[int] = mapped_column(ForeignKey("installed_apps.id", ondelete="CASCADE"), index=True)
+    title_id: Mapped[str] = mapped_column(ForeignKey("jamf_patch_titles.id", ondelete="CASCADE"))
+    basis: Mapped[str] = mapped_column(String(16))
+    state: Mapped[str] = mapped_column(String(16))
+    version_known: Mapped[bool] = mapped_column(Boolean)
+    on_latest: Mapped[bool] = mapped_column(Boolean)
+    installed_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    installed_released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    latest_version: Mapped[str] = mapped_column(String(64))
+    latest_released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Jamf's release date of the earliest listed version newer than the installed one.
+    first_newer_released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class DataSharingSettings(Base):

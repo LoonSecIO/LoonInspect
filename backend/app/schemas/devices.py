@@ -63,6 +63,13 @@ class InstalledAppOut(BaseModel):
     patch_available: bool | None
     patch_available_since: datetime | None
     last_patch_check_at: datetime | None
+    # Jamf Patch matching (app.mdm.patch.matching): the titles this build belongs to, the
+    # rolling title's state and latest version, and whether Jamf has listed this version.
+    jamf_title_ids: list[str] | None = None
+    patch_state: str | None = None
+    this_version_seen: bool | None = None
+    latest_version: str | None = None
+    latest_released_at: datetime | None = None
 
     @computed_field
     @property

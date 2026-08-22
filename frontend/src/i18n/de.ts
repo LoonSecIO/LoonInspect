@@ -373,6 +373,12 @@ export const de: Translations = {
       versionsTitle: "Versionshistorie",
       versionsTotal: (n: number) => `${n} Version${n === 1 ? "" : "en"}`,
       tableDeviceCount: "Geräte mit Version",
+      deviceSummary: (devices: number, onLatest: number) =>
+        devices === 0
+          ? "Kein Gerät dieses Mandanten hat eine App, die diesem Titel zugeordnet ist."
+          : `${devices} Gerät${devices === 1 ? "" : "e"} mit diesem Titel · ${onLatest} auf der aktuellen Version`,
+      unlistedVersions: (n: number) =>
+        `${n} Gerät${n === 1 ? "" : "e"} auf einer Version, die Jamf nicht führt (dem Katalog voraus oder ein Build, den Jamf nie erfasst hat).`,
       tableVulnerabilities: "Schwachstellen",
       vulnerabilitiesTooltip: "Sie müssen die LoonSecIO-Integration aktivieren, um Schwachstellendaten zu sehen.",
       vulnCritical: "Kritisch",

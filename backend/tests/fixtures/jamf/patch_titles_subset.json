@@ -1,0 +1,6384 @@
+[
+ {
+  "appName": null,
+  "bundleId": null,
+  "currentVersion": "8.12.33",
+  "extensionAttributes": [],
+  "id": "575",
+  "lastModified": "2026-08-13T09:34:05Z",
+  "name": "1Password",
+  "patches": [
+   {
+    "releaseDate": "2026-08-12T20:01:00Z",
+    "version": "8.12.33"
+   },
+   {
+    "releaseDate": "2026-08-11T13:16:14Z",
+    "version": "8.12.32"
+   },
+   {
+    "releaseDate": "2026-07-28T20:47:55Z",
+    "version": "8.12.30"
+   },
+   {
+    "releaseDate": "2026-07-14T13:31:45Z",
+    "version": "8.12.28"
+   },
+   {
+    "releaseDate": "2026-06-30T14:16:41Z",
+    "version": "8.12.26"
+   },
+   {
+    "releaseDate": "2026-06-16T13:01:32Z",
+    "version": "8.12.24"
+   },
+   {
+    "releaseDate": "2026-06-02T14:46:21Z",
+    "version": "8.12.22"
+   },
+   {
+    "releaseDate": "2026-05-20T19:00:49Z",
+    "version": "8.12.21"
+   },
+   {
+    "releaseDate": "2026-04-21T10:31:24Z",
+    "version": "8.12.12"
+   },
+   {
+    "releaseDate": "2026-04-07T20:16:17Z",
+    "version": "8.12.10"
+   },
+   {
+    "releaseDate": "2026-03-17T18:01:35Z",
+    "version": "8.12.8"
+   },
+   {
+    "releaseDate": "2026-03-10T16:47:38Z",
+    "version": "8.12.6"
+   },
+   {
+    "releaseDate": "2026-02-26T18:17:32Z",
+    "version": "8.12.5"
+   },
+   {
+    "releaseDate": "2026-02-24T11:18:10Z",
+    "version": "8.12.4"
+   },
+   {
+    "releaseDate": "2026-02-10T18:47:18Z",
+    "version": "8.12.2"
+   },
+   {
+    "releaseDate": "2026-01-20T00:01:03Z",
+    "version": "8.12.0"
+   },
+   {
+    "releaseDate": "2025-12-09T12:16:17Z",
+    "version": "8.11.22"
+   },
+   {
+    "releaseDate": "2025-11-25T17:46:14Z",
+    "version": "8.11.20"
+   },
+   {
+    "releaseDate": "2025-11-11T14:46:22Z",
+    "version": "8.11.18"
+   },
+   {
+    "releaseDate": "2025-10-28T09:31:19Z",
+    "version": "8.11.16"
+   },
+   {
+    "releaseDate": "2025-10-14T18:46:14Z",
+    "version": "8.11.14"
+   },
+   {
+    "releaseDate": "2025-09-30T14:17:05Z",
+    "version": "8.11.12"
+   },
+   {
+    "releaseDate": "2025-09-22T15:16:25Z",
+    "version": "8.11.10"
+   },
+   {
+    "releaseDate": "2025-08-26T19:01:46Z",
+    "version": "8.11.8"
+   },
+   {
+    "releaseDate": "2025-08-19T15:16:11Z",
+    "version": "8.11.6"
+   },
+   {
+    "releaseDate": "2018-05-23T00:50:21Z",
+    "version": "7.0"
+   },
+   {
+    "releaseDate": "2016-01-13T04:56:45Z",
+    "version": "6.0"
+   },
+   {
+    "releaseDate": "2015-01-27T02:33:02Z",
+    "version": "5.1"
+   }
+  ],
+  "publisher": "AgileBits (Combined Definition)",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.1password.1password"
+     }
+    ]
+   },
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "like",
+      "type": "recon",
+      "value": "com.agilebits.onepassword"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "1Password 4.app",
+  "bundleId": "com.agilebits.onepassword4",
+  "currentVersion": "4.4.3",
+  "extensionAttributes": [],
+  "id": "0F5",
+  "lastModified": "2022-10-20T11:35:19Z",
+  "name": "1Password 4",
+  "patches": [
+   {
+    "releaseDate": "2014-10-07T07:10:09Z",
+    "version": "4.4.3"
+   },
+   {
+    "releaseDate": "2014-10-07T02:53:23Z",
+    "version": "4.4.2"
+   },
+   {
+    "releaseDate": "2014-06-05T03:09:34Z",
+    "version": "4.4.1"
+   },
+   {
+    "releaseDate": "2014-05-01T07:16:56Z",
+    "version": "4.4"
+   },
+   {
+    "releaseDate": "2014-04-23T00:21:53Z",
+    "version": "4.3"
+   },
+   {
+    "releaseDate": "2014-03-15T12:45:36Z",
+    "version": "4.2.2"
+   },
+   {
+    "releaseDate": "2014-03-13T09:11:52Z",
+    "version": "4.2.1"
+   },
+   {
+    "releaseDate": "2014-03-12T03:55:46Z",
+    "version": "4.2"
+   },
+   {
+    "releaseDate": "2014-01-13T10:22:54Z",
+    "version": "4.1.3"
+   },
+   {
+    "releaseDate": "2013-12-06T12:14:50Z",
+    "version": "4.1.1"
+   },
+   {
+    "releaseDate": "2013-11-08T13:19:09Z",
+    "version": "4.0.9"
+   },
+   {
+    "releaseDate": "2013-11-06T16:19:50Z",
+    "version": "4.0.7"
+   },
+   {
+    "releaseDate": "2013-10-28T11:07:20Z",
+    "version": "4.0.5"
+   },
+   {
+    "releaseDate": "2013-10-08T14:42:41Z",
+    "version": "4.0.2"
+   },
+   {
+    "releaseDate": "2013-10-04T02:29:19Z",
+    "version": "4.0.1"
+   }
+  ],
+  "publisher": "AgileBits",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.agilebits.onepassword4"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "4."
+     },
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.agilebits.onepassword4"
+     },
+     {
+      "name": "Application Version",
+      "operator": "not like",
+      "type": "recon",
+      "value": "5.4."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "1Password 5.app",
+  "bundleId": "com.agilebits.onepassword4",
+  "currentVersion": "5.4.3",
+  "extensionAttributes": [],
+  "id": "0F6",
+  "lastModified": "2022-10-20T10:04:01Z",
+  "name": "1Password 5",
+  "patches": [
+   {
+    "releaseDate": "2016-01-13T03:02:00Z",
+    "version": "5.4.3"
+   },
+   {
+    "releaseDate": "2015-12-31T08:52:46Z",
+    "version": "5.4.2"
+   },
+   {
+    "releaseDate": "2015-10-22T07:18:27Z",
+    "version": "5.4.1"
+   },
+   {
+    "releaseDate": "2015-10-16T02:52:50Z",
+    "version": "5.4"
+   },
+   {
+    "releaseDate": "2015-05-26T05:51:47Z",
+    "version": "5.3.2"
+   },
+   {
+    "releaseDate": "2015-04-28T06:21:33Z",
+    "version": "5.3.1"
+   },
+   {
+    "releaseDate": "2015-04-07T03:49:11Z",
+    "version": "5.3"
+   },
+   {
+    "releaseDate": "2015-01-27T02:33:02Z",
+    "version": "5.1"
+   },
+   {
+    "releaseDate": "2014-10-31T05:25:07Z",
+    "version": "5.0.2"
+   },
+   {
+    "releaseDate": "2014-10-17T06:49:22Z",
+    "version": "5.0.1"
+   }
+  ],
+  "publisher": "AgileBits",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.agilebits.onepassword4"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "5."
+     },
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.agilebits.onepassword4"
+     },
+     {
+      "name": "Application Version",
+      "operator": "not like",
+      "type": "recon",
+      "value": "6.5."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "1Password 6.app",
+  "bundleId": "com.agilebits.onepassword4",
+  "currentVersion": "6.8.9",
+  "extensionAttributes": [],
+  "id": "0F7",
+  "lastModified": "2021-03-16T00:45:24Z",
+  "name": "1Password 6",
+  "patches": [
+   {
+    "releaseDate": "2018-05-19T00:09:03Z",
+    "version": "6.8.9"
+   },
+   {
+    "releaseDate": "2018-03-16T01:39:43Z",
+    "version": "6.8.8"
+   },
+   {
+    "releaseDate": "2018-02-22T04:26:54Z",
+    "version": "6.8.7"
+   },
+   {
+    "releaseDate": "2018-01-19T03:38:21Z",
+    "version": "6.8.6"
+   },
+   {
+    "releaseDate": "2017-12-19T01:41:42Z",
+    "version": "6.8.5"
+   },
+   {
+    "releaseDate": "2017-11-04T04:03:07Z",
+    "version": "6.8.4"
+   },
+   {
+    "releaseDate": "2017-10-14T00:55:29Z",
+    "version": "6.8.3"
+   },
+   {
+    "releaseDate": "2017-09-19T00:17:17Z",
+    "version": "6.8.2"
+   },
+   {
+    "releaseDate": "2017-08-24T00:34:38Z",
+    "version": "6.8.1"
+   },
+   {
+    "releaseDate": "2017-07-18T00:17:26Z",
+    "version": "6.8"
+   },
+   {
+    "releaseDate": "2017-05-03T03:04:01Z",
+    "version": "6.7.1"
+   },
+   {
+    "releaseDate": "2017-04-27T05:03:17Z",
+    "version": "6.7"
+   },
+   {
+    "releaseDate": "2017-03-24T01:01:15Z",
+    "version": "6.6.4"
+   },
+   {
+    "releaseDate": "2017-03-18T02:17:43Z",
+    "version": "6.6.3"
+   },
+   {
+    "releaseDate": "2017-03-07T03:23:40Z",
+    "version": "6.6.2"
+   },
+   {
+    "releaseDate": "2017-02-24T09:58:12Z",
+    "version": "6.6.1"
+   },
+   {
+    "releaseDate": "2017-02-19T12:27:39Z",
+    "version": "6.5.5"
+   },
+   {
+    "releaseDate": "2017-02-19T11:12:21Z",
+    "version": "6.5.4"
+   },
+   {
+    "releaseDate": "2016-12-22T10:28:33Z",
+    "version": "6.5.3"
+   },
+   {
+    "releaseDate": "2016-11-24T05:51:34Z",
+    "version": "6.5.2"
+   },
+   {
+    "releaseDate": "2016-11-17T07:19:14Z",
+    "version": "6.5.1"
+   },
+   {
+    "releaseDate": "2016-10-20T09:43:35Z",
+    "version": "6.3.5"
+   },
+   {
+    "releaseDate": "2016-10-18T00:43:41Z",
+    "version": "6.3.4"
+   },
+   {
+    "releaseDate": "2016-09-21T04:31:27Z",
+    "version": "6.3.3"
+   },
+   {
+    "releaseDate": "2016-08-11T05:03:02Z",
+    "version": "6.3.2"
+   },
+   {
+    "releaseDate": "2016-01-13T04:56:45Z",
+    "version": "6.0"
+   }
+  ],
+  "publisher": "AgileBits",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.agilebits.onepassword4"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "6."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "1Password 7.app",
+  "bundleId": "com.agilebits.onepassword7",
+  "currentVersion": "7.9.11",
+  "extensionAttributes": [],
+  "id": "0F8",
+  "lastModified": "2024-12-02T15:22:54Z",
+  "name": "1Password 7",
+  "patches": [
+   {
+    "releaseDate": "2023-11-01T16:00:00Z",
+    "version": "7.9.12"
+   },
+   {
+    "releaseDate": "2023-07-26T20:50:17Z",
+    "version": "7.9.11"
+   },
+   {
+    "releaseDate": "2023-04-17T14:00:00Z",
+    "version": "7.9.10"
+   },
+   {
+    "releaseDate": "2023-01-25T21:00:00Z",
+    "version": "7.9.9"
+   },
+   {
+    "releaseDate": "2022-12-12T18:00:00Z",
+    "version": "7.9.8"
+   },
+   {
+    "releaseDate": "2022-11-14T18:00:00Z",
+    "version": "7.9.7"
+   },
+   {
+    "releaseDate": "2022-08-09T14:19:31Z",
+    "version": "7.9.6"
+   },
+   {
+    "releaseDate": "2022-05-24T15:00:00Z",
+    "version": "7.9.5"
+   },
+   {
+    "releaseDate": "2022-04-07T17:00:00Z",
+    "version": "7.9.4"
+   },
+   {
+    "releaseDate": "2022-03-14T20:00:00Z",
+    "version": "7.9.3"
+   },
+   {
+    "releaseDate": "2021-12-07T11:00:00Z",
+    "version": "7.9.2"
+   },
+   {
+    "releaseDate": "2021-11-02T11:00:00Z",
+    "version": "7.9.1"
+   },
+   {
+    "releaseDate": "2021-10-12T11:00:00Z",
+    "version": "7.9"
+   },
+   {
+    "releaseDate": "2021-10-04T14:00:00Z",
+    "version": "7.8.8"
+   },
+   {
+    "releaseDate": "2021-08-10T20:00:00Z",
+    "version": "7.8.7"
+   },
+   {
+    "releaseDate": "2021-06-15T11:00:00Z",
+    "version": "7.8.6"
+   },
+   {
+    "releaseDate": "2021-06-01T20:00:00Z",
+    "version": "7.8.5"
+   },
+   {
+    "releaseDate": "2021-05-25T11:00:00Z",
+    "version": "7.8.4"
+   },
+   {
+    "releaseDate": "2021-05-18T11:00:00Z",
+    "version": "7.8.3"
+   },
+   {
+    "releaseDate": "2021-05-10T11:00:00Z",
+    "version": "7.8.2"
+   },
+   {
+    "releaseDate": "2021-04-14T12:00:00Z",
+    "version": "7.8.1"
+   },
+   {
+    "releaseDate": "2021-03-10T07:34:58Z",
+    "version": "7.8"
+   },
+   {
+    "releaseDate": "2020-11-20T11:12:40Z",
+    "version": "7.7"
+   },
+   {
+    "releaseDate": "2020-07-08T00:49:16Z",
+    "version": "7.6"
+   },
+   {
+    "releaseDate": "2020-05-05T19:50:31Z",
+    "version": "7.5"
+   },
+   {
+    "releaseDate": "2018-05-23T00:50:21Z",
+    "version": "7.0"
+   }
+  ],
+  "publisher": "AgileBits",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.agilebits.onepassword7"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "1Password.app",
+  "bundleId": "com.1password.1password",
+  "currentVersion": "8.12.33",
+  "extensionAttributes": [],
+  "id": "50F",
+  "lastModified": "2026-08-13T09:34:08Z",
+  "name": "1Password 8",
+  "patches": [
+   {
+    "releaseDate": "2026-08-12T20:01:00Z",
+    "version": "8.12.33"
+   },
+   {
+    "releaseDate": "2026-08-11T13:16:14Z",
+    "version": "8.12.32"
+   },
+   {
+    "releaseDate": "2026-07-28T20:47:55Z",
+    "version": "8.12.30"
+   },
+   {
+    "releaseDate": "2026-07-14T13:31:45Z",
+    "version": "8.12.28"
+   },
+   {
+    "releaseDate": "2026-06-30T14:16:41Z",
+    "version": "8.12.26"
+   },
+   {
+    "releaseDate": "2026-06-16T13:01:32Z",
+    "version": "8.12.24"
+   },
+   {
+    "releaseDate": "2026-06-02T14:46:21Z",
+    "version": "8.12.22"
+   },
+   {
+    "releaseDate": "2026-05-20T19:00:49Z",
+    "version": "8.12.21"
+   },
+   {
+    "releaseDate": "2026-04-21T10:31:24Z",
+    "version": "8.12.12"
+   },
+   {
+    "releaseDate": "2026-04-07T20:16:17Z",
+    "version": "8.12.10"
+   },
+   {
+    "releaseDate": "2026-03-17T18:01:35Z",
+    "version": "8.12.8"
+   },
+   {
+    "releaseDate": "2026-03-10T16:47:38Z",
+    "version": "8.12.6"
+   },
+   {
+    "releaseDate": "2026-02-26T18:17:32Z",
+    "version": "8.12.5"
+   },
+   {
+    "releaseDate": "2026-02-24T11:18:10Z",
+    "version": "8.12.4"
+   },
+   {
+    "releaseDate": "2026-02-10T18:47:18Z",
+    "version": "8.12.2"
+   },
+   {
+    "releaseDate": "2026-01-20T00:01:03Z",
+    "version": "8.12.0"
+   },
+   {
+    "releaseDate": "2025-12-09T12:16:17Z",
+    "version": "8.11.22"
+   },
+   {
+    "releaseDate": "2025-11-25T17:46:14Z",
+    "version": "8.11.20"
+   },
+   {
+    "releaseDate": "2025-11-11T14:46:22Z",
+    "version": "8.11.18"
+   },
+   {
+    "releaseDate": "2025-10-28T09:31:19Z",
+    "version": "8.11.16"
+   },
+   {
+    "releaseDate": "2025-10-14T18:46:14Z",
+    "version": "8.11.14"
+   },
+   {
+    "releaseDate": "2025-09-30T14:17:05Z",
+    "version": "8.11.12"
+   },
+   {
+    "releaseDate": "2025-09-22T15:16:25Z",
+    "version": "8.11.10"
+   },
+   {
+    "releaseDate": "2025-08-26T19:01:46Z",
+    "version": "8.11.8"
+   },
+   {
+    "releaseDate": "2025-08-19T15:16:11Z",
+    "version": "8.11.6"
+   }
+  ],
+  "publisher": "AgileBits",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.1password.1password"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Ableton Live 10 Lite.app",
+  "bundleId": "com.ableton.live",
+  "currentVersion": "10.1.43",
+  "extensionAttributes": [],
+  "id": "2DE",
+  "lastModified": "2023-09-20T18:51:53Z",
+  "name": "Ableton Live 10 Lite",
+  "patches": [
+   {
+    "releaseDate": "2022-06-20T16:36:25Z",
+    "version": "10.1.43"
+   },
+   {
+    "releaseDate": "2021-11-09T11:00:00Z",
+    "version": "10.1.42"
+   },
+   {
+    "releaseDate": "2021-08-16T05:00:00Z",
+    "version": "10.1.41"
+   },
+   {
+    "releaseDate": "2021-07-13T02:00:00Z",
+    "version": "10.1.40"
+   },
+   {
+    "releaseDate": "2021-03-06T11:05:46Z",
+    "version": "10.1.35"
+   },
+   {
+    "releaseDate": "2020-11-20T15:08:52Z",
+    "version": "10.1.30"
+   },
+   {
+    "releaseDate": "2020-10-03T10:30:49Z",
+    "version": "10.1.25"
+   },
+   {
+    "releaseDate": "2020-08-01T00:44:35Z",
+    "version": "10.1.18"
+   },
+   {
+    "releaseDate": "2020-07-22T22:16:00Z",
+    "version": "10.1.17"
+   },
+   {
+    "releaseDate": "2020-06-11T18:29:26Z",
+    "version": "10.1.15"
+   },
+   {
+    "releaseDate": "2020-05-14T03:33:52Z",
+    "version": "10.1.14"
+   },
+   {
+    "releaseDate": "2020-04-24T02:46:39Z",
+    "version": "10.1.13"
+   },
+   {
+    "releaseDate": "2020-02-24T21:03:40Z",
+    "version": "10.1.9"
+   },
+   {
+    "releaseDate": "2020-01-14T19:28:33Z",
+    "version": "10.1.7"
+   },
+   {
+    "releaseDate": "2019-12-18T11:08:24Z",
+    "version": "10.1.6"
+   },
+   {
+    "releaseDate": "2019-11-15T19:34:48Z",
+    "version": "10.1.5"
+   },
+   {
+    "releaseDate": "2019-10-21T21:08:19Z",
+    "version": "10.1.4"
+   },
+   {
+    "releaseDate": "2019-10-15T11:05:15Z",
+    "version": "10.1.3"
+   },
+   {
+    "releaseDate": "2019-10-08T17:06:27Z",
+    "version": "10.1.2"
+   },
+   {
+    "releaseDate": "2019-09-17T17:08:26Z",
+    "version": "10.1.1"
+   },
+   {
+    "releaseDate": "2019-05-28T12:47:51Z",
+    "version": "10.1"
+   },
+   {
+    "releaseDate": "2019-01-14T20:37:59Z",
+    "version": "10.0.6"
+   },
+   {
+    "releaseDate": "2018-10-19T13:06:05Z",
+    "version": "10.0.5"
+   },
+   {
+    "releaseDate": "2018-10-06T11:54:13Z",
+    "version": "10.0.4"
+   },
+   {
+    "releaseDate": "2018-08-23T05:59:21Z",
+    "version": "10.0.3"
+   }
+  ],
+  "publisher": "Ableton",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Title",
+      "operator": "is",
+      "type": "recon",
+      "value": "Ableton Live 10 Lite.app"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "10."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Ableton Live 11 Lite.app",
+  "bundleId": "com.ableton.live",
+  "currentVersion": "11.3.43",
+  "extensionAttributes": [],
+  "id": "41D",
+  "lastModified": "2025-10-14T17:53:09Z",
+  "name": "Ableton Live 11 Lite",
+  "patches": [
+   {
+    "releaseDate": "2025-10-14T14:16:15Z",
+    "version": "11.3.43"
+   },
+   {
+    "releaseDate": "2025-04-14T10:02:31Z",
+    "version": "11.3.42"
+   },
+   {
+    "releaseDate": "2025-02-10T14:16:11Z",
+    "version": "11.3.41"
+   },
+   {
+    "releaseDate": "2025-01-23T09:16:33Z",
+    "version": "11.3.40"
+   },
+   {
+    "releaseDate": "2024-10-08T07:00:00Z",
+    "version": "11.3.35"
+   },
+   {
+    "releaseDate": "2024-09-04T12:00:00Z",
+    "version": "11.3.30"
+   },
+   {
+    "releaseDate": "2024-08-29T13:00:00Z",
+    "version": "11.3.26"
+   },
+   {
+    "releaseDate": "2024-05-08T14:00:00Z",
+    "version": "11.3.25"
+   },
+   {
+    "releaseDate": "2024-03-11T18:00:00Z",
+    "version": "11.3.22"
+   },
+   {
+    "releaseDate": "2024-01-25T16:00:00Z",
+    "version": "11.3.21"
+   },
+   {
+    "releaseDate": "2024-01-12T14:00:00Z",
+    "version": "11.3.20"
+   },
+   {
+    "releaseDate": "2023-10-25T04:00:00Z",
+    "version": "11.3.13"
+   },
+   {
+    "releaseDate": "2023-10-10T16:00:00Z",
+    "version": "11.3.12"
+   },
+   {
+    "releaseDate": "2023-09-20T11:00:00Z",
+    "version": "11.3.11"
+   },
+   {
+    "releaseDate": "2023-08-22T10:00:00Z",
+    "version": "11.3.10"
+   },
+   {
+    "releaseDate": "2023-07-04T13:00:00Z",
+    "version": "11.3.4"
+   },
+   {
+    "releaseDate": "2023-06-05T10:00:00Z",
+    "version": "11.3.3"
+   },
+   {
+    "releaseDate": "2023-05-23T08:00:00Z",
+    "version": "11.3.2"
+   },
+   {
+    "releaseDate": "2023-03-22T10:51:01Z",
+    "version": "11.2.11"
+   },
+   {
+    "releaseDate": "2023-02-22T11:00:00Z",
+    "version": "11.2.10"
+   },
+   {
+    "releaseDate": "2022-12-15T14:00:00Z",
+    "version": "11.2.7"
+   },
+   {
+    "releaseDate": "2022-11-01T12:00:00Z",
+    "version": "11.2.6"
+   },
+   {
+    "releaseDate": "2022-10-18T09:03:58Z",
+    "version": "11.2.5"
+   },
+   {
+    "releaseDate": "2022-09-27T08:00:00Z",
+    "version": "11.2"
+   },
+   {
+    "releaseDate": "2022-06-20T17:29:07Z",
+    "version": "11.1.6"
+   },
+   {
+    "releaseDate": "2021-02-17T00:16:22Z",
+    "version": "11.0"
+   }
+  ],
+  "publisher": "Ableton",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Title",
+      "operator": "is",
+      "type": "recon",
+      "value": "Ableton Live 11 Lite.app"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "11."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Ableton Live 11 Suite.app",
+  "bundleId": "com.ableton.live",
+  "currentVersion": "11.3.43",
+  "extensionAttributes": [],
+  "id": "527",
+  "lastModified": "2025-10-14T17:52:51Z",
+  "name": "Ableton Live 11 Suite",
+  "patches": [
+   {
+    "releaseDate": "2025-10-14T14:18:31Z",
+    "version": "11.3.43"
+   },
+   {
+    "releaseDate": "2025-04-14T10:05:09Z",
+    "version": "11.3.42"
+   },
+   {
+    "releaseDate": "2025-02-10T14:16:32Z",
+    "version": "11.3.41"
+   },
+   {
+    "releaseDate": "2025-01-23T09:17:27Z",
+    "version": "11.3.40"
+   },
+   {
+    "releaseDate": "2024-10-08T07:00:00Z",
+    "version": "11.3.35"
+   },
+   {
+    "releaseDate": "2024-09-04T12:00:00Z",
+    "version": "11.3.30"
+   },
+   {
+    "releaseDate": "2024-08-29T13:00:00Z",
+    "version": "11.3.26"
+   },
+   {
+    "releaseDate": "2024-05-08T14:00:00Z",
+    "version": "11.3.25"
+   },
+   {
+    "releaseDate": "2024-03-11T18:00:00Z",
+    "version": "11.3.22"
+   },
+   {
+    "releaseDate": "2024-01-25T16:00:00Z",
+    "version": "11.3.21"
+   },
+   {
+    "releaseDate": "2024-01-12T14:00:00Z",
+    "version": "11.3.20"
+   },
+   {
+    "releaseDate": "2023-10-25T04:00:00Z",
+    "version": "11.3.13"
+   },
+   {
+    "releaseDate": "2023-10-10T16:00:00Z",
+    "version": "11.3.12"
+   },
+   {
+    "releaseDate": "2023-09-20T11:00:00Z",
+    "version": "11.3.11"
+   },
+   {
+    "releaseDate": "2023-08-22T10:00:00Z",
+    "version": "11.3.10"
+   },
+   {
+    "releaseDate": "2023-07-04T13:00:00Z",
+    "version": "11.3.4"
+   },
+   {
+    "releaseDate": "2023-06-05T10:00:00Z",
+    "version": "11.3.3"
+   },
+   {
+    "releaseDate": "2023-05-23T08:00:00Z",
+    "version": "11.3.2"
+   },
+   {
+    "releaseDate": "2023-03-22T10:59:34Z",
+    "version": "11.2.11"
+   },
+   {
+    "releaseDate": "2023-02-22T11:00:00Z",
+    "version": "11.2.10"
+   },
+   {
+    "releaseDate": "2022-12-15T14:00:00Z",
+    "version": "11.2.7"
+   },
+   {
+    "releaseDate": "2022-11-01T12:00:00Z",
+    "version": "11.2.6"
+   },
+   {
+    "releaseDate": "2022-10-18T09:00:00Z",
+    "version": "11.2.5"
+   },
+   {
+    "releaseDate": "2022-09-27T08:00:00Z",
+    "version": "11.2"
+   },
+   {
+    "releaseDate": "2022-06-20T18:01:07Z",
+    "version": "11.1.6"
+   },
+   {
+    "releaseDate": "2021-02-17T00:28:04Z",
+    "version": "11.0"
+   }
+  ],
+  "publisher": "Ableton",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Title",
+      "operator": "is",
+      "type": "recon",
+      "value": "Ableton Live 11 Suite.app"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "11."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": null,
+  "bundleId": null,
+  "currentVersion": "12.4.3",
+  "extensionAttributes": [],
+  "id": "561",
+  "lastModified": "2026-07-14T13:31:30Z",
+  "name": "Ableton Live Lite",
+  "patches": [
+   {
+    "releaseDate": "2026-07-14T09:32:08Z",
+    "version": "12.4.3"
+   },
+   {
+    "releaseDate": "2026-06-11T08:18:03Z",
+    "version": "12.4.2"
+   },
+   {
+    "releaseDate": "2026-05-28T14:17:38Z",
+    "version": "12.4.1"
+   },
+   {
+    "releaseDate": "2026-05-05T08:49:42Z",
+    "version": "12.4"
+   },
+   {
+    "releaseDate": "2026-04-29T14:02:17Z",
+    "version": "12.3.8"
+   },
+   {
+    "releaseDate": "2026-04-13T15:02:44Z",
+    "version": "12.3.7"
+   },
+   {
+    "releaseDate": "2026-03-03T16:05:15Z",
+    "version": "12.3.6"
+   },
+   {
+    "releaseDate": "2026-01-26T15:17:32Z",
+    "version": "12.3.5"
+   },
+   {
+    "releaseDate": "2025-12-17T04:46:25Z",
+    "version": "12.3.2"
+   },
+   {
+    "releaseDate": "2025-12-09T13:18:04Z",
+    "version": "12.3.1"
+   },
+   {
+    "releaseDate": "2025-11-25T09:32:59Z",
+    "version": "12.3"
+   },
+   {
+    "releaseDate": "2025-11-12T08:46:28Z",
+    "version": "12.2.7"
+   },
+   {
+    "releaseDate": "2025-10-14T14:03:42Z",
+    "version": "12.2.6"
+   },
+   {
+    "releaseDate": "2025-08-27T13:16:24Z",
+    "version": "12.2.5"
+   },
+   {
+    "releaseDate": "2025-08-13T13:16:21Z",
+    "version": "12.2.2"
+   },
+   {
+    "releaseDate": "2025-06-19T11:46:20Z",
+    "version": "12.2.1"
+   },
+   {
+    "releaseDate": "2025-06-11T08:31:17Z",
+    "version": "12.2"
+   },
+   {
+    "releaseDate": "2025-04-14T13:31:49Z",
+    "version": "12.1.11"
+   },
+   {
+    "releaseDate": "2025-02-25T15:04:26Z",
+    "version": "12.1.10"
+   },
+   {
+    "releaseDate": "2024-12-12T15:16:20Z",
+    "version": "12.1.5"
+   },
+   {
+    "releaseDate": "2024-10-30T16:00:00Z",
+    "version": "12.1.1"
+   },
+   {
+    "releaseDate": "2024-10-08T07:00:00Z",
+    "version": "12.1"
+   },
+   {
+    "releaseDate": "2024-08-30T10:00:00Z",
+    "version": "12.0.25"
+   },
+   {
+    "releaseDate": "2024-08-06T11:00:00Z",
+    "version": "12.0.20"
+   },
+   {
+    "releaseDate": "2024-07-23T15:00:00Z",
+    "version": "12.0.15"
+   },
+   {
+    "releaseDate": "2021-02-17T00:16:22Z",
+    "version": "11.0"
+   }
+  ],
+  "publisher": "Ableton (Combined Definition)",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.ableton.live"
+     },
+     {
+      "name": "Application Title",
+      "operator": "has",
+      "type": "recon",
+      "value": "Ableton Live 10 Lite.app"
+     }
+    ]
+   },
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Title",
+      "operator": "has",
+      "type": "recon",
+      "value": "Ableton Live 11 Lite.app"
+     }
+    ]
+   },
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Title",
+      "operator": "has",
+      "type": "recon",
+      "value": "Ableton Live 12 Lite.app"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": null,
+  "bundleId": "com.adobe.Photoshop",
+  "currentVersion": "26.11.7",
+  "extensionAttributes": [],
+  "id": "675",
+  "lastModified": "2026-08-21T15:03:41Z",
+  "name": "Adobe Photoshop 2025",
+  "patches": [
+   {
+    "releaseDate": "2026-08-21T14:04:57Z",
+    "version": "26.11.7"
+   },
+   {
+    "releaseDate": "2026-06-18T18:50:41Z",
+    "version": "26.11.6"
+   },
+   {
+    "releaseDate": "2026-04-28T20:10:15Z",
+    "version": "26.11.5"
+   },
+   {
+    "releaseDate": "2026-04-01T19:08:11Z",
+    "version": "26.11.4"
+   },
+   {
+    "releaseDate": "2026-02-23T13:17:18Z",
+    "version": "26.11.3"
+   },
+   {
+    "releaseDate": "2025-11-20T18:16:07Z",
+    "version": "26.11.2"
+   },
+   {
+    "releaseDate": "2025-10-28T00:00:00Z",
+    "version": "26.11.1"
+   },
+   {
+    "releaseDate": "2025-09-24T22:46:21Z",
+    "version": "26.11.0"
+   },
+   {
+    "releaseDate": "2025-08-20T18:09:42Z",
+    "version": "26.10.0"
+   },
+   {
+    "releaseDate": "2025-07-29T00:00:00Z",
+    "version": "26.9.0"
+   },
+   {
+    "releaseDate": "2025-06-27T00:34:33Z",
+    "version": "26.8.1"
+   },
+   {
+    "releaseDate": "2025-06-17T14:11:32Z",
+    "version": "26.8.0"
+   },
+   {
+    "releaseDate": "2025-05-19T00:00:00Z",
+    "version": "26.7.0"
+   },
+   {
+    "releaseDate": "2025-05-09T16:09:05Z",
+    "version": "26.6.1"
+   },
+   {
+    "releaseDate": "2025-04-24T12:30:18Z",
+    "version": "26.6.0"
+   },
+   {
+    "releaseDate": "2025-03-27T14:00:03Z",
+    "version": "26.5.0"
+   },
+   {
+    "releaseDate": "2025-02-27T00:00:00Z",
+    "version": "26.4.1"
+   },
+   {
+    "releaseDate": "2025-02-24T00:00:00Z",
+    "version": "26.4.0"
+   },
+   {
+    "releaseDate": "2025-01-30T01:42:38Z",
+    "version": "26.3.0"
+   },
+   {
+    "releaseDate": "2024-12-06T07:36:02Z",
+    "version": "26.2.0"
+   },
+   {
+    "releaseDate": "2024-11-20T09:00:00Z",
+    "version": "26.1.0"
+   },
+   {
+    "releaseDate": "2024-10-15T08:32:09Z",
+    "version": "26.0.0"
+   }
+  ],
+  "publisher": "Adobe",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.adobe.Photoshop"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "26."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Safari.app",
+  "bundleId": "com.apple.Safari",
+  "currentVersion": "26.6.2",
+  "extensionAttributes": [],
+  "id": "240",
+  "lastModified": "2026-08-18T23:47:09Z",
+  "name": "Apple Safari",
+  "patches": [
+   {
+    "releaseDate": "2026-08-17T19:00:47Z",
+    "version": "26.6.2"
+   },
+   {
+    "releaseDate": "2026-08-17T19:00:47Z",
+    "version": "26.6.1"
+   },
+   {
+    "releaseDate": "2026-07-27T19:21:57Z",
+    "version": "26.6"
+   },
+   {
+    "releaseDate": "2026-06-29T19:20:16Z",
+    "version": "26.5.2"
+   },
+   {
+    "releaseDate": "2026-05-11T18:00:49Z",
+    "version": "26.5"
+   },
+   {
+    "releaseDate": "2026-03-24T00:00:00Z",
+    "version": "26.4"
+   },
+   {
+    "releaseDate": "2026-03-11T00:00:00Z",
+    "version": "26.3.1"
+   },
+   {
+    "releaseDate": "2026-02-11T19:57:47Z",
+    "version": "26.3"
+   },
+   {
+    "releaseDate": "2025-12-12T19:52:15Z",
+    "version": "26.2"
+   },
+   {
+    "releaseDate": "2025-11-04T00:50:03Z",
+    "version": "26.1"
+   },
+   {
+    "releaseDate": "2025-09-24T14:00:27Z",
+    "version": "26.0.1"
+   },
+   {
+    "releaseDate": "2025-09-15T00:00:00Z",
+    "version": "26.0"
+   },
+   {
+    "releaseDate": "2025-07-29T19:00:38Z",
+    "version": "18.6"
+   },
+   {
+    "releaseDate": "2025-05-12T00:00:00Z",
+    "version": "18.5"
+   },
+   {
+    "releaseDate": "2025-03-31T21:34:23Z",
+    "version": "18.4"
+   },
+   {
+    "releaseDate": "2025-03-11T18:31:37Z",
+    "version": "18.3.1"
+   },
+   {
+    "releaseDate": "2025-01-27T17:31:50Z",
+    "version": "18.3"
+   },
+   {
+    "releaseDate": "2024-12-11T19:41:41Z",
+    "version": "18.2"
+   },
+   {
+    "releaseDate": "2024-11-19T19:00:00Z",
+    "version": "18.1.1"
+   },
+   {
+    "releaseDate": "2024-10-29T00:00:00Z",
+    "version": "18.1"
+   },
+   {
+    "releaseDate": "2024-10-03T22:00:00Z",
+    "version": "18.0.1"
+   },
+   {
+    "releaseDate": "2024-09-16T15:13:02Z",
+    "version": "18.0"
+   },
+   {
+    "releaseDate": "2024-07-29T22:00:00Z",
+    "version": "17.6"
+   },
+   {
+    "releaseDate": "2024-05-15T13:00:00Z",
+    "version": "17.5"
+   },
+   {
+    "releaseDate": "2024-03-25T23:00:00Z",
+    "version": "17.4.1"
+   },
+   {
+    "releaseDate": "2022-09-12T00:00:00Z",
+    "version": "16.0"
+   },
+   {
+    "releaseDate": "2020-09-17T00:46:10Z",
+    "version": "14.0"
+   },
+   {
+    "releaseDate": "2020-03-24T00:00:00Z",
+    "version": "13.1"
+   },
+   {
+    "releaseDate": "2018-09-17T00:00:00Z",
+    "version": "12.0"
+   },
+   {
+    "releaseDate": "2017-09-19T00:00:00Z",
+    "version": "11.0"
+   },
+   {
+    "releaseDate": "2016-09-20T00:00:00Z",
+    "version": "10.0"
+   }
+  ],
+  "publisher": "Apple",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.apple.Safari"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Xcode.app",
+  "bundleId": "com.apple.dt.Xcode",
+  "currentVersion": "26.6",
+  "extensionAttributes": [],
+  "id": "0C3",
+  "lastModified": "2026-06-26T10:29:08Z",
+  "name": "Apple Xcode",
+  "patches": [
+   {
+    "releaseDate": "2026-06-25T23:45:58Z",
+    "version": "26.6"
+   },
+   {
+    "releaseDate": "2026-05-11T22:31:01Z",
+    "version": "26.5"
+   },
+   {
+    "releaseDate": "2026-04-16T19:00:20Z",
+    "version": "26.4.1"
+   },
+   {
+    "releaseDate": "2026-03-24T23:46:05Z",
+    "version": "26.4"
+   },
+   {
+    "releaseDate": "2026-02-26T19:00:14Z",
+    "version": "26.3"
+   },
+   {
+    "releaseDate": "2025-12-12T19:15:59Z",
+    "version": "26.2"
+   },
+   {
+    "releaseDate": "2025-11-11T22:00:14Z",
+    "version": "26.1.1"
+   },
+   {
+    "releaseDate": "2025-11-03T22:00:19Z",
+    "version": "26.1"
+   },
+   {
+    "releaseDate": "2025-09-22T17:46:01Z",
+    "version": "26.0.1"
+   },
+   {
+    "releaseDate": "2025-09-15T21:31:00Z",
+    "version": "26.0"
+   },
+   {
+    "releaseDate": "2025-05-28T20:30:56Z",
+    "version": "16.4"
+   },
+   {
+    "releaseDate": "2025-03-31T18:45:57Z",
+    "version": "16.3"
+   },
+   {
+    "releaseDate": "2024-12-11T22:00:17Z",
+    "version": "16.2"
+   },
+   {
+    "releaseDate": "2024-10-28T18:00:00Z",
+    "version": "16.1"
+   },
+   {
+    "releaseDate": "2024-09-16T20:00:00Z",
+    "version": "16.0"
+   },
+   {
+    "releaseDate": "2024-05-13T19:00:00Z",
+    "version": "15.4"
+   },
+   {
+    "releaseDate": "2024-03-05T19:00:00Z",
+    "version": "15.3"
+   },
+   {
+    "releaseDate": "2024-01-08T18:00:00Z",
+    "version": "15.2"
+   },
+   {
+    "releaseDate": "2023-12-11T19:00:00Z",
+    "version": "15.1"
+   },
+   {
+    "releaseDate": "2023-10-18T21:00:00Z",
+    "version": "15.0.1"
+   },
+   {
+    "releaseDate": "2023-09-18T18:00:00Z",
+    "version": "15.0"
+   },
+   {
+    "releaseDate": "2023-06-01T18:00:00Z",
+    "version": "14.3.1"
+   },
+   {
+    "releaseDate": "2023-03-30T22:00:00Z",
+    "version": "14.3"
+   },
+   {
+    "releaseDate": "2022-12-13T19:00:00Z",
+    "version": "14.2"
+   },
+   {
+    "releaseDate": "2022-11-01T18:00:00Z",
+    "version": "14.1"
+   },
+   {
+    "releaseDate": "2022-09-12T18:00:00Z",
+    "version": "14.0"
+   },
+   {
+    "releaseDate": "2021-10-25T14:00:00Z",
+    "version": "13.1"
+   },
+   {
+    "releaseDate": "2020-09-17T20:40:56Z",
+    "version": "12.0"
+   },
+   {
+    "releaseDate": "2019-09-21T23:00:51Z",
+    "version": "11.0"
+   },
+   {
+    "releaseDate": "2019-07-22T10:26:13Z",
+    "version": "10.3"
+   },
+   {
+    "releaseDate": "2018-09-12T06:50:39Z",
+    "version": "10.0"
+   },
+   {
+    "releaseDate": "2017-09-02T11:17:18Z",
+    "version": "9.0"
+   },
+   {
+    "releaseDate": "2016-08-27T10:19:14Z",
+    "version": "8.0"
+   },
+   {
+    "releaseDate": "2015-09-11T07:22:57Z",
+    "version": "7.0"
+   },
+   {
+    "releaseDate": "2014-03-01T20:19:47Z",
+    "version": "5.1"
+   },
+   {
+    "releaseDate": "2013-09-16T10:39:25Z",
+    "version": "5.0"
+   }
+  ],
+  "publisher": "Apple",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.apple.dt.Xcode"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": null,
+  "bundleId": null,
+  "currentVersion": "26.6.2 (25G83)",
+  "extensionAttributes": [],
+  "id": "5A0",
+  "lastModified": "2026-08-17T21:07:02Z",
+  "name": "Apple macOS",
+  "patches": [
+   {
+    "releaseDate": "2026-08-17T19:00:47Z",
+    "version": "26.6.2 (25G83)"
+   },
+   {
+    "releaseDate": "2026-08-06T18:00:50Z",
+    "version": "26.6.1 (25G76)"
+   },
+   {
+    "releaseDate": "2026-07-27T18:00:52Z",
+    "version": "26.6 (25G72)"
+   },
+   {
+    "releaseDate": "2026-06-29T19:00:47Z",
+    "version": "26.5.2 (25F84)"
+   },
+   {
+    "releaseDate": "2026-06-01T18:00:51Z",
+    "version": "26.5.1 (25F80)"
+   },
+   {
+    "releaseDate": "2026-05-11T18:00:49Z",
+    "version": "26.5 (25F71)"
+   },
+   {
+    "releaseDate": "2026-04-09T18:00:52Z",
+    "version": "26.4.1 (25E253)"
+   },
+   {
+    "releaseDate": "2026-03-24T19:00:49Z",
+    "version": "26.4 (25E246)"
+   },
+   {
+    "releaseDate": "2026-03-17T00:00:00Z",
+    "version": "26.3.2 (25D771400a)"
+   },
+   {
+    "releaseDate": "2026-03-10T19:00:47Z",
+    "version": "26.3.2 (25D2140)"
+   },
+   {
+    "releaseDate": "2026-03-17T00:00:00Z",
+    "version": "26.3.1 (25D771280a)"
+   },
+   {
+    "releaseDate": "2026-03-04T19:00:47Z",
+    "version": "26.3.1 (25D2128)"
+   },
+   {
+    "releaseDate": "2026-02-11T20:00:43Z",
+    "version": "26.3 (25D125)"
+   },
+   {
+    "releaseDate": "2025-12-12T20:00:43Z",
+    "version": "26.2 (25C56)"
+   },
+   {
+    "releaseDate": "2025-11-03T22:00:50Z",
+    "version": "26.1 (25B78)"
+   },
+   {
+    "releaseDate": "2025-10-16T01:00:48Z",
+    "version": "26.0.1 (25A8364)"
+   },
+   {
+    "releaseDate": "2025-09-29T18:00:42Z",
+    "version": "26.0.1 (25A362)"
+   },
+   {
+    "releaseDate": "2025-09-15T13:33:20Z",
+    "version": "26.0 (25A354)"
+   },
+   {
+    "releaseDate": "2026-08-06T18:00:49Z",
+    "version": "15.7.9 (24G830)"
+   },
+   {
+    "releaseDate": "2026-07-27T18:00:52Z",
+    "version": "15.7.8 (24G824)"
+   },
+   {
+    "releaseDate": "2026-05-11T18:00:49Z",
+    "version": "15.7.7 (24G720)"
+   },
+   {
+    "releaseDate": "2026-03-24T19:00:43Z",
+    "version": "15.7.5 (24G624)"
+   },
+   {
+    "releaseDate": "2026-02-11T20:00:40Z",
+    "version": "15.7.4 (24G517)"
+   },
+   {
+    "releaseDate": "2025-12-12T19:00:38Z",
+    "version": "15.7.3 (24G419)"
+   },
+   {
+    "releaseDate": "2025-11-03T23:00:48Z",
+    "version": "15.7.2 (24G325)"
+   }
+  ],
+  "publisher": "Apple (Combined Definition)",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Operating System Version",
+      "operator": "greater than or equal",
+      "type": "recon",
+      "value": "26.0"
+     },
+     {
+      "name": "Operating System Version",
+      "operator": "less than",
+      "type": "recon",
+      "value": "27.0"
+     }
+    ]
+   },
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Operating System Version",
+      "operator": "greater than or equal",
+      "type": "recon",
+      "value": "15.0"
+     },
+     {
+      "name": "Operating System Version",
+      "operator": "less than",
+      "type": "recon",
+      "value": "16.0"
+     }
+    ]
+   },
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Operating System Version",
+      "operator": "greater than or equal",
+      "type": "recon",
+      "value": "14.0"
+     },
+     {
+      "name": "Operating System Version",
+      "operator": "less than",
+      "type": "recon",
+      "value": "15.0"
+     }
+    ]
+   },
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Operating System Version",
+      "operator": "greater than or equal",
+      "type": "recon",
+      "value": "13.0"
+     },
+     {
+      "name": "Operating System Version",
+      "operator": "less than",
+      "type": "recon",
+      "value": "14.0"
+     }
+    ]
+   },
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Operating System Version",
+      "operator": "greater than or equal",
+      "type": "recon",
+      "value": "12.0"
+     },
+     {
+      "name": "Operating System Version",
+      "operator": "less than",
+      "type": "recon",
+      "value": "13.0"
+     }
+    ]
+   },
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Platform",
+      "operator": "is",
+      "type": "recon",
+      "value": "Mac"
+     },
+     {
+      "name": "Operating System Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "10.16"
+     }
+    ]
+   },
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Platform",
+      "operator": "is",
+      "type": "recon",
+      "value": "Mac"
+     },
+     {
+      "name": "Operating System Version",
+      "operator": "greater than or equal",
+      "type": "recon",
+      "value": "11.0"
+     },
+     {
+      "name": "Operating System Version",
+      "operator": "less than",
+      "type": "recon",
+      "value": "12.0"
+     }
+    ]
+   },
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Operating System Version",
+      "operator": "greater than or equal",
+      "type": "recon",
+      "value": "10.15"
+     },
+     {
+      "name": "Operating System Version",
+      "operator": "less than",
+      "type": "recon",
+      "value": "10.16"
+     }
+    ]
+   },
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Platform",
+      "operator": "is",
+      "type": "recon",
+      "value": "Mac"
+     },
+     {
+      "name": "Operating System Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "10.14"
+     }
+    ]
+   },
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Platform",
+      "operator": "is",
+      "type": "recon",
+      "value": "Mac"
+     },
+     {
+      "name": "Operating System Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "10.13"
+     }
+    ]
+   },
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Platform",
+      "operator": "is",
+      "type": "recon",
+      "value": "Mac"
+     },
+     {
+      "name": "Operating System Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "10.12"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": null,
+  "bundleId": null,
+  "currentVersion": "11.7.11 (20G1443)",
+  "extensionAttributes": [],
+  "id": "303",
+  "lastModified": "2026-02-03T13:32:54Z",
+  "name": "Apple macOS Big Sur",
+  "patches": [
+   {
+    "releaseDate": "2026-02-02T20:00:35Z",
+    "version": "11.7.11 (20G1443)"
+   },
+   {
+    "releaseDate": "2023-09-11T18:00:00Z",
+    "version": "11.7.10 (20G1427)"
+   },
+   {
+    "releaseDate": "2023-07-24T18:00:00Z",
+    "version": "11.7.9 (20G1426)"
+   },
+   {
+    "releaseDate": "2023-06-21T18:00:00Z",
+    "version": "11.7.8 (20G1351)"
+   },
+   {
+    "releaseDate": "2023-05-18T18:00:00Z",
+    "version": "11.7.7 (20G1345)"
+   },
+   {
+    "releaseDate": "2023-04-10T18:00:00Z",
+    "version": "11.7.6 (20G1231)"
+   },
+   {
+    "releaseDate": "2023-03-27T18:00:00Z",
+    "version": "11.7.5 (20G1225)"
+   },
+   {
+    "releaseDate": "2023-02-15T22:00:00Z",
+    "version": "11.7.4 (20G1120)"
+   },
+   {
+    "releaseDate": "2023-01-23T21:00:00Z",
+    "version": "11.7.3 (20G1116)"
+   },
+   {
+    "releaseDate": "2022-12-13T00:00:00Z",
+    "version": "11.7.2 (20G1020)"
+   },
+   {
+    "releaseDate": "2022-10-24T19:00:00Z",
+    "version": "11.7.1 (20G918)"
+   },
+   {
+    "releaseDate": "2022-09-12T00:00:00Z",
+    "version": "11.7 (20G817)"
+   },
+   {
+    "releaseDate": "2022-07-20T18:00:00Z",
+    "version": "11.6.8 (20G730)"
+   },
+   {
+    "releaseDate": "2022-06-09T18:00:00Z",
+    "version": "11.6.7 (20G630)"
+   },
+   {
+    "releaseDate": "2022-05-16T19:00:00Z",
+    "version": "11.6.6 (20G624)"
+   },
+   {
+    "releaseDate": "2022-03-14T14:00:00Z",
+    "version": "11.6.5 (20G527)"
+   },
+   {
+    "releaseDate": "2022-02-14T15:00:00Z",
+    "version": "11.6.4 (20G417)"
+   },
+   {
+    "releaseDate": "2022-01-26T14:00:00Z",
+    "version": "11.6.3 (20G415)"
+   },
+   {
+    "releaseDate": "2021-12-13T14:00:00Z",
+    "version": "11.6.2 (20G314)"
+   },
+   {
+    "releaseDate": "2021-10-25T14:23:52Z",
+    "version": "11.6.1 (20G224)"
+   },
+   {
+    "releaseDate": "2021-09-13T14:00:00Z",
+    "version": "11.6 (20G165)"
+   },
+   {
+    "releaseDate": "2021-08-11T14:00:00Z",
+    "version": "11.5.2 (20G95)"
+   },
+   {
+    "releaseDate": "2021-07-26T15:00:00Z",
+    "version": "11.5.1 (20G80)"
+   },
+   {
+    "releaseDate": "2021-07-21T14:00:00Z",
+    "version": "11.5 (20G71)"
+   },
+   {
+    "releaseDate": "2021-05-24T14:00:00Z",
+    "version": "11.4 (20F71)"
+   }
+  ],
+  "publisher": "Apple",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Platform",
+      "operator": "is",
+      "type": "recon",
+      "value": "Mac"
+     },
+     {
+      "name": "Operating System Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "10.16"
+     }
+    ]
+   },
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Platform",
+      "operator": "is",
+      "type": "recon",
+      "value": "Mac"
+     },
+     {
+      "name": "Operating System Version",
+      "operator": "greater than or equal",
+      "type": "recon",
+      "value": "11.0"
+     },
+     {
+      "name": "Operating System Version",
+      "operator": "less than",
+      "type": "recon",
+      "value": "12.0"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "",
+  "bundleId": "",
+  "currentVersion": "10.15.7 (19H2026)",
+  "extensionAttributes": [],
+  "id": "195",
+  "lastModified": "2022-07-20T19:48:56Z",
+  "name": "Apple macOS Catalina",
+  "patches": [
+   {
+    "releaseDate": "2022-07-20T18:00:00Z",
+    "version": "10.15.7 (19H2026)"
+   },
+   {
+    "releaseDate": "2022-05-16T19:00:00Z",
+    "version": "10.15.7 (19H1922)"
+   },
+   {
+    "releaseDate": "2022-03-14T00:00:00Z",
+    "version": "10.15.7 (19H1824)"
+   },
+   {
+    "releaseDate": "2022-02-14T15:00:00Z",
+    "version": "10.15.7 (19H1715)"
+   },
+   {
+    "releaseDate": "2022-01-26T14:00:00Z",
+    "version": "10.15.7 (19H1713)"
+   },
+   {
+    "releaseDate": "2021-12-13T14:00:00Z",
+    "version": "10.15.7 (19H1615)"
+   },
+   {
+    "releaseDate": "2021-10-25T14:20:08Z",
+    "version": "10.15.7 (19H1519)"
+   },
+   {
+    "releaseDate": "2021-09-24T02:00:00Z",
+    "version": "10.15.7 (19H1419)"
+   },
+   {
+    "releaseDate": "2021-09-13T14:00:00Z",
+    "version": "10.15.7 (19H1417)"
+   },
+   {
+    "releaseDate": "2021-07-21T14:00:00Z",
+    "version": "10.15.7 (19H1323)"
+   },
+   {
+    "releaseDate": "2021-05-24T14:00:00Z",
+    "version": "10.15.7 (19H1217)"
+   },
+   {
+    "releaseDate": "2021-04-26T15:00:00Z",
+    "version": "10.15.7 (19H1030)"
+   },
+   {
+    "releaseDate": "2021-02-10T11:19:42Z",
+    "version": "10.15.7 (19H524)"
+   },
+   {
+    "releaseDate": "2021-02-02T15:02:06Z",
+    "version": "10.15.7 (19H512)"
+   },
+   {
+    "releaseDate": "2020-12-15T10:04:39Z",
+    "version": "10.15.7 (19H114)"
+   },
+   {
+    "releaseDate": "2020-11-13T17:57:56Z",
+    "version": "10.15.7 (19H15)"
+   },
+   {
+    "releaseDate": "2020-10-27T00:00:00Z",
+    "version": "10.15.7 (19H4)"
+   },
+   {
+    "releaseDate": "2020-09-24T00:00:00Z",
+    "version": "10.15.7 (19H2)"
+   },
+   {
+    "releaseDate": "2020-09-10T14:00:00Z",
+    "version": "10.15.6 (19G2531)"
+   },
+   {
+    "releaseDate": "2020-08-12T00:49:31Z",
+    "version": "10.15.6 (19G2021)"
+   },
+   {
+    "releaseDate": "2020-08-06T00:00:00Z",
+    "version": "10.15.6 (19G2006)"
+   },
+   {
+    "releaseDate": "2020-07-16T23:47:36Z",
+    "version": "10.15.6 (19G73)"
+   },
+   {
+    "releaseDate": "2020-06-17T00:52:13Z",
+    "version": "10.15.5 (19F2200)"
+   },
+   {
+    "releaseDate": "2020-06-02T01:25:10Z",
+    "version": "10.15.5 (19F101)"
+   },
+   {
+    "releaseDate": "2020-05-27T08:34:26Z",
+    "version": "10.15.5 (19F96)"
+   }
+  ],
+  "publisher": "Apple",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Operating System Version",
+      "operator": "greater than or equal",
+      "type": "recon",
+      "value": "10.15"
+     },
+     {
+      "name": "Operating System Version",
+      "operator": "less than",
+      "type": "recon",
+      "value": "10.16"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": null,
+  "bundleId": "com.bambulab.bambu-studio",
+  "currentVersion": "02.08.02.61",
+  "extensionAttributes": [],
+  "id": "6C9",
+  "lastModified": "2026-08-21T09:54:09Z",
+  "name": "Bambu Studio",
+  "patches": [
+   {
+    "releaseDate": "2026-08-21T06:46:54Z",
+    "version": "02.08.02.61"
+   },
+   {
+    "releaseDate": "2026-08-14T12:02:08Z",
+    "version": "02.08.02.60"
+   },
+   {
+    "releaseDate": "2026-06-16T14:47:28Z",
+    "version": "02.07.01.62"
+   },
+   {
+    "releaseDate": "2026-06-01T14:01:58Z",
+    "version": "02.07.01.57"
+   },
+   {
+    "releaseDate": "2026-04-17T13:16:20Z",
+    "version": "02.06.00.51"
+   },
+   {
+    "releaseDate": "2026-04-14T15:26:09Z",
+    "version": "02.05.03.61"
+   },
+   {
+    "releaseDate": "2026-01-28T16:00:42Z",
+    "version": "02.05.00.66"
+   },
+   {
+    "releaseDate": "2026-01-27T11:46:44Z",
+    "version": "02.05.00.64"
+   },
+   {
+    "releaseDate": "2025-11-18T14:00:52Z",
+    "version": "02.04.00.70"
+   },
+   {
+    "releaseDate": "2025-10-30T08:32:55Z",
+    "version": "02.03.01.51"
+   },
+   {
+    "releaseDate": "2025-10-14T14:47:02Z",
+    "version": "02.03.00.70"
+   },
+   {
+    "releaseDate": "2025-09-15T09:16:41Z",
+    "version": "02.02.02.56"
+   },
+   {
+    "releaseDate": "2025-08-28T12:16:24Z",
+    "version": "02.02.01.60"
+   },
+   {
+    "releaseDate": "2025-08-26T15:16:16Z",
+    "version": "02.02.01.58"
+   },
+   {
+    "releaseDate": "2025-08-12T13:30:00Z",
+    "version": "02.02.00.85"
+   },
+   {
+    "releaseDate": "2025-06-17T08:34:22Z",
+    "version": "02.01.01.52"
+   },
+   {
+    "releaseDate": "2025-06-12T09:40:18Z",
+    "version": "02.01.00.59"
+   },
+   {
+    "releaseDate": "2025-04-28T08:07:20Z",
+    "version": "02.00.03.54"
+   },
+   {
+    "releaseDate": "2025-04-16T10:18:18Z",
+    "version": "02.00.02.57"
+   },
+   {
+    "releaseDate": "2025-04-01T09:48:56Z",
+    "version": "02.00.01.50"
+   },
+   {
+    "releaseDate": "2025-03-28T11:23:42Z",
+    "version": "02.00.00.95"
+   },
+   {
+    "releaseDate": "2025-03-05T09:10:17Z",
+    "version": "01.10.02.76"
+   },
+   {
+    "releaseDate": "2024-11-22T10:59:39Z",
+    "version": "01.10.01.50"
+   },
+   {
+    "releaseDate": "2024-09-25T10:15:55Z",
+    "version": "01.09.07.52"
+   },
+   {
+    "releaseDate": "2024-09-04T12:09:40Z",
+    "version": "01.09.05.51"
+   }
+  ],
+  "publisher": "Bambu Lab",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.bambulab.bambu-studio"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Docker.app",
+  "bundleId": "com.docker.docker",
+  "currentVersion": "4.87.0",
+  "extensionAttributes": [],
+  "id": "156",
+  "lastModified": "2026-08-17T19:35:25Z",
+  "name": "Docker Desktop",
+  "patches": [
+   {
+    "releaseDate": "2026-08-17T15:16:00Z",
+    "version": "4.87.0"
+   },
+   {
+    "releaseDate": "2026-08-10T09:31:05Z",
+    "version": "4.86.0"
+   },
+   {
+    "releaseDate": "2026-08-03T13:16:52Z",
+    "version": "4.85.0"
+   },
+   {
+    "releaseDate": "2026-07-27T15:31:05Z",
+    "version": "4.84.0"
+   },
+   {
+    "releaseDate": "2026-07-20T12:46:06Z",
+    "version": "4.83.0"
+   },
+   {
+    "releaseDate": "2026-07-13T15:00:55Z",
+    "version": "4.82.0"
+   },
+   {
+    "releaseDate": "2026-07-06T09:00:24Z",
+    "version": "4.81.0"
+   },
+   {
+    "releaseDate": "2026-06-29T17:01:01Z",
+    "version": "4.80.0"
+   },
+   {
+    "releaseDate": "2026-06-22T15:46:27Z",
+    "version": "4.79.0"
+   },
+   {
+    "releaseDate": "2026-06-15T10:16:01Z",
+    "version": "4.78.0"
+   },
+   {
+    "releaseDate": "2026-06-08T16:16:33Z",
+    "version": "4.77.0"
+   },
+   {
+    "releaseDate": "2026-06-01T17:00:32Z",
+    "version": "4.76.0"
+   },
+   {
+    "releaseDate": "2026-05-26T14:30:59Z",
+    "version": "4.75.0"
+   },
+   {
+    "releaseDate": "2026-05-19T13:48:35Z",
+    "version": "4.74.0"
+   },
+   {
+    "releaseDate": "2026-05-11T15:32:27Z",
+    "version": "4.73.0"
+   },
+   {
+    "releaseDate": "2026-05-06T17:47:24Z",
+    "version": "4.72.0"
+   },
+   {
+    "releaseDate": "2026-04-27T08:00:26Z",
+    "version": "4.71.0"
+   },
+   {
+    "releaseDate": "2026-04-20T14:00:23Z",
+    "version": "4.70.0"
+   },
+   {
+    "releaseDate": "2026-04-13T08:16:02Z",
+    "version": "4.69.0"
+   },
+   {
+    "releaseDate": "2026-04-07T19:46:08Z",
+    "version": "4.68.0"
+   },
+   {
+    "releaseDate": "2026-03-30T09:46:08Z",
+    "version": "4.67.0"
+   },
+   {
+    "releaseDate": "2026-03-26T15:46:09Z",
+    "version": "4.66.1"
+   },
+   {
+    "releaseDate": "2026-03-23T16:16:10Z",
+    "version": "4.66.0"
+   },
+   {
+    "releaseDate": "2026-03-16T14:46:19Z",
+    "version": "4.65.0"
+   },
+   {
+    "releaseDate": "2026-03-11T09:46:16Z",
+    "version": "4.64.0"
+   },
+   {
+    "releaseDate": "2026-02-10T18:00:14Z",
+    "version": "4.60.1"
+   },
+   {
+    "releaseDate": "2021-11-09T05:00:00Z",
+    "version": "4.2.0"
+   }
+  ],
+  "publisher": "Docker",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.docker.docker"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": null,
+  "bundleId": null,
+  "currentVersion": "19.0.2+7",
+  "extensionAttributes": [
+   {
+    "displayName": "Eclipse Temurin (JRE) 19 Get Info String",
+    "key": "jamf-patch-temurin-jre-19"
+   }
+  ],
+  "id": "61C",
+  "lastModified": "2023-03-01T01:10:25Z",
+  "name": "Eclipse Temurin (JRE) 19",
+  "patches": [
+   {
+    "releaseDate": "2023-01-18T20:12:00Z",
+    "version": "19.0.2+7"
+   },
+   {
+    "releaseDate": "2022-10-19T15:33:00Z",
+    "version": "19.0.1+10"
+   },
+   {
+    "releaseDate": "2022-09-21T15:49:00Z",
+    "version": "19+36"
+   }
+  ],
+  "publisher": "Eclipse Foundation",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "jamf-patch-temurin-jre-19",
+      "operator": "like",
+      "type": "extensionAttribute",
+      "value": " 19"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "GIMP-2.10.app",
+  "bundleId": "org.gimp.gimp-3.0",
+  "currentVersion": "3.2.4",
+  "extensionAttributes": [],
+  "id": "10A",
+  "lastModified": "2026-04-20T14:07:50Z",
+  "name": "GIMP",
+  "patches": [
+   {
+    "releaseDate": "2026-04-19T21:32:32Z",
+    "version": "3.2.4"
+   },
+   {
+    "releaseDate": "2026-04-06T08:46:04Z",
+    "version": "3.2.2"
+   },
+   {
+    "releaseDate": "2026-03-14T18:31:03Z",
+    "version": "3.2.0"
+   },
+   {
+    "releaseDate": "2026-01-25T01:45:59Z",
+    "version": "3.0.8"
+   },
+   {
+    "releaseDate": "2025-10-07T13:31:06Z",
+    "version": "3.0.6"
+   },
+   {
+    "releaseDate": "2025-05-18T21:01:03Z",
+    "version": "3.0.4"
+   },
+   {
+    "releaseDate": "2025-03-24T20:46:00Z",
+    "version": "3.0.2"
+   },
+   {
+    "releaseDate": "2025-03-18T23:06:22Z",
+    "version": "3.0.0"
+   },
+   {
+    "releaseDate": "2024-05-05T19:00:00Z",
+    "version": "2.10.38"
+   },
+   {
+    "releaseDate": "2023-11-13T17:00:00Z",
+    "version": "2.10.36"
+   },
+   {
+    "releaseDate": "2023-02-28T00:00:00Z",
+    "version": "2.10.34"
+   },
+   {
+    "releaseDate": "2022-11-26T00:00:00Z",
+    "version": "2.10.32 revision 1"
+   },
+   {
+    "releaseDate": "2022-06-14T19:00:00Z",
+    "version": "2.10.32"
+   },
+   {
+    "releaseDate": "2021-12-21T09:00:00Z",
+    "version": "2.10.30"
+   },
+   {
+    "releaseDate": "2021-11-17T20:00:00Z",
+    "version": "2.10.28"
+   },
+   {
+    "releaseDate": "2021-08-02T11:00:00Z",
+    "version": "2.10.24"
+   },
+   {
+    "releaseDate": "2020-12-21T13:08:05Z",
+    "version": "2.10.22"
+   },
+   {
+    "releaseDate": "2019-10-31T01:04:31Z",
+    "version": "2.10.14"
+   },
+   {
+    "releaseDate": "2019-06-18T00:06:29Z",
+    "version": "2.10.12"
+   },
+   {
+    "releaseDate": "2019-04-08T23:56:33Z",
+    "version": "2.10.10"
+   },
+   {
+    "releaseDate": "2018-11-09T07:53:30Z",
+    "version": "2.10.8"
+   },
+   {
+    "releaseDate": "2018-08-21T08:50:59Z",
+    "version": "2.10.6"
+   },
+   {
+    "releaseDate": "2018-07-06T03:23:33Z",
+    "version": "2.10.4"
+   },
+   {
+    "releaseDate": "2017-05-11T18:29:21Z",
+    "version": "2.8.22"
+   },
+   {
+    "releaseDate": "2017-02-06T02:11:47Z",
+    "version": "2.8.20"
+   },
+   {
+    "releaseDate": "2012-05-30T21:25:44Z",
+    "version": "2.8"
+   }
+  ],
+  "publisher": "The GIMP Team",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.gimp.gimp-3.0"
+     }
+    ]
+   },
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.gnome.gimp"
+     }
+    ]
+   },
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.gimp.gimp"
+     }
+    ]
+   },
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.gnomw.Gimp"
+     }
+    ]
+   },
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.gimp.gimp-2.10"
+     }
+    ]
+   },
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.gimp.gimp-2.10:"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Google Chrome.app",
+  "bundleId": "com.google.Chrome",
+  "currentVersion": "151.0.7922.174",
+  "extensionAttributes": [],
+  "id": "0BC",
+  "lastModified": "2026-08-21T09:31:50Z",
+  "name": "Google Chrome",
+  "patches": [
+   {
+    "releaseDate": "2026-08-20T20:13:14Z",
+    "version": "151.0.7922.174"
+   },
+   {
+    "releaseDate": "2026-08-20T20:13:14Z",
+    "version": "151.0.7922.173"
+   },
+   {
+    "releaseDate": "2026-08-20T20:13:14Z",
+    "version": "151.0.7922.172"
+   },
+   {
+    "releaseDate": "2026-08-19T16:43:28Z",
+    "version": "152.0.7977.54"
+   },
+   {
+    "releaseDate": "2026-08-19T16:43:28Z",
+    "version": "151.0.7922.171"
+   },
+   {
+    "releaseDate": "2026-08-18T18:49:25Z",
+    "version": "151.0.7922.170"
+   },
+   {
+    "releaseDate": "2026-08-18T18:49:25Z",
+    "version": "151.0.7922.169"
+   },
+   {
+    "releaseDate": "2026-08-18T18:49:25Z",
+    "version": "151.0.7922.140"
+   },
+   {
+    "releaseDate": "2026-08-12T21:07:14Z",
+    "version": "151.0.7922.139"
+   },
+   {
+    "releaseDate": "2026-08-12T21:07:14Z",
+    "version": "152.0.7977.42"
+   },
+   {
+    "releaseDate": "2026-08-11T21:31:03Z",
+    "version": "151.0.7922.138"
+   },
+   {
+    "releaseDate": "2026-08-11T21:19:21Z",
+    "version": "151.0.7922.137"
+   },
+   {
+    "releaseDate": "2026-08-11T21:19:21Z",
+    "version": "151.0.7922.110"
+   },
+   {
+    "releaseDate": "2026-08-06T20:15:55Z",
+    "version": "151.0.7922.109"
+   },
+   {
+    "releaseDate": "2026-08-06T20:04:28Z",
+    "version": "151.0.7922.108"
+   },
+   {
+    "releaseDate": "2026-08-06T20:04:28Z",
+    "version": "151.0.7922.77"
+   },
+   {
+    "releaseDate": "2026-08-04T20:07:39Z",
+    "version": "151.0.7922.76"
+   },
+   {
+    "releaseDate": "2026-08-04T20:07:39Z",
+    "version": "151.0.7922.75"
+   },
+   {
+    "releaseDate": "2026-08-04T20:07:39Z",
+    "version": "150.0.7871.189"
+   },
+   {
+    "releaseDate": "2026-07-29T20:41:45Z",
+    "version": "151.0.7922.72"
+   },
+   {
+    "releaseDate": "2026-07-29T20:41:45Z",
+    "version": "151.0.7922.71"
+   },
+   {
+    "releaseDate": "2026-07-29T20:41:45Z",
+    "version": "150.0.7871.188"
+   },
+   {
+    "releaseDate": "2026-07-23T20:23:17Z",
+    "version": "150.0.7871.187"
+   },
+   {
+    "releaseDate": "2026-07-23T20:23:17Z",
+    "version": "150.0.7871.186"
+   },
+   {
+    "releaseDate": "2026-07-23T20:23:17Z",
+    "version": "150.0.7871.184"
+   }
+  ],
+  "publisher": "Google",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.google.Chrome"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Self Service.app",
+  "bundleId": "com.jamfsoftware.selfservice",
+  "currentVersion": "11.31.1",
+  "extensionAttributes": [],
+  "id": "SelfServiceformacOS",
+  "lastModified": "2026-08-20T19:51:55Z",
+  "name": "Jamf Self Service for macOS",
+  "patches": [
+   {
+    "releaseDate": "2026-08-20T19:00:52Z",
+    "version": "11.31.1"
+   },
+   {
+    "releaseDate": "2026-08-13T14:00:32Z",
+    "version": "11.31.0"
+   },
+   {
+    "releaseDate": "2026-07-31T15:00:49Z",
+    "version": "11.30.2"
+   },
+   {
+    "releaseDate": "2026-07-23T14:00:55Z",
+    "version": "11.30.1"
+   },
+   {
+    "releaseDate": "2026-07-14T14:00:51Z",
+    "version": "11.30.0"
+   },
+   {
+    "releaseDate": "2026-07-02T19:00:48Z",
+    "version": "11.29.2"
+   },
+   {
+    "releaseDate": "2026-06-25T14:00:52Z",
+    "version": "11.29.1"
+   },
+   {
+    "releaseDate": "2026-06-16T16:00:49Z",
+    "version": "11.29.0"
+   },
+   {
+    "releaseDate": "2026-05-28T19:00:51Z",
+    "version": "11.28.1"
+   },
+   {
+    "releaseDate": "2026-05-19T14:00:49Z",
+    "version": "11.28.0"
+   },
+   {
+    "releaseDate": "2026-04-30T18:00:51Z",
+    "version": "11.27.1"
+   },
+   {
+    "releaseDate": "2026-04-23T14:00:54Z",
+    "version": "11.27.0"
+   },
+   {
+    "releaseDate": "2026-04-02T00:00:00Z",
+    "version": "11.26.1"
+   },
+   {
+    "releaseDate": "2026-03-24T00:00:00Z",
+    "version": "11.26.0"
+   },
+   {
+    "releaseDate": "2026-03-08T05:00:44Z",
+    "version": "11.25.2"
+   },
+   {
+    "releaseDate": "2026-03-05T15:00:50Z",
+    "version": "11.25.1"
+   },
+   {
+    "releaseDate": "2026-02-17T16:00:53Z",
+    "version": "11.25.0"
+   },
+   {
+    "releaseDate": "2026-01-29T00:00:00Z",
+    "version": "11.24.1"
+   },
+   {
+    "releaseDate": "2026-01-20T15:00:48Z",
+    "version": "11.24.0"
+   },
+   {
+    "releaseDate": "2026-01-08T15:00:47Z",
+    "version": "11.23.2"
+   },
+   {
+    "releaseDate": "2025-12-16T15:00:49Z",
+    "version": "11.23.1"
+   },
+   {
+    "releaseDate": "2025-12-02T16:00:46Z",
+    "version": "11.23.0"
+   },
+   {
+    "releaseDate": "2025-11-06T16:00:41Z",
+    "version": "11.22.1"
+   },
+   {
+    "releaseDate": "2025-10-28T15:00:50Z",
+    "version": "11.22.0"
+   },
+   {
+    "releaseDate": "2025-10-09T14:00:50Z",
+    "version": "11.21.1"
+   }
+  ],
+  "publisher": "Jamf",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "like",
+      "type": "recon",
+      "value": "com.jamfsoftware.selfservice"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "PyCharm CE.app",
+  "bundleId": "com.jetbrains.pycharm.ce",
+  "currentVersion": "2025.2.6.1",
+  "extensionAttributes": [
+   {
+    "displayName": "PyCharm Community Version",
+    "key": "jamf-patch-jetbrains-pycharm-community"
+   }
+  ],
+  "id": "0ED",
+  "lastModified": "2026-04-30T15:00:02Z",
+  "name": "JetBrains PyCharm Community",
+  "patches": [
+   {
+    "releaseDate": "2026-04-30T11:08:42Z",
+    "version": "2025.2.6.1"
+   },
+   {
+    "releaseDate": "2025-12-18T14:16:05Z",
+    "version": "2025.2.6"
+   },
+   {
+    "releaseDate": "2025-11-28T13:31:02Z",
+    "version": "2025.2.5"
+   },
+   {
+    "releaseDate": "2025-10-24T08:30:56Z",
+    "version": "2025.2.4"
+   },
+   {
+    "releaseDate": "2025-10-03T15:46:04Z",
+    "version": "2025.2.3"
+   },
+   {
+    "releaseDate": "2025-09-22T19:31:02Z",
+    "version": "2025.2.2"
+   },
+   {
+    "releaseDate": "2025-09-03T16:06:18Z",
+    "version": "2025.2.1.1"
+   },
+   {
+    "releaseDate": "2025-08-29T13:00:40Z",
+    "version": "2025.2.1"
+   },
+   {
+    "releaseDate": "2025-08-12T16:00:15Z",
+    "version": "2025.2.0.1"
+   },
+   {
+    "releaseDate": "2025-08-04T18:30:59Z",
+    "version": "2025.2"
+   },
+   {
+    "releaseDate": "2025-07-11T17:46:01Z",
+    "version": "2025.1.3.1"
+   },
+   {
+    "releaseDate": "2025-07-03T18:32:28Z",
+    "version": "2025.1.3"
+   },
+   {
+    "releaseDate": "2025-06-11T14:46:49Z",
+    "version": "2025.1.2"
+   },
+   {
+    "releaseDate": "2025-05-15T09:17:20Z",
+    "version": "2025.1.1.1"
+   },
+   {
+    "releaseDate": "2025-05-08T11:47:31Z",
+    "version": "2025.1.1"
+   },
+   {
+    "releaseDate": "2025-04-16T12:22:11Z",
+    "version": "2025.1"
+   },
+   {
+    "releaseDate": "2026-04-30T11:04:20Z",
+    "version": "2024.3.6.1"
+   },
+   {
+    "releaseDate": "2025-06-20T12:00:18Z",
+    "version": "2024.3.6"
+   },
+   {
+    "releaseDate": "2025-03-19T17:33:11Z",
+    "version": "2024.3.5"
+   },
+   {
+    "releaseDate": "2025-02-27T22:30:59Z",
+    "version": "2024.3.4"
+   },
+   {
+    "releaseDate": "2025-02-14T08:00:17Z",
+    "version": "2024.3.3"
+   },
+   {
+    "releaseDate": "2025-01-28T10:07:59Z",
+    "version": "2024.3.2"
+   },
+   {
+    "releaseDate": "2024-12-19T18:01:23Z",
+    "version": "2024.3.1.1"
+   },
+   {
+    "releaseDate": "2024-12-12T15:00:15Z",
+    "version": "2024.3.1"
+   },
+   {
+    "releaseDate": "2024-11-13T17:00:00Z",
+    "version": "2024.3"
+   }
+  ],
+  "publisher": "JetBrains",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "jamf-patch-jetbrains-pycharm-community",
+      "operator": "is not",
+      "type": "extensionAttribute",
+      "value": ""
+     }
+    ]
+   },
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.jetbrains.pycharm.ce"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "PyCharm.app",
+  "bundleId": "com.jetbrains.pycharm",
+  "currentVersion": "2026.2.1",
+  "extensionAttributes": [
+   {
+    "displayName": "PyCharm Professional Version",
+    "key": "jamf-patch-jetbrains-pycharm-professional"
+   }
+  ],
+  "id": "0EE",
+  "lastModified": "2026-08-12T16:08:03Z",
+  "name": "JetBrains PyCharm Unified",
+  "patches": [
+   {
+    "releaseDate": "2026-08-12T12:16:03Z",
+    "version": "2026.2.1"
+   },
+   {
+    "releaseDate": "2026-07-27T20:46:02Z",
+    "version": "2026.2.0.1"
+   },
+   {
+    "releaseDate": "2026-07-21T15:00:23Z",
+    "version": "2026.2"
+   },
+   {
+    "releaseDate": "2026-07-03T14:15:54Z",
+    "version": "2026.1.4"
+   },
+   {
+    "releaseDate": "2026-06-23T16:16:04Z",
+    "version": "2026.1.3"
+   },
+   {
+    "releaseDate": "2026-05-15T14:02:59Z",
+    "version": "2026.1.2"
+   },
+   {
+    "releaseDate": "2026-04-28T17:31:07Z",
+    "version": "2026.1.1"
+   },
+   {
+    "releaseDate": "2026-03-30T15:16:18Z",
+    "version": "2026.1"
+   },
+   {
+    "releaseDate": "2026-03-25T18:04:12Z",
+    "version": "2025.3.4"
+   },
+   {
+    "releaseDate": "2026-02-20T17:17:49Z",
+    "version": "2025.3.3"
+   },
+   {
+    "releaseDate": "2026-02-02T16:31:10Z",
+    "version": "2025.3.2.1"
+   },
+   {
+    "releaseDate": "2026-01-27T19:31:00Z",
+    "version": "2025.3.2"
+   },
+   {
+    "releaseDate": "2026-01-12T15:03:02Z",
+    "version": "2025.3.1.1"
+   },
+   {
+    "releaseDate": "2025-12-18T20:00:26Z",
+    "version": "2025.3.1"
+   },
+   {
+    "releaseDate": "2025-12-08T15:00:17Z",
+    "version": "2025.3"
+   },
+   {
+    "releaseDate": "2025-11-28T13:31:00Z",
+    "version": "2025.2.5"
+   },
+   {
+    "releaseDate": "2025-10-24T08:30:59Z",
+    "version": "2025.2.4"
+   },
+   {
+    "releaseDate": "2025-10-03T15:46:01Z",
+    "version": "2025.2.3"
+   },
+   {
+    "releaseDate": "2025-09-22T19:32:16Z",
+    "version": "2025.2.2"
+   },
+   {
+    "releaseDate": "2025-09-03T16:05:28Z",
+    "version": "2025.2.1.1"
+   },
+   {
+    "releaseDate": "2025-08-29T13:00:19Z",
+    "version": "2025.2.1"
+   },
+   {
+    "releaseDate": "2025-08-12T16:00:16Z",
+    "version": "2025.2.0.1"
+   },
+   {
+    "releaseDate": "2025-08-04T18:30:55Z",
+    "version": "2025.2"
+   },
+   {
+    "releaseDate": "2025-07-11T17:46:02Z",
+    "version": "2025.1.3.1"
+   },
+   {
+    "releaseDate": "2025-07-03T18:31:01Z",
+    "version": "2025.1.3"
+   }
+  ],
+  "publisher": "JetBrains",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "jamf-patch-jetbrains-pycharm-professional",
+      "operator": "is not",
+      "type": "extensionAttribute",
+      "value": ""
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Visual Studio.app",
+  "bundleId": "com.microsoft.visual-studio",
+  "currentVersion": "8.10.25.2",
+  "extensionAttributes": [],
+  "id": "23C",
+  "lastModified": "2022-11-22T13:51:31Z",
+  "name": "Microsoft Visual Studio 2019",
+  "patches": [
+   {
+    "releaseDate": "2022-06-21T19:00:00Z",
+    "version": "8.10.25.2"
+   },
+   {
+    "releaseDate": "2022-06-14T18:00:00Z",
+    "version": "8.10.24.14"
+   },
+   {
+    "releaseDate": "2022-05-11T01:00:00Z",
+    "version": "8.10.23.7"
+   },
+   {
+    "releaseDate": "2022-04-12T14:00:00Z",
+    "version": "8.10.22.11"
+   },
+   {
+    "releaseDate": "2022-03-22T14:00:00Z",
+    "version": "8.10.21.4"
+   },
+   {
+    "releaseDate": "2022-03-08T17:00:00Z",
+    "version": "8.10.20.0"
+   },
+   {
+    "releaseDate": "2022-02-09T19:38:20Z",
+    "version": "8.10.19.2"
+   },
+   {
+    "releaseDate": "2022-02-08T14:00:00Z",
+    "version": "8.10.18.11"
+   },
+   {
+    "releaseDate": "2022-01-19T17:00:00Z",
+    "version": "8.10.17.2"
+   },
+   {
+    "releaseDate": "2021-12-16T14:00:00Z",
+    "version": "8.10.16.2"
+   },
+   {
+    "releaseDate": "2021-12-14T14:00:00Z",
+    "version": "8.10.15.32"
+   },
+   {
+    "releaseDate": "2021-11-17T17:00:00Z",
+    "version": "8.10.14.17"
+   },
+   {
+    "releaseDate": "2021-11-08T14:00:00Z",
+    "version": "8.10.13.11"
+   },
+   {
+    "releaseDate": "2021-11-03T14:00:00Z",
+    "version": "8.10.12.16"
+   },
+   {
+    "releaseDate": "2021-10-12T17:00:00Z",
+    "version": "8.10.11.8"
+   },
+   {
+    "releaseDate": "2021-09-29T17:00:00Z",
+    "version": "8.10.10.8"
+   },
+   {
+    "releaseDate": "2021-09-16T20:00:00Z",
+    "version": "8.10.9.3"
+   },
+   {
+    "releaseDate": "2021-08-19T04:50:36Z",
+    "version": "8.10.8.0"
+   },
+   {
+    "releaseDate": "2021-08-06T02:48:34Z",
+    "version": "8.10.7.17"
+   },
+   {
+    "releaseDate": "2021-07-13T00:00:00Z",
+    "version": "8.10.6.10"
+   },
+   {
+    "releaseDate": "2021-07-06T00:00:00Z",
+    "version": "8.10.5.16"
+   },
+   {
+    "releaseDate": "2021-06-25T02:46:14Z",
+    "version": "8.10.4.11"
+   },
+   {
+    "releaseDate": "2021-06-18T03:42:26Z",
+    "version": "8.10.3.15"
+   },
+   {
+    "releaseDate": "2021-06-11T02:17:22Z",
+    "version": "8.10.2.17"
+   },
+   {
+    "releaseDate": "2021-06-09T03:22:21Z",
+    "version": "8.10.1.71"
+   }
+  ],
+  "publisher": "Microsoft",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.microsoft.visual-studio"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "8."
+     },
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.microsoft.visual-studio"
+     },
+     {
+      "name": "Application Version",
+      "operator": "not like",
+      "type": "recon",
+      "value": "7.8."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Firefox.app",
+  "bundleId": "org.mozilla.firefox",
+  "currentVersion": "154.0",
+  "extensionAttributes": [
+   {
+    "displayName": "Mozilla Firefox Version",
+    "key": "jamf-patch-mozilla-firefox"
+   }
+  ],
+  "id": "0B3",
+  "lastModified": "2026-08-18T16:05:26Z",
+  "name": "Mozilla Firefox",
+  "patches": [
+   {
+    "releaseDate": "2026-08-18T12:51:58Z",
+    "version": "154.0"
+   },
+   {
+    "releaseDate": "2026-08-11T12:31:02Z",
+    "version": "153.0.4"
+   },
+   {
+    "releaseDate": "2026-08-04T12:47:04Z",
+    "version": "153.0.3"
+   },
+   {
+    "releaseDate": "2026-07-28T12:46:10Z",
+    "version": "153.0.1"
+   },
+   {
+    "releaseDate": "2026-07-21T12:45:58Z",
+    "version": "153.0"
+   },
+   {
+    "releaseDate": "2026-07-14T12:30:56Z",
+    "version": "152.0.6"
+   },
+   {
+    "releaseDate": "2026-07-07T12:46:01Z",
+    "version": "152.0.5"
+   },
+   {
+    "releaseDate": "2026-06-30T13:01:10Z",
+    "version": "152.0.4"
+   },
+   {
+    "releaseDate": "2026-06-25T13:31:06Z",
+    "version": "152.0.3"
+   },
+   {
+    "releaseDate": "2026-06-23T13:31:00Z",
+    "version": "152.0.2"
+   },
+   {
+    "releaseDate": "2026-06-18T12:16:04Z",
+    "version": "152.0.1"
+   },
+   {
+    "releaseDate": "2026-06-16T12:30:59Z",
+    "version": "152.0"
+   },
+   {
+    "releaseDate": "2026-06-09T13:31:02Z",
+    "version": "151.0.4"
+   },
+   {
+    "releaseDate": "2026-06-02T12:46:03Z",
+    "version": "151.0.3"
+   },
+   {
+    "releaseDate": "2026-05-26T13:48:54Z",
+    "version": "151.0.2"
+   },
+   {
+    "releaseDate": "2026-05-21T13:32:15Z",
+    "version": "151.0.1"
+   },
+   {
+    "releaseDate": "2026-05-19T12:31:01Z",
+    "version": "151.0"
+   },
+   {
+    "releaseDate": "2026-05-12T12:32:12Z",
+    "version": "150.0.3"
+   },
+   {
+    "releaseDate": "2026-05-07T12:34:25Z",
+    "version": "150.0.2"
+   },
+   {
+    "releaseDate": "2026-04-28T13:46:05Z",
+    "version": "150.0.1"
+   },
+   {
+    "releaseDate": "2026-04-21T12:31:05Z",
+    "version": "150.0"
+   },
+   {
+    "releaseDate": "2026-04-07T12:46:34Z",
+    "version": "149.0.2"
+   },
+   {
+    "releaseDate": "2026-03-24T12:46:37Z",
+    "version": "149.0"
+   },
+   {
+    "releaseDate": "2026-03-10T15:16:05Z",
+    "version": "148.0.2"
+   },
+   {
+    "releaseDate": "2026-02-24T13:49:36Z",
+    "version": "148.0"
+   },
+   {
+    "releaseDate": "2014-01-28T15:54:28Z",
+    "version": "27.0"
+   },
+   {
+    "releaseDate": "2013-12-06T04:07:20Z",
+    "version": "26.0"
+   },
+   {
+    "releaseDate": "2012-10-06T10:14:53Z",
+    "version": "16.0"
+   },
+   {
+    "releaseDate": "2012-04-21T11:07:35Z",
+    "version": "12.0"
+   },
+   {
+    "releaseDate": "2012-03-13T15:35:45Z",
+    "version": "11.0"
+   },
+   {
+    "releaseDate": "2012-01-30T00:28:22Z",
+    "version": "10.0"
+   },
+   {
+    "releaseDate": "2011-12-17T14:15:54Z",
+    "version": "9.0"
+   },
+   {
+    "releaseDate": "2011-11-05T15:20:30Z",
+    "version": "8.0"
+   },
+   {
+    "releaseDate": "2011-09-23T12:50:42Z",
+    "version": "7.0"
+   },
+   {
+    "releaseDate": "2011-08-12T13:57:33Z",
+    "version": "6.0"
+   },
+   {
+    "releaseDate": "2011-06-16T12:29:23Z",
+    "version": "5.0"
+   }
+  ],
+  "publisher": "Mozilla",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "jamf-patch-mozilla-firefox",
+      "operator": "is not",
+      "type": "extensionAttribute",
+      "value": ""
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": null,
+  "bundleId": null,
+  "currentVersion": "14.21.3",
+  "extensionAttributes": [
+   {
+    "displayName": "Node.js 14 Version",
+    "key": "jamf-patch-nodejs-14"
+   }
+  ],
+  "id": "2FC",
+  "lastModified": "2023-03-06T21:19:35Z",
+  "name": "Node.js 14",
+  "patches": [
+   {
+    "releaseDate": "2023-02-16T22:00:00Z",
+    "version": "14.21.3"
+   },
+   {
+    "releaseDate": "2022-12-13T13:00:00Z",
+    "version": "14.21.2"
+   },
+   {
+    "releaseDate": "2022-11-04T18:00:00Z",
+    "version": "14.21.1"
+   },
+   {
+    "releaseDate": "2022-11-01T22:00:00Z",
+    "version": "14.21.0"
+   },
+   {
+    "releaseDate": "2022-09-23T16:00:00Z",
+    "version": "14.20.1"
+   },
+   {
+    "releaseDate": "2022-07-07T16:00:00Z",
+    "version": "14.20.0"
+   },
+   {
+    "releaseDate": "2022-05-17T19:00:00Z",
+    "version": "14.19.3"
+   },
+   {
+    "releaseDate": "2022-05-04T17:00:00Z",
+    "version": "14.19.2"
+   },
+   {
+    "releaseDate": "2022-03-17T20:00:00Z",
+    "version": "14.19.1"
+   },
+   {
+    "releaseDate": "2022-02-01T08:00:00Z",
+    "version": "14.19.0"
+   },
+   {
+    "releaseDate": "2022-01-10T17:00:00Z",
+    "version": "14.18.3"
+   },
+   {
+    "releaseDate": "2021-12-01T01:21:07Z",
+    "version": "14.18.2"
+   },
+   {
+    "releaseDate": "2021-10-12T10:17:41Z",
+    "version": "14.18.1"
+   },
+   {
+    "releaseDate": "2021-09-30T15:15:15Z",
+    "version": "14.18.0"
+   },
+   {
+    "releaseDate": "2021-09-02T12:41:36Z",
+    "version": "14.17.6"
+   },
+   {
+    "releaseDate": "2021-08-13T10:13:58Z",
+    "version": "14.17.5"
+   },
+   {
+    "releaseDate": "2021-08-02T13:51:25Z",
+    "version": "14.17.4"
+   },
+   {
+    "releaseDate": "2021-07-05T18:23:17Z",
+    "version": "14.17.3"
+   },
+   {
+    "releaseDate": "2021-07-01T18:22:18Z",
+    "version": "14.17.2"
+   },
+   {
+    "releaseDate": "2021-06-19T12:42:57Z",
+    "version": "14.17.1"
+   },
+   {
+    "releaseDate": "2021-05-12T05:13:00Z",
+    "version": "14.17.0"
+   },
+   {
+    "releaseDate": "2021-04-09T13:10:30Z",
+    "version": "14.16.1"
+   },
+   {
+    "releaseDate": "2021-02-24T14:38:15Z",
+    "version": "14.16.0"
+   },
+   {
+    "releaseDate": "2021-02-10T13:10:12Z",
+    "version": "14.15.5"
+   },
+   {
+    "releaseDate": "2021-01-05T11:51:44Z",
+    "version": "14.15.4"
+   }
+  ],
+  "publisher": "Node.js Foundation",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "jamf-patch-nodejs-14",
+      "operator": "like",
+      "type": "extensionAttribute",
+      "value": "v14."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": null,
+  "bundleId": "com.openai.codex",
+  "currentVersion": "26.818.32112",
+  "extensionAttributes": [],
+  "id": "883",
+  "lastModified": "2026-08-21T19:13:22Z",
+  "name": "OpenAI ChatGPT Codex",
+  "patches": [
+   {
+    "releaseDate": "2026-08-21T18:18:22Z",
+    "version": "26.818.32112"
+   },
+   {
+    "releaseDate": "2026-08-20T23:01:35Z",
+    "version": "26.818.31338"
+   },
+   {
+    "releaseDate": "2026-08-20T16:17:51Z",
+    "version": "26.818.22352"
+   },
+   {
+    "releaseDate": "2026-08-20T05:01:28Z",
+    "version": "26.818.21641"
+   },
+   {
+    "releaseDate": "2026-08-18T17:02:01Z",
+    "version": "26.814.41957"
+   },
+   {
+    "releaseDate": "2026-08-18T00:20:24Z",
+    "version": "26.814.41407"
+   },
+   {
+    "releaseDate": "2026-08-15T06:03:10Z",
+    "version": "26.810.52044"
+   },
+   {
+    "releaseDate": "2026-08-14T20:03:48Z",
+    "version": "26.810.50856"
+   },
+   {
+    "releaseDate": "2026-08-13T21:49:44Z",
+    "version": "26.810.41047"
+   },
+   {
+    "releaseDate": "2026-08-11T01:17:04Z",
+    "version": "26.803.81509"
+   },
+   {
+    "releaseDate": "2026-08-10T18:31:37Z",
+    "version": "26.803.61601"
+   },
+   {
+    "releaseDate": "2026-08-07T02:47:23Z",
+    "version": "26.803.41515"
+   },
+   {
+    "releaseDate": "2026-08-05T04:31:34Z",
+    "version": "26.730.61639"
+   },
+   {
+    "releaseDate": "2026-08-05T00:31:50Z",
+    "version": "26.730.61309"
+   },
+   {
+    "releaseDate": "2026-08-01T01:03:53Z",
+    "version": "26.727.51351"
+   },
+   {
+    "releaseDate": "2026-07-30T21:00:54Z",
+    "version": "26.727.40816"
+   },
+   {
+    "releaseDate": "2026-07-29T09:02:09Z",
+    "version": "26.721.81911"
+   },
+   {
+    "releaseDate": "2026-07-24T21:02:39Z",
+    "version": "26.721.41059"
+   },
+   {
+    "releaseDate": "2026-07-24T05:01:01Z",
+    "version": "26.721.31836"
+   },
+   {
+    "releaseDate": "2026-07-23T20:48:36Z",
+    "version": "26.721.30844"
+   },
+   {
+    "releaseDate": "2026-07-22T10:32:13Z",
+    "version": "26.715.72359"
+   },
+   {
+    "releaseDate": "2026-07-22T06:16:53Z",
+    "version": "26.715.72028"
+   },
+   {
+    "releaseDate": "2026-07-22T04:16:59Z",
+    "version": "26.715.71837"
+   },
+   {
+    "releaseDate": "2026-07-21T18:16:55Z",
+    "version": "26.715.70719"
+   },
+   {
+    "releaseDate": "2026-07-21T06:16:56Z",
+    "version": "26.715.61943"
+   },
+   {
+    "releaseDate": "2026-06-17T16:17:22Z",
+    "version": "26.611.62324"
+   }
+  ],
+  "publisher": "OpenAI",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.openai.codex"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Postman.app",
+  "bundleId": "com.postmanlabs.mac",
+  "currentVersion": "12.24.5",
+  "extensionAttributes": [],
+  "id": "11E",
+  "lastModified": "2026-08-21T11:03:00Z",
+  "name": "Postman",
+  "patches": [
+   {
+    "releaseDate": "2026-08-21T09:31:07Z",
+    "version": "12.24.5"
+   },
+   {
+    "releaseDate": "2026-08-20T06:32:23Z",
+    "version": "12.24.4"
+   },
+   {
+    "releaseDate": "2026-08-19T08:31:04Z",
+    "version": "12.24.2"
+   },
+   {
+    "releaseDate": "2026-08-18T09:00:26Z",
+    "version": "12.24.1"
+   },
+   {
+    "releaseDate": "2026-08-15T02:47:38Z",
+    "version": "12.23.8"
+   },
+   {
+    "releaseDate": "2026-08-14T10:00:29Z",
+    "version": "12.23.7"
+   },
+   {
+    "releaseDate": "2026-08-13T17:00:27Z",
+    "version": "12.23.5"
+   },
+   {
+    "releaseDate": "2026-08-12T06:16:00Z",
+    "version": "12.23.2"
+   },
+   {
+    "releaseDate": "2026-08-11T10:18:27Z",
+    "version": "12.23.1"
+   },
+   {
+    "releaseDate": "2026-08-07T15:46:16Z",
+    "version": "12.22.8"
+   },
+   {
+    "releaseDate": "2026-08-06T08:31:05Z",
+    "version": "12.22.6"
+   },
+   {
+    "releaseDate": "2026-08-05T04:46:07Z",
+    "version": "12.22.3"
+   },
+   {
+    "releaseDate": "2026-08-04T11:46:46Z",
+    "version": "12.22.2"
+   },
+   {
+    "releaseDate": "2026-08-03T07:15:57Z",
+    "version": "12.22.0"
+   },
+   {
+    "releaseDate": "2026-07-31T11:00:28Z",
+    "version": "12.21.9"
+   },
+   {
+    "releaseDate": "2026-07-29T06:46:06Z",
+    "version": "12.21.2"
+   },
+   {
+    "releaseDate": "2026-07-28T06:46:01Z",
+    "version": "12.21.1"
+   },
+   {
+    "releaseDate": "2026-07-27T13:46:08Z",
+    "version": "12.21.0"
+   },
+   {
+    "releaseDate": "2026-07-23T14:16:01Z",
+    "version": "12.20.4"
+   },
+   {
+    "releaseDate": "2026-07-22T12:00:26Z",
+    "version": "12.20.2"
+   },
+   {
+    "releaseDate": "2026-07-21T11:31:00Z",
+    "version": "12.20.1"
+   },
+   {
+    "releaseDate": "2026-07-20T04:46:04Z",
+    "version": "12.20.0"
+   },
+   {
+    "releaseDate": "2026-07-17T06:16:05Z",
+    "version": "12.19.6"
+   },
+   {
+    "releaseDate": "2026-07-16T05:31:01Z",
+    "version": "12.19.5"
+   },
+   {
+    "releaseDate": "2026-07-14T23:31:04Z",
+    "version": "12.19.3"
+   },
+   {
+    "releaseDate": "2026-07-01T06:31:59Z",
+    "version": "12.17.2"
+   },
+   {
+    "releaseDate": "2026-03-16T05:00:16Z",
+    "version": "12.2.0"
+   },
+   {
+    "releaseDate": "2020-06-06T06:46:26Z",
+    "version": "7.25.3"
+   },
+   {
+    "releaseDate": "2016-05-13T03:14:11Z",
+    "version": "4.2.0"
+   }
+  ],
+  "publisher": "Postman",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.postmanlabs.mac"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Slack.app",
+  "bundleId": "com.tinyspeck.slackmacgap",
+  "currentVersion": "4.51.191",
+  "extensionAttributes": [],
+  "id": "0C9",
+  "lastModified": "2026-08-17T21:13:53Z",
+  "name": "Slack",
+  "patches": [
+   {
+    "releaseDate": "2026-08-17T19:10:13Z",
+    "version": "4.51.191"
+   },
+   {
+    "releaseDate": "2026-08-10T20:31:01Z",
+    "version": "4.51.185"
+   },
+   {
+    "releaseDate": "2026-07-20T18:31:01Z",
+    "version": "4.51.180"
+   },
+   {
+    "releaseDate": "2026-06-24T20:00:15Z",
+    "version": "4.50.143"
+   },
+   {
+    "releaseDate": "2026-06-15T17:15:59Z",
+    "version": "4.50.140"
+   },
+   {
+    "releaseDate": "2026-05-26T18:32:26Z",
+    "version": "4.50.128"
+   },
+   {
+    "releaseDate": "2026-05-12T18:33:05Z",
+    "version": "4.50.121"
+   },
+   {
+    "releaseDate": "2026-04-27T20:15:59Z",
+    "version": "4.49.89"
+   },
+   {
+    "releaseDate": "2026-04-01T18:00:20Z",
+    "version": "4.49.81"
+   },
+   {
+    "releaseDate": "2026-03-17T18:15:59Z",
+    "version": "4.48.102"
+   },
+   {
+    "releaseDate": "2026-03-05T23:16:04Z",
+    "version": "4.48.100"
+   },
+   {
+    "releaseDate": "2026-03-04T21:30:56Z",
+    "version": "4.48.99"
+   },
+   {
+    "releaseDate": "2026-02-19T18:15:54Z",
+    "version": "4.48.95"
+   },
+   {
+    "releaseDate": "2026-02-19T00:17:22Z",
+    "version": "4.48.94"
+   },
+   {
+    "releaseDate": "2026-02-14T00:15:54Z",
+    "version": "4.48.92"
+   },
+   {
+    "releaseDate": "2026-02-02T20:31:03Z",
+    "version": "4.48.86"
+   },
+   {
+    "releaseDate": "2025-12-13T01:00:17Z",
+    "version": "4.47.72"
+   },
+   {
+    "releaseDate": "2025-12-08T17:45:59Z",
+    "version": "4.47.69"
+   },
+   {
+    "releaseDate": "2025-11-21T23:15:59Z",
+    "version": "4.47.65"
+   },
+   {
+    "releaseDate": "2025-11-10T19:46:01Z",
+    "version": "4.47.59"
+   },
+   {
+    "releaseDate": "2025-10-21T19:16:01Z",
+    "version": "4.46.104"
+   },
+   {
+    "releaseDate": "2025-10-06T21:00:21Z",
+    "version": "4.46.101"
+   },
+   {
+    "releaseDate": "2025-09-24T19:46:40Z",
+    "version": "4.46.99"
+   },
+   {
+    "releaseDate": "2025-09-10T16:45:56Z",
+    "version": "4.46.96"
+   },
+   {
+    "releaseDate": "2025-09-08T20:15:54Z",
+    "version": "4.46.95"
+   },
+   {
+    "releaseDate": "2019-12-05T19:26:56Z",
+    "version": "4.2.0"
+   },
+   {
+    "releaseDate": "2016-10-20T15:56:10Z",
+    "version": "2.3.0"
+   },
+   {
+    "releaseDate": "2015-06-24T07:35:46Z",
+    "version": "1.1"
+   }
+  ],
+  "publisher": "Slack Technologies",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.tinyspeck.slackmacgap"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": null,
+  "bundleId": null,
+  "currentVersion": "2026.2.0",
+  "extensionAttributes": [],
+  "id": "608",
+  "lastModified": "2026-08-11T16:31:55Z",
+  "name": "TechSmith Camtasia",
+  "patches": [
+   {
+    "releaseDate": "2026-08-11T12:31:24Z",
+    "version": "2026.2.0"
+   },
+   {
+    "releaseDate": "2026-07-14T12:16:36Z",
+    "version": "2026.1.4"
+   },
+   {
+    "releaseDate": "2026-06-02T12:17:21Z",
+    "version": "2026.1.3"
+   },
+   {
+    "releaseDate": "2026-05-28T16:16:40Z",
+    "version": "2026.1.2"
+   },
+   {
+    "releaseDate": "2026-05-19T15:32:22Z",
+    "version": "2026.1.1"
+   },
+   {
+    "releaseDate": "2026-04-14T13:32:46Z",
+    "version": "2026.1.0"
+   },
+   {
+    "releaseDate": "2026-03-10T12:18:21Z",
+    "version": "2026.0.7"
+   },
+   {
+    "releaseDate": "2026-02-04T13:16:20Z",
+    "version": "2026.0.6"
+   },
+   {
+    "releaseDate": "2026-01-14T16:17:12Z",
+    "version": "2026.0.5"
+   },
+   {
+    "releaseDate": "2026-01-13T13:16:30Z",
+    "version": "2026.0.4"
+   },
+   {
+    "releaseDate": "2025-12-17T15:32:03Z",
+    "version": "2026.0.3"
+   },
+   {
+    "releaseDate": "2025-10-09T17:31:25Z",
+    "version": "2025.2.5"
+   },
+   {
+    "releaseDate": "2025-10-07T11:46:25Z",
+    "version": "2025.2.4"
+   },
+   {
+    "releaseDate": "2025-09-10T18:46:21Z",
+    "version": "2025.2.3"
+   },
+   {
+    "releaseDate": "2025-09-09T11:46:25Z",
+    "version": "2025.2.2"
+   },
+   {
+    "releaseDate": "2025-07-30T18:31:41Z",
+    "version": "2025.2.1"
+   },
+   {
+    "releaseDate": "2025-07-22T12:16:16Z",
+    "version": "2025.2.0"
+   },
+   {
+    "releaseDate": "2025-07-15T12:16:19Z",
+    "version": "2025.1.4"
+   },
+   {
+    "releaseDate": "2025-07-01T12:46:20Z",
+    "version": "2025.1.3"
+   },
+   {
+    "releaseDate": "2025-05-28T16:56:35Z",
+    "version": "2025.1.2"
+   },
+   {
+    "releaseDate": "2025-05-27T14:01:22Z",
+    "version": "2025.1.1"
+   },
+   {
+    "releaseDate": "2025-04-29T12:19:11Z",
+    "version": "2025.1.0"
+   },
+   {
+    "releaseDate": "2025-04-09T12:47:21Z",
+    "version": "2025.0.3"
+   },
+   {
+    "releaseDate": "2025-03-25T12:01:46Z",
+    "version": "2025.0.2"
+   },
+   {
+    "releaseDate": "2025-02-18T13:49:54Z",
+    "version": "2025.0.1"
+   },
+   {
+    "releaseDate": "2023-11-28T16:00:00Z",
+    "version": "2022.6.10"
+   }
+  ],
+  "publisher": "TechSmith (Combined Definition)",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "like",
+      "type": "recon",
+      "value": "com.techsmith.camtasia"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Camtasia 2022.app",
+  "bundleId": "com.techsmith.camtasia2022",
+  "currentVersion": "2022.6.10",
+  "extensionAttributes": [],
+  "id": "514",
+  "lastModified": "2023-11-28T17:36:34Z",
+  "name": "TechSmith Camtasia 2022",
+  "patches": [
+   {
+    "releaseDate": "2023-11-28T16:00:00Z",
+    "version": "2022.6.10"
+   },
+   {
+    "releaseDate": "2023-10-04T15:00:00Z",
+    "version": "2022.6.9"
+   },
+   {
+    "releaseDate": "2023-04-20T13:00:00Z",
+    "version": "2022.6.8"
+   },
+   {
+    "releaseDate": "2023-04-04T16:00:00Z",
+    "version": "2022.6.7"
+   },
+   {
+    "releaseDate": "2023-03-30T13:00:00Z",
+    "version": "2022.6.6"
+   },
+   {
+    "releaseDate": "2023-03-28T17:00:00Z",
+    "version": "2022.6.5"
+   },
+   {
+    "releaseDate": "2023-03-28T13:00:00Z",
+    "version": "2022.6.4"
+   },
+   {
+    "releaseDate": "2023-03-10T13:00:00Z",
+    "version": "2022.6.3"
+   },
+   {
+    "releaseDate": "2023-03-07T14:00:00Z",
+    "version": "2022.6.2"
+   },
+   {
+    "releaseDate": "2023-02-08T18:00:00Z",
+    "version": "2022.6.1"
+   },
+   {
+    "releaseDate": "2023-02-07T14:00:00Z",
+    "version": "2022.6.0"
+   },
+   {
+    "releaseDate": "2023-01-12T14:00:00Z",
+    "version": "2022.5.1"
+   },
+   {
+    "releaseDate": "2022-12-13T13:00:00Z",
+    "version": "2022.5.0"
+   },
+   {
+    "releaseDate": "2022-11-15T12:00:00Z",
+    "version": "2022.4.2"
+   },
+   {
+    "releaseDate": "2022-10-28T18:00:00Z",
+    "version": "2022.4.1"
+   },
+   {
+    "releaseDate": "2022-10-27T13:00:00Z",
+    "version": "2022.4.0"
+   },
+   {
+    "releaseDate": "2022-09-27T19:00:00Z",
+    "version": "2022.3.0"
+   },
+   {
+    "releaseDate": "2022-08-25T13:00:00Z",
+    "version": "2022.2.0"
+   },
+   {
+    "releaseDate": "2022-08-09T13:00:00Z",
+    "version": "2022.1.0"
+   },
+   {
+    "releaseDate": "2022-07-14T12:00:00Z",
+    "version": "2022.0.4"
+   },
+   {
+    "releaseDate": "2022-07-13T13:00:00Z",
+    "version": "2022.0.3"
+   },
+   {
+    "releaseDate": "2022-06-13T18:04:58Z",
+    "version": "2022.0.2"
+   },
+   {
+    "releaseDate": "2022-06-10T17:26:30Z",
+    "version": "2022.0.1"
+   },
+   {
+    "releaseDate": "2022-05-27T22:34:40Z",
+    "version": "2022.0.0"
+   }
+  ],
+  "publisher": "TechSmith",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.techsmith.camtasia2022"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Vysor.app",
+  "bundleId": "com.electron.vysor",
+  "currentVersion": "5.0.7",
+  "extensionAttributes": [],
+  "id": "1FE",
+  "lastModified": "2023-05-18T09:12:49Z",
+  "name": "Vysor",
+  "patches": [
+   {
+    "releaseDate": "2023-05-18T05:00:00Z",
+    "version": "5.0.7"
+   },
+   {
+    "releaseDate": "2022-06-30T04:00:00Z",
+    "version": "4.2.3"
+   },
+   {
+    "releaseDate": "2021-08-05T14:00:00Z",
+    "version": "4.1.77"
+   },
+   {
+    "releaseDate": "2021-07-18T08:00:00Z",
+    "version": "4.1.62"
+   },
+   {
+    "releaseDate": "2021-07-17T08:00:00Z",
+    "version": "4.1.61"
+   },
+   {
+    "releaseDate": "2021-07-07T20:00:00Z",
+    "version": "4.1.29"
+   },
+   {
+    "releaseDate": "2021-07-03T08:00:00Z",
+    "version": "4.1.27"
+   },
+   {
+    "releaseDate": "2021-06-30T17:00:00Z",
+    "version": "4.1.25"
+   },
+   {
+    "releaseDate": "2021-01-05T16:49:02Z",
+    "version": "4.0.17"
+   },
+   {
+    "releaseDate": "2021-01-04T19:24:50Z",
+    "version": "4.0.11"
+   },
+   {
+    "releaseDate": "2021-01-02T17:30:33Z",
+    "version": "4.0.3"
+   },
+   {
+    "releaseDate": "2021-01-02T15:42:48Z",
+    "version": "4.0.0"
+   },
+   {
+    "releaseDate": "2020-08-16T16:29:03Z",
+    "version": "3.1.4"
+   },
+   {
+    "releaseDate": "2020-08-15T17:35:25Z",
+    "version": "3.1.3"
+   },
+   {
+    "releaseDate": "2020-08-14T03:57:43Z",
+    "version": "3.1.0"
+   },
+   {
+    "releaseDate": "2020-05-14T04:06:15Z",
+    "version": "3.0.87"
+   },
+   {
+    "releaseDate": "2020-05-10T06:31:36Z",
+    "version": "3.0.84"
+   },
+   {
+    "releaseDate": "2020-05-06T12:03:58Z",
+    "version": "3.0.67"
+   },
+   {
+    "releaseDate": "2020-05-01T05:51:05Z",
+    "version": "3.0.44"
+   },
+   {
+    "releaseDate": "2020-02-14T18:11:50Z",
+    "version": "2.3.1"
+   },
+   {
+    "releaseDate": "2020-01-19T00:38:10Z",
+    "version": "2.2.2"
+   },
+   {
+    "releaseDate": "2020-01-19T00:29:12Z",
+    "version": "2.2.1"
+   },
+   {
+    "releaseDate": "2019-02-10T17:06:38Z",
+    "version": "2.1.2"
+   },
+   {
+    "releaseDate": "2018-11-29T00:03:02Z",
+    "version": "2.1.0"
+   },
+   {
+    "releaseDate": "2018-01-22T21:07:12Z",
+    "version": "1.8.3"
+   }
+  ],
+  "publisher": "ClockworkMod",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "com.electron.vysor"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": null,
+  "bundleId": null,
+  "currentVersion": "4.6.8",
+  "extensionAttributes": [],
+  "id": "612",
+  "lastModified": "2026-08-13T09:34:31Z",
+  "name": "Wireshark",
+  "patches": [
+   {
+    "releaseDate": "2026-08-12T19:18:22Z",
+    "version": "4.6.8"
+   },
+   {
+    "releaseDate": "2026-07-08T22:47:57Z",
+    "version": "4.6.7"
+   },
+   {
+    "releaseDate": "2026-05-19T20:05:41Z",
+    "version": "4.6.6"
+   },
+   {
+    "releaseDate": "2026-04-30T01:49:19Z",
+    "version": "4.6.5"
+   },
+   {
+    "releaseDate": "2026-02-25T22:20:57Z",
+    "version": "4.6.4"
+   },
+   {
+    "releaseDate": "2026-01-14T19:32:10Z",
+    "version": "4.6.3"
+   },
+   {
+    "releaseDate": "2025-12-03T19:46:25Z",
+    "version": "4.6.2"
+   },
+   {
+    "releaseDate": "2025-11-19T22:32:12Z",
+    "version": "4.6.1"
+   },
+   {
+    "releaseDate": "2025-10-09T08:11:39Z",
+    "version": "4.6.0"
+   },
+   {
+    "releaseDate": "2026-08-12T19:16:44Z",
+    "version": "4.4.18"
+   },
+   {
+    "releaseDate": "2026-07-08T22:46:39Z",
+    "version": "4.4.17"
+   },
+   {
+    "releaseDate": "2026-05-19T20:04:01Z",
+    "version": "4.4.16"
+   },
+   {
+    "releaseDate": "2026-04-30T05:47:18Z",
+    "version": "4.4.15"
+   },
+   {
+    "releaseDate": "2026-02-25T22:20:26Z",
+    "version": "4.4.14"
+   },
+   {
+    "releaseDate": "2026-01-14T19:31:29Z",
+    "version": "4.4.13"
+   },
+   {
+    "releaseDate": "2025-12-05T20:31:21Z",
+    "version": "4.4.12"
+   },
+   {
+    "releaseDate": "2025-11-19T22:31:15Z",
+    "version": "4.4.11"
+   },
+   {
+    "releaseDate": "2025-10-09T02:31:31Z",
+    "version": "4.4.10"
+   },
+   {
+    "releaseDate": "2025-08-29T00:00:41Z",
+    "version": "4.4.9"
+   },
+   {
+    "releaseDate": "2025-07-16T20:31:21Z",
+    "version": "4.4.8"
+   },
+   {
+    "releaseDate": "2025-06-04T22:46:18Z",
+    "version": "4.4.7"
+   },
+   {
+    "releaseDate": "2025-04-16T18:18:30Z",
+    "version": "4.4.6"
+   },
+   {
+    "releaseDate": "2025-02-24T21:01:25Z",
+    "version": "4.4.5"
+   },
+   {
+    "releaseDate": "2025-02-19T20:46:22Z",
+    "version": "4.4.4"
+   },
+   {
+    "releaseDate": "2025-01-09T02:00:46Z",
+    "version": "4.4.3"
+   },
+   {
+    "releaseDate": "2023-11-15T15:31:36Z",
+    "version": "4.2.0"
+   }
+  ],
+  "publisher": "Wireshark Foundation (Combined Definition)",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.wireshark.Wireshark"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Wireshark.app",
+  "bundleId": "org.wireshark.Wireshark",
+  "currentVersion": "1.10.14",
+  "extensionAttributes": [],
+  "id": "132",
+  "lastModified": "2021-04-14T04:30:49Z",
+  "name": "Wireshark 1.10",
+  "patches": [
+   {
+    "releaseDate": "2015-05-13T06:26:22Z",
+    "version": "1.10.14"
+   },
+   {
+    "releaseDate": "2015-03-05T04:21:12Z",
+    "version": "1.10.13"
+   },
+   {
+    "releaseDate": "2015-01-06T21:28:53Z",
+    "version": "1.10.12"
+   },
+   {
+    "releaseDate": "2014-11-13T06:09:55Z",
+    "version": "1.10.11"
+   },
+   {
+    "releaseDate": "2014-09-17T02:42:22Z",
+    "version": "1.10.10"
+   },
+   {
+    "releaseDate": "2014-08-01T05:14:10Z",
+    "version": "1.10.9"
+   },
+   {
+    "releaseDate": "2014-06-13T07:11:15Z",
+    "version": "1.10.8"
+   },
+   {
+    "releaseDate": "2014-04-23T02:47:49Z",
+    "version": "1.10.7"
+   },
+   {
+    "releaseDate": "2014-03-08T05:15:57Z",
+    "version": "1.10.6"
+   },
+   {
+    "releaseDate": "2013-12-20T05:54:17Z",
+    "version": "1.10.5"
+   },
+   {
+    "releaseDate": "2013-12-18T04:33:29Z",
+    "version": "1.10.4"
+   },
+   {
+    "releaseDate": "2013-11-02T04:06:22Z",
+    "version": "1.10.3"
+   },
+   {
+    "releaseDate": "2013-09-11T03:00:42Z",
+    "version": "1.10.2"
+   },
+   {
+    "releaseDate": "2013-07-27T05:05:42Z",
+    "version": "1.10.1"
+   },
+   {
+    "releaseDate": "2013-06-06T03:37:56Z",
+    "version": "1.10.0"
+   }
+  ],
+  "publisher": "Wireshark Foundation",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.wireshark.Wireshark"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "1.10."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Wireshark.app",
+  "bundleId": "org.wireshark.Wireshark",
+  "currentVersion": "1.12.13",
+  "extensionAttributes": [],
+  "id": "133",
+  "lastModified": "2021-04-14T04:30:50Z",
+  "name": "Wireshark 1.12",
+  "patches": [
+   {
+    "releaseDate": "2016-07-28T05:00:24Z",
+    "version": "1.12.13"
+   },
+   {
+    "releaseDate": "2016-06-08T04:51:40Z",
+    "version": "1.12.12"
+   },
+   {
+    "releaseDate": "2016-04-23T03:28:38Z",
+    "version": "1.12.11"
+   },
+   {
+    "releaseDate": "2016-02-27T07:18:59Z",
+    "version": "1.12.10"
+   },
+   {
+    "releaseDate": "2015-12-30T05:45:00Z",
+    "version": "1.12.9"
+   },
+   {
+    "releaseDate": "2015-10-15T04:14:26Z",
+    "version": "1.12.8"
+   },
+   {
+    "releaseDate": "2015-08-13T02:45:08Z",
+    "version": "1.12.7"
+   },
+   {
+    "releaseDate": "2015-06-18T02:19:42Z",
+    "version": "1.12.6"
+   },
+   {
+    "releaseDate": "2015-05-13T06:24:13Z",
+    "version": "1.12.5"
+   },
+   {
+    "releaseDate": "2015-03-05T04:11:01Z",
+    "version": "1.12.4"
+   },
+   {
+    "releaseDate": "2015-01-08T07:26:47Z",
+    "version": "1.12.3"
+   },
+   {
+    "releaseDate": "2014-11-13T05:47:55Z",
+    "version": "1.12.2"
+   },
+   {
+    "releaseDate": "2014-09-17T02:35:23Z",
+    "version": "1.12.1"
+   },
+   {
+    "releaseDate": "2014-08-01T04:54:54Z",
+    "version": "1.12.0"
+   }
+  ],
+  "publisher": "Wireshark Foundation",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.wireshark.Wireshark"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "1.12."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Wireshark.app",
+  "bundleId": "org.wireshark.Wireshark",
+  "currentVersion": "1.6.16",
+  "extensionAttributes": [],
+  "id": "130",
+  "lastModified": "2021-04-14T04:30:46Z",
+  "name": "Wireshark 1.6",
+  "patches": [
+   {
+    "releaseDate": "2013-06-08T01:57:20Z",
+    "version": "1.6.16"
+   },
+   {
+    "releaseDate": "2013-05-18T03:34:31Z",
+    "version": "1.6.15"
+   },
+   {
+    "releaseDate": "2013-03-07T06:19:23Z",
+    "version": "1.6.14"
+   },
+   {
+    "releaseDate": "2013-01-30T04:29:39Z",
+    "version": "1.6.13"
+   },
+   {
+    "releaseDate": "2012-11-29T06:29:59Z",
+    "version": "1.6.12"
+   },
+   {
+    "releaseDate": "2012-10-03T02:14:59Z",
+    "version": "1.6.11"
+   },
+   {
+    "releaseDate": "2012-08-16T01:44:58Z",
+    "version": "1.6.10"
+   },
+   {
+    "releaseDate": "2012-07-24T03:24:55Z",
+    "version": "1.6.9"
+   },
+   {
+    "releaseDate": "2012-05-23T00:45:44Z",
+    "version": "1.6.8"
+   },
+   {
+    "releaseDate": "2012-04-07T05:27:41Z",
+    "version": "1.6.7"
+   },
+   {
+    "releaseDate": "2012-03-28T03:59:58Z",
+    "version": "1.6.6"
+   },
+   {
+    "releaseDate": "2012-01-11T06:08:46Z",
+    "version": "1.6.5"
+   },
+   {
+    "releaseDate": "2011-11-19T05:34:01Z",
+    "version": "1.6.4"
+   },
+   {
+    "releaseDate": "2011-11-02T03:51:05Z",
+    "version": "1.6.3"
+   },
+   {
+    "releaseDate": "2011-09-08T10:26:26Z",
+    "version": "1.6.2"
+   },
+   {
+    "releaseDate": "2011-07-19T06:31:49Z",
+    "version": "1.6.1"
+   },
+   {
+    "releaseDate": "2011-06-08T01:39:06Z",
+    "version": "1.6.0"
+   }
+  ],
+  "publisher": "Wireshark Foundation",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.wireshark.Wireshark"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "1.6."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Wireshark.app",
+  "bundleId": "org.wireshark.Wireshark",
+  "currentVersion": "1.8.15",
+  "extensionAttributes": [],
+  "id": "131",
+  "lastModified": "2021-04-14T04:30:47Z",
+  "name": "Wireshark 1.8",
+  "patches": [
+   {
+    "releaseDate": "2014-06-13T05:41:59Z",
+    "version": "1.8.15"
+   },
+   {
+    "releaseDate": "2014-04-23T03:01:35Z",
+    "version": "1.8.14"
+   },
+   {
+    "releaseDate": "2014-03-08T05:32:38Z",
+    "version": "1.8.13"
+   },
+   {
+    "releaseDate": "2013-12-18T04:59:09Z",
+    "version": "1.8.12"
+   },
+   {
+    "releaseDate": "2013-11-02T04:11:10Z",
+    "version": "1.8.11"
+   },
+   {
+    "releaseDate": "2013-09-11T03:56:30Z",
+    "version": "1.8.10"
+   },
+   {
+    "releaseDate": "2013-07-27T03:44:53Z",
+    "version": "1.8.9"
+   },
+   {
+    "releaseDate": "2013-06-08T02:19:36Z",
+    "version": "1.8.8"
+   },
+   {
+    "releaseDate": "2013-05-18T03:10:38Z",
+    "version": "1.8.7"
+   },
+   {
+    "releaseDate": "2013-03-07T06:22:10Z",
+    "version": "1.8.6"
+   },
+   {
+    "releaseDate": "2013-01-30T05:47:36Z",
+    "version": "1.8.5"
+   },
+   {
+    "releaseDate": "2012-11-29T06:11:53Z",
+    "version": "1.8.4"
+   },
+   {
+    "releaseDate": "2012-10-03T02:11:38Z",
+    "version": "1.8.3"
+   },
+   {
+    "releaseDate": "2012-08-16T02:09:19Z",
+    "version": "1.8.2"
+   },
+   {
+    "releaseDate": "2012-07-24T06:06:10Z",
+    "version": "1.8.1"
+   },
+   {
+    "releaseDate": "2012-06-22T04:52:54Z",
+    "version": "1.8.0"
+   }
+  ],
+  "publisher": "Wireshark Foundation",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.wireshark.Wireshark"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "1.8."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Wireshark.app",
+  "bundleId": "org.wireshark.Wireshark",
+  "currentVersion": "2.0.16",
+  "extensionAttributes": [],
+  "id": "134",
+  "lastModified": "2021-04-14T04:30:51Z",
+  "name": "Wireshark 2.0",
+  "patches": [
+   {
+    "releaseDate": "2017-10-11T05:03:04Z",
+    "version": "2.0.16"
+   },
+   {
+    "releaseDate": "2017-08-30T04:00:42Z",
+    "version": "2.0.15"
+   },
+   {
+    "releaseDate": "2017-07-19T03:23:19Z",
+    "version": "2.0.14"
+   },
+   {
+    "releaseDate": "2017-06-02T04:34:03Z",
+    "version": "2.0.13"
+   },
+   {
+    "releaseDate": "2017-04-13T05:52:44Z",
+    "version": "2.0.12"
+   },
+   {
+    "releaseDate": "2017-03-04T07:53:30Z",
+    "version": "2.0.11"
+   },
+   {
+    "releaseDate": "2017-01-24T07:30:01Z",
+    "version": "2.0.10"
+   },
+   {
+    "releaseDate": "2016-12-15T05:08:55Z",
+    "version": "2.0.9"
+   },
+   {
+    "releaseDate": "2016-11-17T05:40:18Z",
+    "version": "2.0.8"
+   },
+   {
+    "releaseDate": "2016-10-05T04:31:26Z",
+    "version": "2.0.7"
+   },
+   {
+    "releaseDate": "2016-09-09T02:15:12Z",
+    "version": "2.0.6"
+   },
+   {
+    "releaseDate": "2016-07-28T04:41:22Z",
+    "version": "2.0.5"
+   },
+   {
+    "releaseDate": "2016-06-08T04:32:03Z",
+    "version": "2.0.4"
+   },
+   {
+    "releaseDate": "2016-04-23T03:19:48Z",
+    "version": "2.0.3"
+   },
+   {
+    "releaseDate": "2016-02-27T07:09:33Z",
+    "version": "2.0.2"
+   },
+   {
+    "releaseDate": "2015-12-30T08:44:28Z",
+    "version": "2.0.1"
+   },
+   {
+    "releaseDate": "2015-11-19T08:39:47Z",
+    "version": "2.0.0"
+   }
+  ],
+  "publisher": "Wireshark Foundation",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.wireshark.Wireshark"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "2.0."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Wireshark.app",
+  "bundleId": "org.wireshark.Wireshark",
+  "currentVersion": "2.2.17",
+  "extensionAttributes": [],
+  "id": "135",
+  "lastModified": "2021-04-14T04:30:53Z",
+  "name": "Wireshark 2.2",
+  "patches": [
+   {
+    "releaseDate": "2018-08-30T03:01:44Z",
+    "version": "2.2.17"
+   },
+   {
+    "releaseDate": "2018-07-19T03:59:19Z",
+    "version": "2.2.16"
+   },
+   {
+    "releaseDate": "2018-05-23T04:02:48Z",
+    "version": "2.2.15"
+   },
+   {
+    "releaseDate": "2018-04-04T06:13:45Z",
+    "version": "2.2.14"
+   },
+   {
+    "releaseDate": "2018-02-24T06:40:00Z",
+    "version": "2.2.13"
+   },
+   {
+    "releaseDate": "2018-01-12T06:02:38Z",
+    "version": "2.2.12"
+   },
+   {
+    "releaseDate": "2017-12-01T06:36:54Z",
+    "version": "2.2.11"
+   },
+   {
+    "releaseDate": "2017-10-11T05:02:11Z",
+    "version": "2.2.10"
+   },
+   {
+    "releaseDate": "2017-08-30T04:04:22Z",
+    "version": "2.2.9"
+   },
+   {
+    "releaseDate": "2017-07-19T03:22:14Z",
+    "version": "2.2.8"
+   },
+   {
+    "releaseDate": "2017-06-02T04:29:49Z",
+    "version": "2.2.7"
+   },
+   {
+    "releaseDate": "2017-04-13T05:45:56Z",
+    "version": "2.2.6"
+   },
+   {
+    "releaseDate": "2017-03-04T07:52:02Z",
+    "version": "2.2.5"
+   },
+   {
+    "releaseDate": "2017-01-24T07:27:51Z",
+    "version": "2.2.4"
+   },
+   {
+    "releaseDate": "2016-12-15T04:56:34Z",
+    "version": "2.2.3"
+   },
+   {
+    "releaseDate": "2016-11-17T08:30:26Z",
+    "version": "2.2.2"
+   },
+   {
+    "releaseDate": "2016-10-05T04:23:01Z",
+    "version": "2.2.1"
+   },
+   {
+    "releaseDate": "2016-09-08T02:55:42Z",
+    "version": "2.2.0"
+   }
+  ],
+  "publisher": "Wireshark Foundation",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.wireshark.Wireshark"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "2.2."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Wireshark.app",
+  "bundleId": "org.wireshark.Wireshark",
+  "currentVersion": "2.4.16",
+  "extensionAttributes": [],
+  "id": "136",
+  "lastModified": "2021-04-14T04:30:54Z",
+  "name": "Wireshark 2.4",
+  "patches": [
+   {
+    "releaseDate": "2019-07-18T03:52:07Z",
+    "version": "2.4.16"
+   },
+   {
+    "releaseDate": "2019-05-23T03:38:50Z",
+    "version": "2.4.15"
+   },
+   {
+    "releaseDate": "2019-04-09T04:51:43Z",
+    "version": "2.4.14"
+   },
+   {
+    "releaseDate": "2019-02-28T05:53:29Z",
+    "version": "2.4.13"
+   },
+   {
+    "releaseDate": "2019-01-09T06:50:27Z",
+    "version": "2.4.12"
+   },
+   {
+    "releaseDate": "2018-11-29T05:21:59Z",
+    "version": "2.4.11"
+   },
+   {
+    "releaseDate": "2018-10-12T08:01:55Z",
+    "version": "2.4.10"
+   },
+   {
+    "releaseDate": "2018-08-30T03:00:53Z",
+    "version": "2.4.9"
+   },
+   {
+    "releaseDate": "2018-07-19T03:58:04Z",
+    "version": "2.4.8"
+   },
+   {
+    "releaseDate": "2018-05-23T04:02:53Z",
+    "version": "2.4.7"
+   },
+   {
+    "releaseDate": "2018-04-04T06:09:48Z",
+    "version": "2.4.6"
+   },
+   {
+    "releaseDate": "2018-02-24T06:38:21Z",
+    "version": "2.4.5"
+   },
+   {
+    "releaseDate": "2018-01-12T06:02:17Z",
+    "version": "2.4.4"
+   },
+   {
+    "releaseDate": "2017-12-01T06:34:05Z",
+    "version": "2.4.3"
+   },
+   {
+    "releaseDate": "2017-10-11T04:58:38Z",
+    "version": "2.4.2"
+   },
+   {
+    "releaseDate": "2017-08-30T03:59:26Z",
+    "version": "2.4.1"
+   },
+   {
+    "releaseDate": "2017-07-20T02:57:11Z",
+    "version": "2.4.0"
+   }
+  ],
+  "publisher": "Wireshark Foundation",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.wireshark.Wireshark"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "2.4."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Wireshark.app",
+  "bundleId": "org.wireshark.Wireshark",
+  "currentVersion": "2.6.20",
+  "extensionAttributes": [],
+  "id": "137",
+  "lastModified": "2021-04-14T04:30:55Z",
+  "name": "Wireshark 2.6",
+  "patches": [
+   {
+    "releaseDate": "2020-09-24T06:16:20Z",
+    "version": "2.6.20"
+   },
+   {
+    "releaseDate": "2020-08-13T06:15:28Z",
+    "version": "2.6.19"
+   },
+   {
+    "releaseDate": "2020-07-02T04:31:03Z",
+    "version": "2.6.18"
+   },
+   {
+    "releaseDate": "2020-05-20T04:45:26Z",
+    "version": "2.6.17"
+   },
+   {
+    "releaseDate": "2020-04-09T06:17:58Z",
+    "version": "2.6.16"
+   },
+   {
+    "releaseDate": "2020-02-27T07:36:42Z",
+    "version": "2.6.15"
+   },
+   {
+    "releaseDate": "2020-01-16T05:31:51Z",
+    "version": "2.6.14"
+   },
+   {
+    "releaseDate": "2019-12-05T05:43:27Z",
+    "version": "2.6.13"
+   },
+   {
+    "releaseDate": "2019-10-24T04:46:09Z",
+    "version": "2.6.12"
+   },
+   {
+    "releaseDate": "2019-09-12T05:43:28Z",
+    "version": "2.6.11"
+   },
+   {
+    "releaseDate": "2019-07-18T03:46:02Z",
+    "version": "2.6.10"
+   },
+   {
+    "releaseDate": "2019-05-23T03:37:20Z",
+    "version": "2.6.9"
+   },
+   {
+    "releaseDate": "2019-04-09T05:04:50Z",
+    "version": "2.6.8"
+   },
+   {
+    "releaseDate": "2019-02-28T05:51:36Z",
+    "version": "2.6.7"
+   },
+   {
+    "releaseDate": "2019-01-09T06:41:55Z",
+    "version": "2.6.6"
+   },
+   {
+    "releaseDate": "2018-11-29T05:19:30Z",
+    "version": "2.6.5"
+   },
+   {
+    "releaseDate": "2018-10-12T08:01:50Z",
+    "version": "2.6.4"
+   },
+   {
+    "releaseDate": "2018-08-30T02:56:10Z",
+    "version": "2.6.3"
+   },
+   {
+    "releaseDate": "2018-07-19T03:52:51Z",
+    "version": "2.6.2"
+   },
+   {
+    "releaseDate": "2018-05-23T04:05:54Z",
+    "version": "2.6.1"
+   },
+   {
+    "releaseDate": "2018-04-25T03:38:30Z",
+    "version": "2.6.0"
+   }
+  ],
+  "publisher": "Wireshark Foundation",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.wireshark.Wireshark"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "2.6."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Wireshark.app",
+  "bundleId": "org.wireshark.Wireshark",
+  "currentVersion": "3.0.14",
+  "extensionAttributes": [],
+  "id": "138",
+  "lastModified": "2021-04-14T04:30:57Z",
+  "name": "Wireshark 3.0",
+  "patches": [
+   {
+    "releaseDate": "2020-09-24T07:43:16Z",
+    "version": "3.0.14"
+   },
+   {
+    "releaseDate": "2020-08-13T04:01:35Z",
+    "version": "3.0.13"
+   },
+   {
+    "releaseDate": "2020-07-02T04:28:26Z",
+    "version": "3.0.12"
+   },
+   {
+    "releaseDate": "2020-05-20T04:07:14Z",
+    "version": "3.0.11"
+   },
+   {
+    "releaseDate": "2020-04-09T08:39:59Z",
+    "version": "3.0.10"
+   },
+   {
+    "releaseDate": "2020-02-27T07:33:19Z",
+    "version": "3.0.9"
+   },
+   {
+    "releaseDate": "2020-01-16T05:29:05Z",
+    "version": "3.0.8"
+   },
+   {
+    "releaseDate": "2019-12-05T05:40:30Z",
+    "version": "3.0.7"
+   },
+   {
+    "releaseDate": "2019-10-24T04:37:27Z",
+    "version": "3.0.6"
+   },
+   {
+    "releaseDate": "2019-09-21T04:22:09Z",
+    "version": "3.0.5"
+   },
+   {
+    "releaseDate": "2019-09-12T05:37:05Z",
+    "version": "3.0.4"
+   },
+   {
+    "releaseDate": "2019-07-18T03:36:54Z",
+    "version": "3.0.3"
+   },
+   {
+    "releaseDate": "2019-05-23T03:35:11Z",
+    "version": "3.0.2"
+   },
+   {
+    "releaseDate": "2019-04-09T04:45:26Z",
+    "version": "3.0.1"
+   },
+   {
+    "releaseDate": "2019-03-01T05:02:23Z",
+    "version": "3.0.0"
+   }
+  ],
+  "publisher": "Wireshark Foundation",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.wireshark.Wireshark"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "3.0."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Wireshark.app",
+  "bundleId": "org.wireshark.Wireshark",
+  "currentVersion": "3.2.18",
+  "extensionAttributes": [],
+  "id": "1E0",
+  "lastModified": "2021-11-17T23:36:20Z",
+  "name": "Wireshark 3.2",
+  "patches": [
+   {
+    "releaseDate": "2021-11-17T17:00:00Z",
+    "version": "3.2.18"
+   },
+   {
+    "releaseDate": "2021-10-06T17:00:00Z",
+    "version": "3.2.17"
+   },
+   {
+    "releaseDate": "2021-08-25T17:00:00Z",
+    "version": "3.2.16"
+   },
+   {
+    "releaseDate": "2021-07-14T17:00:00Z",
+    "version": "3.2.15"
+   },
+   {
+    "releaseDate": "2021-06-02T17:00:00Z",
+    "version": "3.2.14"
+   },
+   {
+    "releaseDate": "2021-04-21T14:00:00Z",
+    "version": "3.2.13"
+   },
+   {
+    "releaseDate": "2021-03-11T05:35:06Z",
+    "version": "3.2.12"
+   },
+   {
+    "releaseDate": "2021-01-30T05:21:52Z",
+    "version": "3.2.11"
+   },
+   {
+    "releaseDate": "2020-12-19T07:42:34Z",
+    "version": "3.2.10"
+   },
+   {
+    "releaseDate": "2020-12-10T16:16:23Z",
+    "version": "3.2.9"
+   },
+   {
+    "releaseDate": "2020-10-30T06:26:58Z",
+    "version": "3.2.8"
+   },
+   {
+    "releaseDate": "2020-09-24T07:40:30Z",
+    "version": "3.2.7"
+   },
+   {
+    "releaseDate": "2020-08-13T03:58:43Z",
+    "version": "3.2.6"
+   },
+   {
+    "releaseDate": "2020-07-02T04:24:52Z",
+    "version": "3.2.5"
+   },
+   {
+    "releaseDate": "2020-05-20T05:13:27Z",
+    "version": "3.2.4"
+   },
+   {
+    "releaseDate": "2020-04-09T08:37:15Z",
+    "version": "3.2.3"
+   },
+   {
+    "releaseDate": "2020-02-27T07:23:06Z",
+    "version": "3.2.2"
+   },
+   {
+    "releaseDate": "2020-01-16T05:18:27Z",
+    "version": "3.2.1"
+   },
+   {
+    "releaseDate": "2019-12-19T05:33:20Z",
+    "version": "3.2.0"
+   }
+  ],
+  "publisher": "Wireshark Foundation",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.wireshark.Wireshark"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "3.2."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Wireshark.app",
+  "bundleId": "org.wireshark.Wireshark",
+  "currentVersion": "3.4.16",
+  "extensionAttributes": [],
+  "id": "2EF",
+  "lastModified": "2022-09-07T21:00:01Z",
+  "name": "Wireshark 3.4",
+  "patches": [
+   {
+    "releaseDate": "2022-09-07T20:00:00Z",
+    "version": "3.4.16"
+   },
+   {
+    "releaseDate": "2022-07-27T23:00:00Z",
+    "version": "3.4.15"
+   },
+   {
+    "releaseDate": "2022-05-04T19:00:00Z",
+    "version": "3.4.14"
+   },
+   {
+    "releaseDate": "2022-03-23T17:00:00Z",
+    "version": "3.4.13"
+   },
+   {
+    "releaseDate": "2022-02-10T17:00:00Z",
+    "version": "3.4.12"
+   },
+   {
+    "releaseDate": "2021-12-29T17:00:00Z",
+    "version": "3.4.11"
+   },
+   {
+    "releaseDate": "2021-11-17T17:00:00Z",
+    "version": "3.4.10"
+   },
+   {
+    "releaseDate": "2021-10-06T17:00:00Z",
+    "version": "3.4.9"
+   },
+   {
+    "releaseDate": "2021-08-25T17:00:00Z",
+    "version": "3.4.8"
+   },
+   {
+    "releaseDate": "2021-07-14T17:00:00Z",
+    "version": "3.4.7"
+   },
+   {
+    "releaseDate": "2021-06-02T17:00:00Z",
+    "version": "3.4.6"
+   },
+   {
+    "releaseDate": "2021-04-21T14:00:00Z",
+    "version": "3.4.5"
+   },
+   {
+    "releaseDate": "2021-03-11T05:29:30Z",
+    "version": "3.4.4"
+   },
+   {
+    "releaseDate": "2021-01-30T12:04:59Z",
+    "version": "3.4.3"
+   },
+   {
+    "releaseDate": "2020-12-19T18:49:36Z",
+    "version": "3.4.2"
+   },
+   {
+    "releaseDate": "2020-12-10T16:17:34Z",
+    "version": "3.4.1"
+   },
+   {
+    "releaseDate": "2020-10-29T20:38:16Z",
+    "version": "3.4.0"
+   }
+  ],
+  "publisher": "Wireshark Foundation",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.wireshark.Wireshark"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "3.4."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Wireshark.app",
+  "bundleId": "org.wireshark.Wireshark",
+  "currentVersion": "3.6.24",
+  "extensionAttributes": [],
+  "id": "4D9",
+  "lastModified": "2024-05-20T19:05:21Z",
+  "name": "Wireshark 3.6",
+  "patches": [
+   {
+    "releaseDate": "2024-05-20T18:00:00Z",
+    "version": "3.6.24"
+   },
+   {
+    "releaseDate": "2024-05-15T20:00:00Z",
+    "version": "3.6.23"
+   },
+   {
+    "releaseDate": "2024-04-18T16:00:00Z",
+    "version": "3.6.22"
+   },
+   {
+    "releaseDate": "2024-02-14T21:00:00Z",
+    "version": "3.6.21"
+   },
+   {
+    "releaseDate": "2024-01-03T21:00:00Z",
+    "version": "3.6.20"
+   },
+   {
+    "releaseDate": "2023-11-15T00:00:00Z",
+    "version": "3.6.19"
+   },
+   {
+    "releaseDate": "2023-10-05T00:00:00Z",
+    "version": "3.6.18"
+   },
+   {
+    "releaseDate": "2023-10-04T19:00:00Z",
+    "version": "3.6.17"
+   },
+   {
+    "releaseDate": "2023-08-23T21:08:18Z",
+    "version": "3.6.16"
+   },
+   {
+    "releaseDate": "2023-07-12T18:32:26Z",
+    "version": "3.6.15"
+   },
+   {
+    "releaseDate": "2023-05-24T21:00:00Z",
+    "version": "3.6.14"
+   },
+   {
+    "releaseDate": "2023-04-12T20:00:00Z",
+    "version": "3.6.13"
+   },
+   {
+    "releaseDate": "2023-03-02T23:00:00Z",
+    "version": "3.6.12"
+   },
+   {
+    "releaseDate": "2023-01-18T22:00:00Z",
+    "version": "3.6.11"
+   },
+   {
+    "releaseDate": "2022-12-07T21:00:00Z",
+    "version": "3.6.10"
+   },
+   {
+    "releaseDate": "2022-10-26T20:00:00Z",
+    "version": "3.6.9"
+   },
+   {
+    "releaseDate": "2022-09-07T19:00:00Z",
+    "version": "3.6.8"
+   },
+   {
+    "releaseDate": "2022-07-27T23:00:00Z",
+    "version": "3.6.7"
+   },
+   {
+    "releaseDate": "2022-06-15T19:00:00Z",
+    "version": "3.6.6"
+   },
+   {
+    "releaseDate": "2022-05-05T04:00:00Z",
+    "version": "3.6.5"
+   },
+   {
+    "releaseDate": "2022-05-04T19:00:00Z",
+    "version": "3.6.4"
+   },
+   {
+    "releaseDate": "2022-03-23T17:00:00Z",
+    "version": "3.6.3"
+   },
+   {
+    "releaseDate": "2022-02-10T14:00:00Z",
+    "version": "3.6.2"
+   },
+   {
+    "releaseDate": "2021-12-29T17:00:00Z",
+    "version": "3.6.1"
+   },
+   {
+    "releaseDate": "2021-11-23T05:45:01Z",
+    "version": "3.6.0"
+   }
+  ],
+  "publisher": "Wireshark Foundation",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.wireshark.Wireshark"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "3.6."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "Wireshark.app",
+  "bundleId": "org.wireshark.Wireshark",
+  "currentVersion": "4.0.17",
+  "extensionAttributes": [],
+  "id": "530",
+  "lastModified": "2024-10-08T11:23:11Z",
+  "name": "Wireshark 4.0",
+  "patches": [
+   {
+    "releaseDate": "2024-10-08T09:00:00Z",
+    "version": "4.0.17"
+   },
+   {
+    "releaseDate": "2024-07-10T20:00:00Z",
+    "version": "4.0.16"
+   },
+   {
+    "releaseDate": "2024-05-15T20:00:00Z",
+    "version": "4.0.15"
+   },
+   {
+    "releaseDate": "2024-03-27T22:00:00Z",
+    "version": "4.0.14"
+   },
+   {
+    "releaseDate": "2024-02-14T22:00:00Z",
+    "version": "4.0.13"
+   },
+   {
+    "releaseDate": "2024-01-03T21:00:00Z",
+    "version": "4.0.12"
+   },
+   {
+    "releaseDate": "2023-11-15T22:00:00Z",
+    "version": "4.0.11"
+   },
+   {
+    "releaseDate": "2023-10-05T00:00:00Z",
+    "version": "4.0.10"
+   },
+   {
+    "releaseDate": "2023-10-04T19:00:00Z",
+    "version": "4.0.9"
+   },
+   {
+    "releaseDate": "2023-08-23T21:09:16Z",
+    "version": "4.0.8"
+   },
+   {
+    "releaseDate": "2023-07-12T18:33:38Z",
+    "version": "4.0.7"
+   },
+   {
+    "releaseDate": "2023-05-24T22:57:51Z",
+    "version": "4.0.6"
+   },
+   {
+    "releaseDate": "2023-04-12T20:00:00Z",
+    "version": "4.0.5"
+   },
+   {
+    "releaseDate": "2023-03-02T23:00:00Z",
+    "version": "4.0.4"
+   },
+   {
+    "releaseDate": "2023-01-18T22:00:00Z",
+    "version": "4.0.3"
+   },
+   {
+    "releaseDate": "2022-12-07T20:00:00Z",
+    "version": "4.0.2"
+   },
+   {
+    "releaseDate": "2022-10-26T20:00:00Z",
+    "version": "4.0.1"
+   },
+   {
+    "releaseDate": "2022-10-05T01:00:00Z",
+    "version": "4.0.0"
+   }
+  ],
+  "publisher": "Wireshark Foundation",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.wireshark.Wireshark"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "4.0."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": null,
+  "bundleId": "org.wireshark.Wireshark",
+  "currentVersion": "4.2.14",
+  "extensionAttributes": [],
+  "id": "5F6",
+  "lastModified": "2025-10-09T08:24:33Z",
+  "name": "Wireshark 4.2",
+  "patches": [
+   {
+    "releaseDate": "2025-10-09T02:32:00Z",
+    "version": "4.2.14"
+   },
+   {
+    "releaseDate": "2025-08-29T16:46:21Z",
+    "version": "4.2.13"
+   },
+   {
+    "releaseDate": "2025-06-04T22:46:39Z",
+    "version": "4.2.12"
+   },
+   {
+    "releaseDate": "2025-02-19T20:46:22Z",
+    "version": "4.2.11"
+   },
+   {
+    "releaseDate": "2025-01-09T02:16:24Z",
+    "version": "4.2.10"
+   },
+   {
+    "releaseDate": "2024-11-20T20:00:00Z",
+    "version": "4.2.9"
+   },
+   {
+    "releaseDate": "2024-10-09T21:00:00Z",
+    "version": "4.2.8"
+   },
+   {
+    "releaseDate": "2024-08-29T10:00:00Z",
+    "version": "4.2.7"
+   },
+   {
+    "releaseDate": "2024-07-10T20:00:00Z",
+    "version": "4.2.6"
+   },
+   {
+    "releaseDate": "2024-05-15T20:00:00Z",
+    "version": "4.2.5"
+   },
+   {
+    "releaseDate": "2024-03-27T22:00:00Z",
+    "version": "4.2.4"
+   },
+   {
+    "releaseDate": "2024-02-14T22:00:00Z",
+    "version": "4.2.3"
+   },
+   {
+    "releaseDate": "2024-01-05T01:00:00Z",
+    "version": "4.2.2"
+   },
+   {
+    "releaseDate": "2024-01-03T21:00:00Z",
+    "version": "4.2.1"
+   },
+   {
+    "releaseDate": "2023-11-15T15:31:36Z",
+    "version": "4.2.0"
+   }
+  ],
+  "publisher": "Wireshark Foundation",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.wireshark.Wireshark"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "4.2."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": null,
+  "bundleId": "org.wireshark.Wireshark",
+  "currentVersion": "4.4.18",
+  "extensionAttributes": [],
+  "id": "661",
+  "lastModified": "2026-08-13T09:34:33Z",
+  "name": "Wireshark 4.4",
+  "patches": [
+   {
+    "releaseDate": "2026-08-12T19:16:44Z",
+    "version": "4.4.18"
+   },
+   {
+    "releaseDate": "2026-07-08T22:46:39Z",
+    "version": "4.4.17"
+   },
+   {
+    "releaseDate": "2026-05-19T20:04:01Z",
+    "version": "4.4.16"
+   },
+   {
+    "releaseDate": "2026-04-30T05:47:18Z",
+    "version": "4.4.15"
+   },
+   {
+    "releaseDate": "2026-02-25T22:20:26Z",
+    "version": "4.4.14"
+   },
+   {
+    "releaseDate": "2026-01-14T19:31:29Z",
+    "version": "4.4.13"
+   },
+   {
+    "releaseDate": "2025-12-05T20:31:21Z",
+    "version": "4.4.12"
+   },
+   {
+    "releaseDate": "2025-11-19T22:31:15Z",
+    "version": "4.4.11"
+   },
+   {
+    "releaseDate": "2025-10-09T02:31:31Z",
+    "version": "4.4.10"
+   },
+   {
+    "releaseDate": "2025-08-29T00:00:41Z",
+    "version": "4.4.9"
+   },
+   {
+    "releaseDate": "2025-07-16T20:31:21Z",
+    "version": "4.4.8"
+   },
+   {
+    "releaseDate": "2025-06-04T22:46:18Z",
+    "version": "4.4.7"
+   },
+   {
+    "releaseDate": "2025-04-16T18:18:30Z",
+    "version": "4.4.6"
+   },
+   {
+    "releaseDate": "2025-02-24T21:01:25Z",
+    "version": "4.4.5"
+   },
+   {
+    "releaseDate": "2025-02-19T20:46:22Z",
+    "version": "4.4.4"
+   },
+   {
+    "releaseDate": "2025-01-09T02:00:46Z",
+    "version": "4.4.3"
+   },
+   {
+    "releaseDate": "2024-11-20T20:00:00Z",
+    "version": "4.4.2"
+   },
+   {
+    "releaseDate": "2024-10-09T21:00:00Z",
+    "version": "4.4.1"
+   },
+   {
+    "releaseDate": "2024-08-29T11:11:24Z",
+    "version": "4.4.0"
+   }
+  ],
+  "publisher": "Wireshark Foundation",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.wireshark.Wireshark"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "4.4."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": null,
+  "bundleId": "org.wireshark.Wireshark",
+  "currentVersion": "4.6.8",
+  "extensionAttributes": [],
+  "id": "817",
+  "lastModified": "2026-08-13T09:34:25Z",
+  "name": "Wireshark 4.6",
+  "patches": [
+   {
+    "releaseDate": "2026-08-12T19:18:22Z",
+    "version": "4.6.8"
+   },
+   {
+    "releaseDate": "2026-07-08T22:47:57Z",
+    "version": "4.6.7"
+   },
+   {
+    "releaseDate": "2026-05-19T20:05:41Z",
+    "version": "4.6.6"
+   },
+   {
+    "releaseDate": "2026-04-30T01:49:19Z",
+    "version": "4.6.5"
+   },
+   {
+    "releaseDate": "2026-02-25T22:20:57Z",
+    "version": "4.6.4"
+   },
+   {
+    "releaseDate": "2026-01-14T19:32:10Z",
+    "version": "4.6.3"
+   },
+   {
+    "releaseDate": "2025-12-03T19:46:25Z",
+    "version": "4.6.2"
+   },
+   {
+    "releaseDate": "2025-11-19T22:32:12Z",
+    "version": "4.6.1"
+   },
+   {
+    "releaseDate": "2025-10-09T08:11:39Z",
+    "version": "4.6.0"
+   }
+  ],
+  "publisher": "Wireshark Foundation",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "org.wireshark.Wireshark"
+     },
+     {
+      "name": "Application Version",
+      "operator": "like",
+      "type": "recon",
+      "value": "4.6."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "appName": "zoom.us.app",
+  "bundleId": "us.zoom.xos",
+  "currentVersion": "7.1.5 (84650)",
+  "extensionAttributes": [],
+  "id": "0F9",
+  "lastModified": "2026-08-19T13:54:16Z",
+  "name": "Zoom Client for Meetings",
+  "patches": [
+   {
+    "releaseDate": "2026-07-20T09:00:21Z",
+    "version": "7.1.5 (84650)"
+   },
+   {
+    "releaseDate": "2026-06-22T13:46:29Z",
+    "version": "7.1.0 (83064)"
+   },
+   {
+    "releaseDate": "2026-07-24T09:35:18Z",
+    "version": "7.0.6 (84834)"
+   },
+   {
+    "releaseDate": "2026-05-18T15:17:19Z",
+    "version": "7.0.5 (81138)"
+   },
+   {
+    "releaseDate": "2026-03-24T14:31:07Z",
+    "version": "7.0.0 (77593)"
+   },
+   {
+    "releaseDate": "2026-03-04T08:33:09Z",
+    "version": "6.7.7 (76486)"
+   },
+   {
+    "releaseDate": "2026-02-13T11:16:06Z",
+    "version": "6.7.6 (75444)"
+   },
+   {
+    "releaseDate": "2026-02-10T13:16:02Z",
+    "version": "6.7.5 (75246)"
+   },
+   {
+    "releaseDate": "2025-12-30T09:31:00Z",
+    "version": "6.7.2 (72191)"
+   },
+   {
+    "releaseDate": "2025-12-15T11:30:59Z",
+    "version": "6.7.0 (71075)"
+   },
+   {
+    "releaseDate": "2025-12-01T08:30:58Z",
+    "version": "6.6.11 (70003)"
+   },
+   {
+    "releaseDate": "2025-11-17T07:00:18Z",
+    "version": "6.6.10 (69071)"
+   },
+   {
+    "releaseDate": "2025-10-27T06:31:02Z",
+    "version": "6.6.6 (67409)"
+   },
+   {
+    "releaseDate": "2025-10-22T06:31:42Z",
+    "version": "6.6.5 (67181)"
+   },
+   {
+    "releaseDate": "2025-09-29T07:16:02Z",
+    "version": "6.6.2 (65462)"
+   },
+   {
+    "releaseDate": "2025-09-15T10:46:02Z",
+    "version": "6.6.0 (64511)"
+   },
+   {
+    "releaseDate": "2025-09-01T09:16:03Z",
+    "version": "6.5.12 (63499)"
+   },
+   {
+    "releaseDate": "2025-08-21T10:00:25Z",
+    "version": "6.5.11 (62892)"
+   },
+   {
+    "releaseDate": "2025-08-18T12:45:55Z",
+    "version": "6.5.10 (62715)"
+   },
+   {
+    "releaseDate": "2025-08-11T07:31:03Z",
+    "version": "6.5.9 (61929)"
+   },
+   {
+    "releaseDate": "2025-07-22T11:00:22Z",
+    "version": "6.5.7 (60598)"
+   },
+   {
+    "releaseDate": "2025-07-17T10:00:19Z",
+    "version": "6.5.6 (60177)"
+   },
+   {
+    "releaseDate": "2025-07-14T09:31:02Z",
+    "version": "6.5.5 (59968)"
+   },
+   {
+    "releaseDate": "2025-06-30T08:31:00Z",
+    "version": "6.5.3 (58803)"
+   },
+   {
+    "releaseDate": "2025-06-23T07:46:01Z",
+    "version": "6.5.1 (58208)"
+   }
+  ],
+  "publisher": "Zoom Video Communications",
+  "requirements": [
+   {
+    "operator": "and",
+    "tests": [
+     {
+      "name": "Application Bundle ID",
+      "operator": "is",
+      "type": "recon",
+      "value": "us.zoom.xos"
+     }
+    ]
+   }
+  ]
+ }
+]

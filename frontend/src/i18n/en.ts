@@ -369,6 +369,12 @@ export const en = {
       versionsTitle: "Version history",
       versionsTotal: (n: number) => `${n} version${n === 1 ? "" : "s"}`,
       tableDeviceCount: "Devices with version",
+      deviceSummary: (devices: number, onLatest: number) =>
+        devices === 0
+          ? "No devices in this tenant have an app matched to this title."
+          : `${devices} device${devices === 1 ? "" : "s"} with this title · ${onLatest} on the current version`,
+      unlistedVersions: (n: number) =>
+        `${n} device${n === 1 ? "" : "s"} on a version Jamf has not listed (ahead of the catalog, or a build Jamf never recorded).`,
       tableVulnerabilities: "Vulnerabilities",
       vulnerabilitiesTooltip: "You must enable the LoonSecIO integration to see vulnerability data.",
       vulnCritical: "Critical",

@@ -386,6 +386,7 @@ identity. It is where `cfBundleVersion` and `lastContact` / `lastCheckIn` surfac
 
 ## 13. Related
 
-`docs/ingest-scheduling.md` (§4.4 guard, §6 catalog freshness), `docs/splunk-event-shaping.md`
+`docs/ingest-scheduling.md` (§4.4 guard, §6 catalog freshness), `docs/jamf-patch-matching.md` (the
+Jamf Patch answer derived per installed app at device process), `docs/splunk-event-shaping.md`
 (the per-device observation id it asks for is `observation_spans.id`), #27 (sections and
 quarantine per ingest profile), #31 (run id, trigger vocabulary), #58 (this work).

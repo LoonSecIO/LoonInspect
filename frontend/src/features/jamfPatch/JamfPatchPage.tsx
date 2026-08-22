@@ -6,7 +6,15 @@ import { Button } from "@/components/ui/button";
 import { useLocale } from "@/i18n/LocaleContext";
 
 type SearchMode = "exact" | "regex" | "fuzzy";
-type SortKey = "name" | "publisher" | "bundleId" | "currentVersion" | "lastModified" | "syncedAt";
+type SortKey =
+  | "name"
+  | "publisher"
+  | "bundleId"
+  | "currentVersion"
+  | "deviceCount"
+  | "devicesOnLatest"
+  | "lastModified"
+  | "syncedAt";
 type SortDir = "asc" | "desc";
 
 const inputClasses =
@@ -46,7 +54,7 @@ function titleMatches(title: JamfPatchTitle, term: string, mode: SearchMode): bo
   );
 }
 
-function sortValue(title: JamfPatchTitle, key: SortKey): string {
+function sortValue(title: JamfPatchTitle, key: SortKey): string | number {
   switch (key) {
     case "name":
       return title.name;
@@ -56,11 +64,20 @@ function sortValue(title: JamfPatchTitle, key: SortKey): string {
       return title.bundleId ?? "";
     case "currentVersion":
       return title.currentVersion;
+    case "deviceCount":
+      return title.deviceCount;
+    case "devicesOnLatest":
+      return title.devicesOnLatest;
     case "lastModified":
       return title.lastModified;
     case "syncedAt":
       return title.syncedAt;
   }
+}
+
+function compareSortValues(a: string | number, b: string | number): number {
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  return String(a).localeCompare(String(b));
 }
 
 export function JamfPatchPage() {
@@ -125,7 +142,7 @@ export function JamfPatchPage() {
     const filtered = term ? titles.filter((title) => titleMatches(title, term, searchMode)) : titles;
 
     const sorted = [...filtered].sort((a, b) => {
-      const result = sortValue(a, sortKey).localeCompare(sortValue(b, sortKey));
+      const result = compareSortValues(sortValue(a, sortKey), sortValue(b, sortKey));
       return sortDir === "asc" ? result : -result;
     });
 
@@ -190,8 +207,8 @@ export function JamfPatchPage() {
               {sortableHeader("publisher", t.jamfPatch.tablePublisher)}
               {sortableHeader("bundleId", t.jamfPatch.tableBundleId)}
               {sortableHeader("currentVersion", t.jamfPatch.tableCurrentVersion)}
-              <th className="px-4 py-2 font-medium">{t.jamfPatch.tableDeviceCount}</th>
-              <th className="px-4 py-2 font-medium">{t.jamfPatch.tableDevicesOnLatest}</th>
+              {sortableHeader("deviceCount", t.jamfPatch.tableDeviceCount)}
+              {sortableHeader("devicesOnLatest", t.jamfPatch.tableDevicesOnLatest)}
               {sortableHeader("lastModified", t.jamfPatch.tableLastModified)}
               {sortableHeader("syncedAt", t.jamfPatch.tableSyncedAt)}
             </tr>
@@ -235,9 +252,12 @@ export function JamfPatchPage() {
                 <td className="px-4 py-2">{title.publisher ?? "—"}</td>
                 <td className="px-4 py-2">{title.bundleId ?? "—"}</td>
                 <td className="px-4 py-2">{title.currentVersion}</td>
-                {/* Stub — not wired to real device-inventory counts yet. */}
-                <td className="px-4 py-2 text-muted-foreground">—</td>
-                <td className="px-4 py-2 text-muted-foreground">—</td>
+                <td className={`px-4 py-2 tabular-nums ${title.deviceCount === 0 ? "text-muted-foreground" : ""}`}>
+                  {title.deviceCount}
+                </td>
+                <td className={`px-4 py-2 tabular-nums ${title.deviceCount === 0 ? "text-muted-foreground" : ""}`}>
+                  {title.deviceCount === 0 ? "—" : title.devicesOnLatest}
+                </td>
                 <td className="px-4 py-2">{title.lastModified}</td>
                 <td className="px-4 py-2">{new Date(title.syncedAt).toLocaleString()}</td>
               </tr>
