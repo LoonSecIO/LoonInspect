@@ -283,6 +283,21 @@ async def test_foreign_device_account_token_404(client, seeded) -> None:
     assert (await client.delete(f"/api/tokens/{seeded['t2']['token_id']}")).status_code == 404
 
 
+async def test_applications_list_aggregates_on_postgres(client, seeded) -> None:
+    """Regression for #63. The per-version query aggregated two boolean columns with
+    max()/min(), which SQLite tolerated and Postgres rejects — and it only runs once
+    `installed_apps` has rows, so an empty stack never saw it. The seeded tenant has one
+    app, which is enough to exercise it through the authenticated client."""
+    response = await client.get("/api/applications")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    mine = [row for row in body["items"] if row["bundleId"] == "com.t1.app"]
+    assert mine, "the seeded app must be listed"
+    assert mine[0]["versions"][0]["patchAvailable"] is None  # nothing checked yet stays null
+    assert mine[0]["versions"][0]["isCompliant"] is None
+    assert not any(row["bundleId"] == "com.t2.app" for row in body["items"])
+
+
 async def test_own_rows_still_resolve(client, seeded) -> None:
     """The sweep is meaningless if 404 is just the route's answer to everything."""
     assert (await client.get(f"/api/mdm/connections/{seeded['t1']['connection_id']}")).status_code == 200

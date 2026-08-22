@@ -73,10 +73,13 @@ async def list_applications(
                     func.min(InstalledApp.short_version).label("short_version"),
                     version_device_count,
                     # Any device reporting a patch for this build makes the build
-                    # patchable; max() over a boolean column is the aggregate form of
-                    # "any". Null stays null when nothing has been checked yet.
-                    func.max(InstalledApp.patch_available).label("patch_available"),
-                    func.min(InstalledApp.is_compliant).label("is_compliant"),
+                    # patchable, and the build is compliant only if every device says
+                    # so. Postgres has no max()/min() over booleans (SQLite did, which is
+                    # how this shipped): bool_or / bool_and are the aggregate "any" and
+                    # "all", and both ignore NULLs and stay NULL when nothing has been
+                    # checked yet.
+                    func.bool_or(InstalledApp.patch_available).label("patch_available"),
+                    func.bool_and(InstalledApp.is_compliant).label("is_compliant"),
                 )
                 .where(InstalledApp.app_hash.in_(app_hashes))
                 .group_by(InstalledApp.app_hash, InstalledApp.version_hash)
