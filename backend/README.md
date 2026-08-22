@@ -9,7 +9,7 @@ It orchestrates the hybrid sync architecture, including webhook ingestion and cr
 * **Framework:** [FastAPI](https://fastapi.tiangolo.com/) (Async web framework)
 * **Dependency Management:** [uv](https://github.com/astral-sh/uv) (Blazing fast Rust-based package manager)
 * **Database ORM:** [SQLAlchemy](https://www.sqlalchemy.org/) 2.0 (with async support)
-* **Task Scheduling:** [APScheduler](https://apscheduler.readthedocs.io/) (for the 1:00 AM CST full sync sweep)
+* **Task Scheduling:** [APScheduler](https://apscheduler.readthedocs.io/) (the minute tick that runs due *collections*, the outbox worker, and cleanup jobs)
 * **Security:** `webauthn` for FIDO2/TouchID and `scim2-models` for Okta integration
 
 ---

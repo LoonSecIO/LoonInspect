@@ -1,0 +1,88 @@
+from __future__ import annotations
+
+from datetime import datetime
+from enum import Enum
+
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
+
+
+class CollectionKind(str, Enum):
+    device_sweep = "device_sweep"
+    catalog = "catalog"
+    webhook = "webhook"
+
+
+class Frequency(str, Enum):
+    hourly = "hourly"
+    daily = "daily"
+    weekly = "weekly"
+    every_n_days = "every_n_days"
+
+
+class _Base(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class CollectionCreate(_Base):
+    name: str = Field(min_length=1, max_length=255)
+    kind: CollectionKind
+    enabled: bool = True
+    sections: list[str] = []
+    selector: str | None = None
+    quarantined_extension_attributes: list[str] = []
+    frequency: Frequency | None = None
+    interval_n: int | None = None
+    at_hour: int | None = None
+    at_minute: int | None = None
+    weekday: int | None = None
+    timezone: str | None = None
+
+
+class CollectionUpdate(_Base):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    enabled: bool | None = None
+    sections: list[str] | None = None
+    selector: str | None = None
+    quarantined_extension_attributes: list[str] | None = None
+    frequency: Frequency | None = None
+    interval_n: int | None = None
+    at_hour: int | None = None
+    at_minute: int | None = None
+    weekday: int | None = None
+    timezone: str | None = None
+
+
+class CollectionOut(_Base):
+    id: int
+    mdm_connection_id: int
+    name: str
+    kind: CollectionKind
+    enabled: bool
+    sections: list[str]
+    selector: str | None
+    quarantined_extension_attributes: list[str]
+    frequency: Frequency | None
+    interval_n: int | None
+    at_hour: int | None
+    at_minute: int | None
+    weekday: int | None
+    timezone: str | None
+    next_due_at: datetime | None
+    last_run_at: datetime | None
+    last_run_status: str | None
+    last_run_summary: dict | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CollectionRunResult(_Base):
+    collection_id: int
+    status: str  # queued | skipped
+
+
+class SectionInfo(_Base):
+    name: str
+    jamf_section: str
+    kind: str  # scalar | list
+    entry_kind: str | None

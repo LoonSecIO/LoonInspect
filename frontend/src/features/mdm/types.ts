@@ -88,3 +88,58 @@ export interface MdmSyncTriggerResult {
   connectionId: number;
   status: SyncStatusValue;
 }
+
+// --- Collections (#27): what to collect from a connection, and when -----------------
+
+export type CollectionKind = "device_sweep" | "catalog" | "webhook";
+export type CollectionFrequency = "hourly" | "daily" | "weekly" | "every_n_days";
+
+export interface Collection {
+  id: number;
+  mdmConnectionId: number;
+  name: string;
+  kind: CollectionKind;
+  enabled: boolean;
+  sections: string[];
+  selector: string | null;
+  quarantinedExtensionAttributes: string[];
+  frequency: CollectionFrequency | null;
+  intervalN: number | null;
+  atHour: number | null;
+  atMinute: number | null;
+  weekday: number | null;
+  timezone: string | null;
+  nextDueAt: string | null;
+  lastRunAt: string | null;
+  lastRunStatus: string | null;
+  lastRunSummary: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CollectionInput {
+  name: string;
+  kind: CollectionKind;
+  enabled?: boolean;
+  sections?: string[];
+  selector?: string | null;
+  quarantinedExtensionAttributes?: string[];
+  frequency?: CollectionFrequency | null;
+  intervalN?: number | null;
+  atHour?: number | null;
+  atMinute?: number | null;
+  weekday?: number | null;
+  timezone?: string | null;
+}
+
+export interface SectionInfo {
+  name: string;
+  jamfSection: string;
+  kind: "scalar" | "list";
+  entryKind: string | null;
+}
+
+export interface CollectionRunResult {
+  collectionId: number;
+  status: string;
+}

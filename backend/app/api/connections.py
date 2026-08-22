@@ -17,6 +17,7 @@ from app.core.context import Actor, reset_actor, set_actor
 from app.core.database import get_db, session_for_tenant
 from app.core.permissions import Permission
 from app.core.tenancy import reset_tenant_id, set_tenant_id
+from app.mdm.collections import ensure_default_collections
 from app.mdm.credentials import CREDENTIAL_SCHEMAS, fingerprint_field
 from app.mdm.jamf.client import JamfClient
 from app.mdm.service import TRIGGER_MANUAL, set_sync_status, sync_connection
@@ -141,6 +142,12 @@ async def create_connection(
     db.add(connection)
     await db.commit()
     await db.refresh(connection)
+
+    # A connection that observes nothing happen reads as broken: the defaults are real
+    # rows — a full device sweep, the group catalog, the webhook scope — visible and
+    # editable under the connection (docs/ingest-scheduling.md §3.2).
+    if await ensure_default_collections(db, connection):
+        await db.commit()
 
     audit(
         AuditAction.CONNECTION_CREATED,

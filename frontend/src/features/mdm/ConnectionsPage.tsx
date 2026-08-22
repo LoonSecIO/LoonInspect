@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { CollectionsPanel } from "@/features/mdm/CollectionsPanel";
 import { ConnectionForm } from "@/features/mdm/ConnectionForm";
 import { RefreshCw } from "lucide-react";
 import { ApiError } from "@/config/api";
@@ -228,6 +229,14 @@ export function ConnectionsPage() {
           </tbody>
         </table>
       </div>
+
+      {/* What each Jamf connection collects, and when (#27). The connection holds
+          credentials; the pulls live here. */}
+      {connections
+        .filter((connection) => connection.provider === "jamf")
+        .map((connection) => (
+          <CollectionsPanel key={connection.id} connection={connection} />
+        ))}
     </section>
   );
 }

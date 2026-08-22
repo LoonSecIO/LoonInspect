@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.accounts import router as accounts_router
 from app.api.applications import router as applications_router
 from app.api.auth import router as auth_router
+from app.api.collections import router as collections_router
 from app.api.connections import router as connections_router
 from app.api.destinations import router as destinations_router
 from app.api.devices import router as devices_router
@@ -41,9 +42,9 @@ from app.core.middleware import RequestContextMiddleware
 from app.core.outbox import deliver_pending, fan_out_pending, purge_delivered_events
 from app.core.sharing import exchange_due, run_exchange
 from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
+from app.mdm.collections import tick_tenant
 from app.mdm.patch.jamf_catalog import sync_catalog
-from app.mdm.service import sync_connection
-from app.models.schema import MdmConnection, MdmSyncState, Tenant, UserSession
+from app.models.schema import MdmSyncState, Tenant, UserSession
 from app.schemas.payload import SyncStatus
 
 # Before anything else in the process emits a line, so migration output and startup
@@ -90,48 +91,31 @@ async def tenant_job(tenant_id: uuid.UUID) -> AsyncGenerator[AsyncSession, None]
         reset_actor(actor_token)
 
 
-async def _sweep_tenant(db: AsyncSession, tenant_id: uuid.UUID) -> None:
-    result = await db.execute(select(MdmConnection).where(MdmConnection.is_active.is_(True)))
-    connections = result.scalars().all()
-    if not connections:
-        return
-
-    logger.info(
-        "sync sweep started",
-        extra={"tenant_id": str(tenant_id), "connection_count": len(connections)},
-    )
-
-    results = [await sync_connection(db, connection) for connection in connections]
-    failed = [result for result in results if not result.ok]
-
-    # One bad credential no longer takes the run down — sync_connection absorbs
-    # per-connection failures so every remaining connection still gets swept.
-    logger.info(
-        "sync sweep finished",
-        extra={
-            "tenant_id": str(tenant_id),
-            "connections": len(results),
-            "succeeded": sum(1 for r in results if r.ok and not r.skipped),
-            "skipped": sum(1 for r in results if r.skipped),
-            "failed": len(failed),
-            "devices": sum(r.device_count for r in results),
-        },
-    )
-
-    if failed:
-        logger.warning(
-            "some connections failed to sync",
-            extra={
-                "tenant_id": str(tenant_id),
-                "connection_ids": [r.connection_id for r in failed],
-            },
-        )
-
-
-async def nightly_sync_sweep() -> None:
+async def collections_tick() -> None:
+    """The minute tick that replaced the single nightly cron (#27, docs/ingest-scheduling.md
+    §5): ask the database which collections are due, claim each with a conditional
+    UPDATE, run it. Schedule changes are ordinary row writes; no live scheduler state,
+    identical behaviour on one process or six. Runs sequentially within a tick, and
+    APScheduler's max_instances=1 keeps ticks from overlapping, so a long sweep simply
+    delays the next tick rather than doubling up.
+    """
     for tenant_id in await operational_tenant_ids():
         async with tenant_job(tenant_id) as db:
-            await _sweep_tenant(db, tenant_id)
+            try:
+                results = await tick_tenant(db)
+            except Exception:
+                logger.exception("collections tick failed", extra={"tenant_id": str(tenant_id)})
+                continue
+        if results:
+            logger.info(
+                "collections tick ran",
+                extra={
+                    "tenant_id": str(tenant_id),
+                    "ran": len(results),
+                    "failed": sum(1 for r in results if not r.ok),
+                    "devices": sum(r.device_count for r in results),
+                },
+            )
 
 
 async def hourly_jamf_patch_sync() -> None:
@@ -284,9 +268,9 @@ async def lifespan(app: FastAPI):
 
     if settings.scheduler_enabled:
         scheduler.add_job(
-            nightly_sync_sweep,
-            CronTrigger(hour=settings.sync_hour, minute=settings.sync_minute),
-            id="nightly_sync_sweep",
+            collections_tick,
+            IntervalTrigger(minutes=1),
+            id="collections_tick",
             replace_existing=True,
         )
         scheduler.add_job(
@@ -375,6 +359,7 @@ app.include_router(tokens_router)
 app.include_router(api_router)
 app.include_router(webhooks_router)
 app.include_router(connections_router)
+app.include_router(collections_router)
 app.include_router(destinations_router)
 app.include_router(system_router)
 app.include_router(devices_router)

@@ -64,9 +64,11 @@ async def seeded():
     from app.core.bootstrap import bootstrap_tenants, create_account
     from app.core.database import init_db, session_for_tenant, unscoped_session
     from app.core.tenancy import OPERATIONAL_TENANT_ID
+    from app.mdm.collections import ensure_default_collections
     from app.models.schema import (
         Account,
         ApiToken,
+        Collection,
         Destination,
         Device,
         EventOutbox,
@@ -126,6 +128,15 @@ async def seeded():
                 provider="jamf",
                 base_url=f"https://{label}.jamfcloud.com",
             )
+            # The connection's default collections (#27): real rows, so they need the
+            # same cross-tenant treatment as everything else under the connection.
+            await ensure_default_collections(db, connection)
+            await db.flush()
+            collection = (
+                await db.execute(
+                    select(Collection).where(Collection.mdm_connection_id == connection.id).order_by(Collection.id)
+                )
+            ).scalars().first()
             device = await one(
                 db,
                 Device,
@@ -172,6 +183,7 @@ async def seeded():
                 "destination_id": destination.id,
                 "destination_name": destination.name,
                 "connection_id": connection.id,
+                "collection_id": collection.id,
                 "device_id": device.id,
                 "token_id": token.id,
                 "event_id": event.id,
@@ -226,6 +238,38 @@ async def test_foreign_destination_survives_patch_and_delete(client, seeded) -> 
         assert row is not None, "cross-tenant DELETE must not remove the row"
         assert row.name == seeded["t2"]["destination_name"]
         assert row.enabled is True
+
+
+async def test_foreign_collection_404_and_untouched(client, seeded) -> None:
+    """Collections hang off connections and carry the what/when of every pull; a
+    foreign one must be as invisible as its connection, for reads, writes, and runs."""
+    from app.core.database import session_for_tenant
+    from app.models.schema import Collection
+
+    other = seeded["t2"]["collection_id"]
+    assert (await client.get(f"/api/mdm/collections/{other}")).status_code == 404
+    assert (await client.patch(f"/api/mdm/collections/{other}", json={"name": "stolen"})).status_code == 404
+    assert (await client.delete(f"/api/mdm/collections/{other}")).status_code == 404
+    assert (await client.post(f"/api/mdm/collections/{other}/run")).status_code == 404
+    assert (
+        await client.get(f"/api/mdm/connections/{seeded['t2']['connection_id']}/collections")
+    ).status_code == 404
+    assert (
+        await client.post(
+            f"/api/mdm/connections/{seeded['t2']['connection_id']}/collections",
+            json={"name": "stolen", "kind": "catalog", "frequency": "hourly", "atMinute": 5, "timezone": "UTC"},
+        )
+    ).status_code == 404
+
+    async with session_for_tenant(seeded["t2"]["tenant_id"]) as db:
+        row = await db.get(Collection, other)
+        assert row is not None and row.name != "stolen"
+
+    mine = await client.get(f"/api/mdm/connections/{seeded['t1']['connection_id']}/collections")
+    assert mine.status_code == 200
+    listed = {row["id"] for row in mine.json()}
+    assert seeded["t1"]["collection_id"] in listed and other not in listed
+    assert (await client.get(f"/api/mdm/collections/{seeded['t1']['collection_id']}")).status_code == 200
 
 
 async def test_foreign_device_account_token_404(client, seeded) -> None:
