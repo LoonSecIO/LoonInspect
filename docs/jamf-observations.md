@@ -174,9 +174,9 @@ observations" — the debouncer that should gate anything destructive — is
 
 ## 5. The v0 sections
 
-A sweep requests exactly these fourteen. An ingest profile (#27) may narrow the set; the
-narrowing is recorded in the aperture (§6), so it reads as a scope change, not as every
-omitted section disappearing.
+The default device sweep requests exactly these fourteen. A *collection* (#27 — Settings →
+Connections → Collections) may narrow the set per pull; the narrowing is recorded in the
+aperture (§6), so it reads as a scope change, not as every omitted section disappearing.
 
 ### Scalar sections (one canonical document each)
 

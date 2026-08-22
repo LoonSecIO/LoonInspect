@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -25,13 +25,12 @@ from app.mdm.jamf.contract import (
     canonicalize_smart_group,
 )
 from app.mdm.patch.factory import get_patch_provider
-from app.models.schema import Device, DeviceExtensionAttribute, InstalledApp, MdmConnection, MdmSyncState
+from app.models.schema import Collection, Device, DeviceExtensionAttribute, InstalledApp, MdmConnection, MdmSyncState
 from app.observations.ledger import (
     RecordResult,
     current_span,
     ensure_aperture,
     is_stale,
-    latest_aperture_digest,
     record_observation,
 )
 from app.schemas.payload import (
@@ -77,6 +76,9 @@ class ConnectionSyncResult:
     # number of group definitions observed. Empty for providers without a ledger.
     observations: Mapping[str, int] = field(default_factory=dict)
     group_count: int = 0
+    # Which collection this run served, when it served one (None for the generic path
+    # and for connection-level runs that aggregate several).
+    collection_id: int | None = None
 
 
 async def set_sync_status(
@@ -120,11 +122,16 @@ async def sync_connection(
         )
         return ConnectionSyncResult(connection_id=connection.id, skipped=True)
 
+    if isinstance(client, JamfClient):
+        # What to pull and how is a property of the connection's collections, not of
+        # the connection; the connection-level entry point runs every enabled device
+        # sweep it has (creating the defaults if none exist yet).
+        from app.mdm.collections import run_connection  # local: collections imports this module
+
+        return await run_connection(db, connection, trigger=trigger)
+
     try:
-        if isinstance(client, JamfClient):
-            result = await _sync_jamf(db, connection, client, trigger=trigger)
-        else:
-            result = await _sync_generic(db, connection, client)
+        result = await _sync_generic(db, connection, client)
     except Exception as exc:
         # Rollback first: a failure mid-loop leaves the session dirty, and the status
         # write below would otherwise fail too.
@@ -138,14 +145,7 @@ async def sync_connection(
 
     logger.info(
         "connection synced",
-        extra={
-            "connection_id": connection.id,
-            "provider": connection.provider,
-            "device_count": result.device_count,
-            "observations": dict(result.observations),
-            "group_count": result.group_count,
-            "trigger": trigger,
-        },
+        extra={"connection_id": connection.id, "provider": connection.provider, "device_count": result.device_count},
     )
     return result
 
@@ -164,59 +164,198 @@ async def _sync_generic(db: AsyncSession, connection: MdmConnection, client) -> 
     return ConnectionSyncResult(connection_id=connection.id, device_count=len(devices))
 
 
-async def capture_aperture(client: JamfClient, http: httpx.AsyncClient) -> Aperture:
+async def capture_aperture(
+    client: JamfClient,
+    http: httpx.AsyncClient,
+    *,
+    sections: Sequence[str] = V0_SECTIONS,
+    quarantined_extension_attributes: Iterable[str] = (),
+) -> Aperture:
     """Read how Jamf is configured to inventory, and stamp it with how we asked.
 
     Two reads per run (version, inventory-collection settings) — never per device.
     Either may be unavailable to an API client without the privilege; the aperture
-    records the absence rather than failing the sweep.
+    records the absence rather than failing the sweep. The sections and quarantine are
+    the collection's, so a narrowed collection is an explicit aperture rather than
+    every omitted section "disappearing".
     """
     version = await client.fetch_version(http)
     settings = await client.fetch_inventory_collection_settings(http)
     return build_aperture(
         host=client.host,
         jamf_version=version,
-        sections=V0_SECTIONS,
+        sections=sections,
         inventory_collection=settings,
+        quarantined_extension_attributes=quarantined_extension_attributes,
     )
 
 
+async def run_jamf(
+    db: AsyncSession,
+    connection: MdmConnection,
+    *,
+    trigger: str,
+    sections: Sequence[str] = V0_SECTIONS,
+    selector: str | None = None,
+    quarantined_extension_attributes: Iterable[str] = (),
+    include_catalog: bool = True,
+    collection_id: int | None = None,
+) -> ConnectionSyncResult:
+    """One device sweep of a Jamf connection, as a collection describes it.
+
+    Like sync_connection, this reports a failure rather than raising: the tick runs
+    many collections in turn and one expired credential must not abort the rest.
+    """
+    quarantine = tuple(quarantined_extension_attributes)
+    try:
+        client = get_mdm_client(connection)
+        assert isinstance(client, JamfClient)
+        result = await _sync_jamf(
+            db,
+            connection,
+            client,
+            trigger=trigger,
+            sections=tuple(sections),
+            selector=selector,
+            quarantine=quarantine,
+            include_catalog=include_catalog,
+        )
+    except Exception as exc:
+        await db.rollback()
+        await set_sync_status(db, connection, SyncStatus.failed)
+        logger.exception(
+            "jamf sweep failed",
+            extra={"connection_id": connection.id, "collection_id": collection_id, "trigger": trigger},
+        )
+        return ConnectionSyncResult(connection_id=connection.id, ok=False, error=str(exc), collection_id=collection_id)
+
+    logger.info(
+        "jamf sweep finished",
+        extra={
+            "connection_id": connection.id,
+            "collection_id": collection_id,
+            "device_count": result.device_count,
+            "observations": dict(result.observations),
+            "group_count": result.group_count,
+            "trigger": trigger,
+        },
+    )
+    return ConnectionSyncResult(
+        connection_id=result.connection_id,
+        device_count=result.device_count,
+        observations=result.observations,
+        group_count=result.group_count,
+        collection_id=collection_id,
+    )
+
+
+async def run_jamf_catalog(
+    db: AsyncSession,
+    connection: MdmConnection,
+    *,
+    trigger: str,
+    collection_id: int | None = None,
+) -> ConnectionSyncResult:
+    """The catalog class on its own: smart-group definitions with criteria, no devices.
+    Tens to hundreds of small reads, so it can run far more often than a sweep and
+    timestamp a criteria edit finer than the sweep would."""
+    try:
+        client = get_mdm_client(connection)
+        assert isinstance(client, JamfClient)
+        outcomes: Counter[str] = Counter()
+        async with client.http() as http:
+            aperture = await capture_aperture(client, http)
+            aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)
+            connection.last_successful_auth_at = datetime.now(timezone.utc)
+            await db.commit()
+            group_count = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes)
+            await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        logger.exception(
+            "jamf catalog refresh failed",
+            extra={"connection_id": connection.id, "collection_id": collection_id, "trigger": trigger},
+        )
+        return ConnectionSyncResult(connection_id=connection.id, ok=False, error=str(exc), collection_id=collection_id)
+
+    logger.info(
+        "jamf catalog refreshed",
+        extra={"connection_id": connection.id, "collection_id": collection_id, "group_count": group_count, "trigger": trigger},
+    )
+    return ConnectionSyncResult(
+        connection_id=connection.id, observations=dict(outcomes), group_count=group_count, collection_id=collection_id
+    )
+
+
+async def _observe_groups(
+    db: AsyncSession,
+    connection: MdmConnection,
+    client: JamfClient,
+    http: httpx.AsyncClient,
+    aperture_digest: str,
+    trigger: str,
+    outcomes: Counter[str],
+) -> int:
+    group_count = 0
+    for raw_group in await client.fetch_smart_groups(http):
+        observation = canonicalize_smart_group(raw_group)
+        result = await record_observation(
+            db,
+            connection_id=connection.id,
+            observation=observation,
+            aperture_digest=aperture_digest,
+            trigger=trigger,
+        )
+        outcomes[f"group_{result.outcome}"] += 1
+        group_count += 1
+    return group_count
+
+
 async def _sync_jamf(
-    db: AsyncSession, connection: MdmConnection, client: JamfClient, *, trigger: str
+    db: AsyncSession,
+    connection: MdmConnection,
+    client: JamfClient,
+    *,
+    trigger: str,
+    sections: Sequence[str] = V0_SECTIONS,
+    selector: str | None = None,
+    quarantine: Sequence[str] = (),
+    include_catalog: bool = True,
 ) -> ConnectionSyncResult:
     outcomes: Counter[str] = Counter()
     device_count = 0
     group_count = 0
 
     async with client.http() as http:
-        aperture = await capture_aperture(client, http)
+        aperture = await capture_aperture(
+            client, http, sections=sections, quarantined_extension_attributes=quarantine
+        )
         aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)
         connection.last_successful_auth_at = datetime.now(timezone.utc)
         await db.commit()
 
         # Streamed, not collected: a 40,000-device tenant is paged through one record
         # at a time, and each device commits on its own (process_sync), so a failure on
-        # device 30,000 leaves 29,999 correctly recorded.
-        async for raw in client.iter_computers(http, V0_SECTIONS):
+        # device 30,000 leaves 29,999 correctly recorded. The selector is pushed into
+        # Jamf's query rather than applied after the fetch — filtering client-side would
+        # still spend the API budget the selector exists to save.
+        async for raw in client.iter_computers(http, sections, rsql_filter=selector):
             result = await ingest_computer(
-                db, connection, raw, aperture_digest=aperture_digest, trigger=trigger
+                db,
+                connection,
+                raw,
+                aperture_digest=aperture_digest,
+                trigger=trigger,
+                sections=sections,
+                quarantined_extension_attributes=quarantine,
             )
             outcomes[result.outcome] += 1
             device_count += 1
 
         # Group definitions ride along with the device sweep so the catalog is never
         # older than the memberships that reference it (docs/ingest-scheduling.md §6.2).
-        for raw_group in await client.fetch_smart_groups(http):
-            observation = canonicalize_smart_group(raw_group)
-            result = await record_observation(
-                db,
-                connection_id=connection.id,
-                observation=observation,
-                aperture_digest=aperture_digest,
-                trigger=trigger,
-            )
-            outcomes[f"group_{result.outcome}"] += 1
-            group_count += 1
+        if include_catalog:
+            group_count = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes)
         await db.commit()
 
     await sync_state(db, connection)
@@ -236,6 +375,8 @@ async def ingest_computer(
     *,
     aperture_digest: str,
     trigger: str,
+    sections: Sequence[str] = V0_SECTIONS,
+    quarantined_extension_attributes: Iterable[str] = (),
 ) -> RecordResult:
     """One raw Jamf computer record, through both layers: the observation ledger and
     the current-state tables. The single function every Jamf ingest path — sweep,
@@ -246,7 +387,9 @@ async def ingest_computer(
     is older than what the ledger already holds for the device, neither layer is
     written. Otherwise the ledger write and process_sync's updates commit together.
     """
-    observation = canonicalize_computer(raw, V0_SECTIONS)
+    observation = canonicalize_computer(
+        raw, sections, quarantined_extension_attributes=quarantined_extension_attributes
+    )
     current = await current_span(
         db,
         connection_id=connection.id,
@@ -289,9 +432,10 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
     """A Jamf webhook names a computer; the inventory comes from a fetch.
 
     Returns None when the payload names nothing (no jssID) — a test webhook, or an event
-    type that does not carry a computer. The aperture is the one the last run on this
-    connection recorded; before any run has happened it is captured here, so the very
-    first webhook on a fresh connection pays two extra reads and later ones pay none.
+    type that does not carry a computer. The aperture is captured per event (two small
+    reads) under the connection's webhook collection, which may be scoped differently
+    from the sweep's; an aperture is content-addressed, so an unchanged one is an upsert
+    of `last_seen_at` and nothing more.
     """
     client = get_mdm_client(connection)
     if not isinstance(client, JamfClient):
@@ -307,16 +451,39 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
         )
         return None
 
+    sections, quarantine = await webhook_scope(db, connection)
     async with client.http() as http:
-        aperture_digest = await latest_aperture_digest(db, connection_id=connection.id)
-        if aperture_digest is None:
-            aperture = await capture_aperture(client, http)
-            aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)
+        aperture = await capture_aperture(
+            client, http, sections=sections, quarantined_extension_attributes=quarantine
+        )
+        aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)
         raw = await client.fetch_computer_detail(http, event.jamf_id)
 
     return await ingest_computer(
-        db, connection, raw, aperture_digest=aperture_digest, trigger=TRIGGER_WEBHOOK
+        db,
+        connection,
+        raw,
+        aperture_digest=aperture_digest,
+        trigger=TRIGGER_WEBHOOK,
+        sections=sections,
+        quarantined_extension_attributes=quarantine,
     )
+
+
+async def webhook_scope(db: AsyncSession, connection: MdmConnection) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """The sections and EA quarantine the webhook path fetches under: the connection's
+    enabled webhook collection, or the whole contract when none exists."""
+    result = await db.execute(
+        select(Collection).where(
+            Collection.mdm_connection_id == connection.id,
+            Collection.kind == "webhook",
+            Collection.enabled.is_(True),
+        )
+    )
+    collection = result.scalars().first()
+    if collection is None or not collection.sections:
+        return tuple(V0_SECTIONS), ()
+    return tuple(collection.sections), tuple(collection.quarantined_extension_attributes or ())
 
 
 async def sync_state(db: AsyncSession, connection: MdmConnection) -> None:

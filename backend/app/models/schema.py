@@ -747,3 +747,67 @@ class ObservationAperture(Base):
     document: Mapped[dict] = mapped_column(JSONB)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class Collection(Base):
+    """What to collect from a connection, and when — docs/ingest-scheduling.md §3, #27.
+
+    A connection carries credentials and capabilities and nothing else; every pull is
+    described by a collection that references it: the Splunk modular-input shape (one
+    account, N inputs). Three kinds:
+
+      device_sweep  computers-inventory with `sections` and an optional RSQL `selector`
+                    pushed into Jamf's query; always ends with a catalog refresh so the
+                    group definitions are never older than the memberships that
+                    reference them
+      catalog       smart-group definitions (with criteria) on their own cadence, so a
+                    criteria edit is timestamped finer than the device sweep
+      webhook       event-driven: no schedule; its sections and quarantine govern the
+                    fetch-by-jssID the webhook endpoint performs
+
+    The schedule is time-of-day + IANA zone + coarse frequency, interpreted by
+    app.core.scheduling; `next_due_at` is materialised so the minute tick's due query is
+    an index scan rather than timezone arithmetic across every row. The claim is an
+    atomic conditional UPDATE of that column, which is what keeps two processes from
+    running the same collection twice.
+    """
+
+    __tablename__ = "collections"
+    __table_args__ = (
+        UniqueConstraint("mdm_connection_id", "name", name="uq_collection_connection_name"),
+        Index("ix_collections_due", "enabled", "next_due_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    mdm_connection_id: Mapped[int] = mapped_column(
+        ForeignKey("mdm_connections.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(255))
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # What. Section names are the contract's (app.mdm.jamf.contract.SECTIONS); the
+    # aperture records them, so narrowing a collection is an explicit boundary.
+    sections: Mapped[list] = mapped_column(JSONB, default=list)
+    selector: Mapped[str | None] = mapped_column(Text, nullable=True)
+    quarantined_extension_attributes: Mapped[list] = mapped_column(JSONB, default=list)
+
+    # When. Null frequency means event-driven (webhook).
+    frequency: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    interval_n: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    at_hour: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    at_minute: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    weekday: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    next_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Outcome of the last run, per collection — MdmSyncState is per connection and
+    # cannot say which collection failed.
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_run_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    last_run_summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)

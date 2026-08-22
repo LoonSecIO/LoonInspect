@@ -1,0 +1,291 @@
+"""Collections (#27) against a real Postgres and the fake Jamf tenant.
+
+What a collection *is* — the what and the when carried by one row — and what the tick
+does with it: defaults that exist as rows, a claim that is atomic, a narrowed sweep
+whose scope reaches Jamf as `section=` and `filter=` and is recorded in the aperture,
+the rate floor that makes a manual run reset the scheduled one, and the webhook path
+scoped by its own collection.
+
+Gated on RUN_DB_TESTS like the other database-backed suites.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import uuid as uuidlib
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
+
+import httpx
+import pytest
+import pytest_asyncio
+from sqlalchemy import delete, select
+
+from tests.jamf_fake import HOST, FakeJamf
+
+pytestmark = [
+    pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
+    pytest.mark.asyncio(loop_scope="session"),
+]
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def tenant_ready() -> None:
+    from app.core.bootstrap import bootstrap_tenants
+    from app.core.database import init_db, unscoped_session
+
+    await init_db()
+    async with unscoped_session() as db:
+        await bootstrap_tenants(db)
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def db(tenant_ready):
+    from app.core.database import session_for_tenant
+    from app.core.tenancy import OPERATIONAL_TENANT_ID
+
+    async with session_for_tenant(OPERATIONAL_TENANT_ID) as session:
+        yield session
+
+
+@pytest.fixture
+def jamf(monkeypatch: pytest.MonkeyPatch) -> FakeJamf:
+    from app.mdm.jamf.client import JamfClient
+
+    fake = FakeJamf()
+
+    @asynccontextmanager
+    async def _mock_http(self):
+        async with httpx.AsyncClient(transport=httpx.MockTransport(fake.handler)) as client:
+            yield client
+
+    monkeypatch.setattr(JamfClient, "http", _mock_http)
+    return fake
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def connection(db):
+    """A Jamf connection with credentials; removed with everything under it afterwards
+    (collections cascade in the database)."""
+    from app.models.schema import Device, DeviceExtensionAttribute, InstalledApp, MdmConnection, MdmSyncState
+
+    row = MdmConnection(
+        name=f"collections jamf {uuidlib.uuid4().hex[:8]}",
+        provider="jamf",
+        base_url=HOST,
+        credentials_encrypted=json.dumps({"clientId": "client", "clientSecret": "secret"}),
+        capability_webhooks=True,
+    )
+    db.add(row)
+    await db.commit()
+    connection_id = row.id
+    try:
+        yield row
+    finally:
+        await db.rollback()
+        device_ids = select(Device.id).where(Device.mdm_connection_id == connection_id)
+        await db.execute(delete(InstalledApp).where(InstalledApp.device_id.in_(device_ids)))
+        await db.execute(delete(DeviceExtensionAttribute).where(DeviceExtensionAttribute.device_id.in_(device_ids)))
+        await db.execute(delete(Device).where(Device.mdm_connection_id == connection_id))
+        await db.execute(delete(MdmSyncState).where(MdmSyncState.mdm_connection_id == connection_id))
+        await db.execute(delete(MdmConnection).where(MdmConnection.id == connection_id))
+        await db.commit()
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+async def _fresh(db, row):
+    await db.refresh(row)
+    return row
+
+
+async def test_defaults_are_real_rows_and_idempotent(db, connection) -> None:
+    from app.core.config import settings
+    from app.mdm.collections import ensure_default_collections, list_collections
+    from app.mdm.jamf.contract import V0_SECTIONS
+
+    added = await ensure_default_collections(db, connection)
+    await db.commit()
+    assert sorted(row.kind for row in added) == ["catalog", "device_sweep", "webhook"]
+
+    rows = {row.kind: row for row in await list_collections(db, connection.id)}
+    sweep, catalog, webhook = rows["device_sweep"], rows["catalog"], rows["webhook"]
+    assert sweep.sections == list(V0_SECTIONS) and sweep.selector is None
+    assert (sweep.frequency, sweep.at_hour, sweep.at_minute, sweep.timezone) == (
+        "daily", settings.sync_hour, settings.sync_minute, settings.sync_timezone
+    )
+    assert sweep.next_due_at is not None and sweep.next_due_at > _now()
+    assert catalog.frequency == "hourly" and catalog.sections == [] and catalog.next_due_at is not None
+    assert webhook.frequency is None and webhook.next_due_at is None and webhook.sections == list(V0_SECTIONS)
+
+    assert await ensure_default_collections(db, connection) == []
+
+
+async def test_run_connection_runs_the_sweeps_and_records_outcomes(db, connection, jamf: FakeJamf) -> None:
+    from app.mdm.collections import list_collections
+    from app.mdm.service import sync_connection
+
+    result = await sync_connection(db, connection)
+    assert result.ok and result.device_count == 2
+    assert result.observations == {"new": 2, "group_new": 1}
+
+    rows = {row.kind: await _fresh(db, row) for row in await list_collections(db, connection.id)}
+    sweep, catalog = rows["device_sweep"], rows["catalog"]
+    assert sweep.last_run_status == "ok" and sweep.last_run_at is not None
+    assert sweep.last_run_summary["deviceCount"] == 2 and sweep.last_run_summary["trigger"] == "sweep"
+    # Catalog collections keep their own cadence; the sweep's trailing refresh covered it.
+    assert catalog.last_run_at is None
+
+
+async def test_a_narrowed_sweep_reaches_jamf_and_the_aperture(db, connection, jamf: FakeJamf) -> None:
+    from app.mdm.collections import apply_schedule, run_collection
+    from app.models.schema import Collection, ObservationAperture, ObservationSpan
+
+    narrowed = Collection(
+        mdm_connection_id=connection.id,
+        name="Managed, general + apps",
+        kind="device_sweep",
+        enabled=True,
+        sections=["general", "applications"],
+        selector="general.remoteManagement.managed==true",
+        quarantined_extension_attributes=["9"],
+        frequency="daily",
+        at_hour=2,
+        at_minute=30,
+        timezone="UTC",
+    )
+    apply_schedule(narrowed)
+    db.add(narrowed)
+    await db.commit()
+
+    result = await run_collection(db, narrowed, trigger="manual")
+    assert result.ok and result.collection_id == narrowed.id
+
+    # The selector was pushed into Jamf's query, not applied after the fetch, and only
+    # the requested sections were asked for.
+    assert jamf.filters and all(f == "general.remoteManagement.managed==true" for f in jamf.filters)
+    assert jamf.sections and all(s == "GENERAL,APPLICATIONS" for s in jamf.sections)
+
+    aperture = (
+        await db.execute(
+            select(ObservationAperture)
+            .where(ObservationAperture.mdm_connection_id == connection.id)
+            .order_by(ObservationAperture.id.desc())
+            .limit(1)
+        )
+    ).scalar_one()
+    assert aperture.document["sections"] == ["applications", "general"]
+    assert aperture.document["quarantinedExtensionAttributes"] == ["9"]
+
+    span = (
+        await db.execute(
+            select(ObservationSpan).where(
+                ObservationSpan.mdm_connection_id == connection.id,
+                ObservationSpan.subject_kind == "computer",
+                ObservationSpan.is_current.is_(True),
+            ).limit(1)
+        )
+    ).scalars().first()
+    assert span is not None and set(span.section_digests) == {"general", "applications"}
+
+
+async def test_claim_is_atomic_and_advances_next_due(db, connection) -> None:
+    from app.mdm.collections import apply_schedule, claim_due
+    from app.models.schema import Collection
+
+    row = Collection(
+        mdm_connection_id=connection.id, name="due now", kind="catalog", enabled=True, sections=[],
+        frequency="hourly", at_minute=0, timezone="UTC",
+    )
+    apply_schedule(row)
+    row.next_due_at = _now() - timedelta(minutes=1)
+    db.add(row)
+    await db.commit()
+
+    now = _now()
+    first = await claim_due(db, now)
+    assert [c.id for c in first] == [row.id]
+    second = await claim_due(db, now)
+    assert second == []
+    await db.refresh(row)
+    assert row.last_claimed_at is not None and row.next_due_at is not None and row.next_due_at > now
+
+
+async def test_claim_leaves_a_busy_connection_for_the_next_tick(db, connection) -> None:
+    from app.mdm.collections import apply_schedule, claim_due
+    from app.mdm.service import set_sync_status
+    from app.models.schema import Collection
+    from app.schemas.payload import SyncStatus
+
+    sweep = Collection(
+        mdm_connection_id=connection.id, name="sweep due", kind="device_sweep", enabled=True,
+        sections=["general"], frequency="daily", at_hour=1, at_minute=0, timezone="UTC",
+    )
+    catalog = Collection(
+        mdm_connection_id=connection.id, name="catalog due", kind="catalog", enabled=True, sections=[],
+        frequency="hourly", at_minute=0, timezone="UTC",
+    )
+    for row in (sweep, catalog):
+        apply_schedule(row)
+        row.next_due_at = _now() - timedelta(minutes=1)
+        db.add(row)
+    await db.commit()
+    await set_sync_status(db, connection, SyncStatus.syncing)
+
+    claimed = {c.kind for c in await claim_due(db, _now())}
+    assert claimed == {"catalog"}  # the sweep waits; its next_due_at is untouched
+    await db.refresh(sweep)
+    assert sweep.next_due_at < _now()
+
+    await set_sync_status(db, connection, SyncStatus.idle)
+    assert {c.kind for c in await claim_due(db, _now())} == {"device_sweep"}
+
+
+async def test_tick_skips_a_collection_inside_its_rate_floor(db, connection, jamf: FakeJamf) -> None:
+    from app.mdm.collections import apply_schedule, tick_tenant
+    from app.models.schema import Collection
+
+    row = Collection(
+        mdm_connection_id=connection.id, name="just ran", kind="device_sweep", enabled=True,
+        sections=["general"], frequency="daily", at_hour=1, at_minute=0, timezone="UTC",
+    )
+    apply_schedule(row)
+    row.next_due_at = _now() - timedelta(minutes=1)
+    row.last_run_at = _now() - timedelta(minutes=5)  # a manual run five minutes ago
+    db.add(row)
+    await db.commit()
+
+    results = await tick_tenant(db, _now())
+    assert results == []
+    await db.refresh(row)
+    assert row.last_run_status == "skipped"
+    assert not any(path.startswith("GET /api/v1/computers-inventory") for path in jamf.requests)
+
+
+async def test_webhook_path_is_scoped_by_its_collection(db, connection, jamf: FakeJamf) -> None:
+    from app.mdm.collections import ensure_default_collections, list_collections
+    from app.mdm.service import ingest_webhook
+    from app.models.schema import ObservationAperture
+
+    await ensure_default_collections(db, connection)
+    await db.commit()
+    webhook = next(row for row in await list_collections(db, connection.id) if row.kind == "webhook")
+    webhook.sections = ["general", "security"]
+    await db.commit()
+
+    payload = {"webhook": {"webhookEvent": "ComputerInventoryCompleted"}, "event": {"jssID": jamf.real["id"]}}
+    result = await ingest_webhook(db, connection, payload)
+    assert result is not None and result.outcome == "new"
+
+    aperture = (
+        await db.execute(
+            select(ObservationAperture)
+            .where(ObservationAperture.mdm_connection_id == connection.id)
+            .order_by(ObservationAperture.id.desc())
+            .limit(1)
+        )
+    ).scalar_one()
+    assert aperture.document["sections"] == ["general", "security"]

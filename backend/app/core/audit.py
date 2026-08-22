@@ -53,6 +53,11 @@ class AuditAction(StrEnum):
     CONNECTION_TESTED = "connection.tested"
     CONNECTION_SYNC_TRIGGERED = "connection.sync.triggered"
 
+    COLLECTION_CREATED = "collection.created"
+    COLLECTION_UPDATED = "collection.updated"
+    COLLECTION_DELETED = "collection.deleted"
+    COLLECTION_RUN_TRIGGERED = "collection.run.triggered"
+
     FEATURE_FLAG_UPDATED = "feature-flag.updated"
 
     SHARING_SETTINGS_UPDATED = "sharing.settings.updated"

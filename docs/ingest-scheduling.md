@@ -1,6 +1,23 @@
 # Ingest scheduling for Jamf Pro pulls
 
-Status: **design settled, nothing built** · Target: V0 · Feeds #27 (implementation) and #31 (corrections)
+Status: **implemented for the what and the when (#27, 2026-08-22) as *collections*; the run
+object, mutex and heartbeat remain #31** · Target: V0
+
+> **What landed, and where it deviates.** The ingest profile of §3/§10 shipped under the
+> user-facing name **collection** (`collections` table, `app/mdm/collections.py`,
+> `app/api/collections.py`, Settings → Connections → Collections). Three kinds:
+> `device_sweep` (sections + RSQL selector pushed into Jamf's query; always ends with a
+> catalog refresh, §6.2), `catalog` (smart-group definitions with criteria on their own
+> cadence), `webhook` (event-driven; scopes the fetch-by-jssID). Connection setup creates
+> the three defaults as real rows (§3.2); the old `SYNC_HOUR` / `SYNC_MINUTE` /
+> `SYNC_TIMEZONE` became the default sweep's schedule rather than a global cron. A minute
+> tick (`collections_tick`) claims due rows with one conditional `UPDATE … WHERE
+> next_due_at <= now RETURNING` (§5 — correct across processes without the run row), runs
+> them sequentially, and advances `next_due_at` in the row's own zone. Rate floors (§4.2)
+> are enforced on save and at claim time; a manual run resets the scheduled one. A device
+> sweep whose connection is mid-sync is left unclaimed and retried next minute. Still
+> open here and owned by #31: the per-connection mutex as a run row, the heartbeat, the
+> concurrency cap (a tick runs one collection at a time today), and jobID-filtered logs.
 
 This document settles how a customer chooses when LoonInspect pulls from Jamf Pro, and
 what stops those pulls from harming the Jamf tenant they point at. It is a design
