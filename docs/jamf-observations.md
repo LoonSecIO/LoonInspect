@@ -98,13 +98,31 @@ joins to the ledger. For smart groups, the group id.
 
 The head also carries `udid`, `serial_number`, and `management_id`. None of them is the
 subject key in v0; all of them are recorded so that **lineage** — the same Mac
-re-enrolled under a new Jamf id, or seen by two collectors — can be derived later
-without a reshape. What would be irrecoverable is not recording them; the chaining rule
-is soft as long as the raw keys are kept.
+re-enrolled under a new Jamf id, seen by two collectors, or repaired — can be derived
+later without a reshape. What would be irrecoverable is not recording them; the chaining
+rule is soft as long as the raw keys are kept.
 
-> Open for the author: udid vs serial as the eventual lineage key. Recommendation: udid
-> (hardware-bound, what the MDM protocol itself uses; VMs get unique ones), with serial
-> as the human cross-MDM key. Not a v0 decision because v0 records both.
+**Lineage is three keys, taken together: the Jamf Pro instance it came from, the UDID,
+and the serial number.** Neither hardware key alone is enough, and they fail in
+different directions:
+
+- The **serial** is the device's warranty identity. When Apple replaces a logic board
+  rather than the whole Mac, the original serial is flashed onto the new board, so the
+  serial survives a repair.
+- The **UDID** is derived from the logic board and immutable for that board, so it
+  *changes* with a board replacement. That is the one common case today where the two
+  keys disagree, and it is rare and becoming rarer.
+
+So within one collector: **same serial, new UDID = the same device with a new board** —
+a lineage event (`board replaced`), not a new device. Same UDID with a different serial
+should not happen and is an anomaly worth surfacing rather than silently merging. Across
+collectors (a Jamf-to-Jamf migration, or Jamf beside another MDM), the pair (UDID,
+serial) is what says two subjects are one Mac; the collector key is what keeps their
+observations apart, since each collector's aperture differs (§6).
+
+`observation_spans` is indexed on `(tenant_id, serial_number)` and `(tenant_id, udid)`
+for exactly these walks. The lineage layer itself — which spans belong to one physical
+device, and which boundary events that implies — is derived and lives above the ledger.
 
 ---
 
@@ -330,7 +348,8 @@ identity. It is where `cfBundleVersion` and `lastContact` / `lastCheckIn` surfac
 
 ## 12. Decisions deferred, and one to raise
 
-- **Identity / lineage** (§3): recorded, not chained. Revisit with re-enrollment data.
+- **Identity / lineage** (§3): decided — the triple (collector, UDID, serial), with the
+  board-replacement rule. Recorded and indexed in v0; chaining is a derived layer.
 - **Certificates** are in v0 with status fields excluded; a derived "expiring" signal
   comes from `expirationDate` and the clock at query time, not from the ledger.
 - **Quarantine knob** → #27. **Run id on the head** → #31 (`last_trigger` carries the

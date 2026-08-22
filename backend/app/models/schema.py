@@ -627,8 +627,9 @@ class ObservationSpan(Base):
 
     The subject is (connection, kind, id): for computers the Jamf computer id, which is
     also `devices.external_id` on the same connection — the join the UI uses — and for
-    smart groups the group id. udid / serial / management id are carried so lineage
-    across re-enrollment can be derived later without a reshape.
+    smart groups the group id. udid / serial / management id are carried because lineage
+    is the triple (collector, UDID, serial): a logic-board repair keeps the serial and
+    changes the UDID, so neither hardware key alone identifies a Mac over its life.
 
     Time is kept twice on purpose. `observed_at` is the device's own inventory time
     (Jamf's reportDate) and is what the monotonic guard compares, so a sweep reading a
@@ -650,6 +651,10 @@ class ObservationSpan(Base):
             unique=True,
             postgresql_where=text("is_current"),
         ),
+        # Lineage walks (docs/jamf-observations.md §3): the same Mac across re-enrollment,
+        # collectors, or a logic-board repair is found by serial and by UDID.
+        Index("ix_observation_spans_serial", "tenant_id", "serial_number", postgresql_where=text("serial_number IS NOT NULL")),
+        Index("ix_observation_spans_udid", "tenant_id", "udid", postgresql_where=text("udid IS NOT NULL")),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)

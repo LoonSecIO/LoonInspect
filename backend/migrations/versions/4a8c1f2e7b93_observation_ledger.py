@@ -83,6 +83,20 @@ def upgrade() -> None:
         unique=True,
         postgresql_where=sa.text("is_current"),
     )
+    # Lineage: the same Mac across re-enrollment, collectors, or a logic-board repair
+    # (serial kept, UDID changed) is found by either key.
+    op.create_index(
+        "ix_observation_spans_serial",
+        "observation_spans",
+        ["tenant_id", "serial_number"],
+        postgresql_where=sa.text("serial_number IS NOT NULL"),
+    )
+    op.create_index(
+        "ix_observation_spans_udid",
+        "observation_spans",
+        ["tenant_id", "udid"],
+        postgresql_where=sa.text("udid IS NOT NULL"),
+    )
     # jsonb_path_ops: smaller and faster for the one operator this index serves, the
     # containment query `section_digests @> '{"applications": "v0:…"}'`.
     op.create_index(
