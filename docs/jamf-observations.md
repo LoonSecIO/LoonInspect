@@ -124,6 +124,20 @@ observations apart, since each collector's aperture differs (§6).
 for exactly these walks. The lineage layer itself — which spans belong to one physical
 device, and which boundary events that implies — is derived and lives above the ledger.
 
+**Two triples, two jobs.** Lineage answers "is this the same Mac over its life". The
+everyday *correlation* key — what the author dedups on in Splunk, and what the SIEM
+`device_meta` block should carry verbatim because it is both sufficient and readable —
+is **(serial number, Jamf Pro URL, Jamf device id)**: one record, in one instance, with
+a human-legible handle. Every head has it: `serial_number`, the connection's URL, and
+`subject_id`. The UDID rides alongside for the lineage walk; it is not needed to dedup.
+
+One legacy artifact the correlation key exposes and lineage must not misread: a device
+can *join* a Jamf Pro more than once, leaving several computer records for one physical
+Mac in one instance. Those are distinct subjects in the ledger (different Jamf ids), and
+the lineage layer classifies **same serial, same UDID, different Jamf ids within one
+collector** as a duplicate-record artifact — not a board replacement (the UDID did not
+change) and not a new device.
+
 ---
 
 ## 4. Time and spans
