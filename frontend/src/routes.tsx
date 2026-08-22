@@ -26,6 +26,7 @@ import { DestinationsPage } from "@/features/destinations/DestinationsPage";
 import { VulnerabilitiesPage } from "@/features/vulnerabilities/VulnerabilitiesPage";
 import { JamfPatchPage } from "@/features/jamfPatch/JamfPatchPage";
 import { JamfPatchDetailPage } from "@/features/jamfPatch/JamfPatchDetailPage";
+import { CatalogPage } from "@/features/catalog/CatalogPage";
 
 export function AppRoutes() {
   return (
@@ -42,6 +43,7 @@ export function AppRoutes() {
         <Route path="devices" element={<DevicesPage />} />
         <Route path="devices/applications" element={<ApplicationsPage />}>
           <Route index element={<ApplicationsOverviewPage />} />
+          <Route path="catalog" element={<CatalogPage />} />
           <Route path="jamf-patch" element={<JamfPatchPage />} />
           <Route path="jamf-patch/:titleId" element={<JamfPatchDetailPage />} />
         </Route>

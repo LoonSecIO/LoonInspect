@@ -4,11 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.catalog.index import rebuild_index
+from app.catalog.service import refresh_tenant
 from app.core.auth import require
 from app.core.database import get_db
 from app.core.permissions import Permission
 from app.mdm.patch.jamf_catalog import sync_catalog
-from app.models.schema import InstalledApp, InstalledAppPatchMatch, JamfPatchTitle
+from app.models.schema import AppCatalogEntry, AppCatalogTitleMatch, InstalledApp, JamfPatchTitle
 from app.schemas.jamf_patch import (
     JamfPatchSyncResult,
     JamfPatchTitleDetailOut,
@@ -19,35 +21,38 @@ from app.schemas.jamf_patch import (
 router = APIRouter(prefix="/api/jamf-patch", tags=["jamf-patch"])
 
 
+def _matched_devices():
+    """Title matches → the catalog row → every installed app with that version hash. All three
+    tables are tenant-scoped (RLS), so a tenant-bound session only ever counts its own fleet."""
+    return (
+        select(
+            AppCatalogTitleMatch.title_id,
+            AppCatalogTitleMatch.on_latest,
+            AppCatalogTitleMatch.installed_version,
+            InstalledApp.device_id,
+        )
+        .join(AppCatalogEntry, AppCatalogEntry.id == AppCatalogTitleMatch.app_catalog_id)
+        .join(InstalledApp, InstalledApp.version_hash == AppCatalogEntry.version_hash)
+    )
+
+
 async def title_device_counts(db: AsyncSession, title_ids: list[str]) -> dict[str, tuple[int, int]]:
-    """title id -> (distinct devices with a matched app, distinct devices on the title's latest).
-    The matches table is under RLS, so a tenant-bound session only ever counts its own fleet."""
+    """title id -> (distinct devices with a matched app, distinct devices on the title's latest)."""
     if not title_ids:
         return {}
-    on_latest_device = case((InstalledAppPatchMatch.on_latest.is_(True), InstalledApp.device_id))
-    rows = (
-        await db.execute(
-            select(
-                InstalledAppPatchMatch.title_id,
-                func.count(distinct(InstalledApp.device_id)),
-                func.count(distinct(on_latest_device)),
-            )
-            .join(InstalledApp, InstalledApp.id == InstalledAppPatchMatch.installed_app_id)
-            .where(InstalledAppPatchMatch.title_id.in_(title_ids))
-            .group_by(InstalledAppPatchMatch.title_id)
-        )
-    ).all()
+    matched = _matched_devices().where(AppCatalogTitleMatch.title_id.in_(title_ids)).subquery()
+    on_latest_device = case((matched.c.on_latest.is_(True), matched.c.device_id))
+    stmt = select(matched.c.title_id, func.count(distinct(matched.c.device_id)), func.count(distinct(on_latest_device)))
+    rows = (await db.execute(stmt.group_by(matched.c.title_id))).all()
     return {title_id: (int(devices), int(on_latest)) for title_id, devices, on_latest in rows}
 
 
 async def title_version_counts(db: AsyncSession, title_id: str) -> dict[str, int]:
     """installed version -> distinct devices, for the apps matched to one title."""
+    matched = _matched_devices().where(AppCatalogTitleMatch.title_id == title_id).subquery()
     rows = (
         await db.execute(
-            select(InstalledAppPatchMatch.installed_version, func.count(distinct(InstalledApp.device_id)))
-            .join(InstalledApp, InstalledApp.id == InstalledAppPatchMatch.installed_app_id)
-            .where(InstalledAppPatchMatch.title_id == title_id)
-            .group_by(InstalledAppPatchMatch.installed_version)
+            select(matched.c.installed_version, func.count(distinct(matched.c.device_id))).group_by(matched.c.installed_version)
         )
     ).all()
     return {version or "": int(count) for version, count in rows}
@@ -60,6 +65,10 @@ async def title_version_counts(db: AsyncSession, title_id: str) -> dict[str, int
 )
 async def sync_titles(db: AsyncSession = Depends(get_db)) -> JamfPatchSyncResult:
     synced = await sync_catalog(db)
+    # The catalog moved: rebuild the lookup index and re-judge this tenant's rows against it.
+    await rebuild_index(db)
+    await refresh_tenant(db)
+    await db.commit()
     return JamfPatchSyncResult(synced=synced)
 
 

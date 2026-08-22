@@ -209,10 +209,14 @@ class TestGroupsAndVerdicts:
 
 
 class TestTitleShape:
-    def test_device_level_titles_are_not_app_level(self) -> None:
-        assert is_app_level(MACOS_CATALINA) is False
-        assert is_app_level(FIREFOX) is True  # the extension attribute reports an app's version
+    def test_only_titles_with_an_identifying_recon_test_are_considered(self) -> None:
+        """Kyle's rule: at least one recon test on the bundle ID or the application title."""
         assert is_app_level(ONEPASSWORD_4) is True
+        assert is_app_level(ABLETON_LIVE_LITE) is True  # Application Title
+        assert is_app_level(MACOS_CATALINA) is False  # device-level
+        assert is_app_level(FIREFOX) is False  # attribute-only: the patching agent's
+        version_test = {"name": "Application Version", "type": "recon", "value": "4.", "operator": "like"}
+        assert is_app_level([{"operator": "and", "tests": [version_test]}]) is False
 
     def test_required_bundle_ids(self) -> None:
         assert required_bundle_ids(ONEPASSWORD_4) == frozenset({"com.agilebits.onepassword4"})

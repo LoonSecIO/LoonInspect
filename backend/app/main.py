@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.accounts import router as accounts_router
 from app.api.applications import router as applications_router
 from app.api.auth import router as auth_router
+from app.api.catalog import router as catalog_router
 from app.api.changes import router as changes_router
 from app.api.collections import router as collections_router
 from app.api.connections import router as connections_router
@@ -31,6 +32,8 @@ from app.api.routes import router as api_router
 from app.api.system import router as system_router
 from app.api.tokens import router as tokens_router
 from app.api.webhooks import router as webhooks_router
+from app.catalog.index import rebuild_index
+from app.catalog.service import refresh_tenant
 from app.core.audit import configure_audit_logging
 from app.core.auth import authenticate
 from app.core.bootstrap import bootstrap_accounts, bootstrap_tenants, migrate_legacy_siem_webhook
@@ -127,7 +130,16 @@ async def hourly_jamf_patch_sync() -> None:
     try:
         async with unscoped_session() as db:
             await sync_catalog(db)
+            await rebuild_index(db)
         logger.info("jamf patch catalog synced")
+        # Then every tenant's app catalog against the catalog that just moved — rows judged
+        # against an older catalog are re-judged; a sync that changed nothing costs nothing.
+        for tenant_id in await operational_tenant_ids():
+            async with session_for_tenant(tenant_id) as db:
+                judged = await refresh_tenant(db)
+                await db.commit()
+            if judged:
+                logger.info("app catalog refreshed", extra={"tenant_id": str(tenant_id), "rows": judged})
     finally:
         reset_actor(actor_token)
 
@@ -366,6 +378,7 @@ app.include_router(destinations_router)
 app.include_router(system_router)
 app.include_router(devices_router)
 app.include_router(applications_router)
+app.include_router(catalog_router)
 app.include_router(jamf_patch_router)
 app.include_router(feature_flags_router)
 

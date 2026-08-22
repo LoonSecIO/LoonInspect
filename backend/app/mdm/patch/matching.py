@@ -17,18 +17,18 @@ rolling ones ("Wireshark 4.2" and "Wireshark"; "TechSmith Camtasia 2022" and "Te
 Camtasia") — so matches are stored one row per (app, title) and the summary columns on
 `installed_apps` are derived from the set.
 
-Extension attributes in requirements (Kyle, 2026-08-22). Jamf uses an attribute where inventory
-cannot tell titles apart — PyCharm Community vs Professional, Firefox vs Firefox ESR, the
-`jamf-patch-*` attributes — which is a scoping device, not a fact about the app. So: an
-attribute the device carries is evaluated for real; one it does not carry resolves TRUE, and
-the match is recorded with `basis = "ea_assumed"` so the assumption stays visible. Because the
-attribute is about the device, a group made only of attribute tests can never identify an app
-by itself: in a title that also has app tests such a group is ignored (JetBrains PyCharm
-Community is `[attribute] OR [Bundle ID is com.jetbrains.pycharm.ce]` — the second group
-decides), and a title whose tests are *only* attributes is identified by its own `bundleId`
-column (it matches the app with that bundle ID). A title with only attributes and no bundle ID
-(JDKs, Node, Python, daemons: nothing an app list can version) is the patching agent's and is
-never matched here.
+Which titles are considered (Kyle, 2026-08-22): only those with at least one recon test on the
+bundle ID or the application title — the tests that can identify an installed app. Device-level
+titles ("Apple macOS …"), attribute-only titles (the `jamf-patch-*` set: JDKs, Node, Python,
+daemons, and a few apps Jamf tells apart only by attribute — PyCharm Professional, Firefox) and
+version-only titles are not considered; they are the patching agent's business.
+
+Extension attributes inside a considered title are Jamf's *scoping* device for collisions
+(PyCharm Community vs Professional, Firefox vs ESR), not a fact about the app: one the device
+carries is evaluated for real; one it does not carry resolves TRUE, and the match is recorded
+with `basis = "ea_assumed"` so the assumption stays visible. A group made only of attribute tests
+can never identify an app by itself and is ignored (JetBrains PyCharm Community is `[attribute]
+OR [Bundle ID is com.jetbrains.pycharm.ce]` — the second group decides).
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mdm.patch.requirements import (
@@ -51,7 +51,7 @@ from app.mdm.patch.requirements import (
     required_bundle_ids,
     version_tuple,
 )
-from app.models.schema import Device, InstalledApp, InstalledAppPatchMatch, JamfPatchTitle
+from app.models.schema import JamfPatchTitle
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +92,8 @@ class CatalogTitle:
     name: str
     bundle_id: str | None
     current_version: str
+    publisher: str | None
+    app_name: str | None
     patches: tuple[Patch, ...]
     requirements: tuple[Mapping, ...]
     # Extension-attribute definitions the title ships: key -> display name. Jamf Pro creates the
@@ -103,8 +105,6 @@ class CatalogTitle:
     # Casefolded names of the attribute tests (plus the definitions' keys and display names):
     # what the device would have to carry for the title to be decided without assuming.
     attribute_names: frozenset[str]
-    # Every test is an attribute test: the title is identified by its bundleId column alone.
-    attribute_only: bool
 
     @classmethod
     def build(
@@ -117,6 +117,8 @@ class CatalogTitle:
         patches: Iterable[Mapping] | None,
         requirements: Iterable[Mapping] | None,
         extension_attributes: Iterable[Mapping] | None = None,
+        publisher: str | None = None,
+        app_name: str | None = None,
     ) -> CatalogTitle:
         groups = tuple(dict(group) for group in (requirements or []))
         definitions = {
@@ -135,6 +137,8 @@ class CatalogTitle:
             name=name,
             bundle_id=bundle_id,
             current_version=current_version or "",
+            publisher=publisher,
+            app_name=app_name,
             patches=tuple(
                 Patch(version=str(patch.get("version") or ""), released_at=parse_release_date(patch.get("releaseDate")))
                 for patch in (patches or [])
@@ -144,7 +148,6 @@ class CatalogTitle:
             app_level=is_app_level(groups),
             required_bundle_ids=required_bundle_ids(groups),
             attribute_names=frozenset(attribute_names),
-            attribute_only=bool(tests) and len(attribute_tests) == len(tests),
         )
 
     def patch_for(self, version: str | None) -> Patch | None:
@@ -163,26 +166,16 @@ class CatalogTitle:
 
 
 class Catalog:
-    """The app-level titles, indexed for the per-app lookup: titles whose every group pins a
-    bundle ID with `is` are reached through that index, attribute-only titles through their
-    bundleId column, and everything else is evaluated for every app. Device-level titles
-    ("Apple macOS …") and attribute-only titles with no bundle ID are not here at all."""
+    """The considered titles, indexed for the per-app lookup: titles whose every group pins a
+    bundle ID with `is` are reached through that index; everything else is evaluated for every
+    app. Titles with no identifying test (see the module docstring) are not here at all."""
 
     def __init__(self, titles: Iterable[CatalogTitle], signature: tuple = ()) -> None:
         self.signature = signature
-        self.titles: list[CatalogTitle] = []
+        self.titles: list[CatalogTitle] = [title for title in titles if title.app_level]
         self.by_bundle: dict[str, list[CatalogTitle]] = {}
         self.broad: list[CatalogTitle] = []
-        for title in titles:
-            if not title.app_level:
-                continue
-            if title.attribute_only:
-                if not title.bundle_id:
-                    continue  # the patching agent's: nothing in an app list carries it
-                self.titles.append(title)
-                self.by_bundle.setdefault(_fold(title.bundle_id), []).append(title)
-                continue
-            self.titles.append(title)
+        for title in self.titles:
             if title.required_bundle_ids is None:
                 self.broad.append(title)
                 continue
@@ -203,6 +196,8 @@ class Catalog:
                     patches=record.get("patches"),
                     requirements=record.get("requirements"),
                     extension_attributes=record.get("extensionAttributes"),
+                    publisher=record.get("publisher"),
+                    app_name=record.get("appName"),
                 )
                 for record in records
             ),
@@ -221,6 +216,8 @@ class Catalog:
                     patches=row.patches,
                     requirements=row.requirements,
                     extension_attributes=row.extension_attributes,
+                    publisher=row.publisher,
+                    app_name=row.app_name,
                 )
                 for row in rows
             ),
@@ -318,14 +315,13 @@ def _facts_for(facts: Facts, title: CatalogTitle) -> tuple[Facts, set[str]]:
 def _decide(title: CatalogTitle, facts: Facts) -> str | None:
     """The basis on which this title matches the app, or None. Groups are evaluated one by
     one so the basis reflects the group that carried the match; a group made only of
-    attribute tests identifies nothing by itself unless the title is attribute-only, in which
-    case the bundleId column already tied it to this app."""
+    attribute tests identifies nothing by itself."""
     title_facts, carried = _facts_for(facts, title)
     basis: str | None = None
     for group in title.requirements:
         tests = list(group.get("tests") or [])
         attribute_tests = [test for test in tests if test.get("type") == EXTENSION_ATTRIBUTE]
-        if attribute_tests and len(attribute_tests) == len(tests) and not title.attribute_only:
+        if attribute_tests and len(attribute_tests) == len(tests):
             continue  # device scoping, not an app test
         if evaluate_group(group, title_facts) is not Verdict.MATCHED:
             continue
@@ -341,8 +337,6 @@ def match_app(facts: Facts, catalog: Catalog) -> list[TitleMatch]:
     fully-evaluated matches first, then by title name."""
     matches: list[TitleMatch] = []
     for title in catalog.candidates(facts.bundle_id):
-        if title.attribute_only and _fold(title.bundle_id) != _fold(facts.bundle_id):
-            continue  # identified by its bundleId column alone, and this is not that app
         basis = _decide(title, facts)
         if basis is None:
             continue
@@ -419,73 +413,3 @@ async def load_catalog(db: AsyncSession) -> Catalog:
 def reset_catalog_cache() -> None:
     global _cache
     _cache = None
-
-
-async def apply_catalog_matches(
-    db: AsyncSession,
-    device: Device,
-    *,
-    os_version: str | None,
-    extension_attributes: Mapping[str, str | None],
-    now: datetime | None = None,
-) -> int:
-    """Re-evaluate every installed app of one device against the catalog: replace its match rows
-    and the summary columns. Called from `process_sync` after the app rows are flushed, for every
-    device regardless of MDM or patch provider — the catalog is a fact about the app, not about
-    the connection. Returns the number of matches written."""
-    catalog = await load_catalog(db)
-    rows = (await db.execute(select(InstalledApp).where(InstalledApp.device_id == device.id))).scalars().all()
-    if not rows:
-        return 0
-    now = now or datetime.now(timezone.utc)
-    await db.execute(delete(InstalledAppPatchMatch).where(InstalledAppPatchMatch.installed_app_id.in_([row.id for row in rows])))
-
-    written = 0
-    for row in rows:
-        facts = Facts(
-            app_name=row.name,
-            bundle_id=row.bundle_id,
-            versions=tuple(version for version in (row.version, row.short_version) if version),
-            os_version=os_version,
-            extension_attributes=extension_attributes,
-        )
-        matches = match_app(facts, catalog)
-        summary = summarize(matches)
-        row.last_patch_check_at = now
-        if summary is None:
-            row.jamf_title_ids = None
-            row.patch_state = None
-            row.is_compliant = None
-            row.patch_available = None
-            row.patch_available_since = None
-            row.this_version_seen = None
-            row.latest_version = None
-            row.latest_released_at = None
-            continue
-        row.jamf_title_ids = summary.title_ids
-        row.patch_state = summary.state
-        row.is_compliant = summary.is_compliant
-        row.patch_available = summary.patch_available
-        row.patch_available_since = summary.patch_available_since
-        row.this_version_seen = summary.this_version_seen
-        row.latest_version = summary.latest_version
-        row.latest_released_at = summary.latest_released_at
-        for match in matches:
-            db.add(
-                InstalledAppPatchMatch(
-                    installed_app_id=row.id,
-                    title_id=match.title.id,
-                    basis=match.basis,
-                    state=match.state,
-                    version_known=match.version_known,
-                    on_latest=match.on_latest,
-                    installed_version=match.installed_version,
-                    installed_released_at=match.installed_released_at,
-                    latest_version=match.latest_version,
-                    latest_released_at=match.latest_released_at,
-                    first_newer_released_at=match.first_newer_released_at,
-                    evaluated_at=now,
-                )
-            )
-            written += 1
-    return written
