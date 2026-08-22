@@ -2,7 +2,7 @@
 
 Jamf Pro does not sign its webhook payloads, so a per-connection shared secret is the
 entire authentication. The assertion that matters most here is the negative one: an
-unauthorized request must never reach `process_sync`, because that is what turns the
+unauthorized request must never reach `ingest_webhook`, because that is what turns the
 endpoint into an amplification vector into the customer's Jamf tenant and a way to
 inject arbitrary inventory into what gets streamed onward to their SIEM.
 
@@ -100,22 +100,14 @@ class TestSecretMatches:
 
 
 def _client(connection: MdmConnection | None, monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, list]:
-    """Mount the router alone, with the database and the sync path stubbed out."""
+    """Mount the router alone, with the database and the ingest path stubbed out."""
     calls: list = []
 
-    async def _fake_process_sync(db, device, conn):
+    async def _fake_ingest_webhook(db, conn, payload):
         calls.append(conn)
+        return None
 
-    def _fake_get_mdm_client(conn):
-        class _Client:
-            @staticmethod
-            def parse_webhook(payload: dict) -> dict:
-                return payload
-
-        return _Client()
-
-    monkeypatch.setattr(webhooks, "process_sync", _fake_process_sync)
-    monkeypatch.setattr(webhooks, "get_mdm_client", _fake_get_mdm_client)
+    monkeypatch.setattr(webhooks, "ingest_webhook", _fake_ingest_webhook)
 
     class _FakeSession:
         async def get(self, model, primary_key):
@@ -144,7 +136,7 @@ class TestJamfWebhookRoute:
         response = client.post("/webhooks/jamf/1", json={"event": {}}, headers={"Authorization": f"Bearer {_SECRET}"})
 
         assert response.status_code == 200
-        assert response.json() == {"status": "accepted"}
+        assert response.json() == {"status": "ignored"}
         assert len(calls) == 1
 
     def test_x_api_key_is_accepted_and_syncs(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -197,4 +189,4 @@ class TestJamfWebhookRoute:
         assert response.status_code == 401, label
         assert response.json() == {"detail": "Unauthorized"}, label
         assert response.headers["WWW-Authenticate"] == 'Basic realm="jamf-webhook"', label
-        assert calls == [], f"{label}: unauthorized request reached process_sync"
+        assert calls == [], f"{label}: unauthorized request reached ingest_webhook"

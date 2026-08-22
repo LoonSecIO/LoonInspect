@@ -29,6 +29,11 @@ LoonInspect is designed around a **"Diff, Stream, Commit"** pipeline to keep loc
 4. **Enrich (Optional):** Sends unseen hashes to the LoonVD AWS Gateway to retrieve real-time EPSS scores, CVE mappings, and patch manifests. Whether you use Munki, Jamf's App Installers, or other patching service.
 5. **Stream:** Emits the calculated delta directly to your SIEM for logging, compliance, and eventing.
 
+Beneath the delta, every Jamf observation is also kept as a versioned, content-addressed
+record — what each device looked like each time it was read, and through what collector
+configuration — so history can be diffed without phantom changes when the shape evolves.
+The contract is in [docs/jamf-observations.md](docs/jamf-observations.md).
+
 ---
 
 ## 🛠 Quick Start (Docker Compose)

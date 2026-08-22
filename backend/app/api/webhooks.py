@@ -4,13 +4,13 @@ import base64
 import logging
 from typing import Annotated
 
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import generate_token, tokens_equal
-from app.mdm.factory import get_mdm_client
-from app.mdm.service import process_sync
+from app.mdm.service import ingest_webhook
 from app.models.schema import MdmConnection
 
 logger = logging.getLogger(__name__)
@@ -123,7 +123,22 @@ async def jamf_webhook(
             headers={"WWW-Authenticate": 'Basic realm="jamf-webhook"'},
         )
 
-    client = get_mdm_client(connection)
-    device = client.parse_webhook(payload)
-    await process_sync(db, device, connection)
-    return {"status": "accepted"}
+    # The payload names a computer; the inventory is fetched by id. Jamf's computer
+    # webhooks carry no application list, so normalizing the payload directly would
+    # diff an empty inventory against the stored one and report everything removed.
+    try:
+        result = await ingest_webhook(db, connection, payload)
+    except httpx.HTTPError:
+        logger.warning(
+            "jamf webhook accepted but the inventory fetch failed",
+            extra={"connection_id": connection_id},
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Inventory fetch from Jamf Pro failed",
+        ) from None
+
+    if result is None:
+        return {"status": "ignored"}
+    return {"status": "accepted", "outcome": result.outcome}

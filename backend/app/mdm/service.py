@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from collections import Counter
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+import httpx
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,8 +16,24 @@ from app.core.context import get_request_id
 from app.core.hashing import compute_app_hash, compute_version_hash
 from app.core.outbox import enqueue_event
 from app.mdm.factory import get_mdm_client
+from app.mdm.jamf.client import JamfClient, normalize_computer, parse_webhook_event
+from app.mdm.jamf.contract import (
+    V0_SECTIONS,
+    Aperture,
+    build_aperture,
+    canonicalize_computer,
+    canonicalize_smart_group,
+)
 from app.mdm.patch.factory import get_patch_provider
 from app.models.schema import Device, DeviceExtensionAttribute, InstalledApp, MdmConnection, MdmSyncState
+from app.observations.ledger import (
+    RecordResult,
+    current_span,
+    ensure_aperture,
+    is_stale,
+    latest_aperture_digest,
+    record_observation,
+)
 from app.schemas.payload import (
     InventoryChangedEvent,
     NormalizedApp,
@@ -23,6 +42,12 @@ from app.schemas.payload import (
 )
 
 logger = logging.getLogger(__name__)
+
+# What triggered an ingest. Stamped on every span as `last_trigger`; #31's run object
+# will carry the same vocabulary.
+TRIGGER_SWEEP = "sweep"
+TRIGGER_MANUAL = "manual"
+TRIGGER_WEBHOOK = "webhook"
 
 
 def apply_hashes(app: NormalizedApp) -> NormalizedApp:
@@ -48,6 +73,10 @@ class ConnectionSyncResult:
     ok: bool = True
     skipped: bool = False
     error: str | None = None
+    # Ledger outcomes for this run, keyed by app.observations.ledger.Outcome, plus the
+    # number of group definitions observed. Empty for providers without a ledger.
+    observations: Mapping[str, int] = field(default_factory=dict)
+    group_count: int = 0
 
 
 async def set_sync_status(
@@ -71,7 +100,9 @@ async def set_sync_status(
     await db.commit()
 
 
-async def sync_connection(db: AsyncSession, connection: MdmConnection) -> ConnectionSyncResult:
+async def sync_connection(
+    db: AsyncSession, connection: MdmConnection, *, trigger: str = TRIGGER_SWEEP
+) -> ConnectionSyncResult:
     """Pull inventory for a single connection.
 
     Deliberately does not raise on a connection-level failure. Both callers — the
@@ -82,35 +113,25 @@ async def sync_connection(db: AsyncSession, connection: MdmConnection) -> Connec
     """
     try:
         client = get_mdm_client(connection)
-        devices = await client.fetch_devices()
     except NotImplementedError:
         logger.debug(
             "sync skipped, provider not implemented",
             extra={"connection_id": connection.id, "provider": connection.provider},
         )
         return ConnectionSyncResult(connection_id=connection.id, skipped=True)
-    except Exception as exc:
-        await db.rollback()
-        await set_sync_status(db, connection, SyncStatus.failed)
-        logger.exception(
-            "connection sync failed while fetching devices",
-            extra={"connection_id": connection.id, "provider": connection.provider},
-        )
-        return ConnectionSyncResult(connection_id=connection.id, ok=False, error=str(exc))
 
     try:
-        connection.last_successful_auth_at = datetime.now(timezone.utc)
-        await db.commit()
-
-        for device in devices:
-            await process_sync(db, device, connection)
+        if isinstance(client, JamfClient):
+            result = await _sync_jamf(db, connection, client, trigger=trigger)
+        else:
+            result = await _sync_generic(db, connection, client)
     except Exception as exc:
         # Rollback first: a failure mid-loop leaves the session dirty, and the status
         # write below would otherwise fail too.
         await db.rollback()
         await set_sync_status(db, connection, SyncStatus.failed)
         logger.exception(
-            "connection sync failed while processing devices",
+            "connection sync failed",
             extra={"connection_id": connection.id, "provider": connection.provider},
         )
         return ConnectionSyncResult(connection_id=connection.id, ok=False, error=str(exc))
@@ -120,22 +141,198 @@ async def sync_connection(db: AsyncSession, connection: MdmConnection) -> Connec
         extra={
             "connection_id": connection.id,
             "provider": connection.provider,
-            "device_count": len(devices),
+            "device_count": result.device_count,
+            "observations": dict(result.observations),
+            "group_count": result.group_count,
+            "trigger": trigger,
         },
     )
+    return result
+
+
+async def _sync_generic(db: AsyncSession, connection: MdmConnection, client) -> ConnectionSyncResult:
+    """Providers without an observation ledger: the original pull-everything path."""
+    devices = await client.fetch_devices()
+    connection.last_successful_auth_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    for device in devices:
+        await process_sync(db, device, connection)
+
+    await sync_state(db, connection)
+    await db.commit()
     return ConnectionSyncResult(connection_id=connection.id, device_count=len(devices))
 
 
+async def capture_aperture(client: JamfClient, http: httpx.AsyncClient) -> Aperture:
+    """Read how Jamf is configured to inventory, and stamp it with how we asked.
+
+    Two reads per run (version, inventory-collection settings) — never per device.
+    Either may be unavailable to an API client without the privilege; the aperture
+    records the absence rather than failing the sweep.
+    """
+    version = await client.fetch_version(http)
+    settings = await client.fetch_inventory_collection_settings(http)
+    return build_aperture(
+        host=client.host,
+        jamf_version=version,
+        sections=V0_SECTIONS,
+        inventory_collection=settings,
+    )
+
+
+async def _sync_jamf(
+    db: AsyncSession, connection: MdmConnection, client: JamfClient, *, trigger: str
+) -> ConnectionSyncResult:
+    outcomes: Counter[str] = Counter()
+    device_count = 0
+    group_count = 0
+
+    async with client.http() as http:
+        aperture = await capture_aperture(client, http)
+        aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)
+        connection.last_successful_auth_at = datetime.now(timezone.utc)
+        await db.commit()
+
+        # Streamed, not collected: a 40,000-device tenant is paged through one record
+        # at a time, and each device commits on its own (process_sync), so a failure on
+        # device 30,000 leaves 29,999 correctly recorded.
+        async for raw in client.iter_computers(http, V0_SECTIONS):
+            result = await ingest_computer(
+                db, connection, raw, aperture_digest=aperture_digest, trigger=trigger
+            )
+            outcomes[result.outcome] += 1
+            device_count += 1
+
+        # Group definitions ride along with the device sweep so the catalog is never
+        # older than the memberships that reference it (docs/ingest-scheduling.md §6.2).
+        for raw_group in await client.fetch_smart_groups(http):
+            observation = canonicalize_smart_group(raw_group)
+            result = await record_observation(
+                db,
+                connection_id=connection.id,
+                observation=observation,
+                aperture_digest=aperture_digest,
+                trigger=trigger,
+            )
+            outcomes[f"group_{result.outcome}"] += 1
+            group_count += 1
+        await db.commit()
+
+    await sync_state(db, connection)
+    await db.commit()
+    return ConnectionSyncResult(
+        connection_id=connection.id,
+        device_count=device_count,
+        observations=dict(outcomes),
+        group_count=group_count,
+    )
+
+
+async def ingest_computer(
+    db: AsyncSession,
+    connection: MdmConnection,
+    raw: dict,
+    *,
+    aperture_digest: str,
+    trigger: str,
+) -> RecordResult:
+    """One raw Jamf computer record, through both layers: the observation ledger and
+    the current-state tables. The single function every Jamf ingest path — sweep,
+    manual run, webhook — goes through, so the two layers can never disagree about
+    what was seen.
+
+    The ledger is consulted first because it owns the monotonic guard: if this record
+    is older than what the ledger already holds for the device, neither layer is
+    written. Otherwise the ledger write and process_sync's updates commit together.
+    """
+    observation = canonicalize_computer(raw, V0_SECTIONS)
+    current = await current_span(
+        db,
+        connection_id=connection.id,
+        subject_kind=observation.subject_kind,
+        subject_id=observation.subject_id,
+    )
+    collected_at = datetime.now(timezone.utc)
+    if is_stale(current, observation.observed_at or collected_at):
+        logger.info(
+            "stale observation ignored",
+            extra={
+                "connection_id": connection.id,
+                "subject_id": observation.subject_id,
+                "observed_at": observation.observed_at,
+                "current_observed_at": current.last_observed_at if current else None,
+                "trigger": trigger,
+            },
+        )
+        return RecordResult(
+            outcome="stale",
+            head_digest="",
+            span_id=current.id if current else None,
+        )
+
+    result = await record_observation(
+        db,
+        connection_id=connection.id,
+        observation=observation,
+        aperture_digest=aperture_digest,
+        trigger=trigger,
+        collected_at=collected_at,
+        current=current,
+        current_loaded=True,
+    )
+    await process_sync(db, normalize_computer(raw), connection)
+    return result
+
+
+async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: dict) -> RecordResult | None:
+    """A Jamf webhook names a computer; the inventory comes from a fetch.
+
+    Returns None when the payload names nothing (no jssID) — a test webhook, or an event
+    type that does not carry a computer. The aperture is the one the last run on this
+    connection recorded; before any run has happened it is captured here, so the very
+    first webhook on a fresh connection pays two extra reads and later ones pay none.
+    """
+    client = get_mdm_client(connection)
+    if not isinstance(client, JamfClient):
+        device = client.parse_webhook(payload)
+        await process_sync(db, device, connection)
+        return None
+
+    event = parse_webhook_event(payload)
+    if event.jamf_id is None:
+        logger.info(
+            "jamf webhook carried no computer id; nothing to ingest",
+            extra={"connection_id": connection.id, "event": event.event_name},
+        )
+        return None
+
+    async with client.http() as http:
+        aperture_digest = await latest_aperture_digest(db, connection_id=connection.id)
+        if aperture_digest is None:
+            aperture = await capture_aperture(client, http)
+            aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)
+        raw = await client.fetch_computer_detail(http, event.jamf_id)
+
+    return await ingest_computer(
+        db, connection, raw, aperture_digest=aperture_digest, trigger=TRIGGER_WEBHOOK
+    )
+
+
 async def sync_state(db: AsyncSession, connection: MdmConnection) -> None:
+    """Stamp the run's end on the connection's sync state. Once per run, not per device:
+    the previous per-device call recounted every device row each time, which made a
+    sweep quadratic in fleet size."""
     result = await db.execute(
         select(MdmSyncState).where(MdmSyncState.mdm_connection_id == connection.id)
     )
     state = result.scalar_one_or_none()
 
-    device_count_result = await db.execute(
-        select(Device).where(Device.mdm_connection_id == connection.id)
-    )
-    device_count = len(device_count_result.scalars().all())
+    device_count = (
+        await db.execute(
+            select(func.count()).select_from(Device).where(Device.mdm_connection_id == connection.id)
+        )
+    ).scalar_one()
 
     if state is None:
         state = MdmSyncState(mdm_connection_id=connection.id, provider=connection.provider)
@@ -187,6 +384,11 @@ async def _apply_patch_status(existing: Device, connection: MdmConnection) -> No
 async def process_sync(
     db: AsyncSession, device: NormalizedDevice, connection: MdmConnection
 ) -> InventoryChangedEvent | None:
+    """Bring the current-state tables for one device up to date and emit the delta.
+
+    Commits. Anything the caller wrote to the session before this — the observation
+    ledger's rows for the same device — lands in the same transaction.
+    """
     for app in device.apps:
         apply_hashes(app)
 
@@ -270,7 +472,6 @@ async def process_sync(
 
     await db.flush()
     await _apply_patch_status(existing, connection)
-    await sync_state(db, connection)
 
     if not added and not removed_rows:
         await db.commit()
