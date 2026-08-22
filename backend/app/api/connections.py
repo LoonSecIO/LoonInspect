@@ -19,7 +19,7 @@ from app.core.permissions import Permission
 from app.core.tenancy import reset_tenant_id, set_tenant_id
 from app.mdm.credentials import CREDENTIAL_SCHEMAS, fingerprint_field
 from app.mdm.jamf.client import JamfClient
-from app.mdm.service import set_sync_status, sync_connection
+from app.mdm.service import TRIGGER_MANUAL, set_sync_status, sync_connection
 from app.models.schema import MdmConnection, MdmSyncState
 from app.schemas.connections import (
     MdmConnectionCreate,
@@ -377,7 +377,7 @@ async def _run_connection_sync(connection_id: int, actor: Actor, tenant_id: uuid
             connection = await db.get(MdmConnection, connection_id)
             if connection is None:
                 return
-            await sync_connection(db, connection)
+            await sync_connection(db, connection, trigger=TRIGGER_MANUAL)
     finally:
         reset_tenant_id(tenant_token)
         reset_actor(token)

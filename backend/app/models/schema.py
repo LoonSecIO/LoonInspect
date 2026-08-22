@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Uuid, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -597,3 +597,153 @@ class LoginAttempt(Base):
     failure_count: Mapped[int] = mapped_column(Integer, default=0)
     last_failure_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# --- The observation ledger ---------------------------------------------------------
+#
+# What the Jamf connector writes beneath `devices` / `installed_apps`: a versioned,
+# content-addressed record of what each subject looked like each time it was observed.
+# Shape and rules are in docs/jamf-observations.md; the normalization that produces the
+# digests is app.mdm.jamf.contract. Four tables, top to bottom:
+#
+#   observation_spans      one row per run of identical observations of one subject
+#   observation_sections   one row per distinct section content (by digest)
+#   observation_entries    one row per distinct entry (by digest), shared fleet-wide
+#   observation_apertures  one row per distinct "how we looked" (by digest)
+#
+# Content rows are immutable and never deleted in v0 — a span references them by digest,
+# and the digest is the contract, so a compaction job later must keep anything a span
+# still names. Everything is tenant-scoped and under RLS like the rest of the schema.
+
+
+class ObservationSpan(Base):
+    """A run of consecutive observations of one subject with identical content.
+
+    A new row is written only when the head digest changes — a section's content, or
+    the aperture it was taken through. An observation that matches the current span
+    bumps its `last_observed_at` and `observation_count` instead. That makes storage
+    proportional to change rate rather than sweep count, and makes "sustained for k
+    observations" a column rather than a query.
+
+    The subject is (connection, kind, id): for computers the Jamf computer id, which is
+    also `devices.external_id` on the same connection — the join the UI uses — and for
+    smart groups the group id. udid / serial / management id are carried because lineage
+    is the triple (collector, UDID, serial): a logic-board repair keeps the serial and
+    changes the UDID, so neither hardware key alone identifies a Mac over its life.
+
+    Time is kept twice on purpose. `observed_at` is the device's own inventory time
+    (Jamf's reportDate) and is what the monotonic guard compares, so a sweep reading a
+    stale copy after a webhook wrote a fresh one cannot roll the record back.
+    `collected_at` is our clock. Groups carry no device time, so both are ours.
+    """
+
+    __tablename__ = "observation_spans"
+    __table_args__ = (
+        Index(
+            "ix_observation_spans_subject",
+            "tenant_id", "mdm_connection_id", "subject_kind", "subject_id",
+        ),
+        # The "current" pointer, enforced: at most one open span per subject. Acquisition
+        # is the insert, so two writers racing on one subject cannot both win.
+        Index(
+            "uq_observation_spans_current_subject",
+            "mdm_connection_id", "subject_kind", "subject_id",
+            unique=True,
+            postgresql_where=text("is_current"),
+        ),
+        # Lineage walks (docs/jamf-observations.md §3): the same Mac across re-enrollment,
+        # collectors, or a logic-board repair is found by serial and by UDID.
+        Index("ix_observation_spans_serial", "tenant_id", "serial_number", postgresql_where=text("serial_number IS NOT NULL")),
+        Index("ix_observation_spans_udid", "tenant_id", "udid", postgresql_where=text("udid IS NOT NULL")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    mdm_connection_id: Mapped[int] = mapped_column(
+        ForeignKey("mdm_connections.id", ondelete="CASCADE"), index=True
+    )
+    subject_kind: Mapped[str] = mapped_column(String(32))
+    subject_id: Mapped[str] = mapped_column(String(255))
+    label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    udid: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    serial_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    management_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    contract_version: Mapped[str] = mapped_column(String(8))
+    aperture_digest: Mapped[str] = mapped_column(String(67))
+    head_digest: Mapped[str] = mapped_column(String(67), index=True)
+    # {section name: section digest}. GIN-indexed so "every subject whose applications
+    # section is X" is an index lookup — the second hop of the inverted index.
+    section_digests: Mapped[dict] = mapped_column(JSONB)
+
+    first_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    first_collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    observation_count: Mapped[int] = mapped_column(Integer, default=1)
+    last_trigger: Mapped[str] = mapped_column(String(16))
+
+    previous_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("observation_spans.id", ondelete="SET NULL"), nullable=True
+    )
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class ObservationSection(Base):
+    """The content behind one section digest. Scalar sections store the canonical
+    document; list sections store the sorted array of entry digests, which is exactly
+    what was hashed, so the digest can be re-verified from the row alone."""
+
+    __tablename__ = "observation_sections"
+    __table_args__ = (UniqueConstraint("tenant_id", "digest", name="uq_observation_section_digest"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    digest: Mapped[str] = mapped_column(String(67), index=True)
+    section: Mapped[str] = mapped_column(String(32))
+    body: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # GIN-indexed: "every section content that contains entry X" is the first hop of
+    # Discover, from one entry digest to the spans that carry it.
+    entry_digests: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    entry_count: Mapped[int] = mapped_column(Integer, default=0)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ObservationEntry(Base):
+    """One content-addressed item — an application, a certificate, a group membership —
+    stored once per tenant however many devices carry it. `label` is the one mutable
+    column: a display name the contract deliberately keeps out of the hash (a group or
+    EA can be renamed without the device changing), refreshed when a newer one is seen."""
+
+    __tablename__ = "observation_entries"
+    __table_args__ = (UniqueConstraint("tenant_id", "digest", name="uq_observation_entry_digest"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    digest: Mapped[str] = mapped_column(String(67), index=True)
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    body: Mapped[dict] = mapped_column(JSONB)
+    label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ObservationAperture(Base):
+    """How an observation was taken: collector identity and version, the sections
+    requested, Jamf's inventory-collection settings, the EA quarantine. Part of every
+    head digest, so a change here opens a new span explicitly rather than surfacing as
+    per-section noise across the fleet."""
+
+    __tablename__ = "observation_apertures"
+    __table_args__ = (UniqueConstraint("tenant_id", "digest", name="uq_observation_aperture_digest"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    mdm_connection_id: Mapped[int] = mapped_column(
+        ForeignKey("mdm_connections.id", ondelete="CASCADE"), index=True
+    )
+    digest: Mapped[str] = mapped_column(String(67), index=True)
+    contract_version: Mapped[str] = mapped_column(String(8))
+    document: Mapped[dict] = mapped_column(JSONB)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

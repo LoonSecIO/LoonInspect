@@ -1,0 +1,525 @@
+{
+  "id": "42",
+  "udid": "00008112-000A1D2E3F4G5H6I",
+  "general": {
+    "name": "mbp-ada",
+    "lastIpAddress": "10.20.30.40",
+    "lastReportedIp": "203.0.113.9",
+    "lastReportedIpV4": "203.0.113.9",
+    "lastReportedIpV6": "",
+    "jamfBinaryVersion": "11.16.0-t1738254800",
+    "platform": "Mac",
+    "barcode1": "",
+    "barcode2": "",
+    "assetTag": "LOON-0042",
+    "remoteManagement": {
+      "managed": true,
+      "managementUsername": "jamfadmin"
+    },
+    "supervised": true,
+    "mdmCapable": {
+      "capable": true,
+      "capableUsers": ["ada"],
+      "userManagementInfo": []
+    },
+    "reportDate": "2026-08-21T07:15:42.391Z",
+    "lastContactTime": "2026-08-21T09:02:11.005Z",
+    "lastCloudBackupDate": null,
+    "lastEnrolledDate": "2025-11-03T16:20:07.000Z",
+    "mdmProfileExpiration": "2027-11-03T16:20:07Z",
+    "initialEntryDate": "2025-11-03",
+    "distributionPoint": "",
+    "enrollmentMethod": {
+      "id": "3",
+      "objectName": "Corporate PreStage",
+      "objectType": "PreStage enrollment"
+    },
+    "site": {
+      "id": "-1",
+      "name": "None"
+    },
+    "itunesStoreAccountActive": false,
+    "enrolledViaAutomatedDeviceEnrollment": true,
+    "userApprovedMdm": true,
+    "declarativeDeviceManagementEnabled": true,
+    "extensionAttributes": [
+      {
+        "definitionId": "12",
+        "name": "Crowdstrike Sensor Version",
+        "description": "Falcon sensor version from falconctl",
+        "enabled": true,
+        "multiValue": false,
+        "values": ["7.18.18805.0"],
+        "dataType": "STRING",
+        "options": [],
+        "inputType": "SCRIPT"
+      }
+    ],
+    "managementId": "5f6a0c1e-9d2b-4c3a-8e7f-1a2b3c4d5e6f",
+    "lastLoggedInUsernameSelfService": "ada",
+    "lastLoggedInUsernameSelfServiceTimestamp": "2026-08-20T14:03:00Z",
+    "lastLoggedInUsernameBinary": "ada",
+    "lastLoggedInUsernameBinaryTimestamp": "2026-08-21T07:15:40Z",
+    "lastLoggedInUsernameMdm": "ada",
+    "lastLoggedInUsernameMdmTimestamp": "2026-08-21T07:15:41Z"
+  },
+  "diskEncryption": {
+    "bootPartitionEncryptionDetails": {
+      "partitionName": "Macintosh HD (Boot Partition)",
+      "partitionFileVault2State": "ENCRYPTED",
+      "partitionFileVault2Percent": 100
+    },
+    "individualRecoveryKeyValidityStatus": "VALID",
+    "institutionalRecoveryKeyPresent": false,
+    "diskEncryptionConfigurationName": "FileVault - Individual Key",
+    "fileVault2Enabled": true,
+    "fileVault2EnabledUserNames": ["ada", "localadmin"],
+    "fileVault2EligibilityMessage": ""
+  },
+  "purchasing": {
+    "leased": false,
+    "purchased": true,
+    "poNumber": "PO-2025-1187",
+    "poDate": "2025-10-28",
+    "vendor": "Apple",
+    "appleCareId": "",
+    "purchasePrice": "2499.00",
+    "purchasingAccount": "IT-CAPEX",
+    "purchasingContact": "",
+    "leaseDate": null,
+    "lifeExpectancy": 4,
+    "warrantyDate": "2028-10-28",
+    "extensionAttributes": [
+      {
+        "definitionId": "31",
+        "name": "Cost Center",
+        "description": "",
+        "enabled": true,
+        "multiValue": false,
+        "values": ["CC-4410"],
+        "dataType": "STRING",
+        "options": [],
+        "inputType": "TEXT"
+      }
+    ]
+  },
+  "applications": [
+    {
+      "name": "Safari.app",
+      "path": "/Applications/Safari.app",
+      "version": "17.6",
+      "macAppStore": false,
+      "sizeMegabytes": 15,
+      "bundleId": "com.apple.Safari",
+      "updateAvailable": false,
+      "externalVersionId": "0"
+    },
+    {
+      "name": "Google Chrome.app",
+      "path": "/Applications/Google Chrome.app",
+      "version": "127.0.6533.120",
+      "macAppStore": false,
+      "sizeMegabytes": 612,
+      "bundleId": "com.google.Chrome",
+      "updateAvailable": true,
+      "externalVersionId": "0"
+    },
+    {
+      "name": "Slack.app",
+      "path": "/Applications/Slack.app",
+      "version": "4.39.95",
+      "macAppStore": true,
+      "sizeMegabytes": 330,
+      "bundleId": "com.tinyspeck.slackmacgap",
+      "updateAvailable": false,
+      "externalVersionId": "870212"
+    },
+    {
+      "name": "zoom.us.app",
+      "path": "/Applications/zoom.us.app",
+      "version": "6.1.6 (40155)",
+      "macAppStore": false,
+      "sizeMegabytes": 401,
+      "bundleId": "us.zoom.xos",
+      "updateAvailable": false,
+      "externalVersionId": "0"
+    },
+    {
+      "name": "1Password.app",
+      "path": "/Applications/1Password.app",
+      "version": "8.10.40",
+      "macAppStore": false,
+      "sizeMegabytes": 150,
+      "bundleId": "com.1password.1password",
+      "updateAvailable": false,
+      "externalVersionId": "0"
+    },
+    {
+      "name": "Visual Studio Code.app",
+      "path": "/Applications/Visual Studio Code.app",
+      "version": "1.92.1",
+      "macAppStore": false,
+      "sizeMegabytes": 420,
+      "bundleId": "com.microsoft.VSCode",
+      "updateAvailable": false,
+      "externalVersionId": "0"
+    },
+    {
+      "name": "Docker.app",
+      "path": "/Applications/Docker.app",
+      "version": "4.33.0",
+      "macAppStore": false,
+      "sizeMegabytes": 1890,
+      "bundleId": "com.docker.docker",
+      "updateAvailable": false,
+      "externalVersionId": "0"
+    },
+    {
+      "name": "Falcon.app",
+      "path": "/Applications/Falcon.app",
+      "version": "7.18.18805.0",
+      "macAppStore": false,
+      "sizeMegabytes": 68,
+      "bundleId": "com.crowdstrike.falcon.App",
+      "updateAvailable": false,
+      "externalVersionId": "0"
+    },
+    {
+      "name": "Self Service.app",
+      "path": "/Applications/Self Service.app",
+      "version": "11.16.0-t1738254800",
+      "macAppStore": false,
+      "sizeMegabytes": 90,
+      "bundleId": "com.jamfsoftware.selfservice.mac",
+      "updateAvailable": false,
+      "externalVersionId": "0"
+    },
+    {
+      "name": "Microsoft Excel.app",
+      "path": "/Applications/Microsoft Excel.app",
+      "version": "16.87",
+      "macAppStore": false,
+      "sizeMegabytes": 2010,
+      "bundleId": "com.microsoft.Excel",
+      "updateAvailable": false,
+      "externalVersionId": "0"
+    },
+    {
+      "name": "Café Tool.app",
+      "path": "/Applications/Café Tool.app",
+      "version": "2.0",
+      "macAppStore": false,
+      "sizeMegabytes": 3,
+      "bundleId": "io.example.cafetool",
+      "updateAvailable": false,
+      "externalVersionId": "0"
+    },
+    {
+      "name": "Keka.app",
+      "path": "/Users/ada/Applications/Keka.app",
+      "version": "1.4.3",
+      "macAppStore": false,
+      "sizeMegabytes": 34,
+      "bundleId": "com.aone.keka",
+      "updateAvailable": false,
+      "externalVersionId": "0"
+    }
+  ],
+  "storage": {
+    "bootDriveAvailableSpaceMegabytes": 312044,
+    "disks": [
+      {
+        "id": "0",
+        "device": "disk0",
+        "model": "APPLE SSD AP1024Z",
+        "revision": "",
+        "serialNumber": "0ba0123456789abc",
+        "sizeMegabytes": 994662,
+        "smartStatus": "Verified",
+        "type": "SSD",
+        "partitions": [
+          {
+            "name": "Macintosh HD",
+            "sizeMegabytes": 994662,
+            "availableMegabytes": 312044,
+            "partitionType": "BOOT",
+            "percentUsed": 68,
+            "fileVault2State": "ENCRYPTED",
+            "fileVault2ProgressPercent": 100,
+            "lvmManaged": false
+          }
+        ]
+      }
+    ]
+  },
+  "userAndLocation": {
+    "username": "ada",
+    "realname": "Ada Lovelace",
+    "email": "ada@example.com",
+    "position": "Staff Engineer",
+    "phone": "",
+    "departmentId": "7",
+    "buildingId": "2",
+    "room": "4.12",
+    "extensionAttributes": [
+      {
+        "definitionId": "18",
+        "name": "Manager",
+        "description": "From LDAP",
+        "enabled": true,
+        "multiValue": false,
+        "values": ["charles@example.com"],
+        "dataType": "STRING",
+        "options": [],
+        "inputType": "LDAP"
+      }
+    ]
+  },
+  "configurationProfiles": [
+    {
+      "id": "11",
+      "username": "",
+      "lastInstalled": "2025-11-03T16:21:09Z",
+      "removable": false,
+      "displayName": "FileVault Escrow",
+      "profileIdentifier": "com.example.fv.escrow",
+      "uuid": "3C1A7A2E-5E0B-4F6C-9D8A-0F1E2D3C4B5A"
+    },
+    {
+      "id": "14",
+      "username": "",
+      "lastInstalled": "2026-02-10T11:40:22Z",
+      "removable": false,
+      "displayName": "Falcon PPPC + System Extension",
+      "profileIdentifier": "com.example.falcon.pppc",
+      "uuid": "9B8A7C6D-5E4F-4A3B-2C1D-0E9F8A7B6C5D"
+    }
+  ],
+  "printers": [],
+  "services": [],
+  "hardware": {
+    "make": "Apple",
+    "model": "MacBook Pro (14-inch, Nov 2023)",
+    "modelIdentifier": "Mac15,7",
+    "serialNumber": "C02ZL0ONSEC1",
+    "processorSpeedMhz": 0,
+    "processorCount": 1,
+    "coreCount": 12,
+    "processorType": "Apple M3 Pro",
+    "processorArchitecture": "arm64",
+    "busSpeedMhz": 0,
+    "cacheSizeKilobytes": 0,
+    "networkAdapterType": "IEEE80211",
+    "macAddress": "AA:BB:CC:DD:EE:01",
+    "altNetworkAdapterType": "Ethernet",
+    "altMacAddress": "AA:BB:CC:DD:EE:02",
+    "totalRamMegabytes": 36864,
+    "openRamSlots": 0,
+    "batteryCapacityPercent": 91,
+    "batteryHealth": "NORMAL",
+    "smcVersion": "",
+    "nicSpeed": "n/a",
+    "opticalDrive": "",
+    "bootRom": "10151.140.19",
+    "bleCapable": true,
+    "supportsIosAppInstalls": true,
+    "appleSilicon": true,
+    "provisioningUdid": "00008112-000A1D2E3F4G5H6I",
+    "extensionAttributes": [
+      {
+        "definitionId": "9",
+        "name": "Uptime Days",
+        "description": "Days since last boot",
+        "enabled": true,
+        "multiValue": false,
+        "values": ["13"],
+        "dataType": "INTEGER",
+        "options": [],
+        "inputType": "SCRIPT"
+      }
+    ]
+  },
+  "localUserAccounts": [
+    {
+      "uid": "501",
+      "userGuid": "A1B2C3D4-0001-4000-8000-000000000501",
+      "username": "ada",
+      "fullName": "Ada Lovelace",
+      "admin": false,
+      "homeDirectory": "/Users/ada",
+      "homeDirectorySizeMb": 48211,
+      "fileVault2Enabled": true,
+      "userAccountType": "LOCAL",
+      "passwordMinLength": 12,
+      "passwordMaxAge": 0,
+      "passwordMinComplexCharacters": 0,
+      "passwordHistoryDepth": 0,
+      "passwordRequireAlphanumeric": false,
+      "computerAzureActiveDirectoryId": "",
+      "userAzureActiveDirectoryId": "",
+      "azureActiveDirectoryId": "UNKNOWN"
+    },
+    {
+      "uid": "502",
+      "userGuid": "A1B2C3D4-0001-4000-8000-000000000502",
+      "username": "localadmin",
+      "fullName": "Local Admin",
+      "admin": true,
+      "homeDirectory": "/Users/localadmin",
+      "homeDirectorySizeMb": 120,
+      "fileVault2Enabled": true,
+      "userAccountType": "LOCAL",
+      "passwordMinLength": 12,
+      "passwordMaxAge": 0,
+      "passwordMinComplexCharacters": 0,
+      "passwordHistoryDepth": 0,
+      "passwordRequireAlphanumeric": false,
+      "computerAzureActiveDirectoryId": "",
+      "userAzureActiveDirectoryId": "",
+      "azureActiveDirectoryId": "UNKNOWN"
+    }
+  ],
+  "certificates": [
+    {
+      "commonName": "JSS Built-in Certificate Authority",
+      "identity": false,
+      "expirationDate": "2034-11-01T00:00:00Z",
+      "username": "",
+      "lifecycleStatus": "ACTIVE",
+      "certificateStatus": "ISSUED",
+      "subjectName": "CN=JSS Built-in Certificate Authority",
+      "serialNumber": "0A1B2C3D",
+      "sha1Fingerprint": "1111111111111111111111111111111111111111",
+      "issuedDate": "2024-11-01T00:00:00Z"
+    },
+    {
+      "commonName": "5f6a0c1e-9d2b-4c3a-8e7f-1a2b3c4d5e6f",
+      "identity": true,
+      "expirationDate": "2027-11-03T16:20:07Z",
+      "username": "",
+      "lifecycleStatus": "ACTIVE",
+      "certificateStatus": "ISSUED",
+      "subjectName": "CN=5f6a0c1e-9d2b-4c3a-8e7f-1a2b3c4d5e6f",
+      "serialNumber": "7E8F9A0B",
+      "sha1Fingerprint": "2222222222222222222222222222222222222222",
+      "issuedDate": "2025-11-03T16:20:07Z"
+    },
+    {
+      "commonName": "Example Corp Wi-Fi",
+      "identity": true,
+      "expirationDate": "2026-09-15T00:00:00Z",
+      "username": "ada",
+      "lifecycleStatus": "ACTIVE",
+      "certificateStatus": "EXPIRING",
+      "subjectName": "CN=ada,OU=Staff,O=Example Corp",
+      "serialNumber": "3C4D5E6F",
+      "sha1Fingerprint": "3333333333333333333333333333333333333333",
+      "issuedDate": "2025-09-15T00:00:00Z"
+    }
+  ],
+  "attachments": [],
+  "plugins": [],
+  "packageReceipts": {
+    "installedByJamfPro": ["FalconSensor-7.18.pkg", "Chrome-127.pkg"],
+    "installedByInstallerSwu": ["com.apple.pkg.Safari"],
+    "cached": []
+  },
+  "fonts": [],
+  "security": {
+    "sipStatus": "ENABLED",
+    "gatekeeperStatus": "APP_STORE_AND_IDENTIFIED_DEVELOPERS",
+    "xprotectVersion": "5281",
+    "autoLoginDisabled": true,
+    "remoteDesktopEnabled": false,
+    "activationLockEnabled": true,
+    "recoveryLockEnabled": true,
+    "firewallEnabled": true,
+    "secureBootLevel": "FULL_SECURITY",
+    "externalBootLevel": "DISALLOW_BOOTING_FROM_EXTERNAL_MEDIA",
+    "bootstrapTokenAllowed": true,
+    "bootstrapTokenEscrowedStatus": "ESCROWED",
+    "lastAttestationAttempt": "2026-08-21T07:15:30Z",
+    "lastSuccessfulAttestation": "2026-08-21T07:15:31Z",
+    "attestationStatus": "SUCCESS"
+  },
+  "operatingSystem": {
+    "name": "macOS",
+    "version": "14.6.1",
+    "build": "23G93",
+    "supplementalBuildVersion": "",
+    "rapidSecurityResponse": "",
+    "activeDirectoryStatus": "Not Bound",
+    "fileVault2Status": "ALL_ENCRYPTED",
+    "softwareUpdateDeviceId": "J514sAP",
+    "extensionAttributes": [
+      {
+        "definitionId": "22",
+        "name": "Last OS Update Check",
+        "description": "",
+        "enabled": true,
+        "multiValue": false,
+        "values": ["2026-08-20"],
+        "dataType": "DATE_TIME",
+        "options": [],
+        "inputType": "SCRIPT"
+      }
+    ]
+  },
+  "licensedSoftware": [],
+  "ibeacons": [],
+  "softwareUpdates": [
+    {
+      "name": "macOS Sonoma 14.6.1",
+      "version": "14.6.1",
+      "packageName": ""
+    }
+  ],
+  "extensionAttributes": [
+    {
+      "definitionId": "5",
+      "name": "Battery Cycle Count",
+      "description": "",
+      "enabled": true,
+      "multiValue": false,
+      "values": ["212"],
+      "dataType": "INTEGER",
+      "options": [],
+      "inputType": "SCRIPT"
+    },
+    {
+      "definitionId": "27",
+      "name": "Departments Served",
+      "description": "LDAP multi-value",
+      "enabled": true,
+      "multiValue": true,
+      "values": ["Research", "Engineering"],
+      "dataType": "STRING",
+      "options": [],
+      "inputType": "LDAP"
+    }
+  ],
+  "contentCaching": {
+    "computerContentCachingInformationId": "0",
+    "activated": false
+  },
+  "groupMemberships": [
+    {
+      "groupId": "3",
+      "groupName": "All Managed Clients",
+      "groupDescription": "",
+      "smartGroup": true
+    },
+    {
+      "groupId": "17",
+      "groupName": "Falcon Installed",
+      "groupDescription": "Devices with the Falcon sensor present",
+      "smartGroup": true
+    },
+    {
+      "groupId": "40",
+      "groupName": "Engineering Laptops",
+      "groupDescription": "",
+      "smartGroup": false
+    }
+  ]
+}
