@@ -60,6 +60,9 @@ class RecordResult:
     head_digest: str
     span_id: uuid.UUID | None = None
     changed_sections: tuple[str, ...] = ()
+    # The span this one closed, when the outcome is `changed` — what the change log
+    # diffs against.
+    previous_span_id: uuid.UUID | None = None
 
 
 def _utcnow() -> datetime:
@@ -266,4 +269,10 @@ async def record_observation(
     )
     db.add(span)
     await db.flush()
-    return RecordResult(outcome=outcome, head_digest=head_digest, span_id=span.id, changed_sections=changed)
+    return RecordResult(
+        outcome=outcome,
+        head_digest=head_digest,
+        span_id=span.id,
+        changed_sections=changed,
+        previous_span_id=previous_id,
+    )

@@ -16,6 +16,8 @@ import { CompliancePage } from "@/features/devices/CompliancePage";
 import { UsersPage } from "@/features/users/UsersPage";
 import { IntegrationsPage } from "@/features/integrations/IntegrationsPage";
 import { AIPage } from "@/features/ai/AIPage";
+import { ChangesPage } from "@/features/changes/ChangesPage";
+import { ChangeTrackingPage } from "@/features/changes/ChangeTrackingPage";
 import { ConnectionsPage } from "@/features/mdm/ConnectionsPage";
 import { FeatureFlagsPage } from "@/features/settings/FeatureFlagsPage";
 import { DataSharingPage } from "@/features/system/DataSharingPage";
@@ -45,11 +47,13 @@ export function AppRoutes() {
         </Route>
         <Route path="devices/groups" element={<GroupsPage />} />
         <Route path="devices/compliance" element={<CompliancePage />} />
+        <Route path="devices/changes" element={<ChangesPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="integrations" element={<IntegrationsPage />} />
         <Route path="ai" element={<AIPage />} />
         <Route element={<RequirePermission permission={PERMISSIONS.CONNECTION_READ} />}>
           <Route path="settings/connections" element={<ConnectionsPage />} />
+          <Route path="settings/change-tracking" element={<ChangeTrackingPage />} />
         </Route>
         <Route element={<RequirePermission permission={PERMISSIONS.FEATURE_FLAG_WRITE} />}>
           <Route path="settings/feature-flags" element={<FeatureFlagsPage />} />

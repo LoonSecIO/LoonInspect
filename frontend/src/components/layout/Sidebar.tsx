@@ -1,5 +1,5 @@
 import { useMemo, type ComponentType } from "react";
-import { AlertTriangle, AppWindow, Database, Flag, Home, KeyRound, Layers, Plug, Send, Settings, ShieldCheck, UserCircle, UserCog, Users, Share2 } from "lucide-react";
+import { AlertTriangle, AppWindow, Database, Flag, History, Home, KeyRound, Layers, ListChecks, Plug, Send, Settings, ShieldCheck, UserCircle, UserCog, Users, Share2 } from "lucide-react";
 import { NavLink } from "react-router";
 import { cn } from "@/lib/utils";
 import { FlaskLogo } from "@/components/icons/FlaskLogo";
@@ -36,7 +36,8 @@ const navigationItems: NavItem[] = [
     children: [
       { labelKey: "applications", icon: AppWindow, to: "/devices/applications", end: false },
       { labelKey: "groups", icon: Layers, to: "/devices/groups", end: false },
-      { labelKey: "compliance", icon: ShieldCheck, to: "/devices/compliance", end: false }
+      { labelKey: "compliance", icon: ShieldCheck, to: "/devices/compliance", end: false },
+      { labelKey: "changes", icon: History, to: "/devices/changes", end: false }
     ]
   },
   { labelKey: "users", icon: Users, to: "/users", end: false },
@@ -53,6 +54,13 @@ const navigationItems: NavItem[] = [
         labelKey: "connections",
         icon: Plug,
         to: "/settings/connections",
+        end: false,
+        permission: PERMISSIONS.CONNECTION_READ
+      },
+      {
+        labelKey: "changeTracking",
+        icon: ListChecks,
+        to: "/settings/change-tracking",
         end: false,
         permission: PERMISSIONS.CONNECTION_READ
       },

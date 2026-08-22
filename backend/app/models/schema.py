@@ -811,3 +811,72 @@ class Collection(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+# --- The change log -------------------------------------------------------------------
+
+
+class ChangePolicy(Base):
+    """One row per tenant: what an admin changed about the default change-log policy
+    (app.changes.policy). Stored sparse — only the overrides — so a field the admin never
+    touched follows future defaults and an explicit choice persists."""
+
+    __tablename__ = "change_policies"
+    __table_args__ = (UniqueConstraint("tenant_id", name="uq_change_policy_tenant"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    version: Mapped[str] = mapped_column(String(8))
+    overrides: Mapped[dict] = mapped_column(JSONB, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+    updated_by_account_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+
+class DeviceChange(Base):
+    """One logged change: a field that moved or an entry that was added, removed, or
+    updated between two spans of one subject, after the policy said it matters.
+
+    Derived from the ledger and deletable without loss — the spans hold the truth and a
+    re-derivation under a different policy is always possible. Carries the correlation
+    key the author dedups on in Splunk (serial, Jamf URL via the connection, Jamf id)
+    plus the UDID, and both span ids so any change can be walked back to the evidence.
+    """
+
+    __tablename__ = "device_changes"
+    __table_args__ = (
+        Index("ix_device_changes_recent", "tenant_id", "observed_at"),
+        Index("ix_device_changes_subject", "tenant_id", "mdm_connection_id", "subject_kind", "subject_id", "observed_at"),
+        Index("ix_device_changes_section", "tenant_id", "section", "observed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    mdm_connection_id: Mapped[int] = mapped_column(ForeignKey("mdm_connections.id", ondelete="CASCADE"), index=True)
+    subject_kind: Mapped[str] = mapped_column(String(32))
+    subject_id: Mapped[str] = mapped_column(String(255))
+    subject_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    serial_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    udid: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    span_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("observation_spans.id", ondelete="SET NULL"), nullable=True
+    )
+    previous_span_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("observation_spans.id", ondelete="SET NULL"), nullable=True
+    )
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    trigger: Mapped[str] = mapped_column(String(16))
+
+    section: Mapped[str] = mapped_column(String(32))
+    field: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    entry_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    entry_identity: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    entry_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    change: Mapped[str] = mapped_column(String(16))  # changed | added | removed | updated
+    old_value: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    new_value: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    level: Mapped[str] = mapped_column(String(8), index=True)
+    details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    policy_version: Mapped[str] = mapped_column(String(8))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

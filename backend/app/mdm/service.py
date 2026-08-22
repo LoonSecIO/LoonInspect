@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.changes.derive import derive_and_record
 from app.core.content_keys import app_full_key, app_title_key
 from app.core.context import get_request_id
 from app.core.hashing import compute_app_hash, compute_version_hash
@@ -306,6 +307,8 @@ async def _observe_groups(
             aperture_digest=aperture_digest,
             trigger=trigger,
         )
+        if result.outcome == "changed":
+            await derive_and_record(db, connection=connection, observation=observation, result=result, trigger=trigger)
         outcomes[f"group_{result.outcome}"] += 1
         group_count += 1
     return group_count
@@ -424,6 +427,12 @@ async def ingest_computer(
         current=current,
         current_loaded=True,
     )
+    if result.outcome == "changed":
+        # The change log is derived from the two spans and written in the same
+        # transaction as the device's state tables below.
+        await derive_and_record(
+            db, connection=connection, observation=observation, result=result, trigger=trigger, collected_at=collected_at
+        )
     await process_sync(db, normalize_computer(raw), connection)
     return result
 

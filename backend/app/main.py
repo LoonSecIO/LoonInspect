@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.accounts import router as accounts_router
 from app.api.applications import router as applications_router
 from app.api.auth import router as auth_router
+from app.api.changes import router as changes_router
 from app.api.collections import router as collections_router
 from app.api.connections import router as connections_router
 from app.api.destinations import router as destinations_router
@@ -360,6 +361,7 @@ app.include_router(api_router)
 app.include_router(webhooks_router)
 app.include_router(connections_router)
 app.include_router(collections_router)
+app.include_router(changes_router)
 app.include_router(destinations_router)
 app.include_router(system_router)
 app.include_router(devices_router)
