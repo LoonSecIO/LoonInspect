@@ -56,9 +56,13 @@ OS_VERSION = "Operating System Version"
 PLATFORM = "Platform"
 EXTENSION_ATTRIBUTE = "extensionAttribute"
 
-# Tests that are about the app rather than the device. A title with none of these in any group
-# (the "Apple macOS …" titles) describes the device and is not an application title.
+# Tests that are about the app rather than the device.
 APP_TESTS = frozenset({BUNDLE_ID, APPLICATION_TITLE, APPLICATION_VERSION})
+# The tests that can *identify* an app. Kyle's rule (2026-08-22): only consider a title that has
+# at least one recon test on the bundle ID or the application title — a version alone, an
+# OS version ("Apple macOS …") or an extension attribute alone (the `jamf-patch-*` titles)
+# cannot say which installed app the title is about.
+IDENTIFYING_TESTS = frozenset({BUNDLE_ID, APPLICATION_TITLE})
 
 
 @dataclass(frozen=True)
@@ -214,9 +218,12 @@ def _tests(groups: Sequence[Mapping]):
 
 
 def is_app_level(groups: Sequence[Mapping]) -> bool:
-    """Whether the title is about an application at all: any app test, or an extension attribute
-    (the `jamf-patch-*` attributes report an installed app's version)."""
-    return any(test.get("type") == EXTENSION_ATTRIBUTE or test.get("name") in APP_TESTS for test in _tests(groups))
+    """Whether the title can identify an installed app: at least one recon test on the bundle
+    ID or the application title (Kyle's rule). Device-level titles ("Apple macOS …"),
+    attribute-only titles (the `jamf-patch-*` set) and version-only titles are not considered."""
+    return any(
+        test.get("type") != EXTENSION_ATTRIBUTE and test.get("name") in IDENTIFYING_TESTS for test in _tests(groups)
+    )
 
 
 def required_bundle_ids(groups: Sequence[Mapping]) -> frozenset[str] | None:

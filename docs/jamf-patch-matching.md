@@ -23,11 +23,12 @@ rows are written — each installed app is tested against the Jamf Patch catalog
 3. **Whether Jamf has seen the installed version** — it appears in `patches[].version`, exact —
    and when Jamf says it was released.
 
-The answer is stored one row per (app, title) in `installed_app_patch_matches` and summarised on
-`installed_apps` (§5). It is re-derived on every process of the device; the daily sweep
-re-processes every device, so a catalog refresh reaches every app within one sweep. Nothing
-else writes these columns today; a connection's own patch provider (LoonSecIO, later) overlays
-them after the catalog pass.
+The answer is stored one row per (distinct app, title) in `app_catalog_title_matches` (#67: the
+tenant app catalog, `docs/app-catalog.md`) and summarised on the catalog row and on
+`installed_apps` (§5). A (name, bundle ID, version) is judged the moment the fleet first shows it
+and re-judged after every Jamf catalog sync (`docs/app-catalog.md` §3). Nothing else writes
+these columns today; a connection's own patch provider (LoonSecIO, later) overlays them after
+the catalog pass.
 
 ## 2. The requirements, and the `and` flag
 
@@ -65,42 +66,37 @@ Operators actually in use in the catalog, and their meaning here:
 `like` being substring is load-bearing: 1Password 4's one group reads `Bundle ID is … AND Version
 like "4." AND Bundle ID is … AND Version not like "5.4."` because "5.4.3" *is* like "4.".
 
-A test whose fact is unknown — an extension attribute the device does not carry, an OS version we
-were not given, a test name or operator we do not know — is **not applicable**, never a pass.
+A test whose fact is unknown — an OS version we were not given, a test name or operator we do
+not know — is **not applicable**, never a pass (extension attributes are the exception, §4).
 A group with a failure is not matched; a group with no failure but something not applicable is
 inconclusive; only a group whose every test passed is matched. A title matches when any group
 matches, is inconclusive when none matches but one is inconclusive, otherwise does not match.
-Titles with no app-level test at all ("Apple macOS …", 14 of them) describe the device and are
-not application titles; they are skipped here.
+
+**Which titles are considered** (Kyle's rule): only a title with at least one `recon` test on
+`Application Bundle ID` or `Application Title` — the tests that can identify an installed app.
+That is 1,248 of 1,549. The 301 others — device-level ("Apple macOS …"), attribute-only (the
+`jamf-patch-*` set: JDKs, Node, Python, daemons, and a few apps Jamf tells apart only by
+attribute, such as PyCharm Professional and Firefox) and version-only titles — are the patching
+agent's business and are never matched here.
 
 ## 4. The matcher
 
-For each installed app, the candidates are every title whose every group pins the bundle ID with
-`is` and names the app's bundle ID, plus every title that cannot be narrowed that way (title-only,
-attribute-only, `like` on the bundle ID — about 320). Each candidate is evaluated:
+For each installed app, the candidates are every considered title whose every group pins the
+bundle ID with `is` and names the app's bundle ID, plus every title that cannot be narrowed that
+way (title-only, `like` on the bundle ID, a group without a bundle test). Each candidate is evaluated:
 
 - `matched` → a match; anything else → no match. Inconclusive never counts.
 
-**Extension attributes** (Kyle, 2026-08-22). Jamf uses an attribute where inventory cannot tell
-titles apart — PyCharm Community vs Professional, Firefox vs Firefox ESR, the `jamf-patch-*`
-attributes — a *scoping* device, not a fact about the app. So an attribute the device carries
-is read for real (by the requirement's name, i.e. the definition's `key`, or by the definition's
-`displayName`, which is what Jamf Pro calls the attribute it creates; an attribute present and
-empty is Jamf's "not installed"); one it does not carry **resolves TRUE**, and the match is
-recorded with `basis = ea_assumed` so the assumption stays visible. Because the attribute is
-about the device, a group made only of attribute tests can never identify an app by itself: in
-a title that also has app tests such a group is ignored ("JetBrains PyCharm Community" is
-`[attribute] OR [Bundle ID is com.jetbrains.pycharm.ce]` — the second group decides), and a
-title whose tests are *only* attributes is identified by its own `bundleId` column — it matches
-the app with that bundle ID. A title with only attributes and no bundle ID at all (JDKs, Node,
-Python, daemons: nothing an app list can version, 92 titles) is the patching agent's and is
-never matched here.
-
-Attribute tests are evaluated against the device's extension attributes by the name the
-requirement uses (the definition's `key`) **or** the definition's `displayName`, which is what
-Jamf Pro calls the attribute it creates when a tenant subscribes to the title; the sync keeps
-both (`jamf_patch_titles.extension_attributes`). An attribute the device carries with an empty
-value is Jamf's "not installed", not an unknown.
+**Extension attributes inside a considered title** (Kyle, 2026-08-22) are Jamf's *scoping*
+device for collisions — PyCharm Community vs Professional, Firefox vs Firefox ESR — not a fact
+about the app. So an attribute the device carries is read for real (by the requirement's name,
+i.e. the definition's `key`, or by the definition's `displayName`, which is what Jamf Pro calls
+the attribute it creates; an attribute present and empty is Jamf's "not installed"); one it does
+not carry **resolves TRUE**, and the match is recorded with `basis = ea_assumed` so the
+assumption stays visible. Because the attribute is about the device, a group made only of
+attribute tests can never identify an app by itself and is ignored ("JetBrains PyCharm
+Community" is `[attribute] OR [Bundle ID is com.jetbrains.pycharm.ce]` — the second group
+decides).
 
 Per match, the version answers: `version_known` (any of the app's version strings is in
 `patches`), `on_latest` (equals `currentVersion`), and `state`:
@@ -123,12 +119,14 @@ Camtasia" (2026.2.0). Both answers are kept.
 
 ## 5. Storage and the summary
 
-`installed_app_patch_matches` (tenant-scoped, RLS): `installed_app_id`, `title_id`, `basis`,
+The answer is stored per distinct app, not per device, since #67 — `app_catalog` and
+`app_catalog_title_matches` (`docs/app-catalog.md`); a device reaches it through
+`installed_apps.version_hash`. Per (catalog row, title): `title_id`, `basis`,
 `state`, `version_known`, `on_latest`, `installed_version`, `installed_released_at`,
 `latest_version`, `latest_released_at`, `first_newer_released_at`, `evaluated_at`; unique per
-(app, title); replaced wholesale each time the device is processed; cascades with the app row.
+(row, title); replaced wholesale each time the row is judged; cascades with the catalog row.
 
-On `installed_apps`, derived from the set. **Latest is Kyle's rule: at least one matched title
+On the catalog row — and copied onto every `installed_apps` row with that `version_hash` — derived from the set. **Latest is Kyle's rule: at least one matched title
 says the installed version is its current one** — a Firefox ESR user on the latest ESR is
 latest although the rolling "Mozilla Firefox" title says behind; Camtasia 2022 on 2022.6.10 is
 latest on its line. The title that says so is the reference; otherwise the **rolling title** (the
@@ -148,11 +146,11 @@ vendor ships now:
 
 All null when nothing matched. `ahead` is its own state: neither compliant nor patch-available.
 
-The real Mac mini (83 apps) resolves 12 apps to 14 rows: Xcode 26.6 on latest; Camtasia 2022 on
+The real Mac mini (83 apps) resolves 11 apps to 13 rows: Xcode 26.6 on latest; Camtasia 2022 on
 the latest of its line (and behind the rolling title — both kept); Slack, Docker, Zoom, Postman,
-Codex, Bambu Studio, Self Service, Wireshark behind with the version known to Jamf; Safari ahead;
-PyCharm with its scoping attribute assumed. The other 71 apps — 64 of them under `/System` —
-match nothing. `tests/test_patch_matching.py` pins exactly that.
+Codex, Bambu Studio, Self Service, Wireshark behind with the version known to Jamf; Safari ahead.
+PyCharm's only title is attribute-only and is not considered. The other 72 apps — 64 of them
+under `/System` — match nothing. `tests/test_patch_matching.py` pins exactly that.
 
 ## 6. Surfaces
 

@@ -188,7 +188,8 @@ class InstalledApp(Base):
     # version, and whether Jamf has listed this version. One row per (app, title) in
     # installed_app_patch_matches carries the detail; is_compliant / patch_available /
     # patch_available_since above are the same answer folded into the older columns.
-    jamf_title_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # none_as_null: "no titles" is SQL NULL, not a JSON null, so `IS NULL` means what it says.
+    jamf_title_ids: Mapped[list | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     patch_state: Mapped[str | None] = mapped_column(String(16), nullable=True)  # latest | behind | ahead | unknown
     this_version_seen: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     latest_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -237,26 +238,66 @@ class JamfPatchTitle(Base):
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
-class InstalledAppPatchMatch(Base):
-    """One installed app matched to one Jamf Patch title, with the version answers — written
-    at device process by app.mdm.patch.matching and replaced wholesale each time the device is
-    processed. An app can belong to more than one title (a versioned line and the rolling
-    title), which is why this is a row per pair rather than a column on the app.
-
-    `basis` says how the title was decided: `requirements` (every criterion evaluated and met)
-    or `ea_assumed` (an extension attribute this device does not carry was resolved TRUE —
-    Jamf's scoping device, not a fact about the app). `state` is latest | behind | ahead | unknown.
+class AppCatalogEntry(Base):
+    """The tenant app catalog: one row per distinct (name, bundle ID, version[, short version])
+    the fleet has shown — keyed by the same `version_hash` every installed app carries — with
+    when it was first and last seen on any device, and Jamf's answer for it (which titles, is it
+    the latest, has Jamf seen this version, when was it released). Rows are written at device
+    process and judged against the patch catalog at first sight and after every catalog sync
+    (`evaluated_signature` says which catalog). Devices reach their answer through
+    `installed_apps.version_hash`; the columns of the same name on `installed_apps` are copies.
     """
 
-    __tablename__ = "installed_app_patch_matches"
+    __tablename__ = "app_catalog"
     __table_args__ = (
-        UniqueConstraint("installed_app_id", "title_id", name="uq_installed_app_patch_match"),
-        Index("ix_installed_app_patch_matches_title", "tenant_id", "title_id"),
+        UniqueConstraint("tenant_id", "version_hash", name="uq_app_catalog_version"),
+        Index("ix_app_catalog_app", "tenant_id", "app_hash"),
+        Index("ix_app_catalog_last_seen", "tenant_id", "last_seen_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
-    installed_app_id: Mapped[int] = mapped_column(ForeignKey("installed_apps.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    bundle_id: Mapped[str] = mapped_column(String(255))
+    version: Mapped[str] = mapped_column(String(64))
+    short_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    app_hash: Mapped[str] = mapped_column(String(32))
+    version_hash: Mapped[str] = mapped_column(String(32))
+    key_title: Mapped[str] = mapped_column(String(67))
+    key_full: Mapped[str] = mapped_column(String(67), index=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    jamf_title_ids: Mapped[list | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    patch_state: Mapped[str | None] = mapped_column(String(16), nullable=True)  # latest | behind | ahead | unknown
+    is_latest: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    patch_available: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    patch_available_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    this_version_seen: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    latest_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    latest_released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Jamf's release date of the installed version itself.
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    evaluated_signature: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class AppCatalogTitleMatch(Base):
+    """One catalog row matched to one Jamf Patch title, with the version answers — replaced
+    wholesale each time the row is judged. `basis` is `requirements` (every criterion evaluated
+    and met) or `ea_assumed` (an extension attribute was resolved TRUE — Jamf's scoping device,
+    not a fact about the app). `state` is latest | behind | ahead | unknown.
+    """
+
+    __tablename__ = "app_catalog_title_matches"
+    __table_args__ = (
+        UniqueConstraint("app_catalog_id", "title_id", name="uq_app_catalog_title_match"),
+        Index("ix_app_catalog_title_matches_title", "tenant_id", "title_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    app_catalog_id: Mapped[int] = mapped_column(ForeignKey("app_catalog.id", ondelete="CASCADE"), index=True)
     title_id: Mapped[str] = mapped_column(ForeignKey("jamf_patch_titles.id", ondelete="CASCADE"))
     basis: Mapped[str] = mapped_column(String(16))
     state: Mapped[str] = mapped_column(String(16))
@@ -266,9 +307,32 @@ class InstalledAppPatchMatch(Base):
     installed_released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     latest_version: Mapped[str] = mapped_column(String(64))
     latest_released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # Jamf's release date of the earliest listed version newer than the installed one.
     first_newer_released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AppCatalogVersion(Base):
+    """Jamf's side of the catalog as a local lookup: one row per title x bundle ID x listed
+    version, with the hashes LoonInspect stamps on installed apps precomputed where Jamf names
+    the app (`appName`). Global, like `jamf_patch_titles`; rebuilt after each catalog sync.
+    """
+
+    __tablename__ = "app_catalog_versions"
+    __table_args__ = (Index("ix_app_catalog_versions_bundle_version", "bundle_id", "version"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title_id: Mapped[str] = mapped_column(ForeignKey("jamf_patch_titles.id", ondelete="CASCADE"), index=True)
+    title_name: Mapped[str] = mapped_column(String(255))
+    publisher: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    app_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    bundle_id: Mapped[str] = mapped_column(String(255))
+    version: Mapped[str] = mapped_column(String(64))
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_latest: Mapped[bool] = mapped_column(Boolean, default=False)
+    app_hash: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    version_hash: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    key_title: Mapped[str | None] = mapped_column(String(67), nullable=True)
+    key_full: Mapped[str | None] = mapped_column(String(67), nullable=True, index=True)
 
 
 class DataSharingSettings(Base):

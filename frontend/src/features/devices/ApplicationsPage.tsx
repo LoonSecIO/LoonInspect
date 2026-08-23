@@ -59,6 +59,9 @@ export function ApplicationsPage() {
         <NavLink to="/devices/applications" end className={({ isActive }) => cn(tabClasses, tabStateClasses(isActive))}>
           {t.applications.tabInstalled}
         </NavLink>
+        <NavLink to="/devices/applications/catalog" className={({ isActive }) => cn(tabClasses, tabStateClasses(isActive))}>
+          {t.catalog.tabLabel}
+        </NavLink>
         {jamfPatchEnabled && (
           <NavLink
             to="/devices/applications/jamf-patch"

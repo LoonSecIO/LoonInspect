@@ -5,7 +5,8 @@
 titles among them, plus the 1Password line, Ableton, Firefox, PyCharm, two device-level
 "Apple macOS" titles and a few more — with each title's patch list trimmed to its first 25
 entries plus any version the device has installed. The expectations below are the dry run the
-matcher was designed from: 12 of the device's 83 apps resolve, 14 app-title rows.
+matcher was designed from: 11 of the device's 83 apps resolve, 13 app-title rows (PyCharm's title
+is attribute-only and is not considered — Kyle's rule).
 """
 
 from __future__ import annotations
@@ -77,19 +78,18 @@ class TestCatalogIndex:
         # 2022 title pins its own bundle ID.
         broad = {title.name for title in catalog.broad}
         assert "TechSmith Camtasia" in broad and "TechSmith Camtasia 2022" not in broad
-        # Attribute-only titles hang off their bundleId column, not the broad list.
-        assert "Mozilla Firefox" not in broad
-        assert "Mozilla Firefox" in [title.name for title in catalog.candidates("org.mozilla.firefox")]
+        # Attribute-only titles are not considered at all.
+        assert "Mozilla Firefox" not in {title.name for title in catalog.titles}
 
 
 class TestRealDevice:
-    def test_twelve_apps_resolve_to_fourteen_rows(self, device_matches) -> None:
+    def test_eleven_apps_resolve_to_thirteen_rows(self, device_matches) -> None:
         matched = {name: matches for name, matches in device_matches.items() if matches}
         assert sorted(matched) == [
-            "BambuStudio.app", "Camtasia 2022.app", "Codex.app", "Docker.app", "Postman.app", "PyCharm.app",
+            "BambuStudio.app", "Camtasia 2022.app", "Codex.app", "Docker.app", "Postman.app",
             "Safari.app", "Self Service.app", "Slack.app", "Wireshark.app", "Xcode.app", "zoom.us.app",
         ]
-        assert sum(len(matches) for matches in matched.values()) == 14
+        assert sum(len(matches) for matches in matched.values()) == 13
 
     def test_xcode_is_on_the_latest(self, device_matches) -> None:
         (match,) = device_matches["Xcode.app"]
@@ -140,13 +140,12 @@ class TestRealDevice:
         summary = summarize([match])
         assert summary.this_version_seen is False and summary.is_compliant is False and summary.patch_available is False
 
-    def test_pycharm_resolves_its_scoping_attribute_as_true(self, device_matches) -> None:
+    def test_pycharm_is_not_considered(self, device_matches, catalog: Catalog) -> None:
         """JetBrains PyCharm Unified's only requirement is an extension attribute (Jamf's way
-        of telling Professional from Community). The device does not carry it: resolved TRUE,
-        the title identified by its bundleId column, the assumption recorded in the basis."""
-        (match,) = device_matches["PyCharm.app"]
-        assert match.title.name == "JetBrains PyCharm Unified" and match.basis == BASIS_EA_ASSUMED
-        assert match.state == STATE_BEHIND and match.version_known
+        of telling Professional from Community): no identifying recon test, so the title is not
+        considered at all (Kyle's rule) — the patching agent's business."""
+        assert device_matches["PyCharm.app"] == []
+        assert "JetBrains PyCharm Unified" not in {title.name for title in catalog.titles}
 
     def test_self_service_matches_through_a_like_test_the_column_would_miss(self, device_matches) -> None:
         """The title's bundleId column is `com.jamfsoftware.selfservice`; the app's is
@@ -170,22 +169,32 @@ class TestRealDevice:
 
 
 class TestExtensionAttributes:
-    def test_firefox_assumed_read_or_ruled_out(self, catalog: Catalog) -> None:
+    def test_attribute_only_titles_are_not_considered(self, catalog: Catalog) -> None:
         firefox = Facts(app_name="Firefox.app", bundle_id="org.mozilla.firefox", versions=("154.0",))
-        # No attribute on the device: resolved TRUE, identified by the bundleId column.
-        (match,) = match_app(firefox, catalog)
-        assert match.title.name == "Mozilla Firefox" and match.basis == BASIS_EA_ASSUMED and match.state == STATE_LATEST
-        # The attribute under Jamf Pro's display name: the requirement names the key, the
-        # definition maps one to the other — read for real.
-        named = Facts(**{**firefox.__dict__, "extension_attributes": {"Mozilla Firefox Version": "154.0"}})
-        (match,) = match_app(named, catalog)
-        assert match.basis == BASIS_REQUIREMENTS and match.state == STATE_LATEST
-        # The attribute present and empty: Jamf's "not installed" — read for real, no match.
-        empty = Facts(**{**firefox.__dict__, "extension_attributes": {"jamf-patch-mozilla-firefox": ""}})
-        assert match_app(empty, catalog) == []
-        # A different app never reaches an attribute-only title: its bundleId column is the test.
+        assert match_app(firefox, catalog) == []
+        carried = Facts(**{**firefox.__dict__, "extension_attributes": {"Mozilla Firefox Version": "154.0"}})
+        assert match_app(carried, catalog) == []  # even when the device carries the attribute
         chrome = Facts(app_name="Google Chrome.app", bundle_id="com.google.Chrome", versions=("151.0.7922.174",))
         assert [m.title.name for m in match_app(chrome, catalog)] == ["Google Chrome"]
+
+    def test_a_mixed_group_assumes_an_absent_attribute_and_reads_a_carried_one(self) -> None:
+        """A title with `Bundle ID is X AND attribute like "v14."` — the attribute is scoping."""
+        title = {
+            "id": "T1", "name": "Mixed", "bundleId": "com.example.mixed", "currentVersion": "14.2",
+            "patches": [{"version": "14.2", "releaseDate": "2026-01-01T00:00:00Z"}],
+            "requirements": [{"operator": "and", "tests": [
+                {"name": "Application Bundle ID", "type": "recon", "value": "com.example.mixed", "operator": "is"},
+                {"name": "jamf-patch-mixed", "type": "extensionAttribute", "value": "v14.", "operator": "like"},
+            ]}],
+            "extensionAttributes": [{"key": "jamf-patch-mixed", "displayName": "Mixed Version"}],
+        }
+        catalog = Catalog.from_records([title])
+        app = Facts(app_name="Mixed.app", bundle_id="com.example.mixed", versions=("14.2",))
+        (match,) = match_app(app, catalog)
+        assert match.basis == BASIS_EA_ASSUMED and match.state == STATE_LATEST
+        (match,) = match_app(Facts(**{**app.__dict__, "extension_attributes": {"Mixed Version": "v14.2"}}), catalog)
+        assert match.basis == BASIS_REQUIREMENTS
+        assert match_app(Facts(**{**app.__dict__, "extension_attributes": {"jamf-patch-mixed": "v13.9"}}), catalog) == []
 
     def test_an_attribute_only_group_never_identifies_an_app_by_itself(self, catalog: Catalog, device_matches) -> None:
         """JetBrains PyCharm Community is `[attribute is not ""] OR [Bundle ID is
@@ -197,13 +206,14 @@ class TestExtensionAttributes:
         assert match.title.name == "JetBrains PyCharm Community" and match.basis == BASIS_REQUIREMENTS
         assert match.state == STATE_LATEST
 
-    def test_attribute_only_titles_without_a_bundle_id_are_the_agents(self, catalog: Catalog) -> None:
+    def test_what_is_not_considered(self, catalog: Catalog) -> None:
         names = {title.name for title in catalog.titles}
-        assert "Node.js 14" not in names and "Eclipse Temurin (JRE) 19" not in names
-        firefox = next(title for title in catalog.titles if title.name == "Mozilla Firefox")
-        assert firefox.attribute_only and firefox.attribute_names == {"jamf-patch-mozilla-firefox", "mozilla firefox version"}
+        for absent in ("Node.js 14", "Eclipse Temurin (JRE) 19", "Mozilla Firefox", "JetBrains PyCharm Unified", "Apple macOS"):
+            assert absent not in names
+        community = next(title for title in catalog.titles if title.name == "JetBrains PyCharm Community")
+        assert community.attribute_names == {"jamf-patch-jetbrains-pycharm-community", "pycharm community version"}
         slack = next(title for title in catalog.titles if title.name == "Slack")
-        assert not slack.attribute_only and slack.attribute_names == frozenset()
+        assert slack.attribute_names == frozenset()
 
 
 class TestSummary:

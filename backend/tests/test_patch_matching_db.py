@@ -1,8 +1,8 @@
 # ruff: noqa: E501 — assertion lines read better unwrapped in this end-to-end test.
-"""Jamf Patch matching through the real ingest path: the catalog slice in `jamf_patch_titles`,
-a sweep of the fake tenant, then the match rows, the summary columns on `installed_apps`, and
-the tenant-scoped counts the Jamf Patch page reads. Gated on RUN_DB_TESTS like the other
-database-backed suites.
+"""Jamf Patch matching through the real ingest path, now via the tenant app catalog (#67): the
+catalog slice in `jamf_patch_titles`, a sweep of the fake tenant, then the catalog rows with
+first/last seen, the title matches per row, the copies on `installed_apps`, and the tenant-scoped
+counts the Jamf Patch page reads. Gated on RUN_DB_TESTS like the other database-backed suites.
 """
 
 from __future__ import annotations
@@ -92,7 +92,14 @@ async def catalog_rows(db):
 
 @pytest_asyncio.fixture(loop_scope="session")
 async def connection(db):
-    from app.models.schema import Device, DeviceExtensionAttribute, InstalledApp, MdmConnection, MdmSyncState
+    from app.models.schema import (
+        AppCatalogEntry,
+        Device,
+        DeviceExtensionAttribute,
+        InstalledApp,
+        MdmConnection,
+        MdmSyncState,
+    )
 
     row = MdmConnection(
         name=f"patch jamf {uuidlib.uuid4().hex[:8]}",
@@ -109,7 +116,10 @@ async def connection(db):
     finally:
         await db.rollback()
         device_ids = select(Device.id).where(Device.mdm_connection_id == connection_id)
-        # installed_app_patch_matches cascade from installed_apps in the database.
+        hashes = select(InstalledApp.version_hash).where(InstalledApp.device_id.in_(device_ids))
+        # Catalog rows outlive devices by design (first/last seen); the test tenant's are
+        # removed so reruns start clean. Title matches cascade from the catalog row.
+        await db.execute(delete(AppCatalogEntry).where(AppCatalogEntry.version_hash.in_(hashes)))
         await db.execute(delete(InstalledApp).where(InstalledApp.device_id.in_(device_ids)))
         await db.execute(delete(DeviceExtensionAttribute).where(DeviceExtensionAttribute.device_id.in_(device_ids)))
         await db.execute(delete(Device).where(Device.mdm_connection_id == connection_id))
@@ -118,11 +128,28 @@ async def connection(db):
         await db.commit()
 
 
-async def test_sweep_writes_matches_summaries_and_counts(db, jamf: FakeJamf, connection, catalog_rows) -> None:
-    from app.api.jamf_patch import title_device_counts, title_version_counts
-    from app.mdm.service import sync_connection
-    from app.models.schema import Device, InstalledApp, InstalledAppPatchMatch
+async def _forget_fixture_apps(db, jamf: FakeJamf) -> None:
+    """Catalog rows outlive devices by design, and other suites sweep the same fixture device
+    into the same tenant; start from rows this test creates itself."""
+    from app.mdm.jamf.client import normalize_computer
+    from app.mdm.service import apply_hashes
+    from app.models.schema import AppCatalogEntry
 
+    hashes = set()
+    for raw in (jamf.real, jamf.synthetic):
+        for app in normalize_computer(raw).apps:
+            hashes.add(apply_hashes(app).version_hash)
+    await db.execute(delete(AppCatalogEntry).where(AppCatalogEntry.version_hash.in_(hashes)))
+    await db.commit()
+
+
+async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connection, catalog_rows) -> None:
+    from app.api.jamf_patch import title_device_counts, title_version_counts
+    from app.catalog.service import refresh_tenant
+    from app.mdm.service import sync_connection
+    from app.models.schema import AppCatalogEntry, AppCatalogTitleMatch, Device, InstalledApp
+
+    await _forget_fixture_apps(db, jamf)
     result = await sync_connection(db, connection)
     assert result.ok and result.device_count == 2, result
 
@@ -130,47 +157,69 @@ async def test_sweep_writes_matches_summaries_and_counts(db, jamf: FakeJamf, con
     apps = {row.name: row for row in (await db.execute(select(InstalledApp).where(InstalledApp.device_id == real.id))).scalars().all()}
     assert len(apps) == 83
 
-    # The summary columns, from the rolling title.
-    xcode = apps["Xcode.app"]
-    assert xcode.jamf_title_ids == ["0C3"] and xcode.patch_state == "latest"
-    assert xcode.is_compliant is True and xcode.patch_available is False and xcode.this_version_seen is True
-    assert xcode.latest_version == "26.6" and xcode.latest_released_at is not None and xcode.last_patch_check_at is not None
+    # One catalog row per distinct (name, bundle ID, version) the device showed, first == last seen on a first sweep.
+    entries = {e.version_hash: e for e in (await db.execute(select(AppCatalogEntry).where(AppCatalogEntry.version_hash.in_([a.version_hash for a in apps.values()])))).scalars().all()}
+    assert len(entries) == len({a.version_hash for a in apps.values()})
+    xcode_entry = entries[apps["Xcode.app"].version_hash]
+    assert xcode_entry.first_seen_at == xcode_entry.last_seen_at and xcode_entry.evaluated_signature
+    assert xcode_entry.jamf_title_ids == ["0C3"] and xcode_entry.patch_state == "latest" and xcode_entry.is_latest is True
+    assert xcode_entry.released_at is not None and xcode_entry.this_version_seen is True
 
+    # The copies on the device's rows.
+    xcode = apps["Xcode.app"]
+    assert xcode.jamf_title_ids == ["0C3"] and xcode.patch_state == "latest" and xcode.is_compliant is True and xcode.patch_available is False
     safari = apps["Safari.app"]
     assert safari.patch_state == "ahead" and safari.this_version_seen is False and safari.is_compliant is False and safari.patch_available is False
-
     camtasia = apps["Camtasia 2022.app"]
-    assert camtasia.jamf_title_ids == ["608", "514"] and camtasia.patch_state == "latest"  # latest on its own line
-    assert camtasia.is_compliant is True and camtasia.patch_available is False and camtasia.latest_version == "2022.6.10"
+    assert camtasia.jamf_title_ids == ["608", "514"] and camtasia.patch_state == "latest" and camtasia.is_compliant is True
     slack = apps["Slack.app"]
     assert slack.patch_state == "behind" and slack.patch_available is True and slack.patch_available_since is not None
+    unmatched = next(row for row in apps.values() if row.jamf_title_ids is None)
+    assert unmatched.is_compliant is None and unmatched.last_patch_check_at is not None
 
-    unmatched = apps["Calculator.app"] if "Calculator.app" in apps else next(row for row in apps.values() if row.jamf_title_ids is None)
-    assert unmatched.jamf_title_ids is None and unmatched.is_compliant is None and unmatched.patch_available is None
-    assert unmatched.last_patch_check_at is not None  # evaluated, nothing found
-
-    # The rows behind the summary: one per (app, title).
-    match_rows = (await db.execute(select(InstalledAppPatchMatch).where(InstalledAppPatchMatch.installed_app_id.in_([row.id for row in apps.values()])))).scalars().all()
-    by_app = {}
+    # The title matches, one per (catalog row, title).
+    match_rows = (await db.execute(select(AppCatalogTitleMatch).where(AppCatalogTitleMatch.app_catalog_id.in_([e.id for e in entries.values()])))).scalars().all()
+    by_entry: dict[int, list] = {}
     for row in match_rows:
-        by_app.setdefault(row.installed_app_id, []).append(row)
-    assert len(match_rows) == 14 and len(by_app) == 12
-    wireshark = {row.title_id: row for row in by_app[apps["Wireshark.app"].id]}
+        by_entry.setdefault(row.app_catalog_id, []).append(row)
+    assert len(match_rows) == 13 and len(by_entry) == 11
+    wireshark = {row.title_id: row for row in by_entry[entries[apps["Wireshark.app"].version_hash].id]}
     assert set(wireshark) == {"5F6", "612"} and all(row.basis == "requirements" and row.state == "behind" for row in wireshark.values())
-    assert next(iter(wireshark.values())).tenant_id == real.tenant_id  # stamped by the database from the session's tenant
-    (pycharm,) = by_app[apps["PyCharm.app"].id]
-    assert pycharm.title_id == "0EE" and pycharm.basis == "ea_assumed"  # the scoping attribute, resolved TRUE
+    assert entries[apps["PyCharm.app"].version_hash].id not in by_entry  # attribute-only title: not considered
 
-    # What the Jamf Patch page reads, scoped by RLS to this tenant. The synthetic second
-    # device may share some titles, so the real device's contribution is a lower bound.
-    counts = await title_device_counts(db, ["0C3", "5F6", "612", "240"])
-    assert counts["0C3"][0] >= 1 and counts["0C3"][1] >= 1  # Xcode: a device, on latest
-    assert counts["5F6"][0] >= 1 and counts["5F6"][1] == 0  # Wireshark 4.2: nobody on 4.2.14
-    assert counts["240"][1] == 0  # Safari ahead is not "on latest"
-    versions = await title_version_counts(db, "5F6")
-    assert versions.get("4.2.0", 0) >= 1
+    # What the Jamf Patch page reads, through the catalog row (tenant-scoped by RLS).
+    counts = await title_device_counts(db, ["0C3", "5F6", "240"])
+    assert counts["0C3"][0] >= 1 and counts["0C3"][1] >= 1
+    assert counts["5F6"][0] >= 1 and counts["5F6"][1] == 0
+    assert counts["240"][1] == 0
+    assert (await title_version_counts(db, "5F6")).get("4.2.0", 0) >= 1
 
-    # A second sweep replaces the rows rather than duplicating them.
+    # A second sweep seconds later: nothing is written for the catalog — last_seen is answered
+    # to LAST_SEEN_GRANULARITY (so a sweep writes it once per distinct app, not once per device),
+    # the copies on the app rows are not re-stamped, rows are not duplicated or re-judged.
+    first_seen, last_seen = xcode_entry.first_seen_at, xcode_entry.last_seen_at
+    checked = xcode.last_patch_check_at
     await sync_connection(db, connection)
-    again = (await db.execute(select(func.count()).select_from(InstalledAppPatchMatch).where(InstalledAppPatchMatch.installed_app_id.in_([row.id for row in apps.values()])))).scalar_one()
-    assert again == 14
+    await db.refresh(xcode_entry)
+    await db.refresh(xcode)
+    assert xcode_entry.first_seen_at == first_seen and xcode_entry.last_seen_at == last_seen
+    assert xcode.last_patch_check_at == checked
+    again = (await db.execute(select(func.count()).select_from(AppCatalogTitleMatch).where(AppCatalogTitleMatch.app_catalog_id.in_([e.id for e in entries.values()])))).scalar_one()
+    assert again == 13
+
+    # Once the row is older than the granularity, the next device process moves last_seen.
+    from datetime import timedelta
+
+    from app.catalog.service import LAST_SEEN_GRANULARITY
+
+    xcode_entry.last_seen_at = last_seen - LAST_SEEN_GRANULARITY - timedelta(seconds=1)
+    await db.commit()
+    await sync_connection(db, connection)
+    await db.refresh(xcode_entry)
+    assert xcode_entry.last_seen_at > last_seen - timedelta(seconds=1) and xcode_entry.first_seen_at == first_seen
+
+    # A forced refresh re-judges every row of the tenant and leaves the same answers.
+    judged = await refresh_tenant(db, force=True)
+    assert judged >= len(entries)
+    await db.refresh(xcode_entry)
+    assert xcode_entry.jamf_title_ids == ["0C3"]
