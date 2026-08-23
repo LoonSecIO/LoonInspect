@@ -18,15 +18,29 @@ When rows are judged:
   copies; a sync that changed nothing costs nothing.
 
 Devices reach their answer through `installed_apps.version_hash`; the per-device matches table
-from #65 is gone. Follow-ups: a per-device override that reads a carried extension attribute,
-and rows for apps that arrive through other paths than an MDM inventory (HEC).
+from #65 is gone.
+
+Why it is built as cache tables at all (Kyle, 2026-08-22): the question is how to get a device
+from Jamf Pro to Splunk as fast as possible — wait for as little as possible, have as much as
+possible cached. Jamf patching, vulnerability and the other enrichments are *lookups*, not
+things calculated per device; calculating them means touching hundreds of MB for each device
+when the goal is 40k devices in ten minutes. So the per-device cost of this module is kept to
+its own rows: one SELECT of the device's apps, one SELECT of their catalog rows by hash, the
+inserts for triples the fleet has never shown, a `last_seen_at` write at most once per
+`LAST_SEEN_GRANULARITY` per distinct app (not once per device carrying it), an in-memory rule
+pass only for rows the current catalog has not judged, and copies onto app rows only when a row
+is new or its answer moved. Nothing per device reads the catalog tables themselves; the title
+index lives in process memory and is rebuilt only when the catalog changes.
+
+Follow-ups: a per-device override that reads a carried extension attribute, and rows for apps
+that arrive through other paths than an MDM inventory (HEC).
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Sequence
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +50,11 @@ from app.mdm.patch.requirements import Facts
 from app.models.schema import AppCatalogEntry, AppCatalogTitleMatch, Device, InstalledApp
 
 logger = logging.getLogger(__name__)
+
+# "Most recently seen on a device" is answered to this granularity: a row's last_seen_at moves
+# when it is older than this, so a sweep writes it about once per distinct app rather than once
+# per device carrying the app (40k devices x 80 apps would otherwise be ~3M row updates a sweep).
+LAST_SEEN_GRANULARITY = timedelta(minutes=15)
 
 
 def catalog_signature(catalog: Catalog) -> str:
@@ -129,8 +148,9 @@ def copy_answer(entry: AppCatalogEntry, app: InstalledApp, *, now: datetime) -> 
 
 async def record_device_apps(db: AsyncSession, device: Device, *, now: datetime | None = None) -> int:
     """`process_sync`'s hook, after the device's app rows are flushed: every app the device
-    reports is seen now (first_seen_at on creation, last_seen_at always), rows without a current
-    answer are judged, and each app row gets its copy. Returns the rows judged."""
+    reports is seen now (first_seen_at on creation; last_seen_at moved when older than the
+    granularity), rows the current catalog has not judged are judged, and app rows that are new
+    or whose row's answer moved get their copy. Returns the rows judged."""
     rows = (await db.execute(select(InstalledApp).where(InstalledApp.device_id == device.id))).scalars().all()
     if not rows:
         return 0
@@ -159,7 +179,7 @@ async def record_device_apps(db: AsyncSession, device: Device, *, now: datetime 
             )
             db.add(entry)
             existing[row.version_hash] = entry
-        else:
+        elif entry.last_seen_at is None or now - entry.last_seen_at >= LAST_SEEN_GRANULARITY:
             entry.last_seen_at = now
     await db.flush()
 
@@ -167,9 +187,15 @@ async def record_device_apps(db: AsyncSession, device: Device, *, now: datetime 
     signature = catalog_signature(catalog)
     stale = [entry for entry in existing.values() if entry.evaluated_signature != signature]
     judged = await evaluate_entries(db, stale, catalog, now=now)
+    moved = {entry.version_hash for entry in stale}
     for row in rows:
         entry = existing.get(row.version_hash)
-        if entry is not None:
+        if entry is None:
+            continue
+        # A copy costs an UPDATE per app row; only when the row is new (no answer yet) or the
+        # catalog row it points at was just judged. Refreshes after a catalog sync update the
+        # copies in bulk (refresh_tenant).
+        if row.last_patch_check_at is None or row.version_hash in moved:
             copy_answer(entry, row, now=now)
     return judged
 

@@ -194,13 +194,29 @@ async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connec
     assert counts["240"][1] == 0
     assert (await title_version_counts(db, "5F6")).get("4.2.0", 0) >= 1
 
-    # A second sweep: last_seen moves, first_seen does not, rows are not duplicated or re-judged.
-    first_seen = xcode_entry.first_seen_at
+    # A second sweep seconds later: nothing is written for the catalog — last_seen is answered
+    # to LAST_SEEN_GRANULARITY (so a sweep writes it once per distinct app, not once per device),
+    # the copies on the app rows are not re-stamped, rows are not duplicated or re-judged.
+    first_seen, last_seen = xcode_entry.first_seen_at, xcode_entry.last_seen_at
+    checked = xcode.last_patch_check_at
     await sync_connection(db, connection)
     await db.refresh(xcode_entry)
-    assert xcode_entry.first_seen_at == first_seen and xcode_entry.last_seen_at >= first_seen
+    await db.refresh(xcode)
+    assert xcode_entry.first_seen_at == first_seen and xcode_entry.last_seen_at == last_seen
+    assert xcode.last_patch_check_at == checked
     again = (await db.execute(select(func.count()).select_from(AppCatalogTitleMatch).where(AppCatalogTitleMatch.app_catalog_id.in_([e.id for e in entries.values()])))).scalar_one()
     assert again == 13
+
+    # Once the row is older than the granularity, the next device process moves last_seen.
+    from datetime import timedelta
+
+    from app.catalog.service import LAST_SEEN_GRANULARITY
+
+    xcode_entry.last_seen_at = last_seen - LAST_SEEN_GRANULARITY - timedelta(seconds=1)
+    await db.commit()
+    await sync_connection(db, connection)
+    await db.refresh(xcode_entry)
+    assert xcode_entry.last_seen_at > last_seen - timedelta(seconds=1) and xcode_entry.first_seen_at == first_seen
 
     # A forced refresh re-judges every row of the tenant and leaves the same answers.
     judged = await refresh_tenant(db, force=True)

@@ -36,6 +36,15 @@ The contract is in [docs/jamf-observations.md](docs/jamf-observations.md).
 
 ---
 
+### Cache, don't calculate, on the device's path
+
+The question behind the design is how fast a device gets from Jamf Pro to your SIEM: wait for as
+little as possible, have as much as possible cached. Jamf patch state, vulnerability data and the
+other enrichments are **lookups** keyed by the hashes every installed app carries — computed once
+per distinct app in the tenant's app catalog, refreshed in the background when the upstream
+catalog moves — never calculated per device. Touching hundreds of MB of catalog for each device
+is what stops 40k devices fitting in ten minutes. See [docs/app-catalog.md](docs/app-catalog.md).
+
 ## 🛠 Quick Start (Docker Compose)
 
 LoonInspect is deployed as two containers: the application — one multi-architecture image

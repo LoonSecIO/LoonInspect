@@ -6,6 +6,21 @@ lookup), `backend/app/api/catalog.py`; migration `b4c7e9d2a1f6`. UI: Devices ›
 **Catalog**. Tests: `tests/test_catalog.py`, `tests/test_catalog_db.py`,
 `tests/test_patch_matching_db.py`.
 
+## 0. Why cache tables at all
+
+Kyle (2026-08-22): *"The reason for all these cache tables is to answer the question of how do I
+get the device from Jamf Pro to Splunk as fast as possible. That method is to wait for as little
+as possible and have as much as possible be cached. Moving Jamf Patching, vulnerability and other
+fields to a lookup instead of a calculation means you are not touching hundreds of MB for each
+device when you are trying to parse 40k in 10 minutes."*
+
+That is the design principle every table in this document serves: **what a device needs is
+looked up, never calculated, on the device's path.** The Jamf answer for an app is computed once
+per distinct (name, bundle ID, version) and looked up by hash; the title index is in process
+memory and rebuilt only when the catalog changes; the per-device path touches the device's own
+rows and nothing else (§3a). Vulnerability data (LoonSecIO) and any later enrichment join the
+same way: by the hashes on the catalog row, as a lookup, never as a per-device computation.
+
 ## 1. What it is
 
 Kyle's brief (2026-08-22): *"From a tenant perspective for an app lookup: I want when it was
@@ -62,6 +77,19 @@ catalog, so device pages and the Applications overview need no join.
    the signature alone and costs nothing. `POST /api/catalog/refresh` forces a full re-judge.
 3. Rows outlive devices by design — an app nobody carries any more keeps its first/last seen —
    and `last_seen_at` only moves when a device reports the app again.
+
+### 3a. What one device process costs (the hot path)
+
+`record_device_apps`, per device, in order: one SELECT of the device's app rows; one SELECT of
+their catalog rows by `version_hash` (indexed); an INSERT per triple the fleet has never shown;
+a `last_seen_at` UPDATE only for rows older than `LAST_SEEN_GRANULARITY` (15 minutes) — so a
+sweep writes it about once per distinct app, not once per device carrying it (40k devices × 80
+apps would otherwise be ~3M row updates for one timestamp); an in-memory rule pass only for rows
+the current catalog has not judged (new triples, or a catalog that moved since); and a copy onto
+an app row only when that row is new or its catalog row was just judged. A device whose apps the
+fleet has already shown, processed after the first device of the sweep, writes nothing for the
+catalog. Nothing on this path reads `jamf_patch_titles` or `app_catalog_versions`; the catalog
+signature check is one `count / max(synced_at)` query against the in-process index.
 
 Judging at catalog level means no device facts: extension attributes resolve TRUE (Kyle's
 practice for them — they are Jamf's scoping device, not a fact about the app) and OS-version
