@@ -179,7 +179,7 @@ jobs:
           docker run -d --name smoke --network smoke-net \
             -e ENCRYPTION_KEY="$KEY" \
             -e DATABASE_URL="postgresql+asyncpg://looninspect_app:${PG_APP_PASSWORD}@smoke-db:5432/looninspect" \
-            -p 8000:8000 looninspect:ci
+            -p 8001:8001 looninspect:ci
           for i in $(seq 1 30); do
             status=$(docker inspect --format '{{.State.Health.Status}}' smoke)
             [ "$status" = healthy ] && break
@@ -190,7 +190,7 @@ jobs:
           docker exec smoke id | tee /dev/stderr | grep -q 'uid=10001' || {
             echo "::error::image is not running as the non-root looninspect user"; exit 1; }
           [ "$status" = healthy ] || { docker logs smoke; docker logs smoke-db; exit 1; }
-          curl -fsS http://localhost:8000/api/health
+          curl -fsS http://localhost:8001/api/health
 
       # A superuser bypasses row-level security without erroring, so "the policies
       # exist" is not the same claim as "the policies apply". This asserts both: that

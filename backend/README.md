@@ -82,7 +82,7 @@ FastAPI standardized its CLI. Instead of calling `uvicorn` directly, use the mod
 uv run fastapi dev app/main.py
 ```
 
-This starts the server at <http://127.0.0.1:8000> with hot-reloading enabled. On startup it automatically applies any pending Alembic migrations (`app/core/database.py::init_db()`) — there's no separate manual migration step for local dev.
+This starts the server at <http://127.0.0.1:8001> with hot-reloading enabled. On startup it automatically applies any pending Alembic migrations (`app/core/database.py::init_db()`) — there's no separate manual migration step for local dev.
 
 MDM connections (Jamf, SimpleMDM, etc.) are configured through the API/UI (`/api/mdm/connections`) and stored in the database, not via environment variables.
 
@@ -90,7 +90,7 @@ MDM connections (Jamf, SimpleMDM, etc.) are configured through the API/UI (`/api
 
 FastAPI automatically generates interactive Swagger documentation. While the server is running, visit:
 
-👉 <http://127.0.0.1:8000/docs>
+👉 <http://127.0.0.1:8001/docs>
 
 ## 🔄 Adding New Dependencies
 
