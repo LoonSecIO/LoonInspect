@@ -308,9 +308,11 @@ async def run_jamf_catalog(
             await db.commit()
             group_count = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes)
             await db.commit()
-            throttle = client.throttle.observations()
+            throttle = {**client.throttle.observations(), **client.adaptive.observations()}
             if run is not None:
                 await beat(db, run)
+                if client.adaptive.changes:
+                    await run_log(db, run, "warning", "throttled: sweep width reduced", reductions=client.adaptive.changes)
                 if throttle:
                     await run_log(db, run, "warning", "throttled by Jamf; backed off and continued", **throttle)
                 await run_log(db, run, "info", "group definitions observed", groupCount=group_count)
@@ -436,8 +438,10 @@ async def _sync_jamf(
         # Throttling is run-row data, not just log lines: the counters ride the same
         # observations JSONB the ledger outcomes do, so the run detail can show them
         # and a dynamic tuner (#74) reads structure instead of parsing text.
-        throttle = client.throttle.observations()
+        throttle = {**client.throttle.observations(), **client.adaptive.observations()}
         if run is not None:
+            if client.adaptive.changes:
+                await run_log(db, run, "warning", "throttled: sweep width reduced", reductions=client.adaptive.changes)
             if throttle:
                 await run_log(db, run, "warning", "throttled by Jamf; backed off and continued", **throttle)
             await run_log(

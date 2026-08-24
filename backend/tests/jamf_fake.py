@@ -12,7 +12,8 @@ arithmetic a tenant performs:
 - `appear_after_first_page` holds devices that enroll right after page 0 is served —
   the case where totalCount is a floor, not gospel.
 - `transient` scripts one-shot answers (a 429 with Retry-After, a 502) in front of any
-  path prefix, consumed in order.
+  request whose full URL contains the match string — a path, or one page's "&page=5" —
+  consumed in order.
 - `async_handler` is the same tenant with the event loop allowed between requests, so
   waves actually overlap and `max_in_flight` can prove how wide the client ran.
 """
@@ -68,8 +69,8 @@ class FakeJamf:
     def handler(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
         self.requests.append(f"{request.method} {path}")
-        for index, (prefix, status, headers) in enumerate(self.transient):
-            if path.startswith(prefix):
+        for index, (match, status, headers) in enumerate(self.transient):
+            if match in str(request.url):
                 self.transient.pop(index)
                 return httpx.Response(status, headers=headers, json={"httpStatus": status})
         if path == "/api/oauth/token":

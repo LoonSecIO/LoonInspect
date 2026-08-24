@@ -5,7 +5,7 @@ import logging
 import random
 from collections.abc import AsyncIterator, Coroutine, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, TypeVar
 from urllib.parse import urlparse
@@ -32,10 +32,13 @@ _PAGE_SIZE = 100
 # latency win. The connection's sweep_page_size overrides this (#71).
 DEFAULT_SWEEP_PAGE_SIZE = 400
 
-# Pages (and smart-group detail reads) in flight at once. Internal rather than a
-# setting: this is the knob that causes 429s, which makes it the knob the dynamic
-# response (#74) owns — the admin's knob is the page size.
+# Pages (and smart-group detail reads) in flight at once — the ceiling. Internal
+# rather than a setting: this is the knob that causes 429s, which makes it the knob
+# the dynamic response (AdaptiveConcurrency, #74) owns — the admin's knob is the
+# page size.
 _CONCURRENCY = 4
+# Clean waves in a row before a halved width earns one step back up.
+_RECOVERY_WAVES = 3
 
 # The tenant telling us to back off (429) or a hop failing transiently (502/503/504).
 # Retried because a sweep is hundreds of idempotent GETs and one transient must not
@@ -72,6 +75,50 @@ class ThrottleCounters:
             "backoff_ms_total": self.backoff_ms_total,
         }
         return {key: value for key, value in fields.items() if value}
+
+
+@dataclass(slots=True)
+class AdaptiveConcurrency:
+    """AIMD over the sweep's in-flight width, scoped to one run (#74).
+
+    Retry (_get) rescues the current request; this shapes the next wave. Any 429
+    observed during a wave halves the width (multiplicative decrease, floor 1);
+    after _RECOVERY_WAVES clean waves in a row the width steps back up by one
+    (additive increase), to the ceiling. The page size is untouched — it is the
+    admin's knob (#71), and the machine adjusts only the knob it owns. Nothing
+    persists across runs: a fresh client starts at the ceiling.
+    """
+
+    width: int = _CONCURRENCY
+    clean_waves: int = 0
+    reductions: int = 0
+    floor_seen: int = _CONCURRENCY
+    changes: list[str] = field(default_factory=list)
+
+    def after_wave(self, saw_429: bool) -> None:
+        if saw_429:
+            reduced = max(1, self.width // 2)
+            if reduced < self.width:
+                logger.warning(
+                    "throttled by jamf; reducing sweep width",
+                    extra={"width_before": self.width, "width_after": reduced},
+                )
+                self.changes.append(f"{self.width} → {reduced}")
+                self.width = reduced
+                self.reductions += 1
+                self.floor_seen = min(self.floor_seen, self.width)
+            self.clean_waves = 0
+        else:
+            self.clean_waves += 1
+            if self.clean_waves >= _RECOVERY_WAVES and self.width < _CONCURRENCY:
+                self.width += 1
+                self.clean_waves = 0
+
+    def observations(self) -> dict[str, int]:
+        """Nonzero only, beside ThrottleCounters' keys in Run.observations."""
+        if not self.reductions:
+            return {}
+        return {"concurrency_reductions": self.reductions, "concurrency_floor": self.floor_seen}
 
 
 def _retry_delay(response: httpx.Response, attempt: int) -> float:
@@ -133,6 +180,7 @@ class JamfClient(MdmClient):
         self._user_agent_override = user_agent_override
         self._token: str | None = None
         self.throttle = ThrottleCounters()
+        self.adaptive = AdaptiveConcurrency()
 
     # Seam for tests: retry waits go through this so a scripted 429 doesn't cost the
     # suite real seconds. An attribute, not a wrapper method, so monkeypatching the
@@ -359,7 +407,8 @@ class JamfClient(MdmClient):
         page = 1
         short_page_seen = False
         while page < known_pages:
-            wave = range(page, min(page + _CONCURRENCY, known_pages))
+            wave = range(page, min(page + self.adaptive.width, known_pages))
+            throttled_before = self.throttle.throttled_429
             for wave_body in await self._wave([fetch_page(number) for number in wave]):
                 results = page_results(wave_body)
                 for computer in results:
@@ -368,6 +417,7 @@ class JamfClient(MdmClient):
                     # The fleet shrank between page 0 and this wave; the serial tail
                     # below would only re-find the shrink.
                     short_page_seen = True
+            self.adaptive.after_wave(self.throttle.throttled_429 > throttled_before)
             page = wave.stop
 
         if short_page_seen:
@@ -445,10 +495,14 @@ class JamfClient(MdmClient):
 
         with_ids = [group for group in groups if group.get("id") is not None]
         detailed: list[dict] = []
-        for start in range(0, len(with_ids), _CONCURRENCY):
-            wave = with_ids[start : start + _CONCURRENCY]
+        start = 0
+        while start < len(with_ids):
+            wave = with_ids[start : start + self.adaptive.width]
+            throttled_before = self.throttle.throttled_429
             details = await self._wave([fetch_detail(group) for group in wave])
             detailed.extend(detail for detail in details if detail is not None)
+            self.adaptive.after_wave(self.throttle.throttled_429 > throttled_before)
+            start += len(wave)
         return detailed
 
     # --- webhooks --------------------------------------------------------------------

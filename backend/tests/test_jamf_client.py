@@ -126,3 +126,44 @@ async def test_an_expired_token_reauthenticates_once_mid_sweep() -> None:
     assert len(computers) == 2
     assert fake.requests.count("POST /api/oauth/token") == 1
     assert client.throttle.observations() == {}  # a 401 is not a transient
+
+
+async def test_aimd_halves_the_width_on_429_and_earns_it_back(recorded_sleeps: list[float]) -> None:
+    fake = FakeJamf()
+    fake.seed(30)  # 32 devices at page_size=1: pages 0..31, waves over 1..31
+    fake.transient.append(("&page=1", 429, {"Retry-After": "0"}))
+
+    computers, client = await sweep(fake, page_size=1)
+
+    assert len(computers) == 32
+    # One throttled wave halved 4 → 2; three clean waves stepped 2 → 3, three more
+    # 3 → 4 — recovered to the ceiling by the end of the sweep.
+    assert client.adaptive.changes == ["4 → 2"]
+    assert client.adaptive.reductions == 1
+    assert client.adaptive.floor_seen == 2
+    assert client.adaptive.width == 4
+    assert client.adaptive.observations() == {"concurrency_reductions": 1, "concurrency_floor": 2}
+    assert recorded_sleeps == [0.0]  # the 429 itself was still rescued by retry
+
+
+async def test_aimd_floor_is_one_and_sustained_429s_stay_there(recorded_sleeps: list[float]) -> None:
+    fake = FakeJamf()
+    fake.seed(8)  # 10 devices at page_size=1: pages 0..9
+    fake.transient.extend(
+        [
+            ("&page=1", 429, {"Retry-After": "0"}),
+            ("&page=5", 429, {"Retry-After": "0"}),
+            ("&page=7", 429, {"Retry-After": "0"}),
+        ]
+    )
+
+    computers, client = await sweep(fake, page_size=1)
+
+    # Every page still lands — retry rescues each request while AIMD narrows the next
+    # wave: 4 → 2 → 1, and a 429 at width 1 has nothing left to halve.
+    assert len(computers) == 10
+    assert client.adaptive.changes == ["4 → 2", "2 → 1"]
+    assert client.adaptive.reductions == 2
+    assert client.adaptive.floor_seen == 1
+    assert client.adaptive.width == 1  # only two clean waves ran after the floor
+    assert len(recorded_sleeps) == 3
