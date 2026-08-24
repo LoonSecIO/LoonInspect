@@ -770,6 +770,10 @@ export const en = {
     userAgentPlaceholder: "LoonSecIO (default)",
     userAgentHint:
       'Sent as the product name in the User-Agent header on every request to Jamf Pro (e.g. "LoonSecIO/0.1.0 auth"). Leave blank to use the instance default.',
+    sweepPageSize: "Sweep page size",
+    sweepPageSizeDefault: "(default)",
+    sweepPageSizeHint:
+      "Devices requested per inventory page, sized for a full-section sweep. The limiter is sections, not the API: the more sections your collections pull per device, the smaller the pages should be.",
     whatUsedFor: "What this connection is used for",
     capabilityDevices: "Devices",
     capabilityUsers: "Users",

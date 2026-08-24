@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 from app.schemas.payload import MdmProvider
@@ -49,6 +49,10 @@ class MdmConnectionCreate(BaseModel):
     loonsecio_license_key: str | None = None
     loonsecio_data_sharing_enabled: bool = False
     user_agent_override: str | None = None
+    # Devices per inventory page at full sections; null is the default (400). Bounds
+    # match the slider — the API cap is 2000, but a full-section page that size is an
+    # enormous body for no latency win.
+    sweep_page_size: int | None = Field(default=None, ge=100, le=1000)
     capability_devices: bool = True
     capability_users: bool = False
     capability_webhooks: bool = False
@@ -76,6 +80,7 @@ class MdmConnectionUpdate(BaseModel):
     loonsecio_license_key: str | None = None
     loonsecio_data_sharing_enabled: bool | None = None
     user_agent_override: str | None = None
+    sweep_page_size: int | None = Field(default=None, ge=100, le=1000)
     capability_devices: bool | None = None
     capability_users: bool | None = None
     capability_webhooks: bool | None = None
@@ -128,6 +133,7 @@ class MdmConnectionOut(BaseModel):
     has_webhook_secret: bool
     has_loonsecio_license_key: bool
     user_agent_override: str | None
+    sweep_page_size: int | None
     capability_devices: bool
     capability_users: bool
     capability_webhooks: bool

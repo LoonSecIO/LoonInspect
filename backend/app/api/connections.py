@@ -94,6 +94,7 @@ def _to_out(conn: MdmConnection) -> MdmConnectionOut:
         has_webhook_secret=bool(conn.webhook_secret_encrypted),
         has_loonsecio_license_key=bool(conn.loonsecio_license_key_encrypted),
         user_agent_override=conn.user_agent_override,
+        sweep_page_size=conn.sweep_page_size,
         capability_devices=conn.capability_devices,
         capability_users=conn.capability_users,
         capability_webhooks=conn.capability_webhooks,
@@ -135,6 +136,7 @@ async def create_connection(
         loonsecio_license_key_encrypted=payload.loonsecio_license_key,
         loonsecio_data_sharing_enabled=payload.loonsecio_data_sharing_enabled,
         user_agent_override=payload.user_agent_override,
+        sweep_page_size=payload.sweep_page_size,
         capability_devices=payload.capability_devices,
         capability_users=payload.capability_users,
         capability_webhooks=payload.capability_webhooks,
@@ -301,6 +303,8 @@ async def update_connection(
         connection.loonsecio_data_sharing_enabled = data["loonsecio_data_sharing_enabled"]
     if "user_agent_override" in data:
         connection.user_agent_override = data["user_agent_override"]
+    if "sweep_page_size" in data:
+        connection.sweep_page_size = data["sweep_page_size"]
     if "capability_devices" in data:
         connection.capability_devices = data["capability_devices"]
     if "capability_users" in data:

@@ -31,7 +31,12 @@ from app.core.runs import (
 )
 from app.core.runs import log as run_log
 from app.mdm.factory import get_mdm_client
-from app.mdm.jamf.client import JamfClient, normalize_computer, parse_webhook_event
+from app.mdm.jamf.client import (
+    DEFAULT_SWEEP_PAGE_SIZE,
+    JamfClient,
+    normalize_computer,
+    parse_webhook_event,
+)
 from app.mdm.jamf.contract import (
     V0_SECTIONS,
     Aperture,
@@ -301,8 +306,11 @@ async def run_jamf_catalog(
             await db.commit()
             group_count = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes)
             await db.commit()
+            throttle = client.throttle.observations()
             if run is not None:
                 await beat(db, run)
+                if throttle:
+                    await run_log(db, run, "warning", "throttled by Jamf; backed off and continued", **throttle)
                 await run_log(db, run, "info", "group definitions observed", groupCount=group_count)
     except Exception as exc:
         await db.rollback()
@@ -317,7 +325,10 @@ async def run_jamf_catalog(
         extra={"connection_id": connection.id, "collection_id": collection_id, "group_count": group_count, "trigger": trigger},
     )
     return ConnectionSyncResult(
-        connection_id=connection.id, observations=dict(outcomes), group_count=group_count, collection_id=collection_id
+        connection_id=connection.id,
+        observations={**dict(outcomes), **throttle},
+        group_count=group_count,
+        collection_id=collection_id,
     )
 
 
@@ -386,7 +397,8 @@ async def _sync_jamf(
         # device 30,000 leaves 29,999 correctly recorded. The selector is pushed into
         # Jamf's query rather than applied after the fetch — filtering client-side would
         # still spend the API budget the selector exists to save.
-        async for raw in client.iter_computers(http, sections, rsql_filter=selector):
+        page_size = connection.sweep_page_size or DEFAULT_SWEEP_PAGE_SIZE
+        async for raw in client.iter_computers(http, sections, rsql_filter=selector, page_size=page_size):
             result = await ingest_computer(
                 db,
                 connection,
@@ -416,7 +428,13 @@ async def _sync_jamf(
         if include_catalog:
             group_count = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes)
         await db.commit()
+        # Throttling is run-row data, not just log lines: the counters ride the same
+        # observations JSONB the ledger outcomes do, so the run detail can show them
+        # and a dynamic tuner (#74) reads structure instead of parsing text.
+        throttle = client.throttle.observations()
         if run is not None:
+            if throttle:
+                await run_log(db, run, "warning", "throttled by Jamf; backed off and continued", **throttle)
             await run_log(
                 db,
                 run,
@@ -432,7 +450,7 @@ async def _sync_jamf(
     return ConnectionSyncResult(
         connection_id=connection.id,
         device_count=device_count,
-        observations=dict(outcomes),
+        observations={**dict(outcomes), **throttle},
         group_count=group_count,
     )
 

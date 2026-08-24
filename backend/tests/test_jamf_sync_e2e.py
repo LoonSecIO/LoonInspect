@@ -214,3 +214,33 @@ async def test_webhook_without_a_computer_is_ignored(db, jamf: FakeJamf, connect
 
     assert await ingest_webhook(db, connection, {"webhook": {"webhookEvent": "ComputerAdded"}, "event": {}}) is None
     assert not any(path.startswith("GET /api/v4/computers-inventory-detail") for path in jamf.requests)
+
+
+async def test_page_size_flows_and_throttling_lands_on_the_run(db, jamf: FakeJamf, connection) -> None:
+    from app.mdm.service import sync_connection
+    from app.models.schema import Run
+
+    # Null on the connection means the default on the wire.
+    first = await sync_connection(db, connection)
+    assert first.ok
+    assert jamf.page_sizes and all(size == 400 for size in jamf.page_sizes)
+
+    # The connection's setting carries to Jamf, and a scripted 429 is retried,
+    # counted, and lands in the observations of the run the sweep happened inside.
+    connection.sweep_page_size = 137
+    await db.commit()
+    jamf.transient.append(("/api/v4/computers-inventory", 429, {"Retry-After": "0"}))
+    second = await sync_connection(db, connection)
+    assert second.ok
+    assert 137 in jamf.page_sizes
+    assert second.observations.get("throttled_429") == 1
+
+    run = (
+        await db.execute(
+            select(Run)
+            .where(Run.mdm_connection_id == connection.id)
+            .order_by(Run.started_at.desc())
+            .limit(1)
+        )
+    ).scalars().first()
+    assert run is not None and run.observations.get("throttled_429") == 1

@@ -89,6 +89,14 @@ class MdmConnection(Base):
 
     user_agent_override: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # Devices per computers-inventory page, defined as the page size *at full
+    # sections* — the worst case this connection's collections can ask for, since
+    # sections are per collection (#27). Null means the default
+    # (app.mdm.jamf.client.DEFAULT_SWEEP_PAGE_SIZE); the limiter is sections, not the
+    # API, so an admin fetching many sections turns this down and a narrow collection
+    # may override upward (#73).
+    sweep_page_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # What LoonInspect uses this connection for. Devices/Users are CRUD (LoonInspect
     # creates/updates/deletes its own records from the synced data); callback Webhooks
     # and Jamf Pro (patch reporting) are read-only. Devices defaults on since that's the

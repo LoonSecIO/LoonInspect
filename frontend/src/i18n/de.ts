@@ -778,6 +778,10 @@ export const de: Translations = {
     userAgentPlaceholder: "LoonSecIO (Standard)",
     userAgentHint:
       'Wird als Produktname im User-Agent-Header bei jeder Anfrage an Jamf Pro gesendet (z. B. "LoonSecIO/0.1.0 auth"). Leer lassen, um den Instanzstandard zu verwenden.',
+    sweepPageSize: "Seitengröße des Sweeps",
+    sweepPageSizeDefault: "(Standard)",
+    sweepPageSizeHint:
+      "Geräte pro Inventarseite, ausgelegt auf einen Sweep mit allen Sektionen. Der begrenzende Faktor sind die Sektionen, nicht die API: je mehr Sektionen die Collections pro Gerät abrufen, desto kleiner sollten die Seiten sein.",
     whatUsedFor: "Wofür diese Verbindung verwendet wird",
     capabilityDevices: "Geräte",
     capabilityUsers: "Benutzer",

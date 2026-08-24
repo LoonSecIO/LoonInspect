@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import logging
-from collections.abc import AsyncIterator, Sequence
+import random
+from collections.abc import AsyncIterator, Coroutine, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, TypeVar
 from urllib.parse import urlparse
 
 import httpx
@@ -23,6 +25,63 @@ from app.schemas.payload import (
 logger = logging.getLogger(__name__)
 
 _PAGE_SIZE = 100
+
+# Devices per computers-inventory page when the connection doesn't say otherwise.
+# Field-tested at full sections; the limiter is sections, not the API — Jamf accepts
+# pages up to 2000, but a full-section page that size is an enormous body for no
+# latency win. The connection's sweep_page_size overrides this (#71).
+DEFAULT_SWEEP_PAGE_SIZE = 400
+
+# Pages (and smart-group detail reads) in flight at once. Internal rather than a
+# setting: this is the knob that causes 429s, which makes it the knob the dynamic
+# response (#74) owns — the admin's knob is the page size.
+_CONCURRENCY = 4
+
+# The tenant telling us to back off (429) or a hop failing transiently (502/503/504).
+# Retried because a sweep is hundreds of idempotent GETs and one transient must not
+# abort it; bounded because a tenant that is actually down should fail, loudly.
+_TRANSIENT_STATUSES = (429, 502, 503, 504)
+_MAX_TRANSIENT_RETRIES = 3
+_RETRY_BASE_SECONDS = 1.0
+# Retry-After is honored but capped: a sweep stalled minutes per request on a
+# hostile or misconfigured header is worse than the failure it avoids.
+_RETRY_AFTER_CAP_SECONDS = 30.0
+
+_T = TypeVar("_T")
+
+
+@dataclass(slots=True)
+class ThrottleCounters:
+    """What the transport did to survive the tenant's rate limits.
+
+    Accumulated on the client instance — one client is one run — and copied onto
+    `Run.observations` by the sweep, so throttling is visible on the run an admin
+    opens rather than buried in log lines, and a future dynamic tuner (#74) reads
+    structured counters instead of parsing text.
+    """
+
+    throttled_429: int = 0
+    retried_5xx: int = 0
+    backoff_ms_total: int = 0
+
+    def observations(self) -> dict[str, int]:
+        """The nonzero counters, in Run.observations' flat integer vocabulary."""
+        fields = {
+            "throttled_429": self.throttled_429,
+            "retried_5xx": self.retried_5xx,
+            "backoff_ms_total": self.backoff_ms_total,
+        }
+        return {key: value for key, value in fields.items() if value}
+
+
+def _retry_delay(response: httpx.Response, attempt: int) -> float:
+    """Retry-After when Jamf names a number of seconds, exponential backoff with
+    jitter when it doesn't (Retry-After may also be an HTTP-date; not worth parsing
+    when the fallback is a sane wait)."""
+    header = response.headers.get("Retry-After", "").strip()
+    if header.isdigit():
+        return min(float(header), _RETRY_AFTER_CAP_SECONDS)
+    return _RETRY_BASE_SECONDS * (2**attempt) + random.uniform(0, 0.5)
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +132,12 @@ class JamfClient(MdmClient):
         self._client_secret = client_secret
         self._user_agent_override = user_agent_override
         self._token: str | None = None
+        self.throttle = ThrottleCounters()
+
+    # Seam for tests: retry waits go through this so a scripted 429 doesn't cost the
+    # suite real seconds. An attribute, not a wrapper method, so monkeypatching the
+    # class reaches every instance.
+    _sleep = staticmethod(asyncio.sleep)
 
     @property
     def host(self) -> str:
@@ -112,13 +177,20 @@ class JamfClient(MdmClient):
     async def _get(
         self, client: httpx.AsyncClient, path: str, *, comment: str, params: dict | None = None
     ) -> httpx.Response:
-        """Authenticated GET with one retry on 401.
+        """Authenticated GET with one retry on 401 and a bounded retry on transients.
 
-        API client tokens expire (30 minutes by default); a full sweep of a large
-        tenant can outlive one. The first 401 drops the cached token, re-authenticates,
-        and retries once — a second 401 is a real failure and propagates.
+        Two failure modes, two answers. API client tokens expire (30 minutes by
+        default) and a full sweep of a large tenant can outlive one: the first 401
+        drops the cached token, re-authenticates, and retries once — a second 401 is a
+        real failure and propagates. 429/502/503/504 are transient by definition:
+        before this, one 502 anywhere in a 400-request sweep aborted the whole run,
+        and with pages in flight the exposure only grows. Those are retried up to
+        _MAX_TRANSIENT_RETRIES times with Retry-After honored, every wait counted on
+        `self.throttle` for the run row.
         """
-        for attempt in (1, 2):
+        reauthenticated = False
+        transient_retries = 0
+        while True:
             token = await self._authenticate(client)
             response = await client.get(
                 f"{self._base_url}{path}",
@@ -129,11 +201,25 @@ class JamfClient(MdmClient):
                 },
                 params=params,
             )
-            if response.status_code == 401 and attempt == 1:
+            if response.status_code == 401 and not reauthenticated:
                 self._token = None
+                reauthenticated = True
+                continue
+            if response.status_code in _TRANSIENT_STATUSES and transient_retries < _MAX_TRANSIENT_RETRIES:
+                delay = _retry_delay(response, transient_retries)
+                if response.status_code == 429:
+                    self.throttle.throttled_429 += 1
+                else:
+                    self.throttle.retried_5xx += 1
+                self.throttle.backoff_ms_total += int(delay * 1000)
+                logger.info(
+                    "transient response from jamf; backing off and retrying",
+                    extra={"status": response.status_code, "path": path, "delay_seconds": round(delay, 2)},
+                )
+                await self._sleep(delay)
+                transient_retries += 1
                 continue
             return response
-        raise AssertionError("unreachable")
 
     async def test_connection(self) -> dict:
         """Attempt the OAuth client-credentials exchange. Raises on failure (the caller
@@ -191,6 +277,28 @@ class JamfClient(MdmClient):
             logger.warning("inventory collection settings unavailable for aperture", exc_info=True)
             return None
 
+    # --- concurrency -----------------------------------------------------------------
+
+    async def _wave(self, coroutines: Sequence[Coroutine[Any, Any, _T]]) -> list[_T]:
+        """One wave of requests in flight together, results in argument order.
+
+        Waves rather than a semaphore over everything: the consumer processes each
+        device against the database, and a semaphore only bounds fetches in flight —
+        completed pages would pile up behind a slow consumer without limit. A wave is
+        fetched, drained, and only then is the next begun, so memory is bounded at one
+        wave of pages. A failure cancels the wave's siblings and propagates — _get has
+        already retried transients by the time it raises, so a wave failure is real.
+        """
+        try:
+            async with asyncio.TaskGroup() as group:
+                tasks = [group.create_task(coroutine) for coroutine in coroutines]
+        except BaseExceptionGroup as eg:
+            # The single real cause reads better on the run row than the group wrapper.
+            if len(eg.exceptions) == 1 and isinstance(eg.exceptions[0], Exception):
+                raise eg.exceptions[0] from eg
+            raise
+        return [task.result() for task in tasks]
+
     # --- computers -------------------------------------------------------------------
 
     async def iter_computers(
@@ -199,16 +307,24 @@ class JamfClient(MdmClient):
         sections: Sequence[str] = V0_SECTIONS,
         *,
         rsql_filter: str | None = None,
-        page_size: int = _PAGE_SIZE,
+        page_size: int = DEFAULT_SWEEP_PAGE_SIZE,
     ) -> AsyncIterator[dict]:
-        """Page through computers-inventory, yielding raw records one at a time so a
-        40,000-device tenant is never held in memory at once.
+        """Page through computers-inventory with pages in flight, yielding raw records
+        one at a time so a 40,000-device tenant is never held in memory at once.
+
+        Page 0 is fetched alone: its totalCount sizes the fan-out. The known pages are
+        then fetched _CONCURRENCY at a time in waves, and totalCount is treated as a
+        floor, not gospel — after the fanned-out pages land, fetching continues
+        serially until a short page, so a device enrolling mid-sweep is still picked
+        up (`sort=id:asc` pins new enrollments to the tail). Records within a run are
+        order-independent (the ledger keys by device), so yielding wave by wave is
+        sound.
 
         `sections` are contract names (app.mdm.jamf.contract.SECTIONS); they are
         translated to Jamf's section parameter here. `rsql_filter` is Jamf's own RSQL
         (`general.remoteManagement.managed==true`), the hook #27's ingest profiles push
-        their selector through. Sorted by id so pages stay stable while devices check in
-        mid-sweep.
+        their selector through. `page_size` is the connection's sweep_page_size — or a
+        collection's override — resolved by the caller.
         """
         params: dict[str, Any] = {
             "section": jamf_section_param(sections),
@@ -218,13 +334,46 @@ class JamfClient(MdmClient):
         if rsql_filter:
             params["filter"] = rsql_filter
 
-        page = 0
-        while True:
+        async def fetch_page(page: int) -> dict:
             response = await self._get(
                 client, "/api/v4/computers-inventory", comment="inventory", params={**params, "page": page}
             )
             response.raise_for_status()
-            results = response.json().get("results", [])
+            body = response.json()
+            return body if isinstance(body, dict) else {}
+
+        def page_results(body: dict) -> list[dict]:
+            results = body.get("results", [])
+            return results if isinstance(results, list) else []
+
+        body = await fetch_page(0)
+        first = page_results(body)
+        for computer in first:
+            yield computer
+        if len(first) < page_size:
+            return
+
+        total = body.get("totalCount")
+        known_pages = -(-total // page_size) if isinstance(total, int) and total > 0 else 1
+
+        page = 1
+        short_page_seen = False
+        while page < known_pages:
+            wave = range(page, min(page + _CONCURRENCY, known_pages))
+            for wave_body in await self._wave([fetch_page(number) for number in wave]):
+                results = page_results(wave_body)
+                for computer in results:
+                    yield computer
+                if len(results) < page_size:
+                    # The fleet shrank between page 0 and this wave; the serial tail
+                    # below would only re-find the shrink.
+                    short_page_seen = True
+            page = wave.stop
+
+        if short_page_seen:
+            return
+        while True:
+            results = page_results(await fetch_page(page))
             for computer in results:
                 yield computer
             if len(results) < page_size:
@@ -253,12 +402,13 @@ class JamfClient(MdmClient):
     async def fetch_smart_groups(self, client: httpx.AsyncClient, *, page_size: int = _PAGE_SIZE) -> list[dict]:
         """Every smart computer group with its criteria.
 
-        The v2 list endpoint returns ids and names; criteria come from the per-group
+        The v3 list endpoint returns ids and names; criteria come from the per-group
         detail, so this is one request per group — tens to hundreds per tenant, a
-        catalog read rather than a sweep. Needs "Read Smart Computer Groups"; a tenant
-        without the privilege (or an older Jamf Pro without the v2 endpoint) yields an
-        empty list and a log line rather than failing the device sweep it rides along
-        with.
+        catalog read rather than a sweep, fetched _CONCURRENCY at a time because
+        hundreds of serial round-trips was the slowest part of a group-heavy tenant's
+        refresh. Needs "Read Smart Computer Groups"; a tenant without the privilege
+        (or an older Jamf Pro without the v3 endpoint) yields an empty list and a log
+        line rather than failing the device sweep it rides along with.
         """
         groups: list[dict] = []
         page = 0
@@ -282,18 +432,23 @@ class JamfClient(MdmClient):
                 break
             page += 1
 
-        detailed: list[dict] = []
-        for group in groups:
-            group_id = group.get("id")
-            if group_id is None:
-                continue
+        async def fetch_detail(group: dict) -> dict | None:
+            group_id = group["id"]
             response = await self._get(client, f"/api/v3/computer-groups/smart-groups/{group_id}", comment="groups")
             if response.status_code == 404:
-                continue  # deleted between the list and the read
+                return None  # deleted between the list and the read
             response.raise_for_status()
             detail = response.json()
-            if isinstance(detail, dict):
-                detailed.append({"id": str(group_id), **group, **detail})
+            if not isinstance(detail, dict):
+                return None
+            return {"id": str(group_id), **group, **detail}
+
+        with_ids = [group for group in groups if group.get("id") is not None]
+        detailed: list[dict] = []
+        for start in range(0, len(with_ids), _CONCURRENCY):
+            wave = with_ids[start : start + _CONCURRENCY]
+            details = await self._wave([fetch_detail(group) for group in wave])
+            detailed.extend(detail for detail in details if detail is not None)
         return detailed
 
     # --- webhooks --------------------------------------------------------------------
