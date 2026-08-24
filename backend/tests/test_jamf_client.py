@@ -167,3 +167,19 @@ async def test_aimd_floor_is_one_and_sustained_429s_stay_there(recorded_sleeps: 
     assert client.adaptive.floor_seen == 1
     assert client.adaptive.width == 1  # only two clean waves ran after the floor
     assert len(recorded_sleeps) == 3
+
+
+def test_parse_webhook_event_unwraps_the_checkin_nesting() -> None:
+    from app.mdm.jamf.client import parse_webhook_event
+
+    payload = {
+        "webhook": {"webhookEvent": "ComputerCheckIn"},
+        "event": {"trigger": "CLIENT_CHECKIN", "computer": {"jssID": 7, "udid": "U-1", "serialNumber": "S-1"}},
+    }
+    event = parse_webhook_event(payload)
+    # The one payload shape that buries the computer a level deeper — parsed so the
+    # drop (#76) can name what it dropped.
+    assert event.event_name == "ComputerCheckIn"
+    assert event.jamf_id == "7"
+    assert event.udid == "U-1"
+    assert event.serial_number == "S-1"
