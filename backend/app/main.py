@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from sqlalchemy import delete, or_, select, update
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.accounts import router as accounts_router
@@ -29,6 +29,7 @@ from app.api.devices import router as devices_router
 from app.api.feature_flags import router as feature_flags_router
 from app.api.jamf_patch import router as jamf_patch_router
 from app.api.routes import router as api_router
+from app.api.runs import router as runs_router
 from app.api.system import router as system_router
 from app.api.tokens import router as tokens_router
 from app.api.webhooks import router as webhooks_router
@@ -44,12 +45,12 @@ from app.core.database import init_db, session_for_tenant, unscoped_session
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
 from app.core.outbox import deliver_pending, fan_out_pending, purge_delivered_events
+from app.core.runs import purge_runs
 from app.core.sharing import exchange_due, run_exchange
 from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
 from app.mdm.collections import tick_tenant
 from app.mdm.patch.jamf_catalog import sync_catalog
-from app.models.schema import MdmSyncState, Tenant, UserSession
-from app.schemas.payload import SyncStatus
+from app.models.schema import Tenant, UserSession
 
 # Before anything else in the process emits a line, so migration output and startup
 # failures are formatted the same way as request logs rather than escaping as plain
@@ -219,6 +220,24 @@ async def outbox_cleanup() -> None:
             )
 
 
+async def run_cleanup() -> None:
+    """Purges finished runs and their log lines past retention.
+
+    Follows `audit_retention_days` rather than the outbox's seven: the run log is what
+    someone opens to answer "did this run last month", so a week cannot serve its own
+    purpose. Runs alongside the other purges rather than at startup, so a long-lived
+    process still prunes.
+    """
+    for tenant_id in await operational_tenant_ids():
+        async with tenant_job(tenant_id) as db:
+            purged = await purge_runs(db, settings.run_retention_days)
+        if purged:
+            logger.info(
+                "purged old runs",
+                extra={"tenant_id": str(tenant_id), "count": purged},
+            )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Deliberately called again here, not just at import. fastapi-cli imports this
@@ -262,22 +281,17 @@ async def lifespan(app: FastAPI):
         await bootstrap_accounts(db)
         await migrate_legacy_siem_webhook(db)
 
-    # A process that died mid-sync leaves its connection marked 'syncing', and the
-    # manual trigger refuses to start while one is in flight — so without this the
-    # only recovery from a crash or a restart is editing the database by hand.
-    for tenant_id in await operational_tenant_ids():
-        async with tenant_job(tenant_id) as db:
-            stuck = await db.execute(
-                update(MdmSyncState)
-                .where(MdmSyncState.status == SyncStatus.syncing.value)
-                .values(status=SyncStatus.failed.value)
-            )
-            await db.commit()
-            if stuck.rowcount:
-                logger.warning(
-                    "reset connections left mid-sync by a previous run",
-                    extra={"tenant_id": str(tenant_id), "count": stuck.rowcount},
-                )
+    # The blanket "mark every syncing connection failed" sweep that used to live here is
+    # gone (#31). It was correct for exactly one deployment shape — a single process
+    # recovering from its own crash — and actively wrong for every other: with a second
+    # worker or during a rolling restart, the starting instance failed a run that a
+    # healthy instance was still performing, which then carried on writing under a status
+    # saying it had died.
+    #
+    # Recovery is the run's heartbeat instead (app.core.runs). A run whose process
+    # stopped beating is reclaimed by the next acquisition — which is a path exercised
+    # constantly rather than only at startup, and which cannot mistake a live run on
+    # another process for a dead one.
 
     if settings.scheduler_enabled:
         scheduler.add_job(
@@ -317,6 +331,12 @@ async def lifespan(app: FastAPI):
             outbox_cleanup,
             CronTrigger(hour=2, minute=45),
             id="outbox_cleanup",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            run_cleanup,
+            CronTrigger(hour=2, minute=50),
+            id="run_cleanup",
             replace_existing=True,
         )
         scheduler.start()
@@ -373,6 +393,7 @@ app.include_router(api_router)
 app.include_router(webhooks_router)
 app.include_router(connections_router)
 app.include_router(collections_router)
+app.include_router(runs_router)
 app.include_router(changes_router)
 app.include_router(destinations_router)
 app.include_router(system_router)

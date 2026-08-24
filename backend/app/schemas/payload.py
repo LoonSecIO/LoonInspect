@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 
@@ -78,3 +78,10 @@ class InventoryChangedEvent(BaseModel):
     added_apps: list[NormalizedApp]
     removed_apps: list[NormalizedApp]
     occurred_at: datetime
+
+    # The meta block: the run's identity (jobId, trigger, comparison, shortDate) plus the
+    # device's serial, so events split apart at a destination can still be correlated back
+    # to the one pull that produced them (docs/splunk-event-shaping.md). Small and fixed
+    # for now — it is duplicated onto every sub-event a Splunk destination expands this
+    # into, so anything added here multiplies by the device's app count.
+    meta: dict = Field(default_factory=dict)

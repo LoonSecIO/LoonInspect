@@ -1,7 +1,8 @@
 # Ingest scheduling for Jamf Pro pulls
 
-Status: **implemented for the what and the when (#27, 2026-08-22) as *collections*; the run
-object, mutex and heartbeat remain #31** · Target: V0
+Status: **implemented — the what and the when (#27, 2026-08-22) as *collections*; the run
+object, mutex, heartbeat and `_time` window (#31, 2026-08-23, see [runs.md](runs.md))** ·
+Target: V0
 
 > **What landed, and where it deviates.** The ingest profile of §3/§10 shipped under the
 > user-facing name **collection** (`collections` table, `app/mdm/collections.py`,
@@ -15,9 +16,17 @@ object, mutex and heartbeat remain #31** · Target: V0
 > next_due_at <= now RETURNING` (§5 — correct across processes without the run row), runs
 > them sequentially, and advances `next_due_at` in the row's own zone. Rate floors (§4.2)
 > are enforced on save and at claim time; a manual run resets the scheduled one. A device
-> sweep whose connection is mid-sync is left unclaimed and retried next minute. Still
-> open here and owned by #31: the per-connection mutex as a run row, the heartbeat, the
-> concurrency cap (a tick runs one collection at a time today), and jobID-filtered logs.
+> sweep whose connection is mid-sync is left unclaimed and retried next minute.
+>
+> **Then #31 (2026-08-23), which took every correction §4 and §11 propose.** The mutex is
+> a `runs` row with the partial unique index on `(tenant_id, mdm_connection_id,
+> lock_class)` of §4.1; webhooks are lock-exempt in the index predicate (§4.4); the
+> heartbeat shipped with it and replaced the startup blanket reset (§4.5); run-now returns
+> 202 with a jobID on contention rather than a 409 (§4.2); the tick's busy check now reads
+> the run table rather than `mdm_sync_state.status`; and `claim_due` hands back the
+> occurrence it claimed, so a run's window is the time it was *due*. Full design in
+> [runs.md](runs.md). Still open and owned by #27: the concurrency cap of §4.3 — a tick
+> runs one collection at a time because it is sequential, not because anything bounds it.
 
 This document settles how a customer chooses when LoonInspect pulls from Jamf Pro, and
 what stops those pulls from harming the Jamf tenant they point at. It is a design

@@ -86,7 +86,55 @@ export interface MdmSyncStatus {
 
 export interface MdmSyncTriggerResult {
   connectionId: number;
+  /** The run to poll: getRun / getRunLog. */
+  jobId: string;
   status: SyncStatusValue;
+  /** False when this click joined a sweep that was already running rather than starting
+   *  one. Contention is a 202 with the in-flight run's jobID, not a 409 — someone
+   *  clicking during a cron sweep wants to see the fleet syncing, and the running
+   *  sweep's log answers that better than an error. */
+  started: boolean;
+}
+
+// --- Runs (#31): the object a pull happens inside ------------------------------------
+
+export type RunStatus = "running" | "succeeded" | "failed";
+
+export interface Run {
+  /** The jobID, stamped on every event this run produced. */
+  id: string;
+  mdmConnectionId: number;
+  collectionId: number | null;
+  trigger: "sweep" | "manual" | "webhook";
+  comparison: "baseline" | "delta";
+  lockClass: "device_sweep" | "catalog" | "webhook";
+  status: RunStatus;
+  windowStart: string;
+  windowEnd: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  heartbeatAt: string;
+  deviceCount: number;
+  groupCount: number;
+  observations: Record<string, number> | null;
+  error: string | null;
+  actorLabel: string | null;
+}
+
+export interface RunLogLine {
+  id: number;
+  ts: string;
+  level: string;
+  message: string;
+  fields: Record<string, unknown> | null;
+}
+
+export interface RunLogResponse {
+  run: Run;
+  lines: RunLogLine[];
+  /** The poller stops on this rather than on an empty page — a sweep mid-fleet can
+   *  produce no new lines for a minute and still be running. */
+  complete: boolean;
 }
 
 // --- Collections (#27): what to collect from a connection, and when -----------------

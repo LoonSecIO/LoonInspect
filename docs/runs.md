@@ -1,0 +1,160 @@
+# The run
+
+Status: **implemented (#31, 2026-08-23)** · Target: V0
+
+Every pull LoonInspect performs happens inside a *run*. Before this there was no such
+object: a run was a function call with a status string beside it on `mdm_sync_state`, and
+four separate contract clauses each needed something that string could not carry.
+
+| Contract clause | What it needs from the run | Where it is now |
+| --- | --- | --- |
+| "Postgres-backed mutex — the run row **is** the lock" | The row, and a partial unique index | `uq_run_active_lock` |
+| "`device_meta` carries jobID, tenant, runtype, run_type, shortdate" | Identity and classification | `app.core.runs.run_meta` |
+| "scheduled runs back-date all events to the run window" | The window | `app.core.runs.event_time` |
+| "Run log queryable in Postgres, scoped by tenant and jobID" | A foreign key | `run_log` |
+
+They are one piece of work wearing four hats, which is why they landed together.
+
+---
+
+## 1. The mutex
+
+```
+partial unique index on (tenant_id, mdm_connection_id, lock_class)
+  where status = 'running' and lock_class <> 'webhook'
+```
+
+**Acquisition is the INSERT.** Two callers racing for the same connection both insert;
+one commits, the other takes an integrity error and is handed the winner's run. This
+replaces a check-then-set race: `connections.py` read `mdm_sync_state.status`, and if it
+was not `syncing`, wrote `syncing` — two statements across an `await`, so two run-now
+requests arriving together both read `idle`, both passed, and both started a full pull
+against the same Jamf server.
+
+**The key is the connection, not the tenant.** #31 originally sketched the index on
+`(tenant_id)` alone. That is wrong in one direction: it permits one run per *tenant*, so
+a customer holding two Jamf Pro instances could sweep only one at a time, for no reason —
+they are separate hosts with separate capacity.
+
+**`lock_class` separates the expensive from the cheap.** A fifteen-minute catalog refresh
+has no reason to queue behind a forty-minute device sweep of the same connection, and
+making it wait starves the catalog exactly when the sweep is generating references into
+it (`ingest-scheduling.md` §6.2).
+
+**Webhooks are exempt, in the predicate rather than in code.** They must ACK fast, a busy
+tenant fires many, and serializing them behind a sweep makes the real-time path useless.
+A webhook still gets a run — it needs the jobID and the log — but never the lock. Their
+ordering against a sweep is handled by the ledger's monotonic guard instead, which is
+independently correct: an observation older than what the ledger already holds is
+refused, so sweep/webhook interleaving is irrelevant rather than coordinated.
+
+## 2. The heartbeat, which is not optional
+
+A mutex without a heartbeat is a deadlock. A process that dies holding a run leaves the
+row `running` forever and **nothing on that connection can sync again** — worse than the
+race it replaces, because duplicate load is noisy and self-limiting while permanent
+silence pages nobody.
+
+`heartbeat_at` is written every 15 seconds from the device loop (throttled, so it is one
+small `UPDATE` per interval and not one per device). A run whose heartbeat is older than
+`RUN_STALE_AFTER_SECONDS` (default 300 — twenty missed beats, not a slow one) is failed
+by the next acquirer.
+
+Reclaim happens **on acquisition, not at startup**. Startup was the wrong moment twice
+over: it never fires in a process that stays up for a month, and the blanket sweep it
+replaces (`main.py`, now deleted) failed runs that a *different, healthy* instance was
+still performing during a rolling restart — while that instance carried on writing under
+a status saying it had died.
+
+## 3. The window, and the `_time` rule
+
+`occurred_at` used to be `datetime.now()` at emit time on all three paths, so a scheduled
+event and a webhook event were stamped identically — by when the container processed
+them, not by when anything happened.
+
+| Trigger | `_time` | Why |
+| --- | --- | --- |
+| `sweep` | `window_start` | Every event of one nightly sweep shares one timestamp. A forty-minute pull must not smear across forty minutes of the index, and a sweep the tick reached late must still report the configured hour. |
+| `webhook` | device time (Jamf's `reportDate`) | It is a real-time signal about a device; the device's clock is the truth. |
+| `manual` | now | Someone is watching it happen. There is no window to belong to, and back-dating an interactive action is a lie about when it occurred. |
+
+`window_start` for a scheduled run is the occurrence being served — the `next_due_at`
+value the tick claimed, captured *before* the claim advances it, not the moment the tick
+got around to it.
+
+This is what makes the contract's *"verify webhooks always land after the run stamp"* a
+checkable statement rather than a hope: the sweep's events sit at the window, the
+webhook's sit later at device time, and the ordering falls out. `test_runs.py` asserts it.
+
+## 4. `runtype` and `run_type` became `trigger` and `comparison`
+
+The contract specified two `device_meta` fields differing by one underscore and meaning
+entirely unrelated things: `runtype` (what triggered this) and `run_type` (what kind of
+comparison this is). That sits badly against the contract's own rule two lines below —
+*"Field names readable English, no abbreviations"* — because an analyst reading
+`runtype=manual run_type=delta` has no way to tell which is which, and will eventually
+type the wrong one and get zero results with no error.
+
+Emitted as **`trigger`** (`sweep` | `manual` | `webhook`) and **`comparison`**
+(`baseline` | `delta`). Renamed while renaming was still free; customer SPL written
+against these names makes them permanent.
+
+`trigger` reuses the vocabulary the observation ledger already stamps on every span as
+`last_trigger`, rather than the contract's `scheduled`: one word per concept across the
+ledger, the run, and the wire. `comparison` is `baseline` until a connection and lock
+class have completed one successful run, and `delta` after.
+
+The meta block on `device.inventory.changed`:
+
+```json
+{"jobId": "…", "trigger": "sweep", "comparison": "delta",
+ "connectionId": 1, "collectionId": 4, "shortDate": "2026-08-23",
+ "serialNumber": "C02…"}
+```
+
+It stays small on purpose: a Splunk destination expands one device's event into one
+sub-event per app, and every field here is duplicated onto all of them.
+
+## 5. The log, and run-now
+
+`run_log` is one row per engine line, scoped by tenant and run. Deliberately **not** per
+device — a 40,000-device sweep writes milestones plus a progress line every 500 devices,
+about 80 rows. The ledger is already the per-device record.
+
+- `GET /api/runs?connectionId=&status=&limit=` — recent runs
+- `GET /api/runs/{jobId}` — one run
+- `GET /api/runs/{jobId}/log?after=<id>` — lines after a cursor, plus the run and a
+  `complete` flag
+
+`POST /api/mdm/connections/{id}/sync` now **always returns 202 with a jobID**, plus
+`started` saying whether it began a run or joined one. Contention is not a 409: someone
+clicking "Run now" during a cron sweep is asking "is my fleet syncing?", and showing them
+the running sweep's log answers that better than an error does
+(`ingest-scheduling.md` §4.2).
+
+The UI (`RunLogPanel.tsx`) polls every two seconds and stops on two conditions, both
+required: the run reaching a terminal status (**not** an empty page — a sweep mid-fleet
+can be quiet for a minute and still be alive), and the tab becoming hidden
+(`visibilitychange`, resumed on return; the cursor means resuming costs one request for
+everything missed).
+
+## 6. Retention
+
+`RUN_RETENTION_DAYS`, default **30**, purged daily at 02:50 alongside the other cleanups.
+
+Two existing precedents disagreed: `event_outbox_retention_days = 7` and
+`audit_retention_days = 30`. The run log follows audit. It is what someone opens to
+answer "did this run last month", so a week cannot serve its own purpose, and it is far
+smaller than the outbox, which carries a row per event per destination. Log lines are
+removed by cascade from the run rather than by a second delete that could drift.
+
+## 7. What this does not do
+
+- **The concurrency cap** (`ingest-scheduling.md` §4.3) — thirty connections due at 02:00
+  are still admitted one at a time only because the tick runs sequentially, not because
+  anything bounds it. Belongs to #27's queue.
+- **`MdmSyncState` is now a projection**, not a lock. The Connections list still reads its
+  `status`, and the sweep still writes it; nothing decides anything from it any more. The
+  tick's busy check reads the run table instead. Collapsing it into `runs` is a follow-up.
+- **The generic (non-Jamf) provider path** does not open a run. It has no collections and
+  no ledger; when a second provider gets either, it gets a run with them.

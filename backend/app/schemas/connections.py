@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from enum import Enum
 
@@ -96,7 +97,13 @@ class MdmSyncTriggerResult(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     connection_id: int
+    # The run to poll: GET /api/runs/{jobId} and /api/runs/{jobId}/log.
+    job_id: uuid.UUID
     status: str
+    # False when this request joined a run that was already in flight rather than
+    # starting one. The UI needs the distinction to say "already syncing" instead of
+    # implying the click caused the sweep it is now watching.
+    started: bool = True
 
 
 class MdmConnectionTestResult(BaseModel):
