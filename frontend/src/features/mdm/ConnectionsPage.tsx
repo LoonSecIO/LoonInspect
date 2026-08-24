@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CollectionsPanel } from "@/features/mdm/CollectionsPanel";
 import { ConnectionForm } from "@/features/mdm/ConnectionForm";
+import { RunLogPanel } from "@/features/mdm/RunLogPanel";
 import { RefreshCw } from "lucide-react";
 import { ApiError } from "@/config/api";
 import { useHasPermission } from "@/features/auth/store";
@@ -26,6 +27,9 @@ export function ConnectionsPage() {
   const [syncStatuses, setSyncStatuses] = useState<Record<number, MdmSyncStatus>>({});
   const [syncingId, setSyncingId] = useState<number | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  // The run each connection's row is currently showing. Set by clicking Sync now, and
+  // kept after the run ends so the outcome stays readable instead of vanishing.
+  const [runs, setRuns] = useState<Record<number, { jobId: string; joined: boolean }>>({});
 
   async function refresh() {
     setLoading(true);
@@ -61,7 +65,11 @@ export function ConnectionsPage() {
     setSyncingId(id);
     setSyncError(null);
     try {
-      await syncConnection(id);
+      // Always a jobID, whether this started the run or joined one already in flight —
+      // the panel points at the run either way, which is what makes a second click
+      // during a cron sweep informative rather than an error.
+      const triggered = await syncConnection(id);
+      setRuns((held) => ({ ...held, [id]: { jobId: triggered.jobId, joined: !triggered.started } }));
       const statuses = await listSyncStatus();
       setSyncStatuses(Object.fromEntries(statuses.map((s) => [s.mdmConnectionId, s])));
     } catch (caught) {
@@ -226,6 +234,30 @@ export function ConnectionsPage() {
                 </td>
               </tr>
             ))}
+            {/* The run-now panel sits under its connection's row rather than inside a
+                cell: the log is wide, and a nested scroll region inside a table cell
+                collapses the column widths for every other row. */}
+            {connections.flatMap((connection) => {
+              const active = runs[connection.id];
+              if (!active) return [];
+              return [
+                <tr key={`run-${connection.id}`} className="border-b last:border-0">
+                  <td className="px-4 pb-3" colSpan={7}>
+                    <RunLogPanel
+                      jobId={active.jobId}
+                      joined={active.joined}
+                      onFinished={() => {
+                        listSyncStatus()
+                          .then((statuses) =>
+                            setSyncStatuses(Object.fromEntries(statuses.map((s) => [s.mdmConnectionId, s])))
+                          )
+                          .catch(() => undefined);
+                      }}
+                    />
+                  </td>
+                </tr>,
+              ];
+            })}
           </tbody>
         </table>
       </div>

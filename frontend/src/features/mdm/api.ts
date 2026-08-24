@@ -10,6 +10,8 @@ import type {
   MdmSyncStatus,
   MdmSyncTriggerResult,
   ProviderInfo,
+  Run,
+  RunLogResponse,
   SectionInfo
 } from "@/features/mdm/types";
 
@@ -44,10 +46,25 @@ export function listSyncStatus(): Promise<MdmSyncStatus[]> {
   return apiRequest<MdmSyncStatus[]>("/mdm/status");
 }
 
-/** Returns as soon as the pull is queued, not when it finishes — poll listSyncStatus
- *  for progress. */
+/** Returns as soon as the pull is queued, not when it finishes. The result carries the
+ *  jobID to poll with getRunLog — and `started: false` when it joined a run that was
+ *  already in flight. */
 export function syncConnection(id: number): Promise<MdmSyncTriggerResult> {
   return apiRequest<MdmSyncTriggerResult>(`/mdm/connections/${id}/sync`, { method: "POST" });
+}
+
+// --- Runs (#31) ----------------------------------------------------------------------
+
+export function listRuns(connectionId?: number, limit = 25): Promise<Run[]> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (connectionId !== undefined) query.set("connectionId", String(connectionId));
+  return apiRequest<Run[]>(`/runs?${query.toString()}`);
+}
+
+/** Engine lines for one run, incrementally. `after` is the last line id already held,
+ *  so a poll transfers only what appeared since rather than the whole log each tick. */
+export function getRunLog(jobId: string, after = 0): Promise<RunLogResponse> {
+  return apiRequest<RunLogResponse>(`/runs/${jobId}/log?after=${after}`);
 }
 
 // --- Collections (#27) ---------------------------------------------------------------

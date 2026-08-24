@@ -34,6 +34,7 @@ from app.changes.policy import (
 )
 from app.core.context import get_request_id
 from app.core.outbox import enqueue_event
+from app.core.runs import get_run
 from app.mdm.jamf.contract import SECTIONS, Observation, SectionContent
 from app.models.schema import (
     ChangePolicy,
@@ -257,8 +258,14 @@ def _wrap(value) -> dict | None:
 
 
 def _event_payload(row: DeviceChange, connection: MdmConnection) -> dict:
+    run = get_run()
     return {
         "event": EVENT_TYPE,
+        # The run that observed this change. Same jobID as the inventory events from the
+        # same pull, which is what lets a search collect everything one sweep produced —
+        # the correlation triple below identifies the *device*, not the pass that saw it.
+        "job_id": str(run.id) if run else None,
+        "comparison": run.comparison if run else None,
         "connection_id": connection.id,
         "jamf_url": connection.base_url,
         "jamf_id": row.subject_id,

@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 import httpx
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import DBAPIError
 
 # One event loop for the whole module, not one per test: app.core.database's engine
@@ -444,7 +444,20 @@ async def test_second_tenant_cannot_authenticate_yet(seeded) -> None:
     operational tenant, so a second tenant's credentials cannot start a session at
     all. When #35 builds the narrow bypass, this test fails, which is the signal to
     widen this sweep to two live HTTP sessions."""
+    from app.core.database import session_for_tenant
+    from app.core.tenancy import OPERATIONAL_TENANT_ID
     from app.main import app
+    from app.models.schema import LoginAttempt
+
+    # Every run of this test is one more failed login for the same identifier, and the
+    # counter is in the database precisely so it survives a restart. Against a
+    # persistent local database (or a night of repeated regression runs) the sixth run
+    # trips the lockout and this asserts 429 instead of 401 — a green suite that goes
+    # red on its own repetition, saying nothing about tenancy. Cleared so the test is
+    # about the boundary it names.
+    async with session_for_tenant(OPERATIONAL_TENANT_ID) as db:
+        await db.execute(delete(LoginAttempt).where(LoginAttempt.identifier == ADMIN2[0]))
+        await db.commit()
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="https://sweep.example.com") as c:

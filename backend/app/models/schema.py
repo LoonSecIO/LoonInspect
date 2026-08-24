@@ -926,6 +926,138 @@ class Collection(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
 
+# --- The run --------------------------------------------------------------------------
+
+
+class Run(Base):
+    """One pull, as an object — #31, docs/ingest-scheduling.md §4.
+
+    Four contract clauses are the same piece of work: the row **is** the mutex, its id
+    **is** the jobID stamped on every event, its window **is** the `_time` anchor for
+    scheduled runs, and it is the foreign key the run log is scoped by. Before this, a
+    run was a function call with a status string beside it on `mdm_sync_state`, which
+    could express none of the four.
+
+    The mutex is the partial unique index below, and acquisition is the INSERT. Two
+    requests racing for the same connection both insert; one commits and runs, the other
+    takes an integrity error — atomic, unlike the SELECT-then-UPDATE it replaces, where
+    both readers saw 'idle' and both started a sweep. The key is
+    (tenant_id, mdm_connection_id, lock_class) rather than #31's original (tenant_id):
+    the resource being protected is the Jamf server, which is the connection, and a
+    fifteen-minute catalog refresh has no reason to wait behind a forty-minute device
+    sweep of the same one (§4.1).
+
+    `heartbeat_at` is what keeps the mutex from being a deadlock. A process that dies
+    holding a run leaves the row `running` forever, and nothing on that connection can
+    sync again — strictly worse than the duplicate load the race caused, because silence
+    pages nobody. A run whose heartbeat has gone stale is reclaimed by the next
+    acquirer, which is why the blanket "mark every syncing row failed at startup" sweep
+    could be deleted: that one was correct for a single process recovering from a crash
+    and actively wrong during a rolling restart, where the starting instance failed a
+    run another instance was still performing.
+    """
+
+    __tablename__ = "runs"
+    __table_args__ = (
+        # The mutex. Partial, so only live runs contend and history accumulates freely.
+        #
+        # Webhooks are excluded in the predicate rather than in code. They must ACK fast,
+        # a busy tenant fires many, and serializing them behind a forty-minute sweep
+        # makes the real-time path useless — so a webhook gets a run (it needs the jobID
+        # and the log) but never the lock. Their ordering against a sweep is solved by
+        # the ledger's monotonic guard instead, which is independently correct
+        # (docs/ingest-scheduling.md §4.4).
+        Index(
+            "uq_run_active_lock",
+            "tenant_id",
+            "mdm_connection_id",
+            "lock_class",
+            unique=True,
+            postgresql_where=text("status = 'running' AND lock_class <> 'webhook'"),
+        ),
+        Index("ix_runs_recent", "tenant_id", "started_at"),
+        Index("ix_runs_connection", "tenant_id", "mdm_connection_id", "started_at"),
+        # Reclaim scans this: live runs only, oldest heartbeat first.
+        Index("ix_runs_heartbeat", "heartbeat_at", postgresql_where=text("status = 'running'")),
+    )
+
+    # The jobID. A UUID rather than a sequence because it is emitted on every event and
+    # read back as a filter — a customer's Splunk search should not be able to guess a
+    # neighbouring run's id, and it is minted before the row is written.
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    mdm_connection_id: Mapped[int] = mapped_column(
+        ForeignKey("mdm_connections.id", ondelete="CASCADE"), index=True
+    )
+    # Which collection this run served, when it served one. Null for the generic
+    # (non-Jamf) provider path, which has no collections.
+    collection_id: Mapped[int | None] = mapped_column(
+        ForeignKey("collections.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    # What started this: sweep | manual | webhook. The same vocabulary the ledger stamps
+    # on every span as `last_trigger`, deliberately — one word for one concept across the
+    # ledger, the run, and the wire. The contract calls the scheduled case "scheduled";
+    # this product has always called it "sweep" and the spans already say so.
+    trigger: Mapped[str] = mapped_column(String(16), index=True)
+    # What kind of comparison this is: baseline | delta. Baseline is the first successful
+    # run for this connection and lock class — there is nothing to compare against yet.
+    #
+    # The contract named these two fields `runtype` and `run_type`, which differ by one
+    # underscore and mean unrelated things; a Splunk analyst reading
+    # `runtype=manual run_type=delta` cannot tell which is which, against the contract's
+    # own "readable English, no abbreviations" rule two lines below. Renamed here while
+    # renaming is still free — customer SPL written against the emitted names makes this
+    # effectively permanent.
+    comparison: Mapped[str] = mapped_column(String(16))
+    # The mutex dimension: device_sweep | catalog. Derived from the collection's kind.
+    lock_class: Mapped[str] = mapped_column(String(16))
+
+    status: Mapped[str] = mapped_column(String(16), index=True)  # running | succeeded | failed
+
+    # The `_time` anchor. A scheduled run back-dates its events to the occurrence it
+    # serves — the time it was *due*, not the time the tick got to it — so a sweep that
+    # started four minutes late does not shift every event it produces. Manual and
+    # webhook runs anchor on their own start; a webhook's events carry device time
+    # regardless, which is what makes "webhooks always land after the run stamp"
+    # expressible at all (app.core.runs.event_time).
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    window_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    device_count: Mapped[int] = mapped_column(Integer, default=0)
+    group_count: Mapped[int] = mapped_column(Integer, default=0)
+    observations: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Who asked. Null for the scheduled tick, which has no requesting account.
+    actor_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class RunLogLine(Base):
+    """One engine line, scoped by tenant and run — the contract's "run log queryable in
+    Postgres, scoped by tenant and jobID".
+
+    Deliberately not per device: a 40,000-device sweep writes milestones and a progress
+    line every few hundred devices, not 40,000 rows. What the run-now panel polls, and
+    what someone opens a month later to answer "did this run, and what happened".
+    """
+
+    __tablename__ = "run_log"
+    __table_args__ = (Index("ix_run_log_run", "run_id", "id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    level: Mapped[str] = mapped_column(String(8))  # info | warning | error
+    message: Mapped[str] = mapped_column(String(512))
+    fields: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
 # --- The change log -------------------------------------------------------------------
 
 

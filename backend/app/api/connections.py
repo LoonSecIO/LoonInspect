@@ -16,12 +16,19 @@ from app.core.auth import Principal, current_principal, require
 from app.core.context import Actor, reset_actor, set_actor
 from app.core.database import get_db, session_for_tenant
 from app.core.permissions import Permission
+from app.core.runs import (
+    LOCK_DEVICE_SWEEP,
+    TRIGGER_MANUAL,
+    acquire,
+    entered,
+    finish,
+)
 from app.core.tenancy import reset_tenant_id, set_tenant_id
 from app.mdm.collections import ensure_default_collections
 from app.mdm.credentials import CREDENTIAL_SCHEMAS, fingerprint_field
 from app.mdm.jamf.client import JamfClient
-from app.mdm.service import TRIGGER_MANUAL, set_sync_status, sync_connection
-from app.models.schema import MdmConnection, MdmSyncState
+from app.mdm.service import set_sync_status, sync_connection
+from app.models.schema import MdmConnection, Run
 from app.schemas.connections import (
     MdmConnectionCreate,
     MdmConnectionOut,
@@ -363,7 +370,9 @@ async def update_connection(
     return _to_out(connection)
 
 
-async def _run_connection_sync(connection_id: int, actor: Actor, tenant_id: uuid.UUID) -> None:
+async def _run_connection_sync(
+    connection_id: int, actor: Actor, tenant_id: uuid.UUID, job_id: uuid.UUID
+) -> None:
     """Background worker for a manually triggered sync.
 
     Runs outside the request, so it opens its own session — the request's is closed by
@@ -376,15 +385,41 @@ async def _run_connection_sync(connection_id: int, actor: Actor, tenant_id: uuid
     tenant bound and every query against a tenant-scoped table would fail. Taking it
     as an argument means the tenant the sync runs as is the tenant that asked for it,
     fixed at enqueue time.
+
+    The run is acquired in the request rather than here, because the response has to
+    carry its jobID — the caller is handed an id to poll before this task has started.
+    So this takes the id and reloads the row; the lock is already held by the time the
+    202 goes out, which is also what makes a second click land on the first run's log
+    instead of starting a duplicate pull.
     """
     token = set_actor(actor)
     tenant_token = set_tenant_id(tenant_id)
     try:
         async with session_for_tenant(tenant_id) as db:
             connection = await db.get(MdmConnection, connection_id)
-            if connection is None:
+            run = await db.get(Run, job_id)
+            if connection is None or run is None:
                 return
-            await sync_connection(db, connection, trigger=TRIGGER_MANUAL)
+            async with entered(run):
+                try:
+                    result = await sync_connection(db, connection, trigger=TRIGGER_MANUAL, run=run)
+                except Exception as exc:
+                    # The lock is this run row. An unhandled failure that left it
+                    # `running` would block the connection until the heartbeat went
+                    # stale — recoverable, but five minutes of silence for something
+                    # already known to be over.
+                    await db.rollback()
+                    await finish(db, run, ok=False, error=str(exc))
+                    raise
+                await finish(
+                    db,
+                    run,
+                    ok=result.ok,
+                    device_count=result.device_count,
+                    group_count=result.group_count,
+                    observations=dict(result.observations),
+                    error=result.error,
+                )
     finally:
         reset_tenant_id(tenant_token)
         reset_actor(token)
@@ -406,22 +441,43 @@ async def trigger_sync(
 
     Returns 202 immediately and runs in the background: a full fleet pull paginates
     through every device and would otherwise hold the request open past any sensible
-    timeout. Poll /api/mdm/status for progress.
+    timeout. The response carries the jobID to poll — `GET /api/runs/{jobId}` for state,
+    `GET /api/runs/{jobId}/log` for the engine lines.
+
+    **Contention returns 202, not 409.** Clicking "Run now" during a cron sweep means
+    "is my fleet syncing?", and showing the running sweep's log answers that better than
+    an error does. `started` says which happened, so the UI can say "joined the sweep
+    already in progress" rather than implying this click caused it
+    (docs/ingest-scheduling.md §4.2).
     """
     connection = await _get_or_404(connection_id, db)
 
     if not connection.is_active:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Connection is not active")
 
-    state = await db.get(MdmSyncState, connection_id)
-    if state is not None and state.status == SyncStatus.syncing.value:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A sync is already running for this connection",
+    # Acquiring here, in the request, is what closes the race the old check-then-set
+    # left open: two clicks arriving together both INSERT, the index rejects one, and
+    # the loser is handed the winner's jobID instead of starting a second pull against
+    # the same Jamf server.
+    acquisition = await acquire(
+        db,
+        connection,
+        trigger=TRIGGER_MANUAL,
+        lock_class=LOCK_DEVICE_SWEEP,
+        actor_label=principal.account.email,
+    )
+
+    if not acquisition.started:
+        return MdmSyncTriggerResult(
+            connection_id=connection.id,
+            job_id=acquisition.run.id,
+            status=SyncStatus.syncing.value,
+            started=False,
         )
 
-    # Published before the task is queued so a second request racing this one sees
-    # 'syncing' and is rejected rather than starting a duplicate pull.
+    # The connection-level status the Connections list renders. Derived from the run
+    # now rather than being the lock itself — kept because the UI reads it, and set
+    # here so it flips the moment the lock is taken rather than when the task starts.
     await set_sync_status(db, connection, SyncStatus.syncing)
 
     audit(
@@ -430,6 +486,7 @@ async def trigger_sync(
         target_id=connection.id,
         name=connection.name,
         provider=connection.provider,
+        job_id=str(acquisition.run.id),
     )
 
     background_tasks.add_task(
@@ -442,9 +499,15 @@ async def trigger_sync(
             tenant_id=principal.tenant_id,
         ),
         principal.tenant_id,
+        acquisition.run.id,
     )
 
-    return MdmSyncTriggerResult(connection_id=connection.id, status=SyncStatus.syncing.value)
+    return MdmSyncTriggerResult(
+        connection_id=connection.id,
+        job_id=acquisition.run.id,
+        status=SyncStatus.syncing.value,
+        started=True,
+    )
 
 
 @router.delete(

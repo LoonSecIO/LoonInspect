@@ -68,7 +68,14 @@ def jamf(monkeypatch: pytest.MonkeyPatch) -> FakeJamf:
 async def connection(db):
     """A Jamf connection with credentials; removed with everything under it afterwards
     (collections cascade in the database)."""
-    from app.models.schema import Device, DeviceExtensionAttribute, InstalledApp, MdmConnection, MdmSyncState
+    from app.models.schema import (
+        AppCatalogEntry,
+        Device,
+        DeviceExtensionAttribute,
+        InstalledApp,
+        MdmConnection,
+        MdmSyncState,
+    )
 
     row = MdmConnection(
         name=f"collections jamf {uuidlib.uuid4().hex[:8]}",
@@ -90,6 +97,10 @@ async def connection(db):
         await db.execute(delete(Device).where(Device.mdm_connection_id == connection_id))
         await db.execute(delete(MdmSyncState).where(MdmSyncState.mdm_connection_id == connection_id))
         await db.execute(delete(MdmConnection).where(MdmConnection.id == connection_id))
+        # Keyed by tenant rather than by connection, so it outlives the cascade above and
+        # would otherwise leave this suite's sweeps visible to test_catalog_db on the
+        # next run against the same local database.
+        await db.execute(delete(AppCatalogEntry))
         await db.commit()
 
 
@@ -209,18 +220,30 @@ async def test_claim_is_atomic_and_advances_next_due(db, connection) -> None:
     # sweep's defaults, on a shared local database); only this row's claim is asserted.
     now = _now()
     first = await claim_due(db, now)
-    assert row.id in [c.id for c in first]
+    # claim_due hands back (collection, due_at): the occurrence being served, captured
+    # before the UPDATE advances next_due_at past it. That value becomes the run's
+    # window, so a sweep the tick reaches late still stamps its events at the hour the
+    # customer configured (#31).
+    assert row.id in [c.id for c, _ in first]
+    due_at = next(due for c, due in first if c.id == row.id)
+    assert due_at < now
     second = await claim_due(db, now)
-    assert row.id not in [c.id for c in second]
+    assert row.id not in [c.id for c, _ in second]
     await db.refresh(row)
     assert row.last_claimed_at is not None and row.next_due_at is not None and row.next_due_at > now
 
 
 async def test_claim_leaves_a_busy_connection_for_the_next_tick(db, connection) -> None:
+    """Busy is a live run row, not a status string.
+
+    The tick asks the run table because the run row *is* the lock now (#31). Skipping a
+    busy connection at claim time rather than letting acquisition reject it is the point:
+    claiming advances next_due_at, so losing the race afterwards would push the next
+    sweep a whole occurrence out instead of retrying next minute.
+    """
+    from app.core.runs import LOCK_DEVICE_SWEEP, TRIGGER_MANUAL, acquire, finish
     from app.mdm.collections import apply_schedule, claim_due
-    from app.mdm.service import set_sync_status
     from app.models.schema import Collection
-    from app.schemas.payload import SyncStatus
 
     sweep = Collection(
         mdm_connection_id=connection.id, name="sweep due", kind="device_sweep", enabled=True,
@@ -235,15 +258,19 @@ async def test_claim_leaves_a_busy_connection_for_the_next_tick(db, connection) 
         row.next_due_at = _now() - timedelta(minutes=1)
         db.add(row)
     await db.commit()
-    await set_sync_status(db, connection, SyncStatus.syncing)
 
-    mine = {c.kind for c in await claim_due(db, _now()) if c.mdm_connection_id == connection.id}
-    assert mine == {"catalog"}  # the sweep waits; its next_due_at is untouched
+    held = await acquire(db, connection, trigger=TRIGGER_MANUAL, lock_class=LOCK_DEVICE_SWEEP)
+    assert held.started
+
+    mine = {c.kind for c, _ in await claim_due(db, _now()) if c.mdm_connection_id == connection.id}
+    # The catalog is a different lock class and runs regardless — a fifteen-minute
+    # definitions refresh has no reason to wait behind a forty-minute device sweep.
+    assert mine == {"catalog"}
     await db.refresh(sweep)
     assert sweep.next_due_at < _now()
 
-    await set_sync_status(db, connection, SyncStatus.idle)
-    mine = {c.kind for c in await claim_due(db, _now()) if c.mdm_connection_id == connection.id}
+    await finish(db, held.run, ok=True)
+    mine = {c.kind for c, _ in await claim_due(db, _now()) if c.mdm_connection_id == connection.id}
     assert mine == {"device_sweep"}
 
 

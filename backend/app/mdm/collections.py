@@ -16,6 +16,14 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.runs import (
+    LOCK_CATALOG,
+    LOCK_DEVICE_SWEEP,
+    acquire,
+    active_connection_ids,
+    entered,
+    finish,
+)
 from app.core.scheduling import (
     KIND_CATALOG,
     KIND_DEVICE_SWEEP,
@@ -34,7 +42,7 @@ from app.mdm.service import (
     run_jamf_catalog,
     set_sync_status,
 )
-from app.models.schema import Collection, MdmConnection, MdmSyncState
+from app.models.schema import Collection, MdmConnection, Run
 from app.schemas.payload import MdmProvider, SyncStatus
 
 logger = logging.getLogger(__name__)
@@ -139,48 +147,116 @@ async def ensure_default_collections(db: AsyncSession, connection: MdmConnection
 # --- running ------------------------------------------------------------------------
 
 
-async def run_collection(db: AsyncSession, collection: Collection, *, trigger: str) -> ConnectionSyncResult:
-    """Run one collection now and record the outcome on its row."""
+LOCK_CLASS_FOR_KIND = {KIND_DEVICE_SWEEP: LOCK_DEVICE_SWEEP, KIND_CATALOG: LOCK_CATALOG}
+
+
+async def run_collection(
+    db: AsyncSession,
+    collection: Collection,
+    *,
+    trigger: str,
+    run: Run | None = None,
+    due_at: datetime | None = None,
+) -> ConnectionSyncResult:
+    """Run one collection now, inside a run, and record the outcome on its row.
+
+    Acquires the run unless one is handed in. The caller passes one when a single run
+    already covers this work — the connection-level "run now" is one run across every
+    sweep the connection has, not one per sweep, because a jobID the user is shown must
+    identify the whole thing they asked for.
+
+    `due_at` is the occurrence the tick claimed. It becomes the run's window, so a sweep
+    the tick reached four minutes late still stamps its events at the configured hour
+    rather than at whenever the queue drained.
+    """
     connection = await db.get(MdmConnection, collection.mdm_connection_id)
     if connection is None:
         return ConnectionSyncResult(connection_id=collection.mdm_connection_id, ok=False, error="connection missing")
 
-    started = _utcnow()
-    if collection.kind == KIND_DEVICE_SWEEP:
-        await set_sync_status(db, connection, SyncStatus.syncing)
-        result = await run_jamf(
+    lock_class = LOCK_CLASS_FOR_KIND.get(collection.kind)
+    if lock_class is None:
+        return ConnectionSyncResult(connection_id=connection.id, skipped=True, collection_id=collection.id)
+
+    owned = run is None
+    if run is None:
+        acquisition = await acquire(
             db,
             connection,
             trigger=trigger,
-            sections=collection.sections or V0_SECTIONS,
-            selector=collection.selector,
-            quarantined_extension_attributes=collection.quarantined_extension_attributes or (),
-            include_catalog=True,
+            lock_class=lock_class,
             collection_id=collection.id,
+            due_at=due_at,
         )
-    elif collection.kind == KIND_CATALOG:
-        result = await run_jamf_catalog(db, connection, trigger=trigger, collection_id=collection.id)
-    else:
-        return ConnectionSyncResult(connection_id=connection.id, skipped=True, collection_id=collection.id)
+        if not acquisition.started:
+            # Someone else holds this connection and class. Not an error and not a
+            # failure on the row: the work is already happening.
+            logger.info(
+                "collection skipped: a run of this class is already in flight",
+                extra={
+                    "collection_id": collection.id,
+                    "connection_id": connection.id,
+                    "holder_job_id": str(acquisition.run.id),
+                },
+            )
+            return ConnectionSyncResult(connection_id=connection.id, skipped=True, collection_id=collection.id)
+        run = acquisition.run
 
-    collection.last_run_at = started
-    collection.last_run_status = "ok" if result.ok else "failed"
-    collection.last_run_summary = {
-        "trigger": trigger,
-        "deviceCount": result.device_count,
-        "groupCount": result.group_count,
-        "observations": dict(result.observations),
-        "error": result.error,
-        "seconds": round((_utcnow() - started).total_seconds(), 1),
-    }
-    await db.commit()
+    started = _utcnow()
+    async with entered(run):
+        if collection.kind == KIND_DEVICE_SWEEP:
+            await set_sync_status(db, connection, SyncStatus.syncing)
+            result = await run_jamf(
+                db,
+                connection,
+                trigger=trigger,
+                sections=collection.sections or V0_SECTIONS,
+                selector=collection.selector,
+                quarantined_extension_attributes=collection.quarantined_extension_attributes or (),
+                include_catalog=True,
+                collection_id=collection.id,
+                run=run,
+            )
+        else:
+            result = await run_jamf_catalog(
+                db, connection, trigger=trigger, collection_id=collection.id, run=run
+            )
+
+        collection.last_run_at = started
+        collection.last_run_status = "ok" if result.ok else "failed"
+        collection.last_run_summary = {
+            "jobId": str(run.id),
+            "trigger": trigger,
+            "deviceCount": result.device_count,
+            "groupCount": result.group_count,
+            "observations": dict(result.observations),
+            "error": result.error,
+            "seconds": round((_utcnow() - started).total_seconds(), 1),
+        }
+        await db.commit()
+
+        if owned:
+            await finish(
+                db,
+                run,
+                ok=result.ok,
+                device_count=result.device_count,
+                group_count=result.group_count,
+                observations=dict(result.observations),
+                error=result.error,
+            )
     return result
 
 
-async def run_connection(db: AsyncSession, connection: MdmConnection, *, trigger: str) -> ConnectionSyncResult:
+async def run_connection(
+    db: AsyncSession, connection: MdmConnection, *, trigger: str, run: Run | None = None
+) -> ConnectionSyncResult:
     """The connection-level "run now": every enabled device sweep the connection has,
     in order. Each sweep ends with a catalog refresh, so catalog collections are not run
-    here — they keep their own cadence between sweeps."""
+    here — they keep their own cadence between sweeps.
+
+    One run covers all of them when the caller supplies it, which is what run-now does:
+    the jobID it handed the browser has to name the whole action, and the panel polling
+    that id has to keep showing progress across the second sweep."""
     await ensure_default_collections(db, connection)
     await db.commit()
     sweeps = [
@@ -190,7 +266,7 @@ async def run_connection(db: AsyncSession, connection: MdmConnection, *, trigger
         logger.info("connection has no enabled device sweep", extra={"connection_id": connection.id})
         return ConnectionSyncResult(connection_id=connection.id, skipped=True)
 
-    results = [await run_collection(db, row, trigger=trigger) for row in sweeps]
+    results = [await run_collection(db, row, trigger=trigger, run=run) for row in sweeps]
     observations: dict[str, int] = {}
     for result in results:
         for key, value in result.observations.items():
@@ -210,7 +286,7 @@ async def run_connection(db: AsyncSession, connection: MdmConnection, *, trigger
 # --- the tick -----------------------------------------------------------------------
 
 
-async def claim_due(db: AsyncSession, now: datetime | None = None) -> list[Collection]:
+async def claim_due(db: AsyncSession, now: datetime | None = None) -> list[tuple[Collection, datetime]]:
     """Claim every collection that is due in this tenant.
 
     The claim is one conditional UPDATE per row — `WHERE next_due_at <= now` — that
@@ -234,18 +310,20 @@ async def claim_due(db: AsyncSession, now: datetime | None = None) -> list[Colle
     if not candidates:
         return []
 
-    busy = set(
-        (
-            await db.execute(
-                select(MdmSyncState.mdm_connection_id).where(MdmSyncState.status == SyncStatus.syncing.value)
-            )
-        ).scalars().all()
-    )
+    # Asked of the run table, not of mdm_sync_state's status string — the run row is the
+    # lock now, and reading the lock from anywhere else is how the two drift. Skipping a
+    # busy connection here rather than letting acquisition reject it is deliberate:
+    # claiming advances next_due_at, so losing the race after a claim would push the next
+    # sweep a whole occurrence out instead of retrying next minute.
+    busy = await active_connection_ids(db, LOCK_DEVICE_SWEEP)
 
-    claimed: list[Collection] = []
+    claimed: list[tuple[Collection, datetime]] = []
     for collection in candidates:
         if collection.kind == KIND_DEVICE_SWEEP and collection.mdm_connection_id in busy:
             continue
+        # Captured before the UPDATE overwrites it. This is the occurrence being served —
+        # the run's window, and so the `_time` every event of this sweep is stamped with.
+        due_at = collection.next_due_at
         following = next_due(schedule_of(collection), now, anchor=collection.last_run_at)
         won = (
             await db.execute(
@@ -255,8 +333,8 @@ async def claim_due(db: AsyncSession, now: datetime | None = None) -> list[Colle
                 .returning(Collection.id)
             )
         ).scalar_one_or_none()
-        if won is not None:
-            claimed.append(collection)
+        if won is not None and due_at is not None:
+            claimed.append((collection, due_at))
     await db.commit()
     return claimed
 
@@ -265,7 +343,7 @@ async def tick_tenant(db: AsyncSession, now: datetime | None = None) -> list[Con
     """One tenant's slice of the minute tick: claim what is due, run it in turn."""
     now = now or _utcnow()
     results: list[ConnectionSyncResult] = []
-    for collection in await claim_due(db, now):
+    for collection, due_at in await claim_due(db, now):
         if within_rate_floor(collection.kind, collection.last_run_at, now):
             collection.last_run_status = "skipped"
             collection.last_run_summary = {"trigger": TRIGGER_SWEEP, "reason": "within rate floor"}
@@ -275,7 +353,7 @@ async def tick_tenant(db: AsyncSession, now: datetime | None = None) -> list[Con
                 extra={"collection_id": collection.id, "kind": collection.kind, "last_run_at": collection.last_run_at},
             )
             continue
-        results.append(await run_collection(db, collection, trigger=TRIGGER_SWEEP))
+        results.append(await run_collection(db, collection, trigger=TRIGGER_SWEEP, due_at=due_at))
     return results
 
 

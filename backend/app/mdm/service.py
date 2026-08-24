@@ -17,6 +17,19 @@ from app.core.content_keys import app_full_key, app_title_key
 from app.core.context import get_request_id
 from app.core.hashing import compute_app_hash, compute_version_hash
 from app.core.outbox import enqueue_event
+from app.core.runs import (
+    LOCK_WEBHOOK,
+    TRIGGER_MANUAL,
+    TRIGGER_SWEEP,
+    TRIGGER_WEBHOOK,
+    acquire,
+    beat,
+    entered,
+    event_time,
+    finish,
+    run_meta,
+)
+from app.core.runs import log as run_log
 from app.mdm.factory import get_mdm_client
 from app.mdm.jamf.client import JamfClient, normalize_computer, parse_webhook_event
 from app.mdm.jamf.contract import (
@@ -27,7 +40,15 @@ from app.mdm.jamf.contract import (
     canonicalize_smart_group,
 )
 from app.mdm.patch.factory import get_patch_provider
-from app.models.schema import Collection, Device, DeviceExtensionAttribute, InstalledApp, MdmConnection, MdmSyncState
+from app.models.schema import (
+    Collection,
+    Device,
+    DeviceExtensionAttribute,
+    InstalledApp,
+    MdmConnection,
+    MdmSyncState,
+    Run,
+)
 from app.observations.ledger import (
     RecordResult,
     current_span,
@@ -44,11 +65,16 @@ from app.schemas.payload import (
 
 logger = logging.getLogger(__name__)
 
-# What triggered an ingest. Stamped on every span as `last_trigger`; #31's run object
-# will carry the same vocabulary.
-TRIGGER_SWEEP = "sweep"
-TRIGGER_MANUAL = "manual"
-TRIGGER_WEBHOOK = "webhook"
+# What triggered an ingest. Stamped on every span as `last_trigger`, and now also the
+# run's own `trigger` — one vocabulary across the ledger, the run, and the wire, which is
+# what the note here promised before #31 landed. Defined in app.core.runs and re-exported
+# so the existing importers of this module keep working.
+__all__ = ["TRIGGER_MANUAL", "TRIGGER_SWEEP", "TRIGGER_WEBHOOK"]
+
+# How many devices between progress lines in the run log. Chosen so a 40,000-device sweep
+# writes 80 lines, not 40,000: the log is for someone watching a sweep move, not a record
+# of every device (the ledger already is that).
+_PROGRESS_EVERY = 500
 
 
 def apply_hashes(app: NormalizedApp) -> NormalizedApp:
@@ -105,7 +131,7 @@ async def set_sync_status(
 
 
 async def sync_connection(
-    db: AsyncSession, connection: MdmConnection, *, trigger: str = TRIGGER_SWEEP
+    db: AsyncSession, connection: MdmConnection, *, trigger: str = TRIGGER_SWEEP, run: Run | None = None
 ) -> ConnectionSyncResult:
     """Pull inventory for a single connection.
 
@@ -130,7 +156,7 @@ async def sync_connection(
         # sweep it has (creating the defaults if none exist yet).
         from app.mdm.collections import run_connection  # local: collections imports this module
 
-        return await run_connection(db, connection, trigger=trigger)
+        return await run_connection(db, connection, trigger=trigger, run=run)
 
     try:
         result = await _sync_generic(db, connection, client)
@@ -202,6 +228,7 @@ async def run_jamf(
     quarantined_extension_attributes: Iterable[str] = (),
     include_catalog: bool = True,
     collection_id: int | None = None,
+    run: Run | None = None,
 ) -> ConnectionSyncResult:
     """One device sweep of a Jamf connection, as a collection describes it.
 
@@ -221,6 +248,7 @@ async def run_jamf(
             selector=selector,
             quarantine=quarantine,
             include_catalog=include_catalog,
+            run=run,
         )
     except Exception as exc:
         await db.rollback()
@@ -257,6 +285,7 @@ async def run_jamf_catalog(
     *,
     trigger: str,
     collection_id: int | None = None,
+    run: Run | None = None,
 ) -> ConnectionSyncResult:
     """The catalog class on its own: smart-group definitions with criteria, no devices.
     Tens to hundreds of small reads, so it can run far more often than a sweep and
@@ -272,6 +301,9 @@ async def run_jamf_catalog(
             await db.commit()
             group_count = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes)
             await db.commit()
+            if run is not None:
+                await beat(db, run)
+                await run_log(db, run, "info", "group definitions observed", groupCount=group_count)
     except Exception as exc:
         await db.rollback()
         logger.exception(
@@ -325,6 +357,7 @@ async def _sync_jamf(
     selector: str | None = None,
     quarantine: Sequence[str] = (),
     include_catalog: bool = True,
+    run: Run | None = None,
 ) -> ConnectionSyncResult:
     outcomes: Counter[str] = Counter()
     device_count = 0
@@ -337,6 +370,16 @@ async def _sync_jamf(
         aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)
         connection.last_successful_auth_at = datetime.now(timezone.utc)
         await db.commit()
+        if run is not None:
+            await run_log(
+                db,
+                run,
+                "info",
+                "aperture captured",
+                apertureDigest=aperture_digest[:12],
+                sections=list(sections),
+                selector=selector,
+            )
 
         # Streamed, not collected: a 40,000-device tenant is paged through one record
         # at a time, and each device commits on its own (process_sync), so a failure on
@@ -356,11 +399,33 @@ async def _sync_jamf(
             outcomes[result.outcome] += 1
             device_count += 1
 
+            if run is not None:
+                # Between devices, not per device: the beat is throttled to one small
+                # UPDATE every fifteen seconds, and the progress line to every few
+                # hundred devices. Both live in the loop because this *is* the long
+                # stretch — a forty-minute pull with no sign of life is exactly what the
+                # reclaim would otherwise mistake for a dead process.
+                await beat(db, run)
+                if device_count % _PROGRESS_EVERY == 0:
+                    await run_log(
+                        db, run, "info", "devices processed", deviceCount=device_count, outcomes=dict(outcomes)
+                    )
+
         # Group definitions ride along with the device sweep so the catalog is never
         # older than the memberships that reference it (docs/ingest-scheduling.md §6.2).
         if include_catalog:
             group_count = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes)
         await db.commit()
+        if run is not None:
+            await run_log(
+                db,
+                run,
+                "info",
+                "sweep complete",
+                deviceCount=device_count,
+                groupCount=group_count,
+                outcomes=dict(outcomes),
+            )
 
     await sync_state(db, connection)
     await db.commit()
@@ -462,22 +527,39 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
         return None
 
     sections, quarantine = await webhook_scope(db, connection)
-    async with client.http() as http:
-        aperture = await capture_aperture(
-            client, http, sections=sections, quarantined_extension_attributes=quarantine
-        )
-        aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)
-        raw = await client.fetch_computer_detail(http, event.jamf_id)
 
-    return await ingest_computer(
-        db,
-        connection,
-        raw,
-        aperture_digest=aperture_digest,
-        trigger=TRIGGER_WEBHOOK,
-        sections=sections,
-        quarantined_extension_attributes=quarantine,
+    # A webhook is a run with one device in it — it needs the jobID so its event is
+    # correlatable and the log so it is accountable. It does *not* take the lock: the
+    # index predicate excludes the webhook class, so a burst of them from a busy tenant
+    # runs concurrently and never queues behind a forty-minute sweep (§4.4).
+    acquisition = await acquire(
+        db, connection, trigger=TRIGGER_WEBHOOK, lock_class=LOCK_WEBHOOK, actor_label=event.event_name
     )
+    run = acquisition.run
+    async with entered(run):
+        try:
+            async with client.http() as http:
+                aperture = await capture_aperture(
+                    client, http, sections=sections, quarantined_extension_attributes=quarantine
+                )
+                aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)
+                raw = await client.fetch_computer_detail(http, event.jamf_id)
+
+            result = await ingest_computer(
+                db,
+                connection,
+                raw,
+                aperture_digest=aperture_digest,
+                trigger=TRIGGER_WEBHOOK,
+                sections=sections,
+                quarantined_extension_attributes=quarantine,
+            )
+        except Exception as exc:
+            await db.rollback()
+            await finish(db, run, ok=False, error=str(exc))
+            raise
+        await finish(db, run, ok=True, device_count=1, observations={result.outcome: 1})
+        return result
 
 
 async def webhook_scope(db: AsyncSession, connection: MdmConnection) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -674,7 +756,12 @@ async def process_sync(
             )
             for row in removed_rows
         ],
-        occurred_at=datetime.now(timezone.utc),
+        # Not `now`. Under a scheduled sweep this is the run's window, so every event the
+        # sweep produces shares one `_time` instead of smearing across the forty minutes
+        # the pull happened to take; a webhook carries the device's own reportDate. See
+        # app.core.runs.event_time.
+        occurred_at=event_time(device.last_inventory_at),
+        meta=run_meta() | {"serialNumber": device.serial_number},
     )
 
     # Enqueued in the same transaction as the device/app state change below, so "we

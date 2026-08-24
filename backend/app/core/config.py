@@ -44,6 +44,18 @@ class Settings(BaseSettings):
 
     event_outbox_retention_days: int = 7
 
+    # How long a run may go without a heartbeat before the next acquirer reclaims it as
+    # dead. The floor is a device that takes longer than this to process: the sweep beats
+    # every 15s between devices, so five minutes is twenty missed beats, not a slow one.
+    # Too low steals the lock from a healthy run; too high is how long a connection stays
+    # unsyncable after a hard kill.
+    run_stale_after_seconds: int = 300
+
+    # Follows audit (30) rather than the outbox (7): the run log is what someone opens to
+    # answer "did this run last month", and it is one row per run plus engine lines, not
+    # a row per event per destination. See app.core.runs.purge_runs.
+    run_retention_days: int = 30
+
     user_agent_product_name: str = "LoonSecIO"
 
     # Where the daily exchange posts. The default is the production collector; tests
@@ -158,6 +170,20 @@ class Settings(BaseSettings):
         if 1 <= value <= 3650:
             return value
         raise ValueError("event_outbox_retention_days must be between 1 and 3650")
+
+    @field_validator("run_retention_days")
+    @classmethod
+    def _validate_run_retention(cls, value: int) -> int:
+        if 1 <= value <= 3650:
+            return value
+        raise ValueError("run_retention_days must be between 1 and 3650")
+
+    @field_validator("run_stale_after_seconds")
+    @classmethod
+    def _validate_run_stale_after(cls, value: int) -> int:
+        if 60 <= value <= 86400:
+            return value
+        raise ValueError("run_stale_after_seconds must be between 60 and 86400")
 
     @field_validator("session_lifetime_seconds")
     @classmethod
