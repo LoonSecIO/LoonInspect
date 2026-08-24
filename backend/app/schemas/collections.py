@@ -30,6 +30,7 @@ class CollectionCreate(_Base):
     enabled: bool = True
     sections: list[str] = []
     selector: str | None = None
+    page_size: int | None = Field(default=None, ge=100, le=1000)
     quarantined_extension_attributes: list[str] = []
     frequency: Frequency | None = None
     interval_n: int | None = None
@@ -44,6 +45,7 @@ class CollectionUpdate(_Base):
     enabled: bool | None = None
     sections: list[str] | None = None
     selector: str | None = None
+    page_size: int | None = Field(default=None, ge=100, le=1000)
     quarantined_extension_attributes: list[str] | None = None
     frequency: Frequency | None = None
     interval_n: int | None = None
@@ -61,6 +63,7 @@ class CollectionOut(_Base):
     enabled: bool
     sections: list[str]
     selector: str | None
+    page_size: int | None
     quarantined_extension_attributes: list[str]
     frequency: Frequency | None
     interval_n: int | None

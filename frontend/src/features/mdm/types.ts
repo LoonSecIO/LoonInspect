@@ -31,6 +31,7 @@ export interface MdmConnection {
   hasWebhookSecret: boolean;
   hasLoonsecioLicenseKey: boolean;
   userAgentOverride: string | null;
+  sweepPageSize: number | null;
   capabilityDevices: boolean;
   capabilityUsers: boolean;
   capabilityWebhooks: boolean;
@@ -53,6 +54,7 @@ export interface MdmConnectionInput {
   loonsecioLicenseKey?: string;
   loonsecioDataSharingEnabled?: boolean;
   userAgentOverride?: string;
+  sweepPageSize?: number | null;
   capabilityDevices?: boolean;
   capabilityUsers?: boolean;
   capabilityWebhooks?: boolean;
@@ -150,6 +152,7 @@ export interface Collection {
   enabled: boolean;
   sections: string[];
   selector: string | null;
+  pageSize: number | null;
   quarantinedExtensionAttributes: string[];
   frequency: CollectionFrequency | null;
   intervalN: number | null;
@@ -171,6 +174,7 @@ export interface CollectionInput {
   enabled?: boolean;
   sections?: string[];
   selector?: string | null;
+  pageSize?: number | null;
   quarantinedExtensionAttributes?: string[];
   frequency?: CollectionFrequency | null;
   intervalN?: number | null;

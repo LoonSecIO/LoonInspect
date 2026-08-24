@@ -292,7 +292,7 @@ async def test_tick_skips_a_collection_inside_its_rate_floor(db, connection, jam
     assert not any(r.collection_id == row.id for r in results)
     await db.refresh(row)
     assert row.last_run_status == "skipped"
-    assert not any(path.startswith("GET /api/v1/computers-inventory") for path in jamf.requests)
+    assert not any(path.startswith("GET /api/v4/computers-inventory") for path in jamf.requests)
 
 
 async def test_webhook_path_is_scoped_by_its_collection(db, connection, jamf: FakeJamf) -> None:

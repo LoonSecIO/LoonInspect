@@ -293,7 +293,7 @@ cares.
 ### 6.1 What actually exists today
 
 The Jamf client has exactly one fetch method: `fetch_devices()` (`client.py:77`) against
-`/api/v1/computers-inventory`. There is no group, profile, or extension-attribute
+`/api/v4/computers-inventory`. There is no group, profile, or extension-attribute
 definition fetching anywhere. EA *values* ride inside each computer record, which is why
 `EXTENSION_ATTRIBUTES` sits in `INVENTORY_SECTIONS`.
 

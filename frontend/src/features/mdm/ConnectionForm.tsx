@@ -49,6 +49,7 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
 
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [userAgentOverride, setUserAgentOverride] = useState(connection?.userAgentOverride ?? "");
+  const [sweepPageSize, setSweepPageSize] = useState<number>(connection?.sweepPageSize ?? 400);
   const [capabilityDevices, setCapabilityDevices] = useState(connection?.capabilityDevices ?? true);
   const [capabilityUsers, setCapabilityUsers] = useState(connection?.capabilityUsers ?? false);
   const [capabilityWebhooks, setCapabilityWebhooks] = useState(connection?.capabilityWebhooks ?? false);
@@ -157,6 +158,9 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
     if (Object.keys(filledCredentials).length > 0) input.credentials = filledCredentials;
     if (loonsecioLicenseKey) input.loonsecioLicenseKey = loonsecioLicenseKey;
     if (userAgentOverride) input.userAgentOverride = userAgentOverride;
+    // 400 is the default: stored as null so a connection that never deviated (or slid
+    // back) keeps following the instance default if it ever moves.
+    if (provider === "jamf") input.sweepPageSize = sweepPageSize === 400 ? null : sweepPageSize;
 
     try {
       if (connection) {
@@ -385,6 +389,25 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
                   placeholder={t.connectionForm.userAgentPlaceholder}
                 />
                 <p className="text-xs text-muted-foreground">{t.connectionForm.userAgentHint}</p>
+              </label>
+            )}
+
+            {provider === "jamf" && (
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">
+                  {t.connectionForm.sweepPageSize}: {sweepPageSize}
+                  {sweepPageSize === 400 ? ` ${t.connectionForm.sweepPageSizeDefault}` : ""}
+                </span>
+                <input
+                  type="range"
+                  min={100}
+                  max={1000}
+                  step={50}
+                  className="w-full"
+                  value={sweepPageSize}
+                  onChange={(e) => setSweepPageSize(Number(e.target.value))}
+                />
+                <p className="text-xs text-muted-foreground">{t.connectionForm.sweepPageSizeHint}</p>
               </label>
             )}
 

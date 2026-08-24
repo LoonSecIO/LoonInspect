@@ -241,7 +241,7 @@ was taken that could change what it contains without the device changing:
 }
 ```
 
-`inventoryCollection` is Jamf's own `/v1/computer-inventory-collection-settings`. When
+`inventoryCollection` is Jamf's own `/v2/computer-inventory-collection-settings`. When
 the API client lacks the privilege to read it, that is recorded as `{"available": false}`
 rather than by omission, so it can never be confused with settings that were read and
 happened to be empty.
@@ -278,7 +278,7 @@ how a connection is read.
 Group *membership* is device-side: an entry per group in `group_memberships`, hashed on
 `{groupId, smartGroup}` with the name as a label — so a rename is not a membership change
 on every member. Group *definitions* are their own subject (`computer_group`), observed
-once per run from `/v2/computer-groups/smart-groups/{id}`, with a single `definition`
+once per run from `/v3/computer-groups/smart-groups/{id}`, with a single `definition`
 section over `{name, siteId, criteria}` — criteria ordered by priority, conjunction
 lower-cased, parentheses preserved. A rename or a criteria edit is one explicit span on
 that subject.
@@ -345,7 +345,7 @@ The webhook path **fetches**. Jamf's computer webhooks (`ComputerAdded`,
 `ComputerCheckIn`, `ComputerInventoryCompleted`) carry an identity — `jssID`, `udid`,
 serial, a few general fields — and no inventory; normalizing the payload directly diffed
 an empty application list against the stored one and reported every app removed on every
-webhook. `ingest_webhook` reads `jssID` and fetches `/v1/computers-inventory-detail/{id}`,
+webhook. `ingest_webhook` reads `jssID` and fetches `/v4/computers-inventory-detail/{id}`,
 which is exactly #27's inversion: the event path, being one device already known to have
 changed, fetches *more* than the sweep.
 

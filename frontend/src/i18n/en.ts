@@ -639,6 +639,9 @@ export const en = {
         managed: "Managed only",
         unmanaged: "Unmanaged only"
       } as Record<string, string>,
+      pageSize: "Page size override",
+      pageSizePlaceholder: "Inherit from connection",
+      pageSizeHelp: "Devices per inventory page for this collection only. Empty inherits the connection's setting; a narrow collection (few sections) can take bigger pages than the connection's full-section worst case.",
       quarantine: "Quarantined extension attributes",
       quarantineHelp: "Definition ids of extension attributes that change on every recon (uptime, battery, free disk). Their values are not hashed, so they cannot churn the ledger.",
       schedule: "Schedule",
@@ -770,6 +773,10 @@ export const en = {
     userAgentPlaceholder: "LoonSecIO (default)",
     userAgentHint:
       'Sent as the product name in the User-Agent header on every request to Jamf Pro (e.g. "LoonSecIO/0.1.0 auth"). Leave blank to use the instance default.',
+    sweepPageSize: "Sweep page size",
+    sweepPageSizeDefault: "(default)",
+    sweepPageSizeHint:
+      "Devices requested per inventory page, sized for a full-section sweep. The limiter is sections, not the API: the more sections your collections pull per device, the smaller the pages should be.",
     whatUsedFor: "What this connection is used for",
     capabilityDevices: "Devices",
     capabilityUsers: "Users",

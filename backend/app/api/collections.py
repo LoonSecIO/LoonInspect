@@ -39,6 +39,7 @@ def _to_out(row: Collection) -> CollectionOut:
         enabled=row.enabled,
         sections=list(row.sections or []),
         selector=row.selector,
+        page_size=row.page_size,
         quarantined_extension_attributes=list(row.quarantined_extension_attributes or []),
         frequency=row.frequency,
         interval_n=row.interval_n,
@@ -84,6 +85,8 @@ def _validate_scope(collection: Collection) -> None:
         collection.selector = None
     if collection.kind == KIND_WEBHOOK:
         collection.selector = None
+    if collection.kind != KIND_DEVICE_SWEEP:
+        collection.page_size = None  # webhooks fetch by id and catalogs read no computers
     if collection.selector is not None:
         collection.selector = collection.selector.strip() or None
     collection.quarantined_extension_attributes = [
@@ -147,6 +150,7 @@ async def create_collection(
         enabled=payload.enabled,
         sections=list(payload.sections),
         selector=payload.selector,
+        page_size=payload.page_size,
         quarantined_extension_attributes=list(payload.quarantined_extension_attributes),
         frequency=payload.frequency.value if payload.frequency else None,
         interval_n=payload.interval_n,
@@ -197,7 +201,7 @@ async def update_collection(
     row = await _collection_or_404(collection_id, db)
     data = payload.model_dump(exclude_unset=True, mode="json")
 
-    for key in ("name", "enabled", "sections", "selector", "quarantined_extension_attributes",
+    for key in ("name", "enabled", "sections", "selector", "page_size", "quarantined_extension_attributes",
                 "frequency", "interval_n", "at_hour", "at_minute", "weekday", "timezone"):
         if key in data:
             setattr(row, key, data[key])
