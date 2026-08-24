@@ -38,7 +38,7 @@ from app.schemas.connections import (
     MdmSyncTriggerResult,
     PatchManagementProvider,
     validate_jamf_specific_fields,
-    validate_loonsecio_requirement,
+    validate_patch_provider_available,
 )
 from app.schemas.payload import MdmProvider, SyncStatus
 
@@ -187,11 +187,6 @@ async def create_connection(
 async def test_connection(
     payload: MdmConnectionTestRequest, db: AsyncSession = Depends(get_db)
 ) -> MdmConnectionTestResult:
-    if payload.provider != MdmProvider.jamf:
-        return MdmConnectionTestResult(
-            success=False, message="Testing is currently only supported for Jamf connections."
-        )
-
     existing: MdmConnection | None = None
     if payload.connection_id is not None:
         existing = await db.get(MdmConnection, payload.connection_id)
@@ -296,6 +291,10 @@ async def update_connection(
     if "webhook_secret" in data:
         connection.webhook_secret_encrypted = data["webhook_secret"]
     if "patch_management_provider" in data:
+        try:
+            validate_patch_provider_available(PatchManagementProvider(data["patch_management_provider"]))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         connection.patch_management_provider = data["patch_management_provider"]
     if "loonsecio_license_key" in data:
         connection.loonsecio_license_key_encrypted = data["loonsecio_license_key"]
@@ -335,11 +334,6 @@ async def update_connection(
         connection.credentials_encrypted = json.dumps(validated)
 
     try:
-        validate_loonsecio_requirement(
-            PatchManagementProvider(connection.patch_management_provider),
-            connection.loonsecio_license_key_encrypted,
-            connection.loonsecio_data_sharing_enabled,
-        )
         validate_jamf_specific_fields(
             MdmProvider(connection.provider),
             PatchManagementProvider(connection.patch_management_provider),

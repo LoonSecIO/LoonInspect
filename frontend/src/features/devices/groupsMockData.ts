@@ -4,7 +4,7 @@ export interface DeviceGroup {
   type: "smart" | "static";
   description: string;
   deviceCount: number;
-  source: "jamf" | "simplemdm" | "loonsecio";
+  source: "jamf" | "loonsecio";
 }
 
 // Placeholder data for the Groups stub — no backend concept for device groups

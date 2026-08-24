@@ -5,8 +5,9 @@ export const INTEGRATION_GROUPS: IntegrationGroup[] = [
     id: "mdm",
     vendors: [
       { id: "jamf", status: "available", href: "/settings/connections", logoUrl: "/logos/jamf.svg" },
-      { id: "simplemdm", status: "available", href: "/settings/connections" },
-      { id: "addigy", status: "available", href: "/settings/connections", logoUrl: "/logos/addigy.svg" }
+      // Roadmap, stated as roadmap: no code path behind these exists yet (#79).
+      { id: "simplemdm", status: "comingSoon" },
+      { id: "addigy", status: "comingSoon", logoUrl: "/logos/addigy.svg" }
     ]
   },
   {
@@ -39,7 +40,7 @@ export const INTEGRATION_GROUPS: IntegrationGroup[] = [
     vendors: [
       { id: "jamf-metadata", status: "available", href: "/settings/connections", logoUrl: "/logos/jamf.svg" },
       { id: "nvd", status: "comingSoon" },
-      { id: "loonsecio", status: "available", href: "/settings/connections" }
+      { id: "loonsecio", status: "comingSoon" }
     ]
   }
 ];

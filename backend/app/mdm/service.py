@@ -44,7 +44,6 @@ from app.mdm.jamf.contract import (
     canonicalize_computer,
     canonicalize_smart_group,
 )
-from app.mdm.patch.factory import get_patch_provider
 from app.models.schema import (
     Collection,
     Device,
@@ -140,61 +139,15 @@ async def sync_connection(
 ) -> ConnectionSyncResult:
     """Pull inventory for a single connection.
 
-    Deliberately does not raise on a connection-level failure. Both callers — the
-    nightly sweep across every connection, and the manual trigger for one — need the
-    failure reported rather than propagated: an expired credential on one Jamf tenant
-    previously aborted the whole sweep, silently skipping every connection ordered
-    after it.
+    What to pull and how is a property of the connection's collections, not of the
+    connection; the connection-level entry point runs every enabled device sweep it
+    has (creating the defaults if none exist yet). Reports a connection-level failure
+    rather than raising — an expired credential on one Jamf tenant must not abort a
+    sweep across several.
     """
-    try:
-        client = get_mdm_client(connection)
-    except NotImplementedError:
-        logger.debug(
-            "sync skipped, provider not implemented",
-            extra={"connection_id": connection.id, "provider": connection.provider},
-        )
-        return ConnectionSyncResult(connection_id=connection.id, skipped=True)
+    from app.mdm.collections import run_connection  # local: collections imports this module
 
-    if isinstance(client, JamfClient):
-        # What to pull and how is a property of the connection's collections, not of
-        # the connection; the connection-level entry point runs every enabled device
-        # sweep it has (creating the defaults if none exist yet).
-        from app.mdm.collections import run_connection  # local: collections imports this module
-
-        return await run_connection(db, connection, trigger=trigger, run=run)
-
-    try:
-        result = await _sync_generic(db, connection, client)
-    except Exception as exc:
-        # Rollback first: a failure mid-loop leaves the session dirty, and the status
-        # write below would otherwise fail too.
-        await db.rollback()
-        await set_sync_status(db, connection, SyncStatus.failed)
-        logger.exception(
-            "connection sync failed",
-            extra={"connection_id": connection.id, "provider": connection.provider},
-        )
-        return ConnectionSyncResult(connection_id=connection.id, ok=False, error=str(exc))
-
-    logger.info(
-        "connection synced",
-        extra={"connection_id": connection.id, "provider": connection.provider, "device_count": result.device_count},
-    )
-    return result
-
-
-async def _sync_generic(db: AsyncSession, connection: MdmConnection, client) -> ConnectionSyncResult:
-    """Providers without an observation ledger: the original pull-everything path."""
-    devices = await client.fetch_devices()
-    connection.last_successful_auth_at = datetime.now(timezone.utc)
-    await db.commit()
-
-    for device in devices:
-        await process_sync(db, device, connection)
-
-    await sync_state(db, connection)
-    await db.commit()
-    return ConnectionSyncResult(connection_id=connection.id, device_count=len(devices))
+    return await run_connection(db, connection, trigger=trigger, run=run)
 
 
 async def capture_aperture(
@@ -244,7 +197,6 @@ async def run_jamf(
     quarantine = tuple(quarantined_extension_attributes)
     try:
         client = get_mdm_client(connection)
-        assert isinstance(client, JamfClient)
         result = await _sync_jamf(
             db,
             connection,
@@ -299,7 +251,6 @@ async def run_jamf_catalog(
     timestamp a criteria edit finer than the sweep would."""
     try:
         client = get_mdm_client(connection)
-        assert isinstance(client, JamfClient)
         outcomes: Counter[str] = Counter()
         async with client.http() as http:
             aperture = await capture_aperture(client, http)
@@ -540,11 +491,6 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
     of `last_seen_at` and nothing more.
     """
     client = get_mdm_client(connection)
-    if not isinstance(client, JamfClient):
-        device = client.parse_webhook(payload)
-        await process_sync(db, device, connection)
-        return None
-
     event = parse_webhook_event(payload)
     if event.jamf_id is None:
         logger.info(
@@ -627,44 +573,6 @@ async def sync_state(db: AsyncSession, connection: MdmConnection) -> None:
     state.last_sync_at = datetime.now(timezone.utc)
     state.status = SyncStatus.idle.value
     state.device_count = device_count
-
-
-async def _apply_patch_status(existing: Device, connection: MdmConnection) -> None:
-    patch_provider = get_patch_provider(connection)
-    if patch_provider is None:
-        return
-
-    apps = [
-        NormalizedApp(
-            name=row.name,
-            bundle_id=row.bundle_id,
-            version=row.version,
-            short_version=row.short_version,
-            app_hash=row.app_hash,
-            version_hash=row.version_hash,
-        )
-        for row in existing.apps
-    ]
-
-    try:
-        results = await patch_provider.check_apps(apps)
-    except NotImplementedError:
-        return
-
-    results_by_hash = {result.version_hash: result for result in results}
-    now = datetime.now(timezone.utc)
-
-    for row in existing.apps:
-        result = results_by_hash.get(row.version_hash)
-        if result is None:
-            continue
-
-        was_available = row.patch_available
-        row.is_compliant = result.is_compliant
-        row.patch_available = result.patch_available
-        row.last_patch_check_at = now
-        if result.patch_available and not was_available:
-            row.patch_available_since = now
 
 
 async def process_sync(
@@ -759,10 +667,8 @@ async def process_sync(
     await db.flush()
     # The tenant app catalog: every app this device reports is seen now; a (name, bundle ID,
     # version) the fleet has not shown before is judged against Jamf's catalog right here, and
-    # each app row gets its copy of the answer. Then whatever the connection's own patch
-    # provider adds on top.
+    # each app row gets its copy of the answer.
     await record_device_apps(db, existing)
-    await _apply_patch_status(existing, connection)
 
     if not added and not removed_rows:
         await db.commit()

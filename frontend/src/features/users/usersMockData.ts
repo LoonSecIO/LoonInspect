@@ -4,7 +4,7 @@ export interface DetectedUser {
   username: string;
   email: string | null;
   department: string | null;
-  source: "jamf" | "simplemdm";
+  source: "jamf";
   assignedDevices: string[];
   loggedInDevices: string[];
   lastSeenAt: string | null;
