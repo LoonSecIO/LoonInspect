@@ -261,3 +261,23 @@ async def test_page_size_flows_and_throttling_lands_on_the_run(db, jamf: FakeJam
     third = await sync_connection(db, connection)
     assert third.ok
     assert 250 in jamf.page_sizes
+
+
+async def test_checkin_is_dropped_before_any_fetch(db, jamf: FakeJamf, connection) -> None:
+    """Kyle's ruling (#76): a check-in is a heartbeat times the whole fleet and does
+    not warrant the reaction — no run row, not one API call."""
+    from app.mdm.service import ingest_webhook
+    from app.models.schema import Run
+
+    payload = {
+        "webhook": {"webhookEvent": "ComputerCheckIn"},
+        "event": {"trigger": "CLIENT_CHECKIN", "computer": {"jssID": jamf.real["id"], "udid": "x"}},
+    }
+    requests_before = len(jamf.requests)
+    runs = select(func.count()).select_from(Run).where(Run.mdm_connection_id == connection.id)
+    runs_before = await _count(db, runs)
+
+    assert await ingest_webhook(db, connection, payload) is None
+
+    assert len(jamf.requests) == requests_before
+    assert await _count(db, runs) == runs_before

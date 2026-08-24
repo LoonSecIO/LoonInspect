@@ -33,6 +33,7 @@ from app.core.runs import log as run_log
 from app.mdm.factory import get_mdm_client
 from app.mdm.jamf.client import (
     DEFAULT_SWEEP_PAGE_SIZE,
+    REACTIVE_WEBHOOK_EVENTS,
     JamfClient,
     normalize_computer,
     parse_webhook_event,
@@ -484,14 +485,24 @@ async def ingest_computer(
 async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: dict) -> RecordResult | None:
     """A Jamf webhook names a computer; the inventory comes from a fetch.
 
-    Returns None when the payload names nothing (no jssID) — a test webhook, or an event
-    type that does not carry a computer. The aperture is captured per event (two small
+    Returns None when the event does not warrant one (not in REACTIVE_WEBHOOK_EVENTS —
+    a ComputerCheckIn above all, #76) or when the payload names nothing (no jssID) — a
+    test webhook, or an event type that does not carry a computer. The aperture is captured per event (two small
     reads) under the connection's webhook collection, which may be scoped differently
     from the sweep's; an aperture is content-addressed, so an unchanged one is an upsert
     of `last_seen_at` and nothing more.
     """
     client = get_mdm_client(connection)
     event = parse_webhook_event(payload)
+    if event.event_name not in REACTIVE_WEBHOOK_EVENTS:
+        # Dropped by name, not by accident: a ComputerCheckIn is a heartbeat times
+        # the whole fleet, and reacting would mint a run and burn three API reads
+        # per heartbeat (#76). Nothing has been fetched and no run row exists yet.
+        logger.info(
+            "jamf webhook event does not warrant a fetch; dropped by design",
+            extra={"connection_id": connection.id, "event": event.event_name, "jamf_id": event.jamf_id},
+        )
+        return None
     if event.jamf_id is None:
         logger.info(
             "jamf webhook carried no computer id; nothing to ingest",

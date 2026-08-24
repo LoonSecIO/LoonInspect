@@ -130,15 +130,28 @@ def _retry_delay(response: httpx.Response, attempt: int) -> float:
     return _RETRY_BASE_SECONDS * (2**attempt) + random.uniform(0, 0.5)
 
 
+# The computer events that warrant the fetch: a new device, or inventory just
+# submitted. Everything else is parsed, named in the log, and dropped before a run
+# row or an API call exists — above all ComputerCheckIn, a heartbeat every ~15
+# minutes times every active device, whose reaction would be a run and three API
+# reads per heartbeat for a record whose reportDate has not moved. That load stays
+# outside this container by design (#76). An allowlist rather than a CheckIn
+# denylist because the question is which events warrant the reaction, and the
+# answer enumerates the warranted ones.
+REACTIVE_WEBHOOK_EVENTS = frozenset({"ComputerAdded", "ComputerInventoryCompleted"})
+
+
 @dataclass(frozen=True, slots=True)
 class JamfWebhookEvent:
     """What a Jamf Pro computer webhook actually carries: an identity, not an inventory.
 
-    ComputerAdded / ComputerCheckIn / ComputerInventoryCompleted payloads name the
-    computer (jssID, udid, serial, a few general fields) and nothing else — no
-    applications, no groups, no EAs. The ingest path therefore fetches the full record
-    by id rather than normalizing the payload; treating the payload as inventory would
-    diff an empty app list against the last one and report everything removed.
+    Computer webhook payloads name the computer (jssID, udid, serial, a few general
+    fields) and nothing else — no applications, no groups, no EAs. The ingest path
+    therefore fetches the full record by id rather than normalizing the payload;
+    treating the payload as inventory would diff an empty app list against the last
+    one and report everything removed. Only REACTIVE_WEBHOOK_EVENTS earn that fetch;
+    ComputerCheckIn in particular is parsed (its computer nests one level deeper)
+    so the drop can name what it dropped, and deliberately nothing more.
     """
 
     event_name: str | None

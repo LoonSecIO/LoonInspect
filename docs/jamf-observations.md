@@ -341,13 +341,18 @@ Sweep, manual run, and webhook all go through `ingest_computer` — the ledger f
 guard), then `process_sync` for `devices` / `installed_apps` and the outbox event,
 committing together per device.
 
-The webhook path **fetches**. Jamf's computer webhooks (`ComputerAdded`,
-`ComputerCheckIn`, `ComputerInventoryCompleted`) carry an identity — `jssID`, `udid`,
-serial, a few general fields — and no inventory; normalizing the payload directly diffed
-an empty application list against the stored one and reported every app removed on every
-webhook. `ingest_webhook` reads `jssID` and fetches `/v4/computers-inventory-detail/{id}`,
-which is exactly #27's inversion: the event path, being one device already known to have
-changed, fetches *more* than the sweep.
+The webhook path **fetches** — for the events that warrant it. Jamf's computer
+webhooks carry an identity — `jssID`, `udid`, serial, a few general fields — and no
+inventory; normalizing the payload directly diffed an empty application list against
+the stored one and reported every app removed on every webhook. For `ComputerAdded`
+and `ComputerInventoryCompleted` (the events that signal inventory novelty),
+`ingest_webhook` reads `jssID` and fetches `/v4/computers-inventory-detail/{id}`,
+which is exactly #27's inversion: the event path, being one device already known to
+have changed, fetches *more* than the sweep. Every other event — `ComputerCheckIn`
+above all — is parsed, named in the log, and dropped before a run row or an API call
+exists: a check-in is a heartbeat every ~15 minutes times every active device, and
+reacting to one would spend a run and three API reads per heartbeat on a record whose
+`reportDate` has not moved (#76). That load stays outside this container.
 
 Jamf privileges the API client needs: Read Computers (inventory), Read Smart Computer
 Groups (definitions; absent → groups are not observed, logged), Read Computer Inventory
