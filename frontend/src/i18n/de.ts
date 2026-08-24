@@ -646,6 +646,9 @@ export const de: Translations = {
         managed: "Nur verwaltete",
         unmanaged: "Nur unverwaltete"
       } as Record<string, string>,
+      pageSize: "Seitengröße überschreiben",
+      pageSizePlaceholder: "Von der Verbindung erben",
+      pageSizeHelp: "Geräte pro Inventarseite, nur für diese Collection. Leer erbt die Einstellung der Verbindung; eine schmale Collection (wenige Sektionen) verträgt größere Seiten als der Worst Case der Verbindung.",
       quarantine: "Erweiterungsattribute in Quarantäne",
       quarantineHelp: "Definitions-IDs von Erweiterungsattributen, die sich bei jedem Recon ändern (Uptime, Akku, freier Speicher). Ihre Werte werden nicht gehasht und können das Ledger nicht aufwirbeln.",
       schedule: "Zeitplan",

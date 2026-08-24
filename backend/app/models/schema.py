@@ -913,6 +913,10 @@ class Collection(Base):
     sections: Mapped[list] = mapped_column(JSONB, default=list)
     selector: Mapped[str | None] = mapped_column(Text, nullable=True)
     quarantined_extension_attributes: Mapped[list] = mapped_column(JSONB, default=list)
+    # Devices per inventory page for this collection only; null inherits the
+    # connection's sweep_page_size. Exists because that setting is the full-section
+    # worst case, and a narrow collection may take bigger pages (#73).
+    page_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # When. Null frequency means event-driven (webhook).
     frequency: Mapped[str | None] = mapped_column(String(16), nullable=True)

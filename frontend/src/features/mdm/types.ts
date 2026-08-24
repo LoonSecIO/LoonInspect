@@ -152,6 +152,7 @@ export interface Collection {
   enabled: boolean;
   sections: string[];
   selector: string | null;
+  pageSize: number | null;
   quarantinedExtensionAttributes: string[];
   frequency: CollectionFrequency | null;
   intervalN: number | null;
@@ -173,6 +174,7 @@ export interface CollectionInput {
   enabled?: boolean;
   sections?: string[];
   selector?: string | null;
+  pageSize?: number | null;
   quarantinedExtensionAttributes?: string[];
   frequency?: CollectionFrequency | null;
   intervalN?: number | null;

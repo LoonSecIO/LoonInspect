@@ -244,3 +244,20 @@ async def test_page_size_flows_and_throttling_lands_on_the_run(db, jamf: FakeJam
         )
     ).scalars().first()
     assert run is not None and run.observations.get("throttled_429") == 1
+
+    # The collection's own override wins over the connection's setting (#73).
+    from app.models.schema import Collection
+
+    sweep_row = (
+        await db.execute(
+            select(Collection).where(
+                Collection.mdm_connection_id == connection.id, Collection.kind == "device_sweep"
+            )
+        )
+    ).scalars().first()
+    assert sweep_row is not None
+    sweep_row.page_size = 250
+    await db.commit()
+    third = await sync_connection(db, connection)
+    assert third.ok
+    assert 250 in jamf.page_sizes

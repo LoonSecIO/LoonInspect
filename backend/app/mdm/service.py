@@ -230,6 +230,7 @@ async def run_jamf(
     trigger: str,
     sections: Sequence[str] = V0_SECTIONS,
     selector: str | None = None,
+    page_size: int | None = None,
     quarantined_extension_attributes: Iterable[str] = (),
     include_catalog: bool = True,
     collection_id: int | None = None,
@@ -251,6 +252,7 @@ async def run_jamf(
             trigger=trigger,
             sections=tuple(sections),
             selector=selector,
+            page_size=page_size,
             quarantine=quarantine,
             include_catalog=include_catalog,
             run=run,
@@ -366,6 +368,7 @@ async def _sync_jamf(
     trigger: str,
     sections: Sequence[str] = V0_SECTIONS,
     selector: str | None = None,
+    page_size: int | None = None,
     quarantine: Sequence[str] = (),
     include_catalog: bool = True,
     run: Run | None = None,
@@ -397,8 +400,10 @@ async def _sync_jamf(
         # device 30,000 leaves 29,999 correctly recorded. The selector is pushed into
         # Jamf's query rather than applied after the fetch — filtering client-side would
         # still spend the API budget the selector exists to save.
-        page_size = connection.sweep_page_size or DEFAULT_SWEEP_PAGE_SIZE
-        async for raw in client.iter_computers(http, sections, rsql_filter=selector, page_size=page_size):
+        # The collection's override wins, then the connection's setting, then the
+        # default — the collection knows its sections, the connection its worst case.
+        effective_page_size = page_size or connection.sweep_page_size or DEFAULT_SWEEP_PAGE_SIZE
+        async for raw in client.iter_computers(http, sections, rsql_filter=selector, page_size=effective_page_size):
             result = await ingest_computer(
                 db,
                 connection,

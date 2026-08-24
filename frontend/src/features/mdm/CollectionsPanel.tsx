@@ -316,6 +316,7 @@ function CollectionForm({ connectionId, collection, onSaved, onCancel }: Collect
   const [enabled, setEnabled] = useState(collection?.enabled ?? true);
   const [sections, setSections] = useState<string[]>(collection?.sections ?? []);
   const [selector, setSelector] = useState(collection?.selector ?? "");
+  const [pageSize, setPageSize] = useState<string>(collection?.pageSize != null ? String(collection.pageSize) : "");
   const [quarantine, setQuarantine] = useState((collection?.quarantinedExtensionAttributes ?? []).join(", "));
   const [frequency, setFrequency] = useState<CollectionFrequency>(
     collection?.frequency ?? (collection?.kind === "catalog" ? "hourly" : "daily")
@@ -358,6 +359,7 @@ function CollectionForm({ connectionId, collection, onSaved, onCancel }: Collect
       enabled,
       sections: usesSections ? sections : [],
       selector: kind === "device_sweep" && selector.trim() ? selector.trim() : null,
+      pageSize: kind === "device_sweep" && pageSize.trim() ? Number(pageSize) : null,
       quarantinedExtensionAttributes: quarantine
         .split(",")
         .map((s) => s.trim())
@@ -466,6 +468,23 @@ function CollectionForm({ connectionId, collection, onSaved, onCancel }: Collect
             placeholder="general.remoteManagement.managed==true"
           />
           <span className="block text-xs text-muted-foreground">{tf.selectorHelp}</span>
+        </label>
+      )}
+
+      {kind === "device_sweep" && (
+        <label className="block space-y-1 text-sm">
+          <span className="font-medium">{tf.pageSize}</span>
+          <input
+            className={inputClasses}
+            type="number"
+            min={100}
+            max={1000}
+            step={50}
+            value={pageSize}
+            onChange={(e) => setPageSize(e.target.value)}
+            placeholder={tf.pageSizePlaceholder}
+          />
+          <span className="block text-xs text-muted-foreground">{tf.pageSizeHelp}</span>
         </label>
       )}
 

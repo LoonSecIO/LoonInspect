@@ -639,6 +639,9 @@ export const en = {
         managed: "Managed only",
         unmanaged: "Unmanaged only"
       } as Record<string, string>,
+      pageSize: "Page size override",
+      pageSizePlaceholder: "Inherit from connection",
+      pageSizeHelp: "Devices per inventory page for this collection only. Empty inherits the connection's setting; a narrow collection (few sections) can take bigger pages than the connection's full-section worst case.",
       quarantine: "Quarantined extension attributes",
       quarantineHelp: "Definition ids of extension attributes that change on every recon (uptime, battery, free disk). Their values are not hashed, so they cannot churn the ledger.",
       schedule: "Schedule",

@@ -211,6 +211,7 @@ async def run_collection(
                 trigger=trigger,
                 sections=collection.sections or V0_SECTIONS,
                 selector=collection.selector,
+                page_size=collection.page_size,
                 quarantined_extension_attributes=collection.quarantined_extension_attributes or (),
                 include_catalog=True,
                 collection_id=collection.id,
