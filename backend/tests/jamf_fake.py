@@ -46,23 +46,23 @@ class FakeJamf:
             return httpx.Response(401, json={"httpStatus": 401})
         if path == "/api/v1/jamf-pro-version":
             return httpx.Response(200, json={"version": "11.31.1-t1787060595569"})
-        if path == "/api/v1/computer-inventory-collection-settings":
+        if path == "/api/v2/computer-inventory-collection-settings":
             return httpx.Response(403, json={"httpStatus": 403, "errors": []})
-        if path == "/api/v1/computers-inventory":
+        if path == "/api/v4/computers-inventory":
             page = int(request.url.params.get("page", "0"))
             self.filters.append(request.url.params.get("filter"))
             self.sections.append(request.url.params.get("section"))
             results = self.computers if page == 0 else []
             return httpx.Response(200, json={"totalCount": len(self.computers), "results": results})
-        if path.startswith("/api/v1/computers-inventory-detail/"):
+        if path.startswith("/api/v4/computers-inventory-detail/"):
             wanted = path.rsplit("/", 1)[1]
             for computer in self.computers:
                 if computer["id"] == wanted:
                     return httpx.Response(200, json=computer)
             return httpx.Response(404, json={"httpStatus": 404})
-        if path == "/api/v2/computer-groups/smart-groups":
+        if path == "/api/v3/computer-groups/smart-groups":
             return httpx.Response(200, json={"totalCount": 1, "results": [{"id": "1", "name": "All Managed Clients"}]})
-        if path == "/api/v2/computer-groups/smart-groups/1":
+        if path == "/api/v3/computer-groups/smart-groups/1":
             return httpx.Response(
                 200,
                 json={

@@ -647,7 +647,7 @@ _GROUP_DEFINITION: Allow = {
 
 
 def canonicalize_smart_group(raw: Mapping) -> Observation:
-    """One /v2/computer-groups/smart-groups/{id} object → an Observation with a single
+    """One /v3/computer-groups/smart-groups/{id} object → an Observation with a single
     `definition` section. Criteria are ordered by priority and their conjunction is
     lower-cased (Jamf accepts "AND" and "and" as the same thing)."""
     group_id = raw.get("id")

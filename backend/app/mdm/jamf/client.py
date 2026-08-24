@@ -170,12 +170,14 @@ class JamfClient(MdmClient):
 
     async def fetch_inventory_collection_settings(self, client: httpx.AsyncClient) -> dict | None:
         """Jamf's inventory-collection preferences: which paths it scans for
-        applications, whether it reads accounts, printers, fonts… The part of the
-        aperture that decides what an app list even means. Needs the "Read Computer
-        Inventory Collection" privilege; without it this is None and the aperture
-        records that absence."""
+        applications, whether it reads accounts, printers… The part of the aperture
+        that decides what an app list even means. v2 of the endpoint no longer reports
+        font/plugin paths (v1 did); the aperture records their absence as absence, so
+        the switch reads as one honest aperture transition per tenant. Needs the "Read
+        Computer Inventory Collection" privilege; without it this is None and the
+        aperture records that absence."""
         try:
-            response = await self._get(client, "/api/v1/computer-inventory-collection-settings", comment="aperture")
+            response = await self._get(client, "/api/v2/computer-inventory-collection-settings", comment="aperture")
             if response.status_code in (401, 403, 404):
                 logger.info(
                     "inventory collection settings not readable; aperture records absence",
@@ -219,7 +221,7 @@ class JamfClient(MdmClient):
         page = 0
         while True:
             response = await self._get(
-                client, "/api/v1/computers-inventory", comment="inventory", params={**params, "page": page}
+                client, "/api/v4/computers-inventory", comment="inventory", params={**params, "page": page}
             )
             response.raise_for_status()
             results = response.json().get("results", [])
@@ -232,7 +234,7 @@ class JamfClient(MdmClient):
     async def fetch_computer_detail(self, client: httpx.AsyncClient, jamf_id: str) -> dict:
         """Every section of one computer. The webhook path's fetch: one device already
         known to have changed, so the full record is cheap and maximally useful."""
-        response = await self._get(client, f"/api/v1/computers-inventory-detail/{jamf_id}", comment="detail")
+        response = await self._get(client, f"/api/v4/computers-inventory-detail/{jamf_id}", comment="detail")
         response.raise_for_status()
         return response.json()
 
@@ -263,7 +265,7 @@ class JamfClient(MdmClient):
         while True:
             response = await self._get(
                 client,
-                "/api/v2/computer-groups/smart-groups",
+                "/api/v3/computer-groups/smart-groups",
                 comment="groups",
                 params={"page": page, "page-size": page_size, "sort": "id:asc"},
             )
@@ -285,7 +287,7 @@ class JamfClient(MdmClient):
             group_id = group.get("id")
             if group_id is None:
                 continue
-            response = await self._get(client, f"/api/v2/computer-groups/smart-groups/{group_id}", comment="groups")
+            response = await self._get(client, f"/api/v3/computer-groups/smart-groups/{group_id}", comment="groups")
             if response.status_code == 404:
                 continue  # deleted between the list and the read
             response.raise_for_status()

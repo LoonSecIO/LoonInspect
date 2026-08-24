@@ -130,7 +130,7 @@ async def test_sweep_then_repeat_then_webhook(db, jamf: FakeJamf, connection) ->
     assert first.observations == {"new": 2, "group_new": 1}
     assert first.group_count == 1
     assert "GET /api/v1/jamf-pro-version" in jamf.requests
-    assert "GET /api/v1/computer-inventory-collection-settings" in jamf.requests
+    assert "GET /api/v2/computer-inventory-collection-settings" in jamf.requests
 
     devices = (await db.execute(select(Device).where(Device.mdm_connection_id == connection.id))).scalars().all()
     assert {d.external_id for d in devices} == {real_id, synthetic_id}
@@ -182,7 +182,7 @@ async def test_sweep_then_repeat_then_webhook(db, jamf: FakeJamf, connection) ->
     result = await ingest_webhook(db, connection, payload)
     assert result is not None and result.outcome == "changed"
     assert result.changed_sections == ("applications",)
-    assert f"GET /api/v1/computers-inventory-detail/{real_id}" in jamf.requests
+    assert f"GET /api/v4/computers-inventory-detail/{real_id}" in jamf.requests
     assert await _count(db, real_apps) == 84
 
     latest = (
@@ -213,4 +213,4 @@ async def test_webhook_without_a_computer_is_ignored(db, jamf: FakeJamf, connect
     from app.mdm.service import ingest_webhook
 
     assert await ingest_webhook(db, connection, {"webhook": {"webhookEvent": "ComputerAdded"}, "event": {}}) is None
-    assert not any(path.startswith("GET /api/v1/computers-inventory-detail") for path in jamf.requests)
+    assert not any(path.startswith("GET /api/v4/computers-inventory-detail") for path in jamf.requests)
