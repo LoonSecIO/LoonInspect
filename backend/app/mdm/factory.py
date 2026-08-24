@@ -2,32 +2,20 @@ from __future__ import annotations
 
 import json
 
-from app.mdm.base import MdmClient
-from app.mdm.credentials import CREDENTIAL_SCHEMAS
+from app.mdm.credentials import JamfCredentials
 from app.mdm.jamf.client import JamfClient
-from app.mdm.simplemdm.client import SimpleMdmClient
 from app.models.schema import MdmConnection
-from app.schemas.payload import MdmProvider
 
 
-def _credentials(connection: MdmConnection) -> dict:
-    if not connection.credentials_encrypted:
-        return {}
-    return json.loads(connection.credentials_encrypted)
-
-
-def get_mdm_client(connection: MdmConnection) -> MdmClient:
-    provider = MdmProvider(connection.provider)
-    schema_cls = CREDENTIAL_SCHEMAS.get(provider)
-    credentials = schema_cls.model_validate(_credentials(connection)) if schema_cls else None
-
-    if provider == MdmProvider.jamf:
-        return JamfClient(
-            base_url=connection.base_url,
-            client_id=credentials.client_id,
-            client_secret=credentials.client_secret,
-            user_agent_override=connection.user_agent_override,
-        )
-    if provider == MdmProvider.simplemdm:
-        return SimpleMdmClient()
-    raise NotImplementedError(f"MDM provider '{connection.provider}' is not implemented yet")
+def get_mdm_client(connection: MdmConnection) -> JamfClient:
+    """The connection's client. Jamf only (#79): the `provider` column and the
+    credential-schema registry remain the seam a second provider plugs into; until one
+    exists, pretending to dispatch here only hid that every caller was Jamf-shaped."""
+    raw = json.loads(connection.credentials_encrypted) if connection.credentials_encrypted else {}
+    credentials = JamfCredentials.model_validate(raw)
+    return JamfClient(
+        base_url=connection.base_url,
+        client_id=credentials.client_id,
+        client_secret=credentials.client_secret,
+        user_agent_override=connection.user_agent_override,
+    )

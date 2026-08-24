@@ -8,10 +8,10 @@ from pydantic.alias_generators import to_camel
 
 
 class MdmProvider(str, Enum):
+    # Jamf only, deliberately (#79). The enum, the `provider` column, and the
+    # credential-schema registry are the seam a second provider plugs into; the seam
+    # stays, the stub implementations behind it did not survive to launch.
     jamf = "jamf"
-    simplemdm = "simplemdm"
-    addigy = "addigy"
-    nano = "nano"
 
 
 class SyncStatus(str, Enum):

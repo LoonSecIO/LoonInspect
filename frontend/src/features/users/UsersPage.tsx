@@ -2,8 +2,7 @@ import { MOCK_USERS } from "@/features/users/usersMockData";
 import { useLocale } from "@/i18n/LocaleContext";
 
 const sourceLabels: Record<string, string> = {
-  jamf: "Jamf",
-  simplemdm: "SimpleMDM"
+  jamf: "Jamf"
 };
 
 export function UsersPage() {

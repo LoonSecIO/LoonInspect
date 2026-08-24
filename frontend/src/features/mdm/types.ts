@@ -1,4 +1,8 @@
-export type MdmProviderType = "jamf" | "simplemdm" | "addigy" | "nano";
+// Jamf only, deliberately (#79) — this union mirrors the backend's MdmProvider enum,
+// which is the seam a second provider plugs into.
+export type MdmProviderType = "jamf";
+// "loonsecio" still arrives from the server on rows that stored it before the value
+// was closed off; it can be displayed but no longer selected (see ConnectionForm).
 export type PatchManagementProvider = "none" | "jamf" | "loonsecio";
 
 export interface MdmSyncStatus {
@@ -51,8 +55,6 @@ export interface MdmConnectionInput {
   credentials?: Record<string, string>;
   webhookSecret?: string;
   patchManagementProvider?: PatchManagementProvider;
-  loonsecioLicenseKey?: string;
-  loonsecioDataSharingEnabled?: boolean;
   userAgentOverride?: string;
   sweepPageSize?: number | null;
   capabilityDevices?: boolean;

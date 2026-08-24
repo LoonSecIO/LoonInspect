@@ -16,11 +16,16 @@ class PatchManagementProvider(str, Enum):
     loonsecio = "loonsecio"
 
 
-def validate_loonsecio_requirement(
-    provider: PatchManagementProvider, license_key: str | None, data_sharing_enabled: bool
-) -> None:
-    if provider == PatchManagementProvider.loonsecio and not license_key and not data_sharing_enabled:
-        raise ValueError("LoonSecIO requires a license key and/or data_sharing_enabled=true")
+def validate_patch_provider_available(provider: PatchManagementProvider) -> None:
+    """The seam is named so the choice stays explicit in the schema; the value is
+    refused until api.loonsec.io exists to serve it — the database_mode="external"
+    pattern. Enforced when the field is *set*, not against stored rows, so an old row
+    holding the value stays editable until someone touches this field."""
+    if provider == PatchManagementProvider.loonsecio:
+        raise ValueError(
+            "LoonSecIO patch management is not yet available; leave "
+            "patch_management_provider at 'none' or 'jamf'"
+        )
 
 
 def validate_jamf_specific_fields(
@@ -59,10 +64,8 @@ class MdmConnectionCreate(BaseModel):
     capability_jamf_pro: bool = False
 
     @model_validator(mode="after")
-    def _check_loonsecio(self) -> MdmConnectionCreate:
-        validate_loonsecio_requirement(
-            self.patch_management_provider, self.loonsecio_license_key, self.loonsecio_data_sharing_enabled
-        )
+    def _check_patch_management(self) -> MdmConnectionCreate:
+        validate_patch_provider_available(self.patch_management_provider)
         validate_jamf_specific_fields(self.provider, self.patch_management_provider, self.capability_jamf_pro)
         return self
 

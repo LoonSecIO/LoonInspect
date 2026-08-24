@@ -18,7 +18,7 @@ interface ConnectionFormProps {
   onCancel: () => void;
 }
 
-const providerOptions: MdmProviderType[] = ["jamf", "simplemdm", "addigy", "nano"];
+const providerOptions: MdmProviderType[] = ["jamf"];
 
 const inputClasses =
   "w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -39,10 +39,6 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
   const [credentials, setCredentials] = useState<Record<string, string>>({});
   const [patchManagementProvider, setPatchManagementProvider] = useState<PatchManagementProvider>(
     connection?.patchManagementProvider ?? "none"
-  );
-  const [loonsecioLicenseKey, setLoonsecioLicenseKey] = useState("");
-  const [loonsecioDataSharingEnabled, setLoonsecioDataSharingEnabled] = useState(
-    connection?.loonsecioDataSharingEnabled ?? false
   );
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -130,7 +126,6 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
   }
 
   const canTest =
-    provider === "jamf" &&
     Boolean(baseUrl) &&
     Boolean(credentials.clientId) &&
     (Boolean(credentials.clientSecret) || connection?.credentialFieldsSet.includes("clientSecret"));
@@ -149,18 +144,16 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
       provider,
       baseUrl,
       patchManagementProvider,
-      loonsecioDataSharingEnabled,
       capabilityDevices,
       capabilityUsers,
       capabilityWebhooks,
       capabilityJamfPro
     };
     if (Object.keys(filledCredentials).length > 0) input.credentials = filledCredentials;
-    if (loonsecioLicenseKey) input.loonsecioLicenseKey = loonsecioLicenseKey;
     if (userAgentOverride) input.userAgentOverride = userAgentOverride;
     // 400 is the default: stored as null so a connection that never deviated (or slid
     // back) keeps following the instance default if it ever moves.
-    if (provider === "jamf") input.sweepPageSize = sweepPageSize === 400 ? null : sweepPageSize;
+    input.sweepPageSize = sweepPageSize === 400 ? null : sweepPageSize;
 
     try {
       if (connection) {
@@ -190,14 +183,8 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
             className={inputClasses}
             value={provider}
             onChange={(e) => {
-              const next = e.target.value as MdmProviderType;
-              setProvider(next);
+              setProvider(e.target.value as MdmProviderType);
               setCredentials({});
-              if (next !== "jamf") {
-                setPatchManagementProvider((current) => (current === "jamf" ? "none" : current));
-                setCapabilityJamfPro(false);
-                setUserAgentOverride("");
-              }
             }}
           >
             {providerOptions.map((option) => (
@@ -311,61 +298,38 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
         {showTestDetail && testDetail && (
           <pre className="max-h-48 overflow-auto rounded-md bg-muted p-2 text-xs">{testDetail}</pre>
         )}
-
-        {provider !== "jamf" && (
-          <p className="text-xs text-muted-foreground">{t.connectionForm.testingOnlyJamf}</p>
-        )}
       </div>
 
       <div className="space-y-2">
         <span className="text-sm font-medium">{t.connectionForm.patchManagement}</span>
         <div className="flex gap-4">
-          {(Object.keys(patchProviderLabels) as PatchManagementProvider[])
-            .filter((option) => option !== "jamf" || provider === "jamf")
-            .map((option) => (
-              <label key={option} className="flex items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  name="patchManagementProvider"
-                  value={option}
-                  checked={patchManagementProvider === option}
-                  onChange={() => setPatchManagementProvider(option)}
-                />
-                {patchProviderLabels[option]}
-              </label>
-            ))}
+          {(["none", "jamf"] as PatchManagementProvider[]).map((option) => (
+            <label key={option} className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="patchManagementProvider"
+                value={option}
+                checked={patchManagementProvider === option}
+                onChange={() => setPatchManagementProvider(option)}
+              />
+              {patchProviderLabels[option]}
+            </label>
+          ))}
+          {/* Named but not selectable: the seam is visible, the service behind it is not
+              live yet (#79). A stored value still shows as checked so an old row stays
+              legible. */}
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="radio"
+              name="patchManagementProvider"
+              value="loonsecio"
+              checked={patchManagementProvider === "loonsecio"}
+              disabled
+            />
+            {patchProviderLabels.loonsecio}
+            <span className="text-xs">{t.connectionForm.loonsecioComingSoon}</span>
+          </label>
         </div>
-        {provider !== "jamf" && (
-          <p className="text-xs text-muted-foreground">{t.connectionForm.patchOnlyJamf}</p>
-        )}
-
-        {patchManagementProvider === "loonsecio" && (
-          <div className="space-y-2 rounded-md border border-dashed p-3">
-            <label className="space-y-1 text-sm">
-              <span className="font-medium">
-                {t.connectionForm.loonsecioLicenseKey}
-                {connection?.hasLoonsecioLicenseKey && (
-                  <span className="ml-1 text-xs text-muted-foreground">{t.connectionForm.setLeaveBlank}</span>
-                )}
-              </span>
-              <input
-                type="password"
-                className={inputClasses}
-                value={loonsecioLicenseKey}
-                onChange={(e) => setLoonsecioLicenseKey(e.target.value)}
-              />
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={loonsecioDataSharingEnabled}
-                onChange={(e) => setLoonsecioDataSharingEnabled(e.target.checked)}
-              />
-              {t.connectionForm.enableDataSharing}
-            </label>
-            <p className="text-xs text-muted-foreground">{t.connectionForm.loonsecioHint}</p>
-          </div>
-        )}
       </div>
 
       <div className="space-y-2">
@@ -379,37 +343,33 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
 
         {showAdvanced && (
           <div className="space-y-4 rounded-md border p-3">
-            {provider === "jamf" && (
-              <label className="space-y-1 text-sm">
-                <span className="font-medium">{t.connectionForm.userAgentOverride}</span>
-                <input
-                  className={inputClasses}
-                  value={userAgentOverride}
-                  onChange={(e) => setUserAgentOverride(e.target.value)}
-                  placeholder={t.connectionForm.userAgentPlaceholder}
-                />
-                <p className="text-xs text-muted-foreground">{t.connectionForm.userAgentHint}</p>
-              </label>
-            )}
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">{t.connectionForm.userAgentOverride}</span>
+              <input
+                className={inputClasses}
+                value={userAgentOverride}
+                onChange={(e) => setUserAgentOverride(e.target.value)}
+                placeholder={t.connectionForm.userAgentPlaceholder}
+              />
+              <p className="text-xs text-muted-foreground">{t.connectionForm.userAgentHint}</p>
+            </label>
 
-            {provider === "jamf" && (
-              <label className="space-y-1 text-sm">
-                <span className="font-medium">
-                  {t.connectionForm.sweepPageSize}: {sweepPageSize}
-                  {sweepPageSize === 400 ? ` ${t.connectionForm.sweepPageSizeDefault}` : ""}
-                </span>
-                <input
-                  type="range"
-                  min={100}
-                  max={1000}
-                  step={50}
-                  className="w-full"
-                  value={sweepPageSize}
-                  onChange={(e) => setSweepPageSize(Number(e.target.value))}
-                />
-                <p className="text-xs text-muted-foreground">{t.connectionForm.sweepPageSizeHint}</p>
-              </label>
-            )}
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">
+                {t.connectionForm.sweepPageSize}: {sweepPageSize}
+                {sweepPageSize === 400 ? ` ${t.connectionForm.sweepPageSizeDefault}` : ""}
+              </span>
+              <input
+                type="range"
+                min={100}
+                max={1000}
+                step={50}
+                className="w-full"
+                value={sweepPageSize}
+                onChange={(e) => setSweepPageSize(Number(e.target.value))}
+              />
+              <p className="text-xs text-muted-foreground">{t.connectionForm.sweepPageSizeHint}</p>
+            </label>
 
             <div className="space-y-2">
               <span className="text-sm font-medium">{t.connectionForm.whatUsedFor}</span>
@@ -441,17 +401,15 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
                   {t.connectionForm.capabilityWebhooks}{" "}
                   <span className="text-xs text-muted-foreground">{t.connectionForm.readOnly}</span>
                 </label>
-                {provider === "jamf" && (
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={capabilityJamfPro}
-                      onChange={(e) => setCapabilityJamfPro(e.target.checked)}
-                    />
-                    {t.connectionForm.capabilityJamfPro}{" "}
-                    <span className="text-xs text-muted-foreground">{t.connectionForm.readOnly}</span>
-                  </label>
-                )}
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={capabilityJamfPro}
+                    onChange={(e) => setCapabilityJamfPro(e.target.checked)}
+                  />
+                  {t.connectionForm.capabilityJamfPro}{" "}
+                  <span className="text-xs text-muted-foreground">{t.connectionForm.readOnly}</span>
+                </label>
               </div>
             </div>
 

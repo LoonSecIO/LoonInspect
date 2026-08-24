@@ -13,7 +13,6 @@ from urllib.parse import urlparse
 import httpx
 
 from app.core.user_agent import build_user_agent
-from app.mdm.base import MdmClient
 from app.mdm.jamf.contract import V0_SECTIONS, jamf_section_param, parse_jamf_datetime
 from app.schemas.payload import (
     MdmProvider,
@@ -164,7 +163,7 @@ def parse_webhook_event(payload: dict) -> JamfWebhookEvent:
     )
 
 
-class JamfClient(MdmClient):
+class JamfClient:
     provider = MdmProvider.jamf.value
 
     def __init__(
@@ -437,16 +436,6 @@ class JamfClient(MdmClient):
         response.raise_for_status()
         return response.json()
 
-    async def fetch_devices(self) -> list[NormalizedDevice]:
-        """The MdmClient contract: the whole normalized inventory in one list. The Jamf
-        sync path streams through iter_computers instead; this remains for callers that
-        want the generic shape."""
-        devices: list[NormalizedDevice] = []
-        async with self.http() as client:
-            async for computer in self.iter_computers(client):
-                devices.append(normalize_computer(computer))
-        return devices
-
     # --- smart groups ----------------------------------------------------------------
 
     async def fetch_smart_groups(self, client: httpx.AsyncClient, *, page_size: int = _PAGE_SIZE) -> list[dict]:
@@ -504,18 +493,6 @@ class JamfClient(MdmClient):
             self.adaptive.after_wave(self.throttle.throttled_429 > throttled_before)
             start += len(wave)
         return detailed
-
-    # --- webhooks --------------------------------------------------------------------
-
-    def parse_webhook(self, payload: dict) -> NormalizedDevice:
-        """The MdmClient contract, kept for shape only. The Jamf ingest path does not
-        use it: a webhook payload identifies a computer and carries no inventory (see
-        JamfWebhookEvent), so app.mdm.service.ingest_webhook fetches the record by id
-        instead of normalizing the payload."""
-        event = payload.get("event", {})
-        computer = event.get("computer", event)
-        return normalize_computer(computer)
-
 
 def normalize_computer(computer: dict) -> NormalizedDevice:
     """The `devices` / `installed_apps` shape the UI reads, from a raw inventory object.

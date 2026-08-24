@@ -19,31 +19,8 @@ class JamfCredentials(_CredentialsBase):
     FINGERPRINT_FIELD: ClassVar[str] = "client_secret"
 
 
-class SimpleMdmCredentials(_CredentialsBase):
-    api_key: str = Field(description="API Key", json_schema_extra={"secret": True})
-
-    FINGERPRINT_FIELD: ClassVar[str] = "api_key"
-
-
-class AddigyCredentials(_CredentialsBase):
-    # Not implemented yet — placeholder shape, adjust once a real Addigy client exists.
-    api_key: str = Field(description="API Key", json_schema_extra={"secret": True})
-
-    FINGERPRINT_FIELD: ClassVar[str] = "api_key"
-
-
-class NanoCredentials(_CredentialsBase):
-    # Not implemented yet — placeholder shape, adjust once a real Nano MDM client exists.
-    api_key: str = Field(description="API Key", json_schema_extra={"secret": True})
-
-    FINGERPRINT_FIELD: ClassVar[str] = "api_key"
-
-
 CREDENTIAL_SCHEMAS: dict[MdmProvider, type[_CredentialsBase]] = {
     MdmProvider.jamf: JamfCredentials,
-    MdmProvider.simplemdm: SimpleMdmCredentials,
-    MdmProvider.addigy: AddigyCredentials,
-    MdmProvider.nano: NanoCredentials,
 }
 
 

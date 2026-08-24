@@ -10,7 +10,7 @@ All without bloating your local database or grinding your MDM APIs to a halt.
 
 ## 🚀 Features
 
-* **Multi-MDM Support:** Native API integration and Webhook ingestion for Jamf Pro (Addigy and SimpleMDM coming soon).
+* **Built for Jamf Pro:** Native API integration and Webhook ingestion, unapologetically Jamf-first (SimpleMDM and Addigy are on the roadmap).
 * **O(1) Vulnerability Hashing:** Translates raw app metadata into MD5 `FullHashes`, allowing lightning-fast lookups against the LoonVD vulnerability engine.
 * **Delta Streaming Engine:** Calculates inventory diffs in-memory and streams structured JSON events (`device.inventory.changed`) directly to your SIEM.
 * **Hybrid Sync Architecture:** Supports real-time webhooks for active devices and scheduled off-peak bulk sweeps to catch devices that were offline. Each pull is a *collection* — what to read (Jamf sections, a device filter pushed into Jamf's query, the smart-group catalog) and when (time of day, timezone, cadence) — configured per connection in the app rather than as one global cron.
@@ -98,7 +98,7 @@ policy attached and enforcing nothing. `POSTGRES_PASSWORD` creates the database;
 `POSTGRES_APP_PASSWORD` belongs to `looninspect_app`, which the app actually uses. Both
 are read once, when the database volume is first created.
 
-A SIEM webhook URL is optional for a first run. MDM connections (Jamf, SimpleMDM, etc.) aren't configured via `.env` — add them from the app itself once it's running, at `/api/mdm/connections` or the Settings page.
+A SIEM webhook URL is optional for a first run. Jamf Pro connections aren't configured via `.env` — add them from the app itself once it's running, at `/api/mdm/connections` or the Settings page.
 
 ### 3. Build and run
 
