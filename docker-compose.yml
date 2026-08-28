@@ -7,7 +7,10 @@ services:
   # single-purpose. Nothing is published to the host: the database is reachable only
   # over the compose network.
   db:
-    image: postgres:17-alpine
+    # Built rather than pulled so local compose runs the same artifact ECS will:
+    # the role-creation script travels inside the image, because a Fargate task
+    # has no checkout to bind-mount it from. See ops/postgres/Dockerfile.
+    build: ./ops/postgres
     environment:
       POSTGRES_DB: looninspect
       # The bootstrap superuser. Not what the application connects as — see the init
@@ -20,9 +23,6 @@ services:
       POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?set POSTGRES_APP_PASSWORD in .env — see backend/.env.example}
     volumes:
       - looninspect-db:/var/lib/postgresql/data
-      # Runs once, against an empty data directory. Changing it later has no effect
-      # without also removing the volume.
-      - ./ops/postgres/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       # -U/-d matter: bare pg_isready reports ready during initdb's own temporary
       # server, which is exactly the window this is meant to exclude.
