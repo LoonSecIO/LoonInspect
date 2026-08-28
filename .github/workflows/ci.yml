@@ -149,6 +149,10 @@ jobs:
       - name: Start Postgres
         run: |
           docker network create smoke-net
+          # The same image compose builds and an ECS task would run as the app's
+          # database sidecar — built here so the smoke test proves the shipped
+          # artifact, not stock postgres with a bind mount Fargate cannot replicate.
+          docker build -t looninspect-db:ci ops/postgres
           # Ephemeral and never published to the host; generated rather than literal
           # so no credential-shaped string lives in the workflow.
           {
@@ -164,8 +168,7 @@ jobs:
             -e POSTGRES_PASSWORD="$PG_SUPERUSER_PASSWORD" \
             -e POSTGRES_APP_USER=looninspect_app \
             -e POSTGRES_APP_PASSWORD="$PG_APP_PASSWORD" \
-            -v "$PWD/ops/postgres/initdb:/docker-entrypoint-initdb.d:ro" \
-            postgres:17-alpine
+            looninspect-db:ci
 
           for i in $(seq 1 30); do
             docker exec smoke-db pg_isready -U looninspect -d looninspect >/dev/null 2>&1 && break
