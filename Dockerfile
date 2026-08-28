@@ -63,7 +63,7 @@ RUN groupadd --gid 10001 looninspect \
     && chown -R looninspect:looninspect /app
 USER looninspect
 
-EXPOSE 8000
+EXPOSE 8001
 
 # TLS_MODE decides the scheme the server binds with, so the probe follows it.
 # A self-signed certificate is expected here, hence the unverified context.
@@ -75,7 +75,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
          "import os,ssl,urllib.request;\
 m=os.environ.get('TLS_MODE','off');\
 s='https' if m!='off' else 'http';\
-p=os.environ.get('PORT','8000');\
+p=os.environ.get('PORT','8001');\
 c=ssl._create_unverified_context() if s=='https' else None;\
 urllib.request.urlopen(f'{s}://127.0.0.1:{p}/api/health',timeout=4,context=c).read()"]
 

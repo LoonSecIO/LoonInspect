@@ -217,8 +217,8 @@ and each session needs its own:
   the same project name attach to the same volume — producing migration and
   fixture interference that is very hard to attribute. Set `COMPOSE_PROJECT_NAME`
   in the worktree's `.env` (it namespaces the volumes as well as the containers).
-- **A distinct backend port.** The default 8000 is baked into
-  `.claude/launch.json` and the permission allowlist; a second session on 8000
+- **A distinct backend port.** The default 8001 is baked into
+  `.claude/launch.json` and the permission allowlist; a second session on 8001
   fails at bind, usually silently from the agent's perspective.
 
 Remove the worktree when the branch merges:

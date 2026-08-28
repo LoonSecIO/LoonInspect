@@ -106,9 +106,9 @@ A SIEM webhook URL is optional for a first run. Jamf Pro connections aren't conf
 GIT_SHA=$(git rev-parse --short HEAD) docker compose up --build
 ```
 
-This builds the frontend, bundles it into the FastAPI image, and starts the app at <http://localhost:8000>. API docs are at <http://localhost:8000/docs>.
+This builds the frontend, bundles it into the FastAPI image, and starts the app at <http://localhost:8001>. API docs are at <http://localhost:8001/docs>.
 
-> **Note:** the container logs and `docker ps` will show the address as `0.0.0.0:8000` — that's the server listening on all interfaces, not a URL you can open. Use `http://localhost:8000` (or `127.0.0.1:8000`) in your browser instead; some browsers will refuse to navigate to `0.0.0.0` directly.
+> **Note:** the container logs and `docker ps` will show the address as `0.0.0.0:8001` — that's the server listening on all interfaces, not a URL you can open. Use `http://localhost:8001` (or `127.0.0.1:8001`) in your browser instead; some browsers will refuse to navigate to `0.0.0.0` directly.
 
 ### Upgrading an existing install
 
@@ -127,7 +127,7 @@ Substitute your own volume name if it differs; `docker volume ls` will show it.
 Volumes created from this version onward inherit the right ownership and need
 nothing.
 
-For day-to-day development with hot-reloading instead, see [backend/README.md](backend/README.md) and run the frontend separately with `npm run dev` inside `frontend/` (proxies `/api` to the backend on port 8000).
+For day-to-day development with hot-reloading instead, see [backend/README.md](backend/README.md) and run the frontend separately with `npm run dev` inside `frontend/` (proxies `/api` to the backend on port 8001).
 
 
 ---
@@ -146,7 +146,7 @@ your threat model needs that.
 
 | `TLS_MODE` | Behaviour | Use when |
 | --- | --- | --- |
-| `off` (default) | Plain HTTP on 8000 | Local use, or something in front already terminates TLS and you're content with a plaintext hop inside your own network |
+| `off` (default) | Plain HTTP on 8001 | Local use, or something in front already terminates TLS and you're content with a plaintext hop inside your own network |
 | `self-signed` | Generates a certificate on first boot, persists it on the data volume, serves HTTPS | You need TLS all the way to the application process — typically to satisfy a review that asks about the load-balancer-to-container hop |
 | `provided` | Serves HTTPS from a certificate and key you mount in | You have a real certificate for the hostname, or an internal CA |
 

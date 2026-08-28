@@ -107,7 +107,7 @@ class Settings(BaseSettings):
     audit_retention_days: int = 30
 
     host: str = "0.0.0.0"
-    port: int = 8000
+    port: int = 8001
 
     # off          plain HTTP (default — unchanged behaviour)
     # self-signed  generate a certificate on first boot and persist it
