@@ -1,0 +1,243 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  One LoonInspect pod on Fargate: the app container and its Postgres sidecar in
+  a single task, matching docker-compose.yml's shape. This is the
+  proof-of-runnability stack, not the product stack — the database lives and
+  dies with the task (ephemeral task storage, no volume), there is no load
+  balancer, and the task's public IP is the front door. What it proves: the
+  images we ship boot, migrate, self-provision an admin, and serve, on AWS.
+
+Parameters:
+  PodName:
+    Type: String
+    Default: loon
+    AllowedPattern: ^[a-z][a-z0-9-]{0,31}$
+    Description: >-
+      The pod's name per the naming ruling (region-less; the future
+      <pod>.pods.loonsec.io label). It becomes the service name, task family,
+      log group, and SSM namespace — everywhere the name leaks into infra.
+
+  AppImageUri:
+    Type: String
+    Description: Full ECR image URI including tag, e.g. <account>.dkr.ecr.<region>.amazonaws.com/looninspect:<git sha>.
+  DbImageUri:
+    Type: String
+    Description: Full ECR image URI including tag for the looninspect-db sidecar, same <git sha>.
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Public subnets (the task gets a public IP; that is the whole ingress story here).
+  AllowedIngressCidr:
+    Type: String
+    AllowedPattern: ^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2}$
+    Description: >-
+      Who may reach port 8000 — your address as a /32. No default on purpose:
+      an unauthenticated first-boot instance on 0.0.0.0/0 is exactly the
+      claim-the-instance race the claim token exists to prevent, and this proof
+      bypasses the claim token.
+
+  AdminEmail:
+    Type: String
+    Description: >-
+      INITIAL_ADMIN_EMAIL — with the password parameter below it triggers the
+      non-interactive bootstrap, so the first-run claim wizard (whose token is
+      process-local and lands in CloudWatch) never runs.
+
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /pods/${PodName}
+      RetentionInDays: 14
+
+  # Free either way; per-pod for now so the stack is self-contained. A shared
+  # `pods` cluster is the eventual shape once more than one pod exists.
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub pods-${PodName}
+
+  # What the *ECS agent* uses to start the task: pull from ECR, write logs,
+  # read the SSM secrets. The app itself gets TaskRole below.
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ecs-tasks.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: read-pod-parameters
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ssm:GetParameters
+                Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/pods/${PodName}/*
+
+  # Empty on purpose: the application makes no AWS API calls. The moment it
+  # does (S3 exports, SES, anything), the permission belongs here — never on
+  # the execution role, which the app's code cannot assume.
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ecs-tasks.amazonaws.com}
+            Action: sts:AssumeRole
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "pod ${PodName}: app port from the operator, nothing else in"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          CidrIp: !Ref AllowedIngressCidr
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Ref PodName
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: "512"
+      Memory: "1024"
+      # X86_64 because CI's ubuntu runners build amd64 images. Switching to ARM64
+      # (~20% cheaper) is a two-place change: this field and the publish
+      # workflow's runner/platform — change both together or the task pulls an
+      # image it cannot execute.
+      RuntimePlatform:
+        CpuArchitecture: X86_64
+        OperatingSystemFamily: LINUX
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: db
+          Image: !Ref DbImageUri
+          Essential: true
+          Environment:
+            - {Name: POSTGRES_DB, Value: looninspect}
+            - {Name: POSTGRES_USER, Value: looninspect}
+            - {Name: POSTGRES_APP_USER, Value: looninspect_app}
+          Secrets:
+            - Name: POSTGRES_PASSWORD
+              ValueFrom: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/pods/${PodName}/db-superuser-password
+            - Name: POSTGRES_APP_PASSWORD
+              ValueFrom: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/pods/${PodName}/db-app-password
+          # Restated from docker-compose.yml because Fargate ignores image and
+          # compose healthchecks alike, and the app container's dependency below
+          # needs this one to exist. Same -U/-d reasoning: bare pg_isready
+          # reports ready during initdb's own temporary server. Retries is 10
+          # where compose says 12 — 10 is the ECS maximum.
+          HealthCheck:
+            Command: ["CMD", "pg_isready", "-U", "looninspect", "-d", "looninspect"]
+            Interval: 5
+            Timeout: 5
+            Retries: 10
+            StartPeriod: 15
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: db
+
+        - Name: app
+          Image: !Ref AppImageUri
+          Essential: true
+          DependsOn:
+            - {ContainerName: db, Condition: HEALTHY}
+          PortMappings:
+            - {ContainerPort: 8000, Protocol: tcp}
+          Environment:
+            # 127.0.0.1, not `db`: awsvpc-mode containers in one task share a
+            # network namespace, so the compose service name does not resolve —
+            # the sidecar is simply localhost. This is the one place the ECS
+            # shape differs from compose on purpose.
+            #
+            # DATABASE_URL itself arrives whole via Secrets below (it embeds the
+            # app password, and a task definition cannot concatenate a secret
+            # into an env string).
+            - {Name: INITIAL_ADMIN_EMAIL, Value: !Ref AdminEmail}
+            # self-signed: no load balancer means no ACM cert, and plain HTTP on
+            # a non-localhost address would make SECURE_COOKIES silently drop
+            # the session. The browser warning on the raw IP is expected;
+            # the pod's real name and cert arrive with the ALB later.
+            - {Name: TLS_MODE, Value: self-signed}
+          Secrets:
+            - Name: DATABASE_URL
+              ValueFrom: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/pods/${PodName}/database-url
+            - Name: ENCRYPTION_KEY
+              ValueFrom: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/pods/${PodName}/encryption-key
+            - Name: INITIAL_ADMIN_PASSWORD
+              ValueFrom: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/pods/${PodName}/initial-admin-password
+          # The Dockerfile HEALTHCHECK restated verbatim — Fargate does not run
+          # image healthchecks. Same probe, same TLS_MODE-following scheme, same
+          # 45s start period for first-boot migrations against an empty database.
+          HealthCheck:
+            Command:
+              - CMD
+              - uv
+              - run
+              - --frozen
+              - --no-sync
+              - --no-dev
+              - python
+              - -c
+              - "import os,ssl,urllib.request;m=os.environ.get('TLS_MODE','off');s='https' if m!='off' else 'http';p=os.environ.get('PORT','8000');c=ssl._create_unverified_context() if s=='https' else None;urllib.request.urlopen(f'{s}://127.0.0.1:{p}/api/health',timeout=4,context=c).read()"
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 45
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: app
+
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Ref PodName
+      Cluster: !Ref Cluster
+      LaunchType: FARGATE
+      DesiredCount: 1
+      TaskDefinition: !Ref TaskDefinition
+      # Replace, never overlap: the default rolling deploy (min 100 / max 200)
+      # would run a second task — and with it a second, empty sidecar database —
+      # beside the first. For a stateful sidecar, brief downtime during replace
+      # is the correct behaviour, so min is 0 and max is 100.
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: !Ref SubnetIds
+          SecurityGroups: [!GetAtt SecurityGroup.GroupId]
+
+Outputs:
+  ClusterName:
+    Value: !Ref Cluster
+  ServiceName:
+    Value: !Ref PodName
+  LogGroupName:
+    Value: !Ref LogGroup
+  WhereIsMyIp:
+    Description: The task's public IP is on its ENI; ops/aws/README.md has the lookup chain.
+    Value: !Sub aws ecs list-tasks --cluster pods-${PodName} --service-name ${PodName}

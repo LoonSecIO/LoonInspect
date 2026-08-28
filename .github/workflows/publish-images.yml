@@ -1,0 +1,91 @@
+# Builds the app image and the database sidecar and pushes both to ECR, tagged
+# with the commit SHA and nothing else — the repositories are tag-immutable, so
+# there is no moving `latest` to repoint. A deploy names a SHA (see
+# ops/aws/README.md), which keeps "what is running" answerable from the tag.
+#
+# Auth is OIDC, no stored keys: the role comes from ops/aws/images.template.yml
+# and its trust policy is main-branch-only by default. That means dispatching
+# this workflow from any other branch will fail at the credentials step by
+# design — merge first, or deliberately widen OidcSubjectPattern and narrow it
+# back after.
+#
+# ci.yml stays the correctness gate (build + smoke on every PR); this workflow
+# only publishes what main already proved.
+name: Publish images
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - backend/**
+      - frontend/**
+      - ops/postgres/**
+      - .github/workflows/publish-images.yml
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: publish-images
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and push to ECR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Repository *variables*, not secrets: neither value is sensitive, and
+      # variables keep the account id out of a repo that goes public.
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ECR_PUSH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+
+      # Immutable tags make a re-run of an already-published SHA a push error
+      # rather than a no-op; skip cleanly instead so re-runs stay green.
+      - name: Check whether this SHA is already published
+        id: exists
+        run: |
+          if aws ecr describe-images --repository-name looninspect \
+               --image-ids imageTag="$GITHUB_SHA" >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::looninspect:$GITHUB_SHA already exists — nothing to do"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.exists.outputs.published == 'false'
+
+      # linux/amd64 to match the pod stack's RuntimePlatform (X86_64). These
+      # move together — see the comment in ops/aws/pod.template.yml.
+      - name: Build and push app image
+        if: steps.exists.outputs.published == 'false'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/looninspect:${{ github.sha }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push database sidecar image
+        if: steps.exists.outputs.published == 'false'
+        uses: docker/build-push-action@v6
+        with:
+          context: ops/postgres
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/looninspect-db:${{ github.sha }}
