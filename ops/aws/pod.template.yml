@@ -33,7 +33,7 @@ Parameters:
     Type: String
     AllowedPattern: ^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2}$
     Description: >-
-      Who may reach port 8000 — your address as a /32. No default on purpose:
+      Who may reach port 8001 — your address as a /32. No default on purpose:
       an unauthenticated first-boot instance on 0.0.0.0/0 is exactly the
       claim-the-instance race the claim token exists to prevent, and this proof
       bypasses the claim token.
@@ -101,8 +101,8 @@ Resources:
       VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 8000
-          ToPort: 8000
+          FromPort: 8001
+          ToPort: 8001
           CidrIp: !Ref AllowedIngressCidr
 
   TaskDefinition:
@@ -159,7 +159,7 @@ Resources:
           DependsOn:
             - {ContainerName: db, Condition: HEALTHY}
           PortMappings:
-            - {ContainerPort: 8000, Protocol: tcp}
+            - {ContainerPort: 8001, Protocol: tcp}
           Environment:
             # 127.0.0.1, not `db`: awsvpc-mode containers in one task share a
             # network namespace, so the compose service name does not resolve —
@@ -195,7 +195,7 @@ Resources:
               - --no-dev
               - python
               - -c
-              - "import os,ssl,urllib.request;m=os.environ.get('TLS_MODE','off');s='https' if m!='off' else 'http';p=os.environ.get('PORT','8000');c=ssl._create_unverified_context() if s=='https' else None;urllib.request.urlopen(f'{s}://127.0.0.1:{p}/api/health',timeout=4,context=c).read()"
+              - "import os,ssl,urllib.request;m=os.environ.get('TLS_MODE','off');s='https' if m!='off' else 'http';p=os.environ.get('PORT','8001');c=ssl._create_unverified_context() if s=='https' else None;urllib.request.urlopen(f'{s}://127.0.0.1:{p}/api/health',timeout=4,context=c).read()"
             Interval: 30
             Timeout: 5
             Retries: 3

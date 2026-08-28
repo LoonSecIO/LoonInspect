@@ -106,10 +106,10 @@ ENI=$(aws ecs describe-tasks --cluster pods-$POD --tasks $TASK \
   --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value" --output text)
 IP=$(aws ec2 describe-network-interfaces --network-interface-ids $ENI \
   --query 'NetworkInterfaces[0].Association.PublicIp' --output text)
-curl -ks https://$IP:8000/api/health
+curl -ks https://$IP:8001/api/health
 ```
 
-Proven means: the health endpoint answers, `https://<ip>:8000` serves the SPA
+Proven means: the health endpoint answers, `https://<ip>:8001` serves the SPA
 past the self-signed warning, and the admin from step 3 can sign in. Logs, if
 anything disagrees:
 
