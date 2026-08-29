@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 # Extend this as new producers land (group membership changes, enrichment results).
 # Validated against in schemas/destinations.py so a typo in subscribedEvents doesn't
 # silently create a destination that never receives anything.
-KNOWN_EVENT_TYPES = frozenset({"device.inventory.changed", "device.change", "run.completed"})
+KNOWN_EVENT_TYPES = frozenset({"device.inventory.changed", "device.change", "run.completed", "run.failed"})
 
 # Same shape as the login lockout backoff: exponential, capped, with a hard ceiling on
 # total attempts so a permanently dead destination doesn't retry forever.
