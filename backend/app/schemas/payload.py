@@ -55,7 +55,10 @@ class NormalizedDevice(BaseModel):
     department: str | None = None
     last_check_in: datetime | None = None
     last_inventory_at: datetime | None = None
-    apps: list[NormalizedApp] = []
+    # None means the applications section was not part of the read's aperture; [] means
+    # it was read and the device genuinely has no apps. The two must never collapse:
+    # process_sync wipes app rows on [], and a scoped webhook read must not wipe (#93).
+    apps: list[NormalizedApp] | None = []
     extension_attributes: list[NormalizedExtensionAttribute] = []
 
 

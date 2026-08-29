@@ -478,7 +478,9 @@ async def ingest_computer(
         await derive_and_record(
             db, connection=connection, observation=observation, result=result, trigger=trigger, collected_at=collected_at
         )
-    await process_sync(db, normalize_computer(raw), connection)
+    # The same sections the ledger just recorded as the aperture: the current-state
+    # tables must not consume more of the record than the run declared it read (#93).
+    await process_sync(db, normalize_computer(raw, sections), connection)
     return result
 
 
@@ -593,8 +595,13 @@ async def process_sync(
 
     Commits. Anything the caller wrote to the session before this — the observation
     ledger's rows for the same device — lands in the same transaction.
+
+    `device.apps is None` means the applications section was outside the read's
+    aperture (Kyle's ruling, 2026-08-29): app rows, the catalog, and the event stream
+    are left exactly as the last real read left them. Only [] — read, and genuinely
+    empty — diffs to removals.
     """
-    for app in device.apps:
+    for app in device.apps or ():
         apply_hashes(app)
 
     result = await db.execute(
@@ -650,36 +657,42 @@ async def process_sync(
         DeviceExtensionAttribute(key=ea.key, value=ea.value) for ea in device.extension_attributes
     ]
 
-    incoming_hashes = {app.version_hash: app for app in device.apps if app.version_hash}
+    added: list[NormalizedApp] = []
+    removed_rows: list[InstalledApp] = []
+    if device.apps is not None:
+        incoming_hashes = {app.version_hash: app for app in device.apps if app.version_hash}
 
-    added = [app for version_hash, app in incoming_hashes.items() if version_hash not in previous_hashes]
-    removed_rows = [
-        row for version_hash, row in previous_hashes.items() if version_hash not in incoming_hashes
-    ]
+        added = [app for version_hash, app in incoming_hashes.items() if version_hash not in previous_hashes]
+        removed_rows = [
+            row for version_hash, row in previous_hashes.items() if version_hash not in incoming_hashes
+        ]
 
-    for row in removed_rows:
-        await db.delete(row)
+        for row in removed_rows:
+            await db.delete(row)
 
-    for app in added:
-        db.add(
-            InstalledApp(
-                device=existing,
-                name=app.name,
-                bundle_id=app.bundle_id,
-                version=app.version,
-                short_version=app.short_version,
-                app_hash=app.app_hash,
-                version_hash=app.version_hash,
-                key_title=app.key_title,
-                key_full=app.key_full,
+        for app in added:
+            db.add(
+                InstalledApp(
+                    device=existing,
+                    name=app.name,
+                    bundle_id=app.bundle_id,
+                    version=app.version,
+                    short_version=app.short_version,
+                    app_hash=app.app_hash,
+                    version_hash=app.version_hash,
+                    key_title=app.key_title,
+                    key_full=app.key_full,
+                )
             )
-        )
 
     await db.flush()
     # The tenant app catalog: every app this device reports is seen now; a (name, bundle ID,
     # version) the fleet has not shown before is judged against Jamf's catalog right here, and
-    # each app row gets its copy of the answer.
-    await record_device_apps(db, existing)
+    # each app row gets its copy of the answer. Skipped when apps were not read: the rows
+    # kept above are the last read's state, and a scoped fetch must not restamp them as
+    # seen now.
+    if device.apps is not None:
+        await record_device_apps(db, existing)
 
     if not added and not removed_rows:
         await db.commit()

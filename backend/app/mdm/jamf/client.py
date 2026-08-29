@@ -507,18 +507,23 @@ class JamfClient:
             start += len(wave)
         return detailed
 
-def normalize_computer(computer: dict) -> NormalizedDevice:
+def normalize_computer(computer: dict, sections: Sequence[str] = V0_SECTIONS) -> NormalizedDevice:
     """The `devices` / `installed_apps` shape the UI reads, from a raw inventory object.
 
     This is the *current-state* view and is deliberately looser than the observation
     contract: it keeps telemetry the UI shows (last contact, last inventory) that the
     contract excludes from hashing.
+
+    `sections` are what the run asked Jamf for — the same read aperture the ledger
+    records. Applications outside that aperture come back as None, never [], so a
+    scoped read can't be mistaken for a device with no apps (#93). Keyed off the
+    request, not the response: Jamf omitting a key we asked for *is* an empty read.
     """
     general = computer.get("general", computer)
     hardware = computer.get("hardware", {})
     operating_system = computer.get("operatingSystem", {})
     user_and_location = computer.get("userAndLocation", {})
-    applications = computer.get("applications", [])
+    applications = computer.get("applications", []) if "applications" in sections else None
     extension_attributes = computer.get("extensionAttributes", [])
 
     remote_management = general.get("remoteManagement", {})
@@ -550,7 +555,9 @@ def normalize_computer(computer: dict) -> NormalizedDevice:
             general.get("lastContactTime") or general.get("lastContact") or general.get("lastCheckIn")
         ),
         last_inventory_at=_parse_datetime(general.get("reportDate")),
-        apps=[
+        apps=None
+        if applications is None
+        else [
             NormalizedApp(
                 name=app.get("name", ""),
                 bundle_id=app.get("bundleId") or app.get("name", ""),
