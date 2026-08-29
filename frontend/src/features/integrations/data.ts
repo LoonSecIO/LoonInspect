@@ -13,8 +13,10 @@ export const INTEGRATION_GROUPS: IntegrationGroup[] = [
   {
     id: "siem",
     vendors: [
-      { id: "runreveal", status: "comingSoon", logoUrl: "/logos/runreveal.svg" },
-      { id: "elastic", status: "comingSoon" },
+      // Both ship as destination types (#55/#56); the destinations page is where
+      // they're configured.
+      { id: "runreveal", status: "available", href: "/settings/destinations", logoUrl: "/logos/runreveal.svg" },
+      { id: "elastic", status: "available", href: "/settings/destinations" },
       { id: "splunk", status: "comingSoon" },
       { id: "datadog", status: "comingSoon", logoUrl: "/logos/datadog.svg", logoUrlDark: "/logos/datadog.png" },
       { id: "webhook", status: "comingSoon" }

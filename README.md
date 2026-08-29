@@ -2,7 +2,7 @@
 
 **A self-hosted, open-source vulnerability scanner and MDM inventory engine for enterprise Apple environments.**
 
-LoonInspect bridges the gap between your Apple Mobile Device Management (MDM) platforms and your security operations. It pulls raw app inventory from MDMs like Jamf Pro, generates O(1) hashed fingerprints, maps them against real-time CVE intelligence, and streams the delta events directly into your SIEM (Splunk, RunReveal, Datadog). 
+LoonInspect bridges the gap between your Apple Mobile Device Management (MDM) platforms and your security operations. It pulls raw app inventory from MDMs like Jamf Pro, generates O(1) hashed fingerprints, maps them against real-time CVE intelligence, and streams the delta events directly into your SIEM (Splunk, Elastic, RunReveal, Datadog). 
 
 All without bloating your local database or grinding your MDM APIs to a halt.
 

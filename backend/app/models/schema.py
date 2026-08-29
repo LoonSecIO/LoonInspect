@@ -613,7 +613,11 @@ class Destination(Base):
     flexible type rather than a menu of named vendor integrations: from here it is
     always an HTTPS POST, and vendor differences live almost entirely in the auth
     header, which `auth_type` covers. Splunk gets its own `type` because HEC has a
-    fixed envelope shape, not because its transport is actually different.
+    fixed envelope shape, and Elastic because the bulk API has a fixed body shape
+    (NDJSON) and its own failure mode — not because their transport is different.
+    "runreveal" is a preset over the generic-webhook delivery path: same bare-JSON
+    POST, bearer auth, existing so the UI can prefill their ingest URL shape instead
+    of making the admin reverse-engineer it.
     """
 
     __tablename__ = "destinations"
@@ -621,16 +625,21 @@ class Destination(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     name: Mapped[str] = mapped_column(String(255))
-    # "generic_webhook" | "splunk_hec"
+    # "generic_webhook" | "splunk_hec" | "elastic" | "runreveal"
     type: Mapped[str] = mapped_column(String(32), default="generic_webhook")
     url: Mapped[str] = mapped_column(String(1024))
 
-    # none | bearer | header | splunk_hec. "header" covers anything behind an API
-    # gateway or a vendor's own REST ingestion (e.g. Snowpipe) that expects its own
-    # named header rather than a standard Authorization convention.
+    # none | bearer | header | splunk_hec | elastic_api_key. "header" covers anything
+    # behind an API gateway or a vendor's own REST ingestion (e.g. Snowpipe) that
+    # expects its own named header rather than a standard Authorization convention.
     auth_type: Mapped[str] = mapped_column(String(16), default="none")
     auth_header_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     auth_secret_encrypted: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
+
+    # Elastic only: the index (or data stream) the bulk POST targets. Null means the
+    # data-stream-friendly default in app/core/outbox.py — a name, not a URL segment
+    # the admin has to remember to append.
+    elastic_index: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 

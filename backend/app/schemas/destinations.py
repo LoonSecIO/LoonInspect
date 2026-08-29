@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -7,8 +8,13 @@ from pydantic.alias_generators import to_camel
 
 from app.core.outbox import KNOWN_EVENT_TYPES
 
-_VALID_TYPES = frozenset({"generic_webhook", "splunk_hec"})
-_VALID_AUTH_TYPES = frozenset({"none", "bearer", "header", "splunk_hec"})
+_VALID_TYPES = frozenset({"generic_webhook", "splunk_hec", "elastic", "runreveal"})
+_VALID_AUTH_TYPES = frozenset({"none", "bearer", "header", "splunk_hec", "elastic_api_key"})
+
+# Elasticsearch's own index/data-stream naming rules, checked here so a bad name is a
+# 422 at configuration time instead of a per-item bulk rejection discovered in the
+# delivery log: lowercase, none of the characters Elastic forbids, no leading -/_/+.
+_ELASTIC_INDEX_RE = re.compile(r'^[^\sA-Z\\/*?"<>|,#:]+$')
 
 
 class _CamelModel(BaseModel):
@@ -24,6 +30,18 @@ def _validate_subscribed_events(value: list[str] | None) -> list[str] | None:
     return value
 
 
+def _validate_elastic_index(value: str | None) -> str | None:
+    if value is None:
+        return value
+    if not value or value in {".", ".."} or value[0] in "-_+" or not _ELASTIC_INDEX_RE.fullmatch(value):
+        raise ValueError(
+            "elasticIndex must be a valid Elasticsearch index or data stream name: "
+            'lowercase, no spaces, none of \\ / * ? " < > | , # :, and it cannot '
+            "start with -, _ or +"
+        )
+    return value
+
+
 class DestinationOut(_CamelModel):
     id: int
     name: str
@@ -31,6 +49,9 @@ class DestinationOut(_CamelModel):
     url: str
     auth_type: str
     auth_header_name: str | None
+    # Elastic only; null everywhere else, and null on an Elastic destination means
+    # the built-in data-stream default.
+    elastic_index: str | None
     # Never the secret itself. There is no read path for it anywhere in this API — the
     # admin typed it, there is nothing to show back, same posture as an API token.
     has_secret: bool
@@ -49,6 +70,7 @@ class DestinationCreate(_CamelModel):
     auth_type: str = "none"
     auth_header_name: str | None = None
     auth_secret: str | None = None
+    elastic_index: str | None = Field(default=None, min_length=1, max_length=255)
     enabled: bool = True
     subscribed_events: list[str] | None = None
 
@@ -62,6 +84,7 @@ class DestinationCreate(_CamelModel):
             raise ValueError("authHeaderName is required when authType is 'header'")
         if self.auth_type != "none" and not self.auth_secret:
             raise ValueError("authSecret is required unless authType is 'none'")
+        _validate_elastic_index(self.elastic_index)
         _validate_subscribed_events(self.subscribed_events)
         return self
 
@@ -74,6 +97,8 @@ class DestinationUpdate(_CamelModel):
     # Provide to rotate the secret; omit to leave the stored one unchanged. There is no
     # way to clear it back to none via this field alone — set authType to "none".
     auth_secret: str | None = None
+    # Provide null explicitly to fall back to the built-in default index.
+    elastic_index: str | None = Field(default=None, max_length=255)
     enabled: bool | None = None
     subscribed_events: list[str] | None = None
 
@@ -83,5 +108,6 @@ class DestinationUpdate(_CamelModel):
             raise ValueError(f"authType must be one of {sorted(_VALID_AUTH_TYPES)}")
         if self.auth_type == "header" and not self.auth_header_name:
             raise ValueError("authHeaderName is required when authType is 'header'")
+        _validate_elastic_index(self.elastic_index)
         _validate_subscribed_events(self.subscribed_events)
         return self
