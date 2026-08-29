@@ -1,7 +1,11 @@
 """posture_snapshot: the tape starts at launch — one row per metric per capture
 
+Also the merge point for the a7d1c3e9f2b8 (AI consent, #118) and a9d4c7e1f3b8
+(run.failed default-on, #119) heads, which both revised e6c9a2f4b8d1 as siblings —
+three PRs left the same head in parallel, and this revision reunites the history.
+
 Revision ID: f8b2d4a6c1e9
-Revises: e6c9a2f4b8d1
+Revises: a7d1c3e9f2b8, a9d4c7e1f3b8
 """
 
 from __future__ import annotations
@@ -12,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "f8b2d4a6c1e9"
-down_revision: Union[str, Sequence[str], None] = "e6c9a2f4b8d1"
+down_revision: Union[str, Sequence[str], None] = ("a7d1c3e9f2b8", "a9d4c7e1f3b8")
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
