@@ -214,6 +214,23 @@ re-derive or rebuild this, extend it:
 - Scheduler: `outbox_worker_tick` every 30s (fan-out + delivery), `outbox_cleanup`
   daily.
 
+## Known constraint (v0): Splunk `_time` is ingest time, not occurrence time
+
+`_build_body()` sends no HEC `time` field, so Splunk stamps every event at HEC
+*arrival* — which trails the occurrence by the outbox cadence (30s tick) and, after a
+destination hiccup, by up to the full retry envelope. Delivery order is not guaranteed
+either (`deliver_pending` has no ORDER BY), so a drained backlog can land shuffled.
+
+Ruled a **known, accepted v0 constraint** (2026-08-29), not a bug to fix in freeze
+week. The authoritative occurrence timestamp is **`occurred_at` in the payload**, whose
+semantics are deliberate and trustworthy: sweep events back-date to the run's `_time`
+window, webhook events carry Jamf's `reportDate` (`backend/app/core/runs.py`). Searches
+and dashboards that care about *when the device changed* must key on `occurred_at`
+(e.g. `| eval _time=strptime(occurred_at, "%Y-%m-%dT%H:%M:%S.%6Q%z")`), not on the
+time picker. Any future change that starts setting HEC `time` from `occurred_at` is
+additive and safe for existing consumers — it makes `_time` mean what dashboards
+already assume — but it belongs to the per-app expansion work, not v0.
+
 ## Adjacent unbuilt features referenced by this design (context, not yet built)
 
 These came up earlier in the same conversation as things `days_since` or the meta block
