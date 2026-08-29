@@ -27,6 +27,20 @@ Every PR must pass the same gates `main` enforces:
 Lockfiles are part of the contract: `uv.lock` and `package-lock.json` must match
 their manifests (`--frozen` / `npm ci` enforce this).
 
+## Measurement
+
+History not recorded can never be backfilled. Every feature issue or PR that creates
+or reshapes a data area answers one line:
+
+```
+posture_snapshot: <keys | none>
+```
+
+— naming the nightly posture keys ([docs/posture-snapshot.md](docs/posture-snapshot.md))
+the change adds, activates, or retires. `none` is a first-class answer: it means the
+question was asked and the change moves no fleet-level number worth a nightly row. A
+missing line means the question was never asked.
+
 ## License
 
 Apache-2.0. By contributing you agree your contributions are licensed under the same

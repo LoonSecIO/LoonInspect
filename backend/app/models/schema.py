@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, Uuid, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -1149,3 +1150,41 @@ class DeviceChange(Base):
     details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     policy_version: Mapped[str] = mapped_column(String(8))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+# --- The posture snapshot -------------------------------------------------------------
+
+
+class PostureSnapshot(Base):
+    """One fleet-level number, captured as the last act of a closed full sweep — the
+    tape #102 starts at launch, because history not recorded can never be backfilled.
+
+    One row per metric per capture, never a wide row and never a JSON blob: the key
+    vocabulary grows by INSERT, and every key's history reads as one indexed scan.
+    Definitions are frozen per key in docs/posture-snapshot.md — a definition change
+    mints a new key rather than quietly bending an old one's history.
+
+    `full_sweep_run_id` is the run whose close stamped this capture, success and
+    failure alike (a failed night's DB state is real, and the failed run id is what
+    makes staleness visible). SET NULL on delete because runs are purged after 30 days
+    while these rows are the durable history that outlives them.
+
+    `value` is NUMERIC and always present: an absent row means the metric did not
+    apply that night (e.g. `outbox.oldest_pending_age_s` with an empty queue), never
+    that it was zero — zero is written as 0.
+    """
+
+    __tablename__ = "posture_snapshot"
+    __table_args__ = (
+        # The read shape: one key's history for one tenant, in time order.
+        Index("ix_posture_snapshot_series", "tenant_id", "metric_key", "captured_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    metric_key: Mapped[str] = mapped_column(Text)
+    value: Mapped[Decimal] = mapped_column(Numeric)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    full_sweep_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("runs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
