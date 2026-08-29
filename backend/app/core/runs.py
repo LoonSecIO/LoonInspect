@@ -631,6 +631,25 @@ async def finish(
         # has always been, and a non-zero count is the anomaly worth a field.
         **({"devicesFailed": devices_failed} if devices_failed else {}),
     )
+    if row.lock_class == LOCK_DEVICE_SWEEP:
+        # The posture snapshot (#102, docs/posture-snapshot.md): the last act of every
+        # closed full sweep, success AND failure — a failed night's database state is
+        # real, and the failed run id on the rows is what makes staleness visible. Only
+        # after the terminal status is committed, so a capture reads the run it stamps;
+        # never for a refused finish, whose reclaim already recorded (or will record)
+        # its own close. A capture failure is logged and swallowed — a night can lose
+        # its snapshot, it must never lose its sweep.
+        from app.core.posture import record_full_sweep_snapshot  # local: posture reads this module's vocabulary
+
+        try:
+            written = await record_full_sweep_snapshot(db, run_id=row.id)
+            await log(db, run, "info", "posture snapshot captured", keys=written)
+        except Exception:
+            with contextlib.suppress(Exception):
+                await db.rollback()
+            logger.exception(
+                "posture snapshot failed; the run's verdict stands", extra={"run_id": str(row.id)}
+            )
     return True
 
 
