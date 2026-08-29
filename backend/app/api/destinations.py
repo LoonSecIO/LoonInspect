@@ -22,6 +22,7 @@ def _to_out(destination: Destination) -> DestinationOut:
         url=destination.url,
         auth_type=destination.auth_type,
         auth_header_name=destination.auth_header_name,
+        elastic_index=destination.elastic_index,
         has_secret=bool(destination.auth_secret_encrypted),
         enabled=destination.enabled,
         subscribed_events=destination.subscribed_events,
@@ -61,6 +62,7 @@ async def create_destination(payload: DestinationCreate, db: AsyncSession = Depe
         auth_type=payload.auth_type,
         auth_header_name=payload.auth_header_name,
         auth_secret_encrypted=payload.auth_secret,
+        elastic_index=payload.elastic_index,
         enabled=payload.enabled,
         subscribed_events=payload.subscribed_events,
     )
@@ -100,6 +102,8 @@ async def update_destination(
         destination.auth_header_name = data["auth_header_name"]
     if data.get("auth_secret"):
         destination.auth_secret_encrypted = data["auth_secret"]
+    if "elastic_index" in data:
+        destination.elastic_index = data["elastic_index"]
     if "enabled" in data:
         destination.enabled = data["enabled"]
     if "subscribed_events" in data:

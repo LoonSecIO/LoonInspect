@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -23,6 +24,12 @@ _BASE_BACKOFF_SECONDS = 30
 _MAX_BACKOFF_SECONDS = 3600
 _MAX_ATTEMPTS = 10
 _MAX_BACKOFF_EXPONENT = 10  # guards against an unbounded 2**n
+
+# What an Elastic destination writes to when no index is configured. Data-stream
+# naming (logs-<dataset>-<namespace>) on purpose: it matches Elastic's built-in
+# `logs-*-*` index template, so a fresh cluster accepts the very first bulk POST
+# with sensible mappings instead of needing setup on the Elastic side first.
+ELASTIC_DEFAULT_INDEX = "logs-looninspect.events-default"
 
 
 async def enqueue_event(
@@ -52,6 +59,10 @@ def _build_headers(destination: Destination) -> dict[str, str]:
         headers["Authorization"] = f"Bearer {secret}"
     elif destination.auth_type == "splunk_hec" and secret:
         headers["Authorization"] = f"Splunk {secret}"
+    elif destination.auth_type == "elastic_api_key" and secret:
+        # The secret is the base64 `id:api_key` string Elastic hands out on key
+        # creation — stored and sent as-is, never decoded or re-encoded here.
+        headers["Authorization"] = f"ApiKey {secret}"
     elif destination.auth_type == "header" and destination.auth_header_name and secret:
         headers[destination.auth_header_name] = secret
 
@@ -63,7 +74,84 @@ def _build_body(destination: Destination, payload: dict) -> dict:
         # HEC's raw-JSON collector endpoint expects the event wrapped, not posted
         # bare — without this, "Splunk support" would silently fail to ingest.
         return {"event": payload}
+    # "runreveal" deliberately falls through: their webhook source ingests the same
+    # bare JSON a generic webhook receives. The preset exists for the UI (prefilled
+    # ingest-URL shape, bearer auth locked in), not for a different wire format.
     return payload
+
+
+def _elastic_bulk_url(destination: Destination) -> str:
+    """`{base_url}/{index}/_bulk` — the destination URL is the cluster, not the
+    endpoint, so the index stays a per-destination setting instead of something the
+    admin has to bake into a URL by hand."""
+    index = destination.elastic_index or ELASTIC_DEFAULT_INDEX
+    return f"{destination.url.rstrip('/')}/{index}/_bulk"
+
+
+def _elastic_bulk_body(event: EventOutbox) -> str:
+    """One `create` action line plus one source line, NDJSON. `create` rather than
+    `index` because the default index name is a data stream, and data streams accept
+    nothing else."""
+    document = dict(event.payload)
+    # @timestamp is the time axis of every Elastic index. The event's own occurred_at
+    # is authoritative (sweeps back-date to the run's window, webhooks carry Jamf's
+    # reportDate — see app.core.runs.event_time); enqueue time is only the fallback
+    # for a payload that somehow lacks it, so the document always maps.
+    if "@timestamp" not in document:
+        occurred_at = document.get("occurred_at")
+        created_at = event.created_at or datetime.now(timezone.utc)
+        document["@timestamp"] = occurred_at or created_at.isoformat()
+    return json.dumps({"create": {}}) + "\n" + json.dumps(document, default=str) + "\n"
+
+
+def _elastic_bulk_error(response: httpx.Response) -> str | None:
+    """The bulk API's trap: HTTP 200 with per-item failures buried in the body.
+    `errors: true` must surface as a delivery failure — swallow it and an Elastic
+    destination with a bad mapping or index permission fails silently forever.
+    Returns the error to record, or None when every item was accepted."""
+    try:
+        body = response.json()
+    except ValueError:
+        return f"bulk response was not JSON: {response.text[:200]}"
+    if not isinstance(body, dict):
+        return f"bulk response was not an object: {response.text[:200]}"
+    if not body.get("errors"):
+        return None
+    for item in body.get("items") or []:
+        # Each item is keyed by its action ({"create": {...}}); the value carries
+        # the per-item status and error.
+        result = next(iter(item.values()), None) if isinstance(item, dict) else None
+        if not isinstance(result, dict) or not result.get("error"):
+            continue
+        error = result["error"]
+        detail = f"{error.get('type', 'error')}: {error.get('reason', '')}" if isinstance(error, dict) else str(error)
+        return f"bulk item rejected (status {result.get('status')}): {detail}"
+    return "bulk response reported errors=true"
+
+
+async def _attempt_elastic_delivery(
+    client: httpx.AsyncClient, destination: Destination, event: EventOutbox
+) -> tuple[bool, str | None]:
+    headers = _build_headers(destination)
+    # The bulk endpoint requires NDJSON and rejects application/json outright.
+    headers["Content-Type"] = "application/x-ndjson"
+    try:
+        response = await client.post(
+            _elastic_bulk_url(destination),
+            content=_elastic_bulk_body(event).encode("utf-8"),
+            headers=headers,
+            timeout=10,
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        return False, f"HTTP {exc.response.status_code}: {exc.response.text[:500]}"
+    except httpx.HTTPError as exc:
+        return False, str(exc)[:500]
+
+    error = _elastic_bulk_error(response)
+    if error is not None:
+        return False, error[:500]
+    return True, None
 
 
 def _next_backoff(attempt_count: int) -> datetime:
@@ -104,6 +192,10 @@ async def fan_out_pending(db: AsyncSession) -> int:
 async def _attempt_delivery(
     client: httpx.AsyncClient, destination: Destination, event: EventOutbox
 ) -> tuple[bool, str | None]:
+    if destination.type == "elastic":
+        # Different enough to branch whole: NDJSON body, the index in the URL, and a
+        # success status that still has to be read for per-item failures.
+        return await _attempt_elastic_delivery(client, destination, event)
     try:
         response = await client.post(
             destination.url,

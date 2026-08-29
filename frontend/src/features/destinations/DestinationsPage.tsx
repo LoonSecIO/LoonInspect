@@ -17,6 +17,7 @@ interface FormState {
   authType: AuthType;
   authHeaderName: string;
   authSecret: string;
+  elasticIndex: string;
   enabled: boolean;
 }
 
@@ -27,7 +28,31 @@ const EMPTY_FORM: FormState = {
   authType: "none",
   authHeaderName: "",
   authSecret: "",
+  elasticIndex: "",
   enabled: true
+};
+
+/** Vendor presets whose auth convention is fixed — exposing a selector for these
+ *  would just be a way to misconfigure them. */
+const FIXED_AUTH: Partial<Record<DestinationType, AuthType>> = {
+  splunk_hec: "splunk_hec",
+  elastic: "elastic_api_key",
+  runreveal: "bearer"
+};
+
+/** What the generic-webhook auth selector actually offers. */
+const GENERIC_AUTH_TYPES: AuthType[] = ["none", "bearer", "header"];
+
+/** What the backend writes to when the index field is left blank. Shown as the
+ *  placeholder so "blank means this" is visible, not folklore. */
+const ELASTIC_DEFAULT_INDEX = "logs-looninspect.events-default";
+
+const URL_PLACEHOLDERS: Record<DestinationType, string> = {
+  generic_webhook: "https://…",
+  splunk_hec: "https://…",
+  elastic: "https://your-cluster.es.example.com:9243",
+  // The shape RunReveal's Structured Webhook source hands out under Source Details.
+  runreveal: "https://api.runreveal.com/sources/hook/<webhookId>"
 };
 
 function formatDate(value: string | null): string {
@@ -37,6 +62,19 @@ function formatDate(value: string | null): string {
 export function DestinationsPage() {
   const { t } = useLocale();
   const canWrite = useHasPermission(PERMISSIONS.DESTINATION_WRITE);
+
+  function typeLabel(type: DestinationType): string {
+    switch (type) {
+      case "splunk_hec":
+        return t.destinations.typeSplunkHec;
+      case "elastic":
+        return t.destinations.typeElastic;
+      case "runreveal":
+        return t.destinations.typeRunReveal;
+      default:
+        return t.destinations.typeGenericWebhook;
+    }
+  }
 
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,11 +111,12 @@ export function DestinationsPage() {
       name: destination.name,
       type: destination.type,
       url: destination.url,
-      // Splunk HEC's auth convention is fixed; editing a generic webhook's auth type
-      // is the only case this selector matters for. See the type-change handler below.
-      authType: destination.type === "splunk_hec" ? "splunk_hec" : destination.authType,
+      // A preset's auth convention is fixed; editing a generic webhook's auth type
+      // is the only case the selector matters for. See the type-change handler below.
+      authType: FIXED_AUTH[destination.type] ?? destination.authType,
       authHeaderName: destination.authHeaderName ?? "",
       authSecret: "",
+      elasticIndex: destination.elasticIndex ?? "",
       enabled: destination.enabled
     });
     setFormMode(destination.id);
@@ -87,9 +126,9 @@ export function DestinationsPage() {
     setForm((current) => ({
       ...current,
       type,
-      // Splunk HEC always authenticates the same way — exposing a separate selector
-      // for it would just be a way to misconfigure it.
-      authType: type === "splunk_hec" ? "splunk_hec" : current.authType === "splunk_hec" ? "none" : current.authType
+      // A preset always authenticates the same way; switching back to a generic
+      // webhook keeps a transferable auth type and resets a preset-only one.
+      authType: FIXED_AUTH[type] ?? (GENERIC_AUTH_TYPES.includes(current.authType) ? current.authType : "none")
     }));
   }
 
@@ -106,6 +145,9 @@ export function DestinationsPage() {
         authType: form.authType,
         authHeaderName: form.authType === "header" ? form.authHeaderName : null,
         authSecret: form.authSecret || undefined,
+        // Blank means the backend's default index; null states that explicitly so an
+        // edit can also clear a previously configured one.
+        elasticIndex: form.type === "elastic" ? form.elasticIndex.trim() || null : null,
         enabled: form.enabled
       };
 
@@ -200,6 +242,8 @@ export function DestinationsPage() {
               >
                 <option value="generic_webhook">{t.destinations.typeGenericWebhook}</option>
                 <option value="splunk_hec">{t.destinations.typeSplunkHec}</option>
+                <option value="elastic">{t.destinations.typeElastic}</option>
+                <option value="runreveal">{t.destinations.typeRunReveal}</option>
               </select>
             </div>
           </div>
@@ -212,11 +256,30 @@ export function DestinationsPage() {
               id="destUrl"
               type="url"
               required
-              placeholder="https://…"
+              placeholder={URL_PLACEHOLDERS[form.type]}
               value={form.url}
               onChange={(event) => setForm((current) => ({ ...current, url: event.target.value }))}
             />
+            {form.type === "elastic" && <p className="text-xs text-muted-foreground">{t.destinations.urlHintElastic}</p>}
+            {form.type === "runreveal" && (
+              <p className="text-xs text-muted-foreground">{t.destinations.urlHintRunReveal}</p>
+            )}
           </div>
+
+          {form.type === "elastic" && (
+            <div className="space-y-2">
+              <label htmlFor="destElasticIndex" className="text-sm font-medium">
+                {t.destinations.elasticIndex}
+              </label>
+              <Input
+                id="destElasticIndex"
+                placeholder={ELASTIC_DEFAULT_INDEX}
+                value={form.elasticIndex}
+                onChange={(event) => setForm((current) => ({ ...current, elasticIndex: event.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">{t.destinations.elasticIndexHint}</p>
+            </div>
+          )}
 
           {form.type === "generic_webhook" && (
             <div className="grid gap-4 sm:grid-cols-2">
@@ -259,7 +322,13 @@ export function DestinationsPage() {
           {form.authType !== "none" && (
             <div className="space-y-2">
               <label htmlFor="destAuthSecret" className="text-sm font-medium">
-                {formMode === "create" ? t.destinations.authSecret : t.destinations.authSecretRotate}
+                {form.type === "elastic"
+                  ? formMode === "create"
+                    ? t.destinations.elasticApiKey
+                    : t.destinations.elasticApiKeyRotate
+                  : formMode === "create"
+                    ? t.destinations.authSecret
+                    : t.destinations.authSecretRotate}
               </label>
               <Input
                 id="destAuthSecret"
@@ -270,6 +339,9 @@ export function DestinationsPage() {
                 value={form.authSecret}
                 onChange={(event) => setForm((current) => ({ ...current, authSecret: event.target.value }))}
               />
+              {form.type === "elastic" && (
+                <p className="text-xs text-muted-foreground">{t.destinations.elasticApiKeyHint}</p>
+              )}
             </div>
           )}
 
@@ -323,9 +395,7 @@ export function DestinationsPage() {
             {destinations.map((destination) => (
               <tr key={destination.id} className="border-b align-top last:border-0">
                 <td className="px-4 py-3 font-medium">{destination.name}</td>
-                <td className="px-4 py-3">
-                  {destination.type === "splunk_hec" ? t.destinations.typeSplunkHec : t.destinations.typeGenericWebhook}
-                </td>
+                <td className="px-4 py-3">{typeLabel(destination.type)}</td>
                 <td className="max-w-xs truncate px-4 py-3 font-mono text-xs text-muted-foreground" title={destination.url}>
                   {destination.url}
                 </td>
