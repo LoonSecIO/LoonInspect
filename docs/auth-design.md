@@ -230,6 +230,8 @@ def _check_session_lifetime(cls, v: int) -> int:
 
 This is a **sliding idle timeout**, not an absolute one — `last_seen_at` refreshes on each authenticated request, and the session expires only after that much inactivity. At a 1-hour default an absolute timer would log people out mid-investigation every hour, which is the kind of thing that gets a security tool worked around rather than used.
 
+The cookie slides in lockstep: whenever activity advances `expires_at` (at most once a minute, on the same touch that refreshes `last_seen_at`), the response re-issues **both** the session and CSRF cookies with a full `Max-Age` — a slide only the database knows about would end with the browser silently dropping a cookie the server still accepts, turning the sliding window back into an absolute one.
+
 `0` means unlimited: `expires_at` is stored as `NULL` and idle expiry never fires. `0` rather than an empty env var, because an unset variable has to fall back to the 1-hour default — "empty means unlimited" would turn a typo into a permanent session.
 
 The 14-day ceiling applies to timed sessions only, enforced at startup, so a misconfigured deployment fails with a clear pydantic error instead of silently minting month-long sessions.

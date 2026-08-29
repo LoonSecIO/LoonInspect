@@ -252,7 +252,7 @@ def _verify_csrf(request: Request, session: UserSession) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid CSRF token")
 
 
-async def authenticate(request: Request, db: AsyncSession = Depends(get_db)) -> None:
+async def authenticate(request: Request, response: Response, db: AsyncSession = Depends(get_db)) -> None:
     """Global dependency: every route is denied unless is_public_path() says otherwise.
 
     Declared with Depends(get_db) rather than opening its own session so FastAPI's
@@ -260,6 +260,10 @@ async def authenticate(request: Request, db: AsyncSession = Depends(get_db)) -> 
     request, not two. The cost is constructing a session object on public requests
     too, which is negligible because SQLAlchemy doesn't acquire a connection until the
     first query.
+
+    The Response parameter is FastAPI's per-request sub-response: headers set on it
+    are merged into whatever the route returns, which is how the sliding-session
+    cookie re-issue (see _authenticate_session) reaches the browser.
     """
     if is_public_path(request.url.path):
         return
@@ -268,7 +272,7 @@ async def authenticate(request: Request, db: AsyncSession = Depends(get_db)) -> 
     if header[:7].lower() == "bearer ":
         principal = await _authenticate_bearer(db, header[7:].strip())
     else:
-        principal = await _authenticate_session(db, request)
+        principal = await _authenticate_session(db, request, response)
 
     if principal is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
@@ -311,7 +315,9 @@ async def authenticate(request: Request, db: AsyncSession = Depends(get_db)) -> 
         )
 
 
-async def _authenticate_session(db: AsyncSession, request: Request) -> Principal | None:
+async def _authenticate_session(
+    db: AsyncSession, request: Request, response: Response
+) -> Principal | None:
     raw_token = request.cookies.get(SESSION_COOKIE)
     if not raw_token:
         return None
@@ -333,6 +339,21 @@ async def _authenticate_session(db: AsyncSession, request: Request) -> Principal
         session.last_seen_at = now
         session.expires_at = session_expiry(now)
         await db.commit()
+
+        # The slide has to reach the browser too. Advancing expires_at is worthless
+        # once the cookie's own Max-Age — stamped at login — runs out, because the
+        # browser then stops presenting a token the server would still accept (#124).
+        # Re-issuing here, on the same cadence as the touch above, keeps the cookie's
+        # clock in lockstep with the session's at a cost of at most one Set-Cookie
+        # per minute per session. Both cookies, always: loon_csrf carries the same
+        # Max-Age, and refreshing only loon_session would leave mutations failing
+        # CSRF an hour in while reads sail on. Skipped when the lifetime is 0 — the
+        # login-time cookies are already browser-session cookies with no clock to
+        # wind. (Routes that return a Response object directly bypass FastAPI's
+        # sub-response header merge, so a re-issue can miss one; the SPA's next
+        # ordinary request carries it, well inside any permitted lifetime.)
+        if settings.session_lifetime_seconds != 0:
+            set_session_cookies(response, raw_token, session.csrf_token)
 
     return Principal(
         account=account,
