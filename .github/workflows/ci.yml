@@ -96,6 +96,18 @@ jobs:
       # `ruff format --check` is deliberately absent: adopting it today would
       # reformat 20 files across feature modules. Tracked in #16.
 
+      # The suite's standing promise (conftest's docstring) is that it runs on a
+      # laptop with no Postgres: engine creation is lazy, and every DB-backed test
+      # file carries a RUN_DB_TESTS skipif gate. Until now nothing enforced that —
+      # the only pytest invocation exported the env var, so the no-database path
+      # could rot silently. This step runs the suite exactly as that laptop would:
+      # no RUN_DB_TESTS, no DATABASE_URL, no ENCRYPTION_KEY, and it runs before
+      # the application role is created, so even the default localhost URL has
+      # nothing to authenticate against — an ungated connection attempt fails here
+      # instead of quietly succeeding against the service container.
+      - name: Test (no database)
+        run: uv run --frozen pytest -q
+
       # The app must NOT connect as POSTGRES_USER. initdb creates that role as a
       # superuser, and a superuser bypasses row-level security entirely and silently
       # — every policy stays attached, shows up in \d, and enforces nothing. That is
