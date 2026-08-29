@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Tailwind v4 compiles `dark:` to the OS media query by default, but the theme
+   toggle (src/hooks/useTheme.ts) works by setting the `.dark` class on <html>.
+   Re-point the variant at that class so `dark:` utilities and the CSS-variable
+   tokens below always agree on which theme is active. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
