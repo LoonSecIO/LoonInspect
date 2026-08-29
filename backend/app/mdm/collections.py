@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.core.runs import (
     LOCK_CATALOG,
     LOCK_DEVICE_SWEEP,
+    RunReclaimed,
     acquire,
     active_connection_ids,
     entered,
@@ -203,23 +204,51 @@ async def run_collection(
 
     started = _utcnow()
     async with entered(run):
-        if collection.kind == KIND_DEVICE_SWEEP:
-            await set_sync_status(db, connection, SyncStatus.syncing)
-            result = await run_jamf(
-                db,
-                connection,
-                trigger=trigger,
-                sections=collection.sections or V0_SECTIONS,
-                selector=collection.selector,
-                page_size=collection.page_size,
-                quarantined_extension_attributes=collection.quarantined_extension_attributes or (),
-                include_catalog=True,
-                collection_id=collection.id,
-                run=run,
+        try:
+            if collection.kind == KIND_DEVICE_SWEEP:
+                await set_sync_status(db, connection, SyncStatus.syncing)
+                result = await run_jamf(
+                    db,
+                    connection,
+                    trigger=trigger,
+                    sections=collection.sections or V0_SECTIONS,
+                    selector=collection.selector,
+                    page_size=collection.page_size,
+                    quarantined_extension_attributes=collection.quarantined_extension_attributes or (),
+                    include_catalog=True,
+                    collection_id=collection.id,
+                    run=run,
+                )
+            else:
+                result = await run_jamf_catalog(
+                    db, connection, trigger=trigger, collection_id=collection.id, run=run
+                )
+        except RunReclaimed as exc:
+            # The reclaim closed this run and freed the lock mid-flight; a fresh
+            # acquisition may already be sweeping this connection. The collection's
+            # cached outcome is still this frame's to record — the run row is not: no
+            # finish, because a late write would trade the reclaim's accounting for
+            # this process's. When the run was handed in, re-raise so its owner stops
+            # the sweeps that would have followed under the same dead jobID.
+            job_id, connection_id, collection_id = str(run.id), connection.id, collection.id
+            await db.rollback()
+            collection.last_run_at = started
+            collection.last_run_status = "failed"
+            collection.last_run_summary = {
+                "jobId": job_id,
+                "trigger": trigger,
+                "error": str(exc),
+                "seconds": round((_utcnow() - started).total_seconds(), 1),
+            }
+            await db.commit()
+            logger.warning(
+                "collection aborted: its run was reclaimed mid-flight",
+                extra={"collection_id": collection_id, "connection_id": connection_id, "job_id": job_id},
             )
-        else:
-            result = await run_jamf_catalog(
-                db, connection, trigger=trigger, collection_id=collection.id, run=run
+            if not owned:
+                raise
+            return ConnectionSyncResult(
+                connection_id=connection_id, ok=False, error=str(exc), collection_id=collection_id
             )
 
         collection.last_run_at = started
@@ -236,7 +265,7 @@ async def run_collection(
         await db.commit()
 
         if owned:
-            await finish(
+            closed = await finish(
                 db,
                 run,
                 ok=result.ok,
@@ -245,6 +274,16 @@ async def run_collection(
                 observations=dict(result.observations),
                 error=result.error,
             )
+            if not closed:
+                # Reclaimed between the last heartbeat and here: the work completed,
+                # but the run's verdict is the reclaim's, and this row's cached outcome
+                # must not disagree with the history it summarizes.
+                collection.last_run_status = "failed"
+                collection.last_run_summary = {
+                    **collection.last_run_summary,
+                    "error": "run reclaimed before it could finish",
+                }
+                await db.commit()
     return result
 
 

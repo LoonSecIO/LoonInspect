@@ -227,6 +227,69 @@ async def test_a_beating_run_is_not_reclaimed(db, connection) -> None:
     await finish(db, live.run, ok=True)
 
 
+async def test_a_reclaimed_run_cannot_be_resurrected_by_its_zombie(db, connection) -> None:
+    """The fence (#94): the reclaim frees the lock by failing a quiet row, but the
+    process it declared dead may only be stalled — a worst-case Jamf retry budget sits
+    uncomfortably close to the staleness threshold. That zombie's heartbeat must not
+    make the row look alive again, and its finish must not overwrite the reclaim's
+    verdict in either direction: a late `succeeded` is the double-run record the module
+    preamble promises cannot exist, and a late `failed` swaps the reclaim's accounting
+    for the zombie's.
+    """
+    from sqlalchemy import update
+
+    from app.core.runs import (
+        LOCK_DEVICE_SWEEP,
+        STATUS_FAILED,
+        TRIGGER_SWEEP,
+        RunReclaimed,
+        acquire,
+        beat,
+        finish,
+    )
+    from app.models.schema import Run, RunLogLine
+
+    zombie = await acquire(db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP)
+    assert zombie.started
+    reclaim_error = "reclaimed: no heartbeat within 300s — the process running it stopped"
+
+    # Exactly the transition _reclaim_stale performs, minus the acquisition that finds
+    # the row: the fence must hold against the state, not against who wrote it.
+    await db.execute(
+        update(Run)
+        .where(Run.id == zombie.run.id)
+        .values(status=STATUS_FAILED, finished_at=_now(), window_end=_now(), error=reclaim_error)
+    )
+    await db.commit()
+
+    # (a) The heartbeat reports the loss instead of quietly keeping a dead run warm.
+    # The in-memory throttle is aged past the interval the way a real stall ages it.
+    zombie.run.heartbeat_at = _now() - timedelta(seconds=60)
+    with pytest.raises(RunReclaimed):
+        await beat(db, zombie.run)
+    # beat's refusal rolled the session back, which expires the ORM row; reload it
+    # explicitly rather than letting an attribute read try to refresh mid-await.
+    await db.refresh(zombie.run)
+
+    # (b) finish cannot resurrect the row as succeeded — the zombie's happy path...
+    assert await finish(db, zombie.run, ok=True, device_count=40_000) is False
+    # ...and cannot restamp it as failed either — the zombie's own exception handler.
+    assert await finish(db, zombie.run, ok=False, error="the zombie's last words") is False
+
+    # (c) The history still shows the reclaim's verdict, accounting untouched.
+    await db.refresh(zombie.run)
+    assert zombie.run.status == STATUS_FAILED
+    assert zombie.run.error == reclaim_error
+    assert zombie.run.device_count == 0
+
+    # And the run log shows the late finisher was turned away — the evidence trail
+    # records that the zombie came back, not just that the run went quiet.
+    messages = (
+        await db.execute(select(RunLogLine.message).where(RunLogLine.run_id == zombie.run.id))
+    ).scalars().all()
+    assert any("finish refused" in message for message in messages)
+
+
 # --- the window, and the `_time` rule ---------------------------------------------------
 
 

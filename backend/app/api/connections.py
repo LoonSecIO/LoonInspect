@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -19,6 +20,7 @@ from app.core.permissions import Permission
 from app.core.runs import (
     LOCK_DEVICE_SWEEP,
     TRIGGER_MANUAL,
+    RunReclaimed,
     acquire,
     entered,
     finish,
@@ -41,6 +43,8 @@ from app.schemas.connections import (
     validate_patch_provider_available,
 )
 from app.schemas.payload import MdmProvider, SyncStatus
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/mdm/connections", tags=["connections"])
 
@@ -401,6 +405,19 @@ async def _run_connection_sync(
             async with entered(run):
                 try:
                     result = await sync_connection(db, connection, trigger=TRIGGER_MANUAL, run=run)
+                except RunReclaimed:
+                    # Already handled where it was detected: the reclaim closed the
+                    # run, run_collection recorded the abort on the collection row,
+                    # and any remaining sweeps were abandoned with it. Nothing to
+                    # finish — the row's verdict is the reclaim's — and nothing to
+                    # re-raise: a reclaimed run is an understood outcome, not a crash
+                    # for the task machinery to report.
+                    await db.rollback()
+                    logger.warning(
+                        "manual sync aborted: its run was reclaimed mid-flight",
+                        extra={"connection_id": connection_id, "job_id": str(job_id)},
+                    )
+                    return
                 except Exception as exc:
                     # The lock is this run row. An unhandled failure that left it
                     # `running` would block the connection until the heartbeat went

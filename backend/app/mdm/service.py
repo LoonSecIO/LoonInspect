@@ -22,6 +22,7 @@ from app.core.runs import (
     TRIGGER_MANUAL,
     TRIGGER_SWEEP,
     TRIGGER_WEBHOOK,
+    RunReclaimed,
     acquire,
     beat,
     entered,
@@ -210,6 +211,13 @@ async def run_jamf(
             include_catalog=include_catalog,
             run=run,
         )
+    except RunReclaimed:
+        # Not a connection failure, and not this frame's status to write: the reclaim
+        # already closed the run, and a fresh acquisition may be sweeping this
+        # connection right now — stamping `failed` on its sync state here would be the
+        # reclaimed process narrating someone else's run. The run's owner stops the
+        # rest of the work (app.mdm.collections.run_collection).
+        raise
     except Exception as exc:
         await db.rollback()
         await set_sync_status(db, connection, SyncStatus.failed)
@@ -268,6 +276,9 @@ async def run_jamf_catalog(
                 if throttle:
                     await run_log(db, run, "warning", "throttled by Jamf; backed off and continued", **throttle)
                 await run_log(db, run, "info", "group definitions observed", groupCount=group_count)
+    except RunReclaimed:
+        # Same as run_jamf: the reclaim already closed the run; its owner stops the work.
+        raise
     except Exception as exc:
         await db.rollback()
         logger.exception(
@@ -544,6 +555,10 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
             await db.rollback()
             await finish(db, run, ok=False, error=str(exc))
             raise
+        # The return is deliberately unchecked: if a slow fetch let the reclaim take
+        # this run, the refused finish leaves that verdict standing, and the device
+        # write above stands on its own — it is fresh from Jamf, and staleness is the
+        # ledger's monotonic guard's call, not the run bookkeeping's.
         await finish(db, run, ok=True, device_count=1, observations={result.outcome: 1})
         return result
 
