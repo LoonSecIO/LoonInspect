@@ -97,7 +97,10 @@ class Settings(BaseSettings):
     log_format: Literal["auto", "json", "console"] = "auto"
 
     # Sliding idle timeout: refreshed on each authenticated request, so this is time
-    # since last activity rather than time since login. 0 disables idle expiry
+    # since last activity rather than time since login. The browser's cookies slide
+    # with it — activity re-issues both auth cookies with a fresh Max-Age (see
+    # app.core.auth._authenticate_session), so the browser keeps presenting the
+    # session for as long as the server would accept it. 0 disables idle expiry
     # entirely; any other value must be between 60s and 14 days.
     session_lifetime_seconds: int = 3600
 
