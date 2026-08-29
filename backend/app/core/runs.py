@@ -17,7 +17,10 @@ saw 'idle', both passed, and both started a sweep against the same Jamf server.
 holding a run leaves the row `running` and nothing on that connection can ever sync
 again. That is worse than the race it replaces, because duplicate load is noisy and
 self-limiting while permanent silence pages nobody. Reclaim runs on every acquisition,
-so the recovery path is exercised constantly rather than only at startup.
+so the recovery path is exercised constantly rather than only at startup. And it is
+fenced: every write a run makes to its own row is conditional on still being `running`,
+so a process the reclaim declared dead but that was merely stalled cannot beat the row
+back to life or overwrite the reclaim's verdict with `succeeded` (#94).
 
 **The run is in a context variable, not a parameter.** `process_sync` is six frames
 below the acquisition and needs the jobID and the window; the actor, tenant, and request
@@ -69,6 +72,19 @@ LOCK_WEBHOOK = "webhook"
 STATUS_RUNNING = "running"
 STATUS_SUCCEEDED = "succeeded"
 STATUS_FAILED = "failed"
+
+
+class RunReclaimed(Exception):
+    """This process's run was reclaimed while it was still working.
+
+    Raised when a conditional write to the run row matches nothing because the row is
+    no longer `running`: the reclaim decided this process was dead, failed the run, and
+    freed the lock — and a fresh acquisition may already be sweeping the same
+    connection. The only correct response is to stop where the loop stands. Every
+    further write made under this run is a second, unaccounted copy of work someone
+    else now owns, and a final status written over the reclaim's would make the history
+    lie about whether the connection double-ran.
+    """
 
 # How often the heartbeat is actually written. The device loop calls beat() constantly;
 # this throttles it to one small UPDATE per interval rather than one per device.
@@ -369,11 +385,34 @@ async def log(
 
 
 async def beat(db: AsyncSession, run: Run) -> None:
-    """Keep the run alive. Throttled — safe to call per device."""
+    """Keep the run alive. Throttled — safe to call per device.
+
+    Conditional on the row still being `running` (#94). The reclaim frees the lock by
+    failing a quiet row; a heartbeat written unconditionally would let the process the
+    reclaim declared dead keep its row looking warm while a second sweep runs beside
+    it. Zero rows updated means the run is no longer this process's to keep alive, and
+    the raise is what stops the ingest loop before it commits more work under a jobID
+    whose verdict is already written.
+    """
     now = _utcnow()
     if run.heartbeat_at and (now - run.heartbeat_at).total_seconds() < _HEARTBEAT_INTERVAL_SECONDS:
         return
-    await db.execute(update(Run).where(Run.id == run.id).values(heartbeat_at=now))
+    held = await db.execute(
+        update(Run)
+        .where(Run.id == run.id, Run.status == STATUS_RUNNING)
+        .values(heartbeat_at=now)
+        .returning(Run.id)
+    )
+    if held.scalar_one_or_none() is None:
+        # Read before the rollback: rollback expires ORM state, and touching an
+        # expired attribute under asyncio raises instead of lazily refreshing.
+        run_id, lock_class = run.id, run.lock_class
+        await db.rollback()
+        logger.warning(
+            "heartbeat refused: run was reclaimed; aborting this process's work",
+            extra={"run_id": str(run_id), "lock_class": lock_class},
+        )
+        raise RunReclaimed(f"run {run_id} was reclaimed while this process was still working it")
     run.heartbeat_at = now
     await db.commit()
 
@@ -387,17 +426,26 @@ async def finish(
     group_count: int = 0,
     observations: dict | None = None,
     error: str | None = None,
-) -> None:
-    """Close the run, releasing the lock.
+) -> bool:
+    """Close the run, releasing the lock. True when this call is what closed it.
 
     A separate UPDATE rather than an ORM write on `run`, because the failure path
     reaches here with a rolled-back session whose identity map cannot be trusted — the
     one moment it matters most that the lock is actually released.
+
+    Conditional on `running`, for the same reason the heartbeat is (#94). A run the
+    reclaim already failed is closed, and its row — status, error, the reclaim's
+    timestamps — is the verdict an auditor reads. A late `succeeded` written over it is
+    the double-run record this row exists to rule out; a late `failed` is no better,
+    because it swaps the reclaim's accounting for the zombie's. Refusal is a return
+    value rather than a raise: every caller is either already done or inside an
+    exception handler, where raising would mask the error being handled. The refusal is
+    logged here; the call site decides what, if anything, is left to unwind.
     """
     now = _utcnow()
-    await db.execute(
+    closed = await db.execute(
         update(Run)
-        .where(Run.id == run.id)
+        .where(Run.id == run.id, Run.status == STATUS_RUNNING)
         .values(
             status=STATUS_SUCCEEDED if ok else STATUS_FAILED,
             finished_at=now,
@@ -408,8 +456,28 @@ async def finish(
             observations=observations or None,
             error=error,
         )
+        .returning(Run.id)
     )
     await db.commit()
+    if closed.scalar_one_or_none() is None:
+        logger.warning(
+            "finish refused: run is not running (reclaimed); its recorded verdict stands",
+            extra={
+                "run_id": str(run.id),
+                "attempted_status": STATUS_SUCCEEDED if ok else STATUS_FAILED,
+            },
+        )
+        # Into the run's own log as well: the evidence trail should show the late
+        # finisher came back and was turned away, not just that the run went quiet.
+        await log(
+            db,
+            run,
+            "warning",
+            "finish refused: this run was reclaimed; a late result was discarded",
+            attemptedStatus=STATUS_SUCCEEDED if ok else STATUS_FAILED,
+            deviceCount=device_count,
+        )
+        return False
     await log(
         db,
         run,
@@ -420,6 +488,7 @@ async def finish(
         seconds=round((now - run.started_at).total_seconds(), 1),
         error=error,
     )
+    return True
 
 
 async def purge_runs(db: AsyncSession, retention_days: int) -> int:
