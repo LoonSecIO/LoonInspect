@@ -292,7 +292,10 @@ export const en = {
     loading: "Loading...",
     errorLoading: "Failed to load devices.",
     empty: "No devices match these filters.",
-    total: (n: number) => `${n} device${n === 1 ? "" : "s"} total`
+    total: (n: number) => `${n} device${n === 1 ? "" : "s"} total`,
+    pageOf: (page: number, pages: number) => `Page ${page} of ${pages}`,
+    previous: "Previous",
+    next: "Next"
   },
   users: {
     eyebrow: "Inventory",

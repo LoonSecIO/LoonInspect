@@ -296,7 +296,10 @@ export const de: Translations = {
     loading: "Lädt...",
     errorLoading: "Geräte konnten nicht geladen werden.",
     empty: "Keine Geräte entsprechen diesen Filtern.",
-    total: (n: number) => `${n} Gerät${n === 1 ? "" : "e"} insgesamt`
+    total: (n: number) => `${n} Gerät${n === 1 ? "" : "e"} insgesamt`,
+    pageOf: (page: number, pages: number) => `Seite ${page} von ${pages}`,
+    previous: "Zurück",
+    next: "Weiter"
   },
   users: {
     eyebrow: "Inventar",

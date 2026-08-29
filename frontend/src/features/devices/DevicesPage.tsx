@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
+import { Button } from "@/components/ui/button";
 import { FilterBar } from "@/features/devices/FilterBar";
 import { listDevices } from "@/features/devices/api";
 import type { Device, DeviceFilters, VersionOperator } from "@/features/devices/types";
@@ -49,29 +50,41 @@ export function DevicesPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const pageSize = 50;
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
 
-    listDevices(filters)
-      .then((response) => {
-        if (cancelled) return;
-        setDevices(response.items);
-        setTotal(response.total);
-      })
-      .catch(() => {
-        if (!cancelled) setError(t.devices.errorLoading);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    // Debounced so typing in the filter doesn't fire a query per keystroke.
+    const handle = setTimeout(() => {
+      listDevices({ ...filters, pageSize })
+        .then((response) => {
+          if (cancelled) return;
+          setDevices(response.items);
+          setTotal(response.total);
+        })
+        .catch(() => {
+          if (!cancelled) setError(t.devices.errorLoading);
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }, 250);
 
     return () => {
       cancelled = true;
+      clearTimeout(handle);
     };
   }, [filters, t]);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = filters.page ?? 1;
+
+  function goToPage(next: number) {
+    setSearchParams(searchParamsFromFilters({ ...filters, page: next }));
+  }
 
   return (
     <section className="space-y-6">
@@ -80,7 +93,10 @@ export function DevicesPage() {
         <h1 className="text-3xl font-bold tracking-tight">{t.devices.title}</h1>
       </div>
 
-      <FilterBar filters={filters} onChange={(next) => setSearchParams(searchParamsFromFilters(next))} />
+      <FilterBar
+        filters={filters}
+        onChange={(next) => setSearchParams(searchParamsFromFilters(next), { replace: true })}
+      />
 
       <div className="overflow-x-auto rounded-lg border bg-card">
         <table className="w-full text-sm">
@@ -140,7 +156,18 @@ export function DevicesPage() {
         </table>
       </div>
 
-      <p className="text-sm text-muted-foreground">{t.devices.total(total)}</p>
+      <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <span>{t.devices.total(total)}</span>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => goToPage(page - 1)}>
+            {t.devices.previous}
+          </Button>
+          <span className="self-center">{t.devices.pageOf(page, totalPages)}</span>
+          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => goToPage(page + 1)}>
+            {t.devices.next}
+          </Button>
+        </div>
+      </div>
     </section>
   );
 }
