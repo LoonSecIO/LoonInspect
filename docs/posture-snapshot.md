@@ -113,6 +113,17 @@ durable run history.
 
 ### Outbox
 
+The capture observes its own run. The recorder fires inside `finish()` after the run's
+own `run.completed` / `run.failed` events are committed to the outbox but before the
+worker fans them out, so every capture counts the 1–2 events its own close just
+enqueued. On sweep nights `outbox.pending` therefore carries a permanent floor of
+~1–2, and `outbox.oldest_pending_age_s` is in practice always written — milliseconds
+old — so the "zero rows pending, no row written" case below effectively never occurs
+(confirmed by the 2026-08-29 wire-e2e regression). This is the point-sample semantics
+working, not a bug: trends read unchanged, and the definitions stand as written.
+Readers and renderers should treat `pending ≤ 2` with a millisecond-scale age as an
+empty-queue night.
+
 | Key | Status | Definition | Source |
 | --- | --- | --- | --- |
 | `outbox.pending` | ACTIVE | `event_outbox` rows awaiting delivery (not yet fanned out, or holding a pending delivery). **A nightly point-sample** of a queue that drains continuously — the number says "this much was in flight at capture", never "this much accumulated today". | `event_outbox`, `outbox_deliveries` |
