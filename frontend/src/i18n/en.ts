@@ -566,6 +566,8 @@ export const en = {
     runJobId: "Job ID",
     loading: "Loading...",
     empty: "No connections yet.",
+    errorLoading: "Could not load connections.",
+    errorDeleting: "Could not delete the connection.",
     active: "Active",
     inactive: "Inactive",
     deleteConfirm: (name: string) => `Delete "${name}"?`,

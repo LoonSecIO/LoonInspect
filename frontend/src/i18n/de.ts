@@ -573,6 +573,8 @@ export const de: Translations = {
     runJobId: "Job-ID",
     loading: "Lädt...",
     empty: "Noch keine Verbindungen.",
+    errorLoading: "Verbindungen konnten nicht geladen werden.",
+    errorDeleting: "Die Verbindung konnte nicht gelöscht werden.",
     active: "Aktiv",
     inactive: "Inaktiv",
     deleteConfirm: (name: string) => `"${name}" löschen?`,
