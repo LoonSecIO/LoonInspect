@@ -18,5 +18,8 @@ dist/
 .vscode/
 .DS_Store
 
+# Agentic tooling state — lives in the companion agentic-coding repo, not here
+.claude/
+
 # Local application state written by test runs (audit log, TLS material)
 backend/data/
