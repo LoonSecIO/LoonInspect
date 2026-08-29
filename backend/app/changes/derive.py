@@ -106,7 +106,15 @@ async def derive_and_record(
         content = observation.sections.get(name)
         if content is None:
             continue
-        old_body, old_entries = await _load_section(db, (previous.section_digests or {}).get(name))
+        previous_digest = (previous.section_digests or {}).get(name)
+        if previous_digest is None:
+            # The previous span's aperture never read this section — an absent digest
+            # is absence of observation, not an empty section (read-and-empty still
+            # digests). Diffing against nothing would mint the whole section as
+            # "added" on the first sweep after a narrower scope (#93); a section's
+            # first read is a baseline, exactly as a device's first span is.
+            continue
+        old_body, old_entries = await _load_section(db, previous_digest)
         if content.is_list:
             spec = SECTIONS.get(name)
             kind = spec.entry_kind if spec and spec.entry_kind else name

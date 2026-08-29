@@ -14,6 +14,9 @@ What it pins, in order:
    added, zero removed. That last number is the point — before this, the webhook
    payload itself was normalized, it carries no application list, and every webhook
    reported the whole inventory removed.
+4. A webhook collection scoped without applications wipes nothing and emits nothing,
+   and the full sweep after it derives no phantom per-app changes — while a full-scope
+   read of a device with genuinely zero apps still diffs to removals (#93).
 
 Gated on RUN_DB_TESTS like the other database-backed suites.
 """
@@ -207,6 +210,103 @@ async def test_sweep_then_repeat_then_webhook(db, jamf: FakeJamf, connection) ->
         )
     ).scalar_one()
     assert current.last_trigger == "webhook" and current.previous_id == real_span.id
+
+
+async def test_narrow_webhook_scope_never_wipes_apps(db, jamf: FakeJamf, connection) -> None:
+    """Kyle's ruling (#93): device state is wiped only when a webhook properly pulls
+    the device — an absent section must never read as "everything was removed".
+
+    The detail endpoint returns every section regardless, so this also pins that the
+    guard keys off the *requested* sections, not the response shape."""
+    from app.mdm.collections import list_collections
+    from app.mdm.service import ingest_webhook, sync_connection
+    from app.models.schema import Device, DeviceChange, EventOutbox, InstalledApp
+
+    real_id = jamf.real["id"]
+    changed_events = (
+        select(func.count()).select_from(EventOutbox).where(EventOutbox.event_type == "device.inventory.changed")
+    )
+
+    first = await sync_connection(db, connection)
+    assert first.ok and first.device_count == 2
+    real_device = (
+        await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == real_id))
+    ).scalar_one()
+    real_apps = select(func.count()).select_from(InstalledApp).where(InstalledApp.device_id == real_device.id)
+    apps_before = await _count(db, real_apps)
+    assert apps_before > 0
+    events_before = await _count(db, changed_events)
+
+    webhook = next(row for row in await list_collections(db, connection.id) if row.kind == "webhook")
+    webhook.sections = ["general", "hardware", "operating_system"]
+    await db.commit()
+
+    # The device submits inventory; the webhook reads it under the narrowed scope.
+    jamf.real["general"]["reportDate"] = "2026-08-29T09:00:00.000Z"
+    payload = {
+        "webhook": {"webhookEvent": "ComputerInventoryCompleted"},
+        "event": {"jssID": real_id, "serialNumber": "LOONMINI0M4"},
+    }
+    result = await ingest_webhook(db, connection, payload)
+    # The aperture changed, so a new span opens — but no section's content moved, no
+    # app row is touched, and nothing reaches the event stream.
+    assert result is not None and result.outcome == "changed"
+    assert result.changed_sections == ()
+    assert await _count(db, real_apps) == apps_before
+    assert await _count(db, changed_events) == events_before
+
+    # The following full sweep re-widens the aperture. The apps it reads are the ones
+    # the rows already hold, so nothing is added, removed, or minted as a change.
+    second = await sync_connection(db, connection)
+    assert second.ok and second.observations.get("changed") == 1
+    assert await _count(db, real_apps) == apps_before
+    assert await _count(db, changed_events) == events_before
+    phantom_changes = (
+        select(func.count())
+        .select_from(DeviceChange)
+        .where(DeviceChange.mdm_connection_id == connection.id, DeviceChange.subject_id == real_id)
+    )
+    assert await _count(db, phantom_changes) == 0
+
+
+async def test_a_full_scope_read_of_zero_apps_still_wipes(db, jamf: FakeJamf, connection) -> None:
+    """The other half of the ruling: [] is a real read of a device with no apps, and
+    still diffs to removals — the guard must not swallow genuine loss."""
+    from app.mdm.service import ingest_webhook, sync_connection
+    from app.models.schema import Device, EventOutbox, InstalledApp
+
+    real_id = jamf.real["id"]
+    first = await sync_connection(db, connection)
+    assert first.ok
+    real_device = (
+        await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == real_id))
+    ).scalar_one()
+    real_apps = select(func.count()).select_from(InstalledApp).where(InstalledApp.device_id == real_device.id)
+    apps_before = await _count(db, real_apps)
+    assert apps_before > 0
+
+    jamf.real["general"]["reportDate"] = "2026-08-29T09:00:00.000Z"
+    jamf.real["applications"] = []
+    payload = {
+        "webhook": {"webhookEvent": "ComputerInventoryCompleted"},
+        "event": {"jssID": real_id, "serialNumber": "LOONMINI0M4"},
+    }
+    result = await ingest_webhook(db, connection, payload)
+    assert result is not None and result.outcome == "changed"
+    assert "applications" in result.changed_sections
+    assert await _count(db, real_apps) == 0
+
+    latest = (
+        await db.execute(
+            select(EventOutbox)
+            .where(EventOutbox.event_type == "device.inventory.changed")
+            .order_by(EventOutbox.id.desc())
+            .limit(1)
+        )
+    ).scalar_one()
+    assert latest.payload["device_external_id"] == real_id
+    assert latest.payload["added_apps"] == []
+    assert len(latest.payload["removed_apps"]) == apps_before
 
 
 async def test_webhook_without_a_computer_is_ignored(db, jamf: FakeJamf, connection) -> None:
