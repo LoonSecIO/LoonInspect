@@ -16,16 +16,16 @@ Parameters:
       root for every LoonSecIO repository.
     AllowedPattern: ^arn:aws:iam::\d{12}:oidc-provider/token\.actions\.githubusercontent\.com$
 
-  OidcSubjectPattern:
-    Type: String
+  OidcSubjectPatterns:
+    Type: CommaDelimitedList
     Default: repo:LoonSecIO/LoonInspect:ref:refs/heads/main
     Description: >-
-      The sub claim pattern this role trusts. The default is main-branch-only,
-      which means images publish after merge, never from a PR head. Before
-      relying on it, compare against the sub format the Support repo's working
-      role trusts — GitHub's sub claim is customizable per org and the format
-      actually issued there is the one that is known to pass. Widen to
-      repo:LoonSecIO/LoonInspect:* only deliberately, and narrow it back.
+      The sub claim patterns this role trusts — main-branch-only, so images
+      publish after merge, never from a PR head. A list because this org's
+      tokens carry ID-stamped subs (repo:LoonSecIO@<orgid>/LoonInspect@<repoid>:...)
+      — the Support repo's working role trusts both the plain and the stamped
+      form, and this role does the same. Pass both forms at deploy time; widen
+      past refs/heads/main only deliberately, and narrow it back.
 
 Resources:
   # Both repositories are tag-immutable: a pushed tag can never be repointed,
@@ -84,7 +84,7 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
               StringLike:
-                token.actions.githubusercontent.com:sub: !Ref OidcSubjectPattern
+                token.actions.githubusercontent.com:sub: !Ref OidcSubjectPatterns
       Policies:
         - PolicyName: push-looninspect-images
           PolicyDocument:

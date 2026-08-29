@@ -33,9 +33,13 @@ aws cloudformation deploy \
   --parameter-overrides GitHubOidcProviderArn=arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com
 ```
 
-Before trusting the default `OidcSubjectPattern`, compare it with the sub
-format the Support repo's working role actually receives — GitHub's sub claim
-is customizable per org, and the format proven there is the one that passes.
+This org's tokens carry ID-stamped subs, so pass `OidcSubjectPatterns` both
+forms (the Support repo's working role trusts both), main-only:
+
+```bash
+aws cloudformation deploy ... --parameter-overrides \
+  "OidcSubjectPatterns=repo:LoonSecIO/LoonInspect:ref:refs/heads/main,repo:LoonSecIO@176315697/LoonInspect@1318452984:ref:refs/heads/main"
+```
 
 ## 2. Publish images
 
