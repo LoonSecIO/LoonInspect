@@ -26,6 +26,11 @@ class RunOut(BaseModel):
     heartbeat_at: datetime
     device_count: int
     group_count: int
+    # Failure accounting (#92): processed + failed = device_count (attempted). A run
+    # can be `succeeded` with failures > 0 — isolated device failures inside the
+    # sweep's tolerance — which is what "39,998 processed, 2 failed" renders from.
+    devices_processed: int
+    devices_failed: int
     observations: dict | None
     error: str | None
     actor_label: str | None

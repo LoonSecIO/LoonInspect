@@ -20,8 +20,10 @@ from pydantic import ValidationError
 def test_enqueued_event_types_are_known() -> None:
     from app.changes.derive import EVENT_TYPE
     from app.core.outbox import KNOWN_EVENT_TYPES
+    from app.core.runs import RUN_COMPLETED_EVENT
 
     assert EVENT_TYPE in KNOWN_EVENT_TYPES
+    assert RUN_COMPLETED_EVENT in KNOWN_EVENT_TYPES
 
 
 def test_destination_can_subscribe_to_device_change() -> None:

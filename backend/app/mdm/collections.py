@@ -203,6 +203,11 @@ async def run_collection(
         run = acquisition.run
 
     started = _utcnow()
+    # Read while the instances are certainly loaded. A RunReclaimed unwinds through the
+    # heartbeat's rollback, which expires every ORM instance in the session — and
+    # touching an expired attribute under asyncio raises instead of lazily refreshing,
+    # which would turn the reclaim's orderly abort into a crash.
+    job_id, connection_id, collection_id = str(run.id), connection.id, collection.id
     async with entered(run):
         try:
             if collection.kind == KIND_DEVICE_SWEEP:
@@ -230,7 +235,6 @@ async def run_collection(
             # finish, because a late write would trade the reclaim's accounting for
             # this process's. When the run was handed in, re-raise so its owner stops
             # the sweeps that would have followed under the same dead jobID.
-            job_id, connection_id, collection_id = str(run.id), connection.id, collection.id
             await db.rollback()
             collection.last_run_at = started
             collection.last_run_status = "failed"
@@ -257,6 +261,7 @@ async def run_collection(
             "jobId": str(run.id),
             "trigger": trigger,
             "deviceCount": result.device_count,
+            "devicesFailed": result.devices_failed,
             "groupCount": result.group_count,
             "observations": dict(result.observations),
             "error": result.error,
@@ -271,6 +276,8 @@ async def run_collection(
                 ok=result.ok,
                 device_count=result.device_count,
                 group_count=result.group_count,
+                devices_processed=result.devices_processed,
+                devices_failed=result.devices_failed,
                 observations=dict(result.observations),
                 error=result.error,
             )
@@ -315,6 +322,8 @@ async def run_connection(
     return ConnectionSyncResult(
         connection_id=connection.id,
         device_count=sum(r.device_count for r in results),
+        devices_processed=sum(r.devices_processed for r in results),
+        devices_failed=sum(r.devices_failed for r in results),
         ok=not failed,
         error="; ".join(r.error for r in failed if r.error) or None,
         observations=observations,

@@ -559,6 +559,7 @@ export const en = {
     runFailed: "Failed",
     runSummary: (devices: number, groups: number) =>
       `${devices} device${devices === 1 ? "" : "s"}, ${groups} group${groups === 1 ? "" : "s"}`,
+    runDevicesFailed: (n: number) => `${n} failed`,
     runJobId: "Job ID",
     loading: "Loading...",
     empty: "No connections yet.",
