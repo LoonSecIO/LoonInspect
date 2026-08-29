@@ -165,6 +165,8 @@ under `/System` — match nothing. `tests/test_patch_matching.py` pins exactly t
 
 ## 7. Not here (follow-ups)
 
-Re-evaluating matches when the hourly catalog sync changes a title (today the next device process
-does it); change-log entries for "fell behind" / "patch available"; device-level titles ("Apple
-macOS …" — is the device on the latest macOS); vulnerability columns (LoonSecIO); fleet findings.
+Re-evaluating matches when the hourly catalog sync changes a title — since shipped:
+`hourly_jamf_patch_sync` re-judges every tenant's catalog after each sync
+(docs/app-catalog.md §3, item 2). Still follow-ups: change-log entries for "fell behind" /
+"patch available"; device-level titles ("Apple macOS …" — is the device on the latest macOS);
+vulnerability columns (LoonSecIO); fleet findings.

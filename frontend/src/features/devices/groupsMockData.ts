@@ -7,8 +7,10 @@ export interface DeviceGroup {
   source: "jamf" | "loonsecio";
 }
 
-// Placeholder data for the Groups stub — no backend concept for device groups
-// exists yet (DeviceFilterCriteria is the closest analogue, see backend/app/schemas/devices.py).
+// Placeholder data for the Groups stub. The backend does observe groups now —
+// smart-group definitions are fetched and canonicalized into the observation ledger,
+// device records carry group_membership entries, and runs count groups — but no read
+// API surfaces any of it yet, so this page still renders these.
 export const MOCK_GROUPS: DeviceGroup[] = [
   {
     id: 1,

@@ -2,10 +2,13 @@
 
 Deliberately has no database fixture. #11 originally scoped one as "an in-memory
 SQLite session fixture", which #29 made impossible: `Settings._require_asyncpg`
-rejects any non-`postgresql+asyncpg://` URL outright (`config.py:109`), and the schema
-carries eight `JSONB` columns SQLite cannot express at all. Everything covered here is
-therefore pure logic that needs no session. DB-backed tests need a real Postgres —
-a `services:` container in CI — and are a separate piece of work.
+rejects any non-`postgresql+asyncpg://` URL outright (`config.py`), and the schema
+carries `JSONB` columns SQLite cannot express at all. Everything wired here serves
+the pure-logic lane, which needs no session. The DB-backed tests exist now — the
+files gated on `RUN_DB_TESTS` bring their own session fixtures against a real
+Postgres (a `services:` container in CI) — and they deliberately keep those fixtures
+local rather than hoisting them here, so importing this file never implies a
+database.
 
 Nothing here touches `app.core.database.engine`. `create_async_engine` is lazy, so
 importing the modules under test never opens a connection; that is what keeps this

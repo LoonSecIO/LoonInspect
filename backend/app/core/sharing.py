@@ -4,8 +4,10 @@ Builds the exact request body the v1 exchange sends — which is also what the
 Settings page's "show exactly what would be sent now" button renders. One code
 path for both is the point: the preview cannot drift from the wire.
 
-The exchange job itself (scheduling, transport, the share log) is INSPECT-0048;
-until it lands this module has exactly one caller, the preview endpoint.
+The exchange job itself (scheduling, transport, the share log) landed as
+INSPECT-0048 and lives in the second half of this file — main.py's
+sharing_exchange_tick drives it, so the module now has two callers: the preview
+endpoint and the scheduler.
 """
 
 from __future__ import annotations
@@ -51,8 +53,8 @@ def _excluded(bundle_id: str, globs: list[str]) -> bool:
 async def build_exchange_request(db: AsyncSession, settings_row: DataSharingSettings) -> dict:
     """The v1 exchange request body, aggregated in SQL: distinct tuples with counts,
     never per-device rows. `reveals` is always empty here — answers to reveal
-    requests are assembled by the exchange job (INSPECT-0048), because they depend
-    on the previous response, which a preview does not have."""
+    requests are assembled by the exchange job (`build_reveals`, below), because they
+    depend on the previous response, which a preview does not have."""
     globs = list(settings_row.exclude_globs or [])
 
     app_rows = (

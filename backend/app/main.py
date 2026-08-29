@@ -191,8 +191,7 @@ async def outbox_worker_tick() -> None:
     """Fan out newly-produced events to subscribed destinations, then attempt every
     delivery that's due. Runs frequently and independently of every sync job — that
     decoupling is the entire point: a slow or dead destination here can never slow
-    down a device sync, and (once it exists) can never delay an inbound webhook's ACK
-    to its sender.
+    down a device sync, and can never delay an inbound webhook's ACK to its sender.
     """
     # Per tenant, and that is the load-bearing detail. fan_out_pending() is the one
     # place that knows which destinations exist, so it is also the one place a missing
@@ -208,8 +207,8 @@ async def outbox_worker_tick() -> None:
 
 async def outbox_cleanup() -> None:
     """Purges outbox events whose deliveries are all terminal and past retention.
-    Without this the table grows without bound once events are continuous rather than
-    nightly-batched."""
+    Without this the table grows without bound now that events are continuous rather
+    than nightly-batched."""
     for tenant_id in await operational_tenant_ids():
         async with tenant_job(tenant_id) as db:
             purged = await purge_delivered_events(db, settings.event_outbox_retention_days)
