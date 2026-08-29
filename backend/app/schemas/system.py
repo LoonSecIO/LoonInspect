@@ -35,6 +35,9 @@ class DataSharingOut(BaseModel):
     # COMMUNITY_SHARING=false wins over the stored tier; the UI shows this as the
     # reason the control is locked rather than silently reporting tier "off".
     env_disabled: bool
+    # AI-inference consent (INSPECT-0112): whether any byte may leave the pod for
+    # inference. Distinct from the ai_features flag, which only turns the area on.
+    ai_inference: bool
     last_exchange_at: datetime | None = None
     last_exchange_outcome: str | None = None
 
@@ -44,3 +47,4 @@ class DataSharingUpdate(BaseModel):
 
     tier: SharingTier | None = None
     exclude_globs: list[str] | None = None
+    ai_inference: bool | None = None

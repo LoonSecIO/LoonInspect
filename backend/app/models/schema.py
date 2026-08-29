@@ -372,6 +372,12 @@ class DataSharingSettings(Base):
     # the reveal-lag the contract specifies. Only ever populated on the reveal tier.
     pending_reveal_keys: Mapped[list] = mapped_column(JSONB, default=list)
 
+    # AI-inference consent (INSPECT-0112), deliberately on this row and not a feature
+    # flag: the flag turns the AI feature area on, this governs whether any byte may
+    # leave the pod for inference — one consent surface, one log. Default off, like
+    # everything behind the AI gate (app.core.ai).
+    ai_inference: Mapped[bool] = mapped_column(Boolean, default=False)
+
 
 class ShareLog(Base):
     """One row per exchange attempt: exactly what left the box, verbatim
