@@ -38,7 +38,8 @@
         "required_status_checks": [
           { "context": "Frontend (typecheck + lint)" },
           { "context": "Backend (ruff + pytest)" },
-          { "context": "Docker image" }
+          { "context": "Docker image" },
+          { "context": "TruffleHog" }
         ]
       }
     }

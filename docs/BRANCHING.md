@@ -610,7 +610,11 @@ that cannot reach its provider reports unverified rather than nothing.
 CM-03 requires a scanner over diff *content*; the path exclusions in the policy
 workflow do not satisfy it on their own. GitHub's own scanning is blocked with
 the rest of §8.1, so `.github/workflows/secret-scan.yml` runs TruffleHog on
-every pull request, on pushes to `main`, and weekly over full history.
+every pull request, on pushes to `main`, and weekly over full history. The job's
+check context (`TruffleHog`) is listed in `.github/rulesets/main.json`'s
+required status checks, so when the ruleset activates at the flip a verified
+finding blocks the merge rather than merely reporting one; until then it fails
+visibly but gates nothing, like every required check.
 
 **It detects; it does not prevent.** By the time the job fails, the secret is in
 remote history and must be rotated. `.githooks/pre-commit` is the preventive
@@ -673,3 +677,4 @@ compliance:
 | v1.4 | 2026-08-18 | GitHub Issues as ticket source of truth; added BR-08, PR-09 |
 | v1.5 | 2026-08-18 | Added `active`/`blocked` status values; recorded rulesets as blocked on the GitHub plan (§8.1); marked BR-04, MG-01, PR-04 active |
 | v1.6 | 2026-08-18 | Added §8.2 (release schedule and history exposure) and §8.3 (secret scanning); CM-03 active for detection; public flip recorded as the unblock date for §8.1 |
+| v1.7 | 2026-08-29 | TruffleHog's check context added to the ruleset's required status checks (§8.3), so CM-03's detection gates merges once §8.1 unblocks |
