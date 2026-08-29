@@ -120,6 +120,11 @@ export interface Run {
   heartbeatAt: string;
   deviceCount: number;
   groupCount: number;
+  /** Failure accounting (#92): processed + failed = deviceCount (attempted). A run
+   *  can be `succeeded` with devicesFailed > 0 — isolated device failures inside the
+   *  sweep's tolerance. */
+  devicesProcessed: number;
+  devicesFailed: number;
   observations: Record<string, number> | null;
   error: string | null;
   actorLabel: string | null;

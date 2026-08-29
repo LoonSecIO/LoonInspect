@@ -566,6 +566,7 @@ export const de: Translations = {
     runFailed: "Fehlgeschlagen",
     runSummary: (devices: number, groups: number) =>
       `${devices} Gerät${devices === 1 ? "" : "e"}, ${groups} Gruppe${groups === 1 ? "" : "n"}`,
+    runDevicesFailed: (n: number) => `${n} fehlgeschlagen`,
     runJobId: "Job-ID",
     loading: "Lädt...",
     empty: "Noch keine Verbindungen.",

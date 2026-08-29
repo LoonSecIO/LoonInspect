@@ -1042,6 +1042,12 @@ class Run(Base):
 
     device_count: Mapped[int] = mapped_column(Integer, default=0)
     group_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Failure accounting (#92). `device_count` is the devices this run attempted;
+    # processed + failed = attempted. A run may finish `succeeded` with failures on the
+    # row — isolated device failures inside the tolerance — which is exactly what the
+    # UI's "39,998 processed, 2 failed" and the run.completed event surface.
+    devices_processed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    devices_failed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     observations: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 

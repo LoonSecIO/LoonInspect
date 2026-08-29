@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
@@ -13,6 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from app.catalog.service import record_device_apps
 from app.changes.derive import derive_and_record
+from app.core.config import settings
 from app.core.content_keys import app_full_key, app_title_key
 from app.core.context import get_request_id
 from app.core.hashing import compute_app_hash, compute_version_hash
@@ -82,6 +84,39 @@ __all__ = ["TRIGGER_MANUAL", "TRIGGER_SWEEP", "TRIGGER_WEBHOOK"]
 # of every device (the ledger already is that).
 _PROGRESS_EVERY = 500
 
+# How much of a failing device's error lands in the run log. Enough to name the
+# exception and its message; never a payload dump.
+_FAILURE_ERROR_CHARS = 300
+
+
+class SweepFailureThresholdExceeded(Exception):
+    """More devices failed than one sweep is allowed to absorb (#92).
+
+    Raised from the device loop the moment the count crosses `sweep_failures_allowed`,
+    which is what stops a fleet-wide outage after the tolerance rather than grinding
+    through 40,000 individually-logged failures. Carries the accounting at the point of
+    the stop so the run row and the run.completed event report what was actually
+    attempted, not zeros.
+    """
+
+    def __init__(self, message: str, *, devices_attempted: int, devices_processed: int, devices_failed: int) -> None:
+        super().__init__(message)
+        self.devices_attempted = devices_attempted
+        self.devices_processed = devices_processed
+        self.devices_failed = devices_failed
+
+
+def sweep_failures_allowed(devices_attempted: int) -> int:
+    """How many device failures a sweep tolerates: the larger of the absolute floor and
+    the percentage of devices attempted so far. Evaluated as the sweep streams —
+    totalCount from Jamf is a floor, not gospel, so "attempted so far" is the only
+    denominator that actually exists mid-sweep. The consequence is deliberate: scattered
+    failures across a big fleet stay inside a growing allowance, while a run where
+    everything fails from the start is stopped just past the absolute floor.
+    """
+    percent_allowance = int(devices_attempted * settings.sweep_failure_max_percent / 100)
+    return max(settings.sweep_failure_max_absolute, percent_allowance)
+
 
 def apply_hashes(app: NormalizedApp) -> NormalizedApp:
     """Stamp both hashes onto a normalized app.
@@ -106,6 +141,11 @@ class ConnectionSyncResult:
     ok: bool = True
     skipped: bool = False
     error: str | None = None
+    # Failure accounting (#92): device_count is the devices attempted, and
+    # processed + failed = attempted. A result can be ok=True with failures — isolated
+    # device failures inside the sweep's tolerance.
+    devices_processed: int = 0
+    devices_failed: int = 0
     # Ledger outcomes for this run, keyed by app.observations.ledger.Outcome, plus the
     # number of group definitions observed. Empty for providers without a ledger.
     observations: Mapping[str, int] = field(default_factory=dict)
@@ -218,6 +258,30 @@ async def run_jamf(
         # reclaimed process narrating someone else's run. The run's owner stops the
         # rest of the work (app.mdm.collections.run_collection).
         raise
+    except SweepFailureThresholdExceeded as exc:
+        # No rollback here: the device loop rolled back the last failing device before
+        # raising, so the session is clean — and the accounting on the exception is
+        # what lets the run row report what was attempted rather than zeros.
+        await set_sync_status(db, connection, SyncStatus.failed)
+        logger.error(
+            "jamf sweep failed: device failures exceeded the threshold",
+            extra={
+                "connection_id": connection.id,
+                "collection_id": collection_id,
+                "trigger": trigger,
+                "devices_attempted": exc.devices_attempted,
+                "devices_failed": exc.devices_failed,
+            },
+        )
+        return ConnectionSyncResult(
+            connection_id=connection.id,
+            ok=False,
+            error=str(exc),
+            device_count=exc.devices_attempted,
+            devices_processed=exc.devices_processed,
+            devices_failed=exc.devices_failed,
+            collection_id=collection_id,
+        )
     except Exception as exc:
         await db.rollback()
         await set_sync_status(db, connection, SyncStatus.failed)
@@ -233,6 +297,7 @@ async def run_jamf(
             "connection_id": connection.id,
             "collection_id": collection_id,
             "device_count": result.device_count,
+            "devices_failed": result.devices_failed,
             "observations": dict(result.observations),
             "group_count": result.group_count,
             "trigger": trigger,
@@ -241,6 +306,8 @@ async def run_jamf(
     return ConnectionSyncResult(
         connection_id=result.connection_id,
         device_count=result.device_count,
+        devices_processed=result.devices_processed,
+        devices_failed=result.devices_failed,
         observations=result.observations,
         group_count=result.group_count,
         collection_id=collection_id,
@@ -340,6 +407,8 @@ async def _sync_jamf(
 ) -> ConnectionSyncResult:
     outcomes: Counter[str] = Counter()
     device_count = 0
+    devices_processed = 0
+    devices_failed = 0
     group_count = 0
 
     async with client.http() as http:
@@ -369,17 +438,74 @@ async def _sync_jamf(
         # default — the collection knows its sections, the connection its worst case.
         effective_page_size = page_size or connection.sweep_page_size or DEFAULT_SWEEP_PAGE_SIZE
         async for raw in client.iter_computers(http, sections, rsql_filter=selector, page_size=effective_page_size):
-            result = await ingest_computer(
-                db,
-                connection,
-                raw,
-                aperture_digest=aperture_digest,
-                trigger=trigger,
-                sections=sections,
-                quarantined_extension_attributes=quarantine,
-            )
-            outcomes[result.outcome] += 1
             device_count += 1
+            try:
+                result = await ingest_computer(
+                    db,
+                    connection,
+                    raw,
+                    aperture_digest=aperture_digest,
+                    trigger=trigger,
+                    sections=sections,
+                    quarantined_extension_attributes=quarantine,
+                )
+            except (RunReclaimed, asyncio.CancelledError):
+                # Neither is a device failure. A reclaim means this process's run is
+                # already someone else's history (#94) and every further write is a
+                # second, unaccounted copy of work — it must unwind, not be absorbed
+                # into the failure count. Cancellation is the loop being told to stop.
+                raise
+            except Exception as exc:
+                # One device must not kill the sweep (#92). Whatever this device's
+                # ingest half-wrote — a ledger span, app rows, a change row — is rolled
+                # back so the next device starts from a clean session; the devices
+                # before it are safe behind their own commits.
+                devices_failed += 1
+                await db.rollback()
+                # The rollback expired every ORM instance in the session; reload the
+                # two the loop keeps using, or the next attribute read raises instead
+                # of lazily refreshing (asyncio).
+                await db.refresh(connection)
+                jamf_id = raw.get("id")
+                serial = (raw.get("hardware") or {}).get("serialNumber")
+                failure = f"{type(exc).__name__}: {exc}"[:_FAILURE_ERROR_CHARS]
+                logger.warning(
+                    "device failed; sweep continues",
+                    extra={
+                        "connection_id": connection.id,
+                        "jamf_id": jamf_id,
+                        "serial_number": serial,
+                        "devices_failed": devices_failed,
+                        "error": failure,
+                    },
+                )
+                if run is not None:
+                    await db.refresh(run)
+                    await run_log(
+                        db,
+                        run,
+                        "warning",
+                        "device failed; sweep continues",
+                        jamfId=jamf_id,
+                        serialNumber=serial,
+                        error=failure,
+                    )
+                allowed = sweep_failures_allowed(device_count)
+                if devices_failed > allowed:
+                    raise SweepFailureThresholdExceeded(
+                        f"{devices_failed} of {device_count} devices failed, over the "
+                        f"tolerance of {allowed} (max of sweep_failure_max_absolute="
+                        f"{settings.sweep_failure_max_absolute}, "
+                        f"sweep_failure_max_percent={settings.sweep_failure_max_percent}% "
+                        "of devices attempted); stopping rather than grinding through "
+                        "a fleet-wide outage",
+                        devices_attempted=device_count,
+                        devices_processed=devices_processed,
+                        devices_failed=devices_failed,
+                    ) from exc
+            else:
+                outcomes[result.outcome] += 1
+                devices_processed += 1
 
             if run is not None:
                 # Between devices, not per device: the beat is throttled to one small
@@ -415,6 +541,7 @@ async def _sync_jamf(
                 deviceCount=device_count,
                 groupCount=group_count,
                 outcomes=dict(outcomes),
+                **({"devicesFailed": devices_failed} if devices_failed else {}),
             )
 
     await sync_state(db, connection)
@@ -422,6 +549,8 @@ async def _sync_jamf(
     return ConnectionSyncResult(
         connection_id=connection.id,
         device_count=device_count,
+        devices_processed=devices_processed,
+        devices_failed=devices_failed,
         observations={**dict(outcomes), **throttle},
         group_count=group_count,
     )
@@ -559,7 +688,7 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
         # this run, the refused finish leaves that verdict standing, and the device
         # write above stands on its own — it is fresh from Jamf, and staleness is the
         # ledger's monotonic guard's call, not the run bookkeeping's.
-        await finish(db, run, ok=True, device_count=1, observations={result.outcome: 1})
+        await finish(db, run, ok=True, device_count=1, devices_processed=1, observations={result.outcome: 1})
         return result
 
 

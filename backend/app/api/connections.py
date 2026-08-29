@@ -432,6 +432,8 @@ async def _run_connection_sync(
                     ok=result.ok,
                     device_count=result.device_count,
                     group_count=result.group_count,
+                    devices_processed=result.devices_processed,
+                    devices_failed=result.devices_failed,
                     observations=dict(result.observations),
                     error=result.error,
                 )

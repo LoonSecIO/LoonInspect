@@ -44,6 +44,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.context import get_request_id
+from app.core.outbox import enqueue_event
 from app.models.schema import MdmConnection, Run, RunLogLine
 
 logger = logging.getLogger(__name__)
@@ -72,6 +74,15 @@ LOCK_WEBHOOK = "webhook"
 STATUS_RUNNING = "running"
 STATUS_SUCCEEDED = "succeeded"
 STATUS_FAILED = "failed"
+
+# Emitted through the outbox when a device-sweep run closes — success or failure — so
+# absence is itself a signal downstream: no run.completed today means the sweep did not
+# run to completion, which is the silent-gap failure mode this product must never have.
+# Device sweeps only: a catalog refresh would satisfy an absence search the sweep was
+# supposed to answer, and a webhook run is one device — emitting per webhook doubles the
+# event volume for no signal (#92). Payload is snake_case, matching the envelope
+# convention and staying out of the way of the pending casing ruling (#90).
+RUN_COMPLETED_EVENT = "run.completed"
 
 
 class RunReclaimed(Exception):
@@ -424,6 +435,8 @@ async def finish(
     ok: bool,
     device_count: int = 0,
     group_count: int = 0,
+    devices_processed: int = 0,
+    devices_failed: int = 0,
     observations: dict | None = None,
     error: str | None = None,
 ) -> bool:
@@ -431,7 +444,9 @@ async def finish(
 
     A separate UPDATE rather than an ORM write on `run`, because the failure path
     reaches here with a rolled-back session whose identity map cannot be trusted — the
-    one moment it matters most that the lock is actually released.
+    one moment it matters most that the lock is actually released. The RETURNING clause
+    carries the identity fields the event below needs, for the same reason: read from
+    the row the UPDATE just matched, never from ORM state a rollback may have expired.
 
     Conditional on `running`, for the same reason the heartbeat is (#94). A run the
     reclaim already failed is closed, and its row — status, error, the reclaim's
@@ -441,25 +456,54 @@ async def finish(
     value rather than a raise: every caller is either already done or inside an
     exception handler, where raising would mask the error being handled. The refusal is
     logged here; the call site decides what, if anything, is left to unwind.
+
+    A device-sweep run also emits `run.completed` (#92), enqueued in the same
+    transaction as the status flip so "the run closed" and "the wire says it closed"
+    can never drift apart. Not for a refused finish — the reclaim's verdict stands and
+    a reclaimed run emits nothing, so the absence downstream is the signal.
     """
     now = _utcnow()
+    status = STATUS_SUCCEEDED if ok else STATUS_FAILED
     closed = await db.execute(
         update(Run)
         .where(Run.id == run.id, Run.status == STATUS_RUNNING)
         .values(
-            status=STATUS_SUCCEEDED if ok else STATUS_FAILED,
+            status=status,
             finished_at=now,
             window_end=now,
             heartbeat_at=now,
             device_count=device_count,
             group_count=group_count,
+            devices_processed=devices_processed,
+            devices_failed=devices_failed,
             observations=observations or None,
             error=error,
         )
-        .returning(Run.id)
+        .returning(Run.id, Run.mdm_connection_id, Run.trigger, Run.comparison, Run.lock_class)
     )
+    row = closed.first()
+    if row is not None and row.lock_class == LOCK_DEVICE_SWEEP:
+        await enqueue_event(
+            db,
+            RUN_COMPLETED_EVENT,
+            {
+                "event_type": RUN_COMPLETED_EVENT,
+                "run_id": str(row.id),
+                "connection_id": row.mdm_connection_id,
+                "trigger": row.trigger,
+                "comparison": row.comparison,
+                # The run's window end — the same instant the row's window_end was
+                # just stamped with, so the event and the row tell one time.
+                "occurred_at": now.isoformat(),
+                "devices_total": device_count,
+                "devices_processed": devices_processed,
+                "devices_failed": devices_failed,
+                "status": status,
+            },
+            request_id=get_request_id(),
+        )
     await db.commit()
-    if closed.scalar_one_or_none() is None:
+    if row is None:
         logger.warning(
             "finish refused: run is not running (reclaimed); its recorded verdict stands",
             extra={
@@ -487,6 +531,9 @@ async def finish(
         groupCount=group_count,
         seconds=round((now - run.started_at).total_seconds(), 1),
         error=error,
+        # Only when something failed: the common all-clear line stays as short as it
+        # has always been, and a non-zero count is the anomaly worth a field.
+        **({"devicesFailed": devices_failed} if devices_failed else {}),
     )
     return True
 

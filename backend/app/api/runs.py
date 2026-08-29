@@ -43,6 +43,8 @@ def _to_out(run: Run) -> RunOut:
         heartbeat_at=run.heartbeat_at,
         device_count=run.device_count,
         group_count=run.group_count,
+        devices_processed=run.devices_processed,
+        devices_failed=run.devices_failed,
         observations=run.observations,
         error=run.error,
         actor_label=run.actor_label,

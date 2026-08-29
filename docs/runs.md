@@ -148,7 +148,71 @@ answer "did this run last month", so a week cannot serve its own purpose, and it
 smaller than the outbox, which carries a row per event per destination. Log lines are
 removed by cascade from the run rather than by a second delete that could drift.
 
-## 7. What this does not do
+## 7. Failure accounting (#92)
+
+One device must not kill the sweep. Before this, the device loop had no per-device
+isolation: any single failure — a corrupt record, or the race a webhook's mutex
+exemption makes possible when both paths insert the same device's span within
+milliseconds — failed the entire run, and because the tick claims an occurrence before
+running it, that occurrence was already spent. On a 40,000-device fleet the odds of one
+bad device are roughly certainty, so the failure mode lived exactly where a first
+impression is made.
+
+**Isolation.** A device that raises mid-sweep is rolled back (its partial writes must
+not poison the session for the next device — per-device commits are the checkpoints
+that make this cheap), recorded in the run log with its identity and error
+(`device failed; sweep continues`, with `jamfId`, `serialNumber`, and the error class),
+and the sweep continues. Two exceptions deliberately pass through: `RunReclaimed`
+(the #94 fence — a reclaimed run must unwind, not absorb the signal into a failure
+count) and cancellation.
+
+**The threshold.** The run fails only when failures exceed
+`max(SWEEP_FAILURE_MAX_ABSOLUTE, SWEEP_FAILURE_MAX_PERCENT% of devices attempted so
+far)` — defaults **25** and **1.0**. Both are settings rather than constants on
+least-regret grounds: a wrong default is corrected by an operator with one env var, not
+by waiting for a release. The absolute floor keeps a small fleet from failing over a
+handful of bad devices (1% of 200 is 2); the percentage keeps 25 from reading as an
+outage on 40,000. Evaluated against devices *attempted so far* because that is the only
+denominator that exists mid-stream — Jamf's totalCount is a floor, not gospel. The
+consequence is deliberate: scattered failures across a big fleet stay inside a growing
+allowance, while a run where everything fails from the first device is stopped just
+past the floor rather than grinding through the whole fleet. At or under the threshold
+the run finishes `succeeded` with its failures recorded; over it, the run is `failed`
+with the count in its error and processing stops where the threshold was crossed.
+
+**On the row.** `devices_processed` and `devices_failed`, with
+`processed + failed = device_count` (attempted). A run can be `succeeded` with
+`devices_failed > 0` — that is the point: "39,998 processed, 2 failed" is a healthy
+night on a big fleet, and hiding the 2 inside a bare `succeeded` is how evidence rots.
+The API returns both; the run panel shows a failed count only when it is non-zero.
+
+**On the wire.** Every device-sweep run that closes — `succeeded` or `failed` — emits
+`run.completed` through the outbox, in the same transaction as the status flip, so the
+row and the wire cannot drift apart. Always-emitting is the least-regret choice: it
+makes absence detection one SPL search (`no run.completed today` = the sweep did not
+run to completion) and puts partial failure in the evidence trail, where the silent gap
+— this product's worst class of bug — cannot hide. Deliberately *not* emitted for
+webhook runs (one device each; a busy tenant would double its event volume for no
+signal) or catalog refreshes (an hourly catalog `run.completed` would satisfy the
+absence search the nightly sweep was supposed to answer). A *reclaimed* run emits
+nothing either — the reclaim is not a finish, and the absence downstream is the signal
+that the sweep died. Payload, snake_case throughout (the envelope convention, and safe
+under the pending casing ruling in #90):
+
+| Field | Meaning |
+| --- | --- |
+| `event_type` | `run.completed` |
+| `run_id` | The jobID — joinable against every event the run produced |
+| `connection_id` | Which connection swept |
+| `trigger` | `sweep` \| `manual` (webhook runs never emit this event) |
+| `comparison` | `baseline` \| `delta` |
+| `occurred_at` | The run's window end — the instant the row's `window_end` was stamped |
+| `devices_total` | Devices attempted (`processed + failed`) |
+| `devices_processed` | Devices ingested |
+| `devices_failed` | Devices that raised and were isolated |
+| `status` | `succeeded` \| `failed` |
+
+## 8. What this does not do
 
 - **The concurrency cap** (`ingest-scheduling.md` §4.3) — thirty connections due at 02:00
   are still admitted one at a time only because the tick runs sequentially, not because

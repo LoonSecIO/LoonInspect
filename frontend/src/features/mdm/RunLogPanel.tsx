@@ -117,6 +117,11 @@ export function RunLogPanel({ jobId, joined, onFinished }: {
             {t.settings.runSummary(run.deviceCount, run.groupCount)}
           </span>
         )}
+        {run && !running && run.devicesFailed > 0 && (
+          <span className="text-muted-foreground">
+            {t.settings.runDevicesFailed(run.devicesFailed)}
+          </span>
+        )}
         {joined && <span className="text-muted-foreground">{t.settings.runJoined}</span>}
         <Button variant="ghost" size="sm" className="ml-auto h-6 px-2" onClick={() => setExpanded((open) => !open)}>
           {expanded ? t.settings.runHideDetails : t.settings.runMoreDetails}
