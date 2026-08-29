@@ -292,13 +292,22 @@ cares.
 
 ### 6.1 What actually exists today
 
-The Jamf client has exactly one fetch method: `fetch_devices()` (`client.py:77`) against
-`/api/v4/computers-inventory`. There is no group, profile, or extension-attribute
-definition fetching anywhere. EA *values* ride inside each computer record, which is why
-`EXTENSION_ATTRIBUTES` sits in `INVENTORY_SECTIONS`.
+The Jamf client's fetch surface (`client.py`) has grown since this was first surveyed —
+when this doc was written it was exactly one method, `fetch_devices()`. Now:
+`iter_computers()` pages `/api/v4/computers-inventory` with pages in flight,
+`fetch_computer_detail()` pulls one device's inventory by id (the webhook path), and
+`fetch_smart_groups()` fetches smart-group *definitions* from
+`/api/v3/computer-groups/smart-groups` — riding along with the device sweep so the
+catalog is never older than the memberships that reference it, which is §6.2's rule,
+implemented. The aperture reads (`fetch_version()`,
+`fetch_inventory_collection_settings()`) and `test_connection()` round it out. Profile
+and extension-attribute *definition* fetching still does not exist. EA values ride
+inside each computer record, which is why `EXTENSION_ATTRIBUTES` sits in `V0_SECTIONS`
+(the constant `INVENTORY_SECTIONS` grew into) — as do `GROUP_MEMBERSHIPS` and
+`CONFIGURATION_PROFILES`, so assignments arrive device-first with every sweep.
 
-**The service/catalog class is new surface, not a rescheduling of existing code.** That
-matters for V0 sizing.
+**A separately-scheduled service/catalog polling class remains new surface, not a
+rescheduling of existing code.** That matters for V0 sizing.
 
 ### 6.2 Definitions and assignments are different objects
 
@@ -310,7 +319,7 @@ them is what "service polling" means:
 | What | The smart group, the profile, the EA and its type | Which devices are in it / have it |
 | Size | Tens to hundreds per tenant | Rows × devices |
 | Changes | When an admin edits something | Constantly |
-| Source | Its own endpoint (**unbuilt**) | Inside device inventory |
+| Source | Its own endpoint (built for smart groups; profiles and EAs **unbuilt**) | Inside device inventory |
 
 Definitions are small and slow-changing, so they can poll far more often than devices —
 and they **must**, for a correctness reason rather than a cost preference:
@@ -325,10 +334,10 @@ rather than emitting the bare ID.
 
 ### 6.3 The fetch-direction fork stays with #27
 
-Assignments can be fetched device-first (add `GROUP_MEMBERSHIPS` to `INVENTORY_SECTIONS`
-and pay per device on every sweep) or group-first (enumerate each group's members and
-pay per group). #27 already noticed the first half — memberships are not fetched at all
-today.
+Assignments can be fetched device-first (add `GROUP_MEMBERSHIPS` to the sweep's
+sections and pay per device on every sweep) or group-first (enumerate each group's
+members and pay per group). The device-first half has since happened —
+`GROUP_MEMBERSHIPS` sits in `V0_SECTIONS`, so memberships now arrive with every sweep.
 
 Given #27's own argument about not paying per-device for data nobody reads, group-first
 likely wins for bulk and device-first for webhooks — the same inversion #27 states. That

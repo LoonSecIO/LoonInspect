@@ -1,10 +1,12 @@
 # LoonInspect Auth & Logging Design
 
-Status: **proposal** · Target: v1 local accounts + RBAC + audit log, built so OIDC/Okta drops in without a rewrite.
+Status: **implemented through Phase 6** (§8) — originally a proposal · Target: v1 local accounts + RBAC + audit log, built so OIDC/Okta drops in without a rewrite.
 
 ---
 
 ## 1. Problem
+
+> **Status note (2026-08-29).** This section is the problem as it stood before Phase 1 landed, kept as written because it is why everything below exists. Every route now sits behind §4.4's default-deny, and the app has since moved from `:8000` to `:8001`. "Today" here means the day this was drafted.
 
 Today every route is unauthenticated. `main.py` mounts six routers with no guard, which means anyone who can reach `:8000` can read and rewrite MDM connection credentials (`/api/mdm/connections`), flip feature flags, and read the full device inventory. For a tool whose whole job is holding Jamf API secrets, that's the highest-severity open item in the repo.
 
@@ -209,10 +211,10 @@ Not JWT. The reasoning:
 
 - **Revocation.** A JWT can't be revoked without a denylist — and a denylist is a session table with extra steps.
 - **Backchannel logout.** When OIDC lands, the IdP tells us "this session is over." That requires server-side session state to act on.
-- **Cost is near zero here.** SQLite is already in the request path, sessions are single-digit-per-user, and there's no multi-service token-verification story to optimize for.
+- **Cost is near zero here.** The database is already in the request path (SQLite when this was written; Postgres since #29), sessions are single-digit-per-user, and there's no multi-service token-verification story to optimize for.
 - No signing-key rotation ceremony to get wrong.
 
-Cookie: `HttpOnly`, `SameSite=Lax`, `Secure` when `not settings.debug`, `Path=/`. Value is 32 bytes of `secrets.token_urlsafe`; only its SHA-256 is stored.
+Cookie: `HttpOnly`, `SameSite=Lax`, `Secure` per `settings.secure_cookies` (its own setting, default on — it was originally derived from `not settings.debug`, the conflation Phase 6's notes call out and fix), `Path=/`. Value is 32 bytes of `secrets.token_urlsafe`; only its SHA-256 is stored.
 
 **Lifetime is operator-configurable, in seconds:**
 
@@ -240,7 +242,7 @@ The 14-day ceiling applies to timed sessions only, enforced at startup, so a mis
 
 Same-origin makes this clean — `main.py` already serves the SPA and API from one port, and `config/api.ts` already sends `credentials: "include"`, so no CORS credential dance in production.
 
-**Dev mode already works — verified.** `frontend/vite.config.ts` proxies `/api` → `127.0.0.1:8000`, and `config/env.ts` defaults `apiBaseUrl` to the relative `/api`. So the browser sees same-origin in dev exactly as it does in the container, and `SameSite=Lax` behaves identically in both. No `SameSite=None`, no HTTPS-in-dev requirement, no separate cookie config for the hot-reload workflow — which is the usual tax on cookie auth and we happen not to owe it. (`Secure` is skipped when `debug`, though browsers treat `localhost` as trustworthy anyway.)
+**Dev mode already works — verified.** `frontend/vite.config.ts` proxies `/api` → `127.0.0.1:8001` (it targeted `:8000` when this was verified; the app moved ports in #78 and the proxy moved with it — nothing else about the shape changed), and `config/env.ts` defaults `apiBaseUrl` to the relative `/api`. So the browser sees same-origin in dev exactly as it does in the container, and `SameSite=Lax` behaves identically in both. No `SameSite=None`, no HTTPS-in-dev requirement, no separate cookie config for the hot-reload workflow — which is the usual tax on cookie auth and we happen not to owe it. (`Secure` follows `settings.secure_cookies` — Phase 6 — though browsers treat `localhost` as trustworthy anyway.)
 
 ### 4.2 CSRF
 
@@ -360,7 +362,7 @@ Because grants live in `account_role` with a `source`, the later OIDC work is pu
 
 ## 6. Logging
 
-Right now the entire logging story is `print(f"[siem] {payload}")` in `mdm/service.py:30`. Audit can't be layered onto that, so the logging foundation lands **first**.
+When this was written the entire logging story was `print(f"[siem] {payload}")` in `mdm/service.py`. Audit couldn't be layered onto that, so the logging foundation landed **first**.
 
 ### 6.1 Three streams, deliberately not merged
 
@@ -394,7 +396,7 @@ Append-only JSONL — one self-contained JSON object per line — written to the
 /app/data/audit/audit.jsonl.2026-08-02   # rotated, kept 30 days
 ```
 
-> ⚠️ **The path must be under `/app/data`.** That's the only thing `docker-compose.yml` persists (`looninspect-data:/app/data`, same volume as the SQLite DB). Audit written to `/app/logs` or the image filesystem is destroyed by the next `docker compose up --build` — which, given how often this app gets rebuilt during development, means the retention policy silently becomes "until the next rebuild."
+> ⚠️ **The path must be under `/app/data`.** That's what `docker-compose.yml` persists for the app container (`looninspect-data:/app/data` — shared with the SQLite DB when this was written; since the Postgres move the database has its own volume and this one carries the audit log and TLS material). Audit written to `/app/logs` or the image filesystem is destroyed by the next `docker compose up --build` — which, given how often this app gets rebuilt during development, means the retention policy silently becomes "until the next rebuild."
 
 **Rotation and TTL** come free from the stdlib:
 
@@ -429,7 +431,7 @@ The audit file is a local buffer and troubleshooting aid. It is explicitly **not
 3. **Retention is capped at 30 days** by design — shorter than most audit-retention obligations.
 4. **It's single-node**, with no aggregation across deployments.
 
-Users who need durable, tamper-resistant, or long-retention audit should forward events to a SIEM, which is the tool built for exactly those properties. **That integration is stubbed** — the config surface exists, the forwarding does not. Worth stating plainly in user-facing docs rather than letting people assume a file on a container volume satisfies an audit requirement; that assumption is only discovered to be wrong during an incident.
+Users who need durable, tamper-resistant, or long-retention audit should forward events to a SIEM, which is the tool built for exactly those properties. **That integration does not carry audit events yet** — the outbox/destinations pipeline has since shipped for inventory and run events, but no `audit.*` event type rides it. Worth stating plainly in user-facing docs rather than letting people assume a file on a container volume satisfies an audit requirement; that assumption is only discovered to be wrong during an incident.
 
 Example line:
 
@@ -442,7 +444,7 @@ Example line:
 Config added to `core/config.py`:
 
 ```python
-audit_log_path: str = "/app/data/audit/audit.jsonl"
+audit_log_path: str = "./data/audit/audit.jsonl"  # /app/data in the container
 audit_retention_days: int = Field(default=30, ge=1, le=3650)
 log_level: str = "INFO"
 log_format: str = "json"   # "console" when debug
@@ -464,7 +466,7 @@ The file is the interface. The outbound event bus and the fetch API are yours to
 
 One note for whenever that API arrives: reading JSONL means scanning files. At this app's event volume that's fine for a long time, and premature indexing would be exactly the complexity we're avoiding. The signal that it has stopped being fine is wanting to filter by actor or target across the full 30-day window in a UI — that's when a queryable index earns its keep, and the file remains the source of truth underneath it.
 
-**SIEM forwarding of audit events is the documented answer to §6.4's limitations, and it is stubbed.** Existing `stream_event()` in `mdm/service.py` stays as-is for `device.inventory.changed` and is not extended to audit events in this phase. What Phase 3 should ship is the seam, not the implementation: audit events already carry a stable JSON shape, so the eventual forwarder is a consumer of the same payload the file receives — no re-modelling, no second event schema to keep in sync.
+**SIEM forwarding of audit events is the documented answer to §6.4's limitations, and it remains unbuilt.** Existing `stream_event()` in `mdm/service.py` stays as-is for `device.inventory.changed` and is not extended to audit events in this phase. *(Since superseded: the event outbox in `app/core/outbox.py` replaced `stream_event()` and now delivers inventory and run events to real destinations — audit events are still not among its event types.)* What Phase 3 should ship is the seam, not the implementation: audit events already carry a stable JSON shape, so the eventual forwarder is a consumer of the same payload the file receives — no re-modelling, no second event schema to keep in sync.
 
 Until it exists, the supported aggregation path is tailing the JSONL off the mounted volume with any shipper (Vector, Fluent Bit, Filebeat, Splunk UF). That's worth putting in the user docs, since it's a real answer available today and costs us nothing to support.
 
@@ -495,7 +497,7 @@ The existing `features/auth/index.ts` stub already has the right shape (`AuthSta
 | **5** ✅ | Account management: create/disable, role assignment, password reset and self-change | RBAC was unusable without it — four roles and no way to grant any of them |
 | **6** ✅ | TLS modes (`off` / `self-signed` / `provided`), proxy-header trust | Phase 1 made HTTPS load-bearing; see below |
 | **Later** | OIDC/Okta, SCIM, TOTP → WebAuthn | Additive by construction if §3.1 holds |
-| **Deferred** | Webhook header auth (§4.7) | Separate iteration; stubbed for pre-release |
+| **Deferred** ✅ | Webhook header auth (§4.7) | Was deferred out of the phase train; since shipped as #14 |
 
 ### Phase 5 notes — account management
 
@@ -587,8 +589,8 @@ None blocking. Everything below is decided.
 - **Audit read API / outbound bus** → out of scope; the file is the interface. See §6.6.
 - **OIDC account linking** → auto-link, gated on `email_verified`. See §3.4.
 - **SCIM readiness** → three unused columns carried in the Phase 1 migration (`username`, `external_id`, `is_service_account`), plus deactivation cascading to sessions and tokens. Groups deferred as safely additive. See §3.5.
-- **Webhook authentication** → per-connection static header credential (`X-API-Key`-style) generated by LoonInspect, pasted into Jamf Pro. Deferred to a later iteration; see §4.7.
-- **Testing** → deferred to a later iteration, before public release. See §11.
+- **Webhook authentication** → per-connection static header credential (`X-API-Key`-style) generated by LoonInspect, pasted into Jamf Pro. Was deferred; since shipped as #14. See §4.7.
+- **Testing** → was deferred to a later iteration; the suite has since landed — a pure-logic lane plus a `RUN_DB_TESTS`-gated Postgres lane, both in CI. See §11.
 
 ---
 
@@ -600,7 +602,7 @@ None blocking. Everything below is decided.
 
 **FastAPI's built-in docs bypass global dependencies.** `/docs`, `/redoc`, and `/openapi.json` are mounted as plain Starlette routes, not `APIRoute`s — so `FastAPI(dependencies=[...])` never runs for them, and the default-deny layer silently did not cover the one surface that enumerates the entire API. Fixed by disabling the built-ins (`docs_url=None`, etc.) and re-registering them as real routes in `main.py`. Worth re-checking whenever anything else gets mounted outside the router.
 
-**SQLite gives back naive datetimes**, even from `DateTime(timezone=True)` — there's no timezone type to round-trip through. Comparing one against `datetime.now(timezone.utc)` raises `TypeError`, which took out session expiry, the sliding-window refresh, and the lockout check all at once. `app.core.auth.as_utc()` re-attaches UTC on read; every comparison against a stored timestamp has to go through it. This will come back in Phase 4 with token expiry.
+**SQLite gives back naive datetimes**, even from `DateTime(timezone=True)` — there's no timezone type to round-trip through. Comparing one against `datetime.now(timezone.utc)` raises `TypeError`, which took out session expiry, the sliding-window refresh, and the lockout check all at once. `app.core.auth.as_utc()` re-attaches UTC on read; every comparison against a stored timestamp has to go through it. This will come back in Phase 4 with token expiry. *(Historical since the Postgres move in #29 — asyncpg round-trips tzinfo — but `as_utc()` remains and comparisons still route through it.)*
 
 **Objects built in Python have no loaded relationships.** `account.roles` on a freshly constructed `Account` triggers a lazy load, which under asyncio raises `MissingGreenlet` rather than quietly issuing a query. `lazy="selectin"` only helps when the object came from a query — after `create_account()` the relationship needs an explicit `await db.refresh(account, ["roles"])`.
 
@@ -624,4 +626,4 @@ The general lesson for later phases: anything that calls `logging.config.fileCon
 
 **CORS becomes near-vestigial — leave it, but watch it.** Prod is same-origin and dev goes through the Vite proxy, so `cors_origins` does no load-bearing work in either. The thing to prevent is a future `allow_origins=["*"]`: combined with the existing `allow_credentials=True`, that turns into a session-theft primitive.
 
-**Testing is deferred** to a later iteration, ahead of public release. What that leaves uncovered in the meantime is worth naming: the default-deny allowlist (§4.4) is the one piece with no compile-time safety net — a new router is protected automatically, but nothing catches a mistaken *addition* to `PUBLIC_PATHS`. When tests do land, the highest-value one by a wide margin is a parametrized sweep over `app.routes` asserting every route either requires a principal or is explicitly allowlisted. It's roughly fifteen lines and it permanently closes the "someone shipped an unprotected endpoint" class of bug.
+**Testing is deferred** to a later iteration, ahead of public release. What that leaves uncovered in the meantime is worth naming: the default-deny allowlist (§4.4) is the one piece with no compile-time safety net — a new router is protected automatically, but nothing catches a mistaken *addition* to `PUBLIC_PATHS`. When tests do land, the highest-value one by a wide margin is a parametrized sweep over `app.routes` asserting every route either requires a principal or is explicitly allowlisted. It's roughly fifteen lines and it permanently closes the "someone shipped an unprotected endpoint" class of bug. *(Status, 2026-08-29: the suite has since landed — pure-logic and `RUN_DB_TESTS` Postgres lanes, both in CI — but this specific route sweep has not been written. The recommendation stands.)*

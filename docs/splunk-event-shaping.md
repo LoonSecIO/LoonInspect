@@ -195,7 +195,9 @@ The outbox/destinations system this work sits on top of is complete and tested �
 re-derive or rebuild this, extend it:
 
 - **Models** (`backend/app/models/schema.py`): `Destination`, `EventOutbox`,
-  `OutboxDelivery`. Migration `d4e7f2a68b91_destinations_and_event_outbox.py`.
+  `OutboxDelivery`. The tables now ship in the Postgres baseline migration,
+  `7fb9f43202ba_postgres_baseline_with_tenancy.py` (the SQLite-era migration this
+  originally named was collapsed into it).
 - **Delivery engine** (`backend/app/core/outbox.py`): `enqueue_event()` (called once,
   inside `process_sync`, the single choke point), `fan_out_pending()`,
   `deliver_pending()` (exponential backoff, 30s base / 3600s cap / 10 max attempts
@@ -244,9 +246,11 @@ might eventually need to reference. Designed, **not implemented**:
   point-in-time/"NOT in group" queries work without Jamf's inverted-smart-group trick.
   New `device.group.joined`/`device.group.left` event types would ride the same outbox.
   Not started.
-- **LoonVD / CVE enrichment** — `LoonSecIoClient.check_apps()` is still
-  `raise NotImplementedError`. Blocked on the real API contract (endpoint, auth,
-  response shape, error semantics) from the author, not a technical blocker.
+- **LoonVD / CVE enrichment** — still unbuilt, and the stub is gone too:
+  `LoonSecIoClient` was excised with the rest of the provider stubs in #79
+  (Jamf-only at launch; `schemas/connections.py` now refuses the `loonsecio`
+  provider on set). Blocked on the real API contract (endpoint, auth, response
+  shape, error semantics) from the author, not a technical blocker.
 
 ## Suggested entry point for the next conversation
 

@@ -58,6 +58,10 @@ class of near-miss typos that case-mixed names invite. The slug is
 kebab-case, describes the outcome rather than the activity, and is short enough
 to read in a branch picker.
 
+Claude Code sessions also mint `claude/*` branches outside this pattern; they
+are accepted as agent working branches and carry the same expectation as every
+other branch — deleted once their pull request merges.
+
 **Ticket numbers come from GitHub Issues and are never assigned by hand.** The
 `NNNN` in an `inspect-NNNN/` branch is the issue's number, zero-padded to four
 digits. Padding is what makes branches sort correctly in a listing; it is not
@@ -666,6 +670,19 @@ compliance:
   counter holds when the first issue is filed, which is above the pull request
   numbers already consumed (#1–#9).
 
+Appended 2026-08-29, from the doc-truth sweep (#128) — recorded, not remediated:
+
+- `claude/*` session branches do not match §2's pattern; they are now the
+  dominant head-ref form for merged pull requests, which is what prompted the
+  acknowledgment sentence in §2.
+- `claude/container-aws-readiness-5863c3` carried two pull requests (#84 and
+  #85), violating BR-05.
+- Merged branches survive on `origin` against BR-04 and §3 step 5:
+  `inspect-0061-change-log` (#62), `claude/festive-roentgen-d48f0b` (#121),
+  `claude/jamf-pro-sdk-python-273d02` (#75).
+- `inspect-0061-change-log` additionally violates §2's pattern — a hyphen where
+  the `inspect-NNNN/` prefix requires a slash.
+
 ## Change log
 
 | Version | Date | Change |
@@ -678,3 +695,4 @@ compliance:
 | v1.5 | 2026-08-18 | Added `active`/`blocked` status values; recorded rulesets as blocked on the GitHub plan (§8.1); marked BR-04, MG-01, PR-04 active |
 | v1.6 | 2026-08-18 | Added §8.2 (release schedule and history exposure) and §8.3 (secret scanning); CM-03 active for detection; public flip recorded as the unblock date for §8.1 |
 | v1.7 | 2026-08-29 | TruffleHog's check context added to the ruleset's required status checks (§8.3), so CM-03's detection gates merges once §8.1 unblocks |
+| v1.8 | 2026-08-29 | Acknowledged `claude/*` agent session branches in §2; appended current deviations to §10 |

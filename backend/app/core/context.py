@@ -55,8 +55,11 @@ def system_actor_for(tenant_id: uuid.UUID) -> Actor:
 
     Scheduler jobs have no requesting user but they do have a tenant, and an audit
     record saying "system did this" without saying whose data it touched is not much of
-    a record. The catalog refresh is the one job that correctly uses bare SYSTEM: it
-    touches only the global app corpus.
+    a record. The catalog sync's global half is the one job that correctly uses bare
+    SYSTEM — the Jamf patch corpus belongs to no tenant. Its second half, the
+    per-tenant catalog refresh, currently rides along under that same bare SYSTEM: an
+    attribution drift (the session is still tenant-scoped; only the audit label loses
+    the tenant), tracked separately rather than fixed here.
     """
     return replace(SYSTEM, tenant_id=tenant_id)
 

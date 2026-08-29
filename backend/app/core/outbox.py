@@ -33,9 +33,10 @@ async def enqueue_event(
     produced it, so the two can never drift apart from a partial failure.
 
     Delivery happens later, on the outbox worker's own schedule, not here — a slow or
-    down destination must never be able to block the caller. That matters more once an
-    inbound webhook handler exists: it needs to ACK its sender fast, and synchronous
-    delivery in the request path would put a flaky SIEM between it and that ACK.
+    down destination must never be able to block the caller. The inbound webhook
+    handler (app/api/webhooks.py) is where that matters most: it needs to ACK its
+    sender fast, and synchronous delivery in the request path would put a flaky SIEM
+    between it and that ACK.
     """
     event = EventOutbox(event_type=event_type, payload=payload, request_id=request_id)
     db.add(event)
@@ -121,7 +122,7 @@ async def _attempt_delivery(
 async def deliver_pending(db: AsyncSession) -> None:
     """Attempt every delivery that's due. Runs on its own scheduler tick, decoupled
     from whatever produced the event — a down destination here can never slow down a
-    device sync or, once it exists, an inbound webhook's ACK."""
+    device sync or an inbound webhook's ACK."""
     now = datetime.now(timezone.utc)
     result = await db.execute(
         select(OutboxDelivery).where(
@@ -194,8 +195,8 @@ async def deliver_pending(db: AsyncSession) -> None:
 
 async def purge_delivered_events(db: AsyncSession, retention_days: int) -> int:
     """Deletes outbox events whose deliveries are all terminal and old enough. Without
-    this the table grows without bound once events stop being nightly-batched and
-    become continuous (webhooks)."""
+    this the table grows without bound now that events are continuous (webhooks)
+    rather than nightly-batched."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
     result = await db.execute(

@@ -20,9 +20,9 @@ dependencies = [
 dev = [
     "ruff>=0.14",
     "pytest>=8.4",
-    # No async tests yet — everything covered so far is pure and synchronous. Added
-    # now because the next tranche (anything touching a session) is async by
-    # construction, and because #11 scopes it here.
+    # Added ahead of the async tranche #11 scoped here; that tranche arrived — most
+    # of the suite is async now, including the RUN_DB_TESTS files that drive a real
+    # Postgres session.
     "pytest-asyncio>=1.0",
 ]
 
