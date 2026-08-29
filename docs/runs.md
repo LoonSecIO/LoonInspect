@@ -194,10 +194,10 @@ run to completion) and puts partial failure in the evidence trail, where the sil
 — this product's worst class of bug — cannot hide. Deliberately *not* emitted for
 webhook runs (one device each; a busy tenant would double its event volume for no
 signal) or catalog refreshes (an hourly catalog `run.completed` would satisfy the
-absence search the nightly sweep was supposed to answer). A *reclaimed* run emits
-nothing either — the reclaim is not a finish, and the absence downstream is the signal
-that the sweep died. Payload, snake_case throughout (the envelope convention, and safe
-under the pending casing ruling in #90):
+absence search the nightly sweep was supposed to answer). A *reclaimed* run emits no
+`run.completed` either — the reclaim is not a finish, and the absence downstream is the
+signal that the sweep died (it does emit `run.failed`; see below). Payload, snake_case
+throughout (the envelope convention, and safe under the pending casing ruling in #90):
 
 | Field | Meaning |
 | --- | --- |
@@ -211,6 +211,31 @@ under the pending casing ruling in #90):
 | `devices_processed` | Devices ingested |
 | `devices_failed` | Devices that raised and were isolated |
 | `status` | `succeeded` \| `failed` |
+
+**The alarm beside the heartbeat (#103).** The moment any run reaches `failed` — by
+finish or by the reclaim — it also emits `run.failed`, in the same transaction as the
+status flip. Where `run.completed` is scoped to device sweeps so its *absence* stays
+meaningful, `run.failed` fires for every trigger and every lock class: a failed
+webhook or catalog run is exactly as silent as a failed sweep, and a failed device
+sweep emits both — one answers "did the sweep close", the other pages on why. A
+reclaimed run's `run.failed` comes from the reclaim itself; the zombie's late,
+refused finish adds nothing, so each failure is one event. Delivery is default-on for
+every destination: null/empty subscriptions already mean "all", and the
+`a9d4c7e1f3b8` migration appended the type to every pre-existing explicit list — a
+destination unsubscribes through its `subscribed_events` the ordinary way. Payload,
+snake_case like `run.completed`'s — exactly the ruled fields, no credentials, no log
+lines (the run id is the pointer to the full story):
+
+| Field | Meaning |
+| --- | --- |
+| `event_type` | `run.failed` |
+| `run_id` | The jobID — joinable against the run log and everything the run produced |
+| `connection_id` | Which connection failed |
+| `connection_name` | The same connection, readable in an alert without a join |
+| `trigger` | `sweep` \| `manual` \| `webhook` |
+| `window_start` | The occurrence the run was serving |
+| `window_end` | When it died — the instant the row's `window_end` was stamped |
+| `error` | The stored run error, truncated to 500 characters |
 
 ## 8. What this does not do
 

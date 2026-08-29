@@ -149,6 +149,18 @@ async def _run_completed_events(db, run_id) -> list:
     return [row for row in rows if row.payload.get("run_id") == str(run_id)]
 
 
+async def _run_failed_events(db, run_id) -> list:
+    """Same matching for run.failed (#103) — the alarm beside run.completed's heartbeat."""
+    from app.models.schema import EventOutbox
+
+    rows = (
+        await db.execute(
+            select(EventOutbox).where(EventOutbox.event_type == "run.failed").order_by(EventOutbox.id)
+        )
+    ).scalars().all()
+    return [row for row in rows if row.payload.get("run_id") == str(run_id)]
+
+
 async def test_one_dead_device_does_not_kill_the_sweep(db, jamf: FakeJamf, connection, monkeypatch) -> None:
     """The headline case: device two of five dies of a real aborted transaction, the
     other four are processed, and the run finishes `succeeded` with the failure on the
@@ -217,6 +229,10 @@ async def test_one_dead_device_does_not_kill_the_sweep(db, jamf: FakeJamf, conne
     assert payload["connection_id"] == connection.id
     assert payload["trigger"] == TRIGGER_MANUAL
 
+    # Failures inside the tolerance are a healthy night, not an alarm: no run.failed
+    # for a run that closed `succeeded`, however many devices it isolated (#103).
+    assert await _run_failed_events(db, run.id) == []
+
 
 async def test_failures_past_the_threshold_fail_the_run_and_stop_it(
     db, jamf: FakeJamf, connection, monkeypatch
@@ -267,6 +283,13 @@ async def test_failures_past_the_threshold_fail_the_run_and_stop_it(
     assert payload["devices_total"] == 2
     assert payload["devices_processed"] == 0
     assert payload["devices_failed"] == 2
+
+    # And beside the heartbeat, exactly one alarm (#103): a run.failed carrying the
+    # same run id and the tolerance verdict as its error summary.
+    alarms = await _run_failed_events(db, run.id)
+    assert len(alarms) == 1
+    assert alarms[0].payload["connection_id"] == connection.id
+    assert alarms[0].payload["error"] and "over the tolerance" in alarms[0].payload["error"]
 
 
 async def test_a_reclaim_still_aborts_the_run_and_is_not_a_device_failure(
@@ -321,6 +344,10 @@ async def test_a_reclaim_still_aborts_the_run_and_is_not_a_device_failure(
     assert run.devices_failed == 0 and run.devices_processed == 0 and run.device_count == 0
 
     assert await _run_completed_events(db, run.id) == []
+    # No run.failed from the refused finish either. When the transition is the real
+    # _reclaim_stale's rather than this test's hand-written copy of it, the reclaim
+    # itself emits the one alarm — test_runs pins that end (#103).
+    assert await _run_failed_events(db, run.id) == []
 
 
 async def test_a_webhook_ingest_emits_no_run_completed(db, jamf: FakeJamf, connection) -> None:

@@ -84,6 +84,22 @@ STATUS_FAILED = "failed"
 # convention and staying out of the way of the pending casing ruling (#90).
 RUN_COMPLETED_EVENT = "run.completed"
 
+# Emitted the moment any run reaches `failed` — every trigger and every lock class,
+# unlike run.completed's device-sweep-only scope (#103). run.completed is the heartbeat
+# whose absence is the signal; this is the alarm, and a failed webhook or catalog run
+# is exactly as silent as a failed sweep without it. Both fire for a failed device
+# sweep, deliberately: one answers "did the sweep close", the other pages on why.
+# Default-on for every destination — null/empty subscriptions already mean "all", and
+# the a9d4c7e1f3b8 migration appends the type to every explicit list; the subs model
+# stays in charge, so an org unsubscribes a destination the ordinary way. Payload is
+# snake_case like run.completed's, one casing throughout (#90).
+RUN_FAILED_EVENT = "run.failed"
+
+# The error summary a run.failed event carries: the stored run error, truncated at the
+# same cap the delivery worker puts on an HTTP error — enough to say what happened,
+# never a log dump. The full text stays on the run row.
+_ERROR_SUMMARY_MAX = 500
+
 
 class RunReclaimed(Exception):
     """This process's run was reclaimed while it was still working.
@@ -192,6 +208,44 @@ def run_meta() -> dict[str, object]:
     }
 
 
+async def _enqueue_run_failed(
+    db: AsyncSession,
+    *,
+    run_id: uuid.UUID,
+    connection_id: int,
+    trigger: str,
+    window_start: datetime,
+    window_end: datetime,
+    error: str | None,
+) -> None:
+    """The run.failed event (#103), added to the caller's open transaction.
+
+    One builder for both producers — finish's failure path and the reclaim — so the
+    wire shape cannot drift between them. Exactly the ruled fields: trigger, the
+    connection by id and name, the run id, the window, and an error summary. Nothing
+    else rides along — no credentials, no log lines; anyone who needs the full story
+    has the run id and the run-log endpoint.
+    """
+    connection_name = (
+        await db.execute(select(MdmConnection.name).where(MdmConnection.id == connection_id))
+    ).scalar_one_or_none()
+    await enqueue_event(
+        db,
+        RUN_FAILED_EVENT,
+        {
+            "event_type": RUN_FAILED_EVENT,
+            "run_id": str(run_id),
+            "connection_id": connection_id,
+            "connection_name": connection_name,
+            "trigger": trigger,
+            "window_start": window_start.isoformat(),
+            "window_end": window_end.isoformat(),
+            "error": (error or "")[:_ERROR_SUMMARY_MAX] or None,
+        },
+        request_id=get_request_id(),
+    )
+
+
 async def _reclaim_stale(db: AsyncSession) -> int:
     """Fail every run in this tenant whose process stopped heartbeating.
 
@@ -200,26 +254,55 @@ async def _reclaim_stale(db: AsyncSession) -> int:
     it replaces failed runs that a *different, healthy* instance was still performing
     during a rolling restart — while that instance carried on writing under a status
     saying it had died.
+
+    The reclaim is a run reaching `failed`, so it is loud the same two ways finish's
+    failure path is (#103): a final line into the run's own log — which otherwise just
+    stops mid-sweep after the last progress line — and a run.failed event, both in the
+    same transaction as the verdict. This is the failure that most needs the wire: the
+    process that would have reported it is the one that died.
     """
-    cutoff = _utcnow() - timedelta(seconds=settings.run_stale_after_seconds)
+    now = _utcnow()
+    cutoff = now - timedelta(seconds=settings.run_stale_after_seconds)
+    error = (
+        "reclaimed: no heartbeat within "
+        f"{settings.run_stale_after_seconds}s — the process running it stopped"
+    )
     result = await db.execute(
         update(Run)
         .where(Run.status == STATUS_RUNNING, Run.heartbeat_at < cutoff)
         .values(
             status=STATUS_FAILED,
-            finished_at=_utcnow(),
-            window_end=_utcnow(),
-            error="reclaimed: no heartbeat within "
-            f"{settings.run_stale_after_seconds}s — the process running it stopped",
+            finished_at=now,
+            window_end=now,
+            error=error,
         )
-        .returning(Run.id)
+        .returning(Run.id, Run.mdm_connection_id, Run.trigger, Run.window_start)
     )
-    reclaimed = list(result.scalars().all())
+    reclaimed = result.all()
     if reclaimed:
+        for row in reclaimed:
+            db.add(
+                RunLogLine(
+                    run_id=row.id,
+                    ts=now,
+                    level="error",
+                    message="run failed",
+                    fields={"error": error},
+                )
+            )
+            await _enqueue_run_failed(
+                db,
+                run_id=row.id,
+                connection_id=row.mdm_connection_id,
+                trigger=row.trigger,
+                window_start=row.window_start,
+                window_end=now,
+                error=error,
+            )
         await db.commit()
         logger.warning(
             "reclaimed runs with no heartbeat",
-            extra={"count": len(reclaimed), "run_ids": [str(run_id) for run_id in reclaimed]},
+            extra={"count": len(reclaimed), "run_ids": [str(row.id) for row in reclaimed]},
         )
     return len(reclaimed)
 
@@ -459,8 +542,11 @@ async def finish(
 
     A device-sweep run also emits `run.completed` (#92), enqueued in the same
     transaction as the status flip so "the run closed" and "the wire says it closed"
-    can never drift apart. Not for a refused finish — the reclaim's verdict stands and
-    a reclaimed run emits nothing, so the absence downstream is the signal.
+    can never drift apart. And any run that closes `failed` also emits `run.failed`
+    (#103) — every trigger and every lock class, because a failed webhook or catalog
+    run is exactly as silent as a failed sweep. Neither fires for a refused finish —
+    the reclaim's verdict stands, and the reclaim already emitted its own run.failed
+    when it wrote that verdict, so a second event here would double-count one failure.
     """
     now = _utcnow()
     status = STATUS_SUCCEEDED if ok else STATUS_FAILED
@@ -479,7 +565,7 @@ async def finish(
             observations=observations or None,
             error=error,
         )
-        .returning(Run.id, Run.mdm_connection_id, Run.trigger, Run.comparison, Run.lock_class)
+        .returning(Run.id, Run.mdm_connection_id, Run.trigger, Run.comparison, Run.lock_class, Run.window_start)
     )
     row = closed.first()
     if row is not None and row.lock_class == LOCK_DEVICE_SWEEP:
@@ -501,6 +587,16 @@ async def finish(
                 "status": status,
             },
             request_id=get_request_id(),
+        )
+    if row is not None and not ok:
+        await _enqueue_run_failed(
+            db,
+            run_id=row.id,
+            connection_id=row.mdm_connection_id,
+            trigger=row.trigger,
+            window_start=row.window_start,
+            window_end=now,
+            error=error,
         )
     await db.commit()
     if row is None:

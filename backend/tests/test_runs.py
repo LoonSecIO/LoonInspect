@@ -112,6 +112,19 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+async def _run_failed_events(db, run_id) -> list:
+    """Every run.failed event this run emitted, matched by payload rather than by
+    recency — the shared local database accumulates events across tests."""
+    from app.models.schema import EventOutbox
+
+    rows = (
+        await db.execute(
+            select(EventOutbox).where(EventOutbox.event_type == "run.failed").order_by(EventOutbox.id)
+        )
+    ).scalars().all()
+    return [row for row in rows if row.payload.get("run_id") == str(run_id)]
+
+
 # --- the mutex ------------------------------------------------------------------------
 
 
@@ -208,7 +221,26 @@ async def test_a_run_with_no_heartbeat_is_reclaimed(db, connection) -> None:
     await db.refresh(reclaimed)
     assert reclaimed.status == STATUS_FAILED
     assert reclaimed.error and "heartbeat" in reclaimed.error
+
+    # The reclaim is loud (#103): the run's own log states the failure — before this,
+    # a reclaimed run's log just stopped mid-sweep after the last progress line — and
+    # the wire carries one run.failed with the reclaim's own error as the summary.
+    from app.models.schema import RunLogLine
+
+    lines = (
+        await db.execute(select(RunLogLine).where(RunLogLine.run_id == dead.run.id).order_by(RunLogLine.id))
+    ).scalars().all()
+    assert lines[-1].level == "error" and lines[-1].message == "run failed"
+    assert "heartbeat" in lines[-1].fields["error"]
+
+    events = await _run_failed_events(db, dead.run.id)
+    assert len(events) == 1
+    assert events[0].payload["trigger"] == TRIGGER_SWEEP
+    assert "heartbeat" in events[0].payload["error"]
+
     await finish(db, revived.run, ok=True)
+    # A run that closed cleanly emits no run.failed — the alarm never cries wolf.
+    assert await _run_failed_events(db, revived.run.id) == []
 
 
 async def test_a_beating_run_is_not_reclaimed(db, connection) -> None:
@@ -288,6 +320,59 @@ async def test_a_reclaimed_run_cannot_be_resurrected_by_its_zombie(db, connectio
         await db.execute(select(RunLogLine.message).where(RunLogLine.run_id == zombie.run.id))
     ).scalars().all()
     assert any("finish refused" in message for message in messages)
+
+    # (d) A refused finish emits no run.failed either — the reclaim owns this run's
+    # one alarm, and the zombie's late `failed` on the wire would double-count it.
+    assert await _run_failed_events(db, zombie.run.id) == []
+
+
+async def test_a_failed_run_emits_exactly_one_run_failed_with_the_ruled_fields(db, connection) -> None:
+    """The wire half of #103: the moment finish writes `failed`, one run.failed leaves
+    through the outbox in the same transaction — trigger, the connection by id and
+    name, the run id, the window, and the stored error truncated to a summary. Nothing
+    else: no credentials, no log lines; the run id is the pointer to the full story.
+    """
+    from app.core.runs import LOCK_DEVICE_SWEEP, TRIGGER_MANUAL, acquire, finish
+
+    long_error = "Jamf returned 502 at page 41 of the inventory pull; " * 20  # far past the cap
+    failed = await acquire(db, connection, trigger=TRIGGER_MANUAL, lock_class=LOCK_DEVICE_SWEEP)
+    await finish(db, failed.run, ok=False, error=long_error)
+
+    events = await _run_failed_events(db, failed.run.id)
+    assert len(events) == 1
+    payload = events[0].payload
+    assert set(payload) == {
+        "event_type", "run_id", "connection_id", "connection_name", "trigger",
+        "window_start", "window_end", "error",
+    }
+    assert payload["event_type"] == "run.failed"
+    assert payload["connection_id"] == connection.id
+    assert payload["connection_name"] == connection.name
+    assert payload["trigger"] == TRIGGER_MANUAL
+    assert payload["window_start"] == failed.run.window_start.isoformat()
+    assert payload["window_end"]  # stamped from the same instant as the row's window_end
+    # Truncated sanely: the summary is the error's head, never the whole text.
+    assert payload["error"] == long_error[:500]
+
+
+async def test_a_failed_webhook_run_emits_run_failed_unlike_run_completed(db, connection) -> None:
+    """run.completed excludes webhook runs because success-per-webhook is volume
+    without signal — but a failed webhook run is exactly as silent as a failed sweep,
+    which is why #103 scopes the alarm to every trigger and every lock class."""
+    from app.core.runs import LOCK_WEBHOOK, TRIGGER_WEBHOOK, acquire, finish
+    from app.models.schema import EventOutbox
+
+    hook = await acquire(db, connection, trigger=TRIGGER_WEBHOOK, lock_class=LOCK_WEBHOOK)
+    await finish(db, hook.run, ok=False, error="device record vanished mid-ingest")
+
+    events = await _run_failed_events(db, hook.run.id)
+    assert len(events) == 1
+    assert events[0].payload["trigger"] == TRIGGER_WEBHOOK
+    # And still no run.completed for a webhook run — the #92 exclusion is untouched.
+    completed = (
+        await db.execute(select(EventOutbox).where(EventOutbox.event_type == "run.completed"))
+    ).scalars().all()
+    assert all(row.payload.get("run_id") != str(hook.run.id) for row in completed)
 
 
 # --- the window, and the `_time` rule ---------------------------------------------------

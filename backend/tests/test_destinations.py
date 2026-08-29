@@ -20,10 +20,11 @@ from pydantic import ValidationError
 def test_enqueued_event_types_are_known() -> None:
     from app.changes.derive import EVENT_TYPE
     from app.core.outbox import KNOWN_EVENT_TYPES
-    from app.core.runs import RUN_COMPLETED_EVENT
+    from app.core.runs import RUN_COMPLETED_EVENT, RUN_FAILED_EVENT
 
     assert EVENT_TYPE in KNOWN_EVENT_TYPES
     assert RUN_COMPLETED_EVENT in KNOWN_EVENT_TYPES
+    assert RUN_FAILED_EVENT in KNOWN_EVENT_TYPES
 
 
 def test_destination_can_subscribe_to_device_change() -> None:
@@ -32,6 +33,18 @@ def test_destination_can_subscribe_to_device_change() -> None:
     created = DestinationCreate(name="siem", url="https://siem.example/hook", subscribed_events=["device.change"])
     assert created.subscribed_events == ["device.change"]
     updated = DestinationUpdate(subscribed_events=["device.change", "device.inventory.changed"])
+    assert updated.subscribed_events is not None
+
+
+def test_destination_can_subscribe_to_run_failed() -> None:
+    """#86's precedent, applied to #103: the type finish and the reclaim enqueue must
+    be subscribable by the same name, or the alarm only flows through the null path."""
+    from app.core.runs import RUN_FAILED_EVENT
+    from app.schemas.destinations import DestinationCreate, DestinationUpdate
+
+    created = DestinationCreate(name="pager", url="https://pager.example/hook", subscribed_events=[RUN_FAILED_EVENT])
+    assert created.subscribed_events == [RUN_FAILED_EVENT]
+    updated = DestinationUpdate(subscribed_events=[RUN_FAILED_EVENT, "run.completed"])
     assert updated.subscribed_events is not None
 
 
@@ -103,4 +116,73 @@ async def test_subscribed_destination_receives_device_change(db) -> None:
         )
         await db.execute(delete(EventOutbox).where(EventOutbox.id == event_id))
         await db.execute(delete(Destination).where(Destination.id.in_([subscriber_id, bystander_id])))
+        await db.commit()
+
+
+@pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1")
+@pytest.mark.asyncio(loop_scope="session")
+async def test_migration_appends_run_failed_to_explicit_subscription_lists(db) -> None:
+    """The default-on ruling (#103), as data: a destination that spelled out a list
+    before run.failed existed gets the type appended; a null list already means "all"
+    and is left alone; a list that somehow already carries it collects no duplicate.
+
+    Runs the migration's own UPDATE — imported from the revision file, not restated
+    here, so this cannot drift from what `alembic upgrade` actually executes. The
+    tenant-bound test session stands in for the migration's per-tenant set_config
+    walk, which is the same dance two earlier data migrations already do.
+    """
+    import importlib.util
+
+    from sqlalchemy import delete, select, text
+
+    from app.models.schema import Destination
+
+    path = os.path.join(
+        os.path.dirname(__file__), "..", "migrations", "versions", "a9d4c7e1f3b8_run_failed_default_on.py"
+    )
+    spec = importlib.util.spec_from_file_location("migration_a9d4c7e1f3b8", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    tag = uuidlib.uuid4().hex[:8]
+    explicit = Destination(
+        name=f"pre-ruling siem {tag}", url="https://siem.example/hook", subscribed_events=["device.change"]
+    )
+    unfiltered = Destination(name=f"everything {tag}", url="https://all.example/hook", subscribed_events=None)
+    already = Destination(
+        name=f"hand-subscribed {tag}", url="https://pager.example/hook", subscribed_events=["run.failed"]
+    )
+    db.add_all([explicit, unfiltered, already])
+    await db.commit()
+    ids = {"explicit": explicit.id, "unfiltered": unfiltered.id, "already": already.id}
+
+    try:
+        await db.execute(text(migration.ADD_RUN_FAILED))
+        await db.commit()
+
+        # Columns, not entities: the raw UPDATE went around the ORM, and an entity
+        # select would answer from the identity map's pre-migration state.
+        subs = dict(
+            (
+                await db.execute(
+                    select(Destination.id, Destination.subscribed_events).where(
+                        Destination.id.in_(list(ids.values()))
+                    )
+                )
+            ).all()
+        )
+        assert subs[ids["explicit"]] == ["device.change", "run.failed"]
+        assert subs[ids["unfiltered"]] is None
+        assert subs[ids["already"]] == ["run.failed"]
+
+        # And the downgrade takes it back out without disturbing the rest of the list.
+        await db.execute(text(migration.REMOVE_RUN_FAILED))
+        await db.commit()
+        removed = (
+            await db.execute(select(Destination.subscribed_events).where(Destination.id == ids["explicit"]))
+        ).scalar_one()
+        assert removed == ["device.change"]
+    finally:
+        await db.rollback()
+        await db.execute(delete(Destination).where(Destination.id.in_(list(ids.values()))))
         await db.commit()
