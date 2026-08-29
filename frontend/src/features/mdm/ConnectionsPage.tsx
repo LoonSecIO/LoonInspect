@@ -21,9 +21,11 @@ export function ConnectionsPage() {
   const canSync = useHasPermission(PERMISSIONS.DEVICE_SYNC);
   const [connections, setConnections] = useState<MdmConnection[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [formMode, setFormMode] = useState<FormMode>("closed");
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [syncStatuses, setSyncStatuses] = useState<Record<number, MdmSyncStatus>>({});
   const [syncingId, setSyncingId] = useState<number | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -33,10 +35,15 @@ export function ConnectionsPage() {
 
   async function refresh() {
     setLoading(true);
+    setLoadError(null);
     try {
       const [rows, statuses] = await Promise.all([listConnections(), listSyncStatus()]);
       setConnections(rows);
       setSyncStatuses(Object.fromEntries(statuses.map((s) => [s.mdmConnectionId, s])));
+    } catch {
+      // Without this, a failed load leaves connections empty and the table says
+      // "no connections yet" — failure must not read as emptiness.
+      setLoadError(t.settings.errorLoading);
     } finally {
       setLoading(false);
     }
@@ -83,10 +90,16 @@ export function ConnectionsPage() {
 
   async function handleDelete(id: number) {
     setDeleting(true);
+    setDeleteError(null);
     try {
       await deleteConnection(id);
       setPendingDeleteId(null);
       await refresh();
+    } catch (caught) {
+      // refresh() reports its own failures, so this catch is the delete call's.
+      setDeleteError(
+        caught instanceof ApiError && caught.detail ? caught.detail : t.settings.errorDeleting
+      );
     } finally {
       setDeleting(false);
     }
@@ -110,6 +123,12 @@ export function ConnectionsPage() {
       {syncError && (
         <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
           {syncError}
+        </p>
+      )}
+
+      {deleteError && (
+        <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          {deleteError}
         </p>
       )}
 
@@ -145,7 +164,14 @@ export function ConnectionsPage() {
                 </td>
               </tr>
             )}
-            {!loading && connections.length === 0 && (
+            {!loading && loadError && (
+              <tr>
+                <td className="px-4 py-4 text-destructive" colSpan={7}>
+                  {loadError}
+                </td>
+              </tr>
+            )}
+            {!loading && !loadError && connections.length === 0 && (
               <tr>
                 <td className="px-4 py-4 text-muted-foreground" colSpan={7}>
                   {t.settings.empty}

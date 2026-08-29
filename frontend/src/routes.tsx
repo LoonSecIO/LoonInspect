@@ -59,6 +59,10 @@ export function AppRoutes() {
         </Route>
         <Route element={<RequirePermission permission={PERMISSIONS.FEATURE_FLAG_WRITE} />}>
           <Route path="settings/feature-flags" element={<FeatureFlagsPage />} />
+        </Route>
+        {/* SYSTEM_READ to match the backend's GET gate and the sidebar item — the
+            page itself hides its write controls without SYSTEM_WRITE. */}
+        <Route element={<RequirePermission permission={PERMISSIONS.SYSTEM_READ} />}>
           <Route path="settings/data-sharing" element={<DataSharingPage />} />
         </Route>
         <Route element={<RequirePermission permission={PERMISSIONS.TOKEN_CREATE} />}>
