@@ -255,10 +255,18 @@ async def run_collection(
                 connection_id=connection_id, ok=False, error=str(exc), collection_id=collection_id
             )
 
+        if not result.ok:
+            # A failure result means the handler inside run_jamf / run_jamf_catalog
+            # rolled the session back, which expired every ORM instance in it (#125).
+            # Reload the two this frame keeps using — writing the collection's
+            # accounting and finishing the run both read them — or the bookkeeping
+            # below raises MissingGreenlet and the run sits 'running' until reclaim.
+            await db.refresh(collection)
+            await db.refresh(run)
         collection.last_run_at = started
         collection.last_run_status = "ok" if result.ok else "failed"
         collection.last_run_summary = {
-            "jobId": str(run.id),
+            "jobId": job_id,
             "trigger": trigger,
             "deviceCount": result.device_count,
             "devicesFailed": result.devices_failed,

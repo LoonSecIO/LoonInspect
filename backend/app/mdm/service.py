@@ -237,6 +237,11 @@ async def run_jamf(
     many collections in turn and one expired credential must not abort the rest.
     """
     quarantine = tuple(quarantined_extension_attributes)
+    # Read while the instance is certainly live: the generic handler below runs after
+    # a rollback, which expires every ORM instance in the session even with
+    # expire_on_commit=False — and an expired attribute read under asyncio raises
+    # MissingGreenlet instead of lazily refreshing (#125).
+    connection_id = connection.id
     try:
         client = get_mdm_client(connection)
         result = await _sync_jamf(
@@ -284,12 +289,20 @@ async def run_jamf(
         )
     except Exception as exc:
         await db.rollback()
-        await set_sync_status(db, connection, SyncStatus.failed)
+        # Logged first, from the primitives captured above — the log line must land
+        # with the right connection id even if the status write below cannot.
         logger.exception(
             "jamf sweep failed",
-            extra={"connection_id": connection.id, "collection_id": collection_id, "trigger": trigger},
+            extra={"connection_id": connection_id, "collection_id": collection_id, "trigger": trigger},
         )
-        return ConnectionSyncResult(connection_id=connection.id, ok=False, error=str(exc), collection_id=collection_id)
+        # The rollback expired the connection instance; reload it before
+        # set_sync_status reads it, or the MissingGreenlet raised here left the
+        # status stuck 'syncing' and collections_tick's blanket handler ate the
+        # crash (#125). The sweep published 'syncing' before it started, so a
+        # terminal status must land or the UI shows a sync that never ends.
+        await db.refresh(connection)
+        await set_sync_status(db, connection, SyncStatus.failed)
+        return ConnectionSyncResult(connection_id=connection_id, ok=False, error=str(exc), collection_id=collection_id)
 
     logger.info(
         "jamf sweep finished",
@@ -325,6 +338,9 @@ async def run_jamf_catalog(
     """The catalog class on its own: smart-group definitions with criteria, no devices.
     Tens to hundreds of small reads, so it can run far more often than a sweep and
     timestamp a criteria edit finer than the sweep would."""
+    # Same discipline as run_jamf (#125): captured before the handler's rollback can
+    # expire the instance, because an expired read under asyncio raises MissingGreenlet.
+    connection_id = connection.id
     try:
         client = get_mdm_client(connection)
         outcomes: Counter[str] = Counter()
@@ -350,9 +366,9 @@ async def run_jamf_catalog(
         await db.rollback()
         logger.exception(
             "jamf catalog refresh failed",
-            extra={"connection_id": connection.id, "collection_id": collection_id, "trigger": trigger},
+            extra={"connection_id": connection_id, "collection_id": collection_id, "trigger": trigger},
         )
-        return ConnectionSyncResult(connection_id=connection.id, ok=False, error=str(exc), collection_id=collection_id)
+        return ConnectionSyncResult(connection_id=connection_id, ok=False, error=str(exc), collection_id=collection_id)
 
     logger.info(
         "jamf catalog refreshed",
@@ -682,6 +698,14 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
             )
         except Exception as exc:
             await db.rollback()
+            # The rollback expired every ORM instance in the session; reload the run
+            # before finish() reads its id, or the MissingGreenlet raised there let
+            # the route 500 instead of answering its designed error and left the run
+            # 'running' until the reclaim (#125). A fetch failure fails the run
+            # deliberately — including Jamf answering 404 for a computer deleted
+            # between the webhook and the fetch: there is no inventory to ingest, the
+            # row records why, and run.failed carries it to the wire (#103).
+            await db.refresh(run)
             await finish(db, run, ok=False, error=str(exc))
             raise
         # The return is deliberately unchecked: if a slow fetch let the reclaim take
