@@ -143,6 +143,17 @@ operational tenant renders it as one switch):
   `com.acme.*`) filters tuples out of snapshots entirely — belt and suspenders ahead
   of the server's own rules.
 
+### AI inference (INSPECT-0112)
+
+The same settings row carries a second, independent consent: `ai_inference`
+(default **off**), governing whether any byte may leave the pod for AI inference.
+It is deliberately not a fourth tier — the tiers describe the community exchange —
+and deliberately not a feature flag: the `ai_features` flag turns the AI feature
+area on, the consent decides whether anything may leave. Both default off; the gate
+every AI feature must call, and the standing doctrine (no model-sourced numbers,
+fleet-identifying payloads BYO-key or on-device only, no silent egress), live in
+`backend/app/core/ai.py`.
+
 ## The exchange (outbound contract, v1)
 
 One conversation per tenant per day. The upload is simultaneously the feed query; the
@@ -219,6 +230,12 @@ the response's request list. Rows older than 90 days are pruned on write.
 - The payload column is plain JSONB, not `EncryptedString` — the data has already left;
   the log's value is that it is inspectable, and pretending it is secret would be
   theater.
+
+Permitted off-pod AI inference calls write to the **same log** (one log is the
+point): tier `ai`, the destination as the endpoint, and a payload naming the feature
+and the field-level disclosure of what left — field names only, never contents.
+These rows are not exchange attempts; the exchange's scheduling and the
+"last exchange" status ignore them.
 
 The share log and the "show what would be sent" button are the same honesty told two
 ways: the button shows the future, the log proves the past.

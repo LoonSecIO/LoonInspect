@@ -8,6 +8,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.ai import AI_SHARE_TIER
 from app.core.audit import AuditAction, audit
 from app.core.auth import require
 from app.core.config import settings
@@ -40,14 +41,22 @@ async def update_status() -> UpdateStatusOut:
 
 
 async def _sharing_out(db: AsyncSession, row) -> DataSharingOut:
+    # AI-inference rows share the log but are not exchanges; "last exchange" must
+    # not start reporting an inference call as one.
     last = (
-        await db.execute(select(ShareLog).order_by(desc(ShareLog.occurred_at)).limit(1))
+        await db.execute(
+            select(ShareLog)
+            .where(ShareLog.tier != AI_SHARE_TIER)
+            .order_by(desc(ShareLog.occurred_at))
+            .limit(1)
+        )
     ).scalar_one_or_none()
     return DataSharingOut(
         tier=row.tier,
         submission_uuid=str(row.submission_uuid),
         exclude_globs=list(row.exclude_globs or []),
         env_disabled=not settings.community_sharing,
+        ai_inference=row.ai_inference,
         last_exchange_at=last.occurred_at if last else None,
         last_exchange_outcome=last.outcome if last else None,
     )
@@ -78,6 +87,8 @@ async def update_data_sharing(
         row.tier = payload.tier.value
     if payload.exclude_globs is not None:
         row.exclude_globs = [g.strip() for g in payload.exclude_globs if g.strip()]
+    if payload.ai_inference is not None:
+        row.ai_inference = payload.ai_inference
     row.updated_at = datetime.now(timezone.utc)
     await db.commit()
 
@@ -86,6 +97,7 @@ async def update_data_sharing(
         target_type="data_sharing",
         tier=row.tier,
         exclude_glob_count=len(row.exclude_globs or []),
+        ai_inference=row.ai_inference,
     )
     return await _sharing_out(db, row)
 

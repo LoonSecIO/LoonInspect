@@ -203,8 +203,12 @@ def _jitter_minute_of_day(settings_row: DataSharingSettings) -> int:
 
 
 async def _last_attempt_at(db: AsyncSession) -> datetime | None:
+    # AI-inference rows share the log (app.core.ai writes tier "ai" — one log is the
+    # point) but are not exchange attempts: without this filter, one permitted
+    # inference call after the day's slot would suppress the community exchange.
+    # The literal rather than ai.AI_SHARE_TIER because ai imports this module.
     row = (
-        await db.execute(select(func.max(ShareLog.occurred_at)))
+        await db.execute(select(func.max(ShareLog.occurred_at)).where(ShareLog.tier != "ai"))
     ).scalar_one_or_none()
     return row
 
