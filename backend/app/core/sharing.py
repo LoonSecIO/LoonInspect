@@ -177,7 +177,14 @@ async def post_exchange(
 ) -> dict:
     """POST with in-run backoff. A 413 drops the reveals and retries once, per the
     contract; anything else exhausts the delays and raises to the caller, whose job
-    is to log a failed attempt and wait for tomorrow."""
+    is to log a failed attempt and wait for tomorrow.
+
+    "Anything else" includes a 200 whose body is not JSON — a captive portal or a
+    misconfigured CDN answering with text/html. `response.json()` raises
+    `json.JSONDecodeError`, a `ValueError` and not an `httpx.HTTPError`, so it is
+    caught alongside one here (the same pairing `update_check._fetch_head_sha` uses
+    against the same hazard). Without it the decode error escaped the loop and the
+    caller both, and the day's attempt was never logged."""
     headers = {"User-Agent": build_user_agent("exchange")}
     async with httpx.AsyncClient(timeout=10.0, transport=transport) as client:
         body = request_body
@@ -192,7 +199,7 @@ async def post_exchange(
                     continue
                 response.raise_for_status()
                 return response.json() if response.content else {}
-            except httpx.HTTPError as exc:
+            except (httpx.HTTPError, ValueError) as exc:
                 last_error = exc
         raise last_error if last_error else RuntimeError("exchange failed")
 
@@ -260,9 +267,15 @@ async def run_exchange(db: AsyncSession, *, transport: httpx.AsyncBaseTransport 
     )
     try:
         response = await post_exchange(request_body, transport=transport)
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, ValueError) as exc:
         # Debug, not warning: an air-gapped instance with sharing left on is a
         # supported configuration, not a daily fault.
+        #
+        # ValueError is post_exchange's undecodable-body case (see its docstring),
+        # and it has to be caught *here* too or the row below is never added: an
+        # unlogged attempt is also an unconsumed day, so `exchange_due` would say
+        # yes again on the next tick and a persistently bad upstream would become a
+        # crash loop instead of one logged failure a day.
         logger.debug("exchange failed: %s", exc)
         log.error = str(exc)[:2000]
     else:

@@ -119,6 +119,24 @@ async def test_persistent_failure_raises_after_the_delays() -> None:
     assert calls == 4  # the initial attempt plus one per delay
 
 
+@pytest.mark.asyncio
+async def test_a_200_that_is_not_json_is_a_failed_attempt_not_an_escape() -> None:
+    """A captive portal or a misconfigured CDN answering 200 text/html. The decode
+    error is a ValueError, not an httpx.HTTPError, so it used to sail past the retry
+    loop and out of run_exchange before the share-log row was written. It is a
+    failed attempt like any other now: retried, then raised to the caller to log."""
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, text="<html>Sign in to the guest network</html>")
+
+    with pytest.raises(ValueError):
+        await post_exchange({"contract": "v1"}, transport=httpx.MockTransport(handler))
+    assert calls == 4
+
+
 # --- due-ness ---------------------------------------------------------------------
 
 
