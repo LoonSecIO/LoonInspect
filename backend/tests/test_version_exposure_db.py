@@ -147,6 +147,35 @@ async def test_system_version_needs_a_session(seeded: uuidlib.UUID) -> None:
     assert response.status_code == 401
 
 
+async def test_a_narrow_api_token_can_still_read_the_build(seeded: uuidlib.UUID) -> None:
+    """The scriptable half of the ruling, and the path the macOS client will take.
+
+    A token scoped to device:read holds no SYSTEM_READ, and must still answer "what
+    build is this?" — otherwise reporting a bug from a script means minting a token
+    broad enough to also read behind-ness, which is the fact being protected.
+    """
+    from app.core.version import get_app_version
+
+    async with _client() as c:
+        await _login(c, ADMIN)
+        created = await c.post(
+            "/api/auth/tokens",
+            headers={"X-CSRF-Token": c.cookies["loon_csrf"]},
+            json={"name": "version probe", "scopes": ["device:read"], "expiresInDays": 1},
+        )
+        assert created.status_code == 201, f"{created.status_code} {created.text}"
+        bearer = {"Authorization": f"Bearer {created.json()['token']}"}
+
+    # A second client so the session cookie cannot be what authenticates these.
+    async with _client() as c:
+        version = await c.get("/api/system/version", headers=bearer)
+        update_status = await c.get("/api/system/update-status", headers=bearer)
+
+    assert version.status_code == 200
+    assert version.json()["version"] == get_app_version()
+    assert update_status.status_code == 403
+
+
 async def test_system_version_needs_no_permission(seeded: uuidlib.UUID) -> None:
     """A viewer holds no SYSTEM_READ, and must still be able to say what it is running.
 

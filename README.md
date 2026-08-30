@@ -181,10 +181,11 @@ them:
 
 **In the app.** The sidebar footer carries it on every page, for anyone signed in.
 
-**Over the API.** Any account can ask, no permission required:
+**Over the API.** Any session or API token can ask — no permission required, so even a
+narrowly scoped token works:
 
 ```bash
-curl -s --cookie jar.txt https://your-host/api/system/version
+curl -s -H "Authorization: Bearer $LOONINSPECT_TOKEN" https://your-host/api/system/version
 ```
 
 **From the host, without signing in.** The image carries the same answer, so a locked
