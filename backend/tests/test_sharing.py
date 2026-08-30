@@ -80,12 +80,16 @@ async def test_successful_exchange_returns_the_response_body() -> None:
         return httpx.Response(200, json={"contract": "v1", "reveal_requests": []})
 
     result = await post_exchange({"contract": "v1"}, transport=httpx.MockTransport(handler))
-    assert result == {"contract": "v1", "reveal_requests": []}
+    assert result.response == {"contract": "v1", "reveal_requests": []}
+    # Nothing was given up to earn that 200, and the share log must be able to say so.
+    assert result.reveals_shed is False
 
 
 @pytest.mark.asyncio
-async def test_413_drops_reveals_and_retries_once() -> None:
-    """The contract's halving rule: too large → resend keys-only."""
+async def test_413_sheds_the_reveals_and_resends_the_same_snapshot() -> None:
+    """The contract's 413 rule, as implemented: the reveals are shed and the snapshot
+    is resent byte-for-byte. Nothing halves the snapshot — docs/data-sharing.md used
+    to say it did (INSPECT-0083), and this is the shape it now describes."""
     seen: list[dict] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -97,12 +101,54 @@ async def test_413_drops_reveals_and_retries_once() -> None:
             return httpx.Response(413)
         return httpx.Response(200, json={})
 
+    snapshot = {"apps": [{"title": "v1:aa", "full": "v1:bb", "count": 2}]}
+    result = await post_exchange(
+        {"contract": "v1", "snapshot": snapshot, "reveals": [{"title": "v1:aa"}]},
+        transport=httpx.MockTransport(handler),
+    )
+    assert result.response == {}
+    assert [bool(b["reveals"]) for b in seen] == [True, False]
+    # The snapshot is untouched by the shed: only the reveals were given up.
+    assert [b["snapshot"] for b in seen] == [snapshot, snapshot]
+
+
+@pytest.mark.asyncio
+async def test_a_shed_is_reported_to_the_caller() -> None:
+    """A 200 to a reveal-less retry is byte-identical to a 200 to the whole
+    submission, so the response cannot carry this — the result object does, and the
+    share log row is the thing that would otherwise overclaim."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        return httpx.Response(413 if json.loads(request.content)["reveals"] else 200, json={})
+
     result = await post_exchange(
         {"contract": "v1", "reveals": [{"title": "v1:aa"}]},
         transport=httpx.MockTransport(handler),
     )
-    assert result == {}
-    assert [bool(b["reveals"]) for b in seen] == [True, False]
+    assert result.reveals_shed is True
+
+
+@pytest.mark.asyncio
+async def test_a_413_against_a_reveal_less_body_is_an_ordinary_failure() -> None:
+    """The container has nothing left to give up, which is why the contract requires
+    the server never to 413 a reveal-less snapshot: the run burns its remaining
+    attempts and the day is lost rather than degraded."""
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(413)
+
+    with pytest.raises(httpx.HTTPError):
+        await post_exchange(
+            {"contract": "v1", "reveals": [{"title": "v1:aa"}]},
+            transport=httpx.MockTransport(handler),
+        )
+    # Four attempts total: the shed consumes one of them rather than adding a fifth.
+    assert calls == 4
 
 
 @pytest.mark.asyncio

@@ -396,6 +396,12 @@ class ShareLog(Base):
     # sent | failed | skipped_env
     outcome: Mapped[str] = mapped_column(String(16))
     payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # The 413 path sheds the reveals and retries, so on those days `payload` is a
+    # superset of the body that earned the 200: everything above left the box except
+    # the reveals array. Without this marker the row is indistinguishable from an
+    # ordinary reveal day, which makes "exactly what left the box" a claim the log
+    # cannot support. False on every other row, including failures.
+    reveals_shed: Mapped[bool] = mapped_column(Boolean, default=False)
     reveal_requests: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
