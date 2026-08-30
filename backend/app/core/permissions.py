@@ -67,6 +67,11 @@ class Permission(StrEnum):
     # The running build itself is a weaker fact and needs no permission, only a
     # session (GET /api/system/version); pre-auth it is withheld too, since after
     # the repo goes public a sha answers the behind-ness question on its own (#130).
+    #
+    # Withholding either one is a speed bump, not a boundary — the source is public and
+    # a deployment can be fingerprinted regardless. Nothing may be left unguarded on the
+    # grounds that it is hard to find; see "Hiding something is not a control" in
+    # SECURITY.md before reasoning from what an attacker can see.
     SYSTEM_READ = "system:read"
 
     # Consent changes for community data sharing. Granted to no role explicitly, so
