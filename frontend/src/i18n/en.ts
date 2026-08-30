@@ -38,7 +38,7 @@ export const en = {
       excludeHelp:
         "Glob patterns, one per line. Matching applications never enter a snapshot at all — filtered before aggregation, ahead of any server-side rule.",
       lastExchange: "Last exchange",
-      neverExchanged: "never — the exchange job is not active yet",
+      neverExchanged: "never — no exchange has been recorded yet",
       revealsShed: "reveals shed — the server refused the full submission and took a reveal-less retry",
       logHeading: "Share log",
       logHelp: "Every exchange attempt, with the verbatim payload the run assembled — byte-accurate history of what left this instance. A row marked revealsShed sent everything in its payload except the reveals. Retained for 90 days.",

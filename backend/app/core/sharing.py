@@ -119,6 +119,13 @@ async def build_reveals(db: AsyncSession, settings_row: DataSharingSettings) -> 
     if settings_row.tier != "reveal" or not pending:
         return []
 
+    # The exclude list has to be applied here too, and this is the path where it
+    # actually matters: the snapshot sends content-hash keys, while this one sends the
+    # plaintext name. An operator who excluded com.acme.* and watched it drop out of
+    # the preview would otherwise still have those names cross the wire the moment the
+    # server asked about the title (INSPECT-0174).
+    globs = list(settings_row.exclude_globs or [])
+
     rows = (
         await db.execute(
             select(
@@ -142,6 +149,8 @@ async def build_reveals(db: AsyncSession, settings_row: DataSharingSettings) -> 
 
     by_title: dict[str, dict] = {}
     for row in rows:
+        if _excluded(row.bundle_id, globs):
+            continue
         entry = by_title.setdefault(
             row.key_title,
             {"title": row.key_title, "app_name": row.name, "bundle_id": row.bundle_id, "versions": []},
