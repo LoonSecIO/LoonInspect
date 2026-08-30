@@ -12,9 +12,15 @@ frontend/dist
 **/*.py[cod]
 
 # Local state and secrets
-.env
-.env.*
-!.env.example
+# `**/`, not bare: a bare pattern here is anchored at the context root, so `.env`
+# would exclude only /.env — while the Dockerfile's `COPY backend/ ./` and
+# backend/README.md's `cp .env.example .env` together produce backend/.env, which
+# would then be baked into the image and live-read by config.py's env_file at
+# /app/.env. Reads like .gitignore, where a bare pattern DOES match at any depth;
+# that mismatch is what hid this (INSPECT-0175).
+**/.env
+**/.env.*
+!**/.env.example
 **/*.db
 **/*.sqlite3
 backend/data

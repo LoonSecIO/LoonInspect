@@ -67,6 +67,71 @@ async def clean(db):
     await _reset(db)
 
 
+async def test_exclude_globs_cover_the_reveal_path(db, clean) -> None:
+    """The operator's exclude list must gag the plaintext path, not just the hashes.
+
+    Until INSPECT-0174 `_excluded` had one call site — build_exchange_request — so an
+    excluded app vanished from the snapshot (and from the preview button, which is the
+    trust feature) while its NAME still crossed the wire the moment the server asked
+    about the title. The snapshot leaks a hash; this path leaks "Acme Payroll". Both
+    apps below are pending reveals; only the unexcluded one may come back.
+    """
+    import uuid as uuidlib
+
+    from app.core.sharing import build_reveals
+    from app.models.schema import DataSharingSettings, Device, InstalledApp
+
+    suffix = uuidlib.uuid4().hex[:8]
+    device = Device(
+        mdm_provider="jamf",
+        external_id=f"reveal-{suffix}",
+        serial_number=f"SER{suffix}",
+        hostname=f"host-{suffix}",
+    )
+    db.add(device)
+    await db.commit()
+
+    secret_key = f"v1:secret{suffix}"[:67]
+    public_key = f"v1:public{suffix}"[:67]
+
+    def app(name, bundle_id, key):
+        return InstalledApp(
+            device_id=device.id, name=name, bundle_id=bundle_id, version="1.0",
+            app_hash=uuidlib.uuid4().hex, version_hash=uuidlib.uuid4().hex,
+            key_title=key, key_full=key,
+        )
+
+    db.add_all([
+        app(f"Acme Payroll {suffix}", "com.acme.payroll", secret_key),
+        app(f"Google Chrome {suffix}", "com.google.Chrome", public_key),
+    ])
+    await db.commit()
+
+    row = (await db.execute(select(DataSharingSettings))).scalar_one()
+    row.tier = "reveal"
+    row.pending_reveal_keys = [secret_key, public_key]
+    row.exclude_globs = ["com.acme.*"]
+    await db.commit()
+
+    try:
+        reveals = await build_reveals(db, row)
+    finally:
+        row.exclude_globs = []
+        row.pending_reveal_keys = []
+        await db.commit()
+        await db.execute(delete(InstalledApp).where(InstalledApp.device_id == device.id))
+        await db.execute(delete(Device).where(Device.id == device.id))
+        await db.commit()
+
+    titles = {entry["title"] for entry in reveals}
+    assert public_key in titles, "an unexcluded pending title must still be revealed"
+    assert secret_key not in titles, "an excluded bundle id leaked its title through the reveal path"
+    # The name is the thing that must not travel; assert on it directly rather than
+    # trusting that filtering the title was enough.
+    names = {entry["app_name"] for entry in reveals}
+    assert not any(name.startswith("Acme Payroll") for name in names), f"plaintext name leaked: {names}"
+
+
 async def _exchange_rows(db) -> list:
     from app.models.schema import ShareLog
 

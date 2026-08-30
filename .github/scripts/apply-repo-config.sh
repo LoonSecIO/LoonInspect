@@ -96,6 +96,22 @@ else
   blocked "CM-03 is only partly covered by the policy workflow's path checks"
 fi
 
+# --- Private vulnerability reporting --------------------------------------
+# SECURITY.md names this as the ONLY disclosure channel and tells reporters not to
+# open a public issue. Until this runs, that instruction points at a 404 — which is
+# inert while the repository is private and nobody outside can reach it, and becomes
+# the front door the moment it is public (INSPECT-0175). Available on every plan.
+step "Private vulnerability reporting (SECURITY.md's disclosure channel)"
+
+if $DRY_RUN; then
+  printf '  [dry-run] enable private vulnerability reporting\n'
+elif run gh api -X PUT "repos/$REPO/private-vulnerability-reporting" >/dev/null 2>&1; then
+  ok "private vulnerability reporting enabled — SECURITY.md's channel is live"
+else
+  blocked "could not enable private vulnerability reporting; SECURITY.md's only"
+  blocked "  disclosure channel stays closed. Enable it under Settings → Security."
+fi
+
 step "Done"
 echo "  Anything marked BLOCKED is a plan constraint, not a failure. See"
 echo "  docs/BRANCHING.md §8 for the current state and how to unblock it."

@@ -591,10 +591,30 @@ and removed in the next commit is still published. This is the failure mode that
 cannot be fixed after the fact: rotation is the only remedy, and it has to
 happen before the flip rather than after.
 
-CM-03's scanner (§8.3) is what makes this checkable. A full-history scan of a
-mirror clone on 2026-08-18 found **0 verified secrets across all 20 refs**, and
-`.env` has never been committed on any ref. That is the baseline; it must be
-re-established during cleanup, not inherited from this document.
+CM-03's scanner (§8.3) is what makes this checkable. **Baseline, 2026-08-30:** a
+mirror clone scanned **without `--only-verified`** across **all 73 refs (69 of them
+`refs/pull/*`), 172 commits, 3,063 chunks** found **0 verified and 2 unverified
+secrets**. Both unverified hits are the same PyPI sha256 in `backend/uv.lock:1259`,
+matched by the SentryToken detector because both shapes are 64 hex characters — a
+false positive, not a finding. `.env` has never been committed on any ref.
+
+Two corrections to how this was previously measured, either of which would have let
+a real credential through:
+
+- The prior baseline said "0 verified secrets across all 20 refs" (2026-08-18). The
+  remote advertises 73. Twenty was the branch-and-tag count, not the published
+  surface — and the refs that were missing are precisely the `refs/pull/*` ones the
+  paragraph above warns about. One of the two hits above sits on a commit that is
+  **not** an ancestor of `main`, which is what proves this sweep reached them.
+- Run it **without `--only-verified`**. Verification asks a provider whether a
+  credential is live, and a Fernet `ENCRYPTION_KEY`, a Postgres password, a Splunk
+  HEC token and a Jamf client secret have no provider to ask. They can never verify,
+  so they can never appear in a verified-only count however plainly they are
+  committed. That flag is right for the blocking PR gate and wrong for this audit.
+
+Re-establish the baseline during cleanup rather than inheriting it from this
+document, and **record the ref count and date with it** — a bare "0 secrets" cannot
+be told apart from "0 secrets in the 27% we looked at" a month later.
 
 ```bash
 git clone --mirror https://github.com/LoonSecIO/LoonInspect.git audit.git

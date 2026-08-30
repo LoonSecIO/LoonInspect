@@ -140,8 +140,11 @@ operational tenant renders it as one switch):
 - **`COMMUNITY_SHARING=false`** (env) hard-disables regardless of UI state, for fleet
   and air-gapped deployments; the UI shows the override as the reason.
 - Tier changes are audit-logged. An operator exclude list (glob on bundle_id, e.g.
-  `com.acme.*`) filters tuples out of snapshots entirely — belt and suspenders ahead
-  of the server's own rules.
+  `com.acme.*`) filters matching apps out of **both** paths — the snapshot's hashed
+  tuples and the reveal path's plaintext names — belt and suspenders ahead of the
+  server's own rules. Both, deliberately: until INSPECT-0174 the filter covered only
+  snapshots, so an excluded app still had its name revealed once the server asked
+  about the title. Anything added here that sends app data must apply `_excluded`.
 
 ### AI inference (INSPECT-0112)
 

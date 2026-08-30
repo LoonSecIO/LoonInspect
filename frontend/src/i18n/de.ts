@@ -40,7 +40,7 @@ export const de: Translations = {
       excludeHelp:
         "Glob-Muster, eines pro Zeile. Passende Anwendungen gelangen nie in einen Snapshot — gefiltert vor der Aggregation, vor jeder serverseitigen Regel.",
       lastExchange: "Letzter Austausch",
-      neverExchanged: "nie — der Austausch-Job ist noch nicht aktiv",
+      neverExchanged: "nie — bisher wurde kein Austausch aufgezeichnet",
       revealsShed: "Reveals verworfen — der Server lehnte die vollständige Übermittlung ab und nahm einen Wiederholungsversuch ohne Reveals an",
       logHeading: "Freigabeprotokoll",
       logHelp: "Jeder Austauschversuch mit der wörtlichen Payload, die der Lauf zusammengestellt hat — byte-genaue Historie dessen, was diese Instanz verlassen hat. Eine mit revealsShed markierte Zeile hat alles aus ihrer Payload gesendet außer den Reveals. 90 Tage aufbewahrt.",
