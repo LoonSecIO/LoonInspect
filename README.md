@@ -205,11 +205,26 @@ is a fresh instance that nobody has claimed yet: the first-run setup page shows 
 build, because at that moment it is already offering the next caller an admin account
 and has nothing left to protect.
 
-This withholds the version *string*; it does not make the build unknowable to someone
-determined. Static assets are served with a `Last-Modified` of the image build time,
-which gives away the date half, and the shipped SPA bundle is itself a fingerprint of
-the frontend tree. Both are inherent to serving a client bundle built from a public
-repo. What is protected is the exact commit, which is the part that maps to a diff.
+This withholds the version *string*. It does not make the build unknowable to someone
+determined, and two accepted exposures are worth stating plainly rather than leaving
+for a reader to discover (issues #130 and #170):
+
+- **Static assets carry a `Last-Modified` of the image build time**, so the date half
+  is one anonymous request away. Accepted deliberately: removing it correctly means
+  also giving the static path an explicit caching policy it does not have today, and
+  the naive version of the fix is worse than the leak. The mtime is currently what
+  keeps browser heuristic caching honest — freeze it to a constant and browsers will
+  serve a stale app shell for years. If you revisit this, remove the headers; never
+  fake them.
+- **The shipped SPA bundle names the frontend commit.** The Vite build is
+  bit-reproducible, so `/assets/index-<hash>.js` in the page source is a lookup key
+  into public history for anyone willing to rebuild it once. Inherent to serving a
+  client bundle built from a public repo.
+
+So the accurate claim is that the build is no longer *stated*, not that it is secret.
+What the version rule still buys is real: naming it required no rebuild table, and
+the bundle hash only moves when the frontend does — most changes here are backend-only,
+which is where the API's own security fixes live.
 
 ---
 
