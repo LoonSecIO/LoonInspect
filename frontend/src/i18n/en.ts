@@ -253,12 +253,48 @@ export const en = {
   },
   overview: {
     eyebrow: "LoonInspect",
-    title: "Backend Security Dashboard",
-    description: "Monitor MDM sync status, vulnerability manifests, and endpoint application inventory.",
-    apiConnectionTitle: "API Connection",
-    apiConnectionPrefix: "The Vite dev server proxies frontend requests from",
-    apiConnectionSuffix: "to FastAPI.",
-    checkApiStatus: "Check API Status"
+    title: "Overview",
+
+    // The setup stepper (#104): the state every new pod opens in, checked off from
+    // real endpoint state rather than from anything remembered in the browser.
+    setupEyebrow: "Getting started",
+    setupTitle: "Get your fleet into Splunk",
+    promise: "Your fleet inventory: 40,000 devices in about 10 minutes.",
+    stepLabel: (step: number) => `Step ${step}`,
+    stepOptional: "Optional",
+    stepDone: "Done",
+    step1Title: "Connect Jamf Pro",
+    step1Body: "Point LoonInspect at your Jamf Pro server and give it read-only API credentials.",
+    step1Action: "Add a connection",
+    step2Title: "Run your first sync",
+    step2Body:
+      "The first sweep pulls every device, group and application into this pod. It becomes the baseline every later change is measured against.",
+    step2Action: "Start the first sync",
+    step3Title: "Send it to Splunk",
+    step3Body:
+      "Add a Splunk HEC destination and everything LoonInspect records is forwarded as it happens. You can do this later.",
+    step3Action: "Add a destination",
+
+    // The hero while a full sync is in flight.
+    firstSyncTitle: "First sync in progress",
+    syncTitle: "Sync in progress",
+    syncFailedTitle: "Sync failed",
+    elapsedLabel: "Elapsed",
+    devicesLabel: "Devices",
+    groupsLabel: "Groups",
+    engineLog: "Engine log",
+    openConnection: "Open the connection",
+
+    // The settled line the hero leaves behind.
+    baselineEstablished: (utc: string) => `Baseline established ${utc}`,
+    runPrefix: "run",
+    baselineCounts: (devices: number, groups: number, duration: string) =>
+      `${devices} device${devices === 1 ? "" : "s"}, ${groups} group${groups === 1 ? "" : "s"} in ${duration}`,
+    seeYourFleet: "See your fleet",
+
+    loading: "Loading…",
+    loadError: "Could not load your setup state.",
+    setupHiddenForRole: "Setup for this pod is managed by an administrator."
   },
   vulnerabilities: {
     eyebrow: "Security",

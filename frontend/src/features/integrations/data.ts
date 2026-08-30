@@ -17,7 +17,9 @@ export const INTEGRATION_GROUPS: IntegrationGroup[] = [
       // they're configured.
       { id: "runreveal", status: "available", href: "/settings/destinations", logoUrl: "/logos/runreveal.svg" },
       { id: "elastic", status: "available", href: "/settings/destinations" },
-      { id: "splunk", status: "comingSoon" },
+      // Splunk HEC has been a destination type since the outbox landed; the card said
+      // "coming soon" while the product shipped it (#88).
+      { id: "splunk", status: "available", href: "/settings/destinations" },
       { id: "datadog", status: "comingSoon", logoUrl: "/logos/datadog.svg", logoUrlDark: "/logos/datadog.png" },
       { id: "webhook", status: "comingSoon" }
     ]
