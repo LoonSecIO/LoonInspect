@@ -22,10 +22,13 @@ function Elapsed({ startedAt, live }: { startedAt: string; live: boolean }) {
 }
 
 function Counter({ label, value }: { label: string; value: number }) {
+  // Grouped in the language the UI is in, not the one the browser is in.
+  const { locale } = useLocale();
+
   return (
     <div>
       <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="font-mono text-2xl tabular-nums">{value.toLocaleString()}</p>
+      <p className="font-mono text-2xl tabular-nums">{value.toLocaleString(locale === "de" ? "de-DE" : "en-US")}</p>
     </div>
   );
 }

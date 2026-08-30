@@ -288,7 +288,8 @@ export const de: Translations = {
     baselineEstablished: (utc: string) => `Basislinie erstellt ${utc}`,
     runPrefix: "Durchlauf",
     baselineCounts: (devices: number, groups: number, duration: string) =>
-      `${devices} Gerät${devices === 1 ? "" : "e"}, ${groups} Gruppe${groups === 1 ? "" : "n"} in ${duration}`,
+      `${devices.toLocaleString("de-DE")} Gerät${devices === 1 ? "" : "e"}, ` +
+      `${groups.toLocaleString("de-DE")} Gruppe${groups === 1 ? "" : "n"} in ${duration}`,
     seeYourFleet: "Zur Geräteliste",
 
     loading: "Wird geladen…",

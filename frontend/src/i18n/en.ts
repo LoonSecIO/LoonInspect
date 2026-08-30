@@ -288,8 +288,11 @@ export const en = {
     // The settled line the hero leaves behind.
     baselineEstablished: (utc: string) => `Baseline established ${utc}`,
     runPrefix: "run",
+    // Grouped in this language's own convention rather than the browser's: a German
+    // reader on an en-US browser should still see 40.128, and vice versa.
     baselineCounts: (devices: number, groups: number, duration: string) =>
-      `${devices} device${devices === 1 ? "" : "s"}, ${groups} group${groups === 1 ? "" : "s"} in ${duration}`,
+      `${devices.toLocaleString("en-US")} device${devices === 1 ? "" : "s"}, ` +
+      `${groups.toLocaleString("en-US")} group${groups === 1 ? "" : "s"} in ${duration}`,
     seeYourFleet: "See your fleet",
 
     loading: "Loading…",

@@ -25,13 +25,13 @@ function BaselineLine({ run }: { run: Run | null }) {
       {run ? (
         <>
           <span>{t.overview.baselineEstablished(formatUtc(run.finishedAt ?? run.startedAt))}</span>
-          <span className="text-muted-foreground">·</span>
+          {/* Each separator travels with the segment it introduces; the alternative
+              leaves a lone "·" on its own line whenever the card wraps. */}
           <span className="text-muted-foreground">
-            {t.overview.runPrefix} <code className="font-mono text-xs">{run.id}</code>
+            · {t.overview.runPrefix} <code className="font-mono text-xs">{run.id}</code>
           </span>
-          <span className="text-muted-foreground">·</span>
           <span className="text-muted-foreground">
-            {t.overview.baselineCounts(run.deviceCount, run.groupCount, runDuration(run))}
+            · {t.overview.baselineCounts(run.deviceCount, run.groupCount, runDuration(run))}
           </span>
         </>
       ) : null}
