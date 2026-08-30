@@ -5,13 +5,6 @@ export type MdmProviderType = "jamf";
 // was closed off; it can be displayed but no longer selected (see ConnectionForm).
 export type PatchManagementProvider = "none" | "jamf" | "loonsecio";
 
-export interface MdmSyncStatus {
-  provider: MdmProviderType;
-  lastSyncAt: string | null;
-  status: "idle" | "syncing" | "failed";
-  deviceCount: number;
-}
-
 export interface ProviderCredentialField {
   key: string;
   label: string;
