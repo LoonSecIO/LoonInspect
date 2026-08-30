@@ -4,11 +4,13 @@ import { Input } from "@/components/ui/input";
 import { ApiError } from "@/config/api";
 import { changeOwnPassword } from "@/features/accounts/api";
 import { useAuthStore } from "@/features/auth/store";
+import { useBuildVersion } from "@/features/system/useBuildVersion";
 import { useLocale } from "@/i18n/LocaleContext";
 
 export function MyAccountPage() {
   const { t } = useLocale();
   const user = useAuthStore((state) => state.user);
+  const version = useBuildVersion();
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -53,7 +55,7 @@ export function MyAccountPage() {
         <p className="mt-1 text-sm text-muted-foreground">{t.myAccount.description}</p>
       </div>
 
-      <div className="grid gap-4 rounded-lg border bg-card p-4 sm:grid-cols-3">
+      <div className="grid gap-4 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <p className="text-xs text-muted-foreground">{t.myAccount.name}</p>
           <p className="text-sm font-medium">{user?.displayName ?? "—"}</p>
@@ -65,6 +67,16 @@ export function MyAccountPage() {
         <div>
           <p className="text-xs text-muted-foreground">{t.myAccount.roles}</p>
           <p className="text-sm font-medium">{user?.roles.join(", ") || "—"}</p>
+        </div>
+        {/* The build lives here as well as in the sidebar footer because the sidebar
+            is hidden below 768px and can be switched off — and since #130 took this
+            answer off the sign-in page, at least one in-app surface has to be one the
+            operator cannot lose. */}
+        <div>
+          <p className="text-xs text-muted-foreground">{t.myAccount.build}</p>
+          <p className="truncate font-mono text-sm font-medium" title={version ?? undefined}>
+            {version ?? "—"}
+          </p>
         </div>
       </div>
 

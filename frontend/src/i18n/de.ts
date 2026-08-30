@@ -210,6 +210,7 @@ export const de: Translations = {
     name: "Name",
     email: "E-Mail",
     roles: "Rollen",
+    build: "Build",
     changePassword: "Passwort ändern",
     changing: "Wird geändert…",
     currentPassword: "Aktuelles Passwort",

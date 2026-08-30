@@ -16,10 +16,19 @@ from app.core.database import get_db
 from app.core.permissions import Permission
 from app.core.sharing import build_exchange_request, get_or_create_settings
 from app.core.update_check import get_update_status
+from app.core.version import get_app_version
 from app.models.schema import ShareLog
-from app.schemas.system import DataSharingOut, DataSharingUpdate, UpdateStatusOut
+from app.schemas.system import DataSharingOut, DataSharingUpdate, UpdateStatusOut, VersionOut
 
 router = APIRouter(prefix="/api/system", tags=["system"])
+
+
+@router.get("/version", response_model=VersionOut)
+async def version() -> VersionOut:
+    """The build this instance is running. Authenticated but unprivileged: anyone who
+    can sign in should be able to answer "what am I running?" when they file a bug.
+    Behind-ness stays behind SYSTEM_READ below — that is the sensitive half."""
+    return VersionOut(version=get_app_version())
 
 
 @router.get(

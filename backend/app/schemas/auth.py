@@ -27,9 +27,13 @@ class AuthStatusOut(_CamelModel):
 
     setup_required: bool
     authenticated: bool
-    # The running build, e.g. "2026.08.20+99361ed" — or the dev sentinel. Shown on
-    # the sign-in screen; deliberately exposed unauthenticated (see issue #41).
-    version: str
+    # The running build, e.g. "2026.08.20+99361ed" — or the dev sentinel. None for an
+    # anonymous caller on a claimed instance: once the repo is public the sha resolves
+    # to a commit, so an exact build read off the sign-in page is a list of the fixes
+    # this instance is missing (issue #130, narrowing the #41 exposure). Still sent
+    # pre-auth while setup_required, where nobody owns the instance yet and the
+    # first-run operator has no other surface to read it from.
+    version: str | None
 
 
 class AccountOut(_CamelModel):

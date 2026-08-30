@@ -207,6 +207,7 @@ export const en = {
     name: "Name",
     email: "Email",
     roles: "Roles",
+    build: "Build",
     changePassword: "Change password",
     changing: "Changing…",
     currentPassword: "Current password",

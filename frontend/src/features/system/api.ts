@@ -14,6 +14,16 @@ export function getUpdateStatus(): Promise<UpdateStatusResponse> {
   return apiRequest<UpdateStatusResponse>("/system/update-status");
 }
 
+export interface VersionResponse {
+  version: string;
+}
+
+/** The running build. Needs a session but no permission — /auth/status withholds it
+ *  from anonymous callers, so this is where a signed-in surface reads it. */
+export function getVersion(): Promise<VersionResponse> {
+  return apiRequest<VersionResponse>("/system/version");
+}
+
 export type SharingTier = "off" | "keys" | "reveal";
 
 export interface DataSharingSettings {

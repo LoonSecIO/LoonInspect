@@ -4,6 +4,7 @@ import { NavLink } from "react-router";
 import { cn } from "@/lib/utils";
 import { FlaskLogo } from "@/components/icons/FlaskLogo";
 import { useAuthStore } from "@/features/auth/store";
+import { BuildVersion } from "@/features/system/BuildVersion";
 import { PERMISSIONS, type PermissionName } from "@/features/auth/types";
 import { useLocale } from "@/i18n/LocaleContext";
 import type { Translations } from "@/i18n/en";
@@ -146,7 +147,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "hidden min-h-[calc(100vh-3.5rem)] border-r bg-muted/30 p-4 md:block",
+        "hidden min-h-[calc(100vh-3.5rem)] flex-col border-r bg-muted/30 p-4 md:flex",
         collapsed ? "w-16" : "w-64"
       )}
     >
@@ -190,6 +191,10 @@ export function Sidebar() {
           );
         })}
       </nav>
+
+      <div className="mt-auto pt-4">
+        <BuildVersion collapsed={collapsed} />
+      </div>
     </aside>
   );
 }
