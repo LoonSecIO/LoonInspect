@@ -14,9 +14,10 @@ What is pinned, by section:
 
 1. **Fan-out.** Which destinations get a delivery row (subscribed, catch-all, and
    the empty list the model documents as "all"), the defaults a new delivery row
-   carries, and the one-way `fanned_out` flag — which is why fan-out is one-shot:
-   an event is burned even when there is nothing to deliver it to, so a destination
-   created (or re-enabled) afterwards never receives it.
+   carries, and the one-way `fanned_out` flag — set once the event has been
+   *considered* against the enabled destinations. Considered-and-declined counts: a
+   destination subscribed to other event types marks the event without producing a
+   row. Nothing enabled at all does not count, and the event is held (#157).
 2. **The shape of the passes.** Both read every matching row with every column,
    with no LIMIT — `fan_out_pending` drags the full JSONB payload out of the
    database purely to flip a boolean. Pinned by capturing the SQL, because it is the
@@ -28,7 +29,8 @@ What is pinned, by section:
    disabled-destination path that leaves a delivery pending on purpose.
 5. **Retention.** `purge_delivered_events` refusing to touch an event that still
    holds one pending delivery — and what that composes into when a destination is
-   left disabled, which is the open storage question on #81.
+   left disabled, which is the open storage question on #81. Held events carry no
+   delivery row, so nothing shields them: they age out on the ordinary window (#157).
 
 Everything runs against a real Postgres in a tenant of this file's own
 (`…-000000000154`), so RLS makes the counts exact rather than "whatever else the
@@ -235,11 +237,11 @@ async def test_fan_out_reads_an_empty_subscription_list_as_all_events(db) -> Non
     assert delivery.destination_id == empty.id
 
 
-async def test_fan_out_skips_a_disabled_destination_and_burns_the_event_anyway(db) -> None:
-    """Both halves are the behaviour on main. The event is marked fanned out even
-    though the pass created nothing for it, so re-enabling the destination a minute
-    later does not backfill: those events are gone as far as this destination is
-    concerned. Worth questioning, not fixed here."""
+async def test_fan_out_holds_the_event_when_the_only_destination_is_disabled(db) -> None:
+    """A disabled destination is not an enabled destination, so the pass has nothing
+    to consider and holds the event rather than burning it (#157). Re-enabling the
+    destination a minute later therefore *does* backfill — the ordinary next pass
+    picks the held event up, with no re-fan machinery involved."""
     from app.core.outbox import enqueue_event, fan_out_pending
 
     disabled = _destination("switched off", enabled=False)
@@ -249,33 +251,99 @@ async def test_fan_out_skips_a_disabled_destination_and_burns_the_event_anyway(d
 
     assert await fan_out_pending(db) == 0
     assert await _deliveries(db) == []
-    assert event.fanned_out is True
+    assert event.fanned_out is False
 
     disabled.enabled = True
     await db.commit()
-    assert await fan_out_pending(db) == 0
-    assert await _deliveries(db) == []
+    assert await fan_out_pending(db) == 1
+    (delivery,) = await _deliveries(db)
+    assert delivery.destination_id == disabled.id
+    assert event.fanned_out is True
 
 
-async def test_fan_out_is_one_shot_so_a_later_destination_never_sees_the_event(db) -> None:
-    """The fresh-install case: events produced before any destination exists are
-    burned by the first tick of the worker, and the destination configured that
-    afternoon starts from empty. Worth questioning, not fixed here."""
+async def test_fan_out_holds_events_produced_before_any_destination_exists(db) -> None:
+    """The onboarding case #157 was filed for. The setup stepper orders connect →
+    first sync → add a destination, and calls the last step optional, so a whole
+    baseline sweep normally completes with nothing configured. Those events wait
+    instead of being consumed by the first worker tick."""
     from app.core.outbox import enqueue_event, fan_out_pending
 
     event = await enqueue_event(db, EVENT_TYPE, {"event": EVENT_TYPE})
     await db.commit()
 
     assert await fan_out_pending(db) == 0
-    assert event.fanned_out is True
+    assert event.fanned_out is False
 
     db.add(_destination("configured later"))
     await db.commit()
 
-    # Nothing left to select: the flag, not the absence of deliveries, is what the
-    # pass looks at.
+    # Still selectable, because the flag was never set: the destination added that
+    # afternoon receives the morning's baseline.
+    assert await fan_out_pending(db) == 1
+    assert len(await _deliveries(db)) == 1
+    assert event.fanned_out is True
+
+
+async def test_fan_out_marks_an_event_no_destination_subscribes_to(db) -> None:
+    """The line between "considered and declined" and "nothing to consider".
+
+    A destination that exists but is subscribed to other event types produces no
+    delivery row — and that event is still burned, because it *was* judged against the
+    destinations that exist and legitimately not delivered. Only the empty-destination
+    case holds. Getting this wrong would hold subscription-filtered events for ever and
+    quietly redefine what `subscribed_events` means.
+    """
+    from app.core.outbox import enqueue_event, fan_out_pending
+
+    db.add(_destination("runs only", subscribed_events=["run.completed"]))
+    event = await enqueue_event(db, EVENT_TYPE, {"event": EVENT_TYPE})
+    await db.commit()
+
+    # Zero rows created, exactly as when no destination exists — and the flag is what
+    # tells the two apart.
     assert await fan_out_pending(db) == 0
     assert await _deliveries(db) == []
+    assert event.fanned_out is True
+
+    # So it is not re-considered when a subscriber for its type arrives later.
+    db.add(_destination("everything"))
+    await db.commit()
+    assert await fan_out_pending(db) == 0
+    assert await _deliveries(db) == []
+
+
+async def test_the_baseline_reaches_a_destination_added_after_the_first_sync(db, monkeypatch) -> None:
+    """#157 end to end, through both passes: events enqueued with nothing configured,
+    a Splunk destination added afterwards, and the next worker tick POSTing every one
+    of them. This is the whole reason the hold exists — the first sweep is the largest
+    and most interesting pull the pod will ever do."""
+    from app.core.outbox import deliver_pending, enqueue_event, fan_out_pending
+
+    seen = _mock_posts(monkeypatch)
+
+    for index in range(5):
+        await enqueue_event(db, EVENT_TYPE, {"event": EVENT_TYPE, "index": index})
+    await db.commit()
+
+    # The worker ticks all through the baseline sweep with no destination configured.
+    for _tick in range(3):
+        await fan_out_pending(db)
+        await deliver_pending(db)
+    assert seen == []
+    assert await _counts(db) == (5, 0)
+
+    destination = _destination("splunk, added that afternoon")
+    db.add(destination)
+    await db.commit()
+
+    await fan_out_pending(db)
+    await deliver_pending(db)
+
+    assert len(seen) == 5
+    deliveries = await _deliveries(db)
+    assert len(deliveries) == 5
+    assert {row.status for row in deliveries} == {"delivered"}
+    assert {json.loads(request.content)["index"] for request in seen} == set(range(5))
 
 
 async def test_fan_out_drains_every_unfanned_event_in_a_single_pass(db) -> None:
@@ -677,19 +745,26 @@ async def test_one_pending_delivery_keeps_the_event_and_its_delivered_sibling(db
     assert await _counts(db) == (0, 0)
 
 
-async def test_an_event_that_was_never_fanned_out_is_never_purged(db) -> None:
-    """`fanned_out.is_(True)` is part of the candidate filter, so an event the worker
-    never reached is kept for ever rather than dropped unsent. Protective as written;
-    it also means a tenant whose worker never ran accumulates outbox rows that no
-    retention setting will ever clear."""
+async def test_a_held_event_ages_out_on_the_ordinary_retention_window(db) -> None:
+    """The other half of #157's ruling. Holding un-fanned events (so a destination
+    added later still receives them) would be unbounded growth on a pod that never
+    adds one, because a held event has no delivery row for the still-pending guard to
+    protect it with. Age is therefore the whole candidate test: seven days to
+    configure a destination and collect the baseline, then the queue stops being a
+    queue."""
     from app.core.outbox import enqueue_event, purge_delivered_events
 
     event = await enqueue_event(db, EVENT_TYPE, {"event": EVENT_TYPE})
     await db.commit()
-    await _age_event(db, event, days=365)
 
+    # Inside the window it is still waiting for a destination, not garbage.
     assert await purge_delivered_events(db, 7) == 0
     assert await _counts(db) == (1, 0)
+
+    await _age_event(db, event, days=8)
+    assert event.fanned_out is False
+    assert await purge_delivered_events(db, 7) == 1
+    assert await _counts(db) == (0, 0)
 
 
 async def test_a_disabled_destination_makes_its_events_immortal(db, monkeypatch) -> None:

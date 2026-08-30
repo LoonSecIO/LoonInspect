@@ -686,8 +686,12 @@ class EventOutbox(Base):
     # the application log.
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    # Set once OutboxDelivery rows exist for this event. Lets the worker find only new
-    # events instead of re-scanning ones it has already fanned out.
+    # Set once this event has been considered against the enabled destinations — which
+    # is not the same as "a delivery row exists": a destination subscribed to other
+    # event types is a considered-and-declined answer, and marks the event too. When no
+    # destination is enabled at all there is nothing to consider, so the event stays
+    # false and waits for one to be added (see fan_out_pending). Lets the worker find
+    # only new events instead of re-scanning ones it has already fanned out.
     fanned_out: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
 
