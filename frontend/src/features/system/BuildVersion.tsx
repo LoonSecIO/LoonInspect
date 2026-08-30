@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
 import { Info } from "lucide-react";
-import { getVersion } from "@/features/system/api";
+import { useBuildVersion } from "@/features/system/useBuildVersion";
 import { useLocale } from "@/i18n/LocaleContext";
 
 interface BuildVersionProps {
@@ -10,30 +9,14 @@ interface BuildVersionProps {
   collapsed?: boolean;
 }
 
-/** The build this instance is running, parked in the sidebar footer so a signed-in
- *  operator can always answer "what am I on?" without hunting for a page.
+/** The build this instance is running, in the sidebar footer.
  *
- *  Fetches rather than reading the auth store: /auth/status only carries the version
- *  for a caller who was already signed in when it ran, so a fresh login in the same
- *  page load would leave the store holding the anonymous null (issue #130). */
+ *  Ambient, not authoritative: the sidebar is hidden below 768px and can be switched
+ *  off entirely, so Settings → My Account carries the same value as the surface that
+ *  cannot disappear. Both exist because #130 took this answer off the sign-in page. */
 export function BuildVersion({ collapsed = false }: BuildVersionProps) {
   const { t } = useLocale();
-  const [version, setVersion] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    getVersion()
-      .then((result) => {
-        if (!cancelled) setVersion(result.version);
-      })
-      .catch(() => {
-        // Unreachable backend or a stale session: show nothing rather than an error
-        // in a chrome element nobody came here to read.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const version = useBuildVersion();
 
   if (!version) return null;
 

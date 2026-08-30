@@ -175,11 +175,14 @@ warn about this. Either terminate TLS in front, use `TLS_MODE=self-signed`, or s
 
 ## 🏷️ Which build am I running?
 
-Builds are named `YYYY.MM.DD+<short-sha>` — the date answers "how old is this?", the
-sha answers "exactly what code?". Three ways to read it, in the order you'll reach for
-them:
+Builds are named `YYYY.MM.DD+<sha>` — the date answers "how old is this?", the sha
+answers "exactly what code?". A local build following the command above gets the short
+sha; images built by CI carry the full 40-character one. Three ways to read it, in the
+order you'll reach for them:
 
-**In the app.** The sidebar footer carries it on every page, for anyone signed in.
+**In the app.** The sidebar footer carries it on every page — but the sidebar is hidden
+below 768px and can be switched off, so **Settings → My Account** shows the same value
+and is always reachable. Either way, any signed-in account can see it.
 
 **Over the API.** Any session or API token can ask — no permission required, so even a
 narrowly scoped token works:
@@ -201,6 +204,12 @@ already have an account here, not for anyone who can reach the port. The one exc
 is a fresh instance that nobody has claimed yet: the first-run setup page shows the
 build, because at that moment it is already offering the next caller an admin account
 and has nothing left to protect.
+
+This withholds the version *string*; it does not make the build unknowable to someone
+determined. Static assets are served with a `Last-Modified` of the image build time,
+which gives away the date half, and the shipped SPA bundle is itself a fingerprint of
+the frontend tree. Both are inherent to serving a client bundle built from a public
+repo. What is protected is the exact commit, which is the part that maps to a diff.
 
 ---
 
