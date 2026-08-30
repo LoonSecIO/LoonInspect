@@ -202,7 +202,9 @@ export function DataSharingPage() {
         <p className="text-sm text-muted-foreground">
           {t.system.sharing.lastExchange}:{" "}
           {settings.lastExchangeAt
-            ? `${new Date(settings.lastExchangeAt).toLocaleString()} (${settings.lastExchangeOutcome ?? "?"})`
+            ? `${new Date(settings.lastExchangeAt).toLocaleString()} (${settings.lastExchangeOutcome ?? "?"}${
+                settings.lastExchangeRevealsShed ? `, ${t.system.sharing.revealsShed}` : ""
+              })`
             : t.system.sharing.neverExchanged}
         </p>
         <p className="text-sm text-muted-foreground">{t.system.sharing.logHelp}</p>

@@ -24,6 +24,8 @@ export interface DataSharingSettings {
   envDisabled: boolean;
   lastExchangeAt: string | null;
   lastExchangeOutcome: string | null;
+  /** The last exchange answered a 413 by dropping its reveals — a degraded "sent". */
+  lastExchangeRevealsShed: boolean;
 }
 
 export function getDataSharing(): Promise<DataSharingSettings> {

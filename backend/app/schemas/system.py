@@ -40,6 +40,10 @@ class DataSharingOut(BaseModel):
     ai_inference: bool
     last_exchange_at: datetime | None = None
     last_exchange_outcome: str | None = None
+    # Whether that last exchange had to shed its reveals to a 413 (INSPECT-0083). The
+    # page says so beside the outcome: "sent" alone would report a degraded day as a
+    # whole one, and the share log is the only other place the difference shows.
+    last_exchange_reveals_shed: bool = False
 
 
 class DataSharingUpdate(BaseModel):

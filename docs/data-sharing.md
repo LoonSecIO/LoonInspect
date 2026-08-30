@@ -164,8 +164,15 @@ with empty arrays is a valid peer, and the container treats absent capabilities 
 ```
 POST {sharing_endpoint}/v1/exchange          default https://api.loonsec.io/v1/exchange
 Content-Type: application/json
-User-Agent: LoonInspect/<build-version> exchange
+User-Agent: LoonSecIO/<build-version> exchange
 ```
+
+The product token is `LoonSecIO`, not `LoonInspect`: every outbound call this
+container makes — the exchange, the update check, Jamf, the patch catalogue — is
+built by `app.core.user_agent.build_user_agent` from one setting
+(`user_agent_product_name`), and the trailing word is the per-caller comment. A
+server matching on the token should match that one, and treat the comment as the
+thing that distinguishes an exchange from an update check.
 
 ```jsonc
 // request
@@ -213,20 +220,36 @@ Semantics the server may rely on:
 - **Failure is silent and logged locally.** Timeout/5xx → exponential backoff within
   the run (3 attempts), then wait for tomorrow. No user-visible error, no repeating log
   noise — an air-gapped instance with sharing left on is a supported configuration.
-- `413` → the container halves the snapshot (keys only, no reveals) and retries once.
+- `413` → the container **sheds the reveals** and retries; the snapshot itself is never
+  shrunk. The retry is the next attempt in the same backoff schedule, not an extra one,
+  and it carries `"reveals": []` with the snapshot byte-for-byte unchanged. Reveals are
+  shed at most once per run: a `413` against a reveal-less body is an ordinary failure
+  from there on, retried until the delays are exhausted and then logged as failed. The
+  load-bearing consequence for the server: **it must never `413` a reveal-less
+  snapshot** — the container has nothing further to give up, so that is a day lost, not
+  a day degraded.
 - Unknown request fields must be ignored by the server; unknown response fields are
   ignored by the container. Contract changes bump the version string.
 
 ## The share log
 
 Every exchange writes one tenant-scoped row recording **exactly what left the box**:
-timestamp, tier, endpoint, outcome (sent / failed / skipped-by-env), the full request
-payload as transmitted (verbatim JSON — this is the point; reveals especially), and
-the response's request list. Rows older than 90 days are pruned on write.
+timestamp, tier, endpoint, outcome (sent / failed / skipped-by-env), the request payload
+the run assembled (verbatim JSON — this is the point; reveals especially), the
+`revealsShed` marker below, and the response's request list. Rows older than 90 days are
+pruned on write.
 
 - Read + download: `AUDIT_READ` (the auditor role exists precisely for "prove to me
   what this thing does").
 - Download: NDJSON of the selected range from Settings → Data Sharing.
+- **`revealsShed`.** True when the `413` path above ran and the submission the server
+  accepted was the reveal-less retry — so the row's `payload` is a *superset* of what
+  earned the `200`: everything in it left the box except the `reveals` array, which did
+  not. False on every ordinary day, which is what makes a `413` day legible after the
+  fact instead of looking like a normal reveal day. The payload is deliberately still
+  the assembled body rather than the shed one: an auditor asking "what did this instance
+  offer, and what did it actually send?" needs both halves, and one boolean beside the
+  full payload carries them where a rewritten payload would silently lose the first.
 - The payload column is plain JSONB, not `EncryptedString` — the data has already left;
   the log's value is that it is inspectable, and pretending it is secret would be
   theater.

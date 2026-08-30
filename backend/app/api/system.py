@@ -59,6 +59,7 @@ async def _sharing_out(db: AsyncSession, row) -> DataSharingOut:
         ai_inference=row.ai_inference,
         last_exchange_at=last.occurred_at if last else None,
         last_exchange_outcome=last.outcome if last else None,
+        last_exchange_reveals_shed=bool(last.reveals_shed) if last else False,
     )
 
 
@@ -162,6 +163,11 @@ async def download_share_log(
                 "endpoint": row.endpoint,
                 "outcome": row.outcome,
                 "payload": row.payload,
+                # True = the 413 path ran, so `payload` above is a superset of the body
+                # the server accepted: its reveals never left. The auditor's question
+                # ("exactly what left the box") needs this beside the payload, not a
+                # rewritten payload — see docs/data-sharing.md, "The share log".
+                "revealsShed": row.reveals_shed,
                 "revealRequests": row.reveal_requests,
                 "error": row.error,
             },

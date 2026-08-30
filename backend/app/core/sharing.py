@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from fnmatch import fnmatch
 
@@ -172,12 +173,28 @@ def apply_response(settings_row: DataSharingSettings, response: dict) -> None:
     # a shape the design doc explicitly leaves open.
 
 
+@dataclass(frozen=True)
+class ExchangeResult:
+    """What came back, and whether the reveals had to be shed to get it.
+
+    The response body alone cannot tell the caller that: a 200 to a reveal-less retry
+    is byte-identical to a 200 to the whole submission. The share log needs the
+    difference, because on a shed day the row's payload is a superset of the body the
+    server actually accepted (docs/data-sharing.md, "The share log")."""
+
+    response: dict
+    reveals_shed: bool = False
+
+
 async def post_exchange(
     request_body: dict, *, transport: httpx.AsyncBaseTransport | None = None
-) -> dict:
-    """POST with in-run backoff. A 413 drops the reveals and retries once, per the
-    contract; anything else exhausts the delays and raises to the caller, whose job
-    is to log a failed attempt and wait for tomorrow.
+) -> ExchangeResult:
+    """POST with in-run backoff. A 413 sheds the reveals and resends on the next
+    attempt in the same schedule, per the contract; anything else exhausts the delays
+    and raises to the caller, whose job is to log a failed attempt and wait for
+    tomorrow. The snapshot is never shrunk — shedding the reveals is the only relief
+    the container has, which is why the contract requires the server never to 413 a
+    reveal-less body.
 
     "Anything else" includes a 200 whose body is not JSON — a captive portal or a
     misconfigured CDN answering with text/html. `response.json()` raises
@@ -188,6 +205,9 @@ async def post_exchange(
     headers = {"User-Agent": build_user_agent("exchange")}
     async with httpx.AsyncClient(timeout=10.0, transport=transport) as client:
         body = request_body
+        # Sticky rather than recomputed from `body`: it is the record of what this run
+        # gave up, and it has to survive into the result that reports the eventual 200.
+        reveals_shed = False
         last_error: Exception | None = None
         for delay in (0, *_RETRY_DELAYS):
             if delay:
@@ -196,9 +216,10 @@ async def post_exchange(
                 response = await client.post(app_settings.sharing_endpoint, json=body, headers=headers)
                 if response.status_code == 413 and body.get("reveals"):
                     body = {**body, "reveals": []}
+                    reveals_shed = True
                     continue
                 response.raise_for_status()
-                return response.json() if response.content else {}
+                return ExchangeResult(response.json() if response.content else {}, reveals_shed)
             except (httpx.HTTPError, ValueError) as exc:
                 last_error = exc
         raise last_error if last_error else RuntimeError("exchange failed")
@@ -262,11 +283,14 @@ async def run_exchange(db: AsyncSession, *, transport: httpx.AsyncBaseTransport 
         occurred_at=now,
         tier=settings_row.tier,
         endpoint=app_settings.sharing_endpoint,
+        # The body this run assembled, which on a 413 day is a superset of the one the
+        # server accepted — `reveals_shed` below is what records the difference.
         payload=request_body,
         outcome="failed",
+        reveals_shed=False,
     )
     try:
-        response = await post_exchange(request_body, transport=transport)
+        result = await post_exchange(request_body, transport=transport)
     except (httpx.HTTPError, ValueError) as exc:
         # Debug, not warning: an air-gapped instance with sharing left on is a
         # supported configuration, not a daily fault.
@@ -279,7 +303,11 @@ async def run_exchange(db: AsyncSession, *, transport: httpx.AsyncBaseTransport 
         logger.debug("exchange failed: %s", exc)
         log.error = str(exc)[:2000]
     else:
+        response = result.response
         log.outcome = "sent"
+        # Only ever true on the success path: a run that shed and then failed anyway
+        # sent nothing the server kept, so "failed" is the whole story of that row.
+        log.reveals_shed = result.reveals_shed
         log.reveal_requests = response.get("reveal_requests") if isinstance(response, dict) else None
         apply_response(settings_row, response if isinstance(response, dict) else {})
 
