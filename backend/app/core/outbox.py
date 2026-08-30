@@ -167,11 +167,14 @@ async def fan_out_pending(db: AsyncSession) -> int:
     subscribed to — keeping that logic in one spot rather than duplicating it at every
     event-producing call site is the point of splitting fan-out from delivery.
     """
-    result = await db.execute(select(EventOutbox).where(EventOutbox.fanned_out.is_(False)))
-    pending_events = result.scalars().all()
-    if not pending_events:
-        return 0
-
+    # Destinations first, and the order is load-bearing now that events are held. The
+    # events select below is every column of every un-fanned row, JSONB payload
+    # included and unbounded (§2 of the characterization tests; #81's to fix). While
+    # events were burned on the first tick that set could never outgrow one tick's
+    # production. Held, it grows for the whole retention window in exactly the state
+    # the stepper calls optional — so asking the cheap indexed question first is what
+    # keeps a destination-less pod from dragging a week of payloads through the worker
+    # every 30 seconds to discover it has nothing to do.
     result = await db.execute(select(Destination).where(Destination.enabled.is_(True)))
     destinations = result.scalars().all()
 
@@ -189,6 +192,11 @@ async def fan_out_pending(db: AsyncSession) -> int:
         # this event type correctly produces no row, and that event *was* considered, so
         # it must still be marked. Held events are aged out by purge_delivered_events on
         # the same `event_outbox_retention_days` window as everything else.
+        return 0
+
+    result = await db.execute(select(EventOutbox).where(EventOutbox.fanned_out.is_(False)))
+    pending_events = result.scalars().all()
+    if not pending_events:
         return 0
 
     created = 0

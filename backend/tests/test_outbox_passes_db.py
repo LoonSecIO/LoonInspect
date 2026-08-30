@@ -241,7 +241,12 @@ async def test_fan_out_holds_the_event_when_the_only_destination_is_disabled(db)
     """A disabled destination is not an enabled destination, so the pass has nothing
     to consider and holds the event rather than burning it (#157). Re-enabling the
     destination a minute later therefore *does* backfill — the ordinary next pass
-    picks the held event up, with no re-fan machinery involved."""
+    picks the held event up, with no re-fan machinery involved.
+
+    Scoped to the only-destination case, deliberately: the guard is all-or-nothing
+    across destinations, not per-destination. Add one *enabled* destination beside this
+    disabled one and the enabled one takes the event, the flag is set, and re-enabling
+    the second backfills nothing. Backfill is a property of holding, not of enabling."""
     from app.core.outbox import enqueue_event, fan_out_pending
 
     disabled = _destination("switched off", enabled=False)
@@ -405,6 +410,34 @@ async def test_the_fan_out_pass_selects_the_whole_payload_just_to_flip_a_boolean
     assert selects, "the fan-out pass must have read the outbox"
     assert "event_outbox.payload" in selects[0]
     assert "LIMIT" not in selects[0].upper()
+
+
+async def test_a_destination_less_pass_never_reads_the_held_backlog(db) -> None:
+    """The other half of the select above, and the reason the #157 guard is ordered the
+    way it is. Holding means the un-fanned set now grows for the whole retention window
+    on a pod with nothing configured — the state the stepper calls optional — while the
+    worker ticks every 30s. If the guard sat below the events select, each of those
+    ticks would drag the entire held backlog, full JSONB payloads and no LIMIT, into the
+    worker to conclude there was nothing to do. So the cheap indexed question is asked
+    first, and a destination-less tick touches `event_outbox` not at all."""
+    from app.core.outbox import enqueue_event, fan_out_pending
+
+    for index in range(3):
+        await enqueue_event(db, EVENT_TYPE, {"event": EVENT_TYPE, "index": index, "big": "x" * 1000})
+    await db.commit()
+
+    statements, stop = _capture_sql()
+    try:
+        assert await fan_out_pending(db) == 0
+    finally:
+        stop()
+
+    assert [text for text in statements if "FROM destinations" in text], "it must ask which destinations exist"
+    assert [text for text in statements if "FROM event_outbox" in text] == []
+
+    # And the hold itself still stands: nothing was consumed by the pass that declined
+    # to read it.
+    assert await _counts(db) == (3, 0)
 
 
 async def test_the_delivery_pass_loads_every_due_row_and_every_event_it_names(db) -> None:

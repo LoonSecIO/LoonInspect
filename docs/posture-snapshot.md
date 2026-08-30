@@ -122,7 +122,21 @@ old — so the "zero rows pending, no row written" case below effectively never 
 (confirmed by the 2026-08-29 wire-e2e regression). This is the point-sample semantics
 working, not a bug: trends read unchanged, and the definitions stand as written.
 Readers and renderers should treat `pending ≤ 2` with a millisecond-scale age as an
-empty-queue night.
+empty-queue night — **on a pod that has an enabled destination.**
+
+A pod that has none does not have a queue that drains. Since #157 `fan_out_pending`
+*holds* events while nothing is enabled rather than consuming them unsent, and
+`_outbox_pending_where()` counts un-fanned rows, so a destination-less pod reports
+`outbox.pending` as its entire held backlog — a whole baseline sweep, one event per
+device — with `outbox.oldest_pending_age_s` climbing toward the retention window
+(604,800s at the default seven days) until a destination is added or the events age
+out. That is the hold working as ruled, not a stalled queue, and it is the normal
+reading during onboarding because the setup stepper calls the destination step
+optional. Renderers, and anything comparing a pod against the peer aggregate, must not
+read it as a backed-up outbox. The `outbox.pending` definition below is unchanged — the
+rows really are awaiting delivery — but its *distribution* on this configuration is
+accumulation rather than a point-sample of flow, and the "drains continuously" gloss in
+that cell is written for the destination-configured case.
 
 | Key | Status | Definition | Source |
 | --- | --- | --- | --- |
