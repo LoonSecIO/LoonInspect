@@ -56,7 +56,7 @@ _PUBLIC_PREFIXES = ("/webhooks/",)
 # FastAPI's generated docs enumerate the entire API surface, which is free
 # reconnaissance for anyone who can reach the port. A signed-in admin's browser sends
 # the session cookie, so Swagger still works for them.
-_PROTECTED_NON_API = frozenset({"/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect"})
+_PROTECTED_NON_API = frozenset({"/docs", "/redoc", "/openapi.json"})
 
 
 def as_utc(value: datetime | None) -> datetime | None:

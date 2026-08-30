@@ -92,19 +92,6 @@ async def ensure_aperture(db: AsyncSession, *, connection_id: int, aperture: Ape
     return aperture.digest
 
 
-async def latest_aperture_digest(db: AsyncSession, *, connection_id: int) -> str | None:
-    """The aperture the most recent run on this connection recorded. The webhook path
-    reuses it rather than re-reading Jamf's settings per event: a webhook is one device
-    observed through the same aperture as the last sweep."""
-    result = await db.execute(
-        select(ObservationAperture.digest)
-        .where(ObservationAperture.mdm_connection_id == connection_id)
-        .order_by(ObservationAperture.last_seen_at.desc())
-        .limit(1)
-    )
-    return result.scalar_one_or_none()
-
-
 async def current_span(
     db: AsyncSession, *, connection_id: int, subject_kind: str, subject_id: str
 ) -> ObservationSpan | None:

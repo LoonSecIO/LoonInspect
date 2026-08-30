@@ -18,7 +18,6 @@ Two derived judgements live here because they need more than one section:
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -298,10 +297,3 @@ def _event_payload(row: DeviceChange, connection: MdmConnection) -> dict:
         "previous_span_id": str(row.previous_span_id) if row.previous_span_id else None,
         "policy_version": row.policy_version,
     }
-
-
-def rows_summary(rows: Sequence[DeviceChange]) -> dict[str, int]:
-    summary: dict[str, int] = {}
-    for row in rows:
-        summary[row.level] = summary.get(row.level, 0) + 1
-    return summary
