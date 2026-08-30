@@ -223,6 +223,16 @@ re-derive or rebuild this, extend it:
 destination hiccup, by up to the full retry envelope. Delivery order is not guaranteed
 either (`deliver_pending` has no ORDER BY), so a drained backlog can land shuffled.
 
+Since #157 the upper bound on that skew is no longer the retry envelope but
+`event_outbox_retention_days` (seven days by default). Events produced before any
+destination exists are now *held* rather than burned, so an operator who runs the
+baseline sweep on Monday and adds Splunk on Friday gets four days of events all
+stamped Friday, arriving as one spike. This is the onboarding path, not an edge case —
+the stepper labels the destination step optional. It makes `occurred_at` the load-
+bearing timestamp for exactly the pull most worth searching: the first full inventory
+of the fleet. The 2026-08-29 acceptance was taken against the retry envelope, so this
+wider bound is inherited, not yet separately ruled.
+
 Ruled a **known, accepted v0 constraint** (2026-08-29), not a bug to fix in freeze
 week. The authoritative occurrence timestamp is **`occurred_at` in the payload**, whose
 semantics are deliberate and trustworthy: sweep events back-date to the run's `_time`

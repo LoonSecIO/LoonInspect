@@ -167,13 +167,37 @@ async def fan_out_pending(db: AsyncSession) -> int:
     subscribed to — keeping that logic in one spot rather than duplicating it at every
     event-producing call site is the point of splitting fan-out from delivery.
     """
+    # Destinations first, and the order is load-bearing now that events are held. The
+    # events select below is every column of every un-fanned row, JSONB payload
+    # included and unbounded (§2 of the characterization tests; #81's to fix). While
+    # events were burned on the first tick that set could never outgrow one tick's
+    # production. Held, it grows for the whole retention window in exactly the state
+    # the stepper calls optional — so asking the cheap indexed question first is what
+    # keeps a destination-less pod from dragging a week of payloads through the worker
+    # every 30 seconds to discover it has nothing to do.
+    result = await db.execute(select(Destination).where(Destination.enabled.is_(True)))
+    destinations = result.scalars().all()
+
+    if not destinations:
+        # Hold, don't burn. `fanned_out` means "this event was considered against the
+        # destinations that existed" — with none enabled there was nothing to consider,
+        # so the events wait for the next pass instead of being consumed unsent. This is
+        # the ruled onboarding path, not an edge case: the setup stepper calls the
+        # destination step optional, so a whole baseline sweep normally lands before any
+        # destination exists. Holding is also all the re-fan machinery needed — the
+        # ordinary pass picks these up the moment a destination is added.
+        #
+        # The guard is "at least one enabled destination existed", never "at least one
+        # delivery row was created": a destination that exists but is not subscribed to
+        # this event type correctly produces no row, and that event *was* considered, so
+        # it must still be marked. Held events are aged out by purge_delivered_events on
+        # the same `event_outbox_retention_days` window as everything else.
+        return 0
+
     result = await db.execute(select(EventOutbox).where(EventOutbox.fanned_out.is_(False)))
     pending_events = result.scalars().all()
     if not pending_events:
         return 0
-
-    result = await db.execute(select(Destination).where(Destination.enabled.is_(True)))
-    destinations = result.scalars().all()
 
     created = 0
     for event in pending_events:
@@ -286,14 +310,21 @@ async def deliver_pending(db: AsyncSession) -> None:
 
 
 async def purge_delivered_events(db: AsyncSession, retention_days: int) -> int:
-    """Deletes outbox events whose deliveries are all terminal and old enough. Without
+    """Deletes outbox events old enough and holding no delivery still mid-retry. Without
     this the table grows without bound now that events are continuous (webhooks)
-    rather than nightly-batched."""
+    rather than nightly-batched.
+
+    Age, not fan-out state, is the candidate test. An event held by `fan_out_pending`
+    because no destination was enabled yet has no delivery rows at all, so the
+    still-pending guard below cannot see it and a `fanned_out` filter here would keep it
+    for ever — turning the held-events fix into unbounded growth on a pod that never
+    adds a destination. Held events therefore age out on the same
+    `event_outbox_retention_days` window as delivered ones: seven days to configure a
+    destination and collect the baseline, then the queue stops being a queue.
+    """
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
-    result = await db.execute(
-        select(EventOutbox.id).where(EventOutbox.created_at < cutoff, EventOutbox.fanned_out.is_(True))
-    )
+    result = await db.execute(select(EventOutbox.id).where(EventOutbox.created_at < cutoff))
     candidate_ids = set(result.scalars().all())
     if not candidate_ids:
         return 0
