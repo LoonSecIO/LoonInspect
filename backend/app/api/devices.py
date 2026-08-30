@@ -73,7 +73,6 @@ def _version_matches(device_version: str | None, operator: VersionOperator, valu
 async def list_devices(
     db: AsyncSession = Depends(get_db),
     q: str | None = Query(default=None),
-    ai: str | None = Query(default=None, description="Reserved for future NL-to-filter translation; unused."),
     os_version: str | None = Query(default=None, alias="osVersion"),
     os_version_operator: VersionOperator = Query(default=VersionOperator.eq, alias="osVersionOperator"),
     site: str | None = Query(default=None),

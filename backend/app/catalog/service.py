@@ -39,7 +39,7 @@ that arrive through other paths than an MDM inventory (HEC).
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, select, update
@@ -230,7 +230,3 @@ async def refresh_tenant(db: AsyncSession, *, force: bool = False, now: datetime
     if judged:
         logger.info("app catalog refreshed", extra={"rows": judged, "signature": signature})
     return judged
-
-
-def entries_by_hash(entries: Iterable[AppCatalogEntry]) -> dict[str, AppCatalogEntry]:
-    return {entry.version_hash: entry for entry in entries}

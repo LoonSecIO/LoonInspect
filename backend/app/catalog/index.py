@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Sequence
-from datetime import datetime
 
 from sqlalchemy import delete, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -116,8 +115,3 @@ async def lookup_versions(
 
     stmt = select(AppCatalogVersion).where(or_(*conditions)).order_by(AppCatalogVersion.title_name, AppCatalogVersion.version)
     return (await db.execute(stmt)).scalars().all()
-
-
-def newest_release(rows: Iterable[AppCatalogVersion]) -> datetime | None:
-    dates = [row.released_at for row in rows if row.released_at is not None]
-    return max(dates) if dates else None

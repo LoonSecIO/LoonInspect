@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from enum import StrEnum
-
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from pydantic.alias_generators import to_camel
 
@@ -12,18 +10,11 @@ from app.core.security import MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH
 # while the authoritative definition stays next to the permission bundles it drives.
 __all__ = [
     "AccountOut",
-    "AccountStatus",
     "AuthStatusOut",
     "LoginRequest",
     "Role",
     "SetupRequest",
 ]
-
-
-class AccountStatus(StrEnum):
-    active = "active"
-    disabled = "disabled"
-    invited = "invited"
 
 
 class _CamelModel(BaseModel):

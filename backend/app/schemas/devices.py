@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, computed_field
 from pydantic.alias_generators import to_camel
 
 from app.schemas.payload import MdmProvider
@@ -23,30 +23,6 @@ class ExtensionAttributeFilter(BaseModel):
 
     key: str
     value: str | None = None
-
-
-class DeviceFilterCriteria(BaseModel):
-    """Reusable filter/criteria shape — also intended as the future basis for smart-group criteria."""
-
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
-
-    q: str | None = None
-    ai: str | None = None
-    os_version: str | None = None
-    os_version_operator: VersionOperator = VersionOperator.eq
-    site: str | None = None
-    building: str | None = None
-    department: str | None = None
-    managed: bool | None = None
-    supervised: bool | None = None
-    last_check_in_after: datetime | None = None
-    last_check_in_before: datetime | None = None
-    last_inventory_after: datetime | None = None
-    last_inventory_before: datetime | None = None
-    mdm_connection_id: int | None = None
-    extension_attributes: list[ExtensionAttributeFilter] = []
-    page: int = Field(default=1, ge=1)
-    page_size: int = Field(default=50, ge=1, le=200)
 
 
 class InstalledAppOut(BaseModel):
