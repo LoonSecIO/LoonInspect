@@ -64,6 +64,9 @@ class Permission(StrEnum):
     # Instance-level status: currently just "is this build behind main". Not
     # sensitive among signed-in users, but deliberately absent pre-auth — the
     # sign-in page must not advertise that an instance runs known-old code.
+    # The running build itself is a weaker fact and needs no permission, only a
+    # session (GET /api/system/version); pre-auth it is withheld too, since after
+    # the repo goes public a sha answers the behind-ness question on its own (#130).
     SYSTEM_READ = "system:read"
 
     # Consent changes for community data sharing. Granted to no role explicitly, so

@@ -1,7 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router";
 import { FlaskLogo } from "@/components/icons/FlaskLogo";
-import { VersionBadge } from "@/features/auth/VersionBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/config/api";
@@ -103,8 +102,6 @@ export function LoginPage() {
             {submitting ? t.auth.signingIn : t.auth.signIn}
           </Button>
         </form>
-
-        <VersionBadge />
       </div>
     </div>
   );

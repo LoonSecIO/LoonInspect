@@ -48,6 +48,13 @@ RUN uv sync --frozen --no-dev
 ARG GIT_SHA
 RUN printf '{"version": "%s+%s"}\n' "$(date -u +%Y.%m.%d)" "${GIT_SHA:-unknown}" > app/build_info.json
 
+# The same answer readable from the host, without a session or even a running
+# container: `docker inspect`. Since #130 the sign-in page no longer states the
+# build, and an operator locked out of the app still has to be able to ask what
+# they are running — that question is about the image, so the image carries it.
+LABEL org.opencontainers.image.revision="${GIT_SHA:-unknown}"
+LABEL org.opencontainers.image.title="LoonInspect"
+
 # Lands inside the `app` package, which uv installed as an editable pointer to /app —
 # so the built SPA is picked up from the source tree with no reinstall. It does change
 # the directory uv hashed when it installed the project, which is why both `uv run`

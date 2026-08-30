@@ -41,8 +41,10 @@ export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 export interface AuthStatusResponse {
   setupRequired: boolean;
   authenticated: boolean;
-  /** The running build, e.g. "2026.08.20+99361ed", or the dev sentinel. */
-  version: string;
+  /** The running build, e.g. "2026.08.20+99361ed", or the dev sentinel. null for an
+   *  anonymous caller on a claimed instance — sent only while setupRequired, or once
+   *  signed in (#130). */
+  version: string | null;
 }
 
 export interface SetupInput {

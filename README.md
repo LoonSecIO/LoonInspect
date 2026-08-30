@@ -173,6 +173,36 @@ warn about this. Either terminate TLS in front, use `TLS_MODE=self-signed`, or s
 
 ---
 
+## 🏷️ Which build am I running?
+
+Builds are named `YYYY.MM.DD+<short-sha>` — the date answers "how old is this?", the
+sha answers "exactly what code?". Three ways to read it, in the order you'll reach for
+them:
+
+**In the app.** The sidebar footer carries it on every page, for anyone signed in.
+
+**Over the API.** Any account can ask, no permission required:
+
+```bash
+curl -s --cookie jar.txt https://your-host/api/system/version
+```
+
+**From the host, without signing in.** The image carries the same answer, so a locked
+-out operator — or one whose container won't start — can still find out:
+
+```bash
+docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}} built {{.Created}}' looninspect-app-1
+```
+
+The sign-in page deliberately shows nothing. A build identifier is a precise statement
+about which published fixes an instance has *not* taken, so it is for people who
+already have an account here, not for anyone who can reach the port. The one exception
+is a fresh instance that nobody has claimed yet: the first-run setup page shows the
+build, because at that moment it is already offering the next caller an admin account
+and has nothing left to protect.
+
+---
+
 ## 🔔 Update notifications
 
 Once a day, the backend asks GitHub for the newest commit on `main`

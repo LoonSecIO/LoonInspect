@@ -6,7 +6,10 @@ import type { AuthStatus, AuthUser, PermissionName, SetupInput } from "@/feature
 interface AuthStore {
   status: AuthStatus;
   user: AuthUser | null;
-  /** Backend build version from /auth/status; null until the probe returns. */
+  /** Backend build version from /auth/status; null until the probe returns, and also
+   *  null for an anonymous caller on a claimed instance (#130). Only the first-run
+   *  setup page reads this — signed-in surfaces use BuildVersion, which asks
+   *  /system/version and so is not stale after a login in the same page load. */
   version: string | null;
   bootstrap: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;

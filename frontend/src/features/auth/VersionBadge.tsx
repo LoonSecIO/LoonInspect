@@ -2,9 +2,13 @@ import { Info } from "lucide-react";
 import { useAuthStore } from "@/features/auth/store";
 import { useLocale } from "@/i18n/LocaleContext";
 
-/** The (i) under the pre-auth cards: which build this instance is running.
+/** The (i) under the first-run setup card: which build this instance is running.
  *  Renders nothing until /auth/status has answered — an empty badge would just
- *  be a mystery icon. */
+ *  be a mystery icon.
+ *
+ *  Setup only. The sign-in page dropped it in #130: on a claimed instance the status
+ *  probe withholds the version from anonymous callers, so there is nothing to draw.
+ *  Signed-in surfaces use BuildVersion instead. */
 export function VersionBadge() {
   const { t } = useLocale();
   const version = useAuthStore((state) => state.version);

@@ -100,7 +100,14 @@ async def auth_status(request: Request, db: AsyncSession = Depends(get_db)) -> A
     if raw_token:
         authenticated = await resolve_session(db, raw_token) is not None
 
-    return AuthStatusOut(setup_required=total == 0, authenticated=authenticated, version=get_app_version())
+    # Anyone who can reach the port can call this, so the build only rides along for a
+    # caller who has signed in — or on an unclaimed instance, which is already offering
+    # that caller the first admin account. See GET /api/system/version for the
+    # authenticated read, and the image's OCI labels for a host that can't sign in.
+    setup_required = total == 0
+    version = get_app_version() if (authenticated or setup_required) else None
+
+    return AuthStatusOut(setup_required=setup_required, authenticated=authenticated, version=version)
 
 
 @router.post("/setup", response_model=AccountOut, status_code=status.HTTP_201_CREATED)
