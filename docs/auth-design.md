@@ -358,6 +358,12 @@ So an Auditor can verify rotation hygiene without ever being handed a secret, wh
 
 Because grants live in `account_role` with a `source`, the later OIDC work is purely additive: a group→role mapping table, and a sync that reconciles only `source='oidc_group'` rows. Manual grants — including the break-glass admin's — are untouched by definition.
 
+### 5.3 The access grain: kinds, never rows
+
+Permissions name **kinds** of things (`device:read`, `destination:read`), never **which rows** a caller may see. Row-level, identity-bound scoping — site- or department-scoped operators, a `scope_filter` on `Account`, a permission member like `device:read:own-site`, or any implicit `WHERE` added from the session — does not exist and never will. Ruled 2026-08-30 (#111); the reasoning, the sanctioned path for multi-scope customers, and the labelling obligation that comes with it are in [docs/data-access-grain.md](data-access-grain.md).
+
+The rule this section has to hold, because everything printed, stamped and recorded downstream depends on it: two callers with the same permissions, in the same tenant, on the same pod, passing the same parameters, get identical answers. The only row-scoping mechanism in the system is the tenant, and it lives in Postgres RLS (`app/core/tenancy.py`), above the request rather than inside it.
+
 ---
 
 ## 6. Logging
