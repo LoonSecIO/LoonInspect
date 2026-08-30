@@ -242,6 +242,26 @@ async def resolve_session(db: AsyncSession, raw_token: str) -> UserSession | Non
     return session
 
 
+async def account_for_session(db: AsyncSession, session: UserSession) -> Account | None:
+    """The account a session may still act as, or None if it may not.
+
+    Split out from _authenticate_session because a live session and an account allowed
+    to use it are two different questions, and answering the second one in two places
+    is how they drifted: /api/auth/status used to call resolve_session alone and report
+    a disabled account as signed in, while every real route revoked the same cookie.
+
+    The consequence is left to the caller. _authenticate_session revokes; auth_status
+    only reports, because a public probe should not carry a write. Note this cannot
+    move into resolve_session itself — logout resolves deliberately without caring
+    whether the account is still active, and must keep clearing a disabled user's
+    cookie.
+    """
+    account = await db.get(Account, session.account_id)
+    if account is None or account.status != "active":
+        return None
+    return account
+
+
 def _verify_csrf(request: Request, session: UserSession) -> None:
     supplied = request.headers.get(CSRF_HEADER, "")
     if not supplied or not tokens_equal(supplied, session.csrf_token):
@@ -326,8 +346,8 @@ async def _authenticate_session(
     if session is None:
         return None
 
-    account = await db.get(Account, session.account_id)
-    if account is None or account.status != "active":
+    account = await account_for_session(db, session)
+    if account is None:
         # The session outlived the account's ability to use it. Revoke rather than
         # merely rejecting, so a re-enabled account doesn't resurrect old cookies.
         await revoke_session(db, session)

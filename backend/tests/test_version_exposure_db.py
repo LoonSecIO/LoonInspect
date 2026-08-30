@@ -24,7 +24,7 @@ import uuid as uuidlib
 import httpx
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 # One event loop for the whole module — the engine's pooled connections belong to
 # whichever loop first used them.
@@ -103,6 +103,49 @@ async def test_anonymous_status_withholds_the_build(seeded: uuidlib.UUID) -> Non
     assert body["setupRequired"] is False
     assert body["authenticated"] is False
     assert body["version"] is None
+
+
+async def test_a_disabled_account_is_not_signed_in(seeded: uuidlib.UUID) -> None:
+    """A live cookie is not a live account.
+
+    auth_status used to call resolve_session alone, which only checks revoked_at and
+    expires_at. A deactivated user still holding an un-revoked cookie therefore read as
+    signed in on the public probe — and since #130 that also handed them the build —
+    while every real route rejected the same cookie and revoked the session. Both sides
+    now ask account_for_session().
+    """
+    from app.core.database import session_for_tenant
+    from app.models.schema import Account
+
+    async with _client() as c:
+        await _login(c, VIEWER)
+        # Sanity: the cookie works before the account is disabled, so a green assertion
+        # below cannot be an artifact of a login that silently failed.
+        assert (await c.get("/api/auth/status")).json()["authenticated"] is True
+
+        async with session_for_tenant(seeded) as db:
+            account = (
+                (await db.execute(select(Account).where(Account.email == VIEWER[0])))
+                .scalars()
+                .one()
+            )
+            account.status = "disabled"
+            await db.commit()
+
+        try:
+            status_body = (await c.get("/api/auth/status")).json()
+            # The real path's verdict on the same cookie, for contrast.
+            real_route = await c.get("/api/system/version")
+        finally:
+            async with session_for_tenant(seeded) as db:
+                await db.execute(
+                    update(Account).where(Account.email == VIEWER[0]).values(status="active")
+                )
+                await db.commit()
+
+    assert status_body["authenticated"] is False
+    assert status_body["version"] is None
+    assert real_route.status_code == 401
 
 
 async def test_signed_in_status_carries_the_build(seeded: uuidlib.UUID) -> None:

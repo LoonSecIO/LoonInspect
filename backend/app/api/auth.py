@@ -12,6 +12,7 @@ from app.core.audit import AuditAction, audit
 from app.core.auth import (
     SESSION_COOKIE,
     Principal,
+    account_for_session,
     as_utc,
     clear_session_cookies,
     create_session,
@@ -98,7 +99,11 @@ async def auth_status(request: Request, db: AsyncSession = Depends(get_db)) -> A
     authenticated = False
     raw_token = request.cookies.get(SESSION_COOKIE)
     if raw_token:
-        authenticated = await resolve_session(db, raw_token) is not None
+        # A live session is not enough: the account behind it must still be allowed to
+        # use it, or a disabled user's un-revoked cookie reads as signed in here while
+        # every real route rejects and revokes it. Same predicate the real path uses.
+        session = await resolve_session(db, raw_token)
+        authenticated = session is not None and await account_for_session(db, session) is not None
 
     # Anyone who can reach the port can call this, so the build only rides along for a
     # caller who has signed in — or on an unclaimed instance, which is already offering
