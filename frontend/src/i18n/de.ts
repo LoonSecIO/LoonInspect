@@ -256,13 +256,45 @@ export const de: Translations = {
   },
   overview: {
     eyebrow: "LoonInspect",
-    title: "Backend-Sicherheitsdashboard",
-    description:
-      "Überwachen Sie den MDM-Synchronisierungsstatus, Schwachstellenberichte und das Anwendungsinventar der Endgeräte.",
-    apiConnectionTitle: "API-Verbindung",
-    apiConnectionPrefix: "Der Vite-Dev-Server leitet Frontend-Anfragen von",
-    apiConnectionSuffix: "an FastAPI weiter.",
-    checkApiStatus: "API-Status prüfen"
+    title: "Übersicht",
+
+    setupEyebrow: "Erste Schritte",
+    setupTitle: "Bringen Sie Ihre Flotte nach Splunk",
+    promise: "Ihr Flotteninventar: 40.000 Geräte in etwa 10 Minuten.",
+    stepLabel: (step: number) => `Schritt ${step}`,
+    stepOptional: "Optional",
+    stepDone: "Erledigt",
+    step1Title: "Jamf Pro verbinden",
+    step1Body: "Richten Sie LoonInspect auf Ihren Jamf-Pro-Server und hinterlegen Sie API-Zugangsdaten mit Lesezugriff.",
+    step1Action: "Verbindung hinzufügen",
+    step2Title: "Erste Synchronisierung starten",
+    step2Body:
+      "Der erste Durchlauf holt alle Geräte, Gruppen und Anwendungen in diesen Pod. Er wird zur Basislinie, an der jede spätere Änderung gemessen wird.",
+    step2Action: "Erste Synchronisierung starten",
+    step3Title: "An Splunk senden",
+    step3Body:
+      "Fügen Sie ein Splunk-HEC-Ziel hinzu, dann wird alles, was LoonInspect erfasst, sofort weitergeleitet. Das können Sie auch später tun.",
+    step3Action: "Ziel hinzufügen",
+
+    firstSyncTitle: "Erste Synchronisierung läuft",
+    syncTitle: "Synchronisierung läuft",
+    syncFailedTitle: "Synchronisierung fehlgeschlagen",
+    elapsedLabel: "Vergangen",
+    devicesLabel: "Geräte",
+    groupsLabel: "Gruppen",
+    engineLog: "Engine-Protokoll",
+    openConnection: "Verbindung öffnen",
+
+    baselineEstablished: (utc: string) => `Basislinie erstellt ${utc}`,
+    runPrefix: "Durchlauf",
+    baselineCounts: (devices: number, groups: number, duration: string) =>
+      `${devices.toLocaleString("de-DE")} Gerät${devices === 1 ? "" : "e"}, ` +
+      `${groups.toLocaleString("de-DE")} Gruppe${groups === 1 ? "" : "n"} in ${duration}`,
+    seeYourFleet: "Zur Geräteliste",
+
+    loading: "Wird geladen…",
+    loadError: "Der Einrichtungsstatus konnte nicht geladen werden.",
+    setupHiddenForRole: "Die Einrichtung dieses Pods wird von einer Administratorin oder einem Administrator verwaltet."
   },
   vulnerabilities: {
     eyebrow: "Sicherheit",
