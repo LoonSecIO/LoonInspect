@@ -767,7 +767,11 @@ async def process_sync(
     `device.apps is None` means the applications section was outside the read's
     aperture (Kyle's ruling, 2026-08-29): app rows, the catalog, and the event stream
     are left exactly as the last real read left them. Only [] — read, and genuinely
-    empty — diffs to removals.
+    empty — diffs to removals. The same discipline covers the rest of the row (#98):
+    each scalar is written only when its owning section was read, and the extension-
+    attribute replace runs only on a real read (None-vs-[] again). A read outside the
+    aperture holds defaults, not observations — writing them would blank hostnames
+    and wipe EA rows on every narrowly-scoped sweep or webhook.
     """
     for app in device.apps or ():
         apply_hashes(app)
@@ -802,28 +806,37 @@ async def process_sync(
         # build shows as removed and the new one as added.
         previous_hashes = {app.version_hash: app for app in existing.apps}
 
-    existing.hostname = device.hostname
-    existing.serial_number = device.serial_number
+    # Seen at all is section-independent; every field below is written only when its
+    # owning section was inside the read's aperture (#98). The creation path above
+    # already stamped hostname and serial (NOT NULL) with whatever the read carried;
+    # for an existing row a narrow read leaves the last real observation standing.
     existing.last_seen_at = datetime.now(timezone.utc)
-    existing.managed = device.managed
-    existing.supervised = device.supervised
-    existing.os_version = device.os_version
-    existing.site = device.site
-    existing.building = device.building
-    existing.department = device.department
-    existing.last_check_in = device.last_check_in
-    existing.last_inventory_at = device.last_inventory_at
-    # Replaced rather than merged, but the delete has to be flushed first. Assigning a
-    # fresh list in one go lets the unit of work order the INSERTs before the DELETEs,
-    # which trips uq_device_extension_attribute_key on any device that already has
-    # attributes — i.e. every device after its first sync.
-    if existing.extension_attributes:
-        existing.extension_attributes.clear()
-        await db.flush()
+    if device.observed("general"):
+        existing.hostname = device.hostname
+        existing.managed = device.managed
+        existing.supervised = device.supervised
+        existing.site = device.site
+        existing.last_check_in = device.last_check_in
+        existing.last_inventory_at = device.last_inventory_at
+    if device.observed("hardware"):
+        existing.serial_number = device.serial_number
+    if device.observed("operating_system"):
+        existing.os_version = device.os_version
+    if device.observed("user_and_location"):
+        existing.building = device.building
+        existing.department = device.department
+    if device.extension_attributes is not None:
+        # Replaced rather than merged, but the delete has to be flushed first. Assigning a
+        # fresh list in one go lets the unit of work order the INSERTs before the DELETEs,
+        # which trips uq_device_extension_attribute_key on any device that already has
+        # attributes — i.e. every device after its first sync.
+        if existing.extension_attributes:
+            existing.extension_attributes.clear()
+            await db.flush()
 
-    existing.extension_attributes = [
-        DeviceExtensionAttribute(key=ea.key, value=ea.value) for ea in device.extension_attributes
-    ]
+        existing.extension_attributes = [
+            DeviceExtensionAttribute(key=ea.key, value=ea.value) for ea in device.extension_attributes
+        ]
 
     added: list[NormalizedApp] = []
     removed_rows: list[InstalledApp] = []
@@ -886,7 +899,9 @@ async def process_sync(
         # the pull happened to take; a webhook carries the device's own reportDate. See
         # app.core.runs.event_time.
         occurred_at=event_time(device.last_inventory_at),
-        meta=run_meta() | {"serialNumber": device.serial_number},
+        # The row, not the normalized view: under an aperture without HARDWARE the
+        # view's serial is "" while the row still holds the last real read's (#98).
+        meta=run_meta() | {"serialNumber": existing.serial_number},
     )
 
     # Enqueued in the same transaction as the device/app state change below, so "we

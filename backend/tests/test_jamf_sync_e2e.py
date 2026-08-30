@@ -17,6 +17,10 @@ What it pins, in order:
 4. A webhook collection scoped without applications wipes nothing and emits nothing,
    and the full sweep after it derives no phantom per-app changes — while a full-scope
    read of a device with genuinely zero apps still diffs to removals (#93).
+5. The same discipline for the rest of the row (#98): a read scoped below GENERAL and
+   the EA section leaves the device's scalars and extension-attribute rows exactly as
+   the last full read left them, any full-aperture read heals, and a full-scope read
+   of genuinely empty values still writes.
 
 Gated on RUN_DB_TESTS like the other database-backed suites.
 """
@@ -307,6 +311,96 @@ async def test_a_full_scope_read_of_zero_apps_still_wipes(db, jamf: FakeJamf, co
     assert latest.payload["device_external_id"] == real_id
     assert latest.payload["added_apps"] == []
     assert len(latest.payload["removed_apps"]) == apps_before
+
+
+async def test_narrow_scope_leaves_scalars_and_eas_untouched(db, jamf: FakeJamf, connection) -> None:
+    """#98, the unfinished half of #93's discipline: a read scoped below GENERAL (and
+    the EA section) must not blank the device row's scalars or wipe its extension-
+    attribute rows. The detail endpoint still returns every section, so this pins —
+    like its #93 sibling — that the guard keys off the request, not the response."""
+    from app.mdm.collections import list_collections
+    from app.mdm.service import ingest_webhook, sync_connection
+    from app.models.schema import Device, DeviceExtensionAttribute
+
+    real_id = jamf.real["id"]
+    first = await sync_connection(db, connection)
+    assert first.ok
+    real_device = (
+        await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == real_id))
+    ).scalar_one()
+    hostname_before = real_device.hostname
+    assert hostname_before and real_device.os_version == "27.0" and real_device.supervised is True
+    ea_rows = select(DeviceExtensionAttribute).where(DeviceExtensionAttribute.device_id == real_device.id)
+    eas_before = {(ea.key, ea.value) for ea in (await db.execute(ea_rows)).scalars()}
+    assert len(eas_before) == 2
+
+    webhook = next(row for row in await list_collections(db, connection.id) if row.kind == "webhook")
+    webhook.sections = ["applications"]
+    await db.commit()
+
+    # The tenant renames the device, updates the OS, and fills an EA — all outside the
+    # webhook collection's scope, all present in the detail response regardless.
+    jamf.real["general"]["reportDate"] = "2026-08-30T09:00:00.000Z"
+    jamf.real["general"]["name"] = "renamed while unwatched"
+    jamf.real["operatingSystem"]["version"] = "27.1"
+    jamf.real["extensionAttributes"][0]["values"] = ["set while unwatched"]
+    payload = {
+        "webhook": {"webhookEvent": "ComputerInventoryCompleted"},
+        "event": {"jssID": real_id, "serialNumber": "LOONMINI0M4"},
+    }
+    result = await ingest_webhook(db, connection, payload)
+    assert result is not None and result.outcome == "changed"
+
+    await db.refresh(real_device)
+    assert real_device.hostname == hostname_before
+    assert real_device.os_version == "27.0" and real_device.supervised is True
+    assert {(ea.key, ea.value) for ea in (await db.execute(ea_rows)).scalars()} == eas_before
+
+    # Any full-aperture read heals: the next sweep reads everything and writes it.
+    second = await sync_connection(db, connection)
+    assert second.ok
+    await db.refresh(real_device)
+    assert real_device.hostname == "renamed while unwatched"
+    assert real_device.os_version == "27.1"
+    healed = {(ea.key, ea.value) for ea in (await db.execute(ea_rows)).scalars()}
+    assert ("Non Inventory Reason", "set while unwatched") in healed
+
+
+async def test_a_full_scope_read_of_genuinely_empty_values_still_writes(db, jamf: FakeJamf, connection) -> None:
+    """The guard's other edge, mirroring the applications pair: a full-aperture read
+    that carries empty values is a real observation, and writes."""
+    from app.mdm.service import ingest_webhook, sync_connection
+    from app.models.schema import Device, DeviceExtensionAttribute
+
+    real_id = jamf.real["id"]
+    first = await sync_connection(db, connection)
+    assert first.ok
+    real_device = (
+        await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == real_id))
+    ).scalar_one()
+    assert real_device.supervised is True
+    ea_count = (
+        select(func.count())
+        .select_from(DeviceExtensionAttribute)
+        .where(DeviceExtensionAttribute.device_id == real_device.id)
+    )
+    assert await _count(db, ea_count) == 2
+
+    # The tenant unsupervises the device and deletes every EA definition; the full
+    # detail read genuinely carries the emptiness, and it lands.
+    jamf.real["general"]["reportDate"] = "2026-08-30T09:00:00.000Z"
+    jamf.real["general"]["supervised"] = False
+    jamf.real["extensionAttributes"] = []
+    payload = {
+        "webhook": {"webhookEvent": "ComputerInventoryCompleted"},
+        "event": {"jssID": real_id, "serialNumber": "LOONMINI0M4"},
+    }
+    result = await ingest_webhook(db, connection, payload)
+    assert result is not None and result.outcome == "changed"
+
+    await db.refresh(real_device)
+    assert real_device.supervised is False
+    assert await _count(db, ea_count) == 0
 
 
 async def test_webhook_without_a_computer_is_ignored(db, jamf: FakeJamf, connection) -> None:
