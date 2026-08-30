@@ -443,6 +443,22 @@ def _resolve_static_asset(full_path: str) -> Path | None:
 
 
 if static_dir.exists():
+    # Accepted exposure, ruled 2026-08-30 on #170 (closed as documented): every response
+    # below carries a `Last-Modified` of the image build time, because FileResponse
+    # stamps it from the file's mtime. That is the CalVer half of the version #130 took
+    # off the sign-in page, readable by anyone who can reach the port. Kept, knowingly.
+    #
+    # Read the rest before "fixing" it. Freezing the mtime to a constant is the obvious
+    # move and is worse than the leak: nothing here sets Cache-Control, so browsers fall
+    # back to heuristic freshness of roughly 10% of (now - Last-Modified). A build-time
+    # mtime keeps that window at minutes, which is the only reason a redeploy reaches
+    # returning browsers at all. Pin it to an epoch and they will serve a stale shell —
+    # one that asks for an /assets/<hash>.js this build no longer contains — for years,
+    # from disk, without ever asking. If this is revisited: remove the headers and set
+    # an explicit Cache-Control; never fake them. And note `del headers["etag"]` after
+    # construction silently no-ops, because __call__ re-stats and re-adds via setdefault
+    # when stat_result is None.
+    #
     # Catch-all so client-side routes (e.g. /devices) resolve to the SPA shell on a
     # direct navigation/refresh, not a 404 — real static assets are served as-is.
     # Unmatched /api or /webhooks paths still 404 instead of silently returning HTML.
