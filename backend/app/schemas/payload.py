@@ -59,7 +59,19 @@ class NormalizedDevice(BaseModel):
     # it was read and the device genuinely has no apps. The two must never collapse:
     # process_sync wipes app rows on [], and a scoped webhook read must not wipe (#93).
     apps: list[NormalizedApp] | None = []
-    extension_attributes: list[NormalizedExtensionAttribute] = []
+    # Same sentinel as apps: None when extension_attributes was outside the aperture,
+    # [] when it was read and the device genuinely has none (#98).
+    extension_attributes: list[NormalizedExtensionAttribute] | None = []
+    # The read aperture this view was normalized under, as contract section names —
+    # stamped by normalize_computer from the same `sections` the ledger canonicalized.
+    # None means an aperture-less constructor (tests, fixtures) and reads as everything.
+    sections: frozenset[str] | None = None
+
+    def observed(self, section: str) -> bool:
+        """Was this section part of the read that produced this view? The scalar-write
+        gate in process_sync: a field outside the aperture holds a default, not an
+        observation, and must not overwrite current state (#98)."""
+        return self.sections is None or section in self.sections
 
 
 class MdmSyncStatusOut(BaseModel):

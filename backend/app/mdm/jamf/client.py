@@ -516,15 +516,22 @@ def normalize_computer(computer: dict, sections: Sequence[str] = V0_SECTIONS) ->
 
     `sections` are what the run asked Jamf for — the same read aperture the ledger
     records. Applications outside that aperture come back as None, never [], so a
-    scoped read can't be mistaken for a device with no apps (#93). Keyed off the
-    request, not the response: Jamf omitting a key we asked for *is* an empty read.
+    scoped read can't be mistaken for a device with no apps (#93); extension
+    attributes get the same sentinel, and a section outside the aperture is not
+    consumed at all, so its scalars normalize to their defaults and the returned
+    `sections` tells process_sync not to write them (#98). Keyed off the request, not
+    the response: Jamf omitting a key we asked for *is* an empty read, and a detail
+    fetch carrying sections we did not ask for is still not an observation of them.
     """
-    general = computer.get("general", computer)
-    hardware = computer.get("hardware", {})
-    operating_system = computer.get("operatingSystem", {})
-    user_and_location = computer.get("userAndLocation", {})
-    applications = computer.get("applications", []) if "applications" in sections else None
-    extension_attributes = computer.get("extensionAttributes", [])
+    requested = set(sections)
+    general = computer.get("general", computer) if "general" in requested else {}
+    hardware = computer.get("hardware", {}) if "hardware" in requested else {}
+    operating_system = computer.get("operatingSystem", {}) if "operating_system" in requested else {}
+    user_and_location = computer.get("userAndLocation", {}) if "user_and_location" in requested else {}
+    applications = computer.get("applications", []) if "applications" in requested else None
+    extension_attributes = (
+        computer.get("extensionAttributes", []) if "extension_attributes" in requested else None
+    )
 
     remote_management = general.get("remoteManagement", {})
     site = general.get("site", {})
@@ -570,7 +577,9 @@ def normalize_computer(computer: dict, sections: Sequence[str] = V0_SECTIONS) ->
             )
             for app in applications
         ],
-        extension_attributes=[
+        extension_attributes=None
+        if extension_attributes is None
+        else [
             NormalizedExtensionAttribute(
                 key=ea.get("name", ""),
                 value=(ea.get("values") or [None])[0],
@@ -578,6 +587,7 @@ def normalize_computer(computer: dict, sections: Sequence[str] = V0_SECTIONS) ->
             for ea in extension_attributes
             if ea.get("name")
         ],
+        sections=frozenset(requested),
     )
 
 
