@@ -136,8 +136,13 @@ class Device(Base):
     supervised: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     os_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     site: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    building: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    department: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Jamf hands the device the department and the building as opaque ids and keeps the
+    # names in two catalogs of its own, so the ids are what a device carries. Storing
+    # them rather than names is also the rule the ledger follows (docs/jamf-observations.md
+    # §2.2): a rename is not a change to any Mac. `jamf_org_units` turns them into names
+    # at read time.
+    building_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    department_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     connection: Mapped[MdmConnection | None] = relationship(back_populates="devices")
     apps: Mapped[list[InstalledApp]] = relationship(
@@ -216,6 +221,44 @@ class MdmSyncState(Base):
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="idle")
     device_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class JamfOrgUnit(Base):
+    """One Jamf department or building — its id, and the name it currently has.
+
+    Jamf Pro's inventory says a Mac is in department 7; the name lives in
+    `/v1/departments`, which no device record ever quotes. This is that lookup, one row
+    per object per connection, refreshed by two small catalog reads that ride along with
+    every sweep and every catalog refresh. Read once per request and joined in Python
+    rather than per device row — the same cache-don't-calculate discipline as
+    `app_catalog`, on a table of tens of rows.
+
+    Nothing here is an observation: a name is a label, and renaming a department changes
+    nothing about any Mac (docs/jamf-observations.md §2.2). The table can be dropped and
+    rebuilt from Jamf without touching a single span, and it holds no history — the
+    device row and the ledger hold the id, which is what actually moved when a Mac
+    changed departments.
+
+    Deleted with its connection: a name lookup for credentials that no longer exist
+    resolves nothing.
+    """
+
+    __tablename__ = "jamf_org_units"
+    __table_args__ = (
+        UniqueConstraint("mdm_connection_id", "kind", "external_id", name="uq_jamf_org_unit"),
+        Index("ix_jamf_org_units_name", "tenant_id", "kind", "name"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    mdm_connection_id: Mapped[int] = mapped_column(
+        ForeignKey("mdm_connections.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(16))  # department | building
+    external_id: Mapped[str] = mapped_column(String(64))
+    name: Mapped[str] = mapped_column(String(255))
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class JamfPatchTitle(Base):

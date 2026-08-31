@@ -587,6 +587,27 @@ def test_real_record_current_state_normalizer(real: dict) -> None:
     assert device.last_inventory_at == datetime(2026, 8, 21, 21, 44, 27, tzinfo=timezone.utc)
 
 
+def test_department_and_building_are_read_as_ids(raw: dict, real: dict) -> None:
+    """`userAndLocation` names its department and building by id and never by name.
+
+    The normalizer read `department` / `building` — the *classic* API's spelling, which
+    the inventory API has never returned — so both columns were NULL on every device
+    ever synced, and the two filters over them could only ever return nothing. The
+    contract had it right from the start (`_USER_AND_LOCATION` allowlists the ids), so
+    this pins the normalizer to what the record actually carries.
+    """
+    from app.mdm.jamf.client import normalize_computer
+
+    assert set(real["userAndLocation"]) & {"department", "building"} == set()
+    assert "departmentId" in real["userAndLocation"] and "buildingId" in real["userAndLocation"]
+
+    device = normalize_computer(raw)
+    assert (device.department_id, device.building_id) == ("7", "2")
+    # Absence is absence: the real record's ids are null, and null is not "" (§2.2).
+    unassigned = normalize_computer(real)
+    assert (unassigned.department_id, unassigned.building_id) == (None, None)
+
+
 # --- smart groups -----------------------------------------------------------------
 
 

@@ -169,6 +169,46 @@ async def test_aimd_floor_is_one_and_sustained_429s_stay_there(recorded_sleeps: 
     assert len(recorded_sleeps) == 3
 
 
+async def test_departments_and_buildings_are_fetched_as_id_and_name() -> None:
+    """The two catalogs that make `departmentId: "7"` mean something."""
+    fake = FakeJamf()
+    client = make_client()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(fake.handler)) as http:
+        departments = await client.fetch_departments(http, page_size=1)
+        buildings = await client.fetch_buildings(http)
+
+    # page_size=1 over two departments: the pager runs until a short page, so the
+    # second department is only here if it paged.
+    assert departments == [{"id": "7", "name": "Engineering"}, {"id": "9", "name": "Sales"}]
+    assert buildings == [{"id": "2", "name": "Bletchley Park"}]
+
+
+async def test_a_catalog_without_the_privilege_is_empty_not_fatal() -> None:
+    """No "Read Departments" privilege: ids stay unresolved, and the sweep that came
+    for inventory still gets it. A missing label may never cost a device read."""
+    fake = FakeJamf()
+    fake.departments = None
+    client = make_client()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(fake.handler)) as http:
+        assert await client.fetch_departments(http) == []
+        assert await client.fetch_buildings(http) == [{"id": "2", "name": "Bletchley Park"}]
+
+
+async def test_a_catalog_that_errors_is_empty_not_fatal(recorded_sleeps: list[float]) -> None:
+    """Same promise for a hard failure, not just a missing privilege: the label read
+    fails, the run's inventory is unaffected. Four 503s — one more than the transient
+    budget — so the retry is exhausted and the failure is real."""
+    fake = FakeJamf()
+    fake.transient.extend([("/api/v1/departments", 503, {}) for _ in range(4)])
+    client = make_client()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(fake.handler)) as http:
+        assert await client.fetch_departments(http) == []
+        computers = [computer async for computer in client.iter_computers(http)]
+
+    assert len(computers) == 2
+    assert client.throttle.retried_5xx == 3  # the budget, spent on the catalog and no further
+
+
 def test_parse_webhook_event_unwraps_the_checkin_nesting() -> None:
     from app.mdm.jamf.client import parse_webhook_event
 

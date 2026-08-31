@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from typing import TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.auth import require
 from app.core.database import get_db
 from app.core.permissions import Permission
+from app.mdm.org_units import BUILDING, DEPARTMENT, OrgUnitNames, ids_for_name, load_names, name_for
 from app.models.schema import Device, DeviceExtensionAttribute
 from app.schemas.devices import (
     DeviceDetailOut,
@@ -29,6 +31,8 @@ router = APIRouter(
     dependencies=[Depends(require(Permission.DEVICE_READ))],
 )
 
+_DeviceOutT = TypeVar("_DeviceOutT", bound=DeviceOut)
+
 
 def _parse_ea_filters(ea: list[str] | None) -> list[ExtensionAttributeFilter]:
     filters: list[ExtensionAttributeFilter] = []
@@ -38,6 +42,42 @@ def _parse_ea_filters(ea: list[str] | None) -> list[ExtensionAttributeFilter]:
         key, value = item.split(":", 1)
         filters.append(ExtensionAttributeFilter(key=key, value=value))
     return filters
+
+
+async def _org_unit_where(
+    db: AsyncSession, kind: str, column: ColumnElement[str | None], value: str
+) -> ColumnElement[bool]:
+    """The department / building filter: a name in, the device rows out.
+
+    Devices carry Jamf's ids, so the typed name is resolved to `(connection, id)` pairs
+    first and matched as pairs — department 7 at one Jamf Pro instance is not
+    department 7 at another, and matching the id alone would pull a second instance's
+    unrelated department into the same answer.
+
+    The raw id is accepted too. Resolving names needs the "Read Departments" /
+    "Read Buildings" privilege, and where an API client lacks it the id is all anyone
+    has — the filter should still work for them, rather than becoming the second
+    version of the bug this replaced.
+    """
+    pairs = await ids_for_name(db, kind=kind, name=value)
+    by_id = column == value
+    if not pairs:
+        return by_id
+    return or_(tuple_(Device.mdm_connection_id, column).in_(pairs), by_id)
+
+
+def _with_names(out: _DeviceOutT, device: Device, names: OrgUnitNames) -> _DeviceOutT:
+    """Stamp the resolved department and building onto a serialized device. One dict
+    lookup per device against a table of tens of rows, rather than a join per row."""
+    connection_id = device.mdm_connection_id
+    return out.model_copy(
+        update={
+            "building": name_for(names, connection_id=connection_id, kind=BUILDING, external_id=device.building_id),
+            "department": name_for(
+                names, connection_id=connection_id, kind=DEPARTMENT, external_id=device.department_id
+            ),
+        }
+    )
 
 
 def _parse_version(value: str) -> tuple[int, ...]:
@@ -99,9 +139,9 @@ async def list_devices(
     if site:
         stmt = stmt.where(Device.site == site)
     if building:
-        stmt = stmt.where(Device.building == building)
+        stmt = stmt.where(await _org_unit_where(db, BUILDING, Device.building_id, building))
     if department:
-        stmt = stmt.where(Device.department == department)
+        stmt = stmt.where(await _org_unit_where(db, DEPARTMENT, Device.department_id, department))
     if managed is not None:
         stmt = stmt.where(Device.managed == managed)
     if supervised is not None:
@@ -156,8 +196,9 @@ async def list_devices(
         result = await db.execute(stmt)
         devices = result.scalars().all()
 
+    names = await load_names(db)
     return DeviceListResponse(
-        items=[DeviceOut.model_validate(device) for device in devices],
+        items=[_with_names(DeviceOut.model_validate(device), device, names) for device in devices],
         total=total,
         page=page,
         page_size=page_size,
@@ -174,4 +215,4 @@ async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> Devi
     device = result.scalar_one_or_none()
     if device is None:
         raise HTTPException(status_code=404, detail="Device not found")
-    return DeviceDetailOut.model_validate(device)
+    return _with_names(DeviceDetailOut.model_validate(device), device, await load_names(db))

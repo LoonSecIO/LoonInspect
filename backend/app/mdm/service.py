@@ -48,6 +48,7 @@ from app.mdm.jamf.contract import (
     canonicalize_computer,
     canonicalize_smart_group,
 )
+from app.mdm.org_units import BUILDING, DEPARTMENT, record_org_units
 from app.models.schema import (
     Collection,
     Device,
@@ -350,6 +351,10 @@ async def run_jamf_catalog(
             connection.last_successful_auth_at = datetime.now(timezone.utc)
             await db.commit()
             group_count = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes)
+            # The catalog class is where the label catalogs belong too: a department
+            # renamed between sweeps is visible at the catalog's cadence, without a
+            # device read.
+            org_units = await _refresh_org_units(db, connection, client, http)
             await db.commit()
             throttle = {**client.throttle.observations(), **client.adaptive.observations()}
             if run is not None:
@@ -359,6 +364,14 @@ async def run_jamf_catalog(
                 if throttle:
                     await run_log(db, run, "warning", "throttled by Jamf; backed off and continued", **throttle)
                 await run_log(db, run, "info", "group definitions observed", groupCount=group_count)
+                await run_log(
+                    db,
+                    run,
+                    "info",
+                    "department and building names cached",
+                    departments=org_units[DEPARTMENT],
+                    buildings=org_units[BUILDING],
+                )
     except RunReclaimed:
         # Same as run_jamf: the reclaim already closed the run; its owner stops the work.
         raise
@@ -408,6 +421,24 @@ async def _observe_groups(
     return group_count
 
 
+async def _refresh_org_units(
+    db: AsyncSession, connection: MdmConnection, client: JamfClient, http: httpx.AsyncClient
+) -> dict[str, int]:
+    """Cache Jamf's department and building names for this connection.
+
+    Two paged reads of tens of rows each — the whole cost of turning `departmentId: "7"`
+    into "Engineering" for every device in the fleet (app.mdm.org_units). Not an
+    observation and not hashed: renaming a department changes nothing about any Mac.
+    """
+    counts: dict[str, int] = {}
+    for kind, units in (
+        (DEPARTMENT, await client.fetch_departments(http)),
+        (BUILDING, await client.fetch_buildings(http)),
+    ):
+        counts[kind] = await record_org_units(db, connection_id=connection.id, kind=kind, units=units)
+    return counts
+
+
 async def _sync_jamf(
     db: AsyncSession,
     connection: MdmConnection,
@@ -443,6 +474,24 @@ async def _sync_jamf(
                 apertureDigest=aperture_digest[:12],
                 sections=list(sections),
                 selector=selector,
+            )
+
+        # Names before ids. The loop below writes `departmentId` and `buildingId` onto
+        # every device it touches, and those are only ever displayed through this
+        # lookup — reading the two catalogs first means a device swept today is never
+        # shown as a bare number. Unconditional, not behind include_catalog: that flag
+        # exists to spare a device-only collection the hundreds of smart-group detail
+        # reads, and this is two.
+        org_units = await _refresh_org_units(db, connection, client, http)
+        await db.commit()
+        if run is not None:
+            await run_log(
+                db,
+                run,
+                "info",
+                "department and building names cached",
+                departments=org_units[DEPARTMENT],
+                buildings=org_units[BUILDING],
             )
 
         # Streamed, not collected: a 40,000-device tenant is paged through one record
@@ -823,8 +872,8 @@ async def process_sync(
     if device.observed("operating_system"):
         existing.os_version = device.os_version
     if device.observed("user_and_location"):
-        existing.building = device.building
-        existing.department = device.department
+        existing.building_id = device.building_id
+        existing.department_id = device.department_id
     if device.extension_attributes is not None:
         # Replaced rather than merged, but the delete has to be flushed first. Assigning a
         # fresh list in one go lets the unit of work order the INSERTs before the DELETEs,

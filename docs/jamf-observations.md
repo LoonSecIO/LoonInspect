@@ -81,6 +81,12 @@ Worked vectors, computed from the recipe alone and asserted against the implemen
    alongside as labels (`observation_entries.label`, or the group's own definition
    observation). The exception is content that *is* a name — an application's name, a
    certificate's common name, a local account's username.
+   Departments and buildings are the sharpest case, because the inventory record gives
+   nothing else: `userAndLocation` carries `departmentId` and `buildingId` and no names
+   at all. The ids are what is hashed *and* what `devices.department_id` /
+   `devices.building_id` store; the names are cached separately in `jamf_org_units`
+   (§11) and resolved for display and filtering. A rename therefore costs one row
+   update and no device diffs.
 3. **Absence is absence.** `null`, `""`, `[]`, `{}` and a missing key are one thing and
    are dropped. Strings are NFC-normalized and stripped. Timestamps that survive the
    allowlist are reduced to UTC whole seconds (`YYYY-MM-DDTHH:MM:SSZ`); date-only
@@ -354,14 +360,27 @@ exists: a check-in is a heartbeat every ~15 minutes times every active device, a
 reacting to one would spend a run and three API reads per heartbeat on a record whose
 `reportDate` has not moved (#76). That load stays outside this container.
 
+Two catalog reads ride along with every sweep, and with the catalog class on its own:
+`/v1/departments` and `/v1/buildings`, cached per connection in `jamf_org_units`
+(`app.mdm.org_units`). They exist because a computer record names both by id and never
+by name, so without them `departmentId: "7"` is an integer nobody can act on. Tens of
+rows and two requests, read *before* the device loop so a device swept today is never
+displayed as a bare number — and an upsert, so a catalog that comes back empty because
+a privilege was revoked leaves the last known names standing. Nothing here is an
+observation: no span, no digest, no change row.
+
 Jamf privileges the API client needs: Read Computers (inventory), Read Smart Computer
 Groups (definitions; absent → groups are not observed, logged), Read Computer Inventory
-Collection (aperture; absent → `available: false`), and the Jamf Pro version endpoint
-(absent → recorded as missing).
+Collection (aperture; absent → `available: false`), Read Departments and Read Buildings
+(names; absent → the ids are still stored and still filterable, but they resolve to no
+name, logged), and the Jamf Pro version endpoint (absent → recorded as missing).
 
 Verified against a real record: `tests/fixtures/jamf/computer_inventory_detail_real.json`
 is a Jamf Pro 11.31.1 inventory of an M4 Mac mini on a macOS 27 beta, scrubbed of
-identity. It is where `cfBundleVersion` and `lastContact` / `lastCheckIn` surfaced.
+identity. It is where `cfBundleVersion` and `lastContact` / `lastCheckIn` surfaced —
+and where `departmentId` / `buildingId` were confirmed as the only spelling the
+inventory API uses, after the current-state normalizer spent its life reading the
+classic API's `department` / `building` and writing NULL.
 
 ---
 
