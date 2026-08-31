@@ -20,21 +20,37 @@ class SyncStatus(str, Enum):
     failed = "failed"
 
 
+# The wire's own version, bumped only on a BREAKING change to delivered events —
+# additive changes never touch it (#188). Deliberately not `contract.CONTRACT_VERSION`,
+# which versions canonicalization, the allowlist and the aperture: those two move for
+# unrelated reasons, and conflating them means every digest change would look like a
+# wire break to a customer's dashboards, and vice versa.
+WIRE_SCHEMA_VERSION = "v0"
+
+
 class NormalizedApp(BaseModel):
+    """An installed app, internally snake_case and camelCase on the wire (#188).
+
+    `bundleId` keeps Jamf's own spelling rather than taking the `ID` uppercasing ruled
+    for LoonInspect-minted keys (#188, this round): the casing law leaves a vendor's
+    native keys exactly as the vendor writes them, and Jamf writes `bundleId`. Every
+    other alias here names a field LoonInspect invented, so those follow the house rule.
+    """
+
     name: str
-    bundle_id: str
+    bundle_id: str = Field(serialization_alias="bundleId")
     version: str
     # CFBundleVersion vs CFBundleShortVersionString. Jamf's inventory API exposes only
     # one version field, so this is null for recon and manual syncs and populated only
     # where the source carries both.
-    short_version: str | None = None
+    short_version: str | None = Field(default=None, serialization_alias="shortVersion")
 
     # Populated by process_sync, not by the MDM clients — every ingest path funnels
     # through there, so hashing happens in exactly one place.
-    app_hash: str | None = None
-    version_hash: str | None = None
-    key_title: str | None = None
-    key_full: str | None = None
+    app_hash: str | None = Field(default=None, serialization_alias="appHash")
+    version_hash: str | None = Field(default=None, serialization_alias="versionHash")
+    key_title: str | None = Field(default=None, serialization_alias="keyTitle")
+    key_full: str | None = Field(default=None, serialization_alias="keyFull")
 
 
 class NormalizedExtensionAttribute(BaseModel):
@@ -87,16 +103,29 @@ class MdmSyncStatusOut(BaseModel):
 
 
 class InventoryChangedEvent(BaseModel):
+    """One device's inventory delta, as it goes out on the wire.
+
+    camelCase throughout, with the token `ID` uppercased on LoonInspect-minted keys —
+    both ruled in #188. The aliases are serialization-only, so the Python side stays
+    snake_case and only `model_dump(by_alias=True)` at the enqueue seam
+    (app.mdm.service.process_sync) sees the wire spelling. That single seam is the whole
+    reason the rename is safe: nothing else serializes this model.
+    """
+
     event: str = "device.inventory.changed"
     provider: MdmProvider
-    device_external_id: str
-    added_apps: list[NormalizedApp]
-    removed_apps: list[NormalizedApp]
-    occurred_at: datetime
+    device_external_id: str = Field(serialization_alias="deviceExternalID")
+    added_apps: list[NormalizedApp] = Field(serialization_alias="addedApps")
+    removed_apps: list[NormalizedApp] = Field(serialization_alias="removedApps")
+    occurred_at: datetime = Field(serialization_alias="occurredAt")
 
-    # The meta block: the run's identity (jobId, trigger, comparison, shortDate) plus the
-    # device's serial, so events split apart at a destination can still be correlated back
-    # to the one pull that produced them (docs/splunk-event-shaping.md). Small and fixed
-    # for now — it is duplicated onto every sub-event a Splunk destination expands this
-    # into, so anything added here multiplies by the device's app count.
-    meta: dict = Field(default_factory=dict)
+    # The device meta block (#189): the keys stamped onto every sub-event a device
+    # produces, so events split apart at a destination still correlate back to the one
+    # pull that produced them. Built by app.mdm.service._device_meta at enqueue time —
+    # never at delivery, where the run ContextVar is already gone.
+    #
+    # It is the most expensive object in the schema: measured against a captured tenant
+    # record it is over half the raw feed, because it is written once per app, per EA,
+    # per certificate, per profile — not once per device. Keys are capped at thirteen
+    # and adding one is permanent, so anything proposed here goes through #189 first.
+    device_meta: dict = Field(default_factory=dict, serialization_alias="deviceMeta")

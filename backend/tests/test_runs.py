@@ -19,12 +19,16 @@ import os
 import uuid as uuidlib
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy import delete, select
 
+from app.core.outbox import _build_body
+from app.core.wire import ENVELOPE, instance_label
+from app.schemas.payload import WIRE_SCHEMA_VERSION
 from tests.jamf_fake import HOST, FakeJamf
 
 pytestmark = [
@@ -466,12 +470,47 @@ async def test_a_sweep_stamps_its_job_id_on_the_events_it_produces(db, connectio
             .limit(1)
         )
     ).scalars().one()
-    meta = event.payload["meta"]
-    assert meta["jobId"] == str(run.id)
+    meta = event.payload["deviceMeta"]
+    assert meta["jobID"] == str(run.id)
     assert meta["trigger"] == TRIGGER_MANUAL
     assert meta["comparison"] == "baseline"
     assert meta["serialNumber"]
     assert meta["shortDate"] == run.window_start.strftime("%Y-%m-%d")
+
+    # The ruled block (#189): identity, correlation, provenance, freshness, integrity.
+    # Asserted by name because every one of these is permanent the moment a customer
+    # writes SPL against it, and a silent rename returns zero rows rather than an error.
+    assert meta["jamfProID"]
+    assert meta["hostName"]
+    assert meta["schemaVersion"] == WIRE_SCHEMA_VERSION
+    assert meta["eventID"] == str(uuidlib.uuid5(run.id, meta["jamfProID"]))
+    # Capped at thirteen, and `custom` is a reserved name that ships no bytes in v0.
+    assert len(meta) <= 13
+    assert "custom" not in meta
+
+    # Nulls are dropped rather than shipped: the block is over half the raw feed, so a
+    # key with no value costs bytes and carries nothing. This run came from a collection,
+    # so collectionID is present; on the webhook path it is absent rather than a null
+    # that would pollute a `stats by`.
+    assert meta["collectionID"] == sweep.id
+    assert all(value is not None for value in meta.values())
+
+    # The envelope is transport, not vocabulary — it must never reach a customer index.
+    hints = event.payload[ENVELOPE]
+    assert hints["host"] == meta["hostName"]
+    assert hints["source"] == instance_label(HOST) == "e2e.jamfcloud.com"
+    body = _build_body(SimpleNamespace(type="splunk_hec"), event.payload)
+    assert body["source"] == "e2e.jamfcloud.com"
+    # Exact, not approx. `pytest.approx`'s default rel=1e-6 against an epoch near 1.79e9
+    # is a half-hour tolerance, which would pass for delivery time, enqueue time or
+    # `now()` — every regression the envelope exists to prevent. Compared against the
+    # event's OWN occurredAt rather than the run window, because those are two different
+    # clock reads and only one of them is what `time` is built from.
+    assert body["time"] == datetime.fromisoformat(event.payload["occurredAt"]).timestamp()
+    assert ENVELOPE not in body["event"]
+    # Not yet ruled for this event type, and a minted sourcetype is a permanent
+    # props.conf stanza — so it stays absent until the fan-out lands (#188).
+    assert "sourcetype" not in body
 
     # And the second run of the same connection and class is a delta, not another
     # baseline — the distinction the contract's `run_type` was carrying.

@@ -95,7 +95,7 @@ analyst write `strftime`/staleness math inline in every search.
 
 This is a **Splunk-HEC-specific delivery-time transformation**, not a change to the
 canonical event LoonInspect produces internally. The canonical `EventOutbox.payload`
-stays a delta (`added_apps`/`removed_apps`) — correct and sufficient for generic-webhook
+stays a delta (`addedApps`/`removedApps`) — correct and sufficient for generic-webhook
 and future warehouse destinations, which don't have Splunk's multivalue-matching
 problem. What changes is the Splunk HEC destination *expanding* that one canonical
 event into N HEC-shaped sub-events at send time.
@@ -122,6 +122,14 @@ construction for one delivery attempt, not as N separate delivery rows.
 
 ## The meta block (`device_meta` equivalent) — confirmed requirements
 
+> **Superseded 2026-08-31 by INSPECT-0189.** The block is ruled, named `deviceMeta`, and
+> capped at thirteen keys; the shipped shape and its rules live in `docs/runs.md`. What
+> follows is the original requirements-gathering, kept because it records *why* each
+> field was wanted. Two claims below are now known false: `short_date` is derived at
+> **enqueue**, not at delivery (the delivery seam can reach neither the run nor the
+> device), and `days_since` was ruled out entirely — a now-relative value frozen into an
+> immutable index decays into a lie, and it is not implementable at delivery anyway.
+
 A small object attached to every emitted Splunk sub-event, carrying device-identity/
 correlation fields so split-apart events can still be searched and correlated together.
 
@@ -130,7 +138,7 @@ correlation fields so split-apart events can still be searched and correlated to
 | Field | Purpose | Status |
 | --- | --- | --- |
 | Serial number | Device identity/correlation key | Free — `Device.serial_number` already exists |
-| `short_date` | Cheap daily-grain dedup (`\| dedup serial short_date`) without inline `strftime` | Free — pure derived field at delivery time from `occurred_at`, no schema change |
+| `shortDate` | Cheap daily-grain dedup (`\| dedup serialNumber shortDate`) without inline `strftime` | Shipped — derived at **enqueue** from the run's window, not at delivery |
 | Inventory/sync UUID | Ties together every sub-event that came from one device's one sync pass, so you can "rebuild" (reconstruct) or cross-search everything from that pull | **New work.** Nothing today ties sub-events to one device-sync-pass. `EventOutbox.request_id` is scoped to the triggering job (a whole sweep/manual trigger can cover many devices) — wrong granularity. Needs a fresh id minted per device-sync, stamped on all N resulting Splunk sub-events. |
 | `days_since` (with DTG-style timestamps) | Precomputed staleness/gap field so searches don't need inline time math | **Ambiguous — never resolved.** Could be purely device-check-in staleness (`Device.last_check_in`/`last_inventory_at` already support this, cheap) or a generalized "days since any timestamp this event carries" pattern that would also apply to app-lifecycle and group-join timestamps (see "Adjacent unbuilt features" below). Question was asked and the conversation hit the context limit before it was answered. |
 
@@ -216,32 +224,47 @@ re-derive or rebuild this, extend it:
 - Scheduler: `outbox_worker_tick` every 30s (fan-out + delivery), `outbox_cleanup`
   daily.
 
-## Known constraint (v0): Splunk `_time` is ingest time, not occurrence time
+## RESOLVED: Splunk `_time` is occurrence time
 
-`_build_body()` sends no HEC `time` field, so Splunk stamps every event at HEC
-*arrival* — which trails the occurrence by the outbox cadence (30s tick) and, after a
-destination hiccup, by up to the full retry envelope. Delivery order is not guaranteed
-either (`deliver_pending` has no ORDER BY), so a drained backlog can land shuffled.
+**Superseded 2026-08-31.** This section previously recorded, as an accepted v0
+constraint, that `_build_body()` sent no HEC `time` field and every event was therefore
+stamped at HEC *arrival*. That is no longer true, and the SPL workaround it taught is
+no longer needed.
 
-Since #157 the upper bound on that skew is no longer the retry envelope but
-`event_outbox_retention_days` (seven days by default). Events produced before any
-destination exists are now *held* rather than burned, so an operator who runs the
-baseline sweep on Monday and adds Splunk on Friday gets four days of events all
-stamped Friday, arriving as one spike. This is the onboarding path, not an edge case —
-the stepper labels the destination step optional. It makes `occurred_at` the load-
-bearing timestamp for exactly the pull most worth searching: the first full inventory
-of the fleet. The 2026-08-29 acceptance was taken against the retry envelope, so this
-wider bound is inherited, not yet separately ruled.
+`_build_body()` now sets `time` from the event's own `occurredAt`, computed at enqueue
+(`backend/app/core/wire.py`). Occurrence semantics are unchanged and still authoritative:
+sweep events back-date to the run's window, webhook events carry Jamf's `reportDate`
+(`backend/app/core/runs.py::event_time`). So `_time` now means *when the device changed*,
+which is what dashboards already assumed.
 
-Ruled a **known, accepted v0 constraint** (2026-08-29), not a bug to fix in freeze
-week. The authoritative occurrence timestamp is **`occurred_at` in the payload**, whose
-semantics are deliberate and trustworthy: sweep events back-date to the run's `_time`
-window, webhook events carry Jamf's `reportDate` (`backend/app/core/runs.py`). Searches
-and dashboards that care about *when the device changed* must key on `occurred_at`
-(e.g. `| eval _time=strptime(occurred_at, "%Y-%m-%dT%H:%M:%S.%6Q%z")`), not on the
-time picker. Any future change that starts setting HEC `time` from `occurred_at` is
-additive and safe for existing consumers — it makes `_time` mean what dashboards
-already assume — but it belongs to the per-app expansion work, not v0.
+What this fixes concretely is the onboarding path, not an edge case. Since #157 events
+produced before any destination exists are *held* rather than burned, so an operator who
+runs the baseline sweep on Monday and adds Splunk on Friday used to get four days of
+events all stamped Friday, arriving as one spike — for exactly the pull most worth
+searching, the first full inventory of the fleet. Those events now land on their own days.
+
+**Do not** write `| eval _time=strptime(occurred_at, ...)` any more. Two reasons: `_time`
+is already correct, and the key was renamed to `occurredAt` by the #188 casing ruling, so
+the old expression silently evaluates to null rather than erroring.
+
+Two related things ship in the same envelope, both indexed metadata and therefore free of
+licence volume:
+
+- **`host`** — the device hostname. Also carried in the body as `deviceMeta.hostName`, a
+  deliberate duplicate: a Splunk admin can override `host` at the HEC input, and envelope
+  fields need not survive a summary index or an export into a case file.
+- **`source`** — the Jamf instance, scheme dropped and non-default port kept:
+  `acme.jamfcloud.com`, `jamf.corp.local:8443`. This is why the instance URL is *not* a
+  `deviceMeta` key.
+
+**`sourcetype` is still not set**, deliberately. The ruled tree (`loon:jamf:mac:app`)
+names the fan-out sub-events, and the fan-out below is not built; a sourcetype is a
+permanent hand-written `props.conf` stanza, so minting one for a shape that is about to
+change would be the expensive kind of mistake.
+
+**Still open:** `deliver_pending` has no `ORDER BY`, so a drained backlog is delivered in
+arbitrary order. With `time` now set this no longer affects where events land on the time
+axis, but it does affect the order in which they arrive.
 
 ## Adjacent unbuilt features referenced by this design (context, not yet built)
 

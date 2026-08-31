@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -30,9 +31,11 @@ from app.core.runs import (
     entered,
     event_time,
     finish,
+    get_run,
     run_meta,
 )
 from app.core.runs import log as run_log
+from app.core.wire import ENVELOPE, envelope, instance_label
 from app.mdm.factory import get_mdm_client
 from app.mdm.jamf.client import (
     DEFAULT_SWEEP_PAGE_SIZE,
@@ -65,6 +68,7 @@ from app.observations.ledger import (
     record_observation,
 )
 from app.schemas.payload import (
+    WIRE_SCHEMA_VERSION,
     InventoryChangedEvent,
     NormalizedApp,
     NormalizedDevice,
@@ -756,6 +760,67 @@ async def sync_state(db: AsyncSession, connection: MdmConnection) -> None:
     state.device_count = device_count
 
 
+def _device_meta(existing: Device) -> dict[str, object]:
+    """The device meta block (#189) — the keys stamped onto every sub-event a device
+    produces, capped at thirteen and permanent once a customer's SPL references them.
+
+    Built HERE, at enqueue, and never at delivery. `_build_body` in app.core.outbox
+    receives only the destination and the frozen payload — no session, no Device, no
+    run — and the run itself is a ContextVar (app.core.runs) whose scope has already
+    closed by the time the outbox worker's 30s tick fires. Anything sourced from the run
+    or the device row has exactly one moment where it is reachable, and this is it.
+
+    Null values are dropped rather than shipped. The block is over half the raw feed
+    measured against a real tenant record, so a key that is null carries cost and no
+    information; `NOT deviceMeta.x=*` finds the same events either way. This is also
+    what keeps `collectionID` honest — webhook runs carry no collection, so it is absent
+    on the intraday path rather than a null that pollutes a `stats by`.
+
+    Reads the Device ROW, not the normalized view: under an aperture without HARDWARE
+    the view's serial is "" while the row still holds the last real read's (#98).
+    """
+    run = get_run()
+    meta: dict[str, object | None] = {
+        # The run's half — jobID, trigger, comparison, connectionID, collectionID, shortDate.
+        **run_meta(),
+        # One id per device per pull, and the only key that can select a single device's
+        # complete inventory pass: two sweeps in a day share a shortDate, and one sweep's
+        # jobID is shared by every device in the fleet (#189).
+        #
+        # Derived rather than minted, so it needs no storage and no threading: uuid5 over
+        # (run, device) means a retry recomputes the same id rather than looking one up.
+        #
+        # It is derivable ON PURPOSE, so that any other producer of this pull can arrive
+        # at the same value without either side passing it along. Nothing else does yet —
+        # app.changes.derive mints no eventID and still spells the run key `job_id` in a
+        # flat snake_case payload, which is the open derive.py reconciliation in #188.
+        # Until that lands, the cross-family join this enables is available on the
+        # inventory family alone.
+        "eventID": str(uuid.uuid5(run.id, existing.external_id)) if run else None,
+        "serialNumber": existing.serial_number or None,
+        # Jamf's own primary key, and the half of a deep link that cannot be
+        # reconstructed. Emitted as the stored string, not coerced to an int: Splunk
+        # searches both identically, and a sibling MDM's id need not be numeric.
+        "jamfProID": existing.external_id,
+        # The cross-tool identity. Every other sourcetype in a customer's Splunk — EDR,
+        # DHCP, VPN, identity — keys on the hostname and none of them know a serial.
+        "hostName": existing.hostname or None,
+        # Whether the app list is current or six weeks stale. A vulnerability finding on
+        # a device that has not reported since July is a different fact from one that
+        # reported this morning, and nothing else on the event carries it.
+        "lastReportDate": (
+            existing.last_inventory_at.isoformat() if existing.last_inventory_at else None
+        ),
+        # The compliance filter: two values fleet-wide, and the cheapest key in the
+        # block. A bool rather than a `managementStatus` string — an enum with one value
+        # invites a second, and additive-only leaves room for a richer field if a third
+        # state ever exists.
+        "managed": existing.managed,
+        "schemaVersion": WIRE_SCHEMA_VERSION,
+    }
+    return {key: value for key, value in meta.items() if value is not None}
+
+
 async def process_sync(
     db: AsyncSession, device: NormalizedDevice, connection: MdmConnection
 ) -> InventoryChangedEvent | None:
@@ -891,6 +956,11 @@ async def process_sync(
                 short_version=row.short_version,
                 app_hash=row.app_hash,
                 version_hash=row.version_hash,
+                # Carried so a removal and an addition are the same shape. Without these
+                # the one event ships two different key sets for one object type, and a
+                # consumer that reads keyTitle off addedApps gets null on every removal.
+                key_title=row.key_title,
+                key_full=row.key_full,
             )
             for row in removed_rows
         ],
@@ -899,17 +969,22 @@ async def process_sync(
         # the pull happened to take; a webhook carries the device's own reportDate. See
         # app.core.runs.event_time.
         occurred_at=event_time(device.last_inventory_at),
-        # The row, not the normalized view: under an aperture without HARDWARE the
-        # view's serial is "" while the row still holds the last real read's (#98).
-        meta=run_meta() | {"serialNumber": existing.serial_number},
+        device_meta=_device_meta(existing),
     )
 
     # Enqueued in the same transaction as the device/app state change below, so "we
     # updated the database" and "we recorded the event" can never drift apart from a
     # partial failure. Delivery itself happens later, on the outbox worker's own
     # schedule — a slow or down destination must never be able to block a sync.
-    await enqueue_event(
-        db, event.event, event.model_dump(mode="json"), request_id=get_request_id()
+    # The envelope rides on the payload and is lifted off again at delivery
+    # (app.core.wire) — `_build_body` can reach neither the run nor the connection, so
+    # this is the only moment `source` and the occurrence time are both in hand.
+    payload = event.model_dump(mode="json", by_alias=True)
+    payload[ENVELOPE] = envelope(
+        occurred_at=event.occurred_at,
+        host=existing.hostname,
+        source=instance_label(connection.base_url),
     )
+    await enqueue_event(db, event.event, payload, request_id=get_request_id())
     await db.commit()
     return event

@@ -200,9 +200,9 @@ async def test_sweep_then_repeat_then_webhook(db, jamf: FakeJamf, connection) ->
             .limit(1)
         )
     ).scalar_one()
-    assert latest.payload["device_external_id"] == real_id
-    assert [app["bundle_id"] for app in latest.payload["added_apps"]] == ["io.loonsec.inspector"]
-    assert latest.payload["removed_apps"] == []
+    assert latest.payload["deviceExternalID"] == real_id
+    assert [app["bundleId"] for app in latest.payload["addedApps"]] == ["io.loonsec.inspector"]
+    assert latest.payload["removedApps"] == []
 
     current = (
         await db.execute(
@@ -308,9 +308,9 @@ async def test_a_full_scope_read_of_zero_apps_still_wipes(db, jamf: FakeJamf, co
             .limit(1)
         )
     ).scalar_one()
-    assert latest.payload["device_external_id"] == real_id
-    assert latest.payload["added_apps"] == []
-    assert len(latest.payload["removed_apps"]) == apps_before
+    assert latest.payload["deviceExternalID"] == real_id
+    assert latest.payload["addedApps"] == []
+    assert len(latest.payload["removedApps"]) == apps_before
 
 
 async def test_narrow_scope_leaves_scalars_and_eas_untouched(db, jamf: FakeJamf, connection) -> None:
