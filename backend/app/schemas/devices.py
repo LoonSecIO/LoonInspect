@@ -71,8 +71,15 @@ class DeviceOut(BaseModel):
     supervised: bool | None
     os_version: str | None
     site: str | None
-    building: str | None
-    department: str | None
+    # Both halves of the same fact. The id is what Jamf put on the device and what the
+    # row stores; the name is resolved per request from the connection's catalog
+    # (app.mdm.org_units) and is null while that catalog has not been read since the id
+    # first appeared — never the id in disguise, so a caller can always tell "no name
+    # yet" from a department genuinely called "7".
+    building_id: str | None
+    department_id: str | None
+    building: str | None = None
+    department: str | None = None
 
 
 class DeviceDetailOut(DeviceOut):

@@ -21,6 +21,10 @@ What it pins, in order:
    the EA section leaves the device's scalars and extension-attribute rows exactly as
    the last full read left them, any full-aperture read heals, and a full-scope read
    of genuinely empty values still writes.
+6. The department and the building, all the way through: the ids Jamf actually sends
+   onto the device row, the two catalogs that give them names, and `/api/devices`
+   filtered by a name a person typed — the chain that returned nothing at all while the
+   normalizer was reading keys the inventory API does not have.
 
 Gated on RUN_DB_TESTS like the other database-backed suites.
 """
@@ -35,7 +39,7 @@ from contextlib import asynccontextmanager
 import httpx
 import pytest
 import pytest_asyncio
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 pytestmark = [
     pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
@@ -79,6 +83,36 @@ def jamf(monkeypatch: pytest.MonkeyPatch) -> FakeJamf:
     return fake
 
 
+ADMIN = ("e2e-devices-admin@build.example.com", "e2e-devices-admin-password")
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def admin(tenant_ready) -> None:
+    """One admin, get-or-create — the device list is behind `device:read`, and the
+    filter is only proved by asking for it the way the UI does."""
+    from app.core.bootstrap import create_account
+    from app.core.database import session_for_tenant
+    from app.core.tenancy import OPERATIONAL_TENANT_ID
+    from app.models.schema import Account, LoginAttempt
+
+    async with session_for_tenant(OPERATIONAL_TENANT_ID) as session:
+        existing = (await session.execute(select(Account).where(Account.email == ADMIN[0]))).scalars().first()
+        if existing is None:
+            await create_account(session, email=ADMIN[0], display_name="e2e devices admin", password=ADMIN[1], roles=("admin",))
+        # A crashed previous run's failed logins would trip the lockout and turn this
+        # suite red about rate limiting instead of about departments.
+        await session.execute(delete(LoginAttempt).where(LoginAttempt.identifier == ADMIN[0]))
+        await session.commit()
+
+
+def _client() -> httpx.AsyncClient:
+    from app.main import app
+
+    # https, not http: the session cookies are Secure and a plain-http origin discards
+    # them, so every request after the login would 401.
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://build.example.com")
+
+
 @pytest_asyncio.fixture(loop_scope="session")
 async def connection(db):
     """A Jamf connection with credentials, removed again afterwards.
@@ -88,8 +122,6 @@ async def connection(db):
     the tenancy sweep's connection listing down with them, so the row — and the devices,
     sync state, and spans that hang off it — is deleted on the way out.
     """
-    from sqlalchemy import delete
-
     from app.models.schema import Device, DeviceExtensionAttribute, InstalledApp, MdmConnection, MdmSyncState
 
     row = MdmConnection(
@@ -475,3 +507,73 @@ async def test_checkin_is_dropped_before_any_fetch(db, jamf: FakeJamf, connectio
 
     assert len(jamf.requests) == requests_before
     assert await _count(db, runs) == runs_before
+
+
+async def test_department_and_building_ids_resolve_to_names_and_filter(db, jamf: FakeJamf, connection, admin) -> None:
+    """The whole chain for the two fields that never worked.
+
+    `userAndLocation` names its department and building by id — `departmentId: "7"` —
+    and the normalizer was reading `department` / `building`, keys the inventory API
+    does not have. Both columns were NULL on every device ever synced, so the two
+    filters over them could only ever return zero rows. The fix has three parts, and
+    all three are asserted here: the id reaches the row, the id gets a name from Jamf's
+    own catalog, and the filter takes the name a person would type.
+    """
+    from app.mdm.org_units import BUILDING, DEPARTMENT, ids_for_name
+    from app.mdm.service import run_jamf_catalog, sync_connection
+    from app.models.schema import Device, JamfOrgUnit
+
+    result = await sync_connection(db, connection)
+    assert result.ok and result.device_count == 2, result
+    assert "GET /api/v1/departments" in jamf.requests and "GET /api/v1/buildings" in jamf.requests
+
+    devices = (await db.execute(select(Device).where(Device.mdm_connection_id == connection.id))).scalars().all()
+    assigned = next(d for d in devices if d.external_id == jamf.synthetic["id"])
+    unassigned = next(d for d in devices if d.external_id == jamf.real["id"])
+    assert (assigned.department_id, assigned.building_id) == ("7", "2")
+    # The real 11.31 record's ids are null — an unassigned Mac, not a failed read.
+    assert (unassigned.department_id, unassigned.building_id) == (None, None)
+
+    units = (
+        await db.execute(select(JamfOrgUnit).where(JamfOrgUnit.mdm_connection_id == connection.id))
+    ).scalars().all()
+    assert {(u.kind, u.external_id, u.name) for u in units} == {
+        (DEPARTMENT, "7", "Engineering"),
+        (DEPARTMENT, "9", "Sales"),
+        (BUILDING, "2", "Bletchley Park"),
+    }
+
+    async with _client() as c:
+        response = await c.post("/api/auth/login", json={"email": ADMIN[0], "password": ADMIN[1]})
+        assert response.status_code == 200, response.text
+
+        # The name, as typed — case and all. This is the assertion the bug owned: this
+        # request returned an empty list for every fleet that ever ran this container.
+        listed = await c.get("/api/devices", params={"department": "engineering"})
+        assert listed.status_code == 200, listed.text
+        items = listed.json()["items"]
+        assert [item["externalId"] for item in items] == [assigned.external_id]
+        assert items[0]["department"] == "Engineering" and items[0]["departmentId"] == "7"
+        assert items[0]["building"] == "Bletchley Park" and items[0]["buildingId"] == "2"
+
+        # Both narrowing directions still narrow: a real department nobody is in, and a
+        # name no catalog knows, are zero rows — never the whole fleet.
+        assert (await c.get("/api/devices", params={"department": "Sales"})).json()["total"] == 0
+        assert (await c.get("/api/devices", params={"building": "Nowhere"})).json()["total"] == 0
+
+        # The id is a filter too, for the tenant whose API client cannot read the
+        # catalogs and has nothing but ids.
+        by_id = await c.get("/api/devices", params={"department": "7"})
+        assert [item["externalId"] for item in by_id.json()["items"]] == [assigned.external_id]
+
+        detail = await c.get(f"/api/devices/{assigned.id}")
+        assert detail.json()["department"] == "Engineering"
+
+    # A rename is not a device change: the catalog class alone carries the new name to
+    # every device that was in it, with no inventory read at all.
+    jamf.departments = [{"id": "7", "name": "Platform"}, {"id": "9", "name": "Sales"}]
+    catalog = await run_jamf_catalog(db, connection, trigger="manual")
+    assert catalog.ok, catalog
+    assert await ids_for_name(db, kind=DEPARTMENT, name="Platform") == [(connection.id, "7")]
+    assert await ids_for_name(db, kind=DEPARTMENT, name="Engineering") == []
+    assert (await db.execute(select(func.count()).select_from(JamfOrgUnit))).scalar_one() == len(units)

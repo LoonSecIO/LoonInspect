@@ -1,12 +1,12 @@
 """A stand-in Jamf Pro tenant for end-to-end tests: enough of the API surface the
 connector touches, answered from the two fixture records, behind httpx.MockTransport.
 
-Two computers, one smart group, a version, and no permission to read inventory-
-collection settings. Records every request path so a test can assert what was fetched
-— and, for the device sweep, which `filter=`, `section=`, and `page-size=` reached
-Jamf. Pagination is real (slices by page/page-size, totalCount at request time), so the
-concurrent pager's waves and its totalCount-floor tail are exercised against the same
-arithmetic a tenant performs:
+Two computers, one smart group, two departments, one building, a version, and no
+permission to read inventory-collection settings. Records every request path so a test
+can assert what was fetched — and, for the device sweep, which `filter=`, `section=`,
+and `page-size=` reached Jamf. Pagination is real (slices by page/page-size, totalCount
+at request time), so the concurrent pager's waves and its totalCount-floor tail are
+exercised against the same arithmetic a tenant performs:
 
 - `seed(n)` grows the fleet with clones so page_size=1 tests have pages to fan out.
 - `appear_after_first_page` holds devices that enroll right after page 0 is served —
@@ -32,8 +32,8 @@ HOST = "https://e2e.jamfcloud.com"
 
 
 class FakeJamf:
-    """Just enough of a tenant: two computers, one smart group, a version, no
-    permission to read inventory-collection settings."""
+    """Just enough of a tenant: two computers, one smart group, two departments, one
+    building, a version, no permission to read inventory-collection settings."""
 
     def __init__(self) -> None:
         self.synthetic = json.loads((FIXTURES / "computer_inventory_detail.json").read_text())
@@ -51,6 +51,14 @@ class FakeJamf:
         self.page_sizes: list[int] = []  # the `page-size=` each inventory page asked for
         self.in_flight = 0
         self.max_in_flight = 0
+        # Departments and buildings, keyed to the ids the synthetic record carries
+        # (departmentId 7, buildingId 2). None stands for an API client without the
+        # "Read Departments" / "Read Buildings" privilege — the catalog answers 403.
+        self.departments: list[dict] | None = [
+            {"id": "7", "name": "Engineering"},
+            {"id": "9", "name": "Sales"},
+        ]
+        self.buildings: list[dict] | None = [{"id": "2", "name": "Bletchley Park"}]
 
     @property
     def computers(self) -> list[dict]:
@@ -102,6 +110,18 @@ class FakeJamf:
                 if computer["id"] == wanted:
                     return httpx.Response(200, json=computer)
             return httpx.Response(404, json={"httpStatus": 404})
+        if path in ("/api/v1/departments", "/api/v1/buildings"):
+            # The two catalogs a computer record names by id and never by name. Paged
+            # like the rest so the pager is exercised, and refusable so a test can take
+            # the privilege away.
+            catalog = self.departments if path.endswith("departments") else self.buildings
+            if catalog is None:
+                return httpx.Response(403, json={"httpStatus": 403, "errors": []})
+            page = int(request.url.params.get("page", "0"))
+            size = int(request.url.params.get("page-size", "100"))
+            return httpx.Response(
+                200, json={"totalCount": len(catalog), "results": catalog[page * size : (page + 1) * size]}
+            )
         if path == "/api/v3/computer-groups/smart-groups":
             return httpx.Response(200, json={"totalCount": 1, "results": [{"id": "1", "name": "All Managed Clients"}]})
         if path == "/api/v3/computer-groups/smart-groups/1":

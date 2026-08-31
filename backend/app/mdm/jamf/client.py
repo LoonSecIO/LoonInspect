@@ -507,6 +507,67 @@ class JamfClient:
             start += len(wave)
         return detailed
 
+    # --- departments and buildings ----------------------------------------------------
+
+    async def fetch_departments(self, client: httpx.AsyncClient, *, page_size: int = _PAGE_SIZE) -> list[dict]:
+        """Every department, as `{"id", "name"}`. Needs "Read Departments"."""
+        return await self._fetch_named_objects(client, "/api/v1/departments", "departments", page_size)
+
+    async def fetch_buildings(self, client: httpx.AsyncClient, *, page_size: int = _PAGE_SIZE) -> list[dict]:
+        """Every building, as `{"id", "name"}`. Needs "Read Buildings"."""
+        return await self._fetch_named_objects(client, "/api/v1/buildings", "buildings", page_size)
+
+    async def _fetch_named_objects(
+        self, client: httpx.AsyncClient, path: str, kind: str, page_size: int
+    ) -> list[dict]:
+        """One of Jamf's small id-and-name catalogs, paged.
+
+        Departments and buildings are the two objects a computer record names by id and
+        never by name, so without these reads a device's `departmentId` is an integer
+        nobody can act on. Tens of rows per tenant, two requests per sweep — a catalog
+        read, not a sweep, which is why it is fetched whole rather than per device.
+
+        A tenant whose API client lacks the privilege yields an empty list and a log
+        line — and so does a catalog that errors outright, which is the stronger of the
+        two promises: names are display, and no missing label may cost a sweep the
+        inventory it came for. An empty answer never blanks what is already cached
+        (app.mdm.org_units.record_org_units upserts).
+        """
+        objects: list[dict] = []
+        page = 0
+        try:
+            while True:
+                response = await self._get(
+                    client, path, comment="catalog", params={"page": page, "page-size": page_size, "sort": "id:asc"}
+                )
+                if response.status_code in (401, 403, 404):
+                    logger.info(
+                        "jamf catalog not readable; ids will not resolve to names",
+                        extra={"status": response.status_code, "catalog": kind},
+                    )
+                    return []
+                response.raise_for_status()
+                results = response.json().get("results", [])
+                if not isinstance(results, list):
+                    return objects
+                objects.extend(
+                    {"id": str(item["id"]), "name": item.get("name") or ""}
+                    for item in results
+                    if isinstance(item, dict) and item.get("id") is not None
+                )
+                if len(results) < page_size:
+                    return objects
+                page += 1
+        except (httpx.HTTPError, ValueError):
+            # ValueError covers a 200 carrying something that is not JSON (#82).
+            logger.warning(
+                "jamf catalog read failed; ids will not resolve to names",
+                extra={"catalog": kind},
+                exc_info=True,
+            )
+            return []
+
+
 def normalize_computer(computer: dict, sections: Sequence[str] = V0_SECTIONS) -> NormalizedDevice:
     """The `devices` / `installed_apps` shape the UI reads, from a raw inventory object.
 
@@ -553,8 +614,16 @@ def normalize_computer(computer: dict, sections: Sequence[str] = V0_SECTIONS) ->
         supervised=general.get("supervised"),
         os_version=operating_system.get("version") or hardware.get("osVersion"),
         site=site.get("name"),
-        building=user_and_location.get("building"),
-        department=user_and_location.get("department"),
+        # Ids, not names. Jamf's inventory API carries `departmentId` and `buildingId`
+        # and nothing else — verified against the 11.31 record in
+        # tests/fixtures/jamf/computer_inventory_detail_real.json, whose userAndLocation
+        # has no `department` or `building` key at all. Those are the classic API's
+        # names, which this endpoint has never returned, so unlike lastContactTime
+        # below there is no older spelling to fall back to: reading them was simply
+        # wrong, and both columns held NULL on every device until it was fixed.
+        # app.mdm.org_units resolves the ids to names for display and filtering.
+        building_id=_org_unit_id(user_and_location.get("buildingId")),
+        department_id=_org_unit_id(user_and_location.get("departmentId")),
         # Jamf Pro 11.31 renamed the field: `lastContact` (MDM) and `lastCheckIn`
         # (binary) replace the documented `lastContactTime`. All three are read so an
         # older server and a current one both populate the column.
@@ -589,6 +658,17 @@ def normalize_computer(computer: dict, sections: Sequence[str] = V0_SECTIONS) ->
         ],
         sections=frozenset(requested),
     )
+
+
+def _org_unit_id(value: object) -> str | None:
+    """A department or building id as a string, and absence as None.
+
+    Jamf sends these as quoted strings, but the column is a string either way, and
+    absence is absence (docs/jamf-observations.md §2.2 rule 3): "" is not a department.
+    """
+    if value is None or value == "":
+        return None
+    return str(value)
 
 
 def _parse_datetime(value: str | None) -> datetime | None:

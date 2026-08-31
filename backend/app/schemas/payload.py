@@ -51,8 +51,10 @@ class NormalizedDevice(BaseModel):
     supervised: bool | None = None
     os_version: str | None = None
     site: str | None = None
-    building: str | None = None
-    department: str | None = None
+    # Jamf's own ids for the two objects the device names by id and never by name; the
+    # names are resolved at read time from `jamf_org_units` (app.mdm.org_units).
+    building_id: str | None = None
+    department_id: str | None = None
     last_check_in: datetime | None = None
     last_inventory_at: datetime | None = None
     # None means the applications section was not part of the read's aperture; [] means
