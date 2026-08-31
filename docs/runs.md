@@ -104,16 +104,41 @@ against these names makes them permanent.
 ledger, the run, and the wire. `comparison` is `baseline` until a connection and lock
 class have completed one successful run, and `delta` after.
 
-The meta block on `device.inventory.changed`:
+The `deviceMeta` block on `device.inventory.changed`, ruled in #189:
 
 ```json
-{"jobId": "…", "trigger": "sweep", "comparison": "delta",
- "connectionId": 1, "collectionId": 4, "shortDate": "2026-08-23",
- "serialNumber": "C02…"}
+{"jobID": "…", "trigger": "sweep", "comparison": "delta",
+ "connectionID": 1, "collectionID": 4, "shortDate": "2026-08-31",
+ "eventID": "…", "serialNumber": "C02…", "jamfProID": "1743",
+ "hostName": "kyle-mbp", "lastReportDate": "2026-08-31T21:44:03+00:00",
+ "managed": true, "schemaVersion": "v0"}
 ```
 
-It stays small on purpose: a Splunk destination expands one device's event into one
-sub-event per app, and every field here is duplicated onto all of them.
+Capped at **thirteen keys**, because a Splunk destination expands one device's event
+into one sub-event per app, per extension attribute, per certificate and per profile,
+and every field here is written onto all of them — measured against a real tenant record
+the block is over half the raw feed. Keys can be added later and never taken away, so
+anything proposed for it goes through #189 first.
+
+Two rules a consumer can rely on:
+
+- **Null values are dropped, not sent.** `collectionID` is absent on the webhook path,
+  where a run carries no collection. `NOT deviceMeta.collectionID=*` finds those events.
+- **`eventID` is one id per device per pull** — `uuid5(jobID, jamfProID)`, so a retry
+  recomputes the same value. It is the only key that selects a single device's complete
+  inventory pass: two sweeps in a day share a `shortDate`, and one sweep's `jobID` is
+  shared by every device in the fleet.
+
+Casing is camelCase throughout with the token `ID` uppercased on LoonInspect's own keys
+(#188). A vendor's native key keeps the vendor's spelling — Jamf writes `bundleId`, so
+the wire does too.
+
+Alongside the body, a Splunk HEC delivery sets three envelope fields: `time` from the
+event's own `occurredAt`, `host` from the hostname, and `source` from the Jamf instance
+(scheme dropped, non-default port kept — `jamf.corp.local:8443`). They are indexed
+metadata, so they cost no licence volume. `sourcetype` is deliberately not set yet: the
+ruled tree names fan-out sub-events that do not exist, and a sourcetype is a permanent
+`props.conf` stanza.
 
 ## 5. The log, and run-now
 

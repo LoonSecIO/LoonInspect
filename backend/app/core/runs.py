@@ -191,19 +191,30 @@ def run_meta() -> dict[str, object]:
     eventually type the wrong one and get zero results with no error. Renamed while it
     is still free: customer SPL written against these names makes them permanent.
 
-    `short_date` rides along because every consumer of this block wants the cheap
-    daily-grain dedup key (`| dedup serial short_date`) and deriving it here costs
-    nothing (docs/splunk-event-shaping.md).
+    `shortDate` rides along because every consumer of this block wants a cheap daily
+    grain and deriving it here costs nothing. Derived at ENQUEUE, not at delivery: the
+    outbox's `_build_body` can reach neither this run nor the device.
+
+    A note on the idiom this docstring used to teach. `| dedup serialNumber shortDate`
+    is correct on a one-event-per-device sourcetype and WRONG on a fan-out one, where it
+    collapses ~107 sub-events to a single arbitrary row. On a fan-out sourcetype the
+    selector is `deviceMeta.eventID`, which names one device's one pull exactly (#189).
+    Two sweeps in a day share a shortDate, so the daily grain cannot separate them.
+
+    The keys are camelCase with `ID` uppercased on LoonInspect-minted names (#188).
+    Renamed while renaming was still free: SPL field names are case-sensitive, so a
+    customer search against the wrong spelling returns zero rows with no error — the
+    same argument the `trigger`/`comparison` rename above is making.
     """
     run = _run.get()
     if run is None:
         return {}
     return {
-        "jobId": str(run.id),
+        "jobID": str(run.id),
         "trigger": run.trigger,
         "comparison": run.comparison,
-        "connectionId": run.connection_id,
-        "collectionId": run.collection_id,
+        "connectionID": run.connection_id,
+        "collectionID": run.collection_id,
         "shortDate": run.window_start.strftime("%Y-%m-%d"),
     }
 

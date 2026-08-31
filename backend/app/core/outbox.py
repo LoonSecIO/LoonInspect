@@ -9,6 +9,7 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.wire import ENVELOPE
 from app.models.schema import Destination, EventOutbox, OutboxDelivery
 
 logger = logging.getLogger(__name__)
@@ -70,10 +71,36 @@ def _build_headers(destination: Destination) -> dict[str, str]:
 
 
 def _build_body(destination: Destination, payload: dict) -> dict:
+    # The envelope hints are a transport detail, computed at enqueue because nothing
+    # here can reach a run or a Device (app.core.wire). Popped for EVERY destination
+    # type, not just Splunk, so the key never reaches a customer's index or a generic
+    # webhook receiver.
+    payload = dict(payload)
+    hints = payload.pop(ENVELOPE, None) or {}
+
     if destination.type == "splunk_hec":
         # HEC's raw-JSON collector endpoint expects the event wrapped, not posted
         # bare — without this, "Splunk support" would silently fail to ingest.
-        return {"event": payload}
+        body: dict = {"event": payload}
+        # `time`, `host` and `source` ride beside the body as indexed metadata: they
+        # cost no licence volume and are faster to search than the same string in `_raw`.
+        # That is why the instance URL is envelope-ONLY and never a deviceMeta key.
+        #
+        # `host` is the deliberate exception: the hostname is carried in BOTH places
+        # (Kyle's ruling, 2026-08-31). A Splunk admin can silently override `host` at the
+        # HEC input, and envelope fields may not survive a summary index or an export
+        # into a case file, whereas the body always travels — so the one identity that
+        # joins outward to EDR, DHCP and identity logs is not left somewhere a customer
+        # can quietly take away. It is a duplicate on purpose, not an oversight.
+        #
+        # `sourcetype` is deliberately absent. The ruled tree names the fan-out
+        # sub-events (`loon:jamf:mac:app`), and the fan-out is not built — minting a
+        # string for this one event type would create a permanent props.conf stanza for
+        # a shape that is about to change. It rides the same hints dict the day it is
+        # ruled.
+        body.update(hints)
+        return body
+
     # "runreveal" deliberately falls through: their webhook source ingests the same
     # bare JSON a generic webhook receives. The preset exists for the UI (prefilled
     # ingest-URL shape, bearer auth locked in), not for a different wire format.
@@ -93,12 +120,22 @@ def _elastic_bulk_body(event: EventOutbox) -> str:
     `index` because the default index name is a data stream, and data streams accept
     nothing else."""
     document = dict(event.payload)
-    # @timestamp is the time axis of every Elastic index. The event's own occurred_at
+    # Never index the outbox's own envelope hints — they are Splunk transport, not data.
+    document.pop(ENVELOPE, None)
+    # @timestamp is the time axis of every Elastic index. The event's own occurredAt
     # is authoritative (sweeps back-date to the run's window, webhooks carry Jamf's
     # reportDate — see app.core.runs.event_time); enqueue time is only the fallback
     # for a payload that somehow lacks it, so the document always maps.
+    #
+    # Both spellings are read, and the fallback is NOT transitional. `occurredAt` is the
+    # camelCase key ruled in #188 and carried by device.inventory.changed; `occurred_at`
+    # is still what run.completed emits (app.core.runs), because the rename was scoped to
+    # the inventory event and the other three producers are an open #188 item. It also
+    # covers the pre-rename backlog, which retention keeps deliverable for seven days.
+    # device.change carries neither and falls through to enqueue time — tracked with the
+    # rest of the derive.py vocabulary reconciliation.
     if "@timestamp" not in document:
-        occurred_at = document.get("occurred_at")
+        occurred_at = document.get("occurredAt") or document.get("occurred_at")
         created_at = event.created_at or datetime.now(timezone.utc)
         document["@timestamp"] = occurred_at or created_at.isoformat()
     return json.dumps({"create": {}}) + "\n" + json.dumps(document, default=str) + "\n"
