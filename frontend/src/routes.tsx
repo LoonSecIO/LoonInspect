@@ -12,6 +12,7 @@ import { DevicesPage } from "@/features/devices/DevicesPage";
 import { ApplicationsPage } from "@/features/devices/ApplicationsPage";
 import { ApplicationsOverviewPage } from "@/features/devices/ApplicationsOverviewPage";
 import { GroupsPage } from "@/features/devices/GroupsPage";
+import { SmartGroupCostPage } from "@/features/smartGroups/SmartGroupCostPage";
 import { CompliancePage } from "@/features/devices/CompliancePage";
 import { IntegrationsPage } from "@/features/integrations/IntegrationsPage";
 import { AIPage } from "@/features/ai/AIPage";
@@ -48,6 +49,7 @@ export function AppRoutes() {
           <Route path="jamf-patch/:titleId" element={<JamfPatchDetailPage />} />
         </Route>
         <Route path="devices/groups" element={<GroupsPage />} />
+        <Route path="devices/groups/cost" element={<SmartGroupCostPage />} />
         <Route path="devices/compliance" element={<CompliancePage />} />
         <Route path="devices/changes" element={<ChangesPage />} />
         {/* No /users route: nothing on the backend serves MDM-synced people, and a
