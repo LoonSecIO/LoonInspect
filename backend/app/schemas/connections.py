@@ -3,11 +3,20 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from enum import Enum
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
+from app.core.egress import validate_mdm_base_url
 from app.schemas.payload import MdmProvider
+
+# The destination this server will send a Jamf credential to, checked wherever it is
+# *set* rather than in the routes: the invariant belongs to the row, because the sweep
+# and the scheduler read `base_url` without asking a route (#131, app.core.egress).
+# MdmConnectionOut deliberately keeps a bare `str` — validating on the way out would
+# make a row saved before this rule unreadable instead of editable.
+BaseUrl = Annotated[str, AfterValidator(validate_mdm_base_url)]
 
 
 class PatchManagementProvider(str, Enum):
@@ -46,7 +55,7 @@ class MdmConnectionCreate(BaseModel):
 
     name: str
     provider: MdmProvider
-    base_url: str
+    base_url: BaseUrl
     is_active: bool = True
     credentials: dict[str, str] = {}
     webhook_secret: str | None = None
@@ -75,7 +84,7 @@ class MdmConnectionUpdate(BaseModel):
 
     name: str | None = None
     provider: MdmProvider | None = None
-    base_url: str | None = None
+    base_url: BaseUrl | None = None
     is_active: bool | None = None
     credentials: dict[str, str] | None = None
     webhook_secret: str | None = None
@@ -95,6 +104,10 @@ class MdmConnectionTestRequest(BaseModel):
 
     connection_id: int | None = None
     provider: MdmProvider
+    # Bare `str`, unlike the two schemas above, and checked in the route instead: this
+    # endpoint's whole job is to answer *why* a destination did not work, and a 422 out
+    # of request validation reaches the form as the generic "could not test" — the one
+    # place the reason is worth carrying is the one place it would be thrown away.
     base_url: str
     client_id: str
     client_secret: str | None = None

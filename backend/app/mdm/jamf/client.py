@@ -49,6 +49,10 @@ _RETRY_BASE_SECONDS = 1.0
 # hostile or misconfigured header is worse than the failure it avoids.
 _RETRY_AFTER_CAP_SECONDS = 30.0
 
+# What of an OAuth token response may be shown to whoever asked for the test. See
+# JamfClient.test_connection; `access_token` is absent on purpose and always will be.
+_TOKEN_RESPONSE_ECHOED = ("token_type", "expires_in", "scope")
+
 _T = TypeVar("_T")
 
 
@@ -283,8 +287,16 @@ class JamfClient:
 
     async def test_connection(self) -> dict:
         """Attempt the OAuth client-credentials exchange. Raises on failure (the caller
-        inspects the response body/status for diagnostics). Returns the token response
-        with `access_token` stripped out — never surface the token itself to the UI."""
+        inspects the response body/status for diagnostics). Returns only the known,
+        non-secret fields of the token response — never the token itself, and never a
+        key this client did not expect.
+
+        An allowlist rather than `access_token` alone (#131): base_url is caller-chosen,
+        so a 200 from anything that speaks JSON used to have its whole body handed back
+        as the success detail. `expires_in` and `token_type` are what a human reads to
+        confirm the exchange worked; `scope` is the one Jamf sometimes adds. A body that
+        is not a JSON object is not a token response at all, and saying so is the
+        caller's cue that the URL is wrong."""
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.post(
                 f"{self._base_url}/api/oauth/token",
@@ -297,7 +309,9 @@ class JamfClient:
             )
             response.raise_for_status()
             body = response.json()
-            return {key: value for key, value in body.items() if key != "access_token"}
+            if not isinstance(body, dict):
+                raise ValueError("the token endpoint did not return a JSON object")
+            return {key: body[key] for key in _TOKEN_RESPONSE_ECHOED if key in body}
 
     # --- the aperture ----------------------------------------------------------------
 

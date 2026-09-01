@@ -68,6 +68,10 @@ services:
       # hostname — Secure cookies are dropped by browsers over HTTP, which breaks
       # sign-in silently.
       SECURE_COOKIES: ${SECURE_COOKIES:-true}
+      # Lets a connection's Jamf URL be plain http. Off by default: the token
+      # exchange carries the client secret in the request body. Only turn this on
+      # for a lab Jamf Pro whose traffic you accept in clear.
+      ALLOW_INSECURE_MDM_BASE_URL: ${ALLOW_INSECURE_MDM_BASE_URL:-false}
       # Daily check against GitHub for a newer build of main, surfaced as a banner
       # to signed-in operators. Set false to disable the outbound call entirely
       # (air-gapped instances can also just leave it on — failure is silent).

@@ -17,6 +17,7 @@ from app.core.auth import Principal, current_principal, require
 from app.core.config import settings
 from app.core.context import Actor, reset_actor, set_actor
 from app.core.database import get_db, session_for_tenant
+from app.core.egress import BlockedBaseUrl, refuse_blocked_resolution, validate_mdm_base_url
 from app.core.permissions import Permission
 from app.core.runs import (
     LOCK_DEVICE_SWEEP,
@@ -84,6 +85,42 @@ def _same_base_url(supplied: str, stored: str) -> bool:
     return supplied.strip().rstrip("/") == stored.strip().rstrip("/")
 
 
+# How much of an upstream answer may come back to the caller. Small on purpose: 500
+# characters is more than every Jamf OAuth error body ("invalid_client" and friends are
+# under 100) and far less than a page worth harvesting.
+_DETAIL_MAX_CHARS = 500
+
+
+def _upstream_detail(response: httpx.Response) -> str:
+    """What of a rejection may be shown to whoever asked for it.
+
+    Diagnosability is the point of this endpoint — the difference between "401" and
+    "401, invalid_client" is the difference between a fixable credential and a ticket —
+    but base_url is caller-supplied, so whatever this returns is a read of a server the
+    caller chose. app.core.egress decides *where* the request may go; this bounds how
+    much of the answer comes back: a JSON body truncated to _DETAIL_MAX_CHARS, and for
+    anything else the status, the content type and the size only.
+
+    Rejected: echoing nothing but the status line. It is the airtight answer and it
+    makes the one endpoint whose job is diagnosis useless at it. Rejected too: echoing
+    any content type up to the cap — an HTML error page from something that is not Jamf
+    is exactly the read this must not hand over, and its first 500 characters are the
+    part with the server banner in them.
+    """
+    content_type = response.headers.get("content-type", "")
+    status_line = f"HTTP {response.status_code}"
+    if "json" not in content_type.split(";")[0].lower():
+        return (
+            f"{status_line}\nThe response was {content_type or 'of no declared type'}, "
+            f"{len(response.content)} bytes. Jamf answers this endpoint with JSON, so the "
+            "body is not shown — whatever is at this URL, it is not a Jamf Pro API."
+        )
+    body = response.text
+    if len(body) > _DETAIL_MAX_CHARS:
+        body = f"{body[:_DETAIL_MAX_CHARS]}\n[truncated at {_DETAIL_MAX_CHARS} characters]"
+    return f"{status_line}\n{body}"
+
+
 def _validate_credentials(provider: MdmProvider, credentials: dict[str, str]) -> dict[str, str]:
     schema_cls = CREDENTIAL_SCHEMAS.get(provider)
     if schema_cls is None:
@@ -133,6 +170,21 @@ def _to_out(conn: MdmConnection) -> MdmConnectionOut:
     )
 
 
+async def _refuse_blocked_destination(base_url: str) -> None:
+    """The half of the egress rule that needs an event loop (app.core.egress).
+
+    Scheme, shape and literal addresses are settled in the schema, where they bind the
+    row rather than the route. What a *hostname* resolves to cannot be: resolving is
+    async, and a pydantic validator is not. So it runs here, on the two routes that
+    write the column — the same reason #208's guard is a route-level check rather than
+    a schema one.
+    """
+    try:
+        await refuse_blocked_resolution(base_url)
+    except BlockedBaseUrl as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 async def _get_or_404(connection_id: int, db: AsyncSession) -> MdmConnection:
     connection = await db.get(MdmConnection, connection_id)
     if connection is None:
@@ -149,6 +201,7 @@ async def _get_or_404(connection_id: int, db: AsyncSession) -> MdmConnection:
 async def create_connection(
     payload: MdmConnectionCreate, db: AsyncSession = Depends(get_db)
 ) -> MdmConnectionOut:
+    await _refuse_blocked_destination(payload.base_url)
     validated_credentials = _validate_credentials(payload.provider, payload.credentials)
 
     connection = MdmConnection(
@@ -237,6 +290,21 @@ async def test_connection(
             **extra,
         )
 
+    # Before the stored secret is so much as read: this endpoint dials whatever it is
+    # given and reports what came back, which is a read primitive against anything the
+    # container can reach unless the destination is bounded first (#131). Checked
+    # against the payload's URL rather than the resolved one because the two can only
+    # differ by a trailing slash — the pin below refuses every other difference.
+    #
+    # A result, not the schema's 422: "why did this fail" is the entire product of this
+    # endpoint, and the form renders a 422 as a generic failure.
+    try:
+        validate_mdm_base_url(payload.base_url)
+        await refuse_blocked_resolution(payload.base_url)
+    except BlockedBaseUrl as exc:
+        _audit_test("refused", reason="blocked_base_url")
+        return MdmConnectionTestResult(success=False, message=str(exc))
+
     client_secret = payload.client_secret
     base_url = payload.base_url
 
@@ -286,12 +354,23 @@ async def test_connection(
         return MdmConnectionTestResult(
             success=False,
             message=f"Jamf rejected the request ({exc.response.status_code}).",
-            detail=f"HTTP {exc.response.status_code}\n{exc.response.text}",
+            detail=_upstream_detail(exc.response),
         )
     except httpx.RequestError as exc:
         _audit_test("failure", reason="unreachable")
         return MdmConnectionTestResult(
-            success=False, message=f"Could not reach {base_url}.", detail=str(exc)
+            success=False, message=f"Could not reach {base_url}.", detail=str(exc)[:_DETAIL_MAX_CHARS]
+        )
+    except ValueError:
+        # A 200 whose body is not a JSON object — i.e. something that is not Jamf's
+        # token endpoint. Before this it left the route as an unhandled JSONDecodeError
+        # (or an AttributeError on a JSON array), which is a 500 the operator cannot
+        # act on. Nothing of the body is echoed: on the success path there is no error
+        # to diagnose, only a URL that is not what the admin thinks it is.
+        _audit_test("failure", reason="not_a_token_response")
+        return MdmConnectionTestResult(
+            success=False,
+            message=f"{base_url} answered, but not with a Jamf token response.",
         )
 
     if existing is not None:
@@ -402,6 +481,8 @@ async def update_connection(
     data = payload.model_dump(exclude_unset=True, mode="json")
 
     _require_credential_re_entry_to_move(connection, data)
+    if "base_url" in data:
+        await _refuse_blocked_destination(data["base_url"])
 
     if "name" in data:
         connection.name = data["name"]
