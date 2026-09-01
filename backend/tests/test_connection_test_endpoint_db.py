@@ -289,9 +289,19 @@ async def test_the_edit_flow_moves_a_connection_and_can_still_test_it(
     client, db, connection, attempts
 ) -> None:
     """End to end through the normal admin path: save the new URL, then test. The
-    stored secret follows the connection because the connection is what moved."""
+    stored secret follows the connection because the connection is what moved.
+
+    The secret is re-typed on the PATCH — the same value the admin already holds —
+    because moving a connection now requires proving you hold its secret: on its own,
+    CONNECTION_WRITE was the other half of #132 (see test_connection_move_db). It is
+    still the *stored* secret that the test below sends, since re-entering it is what
+    stored it.
+    """
     moved = "https://moved.jamfcloud.com"
-    patched = await client.patch(f"/api/mdm/connections/{connection.id}", json={"baseUrl": moved})
+    patched = await client.patch(
+        f"/api/mdm/connections/{connection.id}",
+        json={"baseUrl": moved, "credentials": {"clientSecret": STORED_SECRET}},
+    )
     assert patched.status_code == 200, patched.text
     assert patched.json()["baseUrl"] == moved
 

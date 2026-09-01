@@ -29,6 +29,14 @@ function toCamel(key: string): string {
   return key.replace(/_([a-zA-Z0-9])/g, (_, c: string) => c.toUpperCase());
 }
 
+/** Mirrors `_same_base_url` in api/connections.py: only the trailing slash is erased,
+ *  because that is the one difference the Jamf client itself erases. Kept as narrow as
+ *  the server's rule on purpose — a looser comparison here would let the form promise a
+ *  save the server then refuses. */
+function sameBaseUrl(supplied: string, stored: string): boolean {
+  return supplied.trim().replace(/\/+$/, "") === stored.trim().replace(/\/+$/, "");
+}
+
 export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionFormProps) {
   const { t } = useLocale();
   const patchProviderLabels = t.connectionForm.patchProviderLabels;
@@ -147,6 +155,23 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
     if (capabilityWebhooks && !webhookSecret && !connection?.hasWebhookSecret) {
       setShowAdvanced(true);
       setError(t.connectionForm.webhookSecretRequired);
+      return;
+    }
+
+    // The server refuses a URL change that would reuse the stored secret
+    // (api/connections.py): moving a connection retargets a credential nothing can read
+    // back, so whoever moves it has to prove they hold it. Repeated here because the
+    // save path renders one generic message — a 422 the operator can't read leaves them
+    // guessing at which field went wrong, and the honest answer is a specific one.
+    const unproven =
+      connection && !sameBaseUrl(baseUrl, connection.baseUrl)
+        ? credentialFields.filter(
+            (field) =>
+              field.secret && connection.credentialFieldsSet.includes(field.key) && !credentials[field.key]
+          )
+        : [];
+    if (unproven.length > 0) {
+      setError(t.connectionForm.baseUrlChangeNeedsSecret(unproven.map((field) => field.label).join(", ")));
       return;
     }
 
