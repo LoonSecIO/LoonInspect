@@ -9,6 +9,7 @@ import type {
 export function listChanges(filters: ChangeFilters): Promise<DeviceChangeListResponse> {
   const params = new URLSearchParams();
   if (filters.q) params.set("q", filters.q);
+  if (filters.artifact) params.set("artifact", filters.artifact);
   if (filters.level) params.set("level", filters.level);
   if (filters.section) params.set("section", filters.section);
   if (filters.connectionId !== undefined) params.set("connectionId", String(filters.connectionId));

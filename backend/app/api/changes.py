@@ -63,12 +63,31 @@ async def list_changes(
     section: str | None = None,
     level: str | None = None,
     q: str | None = None,
+    artifact: str | None = None,
     since: datetime | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200, alias="pageSize"),
     db: AsyncSession = Depends(get_db),
 ) -> DeviceChangeListResponse:
-    """The change feed, newest first. `q` matches the device name, serial, or Jamf id."""
+    """The change feed, newest first.
+
+    Two searches, because an investigation runs in two directions. `q` names the
+    *device* — its name, serial, or Jamf id. `artifact` names the *thing that changed*
+    — an application name or bundle id, a local account's username, or the label the
+    contract carries for a group, a profile, or an extension attribute.
+
+    They are separate parameters rather than one widened `q` for two reasons. Widening
+    `q` would silently change what every existing caller gets back, the frontend and
+    any bookmarked feed URL included. And one string cannot mean both: `q=MacBook Air`
+    with `artifact=Wireshark` is "did this laptop family get Wireshark", which a single
+    OR-ed needle can only answer as "either".
+
+    Not searchable here, deliberately: `path` (an `artifact=/Applications` that matches
+    the whole fleet is a worse answer than none), and old/new values — searching the
+    values a change moved between is a different query surface, not a filter. A
+    certificate is identified only by its SHA-1 fingerprint and carries no label, so it
+    is reachable by `section=certificates`, not by name.
+    """
     conditions = []
     if connection_id is not None:
         conditions.append(DeviceChange.mdm_connection_id == connection_id)
@@ -90,6 +109,31 @@ async def list_changes(
             DeviceChange.subject_label.ilike(needle)
             | DeviceChange.serial_number.ilike(needle)
             | DeviceChange.subject_id.ilike(needle)
+        )
+    if artifact:
+        # `entry_identity` holds only the kind's identity fields (app: name/bundleId/path,
+        # local account: uid/username), so these four expressions are the whole of what a
+        # row says the changed thing is *called*. A field change has no entry at all: its
+        # entry_identity and entry_label are NULL, `->>` yields NULL, and NULL ILIKE never
+        # matches — so `artifact` narrows to entry changes without a separate predicate.
+        #
+        # No index, measured rather than assumed. At 2M rows (1.8M in the tenant) on
+        # postgres:17: page 1 is 3.6 ms, because ix_device_changes_recent still drives the
+        # newest-first walk and LIMIT stops it early; the `total` beside it is a 324 ms
+        # parallel seq scan, and a needle that matches nothing is 415 ms. Composing with
+        # `since` bounds it proportionally (7 days: 212 ms) since that predicate rides the
+        # same index. A GIN pg_trgm index over these four columns concatenated takes the
+        # miss to 0.06 ms and the total to 168 ms for 43 MB and a per-insert maintenance
+        # cost — worth taking when this table is tens of millions of rows, but it needs
+        # CREATE EXTENSION at migration time, and buying a sub-second query with a
+        # migration that can fail on an operator's database is the wrong trade this side
+        # of the flip. The trade is recorded here so it does not have to be re-measured.
+        needle = f"%{artifact.strip()}%"
+        conditions.append(
+            DeviceChange.entry_label.ilike(needle)
+            | DeviceChange.entry_identity["name"].astext.ilike(needle)
+            | DeviceChange.entry_identity["bundleId"].astext.ilike(needle)
+            | DeviceChange.entry_identity["username"].astext.ilike(needle)
         )
 
     total = (await db.execute(select(func.count()).select_from(DeviceChange).where(*conditions))).scalar_one()

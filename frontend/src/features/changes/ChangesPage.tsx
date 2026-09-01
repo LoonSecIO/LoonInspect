@@ -12,6 +12,7 @@ function filtersFromParams(params: URLSearchParams): ChangeFilters {
   const level = params.get("level");
   return {
     q: params.get("q") ?? undefined,
+    artifact: params.get("artifact") ?? undefined,
     level: level === "high" || level === "normal" || level === "low" ? level : undefined,
     section: params.get("section") ?? undefined,
     page: params.get("page") ? Number(params.get("page")) : 1
@@ -21,6 +22,7 @@ function filtersFromParams(params: URLSearchParams): ChangeFilters {
 function paramsFromFilters(filters: ChangeFilters): URLSearchParams {
   const params = new URLSearchParams();
   if (filters.q) params.set("q", filters.q);
+  if (filters.artifact) params.set("artifact", filters.artifact);
   if (filters.level) params.set("level", filters.level);
   if (filters.section) params.set("section", filters.section);
   if (filters.page && filters.page !== 1) params.set("page", String(filters.page));
@@ -48,6 +50,7 @@ export function ChangesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [draftQuery, setDraftQuery] = useState(filters.q ?? "");
+  const [draftArtifact, setDraftArtifact] = useState(filters.artifact ?? "");
   const pageSize = 50;
 
   useEffect(() => {
@@ -117,12 +120,18 @@ export function ChangesPage() {
         className="flex flex-wrap items-end gap-3"
         onSubmit={(event) => {
           event.preventDefault();
-          update({ q: draftQuery.trim() || undefined });
+          update({ q: draftQuery.trim() || undefined, artifact: draftArtifact.trim() || undefined });
         }}
       >
         <label className="space-y-1 text-sm">
           <span className="block text-muted-foreground">{tc.search}</span>
           <input className={inputClasses} value={draftQuery} onChange={(e) => setDraftQuery(e.target.value)} placeholder={tc.searchPlaceholder} />
+        </label>
+        {/* Deliberately its own box rather than a mode switch on the one above: the two
+            compose, and the pair "this fleet" + "this app" is the whole investigation. */}
+        <label className="space-y-1 text-sm">
+          <span className="block text-muted-foreground">{tc.artifact}</span>
+          <input className={inputClasses} value={draftArtifact} onChange={(e) => setDraftArtifact(e.target.value)} placeholder={tc.artifactPlaceholder} />
         </label>
         <label className="space-y-1 text-sm">
           <span className="block text-muted-foreground">{tc.level}</span>
