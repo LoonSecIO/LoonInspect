@@ -628,7 +628,10 @@ export const en = {
     errorDeleting: "Could not delete the connection.",
     active: "Active",
     inactive: "Inactive",
-    deleteConfirm: (name: string) => `Delete "${name}"?`,
+    // Names the consequence, because the button now has one: the delete takes the
+    // fleet with it. "Delete X?" alone read like unlinking an integration.
+    deleteConfirm: (name: string) =>
+      `Delete "${name}"? Its devices, their apps and their history go with it.`,
     deleting: "Deleting...",
     confirm: "Confirm",
     cancel: "Cancel",

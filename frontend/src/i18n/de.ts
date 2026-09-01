@@ -628,7 +628,8 @@ export const de: Translations = {
     errorDeleting: "Die Verbindung konnte nicht gelöscht werden.",
     active: "Aktiv",
     inactive: "Inaktiv",
-    deleteConfirm: (name: string) => `"${name}" löschen?`,
+    deleteConfirm: (name: string) =>
+      `"${name}" löschen? Die zugehörigen Geräte, deren Apps und deren Verlauf werden mitgelöscht.`,
     deleting: "Wird gelöscht...",
     confirm: "Bestätigen",
     cancel: "Abbrechen",

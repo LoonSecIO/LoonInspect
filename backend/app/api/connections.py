@@ -3,22 +3,24 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import ValidationError
 from pydantic.alias_generators import to_camel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditAction, audit
 from app.core.auth import Principal, current_principal, require
+from app.core.config import settings
 from app.core.context import Actor, reset_actor, set_actor
 from app.core.database import get_db, session_for_tenant
 from app.core.permissions import Permission
 from app.core.runs import (
     LOCK_DEVICE_SWEEP,
+    STATUS_RUNNING,
     TRIGGER_MANUAL,
     RunReclaimed,
     acquire,
@@ -30,7 +32,14 @@ from app.mdm.collections import ensure_default_collections
 from app.mdm.credentials import CREDENTIAL_SCHEMAS, fingerprint_field
 from app.mdm.jamf.client import JamfClient
 from app.mdm.service import set_sync_status, sync_connection
-from app.models.schema import MdmConnection, Run
+from app.models.schema import (
+    Device,
+    DeviceExtensionAttribute,
+    InstalledApp,
+    MdmConnection,
+    MdmSyncState,
+    Run,
+)
 from app.schemas.connections import (
     MdmConnectionCreate,
     MdmConnectionOut,
@@ -533,9 +542,79 @@ async def trigger_sync(
     dependencies=[Depends(require(Permission.CONNECTION_WRITE))],
 )
 async def delete_connection(connection_id: int, db: AsyncSession = Depends(get_db)) -> None:
+    """Remove a connection and everything collected through it.
+
+    **Deleting a connection deletes its fleet.** Six of the eight foreign keys into
+    `mdm_connections` already declare ON DELETE CASCADE — collections, runs and their
+    logs, observation spans, apertures, org units, change rows — so this has always
+    been a history-destroying act, and `JamfOrgUnit`'s docstring says so outright. The
+    two keys that did not were the accident, not the intent: `mdm_sync_state`'s plain
+    FK turned every delete into a raw 500 the moment a connection had ever *started* a
+    sync (`set_sync_status` writes that row before the first page is fetched), and
+    `devices`' plain FK meant the ORM would have nullified the fleet instead —
+    device rows, apps, extension attributes and all, surviving forever attached to no
+    connection, in `/api/devices` but out of every `devices.*` posture key (#185).
+
+    Refusing instead (409, "delete its devices first") was rejected because there is no
+    endpoint that deletes a device: the instruction would name a step the operator
+    cannot take. Marking the connection departed was rejected as front-running #135,
+    which has not been ruled — and a departed connection still holds live credentials,
+    which is not what "delete" was asked for.
+
+    What survives, deliberately: `event_outbox` rows already emitted (the wire is an
+    append-only record of what was reported, and deleting a connection must not rewrite
+    history a SIEM already indexed), `posture_snapshot` (tenant history; its run
+    reference is ON DELETE SET NULL by design), `app_catalog`, and the content-addressed
+    `observation_sections`/`observation_entries`, which are per-tenant and shared across
+    connections.
+
+    The child rows are removed with explicit statements rather than by adding ON DELETE
+    CASCADE in a migration. Postgres runs a referential cascade as an internal RI action
+    that bypasses row-level security; these run on the request's tenant-scoped session,
+    so RLS constrains them the way it constrains every other write in this router.
+    """
     connection = await _get_or_404(connection_id, db)
     name, provider = connection.name, connection.provider
 
+    # A live sweep is writing devices and spans under this connection right now, and
+    # deleting the run row out from under it is the expired-instance sad path (#125) in
+    # a new place. Gated on the heartbeat, not on `status == 'running'` alone: a run
+    # whose process died sits `running` until the next acquisition reclaims it, and
+    # "start a sync before you can delete it" is not an instruction to hand anyone.
+    # After the stale window the connection becomes deletable on its own.
+    cutoff = _utcnow() - timedelta(seconds=settings.run_stale_after_seconds)
+    live_run = (
+        await db.execute(
+            select(Run.id)
+            .where(
+                Run.mdm_connection_id == connection_id,
+                Run.status == STATUS_RUNNING,
+                Run.heartbeat_at >= cutoff,
+            )
+            .limit(1)
+        )
+    ).scalars().first()
+    if live_run is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            # Names the job and the next step. "Conflict" on its own tells a cold
+            # operator nothing, and this is the one refusal on the delete path.
+            detail=(
+                f"A sync is running on this connection (job {live_run}). "
+                f"Wait for it to finish — GET /api/runs/{live_run} reports when it has — "
+                "then delete the connection."
+            ),
+        )
+
+    device_ids = select(Device.id).where(Device.mdm_connection_id == connection_id)
+    await db.execute(delete(InstalledApp).where(InstalledApp.device_id.in_(device_ids)))
+    await db.execute(
+        delete(DeviceExtensionAttribute).where(DeviceExtensionAttribute.device_id.in_(device_ids))
+    )
+    devices_removed = (
+        await db.execute(delete(Device).where(Device.mdm_connection_id == connection_id))
+    ).rowcount
+    await db.execute(delete(MdmSyncState).where(MdmSyncState.mdm_connection_id == connection_id))
     await db.delete(connection)
     await db.commit()
 
@@ -545,4 +624,7 @@ async def delete_connection(connection_id: int, db: AsyncSession = Depends(get_d
         target_id=connection_id,
         name=name,
         provider=provider,
+        # A 204 carries no body, so the size of what went with it is recorded here or
+        # nowhere.
+        devices_deleted=devices_removed,
     )

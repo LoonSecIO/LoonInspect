@@ -114,7 +114,15 @@ class MdmConnection(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
-    devices: Mapped[list[Device]] = relationship(back_populates="connection")
+    # passive_deletes, so deleting a connection never quietly nullifies
+    # `devices.mdm_connection_id`. The ORM's default is to load the collection and set
+    # the key to NULL, which left the whole fleet alive and attached to nothing: still
+    # listed by /api/devices, but outside every `devices.*` posture key, since those
+    # count device rows joined to a live connection (#185). The route deletes the fleet
+    # explicitly (app.api.connections.delete_connection); with the nullify gone, a
+    # device row this misses raises the foreign key instead of being orphaned, which is
+    # a loud failure rather than a silent, permanent one.
+    devices: Mapped[list[Device]] = relationship(back_populates="connection", passive_deletes=True)
 
 
 class Device(Base):
