@@ -26,6 +26,7 @@ from app.core.context import Actor
 from app.core.database import get_db
 from app.core.permissions import Permission, permissions_for
 from app.core.security import hash_password, tokens_equal, verify_password
+from app.core.sharing import record_setup_choice
 from app.core.version import get_app_version
 from app.models.schema import Account, AuthIdentity, LoginAttempt, UserSession
 from app.schemas.accounts import PasswordChangeRequest
@@ -159,6 +160,11 @@ async def setup(
     # which under asyncio raises MissingGreenlet instead of quietly issuing a query.
     await db.refresh(account, ["roles"])
 
+    # The wizard's sharing answer, written down before the operator is handed the app.
+    # Both answers, not just "no": an install only shares because someone said so here,
+    # so a yes that is never written is a yes that never happened.
+    await record_setup_choice(db, share=payload.share_community_data)
+
     consume_claim_token()
     set_session_cookies(response, raw_token, session.csrf_token)
 
@@ -172,6 +178,10 @@ async def setup(
         target_type="account",
         target_id=account.id,
         role=Role.admin.value,
+        # On the same event rather than a second SHARING_SETTINGS_UPDATED row: this is
+        # the answer to a question asked once, at setup, and an auditor reconstructing
+        # "did anyone consent, and when" should find it where the consent was given.
+        community_sharing=payload.share_community_data,
     )
     return _account_out(account)
 

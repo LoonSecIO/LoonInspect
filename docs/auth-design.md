@@ -283,7 +283,7 @@ The container starts with zero accounts, which is the moment of maximum exposure
 
 Recommended: `/api/auth/setup` is live **only while `account_count == 0`**, and requires a claim token generated on first boot and printed to the container logs — the pattern Jupyter and Portainer use. Someone who can't read your `docker compose logs` can't claim the instance.
 
-Plus `INITIAL_ADMIN_EMAIL` / `INITIAL_ADMIN_PASSWORD` env vars for automated deployments, which skip the wizard entirely.
+Plus `INITIAL_ADMIN_EMAIL` / `INITIAL_ADMIN_PASSWORD` env vars for automated deployments, which skip the wizard entirely. Skipping it means nobody was asked the wizard's questions, so anything the wizard consents to stays off on that path — today that is community data sharing (`docs/data-sharing.md`), and anything added to the wizard later inherits the same rule.
 
 ### 4.6 Brute-force protection
 

@@ -124,14 +124,27 @@ operational tenant renders it as one switch):
 
 | tier | uploads | answers reveals | receives verdicts/feeds |
 | --- | --- | --- | --- |
-| `off` | — | — | — |
+| `off` *(an install nobody has answered for)* | — | — | — |
 | `keys` | keys + counts | never | yes |
-| `reveal` *(default)* | keys + counts | common titles only, per the k-rule | yes |
+| `reveal` *(the wizard's pre-checked answer)* | keys + counts | common titles only, per the k-rule | yes |
 
-- **First-run wizard**: the choice is presented pre-checked at `reveal` during setup.
-  Every operator affirmatively sees it before the first byte leaves; nobody discovers
-  it in a traffic capture. This moment does not repeat per customer, which is why the
-  feature ships in V0 at all.
+- **An install that was never asked does not share.** Consent is a row somebody's
+  answer wrote, not the absence of one: the stored default is `off`, and the tier only
+  becomes `reveal` because a wizard submission said so. This is the rule the two
+  bullets below are consequences of, and it is deliberately stated first — the earlier
+  arrangement inverted it, defaulting an unwritten row to `reveal`, which made the
+  wizard bullet's promise false on every non-interactive install.
+- **First-run wizard**: the choice is presented pre-checked at `reveal` during setup,
+  and submitting the form records the answer either way — the checked box is written
+  down, not inferred. Every operator who goes through the wizard affirmatively sees it
+  before the first byte leaves; nobody discovers it in a traffic capture. This moment
+  does not repeat per customer, which is why the feature ships in V0 at all.
+- **Non-interactive bootstrap** (`INITIAL_ADMIN_EMAIL` / `INITIAL_ADMIN_PASSWORD`, the
+  path a pod, a script, or an MSP's fortieth container takes) skips the wizard
+  entirely, so nobody is asked and nothing is shared. Sharing starts only when an
+  administrator turns it on under Settings → Data Sharing. The startup log says so on
+  that path, because an operator who never saw the wizard should not have to read this
+  document to find out which way the switch is set.
 - **Settings → Data Sharing**: the tier control, the disclosure content (this
   document's "what is shared" section, rendered), last-exchange status, the submission
   UUID with a reset button, and a **"Show exactly what would be sent now"** button that

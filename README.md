@@ -267,9 +267,11 @@ in [docs/data-sharing.md](docs/data-sharing.md).
 
 The choice is presented during first-run setup and lives under **Settings → Data
 Sharing** afterwards, alongside a button that renders the literal next payload from
-live data. `COMMUNITY_SHARING=false` in `.env` hard-disables sharing regardless of the
-UI. Air-gapped instances can leave it on — a failed exchange is silent and logged
-locally only.
+live data. **An install that was never asked does not share:** bootstrapping
+non-interactively with `INITIAL_ADMIN_EMAIL` / `INITIAL_ADMIN_PASSWORD` (below) skips
+the wizard, so sharing stays off until an administrator turns it on. `COMMUNITY_SHARING=false`
+in `.env` hard-disables it regardless of the UI. Air-gapped instances can leave it on —
+a failed exchange is silent and logged locally only.
 
 ---
 

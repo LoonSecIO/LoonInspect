@@ -401,9 +401,8 @@ class AppCatalogVersion(Base):
 
 class DataSharingSettings(Base):
     """One row per tenant: the community data-sharing consent state
-    (docs/data-sharing.md). Created lazily on first access; an absent row means the
-    defaults — tier "reveal", no exclusions — which is also what the first-run
-    wizard's pre-checked choice writes.
+    (docs/data-sharing.md). Created lazily on first access; an absent row means an
+    install nobody has answered for yet.
     """
 
     __tablename__ = "data_sharing_settings"
@@ -411,7 +410,24 @@ class DataSharingSettings(Base):
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(primary_key=True)
 
     # off | keys | reveal — app.schemas.system.SharingTier is the source of truth.
-    tier: Mapped[str] = mapped_column(String(16), default="reveal")
+    #
+    # Default "off", and it used to be "reveal". The wizard's pre-checked box is still
+    # "reveal" — it just writes that answer down now (app.api.auth.setup) instead of
+    # relying on this default to mean it. The old arrangement made *silence* mean the
+    # most permissive tier, and there are two ways to be silent: bootstrap through
+    # INITIAL_ADMIN_EMAIL/PASSWORD, which returns before the claim token is minted so
+    # the wizard never renders, and a container nobody has signed into at all, whose
+    # scheduler still materializes this row on its first exchange tick. Both are
+    # installs that were never asked, and both shared. docs/data-sharing.md rests the
+    # whole case for a pre-checked default on "every operator affirmatively sees it
+    # before the first byte leaves"; the only way that sentence is true is if consent
+    # is a thing someone wrote, not a thing we assumed.
+    #
+    # Rejected: writing an explicit "off" row in bootstrap.py's INITIAL_ADMIN_* branch
+    # and leaving this default alone. Narrower, but it fixes one caller rather than the
+    # rule, and leaves the next non-interactive path — a management API, a seeding
+    # script, #30's per-tenant provisioning — to rediscover the same hole.
+    tier: Mapped[str] = mapped_column(String(16), default="off")
 
     # The pseudonymous dedup identity on the wire. Per tenant, not per instance, so
     # the server cannot tell which tenants co-reside on one box; resettable because

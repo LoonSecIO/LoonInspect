@@ -24,6 +24,40 @@ def _row(tier: str = "reveal") -> DataSharingSettings:
     return row
 
 
+# --- the consent default ----------------------------------------------------------
+#
+# The database-backed half of this property — what a real INITIAL_ADMIN_* install ends
+# up sharing, and what the wizard records — is in test_sharing_consent_db.py. These two
+# need no database and so run in every lane, which is the point: they are the cheapest
+# possible tripwire on a default that must never drift back.
+
+
+def test_an_unanswered_install_defaults_to_off() -> None:
+    """The regression guard. Sharing must be something an operator turned on, so the
+    tier a row is born with is `off` — an absent or freshly-materialized row is an
+    install nobody has answered for, and this used to be `reveal`, the most permissive
+    tier. Anything that flips this literal back re-opens the finding: bootstrap through
+    INITIAL_ADMIN_* never renders the wizard, so on that path a permissive default is
+    egress of employee device inventory that nobody was ever asked about.
+    """
+    assert DataSharingSettings.__table__.c.tier.default.arg == "off"
+
+
+def test_a_setup_request_that_omits_the_choice_does_not_share() -> None:
+    """The wire's own fail-safe. An older UI build, or somebody's script written
+    against last month's API, sends no sharing field at all; the answer to a question
+    that was never asked is no."""
+    from app.schemas.auth import SetupRequest
+
+    payload = SetupRequest(
+        claim_token="t",
+        email="admin@example.com",
+        display_name="Admin",
+        password="correct-horse-battery",
+    )
+    assert payload.share_community_data is False
+
+
 # --- apply_response ---------------------------------------------------------------
 
 
