@@ -35,6 +35,8 @@ export interface DeviceChangeListResponse {
 
 export interface ChangeFilters {
   q?: string;
+  /** The changed thing, not the device: an app name or bundle id, a username, an entry label. */
+  artifact?: string;
   level?: ChangeLevel;
   section?: string;
   connectionId?: number;

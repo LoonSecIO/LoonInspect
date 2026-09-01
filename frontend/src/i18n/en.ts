@@ -745,6 +745,8 @@ export const en = {
     description: "What changed on each device between observations, after your change-tracking policy decided it matters. Every row links back to the two observations it was derived from.",
     search: "Search",
     searchPlaceholder: "Device name, serial, or Jamf id",
+    artifact: "Changed thing",
+    artifactPlaceholder: "App name, bundle id, username, group…",
     level: "Level",
     anyLevel: "Any level",
     section: "Section",

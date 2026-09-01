@@ -743,6 +743,8 @@ export const de: Translations = {
     description: "Was sich an jedem Gerät zwischen zwei Beobachtungen geändert hat, nachdem die Änderungsverfolgung entschieden hat, dass es zählt. Jede Zeile verweist auf die beiden Beobachtungen, aus denen sie abgeleitet wurde.",
     search: "Suche",
     searchPlaceholder: "Gerätename, Seriennummer oder Jamf-ID",
+    artifact: "Geändertes Objekt",
+    artifactPlaceholder: "App-Name, Bundle-ID, Benutzername, Gruppe…",
     level: "Stufe",
     anyLevel: "Alle Stufen",
     section: "Abschnitt",
