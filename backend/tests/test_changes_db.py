@@ -15,12 +15,16 @@ import json
 import os
 import uuid as uuidlib
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy import delete, func, select
 
+from app.core.outbox import _build_body
+from app.core.wire import ENVELOPE, instance_label
 from tests.jamf_fake import HOST, FakeJamf
 
 pytestmark = [
@@ -143,7 +147,7 @@ async def _rows(db, connection_id: int, subject_id: str):
 
 async def test_changes_are_derived_under_the_default_policy(db, connection, jamf: FakeJamf) -> None:
     from app.mdm.service import ingest_webhook, sync_connection
-    from app.models.schema import EventOutbox
+    from app.models.schema import Device, EventOutbox
 
     first = await sync_connection(db, connection)
     assert first.ok and first.observations.get("new") == 2
@@ -198,6 +202,28 @@ async def test_changes_are_derived_under_the_default_policy(db, connection, jamf
     latest = (await db.execute(select(EventOutbox).where(EventOutbox.event_type == "device.change").order_by(EventOutbox.id.desc()).limit(1))).scalar_one()
     assert latest.payload["jamf_id"] == real_id and latest.payload["serial_number"] == "LOONMINI0M4"
     assert latest.payload["jamf_url"] == HOST and latest.payload["policy_version"] == "v0"
+
+    # The envelope. Before this, device.change shipped with none, so a change observed
+    # at Jamf's reportDate landed at whatever moment Splunk accepted the delivery.
+    hints = latest.payload[ENVELOPE]
+    assert hints["source"] == instance_label(HOST) == "e2e.jamfcloud.com"
+    # A webhook run stamps the device's own reportDate (app.core.runs.event_time), which
+    # is exactly what the row's observed_at was parsed from — so a change and the
+    # inventory event from the same pull sit at one `_time` rather than two.
+    row = next(r for r in rows if r.section == "operating_system" and r.field == "version")
+    assert hints["time"] == row.observed_at.timestamp()
+    assert hints["time"] == datetime(2026, 8, 23, 9, 0, tzinfo=timezone.utc).timestamp()
+    # `host` is the same string the inventory family ships as deviceMeta.hostName —
+    # read off the device row here so the two families cannot drift to two spellings.
+    hostname = (
+        await db.execute(select(Device.hostname).where(Device.mdm_connection_id == connection.id, Device.external_id == real_id))
+    ).scalar_one()
+    assert hints["host"] == hostname and hostname
+    # And it is transport: popped for every destination before anything is delivered.
+    body = _build_body(SimpleNamespace(type="splunk_hec"), latest.payload)
+    assert body["host"] == hostname and body["time"] == hints["time"]
+    assert ENVELOPE not in body["event"]
+    assert _build_body(SimpleNamespace(type="webhook"), latest.payload).get(ENVELOPE) is None
     assert all(r.span_id is not None and r.previous_span_id is not None for r in rows)
     assert by_key  # sanity
 

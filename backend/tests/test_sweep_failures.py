@@ -27,12 +27,15 @@ import os
 import uuid as uuidlib
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy import delete, select, text, update
 
+from app.core.outbox import _build_body
+from app.core.wire import ENVELOPE
 from tests.jamf_fake import HOST, FakeJamf
 
 pytestmark = [
@@ -217,7 +220,13 @@ async def test_one_dead_device_does_not_kill_the_sweep(db, jamf: FakeJamf, conne
     # And on the wire: one run.completed, same accounting, exactly the ruled fields.
     events = await _run_completed_events(db, run.id)
     assert len(events) == 1
-    payload = events[0].payload
+    # The envelope is lifted off first so this stays an assertion about the ruled WIRE
+    # vocabulary. `_envelope` is outbox transport that `_build_body` pops before any
+    # destination sees it, so it is not a new field on the event — and popping it here
+    # rather than adding it to the set keeps this test failing if a real key is ever
+    # added or renamed without a ruling.
+    payload = dict(events[0].payload)
+    payload.pop(ENVELOPE)
     assert set(payload) == {
         "event_type", "run_id", "connection_id", "trigger", "comparison",
         "occurred_at", "devices_total", "devices_processed", "devices_failed", "status",
@@ -232,6 +241,24 @@ async def test_one_dead_device_does_not_kill_the_sweep(db, jamf: FakeJamf, conne
     # Failures inside the tolerance are a healthy night, not an alarm: no run.failed
     # for a run that closed `succeeded`, however many devices it isolated (#103).
     assert await _run_failed_events(db, run.id) == []
+
+    # The envelope. Before this, run.completed carried none at all, so Splunk stamped
+    # `_time` with its own receive time — the run that closed at 01:40 sorted wherever
+    # the outbox drain happened to land it.
+    hints = events[0].payload[ENVELOPE]
+    assert hints["time"] == datetime.fromisoformat(payload["occurred_at"]).timestamp()
+    assert hints["time"] == run.window_end.timestamp()  # and the row agrees
+    assert hints["source"] == "e2e.jamfcloud.com"
+    # The ruling: a run is not about a Mac, so `host` is genuinely absent rather than
+    # filled with the Jamf server or the worker's container. If this ever starts
+    # asserting a host, `dc(host)` across a customer's index counts something that is
+    # not a device.
+    assert "host" not in hints
+    body = _build_body(SimpleNamespace(type="splunk_hec"), events[0].payload)
+    assert body["time"] == hints["time"] and body["source"] == "e2e.jamfcloud.com"
+    assert "host" not in body
+    # And the reserved key is transport only: it must never reach a customer's index.
+    assert ENVELOPE not in body["event"]
 
 
 async def test_failures_past_the_threshold_fail_the_run_and_stop_it(
@@ -290,6 +317,21 @@ async def test_failures_past_the_threshold_fail_the_run_and_stop_it(
     assert len(alarms) == 1
     assert alarms[0].payload["connection_id"] == connection.id
     assert alarms[0].payload["error"] and "over the tolerance" in alarms[0].payload["error"]
+
+    # run.failed's envelope. Its occurrence is `window_end` — the instant the run
+    # reached `failed`, already on the payload and on the row — rather than a new
+    # field minted to carry the same value.
+    hints = alarms[0].payload[ENVELOPE]
+    assert hints["time"] == datetime.fromisoformat(alarms[0].payload["window_end"]).timestamp()
+    assert hints["time"] == run.window_end.timestamp()
+    assert hints["source"] == "e2e.jamfcloud.com"
+    assert "host" not in hints  # same ruling: a run is not about a Mac
+    body = _build_body(SimpleNamespace(type="splunk_hec"), alarms[0].payload)
+    assert ENVELOPE not in body["event"]
+    # The alarm is the failure that most needs a true `_time`: a destination outage is
+    # exactly the condition that both fails runs and delays their delivery, so receive
+    # time would file the whole outage at the moment it ended.
+    assert body["time"] == hints["time"]
 
 
 async def test_a_reclaim_still_aborts_the_run_and_is_not_a_device_failure(

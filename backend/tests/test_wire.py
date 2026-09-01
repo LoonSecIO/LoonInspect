@@ -5,6 +5,12 @@ on the event value, not the envelope, so a string that fits here is free where t
 string in `deviceMeta` is paid for on every one of a device's sub-events. That makes the
 envelope's correctness worth its own tests: it is load-bearing for `_time` meaning *when
 the device changed*, and nothing else in the suite covers app.core.wire.
+
+The last section pins the other half of the contract: which producers have a `host` and
+which deliberately do not. Three of the four event families shipped with no envelope at
+all until they were given one, and the fix would be half-made if "a run has no host" or
+"a group is not a Mac" were left as an accident of a code path rather than a ruling with
+a test behind it.
 """
 
 from __future__ import annotations
@@ -172,3 +178,62 @@ def test_building_a_body_does_not_mutate_the_stored_payload() -> None:
     _build_body(SPLUNK, payload)
     assert ENVELOPE in payload
     assert _build_body(SPLUNK, payload)["host"] == "kyle-mbp"
+
+
+# --- who gets a `host`, and who does not -------------------------------------------
+
+
+def test_an_absent_host_is_a_ruling_the_run_family_relies_on() -> None:
+    """`host` means "the Mac this event is about" — one thing, on every event type.
+
+    A run is about a connection, not a device, so it passes `host=None` rather than
+    filling the slot with the Jamf server (that is already `source`, and counting it as
+    a Mac breaks every `dc(host)`) or the worker's container (infrastructure naming a
+    customer's SPL cannot join to anything). HEC then applies the input's own default,
+    which a Splunk admin can see and override — unlike a value the product asserted.
+    """
+    hints = envelope(occurred_at=datetime.now(timezone.utc), host=None, source="acme.jamfcloud.com")
+    body = _build_body(SPLUNK, {"event": "run.completed", ENVELOPE: hints})
+
+    assert "host" not in body
+    assert body["source"] == "acme.jamfcloud.com"
+    assert "time" in body
+
+
+def test_a_group_change_carries_no_host_because_a_group_is_not_a_mac() -> None:
+    """`derive_and_record` runs for computer_group subjects too, and a group's
+    `subject_label` is a group name. Shipping it as `host` would invent Macs called
+    "Devices out of Checkin Compliance" and corrupt `dc(host)` across the index. The
+    instance is still known, so `source` stays."""
+    from app.changes.derive import _event_payload
+    from app.mdm.jamf.contract import SUBJECT_COMPUTER, SUBJECT_COMPUTER_GROUP
+    from app.models.schema import DeviceChange
+
+    connection = SimpleNamespace(id=1, base_url="https://acme.jamfcloud.com")
+    observed = datetime(2026, 8, 23, 9, 0, tzinfo=timezone.utc)
+
+    def _row(subject_kind: str, subject_label: str) -> DeviceChange:
+        return DeviceChange(
+            subject_kind=subject_kind,
+            subject_id="12",
+            subject_label=subject_label,
+            observed_at=observed,
+            collected_at=observed,
+            trigger="sweep",
+            section="definition",
+            change="changed",
+            level="normal",
+            policy_version="v0",
+        )
+
+    group = _event_payload(_row(SUBJECT_COMPUTER_GROUP, "Devices out of Checkin Compliance"), connection)
+    assert "host" not in group[ENVELOPE]
+    assert group[ENVELOPE]["source"] == "acme.jamfcloud.com"
+
+    # A computer subject does get one: its label IS the hostname — both are Jamf's
+    # general.name — so the change family and the inventory family name one `host`.
+    computer = _event_payload(_row(SUBJECT_COMPUTER, "mbp-ada"), connection)
+    assert computer[ENVELOPE]["host"] == "mbp-ada"
+    # Outside a run, `event_time` is now; the row's own observed_at is what a run
+    # back-dates to, and either way the time is the event's, never the delivery's.
+    assert computer[ENVELOPE]["time"] >= observed.timestamp()

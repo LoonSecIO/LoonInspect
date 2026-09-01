@@ -77,6 +77,11 @@ def envelope(*, occurred_at, host: str | None, source: str | None) -> dict[str, 
     An empty `host` is dropped rather than sent: HEC falls back to the input's own
     default for a blank one, which would collapse every affected device onto a single
     phantom host where `dc(serialNumber)` counts them all as one.
+
+    `str | None` is a ruling, not a convenience. The run family (app.core.runs) passes
+    `host=None` on purpose: a run is not about a Mac, and the candidates for filling
+    that slot — the Jamf server, the worker's container — would each make `host` mean a
+    second thing. Every producer calls this function; the ones with no device say so.
     """
     hints: dict[str, object | None] = {
         "time": occurred_at.timestamp() if occurred_at else None,
