@@ -185,10 +185,12 @@ further before the context limit hit.
    dismissed the question without answering** — still fully open.
 
 4. **Embed vs. namespace LoonInspect's own augmentations** (CVE/EPSS data, group-join
-   timestamps) in Splunk output — flattened alongside Jamf's native fields (consistent
-   with the "no step 3" principle) or nested under a distinct namespace (clearer
-   provenance, more SPL friction)? Same structured question, **also dismissed without
-   an answer** — still fully open.
+   timestamps) in Splunk output. **RESOLVED 2026-09-01 (#188): namespaced.** LoonInspect's
+   own answers about a Jamf object ride that object's sub-event under their own wrapper
+   key — `patch` and `vuln` — and its own assertions about a run carry no vendor segment
+   at all (`loon:run`). The registry is
+   [docs/splunk-wire-vocabulary.md](splunk-wire-vocabulary.md); this entry is kept rather
+   than deleted because the question was open long enough to be answered twice.
 
 5. **`days_since` semantics** — see the meta-block table above. Asked directly as the
    last message before the context limit; no answer received yet.
