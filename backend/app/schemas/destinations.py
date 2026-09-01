@@ -88,6 +88,13 @@ class DestinationOut(_CamelModel):
     has_secret: bool
     enabled: bool
     subscribed_events: list[str] | None
+    # Delivery health. `last_error` is the most recent upstream refusal for this
+    # destination, read from the delivery rows rather than denormalised onto the
+    # destination — a stored copy would go stale on success, and the diagnosis the
+    # operator needs is exactly the one the delivery loop already writes down.
+    last_error: str | None = None
+    pending_count: int = 0
+    failed_count: int = 0
     last_success_at: datetime | None
     last_failure_at: datetime | None
     created_at: datetime

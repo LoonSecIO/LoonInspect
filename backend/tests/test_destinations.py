@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import uuid as uuidlib
+from datetime import datetime, timezone
 
 import pytest
 import pytest_asyncio
@@ -267,3 +268,75 @@ def test_the_openapi_schema_publishes_the_four_working_types() -> None:
     published = schema["properties"]["type"]
     values = published.get("enum") or schema["$defs"][published["allOf"][0]["$ref"].rsplit("/", 1)[-1]]["enum"]
     assert set(values) == {"generic_webhook", "splunk_hec", "elastic", "runreveal"}
+# --- delivery diagnosability --------------------------------------------------------
+
+
+def test_the_test_event_type_is_not_subscribable() -> None:
+    """It exists so the destination test button sends something identifiable rather than
+    a fabricated device event that would land in a customer's index looking real. Being
+    outside KNOWN_EVENT_TYPES is what stops a destination subscribing to it."""
+    from app.core.outbox import KNOWN_EVENT_TYPES, TEST_EVENT_TYPE
+
+    assert TEST_EVENT_TYPE not in KNOWN_EVENT_TYPES
+
+    from app.schemas.destinations import DestinationCreate
+
+    with pytest.raises(ValidationError):
+        DestinationCreate(name="x", url="https://example.test/x", subscribed_events=[TEST_EVENT_TYPE])
+
+
+def test_destination_out_defaults_its_health_fields() -> None:
+    """A destination with no deliveries yet reports a clean bill rather than nulls the
+    UI has to special-case."""
+    from datetime import datetime, timezone
+
+    from app.schemas.destinations import DestinationOut
+
+    now = datetime.now(timezone.utc)
+    out = DestinationOut(
+        id=1, name="siem", type="generic_webhook", url="https://siem.example/hook",
+        auth_type="none", auth_header_name=None, elastic_index=None, has_secret=False,
+        enabled=True, subscribed_events=None, last_success_at=None, last_failure_at=None,
+        created_at=now, updated_at=now,
+    )
+    assert out.last_error is None and out.pending_count == 0 and out.failed_count == 0
+
+
+@pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1")
+@pytest.mark.asyncio(loop_scope="session")
+async def test_health_reports_the_last_error_and_the_queue_depth(db) -> None:
+    """The defect this closes: outbox_deliveries.last_error held the exact upstream
+    refusal and no API read it, so the symptom an operator experienced was "Splunk is
+    empty and the app says everything is fine"."""
+    from sqlalchemy import delete
+
+    from app.api.destinations import _health
+    from app.core.outbox import enqueue_event
+    from app.models.schema import Destination, EventOutbox, OutboxDelivery
+
+    tag = uuidlib.uuid4().hex[:8]
+    destination = Destination(name=f"broken splunk {tag}", url="https://splunk.example/x")
+    db.add(destination)
+    event = await enqueue_event(db, "device.change", {"event": "device.change", "test": tag})
+    await db.commit()
+    destination_id, event_id = destination.id, event.id
+
+    db.add_all([
+        OutboxDelivery(
+            outbox_event_id=event_id, destination_id=destination_id, status="pending",
+            attempt_count=1, last_error='HTTP 403: {"text":"Invalid token","code":4}',
+            last_attempted_at=datetime.now(timezone.utc),
+        ),
+    ])
+    await db.commit()
+
+    try:
+        health = await _health(db, [destination_id])
+        assert health[destination_id]["last_error"] == 'HTTP 403: {"text":"Invalid token","code":4}'
+        assert health[destination_id]["pending_count"] == 1
+        assert health[destination_id]["failed_count"] == 0
+    finally:
+        await db.execute(delete(OutboxDelivery).where(OutboxDelivery.destination_id == destination_id))
+        await db.execute(delete(EventOutbox).where(EventOutbox.id == event_id))
+        await db.execute(delete(Destination).where(Destination.id == destination_id))
+        await db.commit()

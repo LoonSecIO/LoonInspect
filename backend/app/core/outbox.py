@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 # silently create a destination that never receives anything.
 KNOWN_EVENT_TYPES = frozenset({"device.inventory.changed", "device.change", "run.completed", "run.failed"})
 
+# Not in KNOWN_EVENT_TYPES: nothing produces it and nothing can subscribe to it. It
+# exists only so the destination test button sends something identifiable rather than a
+# fabricated device event that would land in a customer's index looking real.
+TEST_EVENT_TYPE = "destination.test"
+
 # Same shape as the login lockout backoff: exponential, capped, with a hard ceiling on
 # total attempts so a permanently dead destination doesn't retry forever.
 # asyncpg caps a statement at 32767 bind parameters. One baseline sweep of a large fleet
@@ -346,6 +351,22 @@ async def deliver_pending(db: AsyncSession) -> None:
             else:
                 delivery.last_error = error
                 destination.last_failure_at = now
+                # Every failed attempt, not only the last one. Before this the log was
+                # silent until a delivery had burned all ten attempts over four hours,
+                # so an operator watching `docker compose logs` during setup saw
+                # nothing at all while a misconfigured destination 401ed on every
+                # event — the diagnosis existed, in a database column nobody reads.
+                logger.warning(
+                    "event delivery failed",
+                    extra={
+                        "destination_id": destination.id,
+                        "destination_name": destination.name,
+                        "event_type": event.event_type,
+                        "attempt": delivery.attempt_count,
+                        "max_attempts": _MAX_ATTEMPTS,
+                        "error": error,
+                    },
+                )
                 if delivery.attempt_count >= _MAX_ATTEMPTS:
                     delivery.status = "failed"
                     logger.warning(
@@ -362,6 +383,28 @@ async def deliver_pending(db: AsyncSession) -> None:
                     delivery.next_attempt_at = _next_backoff(delivery.attempt_count)
 
     await db.commit()
+
+
+async def send_test_event(destination: Destination) -> tuple[bool, str | None]:
+    """One synthetic event down the real delivery path, synchronously, for the
+    `POST /api/destinations/{id}/test` button.
+
+    Deliberately the same `_attempt_delivery` the scheduler uses rather than a bespoke
+    ping: a test that exercises a different code path can pass while delivery fails,
+    which is worse than no test. The event is never added to a session, so nothing is
+    persisted and no retry is scheduled — the caller gets the upstream verdict directly.
+    """
+    event = EventOutbox(
+        event_type=TEST_EVENT_TYPE,
+        payload={
+            "event": TEST_EVENT_TYPE,
+            "message": "LoonInspect destination test. If you can read this, delivery works.",
+            "destinationId": destination.id,
+            "destinationName": destination.name,
+        },
+    )
+    async with httpx.AsyncClient() as client:
+        return await _attempt_delivery(client, destination, event)
 
 
 async def purge_delivered_events(db: AsyncSession, retention_days: int) -> int:

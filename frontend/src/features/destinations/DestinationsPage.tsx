@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { ApiError } from "@/config/api";
 import { useHasPermission } from "@/features/auth/store";
 import { PERMISSIONS } from "@/features/auth/types";
-import { createDestination, deleteDestination, listDestinations, updateDestination } from "@/features/destinations/api";
+import { createDestination, deleteDestination, testDestination, listDestinations, updateDestination } from "@/features/destinations/api";
 import type { AuthType, Destination, DestinationType } from "@/features/destinations/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
@@ -85,6 +85,7 @@ export function DestinationsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [testResult, setTestResult] = useState<{ id: number; ok: boolean; detail: string } | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -180,6 +181,22 @@ export function DestinationsPage() {
       await refresh();
     } catch {
       setError(t.destinations.errorUpdating);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleTest(destination: Destination) {
+    setBusyId(destination.id);
+    setError(null);
+    setTestResult(null);
+    try {
+      const result = await testDestination(destination.id);
+      setTestResult({ id: destination.id, ...result });
+      // A refused delivery still updates the stored error, so re-read the row.
+      await refresh();
+    } catch {
+      setError(t.destinations.errorTesting);
     } finally {
       setBusyId(null);
     }
@@ -419,6 +436,29 @@ export function DestinationsPage() {
                   ) : (
                     <span className="text-muted-foreground">{t.destinations.neverDelivered}</span>
                   )}
+                  {destination.lastError && (
+                    <p
+                      className="mt-1 break-words font-mono text-[11px] leading-snug text-destructive"
+                      title={destination.lastError}
+                    >
+                      {destination.lastError}
+                    </p>
+                  )}
+                  {(destination.pendingCount > 0 || destination.failedCount > 0) && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      {[
+                        destination.pendingCount > 0 ? t.destinations.pendingDeliveries(destination.pendingCount) : null,
+                        destination.failedCount > 0 ? t.destinations.failedDeliveries(destination.failedCount) : null
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  )}
+                  {testResult?.id === destination.id && (
+                    <p className={`mt-1 text-[11px] ${testResult.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
+                      {testResult.ok ? t.destinations.testDelivered : t.destinations.testRefused(testResult.detail)}
+                    </p>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   {canWrite && (
@@ -440,6 +480,14 @@ export function DestinationsPage() {
                         </div>
                       ) : (
                         <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={busyId === destination.id}
+                            onClick={() => handleTest(destination)}
+                          >
+                            {busyId === destination.id ? t.destinations.testing : t.destinations.test}
+                          </Button>
                           <Button
                             variant="outline"
                             size="sm"
