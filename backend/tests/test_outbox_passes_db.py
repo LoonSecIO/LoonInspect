@@ -18,10 +18,13 @@ What is pinned, by section:
    *considered* against the enabled destinations. Considered-and-declined counts: a
    destination subscribed to other event types marks the event without producing a
    row. Nothing enabled at all does not count, and the event is held (#157).
-2. **The shape of the passes.** Both read every matching row with every column,
-   with no LIMIT — `fan_out_pending` drags the full JSONB payload out of the
-   database purely to flip a boolean. Pinned by capturing the SQL, because it is the
-   exact property #81 has to change and the one most likely to change by accident.
+2. **The shape of the passes.** Both read every column of every row they take, and
+   both now stop at a per-tick ceiling with an ORDER BY that makes the remainder the
+   next tick's head. `fan_out_pending` still drags the full JSONB payload out of the
+   database purely to flip a boolean — narrowing the columns is #81's, and the
+   assertion stays until it moves. Pinned by capturing the SQL, because a LIMIT with
+   the wrong ORDER BY passes every behavioural test here while starving the back of
+   the queue.
 3. **Producer volume.** One connection sync of a two-device tenant: how many events
    the first sweep enqueues, and how many the second, unchanged sweep does. This is
    the number #81 rewrites.
@@ -31,6 +34,11 @@ What is pinned, by section:
    holds one pending delivery — and what that composes into when a destination is
    left disabled, which is the open storage question on #81. Held events carry no
    delivery row, so nothing shields them: they age out on the ordinary window (#157).
+6. **The per-tick ceiling.** A backlog larger than `_TICK_LIMIT` drains across ticks
+   losing nothing; a backlog smaller than it behaves exactly as it did before the
+   ceiling existed; and — the one that would be worst to get wrong — a delivery the
+   tick simply did not reach keeps its `attempt_count` and `next_attempt_at` untouched,
+   so being deferred can never spend a healthy destination's retry budget.
 
 Everything runs against a real Postgres in a tenant of this file's own
 (`…-000000000154`), so RLS makes the counts exact rather than "whatever else the
@@ -351,13 +359,15 @@ async def test_the_baseline_reaches_a_destination_added_after_the_first_sync(db,
     assert {json.loads(request.content)["index"] for request in seen} == set(range(5))
 
 
-async def test_fan_out_drains_every_unfanned_event_in_a_single_pass(db) -> None:
-    """No batch size, no LIMIT, no per-tick ceiling: one call handles the whole
-    backlog and creates one row per event per destination in one transaction. Twelve
-    events stands in for a sweep's worth; the property is that the number does not
-    matter to the pass, which is precisely what #81's volume change leans on."""
-    from app.core.outbox import enqueue_event, fan_out_pending
+async def test_fan_out_drains_a_backlog_under_the_ceiling_in_a_single_pass(db) -> None:
+    """A backlog smaller than _TICK_LIMIT is handled exactly as it was before the
+    ceiling landed: one call, one transaction, one row per event per destination, and
+    an empty backlog afterwards. Twelve events stands in for a sweep's worth. The
+    ceiling is not supposed to be observable below itself, and this is the assertion
+    that says so."""
+    from app.core.outbox import _TICK_LIMIT, enqueue_event, fan_out_pending
 
+    assert _TICK_LIMIT > 12, "this test only means anything below the ceiling"
     db.add_all([_destination("first"), _destination("second")])
     for index in range(12):
         await enqueue_event(db, EVENT_TYPE, {"event": EVENT_TYPE, "index": index})
@@ -368,13 +378,14 @@ async def test_fan_out_drains_every_unfanned_event_in_a_single_pass(db) -> None:
     assert await fan_out_pending(db) == 0  # and the backlog is empty afterwards
 
 
-# --- 2. The shape of the passes: every column, every row, no limit -----------------
+# --- 2. The shape of the passes: every column, a bounded number of rows ------------
 
 
 def _capture_sql():
-    """Record the SQL the passes actually send. The unbounded selects are the two
-    things #81's review named as prerequisites, so they are pinned as statements
-    rather than inferred from row counts."""
+    """Record the SQL the passes actually send. The per-tick ceiling and the order it
+    applies to are pinned as statements rather than inferred from row counts: a LIMIT
+    with the wrong ORDER BY still passes every behavioural test in this file while
+    quietly starving the back of the queue."""
     from sqlalchemy import event as sa_event
 
     from app.core.database import engine
@@ -388,13 +399,18 @@ def _capture_sql():
     return statements, lambda: sa_event.remove(engine.sync_engine, "before_cursor_execute", _record)
 
 
-async def test_the_fan_out_pass_selects_the_whole_payload_just_to_flip_a_boolean(db) -> None:
-    """`select(EventOutbox)` — every column of every un-fanned row, JSONB payload
-    included, when the pass only reads `event_type` and writes `fanned_out`. At
-    30KB a row and 40,000 rows that is the whole sweep pulled into the worker for
-    nothing.
-    Characterized deliberately: fixing it is #81's work, not this file's."""
-    from app.core.outbox import enqueue_event, fan_out_pending
+async def test_the_fan_out_pass_still_selects_the_whole_payload_but_only_a_tickful(db) -> None:
+    """Two halves, one statement.
+
+    Unchanged: `select(EventOutbox)` is still every column of every row it reads,
+    JSONB payload included, when the pass only reads `event_type` and writes
+    `fanned_out`. Narrowing the columns is #81's work, not this change's, and the
+    assertion stays so the day it moves is visible.
+
+    Changed: the row count is now capped, and ordered oldest-first by `id` so the
+    remainder the next tick sees is the tail of this one rather than an arbitrary
+    re-slice of the same set."""
+    from app.core.outbox import _TICK_LIMIT, enqueue_event, fan_out_pending
 
     db.add(_destination("siem"))
     await enqueue_event(db, EVENT_TYPE, {"event": EVENT_TYPE, "big": "x" * 1000})
@@ -409,7 +425,9 @@ async def test_the_fan_out_pass_selects_the_whole_payload_just_to_flip_a_boolean
     selects = [text for text in statements if "FROM event_outbox" in text and text.lstrip().startswith("SELECT")]
     assert selects, "the fan-out pass must have read the outbox"
     assert "event_outbox.payload" in selects[0]
-    assert "LIMIT" not in selects[0].upper()
+    assert "ORDER BY event_outbox.id" in selects[0]
+    assert "LIMIT" in selects[0].upper()
+    assert _TICK_LIMIT == 1000
 
 
 async def test_a_destination_less_pass_never_reads_the_held_backlog(db) -> None:
@@ -417,9 +435,10 @@ async def test_a_destination_less_pass_never_reads_the_held_backlog(db) -> None:
     way it is. Holding means the un-fanned set now grows for the whole retention window
     on a pod with nothing configured — the state the stepper calls optional — while the
     worker ticks every 30s. If the guard sat below the events select, each of those
-    ticks would drag the entire held backlog, full JSONB payloads and no LIMIT, into the
-    worker to conclude there was nothing to do. So the cheap indexed question is asked
-    first, and a destination-less tick touches `event_outbox` not at all."""
+    ticks would drag a thousand held payloads into the worker to conclude there was
+    nothing to do — the whole window before the per-tick ceiling landed, which is better
+    and still entirely wasted. So the cheap indexed question is asked first, and a
+    destination-less tick touches `event_outbox` not at all."""
     from app.core.outbox import enqueue_event, fan_out_pending
 
     for index in range(3):
@@ -440,9 +459,20 @@ async def test_a_destination_less_pass_never_reads_the_held_backlog(db) -> None:
     assert await _counts(db) == (3, 0)
 
 
-async def test_the_delivery_pass_loads_every_due_row_and_every_event_it_names(db) -> None:
-    """Same shape on the delivery side: all due deliveries, then their events by id —
-    both unbounded, both full rows, both resident in the worker at once."""
+async def test_the_delivery_pass_reads_a_bounded_due_set_oldest_first(db) -> None:
+    """Same shape on the delivery side: due deliveries, then their events by id, both
+    full rows and both resident in the worker at once — but now at most _TICK_LIMIT of
+    them, so what is resident is bounded by the ceiling instead of by the fleet.
+
+    The ORDER BY is the assertion that matters most here. `next_attempt_at` first,
+    which is the queue's own due-time discipline and the column
+    ix_outbox_deliveries_next_attempt_at covers; `id` only as the tiebreak that makes
+    the order total. Ordering by id alone would put every retry ahead of every event
+    produced since it first failed, which under a ceiling is starvation.
+
+    The events select carries no LIMIT of its own and does not need one: it is driven
+    by the ids of the already-capped due set, and `_in_batches` keeps it inside
+    asyncpg's bind-parameter budget."""
     from app.core.outbox import deliver_pending
 
     await _one_pending_delivery(db)
@@ -455,9 +485,10 @@ async def test_the_delivery_pass_loads_every_due_row_and_every_event_it_names(db
 
     due = [text for text in statements if "FROM outbox_deliveries" in text and text.lstrip().startswith("SELECT")]
     events = [text for text in statements if "FROM event_outbox" in text and text.lstrip().startswith("SELECT")]
-    assert due and "LIMIT" not in due[0].upper()
+    assert due and "LIMIT" in due[0].upper()
+    assert "ORDER BY outbox_deliveries.next_attempt_at, outbox_deliveries.id" in due[0]
     assert events and "event_outbox.payload" in events[0]
-    assert "LIMIT" not in events[0].upper()
+    assert "event_outbox.id IN" in events[0]
 
 
 # --- 3. Producer volume: what one connection sync enqueues today -------------------
@@ -826,3 +857,142 @@ async def test_a_disabled_destination_makes_its_events_immortal(db, monkeypatch)
     assert await purge_delivered_events(db, 7) == 0
     assert await purge_delivered_events(db, 0) == 0
     assert await _counts(db) == (1, 1)
+
+
+# --- 6. The per-tick ceiling: drain across ticks, and touch nothing else ------------
+#
+# Both passes take at most _TICK_LIMIT rows. These tests lower the ceiling rather than
+# building a thousand-row backlog: the property under test is "the pass stops at the
+# ceiling and the next one resumes", which is the same property at 3 as at 1,000, and a
+# suite that spends a real sweep's worth of inserts to prove it is a suite nobody runs.
+
+
+def _lower_the_ceiling(monkeypatch: pytest.MonkeyPatch, rows: int) -> None:
+    """Both passes read `_TICK_LIMIT` off the module at call time, so this is the seam."""
+    from app.core import outbox
+
+    monkeypatch.setattr(outbox, "_TICK_LIMIT", rows)
+
+
+async def test_a_fan_out_backlog_larger_than_the_ceiling_drains_across_ticks(db, monkeypatch) -> None:
+    """Nothing is lost and nothing is fanned twice: seven events under a ceiling of
+    three become 3 + 3 + 1 delivery rows over three ticks, in arrival order, and the
+    fourth tick has nothing left to do."""
+    from app.core.outbox import enqueue_event, fan_out_pending
+
+    db.add(_destination("siem"))
+    events = [await enqueue_event(db, EVENT_TYPE, {"event": EVENT_TYPE, "index": index}) for index in range(7)]
+    await db.commit()
+    arrival = [event.id for event in events]
+    _lower_the_ceiling(monkeypatch, 3)
+
+    assert await fan_out_pending(db) == 3
+    # Oldest first, and the slice is a prefix of arrival order rather than any three
+    # rows — which is the difference between a queue and a lottery.
+    assert [row.outbox_event_id for row in await _deliveries(db)] == arrival[:3]
+
+    assert await fan_out_pending(db) == 3
+    assert [row.outbox_event_id for row in await _deliveries(db)] == arrival[:6]
+
+    assert await fan_out_pending(db) == 1
+    assert [row.outbox_event_id for row in await _deliveries(db)] == arrival
+
+    assert await fan_out_pending(db) == 0
+    assert await _counts(db) == (7, 7)
+
+
+async def test_a_delivery_deferred_by_the_ceiling_keeps_its_whole_retry_budget(db, monkeypatch) -> None:
+    """The one that would be worst to get wrong.
+
+    A row the tick did not reach must be indistinguishable from a row the tick never
+    saw: same attempt_count, same next_attempt_at, no last_attempted_at, no last_error.
+    Treating a deferred delivery as a failed attempt would burn the ten-try budget of a
+    destination that is answering 200 to everything it is actually asked, and
+    dead-letter healthy events on a schedule — silently, since only the row records it.
+    That is a strictly worse failure than the unbounded load the ceiling replaces, so it
+    is pinned rather than reasoned about.
+    """
+    from app.core.outbox import deliver_pending, enqueue_event, fan_out_pending
+
+    seen = _mock_posts(monkeypatch)
+    db.add(_destination("siem"))
+    for index in range(7):
+        await enqueue_event(db, EVENT_TYPE, {"event": EVENT_TYPE, "index": index})
+    await db.commit()
+    await fan_out_pending(db)
+
+    before = {row.id: (row.attempt_count, row.next_attempt_at) for row in await _deliveries(db)}
+    _lower_the_ceiling(monkeypatch, 3)
+
+    await deliver_pending(db)
+
+    rows = await _deliveries(db)
+    assert [row.status for row in rows] == ["delivered"] * 3 + ["pending"] * 4
+    assert len(seen) == 3
+    for row in rows[3:]:
+        assert (row.attempt_count, row.next_attempt_at) == before[row.id]
+        assert row.last_attempted_at is None
+        assert row.last_error is None
+
+    # And the budget really is intact: every one of the seven eventually lands on its
+    # first attempt, not its second.
+    await deliver_pending(db)
+    await deliver_pending(db)
+    rows = await _deliveries(db)
+    assert {row.status for row in rows} == {"delivered"}
+    assert {row.attempt_count for row in rows} == {1}
+    assert {json.loads(request.content)["index"] for request in seen} == set(range(7))
+
+
+async def test_the_ceiling_takes_the_most_overdue_delivery_not_the_oldest_row(db, monkeypatch) -> None:
+    """`ORDER BY next_attempt_at`, not `ORDER BY id`, and the two disagree exactly when
+    it matters. A row that has failed and backed off has an older id than everything
+    produced while it waited; ordering by id would hand it the whole ceiling on every
+    tick and the newer events would never be reached. Ordering by due time puts it back
+    in line where the backoff placed it."""
+    from app.core.outbox import deliver_pending, enqueue_event, fan_out_pending
+
+    seen = _mock_posts(monkeypatch)
+    db.add(_destination("siem"))
+    for index in range(3):
+        await enqueue_event(db, EVENT_TYPE, {"event": EVENT_TYPE, "index": index})
+    await db.commit()
+    await fan_out_pending(db)
+
+    # Due-time order deliberately the reverse of id order.
+    now = datetime.now(timezone.utc)
+    overdue = [timedelta(seconds=1), timedelta(minutes=5), timedelta(hours=1)]
+    for row, overdue_by in zip(await _deliveries(db), overdue, strict=True):
+        row.next_attempt_at = now - overdue_by
+    await db.commit()
+    _lower_the_ceiling(monkeypatch, 1)
+
+    await deliver_pending(db)
+    assert [row.status for row in await _deliveries(db)] == ["pending", "pending", "delivered"]
+    assert json.loads(seen[0].content)["index"] == 2
+
+    await deliver_pending(db)
+    assert [row.status for row in await _deliveries(db)] == ["pending", "delivered", "delivered"]
+    assert json.loads(seen[1].content)["index"] == 1
+
+
+async def test_a_delivery_backlog_under_the_ceiling_is_drained_in_one_tick(db, monkeypatch) -> None:
+    """The no-change assertion. Below the ceiling the pass must behave exactly as it did
+    before it had one: every due row attempted in a single tick, none held back."""
+    from app.core.outbox import _TICK_LIMIT, deliver_pending, enqueue_event, fan_out_pending
+
+    seen = _mock_posts(monkeypatch)
+    db.add(_destination("siem"))
+    for index in range(6):
+        await enqueue_event(db, EVENT_TYPE, {"event": EVENT_TYPE, "index": index})
+    await db.commit()
+    await fan_out_pending(db)
+    assert _TICK_LIMIT > 6, "this test only means anything below the ceiling"
+
+    await deliver_pending(db)
+
+    rows = await _deliveries(db)
+    assert len(rows) == 6
+    assert {row.status for row in rows} == {"delivered"}
+    assert {row.attempt_count for row in rows} == {1}
+    assert {json.loads(request.content)["index"] for request in seen} == set(range(6))
