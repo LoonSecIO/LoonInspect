@@ -90,6 +90,19 @@ export const en = {
     noAccessDescription:
       "Your account's role doesn't include permission for this area. Ask an administrator if you need it."
   },
+  errors: {
+    notFoundTitle: "That page doesn't exist",
+    notFoundDescription:
+      "LoonInspect serves nothing at this address. It was most likely a typo, or a link from an older build.",
+    notFoundPathLabel: "Requested address",
+    backToOverview: "Back to Overview",
+    crashTitle: "This view failed to render",
+    crashDescription:
+      "Something in the page threw partway through drawing it. Your session is untouched and no data was changed — reload, or go back to the Overview.",
+    crashDetailNote:
+      "The technical detail is in the browser console. It is deliberately not shown here: a render error can quote fragments of this instance's data.",
+    reload: "Reload the page"
+  },
   nav: {
     overview: "Overview",
     devices: "Devices",

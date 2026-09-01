@@ -93,6 +93,19 @@ export const de: Translations = {
     noAccessDescription:
       "Die Rolle Ihres Kontos umfasst keine Berechtigung für diesen Bereich. Wenden Sie sich an eine Administratorin oder einen Administrator, falls Sie ihn benötigen."
   },
+  errors: {
+    notFoundTitle: "Diese Seite gibt es nicht",
+    notFoundDescription:
+      "Unter dieser Adresse liefert LoonInspect nichts aus. Vermutlich ein Tippfehler oder ein Link aus einem älteren Build.",
+    notFoundPathLabel: "Angeforderte Adresse",
+    backToOverview: "Zurück zur Übersicht",
+    crashTitle: "Diese Ansicht konnte nicht dargestellt werden",
+    crashDescription:
+      "Beim Aufbau der Seite ist ein Fehler aufgetreten. Ihre Sitzung ist davon unberührt und es wurden keine Daten geändert — laden Sie die Seite neu oder kehren Sie zur Übersicht zurück.",
+    crashDetailNote:
+      "Die technischen Details stehen in der Browser-Konsole. Sie werden hier bewusst nicht angezeigt: Ein Render-Fehler kann Fragmente der Daten dieser Instanz enthalten.",
+    reload: "Seite neu laden"
+  },
   nav: {
     overview: "Übersicht",
     devices: "Geräte",
