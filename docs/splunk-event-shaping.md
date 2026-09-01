@@ -247,6 +247,15 @@ searching, the first full inventory of the fleet. Those events now land on their
 is already correct, and the key was renamed to `occurredAt` by the #188 casing ruling, so
 the old expression silently evaluates to null rather than erroring.
 
+**Amended 2026-08-31 (second pass).** As first written this section overstated its own
+scope, and the overstatement was live in main. `envelope()` was called from exactly one
+producer — `process_sync`, i.e. `device.inventory.changed` — while four sites enqueued.
+`device.change`, `run.completed` and `run.failed` shipped with no envelope at all, so
+Splunk stamped them at *receive* time (measured skew on real indexed data: 26–250
+seconds) and gave them the HEC endpoint's default `host`. All four families now build an
+envelope at enqueue. Nothing above changes for the inventory family; the other three now
+mean what this section always claimed they did.
+
 Two related things ship in the same envelope, both indexed metadata and therefore free of
 licence volume:
 
@@ -255,7 +264,29 @@ licence volume:
   fields need not survive a summary index or an export into a case file.
 - **`source`** — the Jamf instance, scheme dropped and non-default port kept:
   `acme.jamfcloud.com`, `jamf.corp.local:8443`. This is why the instance URL is *not* a
-  `deviceMeta` key.
+  `deviceMeta` key. Every family sets it, including the run events: a run belongs to
+  exactly one Jamf Pro, and `source` is what collects a single instance's whole feed.
+
+**`host` is absent on `run.completed` and `run.failed`, by ruling.** A run is about a
+connection, not a Mac. The candidates for filling the slot were the Jamf server — which
+is already `source`, and which counting as a device would break every `dc(host)` — and
+the container the worker runs in, which a customer's SPL cannot join to anything. `host`
+means one thing on this wire, and where there is no device it is left genuinely absent so
+HEC applies the input's own visible, overridable default. `device.change` follows the
+same rule one level down: a computer subject carries its hostname, a `computer_group`
+subject carries none, because a smart group is not a Mac either.
+
+Per-family `_time`, all four now set:
+
+| event | `_time` from | `host` |
+| --- | --- | --- |
+| `device.inventory.changed` | `event_time()` — run window, or the device's `reportDate` | hostname |
+| `device.change` | `event_time()` — same rule, so a change and its own inventory event share one `_time` | hostname; absent for a group subject |
+| `run.completed` | the instant the run closed (its `occurred_at` / row `window_end`) | absent |
+| `run.failed` | the instant the run reached `failed` (its `window_end`) | absent |
+
+The run events are deliberately **not** back-dated by `event_time()`: a sweep's closing
+event stamped at the window start would sort before every event it closes over.
 
 **`sourcetype` is still not set**, deliberately. The ruled tree (`loon:jamf:mac:app`)
 names the fan-out sub-events, and the fan-out below is not built; a sourcetype is a

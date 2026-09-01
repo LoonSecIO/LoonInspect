@@ -46,6 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.context import get_request_id
 from app.core.outbox import enqueue_event
+from app.core.wire import ENVELOPE, envelope, instance_label
 from app.models.schema import MdmConnection, Run, RunLogLine
 
 logger = logging.getLogger(__name__)
@@ -219,6 +220,36 @@ def run_meta() -> dict[str, object]:
     }
 
 
+async def _connection_wire(db: AsyncSession, connection_id: int) -> tuple[str | None, str | None]:
+    """A run event's connection name and its Splunk `source` — one small SELECT per
+    closed run.
+
+    `source` is knowable for a run and worth the read: a run belongs to exactly one Jamf
+    Pro, and `source` is the key that lets one SPL search collect every family a single
+    instance produced. Read here rather than carried on RunContext, because the reclaim
+    path never had a RunContext in the first place — it revives rows another process
+    left behind — and one lookup per closed run is not the per-device cost that would
+    have argued the other way.
+
+    There is deliberately no `host`. A run is not about a device: the closest candidates
+    are the Jamf server (already `source`, and counting it as a Mac would break every
+    `dc(host)`) and the container the worker happens to run in (infrastructure naming a
+    customer's SPL cannot join to anything). `host` means "the Mac this is about"
+    everywhere else on the wire, and the fix for it meaning two things is to leave it
+    genuinely absent where there is no Mac, not to fill it. `envelope()` drops a None,
+    so HEC applies the input's own default host — an obvious, overridable placeholder
+    rather than a fact the product asserted.
+    """
+    row = (
+        await db.execute(
+            select(MdmConnection.name, MdmConnection.base_url).where(MdmConnection.id == connection_id)
+        )
+    ).first()
+    if row is None:
+        return None, None
+    return row.name, (instance_label(row.base_url) if row.base_url else None)
+
+
 async def _enqueue_run_failed(
     db: AsyncSession,
     *,
@@ -237,9 +268,7 @@ async def _enqueue_run_failed(
     else rides along — no credentials, no log lines; anyone who needs the full story
     has the run id and the run-log endpoint.
     """
-    connection_name = (
-        await db.execute(select(MdmConnection.name).where(MdmConnection.id == connection_id))
-    ).scalar_one_or_none()
+    connection_name, source = await _connection_wire(db, connection_id)
     await enqueue_event(
         db,
         RUN_FAILED_EVENT,
@@ -252,6 +281,12 @@ async def _enqueue_run_failed(
             "window_start": window_start.isoformat(),
             "window_end": window_end.isoformat(),
             "error": (error or "")[:_ERROR_SUMMARY_MAX] or None,
+            # `window_end` is the moment the run reached `failed` at both producers —
+            # finish's failure path and the reclaim — so it is the occurrence, and no
+            # new field had to be minted to carry it. NOT `event_time()`: that
+            # back-dates a sweep to its window, which would file the closing event
+            # before every device event it closes over.
+            ENVELOPE: envelope(occurred_at=window_end, host=None, source=source),
         },
         request_id=get_request_id(),
     )
@@ -580,6 +615,7 @@ async def finish(
     )
     row = closed.first()
     if row is not None and row.lock_class == LOCK_DEVICE_SWEEP:
+        _, source = await _connection_wire(db, row.mdm_connection_id)
         await enqueue_event(
             db,
             RUN_COMPLETED_EVENT,
@@ -596,6 +632,13 @@ async def finish(
                 "devices_processed": devices_processed,
                 "devices_failed": devices_failed,
                 "status": status,
+                # The same `now` the payload's occurred_at and the row's window_end
+                # were stamped with, so the row, the body and Splunk's `_time` all
+                # tell one time. NOT `event_time()`, which back-dates a sweep to its
+                # window: the run closing is not part of the occurrence the run
+                # serves, and stamping it at window_start would sort the sweep's
+                # closing event before every event it closes over.
+                ENVELOPE: envelope(occurred_at=now, host=None, source=source),
             },
             request_id=get_request_id(),
         )

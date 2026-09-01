@@ -33,8 +33,9 @@ from app.changes.policy import (
 )
 from app.core.context import get_request_id
 from app.core.outbox import enqueue_event
-from app.core.runs import get_run
-from app.mdm.jamf.contract import SECTIONS, Observation, SectionContent
+from app.core.runs import event_time, get_run
+from app.core.wire import ENVELOPE, envelope, instance_label
+from app.mdm.jamf.contract import SECTIONS, SUBJECT_COMPUTER, Observation, SectionContent
 from app.models.schema import (
     ChangePolicy,
     DeviceChange,
@@ -266,7 +267,7 @@ def _wrap(value) -> dict | None:
 
 def _event_payload(row: DeviceChange, connection: MdmConnection) -> dict:
     run = get_run()
-    return {
+    payload = {
         "event": EVENT_TYPE,
         # The run that observed this change. Same jobID as the inventory events from the
         # same pull, which is what lets a search collect everything one sweep produced —
@@ -297,3 +298,24 @@ def _event_payload(row: DeviceChange, connection: MdmConnection) -> dict:
         "previous_span_id": str(row.previous_span_id) if row.previous_span_id else None,
         "policy_version": row.policy_version,
     }
+    # The envelope, on the same rule the inventory family uses (app.core.wire). Without
+    # it every device.change landed at Splunk's *receive* time, so a change the sweep
+    # observed at 01:00 sorted beside whatever the outbox happened to drain at 09:00.
+    #
+    # `event_time` rather than `row.observed_at` directly: that is the one back-dating
+    # rule in this codebase (app.core.runs), and running a second rule here would put
+    # a device's change and its own inventory event — same pull, same jobID — at two
+    # different `_time`s. Under a sweep both are the run window; under a webhook both
+    # are Jamf's reportDate, which is exactly what `observed_at` was parsed from.
+    #
+    # `host` only for a computer. `derive_and_record` also runs for computer_group
+    # subjects, whose `subject_label` is a group name — shipping that as `host` would
+    # invent Macs named "Devices out of Checkin Compliance" and corrupt every
+    # `dc(host)` in the customer's index. An absent hint is recoverable; a wrong one
+    # is not.
+    payload[ENVELOPE] = envelope(
+        occurred_at=event_time(row.observed_at),
+        host=row.subject_label if row.subject_kind == SUBJECT_COMPUTER else None,
+        source=instance_label(connection.base_url),
+    )
+    return payload

@@ -242,6 +242,21 @@ async def test_a_run_with_no_heartbeat_is_reclaimed(db, connection) -> None:
     assert events[0].payload["trigger"] == TRIGGER_SWEEP
     assert "heartbeat" in events[0].payload["error"]
 
+    # The reclaim is run.failed's *other* producer, and its envelope must match the
+    # verdict it just wrote: `time` is the instant the reclaim stamped window_end, not
+    # the moment the outbox drains. This is the event that most needs a true `_time` —
+    # the process that would have reported the failure is the one that died, so the
+    # only clock left is the reclaimer's.
+    hints = events[0].payload[ENVELOPE]
+    assert hints["time"] == reclaimed.window_end.timestamp()
+    assert hints["time"] == datetime.fromisoformat(events[0].payload["window_end"]).timestamp()
+    assert hints["source"] == instance_label(HOST) == "e2e.jamfcloud.com"
+    # A run is not about a Mac, so no `host` — deliberately, not by omission.
+    assert "host" not in hints
+    body = _build_body(SimpleNamespace(type="splunk_hec"), events[0].payload)
+    assert body["time"] == hints["time"] and "host" not in body
+    assert ENVELOPE not in body["event"]
+
     await finish(db, revived.run, ok=True)
     # A run that closed cleanly emits no run.failed — the alarm never cries wolf.
     assert await _run_failed_events(db, revived.run.id) == []
@@ -344,7 +359,12 @@ async def test_a_failed_run_emits_exactly_one_run_failed_with_the_ruled_fields(d
 
     events = await _run_failed_events(db, failed.run.id)
     assert len(events) == 1
-    payload = events[0].payload
+    # The envelope is lifted off first so this stays an assertion about the ruled WIRE
+    # fields. `_envelope` is outbox transport that `_build_body` pops before any
+    # destination sees it — popping it here rather than widening the set keeps this
+    # test failing if a real field is ever added or renamed without a ruling.
+    payload = dict(events[0].payload)
+    hints = payload.pop(ENVELOPE)
     assert set(payload) == {
         "event_type", "run_id", "connection_id", "connection_name", "trigger",
         "window_start", "window_end", "error",
@@ -357,6 +377,15 @@ async def test_a_failed_run_emits_exactly_one_run_failed_with_the_ruled_fields(d
     assert payload["window_end"]  # stamped from the same instant as the row's window_end
     # Truncated sanely: the summary is the error's head, never the whole text.
     assert payload["error"] == long_error[:500]
+    # And the envelope carries the occurrence, from the field the payload already had:
+    # window_end is the instant the run reached `failed`, at both of run.failed's
+    # producers, so nothing new had to be minted to give Splunk a true `_time`.
+    assert hints["time"] == datetime.fromisoformat(payload["window_end"]).timestamp()
+    assert hints["source"] == instance_label(HOST) == "e2e.jamfcloud.com"
+    assert "host" not in hints  # a run is not about a Mac
+    # The error summary is the one free-text field on this event, and the envelope must
+    # not become a second place it can leak: the hints are three keys, nothing more.
+    assert set(hints) == {"time", "source"}
 
 
 async def test_a_failed_webhook_run_emits_run_failed_unlike_run_completed(db, connection) -> None:
