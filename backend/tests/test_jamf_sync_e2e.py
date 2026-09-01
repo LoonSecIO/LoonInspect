@@ -576,4 +576,13 @@ async def test_department_and_building_ids_resolve_to_names_and_filter(db, jamf:
     assert catalog.ok, catalog
     assert await ids_for_name(db, kind=DEPARTMENT, name="Platform") == [(connection.id, "7")]
     assert await ids_for_name(db, kind=DEPARTMENT, name="Engineering") == []
-    assert (await db.execute(select(func.count()).select_from(JamfOrgUnit))).scalar_one() == len(units)
+    # Scoped to this connection. Unscoped, this counts every org unit the tenant holds
+    # — including the ones a real Jamf sync left behind — so it passed only on a
+    # database nothing else had ever written to. The assertion is that a rename updates
+    # the row in place rather than inserting a second one, and that is per connection.
+    renamed_count = await db.execute(
+        select(func.count())
+        .select_from(JamfOrgUnit)
+        .where(JamfOrgUnit.mdm_connection_id == connection.id)
+    )
+    assert renamed_count.scalar_one() == len(units)
