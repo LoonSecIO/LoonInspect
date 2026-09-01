@@ -847,6 +847,11 @@ export const en = {
     capabilityJamfPro: "Jamf Pro",
     crud: "(CRUD)",
     readOnly: "(read)",
+    webhookSecret: "Webhook secret",
+    webhookSecretHint:
+      "Shared with Jamf Pro: set the same value on the webhook there, as its Header Authentication value (header name X-API-Key) or as its Basic authentication password. Stored encrypted and never shown again — to change it, enter a new value here and update Jamf Pro to match.",
+    webhookSecretRequired:
+      "Callback webhooks need a secret. Without one, the webhook endpoint rejects every request Jamf Pro sends it.",
     lastSuccessfulAuth: "Last successful authentication:",
     never: "Never",
     credentialsRotated: "Credentials last rotated:",

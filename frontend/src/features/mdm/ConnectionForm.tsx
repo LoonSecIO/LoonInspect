@@ -50,6 +50,10 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
   const [capabilityUsers, setCapabilityUsers] = useState(connection?.capabilityUsers ?? false);
   const [capabilityWebhooks, setCapabilityWebhooks] = useState(connection?.capabilityWebhooks ?? false);
   const [capabilityJamfPro, setCapabilityJamfPro] = useState(connection?.capabilityJamfPro ?? false);
+  // Never seeded from `connection`: the server sends `hasWebhookSecret`, never the
+  // value. Blank on an edit means "keep what is stored", the same contract the
+  // credential fields above and the destination form's secret both use.
+  const [webhookSecret, setWebhookSecret] = useState("");
 
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [credentialsJsonMode, setCredentialsJsonMode] = useState(false);
@@ -133,6 +137,19 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setError(null);
+
+    // Webhook auth fails closed (api/webhooks.py): a connection with the capability on
+    // and no secret answers every Jamf callback with 401, which reads as Jamf being
+    // broken rather than as a half-filled form. The input's `required` attribute cannot
+    // carry this alone — the capability checkboxes live inside the collapsible advanced
+    // panel, so ticking the box, collapsing the panel and submitting leaves no such
+    // input in the DOM for the browser to validate.
+    if (capabilityWebhooks && !webhookSecret && !connection?.hasWebhookSecret) {
+      setShowAdvanced(true);
+      setError(t.connectionForm.webhookSecretRequired);
+      return;
+    }
+
     setSubmitting(true);
 
     const filledCredentials = Object.fromEntries(
@@ -150,6 +167,10 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
       capabilityJamfPro
     };
     if (Object.keys(filledCredentials).length > 0) input.credentials = filledCredentials;
+    // Omitted rather than sent blank: the backend applies `webhook_secret` whenever the
+    // key is present, so sending "" on an edit would clear the stored secret and shut
+    // the endpoint down without saying so.
+    if (webhookSecret) input.webhookSecret = webhookSecret;
     if (userAgentOverride) input.userAgentOverride = userAgentOverride;
     // 400 is the default: stored as null so a connection that never deviated (or slid
     // back) keeps following the instance default if it ever moves.
@@ -411,6 +432,26 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
                   <span className="text-xs text-muted-foreground">{t.connectionForm.readOnly}</span>
                 </label>
               </div>
+
+              {capabilityWebhooks && (
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium">
+                    {t.connectionForm.webhookSecret}
+                    {connection?.hasWebhookSecret && (
+                      <span className="ml-1 text-xs text-muted-foreground">{t.connectionForm.setLeaveBlank}</span>
+                    )}
+                  </span>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    className={inputClasses}
+                    required={!connection?.hasWebhookSecret}
+                    value={webhookSecret}
+                    onChange={(e) => setWebhookSecret(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">{t.connectionForm.webhookSecretHint}</p>
+                </label>
+              )}
             </div>
 
             {connection && (
