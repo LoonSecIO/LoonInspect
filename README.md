@@ -1,33 +1,34 @@
 # 🦅 LoonInspect
 
-**A self-hosted, open-source vulnerability scanner and MDM inventory engine for enterprise Apple environments.**
+**The software-change feed for Jamf Pro fleets — what changed on every Mac, in your own SIEM, without installing anything on the Mac.**
 
-LoonInspect bridges the gap between your Apple Mobile Device Management (MDM) platforms and your security operations. It pulls raw app inventory from MDMs like Jamf Pro, generates O(1) hashed fingerprints, maps them against real-time CVE intelligence, and streams the delta events directly into your SIEM (Splunk, Elastic, RunReveal, Datadog). 
-
-All without bloating your local database or grinding your MDM APIs to a halt.
+LoonInspect reads inventory from Jamf Pro, works out what actually changed since the last read, and streams those changes as structured events into Splunk, Elastic, RunReveal, or any webhook endpoint. It is agentless: nothing is installed on managed devices.
 
 ---
 
 ## 🚀 Features
 
-* **Built for Jamf Pro:** Native API integration and Webhook ingestion, unapologetically Jamf-first (SimpleMDM and Addigy are on the roadmap).
-* **O(1) Vulnerability Hashing:** Translates raw app metadata into MD5 `FullHashes`, allowing lightning-fast lookups against the LoonVD vulnerability engine.
-* **Delta Streaming Engine:** Calculates inventory diffs in-memory and streams structured JSON events (`device.inventory.changed`) directly to your SIEM.
-* **Hybrid Sync Architecture:** Supports real-time webhooks for active devices and scheduled off-peak bulk sweeps to catch devices that were offline. Each pull is a *collection* — what to read (Jamf sections, a device filter pushed into Jamf's query, the smart-group catalog) and when (time of day, timezone, cadence) — configured per connection in the app rather than as one global cron.
-* **Secure by Default:** Built-in SCIM provisioning (Okta/Azure AD) and WebAuthn (Touch ID/YubiKey) MFA on the free tier.
-* **Lightweight Container:** Multi-architecture (AMD64/ARM64) Docker image built on hardened base images.
+* **Built for Jamf Pro:** Native Pro API integration and webhook ingestion, unapologetically Jamf-first (SimpleMDM and Addigy are on the roadmap).
+* **Delta Streaming Engine:** Diffs inventory against the last observation and streams structured JSON events (`device.inventory.changed`, `device.change`) directly to your SIEM. A sweep where nothing changed emits nothing at all.
+* **Small on the wire:** Measured at 509 bytes per event plus 311 bytes per changed app. A 40,000-device baseline sweep is roughly 1.06 GB, once; a quiet day afterwards is roughly 4 MB.
+* **Hybrid Sync Architecture:** Real-time webhooks for active devices and scheduled off-peak sweeps for the rest. Each pull is a *collection* — what to read (Jamf sections, a device filter pushed into Jamf's query, the smart-group catalog) and when (time of day, timezone, cadence) — configured per connection in the app rather than as one global cron.
+* **Tenant isolation in the database:** Row-level security is enforced by Postgres rather than by application filters, and CI asserts that the application role cannot bypass it.
+* **Self-hosted:** One container and a Postgres database. No vendor account required to run it.
+
+### What it does not do
+
+No CVE or EPSS enrichment. No vulnerability scoring. No SCIM, no MFA. Jamf Patch title compliance is implemented; nothing else vulnerability-shaped is. If you need those today, this is not that tool.
 
 ---
 
 ## 🏗 Architecture Overview
 
-LoonInspect is designed around a **"Diff, Stream, Commit"** pipeline to keep local storage requirements microscopic while delivering enterprise-grade telemetry:
+LoonInspect is designed around a **"Diff, Stream, Commit"** pipeline:
 
-1. **Ingest:** Receives a webhook, chron, or event system.
-2. **Fingerprint:** Deduplicates raw app strings into cryptographic `FullHashes`.
-3. **Analyze:** Checks hashes against the local Postgres database to determine what changed.
-4. **Enrich (Optional):** Sends unseen hashes to the LoonVD AWS Gateway to retrieve real-time EPSS scores, CVE mappings, and patch manifests. Whether you use Munki, Jamf's App Installers, or other patching service.
-5. **Stream:** Emits the calculated delta directly to your SIEM for logging, compliance, and eventing.
+1. **Ingest:** Receives a Jamf webhook, or runs a scheduled sweep.
+2. **Fingerprint:** Hashes each app's identity and version, so a repeat read is recognisable without comparing strings.
+3. **Analyze:** Diffs against the stored observation to determine what actually changed.
+4. **Stream:** Emits the delta to your SIEM for logging, compliance, and alerting.
 
 Beneath the delta, every Jamf observation is also kept as a versioned, content-addressed
 record — what each device looked like each time it was read, and through what collector
@@ -47,8 +48,10 @@ is what stops 40k devices fitting in ten minutes. See [docs/app-catalog.md](docs
 
 ## 🛠 Quick Start (Docker Compose)
 
-LoonInspect is deployed as two containers: the application — one multi-architecture image
-carrying both the React frontend and the FastAPI backend — and a Postgres alongside it.
+LoonInspect is deployed as two containers: the application — one image carrying both the
+React frontend and the FastAPI backend — and a Postgres alongside it. `docker compose up
+--build` builds natively for your machine, Apple Silicon included; the image published by
+CI is `linux/amd64`.
 Both are in the bundle; nothing external is required, and the database port is never
 published to the host.
 

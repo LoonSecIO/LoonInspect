@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Collection, Iterator
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -21,6 +22,20 @@ KNOWN_EVENT_TYPES = frozenset({"device.inventory.changed", "device.change", "run
 
 # Same shape as the login lockout backoff: exponential, capped, with a hard ceiling on
 # total attempts so a permanently dead destination doesn't retry forever.
+# asyncpg caps a statement at 32767 bind parameters. One baseline sweep of a large fleet
+# produces more outbox ids than that in a single night — 40,000 at 40k devices — so the
+# unbatched `IN (...)` this function used to build raised rather than ran, and the nightly
+# purge never completed even once. Same cap, same answer as `observations/ledger.py`.
+_PURGE_BATCH = 1000
+
+
+def _in_batches(values: Collection, size: int = _PURGE_BATCH) -> Iterator[list]:
+    """`values` in chunks small enough to survive one statement's bind-parameter budget."""
+    items = list(values)
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
+
+
 _BASE_BACKOFF_SECONDS = 30
 _MAX_BACKOFF_SECONDS = 3600
 _MAX_ATTEMPTS = 10
@@ -286,11 +301,14 @@ async def deliver_pending(db: AsyncSession) -> None:
     if not due:
         return
 
+    # Batched for the same reason the purge is: `due` is unbounded, so one baseline
+    # sweep of a large fleet puts more event ids in here than a statement can bind.
+    # `destination_ids` below is bounded by the destination count and needs no batching.
     event_ids = {row.outbox_event_id for row in due}
-    events = {
-        e.id: e
-        for e in (await db.execute(select(EventOutbox).where(EventOutbox.id.in_(event_ids)))).scalars().all()
-    }
+    events: dict = {}
+    for batch in _in_batches(event_ids):
+        result = await db.execute(select(EventOutbox).where(EventOutbox.id.in_(batch)))
+        events.update({e.id: e for e in result.scalars().all()})
     destination_ids = {row.destination_id for row in due}
     destinations = {
         d.id: d
@@ -368,18 +386,21 @@ async def purge_delivered_events(db: AsyncSession, retention_days: int) -> int:
 
     # Never purge an event with a delivery still mid-retry, however old it is —
     # correctness here matters more than tidiness.
-    result = await db.execute(
-        select(OutboxDelivery.outbox_event_id).where(
-            OutboxDelivery.outbox_event_id.in_(candidate_ids),
-            OutboxDelivery.status == "pending",
+    still_pending: set = set()
+    for batch in _in_batches(candidate_ids):
+        result = await db.execute(
+            select(OutboxDelivery.outbox_event_id).where(
+                OutboxDelivery.outbox_event_id.in_(batch),
+                OutboxDelivery.status == "pending",
+            )
         )
-    )
-    still_pending = set(result.scalars().all())
+        still_pending.update(result.scalars().all())
     purge_ids = candidate_ids - still_pending
     if not purge_ids:
         return 0
 
-    await db.execute(sa_delete(OutboxDelivery).where(OutboxDelivery.outbox_event_id.in_(purge_ids)))
-    await db.execute(sa_delete(EventOutbox).where(EventOutbox.id.in_(purge_ids)))
+    for batch in _in_batches(purge_ids):
+        await db.execute(sa_delete(OutboxDelivery).where(OutboxDelivery.outbox_event_id.in_(batch)))
+        await db.execute(sa_delete(EventOutbox).where(EventOutbox.id.in_(batch)))
     await db.commit()
     return len(purge_ids)
