@@ -27,6 +27,7 @@ import { VulnerabilitiesPage } from "@/features/vulnerabilities/VulnerabilitiesP
 import { JamfPatchPage } from "@/features/jamfPatch/JamfPatchPage";
 import { JamfPatchDetailPage } from "@/features/jamfPatch/JamfPatchDetailPage";
 import { CatalogPage } from "@/features/catalog/CatalogPage";
+import { NotFoundPage } from "@/features/errors/NotFoundPage";
 
 export function AppRoutes() {
   return (
@@ -77,6 +78,13 @@ export function AppRoutes() {
         {/* No permission gate — everyone manages their own profile. */}
         <Route path="settings/my-account" element={<MyAccountPage />} />
         <Route path="vulnerabilities" element={<VulnerabilitiesPage />} />
+        {/* Last child on purpose, and inside the shell rather than beside /login: a
+            signed-out visitor keeps getting the same sign-in redirect for a typo as
+            for a real page, so an unmatched path never reveals which paths exist.
+            Route ranking, not order, is what keeps this from shadowing anything —
+            react-router scores a static segment above a splat, so /login and every
+            route above still win. */}
+        <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>
     </Routes>
