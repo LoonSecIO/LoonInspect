@@ -137,6 +137,14 @@ class Settings(BaseSettings):
     # Behind a reverse proxy, set this to the proxy's address.
     forwarded_allow_ips: str = "127.0.0.1"
 
+    # Lets an MDM connection's base_url be plain http. Off by default: the Jamf
+    # client-credentials POST carries the client secret in its body, so http hands it
+    # to anyone on the path. On rather than absent because a lab Jamf Pro on an
+    # operator's own network is a real thing to point this at — but it has to be a
+    # decision someone made, not a URL that happened to save (#131). See
+    # app.core.egress.
+    allow_insecure_mdm_base_url: bool = False
+
     # Marks the session cookie Secure. On by default because the alternative fails
     # silently in the dangerous direction. Browsers refuse Secure cookies over plain
     # HTTP everywhere except localhost, so turn this off *only* for a deliberate
