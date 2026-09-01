@@ -319,9 +319,9 @@ class JamfClient:
         applications, whether it reads accounts, printers… The part of the aperture
         that decides what an app list even means. v2 of the endpoint no longer reports
         font/plugin paths (v1 did); the aperture records their absence as absence, so
-        the switch reads as one honest aperture transition per tenant. Needs the "Read
-        Computer Inventory Collection" privilege; without it this is None and the
-        aperture records that absence."""
+        the switch reads as one honest aperture transition per tenant. Needs "Read
+        Computer Inventory Collection Settings" (app.mdm.jamf.privileges); without it
+        this is None and the aperture records that absence."""
         try:
             response = await self._get(client, "/api/v2/computer-inventory-collection-settings", comment="aperture")
             if response.status_code in (401, 403, 404):

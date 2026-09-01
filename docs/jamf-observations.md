@@ -371,9 +371,16 @@ observation: no span, no digest, no change row.
 
 Jamf privileges the API client needs: Read Computers (inventory), Read Smart Computer
 Groups (definitions; absent → groups are not observed, logged), Read Computer Inventory
-Collection (aperture; absent → `available: false`), Read Departments and Read Buildings
-(names; absent → the ids are still stored and still filterable, but they resolve to no
-name, logged), and the Jamf Pro version endpoint (absent → recorded as missing).
+Collection Settings (aperture; absent → `available: false`), Read Departments and Read
+Buildings (names; absent → the ids are still stored and still filterable, but they
+resolve to no name, logged). `/v1/jamf-pro-version` needs authentication and no
+privilege at all, so a missing version is never a privilege problem.
+
+This list is no longer only here: it is a registry in `app.mdm.jamf.privileges`, a table
+in the README's setup path, and a hint in the connection form, because an operator
+building an API Role was never going to find it 370 lines into a contract document.
+`tests/test_jamf_privileges.py` reads the endpoint literals out of `client.py` and
+refuses drift between all four.
 
 Verified against a real record: `tests/fixtures/jamf/computer_inventory_detail_real.json`
 is a Jamf Pro 11.31.1 inventory of an M4 Mac mini on a macOS 27 beta, scrubbed of

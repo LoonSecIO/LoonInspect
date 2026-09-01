@@ -161,3 +161,7 @@ class ProviderInfo(BaseModel):
 
     provider: MdmProvider
     credential_fields: list[ProviderCredentialField]
+    # Names only, never prose: these are Jamf's own strings, typed into Jamf's API Role
+    # editor, so they must not be translated — while the sentences around them in the
+    # form must be. Anything explanatory rides in the frontend's locale files instead.
+    required_privileges: list[str]

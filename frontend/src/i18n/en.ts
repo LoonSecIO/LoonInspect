@@ -838,6 +838,14 @@ export const en = {
     jsonParsedHint: "Parsed fields from JSON.",
     loadingFields: "Loading fields for this provider...",
     setLeaveBlank: "(set — leave blank to keep)",
+    showPrivileges: "Which Jamf Pro privileges does this need?",
+    hidePrivileges: "Hide privileges",
+    privilegesIntro:
+      "The API Role assigned to this API Client needs these read privileges. All five are reads; none writes anything to Jamf Pro.",
+    privilegesExactNames:
+      "Type them exactly as spelled — these are Jamf's own strings, and the API Role editor searches on them.",
+    testProvesOnlyAuth:
+      "Test connection only exchanges these credentials for a token — the one Jamf Pro call that needs no privilege. It does not check the API Role, so a role with nothing ticked still passes and then syncs no devices.",
     testConnection: "Test connection",
     testing: "Testing...",
     testRequestFailed: "Test request failed.",
