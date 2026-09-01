@@ -8,10 +8,13 @@ FakeJamf through httpx.MockTransport directly rather than through the monkeypatc
 
 from __future__ import annotations
 
+import asyncio
+import time
+
 import httpx
 import pytest
 
-from app.mdm.jamf.client import JamfClient
+from app.mdm.jamf.client import JamfClient, _token_lifetime
 from tests.jamf_fake import HOST, FakeJamf
 
 
@@ -118,7 +121,10 @@ async def test_transients_exhaust_and_the_real_failure_propagates(recorded_sleep
 async def test_an_expired_token_reauthenticates_once_mid_sweep() -> None:
     fake = FakeJamf()
     client = make_client()
-    client._token = "stale"  # as if the sweep outlived the token's 30 minutes
+    # A token the tenant no longer accepts and whose deadline this client never saw —
+    # revoked, or issued before a restart. The 401 backstop is the only thing that can
+    # find that out, which is why proactive refresh does not replace it.
+    client._token = "stale"
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(fake.handler)) as http:
         computers = [computer async for computer in client.iter_computers(http, page_size=100)]
@@ -126,6 +132,124 @@ async def test_an_expired_token_reauthenticates_once_mid_sweep() -> None:
     assert len(computers) == 2
     assert fake.requests.count("POST /api/oauth/token") == 1
     assert client.throttle.observations() == {}  # a 401 is not a transient
+
+
+# --- the token, and the lock around issuing one ---------------------------------------
+
+
+def test_token_lifetime_comes_from_the_response_and_never_from_a_default() -> None:
+    """The number this module used to assert in a comment ("30 minutes by default")
+    is now nobody's business but the tenant's: `expires_in` decides, and the margin is
+    the only constant."""
+    # What loonsecio.jamfcloud.com (Jamf Pro 11.31.1) actually returns, less the margin.
+    assert _token_lifetime({"expires_in": 179}) == 149.0
+    assert _token_lifetime({"expires_in": "179"}) == 149.0
+    # A lifetime shorter than the margin is halved, never driven negative: a deadline
+    # in the past would re-authenticate before every single request.
+    assert _token_lifetime({"expires_in": 20}) == 10.0
+    # Nothing usable said: no proactive refresh, and the 401 retry carries the client.
+    assert _token_lifetime({"token_type": "Bearer"}) is None
+    assert _token_lifetime({"expires_in": "soon"}) is None
+    assert _token_lifetime({"expires_in": 0}) is None
+
+
+async def test_a_token_is_replaced_before_it_expires_rather_than_after_a_401() -> None:
+    """Proactive refresh: at the measured lifetime a long sweep crosses many expiries,
+    and each one used to cost a wasted 401 per request in flight."""
+    fake = FakeJamf()
+    client = make_client()
+    client._token = "expired"
+    client._token_expires_at = time.monotonic() - 1  # the deadline expires_in named has passed
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(fake.handler)) as http:
+        response = await client._get(http, "/api/v1/jamf-pro-version", comment="aperture")
+
+    assert response.status_code == 200
+    # One GET, not two: the expiry was known, so no round trip was spent discovering it.
+    assert fake.requests == ["POST /api/oauth/token", "GET /api/v1/jamf-pro-version"]
+    assert client._token == "tok"
+    # The fake answers expires_in=179, as the real tenant does; the deadline is that
+    # less the 30-second margin, read off the response rather than assumed.
+    assert 148.0 < client._token_expires_at - time.monotonic() <= 149.0
+
+
+async def test_one_expiry_produces_one_token_request_however_many_race() -> None:
+    """The whole point: a wave's worth of coroutines meeting a dead token together
+    issue one token between them, not one each."""
+    fake = FakeJamf()
+    client = make_client()
+    client._token = "revoked"  # every request in flight will 401 at the same moment
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(fake.async_handler)) as http:
+        responses = await asyncio.gather(
+            *(client._get(http, "/api/v1/jamf-pro-version", comment="race") for _ in range(4))
+        )
+
+    assert [response.status_code for response in responses] == [200, 200, 200, 200]
+    assert fake.requests.count("POST /api/oauth/token") == 1
+    # Four 401s and four retries — the wasted GETs are the 401 backstop working, and
+    # the amplification that was fixed is in the POST count above.
+    assert fake.requests.count("GET /api/v1/jamf-pro-version") == 8
+
+
+async def test_a_coroutine_waiting_on_the_lock_takes_the_peers_token() -> None:
+    """The classic double-fetch. A coroutine that blocks on the lock re-checks after
+    acquiring it; without that re-check it would POST for a token it already has."""
+    fake = FakeJamf()
+    client = make_client()
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(fake.async_handler)) as http:
+        await client._auth_lock.acquire()  # stand in for a peer mid-refresh
+        waiter = asyncio.create_task(client._authenticate(http))
+        await asyncio.sleep(0)
+        assert not waiter.done()  # it is on the lock, not on the network
+
+        client._token = "peer-token"  # the peer's refresh lands
+        client._auth_lock.release()
+
+        assert await waiter == "peer-token"
+
+    assert fake.requests == []  # nothing was asked of the tenant at all
+
+
+def test_a_late_401_does_not_wipe_a_peers_fresh_token() -> None:
+    """`self._token = None` was the old invalidation, and a 401 carrying an already
+    replaced token would clear the replacement — sending the next wave unauthenticated
+    for one round trip each. Invalidation is now by value."""
+    client = make_client()
+    client._token = "fresh"
+    client._token_expires_at = time.monotonic() + 100
+
+    client._forget("expired")  # a slow coroutine's 401, carrying the dead token
+    assert client._token == "fresh"
+
+    client._forget("fresh")  # the cached token itself failing is a real invalidation
+    assert client._token is None
+    assert client._token_expires_at is None
+
+
+async def test_a_second_401_is_a_real_failure_and_does_not_authenticate_for_ever() -> None:
+    """One retry, not a loop. An API client disabled mid-sweep fails the run instead of
+    hammering the token endpoint — the behavior this change had to leave alone."""
+    posts = 0
+    gets = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal posts, gets
+        if request.url.path == "/api/oauth/token":
+            posts += 1
+            return httpx.Response(200, json={"access_token": "tok", "expires_in": 179})
+        gets += 1
+        return httpx.Response(401, json={"httpStatus": 401})
+
+    client = make_client()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        response = await client._get(http, "/api/v1/jamf-pro-version", comment="aperture")
+
+    # The 401 is returned for the caller to raise on, after exactly one re-auth: two
+    # POSTs proves the failing token was invalidated, two GETs that it stopped there.
+    assert response.status_code == 401
+    assert (posts, gets) == (2, 2)
 
 
 async def test_aimd_halves_the_width_on_429_and_earns_it_back(recorded_sleeps: list[float]) -> None:

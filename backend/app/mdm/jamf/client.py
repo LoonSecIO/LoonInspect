@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import time
 from collections.abc import AsyncIterator, Coroutine, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -52,6 +53,11 @@ _RETRY_AFTER_CAP_SECONDS = 30.0
 # What of an OAuth token response may be shown to whoever asked for the test. See
 # JamfClient.test_connection; `access_token` is absent on purpose and always will be.
 _TOKEN_RESPONSE_ECHOED = ("token_type", "expires_in", "scope")
+
+# How far ahead of its stated expiry a token is replaced. The only constant here on
+# purpose: the lifetime itself is whatever the token response says, never a number
+# this code believes. See _token_lifetime.
+_TOKEN_REFRESH_MARGIN_SECONDS = 30.0
 
 _T = TypeVar("_T")
 
@@ -122,6 +128,35 @@ class AdaptiveConcurrency:
         if not self.reductions:
             return {}
         return {"concurrency_reductions": self.reductions, "concurrency_floor": self.floor_seen}
+
+
+def _token_lifetime(body: dict) -> float | None:
+    """How long a just-issued token may be used, from the token response's own
+    `expires_in`; None when the response doesn't say and only a 401 can find out.
+
+    Measured, not assumed. This module used to state that API client tokens last "30
+    minutes by default"; loonsecio.jamfcloud.com on Jamf Pro 11.31.1 answered
+    expires_in=179 on three consecutive samples (2026-08-31) — seconds, off by an
+    order of magnitude from the comment reviewers were trusting. Whether that 179 is a
+    Jamf default, a per-API-client setting, or one tenant's own configuration is not
+    something this code can see — so nothing is hardcoded. 179 seconds is what one real
+    tenant returned; what gets used is whatever each tenant's response says.
+
+    The margin is subtracted so the token is replaced before it dies in flight rather
+    than after a wasted 401. Halving is the floor for a lifetime shorter than the
+    margin — subtracting there would put the deadline in the past and re-authenticate
+    before every request, which is the amplification this whole path exists to avoid.
+    """
+    raw = body.get("expires_in")
+    try:
+        # Tolerant of the string form: it is not what Jamf sends, but a token response
+        # that spells the number differently is no reason to fall back to 401s.
+        seconds = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if seconds <= 0:
+        return None
+    return max(seconds - _TOKEN_REFRESH_MARGIN_SECONDS, seconds / 2)
 
 
 def _retry_delay(response: httpx.Response, attempt: int) -> float:
@@ -195,6 +230,16 @@ class JamfClient:
         self._client_secret = client_secret
         self._user_agent_override = user_agent_override
         self._token: str | None = None
+        # Monotonic, not wall clock: a sweep must not re-authenticate early (or, worse,
+        # late) because NTP stepped the clock under it. None means the token response
+        # named no lifetime, and only a 401 will tell us the token is gone.
+        self._token_expires_at: float | None = None
+        # One expiry, one token request. Without this every coroutine in a wave that
+        # meets an expired token POSTs for its own — _CONCURRENCY tokens issued where
+        # one was needed, all but one discarded, against a tenant that rate-limits.
+        # It was never a correctness bug: _authenticate returns into a local and the
+        # retry sends that, so the redundant tokens cost requests, not sweeps.
+        self._auth_lock = asyncio.Lock()
         self.throttle = ThrottleCounters()
         self.adaptive = AdaptiveConcurrency()
 
@@ -221,32 +266,69 @@ class JamfClient:
         async with httpx.AsyncClient(timeout=30) as client:
             yield client
 
-    async def _authenticate(self, client: httpx.AsyncClient) -> str:
-        if self._token:
-            return self._token
-
-        response = await client.post(
-            f"{self._base_url}/api/oauth/token",
-            data={
-                "grant_type": "client_credentials",
-                "client_id": self._client_id,
-                "client_secret": self._client_secret,
-            },
-            headers={"User-Agent": self._user_agent("auth")},
-        )
-        response.raise_for_status()
-        self._token = response.json()["access_token"]
+    def _live_token(self) -> str | None:
+        """The cached token, if it is still worth sending."""
+        if self._token is None:
+            return None
+        if self._token_expires_at is not None and time.monotonic() >= self._token_expires_at:
+            return None
         return self._token
+
+    def _forget(self, token: str) -> None:
+        """Drop the cached token, but only if it is still the one that just failed.
+
+        `self._token = None` was the old line, and with a wave in flight it could wipe
+        a peer's freshly issued token: one coroutine refreshes, another's 401 — carrying
+        the token that already expired — lands a moment later and clears the new one.
+        Comparing first makes a late 401 harmless.
+        """
+        if self._token == token:
+            self._token = None
+            self._token_expires_at = None
+
+    async def _authenticate(self, client: httpx.AsyncClient) -> str:
+        token = self._live_token()
+        if token:
+            return token
+
+        async with self._auth_lock:
+            # Re-checking here is the point of the lock, not belt and braces: whoever
+            # waited almost always waited for a peer's refresh, and POSTing anyway
+            # after acquiring it would issue exactly the tokens the lock exists to
+            # stop being issued.
+            token = self._live_token()
+            if token:
+                return token
+
+            response = await client.post(
+                f"{self._base_url}/api/oauth/token",
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": self._client_id,
+                    "client_secret": self._client_secret,
+                },
+                headers={"User-Agent": self._user_agent("auth")},
+            )
+            response.raise_for_status()
+            body = response.json()
+            token = body["access_token"]
+            lifetime = _token_lifetime(body)
+            self._token_expires_at = None if lifetime is None else time.monotonic() + lifetime
+            self._token = token
+            return token
 
     async def _get(
         self, client: httpx.AsyncClient, path: str, *, comment: str, params: dict | None = None
     ) -> httpx.Response:
         """Authenticated GET with one retry on 401 and a bounded retry on transients.
 
-        Two failure modes, two answers. API client tokens expire (30 minutes by
-        default) and a full sweep of a large tenant can outlive one: the first 401
-        drops the cached token, re-authenticates, and retries once — a second 401 is a
-        real failure and propagates. 429/502/503/504 are transient by definition:
+        Two failure modes, two answers. An API client token is short-lived — see
+        _token_lifetime for what one real tenant actually returns — and a sweep of a
+        large tenant outlives several: _authenticate replaces one before it expires,
+        and the 401 retry stays as the backstop for the token that dies early anyway,
+        revoked or its API client disabled mid-sweep. The first 401 drops that token,
+        re-authenticates, and retries once — a second 401 is a real failure and
+        propagates. 429/502/503/504 are transient by definition:
         before this, one 502 anywhere in a 400-request sweep aborted the whole run,
         and with pages in flight the exposure only grows. Those are retried up to
         _MAX_TRANSIENT_RETRIES times with Retry-After honored, every wait counted on
@@ -266,7 +348,7 @@ class JamfClient:
                 params=params,
             )
             if response.status_code == 401 and not reauthenticated:
-                self._token = None
+                self._forget(token)
                 reauthenticated = True
                 continue
             if response.status_code in _TRANSIENT_STATUSES and transient_retries < _MAX_TRANSIENT_RETRIES:
