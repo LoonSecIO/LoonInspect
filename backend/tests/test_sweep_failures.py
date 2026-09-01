@@ -149,7 +149,7 @@ async def _run_completed_events(db, run_id) -> list:
             select(EventOutbox).where(EventOutbox.event_type == "run.completed").order_by(EventOutbox.id)
         )
     ).scalars().all()
-    return [row for row in rows if row.payload.get("run_id") == str(run_id)]
+    return [row for row in rows if row.payload.get("jobID") == str(run_id)]
 
 
 async def _run_failed_events(db, run_id) -> list:
@@ -161,7 +161,7 @@ async def _run_failed_events(db, run_id) -> list:
             select(EventOutbox).where(EventOutbox.event_type == "run.failed").order_by(EventOutbox.id)
         )
     ).scalars().all()
-    return [row for row in rows if row.payload.get("run_id") == str(run_id)]
+    return [row for row in rows if row.payload.get("jobID") == str(run_id)]
 
 
 async def test_one_dead_device_does_not_kill_the_sweep(db, jamf: FakeJamf, connection, monkeypatch) -> None:
@@ -228,14 +228,14 @@ async def test_one_dead_device_does_not_kill_the_sweep(db, jamf: FakeJamf, conne
     payload = dict(events[0].payload)
     payload.pop(ENVELOPE)
     assert set(payload) == {
-        "event_type", "run_id", "connection_id", "trigger", "comparison",
-        "occurred_at", "devices_total", "devices_processed", "devices_failed", "status",
+        "event", "jobID", "connectionID", "trigger", "comparison",
+        "occurredAt", "devicesTotal", "devicesProcessed", "devicesFailed", "status",
     }
     assert payload["status"] == "succeeded"
-    assert payload["devices_total"] == 5
-    assert payload["devices_processed"] == 4
-    assert payload["devices_failed"] == 1
-    assert payload["connection_id"] == connection.id
+    assert payload["devicesTotal"] == 5
+    assert payload["devicesProcessed"] == 4
+    assert payload["devicesFailed"] == 1
+    assert payload["connectionID"] == connection.id
     assert payload["trigger"] == TRIGGER_MANUAL
 
     # Failures inside the tolerance are a healthy night, not an alarm: no run.failed
@@ -246,7 +246,7 @@ async def test_one_dead_device_does_not_kill_the_sweep(db, jamf: FakeJamf, conne
     # `_time` with its own receive time — the run that closed at 01:40 sorted wherever
     # the outbox drain happened to land it.
     hints = events[0].payload[ENVELOPE]
-    assert hints["time"] == datetime.fromisoformat(payload["occurred_at"]).timestamp()
+    assert hints["time"] == datetime.fromisoformat(payload["occurredAt"]).timestamp()
     assert hints["time"] == run.window_end.timestamp()  # and the row agrees
     assert hints["source"] == "e2e.jamfcloud.com"
     # The ruling: a run is not about a Mac, so `host` is genuinely absent rather than
@@ -307,22 +307,22 @@ async def test_failures_past_the_threshold_fail_the_run_and_stop_it(
     assert len(events) == 1
     payload = events[0].payload
     assert payload["status"] == "failed"
-    assert payload["devices_total"] == 2
-    assert payload["devices_processed"] == 0
-    assert payload["devices_failed"] == 2
+    assert payload["devicesTotal"] == 2
+    assert payload["devicesProcessed"] == 0
+    assert payload["devicesFailed"] == 2
 
     # And beside the heartbeat, exactly one alarm (#103): a run.failed carrying the
     # same run id and the tolerance verdict as its error summary.
     alarms = await _run_failed_events(db, run.id)
     assert len(alarms) == 1
-    assert alarms[0].payload["connection_id"] == connection.id
+    assert alarms[0].payload["connectionID"] == connection.id
     assert alarms[0].payload["error"] and "over the tolerance" in alarms[0].payload["error"]
 
     # run.failed's envelope. Its occurrence is `window_end` — the instant the run
     # reached `failed`, already on the payload and on the row — rather than a new
     # field minted to carry the same value.
     hints = alarms[0].payload[ENVELOPE]
-    assert hints["time"] == datetime.fromisoformat(alarms[0].payload["window_end"]).timestamp()
+    assert hints["time"] == datetime.fromisoformat(alarms[0].payload["windowEnd"]).timestamp()
     assert hints["time"] == run.window_end.timestamp()
     assert hints["source"] == "e2e.jamfcloud.com"
     assert "host" not in hints  # same ruling: a run is not about a Mac

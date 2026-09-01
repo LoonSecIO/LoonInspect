@@ -175,7 +175,7 @@ async def _events(db, event_type: str, run_id) -> list:
             select(EventOutbox).where(EventOutbox.event_type == event_type).order_by(EventOutbox.id)
         )
     ).scalars().all()
-    return [row for row in rows if row.payload.get("run_id") == str(run_id)]
+    return [row for row in rows if row.payload.get("jobID") == str(run_id)]
 
 
 async def _post_webhook(db, connection_id: int, payload: dict) -> httpx.Response:
@@ -206,7 +206,7 @@ async def test_webhook_fetch_404_fails_the_run_and_answers_502(db, jamf: FakeJam
 
     alarms = await _events(db, "run.failed", run.id)
     assert len(alarms) == 1
-    assert alarms[0].payload["connection_id"] == connection_id
+    assert alarms[0].payload["connectionID"] == connection_id
     assert alarms[0].payload["trigger"] == "webhook"
     assert alarms[0].payload["error"] and "404" in alarms[0].payload["error"]
     # The webhook lock class stays outside run.completed (#92) — failing is no exception.
@@ -234,7 +234,7 @@ async def test_webhook_fetch_5xx_fails_the_run_and_answers_502(db, jamf: FakeJam
 
     alarms = await _events(db, "run.failed", run.id)
     assert len(alarms) == 1
-    assert alarms[0].payload["connection_id"] == connection_id
+    assert alarms[0].payload["connectionID"] == connection_id
     assert alarms[0].payload["trigger"] == "webhook"
     assert await _events(db, "run.completed", run.id) == []
 
@@ -282,7 +282,7 @@ async def test_generic_sweep_failure_lands_a_terminal_sync_status(
     assert run.error and "division by zero" in run.error
     alarms = await _events(db, "run.failed", run.id)
     assert len(alarms) == 1
-    assert alarms[0].payload["connection_id"] == connection_id
+    assert alarms[0].payload["connectionID"] == connection_id
 
     records = [record for record in caplog.records if record.getMessage() == "jamf sweep failed"]
     assert len(records) == 1
@@ -325,7 +325,7 @@ async def test_generic_catalog_failure_is_logged_with_the_connection_id(
     assert run.error and "division by zero" in run.error
     alarms = await _events(db, "run.failed", run.id)
     assert len(alarms) == 1
-    assert alarms[0].payload["connection_id"] == connection_id
+    assert alarms[0].payload["connectionID"] == connection_id
 
     records = [record for record in caplog.records if record.getMessage() == "jamf catalog refresh failed"]
     assert len(records) == 1

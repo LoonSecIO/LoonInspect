@@ -200,8 +200,11 @@ async def test_changes_are_derived_under_the_default_policy(db, connection, jamf
     events_after = (await db.execute(select(func.count()).select_from(EventOutbox).where(EventOutbox.event_type == "device.change"))).scalar_one()
     assert events_after - events_before == len(rows)
     latest = (await db.execute(select(EventOutbox).where(EventOutbox.event_type == "device.change").order_by(EventOutbox.id.desc()).limit(1))).scalar_one()
-    assert latest.payload["jamf_id"] == real_id and latest.payload["serial_number"] == "LOONMINI0M4"
-    assert latest.payload["jamf_url"] == HOST and latest.payload["policy_version"] == "v0"
+    # camelCase with `ID` uppercased (#188), and `jamfProID`/`serialNumber` are the same
+    # names deviceMeta carries — so this event and the inventory event from the same
+    # pull agree on both keys and both values.
+    assert latest.payload["jamfProID"] == real_id and latest.payload["serialNumber"] == "LOONMINI0M4"
+    assert latest.payload["jamfUrl"] == HOST and latest.payload["policyVersion"] == "v0"
 
     # The envelope. Before this, device.change shipped with none, so a change observed
     # at Jamf's reportDate landed at whatever moment Splunk accepted the delivery.

@@ -126,7 +126,7 @@ async def _run_failed_events(db, run_id) -> list:
             select(EventOutbox).where(EventOutbox.event_type == "run.failed").order_by(EventOutbox.id)
         )
     ).scalars().all()
-    return [row for row in rows if row.payload.get("run_id") == str(run_id)]
+    return [row for row in rows if row.payload.get("jobID") == str(run_id)]
 
 
 # --- the mutex ------------------------------------------------------------------------
@@ -249,7 +249,7 @@ async def test_a_run_with_no_heartbeat_is_reclaimed(db, connection) -> None:
     # only clock left is the reclaimer's.
     hints = events[0].payload[ENVELOPE]
     assert hints["time"] == reclaimed.window_end.timestamp()
-    assert hints["time"] == datetime.fromisoformat(events[0].payload["window_end"]).timestamp()
+    assert hints["time"] == datetime.fromisoformat(events[0].payload["windowEnd"]).timestamp()
     assert hints["source"] == instance_label(HOST) == "e2e.jamfcloud.com"
     # A run is not about a Mac, so no `host` — deliberately, not by omission.
     assert "host" not in hints
@@ -366,21 +366,21 @@ async def test_a_failed_run_emits_exactly_one_run_failed_with_the_ruled_fields(d
     payload = dict(events[0].payload)
     hints = payload.pop(ENVELOPE)
     assert set(payload) == {
-        "event_type", "run_id", "connection_id", "connection_name", "trigger",
-        "window_start", "window_end", "error",
+        "event", "jobID", "connectionID", "connectionName", "trigger",
+        "windowStart", "windowEnd", "error",
     }
-    assert payload["event_type"] == "run.failed"
-    assert payload["connection_id"] == connection.id
-    assert payload["connection_name"] == connection.name
+    assert payload["event"] == "run.failed"
+    assert payload["connectionID"] == connection.id
+    assert payload["connectionName"] == connection.name
     assert payload["trigger"] == TRIGGER_MANUAL
-    assert payload["window_start"] == failed.run.window_start.isoformat()
-    assert payload["window_end"]  # stamped from the same instant as the row's window_end
+    assert payload["windowStart"] == failed.run.window_start.isoformat()
+    assert payload["windowEnd"]  # stamped from the same instant as the row's window_end
     # Truncated sanely: the summary is the error's head, never the whole text.
     assert payload["error"] == long_error[:500]
     # And the envelope carries the occurrence, from the field the payload already had:
     # window_end is the instant the run reached `failed`, at both of run.failed's
     # producers, so nothing new had to be minted to give Splunk a true `_time`.
-    assert hints["time"] == datetime.fromisoformat(payload["window_end"]).timestamp()
+    assert hints["time"] == datetime.fromisoformat(payload["windowEnd"]).timestamp()
     assert hints["source"] == instance_label(HOST) == "e2e.jamfcloud.com"
     assert "host" not in hints  # a run is not about a Mac
     # The error summary is the one free-text field on this event, and the envelope must
@@ -405,7 +405,7 @@ async def test_a_failed_webhook_run_emits_run_failed_unlike_run_completed(db, co
     completed = (
         await db.execute(select(EventOutbox).where(EventOutbox.event_type == "run.completed"))
     ).scalars().all()
-    assert all(row.payload.get("run_id") != str(hook.run.id) for row in completed)
+    assert all(row.payload.get("jobID") != str(hook.run.id) for row in completed)
 
 
 # --- the window, and the `_time` rule ---------------------------------------------------

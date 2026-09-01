@@ -266,37 +266,61 @@ def _wrap(value) -> dict | None:
 
 
 def _event_payload(row: DeviceChange, connection: MdmConnection) -> dict:
+    """One change row as it goes out on the wire.
+
+    camelCase with the token `ID` uppercased (#188), spelled to agree with the
+    `deviceMeta` block on `device.inventory.changed` rather than merely to be camelCase:
+    `jobID`, `jamfProID` and `serialNumber` are the same names carrying the same values,
+    so a change and the inventory event from the same pull join on identical keys.
+
+    Two spellings were genuinely ambiguous and are ruled here:
+
+    * `jamfUrl`, not `jamfURL`. The law uppercases exactly one token, `ID`. Extending it
+      to `URL` would be a second ruling made in passing, and Jamf's own API spells its
+      url keys `...Url` — so the mechanical reading is also the one a Jamf admin expects.
+    * `udid` unchanged. It is one acronym, not a name ending in an `Id` token, and
+      camelCase puts the leading word in lower case — `UDID` breaks that and `udID`
+      reads as nonsense. Jamf spells it `udid` too.
+    """
     run = get_run()
     payload = {
+        # `event`, matching the inventory family and now the run families. One
+        # discriminator key is the whole point: `event=device.*` and `event=run.*` from
+        # a single SPL predicate, which `event_type` on two of four families made
+        # impossible.
         "event": EVENT_TYPE,
         # The run that observed this change. Same jobID as the inventory events from the
         # same pull, which is what lets a search collect everything one sweep produced —
         # the correlation triple below identifies the *device*, not the pass that saw it.
-        "job_id": str(run.id) if run else None,
+        "jobID": str(run.id) if run else None,
         "comparison": run.comparison if run else None,
-        "connection_id": connection.id,
-        "jamf_url": connection.base_url,
-        "jamf_id": row.subject_id,
-        "subject_kind": row.subject_kind,
-        "subject_label": row.subject_label,
-        "serial_number": row.serial_number,
+        "connectionID": connection.id,
+        "jamfUrl": connection.base_url,
+        # `jamfProID`, the deviceMeta spelling, and the same value for a computer
+        # subject. NOT a second name like `jamfID` for the object's Jamf Pro primary
+        # key: `subjectKind` already says which kind of object the id belongs to, and a
+        # group's id lives in the same Jamf Pro as a computer's.
+        "jamfProID": row.subject_id,
+        "subjectKind": row.subject_kind,
+        "subjectLabel": row.subject_label,
+        "serialNumber": row.serial_number,
         "udid": row.udid,
-        "observed_at": row.observed_at.isoformat(),
-        "collected_at": row.collected_at.isoformat(),
+        "observedAt": row.observed_at.isoformat(),
+        "collectedAt": row.collected_at.isoformat(),
         "trigger": row.trigger,
         "section": row.section,
         "field": row.field,
-        "entry_kind": row.entry_kind,
-        "entry_identity": row.entry_identity,
-        "entry_label": row.entry_label,
+        "entryKind": row.entry_kind,
+        "entryIdentity": row.entry_identity,
+        "entryLabel": row.entry_label,
         "change": row.change,
         "old": row.old_value,
         "new": row.new_value,
         "level": row.level,
         "details": row.details,
-        "span_id": str(row.span_id) if row.span_id else None,
-        "previous_span_id": str(row.previous_span_id) if row.previous_span_id else None,
-        "policy_version": row.policy_version,
+        "spanID": str(row.span_id) if row.span_id else None,
+        "previousSpanID": str(row.previous_span_id) if row.previous_span_id else None,
+        "policyVersion": row.policy_version,
     }
     # The envelope, on the same rule the inventory family uses (app.core.wire). Without
     # it every device.change landed at Splunk's *receive* time, so a change the sweep

@@ -147,13 +147,14 @@ def _elastic_bulk_body(event: EventOutbox) -> str:
     # reportDate — see app.core.runs.event_time); enqueue time is only the fallback
     # for a payload that somehow lacks it, so the document always maps.
     #
-    # Both spellings are read, and the fallback is NOT transitional. `occurredAt` is the
-    # camelCase key ruled in #188 and carried by device.inventory.changed; `occurred_at`
-    # is still what run.completed emits (app.core.runs), because the rename was scoped to
-    # the inventory event and the other three producers are an open #188 item. It also
-    # covers the pre-rename backlog, which retention keeps deliverable for seven days.
-    # device.change carries neither and falls through to enqueue time — tracked with the
-    # rest of the derive.py vocabulary reconciliation.
+    # Both spellings are read, and the fallback IS transitional now. `occurredAt` is the
+    # camelCase key ruled in #188, and every producer that has an occurrence time now
+    # emits it — device.inventory.changed and run.completed alike. `occurred_at` is kept
+    # only for the pre-rename backlog, which retention keeps deliverable for seven days;
+    # after that it is dead code and can go. Removing it in the same change as the rename
+    # would have silently re-dated a week of undelivered events to their drain time.
+    # device.change still carries neither (it has `observedAt`, which is a different
+    # fact) and falls through to enqueue time — untouched here, and noted in #188.
     if "@timestamp" not in document:
         occurred_at = document.get("occurredAt") or document.get("occurred_at")
         created_at = event.created_at or datetime.now(timezone.utc)

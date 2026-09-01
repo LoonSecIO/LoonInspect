@@ -32,6 +32,11 @@ from app.core.outbox import (
 )
 from app.models.schema import Destination, EventOutbox
 
+# Deliberately the PRE-#188 spelling, which no producer emits any more. What this
+# fixture pins is the `occurred_at` fallback in `_elastic_bulk_body`: the outbox keeps up
+# to seven days of undelivered events, so a backlog enqueued before the casing rename
+# must still map to `@timestamp` rather than silently re-dating to its drain time. Once
+# that window has passed the fallback is dead code and this payload goes with it.
 _PAYLOAD = {
     "event": "device.inventory.changed",
     "occurred_at": "2026-08-29T12:00:00+00:00",
