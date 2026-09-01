@@ -41,6 +41,22 @@ def _in_batches(values: Collection, size: int = _PURGE_BATCH) -> Iterator[list]:
         yield items[start : start + size]
 
 
+# One tick's ceiling, on both scheduler passes. A baseline sweep of a 40,000-device
+# fleet lands 40,000 events at once and both passes used to load every matching row —
+# 3.7GB resident for 100,000 events, on a 30-second timer.
+#
+# The rejected alternative was to leave the passes whole and make the rows cheaper:
+# defer the JSONB payload, select only the columns each pass actually reads. That
+# shrinks the constant but leaves a tick's cost proportional to the backlog, so the
+# same fleet one size larger is the same incident again. A ceiling makes it
+# proportional to the ceiling. Nothing is dropped — what a tick does not reach is
+# simply the head of the next tick's set, thirty seconds later.
+#
+# Deliberately NOT shared with _PURGE_BATCH above, which is the same number for an
+# unrelated reason (asyncpg's bind-parameter cap). Tuning the tick ceiling must not
+# silently move a hard protocol limit.
+_TICK_LIMIT = 1000
+
 _BASE_BACKOFF_SECONDS = 30
 _MAX_BACKOFF_SECONDS = 3600
 _MAX_ATTEMPTS = 10
@@ -219,20 +235,23 @@ def _next_backoff(attempt_count: int) -> datetime:
 
 
 async def fan_out_pending(db: AsyncSession) -> int:
-    """Create delivery rows for events that haven't been fanned out yet.
+    """Create delivery rows for events that haven't been fanned out yet, oldest first,
+    at most _TICK_LIMIT events per call.
 
     The only place that needs to know which destinations exist and what they're
     subscribed to — keeping that logic in one spot rather than duplicating it at every
     event-producing call site is the point of splitting fan-out from delivery.
     """
     # Destinations first, and the order is load-bearing now that events are held. The
-    # events select below is every column of every un-fanned row, JSONB payload
-    # included and unbounded (§2 of the characterization tests; #81's to fix). While
-    # events were burned on the first tick that set could never outgrow one tick's
-    # production. Held, it grows for the whole retention window in exactly the state
-    # the stepper calls optional — so asking the cheap indexed question first is what
-    # keeps a destination-less pod from dragging a week of payloads through the worker
-    # every 30 seconds to discover it has nothing to do.
+    # events select below is still every column of every un-fanned row it reads, JSONB
+    # payload included to flip a boolean (§2 of the characterization tests; #81's to
+    # fix) — _TICK_LIMIT caps how many of those rows land in the worker at once, not
+    # how wide each one is. While events were burned on the first tick that set could
+    # never outgrow one tick's production. Held, it grows for the whole retention
+    # window in exactly the state the stepper calls optional — so asking the cheap
+    # indexed question first is what keeps a destination-less pod from dragging a
+    # thousand payloads through the worker every 30 seconds to discover it has nothing
+    # to do.
     result = await db.execute(select(Destination).where(Destination.enabled.is_(True)))
     destinations = result.scalars().all()
 
@@ -252,7 +271,18 @@ async def fan_out_pending(db: AsyncSession) -> int:
         # the same `event_outbox_retention_days` window as everything else.
         return 0
 
-    result = await db.execute(select(EventOutbox).where(EventOutbox.fanned_out.is_(False)))
+    # Oldest first, and by `id` rather than `created_at`: the sequence is the true
+    # arrival order and cannot tie, while created_at is a Python-side default that two
+    # rows flushed in one transaction can share. A tie under a ceiling is not a lost
+    # row, but a total order is what makes "the next tick opens where this one stopped"
+    # a fact rather than a hope.
+    #
+    # Whatever the ceiling leaves behind keeps fanned_out false — the state it was
+    # already in — so being deferred is indistinguishable from never having been
+    # looked at, which is the point.
+    result = await db.execute(
+        select(EventOutbox).where(EventOutbox.fanned_out.is_(False)).order_by(EventOutbox.id).limit(_TICK_LIMIT)
+    )
     pending_events = result.scalars().all()
     if not pending_events:
         return 0
@@ -294,21 +324,39 @@ async def _attempt_delivery(
 
 
 async def deliver_pending(db: AsyncSession) -> None:
-    """Attempt every delivery that's due. Runs on its own scheduler tick, decoupled
-    from whatever produced the event — a down destination here can never slow down a
-    device sync or an inbound webhook's ACK."""
+    """Attempt the deliveries that are due, oldest first, at most _TICK_LIMIT of them.
+    Runs on its own scheduler tick, decoupled from whatever produced the event — a
+    down destination here can never slow down a device sync or an inbound webhook's
+    ACK."""
     now = datetime.now(timezone.utc)
+    # Most-overdue first, ordered by `next_attempt_at` rather than `id` on purpose.
+    # By id a row that has already failed twice sorts ahead of every event produced
+    # since, so under a ceiling a backlog of retries would starve new events for as
+    # long as it lasted. By due time a retry takes its place behind the events produced
+    # while it was backing off, which is what the backoff was asking for.
+    # ix_outbox_deliveries_next_attempt_at already orders this; `id` is only the
+    # tiebreak that makes the order total.
+    #
+    # Rows past the ceiling are never read, and attempt_count / next_attempt_at are
+    # only ever written inside the loop below — so a delivery this tick did not reach
+    # is untouched, not attempted-and-failed. Getting that backwards would spend the
+    # retry budget of a perfectly healthy destination on the worker being busy, which
+    # is a worse failure than the unbounded load this ceiling replaces.
     result = await db.execute(
-        select(OutboxDelivery).where(
-            OutboxDelivery.status == "pending", OutboxDelivery.next_attempt_at <= now
-        )
+        select(OutboxDelivery)
+        .where(OutboxDelivery.status == "pending", OutboxDelivery.next_attempt_at <= now)
+        .order_by(OutboxDelivery.next_attempt_at, OutboxDelivery.id)
+        .limit(_TICK_LIMIT)
     )
     due = result.scalars().all()
     if not due:
         return
 
-    # Batched for the same reason the purge is: `due` is unbounded, so one baseline
-    # sweep of a large fleet puts more event ids in here than a statement can bind.
+    # Batched for the same reason the purge is. `due` is now capped at _TICK_LIMIT, so
+    # this is one statement in practice — kept because the two bounds are independent:
+    # the tick ceiling is a memory and tick-length judgement that may be tuned, while
+    # the batch size is asyncpg's hard bind-parameter cap. Raising the former must not
+    # quietly reintroduce the crash the latter exists to prevent.
     # `destination_ids` below is bounded by the destination count and needs no batching.
     event_ids = {row.outbox_event_id for row in due}
     events: dict = {}
