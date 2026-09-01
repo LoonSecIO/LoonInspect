@@ -103,7 +103,7 @@ async def fleet(db):
         seeded_events = select(EventOutbox.id).where(EventOutbox.event_type == "posture.test")
         completed_events = select(EventOutbox.id).where(
             EventOutbox.event_type == "run.completed",
-            EventOutbox.payload["run_id"].astext.in_([str(run_id) for run_id in run_ids]),
+            EventOutbox.payload["jobID"].astext.in_([str(run_id) for run_id in run_ids]),
         )
         for event_ids in (seeded_events, completed_events):
             await db.execute(delete(OutboxDelivery).where(OutboxDelivery.outbox_event_id.in_(event_ids)))

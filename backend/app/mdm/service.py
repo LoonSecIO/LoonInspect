@@ -840,11 +840,11 @@ def _device_meta(existing: Device) -> dict[str, object]:
         # (run, device) means a retry recomputes the same id rather than looking one up.
         #
         # It is derivable ON PURPOSE, so that any other producer of this pull can arrive
-        # at the same value without either side passing it along. Nothing else does yet —
-        # app.changes.derive mints no eventID and still spells the run key `job_id` in a
-        # flat snake_case payload, which is the open derive.py reconciliation in #188.
-        # Until that lands, the cross-family join this enables is available on the
-        # inventory family alone.
+        # at the same value without either side passing it along. Nothing else does yet:
+        # app.changes.derive now agrees on the run key (`jobID`) and on `jamfProID`, so
+        # the join across families works, but it still mints no eventID of its own — a
+        # device.change is joined to its pull through jobID + jamfProID rather than
+        # through the single key the inventory family has.
         "eventID": str(uuid.uuid5(run.id, existing.external_id)) if run else None,
         "serialNumber": existing.serial_number or None,
         # Jamf's own primary key, and the half of a deep link that cannot be

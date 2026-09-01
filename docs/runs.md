@@ -133,6 +133,41 @@ Casing is camelCase throughout with the token `ID` uppercased on LoonInspect's o
 (#188). A vendor's native key keeps the vendor's spelling — Jamf writes `bundleId`, so
 the wire does too.
 
+The law covers **all four families** — `device.inventory.changed`, `device.change`,
+`run.completed`, `run.failed` — and for a year it was applied to one. The consequence,
+seen on real indexed data, was one index, one sourcetype, and one run UUID arriving under
+three names (`deviceMeta.jobID`, `job_id`, `run_id`) with no single predicate able to
+select LoonInspect events by type. Three decisions closed that:
+
+- **The discriminator is `event`, on every family.** The run families said `event_type`;
+  they now say `event` too, so `event=device.*` and `event=run.*` are one search. This is
+  the change most visible to a customer: a saved search or alert written against
+  `event_type=run.failed` returns zero rows — silently, because SPL has no such thing as
+  an unknown-field error. `event` won over `eventType` because it was already the
+  spelling on the two device families, which carry essentially all of the volume, and
+  renaming those to chase the smaller pair would have been the expensive direction.
+- **The run UUID is `jobID` everywhere.** `deviceMeta` said `jobID`, `device.change` said
+  `job_id`, and the run events said `run_id`; all three are now `jobID`, carrying the
+  same value. `runID` was rejected for the same reason: one value, one name.
+- **`jamfProID` is the object's id in Jamf Pro on both device families**, computer or
+  group — `subjectKind` says which kind of object it belongs to.
+
+One caveat, stated plainly because the promise below is otherwise read too strongly:
+`jobID` is top-level on `device.change`, `run.completed` and `run.failed`, and nested on
+`device.inventory.changed`, where it lives inside `deviceMeta`. Splunk's JSON extraction
+names the nested one `deviceMeta.jobID`, so the fully field-qualified cross-family join
+is `jobID=$id$ OR deviceMeta.jobID=$id$` (or one `coalesce`), not a bare `jobID=$id$`.
+Hoisting it to the top level of the inventory event would fix that and was deliberately
+not done here: it adds a key to the most-multiplied event on the wire, which is a #189
+decision, not a casing one.
+
+Two spellings were genuinely ambiguous and are ruled here so nobody has to guess twice:
+
+- **`jamfUrl`, not `jamfURL`.** The law uppercases exactly one token, `ID`. Extending it
+  to `URL` in passing would be a second ruling; Jamf's own API spells url keys `...Url`.
+- **`udid` stays `udid`.** It is one acronym rather than a name ending in an `Id` token,
+  camelCase puts the leading word in lower case, and Jamf spells it `udid` as well.
+
 Alongside the body, a Splunk HEC delivery sets three envelope fields: `time` from the
 event's own `occurredAt`, `host` from the hostname, and `source` from the Jamf instance
 (scheme dropped, non-default port kept — `jamf.corp.local:8443`). They are indexed
@@ -221,20 +256,20 @@ webhook runs (one device each; a busy tenant would double its event volume for n
 signal) or catalog refreshes (an hourly catalog `run.completed` would satisfy the
 absence search the nightly sweep was supposed to answer). A *reclaimed* run emits no
 `run.completed` either — the reclaim is not a finish, and the absence downstream is the
-signal that the sweep died (it does emit `run.failed`; see below). Payload, snake_case
-throughout (the envelope convention, and safe under the pending casing ruling in #90):
+signal that the sweep died (it does emit `run.failed`; see below). Payload, camelCase
+under the casing law above — every key on every family, not just the inventory one:
 
 | Field | Meaning |
 | --- | --- |
-| `event_type` | `run.completed` |
-| `run_id` | The jobID — joinable against every event the run produced |
-| `connection_id` | Which connection swept |
+| `event` | `run.completed` |
+| `jobID` | The run — the same name and value `deviceMeta.jobID` carries |
+| `connectionID` | Which connection swept |
 | `trigger` | `sweep` \| `manual` (webhook runs never emit this event) |
 | `comparison` | `baseline` \| `delta` |
-| `occurred_at` | The run's window end — the instant the row's `window_end` was stamped |
-| `devices_total` | Devices attempted (`processed + failed`) |
-| `devices_processed` | Devices ingested |
-| `devices_failed` | Devices that raised and were isolated |
+| `occurredAt` | The run's window end — the instant the row's `window_end` was stamped |
+| `devicesTotal` | Devices attempted (`processed + failed`) |
+| `devicesProcessed` | Devices ingested |
+| `devicesFailed` | Devices that raised and were isolated |
 | `status` | `succeeded` \| `failed` |
 
 **The alarm beside the heartbeat (#103).** The moment any run reaches `failed` — by
@@ -248,18 +283,18 @@ refused finish adds nothing, so each failure is one event. Delivery is default-o
 every destination: null/empty subscriptions already mean "all", and the
 `a9d4c7e1f3b8` migration appended the type to every pre-existing explicit list — a
 destination unsubscribes through its `subscribed_events` the ordinary way. Payload,
-snake_case like `run.completed`'s — exactly the ruled fields, no credentials, no log
+camelCase like `run.completed`'s — exactly the ruled fields, no credentials, no log
 lines (the run id is the pointer to the full story):
 
 | Field | Meaning |
 | --- | --- |
-| `event_type` | `run.failed` |
-| `run_id` | The jobID — joinable against the run log and everything the run produced |
-| `connection_id` | Which connection failed |
-| `connection_name` | The same connection, readable in an alert without a join |
+| `event` | `run.failed` |
+| `jobID` | The run — joinable against the run log and everything the run produced |
+| `connectionID` | Which connection failed |
+| `connectionName` | The same connection, readable in an alert without a join |
 | `trigger` | `sweep` \| `manual` \| `webhook` |
-| `window_start` | The occurrence the run was serving |
-| `window_end` | When it died — the instant the row's `window_end` was stamped |
+| `windowStart` | The occurrence the run was serving |
+| `windowEnd` | When it died — the instant the row's `window_end` was stamped |
 | `error` | The stored run error, truncated to 500 characters |
 
 ## 8. What this does not do

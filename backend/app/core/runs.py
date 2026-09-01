@@ -267,19 +267,27 @@ async def _enqueue_run_failed(
     connection by id and name, the run id, the window, and an error summary. Nothing
     else rides along — no credentials, no log lines; anyone who needs the full story
     has the run id and the run-log endpoint.
+
+    Keys are camelCase with `ID` uppercased (#188), and the run id is `jobID` — the
+    spelling `deviceMeta` already carries. Deliberately NOT `runID`: a second name for
+    one value is what made the join docs/runs.md promises unwritable in SPL.
     """
     connection_name, source = await _connection_wire(db, connection_id)
     await enqueue_event(
         db,
         RUN_FAILED_EVENT,
         {
-            "event_type": RUN_FAILED_EVENT,
-            "run_id": str(run_id),
-            "connection_id": connection_id,
-            "connection_name": connection_name,
+            # `event`, not `eventType`. The discriminator has to be one key across all
+            # four families or no single SPL predicate selects LoonInspect events, and
+            # the device families were already spelling it `event` on far more indexed
+            # volume than the run families will ever carry.
+            "event": RUN_FAILED_EVENT,
+            "jobID": str(run_id),
+            "connectionID": connection_id,
+            "connectionName": connection_name,
             "trigger": trigger,
-            "window_start": window_start.isoformat(),
-            "window_end": window_end.isoformat(),
+            "windowStart": window_start.isoformat(),
+            "windowEnd": window_end.isoformat(),
             "error": (error or "")[:_ERROR_SUMMARY_MAX] or None,
             # `window_end` is the moment the run reached `failed` at both producers —
             # finish's failure path and the reclaim — so it is the occurrence, and no
@@ -620,19 +628,22 @@ async def finish(
             db,
             RUN_COMPLETED_EVENT,
             {
-                "event_type": RUN_COMPLETED_EVENT,
-                "run_id": str(row.id),
-                "connection_id": row.mdm_connection_id,
+                # camelCase with `ID` uppercased (#188), `event` as the one
+                # discriminator across all four families, and the run id under the
+                # `jobID` that `deviceMeta` already carries — see _enqueue_run_failed.
+                "event": RUN_COMPLETED_EVENT,
+                "jobID": str(row.id),
+                "connectionID": row.mdm_connection_id,
                 "trigger": row.trigger,
                 "comparison": row.comparison,
                 # The run's window end — the same instant the row's window_end was
                 # just stamped with, so the event and the row tell one time.
-                "occurred_at": now.isoformat(),
-                "devices_total": device_count,
-                "devices_processed": devices_processed,
-                "devices_failed": devices_failed,
+                "occurredAt": now.isoformat(),
+                "devicesTotal": device_count,
+                "devicesProcessed": devices_processed,
+                "devicesFailed": devices_failed,
                 "status": status,
-                # The same `now` the payload's occurred_at and the row's window_end
+                # The same `now` the payload's occurredAt and the row's window_end
                 # were stamped with, so the row, the body and Splunk's `_time` all
                 # tell one time. NOT `event_time()`, which back-dates a sweep to its
                 # window: the run closing is not part of the occurrence the run
