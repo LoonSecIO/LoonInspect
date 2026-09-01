@@ -290,6 +290,7 @@ and is never reused.
 | CM-02 | No branch contains consecutive commits with identical subjects | `ci` | warn | proposed |
 | CM-03 | No secret material or local state is committed (`.env`, `*.db`, keys, tokens) | `ci` | block | active (detection); prevention `blocked` — see §8.3 |
 | CM-04 | Diff excludes editor and OS artefacts (`.idea/`, `.vscode/`, `.DS_Store`) | `ci` | block | proposed |
+| CM-05 | `README.md` makes no claim the codebase does not back | `ci` | block | active — see §7 |
 
 ### 6.3 Pull request controls
 
@@ -502,6 +503,19 @@ for s in $(git branch -r --list 'origin/spike/*' --format='%(refname:short)'); d
   git merge-base --is-ancestor "$s" HEAD && exit 1
 done
 ```
+
+**CM-05** — the README's claims are backed by the codebase
+
+```bash
+.github/scripts/check-readme-claims.sh
+```
+
+An explicit table of claim markers and the grep that proves each one, rather than
+a sweep over prose: a check that reports false positives gets deleted, and one
+that reports nothing is worse than none. It runs as the `README claims` job in
+`ci.yml` and its context is in `.github/rulesets/main.json`, so it gates merges
+on the same schedule as every other required check (§8.1). The rationale, and
+what the check deliberately does not cover, are in the script's own header.
 
 ## 8. Enforcement roadmap
 
@@ -716,3 +730,4 @@ Appended 2026-08-29, from the doc-truth sweep (#128) — recorded, not remediate
 | v1.6 | 2026-08-18 | Added §8.2 (release schedule and history exposure) and §8.3 (secret scanning); CM-03 active for detection; public flip recorded as the unblock date for §8.1 |
 | v1.7 | 2026-08-29 | TruffleHog's check context added to the ruleset's required status checks (§8.3), so CM-03's detection gates merges once §8.1 unblocks |
 | v1.8 | 2026-08-29 | Acknowledged `claude/*` agent session branches in §2; appended current deviations to §10 |
+| v1.9 | 2026-08-31 | Added CM-05 (§6.2, §7): the README's claims are checked against the codebase by the `README claims` job, whose context is in the ruleset's required status checks |

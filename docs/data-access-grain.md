@@ -41,9 +41,9 @@ ambiguous, and no migration recovers what a number meant to whom.
 
 ## 2. The ruling
 
-**Row-level, identity-bound data scoping never exists in this product.** The entry goes
-to the v-never list (§7 below carries the drop-in text). V0 proceeds on whole-fleet
-reads everywhere, exactly as it does today.
+**Row-level, identity-bound data scoping never exists in this product.** The entry is on
+the v-never list ([docs/v-never.md](v-never.md); §7 below is its source of record). V0
+proceeds on whole-fleet reads everywhere, exactly as it does today.
 
 ### 2.1 Access is decided by kind, never by row
 
@@ -221,7 +221,8 @@ that it is written down.
 
 ## 7. The v-never entry
 
-Drop-in text for `docs/v-never.md`:
+This is the source of record for the wording; [docs/v-never.md](v-never.md) carries it
+verbatim, and the two are edited together or not at all.
 
 > **Row-level data scoping.** What a caller may see is decided by the kind of thing it
 > is, never by which rows they are. Two callers with the same permissions, in the same
