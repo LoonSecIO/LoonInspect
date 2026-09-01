@@ -845,6 +845,11 @@ export const de: Translations = {
     capabilityJamfPro: "Jamf Pro",
     crud: "(CRUD)",
     readOnly: "(lesend)",
+    webhookSecret: "Webhook-Geheimnis",
+    webhookSecretHint:
+      "Wird mit Jamf Pro geteilt: denselben Wert dort am Webhook hinterlegen, als Wert der Header-Authentifizierung (Header-Name X-API-Key) oder als Passwort der Basic-Authentifizierung. Wird verschlüsselt gespeichert und nie wieder angezeigt — zum Ändern hier einen neuen Wert eingeben und Jamf Pro entsprechend anpassen.",
+    webhookSecretRequired:
+      "Callback-Webhooks benötigen ein Geheimnis. Ohne dieses weist der Webhook-Endpunkt jede Anfrage von Jamf Pro zurück.",
     lastSuccessfulAuth: "Letzte erfolgreiche Authentifizierung:",
     never: "Nie",
     credentialsRotated: "Anmeldedaten zuletzt rotiert:",
