@@ -171,7 +171,11 @@ class InstalledApp(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
-    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id"))
+    # device_id is the primary access path to this table — `process_sync` reads one
+    # device's apps twice per device — and it is the largest table in the schema at
+    # ~100 rows per device. Without the index that read is a parallel seq scan over
+    # every row in the tenant.
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id"), index=True)
     name: Mapped[str] = mapped_column(String(255))
     bundle_id: Mapped[str] = mapped_column(String(255), index=True)
     version: Mapped[str] = mapped_column(String(64))
