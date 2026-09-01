@@ -874,6 +874,47 @@ def _lower_the_ceiling(monkeypatch: pytest.MonkeyPatch, rows: int) -> None:
     monkeypatch.setattr(outbox, "_TICK_LIMIT", rows)
 
 
+async def test_the_ordering_columns_are_both_indexed(db) -> None:
+    """The ceiling's ordering is only affordable because both ORDER BY columns are
+    covered, so the coverage is asserted rather than assumed.
+
+    `ix_event_outbox_unfanned` is the one this change adds (c3f9a71e5b48), and it is
+    partial on purpose: un-fanned rows are always the newest, so they sit at the end of
+    id order, and an `ORDER BY id LIMIT` over the whole primary key discards the entire
+    settled retention window before reaching one. The predicate is load-bearing — a
+    plain (fanned_out, id) composite would index the settled window too — so the
+    predicate is what is asserted, not just the name.
+
+    `ix_outbox_deliveries_next_attempt_at` predates this change and needed nothing.
+
+    What this does NOT prove is that the planner chooses either index: at this suite's
+    row counts a sequential scan is genuinely cheaper and Postgres is right to take it.
+    The plans were measured by hand at 43,000 rows against the application role with
+    the tenant GUC bound; the numbers are in the migration's docstring and in the PR.
+    """
+    from sqlalchemy import text as sa_text
+
+    definitions = dict(
+        (
+            await db.execute(
+                sa_text(
+                    "SELECT indexname, indexdef FROM pg_indexes "
+                    "WHERE tablename IN ('event_outbox', 'outbox_deliveries')"
+                )
+            )
+        ).all()
+    )
+
+    unfanned = definitions.get("ix_event_outbox_unfanned")
+    assert unfanned is not None, "the migration must have run: fan-out orders by id"
+    assert "(id)" in unfanned
+    assert "WHERE (fanned_out IS FALSE)" in unfanned, "partial, or it indexes the settled window too"
+
+    due = definitions.get("ix_outbox_deliveries_next_attempt_at")
+    assert due is not None, "delivery orders by next_attempt_at"
+    assert "(next_attempt_at)" in due
+
+
 async def test_a_fan_out_backlog_larger_than_the_ceiling_drains_across_ticks(db, monkeypatch) -> None:
     """Nothing is lost and nothing is fanned twice: seven events under a ceiling of
     three become 3 + 3 + 1 delivery rows over three ticks, in arrival order, and the

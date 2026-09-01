@@ -747,6 +747,17 @@ class EventOutbox(Base):
     """
 
     __tablename__ = "event_outbox"
+    __table_args__ = (
+        # The fan-out pass takes the oldest un-fanned rows, and a queue is exactly the
+        # shape the planner's uniformity assumption gets wrong: un-fanned rows are
+        # always the newest, so they sit at the *end* of id order, and `ORDER BY id
+        # LIMIT` over the full primary key walks the whole settled retention window
+        # before it reaches one. Rejected the obvious (fanned_out, id) composite: this
+        # index holds only the live backlog, so it is tens of KB during a drain and
+        # empty the rest of the time, where the composite would carry every row the
+        # retention window keeps in order to describe the handful that still matter.
+        Index("ix_event_outbox_unfanned", "id", postgresql_where=text("fanned_out IS false")),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
