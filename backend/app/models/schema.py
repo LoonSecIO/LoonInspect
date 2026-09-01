@@ -495,9 +495,12 @@ class FeatureFlag(Base):
 class Account(Base):
     """A LoonInspect operator — someone who signs into this application.
 
-    Deliberately separate from the MDM-synced people on the Users page: those are
+    Deliberately separate from the MDM-synced people a device carries: those are
     device owners pulled from Jamf, these are the humans administering LoonInspect.
-    Conflating the two would mean an MDM sync could create login accounts.
+    Conflating the two would mean an MDM sync could create login accounts. Nothing
+    persists the former today — `userAndLocation` reaches the change feed and the
+    wire, and the page that once claimed to list them is gone (#95) — so the
+    separation is a rule waiting for its other half, not a description of two tables.
 
     Carries no credential columns. Authentication material lives in AuthIdentity so
     that an account can hold a password *and* an SSO identity at once — which is

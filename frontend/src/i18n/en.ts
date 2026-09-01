@@ -109,7 +109,6 @@ export const en = {
     applications: "Applications",
     groups: "Groups",
     compliance: "Compliance",
-    users: "Users",
     vulnerabilities: "Vulnerabilities",
     integrations: "Integrations",
     ai: "AI",
@@ -369,22 +368,6 @@ export const en = {
     pageOf: (page: number, pages: number) => `Page ${page} of ${pages}`,
     previous: "Previous",
     next: "Next"
-  },
-  users: {
-    eyebrow: "Inventory",
-    title: "Users",
-    description:
-      "Users detected from your connected MDM platforms — assigned users, logged-in users, and the devices associated with them.",
-    tableName: "Name",
-    tableUsername: "Username",
-    tableEmail: "Email",
-    tableDepartment: "Department",
-    tableSource: "Source",
-    tableAssignedDevices: "Assigned devices",
-    tableLoggedInDevices: "Logged-in devices",
-    tableLastSeen: "Last seen",
-    empty: "No users detected yet.",
-    total: (n: number) => `${n} user${n === 1 ? "" : "s"} total`
   },
   applications: {
     eyebrow: "Devices",
