@@ -82,7 +82,10 @@ class FakeJamf:
                 self.transient.pop(index)
                 return httpx.Response(status, headers=headers, json={"httpStatus": status})
         if path == "/api/oauth/token":
-            return httpx.Response(200, json={"access_token": "tok", "expires_in": 1799, "token_type": "Bearer"})
+            # 179, not the 1799 this fake used to claim: a real tenant (Jamf Pro
+            # 11.31.1) answers in seconds, and the client's proactive refresh is only
+            # honest here if the fake's lifetime is the one it was measured against.
+            return httpx.Response(200, json={"access_token": "tok", "expires_in": 179, "token_type": "Bearer"})
         if request.headers.get("Authorization") != "Bearer tok":
             return httpx.Response(401, json={"httpStatus": 401})
         if path == "/api/v1/jamf-pro-version":
