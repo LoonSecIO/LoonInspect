@@ -15,6 +15,19 @@ permissions:
   contents: read
 
 jobs:
+  # Its own job rather than a step inside `backend`, for the same reason TruffleHog
+  # is its own workflow: a false claim in the README is not a Python failure, and
+  # burying it under "Backend (ruff + pytest)" sends the reader to look for one.
+  # Needs no toolchain — checkout plus bash — so it costs a runner and seconds.
+  # Like the backend job, this display name is the required-status-check context in
+  # .github/rulesets/main.json; the two change together or the ruleset waits forever.
+  claims:
+    name: README claims
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: .github/scripts/check-readme-claims.sh
+
   frontend:
     name: Frontend (typecheck + lint)
     runs-on: ubuntu-latest

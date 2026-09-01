@@ -18,8 +18,9 @@ payload contents: the log answers "what kind of thing left, and where to", and t
 row is committed before the first byte moves, so a crash mid-call can lose the
 answer but never the question.
 
-Standing doctrine for every implementer who calls this gate (founder-ruled; the
-v-never list restated):
+Standing doctrine for every implementer who calls this gate (founder-ruled;
+``docs/v-never.md`` restated — these four bind the product, not just this module,
+so a feature that never reaches the gate is still bound by them):
 
 - **No model-sourced numbers anywhere.** Counts, versions, CVE data, dates — every
   number in the product comes from a real data path. A model may explain numbers;
