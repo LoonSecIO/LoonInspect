@@ -113,6 +113,15 @@ This builds the frontend, bundles it into the FastAPI image, and starts the app 
 
 > **Note:** the container logs and `docker ps` will show the address as `0.0.0.0:8001` — that's the server listening on all interfaces, not a URL you can open. Use `http://localhost:8001` (or `127.0.0.1:8001`) in your browser instead; some browsers will refuse to navigate to `0.0.0.0` directly.
 
+### 4. Point it at Splunk
+
+The onboarding stepper's third step is "Send it to Splunk", and there is more to it than
+a URL: HEC ships disabled, the "Secret" field means the HEC token, the index comes from
+the token rather than from anything LoonInspect sends, and Splunk's stock self-signed
+certificate is refused by default. **[docs/splunk-setup.md](docs/splunk-setup.md)** walks
+through all of it, including a `props.conf` stanza to hand your Splunk team and what to
+do about that certificate without turning verification off.
+
 ### Upgrading an existing install
 
 The container now runs as a non-root user (`looninspect`, uid 10001) rather than

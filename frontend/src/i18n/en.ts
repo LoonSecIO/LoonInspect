@@ -123,6 +123,8 @@ export const en = {
     typeElastic: "Elasticsearch",
     typeRunReveal: "RunReveal",
     url: "URL",
+    urlHintSplunk:
+      "The full HEC endpoint including the /services/collector path — port 8088 by default. The secret below is the HEC token, and the index is the one that token writes to.",
     urlHintElastic: "Base URL of the cluster — events are POSTed to {url}/{index}/_bulk via the bulk API.",
     urlHintRunReveal: "The ingest URL of your RunReveal webhook source, shown under Source Details.",
     elasticIndex: "Index",
