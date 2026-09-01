@@ -122,7 +122,25 @@ certificate is refused by default. **[docs/splunk-setup.md](docs/splunk-setup.md
 through all of it, including a `props.conf` stanza to hand your Splunk team and what to
 do about that certificate without turning verification off.
 
+### 5. Back it up before you need to
+
+**[docs/operations.md](docs/operations.md)** is the operator runbook: what to back up
+(the database *and* `ENCRYPTION_KEY` — a dump without the key restores an instance whose
+every MDM connection is permanently unreadable), the `pg_dump` and `psql` commands to do
+it, what a restore does to in-flight outbox rows and the run mutex, how upgrades and
+rollbacks actually behave, and how to read the one failure that crash-loops. Every
+command in it was run against a throwaway stack and the real output is printed beside it.
+
+**[KNOWN_ISSUES.md](KNOWN_ISSUES.md)** is the measured limits list — what grows without
+bound, at what rate, at what fleet size it bites, and the workaround for each. Read it
+before sizing the database volume.
+
 ### Upgrading an existing install
+
+Migrations run unattended at startup, so `docker compose up -d --build` on a newer
+checkout *is* the upgrade. Take a dump first, and read
+[docs/operations.md §4–5](docs/operations.md) before rolling one back: the downgrade has
+to be run from the newer image, and swapping the image back first crash-loops.
 
 The container now runs as a non-root user (`looninspect`, uid 10001) rather than
 as root. A data volume created by an earlier version is owned by root, and the
