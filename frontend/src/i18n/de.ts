@@ -851,6 +851,8 @@ export const de: Translations = {
       "Wird mit Jamf Pro geteilt: denselben Wert dort am Webhook hinterlegen, als Wert der Header-Authentifizierung (Header-Name X-API-Key) oder als Passwort der Basic-Authentifizierung. Wird verschlüsselt gespeichert und nie wieder angezeigt — zum Ändern hier einen neuen Wert eingeben und Jamf Pro entsprechend anpassen.",
     webhookSecretRequired:
       "Callback-Webhooks benötigen ein Geheimnis. Ohne dieses weist der Webhook-Endpunkt jede Anfrage von Jamf Pro zurück.",
+    baseUrlChangeNeedsSecret: (fields: string) =>
+      `Beim Ändern der URL müssen ${fields} erneut eingegeben werden. Die gespeicherten Anmeldedaten werden nur an die URL gesendet, unter der sie gespeichert wurden.`,
     lastSuccessfulAuth: "Letzte erfolgreiche Authentifizierung:",
     never: "Nie",
     credentialsRotated: "Anmeldedaten zuletzt rotiert:",

@@ -354,6 +354,8 @@ The `CONNECTION_READ` / `CONNECTION_CREDENTIAL_READ` split is what makes Auditor
 
 So an Auditor can verify rotation hygiene without ever being handed a secret, which is the whole point of the role. Admin-only remains the correct home for the second permission.
 
+The split bounds who may *see* a secret; on its own it does not bound where one may be *sent*, and #132 found that gap twice. A stored secret travels wherever the connection's `base_url` points, so both halves of the fix are invariants on that pairing rather than new permissions: `POST /connections/test` refuses the stored secret against any URL but the stored one (#200), and `PATCH /connections/{id}` refuses to move `base_url` unless the request re-supplies every stored secret field (#132). Guarding the row rather than each endpoint is deliberate — the nightly sweep reads `base_url` under no principal at all, so no permission check on a route could have covered it.
+
 ### 5.2 Forward-compat with IdP group mapping
 
 Because grants live in `account_role` with a `source`, the later OIDC work is purely additive: a group→role mapping table, and a sync that reconciles only `source='oidc_group'` rows. Manual grants — including the break-glass admin's — are untouched by definition.

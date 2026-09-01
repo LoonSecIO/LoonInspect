@@ -29,7 +29,7 @@ from app.core.runs import (
 )
 from app.core.tenancy import reset_tenant_id, set_tenant_id
 from app.mdm.collections import ensure_default_collections
-from app.mdm.credentials import CREDENTIAL_SCHEMAS, fingerprint_field
+from app.mdm.credentials import CREDENTIAL_SCHEMAS, fingerprint_field, secret_fields
 from app.mdm.jamf.client import JamfClient
 from app.mdm.service import set_sync_status, sync_connection
 from app.models.schema import (
@@ -326,6 +326,70 @@ async def get_connection(connection_id: int, db: AsyncSession = Depends(get_db))
     return _to_out(connection)
 
 
+def _require_credential_re_entry_to_move(connection: MdmConnection, data: dict) -> None:
+    """Refuse to point a stored secret at a host the caller never proved they hold it for.
+
+    Moving `base_url` retargets every later use of the stored credential, so on its own
+    CONNECTION_WRITE was a read path for a secret this product otherwise never returns:
+    set the URL to a listener you control and wait. Waiting is all it takes — a manual
+    `POST /{id}/sync` needs DEVICE_SYNC, but the nightly sweep asks no permission at
+    all, so the token exchange arrives at the attacker's host either way and the
+    client-credentials POST carries the secret in its body (#132). POST /test got the
+    same pin in #200; this one guards the row instead of one sink, which is the only
+    version that also covers the scheduler and `POST /collections/{id}/run`.
+
+    Rejected: gating `base_url` on CONNECTION_CREDENTIAL_READ. That tier means "may use
+    the secret, may never see it" (see the comment on POST /test), and a holder who can
+    move the URL converts use into read — so the permission drawing the line would be
+    the one defeating it. Rejected too: clearing the stored secret on a URL change. It
+    is safe, but it fails towards an outage nobody is told about — a typo in the URL
+    field disarms the connection until a sweep reports it — and it ends with the
+    operator re-entering the secret regardless, which is what this asks for up front.
+
+    A *wrong* secret is accepted, deliberately: what then travels to the new host is
+    the value the caller typed, and the stored one is overwritten rather than revealed.
+    This proves possession, not correctness — `POST /test` is where correctness is
+    answered. Nor is destroying a credential a new power; CONNECTION_WRITE could always
+    overwrite it, or delete the connection outright.
+    """
+    if "base_url" not in data or _same_base_url(data["base_url"], connection.base_url):
+        return
+
+    provider = MdmProvider(connection.provider)
+    stored = _credentials_dict(connection)
+    supplied = _normalize_credential_keys(
+        provider, {key: value for key, value in (data.get("credentials") or {}).items() if value}
+    )
+
+    unproven = sorted(
+        field for field in secret_fields(provider) if stored.get(field) and not supplied.get(field)
+    )
+    if not unproven:
+        return
+
+    audit(
+        AuditAction.CONNECTION_UPDATED,
+        outcome="refused",
+        target_type="mdm_connection",
+        target_id=connection.id,
+        name=connection.name,
+        # The URL the caller asked for. On a refusal that is the whole event — the
+        # record is what turns a blocked exfiltration attempt into a detection.
+        base_url=data["base_url"],
+        reason="base_url_moved_without_credential",
+        # Field names, never values (as everywhere else in this router).
+        unproven_fields=unproven,
+    )
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            "Changing this connection's URL requires re-entering its "
+            f"{', '.join(to_camel(field) for field in unproven)}. The stored credential is "
+            "only ever sent to the URL it was saved against."
+        ),
+    )
+
+
 @router.patch(
     "/{connection_id}",
     response_model=MdmConnectionOut,
@@ -336,6 +400,8 @@ async def update_connection(
 ) -> MdmConnectionOut:
     connection = await _get_or_404(connection_id, db)
     data = payload.model_dump(exclude_unset=True, mode="json")
+
+    _require_credential_re_entry_to_move(connection, data)
 
     if "name" in data:
         connection.name = data["name"]
