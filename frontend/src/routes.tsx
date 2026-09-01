@@ -13,7 +13,6 @@ import { ApplicationsPage } from "@/features/devices/ApplicationsPage";
 import { ApplicationsOverviewPage } from "@/features/devices/ApplicationsOverviewPage";
 import { GroupsPage } from "@/features/devices/GroupsPage";
 import { CompliancePage } from "@/features/devices/CompliancePage";
-import { UsersPage } from "@/features/users/UsersPage";
 import { IntegrationsPage } from "@/features/integrations/IntegrationsPage";
 import { AIPage } from "@/features/ai/AIPage";
 import { ChangesPage } from "@/features/changes/ChangesPage";
@@ -51,7 +50,9 @@ export function AppRoutes() {
         <Route path="devices/groups" element={<GroupsPage />} />
         <Route path="devices/compliance" element={<CompliancePage />} />
         <Route path="devices/changes" element={<ChangesPage />} />
-        <Route path="users" element={<UsersPage />} />
+        {/* No /users route: nothing on the backend serves MDM-synced people, and a
+            route rendering an empty table of eight columns Jamf's users would fill
+            is a promise, not a page. It comes back with the endpoint (#95). */}
         <Route path="integrations" element={<IntegrationsPage />} />
         <Route path="ai" element={<AIPage />} />
         <Route element={<RequirePermission permission={PERMISSIONS.CONNECTION_READ} />}>

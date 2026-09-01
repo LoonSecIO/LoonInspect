@@ -112,7 +112,6 @@ export const de: Translations = {
     applications: "Anwendungen",
     groups: "Gruppen",
     compliance: "Compliance",
-    users: "Benutzer",
     vulnerabilities: "Schwachstellen",
     integrations: "Integrationen",
     ai: "KI",
@@ -366,22 +365,6 @@ export const de: Translations = {
     pageOf: (page: number, pages: number) => `Seite ${page} von ${pages}`,
     previous: "Zurück",
     next: "Weiter"
-  },
-  users: {
-    eyebrow: "Inventar",
-    title: "Benutzer",
-    description:
-      "Von Ihren verbundenen MDM-Plattformen erkannte Benutzer — zugewiesene Benutzer, angemeldete Benutzer und die ihnen zugeordneten Geräte.",
-    tableName: "Name",
-    tableUsername: "Benutzername",
-    tableEmail: "E-Mail",
-    tableDepartment: "Abteilung",
-    tableSource: "Quelle",
-    tableAssignedDevices: "Zugewiesene Geräte",
-    tableLoggedInDevices: "Angemeldete Geräte",
-    tableLastSeen: "Zuletzt gesehen",
-    empty: "Noch keine Benutzer erkannt.",
-    total: (n: number) => `${n} Benutzer insgesamt`
   },
   applications: {
     eyebrow: "Geräte",
