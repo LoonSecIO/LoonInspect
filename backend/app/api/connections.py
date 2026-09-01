@@ -62,6 +62,19 @@ def _credentials_dict(conn: MdmConnection) -> dict[str, str]:
         return {}
 
 
+def _same_base_url(supplied: str, stored: str) -> bool:
+    """Whether `supplied` names the server the connection already points at.
+
+    Only the trailing slash is normalized away, because that is the one difference
+    JamfClient itself erases (`base_url.rstrip("/")`) — two spellings that produce the
+    same request. Deliberately no case-folding, no percent-decoding, no host parsing:
+    this is a security comparison, an unrecognized-but-equivalent spelling costs the
+    admin one re-typed secret, and every cleverer normalization is another place a
+    lookalike could be argued equal.
+    """
+    return supplied.strip().rstrip("/") == stored.strip().rstrip("/")
+
+
 def _validate_credentials(provider: MdmProvider, credentials: dict[str, str]) -> dict[str, str]:
     schema_cls = CREDENTIAL_SCHEMAS.get(provider)
     if schema_cls is None:
@@ -182,7 +195,9 @@ async def create_connection(
 
 # Credential-tier, not write-tier: this exercises the live secret and will fall back
 # to the *stored* one when the payload omits it, so it lets the caller use a credential
-# they may not be able to see. That's the line CONNECTION_CREDENTIAL_READ draws.
+# they may not be able to see. That's the line CONNECTION_CREDENTIAL_READ draws — and
+# the fallback is pinned to the stored base_url, because a credential you may use but
+# never read must not be steerable to a host of your choosing (see below).
 @router.post(
     "/test",
     response_model=MdmConnectionTestResult,
@@ -195,13 +210,6 @@ async def test_connection(
     if payload.connection_id is not None:
         existing = await db.get(MdmConnection, payload.connection_id)
 
-    client_secret = payload.client_secret
-    if not client_secret and existing is not None:
-        client_secret = _credentials_dict(existing).get("client_secret")
-
-    if not client_secret:
-        return MdmConnectionTestResult(success=False, message="Enter a client secret to test.")
-
     # Recorded because it's the case where the caller exercised a credential they were
     # never shown — the reason this endpoint sits behind CONNECTION_CREDENTIAL_READ.
     used_stored_secret = not payload.client_secret
@@ -213,14 +221,50 @@ async def test_connection(
             target_type="mdm_connection",
             target_id=payload.connection_id,
             provider=payload.provider.value,
+            # The URL the caller *asked* for, not the one used: on the refusal below
+            # that difference is the whole event.
             base_url=payload.base_url,
             used_stored_secret=used_stored_secret,
             **extra,
         )
 
+    client_secret = payload.client_secret
+    base_url = payload.base_url
+
+    stored_secret = _credentials_dict(existing).get("client_secret") if existing else None
+
+    if not client_secret and existing is not None and stored_secret:
+        # The stored secret goes to the stored URL or it goes nowhere. Accepting the
+        # payload's base_url here made this endpoint the read path the product
+        # otherwise refuses to have: name an existing connection, omit the secret,
+        # point base_url at a listener you control, and the client-credentials POST
+        # delivers the secret you were never shown (#132).
+        #
+        # Rejected: silently substituting the stored URL. That answers "connected" for
+        # a URL the admin believes they just tested, which is a worse lie than a
+        # refusal. Rejected too: enforcing this in MdmConnectionTestRequest — the rule
+        # is "equals the value on that row", and the schema has no row to compare
+        # against. A schema-shaped proxy (connectionId and baseUrl are mutually
+        # exclusive) would also forbid the legitimate stored-secret-against-stored-URL
+        # test the UI actually sends.
+        if not _same_base_url(payload.base_url, existing.base_url):
+            _audit_test("refused", reason="stored_secret_foreign_base_url")
+            return MdmConnectionTestResult(
+                success=False,
+                message=(
+                    "The stored client secret can only be tested against this connection's "
+                    "saved URL. Save the new URL first, or enter the client secret to test it."
+                ),
+            )
+        client_secret = stored_secret
+        base_url = existing.base_url
+
+    if not client_secret:
+        return MdmConnectionTestResult(success=False, message="Enter a client secret to test.")
+
     user_agent_override = payload.user_agent_override or (existing.user_agent_override if existing else None)
     jamf_client = JamfClient(
-        base_url=payload.base_url,
+        base_url=base_url,
         client_id=payload.client_id,
         client_secret=client_secret,
         user_agent_override=user_agent_override,
@@ -238,7 +282,7 @@ async def test_connection(
     except httpx.RequestError as exc:
         _audit_test("failure", reason="unreachable")
         return MdmConnectionTestResult(
-            success=False, message=f"Could not reach {payload.base_url}.", detail=str(exc)
+            success=False, message=f"Could not reach {base_url}.", detail=str(exc)
         )
 
     if existing is not None:
