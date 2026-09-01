@@ -52,4 +52,7 @@ export interface SetupInput {
   email: string;
   displayName: string;
   password: string;
+  /** The community-sharing checkbox. Always sent, in both states: the server treats a
+   *  missing field as "no", and a yes that never arrives is a yes that never happened. */
+  shareCommunityData: boolean;
 }

@@ -127,8 +127,16 @@ async def bootstrap_accounts(db: AsyncSession) -> None:
         )
         await db.commit()
         _claim_token = None
+        # This path returns before the claim token below is ever minted, so the setup
+        # wizard — the only place community data sharing is offered — never renders on
+        # it. Nothing here writes a consent row on purpose: the absent row already
+        # means "off" (models.schema.DataSharingSettings.tier), and an install that
+        # nobody asked must not share. Said out loud in the log because this is the
+        # documented path for pods, scripts and MSP fleets, and the operator reading
+        # this line is the one who would otherwise never learn sharing exists.
         logger.info(
-            "initial admin created from environment",
+            "initial admin created from environment; community data sharing is off "
+            "until an administrator opts in under Settings → Data Sharing",
             extra={"account_id": account.id, "email": account.email},
         )
         return

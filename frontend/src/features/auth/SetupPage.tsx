@@ -5,7 +5,6 @@ import { VersionBadge } from "@/features/auth/VersionBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/config/api";
-import { updateDataSharing } from "@/features/system/api";
 import { useAuthStore } from "@/features/auth/store";
 import { useLocale } from "@/i18n/LocaleContext";
 
@@ -50,17 +49,12 @@ export function SetupPage() {
     }
 
     try {
-      await completeSetup({ claimToken, email, displayName, password });
-      if (!share) {
-        // The stored default is "reveal", which is exactly what a checked box means —
-        // so only an unchecked box needs a write. Best-effort: if it fails, the
-        // Data Sharing settings page shows and can correct the actual state.
-        try {
-          await updateDataSharing({ tier: "off" });
-        } catch {
-          // Non-fatal by design.
-        }
-      }
+      // The checkbox rides along with the account creation. It used to be a second,
+      // best-effort PUT fired only when the box was UNchecked — which was sound only
+      // while an absent settings row meant "reveal". Consent defaults to off now, so
+      // the yes is the answer that has to survive the trip, and a request the page is
+      // allowed to swallow the failure of is not a place to put it.
+      await completeSetup({ claimToken, email, displayName, password, shareCommunityData: share });
       navigate("/", { replace: true });
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 403) {

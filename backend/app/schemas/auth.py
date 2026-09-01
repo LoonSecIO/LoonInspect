@@ -60,3 +60,16 @@ class SetupRequest(_CamelModel):
     email: EmailStr
     display_name: str = Field(min_length=1, max_length=255)
     password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
+    # The wizard's community-sharing checkbox, carried here so the answer is recorded
+    # in the same request that creates the administrator. It used to be a second,
+    # best-effort PUT the browser fired afterwards and swallowed the failure of, which
+    # only worked because "no write" happened to mean "reveal"; with consent defaulting
+    # off, a dropped follow-up request would silently discard a yes.
+    #
+    # Defaulted False and not required: a caller that omits it — an older UI build, a
+    # script someone wrote against last month's API — gets an install that does not
+    # share. The failure mode of a missing consent field has to be no consent.
+    #
+    # A bool rather than the SharingTier enum because the wizard asks one yes/no
+    # question; picking "keys" over "reveal" is a Settings decision, not a first-run one.
+    share_community_data: bool = False

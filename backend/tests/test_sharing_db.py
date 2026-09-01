@@ -46,17 +46,25 @@ async def db(tenant_ready):
 
 
 async def _reset(db) -> None:
-    """Clear this suite's exchange rows and put the tier back to the shipped
-    default. Other suites share the tenant, so only what this suite touches is
-    cleared — the AI rows (tier "ai") share the log and are left alone."""
-    from app.models.schema import DataSharingSettings, ShareLog
+    """Clear this suite's exchange rows and put the tier back to "reveal".
+
+    Not the shipped default any more — that is "off", so an unanswered install shares
+    nothing (test_sharing_consent_db.py). This suite is about what a *consented*
+    instance puts on the wire, so it sets the tier the consent would have set. Other
+    suites share the tenant, so only what this suite touches is cleared — the AI rows
+    (tier "ai") share the log and are left alone."""
+    from app.core.sharing import get_or_create_settings
+    from app.models.schema import ShareLog
 
     await db.rollback()
     await db.execute(delete(ShareLog).where(ShareLog.tier != "ai"))
-    row = (await db.execute(select(DataSharingSettings))).scalar_one_or_none()
-    if row is not None:
-        row.tier = "reveal"
-        row.pending_reveal_keys = []
+    # get-or-create rather than "update it if it happens to be there": with the default
+    # at "off", a row this suite does not find is a row that would silently short-circuit
+    # every exchange below into a no-op, and a suite about the wire would pass by never
+    # reaching it.
+    row = await get_or_create_settings(db)
+    row.tier = "reveal"
+    row.pending_reveal_keys = []
     await db.commit()
 
 

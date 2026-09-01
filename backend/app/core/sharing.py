@@ -37,6 +37,11 @@ async def get_or_create_settings(db: AsyncSession) -> DataSharingSettings:
     Lazy creation mirrors FeatureFlag: an absent row and the defaults are the same
     state, and materializing it on first touch gives the submission UUID a single
     stable birth rather than a special case in every reader.
+
+    Which is exactly why the default has to be `off` (see the column's comment): this
+    runs from `exchange_due` on the scheduler tick, so on any install nobody has
+    answered for, the first thing that touches consent is the machinery that acts on
+    it. A permissive default here is consent manufactured by the reader.
     """
     row = (await db.execute(select(DataSharingSettings))).scalar_one_or_none()
     if row is None:
@@ -45,6 +50,27 @@ async def get_or_create_settings(db: AsyncSession) -> DataSharingSettings:
         await db.commit()
         await db.refresh(row)
     return row
+
+
+async def record_setup_choice(db: AsyncSession, *, share: bool) -> None:
+    """Write the first-run wizard's answer, including when the answer is yes.
+
+    A "yes" used to be recorded by writing nothing at all — the box was pre-checked,
+    the default was "reveal", so a checked box and an unanswered install were the same
+    row. That is the whole finding: it made the two indistinguishable in the one place
+    that decides whether bytes leave. Now both answers are written, and `updated_at` is
+    stamped either way, so the row says *someone answered* and not merely *what it
+    says today*.
+
+    Called by the setup endpoint after the account commit rather than folded into it:
+    `get_or_create_settings` commits, and hoisting that above `create_session` would
+    land the first administrator without the session that signs them in if anything
+    below it failed.
+    """
+    row = await get_or_create_settings(db)
+    row.tier = "reveal" if share else "off"
+    row.updated_at = datetime.now(timezone.utc)
+    await db.commit()
 
 
 def _excluded(bundle_id: str, globs: list[str]) -> bool:
