@@ -33,7 +33,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -100,6 +100,12 @@ RUN_FAILED_EVENT = "run.failed"
 # same cap the delivery worker puts on an HTTP error — enough to say what happened,
 # never a log dump. The full text stays on the run row.
 _ERROR_SUMMARY_MAX = 500
+
+# What a run's own log says when its closing event could not be enqueued. Named rather
+# than written inline at the one place it is used, because it is what an operator who
+# noticed a missing event greps for and what the run tests assert on — a message that can
+# be reworded silently is not evidence anyone can rely on finding.
+EVENT_LOST_MESSAGE = "closing event was not enqueued; the run is closed and its lock is free"
 
 
 class RunReclaimed(Exception):
@@ -300,6 +306,133 @@ async def _enqueue_run_failed(
     )
 
 
+async def _enqueue_run_completed(
+    db: AsyncSession,
+    *,
+    run_id: uuid.UUID,
+    connection_id: int,
+    trigger: str,
+    comparison: str,
+    closed_at: datetime,
+    status: str,
+    device_count: int,
+    devices_processed: int,
+    devices_failed: int,
+) -> None:
+    """The run.completed event (#92), added to the caller's open transaction.
+
+    Lifted out of `finish` so both closing events are built by a named builder and handed
+    to the same best-effort emitter below, rather than one being a builder and the other
+    twenty-eight inline lines. Not a shape change: every key, every value and every
+    comment below is the payload `finish` built before the lift (#212's casing included), and the tests assert
+    the set of keys exactly.
+    """
+    _, source = await _connection_wire(db, connection_id)
+    await enqueue_event(
+        db,
+        RUN_COMPLETED_EVENT,
+        {
+            # camelCase with `ID` uppercased (#188), `event` as the one discriminator
+            # across all four families, and the run id under the `jobID` that
+            # `deviceMeta` already carries — see _enqueue_run_failed.
+            "event": RUN_COMPLETED_EVENT,
+            "jobID": str(run_id),
+            "connectionID": connection_id,
+            "trigger": trigger,
+            "comparison": comparison,
+            # The run's window end — the same instant the row's window_end was
+            # just stamped with, so the event and the row tell one time.
+            "occurredAt": closed_at.isoformat(),
+            "devicesTotal": device_count,
+            "devicesProcessed": devices_processed,
+            "devicesFailed": devices_failed,
+            "status": status,
+            # The same instant the payload's occurred_at and the row's window_end were
+            # stamped with, so the row, the body and Splunk's `_time` all tell one
+            # time. NOT `event_time()`, which back-dates a sweep to its window: the run
+            # closing is not part of the occurrence the run serves, and stamping it at
+            # window_start would sort the sweep's closing event before every event it
+            # closes over.
+            ENVELOPE: envelope(occurred_at=closed_at, host=None, source=source),
+        },
+        request_id=get_request_id(),
+    )
+
+
+async def _emit_after_release(
+    db: AsyncSession, run_id: uuid.UUID, event_type: str, emit: Callable[[], Awaitable[None]]
+) -> None:
+    """Enqueue one closing event in its own transaction, AFTER the release has committed.
+
+    Both producers used to enqueue in the SAME transaction as the run-status UPDATE that
+    frees the mutex, on the argument that "the run closed" and "the wire says it closed"
+    should never drift apart. The argument was right about the pairing and wrong about
+    the cost: a single failed INSERT into `event_outbox` aborts that transaction and
+    takes the release with it, so the row stays `running` and the connection can never
+    sync again. Worse, `acquire()` calls `_reclaim_stale()` first, so the identical
+    INSERT then fails for every OTHER connection's acquisition too. One full disk stopped
+    all syncing everywhere; the asyncpg bind-parameter ceiling was a second trigger, and
+    any INSERT failure has the same blast radius. It is also non-deterministic — a
+    retried close whose row happens to fit in existing page space succeeds — so an
+    operator cannot predict which of the two failures they get.
+
+    Release-then-emit, not emit-then-release-in-two-transactions. The other order can
+    double-emit: whether a close may emit at all is decided by whether the fenced UPDATE
+    matched a still-`running` row (#94), which is knowable only after the UPDATE runs, so
+    emitting first means emitting for a run the reclaim already closed — the double-count
+    `finish`'s docstring rules out — and a retry after a release that failed post-emit
+    files a second copy of one close. This order can only LOSE an event, and losing one
+    is strictly cheaper than wedging every connection: `run.completed`'s ABSENCE is
+    already the monitored signal ("no run.completed today means the sweep did not run to
+    completion"), so the operator's absence search fires exactly as it would for a
+    genuinely incomplete sweep, and the run row, the ERROR line this writes into the
+    run's own log, and the logged exception together say which of the two it was. A
+    duplicate would instead corrupt every `stats count` written against the heartbeat,
+    silently and permanently.
+
+    Modelled on the posture snapshot at the end of `finish`: commit the thing that must
+    not be lost, then attempt the thing that may be.
+    """
+
+    async def lost() -> None:
+        logger.exception(EVENT_LOST_MESSAGE, extra={"run_id": str(run_id), "event_type": event_type})
+        # Into the run's own log as well. Without it the only trace is a container log
+        # line an operator has to already suspect something to go looking for — and the
+        # run they open, having noticed the missing event, would show a clean close.
+        with contextlib.suppress(Exception):
+            db.add(
+                RunLogLine(
+                    run_id=run_id,
+                    ts=_utcnow(),
+                    level="error",
+                    message=EVENT_LOST_MESSAGE,
+                    fields={"eventType": event_type},
+                )
+            )
+            await db.commit()
+
+    try:
+        # Inside a savepoint, for the same reason `acquire`'s INSERT is: the failed
+        # statement unwinds alone and the session is usable afterwards. A blanket
+        # `rollback()` here would satisfy the database and wreck the caller — a full
+        # rollback expires EVERY orm object in the session, and `acquire` reads
+        # `connection.id` on the line after `_reclaim_stale()` returns. A best-effort
+        # emit that breaks the acquisition running it has not fixed anything.
+        async with db.begin_nested():
+            await emit()
+    except Exception:
+        await lost()
+        return
+    try:
+        await db.commit()
+    except Exception:
+        # The commit itself rather than the INSERT: there is no savepoint left to unwind
+        # it, so this is the one place the blunt instrument is the right one.
+        with contextlib.suppress(Exception):
+            await db.rollback()
+        await lost()
+
+
 async def _reclaim_stale(db: AsyncSession) -> int:
     """Fail every run in this tenant whose process stopped heartbeating.
 
@@ -311,9 +444,16 @@ async def _reclaim_stale(db: AsyncSession) -> int:
 
     The reclaim is a run reaching `failed`, so it is loud the same two ways finish's
     failure path is (#103): a final line into the run's own log — which otherwise just
-    stops mid-sweep after the last progress line — and a run.failed event, both in the
-    same transaction as the verdict. This is the failure that most needs the wire: the
-    process that would have reported it is the one that died.
+    stops mid-sweep after the last progress line — and a run.failed event. This is the
+    failure that most needs the wire: the process that would have reported it is the one
+    that died.
+
+    Both of those are recorded AFTER the verdicts commit, not with them (`_emit_after_
+    release`). The reclaim's failure mode is the worse of the two the module had: it runs
+    on EVERY acquisition, so an insert it cannot complete does not merely wedge the
+    connection whose run went stale — it raises out of every acquire in the tenant,
+    including connections with nothing stuck and nothing to reclaim. The lock-freeing
+    UPDATE is the one statement here that must not be hostage to anything else.
     """
     now = _utcnow()
     cutoff = now - timedelta(seconds=settings.run_stale_after_seconds)
@@ -334,31 +474,49 @@ async def _reclaim_stale(db: AsyncSession) -> int:
     )
     reclaimed = result.all()
     if reclaimed:
-        for row in reclaimed:
-            db.add(
-                RunLogLine(
-                    run_id=row.id,
-                    ts=now,
-                    level="error",
-                    message="run failed",
-                    fields={"error": error},
-                )
-            )
-            await _enqueue_run_failed(
-                db,
-                run_id=row.id,
-                connection_id=row.mdm_connection_id,
-                trigger=row.trigger,
-                window_start=row.window_start,
-                window_end=now,
-                error=error,
-            )
+        # The verdicts alone. Every lock this reclaim freed is free from here on, whatever
+        # happens to the recording below.
         await db.commit()
         logger.warning(
             "reclaimed runs with no heartbeat",
             extra={"count": len(reclaimed), "run_ids": [str(row.id) for row in reclaimed]},
         )
+        for row in reclaimed:
+            await _record_reclaim(db, row, at=now, error=error)
     return len(reclaimed)
+
+
+async def _record_reclaim(db: AsyncSession, row, *, at: datetime, error: str) -> None:
+    """One reclaimed run's log line and run.failed event, once its verdict has committed.
+
+    Per row rather than one attempt for the batch: a reclaim that finds three stale runs
+    should not lose all three events because the first one's insert failed. The log line
+    rides with the event because they are the same statement about the same run, and
+    splitting them would let a run announce its failure on the wire while its own log
+    still just stops mid-sweep.
+    """
+
+    async def emit() -> None:
+        db.add(
+            RunLogLine(
+                run_id=row.id,
+                ts=at,
+                level="error",
+                message="run failed",
+                fields={"error": error},
+            )
+        )
+        await _enqueue_run_failed(
+            db,
+            run_id=row.id,
+            connection_id=row.mdm_connection_id,
+            trigger=row.trigger,
+            window_start=row.window_start,
+            window_end=at,
+            error=error,
+        )
+
+    await _emit_after_release(db, row.id, RUN_FAILED_EVENT, emit)
 
 
 async def _comparison_for(db: AsyncSession, connection_id: int, lock_class: str) -> str:
@@ -582,7 +740,7 @@ async def finish(
     A separate UPDATE rather than an ORM write on `run`, because the failure path
     reaches here with a rolled-back session whose identity map cannot be trusted — the
     one moment it matters most that the lock is actually released. The RETURNING clause
-    carries the identity fields the event below needs, for the same reason: read from
+    carries the identity fields the events below need, for the same reason: read from
     the row the UPDATE just matched, never from ORM state a rollback may have expired.
 
     Conditional on `running`, for the same reason the heartbeat is (#94). A run the
@@ -594,13 +752,19 @@ async def finish(
     exception handler, where raising would mask the error being handled. The refusal is
     logged here; the call site decides what, if anything, is left to unwind.
 
-    A device-sweep run also emits `run.completed` (#92), enqueued in the same
-    transaction as the status flip so "the run closed" and "the wire says it closed"
-    can never drift apart. And any run that closes `failed` also emits `run.failed`
-    (#103) — every trigger and every lock class, because a failed webhook or catalog
-    run is exactly as silent as a failed sweep. Neither fires for a refused finish —
-    the reclaim's verdict stands, and the reclaim already emitted its own run.failed
-    when it wrote that verdict, so a second event here would double-count one failure.
+    A device-sweep run also emits `run.completed` (#92), and any run that closes
+    `failed` also emits `run.failed` (#103) — every trigger and every lock class,
+    because a failed webhook or catalog run is exactly as silent as a failed sweep.
+    Neither fires for a refused finish — the reclaim's verdict stands, and the reclaim
+    already emitted its own run.failed when it wrote that verdict, so a second event
+    here would double-count one failure.
+
+    Both are enqueued AFTER the release commits, not with it (`_emit_after_release`).
+    They used to ride the same transaction as the status flip, which paired them
+    perfectly and made the release hostage to an INSERT: one that failed rolled the
+    release back with it, the row stayed `running`, and the reclaim on every subsequent
+    acquire — for every connection — failed on the same INSERT. The pairing was worth
+    less than the mutex.
     """
     now = _utcnow()
     status = STATUS_SUCCEEDED if ok else STATUS_FAILED
@@ -622,47 +786,9 @@ async def finish(
         .returning(Run.id, Run.mdm_connection_id, Run.trigger, Run.comparison, Run.lock_class, Run.window_start)
     )
     row = closed.first()
-    if row is not None and row.lock_class == LOCK_DEVICE_SWEEP:
-        _, source = await _connection_wire(db, row.mdm_connection_id)
-        await enqueue_event(
-            db,
-            RUN_COMPLETED_EVENT,
-            {
-                # camelCase with `ID` uppercased (#188), `event` as the one
-                # discriminator across all four families, and the run id under the
-                # `jobID` that `deviceMeta` already carries — see _enqueue_run_failed.
-                "event": RUN_COMPLETED_EVENT,
-                "jobID": str(row.id),
-                "connectionID": row.mdm_connection_id,
-                "trigger": row.trigger,
-                "comparison": row.comparison,
-                # The run's window end — the same instant the row's window_end was
-                # just stamped with, so the event and the row tell one time.
-                "occurredAt": now.isoformat(),
-                "devicesTotal": device_count,
-                "devicesProcessed": devices_processed,
-                "devicesFailed": devices_failed,
-                "status": status,
-                # The same `now` the payload's occurredAt and the row's window_end
-                # were stamped with, so the row, the body and Splunk's `_time` all
-                # tell one time. NOT `event_time()`, which back-dates a sweep to its
-                # window: the run closing is not part of the occurrence the run
-                # serves, and stamping it at window_start would sort the sweep's
-                # closing event before every event it closes over.
-                ENVELOPE: envelope(occurred_at=now, host=None, source=source),
-            },
-            request_id=get_request_id(),
-        )
-    if row is not None and not ok:
-        await _enqueue_run_failed(
-            db,
-            run_id=row.id,
-            connection_id=row.mdm_connection_id,
-            trigger=row.trigger,
-            window_start=row.window_start,
-            window_end=now,
-            error=error,
-        )
+    # The release, committed alone and first. Everything else this close records — the
+    # two wire events, the log line, the posture snapshot — happens after this line and
+    # cannot take the lock back down with it.
     await db.commit()
     if row is None:
         logger.warning(
@@ -683,6 +809,41 @@ async def finish(
             deviceCount=device_count,
         )
         return False
+    if row.lock_class == LOCK_DEVICE_SWEEP:
+
+        async def emit_completed() -> None:
+            await _enqueue_run_completed(
+                db,
+                run_id=row.id,
+                connection_id=row.mdm_connection_id,
+                trigger=row.trigger,
+                comparison=row.comparison,
+                closed_at=now,
+                status=status,
+                device_count=device_count,
+                devices_processed=devices_processed,
+                devices_failed=devices_failed,
+            )
+
+        await _emit_after_release(db, row.id, RUN_COMPLETED_EVENT, emit_completed)
+    if not ok:
+
+        async def emit_failed() -> None:
+            await _enqueue_run_failed(
+                db,
+                run_id=row.id,
+                connection_id=row.mdm_connection_id,
+                trigger=row.trigger,
+                window_start=row.window_start,
+                window_end=now,
+                error=error,
+            )
+
+        # Its own attempt, not one transaction shared with run.completed above. A failed
+        # device sweep emits both, and the alarm is the one an operator is paged by:
+        # losing it because the heartbeat beside it could not be written would be the
+        # worst possible pairing to keep.
+        await _emit_after_release(db, row.id, RUN_FAILED_EVENT, emit_failed)
     await log(
         db,
         run,

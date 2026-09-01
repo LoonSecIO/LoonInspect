@@ -24,7 +24,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
 from app.core.outbox import _build_body
 from app.core.wire import ENVELOPE, instance_label
@@ -127,6 +127,78 @@ async def _run_failed_events(db, run_id) -> list:
         )
     ).scalars().all()
     return [row for row in rows if row.payload.get("jobID") == str(run_id)]
+
+
+async def _run_completed_events(db, run_id) -> list:
+    """The same matching for run.completed — the heartbeat beside run.failed's alarm."""
+    from app.models.schema import EventOutbox
+
+    rows = (
+        await db.execute(
+            select(EventOutbox).where(EventOutbox.event_type == "run.completed").order_by(EventOutbox.id)
+        )
+    ).scalars().all()
+    # `jobID`, matching its sibling above: #212 renamed the run id on every family and
+    # updated the run.failed helper, but nothing on main exercised this one, so its
+    # stale `run_id` lookup silently matched zero rows until these tests arrived.
+    return [row for row in rows if row.payload.get("jobID") == str(run_id)]
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def sibling_connection(db):
+    """A SECOND connection in the same tenant, for the blast-radius assertions.
+
+    The failure those tests pin was never confined to the connection that broke: the
+    reclaim runs on every acquisition, so one unwritable INSERT stopped syncing on
+    connections with nothing wrong with them. A suite with one connection in it cannot
+    see that, and would have reported the outage as a single stuck run.
+    """
+    from app.models.schema import MdmConnection, MdmSyncState
+
+    row = MdmConnection(
+        name=f"runs jamf sibling {uuidlib.uuid4().hex[:8]}",
+        provider="jamf",
+        base_url=HOST,
+        credentials_encrypted=json.dumps({"clientId": "client", "clientSecret": "secret"}),
+    )
+    db.add(row)
+    await db.commit()
+    connection_id = row.id
+    try:
+        yield row
+    finally:
+        # `runs` and `run_log` go with the connection by cascade, as in the fixture above.
+        await db.rollback()
+        await db.execute(delete(MdmSyncState).where(MdmSyncState.mdm_connection_id == connection_id))
+        await db.execute(delete(MdmConnection).where(MdmConnection.id == connection_id))
+        await db.commit()
+
+
+@pytest.fixture
+def unwritable_outbox(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """An `enqueue_event` that fails the way the full disk failed: with a statement error
+    that ABORTS the surrounding transaction.
+
+    A bare `raise RuntimeError` would be the weaker fake, and a dangerous one: the
+    transaction would stay perfectly usable, the commit after it would write the release
+    anyway, and the test would pass against the very code it exists to condemn. What was
+    observed was an INSERT into `event_outbox` that could not be written — after which
+    every statement on that connection errors until someone rolls back. This reproduces
+    that, which is as close as a test gets to exhausting a disk on purpose.
+
+    Returns the event types it was asked for, so a test can tell "the emit was attempted
+    and failed" from "the emit was quietly skipped".
+    """
+    from app.core import runs
+
+    attempted: list[str] = []
+
+    async def _unwritable(db, event_type, payload, *, request_id=None):
+        attempted.append(event_type)
+        await db.execute(text("INSERT INTO no_such_table_anywhere (id) VALUES (1)"))
+
+    monkeypatch.setattr(runs, "enqueue_event", _unwritable)
+    return attempted
 
 
 # --- the mutex ------------------------------------------------------------------------
@@ -406,6 +478,160 @@ async def test_a_failed_webhook_run_emits_run_failed_unlike_run_completed(db, co
         await db.execute(select(EventOutbox).where(EventOutbox.event_type == "run.completed"))
     ).scalars().all()
     assert all(row.payload.get("jobID") != str(hook.run.id) for row in completed)
+
+
+# --- the emit is outside the release ----------------------------------------------------
+
+
+async def test_the_run_releases_even_when_the_event_emit_fails(db, connection, unwritable_outbox) -> None:
+    """The whole point of the change: releasing the mutex must not depend on being able
+    to enqueue an event.
+
+    `finish` used to enqueue run.completed and run.failed in the same transaction as the
+    status UPDATE that frees the lock. A failed INSERT aborted that transaction and took
+    the release with it — the row stayed ('running', False, None), which is a connection
+    that can never sync again. Found by a destructive disk-exhaustion test, and
+    non-deterministic there: a second attempt whose row happened to fit in existing page
+    space released fine, so an operator could not even predict which failure they had.
+    """
+    from app.core.runs import (
+        EVENT_LOST_MESSAGE,
+        LOCK_DEVICE_SWEEP,
+        RUN_COMPLETED_EVENT,
+        RUN_FAILED_EVENT,
+        STATUS_FAILED,
+        TRIGGER_SWEEP,
+        acquire,
+        finish,
+    )
+    from app.models.schema import Run, RunLogLine
+
+    acquired = await acquire(db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP)
+    assert acquired.started
+
+    assert await finish(db, acquired.run, ok=False, error="Jamf stopped answering") is True
+
+    # Selected rather than db.get()'d: the session is expire_on_commit=False and the
+    # status was written by a Core UPDATE, so the identity map still says `running`.
+    closed = (
+        await db.execute(select(Run.status, Run.finished_at, Run.error).where(Run.id == acquired.run.id))
+    ).one()
+    assert closed.status == STATUS_FAILED
+    assert closed.finished_at is not None
+    assert closed.error == "Jamf stopped answering"
+
+    # Both events were attempted, and both were lost. Asserted separately from the
+    # release so a change that stops attempting one of them cannot pass by looking
+    # like this one: losing an event is the ruled trade, not skipping it.
+    assert unwritable_outbox == [RUN_COMPLETED_EVENT, RUN_FAILED_EVENT]
+    assert await _run_completed_events(db, acquired.run.id) == []
+    assert await _run_failed_events(db, acquired.run.id) == []
+
+    # And the loss is recorded where an operator who noticed the missing event will
+    # look. Without this the run they open would show a clean close and the only trace
+    # would be a container log line they had to already suspect something to find.
+    lines = (
+        await db.execute(select(RunLogLine).where(RunLogLine.run_id == acquired.run.id).order_by(RunLogLine.id))
+    ).scalars().all()
+    lost = [line for line in lines if line.message == EVENT_LOST_MESSAGE]
+    assert [line.fields["eventType"] for line in lost] == [RUN_COMPLETED_EVENT, RUN_FAILED_EVENT]
+    assert all(line.level == "error" for line in lost)
+    # The run's own closing line is still written after them: a lost event does not cost
+    # the run its history as well.
+    assert "run failed" in [line.message for line in lines]
+
+
+async def test_a_failed_emit_leaves_every_connection_still_able_to_acquire(
+    db, connection, sibling_connection, unwritable_outbox, monkeypatch
+) -> None:
+    """The blast radius, and the reason this was never merely a lost event.
+
+    A run stuck at `running` blocks its own connection — but `acquire()` calls
+    `_reclaim_stale()` first, and on the old code that reclaim re-raised the identical
+    INSERT failure for every caller. One unwritable row stopped syncing everywhere,
+    including on connections that had nothing wrong with them.
+    """
+    from app.core.runs import LOCK_DEVICE_SWEEP, TRIGGER_SWEEP, acquire, finish
+
+    doomed = await acquire(db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP)
+    assert await finish(db, doomed.run, ok=True, device_count=7) is True
+    assert unwritable_outbox  # the emit really was attempted, and really did fail
+
+    # The connection whose emit failed can start a new run...
+    again = await acquire(db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP)
+    assert again.started is True and again.run.id != doomed.run.id
+    # ...and so can a connection that was never anywhere near the failure.
+    sibling = await acquire(db, sibling_connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP)
+    assert sibling.started is True
+
+    # Nothing latches: with the outbox writable again the next close emits normally,
+    # exactly one run.completed carrying the ordinary accounting.
+    monkeypatch.undo()
+    assert await finish(db, again.run, ok=True, device_count=7) is True
+    events = await _run_completed_events(db, again.run.id)
+    assert len(events) == 1
+    assert events[0].payload["status"] == "succeeded"
+    assert events[0].payload["devicesTotal"] == 7
+    await finish(db, sibling.run, ok=True)
+
+
+async def test_the_reclaim_frees_the_lock_even_when_its_event_emit_fails(
+    db, connection, sibling_connection, unwritable_outbox
+) -> None:
+    """The reclaim needed the same treatment as `finish`, and its failure mode is worse.
+
+    `finish`'s bad transaction wedges the one connection it was closing. The reclaim runs
+    on EVERY acquisition, so its failed INSERT raised out of `acquire` for callers with no
+    stale run to reclaim and nothing to emit — which is how one unwritable row became a
+    tenant-wide stop. The acquisition that trips the reclaim here therefore belongs to a
+    different connection on purpose: that caller is the bystander the old code broke.
+    """
+    from sqlalchemy import update as sa_update
+
+    from app.core.config import settings
+    from app.core.runs import (
+        EVENT_LOST_MESSAGE,
+        LOCK_DEVICE_SWEEP,
+        STATUS_FAILED,
+        TRIGGER_SWEEP,
+        acquire,
+        finish,
+    )
+    from app.models.schema import Run, RunLogLine
+
+    dead = await acquire(db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP)
+    assert dead.started
+    stale = _now() - timedelta(seconds=settings.run_stale_after_seconds + 60)
+    await db.execute(sa_update(Run).where(Run.id == dead.run.id).values(heartbeat_at=stale))
+    await db.commit()
+
+    bystander = await acquire(db, sibling_connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP)
+    assert bystander.started is True
+
+    # The reclaim's verdict committed even though its recording could not.
+    reclaimed = (await db.execute(select(Run.status, Run.error).where(Run.id == dead.run.id))).one()
+    assert reclaimed.status == STATUS_FAILED
+    assert reclaimed.error and "heartbeat" in reclaimed.error
+    assert await _run_failed_events(db, dead.run.id) == []
+
+    # And the lock it freed is genuinely free, for the connection it was freed on.
+    revived = await acquire(db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP)
+    assert revived.started is True and revived.run.id != dead.run.id
+
+    # The reclaimed run's log carries the loss in place of the "run failed" line the
+    # healthy path writes there — the two ride one transaction because they are one
+    # statement about one run, so a reclaim never announces on the wire what its own log
+    # does not say. Either way the log does not simply stop mid-sweep, which is the
+    # property #103 added it for.
+    lines = (
+        await db.execute(select(RunLogLine).where(RunLogLine.run_id == dead.run.id).order_by(RunLogLine.id))
+    ).scalars().all()
+    assert lines[-1].message == EVENT_LOST_MESSAGE
+    assert lines[-1].level == "error"
+    assert lines[-1].fields["eventType"] == "run.failed"
+
+    await finish(db, revived.run, ok=True)
+    await finish(db, bystander.run, ok=True)
 
 
 # --- the window, and the `_time` rule ---------------------------------------------------
