@@ -18,6 +18,13 @@ export interface Destination {
   /** Null means "all event types" — the default, and how the legacy single-webhook
    *  setup behaved before destinations existed. */
   subscribedEvents: string[] | null;
+  /** The most recent upstream refusal for this destination, read from the delivery
+   *  rows. Null when nothing has failed. This is the diagnosis the delivery loop
+   *  already wrote down and that nothing used to read back. */
+  lastError: string | null;
+  /** Deliveries still queued or mid-retry, and deliveries that exhausted their retries. */
+  pendingCount: number;
+  failedCount: number;
   lastSuccessAt: string | null;
   lastFailureAt: string | null;
   createdAt: string;
