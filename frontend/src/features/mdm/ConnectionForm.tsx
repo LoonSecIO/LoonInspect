@@ -68,6 +68,8 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
   const [credentialsJson, setCredentialsJson] = useState("");
   const [jsonParseError, setJsonParseError] = useState<string | null>(null);
 
+  const [showPrivileges, setShowPrivileges] = useState(false);
+
   const [testStatus, setTestStatus] = useState<TestStatus>("idle");
   const [testMessage, setTestMessage] = useState<string | null>(null);
   const [testDetail, setTestDetail] = useState<string | null>(null);
@@ -79,6 +81,8 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
 
   const credentialFields: ProviderCredentialField[] =
     providers.find((p) => p.provider === provider)?.credentialFields ?? [];
+  const requiredPrivileges: string[] =
+    providers.find((p) => p.provider === provider)?.requiredPrivileges ?? [];
 
   function setCredentialField(key: string, value: string) {
     setCredentials((current) => ({ ...current, [key]: value }));
@@ -301,6 +305,35 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
           </div>
         )}
 
+        {/* The privileges the credentials will need on the other side, served by
+            /api/mdm/providers rather than written out here: this is the second place an
+            operator could read them and the first place they will, and a list kept in
+            the form would be free to drift from the endpoints the client calls. Behind
+            a toggle because it is setup-time reading; the sentence about what "Test
+            connection" actually proves is not, so it stays visible below. */}
+        {requiredPrivileges.length > 0 && (
+          <div className="space-y-1 pt-1">
+            <button
+              type="button"
+              className="text-xs font-medium text-primary underline-offset-2 hover:underline"
+              onClick={() => setShowPrivileges((current) => !current)}
+            >
+              {showPrivileges ? t.connectionForm.hidePrivileges : t.connectionForm.showPrivileges}
+            </button>
+            {showPrivileges && (
+              <div className="space-y-2 rounded-md border p-3 text-xs text-muted-foreground">
+                <p>{t.connectionForm.privilegesIntro}</p>
+                <ul className="list-disc space-y-0.5 pl-4 font-mono text-foreground">
+                  {requiredPrivileges.map((privilege) => (
+                    <li key={privilege}>{privilege}</li>
+                  ))}
+                </ul>
+                <p>{t.connectionForm.privilegesExactNames}</p>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center gap-3 pt-1">
           <Button
             type="button"
@@ -340,6 +373,11 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
             </button>
           )}
         </div>
+
+        {/* Always shown, never only after a green tick: a role with no read privileges
+            passes this test, because the token exchange is the one Jamf call that needs
+            no privilege. The empty first sweep is otherwise the first hint. */}
+        <p className="text-xs text-muted-foreground">{t.connectionForm.testProvesOnlyAuth}</p>
 
         {showTestDetail && testDetail && (
           <pre className="max-h-48 overflow-auto rounded-md bg-muted p-2 text-xs">{testDetail}</pre>

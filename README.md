@@ -103,7 +103,42 @@ are read once, when the database volume is first created.
 
 A SIEM webhook URL is optional for a first run. Jamf Pro connections aren't configured via `.env` — add them from the app itself once it's running, at `/api/mdm/connections` or the Settings page.
 
-### 3. Build and run
+### 3. Create the Jamf Pro API Role and client
+
+Do this in Jamf Pro before adding the connection, at **Settings → System → API roles and
+clients**. Create an **API Role** holding the privileges below, then an **API Client**
+assigned to that role; the client's Client ID and Client Secret are the two values
+LoonInspect asks for. Everything LoonInspect does to Jamf Pro is a read — no privilege
+below writes anything, and none is a CRUD privilege.
+
+| Jamf Pro privilege | What it buys | Without it |
+| --- | --- | --- |
+| `Read Computers` | Computer inventory, and the per-device fetch a webhook triggers | **Nothing works.** Every sweep and every webhook fetch fails |
+| `Read Smart Computer Groups` | Smart-group definitions and their criteria | Devices still sync; group definitions are not observed, and the run log says so |
+| `Read Computer Inventory Collection Settings` | What Jamf was configured to collect — the "aperture" recorded beside every reading | Readings are kept with `available: false`, so a later collection change can't be told apart from a real device change |
+| `Read Departments` | Department names | `departmentId` is stored and filterable, but shows as a bare number |
+| `Read Buildings` | Building names | `buildingId` is stored and filterable, but shows as a bare number |
+
+Type the names exactly as spelled above — they are Jamf's own strings, and the API Role
+editor searches on them.
+
+> **The "Test connection" button does not check any of this.** It performs the OAuth
+> client-credentials exchange and nothing else, because that is the only call to Jamf
+> Pro that needs no privilege. An API Role with every box unticked passes the test and
+> then sweeps zero devices. If a connection tests green and the first run comes back
+> empty, the role is where to look.
+
+**Jamf Pro version.** This is verified against **Jamf Pro 11.31.1**. The client calls
+the newest generation of each endpoint family — `v4` computer inventory, `v3` smart
+groups, `v2` inventory collection settings — and Jamf's API reference does not state
+which release first served them, so we don't publish a minimum: 11.31.1 is the version
+we can stand behind, not the earliest that works. Two consequences worth knowing on an
+older server: the inventory reads have no fallback to an older endpoint version, so a
+Jamf Pro that doesn't serve `v4` fails outright rather than degrading; and
+`cfBundleVersion` arrived in Jamf Pro 11.31, so before that a build-only bump under an
+unchanged marketing version is not visible to anyone, including Jamf.
+
+### 4. Build and run
 
 ```bash
 GIT_SHA=$(git rev-parse --short HEAD) docker compose up --build
@@ -113,7 +148,7 @@ This builds the frontend, bundles it into the FastAPI image, and starts the app 
 
 > **Note:** the container logs and `docker ps` will show the address as `0.0.0.0:8001` — that's the server listening on all interfaces, not a URL you can open. Use `http://localhost:8001` (or `127.0.0.1:8001`) in your browser instead; some browsers will refuse to navigate to `0.0.0.0` directly.
 
-### 4. Point it at Splunk
+### 5. Point it at Splunk
 
 The onboarding stepper's third step is "Send it to Splunk", and there is more to it than
 a URL: HEC ships disabled, the "Secret" field means the HEC token, the index comes from

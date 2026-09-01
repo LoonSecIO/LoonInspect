@@ -12,9 +12,10 @@ from app.core.auth import require
 from app.core.database import get_db, ping
 from app.core.permissions import Permission
 from app.mdm.credentials import CREDENTIAL_SCHEMAS, field_specs
+from app.mdm.jamf.privileges import privilege_names
 from app.models.schema import MdmSyncState
 from app.schemas.connections import ProviderCredentialField, ProviderInfo
-from app.schemas.payload import MdmSyncStatusOut
+from app.schemas.payload import MdmProvider, MdmSyncStatusOut
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +76,20 @@ async def mdm_status(db: AsyncSession = Depends(get_db)) -> list[MdmSyncState]:
     dependencies=[Depends(require(Permission.CONNECTION_READ))],
 )
 async def list_providers() -> list[ProviderInfo]:
+    """What the connection form needs to draw itself — including the privileges the
+    credentials will need on the other side.
+
+    The privilege list is served rather than hardcoded in the form because the form is
+    the second place an operator could have read it and the first place they will. It
+    is keyed off `provider` explicitly, the way `mdm.factory` refuses to pretend it
+    dispatches: a sibling vertical added later brings its own list, and inheriting
+    Jamf's by falling through would be worse than showing none.
+    """
     return [
         ProviderInfo(
             provider=provider,
             credential_fields=[ProviderCredentialField(**spec) for spec in field_specs(schema)],
+            required_privileges=privilege_names() if provider is MdmProvider.jamf else [],
         )
         for provider, schema in CREDENTIAL_SCHEMAS.items()
     ]

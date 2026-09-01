@@ -14,6 +14,10 @@ export interface ProviderCredentialField {
 export interface ProviderInfo {
   provider: MdmProviderType;
   credentialFields: ProviderCredentialField[];
+  /** Jamf's own privilege names, served from app.mdm.jamf.privileges. Rendered
+   *  verbatim and never translated — they are what gets typed into Jamf's API Role
+   *  editor, which searches on the English strings. */
+  requiredPrivileges: string[];
 }
 
 export interface MdmConnection {

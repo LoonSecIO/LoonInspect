@@ -837,6 +837,14 @@ export const de: Translations = {
     jsonParsedHint: "Felder aus JSON übernommen.",
     loadingFields: "Felder für diesen Anbieter werden geladen...",
     setLeaveBlank: "(gesetzt — leer lassen, um beizubehalten)",
+    showPrivileges: "Welche Jamf-Pro-Berechtigungen werden benötigt?",
+    hidePrivileges: "Berechtigungen ausblenden",
+    privilegesIntro:
+      "Die diesem API-Client zugewiesene API-Rolle braucht diese Leseberechtigungen. Alle fünf sind Lesezugriffe; keine schreibt etwas nach Jamf Pro.",
+    privilegesExactNames:
+      "Genau so eingeben, wie hier geschrieben — das sind Jamfs eigene Bezeichnungen, und der Editor für API-Rollen sucht danach.",
+    testProvesOnlyAuth:
+      "„Verbindung testen“ tauscht diese Zugangsdaten nur gegen ein Token — der einzige Jamf-Pro-Aufruf, der keine Berechtigung braucht. Die API-Rolle wird dabei nicht geprüft: Eine Rolle ohne jede Berechtigung besteht den Test und synchronisiert danach kein einziges Gerät.",
     testConnection: "Verbindung testen",
     testing: "Wird getestet...",
     testRequestFailed: "Testanfrage fehlgeschlagen.",
