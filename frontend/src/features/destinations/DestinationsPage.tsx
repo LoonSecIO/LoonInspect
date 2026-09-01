@@ -49,7 +49,10 @@ const ELASTIC_DEFAULT_INDEX = "logs-looninspect.events-default";
 
 const URL_PLACEHOLDERS: Record<DestinationType, string> = {
   generic_webhook: "https://…",
-  splunk_hec: "https://…",
+  // Path included: delivery POSTs to this URL verbatim and appends nothing, unlike the
+  // Elastic branch, which builds {url}/{index}/_bulk. A bare "https://…" left the
+  // operator to supply /services/collector and 8088 from outside knowledge.
+  splunk_hec: "https://splunk.example.com:8088/services/collector",
   elastic: "https://your-cluster.es.example.com:9243",
   // The shape RunReveal's Structured Webhook source hands out under Source Details.
   runreveal: "https://api.runreveal.com/sources/hook/<webhookId>"
@@ -277,6 +280,7 @@ export function DestinationsPage() {
               value={form.url}
               onChange={(event) => setForm((current) => ({ ...current, url: event.target.value }))}
             />
+            {form.type === "splunk_hec" && <p className="text-xs text-muted-foreground">{t.destinations.urlHintSplunk}</p>}
             {form.type === "elastic" && <p className="text-xs text-muted-foreground">{t.destinations.urlHintElastic}</p>}
             {form.type === "runreveal" && (
               <p className="text-xs text-muted-foreground">{t.destinations.urlHintRunReveal}</p>

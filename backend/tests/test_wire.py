@@ -12,10 +12,12 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
-from app.core.outbox import _build_body
+from app.core.outbox import _attempt_delivery, _build_body
 from app.core.wire import ENVELOPE, envelope, instance_label
+from app.models.schema import Destination, EventOutbox
 
 SPLUNK = SimpleNamespace(type="splunk_hec")
 WEBHOOK = SimpleNamespace(type="webhook")
@@ -97,11 +99,68 @@ def test_the_envelope_is_lifted_beside_the_body_and_never_into_it() -> None:
     assert "sourcetype" not in body
 
 
+def test_no_index_is_sent_so_the_hec_token_alone_decides_where_events_land() -> None:
+    """docs/splunk-setup.md tells the operator to scope the token to exactly one index,
+    on the grounds that the token's own index list is the *only* thing choosing the
+    destination index. Start sending `index` here and that instruction silently becomes
+    wrong: a token allowed several indexes would write wherever the body said, and the
+    least-privilege setup the doc asks for would stop being the control it claims to be.
+    """
+    payload = {
+        "event": "device.inventory.changed",
+        ENVELOPE: envelope(
+            occurred_at=datetime(2026, 8, 31, tzinfo=timezone.utc),
+            host="kyle-mbp",
+            source="acme.jamfcloud.com",
+        ),
+    }
+    body = _build_body(SPLUNK, payload)
+
+    assert "index" not in body
+    # Nor smuggled in beside the envelope hints: the body is the wrapper plus exactly
+    # the three fields wire.envelope() produces.
+    assert set(body) == {"event", "time", "host", "source"}
+
+
 def test_the_envelope_never_reaches_a_non_splunk_destination() -> None:
     """It is outbox transport, not vocabulary. A generic webhook receiver must never see
     it, or the reserved key becomes part of the contract by accident."""
     payload = {"event": "device.inventory.changed", ENVELOPE: {"host": "kyle-mbp"}}
     assert _build_body(WEBHOOK, payload) == {"event": "device.inventory.changed"}
+
+
+async def test_a_splunk_delivery_posts_the_configured_url_verbatim() -> None:
+    """docs/splunk-setup.md tells the operator to type the whole HEC endpoint, path
+    included, because delivery appends nothing to it — the Elastic branch is the one that
+    assembles `{url}/{index}/_bulk`. If that ever stopped being true, the documented URL
+    would 404 for every reader who followed the instruction, and the doc is the only
+    place the `/services/collector` path is written down.
+
+    The `Splunk <token>` header rides along here for the same reason: the field is
+    labelled "Secret" in the UI, and the doc's claim that it takes the bare HEC token
+    with no scheme prefix is only true while `_build_headers` adds the prefix itself.
+    """
+    destination = Destination(
+        name="splunk",
+        type="splunk_hec",
+        url="https://splunk.example.com:8088/services/collector",
+        auth_type="splunk_hec",
+        auth_secret_encrypted="00000000-1111-2222-3333-444444444444",
+    )
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"text": "Success", "code": 0})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        ok, error = await _attempt_delivery(
+            client, destination, EventOutbox(event_type="device.inventory.changed", payload={"event": "x"})
+        )
+
+    assert (ok, error) == (True, None)
+    assert str(seen[0].url) == "https://splunk.example.com:8088/services/collector"
+    assert seen[0].headers["Authorization"] == "Splunk 00000000-1111-2222-3333-444444444444"
 
 
 def test_building_a_body_does_not_mutate_the_stored_payload() -> None:
