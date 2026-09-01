@@ -9,7 +9,12 @@ from app.core.auth import require
 from app.core.database import get_db
 from app.core.permissions import Permission
 from app.models.schema import Destination, OutboxDelivery
-from app.schemas.destinations import DestinationCreate, DestinationOut, DestinationUpdate
+from app.schemas.destinations import (
+    DestinationCreate,
+    DestinationOut,
+    DestinationUpdate,
+    resolve_auth_type,
+)
 
 router = APIRouter(prefix="/api/destinations", tags=["destinations"])
 
@@ -91,6 +96,17 @@ async def update_destination(
 ) -> DestinationOut:
     destination = await _get_or_404(db, destination_id)
     data = payload.model_dump(exclude_unset=True)
+
+    # `type` is immutable, so only here is the pairing knowable. Without this an
+    # operator could PATCH a working splunk_hec destination to authType "none" and
+    # silently stop every delivery it makes.
+    if "auth_type" in data:
+        try:
+            data["auth_type"] = resolve_auth_type(destination.type, data["auth_type"])
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            ) from exc
 
     if "name" in data:
         destination.name = data["name"]

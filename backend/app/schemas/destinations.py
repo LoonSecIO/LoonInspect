@@ -2,14 +2,45 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 from app.core.outbox import KNOWN_EVENT_TYPES
 
-_VALID_TYPES = frozenset({"generic_webhook", "splunk_hec", "elastic", "runreveal"})
-_VALID_AUTH_TYPES = frozenset({"none", "bearer", "header", "splunk_hec", "elastic_api_key"})
+# Literals rather than a runtime membership test, so the four working values reach the
+# OpenAPI schema. A bare `str` published nothing, and an API-driven caller reading the
+# spec had no way to learn that `splunk_hec` was even a legal type.
+DestinationType = Literal["generic_webhook", "splunk_hec", "elastic", "runreveal"]
+AuthType = Literal["none", "bearer", "header", "splunk_hec", "elastic_api_key"]
+
+# The auth scheme each destination type requires. This coupling used to live *only* in
+# FIXED_AUTH in frontend/src/features/destinations/DestinationsPage.tsx, so the UI path
+# worked and the API path did not: POST {"type": "splunk_hec", "authSecret": "..."}
+# returned 201, encrypted and stored the token, defaulted authType to "none", and then
+# 401ed for ever — because core/outbox.py only sends `Authorization: Splunk` when
+# auth_type is "splunk_hec". A type absent here (generic_webhook) lets the operator
+# choose.
+_FIXED_AUTH: dict[str, str] = {
+    "splunk_hec": "splunk_hec",
+    "elastic": "elastic_api_key",
+    "runreveal": "bearer",
+}
+
+
+def resolve_auth_type(destination_type: str, auth_type: str | None) -> str:
+    """The auth scheme this destination will actually use, or a ValueError naming the
+    one it must use. `None` means the caller did not say, which is the common case for
+    a type that only has one right answer."""
+    required = _FIXED_AUTH.get(destination_type)
+    if auth_type is None:
+        return required or "none"
+    if required is not None and auth_type != required:
+        raise ValueError(
+            f"a {destination_type} destination must use authType '{required}', not '{auth_type}'"
+        )
+    return auth_type
 
 # Elasticsearch's own index/data-stream naming rules, checked here so a bad name is a
 # 422 at configuration time instead of a per-item bulk rejection discovered in the
@@ -65,9 +96,11 @@ class DestinationOut(_CamelModel):
 
 class DestinationCreate(_CamelModel):
     name: str = Field(min_length=1, max_length=255)
-    type: str = "generic_webhook"
+    type: DestinationType = "generic_webhook"
     url: str = Field(min_length=1, max_length=1024)
-    auth_type: str = "none"
+    # Omit and it is derived from `type`; every type but generic_webhook has exactly
+    # one right answer.
+    auth_type: AuthType | None = None
     auth_header_name: str | None = None
     auth_secret: str | None = None
     elastic_index: str | None = Field(default=None, min_length=1, max_length=255)
@@ -76,10 +109,7 @@ class DestinationCreate(_CamelModel):
 
     @model_validator(mode="after")
     def _validate(self) -> DestinationCreate:
-        if self.type not in _VALID_TYPES:
-            raise ValueError(f"type must be one of {sorted(_VALID_TYPES)}")
-        if self.auth_type not in _VALID_AUTH_TYPES:
-            raise ValueError(f"authType must be one of {sorted(_VALID_AUTH_TYPES)}")
+        self.auth_type = resolve_auth_type(self.type, self.auth_type)
         if self.auth_type == "header" and not self.auth_header_name:
             raise ValueError("authHeaderName is required when authType is 'header'")
         if self.auth_type != "none" and not self.auth_secret:
@@ -92,7 +122,9 @@ class DestinationCreate(_CamelModel):
 class DestinationUpdate(_CamelModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     url: str | None = Field(default=None, min_length=1, max_length=1024)
-    auth_type: str | None = None
+    # `type` is immutable after creation, so whether this is legal depends on the
+    # stored type — checked in api/destinations.py, which knows it.
+    auth_type: AuthType | None = None
     auth_header_name: str | None = None
     # Provide to rotate the secret; omit to leave the stored one unchanged. There is no
     # way to clear it back to none via this field alone — set authType to "none".
@@ -104,8 +136,6 @@ class DestinationUpdate(_CamelModel):
 
     @model_validator(mode="after")
     def _validate(self) -> DestinationUpdate:
-        if self.auth_type is not None and self.auth_type not in _VALID_AUTH_TYPES:
-            raise ValueError(f"authType must be one of {sorted(_VALID_AUTH_TYPES)}")
         if self.auth_type == "header" and not self.auth_header_name:
             raise ValueError("authHeaderName is required when authType is 'header'")
         _validate_elastic_index(self.elastic_index)

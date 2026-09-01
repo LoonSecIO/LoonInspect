@@ -186,3 +186,84 @@ async def test_migration_appends_run_failed_to_explicit_subscription_lists(db) -
         await db.rollback()
         await db.execute(delete(Destination).where(Destination.id.in_(list(ids.values()))))
         await db.commit()
+
+
+# --- the type/authType coupling (the API path that used to 401 for ever) ------------
+
+
+def test_splunk_hec_derives_its_auth_type_when_the_caller_omits_it() -> None:
+    """The defect this closes: POST {"type": "splunk_hec", "authSecret": "..."} returned
+    201 with authType "none", stored the token, and then 401ed on every delivery,
+    because outbox.py only sends `Authorization: Splunk` when auth_type is splunk_hec.
+    The coupling lived only in the frontend's FIXED_AUTH map."""
+    from app.schemas.destinations import DestinationCreate
+
+    created = DestinationCreate(
+        name="splunk", type="splunk_hec", url="https://splunk.example:8088/services/collector",
+        auth_secret="token",
+    )
+    assert created.auth_type == "splunk_hec"
+
+
+def test_every_fixed_type_derives_its_own_auth_type() -> None:
+    from app.schemas.destinations import DestinationCreate
+
+    for destination_type, expected in (("elastic", "elastic_api_key"), ("runreveal", "bearer")):
+        created = DestinationCreate(
+            name=destination_type, type=destination_type,
+            url="https://example.test/ingest", auth_secret="s",
+        )
+        assert created.auth_type == expected
+
+
+def test_generic_webhook_still_defaults_to_none_and_lets_the_operator_choose() -> None:
+    from app.schemas.destinations import DestinationCreate
+
+    assert DestinationCreate(name="hook", url="https://example.test/hook").auth_type == "none"
+    chosen = DestinationCreate(
+        name="hook", type="generic_webhook", url="https://example.test/hook",
+        auth_type="bearer", auth_secret="s",
+    )
+    assert chosen.auth_type == "bearer"
+
+
+def test_contradicting_a_fixed_auth_type_is_refused_and_names_the_right_one() -> None:
+    from app.schemas.destinations import DestinationCreate
+
+    with pytest.raises(ValidationError) as exc:
+        DestinationCreate(
+            name="splunk", type="splunk_hec",
+            url="https://splunk.example:8088/services/collector",
+            auth_type="none", auth_secret="token",
+        )
+    assert "splunk_hec" in str(exc.value)
+
+
+def test_a_splunk_destination_without_a_secret_is_refused() -> None:
+    """Falls out of deriving the auth type: authSecret is required unless authType is
+    "none", and a splunk_hec destination can no longer claim to be "none"."""
+    from app.schemas.destinations import DestinationCreate
+
+    with pytest.raises(ValidationError):
+        DestinationCreate(
+            name="splunk", type="splunk_hec",
+            url="https://splunk.example:8088/services/collector",
+        )
+
+
+def test_an_unknown_type_is_refused_by_the_schema() -> None:
+    from app.schemas.destinations import DestinationCreate
+
+    with pytest.raises(ValidationError):
+        DestinationCreate(name="x", type="datadog", url="https://example.test/x")
+
+
+def test_the_openapi_schema_publishes_the_four_working_types() -> None:
+    """A bare `str` published nothing, so an API-driven caller reading the spec could not
+    learn that splunk_hec was a legal value at all."""
+    from app.schemas.destinations import DestinationCreate
+
+    schema = DestinationCreate.model_json_schema()
+    published = schema["properties"]["type"]
+    values = published.get("enum") or schema["$defs"][published["allOf"][0]["$ref"].rsplit("/", 1)[-1]]["enum"]
+    assert set(values) == {"generic_webhook", "splunk_hec", "elastic", "runreveal"}
