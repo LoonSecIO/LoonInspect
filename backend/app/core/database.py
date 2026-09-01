@@ -121,6 +121,24 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+async def ping() -> None:
+    """One round trip that proves the database is *answering*, not merely reachable.
+
+    `engine.connect()` rather than a session from the factory, and not `get_db`:
+    a session is the tenancy-carrying object and a liveness probe has no tenant to
+    carry, so borrowing one would either bind a tenant that means nothing or leave the
+    GUC unset and make the probe's own behaviour depend on RLS. This still goes
+    through the same pool every request uses, which is the point — a pool with no free
+    connection is an outage the probe has to see, and a check that dodged the pool
+    would report health while every real request queued.
+
+    Raises rather than returning a bool so the caller decides the consequence: startup
+    retries, the health endpoint answers 503.
+    """
+    async with engine.connect() as connection:
+        await connection.execute(text("SELECT 1"))
+
+
 def _run_migrations() -> None:
     # Alembic's command API is sync and internally does its own asyncio.run() for the
     # async engine, so this must run off the main event loop thread (see init_db()).
@@ -144,8 +162,7 @@ async def _wait_for_database() -> None:
     while True:
         attempt += 1
         try:
-            async with engine.connect() as connection:
-                await connection.execute(text("SELECT 1"))
+            await ping()
             if attempt > 1:
                 logger.info("database accepted connections", extra={"attempts": attempt})
             return
