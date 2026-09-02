@@ -312,11 +312,16 @@ might eventually need to reference. Designed, **not implemented**:
   point-in-time/"NOT in group" queries work without Jamf's inverted-smart-group trick.
   New `device.group.joined`/`device.group.left` event types would ride the same outbox.
   Not started.
-- **LoonVD / CVE enrichment** — still unbuilt, and the stub is gone too:
-  `LoonSecIoClient` was excised with the rest of the provider stubs in #79
-  (Jamf-only at launch; `schemas/connections.py` now refuses the `loonsecio`
-  provider on set). Blocked on the real API contract (endpoint, auth, response
-  shape, error semantics) from the author, not a technical blocker.
+- **LoonVD / CVE enrichment** — **contract ruled 2026-09-02 (#113), still unbuilt.**
+  The keys, the id namespaces, the supersede lifecycle and the tiers are
+  [`docs/vulnerabilities.md`](vulnerabilities.md); the wrapper key and sourcetype are
+  frozen in [`docs/splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md). The "blocked
+  on the real API contract from the author" framing this entry carried is superseded:
+  v0 is a **local hash-join against a static corpus**, so there is no endpoint, no auth
+  and no response shape to wait for. The stub is still gone — `LoonSecIoClient` was
+  excised with the rest of the provider stubs in #79 (Jamf-only at launch;
+  `schemas/connections.py` refuses the `loonsecio` provider on set) — and nothing in the
+  ruled v0 brings it back.
 
 ## Suggested entry point for the next conversation
 

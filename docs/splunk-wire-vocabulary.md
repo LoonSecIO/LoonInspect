@@ -2,8 +2,9 @@
 
 Status: **frozen** · Ruled in [#188](https://github.com/LoonSecIO/LoonInspect/issues/188),
 2026-08-31 and 2026-09-01 · Amended, additively, in
-[#229](https://github.com/LoonSecIO/LoonInspect/issues/229) and
-[#220](https://github.com/LoonSecIO/LoonInspect/issues/220), 2026-09-02 · Registry
+[#229](https://github.com/LoonSecIO/LoonInspect/issues/229),
+[#220](https://github.com/LoonSecIO/LoonInspect/issues/220) and
+[#113](https://github.com/LoonSecIO/LoonInspect/issues/113), 2026-09-02 · Registry
 generated from [`app/core/wire_vocabulary.py`](../backend/app/core/wire_vocabulary.py)
 
 The vocabulary had been ruled three times, differently — the draft, #81 on 2026-08-24,
@@ -23,8 +24,9 @@ collected without a name to travel under, and a name cannot outlive its section.
 
 Companion documents: the casing law and the `deviceMeta` block are in
 [`docs/runs.md`](runs.md) (#189); the envelope — `time` / `host` / `source` — is
-[`app/core/wire.py`](../backend/app/core/wire.py); what an operator does with all of it
-is [`docs/splunk-setup.md`](splunk-setup.md).
+[`app/core/wire.py`](../backend/app/core/wire.py); the `vuln` enrichment's own keys and
+their lifecycle are [`docs/vulnerabilities.md`](vulnerabilities.md) (#113); what an
+operator does with all of it is [`docs/splunk-setup.md`](splunk-setup.md).
 
 ---
 
@@ -158,13 +160,19 @@ licence. Clause one is verbatim from #188's acceptance list; the set is asserted
    null-equivalent, or is absent under the null-dropping rule that already governs
    `deviceMeta`.
 4. Absence of a key means the event predates it, never that its value is "none". A
-   vocabulary needing to say *never* says so with a sentinel — which is why `days_oldest`
-   uses `-1`.
+   vocabulary needing to say *never* says so with a sentinel — which is why
+   `daysOldestPublished` uses `-1`.
 5. A sourcetype string, once minted, is permanent. New shapes get new sourcetypes;
    existing ones are not repurposed.
 6. `schemaVersion` rides the `deviceMeta` block and **never** the sourcetype. A version
    in the sourcetype breaks every dashboard on every bump, so it never gets bumped, so it
    is a lie.
+
+> **Correction, 2026-09-02.** Clause 4 cited its sentinel example as `days_oldest`, a
+> snake_case name minted before this document froze camelCase and before
+> [#113](https://github.com/LoonSecIO/LoonInspect/issues/113) named the clock in the key.
+> The clause is unchanged in substance; the key it cites is `daysOldestPublished`, and
+> the vulnerability contract it belongs to is [`docs/vulnerabilities.md`](vulnerabilities.md).
 
 `schemaVersion` is deliberately distinct from `CONTRACT_VERSION`
 (`app/mdm/jamf/contract.py`), which governs observation digests and never appears on a
