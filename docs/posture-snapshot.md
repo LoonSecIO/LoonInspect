@@ -160,13 +160,21 @@ that cell is written for the destination-configured case.
 Frozen definitions, no writer yet. Each activates with its feature's table — no
 zero-priming: no key records before the thing it measures exists.
 
+**The `vuln.*` activation rule, ruled on #113 (2026-09-02).** While a tenant has never
+run the corpus join — every app reading `assessment: off` on the wire — the four
+`vuln.*` keys write **no rows, not zeros**. This is the guardrail above applied to a
+case a naive recorder gets wrong: a zero here is not "no vulnerabilities", it is "never
+assessed", and writing it manufactures a clean bill of health for a fleet nobody looked
+at. The keys activate the night the join first runs for that tenant, and their tape
+starts then. The contract they gate is [`docs/vulnerabilities.md`](vulnerabilities.md).
+
 | Key | Status | Definition | Source |
 | --- | --- | --- | --- |
 | `alerts.open` | RESERVED | Open rows in #101's alerts table at capture. Activates with that table. | — |
 | `alerts.opened_24h` | RESERVED | Alerts opened in the trailing 24h. Activates with #101's alerts table. | — |
 | `vuln.apps_affected` | RESERVED | Distinct apps with at least one LoonVD-known vulnerability. Gated on the LoonVD wire. | — |
 | `vuln.apps_kev_affected` | RESERVED | Distinct apps carrying a KEV-listed vulnerability. Gated on the LoonVD wire. | — |
-| `vuln.apps_unknown` | RESERVED | Apps LoonVD cannot assess (`unknown_app`). Gated on the LoonVD wire. | — |
+| `vuln.apps_unknown` | RESERVED | Apps LoonVD cannot assess (`unknown_app` — a ruled wire value, deliberately snake_case). Gated on the LoonVD wire. | — |
 | `vuln.devices_affected` | RESERVED | Distinct devices carrying at least one affected app. Gated on the LoonVD wire. | — |
 
 ## The process line

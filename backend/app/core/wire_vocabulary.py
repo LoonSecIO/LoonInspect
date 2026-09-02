@@ -168,8 +168,8 @@ ADDITIVE_ONLY_CLAUSES: tuple[str, ...] = (
     "null-equivalent, or is absent under the null-dropping rule that already governs "
     "deviceMeta.",
     "Absence of a key means the event predates it, never that its value is 'none'. A "
-    "vocabulary needing to say 'never' says so with a sentinel, which is why days_oldest "
-    "uses -1.",
+    "vocabulary needing to say 'never' says so with a sentinel, which is why "
+    "daysOldestPublished uses -1.",
     "A sourcetype string, once minted, is permanent. New shapes get new sourcetypes; "
     "existing ones are not repurposed.",
     "schemaVersion rides the deviceMeta block and never the sourcetype. A version in the "

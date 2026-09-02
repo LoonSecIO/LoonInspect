@@ -168,3 +168,29 @@ def test_alert_is_singular_app_carried_and_written_by_nothing() -> None:
     assert [carrier for carrier, leaves in ENRICHMENTS.items() if "alert" in leaves] == ["app"]
     assert sourcetype("app", leaf="alert") == "loon:jamf:mac:app:alert"
     assert {"alerts.open", "alerts.opened_24h"} <= set(ACTIVE_KEYS) | set(RESERVED_KEYS)
+
+
+def test_the_sentinel_clause_names_the_key_that_ruled_its_clock() -> None:
+    """#113, 2026-09-02: clause 4's example was `days_oldest`, minted before this
+    vocabulary froze camelCase and before the vulnerability contract put the clock's
+    basis in the key name. The clause is unchanged in substance; the spelling it cites
+    is not. `cve_l` and `cves_truncated` were the same design record's names for the id
+    list and its flag, and lost to `vulnIDs` / `vulnIDsTruncated` on the same day.
+
+    Pinned in both directions because the refused spellings are still readable on #113,
+    on #81 ruling 5 and in the 2026-08-25 design record, and a contract that lives in a
+    session record is one that gets re-argued by whoever builds it — which is what
+    docs/vulnerabilities.md exists to stop.
+    """
+    clauses = " ".join(ADDITIVE_ONLY_CLAUSES)
+    assert "daysOldestPublished" in clauses
+    for refused in ("days_oldest", "cve_l", "cves_truncated", "vulnerabilities{}"):
+        assert refused not in clauses, f"{refused} was ruled out on #113"
+
+    contract = (DOC.parent / "vulnerabilities.md").read_text()
+    for ruled in ("daysOldestPublished", "vulnIDs", "vulnIDsTruncated", "LOCAL-YYYY-NNNNNN", "unknown_app"):
+        assert ruled in contract, f"docs/vulnerabilities.md must carry the ruled name {ruled}"
+    assert "loon:jamf:mac:app:vuln" in contract, (
+        "the contract must say which sourcetype the lifecycle records take — the summary "
+        "rides the app sub-event inline, so the compound leaf is not the summary's"
+    )
