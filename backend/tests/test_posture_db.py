@@ -398,3 +398,72 @@ async def test_an_empty_queue_writes_no_oldest_pending_row(db, fleet) -> None:
     assert captured["outbox.pending"] == 0  # zero is written as 0; only "did not apply" is absent
     assert written == len(ACTIVE_KEYS) - 1 == len(captured)
     assert captured["runs.full_sweep_duration_s"] == 120.0
+
+
+async def test_every_captured_row_names_the_population_it_counted(db, fleet) -> None:
+    """#230: the population is on the row, not inferred from the era it was written in.
+    v0 reads computers only, so a capture stamps `macos` on every key it writes."""
+    from app.core.posture import CAPTURE_PLATFORM, record_full_sweep_snapshot
+    from app.models.schema import PostureSnapshot, Run
+
+    now = _now()
+    run = Run(
+        id=uuidlib.uuid4(), mdm_connection_id=fleet.connection.id, trigger="sweep", comparison="delta",
+        lock_class="device_sweep", status="succeeded", window_start=now - timedelta(seconds=60),
+        started_at=now - timedelta(seconds=60), finished_at=now, heartbeat_at=now,
+    )
+    db.add(run)
+    await db.commit()
+
+    written = await record_full_sweep_snapshot(db, run_id=run.id)
+    rows = (await db.execute(select(PostureSnapshot).where(PostureSnapshot.full_sweep_run_id == run.id))).scalars().all()
+
+    assert written == len(rows) > 0
+    assert CAPTURE_PLATFORM == "macos"
+    assert {row.platform for row in rows} == {"macos"}
+
+
+async def test_one_row_per_key_per_capture_per_population(db, fleet) -> None:
+    """uq_posture_snapshot_capture (#230): the invariant every reader of the tape already
+    assumes, finally declared. A `macos` row and an `all` roll-up row for one key at one
+    instant are two legitimate rows — the constraint does not and must not stop them.
+    What it stops is the second row for the *same* population, which is what would make
+    a correctly-filtered read double. It lands now because today the table satisfies it
+    trivially; once v5 writes several populations per capture, adding it needs a cleanup
+    pass first."""
+    from sqlalchemy.exc import IntegrityError
+
+    from app.core.posture import CAPTURE_PLATFORM, PLATFORM_ROLLUP, record_full_sweep_snapshot
+    from app.models.schema import PostureSnapshot, Run
+
+    now = _now()
+    run = Run(
+        id=uuidlib.uuid4(), mdm_connection_id=fleet.connection.id, trigger="sweep", comparison="delta",
+        lock_class="device_sweep", status="succeeded", window_start=now - timedelta(seconds=60),
+        started_at=now - timedelta(seconds=60), finished_at=now, heartbeat_at=now,
+    )
+    db.add(run)
+    await db.commit()
+
+    await record_full_sweep_snapshot(db, run_id=run.id)
+    row = (
+        await db.execute(select(PostureSnapshot).where(PostureSnapshot.full_sweep_run_id == run.id))
+    ).scalars().first()
+    assert row is not None
+    key, value, captured_at = row.metric_key, row.value, row.captured_at
+
+    # A different population at the same instant is a different row, and permitted.
+    db.add(PostureSnapshot(
+        metric_key=key, platform=PLATFORM_ROLLUP, value=value,
+        captured_at=captured_at, full_sweep_run_id=run.id,
+    ))
+    await db.commit()
+
+    # The same (tenant, key, platform, capture) is not.
+    db.add(PostureSnapshot(
+        metric_key=key, platform=CAPTURE_PLATFORM, value=value,
+        captured_at=captured_at, full_sweep_run_id=run.id,
+    ))
+    with pytest.raises(IntegrityError):
+        await db.commit()
+    await db.rollback()
