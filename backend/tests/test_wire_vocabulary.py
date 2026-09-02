@@ -17,11 +17,13 @@ from app.core.wire_vocabulary import (
     ENRICHMENTS,
     PRODUCER,
     SECTION_WRAPPERS,
+    SUB_EVENT_KEYS,
     enrichment_rows,
     registry_rows,
     sourcetype,
 )
 from app.mdm.jamf.contract import SECTIONS
+from app.schemas.payload import InventoryChangedEvent
 
 DOC = Path(__file__).resolve().parents[2] / "docs" / "splunk-wire-vocabulary.md"
 
@@ -93,6 +95,40 @@ def test_doc_registry_table_is_generated_from_sections() -> None:
 def test_doc_enrichment_table_matches_the_registry() -> None:
     documented = _doc_rows("| Carrier | Enrichment | Sourcetype |")
     assert documented == enrichment_rows()
+
+
+def test_the_sub_event_keys_are_the_ruled_three() -> None:
+    """#220 (D1, from #81's close-out), 2026-09-02: what survives the fan-out split.
+
+    Pinned before the fan-out exists, which is the whole point — #242 has no sub-event to
+    correct once a customer has indexed one. `event` is the snapshot's own type carried
+    down, not a per-sub-event discriminator; `sourcetype` is what distinguishes an app
+    from a certificate.
+    """
+    assert SUB_EVENT_KEYS == ("event", "jobID", "deviceMeta")
+    assert all(_WIRE_KEY.match(key) for key in SUB_EVENT_KEYS), "the casing law covers these too"
+
+
+def test_the_event_that_the_fan_out_expands_already_carries_all_three() -> None:
+    """The bridge from the ruling to the shipped model.
+
+    `_build_body` receives the stored payload and nothing else (`app.core.outbox`), so a
+    key the fan-out is required to stamp on every sub-event has to be on the event it
+    expands, or it is unreachable by the time the split happens. `jobID` at the root is
+    #220's hoist; before it, this assertion would have failed on that key alone.
+    """
+    wire_names = {
+        info.serialization_alias or name for name, info in InventoryChangedEvent.model_fields.items()
+    }
+    assert set(SUB_EVENT_KEYS) <= wire_names
+
+
+def test_doc_sub_event_table_matches_the_ruling() -> None:
+    documented = _doc_rows("| Key | What it carries | Ruled |")
+    assert tuple(row[0] for row in documented) == SUB_EVENT_KEYS, (
+        "docs/splunk-wire-vocabulary.md §6 must name exactly the keys in "
+        "app.core.wire_vocabulary.SUB_EVENT_KEYS, in order."
+    )
 
 
 def _prose(text: str) -> str:

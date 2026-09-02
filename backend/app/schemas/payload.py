@@ -115,6 +115,28 @@ class InventoryChangedEvent(BaseModel):
     """
 
     event: str = "device.inventory.changed"
+
+    # The run, at the event root as well as inside `deviceMeta` — ruled on #220,
+    # 2026-09-02, option 1 of four. Duplicated on purpose: `deviceMeta.jobID` is a name a
+    # customer's SPL may already carry and SPL fails silently on an unknown field, so it
+    # stays; the root copy is what makes the cross-family join the bare `jobID=$id$`
+    # docs/runs.md promises, instead of the two-term `jobID=$id$ OR deviceMeta.jobID=$id$`
+    # it had to caveat. Additive under clause 1 (app.core.wire_vocabulary), and a
+    # duplicate-on-purpose is not new here: `host` rides in both the envelope and the
+    # body on the same reasoning (app.core.outbox).
+    #
+    # The cost is ~47 bytes on the most-multiplied event on the wire once the fan-out
+    # lands (#242) — that is the whole argument the other three options made, and it was
+    # ruled against because a join every consumer writes twice, or writes once and
+    # silently under-reports on the highest-volume family, is the more expensive mistake.
+    #
+    # Absent rather than null when there is no run, mirroring the null-dropping rule
+    # `deviceMeta` already follows (#189, and clause 3 blesses it): a run is present on
+    # both the sweep and the webhook paths, so this is a defensive branch, and a null
+    # here would pay the bytes on every sub-event to say nothing. Set from the meta block
+    # itself in app.mdm.service.process_sync, so the two copies cannot disagree.
+    job_id: str | None = Field(default=None, serialization_alias="jobID")
+
     provider: MdmProvider
     device_external_id: str = Field(serialization_alias="deviceExternalID")
     added_apps: list[NormalizedApp] = Field(serialization_alias="addedApps")
