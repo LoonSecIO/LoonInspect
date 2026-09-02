@@ -46,13 +46,14 @@ catalog, so device pages and the Applications overview need no join.
 - **`app_catalog`** (RLS): `name`, `bundle_id`, `version`, `short_version`, the four keys
   (`app_hash`, `version_hash`, `key_title`, `key_full`), `first_seen_at`, `last_seen_at`, and the
   answer: `jamf_title_ids`, `patch_state` (latest | behind | ahead | unknown), `is_latest`,
-  `patch_available`, `patch_available_since`, `this_version_seen`, `latest_version`,
+  `patch_available`, `patch_available_since`, `releases_missed`, `this_version_seen`, `latest_version`,
   `latest_released_at`, `released_at` (Jamf's date for the installed version itself),
   `evaluated_at`, `evaluated_signature` (which catalog it was judged against: the title count and
   newest `synced_at`). Unique per tenant on `version_hash`.
 - **`app_catalog_title_matches`** (RLS): one row per (catalog row, Jamf title) — `basis`
   (`requirements` | `ea_assumed`), `state`, `version_known`, `on_latest`, `installed_version`,
-  `installed_released_at`, `latest_version`, `latest_released_at`, `first_newer_released_at`.
+  `installed_released_at`, `latest_version`, `latest_released_at`, `first_newer_released_at`,
+  `releases_missed`.
   Replaced wholesale when the row is judged; the Jamf Patch page's device counts come from here
   through the catalog row and `installed_apps.version_hash`.
 - **`app_catalog_versions`** (global, like `jamf_patch_titles`): Jamf's side as a local lookup —

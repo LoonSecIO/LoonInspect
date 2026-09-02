@@ -95,6 +95,7 @@ class TestRealDevice:
         (match,) = device_matches["Xcode.app"]
         assert match.title.name == "Apple Xcode" and match.basis == BASIS_REQUIREMENTS
         assert match.state == STATE_LATEST and match.on_latest and match.version_known
+        assert match.releases_missed == 0
         assert match.latest_version == "26.6" and match.latest_released_at == _ts("2026-06-25T23:45:58Z")
         summary = summarize(device_matches["Xcode.app"])
         assert summary.is_compliant is True and summary.patch_available is False
@@ -110,6 +111,7 @@ class TestRealDevice:
         summary = summarize(device_matches["Slack.app"])
         assert summary.patch_available is True and summary.is_compliant is False
         assert summary.patch_available_since == match.first_newer_released_at
+        assert match.releases_missed and summary.releases_missed == match.releases_missed
 
     def test_wireshark_resolves_to_its_line_and_the_rolling_title_only(self, device_matches) -> None:
         """Sixteen titles share org.wireshark.Wireshark; `Application Version like "4.2."`
@@ -120,6 +122,12 @@ class TestRealDevice:
         summary = summarize(matches)
         assert summary.title_ids == ["612", "5F6"]  # by name: "Wireshark" sorts before "Wireshark 4.2"
         assert summary.latest_version == "4.6.8" and summary.state == STATE_BEHIND
+        # #68's sentence: the date and the count come from one title — the 4.2 line, whose
+        # 4.2.1 is the earliest miss — never from a fold across the two.
+        by_id = {m.title.id: m for m in matches}
+        assert by_id["5F6"].releases_missed == 14 and by_id["612"].releases_missed == 25
+        assert summary.patch_available_since == by_id["5F6"].first_newer_released_at
+        assert summary.releases_missed == 14
 
     def test_camtasia_2022_is_latest_on_its_line_and_behind_the_rolling_title(self, device_matches) -> None:
         """Both answers are kept; the summary follows Kyle's rule — at least one title says
@@ -131,7 +139,8 @@ class TestRealDevice:
         summary = summarize(list(by_id.values()))
         assert summary.state == STATE_LATEST and summary.latest_version == "2022.6.10"
         assert summary.is_compliant is True and summary.patch_available is False and summary.this_version_seen is True
-        assert summary.patch_available_since is None and summary.title_ids == ["608", "514"]
+        assert summary.patch_available_since is None and summary.releases_missed is None
+        assert summary.title_ids == ["608", "514"]
 
     def test_safari_on_the_beta_is_ahead_of_the_catalog(self, device_matches) -> None:
         (match,) = device_matches["Safari.app"]

@@ -81,6 +81,7 @@ def _apply_summary(entry: AppCatalogEntry, matches: Sequence[TitleMatch], *, now
         entry.is_latest = None
         entry.patch_available = None
         entry.patch_available_since = None
+        entry.releases_missed = None
         entry.this_version_seen = None
         entry.latest_version = None
         entry.latest_released_at = None
@@ -91,6 +92,7 @@ def _apply_summary(entry: AppCatalogEntry, matches: Sequence[TitleMatch], *, now
     entry.is_latest = summary.is_compliant
     entry.patch_available = summary.patch_available
     entry.patch_available_since = summary.patch_available_since
+    entry.releases_missed = summary.releases_missed
     entry.this_version_seen = summary.this_version_seen
     entry.latest_version = summary.latest_version
     entry.latest_released_at = summary.latest_released_at
@@ -126,6 +128,7 @@ async def evaluate_entries(db: AsyncSession, entries: Sequence[AppCatalogEntry],
                     latest_version=match.latest_version,
                     latest_released_at=match.latest_released_at,
                     first_newer_released_at=match.first_newer_released_at,
+                    releases_missed=match.releases_missed,
                     evaluated_at=now,
                 )
             )
@@ -140,6 +143,7 @@ def copy_answer(entry: AppCatalogEntry, app: InstalledApp, *, now: datetime) -> 
     app.is_compliant = entry.is_latest
     app.patch_available = entry.patch_available
     app.patch_available_since = entry.patch_available_since
+    app.releases_missed = entry.releases_missed
     app.this_version_seen = entry.this_version_seen
     app.latest_version = entry.latest_version
     app.latest_released_at = entry.latest_released_at
@@ -221,6 +225,7 @@ async def refresh_tenant(db: AsyncSession, *, force: bool = False, now: datetime
                 is_compliant=entry.is_latest,
                 patch_available=entry.patch_available,
                 patch_available_since=entry.patch_available_since,
+                releases_missed=entry.releases_missed,
                 this_version_seen=entry.this_version_seen,
                 latest_version=entry.latest_version,
                 latest_released_at=entry.latest_released_at,

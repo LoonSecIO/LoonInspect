@@ -44,6 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.changes.policy import LEVELS, NORMAL
 from app.core.permissions import Role
 from app.core.runs import STATUS_FAILED, STATUS_SUCCEEDED, TRIGGER_SWEEP
+from app.mdm.patch.matching import STATE_BEHIND, STATE_UNKNOWN
 from app.models.schema import (
     Account,
     AccountRole,
@@ -66,13 +67,15 @@ logger = logging.getLogger(__name__)
 # frozen 168 hours from the capture instant, not a calendar boundary.
 _STALE_HOURS = 168
 _WINDOW_HOURS = 24
+# The laggard cut: 14 days in exact hours from the capture instant (#68).
+_LAGGARD_HOURS = 336
 
 # "Notable" is the closed LEVELS ordering at NORMAL or above — the same cut the change
 # policy's default preset draws ("high + normal on, low off"). Derived from LEVELS
 # rather than spelled as a literal pair so a change to the ordering is a change here.
 NOTABLE_LEVELS: tuple[str, ...] = tuple(LEVELS[: LEVELS.index(NORMAL) + 1])
 
-# Definitions v1 — the 23 active keys, in the order their rows are written. The names
+# Definitions v1 — the 25 active keys, in the order their rows are written. The names
 # are the contract: a definition change mints a new key, so a name in this tuple means
 # exactly what docs/posture-snapshot.md says it means, forever.
 ACTIVE_KEYS: tuple[str, ...] = (
@@ -89,6 +92,8 @@ ACTIVE_KEYS: tuple[str, ...] = (
     "patch.pairs_total",
     "patch.pairs_on_latest",
     "patch.titles_with_laggards",
+    "patch.pairs_laggard_over_14d",
+    "patch.pairs_unknown_build",
     "changes.notable_24h",
     "runs.sweeps_succeeded_24h",
     "runs.failed_24h",
@@ -106,7 +111,6 @@ ACTIVE_KEYS: tuple[str, ...] = (
 RESERVED_KEYS: tuple[str, ...] = (
     "alerts.open",
     "alerts.opened_24h",
-    "patch.pairs_laggard_over_14d",
     "vuln.apps_affected",
     "vuln.apps_kev_affected",
     "vuln.apps_unknown",
@@ -134,11 +138,12 @@ def _installed():
     return exists(select(InstalledApp.id).where(InstalledApp.version_hash == AppCatalogEntry.version_hash))
 
 
-def _patch_pairs(*, on_latest_only: bool = False):
+def _patch_pairs(*criteria):
     """Distinct (device, matched Jamf Patch title) install pairs — the
     AppCatalogTitleMatch → catalog row → InstalledApp join /api/jamf-patch counts devices
-    through, kept at the pair grain. `on_latest` follows the standing "latest = any title
-    says so" semantics the matcher already stamped on the row."""
+    through, kept at the pair grain. `criteria` are predicates on the match row: `on_latest`
+    follows the standing "latest = any title says so" semantics the matcher already stamped
+    on the row, and the dates are the row's own, so no fold across titles ever happens here."""
     stmt = (
         select(InstalledApp.device_id, AppCatalogTitleMatch.title_id)
         .join_from(
@@ -146,8 +151,8 @@ def _patch_pairs(*, on_latest_only: bool = False):
         )
         .join(InstalledApp, InstalledApp.version_hash == AppCatalogEntry.version_hash)
     )
-    if on_latest_only:
-        stmt = stmt.where(AppCatalogTitleMatch.on_latest.is_(True))
+    if criteria:
+        stmt = stmt.where(*criteria)
     return stmt.distinct().subquery()
 
 
@@ -219,7 +224,26 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
     # devices_on_latest < device_count. Coverage % derives at render; both inputs land.
     values["patch.pairs_total"] = await _count(db, select(func.count()).select_from(_patch_pairs()))
     values["patch.pairs_on_latest"] = await _count(
-        db, select(func.count()).select_from(_patch_pairs(on_latest_only=True))
+        db, select(func.count()).select_from(_patch_pairs(AppCatalogTitleMatch.on_latest.is_(True)))
+    )
+    # patch.pairs_laggard_over_14d — #68's clock, ruled 2026-09-02: Jamf's release date of the
+    # earliest listed version newer than the installed one, read from the pair's own title row.
+    # Behind only: an unlisted build cannot be placed against a specific missed update, so it
+    # gets its own key rather than a silent seat in this one. Both error directions are part of
+    # the definition — no severity filter (a superset of the Cyber Essentials number), and the
+    # matcher's dateless-list fallback to the latest version's date (an age that reads smaller).
+    laggard_cutoff = captured_at - timedelta(hours=_LAGGARD_HOURS)
+    values["patch.pairs_laggard_over_14d"] = await _count(
+        db,
+        select(func.count()).select_from(
+            _patch_pairs(
+                AppCatalogTitleMatch.state == STATE_BEHIND,
+                AppCatalogTitleMatch.first_newer_released_at < laggard_cutoff,
+            )
+        ),
+    )
+    values["patch.pairs_unknown_build"] = await _count(
+        db, select(func.count()).select_from(_patch_pairs(AppCatalogTitleMatch.state == STATE_UNKNOWN))
     )
     matched = (
         select(

@@ -23,6 +23,8 @@ export interface CatalogEntry {
   isLatest: boolean | null;
   patchAvailable: boolean | null;
   patchAvailableSince: string | null;
+  /** Listed versions newer than the installed one, on the title that dates patchAvailableSince (#68). */
+  releasesMissed: number | null;
   thisVersionSeen: boolean | null;
   latestVersion: string | null;
   latestReleasedAt: string | null;
