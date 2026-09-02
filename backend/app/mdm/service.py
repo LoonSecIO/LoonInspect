@@ -993,6 +993,11 @@ async def process_sync(
         await db.commit()
         return None
 
+    # Built once and read twice: the root `jobID` below is the same string this block
+    # carries, taken from the block rather than from a second `get_run()` call, so the
+    # duplicate the #220 ruling asked for cannot drift from its original.
+    meta = _device_meta(existing)
+
     event = InventoryChangedEvent(
         provider=device.mdm_provider,
         device_external_id=device.external_id,
@@ -1018,7 +1023,11 @@ async def process_sync(
         # the pull happened to take; a webhook carries the device's own reportDate. See
         # app.core.runs.event_time.
         occurred_at=event_time(device.last_inventory_at),
-        device_meta=_device_meta(existing),
+        # The run at the event root, duplicating `deviceMeta.jobID` (#220, ruled
+        # 2026-09-02). `.get`, not `[...]`: the block drops its nulls, so a run-less
+        # enqueue leaves both copies absent rather than one absent and one null.
+        job_id=meta.get("jobID"),
+        device_meta=meta,
     )
 
     # Enqueued in the same transaction as the device/app state change below, so "we
@@ -1029,6 +1038,11 @@ async def process_sync(
     # (app.core.wire) — `_build_body` can reach neither the run nor the connection, so
     # this is the only moment `source` and the occurrence time are both in hand.
     payload = event.model_dump(mode="json", by_alias=True)
+    if payload["jobID"] is None:
+        # Absent, not null — see the field's own note. Pydantic has no per-field
+        # `exclude_none`, and `exclude_none=True` on the whole dump would silently strip
+        # nulls out of every app in `addedApps` too, which is a shape change nobody ruled.
+        del payload["jobID"]
     payload[ENVELOPE] = envelope(
         occurred_at=event.occurred_at,
         host=existing.hostname,

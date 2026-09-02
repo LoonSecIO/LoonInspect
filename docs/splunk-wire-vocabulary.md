@@ -2,7 +2,8 @@
 
 Status: **frozen** · Ruled in [#188](https://github.com/LoonSecIO/LoonInspect/issues/188),
 2026-08-31 and 2026-09-01 · Amended, additively, in
-[#229](https://github.com/LoonSecIO/LoonInspect/issues/229), 2026-09-02 · Registry
+[#229](https://github.com/LoonSecIO/LoonInspect/issues/229) and
+[#220](https://github.com/LoonSecIO/LoonInspect/issues/220), 2026-09-02 · Registry
 generated from [`app/core/wire_vocabulary.py`](../backend/app/core/wire_vocabulary.py)
 
 The vocabulary had been ruled three times, differently — the draft, #81 on 2026-08-24,
@@ -169,7 +170,39 @@ licence. Clause one is verbatim from #188's acceptance list; the set is asserted
 (`app/mdm/jamf/contract.py`), which governs observation digests and never appears on a
 delivered event. It ships today as `WIRE_SCHEMA_VERSION` in `app/schemas/payload.py`.
 
-## 6. What is ruled here but not yet built
+## 6. The keys every sub-event carries
+
+Three, whatever sourcetype the sub-event lands under. Ruled on
+[#220](https://github.com/LoonSecIO/LoonInspect/issues/220), 2026-09-02, and named here
+rather than in the builder because the fan-out ([#242](https://github.com/LoonSecIO/LoonInspect/issues/242))
+is not written yet and the first sub-event ever emitted has to be right.
+
+| Key | What it carries | Ruled |
+| --- | --- | --- |
+| `event` | The snapshot's own type, verbatim | #220 |
+| `jobID` | The run, at the sub-event root | #220 |
+| `deviceMeta` | The identity of the pull, whole | #189 |
+
+**`event` is the snapshot's type, not the sub-event's.** Nothing mints
+`device.inventory.app`. `sourcetype` is what says an event is an app rather than a
+certificate — §1's leaf rule already guarantees that — and `event` is what keeps
+`event=device.*` selecting the whole fan-out from one predicate, the same
+single-discriminator argument that moved the run families off `event_type`
+([`runs.md`](runs.md) §4). It also leaves a sub-event legible with no sourcetype set,
+which is the state the wire is in today (#222).
+
+**`jobID` sits at the sub-event root and inside `deviceMeta`.** The duplicate is the
+ruling: the root copy makes the bare `jobID=$id$` join work across every family and every
+sub-event, and the nested copy stays because a customer's SPL may already name it and an
+unknown field returns zero rows with no error. [`runs.md`](runs.md) §4 carries the full
+argument.
+
+**`deviceMeta` is why the cap is thirteen.** Every key in it is written once per app, per
+extension attribute, per certificate and per profile. A fourth key proposed for this list
+is a #189 decision about a cost measured in fields × events × devices × syncs, not a
+naming one.
+
+## 7. What is ruled here but not yet built
 
 The vocabulary is frozen; what follows from it and is not yet implemented has its own
 issue rather than living on as a footnote.

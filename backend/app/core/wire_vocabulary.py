@@ -8,9 +8,9 @@ is a hand-written stanza in a customer's Splunk forever, and SPL field names are
 case-sensitive — a wrong one returns zero rows with no error.
 
 Amendments are additive and owned by the issue that rules them — #229 added the `alert`
-enrichment on 2026-09-02 — and #188 stays closed: the ruling issue edits this module,
-regenerates the doc, pins the refused spelling in `tests/test_wire_vocabulary.py`, and
-leaves one pointer on #188.
+enrichment and #220 the sub-event keys, both on 2026-09-02 — and #188 stays closed: the
+ruling issue edits this module, regenerates the doc, pins the refused spelling in
+`tests/test_wire_vocabulary.py`, and leaves one pointer on #188.
 
 Where the rest of the contract lives: the casing law and the `deviceMeta` block are in
 `docs/runs.md` (#189); the envelope — `time` / `host` / `source` — is `app.core.wire`;
@@ -94,6 +94,30 @@ SECTION_WRAPPERS: dict[str, str] = {
 ENRICHMENTS: dict[str, tuple[str, ...]] = {
     "app": ("patch", "vuln", "alert"),
 }
+
+
+# What survives the split: the body keys every fan-out sub-event carries, whatever
+# sourcetype it lands under. Ruled 2026-09-02 on #220 — D1, carried over from #81's
+# close-out — and named here rather than in the builder because the fan-out (#242) is not
+# written yet, and the first sub-event ever emitted has to be right.
+#
+# `event` — the snapshot's own type, verbatim, on every sub-event it expands into. NOT a
+#   per-sub-event discriminator: nothing mints `device.inventory.app`. `sourcetype` is
+#   what says an event is an app rather than a certificate (#188 ruling 5, below: the
+#   leaf is the wrapper key), and `event` is what keeps `event=device.*` selecting the
+#   whole fan-out from one predicate — the same single-discriminator argument that moved the
+#   run families off `event_type` (docs/runs.md §4). It also makes a sub-event legible
+#   with no sourcetype set, which is exactly the state #222 leaves the wire in today.
+# `jobID` — the run, at the sub-event root. #220's hoist: one bare `jobID=$id$` joins
+#   every family and every sub-event, rather than the two-term join the nested-only path
+#   forced. Carried a second time inside `deviceMeta`, deliberately.
+# `deviceMeta` — #189's block, whole. It is the reason the cap is thirteen keys: every
+#   key in it is written once per app, per EA, per certificate and per profile.
+#
+# Three keys, and the last one is the expensive one. Anything proposed as a fourth is a
+# #189 decision about a cost measured in fields x events x devices x syncs — ruff
+# rejects the multiplication sign in a comment, so the doc carries the typography.
+SUB_EVENT_KEYS: tuple[str, ...] = ("event", "jobID", "deviceMeta")
 
 
 def sourcetype(wrapper: str, *, vendor: str = "jamf", platform: str = "mac", leaf: str | None = None) -> str:

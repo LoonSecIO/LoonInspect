@@ -152,14 +152,23 @@ select LoonInspect events by type. Three decisions closed that:
 - **`jamfProID` is the object's id in Jamf Pro on both device families**, computer or
   group — `subjectKind` says which kind of object it belongs to.
 
-One caveat, stated plainly because the promise below is otherwise read too strongly:
-`jobID` is top-level on `device.change`, `run.completed` and `run.failed`, and nested on
-`device.inventory.changed`, where it lives inside `deviceMeta`. Splunk's JSON extraction
-names the nested one `deviceMeta.jobID`, so the fully field-qualified cross-family join
-is `jobID=$id$ OR deviceMeta.jobID=$id$` (or one `coalesce`), not a bare `jobID=$id$`.
-Hoisting it to the top level of the inventory event would fix that and was deliberately
-not done here: it adds a key to the most-multiplied event on the wire, which is a #189
-decision, not a casing one.
+`jobID` is **top-level on all four families**, and on `device.inventory.changed` it is
+carried a second time inside `deviceMeta`, where Splunk's JSON extraction names it
+`deviceMeta.jobID`. The cross-family join is therefore a bare `jobID=$id$` — not
+`jobID=$id$ OR deviceMeta.jobID=$id$`, and not a `coalesce` — which is what lets the
+payload tables below call the run id joinable with no qualification attached.
+
+The duplicate is deliberate, ruled on
+[#220](https://github.com/LoonSecIO/LoonInspect/issues/220), 2026-09-02, against three
+alternatives. The root copy is what lets one predicate select every family. The nested
+copy stays because a customer's SPL may already name it and an unknown field returns zero
+rows with no error, and because `deviceMeta` is meant to be the self-contained identity of
+the pull — a sub-event read alone should still know which run produced it. It costs ~47
+bytes on the event whose cost multiplies by every app, EA, certificate and profile once
+the fan-out lands, which is what made this a #189 decision rather than a casing one; a
+join every consumer writes twice, or writes once and silently under-reports on the
+highest-volume family, was ruled the more expensive of the two. `host` already rides in
+both the envelope and the body on the same reasoning.
 
 Two spellings were genuinely ambiguous and are ruled here so nobody has to guess twice:
 

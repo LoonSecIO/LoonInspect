@@ -280,14 +280,16 @@ async def test_one_predicate_selects_all_four_types(four_families) -> None:
 
 async def test_the_run_uuid_has_one_name_and_the_documented_join_works(four_families) -> None:
     """docs/runs.md promises the run id is "joinable against every event the run
-    produced". Under three names it was not joinable at all; under one it is.
+    produced". Under three names it was not joinable at all; under one name and two paths
+    it took two terms; under the #220 hoist it is a bare `jobID=$id$`.
 
-    The caveat is pinned rather than glossed: `jobID` is top-level on three families and
-    nested under `deviceMeta` on the inventory family, which Splunk's JSON extraction
-    names `deviceMeta.jobID`. So the field-qualified join is two terms or a coalesce —
-    still one name, still one value, but not a bare `jobID=$id$`. Hoisting it out of
-    `deviceMeta` would close that and is a #189 decision about adding a key to the
-    most-multiplied event on the wire, not a casing one.
+    What changed here on 2026-09-02: this test used to pin the caveat — that the
+    inventory family carried the id *only* under `deviceMeta`, so a top-level predicate
+    missed it. #220 ruled that closed, option 1 of four: the id is hoisted to the event
+    root and `deviceMeta.jobID` stays, because a customer's SPL may already name it and
+    SPL fails silently on an unknown field. So both paths are asserted below — the
+    duplicate is the ruling, and a copy that can go missing on one path is worse than no
+    copy at all.
     """
     rows, failed_run_id = four_families
 
@@ -308,18 +310,20 @@ async def test_the_run_uuid_has_one_name_and_the_documented_join_works(four_fami
     names |= {path.rsplit(".", 1)[-1] for row in rows for path in carriers(row.payload, str(failed_run_id))}
     assert names == {"jobID"}
 
-    # The join, as a customer would write it. Every event the sweep produced is selected
-    # by `jobID=<id> OR deviceMeta.jobID=<id>` — inventory, changes and the closing run
-    # event alike — which is the docs/runs.md claim, now true.
-    joined = [row for row in sweep_events if carriers(row.payload, sweep_id)]
+    # The join, as a customer would write it: one bare top-level term, no
+    # `deviceMeta.jobID` alternate and no coalesce. Every event the sweep produced is
+    # selected — inventory, changes and the closing run event alike — which is the
+    # docs/runs.md claim, now true without a qualification attached.
+    joined = [row for row in sweep_events if row.payload.get("jobID") == sweep_id]
     assert {row.event_type for row in joined} == {"device.inventory.changed", "device.change", "run.completed"}
     assert len(joined) == len(sweep_events), "no event of this sweep is left out of the join"
 
-    # And the caveat, stated as an assertion so it cannot quietly become false: the
-    # inventory family carries the id only under `deviceMeta`, so a bare top-level
-    # `jobID=` predicate misses it.
+    # The hoist itself, both halves. The root copy is what the bare join above selects on;
+    # `deviceMeta.jobID` is kept because removing it would break existing SPL in the
+    # silent direction, and it is what every fan-out sub-event will still carry (#242).
     inventory = [row for row in sweep_events if row.event_type == "device.inventory.changed"]
-    assert inventory and all("jobID" not in row.payload for row in inventory)
+    assert inventory
+    assert all(row.payload["jobID"] == sweep_id for row in inventory)
     assert all(row.payload["deviceMeta"]["jobID"] == sweep_id for row in inventory)
 
     # The run's failure event names the run the same way — a different run id, the same
