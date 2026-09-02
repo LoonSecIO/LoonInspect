@@ -116,3 +116,19 @@ def test_the_superseded_spellings_are_not_reintroduced() -> None:
     assert "vulnerabilities" not in wrappers
     assert "patching" not in wrappers
     assert "vuln" in wrappers and "patch" in wrappers
+
+
+def test_alert_is_singular_app_carried_and_written_by_nothing() -> None:
+    """`alerts{}` — the plural #81 ruling 5 parked and #101 carries — was ruled out as a
+    wrapper key on 2026-09-02 (#229). The wire slot is `alert`: an inline enrichment on
+    the app sub-event beside `patch` and `vuln`, minted with no writer in v0. The posture
+    tape's `alerts.open` / `alerts.opened_24h` are a different vocabulary — this one
+    governs the wire only — and keep their spelling whatever their status."""
+    from app.core.posture import ACTIVE_KEYS, RESERVED_KEYS
+
+    wrappers = set(SECTION_WRAPPERS.values()) | {leaf for leaves in ENRICHMENTS.values() for leaf in leaves}
+    assert "alerts" not in wrappers
+    assert "alert" in ENRICHMENTS["app"]
+    assert [carrier for carrier, leaves in ENRICHMENTS.items() if "alert" in leaves] == ["app"]
+    assert sourcetype("app", leaf="alert") == "loon:jamf:mac:app:alert"
+    assert {"alerts.open", "alerts.opened_24h"} <= set(ACTIVE_KEYS) | set(RESERVED_KEYS)

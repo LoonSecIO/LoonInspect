@@ -1,8 +1,9 @@
 # The v0 Splunk wire vocabulary
 
 Status: **frozen** · Ruled in [#188](https://github.com/LoonSecIO/LoonInspect/issues/188),
-2026-08-31 and 2026-09-01 · Registry generated from
-[`app/core/wire_vocabulary.py`](../backend/app/core/wire_vocabulary.py)
+2026-08-31 and 2026-09-01 · Amended, additively, in
+[#229](https://github.com/LoonSecIO/LoonInspect/issues/229), 2026-09-02 · Registry
+generated from [`app/core/wire_vocabulary.py`](../backend/app/core/wire_vocabulary.py)
 
 The vocabulary had been ruled three times, differently — the draft, #81 on 2026-08-24,
 and the schema review on 2026-08-31 — with no single artifact holding the answer.
@@ -81,6 +82,13 @@ sub-event rather than as sub-events of their own:
 | --- | --- | --- |
 | `app` | `patch` | `loon:jamf:mac:app:patch` |
 | `app` | `vuln` | `loon:jamf:mac:app:vuln` |
+| `app` | `alert` | `loon:jamf:mac:app:alert` |
+
+On the wire, `alert` is LoonInspect's own latch on an object — a fact it asserts about an
+app, the NEW-app latch first ([#101](https://github.com/LoonSecIO/LoonInspect/issues/101))
+— never the customer's Splunk saved-search alert. A LoonInspect `alert` is what a saved
+search fires *on*; everywhere else this product's documentation says *alert*, it means the
+customer's. Nothing writes the block in v0 (§6).
 
 And LoonInspect's own assertions: `loon:run`.
 
@@ -97,13 +105,22 @@ This is the reason the table is published rather than left derivable: nothing te
 reader, or an agent writing SPL, that `applications` shortens to `app` while
 `operatingSystem` does not.
 
-`patch` and `vuln` are short by the same rule. They ride the highest fan-out object the
-product emits — one per app, per device — and neither collides with anything.
+`patch`, `vuln` and `alert` are short by the same rule. They ride the highest fan-out
+object the product emits — one per app, per device — and none collides with anything.
 
 > **Correction, 2026-09-01.** #81 ruling 5, the vulnerability-summary wire design, and
 > the #113 CVE scope all carried `vulnerabilities{}`, and by extension `patching{}`.
 > Those records are superseded by this table. The brevity rule applies cleanly where
 > nothing is ambiguous, and the competing spellings were precedent rather than argument.
+
+> **Correction, 2026-09-02.** #81 ruling 5 parked `alerts{}`, and #101, #106 and the
+> posture tape's `alerts.open` / `alerts.opened_24h` carry the plural. On the wire the key
+> is `alert` — singular, like every other wrapper, ruled in
+> [#229](https://github.com/LoonSecIO/LoonInspect/issues/229). The posture keys are a
+> different vocabulary and keep their spelling: this document governs the wire only (§4),
+> as `macos` in the data-sharing payload already sits beside `mac` in the sourcetype. The
+> field that grades an alert is `level`, reusing the change log's closed
+> `high | normal | low`, never `severity`.
 
 ## 4. Casing
 
@@ -154,8 +171,8 @@ delivered event. It ships today as `WIRE_SCHEMA_VERSION` in `app/schemas/payload
 
 ## 6. What is ruled here but not yet built
 
-The vocabulary is frozen; three consequences of it are not implemented, and each has its
-own issue rather than living on as a footnote.
+The vocabulary is frozen; what follows from it and is not yet implemented has its own
+issue rather than living on as a footnote.
 
 | Consequence | Issue |
 | --- | --- |
@@ -164,3 +181,4 @@ own issue rather than living on as a footnote.
 | `run.completed` fires only for the full sweep, so every intraday `jobID` from a webhook run is a dangling pointer | [#224](https://github.com/LoonSecIO/LoonInspect/issues/224) |
 | The run id is `uuid4`, so `max(jobID)` — the latest-state idiom on a fan-out sourcetype — is meaningless. UUIDv7 is free until the flip | [#225](https://github.com/LoonSecIO/LoonInspect/issues/225) |
 | `JamfClient.host` drops the port that `source` retains, so the aperture merges two instances Splunk separates | [#226](https://github.com/LoonSecIO/LoonInspect/issues/226) |
+| `alert` is minted with no writer — #101 ships the alerts table and the Needs Attention rows with nothing on the wire; the block's shape (a keyed list on the app, per the 2026-08-29 ruling) and its kind vocabulary are named when it is built, additive under clause 1 | [#101](https://github.com/LoonSecIO/LoonInspect/issues/101) |

@@ -7,6 +7,11 @@ from it. `props.conf [<sourcetype>]` stanzas accept no wildcards, so each string
 is a hand-written stanza in a customer's Splunk forever, and SPL field names are
 case-sensitive — a wrong one returns zero rows with no error.
 
+Amendments are additive and owned by the issue that rules them — #229 added the `alert`
+enrichment on 2026-09-02 — and #188 stays closed: the ruling issue edits this module,
+regenerates the doc, pins the refused spelling in `tests/test_wire_vocabulary.py`, and
+leaves one pointer on #188.
+
 Where the rest of the contract lives: the casing law and the `deviceMeta` block are in
 `docs/runs.md` (#189); the envelope — `time` / `host` / `source` — is `app.core.wire`;
 the read aperture that decides which sections are fetched at all is
@@ -63,15 +68,31 @@ SECTION_WRAPPERS: dict[str, str] = {
 }
 
 # Enrichment sections: LoonInspect's own answers about a Jamf object, carried on the
-# object's sub-event rather than as sub-events of their own. Both are short by the same
-# rule — they ride the highest fan-out object the product emits, one per app per device.
+# object's sub-event rather than as sub-events of their own. All three are short by the
+# same rule — they ride the highest fan-out object the product emits, one per app per
+# device.
 #
 # `vuln` and `patch` were ruled 2026-09-01 against the competing `vulnerabilities{}` /
 # `patching{}` spellings carried by #81 ruling 5 and the #113 CVE scope; those records
 # were corrected rather than honoured, because the brevity rule applies cleanly where
 # nothing is ambiguous.
+#
+# `alert` was ruled 2026-09-02 (#229) against the plural `alerts{}` that #81 ruling 5
+# parked and #101 carries: singular, like every other wrapper. It is LoonInspect's own
+# latch on the app — the NEW-app latch first (#101) — and never the customer's Splunk
+# saved-search alert, which is the thing a LoonInspect `alert` is fired *on*. The latch
+# is a fact about the app on this pull, so it rides inline; a lifecycle fan-out of what
+# happened, if one is ever built, takes the reserved `loon:jamf:mac:app:alert` string
+# the way #113's vulnerability design pairs an inline summary with lifecycle records.
+# Nothing writes it in v0 — #101 ships the alerts table and the Needs Attention rows
+# with nothing on the wire, and emitting the block later is additive under clause 1.
+# The field that grades an alert is `level`, reusing `app.changes.policy.LEVELS`, never
+# `severity`. `app` is the only carrier: a device-scoped alert kind, if #101's close-out
+# ever names one, is a carrier decision on the structure #243 rules for `change`, not a
+# naming one — the leaf and its sense are fixed here, and moving the declaration between
+# dicts changes nothing a customer can see.
 ENRICHMENTS: dict[str, tuple[str, ...]] = {
-    "app": ("patch", "vuln"),
+    "app": ("patch", "vuln", "alert"),
 }
 
 
