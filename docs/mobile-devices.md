@@ -81,7 +81,7 @@ but each one silently wrong the first time a mobile record reaches it.
 
 | | What assumes computers | Where | When it must land |
 | --- | --- | --- | --- |
-| **P‑1** | `posture_snapshot` has no population column; 11 of the 23 keys change meaning | `schema.py:1281` | **v0** — see [#230](https://github.com/LoonSecIO/LoonInspect/issues/230) |
+| **P‑1** | `posture_snapshot` has no population column; 11 of the 23 keys change meaning | `schema.py:1293` | **v0** — see [#230](https://github.com/LoonSecIO/LoonInspect/issues/230) |
 | **P‑2** | The data-sharing submission carries no platform; `snapshot.apps` rows are `{title, full, count}` | `sharing.py:98–116` | **v0** — [#231](https://github.com/LoonSecIO/LoonInspect/issues/231) |
 | **P‑3** | `devices` is unique on `(mdm_connection_id, external_id)` — one Jamf ID space | `schema.py:130` | 1st mobile sweep — [#233](https://github.com/LoonSecIO/LoonInspect/issues/233) |
 | **P‑4** | `deviceMeta.eventID` is `uuid5(run.id, external_id)` — no platform in the name | `service.py:848` | 1st mobile sweep — [#234](https://github.com/LoonSecIO/LoonInspect/issues/234) |
