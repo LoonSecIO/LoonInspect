@@ -81,7 +81,7 @@ but each one silently wrong the first time a mobile record reaches it.
 
 | | What assumes computers | Where | When it must land |
 | --- | --- | --- | --- |
-| **P‑1** | `posture_snapshot` has no population column; 11 of the 23 keys change meaning | `schema.py:1293` | **v0** — see [#230](https://github.com/LoonSecIO/LoonInspect/issues/230) |
+| **P‑1** | ~~`posture_snapshot` has no population column; 11 of the 25 keys change meaning~~ | `schema.py:1293` | **LANDED 2026-09-02** — [#230](https://github.com/LoonSecIO/LoonInspect/issues/230) |
 | **P‑2** | The data-sharing submission carries no platform; `snapshot.apps` rows are `{title, full, count}` | `sharing.py:98–116` | **v0** — [#231](https://github.com/LoonSecIO/LoonInspect/issues/231) |
 | **P‑3** | `devices` is unique on `(mdm_connection_id, external_id)` — one Jamf ID space | `schema.py:130` | 1st mobile sweep — [#233](https://github.com/LoonSecIO/LoonInspect/issues/233) |
 | **P‑4** | `deviceMeta.eventID` is `uuid5(run.id, external_id)` — no platform in the name | `service.py:848` | 1st mobile sweep — [#234](https://github.com/LoonSecIO/LoonInspect/issues/234) |
@@ -94,7 +94,19 @@ but each one silently wrong the first time a mobile record reaches it.
 `posture_snapshot` captures as the last act of every closed full sweep, starting at launch,
 and `docs/posture-snapshot.md` already names why that is the one decision that destroys data
 if taken late: no-zero-priming means a key minted later has no history behind it, ever. #230
-holds the migration.
+held the migration and **landed 2026-09-02**: every captured row now carries `platform`,
+stamped `macos`, and `uq_posture_snapshot_capture` makes `(tenant, key, platform, capture)`
+unique before a roll-up row can silently double a reader. The rules that value carries
+— the per-Apple-OS vocabulary, the reserved `all`, and read-filters-on-platform — are
+[`docs/posture-snapshot.md` § Population](posture-snapshot.md#population).
+
+One spelling note this document must carry, because it looks like drift and is not: the tape
+says **`macos`** where the sourcetype says **`mac`** (Kyle, 2026-09-02). They are different
+namespaces with different already-minted vocabularies — `mac` is §2's sourcetype segment,
+`macos` is the content-key OS domain (`os_key("macos", …)`, hashed into shared-corpus rows
+and unchangeable there) — and neither was renamed to match the other. So the tape's
+siblings are `ios`, `ipados`, `tvos`, `visionos`, which agree with §2 on every value
+except Mac.
 
 `sharing.py` is the same argument at a different table. Its rows are *correct* for v0 — every
 device is a Mac, so `os_key("macos", …)` is a fact, not a guess. The gap is that the

@@ -19,13 +19,17 @@ history. Reserved keys (`RESERVED_KEYS`) have frozen definitions and no writer y
 no key records before its feature's table exists — a run of primed zeros is a lie
 about when measurement began.
 
-Two writing rules the reader of the table must be able to rely on:
+Three writing rules the reader of the table must be able to rely on:
 
 * **Absent means "did not apply", never zero.** `outbox.oldest_pending_age_s` writes
   no row when zero rows were pending — coercing that to 0 would make "empty queue"
   indistinguishable from "a delivery is due right now".
 * **Ratios are never stored.** Numerator and denominator land as separate keys and
   the percentage derives at render, so the inputs stay auditable forever.
+* **Every row names the population it counted.** `platform` is stamped from
+  `CAPTURE_PLATFORM`, so a number is never read against a fleet it did not measure.
+  Eleven active keys change meaning the night a sweep observes more than Macs, and
+  immutable definitions leave no way to say so afterwards (#230).
 
 Recorder failure never fails the run: the caller (runs.finish) catches everything,
 logs, and lets the run's verdict stand. A night can lose its capture; it must never
@@ -105,6 +109,19 @@ ACTIVE_KEYS: tuple[str, ...] = (
     "accounts.admins",
     "tokens.active",
 )
+
+# The population a capture counted (#230). v0 reads computers only
+# (docs/mobile-devices.md), so every row this recorder writes is `macos` — a fact about
+# what the sweep observed, not a default standing in for an unknown. The vocabulary is
+# one value per Apple OS — `macos`, `ios`, `ipados`, `tvos`, `visionos` (Kyle,
+# 2026-09-02: the content-key OS spelling `os_key("macos", …)` carries, not the
+# sourcetype segment's `mac`) — and a value is never reused for a different population.
+CAPTURE_PLATFORM = "macos"
+
+# Reserved for a capture that counted every platform at once. A single-platform run
+# never writes it: a roll-up is a different number, not a synonym for the only
+# population that existed the night it ran.
+PLATFORM_ROLLUP = "all"
 
 # Frozen definitions, no writer yet — each activates with its feature's table, never
 # before (docs/posture-snapshot.md carries the definitions and the gates).
@@ -359,7 +376,11 @@ async def record_full_sweep_snapshot(db: AsyncSession, *, run_id: uuid.UUID) -> 
     values = await _compute(db, run_id, captured_at)
     db.add_all(
         PostureSnapshot(
-            metric_key=key, value=values[key], captured_at=captured_at, full_sweep_run_id=run_id
+            metric_key=key,
+            platform=CAPTURE_PLATFORM,
+            value=values[key],
+            captured_at=captured_at,
+            full_sweep_run_id=run_id,
         )
         for key in ACTIVE_KEYS
         if key in values

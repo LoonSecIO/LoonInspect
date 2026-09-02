@@ -1288,17 +1288,28 @@ class PostureSnapshot(Base):
     `value` is NUMERIC and always present: an absent row means the metric did not
     apply that night (e.g. `outbox.oldest_pending_age_s` with an empty queue), never
     that it was zero — zero is written as 0.
+
+    `platform` names the population the number counted (#230). Eleven of the active
+    keys mean something different once a sweep observes more than Macs, and a key
+    cannot be redefined after the fact, so the population is recorded in the row
+    rather than inferred from the era it was written in. `app.core.posture` stamps it;
+    the vocabulary and the reserved `all` roll-up are in docs/posture-snapshot.md.
     """
 
     __tablename__ = "posture_snapshot"
     __table_args__ = (
-        # The read shape: one key's history for one tenant, in time order.
-        Index("ix_posture_snapshot_series", "tenant_id", "metric_key", "captured_at"),
+        # One row per key per capture per population. Its backing index carries the
+        # series read shape as well — one key's history for one tenant for one
+        # population, in time order — so there is no separate index beside it.
+        UniqueConstraint(
+            "tenant_id", "metric_key", "platform", "captured_at", name="uq_posture_snapshot_capture"
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     metric_key: Mapped[str] = mapped_column(Text)
+    platform: Mapped[str] = mapped_column(Text)
     value: Mapped[Decimal] = mapped_column(Numeric)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     full_sweep_run_id: Mapped[uuid.UUID | None] = mapped_column(

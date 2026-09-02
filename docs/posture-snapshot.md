@@ -3,13 +3,13 @@
 Status: **implemented (#102, 2026-08-29)** · Target: V0
 
 The nightly tape of fleet posture. One table, `posture_snapshot(tenant_id, metric_key,
-value, captured_at, full_sweep_run_id)` — one row per metric per capture, never a wide
-row, never a JSON blob. The recorder (`app.core.posture`) fires as the last act of every
-closed full sweep (`app.core.runs.finish`, lock class `device_sweep`), success **and**
-failure: a failed night's database state is real, and the failed run id stamped on the
-rows is what makes staleness visible. The failure itself gets loud elsewhere (run log +
-`run.completed`); a run whose process died and was later reclaimed writes no capture at
-all, and that gap in the tape is itself the signal.
+platform, value, captured_at, full_sweep_run_id)` — one row per metric per capture per
+population, never a wide row, never a JSON blob. The recorder (`app.core.posture`) fires
+as the last act of every closed full sweep (`app.core.runs.finish`, lock class
+`device_sweep`), success **and** failure: a failed night's database state is real, and
+the failed run id stamped on the rows is what makes staleness visible. The failure
+itself gets loud elsewhere (run log + `run.completed`); a run whose process died and was
+later reclaimed writes no capture at all, and that gap in the tape is itself the signal.
 
 This is the one piece of the 2026-08-29 design record that had to be code before the
 freeze: history not recorded can never be backfilled, so this is the only decision in
@@ -27,6 +27,9 @@ Three mechanical facts about the rows:
 * **A capture can fail; the sweep cannot fail with it.** The recorder commits its own
   rows after the run's terminal status is committed, and every recorder error is logged
   and swallowed by the caller.
+* **Every row says which population it counted.** `platform` is on the row, and
+  `uq_posture_snapshot_capture` makes `(tenant_id, metric_key, platform, captured_at)`
+  unique — see [Population](#population) below.
 
 ## Guardrails
 
@@ -34,6 +37,7 @@ Written here so a future key argues against a rule rather than against silence:
 
 * fleet-level scalars only (no per-entity key families)
 * definitions immutable per key (a change mints a new key and retires the old)
+* every row names its population (see [Population](#population))
 * ratios never stored (numerator and denominator as separate keys)
 * recorder reads the DB never the API
 * recording buys zero pixels
@@ -46,6 +50,57 @@ measurement began. "No operator-behavior keys ever" means the tape measures the 
 and the pipeline, never the humans operating them — page views, click paths, and login
 cadences are not posture and will not become keys.
 
+## Population
+
+Ruled 2026-09-02 (#230). **A capture's rows are scoped to the population the run that
+wrote them observed, and the row says so.** `platform` is stamped by
+`app.core.posture.CAPTURE_PLATFORM`; today it is `macos` on every row, because v0 reads
+computers only ([mobile-devices.md](mobile-devices.md)) and every device the recorder
+counts is a Mac by construction.
+
+The column exists because the guardrails above leave no way to add it later. Eleven of
+the 25 active keys count a *different population* the first night a sweep observes more
+than Macs — the four `devices.*`, the five `catalog.*`, `apps.distinct` and
+`changes.notable_24h` — and at that point both available moves destroy something.
+Redefining `devices.total` in place to mean "Macs and iPads" is forbidden by
+*definitions immutable per key*, and silent besides: no error, no migration, just a
+series that stops meaning what its own history means. Minting `devices.macos.total` and
+retiring `devices.total` obeys that rule and collides with *no zero-priming* — the new
+key starts with no history behind it and can never be backfilled. The peer aggregate is
+worse than the local read: a size band derived from a population-less `devices.total`
+files a 3,000-Mac tenant and a 1,500-Mac/1,500-iPad tenant in the same bucket.
+
+`catalog.matched` is the sharpest of the eleven. Jamf Patch carries macOS titles only,
+so an iOS app can never enter that numerator and lands in `catalog.unmatched`
+permanently — patch coverage collapses on the graph while nothing about the fleet got
+worse. The five `patch.*` keys are safe for that same reason: they count pairs reached
+through a matched title, and there are no mobile titles to reach through.
+
+The rules the column carries:
+
+* **The vocabulary is one value per Apple OS**: `macos`, `ios`, `ipados`, `tvos`,
+  `visionos`. This is the content-key OS spelling (`os_key("macos", …)`), **not** the
+  sourcetype segment's `mac` — the two namespaces spell Mac differently and both
+  spellings are already minted, so neither is renamed to match the other (Kyle,
+  2026-09-02).
+* **A platform value is never reused for a different population.** It is as immutable
+  as a key name, and for the same reason: a value's meaning is what its history means.
+* **`all` is reserved for a cross-platform roll-up and is never written by a
+  single-platform run.** A roll-up is a different number, not a synonym for the only
+  population that happened to exist that night. Writing `all` for a Mac-only capture
+  would make the roll-up's own history start as a lie about its coverage.
+* **Every read filters on platform.** A query that groups by `metric_key` alone sums
+  across populations, and no constraint can save it — a `macos` row and an `all` row
+  for one key are legitimately two rows. What `uq_posture_snapshot_capture` guarantees
+  is the other half: *within* one population there is exactly one row per key per
+  capture, so a read that does filter can never double-count. Unique on `(tenant_id,
+  metric_key, platform, captured_at)`, its backing index is also the series read shape,
+  which is why `ix_posture_snapshot_series` was dropped into it rather than widened
+  beside it — that would have been the same four columns twice.
+* **Reserved keys are stamped by the run that activates them**, on the same rule: the
+  six names below carry no population today because they carry no rows, and each starts
+  its tape under the platform its first capture observed.
+
 ## Definitions v1
 
 Every key is one bounded SQL query inside the capture (`app.core.posture._compute`).
@@ -54,9 +109,10 @@ never calendar boundaries. `capture` below is `captured_at`.
 
 ### Devices
 
-The population for every `devices.*` key is device rows on **active** connections.
-NULLs count as stale in both staleness keys — a device that has never checked in is the
-worst staleness there is.
+The population for every `devices.*` key is device rows on **active** connections, of
+the capture's own platform — the recorder counts what the sweep observed and the row
+records which that was ([Population](#population)). NULLs count as stale in both
+staleness keys — a device that has never checked in is the worst staleness there is.
 
 | Key | Status | Definition | Source |
 | --- | --- | --- | --- |
@@ -158,7 +214,10 @@ that cell is written for the destination-configured case.
 ### Reserved: alerts and vulnerabilities
 
 Frozen definitions, no writer yet. Each activates with its feature's table — no
-zero-priming: no key records before the thing it measures exists.
+zero-priming: no key records before the thing it measures exists. Their population is
+whatever the run that activates them observed, stamped on the row like every other key
+([Population](#population)); until then they have no population because they have no
+rows.
 
 **The `vuln.*` activation rule, ruled on #113 (2026-09-02).** While a tenant has never
 run the corpus join — every app reading `assessment: off` on the wire — the four
