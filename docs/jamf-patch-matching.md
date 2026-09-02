@@ -109,8 +109,10 @@ Per match, the version answers: `version_known` (any of the app's version string
 | `unknown` | not in `patches` and not newer — a build Jamf never listed |
 
 plus `installed_released_at` (Jamf's release date of the installed version), `latest_version` /
-`latest_released_at`, and `first_newer_released_at` — the release date of the earliest listed
-version newer than the installed one: when a patch first became available, by the catalog's clock.
+`latest_released_at`, `first_newer_released_at` — the release date of the earliest listed
+version newer than the installed one: when a patch first became available, by the catalog's clock
+— and `releases_missed`, how many listed versions are newer than the installed one (0 on latest
+and ahead).
 
 One app can belong to several titles — Jamf keeps versioned titles beside rolling ones. On the
 real record, Wireshark 4.2.0 matches "Wireshark 4.2" (latest 4.2.14) and "Wireshark" (4.6.8);
@@ -139,12 +141,28 @@ vendor ships now:
 | `patch_state` | `latest` when any title says so, else the rolling title's state |
 | `is_compliant` | any matched title says latest |
 | `patch_available` | no title says latest **and** one says `behind` / `unknown` |
-| `patch_available_since` | earliest `first_newer_released_at` across those — Jamf's date, not "when we first noticed" |
+| `patch_available_since` | `first_newer_released_at` of the behind title whose first missed update is earliest — Jamf's date, not "when we first noticed" (#68) |
+| `releases_missed` | that same title's count of listed versions newer than the installed one; null unless a patch is available |
 | `this_version_seen` | Jamf lists the installed version on any matched title |
 | `latest_version`, `latest_released_at` | the reference title's |
 | `last_patch_check_at` | when the app was last evaluated (set even when nothing matched) |
 
 All null when nothing matched. `ahead` is its own state: neither compliant nor patch-available.
+
+**#68, the clock (ruled 2026-09-02).** `patch_available_since` keeps the earliest missed
+update's date and stays unbounded: Wireshark 4.2.0 reads 2024-01-03, which was 961 days by the
+time of the ruling, and that is the honest number. The alternatives were rejected on the record:
+the latest version's date resets with every release, so a device two majors behind a
+weekly-shipping title never looks 14 days behind; "when LoonInspect first noticed" measures how
+long the customer has owned the product; the installed build's age is a fact about the build,
+not about a patch. What changed is the sentence, not the data. A surface leads with **"Behind
+since 2024-01-03 · 14 releases missed"** — a date does not inflate, and a count grows only when
+the vendor ships. Both halves come from one title (the per-line "Wireshark 4.2", whose 4.2.1 is
+the earliest miss), never from a fold across titles. The day count stays on the device API for
+consumers that want it; buckets and caps are a renderer's business and never ride the wire,
+which carries the raw date and the raw integer when `patch{}` ships
+(`docs/splunk-wire-vocabulary.md` §5). The posture tape reads the per-title row, not this
+column: `patch.pairs_laggard_over_14d` and `patch.pairs_unknown_build` (`docs/posture-snapshot.md`).
 
 The real Mac mini (83 apps) resolves 11 apps to 13 rows: Xcode 26.6 on latest; Camtasia 2022 on
 the latest of its line (and behind the rolling title — both kept); Slack, Docker, Zoom, Postman,

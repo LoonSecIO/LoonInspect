@@ -418,6 +418,8 @@ export const en = {
     stateBehind: "Behind",
     stateAhead: "Ahead of catalog",
     stateUnknown: "Unknown build",
+    behindSince: (since: string, missed: number | null) =>
+      missed === null ? `since ${since}` : `since ${since} · ${missed} release${missed === 1 ? "" : "s"} missed`,
     loading: "Loading catalog…",
     errorLoading: "Could not load the catalog.",
     empty: "No apps catalogued yet — the catalog fills as devices are processed.",

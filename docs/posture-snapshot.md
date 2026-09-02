@@ -85,14 +85,17 @@ The pair grain: a *pair* is one distinct (device, matched Jamf Patch title), rea
 through the `AppCatalogTitleMatch` → catalog row → `InstalledApp` join — the same join
 `/api/jamf-patch` counts devices through. `on_latest` carries the standing "latest =
 any title says so" semantics the matcher stamped on the row. Coverage % derives at
-render from the two pair keys; it is never stored.
+render from the two pair keys; it is never stored. The two dated keys read the pair's
+own row — `installed_apps.patch_available_since` is a fold across an app's titles and
+is never what the tape counts.
 
 | Key | Status | Definition | Source |
 | --- | --- | --- | --- |
 | `patch.pairs_total` | ACTIVE | Distinct (device, matched title) install pairs. | title matches ⋈ `app_catalog` ⋈ `installed_apps` |
 | `patch.pairs_on_latest` | ACTIVE | Pairs where the installed version equals the title's latest (`on_latest`). | same join |
 | `patch.titles_with_laggards` | ACTIVE | Matched titles where `devices_on_latest < device_count` and `device_count > 0`. | same join, per title |
-| `patch.pairs_laggard_over_14d` | RESERVED | Pairs behind a latest that has been available longer than 14 days. Gated on #68 (`patch_available_since`); activates when that contract closes. | — |
+| `patch.pairs_laggard_over_14d` | ACTIVE | Pairs with `state = behind` whose `first_newer_released_at` — Jamf's release date of the earliest listed version newer than the installed one, read from the pair's own title row, never folded across titles — is older than 336h at capture. **Every update, not severity-filtered:** a superset of the Cyber Essentials 14-day number, which scopes to high-risk and critical updates; Jamf's catalog carries no severity. **Under-counts where a title's newer patches carry no release date:** the matcher then falls back to the latest version's date, a later one. Unlisted builds are not here — see the next key. #68's clock, ruled 2026-09-02. | same join, `app_catalog_title_matches.first_newer_released_at` |
+| `patch.pairs_unknown_build` | ACTIVE | Pairs with `state = unknown`: the installed build is one Jamf never listed and is not newer than the title's latest. Kept out of the laggard key by design — a build that cannot be placed cannot honestly be called "14 days behind" a specific update — and given its own key so it is visible in the tape at all. | same join |
 
 ### Changes
 

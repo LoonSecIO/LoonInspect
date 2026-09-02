@@ -25,7 +25,7 @@ pytestmark = [
     pytest.mark.asyncio(loop_scope="session"),
 ]
 
-_TITLE_IDS = ("LOONT1", "LOONT2")
+_TITLE_IDS = ("LOONT1", "LOONT2", "LOONT3")
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
@@ -132,7 +132,8 @@ async def _seed_fleet(db, ns) -> None:
     Three devices on the active connection (one healthy, one with a 200h-old check-in,
     one that has never checked in and is unmanaged) and one on the inactive connection
     that must count nowhere; three catalog entries (behind/latest/unmatched) installed
-    across the devices; two Jamf Patch titles with one laggard; four device changes
+    across the devices; three Jamf Patch titles — one laggard 20 days behind, one on latest,
+    one carrying a build Jamf never listed; four device changes
     straddling the notable cut and the 24h window; a failed run in the window and a
     succeeded sweep outside it; an outbox holding one pending, one delivered, and one
     dead-lettered event; one extra active admin, one disabled account, one live token,
@@ -204,8 +205,10 @@ async def _seed_fleet(db, ns) -> None:
     # tenancy, and the FK check needs them on disk first.
     await db.commit()
     db.add_all([
-        AppCatalogTitleMatch(app_catalog_id=e1.id, title_id="LOONT1", basis="requirements", state="behind", version_known=True, on_latest=False, installed_version="1.0", latest_version="2.0"),
-        AppCatalogTitleMatch(app_catalog_id=e2.id, title_id="LOONT2", basis="requirements", state="latest", version_known=True, on_latest=True, installed_version="1.0", latest_version="3.0"),
+        AppCatalogTitleMatch(app_catalog_id=e1.id, title_id="LOONT1", basis="requirements", state="behind", version_known=True, on_latest=False, installed_version="1.0", latest_version="2.0", first_newer_released_at=now - timedelta(days=20), releases_missed=3),
+        AppCatalogTitleMatch(app_catalog_id=e2.id, title_id="LOONT2", basis="requirements", state="latest", version_known=True, on_latest=True, installed_version="1.0", latest_version="3.0", releases_missed=0),
+        # The same 20-day-old date on an unlisted build: counted under its own key, never as a laggard.
+        AppCatalogTitleMatch(app_catalog_id=e1.id, title_id="LOONT3", basis="requirements", state="unknown", version_known=False, on_latest=False, installed_version="1.0", latest_version="4.0", first_newer_released_at=now - timedelta(days=20), releases_missed=5),
     ])
 
     def change(level, observed):
@@ -316,10 +319,14 @@ async def test_a_closed_full_sweep_captures_every_active_key(db, fleet) -> None:
     assert delta("catalog.installed_not_latest") == 1  # entries, not device pairs
     assert delta("apps.distinct") == 2
 
-    # Patch pairs: (d1,T1) behind, (d1,T2) latest, (d2,T2) latest; T1 is the one laggard title.
-    assert delta("patch.pairs_total") == 3
+    # Patch pairs: (d1,T1) behind by 20 days, (d1,T2) latest, (d2,T2) latest, (d1,T3) an
+    # unlisted build. T1 and T3 are the laggard titles; only the behind pair crosses 14 days —
+    # the unknown pair carries the same date and lands under its own key, never here (#68).
+    assert delta("patch.pairs_total") == 4
     assert delta("patch.pairs_on_latest") == 2
-    assert delta("patch.titles_with_laggards") == 1
+    assert delta("patch.titles_with_laggards") == 2
+    assert delta("patch.pairs_laggard_over_14d") == 1
+    assert delta("patch.pairs_unknown_build") == 1
 
     # Changes: high + normal inside 24h; the low row and the 30h-old high row do not count.
     assert delta("changes.notable_24h") == 2

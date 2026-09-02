@@ -231,10 +231,18 @@ export function CatalogPage() {
                   </td>
                   <td className="px-4 py-2">
                     {entry.patchState ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: STATE_COLORS[entry.patchState] }} />
-                        {stateLabels[entry.patchState] ?? entry.patchState}
-                      </span>
+                      <>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: STATE_COLORS[entry.patchState] }} />
+                          {stateLabels[entry.patchState] ?? entry.patchState}
+                        </span>
+                        {/* #68: a date and a count, never a day count — a date does not inflate. */}
+                        {entry.patchAvailable && (
+                          <span className="block text-xs text-muted-foreground">
+                            {t.catalog.behindSince(formatDate(entry.patchAvailableSince), entry.releasesMissed)}
+                          </span>
+                        )}
+                      </>
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}

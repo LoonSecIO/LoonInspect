@@ -415,6 +415,8 @@ export const de: Translations = {
     stateBehind: "Veraltet",
     stateAhead: "Dem Katalog voraus",
     stateUnknown: "Unbekannter Build",
+    behindSince: (since: string, missed: number | null) =>
+      missed === null ? `seit ${since}` : `seit ${since} · ${missed} ${missed === 1 ? "Version" : "Versionen"} verpasst`,
     loading: "Katalog wird geladen…",
     errorLoading: "Der Katalog konnte nicht geladen werden.",
     empty: "Noch keine Apps katalogisiert – der Katalog füllt sich, sobald Geräte verarbeitet werden.",

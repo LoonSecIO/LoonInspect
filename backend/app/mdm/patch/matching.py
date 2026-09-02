@@ -240,8 +240,15 @@ class TitleMatch:
     latest_version: str
     latest_released_at: datetime | None
     # Jamf's release date of the earliest listed version newer than the installed one — when
-    # a patch first became available, by the catalog's clock.
+    # a patch first became available, by the catalog's clock. #68's clock, ruled 2026-09-02:
+    # the earliest missed update is the only date that answers "behind by more than 14 days",
+    # and it stays unbounded — the sentence a surface prints changes, the stored date does not.
     first_newer_released_at: datetime | None
+    # Listed versions newer than the installed one: how many releases this build has missed on
+    # this title. 0 on latest and ahead. The count a surface leads with beside the date — a date
+    # does not inflate, and a count grows only when the vendor ships, never while the customer
+    # sleeps (#68).
+    releases_missed: int | None
 
 
 def classify(versions: Sequence[str], title: CatalogTitle) -> TitleMatch:
@@ -265,12 +272,13 @@ def classify(versions: Sequence[str], title: CatalogTitle) -> TitleMatch:
         state = STATE_UNKNOWN
 
     first_newer: datetime | None = None
+    releases_missed: int | None = 0 if installed else None
     if state in (STATE_BEHIND, STATE_UNKNOWN) and installed:
-        newer = [
-            patch.released_at
-            for patch in title.patches
-            if patch.released_at is not None and compare_versions(patch.version, installed) > 0
-        ]
+        missed = [patch for patch in title.patches if compare_versions(patch.version, installed) > 0]
+        releases_missed = len(missed)
+        # A dateless patch list falls back to the latest version's date — a later date, so the
+        # age reads smaller, never larger. That direction is written into the posture key.
+        newer = [patch.released_at for patch in missed if patch.released_at is not None]
         first_newer = min(newer) if newer else title.latest_released_at
 
     return TitleMatch(
@@ -284,6 +292,7 @@ def classify(versions: Sequence[str], title: CatalogTitle) -> TitleMatch:
         latest_version=title.current_version,
         latest_released_at=title.latest_released_at,
         first_newer_released_at=first_newer,
+        releases_missed=releases_missed,
     )
 
 
@@ -356,6 +365,12 @@ class AppPatchSummary:
     The title that says so supplies the state and the latest version; otherwise the rolling title
     (the highest `currentVersion` among the matches) does, so an app behind everywhere shows what
     the vendor ships now. A patch is available only when no title says latest and one says behind.
+
+    `patch_available_since` and `releases_missed` are one title's sentence, not two folds: the
+    behind title whose first missed update is the earliest supplies both, so "behind since
+    2024-01-03 · 14 releases missed" is true of one line (Wireshark 4.2.0 reads its 4.2 line, not
+    the rolling title). When no behind title dates its patches, the largest count stands alone.
+    Both are None unless a patch is available (#68).
     """
 
     title_ids: list[str]
@@ -363,6 +378,7 @@ class AppPatchSummary:
     is_compliant: bool
     patch_available: bool
     patch_available_since: datetime | None
+    releases_missed: int | None
     this_version_seen: bool
     latest_version: str
     latest_released_at: datetime | None
@@ -379,13 +395,21 @@ def summarize(matches: Sequence[TitleMatch]) -> AppPatchSummary | None:
     )
     behind = [match for match in matches if match.state in (STATE_BEHIND, STATE_UNKNOWN)]
     patch_available = not on_latest and bool(behind)
-    since = [match.first_newer_released_at for match in behind if match.first_newer_released_at is not None]
+    dated = [match for match in behind if match.first_newer_released_at is not None]
+    sentence: TitleMatch | None = None
+    if patch_available:
+        sentence = (
+            min(dated, key=lambda match: match.first_newer_released_at or datetime.max.replace(tzinfo=timezone.utc))
+            if dated
+            else max(behind, key=lambda match: match.releases_missed or 0)
+        )
     return AppPatchSummary(
         title_ids=[match.title.id for match in matches],
         state=STATE_LATEST if on_latest else reference.state,
         is_compliant=bool(on_latest),
         patch_available=patch_available,
-        patch_available_since=min(since) if patch_available and since else None,
+        patch_available_since=sentence.first_newer_released_at if sentence is not None else None,
+        releases_missed=sentence.releases_missed if sentence is not None else None,
         this_version_seen=any(match.version_known for match in matches),
         latest_version=reference.latest_version,
         latest_released_at=reference.latest_released_at,

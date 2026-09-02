@@ -37,6 +37,7 @@ class CatalogEntryOut(_CamelModel):
     is_latest: bool | None = None
     patch_available: bool | None = None
     patch_available_since: datetime | None = None
+    releases_missed: int | None = None
     this_version_seen: bool | None = None
     latest_version: str | None = None
     latest_released_at: datetime | None = None

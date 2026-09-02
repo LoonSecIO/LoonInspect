@@ -46,6 +46,10 @@ class InstalledAppOut(BaseModel):
     this_version_seen: bool | None = None
     latest_version: str | None = None
     latest_released_at: datetime | None = None
+    # #68: the two halves of the sentence a surface leads with — "behind since <date> · <n>
+    # releases missed" — are patch_available_since and this count. The day count below stays
+    # for consumers that want it; it is derived from an unbounded date and is never the headline.
+    releases_missed: int | None = None
 
     @computed_field
     @property

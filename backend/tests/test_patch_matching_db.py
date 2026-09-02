@@ -174,6 +174,7 @@ async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connec
     assert camtasia.jamf_title_ids == ["608", "514"] and camtasia.patch_state == "latest" and camtasia.is_compliant is True
     slack = apps["Slack.app"]
     assert slack.patch_state == "behind" and slack.patch_available is True and slack.patch_available_since is not None
+    assert slack.releases_missed is not None and slack.releases_missed > 0
     unmatched = next(row for row in apps.values() if row.jamf_title_ids is None)
     assert unmatched.is_compliant is None and unmatched.last_patch_check_at is not None
 
@@ -183,6 +184,7 @@ async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connec
     for row in match_rows:
         by_entry.setdefault(row.app_catalog_id, []).append(row)
     assert len(match_rows) == 13 and len(by_entry) == 11
+    assert all(row.releases_missed is not None for row in match_rows)
     wireshark = {row.title_id: row for row in by_entry[entries[apps["Wireshark.app"].version_hash].id]}
     assert set(wireshark) == {"5F6", "612"} and all(row.basis == "requirements" and row.state == "behind" for row in wireshark.values())
     assert entries[apps["PyCharm.app"].version_hash].id not in by_entry  # attribute-only title: not considered

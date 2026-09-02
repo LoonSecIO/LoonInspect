@@ -211,15 +211,19 @@ class InstalledApp(Base):
 
     # The Jamf Patch answer for this build, derived at device process from the catalog
     # (app.mdm.patch.matching): the titles it belongs to, the rolling title's state and latest
-    # version, and whether Jamf has listed this version. One row per (app, title) in
-    # installed_app_patch_matches carries the detail; is_compliant / patch_available /
+    # version, and whether Jamf has listed this version. One row per (build, title) in
+    # app_catalog_title_matches carries the detail; is_compliant / patch_available /
     # patch_available_since above are the same answer folded into the older columns.
+    # patch_available_since is Jamf's date of the earliest listed version newer than the
+    # installed one (#68's clock, ruled 2026-09-02) and is unbounded on purpose: a surface leads
+    # with that date and releases_missed, never with a day count.
     # none_as_null: "no titles" is SQL NULL, not a JSON null, so `IS NULL` means what it says.
     jamf_title_ids: Mapped[list | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     patch_state: Mapped[str | None] = mapped_column(String(16), nullable=True)  # latest | behind | ahead | unknown
     this_version_seen: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     latest_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     latest_released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    releases_missed: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     device: Mapped[Device] = relationship(back_populates="apps")
 
@@ -340,6 +344,10 @@ class AppCatalogEntry(Base):
     this_version_seen: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     latest_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     latest_released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Listed versions newer than the installed one on the title that supplies
+    # patch_available_since — the two halves of one sentence (#68); null unless a patch is
+    # available.
+    releases_missed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Jamf's release date of the installed version itself.
     released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -372,6 +380,10 @@ class AppCatalogTitleMatch(Base):
     latest_version: Mapped[str] = mapped_column(String(64))
     latest_released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     first_newer_released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Listed versions newer than the installed one; 0 on latest and ahead (#68). Computed at
+    # judge time per (build, title), never per device — the posture tape and the laggard
+    # surfaces read it here.
+    releases_missed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
