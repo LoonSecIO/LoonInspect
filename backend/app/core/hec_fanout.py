@@ -50,12 +50,15 @@ over one stored row is byte-identical and a partial acceptance can be reasoned a
 position (#242, D2).
 
 What the wire loses, on purpose and on the record: a section outside the read's aperture
-is absent from the snapshot and fans out nothing, and a section read and genuinely empty
-fans out nothing too. On the wire the two look the same — `loon:jamf:mac:general` with no
-`loon:jamf:mac:cert` for the same `deviceMeta.eventID` means either zero certificates or
-certificates not read. The payload keeps the distinction (absent versus `[]`); a key
-saying "unread" on the most-multiplied event is #189's decision, not taken here
-(docs/splunk-setup.md §7).
+is absent from the snapshot and fans out nothing, and a LIST section read and genuinely
+empty fans out nothing too. On the wire the two look the same — `loon:jamf:mac:general`
+with no `loon:jamf:mac:cert` for the same `deviceMeta.eventID` means either zero
+certificates or certificates not read. The payload keeps the distinction (absent versus
+`[]`); a key saying "unread" on the most-multiplied event is #189's decision, not taken
+here (docs/splunk-setup.md §7). A SCALAR section read and genuinely empty is not lost: it
+still emits its anchor, as `{}` (`userAndLocation` on the real fixture), so for the seven
+anchors absent means unread and `{}` means read-and-empty, and a full read always
+produces all seven. Built this way and ruled by default — Kyle confirms or overrules.
 
 Pure: the stored payload dict and the envelope hints in, HEC event objects out. No
 session, no clock, no I/O, and the input is never mutated — delivery is retried against

@@ -335,8 +335,9 @@ saved search keyed on that input name must add the strings
 ([`splunk-setup.md`](splunk-setup.md) §6).
 
 **Two families are still unstamped**, deliberately: `device.inventory.changed`, because the
-delta family has no ruled string and no issue owns one, and the test event, which is meant
-to be identifiable rather than routed. Both land under the HEC input's own sourcetype.
+delta family has no ruled string ([#277](https://github.com/LoonSecIO/LoonInspect/issues/277) puts the ruling to Kyle before the flip), and the
+test event, which is meant to be identifiable rather than routed. Both land under the HEC
+input's own sourcetype.
 
 **Closed (#213):** `deliver_pending` orders by `next_attempt_at`, then `id`, so a drained
 backlog arrives most-overdue first rather than in arbitrary order; `_time` is each event's

@@ -134,8 +134,8 @@ def _single_event_sourcetype(payload: Mapping[str, object]) -> str | None:
       "`loon:run` on the run family in the same change"). The "shape about to change"
       reason that held the section tree back never applied to a run event.
 
-    `device.inventory.changed` carries none — the delta family has no ruled string, and no
-    issue owns one — and neither does `destination.test`, which is meant to be
+    `device.inventory.changed` carries none — the delta family has no ruled string; #277
+    puts the ruling to Kyle before the flip — and neither does `destination.test`, which is meant to be
     identifiable rather than routed. Both land under the sourcetype the operator set on
     the HEC input, exactly as every event did before any string was stamped.
 

@@ -246,8 +246,8 @@ in [`splunk-setup.md`](splunk-setup.md) §6.
   no vendor segment (#242 item 6, in the same change as the section tree).
 
 Still under the HEC input's own sourcetype, deliberately: `device.inventory.changed` — the
-delta family has no ruled string, and no issue owns one — and the test event, which is
-meant to be identifiable rather than routed.
+delta family has no ruled string; [#277](https://github.com/LoonSecIO/LoonInspect/issues/277) puts the ruling to Kyle before the flip — and
+the test event, which is meant to be identifiable rather than routed.
 
 ### The snapshot family: `device.inventory` (#241)
 
@@ -438,18 +438,26 @@ reports the position (`invalid-event-number`, HTTP 400); nothing built here can 
 malformed event, so that 400 is a producer bug on the ordinary path. A retry therefore
 re-sends sub-events Splunk may already hold — the at-least-once story the outbox always
 had, one level down. The dedup key on a fan-out sourcetype is the pull plus the item:
-`dedup deviceMeta.eventID app.bundleId app.path app.version` on `loon:jamf:mac:app`, each
-sibling section's own identity on its sourcetype — never `deviceMeta.eventID` alone,
-which collapses a device's pass to one arbitrary row.
+`dedup keepempty=true deviceMeta.eventID app.path app.version` on `loon:jamf:mac:app`,
+each sibling section's own identity on its sourcetype — never `deviceMeta.eventID` alone,
+which collapses a device's pass to one arbitrary row. Keyed on `path`, not `bundleId`,
+and with `keepempty=true`: the canonicalizer omits an empty `bundleId`, and Splunk's
+`dedup` drops every event missing one of its fields unless told to keep them, so a key
+on `bundleId` would silently lose every app Jamf reports without one.
 
 **What the wire cannot say.** A section outside the read's aperture is absent from the
-snapshot and fans out nothing; a section read and genuinely empty fans out nothing too.
-On the wire the two look the same: `loon:jamf:mac:general` with no `loon:jamf:mac:cert` for
-the same `deviceMeta.eventID` means *either* zero certificates *or* certificates not read.
-The payload keeps the distinction (absent versus `[]`); the fan-out loses it, and a key
-saying "unread" on the most-multiplied event is #189's decision, not taken. Under a
-full-contract sweep "zero" is the right reading; under a scoped webhook collection it is
-not ([`splunk-setup.md`](splunk-setup.md) §7).
+snapshot and fans out nothing. A *list* section read and genuinely empty fans out nothing
+too, so on the wire the two look the same: `loon:jamf:mac:general` with no
+`loon:jamf:mac:cert` for the same `deviceMeta.eventID` means *either* zero certificates
+*or* certificates not read. The payload keeps the distinction (absent versus `[]`); the
+fan-out loses it, and a key saying "unread" on the most-multiplied event is #189's
+decision, not taken. Under a full-contract sweep "zero" is the right reading; under a
+scoped webhook collection it is not ([`splunk-setup.md`](splunk-setup.md) §7). A *scalar*
+section read and genuinely empty is different: it still emits its anchor, as `{}` — the
+real record's `userAndLocation` is one sub-event, `{"userAndLocation": {}}`, under
+`loon:jamf:mac:userAndLocation` — so for the seven anchors absent means unread and `{}`
+means read-and-empty, and a full read always produces all seven. (Ruled by default —
+built, tested and posted this way in #242; Kyle confirms or overrules.)
 
 **A section the registry does not name** — a shape from a newer producer replayed on an
 older worker — is delivered unstamped rather than dropped or raised, the same degrade the

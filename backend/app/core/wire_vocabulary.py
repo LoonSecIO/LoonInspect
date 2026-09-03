@@ -27,8 +27,8 @@ fan-out (#242, 2026-09-03) expands one `device.inventory` snapshot into — `sou
 read through `registry_rows()`; and the run family, `run.completed` and `run.failed`,
 under `ASSERTION_SOURCETYPE`. `app.core.outbox` stamps all three, on the `splunk_hec`
 destination type only. Still under the HEC input's own default: `device.inventory.changed`
-(the delta family has no ruled string, and no issue owns one) and `destination.test`
-(deliberately identifiable). The three enrichment strings are minted with no writer,
+(the delta family has no ruled string; #277 puts the ruling to Kyle before the flip) and
+`destination.test` (deliberately identifiable). The three enrichment strings are minted with no writer,
 because an enrichment rides inline on the app sub-event.
 """
 

@@ -37,8 +37,8 @@ search head; take the URL from the token's own page rather than assuming the sha
   the `device.inventory` snapshot arrives as sub-events under the fourteen section strings
   (`loon:jamf:mac:app`, …), the change stream under its fifteen `:change` strings, and
   `run.completed` / `run.failed` under `loon:run` (§6). What still lands under the name
-  you set here is `device.inventory.changed` — the delta family has no ruled string — and
-  the test event. Set one anyway: it is what those get for ever, and it is where an event
+  you set here is `device.inventory.changed` — the delta family has no ruled string;
+  [#277](https://github.com/LoonSecIO/LoonInspect/issues/277) puts the ruling to Kyle before the flip — and the test event. Set one anyway: it is what those get for ever, and it is where an event
   from a LoonInspect build that predates a family's stamp would land.
 - *Allowed indexes* and *Default index*: **this is the only thing that decides where the
   events land.** LoonInspect never sends an `index` field — every HEC event object
@@ -186,8 +186,9 @@ the input's for that event.
 - `run.completed` and `run.failed` arrive under `loon:run` — LoonInspect's own assertion
   about a run, with no vendor segment.
 - `device.inventory.changed` and the test event send none and arrive under whichever
-  sourcetype **you** set on the input (§2). The delta family has no ruled string, and a
-  string once minted is a permanent stanza, so none was invented in passing.
+  sourcetype **you** set on the input (§2). The delta family has no ruled string
+  ([#277](https://github.com/LoonSecIO/LoonInspect/issues/277) rules it, before the flip), and a string once minted is a permanent stanza, so
+  none was invented in passing.
 
 The stanza below keys on the input's name and so covers the delta and the test event; the
 same three lines belong under each of the thirty minted strings, and the section after it
@@ -331,18 +332,26 @@ one per device per pass, ~28 KB for a Mac with 83 apps — [runs.md](runs.md) §
 **Selecting one device's pass, and deduplicating a retry.** `deviceMeta.eventID` is one
 id per device per pull, on every sub-event of that pull; a retry after a lost response
 re-sends a device's sub-events together, so the dedup key on a fan-out sourcetype is the
-pull plus the item — `| dedup deviceMeta.eventID app.bundleId app.path app.version` on
+pull plus the item — `| dedup keepempty=true deviceMeta.eventID app.path app.version` on
 `loon:jamf:mac:app`, and each section's own identity on its sourcetype — never
 `deviceMeta.eventID` alone, which collapses a device's whole pass to one arbitrary row.
+Keyed on `path` rather than `bundleId`, and with `keepempty=true`, because the
+canonicalizer omits an empty `bundleId` and `dedup` drops every event missing one of its
+fields unless told to keep them — a key on `bundleId` would silently lose every app Jamf
+reports without one.
 
 **What an absent sub-event means.** A section outside the webhook collection's aperture
-is not read and fans out nothing; a section read and genuinely empty fans out nothing
-too. On the wire the two look the same: `loon:jamf:mac:general` with no
+is not read and fans out nothing. A *list* section read and genuinely empty fans out
+nothing too, so on the wire the two look the same: `loon:jamf:mac:general` with no
 `loon:jamf:mac:cert` for the same `deviceMeta.eventID` is *either* zero certificates *or*
 certificates not read. Under the nightly sweep — the whole contract — "zero" is the right
 reading; under a webhook collection scoped to a few sections it is not, and nothing on the
 sub-event says which (a key that would is a #189 decision, not taken). If you scope the
-webhook collection, know that its snapshots are partial by design.
+webhook collection, know that its snapshots are partial by design. A *scalar* section read
+and genuinely empty still arrives — as its anchor with an empty object, `{"userAndLocation":
+{}}` under `loon:jamf:mac:userAndLocation` — so for the seven one-per-device sections a
+missing anchor means unread, an empty one means read-and-empty, and a full read always
+sends all seven.
 
 **Volume is a subscription knob, not a wire change.** Null or empty `subscribed_events`
 means every event, so a destination on the default receives the snapshot from the day it
