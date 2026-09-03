@@ -48,7 +48,11 @@
 #           table of guards alone goes vacuously green the day someone rewrites
 #           the README, and prints a tick while checking nothing.
 #
-# SCOPE: README.md only. docs/ carries the same risk and is not covered.
+# SCOPE: README.md and backend/README.md. #87 found that backend/README.md carried
+# the exact same false claim class this check exists to prevent (fabricated
+# `webauthn`/`scim2-models` dependencies) while sitting entirely outside this
+# script's reach — a second storefront page, invisible to the machine. docs/
+# carries the same risk beyond these two and is still not covered.
 
 set -uo pipefail
 # Deliberately not `set -e`: one failing row must not hide the other ten. Every
@@ -57,23 +61,32 @@ set -uo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" || exit 2
 
 README=README.md
+BACKEND_README=backend/README.md
 [[ -f $README ]] || { echo "no $README at $(pwd)"; exit 2; }
+[[ -f $BACKEND_README ]] || { echo "no $BACKEND_README at $(pwd)"; exit 2; }
 
 # The "What it does not do" section is where absences are named, so it is full of
 # the very words the guards look for ("No CVE or EPSS enrichment. No SCIM, no
 # MFA."). Scanning it would fail the build for telling the truth. Stripped from
 # its heading to the next heading. If that section is ever deleted the strip
-# becomes a no-op and this check gets stricter, never weaker.
-SCANNED=$(awk '
-  /^#+[[:space:]]+What it does not do[[:space:]]*$/ { skip = 1; next }
-  skip && /^#/ { skip = 0 }
-  !skip
-' "$README")
+# becomes a no-op and this check gets stricter, never weaker. backend/README.md
+# has no equivalent section and is scanned whole.
+SCANNED=$(
+  awk '
+    /^#+[[:space:]]+What it does not do[[:space:]]*$/ { skip = 1; next }
+    skip && /^#/ { skip = 0 }
+    !skip
+  ' "$README"
+  cat "$BACKEND_README"
+)
 
 pass=0 armed=0 inert=0 failed=0
 
 # CI reads ::error:: annotations (the image job in ci.yml already uses them);
-# a terminal reads the plain line.
+# a terminal reads the plain line. Points at README.md specifically — the more
+# common offender and the file GitHub renders on the repo's front page — even
+# though $SCANNED merges both files, so a claim only backend/README.md makes
+# still fails the build; the annotation just isn't pinpoint about which file.
 annotate() {
   [[ -n ${GITHUB_ACTIONS:-} ]] && printf '::error file=%s::%s\n' "$README" "$1"
   printf '  FAIL  %s\n' "$1"
@@ -88,7 +101,7 @@ claim() {
 
   if [[ $claimed == no ]]; then
     if [[ $kind == anchor ]]; then
-      annotate "$id: the README no longer makes this anchor claim. Anchors are what stop this check going vacuously green — restore the claim, or retire the row deliberately."
+      annotate "$id: neither README.md nor backend/README.md makes this anchor claim anymore. Anchors are what stop this check going vacuously green — restore the claim, or retire the row deliberately."
       ((failed++))
     else
       printf '  ----  %-13s not claimed\n' "$id"
@@ -102,7 +115,7 @@ claim() {
     printf '  ok    %-13s claimed, and backed by: %s\n' "$id" "$proof"
     ((pass++))
   else
-    annotate "$id: README.md claims this and nothing in the codebase backs it. The proof that found nothing was: $proof"
+    annotate "$id: README.md or backend/README.md claims this and nothing in the codebase backs it. The proof that found nothing was: $proof"
     ((failed++))
   fi
 }
@@ -182,7 +195,7 @@ printf '\n%d claim(s) armed, %d backed, %d inert, %d failed\n' \
   "$armed" "$pass" "$inert" "$failed"
 
 if (( failed > 0 )); then
-  printf '\nREADME.md and the code disagree. Either remove the claim, or ship the\n'
+  printf '\nA README and the code disagree. Either remove the claim, or ship the\n'
   printf 'thing and point its row at the proof.\n'
   exit 1
 fi

@@ -240,12 +240,13 @@ Friday spike.
 or `jamf.corp.local:8443` when the port is not the scheme's default).
 
 The body's field names — `deviceMeta`, `addedApps`, and the rest — are documented in
-[runs.md](runs.md) §4. **Treat them as not yet frozen:** the casing rules are ruled for
-the inventory event but still open for the other producers (#188, #90). Today that
-difference is visible on the wire — `device.inventory.changed` is camelCase
-(`occurredAt`), while `run.completed` is still snake_case (`occurred_at`) — and it is
-expected to be reconciled before 1.0. Pin dashboards to the index and the sourcetype,
-and expect to revisit field-level SPL.
+[runs.md](runs.md) §4. **The vocabulary is frozen:** ruled in #188 and amended only
+additively since — [splunk-wire-vocabulary.md](splunk-wire-vocabulary.md) is the
+contract, generated from the read aperture so it cannot drift from the code. Casing is
+camelCase across every event family, not only the inventory one (#212): `occurredAt` on
+`device.inventory.changed` and on `run.completed` alike. Pin dashboards to the index and
+the sourcetype, and pin field-level SPL too — the additive-only rule means a saved search
+written against today's keys keeps working as new sections and keys arrive.
 
 ## 8. Prove it end to end
 
