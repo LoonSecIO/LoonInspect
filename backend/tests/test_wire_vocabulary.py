@@ -26,7 +26,7 @@ from app.core.wire_vocabulary import (
     sourcetype,
 )
 from app.mdm.jamf.contract import SECTIONS
-from app.schemas.payload import InventoryChangedEvent
+from app.schemas.payload import InventoryChangedEvent, InventorySnapshotEvent
 
 DOC = Path(__file__).resolve().parents[2] / "docs" / "splunk-wire-vocabulary.md"
 
@@ -193,11 +193,16 @@ def test_the_event_that_the_fan_out_expands_already_carries_all_three() -> None:
     key the fan-out is required to stamp on every sub-event has to be on the event it
     expands, or it is unreachable by the time the split happens. `jobID` at the root is
     #220's hoist; before it, this assertion would have failed on that key alone.
+
+    Since #241 the event the fan-out expands is the snapshot, `InventorySnapshotEvent`;
+    the delta is held to the same three so the two inventory families never disagree
+    about what survives a split.
     """
-    wire_names = {
-        info.serialization_alias or name for name, info in InventoryChangedEvent.model_fields.items()
-    }
-    assert set(SUB_EVENT_KEYS) <= wire_names
+    for model in (InventorySnapshotEvent, InventoryChangedEvent):
+        wire_names = {
+            info.alias or info.serialization_alias or name for name, info in model.model_fields.items()
+        }
+        assert set(SUB_EVENT_KEYS) <= wire_names, model.__name__
 
 
 def test_doc_sub_event_table_matches_the_ruling() -> None:

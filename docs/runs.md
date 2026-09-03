@@ -105,7 +105,7 @@ ledger, the run, and the wire. `comparison` is `baseline` until a connection and
 class have completed one successful run, and `delta` after — and it rides `run.completed`
 (§7), **not** `deviceMeta`, for the reason below.
 
-The `deviceMeta` block on `device.inventory.changed`, ruled in #189:
+The `deviceMeta` block on `device.inventory` and `device.inventory.changed`, ruled in #189:
 
 ```json
 {"jobID": "…", "trigger": "sweep", "connectionID": 1,
@@ -174,8 +174,8 @@ Casing is camelCase throughout with the token `ID` uppercased on LoonInspect's o
 (#188). A vendor's native key keeps the vendor's spelling — Jamf writes `bundleId`, so
 the wire does too.
 
-The law covers **all four families** — `device.inventory.changed`, `device.change`,
-`run.completed`, `run.failed` — and for a year it was applied to one. The consequence,
+The law covers **all five families** — `device.inventory`, `device.inventory.changed`,
+`device.change`, `run.completed`, `run.failed` — and for a year it was applied to one. The consequence,
 seen on real indexed data, was one index, one sourcetype, and one run UUID arriving under
 three names (`deviceMeta.jobID`, `job_id`, `run_id`) with no single predicate able to
 select LoonInspect events by type. Three decisions closed that:
@@ -196,9 +196,10 @@ select LoonInspect events by type. Three decisions closed that:
   so the two id spaces are separated by the field Splunk routes on. Joining across
   sourcetypes on the id alone still mixes them, and this sentence is the warning.
 
-`jobID` is **top-level on all four families**, and on `device.inventory.changed` it is
-carried a second time inside `deviceMeta`, where Splunk's JSON extraction names it
-`deviceMeta.jobID`. The cross-family join is therefore a bare `jobID=$id$` — not
+`jobID` is **top-level on all five families**, and on the three device families —
+`device.inventory`, `device.inventory.changed`, `device.change` — it is carried a second
+time inside `deviceMeta`, where Splunk's JSON extraction names it `deviceMeta.jobID`. The
+cross-family join is therefore a bare `jobID=$id$` — not
 `jobID=$id$ OR deviceMeta.jobID=$id$`, and not a `coalesce` — which is what lets the
 payload tables below call the run id joinable with no qualification attached.
 
@@ -233,13 +234,128 @@ its entity's string — `loon:jamf:mac:security:change`, `loon:jamf:mac:app:chan
 every other destination type gets the canonical event with no sourcetype at all. The
 strings are ruled in [`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md) §2 and the
 stanzas they imply are in [`splunk-setup.md`](splunk-setup.md) §6. Every other family is
-still deliberately unstamped: the ruled section tree names fan-out sub-events that do not
-exist, and a sourcetype is a permanent `props.conf` stanza, so minting one for a shape
+still deliberately unstamped — the per-device snapshot `device.inventory` included: the
+ruled section tree names the fan-out sub-events that snapshot will be split into, they are
+not built, and a sourcetype is a permanent `props.conf` stanza, so minting one for a shape
 about to change would be the expensive kind of mistake
 ([#222](https://github.com/LoonSecIO/LoonInspect/issues/222), absorbed by the fan-out,
 [#242](https://github.com/LoonSecIO/LoonInspect/issues/242)). `device.change` was never
 blocked that way — it is already at sub-event grain, one event per kept change row — which
 is why #243 ruled it may be stamped first.
+
+### The snapshot family: `device.inventory` (#241)
+
+One `device.inventory` per device per pass that clears the ledger's monotonic guard —
+sweep and webhook alike, whether or not anything changed — enqueued by `process_sync` in
+the same transaction as the ledger write and the row updates, and **fattened at enqueue**
+(Kyle, 2026-09-02: "flatten at enqueue", read as *fatten*, the option he confirmed on
+2026-09-01). It never fires on the stale path and never for a device whose ingest was
+rolled back. It is the state; `device.inventory.changed` is what happened to the app list
+and keeps shipping unchanged beside it — #81 ruling 6's IS/HAPPENED test applied to the
+discriminator — so `event=device.inventory*` collects both and a delta-only subscription
+still means what it did. It is the event the fan-out (#242) expands, and it carries the
+three keys every sub-event must survive with ([`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md)
+§6) at its root.
+
+```json
+{"event": "device.inventory", "jobID": "0199a5c4-…", "occurredAt": "2026-09-02T02:00:00Z",
+ "deviceMeta": {"jobID": "0199a5c4-…", "trigger": "sweep", "eventID": "…", "…": "the ruled block, once"},
+ "general": {"name": "Loon’s Mac mini", "remoteManagement": {"managed": true}, "…": "…"},
+ "hardware": {"serialNumber": "LOONMINI0M4", "model": "Mac mini", "…": "…"},
+ "operatingSystem": {"…": "…"}, "userAndLocation": {}, "purchasing": {"…": "…"},
+ "security": {"…": "…"}, "diskEncryption": {"…": "…"},
+ "app": [
+   {"app": {"name": "Maps.app", "path": "/System/Applications/Maps.app", "version": "3.0",
+            "cfBundleShortVersionString": "3.0", "cfBundleVersion": "2972.20.6.12.13",
+            "bundleId": "com.apple.Maps", "macAppStore": false},
+    "patch": {"supported": false},
+    "vuln": {"assessment": "off"}}
+ ],
+ "ea": [{"ea": {"definitionId": "3", "name": "…", "values": [], "enabled": true, "…": "…", "source": "extensionAttributes"}}],
+ "group": [{"group": {"groupId": "1", "smartGroup": true, "groupName": "All Managed Clients"}}],
+ "profile": [{"profile": {"…": "…"}}], "localUserAccount": [{"localUserAccount": {"…": "…"}}],
+ "cert": [{"cert": {"…": "…"}}], "update": [{"update": {"…": "…"}}]}
+```
+
+Four properties, each traceable to a ruling:
+
+- **The section keys are the registry's and nothing else.** Fourteen at most, exactly
+  `SECTION_WRAPPERS.values()` ([`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md)
+  §2): the seven one-per-device sections are Jamf's object, the seven list sections are
+  lists — `localUserAccount` included, whatever the naming comment says, because the
+  contract's `entry_kind` makes it a list. Under the frozen registry the "device anchor"
+  #81 spoke of is one sub-event per scalar section, which is why all seven ride.
+- **A list item is the sub-event body minus the three sub-event keys.** `{"cert": {…}}`,
+  and for an app `{"app": {…}, "patch": {…}, "vuln": {…}}` — byte for byte what the
+  fan-out emits under the section's sourcetype once it adds `event`, `jobID` and
+  `deviceMeta` and the envelope. So the fan-out is iteration, not reshaping, and every
+  shape decision lives on this side of the outbox, where the data is. It also keeps
+  LoonInspect's enrichment keys *beside* Jamf's object rather than inside it — namespaced,
+  not flattened — so Jamf can never add a field that collides with `patch`. The price is
+  `app[].app.bundleId` on a generic-webhook or Elastic document.
+- **Jamf's v4 names, verbatim; the ledger's allowlist for the field set.** Kyle,
+  2026-09-02: "Use Jamf's v4 Names Verbatim in the sections I am copying them." Every
+  section object is Jamf's `computers-inventory` object under Jamf's keys, restricted to
+  the contract's allowlist for that section (`app/mdm/jamf/contract.py`), with values in
+  the ledger's canonical form — the snapshot agrees with the ledger byte for byte, which
+  is what makes a `device.inventory` sub-event and a `device.change` from the same span
+  join on equal strings. The field set is the labelled assumption on #81's 2026-09-02
+  ruling comment, applied to every section: the telemetry the allowlist excludes
+  (`lastContactTime`, `lastIpAddress`, `reportDate`, battery) is off the wire in v0 and
+  additive later under clause 1; `lastReportDate` already rides `deviceMeta`. The four
+  minted identity fields — `appHash`, `versionHash`, `keyTitle`, `keyFull` — ride no app
+  object here (Kyle, 2026-09-02: "leave them out for now we can add them in the future.
+  We can add keys later but we can't take them away"); they keep riding the delta's
+  `addedApps[]` / `removedApps[]`, which is not the fan-out.
+- **Labelled entries carry their label under Jamf's key**, and the extension-attribute
+  item is #197's ruled wire object. The contract keeps names out of the hash and carries
+  them as the entry's label; the wire wants `group.groupName` and `profile.displayName`,
+  because that is what an analyst types. The `ea` item is Jamf's object verbatim plus
+  `source` — the one key LoonInspect mints inside a Jamf object anywhere on the wire
+  ([`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md) §4).
+
+`patch` and `vuln` ride every app item because fatten-at-enqueue leaves the fan-out
+nothing to join against: `patch.supported` is a bool, always present, `true` iff the
+installed-app row's Jamf Patch answer names a title (Kyle, 2026-09-01: "we need a default
+for the patching... a boolean ... set that equal to false. That way you can always search
+for it or not it easy"), read off the row already in the transaction — cache, don't
+calculate; `vuln` is `{"assessment": "off"}` until the corpus lands
+([`vulnerabilities.md`](vulnerabilities.md) §4a). `alert` is name-only in v0 (#229) and
+rides nothing.
+
+**Three meanings of absence**, and a consumer can rely on all three:
+
+- **A section wrapper absent** — the section was outside this read's aperture. The
+  2026-08-29 ruling applied per section: a webhook collection scoped to
+  `["general", "hardware", "operating_system"]` produces three wrappers and no `app` key;
+  the snapshot never asserts an absence the read did not observe. This is a per-event
+  exception to additive-only clause 4 ("absence means the event predates the key"),
+  recorded beside the clause rather than amended into it: the wrapper rule is the
+  aperture's, not the vocabulary's, and a section-less snapshot cannot exist because the
+  webhook path falls back to the whole contract.
+- **`{}` or `[]`** — read, and genuinely empty. The real fixture's `userAndLocation` is
+  `{}`; a full read of a device with no apps is `"app": []`.
+- **A key absent inside a Jamf object** — Jamf sent no value: an older server that does
+  not report the field, or a null the canonicalizer dropped. The additive-only clauses
+  govern LoonInspect's own keys; they never describe Jamf's object.
+
+**The v4 pin.** Every section object is pinned to the v4 `computers-inventory` shape. A
+field Jamf adds reaches the wire when the allowlist admits it — additive under clause 1,
+never automatic; a rename or removal forced by adopting a later major endpoint version is
+a breaking wire change and ships as a `schemaVersion` bump in `deviceMeta` (clause 6),
+never a silent reshape.
+
+**Size and the subscription default.** Measured against the captured Jamf Pro 11.31
+record (`backend/tests/fixtures/jamf/computer_inventory_detail_real.json`, 83 apps) as
+compact JSON: **28,783 bytes** for one device — ~22.3 KB of it the `app` list at ~268
+bytes an item — every pass, not once. `device.inventory` joined `KNOWN_EVENT_TYPES` under
+the default the type was born with: null or empty `subscribed_events` keeps meaning every
+event, so a destination on the default receives one snapshot per device per pass from the
+day it ships, and explicit lists were **not** appended to (unlike `run.failed`, migration
+`a9d4c7e1f3b8`): a destination that curated its list never asked for a state stream.
+Opting out, or in, is `subscribed_events` on the API — what each destination type receives
+is in [`splunk-setup.md`](splunk-setup.md) §7. The snapshot's shape is pinned against the
+fixture in `backend/tests/test_inventory_snapshot.py`, size ceiling included.
 
 **The run id is UUIDv7, not `uuid4`, since
 [#225](https://github.com/LoonSecIO/LoonInspect/issues/225).** `jobID` being a

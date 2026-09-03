@@ -385,7 +385,9 @@ def test_the_docs_name_the_same_keys() -> None:
     invisible for three days."""
     docs = Path(__file__).resolve().parents[2] / "docs" / "runs.md"
     text = docs.read_text()
-    example = text.split('The `deviceMeta` block on `device.inventory.changed`, ruled in #189:', 1)[1]
+    example = text.split(
+        'The `deviceMeta` block on `device.inventory` and `device.inventory.changed`, ruled in #189:', 1
+    )[1]
     example = example.split("```", 2)[1]
     assert set(REFUSED) & set(RULED_TWELVE) == set()
     for key in SHIPPED_ELEVEN:

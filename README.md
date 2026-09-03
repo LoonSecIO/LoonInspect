@@ -11,15 +11,15 @@ LoonInspect reads inventory from Jamf Pro, works out what actually changed since
 ## 🚀 Features
 
 * **Built for Jamf Pro:** Native Pro API integration and webhook ingestion. LoonInspect is Jamf-only by design (#79) — `app/mdm/factory.py` builds a Jamf client directly rather than dispatching through an abstraction. A second MDM would be a sibling vertical in this repo, not a provider this one plugs into.
-* **Delta Streaming Engine:** Diffs inventory against the last observation and streams structured JSON events (`device.inventory.changed`, `device.change`) directly to your SIEM. A sweep where nothing changed emits nothing at all. The wire vocabulary is frozen and amended only additively — [docs/splunk-wire-vocabulary.md](docs/splunk-wire-vocabulary.md).
-* **Small on the wire:** Measured at 509 bytes per event plus 311 bytes per changed app. A 40,000-device baseline sweep is roughly 1.06 GB, once; a quiet day afterwards is roughly 4 MB.
+* **Delta Streaming Engine:** Diffs inventory against the last observation and streams structured JSON events (`device.inventory.changed`, `device.change`) directly to your SIEM, beside one `device.inventory` snapshot per device per pass so the SIEM always holds the current state. A sweep where nothing changed emits no deltas. The wire vocabulary is frozen and amended only additively — [docs/splunk-wire-vocabulary.md](docs/splunk-wire-vocabulary.md).
+* **Small on the wire, by subscription:** Deltas measure 509 bytes per event plus 311 bytes per changed app — a quiet day is roughly 4 MB. The per-device snapshot measures about 28 KB for a Mac with 83 apps, every pass, so a 40,000-device sweep is roughly 1.1 GB of snapshots each time. Destinations subscribe per event type, so a delta-only feed stays small.
 * **Hybrid Sync Architecture:** Real-time webhooks for active devices and scheduled off-peak sweeps for the rest. Each pull is a *collection* — what to read (Jamf sections, a device filter pushed into Jamf's query, the smart-group catalog) and when (time of day, timezone, cadence) — configured per connection in the app rather than as one global cron.
 * **Tenant isolation in the database:** Row-level security is enforced by Postgres rather than by application filters, and CI asserts that the application role cannot bypass it.
 * **Self-hosted:** One container and a Postgres database. No vendor account required to run it.
 
 ### What it does not do
 
-No CVE or EPSS enrichment. No vulnerability scoring. No SCIM, no MFA. Jamf Patch title compliance is implemented; nothing else vulnerability-shaped is. The wire already carries a `vuln` slot for the rest — every device event ships `assessment: off` until the community corpus and its matching land ([docs/vulnerabilities.md](docs/vulnerabilities.md), tracked in [#248](https://github.com/LoonSecIO/LoonInspect/issues/248)/[#249](https://github.com/LoonSecIO/LoonInspect/issues/249)). If you need vulnerability scoring today, this is not that tool yet.
+No CVE or EPSS enrichment. No vulnerability scoring. No SCIM, no MFA. Jamf Patch title compliance is implemented; nothing else vulnerability-shaped is. The wire already carries a `vuln` slot for the rest — every app on every `device.inventory` snapshot ships `assessment: off` until the community corpus and its matching land ([docs/vulnerabilities.md](docs/vulnerabilities.md), tracked in [#248](https://github.com/LoonSecIO/LoonInspect/issues/248)/[#249](https://github.com/LoonSecIO/LoonInspect/issues/249)). If you need vulnerability scoring today, this is not that tool yet.
 
 ---
 

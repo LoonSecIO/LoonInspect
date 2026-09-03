@@ -27,7 +27,7 @@ What is pinned, by section:
    the queue.
 3. **Producer volume.** One connection sync of a two-device tenant: how many events
    the first sweep enqueues, and how many the second, unchanged sweep does. This is
-   the number #81 rewrites.
+   the number #81 rewrote and #241 built: one snapshot per device per pass, every pass.
 4. **Delivery.** Success, failure, backoff, the ten-attempt dead-letter, and the
    disabled-destination path that leaves a delivery pending on purpose.
 5. **Retention.** `purge_delivered_events` refusing to touch an event that still
@@ -542,16 +542,19 @@ async def connection(db):
         await db.commit()
 
 
-async def test_a_sync_enqueues_one_event_per_changed_device_and_nothing_for_the_rest(
+async def test_a_sync_enqueues_one_snapshot_per_device_per_pass_and_a_delta_only_when_apps_moved(
     db, connection, jamf: FakeJamf
 ) -> None:
-    """The number #81 rewrites, written down before it changes.
+    """The number #81 rewrote, and #241 built: one `device.inventory` per device per
+    pass, whether or not anything changed, beside a `device.inventory.changed` only when
+    the app list moved.
 
-    Today the producer is delta-shaped: a device whose app inventory did not move
-    produces no event at all, so a quiet fleet costs an empty outbox. The proposed
-    ruling makes it one snapshot per device per sweep — the same two-device tenant
-    would produce 2 here *and* 2 on the second sweep, and a 40,000-device tenant
-    40,000 of them every time.
+    Before #241 the producer was delta-shaped and a quiet fleet cost an empty outbox;
+    this two-device tenant produced 2 device events on the first sweep and none on the
+    second. Now it produces 2 snapshots *and* 2 deltas on the baseline, and 2 more
+    snapshots with no delta on the repeat — a 40,000-device tenant, 40,000 snapshots of
+    ~30 KB every time. That is the storage story #241 measured and the retention
+    question #91 carries; this test is the alarm on the count.
     """
     from app.mdm.service import sync_connection
     from app.models.schema import EventOutbox
@@ -564,15 +567,27 @@ async def test_a_sync_enqueues_one_event_per_changed_device_and_nothing_for_the_
 
     first = await sync_connection(db, connection)
     assert first.ok
-    # Two computers in the fake tenant, both seen for the first time, both with apps —
-    # and nothing else in the outbox but the sweep's own completion event.
-    assert await _by_type() == {"device.inventory.changed": 2, "run.completed": 1}
+    # Two computers in the fake tenant, both seen for the first time, both with apps: a
+    # snapshot and a delta each, and nothing else but the sweep's own completion event.
+    assert await _by_type() == {"device.inventory": 2, "device.inventory.changed": 2, "run.completed": 1}
 
     second = await sync_connection(db, connection)
     assert second.ok
-    # The delta shape, in one line: the second sweep of an unchanged fleet adds its
-    # run event and not one device event.
-    assert await _by_type() == {"device.inventory.changed": 2, "run.completed": 2}
+    # The snapshot shape, in one line: the second sweep of an unchanged fleet adds one
+    # snapshot per device and its run event, and not one delta.
+    assert await _by_type() == {"device.inventory": 4, "device.inventory.changed": 2, "run.completed": 2}
+
+    # Exactly one snapshot row per device per pass, on both passes — never two for one
+    # device, never none: the grain the fan-out (#242) multiplies.
+    snapshots = (
+        await db.execute(select(EventOutbox).where(EventOutbox.event_type == "device.inventory").order_by(EventOutbox.id))
+    ).scalars().all()
+    per_pass: dict[str, list[str]] = {}
+    for row in snapshots:
+        per_pass.setdefault(row.payload["jobID"], []).append(row.payload["deviceMeta"]["jamfProID"])
+    assert len(per_pass) == 2
+    for devices in per_pass.values():
+        assert sorted(devices) == sorted({jamf.real["id"], jamf.synthetic["id"]})
 
 
 # --- 4. Delivery: success, failure, backoff, dead-letter, disabled ------------------

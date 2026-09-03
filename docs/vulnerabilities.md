@@ -132,9 +132,13 @@ means 'did not apply', never zero"* ([`posture-snapshot.md`](posture-snapshot.md
 `patch.supported` is the same instinct in bool form: always present, so a search can
 `NOT` it.
 
-Under `off` the whole block is `{"assessment": "off"}` — the constant #241 and #242
-were told to emit while no corpus exists, and the only vulnerability key on the wire
-until [#249](https://github.com/LoonSecIO/LoonInspect/issues/249) lands.
+Under `off` the whole block is `{"assessment": "off"}` — the constant
+[#241](https://github.com/LoonSecIO/LoonInspect/issues/241) stamps on every `app` item of
+the `device.inventory` snapshot at enqueue (`VulnEnrichment`, `app/schemas/payload.py`,
+typed to this closed set so a misspelled assessment is refused rather than indexed) and
+[#242](https://github.com/LoonSecIO/LoonInspect/issues/242) copies through to the app
+sub-event while no corpus exists; the only vulnerability key on the wire until
+[#249](https://github.com/LoonSecIO/LoonInspect/issues/249) lands.
 
 ### 4b. Values are not camelCase, and `unknown_app` is not a typo
 

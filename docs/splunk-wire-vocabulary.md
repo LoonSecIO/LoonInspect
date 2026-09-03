@@ -272,6 +272,12 @@ extension attribute, per certificate and per profile. A fourth key proposed for 
 is a #189 decision about a cost measured in fields × events × devices × syncs, not a
 naming one.
 
+The event the fan-out expands is the per-device snapshot, `device.inventory`
+([#241](https://github.com/LoonSecIO/LoonInspect/issues/241)): it carries all three at its
+root, once, and each of its list items is already the sub-event body minus these three —
+`{"app": {…}, "patch": {…}, "vuln": {…}}` — so the split is iteration, not reshaping
+([`runs.md`](runs.md) §4).
+
 ## 7. What is ruled here but not yet built
 
 The vocabulary is frozen; what follows from it and is not yet implemented has its own
@@ -279,5 +285,5 @@ issue rather than living on as a footnote.
 
 | Consequence | Issue |
 | --- | --- |
-| `sourcetype` is not stamped on the **section tree** — those strings name fan-out sub-events that are not built, so `app/core/outbox.py` sends none for the inventory and run families and whatever the operator set on the HEC input still names them. The `:change` family (§2) is the one exception and is built | [#222](https://github.com/LoonSecIO/LoonInspect/issues/222) |
+| `sourcetype` is not stamped on the **section tree** — those strings name fan-out sub-events that are not built, so `app/core/outbox.py` sends none for the two inventory families and the run families and whatever the operator set on the HEC input still names them. The per-device snapshot `device.inventory` ([#241](https://github.com/LoonSecIO/LoonInspect/issues/241), built 2026-09-03; [`runs.md`](runs.md) §4) is the event those strings will be minted for: it carries every section under its wrapper key from §2 and travels **unstamped and whole** until the fan-out splits it. The `:change` family (§2) is the one exception and is built | [#222](https://github.com/LoonSecIO/LoonInspect/issues/222) |
 | `alert` is minted with no writer — #101 ships the alerts table and the Needs Attention rows with nothing on the wire; the block's shape (a keyed list on the app, per the 2026-08-29 ruling) and its kind vocabulary are named when it is built, additive under clause 1 | [#101](https://github.com/LoonSecIO/LoonInspect/issues/101) |

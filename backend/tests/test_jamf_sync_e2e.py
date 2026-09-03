@@ -8,15 +8,19 @@ with the two fixture records as the fleet.
 
 What it pins, in order:
 
-1. A sweep opens one span per device and populates devices/installed_apps.
-2. The same sweep again is "repeat" for every device — no spans, no events, no churn.
+1. A sweep opens one span per device and populates devices/installed_apps, and enqueues
+   one `device.inventory` snapshot per device (#241).
+2. The same sweep again is "repeat" for every device — no spans, no deltas, no churn —
+   and still one snapshot per device, because the snapshot says what a device IS.
 3. A webhook naming a computer fetches the full record by id and ingests it: one app
    added, zero removed. That last number is the point — before this, the webhook
    payload itself was normalized, it carries no application list, and every webhook
-   reported the whole inventory removed.
-4. A webhook collection scoped without applications wipes nothing and emits nothing,
-   and the full sweep after it derives no phantom per-app changes — while a full-scope
-   read of a device with genuinely zero apps still diffs to removals (#93).
+   reported the whole inventory removed. Its snapshot shares the delta's identity.
+4. A webhook collection scoped without applications wipes nothing and emits no delta —
+   its snapshot carries the sections it read and no `app` key at all — and the full
+   sweep after it derives no phantom per-app changes; while a full-scope read of a
+   device with genuinely zero apps still diffs to removals, and its snapshot says
+   `"app": []` (#93, per section since #241).
 5. The same discipline for the rest of the row (#98): a read scoped below GENERAL and
    the EA section leaves the device's scalars and extension-attribute rows exactly as
    the last full read left them, any full-aperture read heals, and a full-scope read
@@ -162,6 +166,8 @@ async def test_sweep_then_repeat_then_webhook(db, jamf: FakeJamf, connection) ->
     changed_events = (
         select(func.count()).select_from(EventOutbox).where(EventOutbox.event_type == "device.inventory.changed")
     )
+    snapshot_events = select(func.count()).select_from(EventOutbox).where(EventOutbox.event_type == "device.inventory")
+    snapshots_before = await _count(db, snapshot_events)
 
     # 1. First sweep: every device is new, the group definition is observed, state tables filled.
     first = await sync_connection(db, connection)
@@ -170,6 +176,9 @@ async def test_sweep_then_repeat_then_webhook(db, jamf: FakeJamf, connection) ->
     assert first.group_count == 1
     assert "GET /api/v1/jamf-pro-version" in jamf.requests
     assert "GET /api/v2/computer-inventory-collection-settings" in jamf.requests
+    # One `device.inventory` per device per pass (#241), enqueued in the same transaction
+    # as the ledger write and the row updates.
+    assert await _count(db, snapshot_events) == snapshots_before + 2
 
     devices = (await db.execute(select(Device).where(Device.mdm_connection_id == connection.id))).scalars().all()
     assert {d.external_id for d in devices} == {real_id, synthetic_id}
@@ -195,12 +204,15 @@ async def test_sweep_then_repeat_then_webhook(db, jamf: FakeJamf, connection) ->
     assert real_span.udid == "A1B2C3D4-0000-4000-8000-0000000000A3"
 
     # 2. The same sweep again: Jamf served the same reportDate, so nothing is new and
-    #    nothing is written for the devices — no spans, no events. The group has no
-    #    device time, so every run is a fresh observation of it: unchanged, count +1.
+    #    nothing is written for the devices — no spans, no deltas. The snapshot is the
+    #    one thing a repeat pass still produces: one per device, saying what the device IS
+    #    (#241). The group has no device time, so every run is a fresh observation of it:
+    #    unchanged, count +1.
     events_before = await _count(db, changed_events)
     second = await sync_connection(db, connection)
     assert second.observations == {"repeat": 2, "group_unchanged": 1}
     assert await _count(db, changed_events) == events_before
+    assert await _count(db, snapshot_events) == snapshots_before + 4
     all_spans = select(func.count()).select_from(ObservationSpan).where(ObservationSpan.mdm_connection_id == connection.id)
     assert await _count(db, all_spans) == 3
 
@@ -235,6 +247,27 @@ async def test_sweep_then_repeat_then_webhook(db, jamf: FakeJamf, connection) ->
     assert latest.payload["deviceExternalID"] == real_id
     assert [app["bundleId"] for app in latest.payload["addedApps"]] == ["io.loonsec.inspector"]
     assert latest.payload["removedApps"] == []
+
+    # The webhook's snapshot, beside its delta: the same pull's identity — `occurredAt`
+    # (the device's own reportDate on the webhook path), the meta block with its
+    # `eventID`, the envelope — and the state the delta describes the transition into:
+    # 84 apps under the full aperture the webhook collection falls back to.
+    assert await _count(db, snapshot_events) == snapshots_before + 5
+    snapshot = (
+        await db.execute(
+            select(EventOutbox).where(EventOutbox.event_type == "device.inventory").order_by(EventOutbox.id.desc()).limit(1)
+        )
+    ).scalar_one()
+    assert snapshot.payload["deviceMeta"] == latest.payload["deviceMeta"]
+    assert snapshot.payload["deviceMeta"]["jamfProID"] == real_id
+    assert snapshot.payload["deviceMeta"]["trigger"] == "webhook"
+    assert snapshot.payload["jobID"] == latest.payload["jobID"]
+    assert snapshot.payload["occurredAt"] == latest.payload["occurredAt"]
+    assert snapshot.payload["occurredAt"].startswith("2026-08-22T09:00:00")
+    assert snapshot.payload["_envelope"] == latest.payload["_envelope"]
+    assert len(snapshot.payload["app"]) == 84
+    assert "io.loonsec.inspector" in {item["app"].get("bundleId") for item in snapshot.payload["app"]}
+    assert all(set(item) == {"app", "patch", "vuln"} for item in snapshot.payload["app"])
 
     current = (
         await db.execute(
@@ -285,18 +318,53 @@ async def test_narrow_webhook_scope_never_wipes_apps(db, jamf: FakeJamf, connect
     }
     result = await ingest_webhook(db, connection, payload)
     # The aperture changed, so a new span opens — but no section's content moved, no
-    # app row is touched, and nothing reaches the event stream.
+    # app row is touched, and no delta reaches the event stream.
     assert result is not None and result.outcome == "changed"
     assert result.changed_sections == ()
     assert await _count(db, real_apps) == apps_before
     assert await _count(db, changed_events) == events_before
 
+    # The snapshot the scoped read produced carries the three sections it read and NO
+    # `app` key — not an empty one. The 2026-08-29 ruling, per section (#241): a section
+    # outside the read's aperture is absent, and the snapshot never asserts zero apps for
+    # a read that did not look at them. The head survives any aperture.
+    async def _latest_snapshot():
+        return (
+            await db.execute(
+                select(EventOutbox)
+                .where(EventOutbox.event_type == "device.inventory")
+                .order_by(EventOutbox.id.desc())
+                .limit(1)
+            )
+        ).scalar_one()
+
+    scoped = await _latest_snapshot()
+    assert scoped.payload["deviceMeta"]["jamfProID"] == real_id and scoped.payload["deviceMeta"]["trigger"] == "webhook"
+    assert set(scoped.payload) - {"_envelope", "event", "jobID", "occurredAt", "deviceMeta"} == {
+        "general", "hardware", "operatingSystem",
+    }
+    assert "app" not in scoped.payload
+    assert scoped.payload["hardware"]["serialNumber"] == "LOONMINI0M4"
+
     # The following full sweep re-widens the aperture. The apps it reads are the ones
-    # the rows already hold, so nothing is added, removed, or minted as a change.
+    # the rows already hold, so nothing is added, removed, or minted as a change — and
+    # the snapshot is whole again, all fourteen wrappers, `app` at the count the rows hold.
     second = await sync_connection(db, connection)
     assert second.ok and second.observations.get("changed") == 1
     assert await _count(db, real_apps) == apps_before
     assert await _count(db, changed_events) == events_before
+    whole = next(
+        row
+        for row in (
+            await db.execute(
+                select(EventOutbox).where(EventOutbox.event_type == "device.inventory").order_by(EventOutbox.id.desc())
+            )
+        ).scalars()
+        if row.payload["deviceMeta"]["jamfProID"] == real_id
+    )
+    assert whole.payload["deviceMeta"]["trigger"] == "sweep"
+    assert len(set(whole.payload) - {"_envelope", "event", "jobID", "occurredAt", "deviceMeta"}) == 14
+    assert len(whole.payload["app"]) == apps_before
     phantom_changes = (
         select(func.count())
         .select_from(DeviceChange)
@@ -343,6 +411,17 @@ async def test_a_full_scope_read_of_zero_apps_still_wipes(db, jamf: FakeJamf, co
     assert latest.payload["deviceExternalID"] == real_id
     assert latest.payload["addedApps"] == []
     assert len(latest.payload["removedApps"]) == apps_before
+
+    # And the snapshot says the same thing the other way round: `[]` is a real read of a
+    # device with no apps — read, and genuinely empty — never an absent wrapper.
+    snapshot = (
+        await db.execute(
+            select(EventOutbox).where(EventOutbox.event_type == "device.inventory").order_by(EventOutbox.id.desc()).limit(1)
+        )
+    ).scalar_one()
+    assert snapshot.payload["deviceMeta"]["jamfProID"] == real_id
+    assert snapshot.payload["app"] == []
+    assert snapshot.payload["deviceMeta"] == latest.payload["deviceMeta"]
 
 
 async def test_narrow_scope_leaves_scalars_and_eas_untouched(db, jamf: FakeJamf, connection) -> None:

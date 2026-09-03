@@ -47,12 +47,14 @@ from app.mdm.jamf.client import (
 from app.mdm.jamf.contract import (
     V0_SECTIONS,
     Aperture,
+    Observation,
     build_aperture,
     canonicalize_computer,
     canonicalize_smart_group,
     with_extension_attribute_carriers,
 )
 from app.mdm.org_units import BUILDING, DEPARTMENT, record_org_units
+from app.mdm.snapshot import build_inventory_snapshot
 from app.models.schema import (
     Collection,
     Device,
@@ -695,10 +697,13 @@ async def ingest_computer(
     # The same sections the ledger just recorded as the aperture: the current-state
     # tables must not consume more of the record than the run declared it read (#93) —
     # and the same quarantine, so a quarantined EA is absent from both layers (#197).
+    # The observation rides along because it is what the snapshot event is built from
+    # (#241): the allowlisted view of exactly the record the ledger just wrote.
     await process_sync(
         db,
         normalize_computer(raw, sections, quarantined_extension_attributes=quarantined_extension_attributes),
         connection,
+        observation=observation,
     )
     return result
 
@@ -895,12 +900,24 @@ def _device_meta(existing: Device) -> dict[str, object]:
 
 
 async def process_sync(
-    db: AsyncSession, device: NormalizedDevice, connection: MdmConnection
+    db: AsyncSession, device: NormalizedDevice, connection: MdmConnection, *, observation: Observation
 ) -> InventoryChangedEvent | None:
-    """Bring the current-state tables for one device up to date and emit the delta.
+    """Bring the current-state tables for one device up to date, emit the snapshot, and
+    emit the delta when the app list moved.
 
     Commits. Anything the caller wrote to the session before this — the observation
-    ledger's rows for the same device — lands in the same transaction.
+    ledger's rows for the same device — lands in the same transaction, and so do both
+    events: "we updated the database" and "we recorded the event" can never drift apart
+    from a partial failure.
+
+    Two events, one pull (#241). `device.inventory` is the state — one per device per
+    pass that clears the ledger's monotonic guard, sweep and webhook alike, whether or
+    not anything changed, built from `observation` by app.mdm.snapshot. It never fires
+    on the stale path (ingest_computer returns before this is reached) and never for a
+    device whose ingest raised and was rolled back. `device.inventory.changed` is what
+    happened to the app list, and keeps shipping unchanged, only when something did.
+    The two share `occurredAt`, the meta block and its `eventID` by design (#81 ruling
+    4: one id per device per pull, stamped on every event of that pull).
 
     `device.apps is None` means the applications section was outside the read's
     aperture (Kyle's ruling, 2026-08-29): app rows, the catalog, and the event stream
@@ -909,7 +926,10 @@ async def process_sync(
     each scalar is written only when its owning section was read, and the extension-
     attribute replace runs only on a real read (None-vs-[] again). A read outside the
     aperture holds defaults, not observations — writing them would blank hostnames
-    and wipe EA rows on every narrowly-scoped sweep or webhook.
+    and wipe EA rows on every narrowly-scoped sweep or webhook. The snapshot reads the
+    same rule per section: a section outside the aperture is absent from it, and only a
+    read-and-empty section is `[]` — it never asserts an absence the read did not
+    observe.
     """
     for app in device.apps or ():
         apply_hashes(app)
@@ -985,6 +1005,12 @@ async def process_sync(
 
     added: list[NormalizedApp] = []
     removed_rows: list[InstalledApp] = []
+    # The rows the device holds AFTER this read: the kept ones plus the added ones, and
+    # never `existing.apps` — SQLAlchemy does not prune a loaded collection on delete, so
+    # that collection can still hold the removed rows after the flush below, and a removed
+    # app must not reach the snapshot. Empty when apps were outside the aperture, where the
+    # snapshot carries no `app` wrapper and reads nothing.
+    current_rows: list[InstalledApp] = []
     if device.apps is not None:
         incoming_hashes = {app.version_hash: app for app in device.apps if app.version_hash}
 
@@ -992,24 +1018,25 @@ async def process_sync(
         removed_rows = [
             row for version_hash, row in previous_hashes.items() if version_hash not in incoming_hashes
         ]
+        current_rows = [row for version_hash, row in previous_hashes.items() if version_hash in incoming_hashes]
 
         for row in removed_rows:
             await db.delete(row)
 
         for app in added:
-            db.add(
-                InstalledApp(
-                    device=existing,
-                    name=app.name,
-                    bundle_id=app.bundle_id,
-                    version=app.version,
-                    short_version=app.short_version,
-                    app_hash=app.app_hash,
-                    version_hash=app.version_hash,
-                    key_title=app.key_title,
-                    key_full=app.key_full,
-                )
+            row = InstalledApp(
+                device=existing,
+                name=app.name,
+                bundle_id=app.bundle_id,
+                version=app.version,
+                short_version=app.short_version,
+                app_hash=app.app_hash,
+                version_hash=app.version_hash,
+                key_title=app.key_title,
+                key_full=app.key_full,
             )
+            db.add(row)
+            current_rows.append(row)
 
     await db.flush()
     # The tenant app catalog: every app this device reports is seen now; a (name, bundle ID,
@@ -1017,17 +1044,45 @@ async def process_sync(
     # each app row gets its copy of the answer. Skipped when apps were not read: the rows
     # kept above are the last read's state, and a scoped fetch must not restamp them as
     # seen now.
+    #
+    # `copy_answer` writes the Jamf Patch answer onto the very instances `current_rows`
+    # holds — the session's identity map hands `record_device_apps`'s SELECT the same
+    # objects — which is what lets the snapshot read `patch.supported` off rows already in
+    # the transaction with no second query. Cache, don't calculate.
     if device.apps is not None:
         await record_device_apps(db, existing)
+
+    # Built once and read by both events: the root `jobID` on each is the same string
+    # this block carries, taken from the block rather than from a second `get_run()`
+    # call, so the duplicate the #220 ruling asked for cannot drift from its original.
+    meta = _device_meta(existing)
+    # Not `now`. Under a scheduled sweep this is the run's window, so every event the
+    # sweep produces shares one `_time` instead of smearing across the forty minutes
+    # the pull happened to take; a webhook carries the device's own reportDate. See
+    # app.core.runs.event_time. One value for both events of this pull.
+    occurred_at = event_time(device.last_inventory_at)
+    # The envelope rides on each payload and is lifted off again at delivery
+    # (app.core.wire) — `_build_body` can reach neither the run nor the connection, so
+    # this is the only moment `source` and the occurrence time are both in hand.
+    hints = envelope(occurred_at=occurred_at, host=existing.hostname, source=instance_label(connection.base_url))
+
+    # The snapshot, first and unconditionally (#241). Enqueued in the same transaction as
+    # the ledger write above and the row updates, before the delta's early return below,
+    # so a device whose app list did not move still says what it IS.
+    snapshot = build_inventory_snapshot(
+        observation,
+        extension_attributes=device.extension_attributes,
+        apps=current_rows,
+        occurred_at=occurred_at,
+        device_meta=meta,
+    )
+    payload = snapshot.to_payload()
+    payload[ENVELOPE] = dict(hints)
+    await enqueue_event(db, snapshot.event, payload, request_id=get_request_id())
 
     if not added and not removed_rows:
         await db.commit()
         return None
-
-    # Built once and read twice: the root `jobID` below is the same string this block
-    # carries, taken from the block rather than from a second `get_run()` call, so the
-    # duplicate the #220 ruling asked for cannot drift from its original.
-    meta = _device_meta(existing)
 
     event = InventoryChangedEvent(
         provider=device.mdm_provider,
@@ -1049,11 +1104,8 @@ async def process_sync(
             )
             for row in removed_rows
         ],
-        # Not `now`. Under a scheduled sweep this is the run's window, so every event the
-        # sweep produces shares one `_time` instead of smearing across the forty minutes
-        # the pull happened to take; a webhook carries the device's own reportDate. See
-        # app.core.runs.event_time.
-        occurred_at=event_time(device.last_inventory_at),
+        # The same instant the snapshot carries — see above.
+        occurred_at=occurred_at,
         # The run at the event root, duplicating `deviceMeta.jobID` (#220, ruled
         # 2026-09-02). `.get`, not `[...]`: the block drops its nulls, so a run-less
         # enqueue leaves both copies absent rather than one absent and one null.
@@ -1065,20 +1117,13 @@ async def process_sync(
     # updated the database" and "we recorded the event" can never drift apart from a
     # partial failure. Delivery itself happens later, on the outbox worker's own
     # schedule — a slow or down destination must never be able to block a sync.
-    # The envelope rides on the payload and is lifted off again at delivery
-    # (app.core.wire) — `_build_body` can reach neither the run nor the connection, so
-    # this is the only moment `source` and the occurrence time are both in hand.
     payload = event.model_dump(mode="json", by_alias=True)
     if payload["jobID"] is None:
         # Absent, not null — see the field's own note. Pydantic has no per-field
         # `exclude_none`, and `exclude_none=True` on the whole dump would silently strip
         # nulls out of every app in `addedApps` too, which is a shape change nobody ruled.
         del payload["jobID"]
-    payload[ENVELOPE] = envelope(
-        occurred_at=event.occurred_at,
-        host=existing.hostname,
-        source=instance_label(connection.base_url),
-    )
+    payload[ENVELOPE] = dict(hints)
     await enqueue_event(db, event.event, payload, request_id=get_request_id())
     await db.commit()
     return event

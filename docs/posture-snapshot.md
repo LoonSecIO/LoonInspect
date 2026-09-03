@@ -186,8 +186,9 @@ empty-queue night — **on a pod that has an enabled destination.**
 A pod that has none does not have a queue that drains. Since #157 `fan_out_pending`
 *holds* events while nothing is enabled rather than consuming them unsent, and
 `_outbox_pending_where()` counts un-fanned rows, so a destination-less pod reports
-`outbox.pending` as its entire held backlog — a whole baseline sweep, one event per
-device — with `outbox.oldest_pending_age_s` climbing toward the retention window
+`outbox.pending` as its entire held backlog — one `device.inventory` snapshot per device
+per sweep, every sweep since #241, plus the deltas — with `outbox.oldest_pending_age_s`
+climbing toward the retention window
 (604,800s at the default seven days) until a destination is added or the events age
 out. That is the hold working as ruled, not a stalled queue, and it is the normal
 reading during onboarding because the setup stepper calls the destination step

@@ -336,11 +336,35 @@ def test_no_destination_but_splunk_gets_a_sourcetype() -> None:
 def test_only_the_change_family_is_stamped() -> None:
     """#242's job is not done here. The section tree names fan-out sub-events that do not
     exist, so minting one of those strings now would be a permanent stanza for a shape
-    about to change (#222), and the per-device snapshot (#241) is likewise untouched. The
-    guard is on the event type, so a family added later is unstamped until it is ruled."""
-    for event in ("device.inventory.changed", "run.completed", "run.failed", "destination.test"):
+    about to change (#222). The per-device snapshot (#241) passes through unstamped for
+    the same reason: it is the whole device in one event, and the strings name the
+    sub-events #242 splits it into. The guard is on the event type, so a family added
+    later is unstamped until it is ruled."""
+    for event in ("device.inventory", "device.inventory.changed", "run.completed", "run.failed", "destination.test"):
         body = _build_body(SPLUNK, {"event": event, "subjectKind": "computer", "section": "applications"})
         assert "sourcetype" not in body, f"{event} must not be stamped by the change family's rule"
+
+
+def test_the_snapshot_passes_through_the_body_builder_whole_and_unstamped() -> None:
+    """Between #241 and #242 a `splunk_hec` destination receives the snapshot as one nested
+    HEC event under the input's own sourcetype: wrapped, with the three envelope hints
+    beside it and nothing else, and every wrapper key intact — `_build_body` reshapes
+    nothing for this family."""
+    occurred = datetime(2026, 9, 2, 2, 0, tzinfo=timezone.utc)
+    payload = {
+        "event": "device.inventory",
+        "jobID": "0199a5c4-7b2e-7c3a-9f1e-3c2b1a0d9e8f",
+        "occurredAt": occurred.isoformat(),
+        "deviceMeta": {"jobID": "0199a5c4-7b2e-7c3a-9f1e-3c2b1a0d9e8f", "serialNumber": "LOONMINI0M4"},
+        "general": {"name": "Loon's Mac mini"},
+        "app": [{"app": {"name": "Maps.app"}, "patch": {"supported": False}, "vuln": {"assessment": "off"}}],
+        ENVELOPE: envelope(occurred_at=occurred, host="Loon's Mac mini", source="e2e.jamfcloud.com"),
+    }
+    body = _build_body(SPLUNK, payload)
+    assert set(body) == {"event", "time", "host", "source"}
+    assert body["event"] == {key: value for key, value in payload.items() if key != ENVELOPE}
+    assert body["time"] == occurred.timestamp()
+    assert _build_body(WEBHOOK, payload) == body["event"]
 
 
 def test_an_unknown_section_costs_one_unstamped_event_not_a_dead_letter() -> None:
