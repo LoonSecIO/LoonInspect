@@ -255,8 +255,10 @@ whole 107-event request for the real fixture is accepted by
 `/services/collector/event` as one POST.
 
 **The size of a request, and the one setting.** All of a device's sub-events travel in
-one POST — 84,135 bytes for a Mac with 83 apps, measured — and Splunk Cloud Platform
-documents a 1 MB `max_content_length` for HEC (Splunk Enterprise ships
+one POST: 84,135 bytes for a Mac with 83 apps, measured under today's shipped
+`vuln.assessment: off`; up to 171,036 bytes (2.03×) once a vulnerability corpus assesses
+every app at the fifty-id cap ([vulnerabilities.md](vulnerabilities.md) §4). Splunk Cloud
+Platform documents a 1 MB `max_content_length` for HEC (Splunk Enterprise ships
 `[http_input] max_content_length = 838860800` in its default `limits.conf`; it was
 1,000,000 before 7.x). A request over the input's limit is refused whole with HTTP 413.
 `SPLUNK_HEC_MAX_REQUEST_BYTES` (default **900000**, 10% under that 1 MB) is the ceiling on
@@ -318,7 +320,9 @@ registry (`loon:jamf:mac:app` and the rest) rather than under the one you set on
 alone.
 
 **What each destination type receives for the per-device snapshot** (`device.inventory`,
-one per device per pass, ~28 KB for a Mac with 83 apps — [runs.md](runs.md) §4):
+one per device per pass, ~28 KB for a Mac with 83 apps under today's shipped
+`vuln.assessment: off` — up to ~113 KB once a vulnerability corpus assesses every app —
+[vulnerabilities.md](vulnerabilities.md) §4, [runs.md](runs.md) §4):
 
 - A `splunk_hec` destination gets it **split**: one HEC event per section item — one for
   each of the seven one-per-device sections, one per app, per extension attribute, per
@@ -326,7 +330,8 @@ one per device per pass, ~28 KB for a Mac with 83 apps — [runs.md](runs.md) §
   update — 107 for that Mac, each carrying `event=device.inventory`, `jobID`, the whole
   `deviceMeta` block, its section's object under its wrapper key, and the snapshot's
   `time`, `host` and `source`, under `sourcetype=loon:jamf:mac:<wrapper>`. All of them in
-  one POST (84,135 bytes for that Mac), so `app.name=X app.version=Y` is one app, as it
+  one POST (84,135 bytes for that Mac under today's shipped `off`; up to 171,036 bytes
+  once a vulnerability corpus is loaded), so `app.name=X app.version=Y` is one app, as it
   should be — the multivalue-pairing hazard [splunk-event-shaping.md](splunk-event-shaping.md)
   describes is why the split exists.
 - A generic webhook, and the `runreveal` preset, get the bare document, whole.

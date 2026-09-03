@@ -231,12 +231,14 @@ field before the format sets, which is cheap now and a migration later. #249 tur
 requirement into a type: `app.core.vuln.VulnFinding` has no constructor without
 `published`.
 
-**Which "today" the days are counted from:** the snapshot's own `occurredAt`, never the
-wall clock. The builder is pure and clock-free, and a delivery is retried against the
-stored row up to ten times — so a day boundary crossed between attempts must not change
-the bytes. A publication date later than the event (a snapshot replayed out of the
-retention window against a corpus refreshed since) reads `0`, never a negative, because
-a negative would collide with the sentinel.
+**Which "today" the days are counted from** — assumed 2026-09-03, pending ratification,
+per [PR #279's verify pass](https://github.com/LoonSecIO/LoonInspect/pull/279#pullrequestreview-5107281104):
+the snapshot's own `occurredAt`, never the wall clock. The builder is pure and
+clock-free, and a delivery is retried against the stored row up to ten times — so a day
+boundary crossed between attempts must not change the bytes. **The zero floor is the
+same pending assumption:** a publication date later than the event (a snapshot replayed
+out of the retention window against a corpus refreshed since) reads `0`, never a
+negative, because a negative would collide with the sentinel.
 
 ### 4e. `vulnIDs`, and the name that was rejected
 
@@ -266,6 +268,29 @@ truncated list under-names findings and never under-reports them. Two orderings 
 contract leaves open are labelled as assumptions in the code: *recency* is read as
 most-recently-published first, and a finding the corpus carries with no severity score
 sorts after `low` — counted in `total`, never dropped.
+
+### 4f. The corpus interface: what `findings()` answers
+
+`VulnCorpus.findings(key_title=…, key_full=…)` (`app/core/vuln.py`) is three-valued, and
+the value **is** the `assessment` vocabulary of §4a — #248 must read it exactly this way:
+
+* **`None`** — the corpus does not know `key_title` at all, OR it has not itself
+  positively assessed *this exact `key_full`*. `unknown_app`.
+* **`()`** — the corpus knows `key_title` **and has positively assessed this exact
+  `key_full`**, with no active findings against it. `covered`, a clean bill, because
+  `covered` says we looked at this build specifically.
+* **a non-empty sequence** — `covered`, with the findings this module derives into
+  counts, days and `vulnIDs`.
+
+**`()` means positively assessed; every other case means `None`.** This is the hash-join
+trap named on [PR #279's verify pass](https://github.com/LoonSecIO/LoonInspect/pull/279#pullrequestreview-5107281104):
+for a corpus keyed on `(title, build)` hashes, a known title with no stored hash for
+*this exact build* is the common case — most builds of a well-known app were never
+individually scanned — and answering `()` there is a `covered` clean bill for a build
+nobody assessed, §4a's failure one layer down. `vuln_block` cannot tell an unassessed
+build from a positively clean one; both arrive as `()`. So `findings()` must not default
+to `()` (a `dict.get(key_full, ())` reads exactly like a positive clean bill) — it must
+answer `None` unless it can name the assessment that produced the empty result.
 
 ## 5. Three id namespaces, one shape
 

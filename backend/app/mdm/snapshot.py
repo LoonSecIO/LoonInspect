@@ -127,11 +127,23 @@ def _fallback_content_keys(body: Mapping[str, object]) -> tuple[str, str]:
     """The pair computed from the canonical entry body, for the app that has no row.
 
     Reached only from the "no row" alarm below, and it produces the SAME strings the row
-    would have carried: `content_keys.canonical_key` NFC-normalises and strips every field
-    before hashing, the entry body is already in that form, and `app_identity`'s
-    empty-`bundleId`-falls-back-to-the-name rule is Jamf's own (`normalize_computer`), so
-    both sides hash one string. Pinned against all 83 rows of the real fixture in
-    tests/test_inventory_snapshot.py.
+    would have carried — but canonicalisation is only half the reason, and `key_title` is
+    the half it actually explains: `content_keys.canonical_key` NFC-normalises and strips
+    every field before hashing, the entry body is already in that form, and
+    `app_identity`'s empty-`bundleId`-falls-back-to-the-name rule is Jamf's own
+    (`normalize_computer`), so both sides hash one string for `key_title`.
+
+    `key_full` hashes a fourth field that canonicalisation says nothing about:
+    `apply_hashes` (`app.mdm.service`) hashes `app.short_version` into the row's
+    `key_full`, and this function hardcodes `None` in its place below. The two agree only
+    because `app.mdm.jamf.client.normalize_computer` pins `short_version=None` on every
+    `NormalizedApp` it builds from Jamf's `applications` section — that endpoint exposes
+    one `version` field and no separate short version, so there is nothing else to put
+    there. That pin is internal, not wire (Jamf's own object is untouched), but it is
+    exactly what this function depends on: if an ingest path ever started populating
+    `short_version`, the row's `key_full` would move and this fallback's would not, and
+    the two sides would silently diverge. Pinned against all 83 rows of the real fixture,
+    and against the dependency itself, in tests/test_inventory_snapshot.py.
 
     Computing rather than shipping `off` for the odd app: a device where one app reads
     `off` and eighty-two read `covered` is not a state §4a describes — `off` is a property

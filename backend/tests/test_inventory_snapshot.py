@@ -339,6 +339,19 @@ def test_the_row_and_the_canonical_entry_agree_on_the_content_keys(payload: dict
         assert from_rows[identity] == (app_title_key(name, bundle), app_full_key(name, bundle, version, None))
 
 
+def test_the_rowless_fallbacks_key_full_agrees_with_the_row_only_because_short_version_is_pinned_none(
+    raw: dict,
+) -> None:
+    """The dependency `_fallback_content_keys` (`app.mdm.snapshot`) actually relies on for
+    `key_full`, which canonicalisation does not explain: `normalize_computer` pins
+    `short_version` to `None` for every app Jamf's `applications` section reports — the
+    fourth field `apply_hashes` hashes into the row's `key_full`, and the exact value the
+    fallback hardcodes in its place. If an ingest path ever started populating it, this is
+    the assertion that would break before the fallback silently diverged from the row."""
+    view = normalize_computer(raw, V0_SECTIONS)
+    assert all(app.short_version is None for app in view.apps or ())
+
+
 def test_a_removed_app_is_absent_and_a_rowless_app_is_unsupported_and_logged(run: RunContext, caplog) -> None:
     """The snapshot is the observation's list: a row for an app Jamf no longer reports (a
     removed app still sitting in a loaded collection) never appears. The other direction —
