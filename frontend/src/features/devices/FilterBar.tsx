@@ -35,15 +35,6 @@ export function FilterBar({ filters, onChange }: FilterBarProps) {
           value={filters.q ?? ""}
           onChange={(e) => update({ q: e.target.value || undefined })}
         />
-        <div className="min-w-[200px] flex-1 space-y-1">
-          <input
-            className={`${inputClasses} w-full`}
-            placeholder={t.devices.aiPlaceholder}
-            value={filters.ai ?? ""}
-            onChange={(e) => update({ ai: e.target.value || undefined })}
-          />
-          <p className="text-xs text-muted-foreground">{t.devices.aiHint}</p>
-        </div>
       </div>
 
       <div className="flex flex-wrap gap-3">
