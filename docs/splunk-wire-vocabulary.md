@@ -186,7 +186,10 @@ into a search bar, not to this product's own HTTP contract, and renaming the que
 parameter would churn the frontend and break bookmarked URLs for no consumer's benefit.
 
 The id vocabulary, ruled in #189 and applied: `eventID`, `jobID`, `connectionID`,
-`collectionID`, `jamfProID`.
+`jamfProID`. `collectionID` was in this list because the block shipped it, not because
+#189 ruled it in — the ruling refused it, and it was removed from `deviceMeta` along with
+`comparison`. Its casing stands if a run-family key ever carries the collection; nothing
+emits one today. See [`runs.md`](runs.md) §4.
 
 **One minted key on a vendor object.** The extension-attribute item is Jamf's object
 verbatim — `definitionId`, `name`, `values`, `dataType`, `inputType`, `multiValue`,
@@ -273,5 +276,4 @@ issue rather than living on as a footnote.
 | `sourcetype` is not stamped on delivered events — the tree names fan-out sub-events that are not built, so `app/core/outbox.py` deliberately sends none and the operator sets it on the HEC input | [#222](https://github.com/LoonSecIO/LoonInspect/issues/222) |
 | The `:change` family is ruled (§2) and nothing stamps it — `changes/derive.py` emits `device.change` with no sourcetype, no `eventID` and no `deviceMeta`, and group ids share the computer id space. #243 ruled this family may be stamped first rather than waiting for the fan-out | [#223](https://github.com/LoonSecIO/LoonInspect/issues/223) |
 | `run.completed` fires only for the full sweep, so every intraday `jobID` from a webhook run is a dangling pointer | [#224](https://github.com/LoonSecIO/LoonInspect/issues/224) |
-| The run id is `uuid4`, so `max(jobID)` — the latest-state idiom on a fan-out sourcetype — is meaningless. UUIDv7 is free until the flip | [#225](https://github.com/LoonSecIO/LoonInspect/issues/225) |
 | `alert` is minted with no writer — #101 ships the alerts table and the Needs Attention rows with nothing on the wire; the block's shape (a keyed list on the app, per the 2026-08-29 ruling) and its kind vocabulary are named when it is built, additive under clause 1 | [#101](https://github.com/LoonSecIO/LoonInspect/issues/101) |

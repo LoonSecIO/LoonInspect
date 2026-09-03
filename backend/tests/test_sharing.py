@@ -1,12 +1,15 @@
 """The exchange half of docs/data-sharing.md, tested without a database: response
 semantics against a plain settings object, transport behavior against a mock
-endpoint, and the due-ness rule as pure time arithmetic. Snapshot assembly is SQL
-and is exercised against the live schema by the preview endpoint instead."""
+endpoint, and the due-ness rule as pure time arithmetic. Snapshot assembly is SQL and is
+exercised against the live schema by the preview endpoint instead — except for the shape
+of the rows the builder wraps around those query results, which is contract and is pinned
+here (#231) against a stub session."""
 
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -240,3 +243,109 @@ def test_one_attempt_per_day_regardless_of_outcome() -> None:
 def test_yesterdays_attempt_does_not_satisfy_today() -> None:
     yesterday = datetime(2026, 8, 19, 10, 5, tzinfo=timezone.utc)
     assert _due(_at(10, 30), yesterday, minute_of_day=10 * 60) is True
+
+
+# --- the snapshot names its platform (#231) ---------------------------------------
+#
+# Assembly is SQL, but the property under test is not: it is what the builder puts in the
+# dicts around the query results. A stub session that answers the two aggregates with fixed
+# rows pins that down in the lane that runs everywhere, which is the point — this key can
+# only be added before the first exchange, and a tripwire that needs a Postgres is a
+# tripwire that is not watching on the day someone deletes the key.
+
+
+class _StubResult:
+    def __init__(self, rows: list) -> None:
+        self._rows = rows
+
+    def all(self) -> list:
+        return self._rows
+
+
+class _StubSession:
+    """Answers `build_exchange_request`'s two aggregates in order: apps, then os."""
+
+    def __init__(self, app_rows: list, os_rows: list) -> None:
+        self._results = [app_rows, os_rows]
+
+    async def execute(self, _statement):
+        return _StubResult(self._results.pop(0))
+
+
+def _app_row(title: str, full: str, bundle_id: str, count: int) -> SimpleNamespace:
+    return SimpleNamespace(key_title=title, key_full=full, bundle_id=bundle_id, count=count)
+
+
+async def _snapshot(*, exclude_globs: list[str] | None = None) -> dict:
+    row = _row("reveal")
+    row.exclude_globs = exclude_globs or []
+    db = _StubSession(
+        [
+            _app_row("v1:title-chrome", "v1:full-chrome", "com.google.Chrome", 412),
+            _app_row("v1:title-tool", "v1:full-tool", "com.vendor.tool", 31),
+            _app_row("v1:title-acme", "v1:full-acme", "com.acme.payroll", 7),
+        ],
+        [SimpleNamespace(os_version="14.6.1", count=380), SimpleNamespace(os_version="15.0", count=12)],
+    )
+    return await sharing.build_exchange_request(db, row)
+
+
+@pytest.mark.asyncio
+async def test_every_app_row_names_the_platform_it_was_counted_on() -> None:
+    """The cloud corpus is partitioned by platform (R4), so a row that does not carry one
+    cannot be routed — and rows already summed cloud-side can never be told afterwards
+    which fleet they came from. Every row, not the envelope: one container will read
+    computers and mobile from one connection."""
+    apps = (await _snapshot())["snapshot"]["apps"]
+    assert apps, "the fixture must produce rows, or this asserts nothing"
+    assert all(app["platform"] == "macos" for app in apps), apps
+    # The rest of the row is untouched — this is an additive key, not a reshape.
+    assert apps[0] == {
+        "title": "v1:title-chrome",
+        "full": "v1:full-chrome",
+        "count": 412,
+        "platform": "macos",
+    }
+
+
+@pytest.mark.asyncio
+async def test_an_excluded_app_is_still_excluded() -> None:
+    """The added key must not have moved the exclude filter's ground: the operator's
+    globs run on the bundle id, which no longer sits beside it in the emitted dict."""
+    apps = (await _snapshot(exclude_globs=["com.acme.*"]))["snapshot"]["apps"]
+    assert [app["title"] for app in apps] == ["v1:title-chrome", "v1:title-tool"]
+
+
+@pytest.mark.asyncio
+async def test_os_rows_state_the_platform_they_already_hash() -> None:
+    """`os_key` hashes the platform, but a sha256 is not a routing token — a reader would
+    have to guess-and-check the whole OS vocabulary to partition on it. Both rows come from
+    the one constant, so a submission can never claim two platforms."""
+    os_rows = (await _snapshot())["snapshot"]["os"]
+    assert all(row["platform"] == "macos" for row in os_rows), os_rows
+    assert [row["count"] for row in os_rows] == [380, 12]
+
+
+@pytest.mark.asyncio
+async def test_the_platform_rides_the_rows_and_not_the_envelope() -> None:
+    """The recorded decision on #231. A submission-level field is cheaper today and wrong
+    the day one container sweeps both platforms — and a field in a frozen v1 contract has
+    to be deprecated rather than extended. Guarding the negative is the only way that
+    decision survives the next person who finds the per-row key repetitive."""
+    body = await _snapshot()
+    assert "platform" not in body
+    assert "platform" not in body["snapshot"]
+
+
+def test_replacing_the_os_literal_did_not_move_a_hash() -> None:
+    """#231 changes what the submission *says*, never what it hashes. `SNAPSHOT_PLATFORM`
+    replaced a hard-coded "macos" inside `os_key`, so the constant is asserted against the
+    published vector from docs/data-sharing.md — not against the literal it replaced, which
+    would only prove the two agree with each other."""
+    from app.core.content_keys import os_key
+
+    assert sharing.SNAPSHOT_PLATFORM == "macos"
+    assert (
+        os_key(sharing.SNAPSHOT_PLATFORM, "14.6.1", "23G93")
+        == "v1:f74565fbdda8b8036799e1e3a67b22ee909acac8840f2a6ae040b3d5a4e18867"
+    )

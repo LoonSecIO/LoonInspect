@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.crypto import EncryptedString
 from app.core.database import Base
 from app.core.tenancy import TENANT_GUC
+from app.core.uuid7 import uuid7
 
 
 def _utcnow() -> datetime:
@@ -1140,7 +1141,14 @@ class Run(Base):
     # The jobID. A UUID rather than a sequence because it is emitted on every event and
     # read back as a filter — a customer's Splunk search should not be able to guess a
     # neighbouring run's id, and it is minted before the row is written.
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    #
+    # `uuid7`, not `uuid.uuid4` (#225): jobID is a correlation key on the wire, and a
+    # fan-out sourcetype's `eventstats max(jobID) by serialNumber` needs an id that sorts
+    # by creation time, which random hex never did. Still effectively unguessable — see
+    # `app.core.uuid7.uuid7`'s docstring for the bit budget. `app.core.runs.acquire` is
+    # the one place a `Run` is ever constructed and mints this id explicitly; this
+    # default is the same generator kept in sync, not a second call site to drift from it.
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     mdm_connection_id: Mapped[int] = mapped_column(
         ForeignKey("mdm_connections.id", ondelete="CASCADE"), index=True
