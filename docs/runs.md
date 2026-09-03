@@ -102,28 +102,45 @@ against these names makes them permanent.
 `trigger` reuses the vocabulary the observation ledger already stamps on every span as
 `last_trigger`, rather than the contract's `scheduled`: one word per concept across the
 ledger, the run, and the wire. `comparison` is `baseline` until a connection and lock
-class have completed one successful run, and `delta` after.
+class have completed one successful run, and `delta` after — and it rides `run.completed`
+(§7), **not** `deviceMeta`, for the reason below.
 
 The `deviceMeta` block on `device.inventory.changed`, ruled in #189:
 
 ```json
-{"jobID": "…", "trigger": "sweep", "comparison": "delta",
- "connectionID": 1, "collectionID": 4, "shortDate": "2026-08-31",
- "eventID": "…", "serialNumber": "C02…", "jamfProID": "1743",
- "hostName": "kyle-mbp", "lastReportDate": "2026-08-31T21:44:03+00:00",
+{"jobID": "…", "trigger": "sweep", "connectionID": 1,
+ "shortDate": "2026-08-31", "eventID": "…", "serialNumber": "C02…",
+ "jamfProID": "1743", "hostName": "kyle-mbp",
+ "lastReportDate": "2026-08-31T21:44:03+00:00",
  "managed": true, "schemaVersion": "v0"}
 ```
 
-Capped at **thirteen keys**, because a Splunk destination expands one device's event
-into one sub-event per app, per extension attribute, per certificate and per profile,
+Eleven keys, capped at **thirteen**, because a Splunk destination expands one device's
+event into one sub-event per app, per extension attribute, per certificate and per profile,
 and every field here is written onto all of them — measured against a real tenant record
-the block is over half the raw feed. Keys can be added later and never taken away, so
+the block is over half the raw feed. The ruling spent twelve of the thirteen slots and
+held the thirteenth open deliberately; the twelfth, **`custom`**, reserves a name and
+ships zero bytes in v0, with the shape frozen (`deviceMeta.custom.groups` as a filtered
+array, `deviceMeta.custom.ea` as a name→value map) so that a customer who writes
+`| fields deviceMeta.*` today has not written something whose expansion changes the day
+an object appears among these scalars. Keys can be added later and never taken away, so
 anything proposed for it goes through #189 first.
+
+**Two keys the ruling cut, and where they went instead.** Both shipped in this block
+before the ruling and were removed after it — `comparison` because it describes run
+*history* rather than the row (it is `delta` on every device of every run after the first,
+so it partitions nothing), and `collectionID` because it is null on the entire webhook
+path, where a `BY` clause over it produces a null bucket that silently means "intraday".
+`comparison` rides `run.completed` (§7); the collection belongs to the run's own event
+when something emits it, joined by `jobID`, and is a run-family key when it does. The
+refusal is pinned in `backend/tests/test_device_meta.py`, which holds the emitted set to
+exactly the names above.
 
 Two rules a consumer can rely on:
 
-- **Null values are dropped, not sent.** `collectionID` is absent on the webhook path,
-  where a run carries no collection. `NOT deviceMeta.collectionID=*` finds those events.
+- **Null values are dropped, not sent.** `lastReportDate` is absent on a device Jamf has
+  never completed inventory on, rather than present and null.
+  `NOT deviceMeta.lastReportDate=*` finds those events.
 - **`eventID` is one id per device per pull** — `uuid5(jobID, jamfProID)`, so a retry
   recomputes the same value. It is the only key that selects a single device's complete
   inventory pass: two sweeps in a day share a `shortDate`, and one sweep's `jobID` is

@@ -827,6 +827,14 @@ def _device_meta(existing: Device) -> dict[str, object]:
     """The device meta block (#189) — the keys stamped onto every sub-event a device
     produces, capped at thirteen and permanent once a customer's SPL references them.
 
+    Eleven ship. The ruling spent twelve of the thirteen slots and held the thirteenth
+    open deliberately; the twelfth, `custom`, reserves a name and zero bytes in v0 — the
+    shape is frozen (`deviceMeta.custom.groups`, `deviceMeta.custom.ea`) so that a
+    customer who writes `| fields deviceMeta.*` today has not written something whose
+    expansion changes the day an object appears among these scalars.
+    `tests/test_device_meta.py` holds the emitted set to exactly those names, and holds
+    the ruling's whole refused table against it.
+
     Built HERE, at enqueue, and never at delivery. `_build_body` in app.core.outbox
     receives only the destination and the frozen payload — no session, no Device, no
     run — and the run itself is a ContextVar (app.core.runs) whose scope has already
@@ -835,16 +843,18 @@ def _device_meta(existing: Device) -> dict[str, object]:
 
     Null values are dropped rather than shipped. The block is over half the raw feed
     measured against a real tenant record, so a key that is null carries cost and no
-    information; `NOT deviceMeta.x=*` finds the same events either way. This is also
-    what keeps `collectionID` honest — webhook runs carry no collection, so it is absent
-    on the intraday path rather than a null that pollutes a `stats by`.
+    information; `NOT deviceMeta.x=*` finds the same events either way. `lastReportDate`
+    is the key this is load-bearing for — a device Jamf has never completed inventory on
+    ships without it rather than with a null.
 
     Reads the Device ROW, not the normalized view: under an aperture without HARDWARE
     the view's serial is "" while the row still holds the last real read's (#98).
     """
     run = get_run()
     meta: dict[str, object | None] = {
-        # The run's half — jobID, trigger, comparison, connectionID, collectionID, shortDate.
+        # The run's half — jobID, trigger, connectionID, shortDate. Four keys, not six:
+        # `comparison` and `collectionID` were cut by the ruling and are gone from
+        # run_meta(), which has the argument for each.
         **run_meta(),
         # One id per device per pull, and the only key that can select a single device's
         # complete inventory pass: two sweeps in a day share a shortDate, and one sweep's
