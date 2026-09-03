@@ -735,7 +735,6 @@ async def test_a_sweep_stamps_its_job_id_on_the_events_it_produces(db, connectio
     meta = event.payload["deviceMeta"]
     assert meta["jobID"] == str(run.id)
     assert meta["trigger"] == TRIGGER_MANUAL
-    assert meta["comparison"] == "baseline"
     assert meta["serialNumber"]
     assert meta["shortDate"] == run.window_start.strftime("%Y-%m-%d")
 
@@ -750,11 +749,20 @@ async def test_a_sweep_stamps_its_job_id_on_the_events_it_produces(db, connectio
     assert len(meta) <= 13
     assert "custom" not in meta
 
+    # The two keys the ruling CUT and PR #191 shipped anyway. Both values are real on this
+    # run — `comparison` is the `baseline` asserted above, and the run served a collection
+    # — so their absence below is a refusal, not a null that happened to be dropped.
+    # `comparison` describes run history rather than the row and rides `run.completed`;
+    # `collectionID` is null on the whole webhook path, where a BY clause over it produces
+    # a null bucket that silently means "intraday". tests/test_device_meta.py holds the
+    # ruling's whole refused table; these two are pinned here as well because this is the
+    # only place the assertion runs against a real sweep.
+    assert run.collection_id == sweep.id
+    assert "comparison" not in meta
+    assert "collectionID" not in meta
+
     # Nulls are dropped rather than shipped: the block is over half the raw feed, so a
-    # key with no value costs bytes and carries nothing. This run came from a collection,
-    # so collectionID is present; on the webhook path it is absent rather than a null
-    # that would pollute a `stats by`.
-    assert meta["collectionID"] == sweep.id
+    # key with no value costs bytes and carries nothing.
     assert all(value is not None for value in meta.values())
 
     # The envelope is transport, not vocabulary — it must never reach a customer index.

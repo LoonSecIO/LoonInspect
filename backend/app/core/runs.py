@@ -46,6 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.context import get_request_id
 from app.core.outbox import enqueue_event
+from app.core.uuid7 import uuid7
 from app.core.wire import ENVELOPE, envelope, instance_label
 from app.models.schema import MdmConnection, Run, RunLogLine
 
@@ -140,7 +141,13 @@ _HEARTBEAT_INTERVAL_SECONDS = 15
 
 @dataclass(frozen=True, slots=True)
 class RunContext:
-    """The active run, as the ingest path sees it."""
+    """The active run, as the ingest path sees it.
+
+    `collection_id` and `comparison` are carried here and deliberately do NOT reach the
+    wire: #189 refused both from `deviceMeta` (see `run_meta` below). They stay on the
+    context because they describe the run the ingest path is inside, not because anything
+    is meant to stamp them onto a device event.
+    """
 
     id: uuid.UUID
     connection_id: int
@@ -201,15 +208,33 @@ def event_time(device_time: datetime | None = None) -> datetime:
 
 
 def run_meta() -> dict[str, object]:
-    """The run's contribution to an event's meta block.
+    """The run's contribution to an event's meta block — four keys, and two refusals.
 
-    `trigger` and `comparison` are the contract's `runtype` and `run_type`, renamed.
-    The originals differ by one underscore and mean unrelated things — what started this
-    versus what kind of comparison it is — which sits badly against the contract's own
-    "field names readable English, no abbreviations" rule. An analyst reading
+    `trigger` is the contract's `runtype`, renamed. The original sat one underscore away
+    from `run_type` and meant something unrelated — what started this, versus what kind
+    of comparison it is — which sits badly against the contract's own "field names
+    readable English, no abbreviations" rule. An analyst reading
     `runtype=manual run_type=delta` in a search has no way to tell them apart, and will
     eventually type the wrong one and get zero results with no error. Renamed while it
-    is still free: customer SPL written against these names makes them permanent.
+    was still free: customer SPL written against these names makes them permanent.
+
+    **`comparison` and `collectionID` are refused here** (#189, ruled 2026-08-31). Both
+    shipped in this block before the ruling and both were cut by it, so they are removed
+    rather than carried — a `deviceMeta` key is written once per app, per extension
+    attribute, per certificate and per profile, and the fan-out (#242) multiplies that
+    again. Each was cut on its own argument, not on volume alone:
+
+    - `comparison` describes run *history*, not the row. `_comparison_for` below returns
+      `delta` the moment any prior run on this connection has succeeded, so the value is
+      identical on every device of every run after the first. It rides `run.completed`
+      instead, joined by `jobID`.
+    - `collectionID` is null on the entire webhook path — a webhook run is acquired with
+      no collection — so a `BY` clause over it produces a null bucket that silently means
+      "intraday". It belongs on the run's own event, joined by `jobID`; nothing emits it
+      there yet, and it is a run-family key when something does, never a device one.
+
+    Both remain on `RunContext` and on the `runs` row. What was refused is a place on the
+    wire, per device, per sub-event.
 
     `shortDate` rides along because every consumer of this block wants a cheap daily
     grain and deriving it here costs nothing. Derived at ENQUEUE, not at delivery: the
@@ -224,7 +249,7 @@ def run_meta() -> dict[str, object]:
     The keys are camelCase with `ID` uppercased on LoonInspect-minted names (#188).
     Renamed while renaming was still free: SPL field names are case-sensitive, so a
     customer search against the wrong spelling returns zero rows with no error — the
-    same argument the `trigger`/`comparison` rename above is making.
+    same argument the `trigger` rename above is making.
     """
     run = _run.get()
     if run is None:
@@ -232,9 +257,7 @@ def run_meta() -> dict[str, object]:
     return {
         "jobID": str(run.id),
         "trigger": run.trigger,
-        "comparison": run.comparison,
         "connectionID": run.connection_id,
-        "collectionID": run.collection_id,
         "shortDate": run.window_start.strftime("%Y-%m-%d"),
     }
 
@@ -600,12 +623,19 @@ async def acquire(
     run's events are back-dated to. The tick passes the `next_due_at` it claimed — the
     time the run was *due* — so a sweep delayed by a busy tick still stamps its events
     at the hour the customer configured.
+
+    The id is minted here, not left to the column's own default (`app.models.schema.
+    Run.id`) — this is the one place a `Run` is ever constructed, and minting explicitly
+    keeps that fact visible rather than implicit in a default two files away. `uuid7()`,
+    not `uuid.uuid4()`, since #225: `jobID` — this same value — is a correlation key on
+    the wire now, and a fan-out sourcetype's `eventstats max(jobID) by serialNumber`
+    needs an id that sorts by creation time to mean anything.
     """
     await _reclaim_stale(db)
 
     now = _utcnow()
     run = Run(
-        id=uuid.uuid4(),
+        id=uuid7(),
         mdm_connection_id=connection.id,
         collection_id=collection_id,
         trigger=trigger,
