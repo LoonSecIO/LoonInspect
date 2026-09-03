@@ -10,7 +10,8 @@ had a test:
    'running' until the reclaim. The defined behavior, pinned here for a 404 (a
    computer deleted between the webhook and the fetch) and for a 5xx: the run
    finishes `failed` with the error recorded, exactly one run.failed goes to the
-   wire (#103), no run.completed (#92), and the route answers 502.
+   wire (#103), one run.completed carrying `status: "failed"` goes with it (#224),
+   and the route answers 502.
 2. `run_jamf`'s generic except: set_sync_status and the log extras read the expired
    connection, so the sync status stayed stuck 'syncing' and collections_tick's
    blanket handler ate the crash. Pinned: the status reaches a terminal 'failed'
@@ -186,8 +187,9 @@ async def _post_webhook(db, connection_id: int, payload: dict) -> httpx.Response
 async def test_webhook_fetch_404_fails_the_run_and_answers_502(db, jamf: FakeJamf, connection) -> None:
     """The defined behavior for a computer deleted between the webhook and the fetch:
     Jamf answers 404, the run finishes `failed` with the error recorded, exactly one
-    run.failed reaches the wire (#103), and the route answers its designed 502 —
-    not the MissingGreenlet 500 that left the run 'running' until the reclaim."""
+    run.failed reaches the wire (#103), one run.completed carrying `status: "failed"`
+    goes with it (#224), and the route answers its designed 502 — not the
+    MissingGreenlet 500 that left the run 'running' until the reclaim."""
     connection_id = connection.id
     payload = {
         "webhook": {"webhookEvent": "ComputerInventoryCompleted"},
@@ -209,8 +211,12 @@ async def test_webhook_fetch_404_fails_the_run_and_answers_502(db, jamf: FakeJam
     assert alarms[0].payload["connectionID"] == connection_id
     assert alarms[0].payload["trigger"] == "webhook"
     assert alarms[0].payload["error"] and "404" in alarms[0].payload["error"]
-    # The webhook lock class stays outside run.completed (#92) — failing is no exception.
-    assert await _events(db, "run.completed", run.id) == []
+    # #224: the webhook lock class no longer stays outside run.completed. A failed
+    # webhook run gets the same heartbeat a failed sweep gets, status "failed" and all.
+    completed = await _events(db, "run.completed", run.id)
+    assert len(completed) == 1
+    assert completed[0].payload["status"] == "failed"
+    assert completed[0].payload["trigger"] == "webhook"
 
 
 async def test_webhook_fetch_5xx_fails_the_run_and_answers_502(db, jamf: FakeJamf, connection) -> None:
@@ -236,7 +242,10 @@ async def test_webhook_fetch_5xx_fails_the_run_and_answers_502(db, jamf: FakeJam
     assert len(alarms) == 1
     assert alarms[0].payload["connectionID"] == connection_id
     assert alarms[0].payload["trigger"] == "webhook"
-    assert await _events(db, "run.completed", run.id) == []
+    # #224: same as the 404 case above — one run.completed rides beside the alarm.
+    completed = await _events(db, "run.completed", run.id)
+    assert len(completed) == 1
+    assert completed[0].payload["status"] == "failed"
 
 
 async def test_generic_sweep_failure_lands_a_terminal_sync_status(

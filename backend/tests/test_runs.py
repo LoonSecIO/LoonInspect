@@ -460,24 +460,31 @@ async def test_a_failed_run_emits_exactly_one_run_failed_with_the_ruled_fields(d
     assert set(hints) == {"time", "source"}
 
 
-async def test_a_failed_webhook_run_emits_run_failed_unlike_run_completed(db, connection) -> None:
-    """run.completed excludes webhook runs because success-per-webhook is volume
-    without signal — but a failed webhook run is exactly as silent as a failed sweep,
-    which is why #103 scopes the alarm to every trigger and every lock class."""
+async def test_a_failed_webhook_run_emits_both_run_failed_and_run_completed(db, connection) -> None:
+    """A failed webhook run is exactly as silent as a failed sweep without run.failed
+    (#103) — and after #224, run.completed is no longer device-sweep-only, so a failed
+    webhook run gets the same heartbeat a failed sweep gets: one run.completed carrying
+    `status: "failed"`, beside the one run.failed alarm."""
     from app.core.runs import LOCK_WEBHOOK, TRIGGER_WEBHOOK, acquire, finish
-    from app.models.schema import EventOutbox
 
     hook = await acquire(db, connection, trigger=TRIGGER_WEBHOOK, lock_class=LOCK_WEBHOOK)
     await finish(db, hook.run, ok=False, error="device record vanished mid-ingest")
 
-    events = await _run_failed_events(db, hook.run.id)
-    assert len(events) == 1
-    assert events[0].payload["trigger"] == TRIGGER_WEBHOOK
-    # And still no run.completed for a webhook run — the #92 exclusion is untouched.
-    completed = (
-        await db.execute(select(EventOutbox).where(EventOutbox.event_type == "run.completed"))
-    ).scalars().all()
-    assert all(row.payload.get("jobID") != str(hook.run.id) for row in completed)
+    alarms = await _run_failed_events(db, hook.run.id)
+    assert len(alarms) == 1
+    assert alarms[0].payload["trigger"] == TRIGGER_WEBHOOK
+
+    # #224: the exclusion used to stop here. Now the same close also heartbeats.
+    completed = await _run_completed_events(db, hook.run.id)
+    assert len(completed) == 1
+    assert completed[0].payload["trigger"] == TRIGGER_WEBHOOK
+    assert completed[0].payload["status"] == "failed"
+    # finish() was never told a count on this failure path (service.py's fetch-failure
+    # handler calls it with only `ok` and `error`), so the defaults ride the wire honestly
+    # rather than implying devices were attempted.
+    assert completed[0].payload["devicesTotal"] == 0
+    assert completed[0].payload["devicesProcessed"] == 0
+    assert completed[0].payload["devicesFailed"] == 0
 
 
 # --- the emit is outside the release ----------------------------------------------------

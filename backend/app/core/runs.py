@@ -76,20 +76,33 @@ STATUS_RUNNING = "running"
 STATUS_SUCCEEDED = "succeeded"
 STATUS_FAILED = "failed"
 
-# Emitted through the outbox when a device-sweep run closes — success or failure — so
-# absence is itself a signal downstream: no run.completed today means the sweep did not
-# run to completion, which is the silent-gap failure mode this product must never have.
-# Device sweeps only: a catalog refresh would satisfy an absence search the sweep was
-# supposed to answer, and a webhook run is one device — emitting per webhook doubles the
-# event volume for no signal (#92). Payload is snake_case, matching the envelope
-# convention and staying out of the way of the pending casing ruling (#90).
+# Emitted through the outbox when a device-sweep or webhook run closes — success or
+# failure — so absence is itself a signal downstream: the silent gap this product must
+# never have. Device sweeps only until #224: a webhook run's inventory event stamped a
+# `jobID` the same as a sweep's, but no run.completed ever closed over it, so the one
+# join a SIEM most wants to make ("show me everything this run produced") silently
+# dropped every webhook-sourced event, and #188's ruling that the aperture digest and
+# shortDate basis ride run.completed, joined by jobID, was void for those runs. Widened
+# to LOCK_WEBHOOK by #224 (see RUN_COMPLETED_LOCK_CLASSES); LOCK_CATALOG stays excluded
+# because an hourly catalog refresh would satisfy the absence search the nightly sweep
+# was supposed to answer, and a catalog pull has no device count worth reporting. One
+# consequence of the widening: "is the fleet fully inventoried" is now
+# `trigger=sweep OR trigger=manual`, not a bare `event=run.completed` — a busy tenant's
+# webhooks emit this event too, and would silence a naive absence search on a night the
+# actual sweep never closed. Payload is snake_case, matching the envelope convention and
+# staying out of the way of the pending casing ruling (#90).
 RUN_COMPLETED_EVENT = "run.completed"
 
+# Lock classes whose closed run also gets a run.completed. LOCK_CATALOG is the one
+# exclusion left standing after #224 — see RUN_COMPLETED_EVENT above.
+RUN_COMPLETED_LOCK_CLASSES = frozenset({LOCK_DEVICE_SWEEP, LOCK_WEBHOOK})
+
 # Emitted the moment any run reaches `failed` — every trigger and every lock class,
-# unlike run.completed's device-sweep-only scope (#103). run.completed is the heartbeat
-# whose absence is the signal; this is the alarm, and a failed webhook or catalog run
-# is exactly as silent as a failed sweep without it. Both fire for a failed device
-# sweep, deliberately: one answers "did the sweep close", the other pages on why.
+# wider than run.completed's scope (#103): run.completed excludes LOCK_CATALOG even
+# after #224. run.completed is the heartbeat whose absence is the signal; this is the
+# alarm, and a failed catalog run is exactly as silent as a failed sweep without it.
+# Both fire for a failed device sweep or webhook, deliberately: one answers "did the
+# run close", the other pages on why.
 # Default-on for every destination — null/empty subscriptions already mean "all", and
 # the a9d4c7e1f3b8 migration appends the type to every explicit list; the subs model
 # stays in charge, so an org unsubscribes a destination the ordinary way. Payload is
@@ -752,12 +765,14 @@ async def finish(
     exception handler, where raising would mask the error being handled. The refusal is
     logged here; the call site decides what, if anything, is left to unwind.
 
-    A device-sweep run also emits `run.completed` (#92), and any run that closes
-    `failed` also emits `run.failed` (#103) — every trigger and every lock class,
-    because a failed webhook or catalog run is exactly as silent as a failed sweep.
-    Neither fires for a refused finish — the reclaim's verdict stands, and the reclaim
-    already emitted its own run.failed when it wrote that verdict, so a second event
-    here would double-count one failure.
+    A device-sweep or webhook run also emits `run.completed` (#92, widened to webhooks
+    by #224) — RUN_COMPLETED_LOCK_CLASSES, not `ok`, decides that: a run that closes
+    `failed` gets one too, with `status: "failed"` on it, same as a sweep. And any run
+    that closes `failed` also emits `run.failed` (#103) — every trigger and every lock
+    class, including LOCK_CATALOG, which run.completed still excludes; a failed catalog
+    run is exactly as silent as a failed sweep. Neither fires for a refused finish — the
+    reclaim's verdict stands, and the reclaim already emitted its own run.failed when it
+    wrote that verdict, so a second event here would double-count one failure.
 
     Both are enqueued AFTER the release commits, not with it (`_emit_after_release`).
     They used to ride the same transaction as the status flip, which paired them
@@ -809,7 +824,7 @@ async def finish(
             deviceCount=device_count,
         )
         return False
-    if row.lock_class == LOCK_DEVICE_SWEEP:
+    if row.lock_class in RUN_COMPLETED_LOCK_CLASSES:
 
         async def emit_completed() -> None:
             await _enqueue_run_completed(
@@ -840,9 +855,9 @@ async def finish(
             )
 
         # Its own attempt, not one transaction shared with run.completed above. A failed
-        # device sweep emits both, and the alarm is the one an operator is paged by:
-        # losing it because the heartbeat beside it could not be written would be the
-        # worst possible pairing to keep.
+        # device sweep or webhook run emits both, and the alarm is the one an operator
+        # is paged by: losing it because the heartbeat beside it could not be written
+        # would be the worst possible pairing to keep.
         await _emit_after_release(db, row.id, RUN_FAILED_EVENT, emit_failed)
     await log(
         db,
@@ -858,6 +873,10 @@ async def finish(
         **({"devicesFailed": devices_failed} if devices_failed else {}),
     )
     if row.lock_class == LOCK_DEVICE_SWEEP:
+        # Deliberately narrower than RUN_COMPLETED_LOCK_CLASSES above: a posture snapshot
+        # is a fleet-wide capture, and a webhook run touched exactly one device, so #224
+        # widening run.completed did not widen this.
+        #
         # The posture snapshot (#102, docs/posture-snapshot.md): the last act of every
         # closed full sweep, success AND failure — a failed night's database state is
         # real, and the failed run id on the rows is what makes staleness visible. Only
