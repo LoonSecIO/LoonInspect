@@ -184,6 +184,21 @@ metadata, so they cost no licence volume. `sourcetype` is deliberately not set y
 ruled tree names fan-out sub-events that do not exist, and a sourcetype is a permanent
 `props.conf` stanza.
 
+**The run id is UUIDv7, not `uuid4`, since
+[#225](https://github.com/LoonSecIO/LoonInspect/issues/225).** `jobID` being a
+correlation key (the ruling above) means `eventstats max(jobID) by serialNumber` — the
+natural latest-state idiom on a fan-out sourcetype — is a search an analyst will reach
+for. Over `uuid4`'s random hex that search was not wrong, exactly; it was meaningless,
+silently, which is the failure mode this whole document exists to close off elsewhere.
+UUIDv7 keeps the exact 36-character shape `uuid4()` already had — nothing downstream
+that stores or displays a run id changes format — and sorts by creation time instead of
+by nothing. Minted locally (`app/core/uuid7.py`) rather than the standard library's own
+`uuid.uuid7()`, which is Python 3.14; this repo runs 3.12. ULID was considered and
+rejected on the same #188 ruling that named UUIDv7: a second, differently-shaped id
+format on the wire beside `eventID` for no gain UUIDv7 doesn't already give. Free before
+the flip and a breaking change after it: `eventID` is `uuid5(jobID, jamfProID)`, so
+changing `jobID`'s generator changes every derived event id too.
+
 ## 5. The log, and run-now
 
 `run_log` is one row per engine line, scoped by tenant and run. Deliberately **not** per
