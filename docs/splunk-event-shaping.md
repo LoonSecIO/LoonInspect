@@ -339,6 +339,25 @@ delta family has no ruled string ([#277](https://github.com/LoonSecIO/LoonInspec
 test event, which is meant to be identifiable rather than routed. Both land under the HEC
 input's own sourcetype.
 
+**Amended 2026-09-03, later the same day: the delta family is stamped too, so four
+families carry a `sourcetype` and one does not.** The ruling the paragraph above was
+waiting on came the same afternoon —
+[#277](https://github.com/LoonSecIO/LoonInspect/issues/277), Kyle, 2026-09-03: stamp it
+before the flip, in the assertion form of #188 ruling 3 — and
+[PR #278](https://github.com/LoonSecIO/LoonInspect/pull/278) shipped it. Every
+`device.inventory.changed` delivered to a `splunk_hec` destination now carries
+`loon:inventory:changed`, minted as `DELTA_SOURCETYPE` in `app/core/wire_vocabulary.py`
+beside `ASSERTION_SOURCETYPE` and applied by one more branch of `_single_event_sourcetype`
+in `app/core/outbox.py`; the generated registry tables did not change, and the vendor-stamped
+alternative (`loon:jamf:mac:app:delta`) was rejected on the reasoning recorded on #277. The
+reason it was worth doing before the flip rather than after is the one #277 gave: a customer
+whose saved searches find the delta under the HEC input's default sourcetype would have lost
+it silently the day the string appeared, and before the flip nobody has written that search.
+What remains unstamped is the test event alone, `destination.test`, deliberately — it is
+meant to be identifiable rather than routed, and it lands under the input's own sourcetype.
+The saved-search consequence in [`splunk-setup.md`](splunk-setup.md) §6 now applies to the
+delta as well.
+
 **Closed (#213):** `deliver_pending` orders by `next_attempt_at`, then `id`, so a drained
 backlog arrives most-overdue first rather than in arbitrary order; `_time` is each event's
 own either way.
