@@ -14,6 +14,7 @@ import time
 import httpx
 import pytest
 
+from app.core.wire import instance_label
 from app.mdm.jamf.client import JamfClient, _token_lifetime
 from tests.jamf_fake import HOST, FakeJamf
 
@@ -347,3 +348,18 @@ def test_parse_webhook_event_unwraps_the_checkin_nesting() -> None:
     assert event.jamf_id == "7"
     assert event.udid == "U-1"
     assert event.serial_number == "S-1"
+
+
+def test_host_keeps_a_non_default_port_the_aperture_must_not_drop() -> None:
+    """`.host` feeds the read aperture's collector identity (app.mdm.service.
+    capture_aperture -> build_aperture). It must agree with instance_label, the value
+    HEC ships as `source`, or two Jamf Pro instances behind one hostname on different
+    ports are two `source` values in Splunk but merge into one collector identity here
+    (#226)."""
+    client = JamfClient(base_url="https://jamf.corp.local:8443", client_id="client", client_secret="secret")
+    assert client.host == instance_label("https://jamf.corp.local:8443") == "jamf.corp.local:8443"
+
+
+def test_host_still_drops_a_default_port_like_instance_label_does() -> None:
+    client = JamfClient(base_url="https://acme.jamfcloud.com:443", client_id="client", client_secret="secret")
+    assert client.host == instance_label("https://acme.jamfcloud.com:443") == "acme.jamfcloud.com"
