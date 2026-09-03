@@ -9,11 +9,11 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, TypeVar
-from urllib.parse import urlparse
 
 import httpx
 
 from app.core.user_agent import build_user_agent
+from app.core.wire import instance_label
 from app.mdm.jamf.contract import (
     V0_SECTIONS,
     HoistedExtensionAttribute,
@@ -256,8 +256,16 @@ class JamfClient:
 
     @property
     def host(self) -> str:
-        """The collector's identity for the aperture: the Jamf Pro hostname."""
-        return urlparse(self._base_url).hostname or self._base_url
+        """The collector's identity for the aperture: the Jamf Pro instance, exactly as
+        Splunk's `source` names it (#226).
+
+        Reconciled to `app.core.wire.instance_label` rather than reimplemented — the
+        aperture and the HEC envelope must agree on one instance's identity, or two Jamf
+        Pro instances behind one hostname on different ports (`jamf.corp.local:8443` and
+        `:8444`) are two distinct `source` values in Splunk but one collector identity to
+        the read aperture, silently merging their fleets there.
+        """
+        return instance_label(self._base_url)
 
     def _user_agent(self, comment: str) -> str:
         return build_user_agent(comment, self._user_agent_override)
