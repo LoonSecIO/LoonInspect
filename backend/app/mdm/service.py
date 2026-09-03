@@ -50,6 +50,7 @@ from app.mdm.jamf.contract import (
     build_aperture,
     canonicalize_computer,
     canonicalize_smart_group,
+    with_extension_attribute_carriers,
 )
 from app.mdm.org_units import BUILDING, DEPARTMENT, record_org_units
 from app.models.schema import (
@@ -242,6 +243,10 @@ async def run_jamf(
     many collections in turn and one expired credential must not abort the rest.
     """
     quarantine = tuple(quarantined_extension_attributes)
+    # Asking for EAs means reading the sections they are displayed under (#197). Closed
+    # here, at the top of every sweep, so the aperture, the fetch and the merge agree —
+    # for a collection row saved before the rule existed as much as for one saved after.
+    sections = with_extension_attribute_carriers(sections)
     # Read while the instance is certainly live: the generic handler below runs after
     # a rollback, which expires every ORM instance in the session even with
     # expire_on_commit=False — and an expired attribute read under asyncio raises
@@ -688,8 +693,13 @@ async def ingest_computer(
             db, connection=connection, observation=observation, result=result, trigger=trigger, collected_at=collected_at
         )
     # The same sections the ledger just recorded as the aperture: the current-state
-    # tables must not consume more of the record than the run declared it read (#93).
-    await process_sync(db, normalize_computer(raw, sections), connection)
+    # tables must not consume more of the record than the run declared it read (#93) —
+    # and the same quarantine, so a quarantined EA is absent from both layers (#197).
+    await process_sync(
+        db,
+        normalize_computer(raw, sections, quarantined_extension_attributes=quarantined_extension_attributes),
+        connection,
+    )
     return result
 
 
@@ -782,7 +792,11 @@ async def webhook_scope(db: AsyncSession, connection: MdmConnection) -> tuple[tu
     collection = result.scalars().first()
     if collection is None or not collection.sections:
         return tuple(V0_SECTIONS), ()
-    return tuple(collection.sections), tuple(collection.quarantined_extension_attributes or ())
+    # Closed for the same reason run_jamf closes the sweep's (#197).
+    return (
+        with_extension_attribute_carriers(collection.sections),
+        tuple(collection.quarantined_extension_attributes or ()),
+    )
 
 
 async def sync_state(db: AsyncSession, connection: MdmConnection) -> None:
@@ -949,7 +963,14 @@ async def process_sync(
             await db.flush()
 
         existing.extension_attributes = [
-            DeviceExtensionAttribute(key=ea.key, value=ea.value) for ea in device.extension_attributes
+            DeviceExtensionAttribute(
+                definition_id=ea.definition_id,
+                name=ea.name,
+                values=list(ea.values),
+                source=ea.source,
+                enabled=ea.enabled,
+            )
+            for ea in device.extension_attributes
         ]
 
     added: list[NormalizedApp] = []

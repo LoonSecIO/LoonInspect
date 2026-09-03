@@ -343,6 +343,13 @@ function CollectionForm({ connectionId, collection, onSaved, onCancel }: Collect
   const scheduled = kind !== "webhook";
   const usesSections = kind !== "catalog";
 
+  // Extension attributes are reported inside the section an admin displays them under,
+  // so asking for them reads the five carriers too. The server closes the set on save
+  // (#197); the editor shows the same closure up front, so what is ticked is what is fetched.
+  const carriers = sectionsAvailable.filter((s) => s.carriesExtensionAttributes).map((s) => s.name);
+  const eaSelected = sections.includes("extension_attributes");
+  const effectiveSections = eaSelected ? [...sections, ...carriers.filter((c) => !sections.includes(c))] : sections;
+
   function toggleSection(sectionName: string) {
     setSections((current) =>
       current.includes(sectionName) ? current.filter((s) => s !== sectionName) : [...current, sectionName]
@@ -357,7 +364,7 @@ function CollectionForm({ connectionId, collection, onSaved, onCancel }: Collect
       name,
       kind,
       enabled,
-      sections: usesSections ? sections : [],
+      sections: usesSections ? effectiveSections : [],
       selector: kind === "device_sweep" && selector.trim() ? selector.trim() : null,
       pageSize: kind === "device_sweep" && pageSize.trim() ? Number(pageSize) : null,
       quarantinedExtensionAttributes: quarantine
@@ -433,19 +440,26 @@ function CollectionForm({ connectionId, collection, onSaved, onCancel }: Collect
             </div>
           </div>
           <div className="grid gap-1 sm:grid-cols-2 md:grid-cols-3">
-            {sectionsAvailable.map((section) => (
-              <label key={section.name} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={sections.includes(section.name)}
-                  onChange={() => toggleSection(section.name)}
-                />
-                <span>
-                  {section.name}
-                  <span className="ml-1 text-xs text-muted-foreground">({section.jamfSection})</span>
-                </span>
-              </label>
-            ))}
+            {sectionsAvailable.map((section) => {
+              const forced = eaSelected && section.carriesExtensionAttributes;
+              return (
+                <label key={section.name} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={effectiveSections.includes(section.name)}
+                    disabled={forced}
+                    onChange={() => toggleSection(section.name)}
+                  />
+                  <span>
+                    {section.name}
+                    <span className="ml-1 text-xs text-muted-foreground">({section.jamfSection})</span>
+                    {section.carriesExtensionAttributes && (
+                      <span className="ml-1 text-xs text-muted-foreground">· {tf.carriesExtensionAttributes}</span>
+                    )}
+                  </span>
+                </label>
+              );
+            })}
           </div>
           <p className="text-xs text-muted-foreground">{tf.sectionsHelp}</p>
         </fieldset>

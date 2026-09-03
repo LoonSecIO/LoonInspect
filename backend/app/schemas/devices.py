@@ -19,10 +19,26 @@ class VersionOperator(str, Enum):
 
 
 class ExtensionAttributeFilter(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    """One `ea=` query term: `<definition id or name>:<value>`, or the key alone."""
 
     key: str
     value: str | None = None
+
+
+class ExtensionAttributeOut(BaseModel):
+    """An extension attribute as the device last reported it — keyed by Jamf's definition
+    id with the name as its label (#197), so a rename in Jamf changes the label and never
+    the identity; `values` is the whole list; `source` is the inventory-display section
+    the value was found under; `enabled` is the definition's flag, carried rather than
+    filtered on."""
+
+    model_config = ConfigDict(from_attributes=True, alias_generator=to_camel, populate_by_name=True)
+
+    definition_id: str
+    name: str | None
+    values: list[str]
+    source: str
+    enabled: bool | None
 
 
 class InstalledAppOut(BaseModel):
@@ -88,7 +104,7 @@ class DeviceOut(BaseModel):
 
 class DeviceDetailOut(DeviceOut):
     apps: list[InstalledAppOut] = []
-    extension_attributes: list[ExtensionAttributeFilter] = []
+    extension_attributes: list[ExtensionAttributeOut] = []
 
 
 class DeviceListResponse(BaseModel):

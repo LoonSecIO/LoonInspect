@@ -15,7 +15,7 @@ from app.core.permissions import Permission
 from app.core.scheduling import KIND_CATALOG, KIND_DEVICE_SWEEP, KIND_WEBHOOK, ScheduleError
 from app.core.tenancy import reset_tenant_id, set_tenant_id
 from app.mdm.collections import apply_schedule, list_collections, run_collection
-from app.mdm.jamf.contract import SECTIONS
+from app.mdm.jamf.contract import EXTENSION_ATTRIBUTE_CARRIERS, SECTIONS, with_extension_attribute_carriers
 from app.mdm.service import TRIGGER_MANUAL
 from app.models.schema import Collection, MdmConnection, MdmSyncState
 from app.schemas.collections import (
@@ -72,14 +72,20 @@ async def _collection_or_404(collection_id: int, db: AsyncSession) -> Collection
 
 def _validate_scope(collection: Collection) -> None:
     """The what, checked against the contract: sections must be contract sections, a
-    device sweep or webhook needs at least one, a catalog has none, and only a device
-    sweep carries a selector."""
+    device sweep or webhook needs at least one and reads the EA carriers whenever it
+    reads EAs, a catalog has none, and only a device sweep carries a selector."""
     sections = list(collection.sections or [])
     unknown = [name for name in sections if name not in SECTIONS]
     if unknown:
         raise HTTPException(status_code=422, detail=f"Unknown sections: {', '.join(unknown)}")
     if collection.kind in (KIND_DEVICE_SWEEP, KIND_WEBHOOK) and not sections:
         raise HTTPException(status_code=422, detail="Choose at least one section")
+    if collection.kind in (KIND_DEVICE_SWEEP, KIND_WEBHOOK):
+        # Asking for extension attributes reads the five sections they are displayed
+        # under (#197). Applied at save so the row, the editor and the aperture all show
+        # the set that is actually fetched, rather than a picker that silently narrows
+        # EAs; run_jamf and webhook_scope apply the same closure for rows that predate it.
+        collection.sections = list(with_extension_attribute_carriers(sections))
     if collection.kind == KIND_CATALOG:
         collection.sections = []
         collection.selector = None
@@ -115,6 +121,7 @@ async def list_jamf_sections() -> list[SectionInfo]:
             jamf_section=spec.jamf_section,
             kind="list" if spec.is_list else "scalar",
             entry_kind=spec.entry_kind,
+            carries_extension_attributes=spec.name in EXTENSION_ATTRIBUTE_CARRIERS,
         )
         for spec in SECTIONS.values()
     ]

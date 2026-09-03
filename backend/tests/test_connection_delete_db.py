@@ -209,7 +209,11 @@ async def _sync_once(db, connection) -> None:
             key_full="v1:" + "d" * 64,
         )
     )
-    db.add(DeviceExtensionAttribute(device_id=device.id, key="Asset Tag", value="LOON-1"))
+    db.add(
+        DeviceExtensionAttribute(
+            device_id=device.id, definition_id="4", name="Asset Tag", values=["LOON-1"], source="extensionAttributes"
+        )
+    )
     db.add(
         Run(
             id=uuidlib.uuid4(),

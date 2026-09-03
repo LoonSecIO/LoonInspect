@@ -4,7 +4,7 @@ import asyncio
 import logging
 import random
 import time
-from collections.abc import AsyncIterator, Coroutine, Sequence
+from collections.abc import AsyncIterator, Coroutine, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -14,7 +14,13 @@ from urllib.parse import urlparse
 import httpx
 
 from app.core.user_agent import build_user_agent
-from app.mdm.jamf.contract import V0_SECTIONS, jamf_section_param, parse_jamf_datetime
+from app.mdm.jamf.contract import (
+    V0_SECTIONS,
+    HoistedExtensionAttribute,
+    hoist_extension_attributes,
+    jamf_section_param,
+    parse_jamf_datetime,
+)
 from app.schemas.payload import (
     MdmProvider,
     NormalizedApp,
@@ -664,7 +670,12 @@ class JamfClient:
             return []
 
 
-def normalize_computer(computer: dict, sections: Sequence[str] = V0_SECTIONS) -> NormalizedDevice:
+def normalize_computer(
+    computer: dict,
+    sections: Sequence[str] = V0_SECTIONS,
+    *,
+    quarantined_extension_attributes: Iterable[str] = (),
+) -> NormalizedDevice:
     """The `devices` / `installed_apps` shape the UI reads, from a raw inventory object.
 
     This is the *current-state* view and is deliberately looser than the observation
@@ -679,15 +690,30 @@ def normalize_computer(computer: dict, sections: Sequence[str] = V0_SECTIONS) ->
     `sections` tells process_sync not to write them (#98). Keyed off the request, not
     the response: Jamf omitting a key we asked for *is* an empty read, and a detail
     fetch carrying sections we did not ask for is still not an observation of them.
+
+    Extension attributes come through `hoist_extension_attributes`, the one merge the
+    observation contract also uses (#197). Jamf spreads them over six arrays — the
+    top-level one and one inside each display section — and this view used to read only
+    the first, so every EA an admin displayed on a section tab was invisible to the
+    product and the wire while the ledger recorded it changing. Each item keeps the
+    section it was found under as `source`; the quarantine is applied in the same place,
+    so a quarantined definition is absent from every path rather than only the ledger.
     """
     requested = set(sections)
+    hoist = hoist_extension_attributes(computer, sections=requested, quarantined=quarantined_extension_attributes)
+    _report_unadmitted(hoist.unadmitted, computer_id=computer.get("id"))
+    # Every section read below comes from the copy the hoist stripped, so no section
+    # object still carries an `extensionAttributes` array beside the real list.
+    computer = hoist.computer
     general = computer.get("general", computer) if "general" in requested else {}
     hardware = computer.get("hardware", {}) if "hardware" in requested else {}
     operating_system = computer.get("operatingSystem", {}) if "operating_system" in requested else {}
     user_and_location = computer.get("userAndLocation", {}) if "user_and_location" in requested else {}
     applications = computer.get("applications", []) if "applications" in requested else None
     extension_attributes = (
-        computer.get("extensionAttributes", []) if "extension_attributes" in requested else None
+        [_extension_attribute(hoisted) for hoisted in hoist.items if _definition_id(hoisted.item) is not None]
+        if "extension_attributes" in requested
+        else None
     )
 
     remote_management = general.get("remoteManagement", {})
@@ -742,16 +768,7 @@ def normalize_computer(computer: dict, sections: Sequence[str] = V0_SECTIONS) ->
             )
             for app in applications
         ],
-        extension_attributes=None
-        if extension_attributes is None
-        else [
-            NormalizedExtensionAttribute(
-                key=ea.get("name", ""),
-                value=(ea.get("values") or [None])[0],
-            )
-            for ea in extension_attributes
-            if ea.get("name")
-        ],
+        extension_attributes=extension_attributes,
         sections=frozenset(requested),
     )
 
@@ -765,6 +782,68 @@ def _org_unit_id(value: object) -> str | None:
     if value is None or value == "":
         return None
     return str(value)
+
+
+def _extension_attribute(hoisted: HoistedExtensionAttribute) -> NormalizedExtensionAttribute:
+    """Jamf's EA object, typed, plus where it was found. Verbatim in spirit: nothing is
+    renamed or dropped, values and options are the whole lists, and absence stays
+    absence — a `description` Jamf sent as null is null, one it sent as "" is ""."""
+    item = hoisted.item
+    return NormalizedExtensionAttribute(
+        definition_id=str(item["definitionId"]),
+        name=_text(item.get("name")),
+        description=_text(item.get("description")),
+        enabled=_flag(item.get("enabled")),
+        multi_value=_flag(item.get("multiValue")),
+        values=_strings(item.get("values")),
+        data_type=_text(item.get("dataType")),
+        options=_strings(item.get("options")),
+        input_type=_text(item.get("inputType")),
+        source=hoisted.source,
+    )
+
+
+def _definition_id(item: Mapping[str, object]) -> str | None:
+    """The EA's identity, or None for an item that has none — which is not an EA."""
+    value = item.get("definitionId")
+    if value is None or str(value) == "":
+        return None
+    return str(value)
+
+
+def _text(value: object) -> str | None:
+    return None if value is None else str(value)
+
+
+def _flag(value: object) -> bool | None:
+    return value if isinstance(value, bool) else None
+
+
+def _strings(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if item is not None]
+
+
+# Sources of extension attributes the aperture did not admit, already reported. Once per
+# process per source: the case this catches — a display section the contract has no
+# name for — repeats on every device of every sweep, and forty thousand copies of one
+# warning say less than one.
+_UNADMITTED_EA_SOURCES_REPORTED: set[str] = set()
+
+
+def _report_unadmitted(sources: Sequence[str], *, computer_id: object) -> None:
+    new = [source for source in sources if source not in _UNADMITTED_EA_SOURCES_REPORTED]
+    if not new:
+        return
+    _UNADMITTED_EA_SOURCES_REPORTED.update(new)
+    logger.warning(
+        "extension attributes found under keys outside the read aperture were not merged; a "
+        "section the contract knows is admitted by requesting it (a collection that asks for "
+        "extension attributes reads its five carriers automatically), one it does not know needs "
+        "adding to app.mdm.jamf.contract.SECTIONS and EXTENSION_ATTRIBUTE_CARRIERS",
+        extra={"sources": new, "computer_id": computer_id},
+    )
 
 
 def _parse_datetime(value: str | None) -> datetime | None:

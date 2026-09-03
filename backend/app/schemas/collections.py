@@ -89,3 +89,6 @@ class SectionInfo(_Base):
     jamf_section: str
     kind: str  # scalar | list
     entry_kind: str | None
+    # One of the five inventory-display sections extension attributes nest under. It is
+    # read whenever `extension_attributes` is, and the editor says so (#197).
+    carries_extension_attributes: bool = False

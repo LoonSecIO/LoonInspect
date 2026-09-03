@@ -304,7 +304,10 @@ implemented. The aperture reads (`fetch_version()`,
 and extension-attribute *definition* fetching still does not exist. EA values ride
 inside each computer record, which is why `EXTENSION_ATTRIBUTES` sits in `V0_SECTIONS`
 (the constant `INVENTORY_SECTIONS` grew into) — as do `GROUP_MEMBERSHIPS` and
-`CONFIGURATION_PROFILES`, so assignments arrive device-first with every sweep.
+`CONFIGURATION_PROFILES`, so assignments arrive device-first with every sweep. A value
+nests inside the section an admin displays the EA under, so a collection that asks for
+`EXTENSION_ATTRIBUTES` reads `GENERAL`, `HARDWARE`, `OPERATING_SYSTEM`,
+`USER_AND_LOCATION` and `PURCHASING` with it (#197; `jamf-observations.md` §7).
 
 **A separately-scheduled service/catalog polling class remains new surface, not a
 rescheduling of existing code.** That matters for V0 sizing.

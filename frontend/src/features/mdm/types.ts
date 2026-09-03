@@ -193,6 +193,9 @@ export interface SectionInfo {
   jamfSection: string;
   kind: "scalar" | "list";
   entryKind: string | null;
+  // One of the five inventory-display sections extension attributes nest under; it is
+  // read whenever `extension_attributes` is (#197).
+  carriesExtensionAttributes: boolean;
 }
 
 export interface CollectionRunResult {

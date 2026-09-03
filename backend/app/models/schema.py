@@ -162,14 +162,35 @@ class Device(Base):
 
 
 class DeviceExtensionAttribute(Base):
+    """An extension attribute as the device last reported it — current state, replaced
+    wholesale on every read that covers the EA section (process_sync).
+
+    Keyed by Jamf's definition id with the name as a label (#197), so a rename in Jamf
+    replaces the label and never the row's identity — the same identity the observation
+    contract hashes and the change log pairs on. `values` is the whole list: one row per
+    definition, never one per value, so an EA the device has not answered is still a
+    row (an empty list) rather than an absence. `source` is the inventory-display
+    section the value was found under, carried for the API and the wire and never for
+    identity. The column name `values` is SQL-reserved; SQLAlchemy quotes it, and in
+    psql it is `"values"`. Migration d7e3b9c5a1f4.
+    """
+
     __tablename__ = "device_extension_attributes"
-    __table_args__ = (UniqueConstraint("device_id", "key", name="uq_device_extension_attribute_key"),)
+    __table_args__ = (
+        UniqueConstraint("device_id", "definition_id", name="uq_device_extension_attribute_definition"),
+        # Containment (`@>`) for the `ea=<id or name>:<value>` filter: a multi-value EA
+        # matches on any of its elements, which a scalar column could not express.
+        Index("ix_device_extension_attributes_values", "values", postgresql_using="gin"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     device_id: Mapped[int] = mapped_column(ForeignKey("devices.id"), index=True)
-    key: Mapped[str] = mapped_column(String(255), index=True)
-    value: Mapped[str | None] = mapped_column(String(1024), nullable=True, index=True)
+    definition_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    values: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
+    source: Mapped[str] = mapped_column(String(64))
+    enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     device: Mapped[Device] = relationship(back_populates="extension_attributes")
 
