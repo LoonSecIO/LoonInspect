@@ -45,11 +45,29 @@ class CatalogEntryOut(_CamelModel):
     latest_released_at: datetime | None = None
     released_at: datetime | None = None
     evaluated_at: datetime | None = None
-    # #251: LoonInspect's own answer about this build, in the wire's own words —
+
+
+class CatalogEntryAssessedOut(CatalogEntryOut):
+    """A catalog row that **is** the build being answered about, so it can carry an
+    assessment (#251).
+
+    The split is the point, not the inheritance. `vuln` is scoped to `key_full` — one
+    answer per distinct build — so it may only ride a row a caller asked for *by build*.
+    The lookup endpoint answers by `appHash` too, where the row returned is deliberately a
+    stand-in for a **different** build (the newest version the tenant has seen), and a
+    clean bill from a newer build presented as the title's answer is
+    `docs/vulnerabilities.md` §4a's failure one grain out — a caller reads "no findings"
+    for a build nobody assessed.
+
+    That is refused by the type rather than documented: `CatalogLookupOut.tenant` is the
+    base `CatalogEntryOut`, which has no `vuln` at all, so a stand-in cannot carry one even
+    by accident. The list endpoint's rows are each their own build, so they use this.
+    """
+
     # `covered` (we looked), `unknown_app` (outside the corpus, dated) or `off` (nobody
     # looked). Defaults to `off`, which is what every row reads until #248 loads a corpus,
-    # and is never absent: a column that cannot tell "no findings" from "not assessed" is
-    # the failure `assessment` exists to prevent (docs/vulnerabilities.md §4a).
+    # and is never absent here: a column that cannot tell "no findings" from "not
+    # assessed" is the failure `assessment` exists to prevent (§4a).
     vuln: VulnEnrichment = Field(default_factory=VulnEnrichment)
 
 
@@ -61,7 +79,7 @@ class CatalogSummaryOut(_CamelModel):
 
 
 class CatalogListResponse(_CamelModel):
-    items: list[CatalogEntryOut]
+    items: list[CatalogEntryAssessedOut]
     total: int
     summary: CatalogSummaryOut
     # #251: the corpus generation the blocks on `items` came from — the page's header
@@ -96,7 +114,13 @@ class CatalogLookupRequest(_CamelModel):
 
 class CatalogLookupOut(_CamelModel):
     """The local lookup for one key: the tenant's row if the fleet has shown the app, and what
-    Jamf knows about that exact (appName, bundleId, version)."""
+    Jamf knows about that exact (appName, bundleId, version).
+
+    `tenant` is the base `CatalogEntryOut` on purpose: this endpoint answers by `appHash`
+    as well as by build, and under `appHash` the row is a stand-in for the newest version
+    the tenant has seen rather than the caller's build. There is no assessment to give at
+    that grain, so the type does not have the field — see `CatalogEntryAssessedOut` (#251).
+    """
 
     key: str
     tenant: CatalogEntryOut | None = None

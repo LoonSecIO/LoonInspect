@@ -20,6 +20,7 @@ from app.core.vuln_read import assess, corpus_as_of, today
 from app.mdm.patch.requirements import version_tuple
 from app.models.schema import AppCatalogEntry, AppCatalogVersion, InstalledApp, JamfPatchTitle
 from app.schemas.catalog import (
+    CatalogEntryAssessedOut,
     CatalogEntryOut,
     CatalogListResponse,
     CatalogLookupOut,
@@ -50,22 +51,41 @@ async def _title_refs(db: AsyncSession, entries: list[AppCatalogEntry]) -> dict[
     return {title_id: CatalogTitleRef(id=title_id, name=name) for title_id, name in rows}
 
 
-def _entry_out(
+def _stamp(out: CatalogEntryOut, devices: int, refs: dict[str, CatalogTitleRef], entry: AppCatalogEntry) -> None:
+    out.device_count = int(devices or 0)
+    out.jamf_titles = [refs[title_id] for title_id in (entry.jamf_title_ids or []) if title_id in refs]
+
+
+def _entry_out(entry: AppCatalogEntry, devices: int, refs: dict[str, CatalogTitleRef]) -> CatalogEntryOut:
+    """A row with no assessment on it — what the lookup returns.
+
+    The lookup answers by `appHash` as well as by build, and under `appHash` this row is a
+    stand-in for the newest version the tenant has seen, not the caller's build. `vuln` is
+    scoped to `key_full`, so there is nothing honest to put here (#251,
+    `docs/vulnerabilities.md` §4a): the model simply has no such field.
+    """
+    out = CatalogEntryOut.model_validate(entry)
+    _stamp(out, devices, refs, entry)
+    return out
+
+
+def _assessed_entry_out(
     entry: AppCatalogEntry,
     devices: int,
     refs: dict[str, CatalogTitleRef],
     *,
     corpus: VulnCorpus,
     as_of: date,
-) -> CatalogEntryOut:
-    out = CatalogEntryOut.model_validate(entry)
-    out.device_count = int(devices or 0)
-    out.jamf_titles = [refs[title_id] for title_id in (entry.jamf_title_ids or []) if title_id in refs]
-    # #251: the corpus's answer for this exact build, keyed on the content keys the row
-    # already carries — the same local hash-join the wire runs, through the same seam. The
-    # corpus is a required argument rather than a default so a `CatalogEntryOut` built
-    # anywhere carries a real answer; a row that quietly defaulted to `off` while a corpus
-    # was loaded would be a lie in the one column that exists to prevent them.
+) -> CatalogEntryAssessedOut:
+    """The same row, plus the corpus's answer for **this exact build** (#251).
+
+    Keyed on the content keys the row already carries — the same local hash-join the wire
+    runs, through the same seam. The corpus is a required argument rather than a default so
+    a row built anywhere carries a real answer; one that quietly defaulted to `off` while a
+    corpus was loaded would be a lie in the one column that exists to prevent them.
+    """
+    out = CatalogEntryAssessedOut.model_validate(entry)
+    _stamp(out, devices, refs, entry)
     out.vuln = assess(corpus, entry, as_of=as_of)
     return out
 
@@ -107,7 +127,7 @@ async def list_catalog(
     # with the fleet — and reads no database; under `NO_CORPUS` it does no per-row work.
     corpus, as_of = loaded_corpus(), today()
     items = [
-        _entry_out(entry, row[1], refs, corpus=corpus, as_of=as_of)
+        _assessed_entry_out(entry, row[1], refs, corpus=corpus, as_of=as_of)
         for entry, row in zip(entries, page_rows, strict=True)
     ]
 
@@ -181,10 +201,11 @@ async def _lookup(
     ).all()
     entries = [row[0] for row in tenant_rows]
     refs = await _title_refs(db, entries)
-    corpus, as_of = loaded_corpus(), today()
     by_key: dict[str, CatalogEntryOut] = {}
     for entry, count in tenant_rows:
-        out = _entry_out(entry, count, refs, corpus=corpus, as_of=as_of)
+        # No corpus here, deliberately: this endpoint answers by `appHash` too, and the row
+        # it returns under that key stands in for a different build (#251).
+        out = _entry_out(entry, count, refs)
         by_key.setdefault(entry.version_hash, out)
         by_key.setdefault(entry.key_full, out)
         # app_hash answers the *title*, not a version; the newest version seen stands in.

@@ -119,6 +119,13 @@ tests are not applicable. A per-device override that reads a carried attribute i
   bundleId, version) from `app_catalog_versions`; `appHash` answers with the newest version the
   tenant has seen. Same vocabulary as the Global API's quick lookup (`jamfTitleIds`, `isLatest`,
   `latest`, `latestReleasedAt`, `thisVersionSeen`, `releasedAt`).
+  **No `vuln` and no `corpusAsOf` here** (#251): `appHash` answers with a *stand-in* row for a
+  different build than the caller's, and an assessment is scoped to `key_full`, so returning
+  one would present a newer build's clean bill as the title's — [`docs/vulnerabilities.md`](vulnerabilities.md)
+  §4a's failure one grain out. Refused in the type rather than documented: `tenant` here is
+  `CatalogEntryOut`, which has no such field; the list endpoint's rows are
+  `CatalogEntryAssessedOut`, which does. A caller wanting an assessment asks `GET /api/catalog`,
+  whose every row is its own build.
 - `POST /api/catalog/refresh` — re-judge every row of the tenant (Analyst and up, like the
   catalog sync).
 

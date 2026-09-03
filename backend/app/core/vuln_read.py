@@ -24,12 +24,19 @@ consumer gets the canonical `null` for *never*, the same as a warehouse destinat
 page reads `null` as "no finding in this band" with no cast, and a JSON reader never has
 to know that `-1` is a number Splunk needs and JavaScript does not.
 
-**Which clock.** The wire pins `as_of` to the snapshot's own `occurredAt` so that ten
-delivery retries of one stored row expand to identical bytes. A page has no retry to be
-stable across and no event to be faithful to: the honest number for someone reading
-`daysOldestPublished` today is days since publication *today*. So the read path passes
-today's UTC date and says so here, because the two numbers can differ by a day or more
-for an old snapshot and nobody should discover that by noticing it.
+**Which clock — there are two, and §4d now says so.** The wire pins `as_of` to the
+snapshot's own `occurredAt`, because a Splunk event is a *historical record*: it says what
+was true when that snapshot was taken, and ten delivery retries of one stored row must
+expand to identical bytes. A page is not a record. It answers *how old is this finding
+now*, for a person looking now, so this module counts from today's UTC date.
+
+The two numbers therefore differ, and the gap is **not** the sync gap: it is the age of
+that device's newest snapshot — bounded by the check-in cadence for a healthy device and
+**unbounded once a device stops checking in**, since the event's clock stops with it while
+the page's does not. Both are true; they answer different questions. Reusing the
+snapshot's clock here was the alternative and it loses on §4d's own argument — it would
+date the page to the last sync, so a fleet would appear to age more slowly the worse its
+check-ins are, and the number would measure our collection rather than their exposure.
 
 **What this costs, and what #248 changes.** One dictionary-shaped question per row, over
 the rows one response already carries: one device's ~100 apps, or the tenant's distinct
@@ -62,9 +69,9 @@ class HasContentKeys(Protocol):
 
 
 def today() -> date:
-    """The read path's `as_of`. UTC, and a function so a test can pin it without a clock
-    freeze — the wire's determinism argument (§4d) does not apply to a page, but a test
-    asserting a day count still needs a fixed today."""
+    """The read path's `as_of` — the second of §4d's two clocks. UTC, and a function so a
+    test can pin it without freezing the process clock: the wire's determinism argument
+    does not apply to a page, but a test asserting a day count still needs a fixed today."""
     return datetime.now(timezone.utc).date()
 
 
