@@ -10,8 +10,8 @@ LoonInspect reads inventory from Jamf Pro, works out what actually changed since
 
 ## 🚀 Features
 
-* **Built for Jamf Pro:** Native Pro API integration and webhook ingestion, unapologetically Jamf-first (SimpleMDM and Addigy are on the roadmap).
-* **Delta Streaming Engine:** Diffs inventory against the last observation and streams structured JSON events (`device.inventory.changed`, `device.change`) directly to your SIEM. A sweep where nothing changed emits nothing at all.
+* **Built for Jamf Pro:** Native Pro API integration and webhook ingestion. LoonInspect is Jamf-only by design (#79) — `app/mdm/factory.py` builds a Jamf client directly rather than dispatching through an abstraction. A second MDM would be a sibling vertical in this repo, not a provider this one plugs into.
+* **Delta Streaming Engine:** Diffs inventory against the last observation and streams structured JSON events (`device.inventory.changed`, `device.change`) directly to your SIEM. A sweep where nothing changed emits nothing at all. The wire vocabulary is frozen and amended only additively — [docs/splunk-wire-vocabulary.md](docs/splunk-wire-vocabulary.md).
 * **Small on the wire:** Measured at 509 bytes per event plus 311 bytes per changed app. A 40,000-device baseline sweep is roughly 1.06 GB, once; a quiet day afterwards is roughly 4 MB.
 * **Hybrid Sync Architecture:** Real-time webhooks for active devices and scheduled off-peak sweeps for the rest. Each pull is a *collection* — what to read (Jamf sections, a device filter pushed into Jamf's query, the smart-group catalog) and when (time of day, timezone, cadence) — configured per connection in the app rather than as one global cron.
 * **Tenant isolation in the database:** Row-level security is enforced by Postgres rather than by application filters, and CI asserts that the application role cannot bypass it.
@@ -19,7 +19,7 @@ LoonInspect reads inventory from Jamf Pro, works out what actually changed since
 
 ### What it does not do
 
-No CVE or EPSS enrichment. No vulnerability scoring. No SCIM, no MFA. Jamf Patch title compliance is implemented; nothing else vulnerability-shaped is. If you need those today, this is not that tool.
+No CVE or EPSS enrichment. No vulnerability scoring. No SCIM, no MFA. Jamf Patch title compliance is implemented; nothing else vulnerability-shaped is. The wire already carries a `vuln` slot for the rest — every device event ships `assessment: off` until the community corpus and its matching land ([docs/vulnerabilities.md](docs/vulnerabilities.md), tracked in [#248](https://github.com/LoonSecIO/LoonInspect/issues/248)/[#249](https://github.com/LoonSecIO/LoonInspect/issues/249)). If you need vulnerability scoring today, this is not that tool yet.
 
 ---
 
@@ -36,6 +36,13 @@ Beneath the delta, every Jamf observation is also kept as a versioned, content-a
 record — what each device looked like each time it was read, and through what collector
 configuration — so history can be diffed without phantom changes when the shape evolves.
 The contract is in [docs/jamf-observations.md](docs/jamf-observations.md).
+
+**Nothing here is deleted.** Devices, installed apps, extension attributes, the
+observation ledger, and the change log (`device_changes`) have no retention setting and
+no purge job — a Mac removed from Jamf keeps its full history. The only three things this
+project ever prunes are the delivery outbox (7 days), finished runs (30 days), and the
+audit log (30 days, by file rotation). See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for what
+that means at scale.
 
 ---
 
@@ -346,10 +353,13 @@ sharing instance sends per-tenant **content-hash keys** of installed application
 aggregated install counts (plus OS and hardware tuples) — never per-device rows, and
 never device identifiers, serials, hostnames, user names, file paths, or anything from
 the accounts and credential tables. App *names* cross the wire only when the instance
-answers an explicit request for a title already seen at 5+ independent contributors,
-and only in the default tier; internal, company-specific apps are never revealed. The
-full design — including exactly what the k-threshold does and doesn't guarantee — is
-in [docs/data-sharing.md](docs/data-sharing.md).
+answers an explicit request for a title already seen at 5+ independent contributors —
+the server's published policy — and only in the default tier; internal, company-specific
+apps are never revealed. The stronger guarantee isn't the count, which a client cannot
+verify: it's that a request can only *name* an app whose plaintext the requester already
+holds, so a genuinely private title is unaddressable regardless of how many contributors
+share it. The full design — including exactly what the k-threshold does and doesn't
+guarantee — is in [docs/data-sharing.md](docs/data-sharing.md).
 
 The choice is presented during first-run setup and lives under **Settings → Data
 Sharing** afterwards, alongside a button that renders the literal next payload from

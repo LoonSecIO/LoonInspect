@@ -1,8 +1,8 @@
 # 🦅 LoonInspect Backend
 
-The backend engine for LoonInspect is a high-performance Python application built with **FastAPI** and **SQLAlchemy**.
+The backend engine for LoonInspect is a Python application built with **FastAPI** and **SQLAlchemy**.
 
-It orchestrates the hybrid sync architecture, including webhook ingestion and cron sweeps, deduplicates raw Mac application data into `O(1)` hashes, and securely streams vulnerability data.
+It orchestrates the hybrid sync architecture (webhook ingestion plus scheduled *collections*), content-hashes installed-app identity so lookups are `O(1)` against the tenant's app catalog instead of recomputed per device, and streams the resulting change events to your SIEM. Vulnerability enrichment rides the same wire but is not populated yet — every event ships `assessment: off` until the community corpus lands ([../docs/vulnerabilities.md](../docs/vulnerabilities.md)).
 
 ## 🛠 Tech Stack
 
@@ -10,27 +10,32 @@ It orchestrates the hybrid sync architecture, including webhook ingestion and cr
 * **Dependency Management:** [uv](https://github.com/astral-sh/uv) (Blazing fast Rust-based package manager)
 * **Database ORM:** [SQLAlchemy](https://www.sqlalchemy.org/) 2.0 (with async support)
 * **Task Scheduling:** [APScheduler](https://apscheduler.readthedocs.io/) (the minute tick that runs due *collections*, the outbox worker, and cleanup jobs)
-* **Security:** `webauthn` for FIDO2/TouchID and `scim2-models` for Okta integration
+* **Auth:** Email + password + server-side sessions (`app/core/auth.py`), passwords hashed with Argon2 (`app/core/security.py`). Passwordless sign-in and directory provisioning are not implemented — see [../docs/auth-design.md](../docs/auth-design.md) for what's shipped versus deferred.
 
 ---
 
-## 🏗 Domain-Driven Architecture
+## 🏗 Architecture
 
-The backend is structured to separate HTTP routing logic from business/MDM sync logic. This keeps endpoints microscopic and prevents vendor lock-in.
+The backend is structured to separate HTTP routing logic from Jamf sync logic. `app/mdm/`
+is Jamf-only by design (#79) — `factory.py` builds a `JamfClient` directly rather than
+dispatching through an abstraction. A `provider` column and a credential-schema registry
+(`app/mdm/credentials.py`) are the seam a second MDM would plug into as a sibling
+vertical in this repo, not a class dropped into this package; see "MDM support" below.
 
 ```text
 backend/
 ├── pyproject.toml         # Managed by uv - contains dependencies
 └── app/
-    ├── main.py            # FastAPI initialization and cron scheduler
-    ├── api/               # HTTP Routers (UI endpoints, Webhook receivers)
-    ├── core/              # DB setup and environment config (Pydantic Settings)
-    ├── models/            # SQLAlchemy Database schemas (MdmConnection, Device, InstalledApp)
-    ├── schemas/           # Pydantic validation schemas (JSON payload validation)
-    └── mdm/               # Business Logic & Diff Engine
-        ├── base.py        # Abstract Base Class for MDMs
-        ├── service.py     # The core hashing & SIEM streaming engine
-        └── jamf/          # Jamf-specific API clients and payload normalizers
+    ├── main.py            # FastAPI initialization and scheduler
+    ├── api/                # HTTP Routers (UI endpoints, Webhook receivers)
+    ├── core/               # DB setup, environment config, content hashing, and SIEM streaming
+    ├── models/             # SQLAlchemy Database schemas (MdmConnection, Device, InstalledApp)
+    ├── schemas/            # Pydantic validation schemas (JSON payload validation)
+    └── mdm/                # Jamf sync and diff logic
+        ├── factory.py      # Builds a JamfClient from a connection's stored credentials
+        ├── service.py      # Orchestrates one connection's sync: diffs inventory, then hands off to core's hashing and streaming
+        ├── jamf/           # Jamf API client and payload normalizers
+        └── patch/          # Jamf Patch title matching
 ```
 
 ## 🚀 Local Development Setup
@@ -76,19 +81,46 @@ cp backend/.env.example backend/.env
 # paste the generated key as ENCRYPTION_KEY=...
 ```
 
-### 4. Run the development server
+### 4. Start a Postgres
 
-FastAPI standardized its CLI. Instead of calling `uvicorn` directly, use the modern `fastapi dev` command wrapped via `uv run`. Back inside `backend/` (`cd backend` if step 3 left you at the repo root):
+`app/main.py` will not boot without one: `database_url` defaults to
+`postgresql+asyncpg://looninspect_app@localhost:5432/looninspect`
+(`app/core/config.py`), and Alembic migrations run against it at startup. The
+bundled `db` service the root README uses is **not** an option here unmodified —
+compose deliberately publishes no port for it ("the database is reachable only
+over the compose network," `docker-compose.yml`) — so point this at a Postgres of
+your own instead. The role has to be a non-superuser, the same reason the bundled
+one is: a superuser bypasses row-level security silently, and this backend's
+tenant isolation depends on RLS actually being enforced. Fastest path, mirroring
+`ops/postgres/initdb/10-app-role.sh`:
+
+```bash
+docker run -d --name looninspect-dev-db -p 5432:5432 \
+  -e POSTGRES_DB=looninspect -e POSTGRES_USER=looninspect -e POSTGRES_PASSWORD=devpassword \
+  postgres:17-alpine
+
+docker exec -i looninspect-dev-db psql -U looninspect -d looninspect <<'SQL'
+CREATE ROLE looninspect_app LOGIN PASSWORD 'devpassword'
+    NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+ALTER SCHEMA public OWNER TO looninspect_app;
+SQL
+```
+
+Then set `DATABASE_URL=postgresql+asyncpg://looninspect_app:devpassword@localhost:5432/looninspect` in `backend/.env`.
+
+### 5. Run the development server
+
+FastAPI standardized its CLI. Instead of calling `uvicorn` directly, use the modern `fastapi dev` command wrapped via `uv run`. Back inside `backend/` (`cd backend` if an earlier step left you at the repo root):
 
 ```bash
 uv run fastapi dev app/main.py
 ```
 
-This starts the server at <http://127.0.0.1:8001> with hot-reloading enabled. On startup it automatically applies any pending Alembic migrations (`app/core/database.py::init_db()`) — there's no separate manual migration step for local dev.
+This starts the server at <http://127.0.0.1:8001> with hot-reloading enabled. On startup it automatically applies any pending Alembic migrations (`app/core/database.py::init_db()`) against the Postgres from step 4 — there's no separate manual migration step for local dev.
 
-MDM connections (Jamf, SimpleMDM, etc.) are configured through the API/UI (`/api/mdm/connections`) and stored in the database, not via environment variables.
+MDM connections are configured through the API/UI (`/api/mdm/connections`) and stored in the database, not via environment variables. Jamf Pro is the only provider today — see "MDM support" below.
 
-### 5. View API documentation
+### 6. View API documentation
 
 FastAPI automatically generates interactive Swagger documentation. While the server is running, visit:
 
@@ -102,11 +134,8 @@ Do not use `pip install`. If you need to add a new Python package (e.g., `boto3`
 uv add boto3
 ```
 
-## 🔒 Adding a New MDM Provider
+## 🔒 MDM support
 
-LoonInspect uses an Abstract Base Class design. To add a new MDM (e.g., SimpleMDM, Addigy, Fleet, Nano, etc):
+LoonInspect is Jamf Pro only at launch, by ruling (#79, [PR #80](https://github.com/LoonSecIO/LoonInspect/pull/80)). Earlier revisions of this backend dispatched through an `MdmClient` abstract base class toward `simplemdm`/`addigy`/`nano` providers that raised `NotImplementedError` — never-shipped surface pretending to be optionality. PR #80 removed it: `app/mdm/factory.py::get_mdm_client` returns a `JamfClient` directly, and the `provider` column is a one-member enum.
 
-1. Create a new folder, for example: `app/mdm/simplemdm/`.
-2. Create your API client and webhook parsers inside it.
-3. Ensure your parser outputs the standard `NormalizedDevice` and `NormalizedApp` objects.
-4. Pass those objects to `app.mdm.service.process_sync()` so the core engine can handle diffing and SIEM streaming.
+What's kept is the seam, not a plugin API: the `provider` column and the credential-schema registry pattern in `app/mdm/credentials.py`. A real second MDM integration is a **sibling vertical** — its own module built when a specific vendor partnership warrants it — not a class dropped into this package against a shared interface. There is no "adding a new MDM" how-to today because there is no abstraction to extend.
