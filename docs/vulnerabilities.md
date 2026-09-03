@@ -237,12 +237,37 @@ requirement into a type: `app.core.vuln.VulnFinding` has no constructor without
 
 **Which "today" the days are counted from** — assumed 2026-09-03, pending ratification,
 per [PR #279's verify pass](https://github.com/LoonSecIO/LoonInspect/pull/279#pullrequestreview-5107281104):
-the snapshot's own `occurredAt`, never the wall clock. The builder is pure and
-clock-free, and a delivery is retried against the stored row up to ten times — so a day
-boundary crossed between attempts must not change the bytes. **The zero floor is the
-same pending assumption:** a publication date later than the event (a snapshot replayed
-out of the retention window against a corpus refreshed since) reads `0`, never a
+**on the wire**, the snapshot's own `occurredAt`, never the wall clock. The builder is
+pure and clock-free, and a delivery is retried against the stored row up to ten times —
+so a day boundary crossed between attempts must not change the bytes. **The zero floor is
+the same pending assumption:** a publication date later than the event (a snapshot
+replayed out of the retention window against a corpus refreshed since) reads `0`, never a
 negative, because a negative would collide with the sentinel.
+
+**There are two clocks, and that is the design** — assumed 2026-09-03 by #251, pending
+ratification, per [PR #283's verify pass](https://github.com/LoonSecIO/LoonInspect/pull/283#pullrequestreview-5107525423).
+The clause above is scoped to the wire because a Splunk event is a **historical record**:
+it says what was true when that snapshot was taken, and it must say the same thing on
+every one of its ten retries. A page is not a record. It answers *how old is this finding
+now*, for a person looking now, so the read path (`app/core/vuln_read.py`) counts from
+today's UTC date.
+
+The consequence, said out loud rather than discovered: **the same app on the same day can
+read a different `daysOldestPublished` in Splunk than on the page.** The difference is
+*not* the sync gap. It is the age of the newest snapshot for that device — bounded by the
+check-in cadence for a healthy device, and **unbounded once a device stops checking in**,
+because the event's clock stops with it while the page's does not. A device dark for a
+year shows a year's difference, and that is the honest pair: the event is still a true
+record of a year ago, and the page is still the true age today.
+
+Making the page reuse the snapshot's clock was the alternative and it loses on the same
+argument §4d already makes about corpus refresh: it would date the page to the last sync,
+so a fleet would appear to age more slowly the worse its check-ins are — the number would
+measure our collection, not their exposure. Making the event use the wall clock loses on
+retry-stability, which is what the clause above exists for.
+
+**No sentinel arithmetic changes.** Both clocks floor at zero and both leave `None` for
+*never*; only the basis differs.
 
 ### 4e. `vulnIDs`, and the name that was rejected
 
@@ -306,15 +331,33 @@ where no saved search exists to catch it.
 So the block a person's browser receives **is** the block above — `VulnEnrichment` itself
 on the REST response, not a REST-shaped copy of it. One model, one vocabulary: a person
 reading a Splunk event and a person reading the page use the same three words for the same
-three facts, and there is no second place for the vocabulary to drift. The only dialect
-difference is the one §4c already rules: no `-1` on the read path, because the sentinel
-belongs to the HEC-shaping seam and a REST client gets the canonical `null`.
+three facts, and there is no second place for the vocabulary to drift.
+
+**Two dialect differences, both ruled above, and no others.** First, no `-1` on the read
+path (§4c): the sentinel belongs to the HEC-shaping seam, so a REST client gets the
+canonical `null`. Second, **the clock** (§4d): the wire counts days from the snapshot's
+`occurredAt` because an event is a historical record, and the page counts from today
+because a page is not. The same app can therefore read a different `daysOldestPublished`
+in each, by the age of that device's newest snapshot — unbounded once a device stops
+checking in. Every other key is the same value in both.
 
 | Surface | What it gained |
 | --- | --- |
 | `GET /api/devices/{id}` | `apps[].vuln` — the block per installed app; `corpusAsOf` on the device |
-| `GET /api/catalog`, `/api/catalog/lookup` | `items[].vuln` — the block per distinct build; `corpusAsOf` on the list response |
+| `GET /api/catalog` | `items[].vuln` — the block per distinct build; `corpusAsOf` on the list response |
+| `GET\|POST /api/catalog/lookup` | **Nothing.** See below |
 | Devices › Applications › **Catalog** | A **Vulnerabilities** column, and the corpus banner above it |
+
+**Why the lookup answers no assessment.** It is keyed by hash and accepts `appHash` as
+well as `versionHash` / `keyFull`; under `appHash` the row it returns is deliberately a
+**stand-in** — the newest version the tenant has seen — not the caller's build. `vuln` is
+scoped to `key_full`, so a stand-in's answer is another build's answer, and a newer
+build's clean bill returned under a title's key is §4a's failure one grain out. Rather
+than shipping it and asking the caller to notice the row's `keyFull`, the grain is refused
+in the type: `CatalogLookupOut.tenant` is the plain `CatalogEntryOut`, which has **no
+`vuln` field at all**, while the list's rows use `CatalogEntryAssessedOut`, which does.
+There is no `corpusAsOf` on the lookup either — it returns a bare list, and a stamp with
+nothing to stamp is noise.
 
 **Why the catalog tab and not a Vulnerabilities page.** The corpus is keyed on `key_full`
 — one answer per distinct build — which is exactly one row of the app catalog, so the

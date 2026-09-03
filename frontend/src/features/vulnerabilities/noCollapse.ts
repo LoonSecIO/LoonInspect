@@ -3,51 +3,65 @@
  * (#251, `docs/vulnerabilities.md` §4a).
  *
  * There is no frontend test lane in this repo (#138), so the assertion is made in the one
- * checker CI already runs: `tsc -b --noEmit`. Every line below is an `@ts-expect-error`,
- * which is an inverted assertion — TypeScript fails the build when the error it names
- * **stops** happening. So if anyone ever widens `AppVulnerability` such that an app nobody
- * assessed carries counts, or drops the discriminant, this file goes red on the exact line
- * that describes what was lost.
+ * checker CI already runs: `tsc -b --noEmit`.
  *
- * Nothing calls this. It is a proof, not a helper, and it is exported so lint does not
- * read it as dead code — deleting it would delete the guarantee, which is the one thing
- * this file is here to make expensive.
+ * **Why not `@ts-expect-error`.** The first version of this file wrote the illegal reads
+ * out and suppressed them. That guard was too loose to be worth having: `@ts-expect-error`
+ * is satisfied by *any* error on its line, so widening the `off` member with an
+ * **optional** `counts?: VulnCounts` would have kept this file green — the read still
+ * errors, now on strict-null grounds — while `vuln.counts?.total ?? 0` quietly started
+ * compiling in every component. The guard would have been passing for a reason unrelated
+ * to the one it claimed.
+ *
+ * So the assertions below are about the *shape of the type* rather than about whether some
+ * expression happens to error. `"counts" extends keyof T` is true for an optional property
+ * as well as a required one, which is exactly the hole the old version missed: the only way
+ * to satisfy `NoKey<Off, "counts">` is for `counts` to be genuinely absent from the `off`
+ * member. Nothing runs; nothing is exported for use. Deleting this file deletes the
+ * guarantee, which is the one thing it exists to make expensive.
  */
 
-import { assertExhaustive, type AppVulnerability } from "@/features/vulnerabilities/types";
+import type { AppVulnerability, VulnAssessment } from "@/features/vulnerabilities/types";
 
-/**
- * The renderer's shape, in miniature: the same exhaustive switch every surface uses, with
- * the read that must not compile attempted in each branch that has no answer to give.
- */
-export function theThreeStatesCannotCollapse(vuln: AppVulnerability): number {
-  switch (vuln.assessment) {
-    case "off":
-      // @ts-expect-error `off` means nobody looked. It carries no counts at all, so no
-      // component can render it as zero findings — not by a typo, not by `?? 0`, not by
-      // copying the line below. This is #251's "the trap", refused by the compiler.
-      return vuln.counts.total;
-    case "unknown_app":
-      // @ts-expect-error An app outside the corpus is dated and uncounted. Zero here would
-      // hand a reader a clean bill for an app the corpus has never heard of.
-      return vuln.counts.total;
-    case "covered":
-      // The only branch where a number exists — and `0` here is a real clean bill,
-      // because `covered` says we looked.
-      return vuln.counts.total;
-    default:
-      // A fourth state added to the union lands here and fails to compile, rather than
-      // falling through to whichever branch was last.
-      return assertExhaustive(vuln);
-  }
-}
+/** Fails to compile unless `T` is exactly `true`. */
+type Assert<T extends true> = T;
 
-/**
- * The other half: the date. `corpusAsOf` rides `covered` and `unknown_app` and nothing
- * else, so a surface cannot stamp a date onto an app that was never assessed.
- */
-export function offIsNeverDated(vuln: Extract<AppVulnerability, { assessment: "off" }>): string {
-  // @ts-expect-error There is no corpus, so there is no corpus date. A surface says so in
-  // words and dates it with nothing, rather than borrowing today's.
-  return vuln.corpusAsOf;
-}
+/** `true` when `K` is not a key of `T` **at all** — optional included. */
+type NoKey<T, K extends PropertyKey> = K extends keyof T ? false : true;
+
+/** `true` when `T` has `K` and `K` is required rather than optional. */
+type RequiredKey<T, K extends keyof T> = object extends Pick<T, K> ? false : true;
+
+type Off = Extract<AppVulnerability, { assessment: "off" }>;
+type UnknownApp = Extract<AppVulnerability, { assessment: "unknown_app" }>;
+type Covered = Extract<AppVulnerability, { assessment: "covered" }>;
+
+// --- The trap, refused (#251) ---------------------------------------------------------
+// `off` means nobody looked. There is no count on it to render as zero — not via a typo,
+// not via `?? 0`, not via `?.total`, because the property does not exist to be optional.
+export type OffCarriesNoCounts = Assert<NoKey<Off, "counts">>;
+export type OffCarriesNoIDs = Assert<NoKey<Off, "vulnIDs">>;
+// And no date: there is no corpus, so there is nothing to stamp a row with. A surface says
+// so in words rather than borrowing today's.
+export type OffCarriesNoDate = Assert<NoKey<Off, "corpusAsOf">>;
+
+// An app outside the corpus is dated and uncounted. Zero here would hand a reader a clean
+// bill for an app the corpus has never heard of.
+export type UnknownAppCarriesNoCounts = Assert<NoKey<UnknownApp, "counts">>;
+export type UnknownAppIsDated = Assert<RequiredKey<UnknownApp, "corpusAsOf">>;
+
+// `covered` is the only member with a number, and it carries one *requiredly*: making it
+// optional would put the clean-bill branch back within reach of `?? 0`.
+export type CoveredCountsAreRequired = Assert<RequiredKey<Covered, "counts">>;
+export type CoveredIsDated = Assert<RequiredKey<Covered, "corpusAsOf">>;
+
+// --- The vocabulary is exactly three --------------------------------------------------
+// A fourth member added to the union without a `VulnAssessment` value (or the reverse)
+// fails here, and every exhaustive `switch` over the union fails at its own `default`.
+export type TheStatesAreExactlyThree = Assert<
+  [AppVulnerability["assessment"]] extends [VulnAssessment]
+    ? [VulnAssessment] extends [AppVulnerability["assessment"]]
+      ? true
+      : false
+    : false
+>;

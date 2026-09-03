@@ -31,19 +31,26 @@ the `VulnCorpus` protocol, which is all this suite is entitled to assume.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from pydantic import ValidationError
 
-from app.api.catalog import _entry_out
+from app.api import devices as devices_api
+from app.api.catalog import _answer, _assessed_entry_out, _entry_out
 from app.api.devices import _assessed
-from app.core.vuln import NO_CORPUS, VulnCorpus, VulnFinding
+from app.core.vuln import NO_CORPUS, VulnCorpus, VulnFinding, vuln_block
 from app.core.vuln_read import assess, assess_all, corpus_as_of, today
 from app.models.schema import AppCatalogEntry
-from app.schemas.catalog import CatalogEntryOut, CatalogListResponse, CatalogSummaryOut
+from app.schemas.catalog import (
+    CatalogEntryAssessedOut,
+    CatalogEntryOut,
+    CatalogListResponse,
+    CatalogLookupOut,
+    CatalogSummaryOut,
+)
 from app.schemas.devices import DeviceDetailOut, InstalledAppOut
-from app.schemas.payload import VulnEnrichment
+from app.schemas.payload import VULN_ASSESSMENT_COVERED, VulnEnrichment
 
 CORPUS_AS_OF = date(2026, 9, 1)
 # The read path's "today" for every assertion below. Fixed rather than the wall clock: the
@@ -117,6 +124,23 @@ UNASSESSED_BUILD_ROW = Row(KNOWN_TITLE, "v1:build-never-assessed", id=5)
 @pytest.fixture
 def corpus() -> StubCorpus:
     return StubCorpus()
+
+
+@pytest.fixture
+def loaded(corpus: StubCorpus, monkeypatch: pytest.MonkeyPatch) -> StubCorpus:
+    """Make `loaded_corpus()` return the stub, for the endpoints that read it themselves.
+
+    `_assessed` deliberately takes no corpus argument — it reads the one function that
+    decides what this container has loaded, so #248 changes `loaded_corpus()` and the
+    endpoint does not move. Testing it therefore means patching that function rather than
+    reimplementing the two lines beside it: a test that calls its own copy of the code
+    under test cannot catch the copy drifting.
+
+    `today` is pinned at the same time so the day arithmetic is deterministic.
+    """
+    monkeypatch.setattr(devices_api, "loaded_corpus", lambda: corpus)
+    monkeypatch.setattr(devices_api, "today", lambda: AS_OF)
+    return corpus
 
 
 def _rest(block: VulnEnrichment) -> dict:
@@ -262,11 +286,33 @@ class TestTheLookup:
         assert corpus_as_of(NO_CORPUS) is None
 
     def test_the_read_path_s_clock_is_today(self) -> None:
-        """The wire pins `as_of` to the event's `occurredAt` so ten retries expand to
-        identical bytes; a page has no retry to be stable across, so it counts days from
-        today. Asserted because the two numbers can differ and nobody should find that out
-        by noticing it."""
+        """§4d's second clock. The wire pins `as_of` to the event's `occurredAt` because an
+        event is a historical record and ten retries must expand to identical bytes; a page
+        answers *how old is this now*, so it counts from today."""
         assert today() == datetime.now(timezone.utc).date()
+
+    def test_the_two_clocks_diverge_by_the_age_of_the_newest_snapshot(self, corpus: StubCorpus) -> None:
+        """The consequence §4d and §4g now state, pinned so it cannot be discovered in the
+        field: the same app reads a different `daysOldestPublished` on the page than in the
+        event, and the gap is the age of that device's newest snapshot — **not** the sync
+        gap, and unbounded once a device stops checking in.
+
+        200 days here is a device dark for over six months: the event is still a true
+        record of what was so when it was taken, and the page is still the true age today.
+        Both clocks floor at zero and leave `None` for never; only the basis differs — which
+        is why the gap below is read off `total`, whose oldest finding predates both dates,
+        rather than off a band whose only finding is newer than the stale event and floors.
+        """
+        stale_event_day = AS_OF - timedelta(days=200)
+        on_the_page = assess(corpus, AFFECTED_ROW, as_of=AS_OF)
+        in_the_event = vuln_block(
+            corpus, key_title=AFFECTED_ROW.key_title, key_full=AFFECTED_ROW.key_full, as_of=stale_event_day
+        )
+        assert on_the_page.days_oldest_published.total - in_the_event.days_oldest_published.total == 200
+        # Everything else is the same value in both — the clock is the whole difference.
+        assert on_the_page.counts == in_the_event.counts
+        assert on_the_page.vuln_ids == in_the_event.vuln_ids
+        assert on_the_page.assessment == in_the_event.assessment == VULN_ASSESSMENT_COVERED
 
 
 class TestTheRestSurface:
@@ -292,7 +338,7 @@ class TestTheRestSurface:
         # from an unassessed app, and the default is the honest answer either way.
         assert payload["vuln"] == {"assessment": "off"}
 
-    def test_the_device_detail_stamps_every_app_and_the_header(self, corpus: StubCorpus) -> None:
+    def test_the_device_detail_stamps_every_app_and_the_header(self, loaded: StubCorpus) -> None:
         detail = DeviceDetailOut(
             id=7,
             mdm_provider="jamf",
@@ -328,14 +374,19 @@ class TestTheRestSurface:
                 for row in (CLEAN_ROW, AFFECTED_ROW, UNKNOWN_ROW)
             ],
         )
-        # `_assessed` reads `loaded_corpus()`; the corpus is handed in here by patching the
-        # rows' answer source the same way `process_sync` will once #248 ships one.
-        out = _assessed_with(detail, [AFFECTED_ROW, UNKNOWN_ROW, CLEAN_ROW], corpus)
-        payload = out.model_dump(mode="json", by_alias=True)
+        # The real `_assessed`, under a corpus that can tell the rows apart — the rows
+        # handed in are in a THIRD order, so a positional pairing would mis-assign every
+        # block and the assertions below would catch it.
+        payload = _assessed(detail, [AFFECTED_ROW, UNKNOWN_ROW, CLEAN_ROW]).model_dump(mode="json", by_alias=True)
         assert payload["corpusAsOf"] == "2026-09-01"
+        assert [app["id"] for app in payload["apps"]] == [CLEAN_ROW.id, AFFECTED_ROW.id, UNKNOWN_ROW.id]
         assert [app["vuln"]["assessment"] for app in payload["apps"]] == ["covered", "covered", "unknown_app"]
         assert payload["apps"][0]["vuln"]["counts"]["total"] == 0  # CLEAN_ROW, id 3
         assert payload["apps"][1]["vuln"]["counts"]["total"] == 3  # AFFECTED_ROW, id 4
+        # Every app asked exactly once, on its own keys — no row answered twice, none skipped.
+        assert sorted(loaded.calls) == sorted(
+            (row.key_title, row.key_full) for row in (CLEAN_ROW, AFFECTED_ROW, UNKNOWN_ROW)
+        )
 
     def test_the_device_detail_says_off_with_no_date_when_no_corpus_is_loaded(self) -> None:
         detail = _assessed(
@@ -380,7 +431,7 @@ class TestTheRestSurface:
         assert payload["apps"][0]["vuln"] == {"assessment": "off"}
 
     def test_a_catalog_entry_carries_the_corpus_s_answer_for_that_build(self, corpus: StubCorpus) -> None:
-        out = _entry_out(_catalog_row(AFFECTED_ROW), 12, {}, corpus=corpus, as_of=AS_OF)
+        out = _assessed_entry_out(_catalog_row(AFFECTED_ROW), 12, {}, corpus=corpus, as_of=AS_OF)
         payload = out.model_dump(mode="json", by_alias=True)
         assert payload["deviceCount"] == 12
         assert payload["vuln"]["assessment"] == "covered"
@@ -388,7 +439,7 @@ class TestTheRestSurface:
         assert payload["vuln"]["corpusAsOf"] == "2026-09-01"
 
     def test_a_catalog_entry_outside_the_corpus_is_dated_and_uncounted(self, corpus: StubCorpus) -> None:
-        payload = _entry_out(_catalog_row(UNKNOWN_ROW), 1, {}, corpus=corpus, as_of=AS_OF).model_dump(
+        payload = _assessed_entry_out(_catalog_row(UNKNOWN_ROW), 1, {}, corpus=corpus, as_of=AS_OF).model_dump(
             mode="json", by_alias=True
         )
         assert payload["vuln"] == {"assessment": "unknown_app", "corpusAsOf": "2026-09-01"}
@@ -417,33 +468,53 @@ class TestTheRestSurface:
         assert schema["properties"]["assessment"]["default"] == "off"
         assert schema.get("additionalProperties") is not True
 
+    def test_the_lookup_never_answers_an_assessment_for_a_build_it_was_not_asked_about(
+        self, corpus: StubCorpus
+    ) -> None:
+        """`/api/catalog/lookup` answers by `appHash` as well as by build, and under
+        `appHash` the row it returns stands in for the newest version the tenant has seen —
+        a different build from the caller's. Two builds of one title differ here on
+        purpose: the newest is clean, the one a caller might hold is affected.
+
+        Shipping the newest build's clean bill as the title's answer is §4a's failure one
+        grain out. It is refused by the type rather than avoided by care: the lookup's
+        `tenant` is the base `CatalogEntryOut`, which has no `vuln` field at all.
+        """
+        newest, held = _catalog_row(CLEAN_ROW), _catalog_row(AFFECTED_ROW)
+        # Same title, different builds, and the corpus genuinely disagrees about them.
+        assert newest.key_title == held.key_title and newest.key_full != held.key_full
+        assert assess(corpus, newest, as_of=AS_OF).counts.total == 0
+        assert assess(corpus, held, as_of=AS_OF).counts.total == 3
+
+        # The stand-in as the endpoint builds it, through the real `_answer`.
+        stand_in = _entry_out(newest, 3, {})
+        payload = _answer("some-app-hash", stand_in, []).model_dump(mode="json", by_alias=True)
+        assert "vuln" not in payload
+        assert "vuln" not in payload["tenant"]
+        assert "corpusAsOf" not in payload
+        # And structurally, so a later edit cannot put it back by handing `_answer` a
+        # different model: the type the lookup returns has no such field.
+        assert "vuln" not in CatalogEntryOut.model_fields
+        assert "vuln" not in CatalogLookupOut.model_fields
+
+    def test_the_list_still_answers_per_build(self, corpus: StubCorpus) -> None:
+        """The other half of the same rule: a catalog row IS its own build, so it carries
+        the assessment, and two builds of one title do not share an answer."""
+        rows = [_catalog_row(CLEAN_ROW), _catalog_row(AFFECTED_ROW)]
+        items = [_assessed_entry_out(row, 1, {}, corpus=corpus, as_of=AS_OF) for row in rows]
+        assert [item.vuln.counts.total for item in items] == [0, 3]
+        assert "vuln" in CatalogEntryAssessedOut.model_fields
+
     def test_the_rest_block_is_the_wire_block(self, corpus: StubCorpus) -> None:
         """One model, not two. The REST field IS `VulnEnrichment`, so the page and the
         Splunk event cannot drift apart in vocabulary — there is no second place for the
         vocabulary to live."""
-        entry = _entry_out(_catalog_row(AFFECTED_ROW), 1, {}, corpus=corpus, as_of=AS_OF)
+        entry = _assessed_entry_out(_catalog_row(AFFECTED_ROW), 1, {}, corpus=corpus, as_of=AS_OF)
         assert isinstance(entry.vuln, VulnEnrichment)
         assert entry.vuln.model_dump(mode="json", by_alias=True) == _rest(
             assess(corpus, AFFECTED_ROW, as_of=AS_OF)
         )
-        assert CatalogEntryOut.model_fields["vuln"].annotation is VulnEnrichment
-
-
-def _assessed_with(detail: DeviceDetailOut, rows: list[Row], corpus: VulnCorpus) -> DeviceDetailOut:
-    """`_assessed` with the corpus handed in rather than read from `loaded_corpus()`.
-
-    `_assessed` is deliberately the thin thing it is — it reads the one function that
-    decides which corpus this container has — so this rebuilds its two lines over an
-    explicit corpus instead of monkeypatching a module global. #248 changes
-    `loaded_corpus()` and neither this nor the endpoint moves.
-    """
-    by_id = {row.id: row for row in rows}
-    return detail.model_copy(
-        update={
-            "corpus_as_of": corpus_as_of(corpus),
-            "apps": [app.model_copy(update={"vuln": assess(corpus, by_id[app.id], as_of=AS_OF)}) for app in detail.apps],
-        }
-    )
+        assert CatalogEntryAssessedOut.model_fields["vuln"].annotation is VulnEnrichment
 
 
 def _catalog_row(row: Row) -> AppCatalogEntry:
