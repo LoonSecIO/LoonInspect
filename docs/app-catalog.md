@@ -137,7 +137,7 @@ no date at all). Sorting on it puts findings first, then the apps the corpus cou
 then the clean bills, then the apps nobody looked at. Above the table, the corpus banner carries
 `corpusAsOf` and one sentence naming what this container does **not** know — which is the whole
 point: a small corpus is only honest if its edge is legible.
-See [`docs/vulnerabilities.md`](vulnerabilities.md) §4f.
+See [`docs/vulnerabilities.md`](vulnerabilities.md) §4g.
 
 ## 6. Not here (follow-ups)
 

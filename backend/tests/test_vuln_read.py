@@ -73,7 +73,14 @@ FINDINGS = (
 
 
 class StubCorpus:
-    """A set of known titles and findings per build, and a record of what it was asked."""
+    """Known titles, the builds this corpus positively assessed, and a record of what it
+    was asked.
+
+    §4f is obeyed rather than approximated: `()` is returned **only** for a build the
+    corpus actually assessed and found clean. A known title whose build was never
+    individually assessed answers `None` — `unknown_app` — because a `dict.get(key_full,
+    ())` there reads exactly like a positive clean bill for a build nobody looked at.
+    """
 
     def __init__(self, *, as_of: date | None = CORPUS_AS_OF) -> None:
         self.as_of = as_of
@@ -83,7 +90,9 @@ class StubCorpus:
         self.calls.append((key_title, key_full))
         if key_title != KNOWN_TITLE:
             return None
-        return FINDINGS if key_full == AFFECTED_BUILD else ()
+        if key_full == AFFECTED_BUILD:
+            return FINDINGS
+        return () if key_full == CLEAN_BUILD else None
 
 
 class Row:
@@ -100,6 +109,9 @@ OFF_ROW = Row(KNOWN_TITLE, AFFECTED_BUILD)
 UNKNOWN_ROW = Row(UNKNOWN_TITLE, CLEAN_BUILD, id=2)
 CLEAN_ROW = Row(KNOWN_TITLE, CLEAN_BUILD, id=3)
 AFFECTED_ROW = Row(KNOWN_TITLE, AFFECTED_BUILD, id=4)
+# A title the corpus knows, in a build it never assessed — §4f's common case, and the one
+# a careless corpus turns into a clean bill.
+UNASSESSED_BUILD_ROW = Row(KNOWN_TITLE, "v1:build-never-assessed", id=5)
 
 
 @pytest.fixture
@@ -163,6 +175,16 @@ class TestTheThreeStatesAreDistinguishable:
         # KEV first, then severity band, then recency (§4e).
         assert block["vulnIDs"] == ["CVE-2026-0001", "CVE-2026-0002", "LoonVD-2026-000001"]
         assert block["vulnIDsTruncated"] is False
+
+    def test_a_known_title_in_an_unassessed_build_reads_unknown_app_on_the_page_too(
+        self, corpus: StubCorpus
+    ) -> None:
+        """§4f, carried through to the surface: `()` means *positively assessed*, so a
+        build the corpus never looked at reaches a person as `Outside the corpus`, dated —
+        not as a green clean bill. The read path adds nothing here; it must also subtract
+        nothing."""
+        block = _rest(assess(corpus, UNASSESSED_BUILD_ROW, as_of=AS_OF))
+        assert block == {"assessment": "unknown_app", "corpusAsOf": "2026-09-01"}
 
     def test_a_zero_findings_covered_app_and_an_off_app_share_no_shape(self, corpus: StubCorpus) -> None:
         """The one assertion #251 names outright. Three renderings, three key sets, and

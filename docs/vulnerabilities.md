@@ -15,7 +15,7 @@ re-argued by whoever builds it. Everything below is a decision with an argument.
 full — every key, the presence rules, the cap, the clock and the sentinel — plus the
 lookup seam it reads (`VulnCorpus` in `app/core/vuln.py`), **and the UI half**: the same
 block on the REST responses that carry installed apps, and the three states rendered
-distinctly with `corpusAsOf` beside them (§4f). What is not built is the corpus behind
+distinctly with `corpusAsOf` beside them (§4g). What is not built is the corpus behind
 that seam ([#248](https://github.com/LoonSecIO/LoonInspect/issues/248)), so the container
 ships `NO_CORPUS` and every app on every device still reads `assessment: off` — on the
 wire and on the page, which now says so in words rather than showing an empty column. The
@@ -235,12 +235,14 @@ field before the format sets, which is cheap now and a migration later. #249 tur
 requirement into a type: `app.core.vuln.VulnFinding` has no constructor without
 `published`.
 
-**Which "today" the days are counted from:** the snapshot's own `occurredAt`, never the
-wall clock. The builder is pure and clock-free, and a delivery is retried against the
-stored row up to ten times — so a day boundary crossed between attempts must not change
-the bytes. A publication date later than the event (a snapshot replayed out of the
-retention window against a corpus refreshed since) reads `0`, never a negative, because
-a negative would collide with the sentinel.
+**Which "today" the days are counted from** — assumed 2026-09-03, pending ratification,
+per [PR #279's verify pass](https://github.com/LoonSecIO/LoonInspect/pull/279#pullrequestreview-5107281104):
+the snapshot's own `occurredAt`, never the wall clock. The builder is pure and
+clock-free, and a delivery is retried against the stored row up to ten times — so a day
+boundary crossed between attempts must not change the bytes. **The zero floor is the
+same pending assumption:** a publication date later than the event (a snapshot replayed
+out of the retention window against a corpus refreshed since) reads `0`, never a
+negative, because a negative would collide with the sentinel.
 
 ### 4e. `vulnIDs`, and the name that was rejected
 
@@ -271,7 +273,30 @@ contract leaves open are labelled as assumptions in the code: *recency* is read 
 most-recently-published first, and a finding the corpus carries with no severity score
 sorts after `low` — counted in `total`, never dropped.
 
-### 4f. The same three words in front of a person
+### 4f. The corpus interface: what `findings()` answers
+
+`VulnCorpus.findings(key_title=…, key_full=…)` (`app/core/vuln.py`) is three-valued, and
+the value **is** the `assessment` vocabulary of §4a — #248 must read it exactly this way:
+
+* **`None`** — the corpus does not know `key_title` at all, OR it has not itself
+  positively assessed *this exact `key_full`*. `unknown_app`.
+* **`()`** — the corpus knows `key_title` **and has positively assessed this exact
+  `key_full`**, with no active findings against it. `covered`, a clean bill, because
+  `covered` says we looked at this build specifically.
+* **a non-empty sequence** — `covered`, with the findings this module derives into
+  counts, days and `vulnIDs`.
+
+**`()` means positively assessed; every other case means `None`.** This is the hash-join
+trap named on [PR #279's verify pass](https://github.com/LoonSecIO/LoonInspect/pull/279#pullrequestreview-5107281104):
+for a corpus keyed on `(title, build)` hashes, a known title with no stored hash for
+*this exact build* is the common case — most builds of a well-known app were never
+individually scanned — and answering `()` there is a `covered` clean bill for a build
+nobody assessed, §4a's failure one layer down. `vuln_block` cannot tell an unassessed
+build from a positively clean one; both arrive as `()`. So `findings()` must not default
+to `()` (a `dict.get(key_full, ())` reads exactly like a positive clean bill) — it must
+answer `None` unless it can name the assessment that produced the empty result.
+
+### 4g. The same three words in front of a person
 
 Built 2026-09-03 (#251). `assessment` was ruled visible **on the wire and in the UI**, and
 the UI half is where the rule is easiest to break silently: a page that renders
@@ -458,5 +483,5 @@ block each other.
 | The v0 corpus and the local hash-join — ~100 titles, public sources, `corpusAsOf`, Wireshark included, and the publication date §4d requires of the format | [#248](https://github.com/LoonSecIO/LoonInspect/issues/248) | Open. It plugs into `app.core.vuln.VulnCorpus` and swaps `loaded_corpus()`; the rest of the wire is built and waiting |
 | `vuln{}` populated on the app sub-event; `assessment` stops being a constant `off`. Also needs the fan-out ([#242](https://github.com/LoonSecIO/LoonInspect/issues/242)) | [#249](https://github.com/LoonSecIO/LoonInspect/issues/249) | **Built 2026-09-03.** `app/core/vuln.py`, `VulnEnrichment` in `app/schemas/payload.py`, the sentinel in `app/core/hec_fanout.py`, pinned in `backend/tests/test_vuln_block.py` |
 | The four `vuln.*` posture keys go ACTIVE, under §7's no-zero rule | [#250](https://github.com/LoonSecIO/LoonInspect/issues/250) | Open. Still RESERVED, deliberately: the join has stored nothing to count |
-| The corpus's edge made visible in the UI — `assessment`, `corpusAsOf`, three empty states | [#251](https://github.com/LoonSecIO/LoonInspect/issues/251) | **Built 2026-09-03.** §4f. `app/core/vuln_read.py` over the same seam, `vuln` + `corpusAsOf` on the device and catalog responses, the Catalog tab's column and banner; pinned in `backend/tests/test_vuln_read.py` and `frontend/src/features/vulnerabilities/noCollapse.ts` |
+| The corpus's edge made visible in the UI — `assessment`, `corpusAsOf`, three empty states | [#251](https://github.com/LoonSecIO/LoonInspect/issues/251) | **Built 2026-09-03.** §4g. `app/core/vuln_read.py` over the same seam, `vuln` + `corpusAsOf` on the device and catalog responses, the Catalog tab's column and banner; pinned in `backend/tests/test_vuln_read.py` and `frontend/src/features/vulnerabilities/noCollapse.ts` |
 | The lifecycle fan-out under `loon:jamf:mac:app:vuln`, and `LOCAL-` ids behind their reservation | post-v0 (§5, §6) | Named, not built. The string stays minted with no writer |

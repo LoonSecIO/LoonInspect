@@ -396,6 +396,27 @@ def test_a_local_id_is_refused_where_the_finding_is_constructed(raw: dict, run) 
     assert LOCAL_PREFIX == "LOCAL-"
 
 
+def test_only_the_two_licensed_namespaces_construct_and_nothing_else_does() -> None:
+    """§5's 'one shape … one validator', both sides of the boundary. `CVE-` and `LoonVD-`
+    are the only two namespaces a finding may be constructed with; a `GHSA-`/`OSV-` id
+    from a public source — or anything malformed — must not mint a fourth namespace on
+    the wire, so it is refused right here rather than passed through verbatim."""
+    for allowed in ("CVE-2026-0001", "CVE-2020-123456", "LoonVD-2026-000001"):
+        VulnFinding(id=allowed, published=date(2026, 1, 1))
+    for refused in (
+        "GHSA-xxxx-yyyy-zzzz",
+        "OSV-2026-1234",
+        "cve-2026-0001",
+        "loonvd-2026-000001",
+        "CVE-2026-1",
+        "LoonVD-2026-1",
+        "CVE_2026_0001",
+        "CVE-2026-0001x",
+    ):
+        with pytest.raises(ValueError, match="namespace"):
+            VulnFinding(id=refused, published=date(2026, 1, 1))
+
+
 def test_no_id_the_wire_carries_is_ever_a_local_id(raw: dict, run) -> None:  # noqa: F811
     """The other direction, on the emitted event: whatever the corpus holds, nothing
     LoonInspect ships puts a `LOCAL-` id on the wire."""
@@ -623,6 +644,23 @@ def test_the_protocol_is_the_whole_interface_248_must_implement() -> None:
     assert vuln_block(corpus, key_title="v1:other", key_full="v1:f", as_of=_WINDOW.date()).assessment == "unknown_app"
     assert vuln_block(corpus, key_title="v1:t", key_full="v1:none", as_of=_WINDOW.date()).counts.total == 0
     assert vuln_block(corpus, key_title="v1:t", key_full="v1:f", as_of=_WINDOW.date()).counts.total == 1
+
+
+def test_the_empty_tuple_means_positively_assessed_never_an_unassessed_build(raw: dict, run) -> None:  # noqa: F811
+    """The corpus-interface hazard #279's review named, not a bug in this builder: `()`
+    must mean the corpus positively assessed this exact build and found nothing active —
+    never merely that it has no stored answer for it (docs/vulnerabilities.md §4f).
+    `vuln_block` cannot tell the two apart — an unassessed build and a truly clean one are
+    the same `()` to this module — so a hash-join corpus that knows the title but defaults
+    to `()` for a build it never looked at (`StubCorpus`'s own `.get(key_full, ())`, #248's
+    shape exactly) reads as a `covered` clean bill here. That is the wrong reading for an
+    unassessed build, which is exactly why the distinction is the corpus's to keep, not
+    this module's to infer."""
+    key_title, _ = _keys(_snapshot(raw), KNOWN_BUNDLE_ID)
+    corpus = StubCorpus(titles=[key_title])  # knows the title; no build was ever stored
+    block = _block(_snapshot(raw, corpus=corpus))
+    assert block["assessment"] == "covered"
+    assert block["counts"] == {"total": 0, "kev": 0, "severity": dict.fromkeys(BANDS, 0)}
 
 
 def test_an_app_with_no_row_is_still_assessed_and_never_reads_off_alone(run) -> None:  # noqa: F811

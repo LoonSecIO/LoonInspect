@@ -36,6 +36,7 @@ at enqueue, in both directions, rather than trusting this module to be careful.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -70,6 +71,15 @@ VULN_IDS_CAP = 50
 # the finding is constructed — see `VulnFinding`.
 LOCAL_PREFIX = "LOCAL-"
 
+# §5, "one shape … one validator": the two namespaces a finding may actually be
+# constructed with. `CVE-YYYY-NNNN…` is the real CVE shape (four digits minimum, no
+# maximum — MITRE's sequence numbers grow past four digits). `LoonVD-YYYY-NNNNNN` is
+# ours, fixed at six. `LOCAL-` is a third, reserved namespace refused above with its own
+# message, and nothing else is licensed — a `GHSA-`/`OSV-` id from a public source must
+# not mint a fourth namespace on the wire, so it is refused here rather than passed
+# through verbatim.
+_ALLOWED_ID = re.compile(r"^(CVE-\d{4}-\d{4,}|LoonVD-\d{4}-\d{6})$")
+
 # `-1` means never (§4c). Minted at the HEC-shaping seam and nowhere upstream: the
 # canonical payload keeps `None`, so a warehouse destination can still render SQL `NULL`.
 NEVER = -1
@@ -88,11 +98,13 @@ class VulnFinding:
     no score. `kev` is CISA's Known Exploited Vulnerabilities list — a flag, not a band
     (§4), so a KEV finding is also counted in whatever band it has.
 
-    A `LOCAL-` id is refused here, at construction. The prefix is reserved and nothing is
-    built behind it, so an id wearing it is a corpus defect rather than a customer
-    finding — and refusing it at construction means #248's corpus load fails loudly on the
-    bad record instead of every device sync failing on a per-lookup raise. **#248 must
-    therefore construct its findings when the corpus is loaded, not per lookup.**
+    An id outside the two constructible namespaces is refused here, at construction —
+    `LOCAL-` by its own reserved-namespace message, anything else (a `GHSA-`/`OSV-` id
+    from a public source, say) by not matching the shape §5 licenses. The prefix alone
+    routes, so a fourth namespace minted by accident would live forever once it shipped;
+    refusing it at construction means #248's corpus load fails loudly on the bad record
+    instead of every device sync failing on a per-lookup raise. **#248 must therefore
+    construct its findings when the corpus is loaded, not per lookup.**
     """
 
     id: str
@@ -107,6 +119,11 @@ class VulnFinding:
             raise ValueError(
                 f"{self.id!r} uses the reserved LOCAL- namespace, which nothing LoonInspect ships mints "
                 "(docs/vulnerabilities.md §5)"
+            )
+        if not _ALLOWED_ID.match(self.id):
+            raise ValueError(
+                f"{self.id!r} is not one of the namespaces §5 licenses for a constructed finding — "
+                "CVE-YYYY-NNNN… or LoonVD-YYYY-NNNNNN (docs/vulnerabilities.md §5)"
             )
         if self.severity is not None and self.severity not in SEVERITY_BANDS:
             raise ValueError(f"{self.severity!r} is not one of {SEVERITY_BANDS} — use None for an unscored finding")
@@ -123,13 +140,26 @@ class VulnCorpus(Protocol):
     present exactly when `assessment` is not `off`.
 
     `findings` answers for one installed build, and its three-valued return is the whole
-    `assessment` vocabulary:
+    `assessment` vocabulary — **`()` means this exact build was positively assessed as
+    clean; anything less certain, an unknown title or a known title whose build was never
+    itself assessed, means `None`** (docs/vulnerabilities.md §4f):
 
-    * `None` — the corpus does not know this application. `unknown_app`, dated, never
-      zero vulnerabilities (§4a);
-    * `()` — it knows the application and this build has no active findings. `covered`,
-      which is a clean bill precisely because `covered` says we looked;
+    * `None` — the corpus does not know this application, OR it has not itself assessed
+      *this exact build*. `unknown_app`, dated, never zero vulnerabilities (§4a);
+    * `()` — the corpus knows the application AND has positively assessed this exact
+      build, with no active findings against it. `covered`, which is a clean bill
+      precisely because `covered` says we looked at this build specifically;
     * a non-empty sequence — `covered`, with the counts, days and ids this module derives.
+
+    **The hash-join trap this distinction exists to name:** for a corpus keyed on
+    `(title, build)` hashes, a known title with no stored hash for *this exact build* is
+    the common case — most builds of a well-known app were never individually scanned —
+    and answering `()` there is a `covered` clean bill for a build nobody assessed, §4a's
+    failure one layer down. This module cannot tell an unassessed build from a positively
+    clean one; both arrive as `()`. So the corpus must not default to `()` (a
+    `dict.get(key_full, ())` reads exactly like a positive clean bill to this module) —
+    it must return `None` unless it can name the assessment that produced the empty
+    result.
 
     Order is not the corpus's problem: `vuln_block` sorts by the ruled priority before it
     caps. Nor is the day arithmetic, which depends on the event's own occurrence time and

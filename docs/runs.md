@@ -399,9 +399,12 @@ never a silent reshape.
 
 **Size and the subscription default.** Measured against the captured Jamf Pro 11.31
 record (`backend/tests/fixtures/jamf/computer_inventory_detail_real.json`, 83 apps) as
-compact JSON: **28,783 bytes** for one device — ~22.3 KB of it the `app` list at ~268
-bytes an item — every pass, not once. On a Splunk destination the same device is
-**84,135 bytes** as 107 sub-events (2.92×; see the fan-out below). `device.inventory`
+compact JSON, under today's shipped `vuln.assessment: off`: **28,783 bytes** for one
+device — ~22.3 KB of it the `app` list at ~268 bytes an item — every pass, not once. On a
+Splunk destination the same device is **84,135 bytes** as 107 sub-events (2.92×; see the
+fan-out below). Once a vulnerability corpus assesses every app at the fifty-id cap
+([vulnerabilities.md](vulnerabilities.md) §4), the same device is **115,684 bytes**
+canonically and **171,036 bytes** (2.03×) as the Splunk fan-out. `device.inventory`
 joined `KNOWN_EVENT_TYPES` under the default the type was born with: null or empty
 `subscribed_events` keeps meaning every event, so a destination on the default receives
 one snapshot per device per pass from the day it ships, and explicit lists were **not**
@@ -462,9 +465,11 @@ object…}, "deviceMeta": {…}}` under `loon:jamf:mac:general`.
 newline-concatenated JSON objects, which `/services/collector/event` indexes one by one —
 per-event expansion, not cross-event batching: two devices' snapshots are two requests.
 The `OutboxDelivery` row, its backoff and its dead-letter are unchanged. Measured on the
-real fixture: **107 sub-events, 84,135 bytes** — `deviceMeta` is 314 bytes × 107 = 33.6 KB of
-it, the envelope and sourcetype ~109 bytes per sub-event, `event` + `jobID` 73 — verified
-against a local Splunk 10.4 (the #242 PR). A device whose expansion exceeds
+real fixture under today's shipped `vuln.assessment: off`: **107 sub-events, 84,135
+bytes** — `deviceMeta` is 314 bytes × 107 = 33.6 KB of it, the envelope and sourcetype
+~109 bytes per sub-event, `event` + `jobID` 73 — verified against a local Splunk 10.4
+(the #242 PR); up to **171,036 bytes** (2.03×) once a vulnerability corpus assesses every
+app at the cap ([vulnerabilities.md](vulnerabilities.md) §4). A device whose expansion exceeds
 `SPLUNK_HEC_MAX_REQUEST_BYTES` (default **900,000**: 10% under the 1 MB `max_content_length`
 Splunk Cloud Platform documents for HEC) is sent as consecutive requests of at most that
 size, whole events only, in order. Order is fixed — registry order, anchors first, items in
