@@ -51,9 +51,6 @@ export const en = {
     darkMode: "Dark mode",
     lightMode: "Light mode",
     language: "Language",
-    manage: "Manage",
-    comingSoon: "Coming soon",
-    previewBanner: "Preview data. This page isn't wired to synced MDM data yet.",
     sidebar: "Sidebar",
     sidebarExpanded: "Icons + text",
     sidebarCollapsed: "Icons only",
@@ -107,12 +104,7 @@ export const en = {
     overview: "Overview",
     devices: "Devices",
     applications: "Applications",
-    groups: "Groups",
     smartGroupCost: "Group cost",
-    compliance: "Compliance",
-    vulnerabilities: "Vulnerabilities",
-    integrations: "Integrations",
-    ai: "AI",
     settings: "Settings",
     connections: "Connections",
     featureFlags: "Feature Flags",
@@ -323,18 +315,10 @@ export const en = {
     loadError: "Could not load your setup state.",
     setupHiddenForRole: "Setup for this pod is managed by an administrator."
   },
-  vulnerabilities: {
-    eyebrow: "Security",
-    title: "Vulnerabilities",
-    description:
-      "CVE and patch-compliance reporting lands here once a patch-management provider (Jamf or LoonSecIO) is configured on a connection in Settings."
-  },
   devices: {
     eyebrow: "Inventory",
     title: "Devices",
     searchPlaceholder: "Search hostname or serial number...",
-    aiPlaceholder: "Ask AI to filter devices...",
-    aiHint: "Natural-language filtering is coming soon — this doesn't affect results yet.",
     osVersionPrefix: "OS version",
     osVersionOperators: {
       eq: "is",
@@ -507,20 +491,6 @@ export const en = {
       testVerdictInconclusive: "Inconclusive — not enough test values to evaluate any group"
     }
   },
-  groups: {
-    eyebrow: "Devices",
-    title: "Groups",
-    description: "Smart and static device groups synced from your MDM platforms.",
-    tableName: "Name",
-    tableType: "Type",
-    tableDescription: "Description",
-    tableDevices: "Devices",
-    tableSource: "Source",
-    typeSmart: "Smart",
-    typeStatic: "Static",
-    empty: "No groups detected yet.",
-    total: (n: number) => `${n} group${n === 1 ? "" : "s"} total`
-  },
   smartGroupCost: {
     eyebrow: "Devices",
     title: "Smart group cost",
@@ -561,81 +531,6 @@ export const en = {
     errorLoading: "Could not load smart groups.",
     empty: "No smart group definitions observed yet. They arrive with the first catalog collection.",
     total: (n: number) => `${n} smart group${n === 1 ? "" : "s"} observed`
-  },
-  compliance: {
-    eyebrow: "Devices",
-    title: "Compliance",
-    description: "Fleet-wide patch compliance, broken down by application.",
-    tableApplication: "Application",
-    tableCompliantDevices: "Compliant devices",
-    tableNonCompliantDevices: "Non-compliant devices",
-    tableComplianceRate: "Compliance rate",
-    empty: "No compliance data yet."
-  },
-  integrations: {
-    eyebrow: "Integrations",
-    title: "Integrations",
-    description: "Connect LoonInspect to your MDM, SIEM, storage, and messaging platforms.",
-    groups: {
-      mdm: "MDM",
-      siem: "SIEM",
-      storage: "Storage",
-      messaging: "Messaging",
-      metadata: "MetaData"
-    },
-    vendors: {
-      jamf: { name: "Jamf", subtitle: "", description: "Apple device management, inventory, and patch reporting." },
-      simplemdm: { name: "SimpleMDM", subtitle: "", description: "Apple MDM for growing teams." },
-      addigy: { name: "Addigy", subtitle: "", description: "Apple device management platform." },
-      elastic: {
-        name: "Elastic",
-        subtitle: "",
-        description: "Ship device and security events to Elastic SIEM, with dashboards in Kibana."
-      },
-      runreveal: {
-        name: "RunReveal",
-        subtitle: "",
-        description: "Detection and response on top of your device data."
-      },
-      splunk: { name: "Splunk", subtitle: "", description: "Search, monitor, and analyze machine data." },
-      datadog: { name: "Datadog", subtitle: "", description: "Cloud monitoring and security." },
-      webhook: { name: "Webhook", subtitle: "", description: "Send events to a custom HTTP endpoint." },
-      snowflake: { name: "Snowflake", subtitle: "", description: "Export data to a Snowflake warehouse." },
-      postgres: { name: "PostgreSQL", subtitle: "", description: "Export data to a Postgres database." },
-      slack: { name: "Slack", subtitle: "", description: "Post alerts and notifications to Slack." },
-      discord: { name: "Discord", subtitle: "", description: "Post alerts and notifications to Discord." },
-      teams: { name: "Microsoft Teams", subtitle: "", description: "Post alerts and notifications to Microsoft Teams." },
-      "jamf-metadata": {
-        name: "Jamf",
-        subtitle: "Patch reporting",
-        description: "Patch reporting and software update data from Jamf Pro."
-      },
-      nvd: {
-        name: "NVD",
-        subtitle: "National Vulnerability Database",
-        description: "CVE and vulnerability data from the National Vulnerability Database."
-      },
-      loonsecio: {
-        name: "LoonSecIO",
-        subtitle: "",
-        description: "CVE and patch-availability lookups by app hash."
-      }
-    }
-  },
-  ai: {
-    eyebrow: "AI",
-    title: "AI Workflows",
-    description: "Automated actions triggered from device and inventory events.",
-    previewBanner: "Preview. Nothing here is wired up yet — visual only.",
-    enable: "Enable",
-    enabled: "Enabled",
-    test: "Test",
-    testStubMessage: "Stub only — no test has actually run yet.",
-    appleAi: {
-      name: "Apple AI",
-      subtitle: "Local, on-device",
-      description: "Runs on the host Mac via a proxied terminal command. Not connected yet."
-    }
   },
   settings: {
     eyebrow: "Settings",

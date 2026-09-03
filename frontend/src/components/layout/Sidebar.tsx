@@ -1,8 +1,7 @@
-import { useMemo, type ComponentType } from "react";
-import { AlertTriangle, AppWindow, Database, Flag, Gauge, History, Home, KeyRound, Layers, ListChecks, Plug, Send, Settings, ShieldCheck, UserCircle, UserCog, Share2 } from "lucide-react";
+import { useMemo } from "react";
+import { AppWindow, Database, Flag, Gauge, History, Home, KeyRound, ListChecks, Plug, Send, Settings, UserCircle, UserCog, Share2, type LucideIcon } from "lucide-react";
 import { NavLink } from "react-router";
 import { cn } from "@/lib/utils";
-import { FlaskLogo } from "@/components/icons/FlaskLogo";
 import { useAuthStore } from "@/features/auth/store";
 import { BuildVersion } from "@/features/system/BuildVersion";
 import { PERMISSIONS, type PermissionName } from "@/features/auth/types";
@@ -12,14 +11,9 @@ import { useSidebarMode } from "@/hooks/SidebarModeContext";
 
 type NavKey = keyof Translations["nav"];
 
-// Loosened from lucide-react's own LucideIcon type so FlaskLogo — a plain custom SVG
-// component, not a lucide icon — can be used interchangeably. Every render site here
-// only ever passes className, so this is the actual shared contract.
-type NavIcon = ComponentType<{ className?: string }>;
-
 interface NavItem {
   labelKey: NavKey;
-  icon: NavIcon;
+  icon: LucideIcon;
   to: string;
   end: boolean;
   /** Omitted where every role can see the page. */
@@ -36,15 +30,10 @@ const navigationItems: NavItem[] = [
     end: false,
     children: [
       { labelKey: "applications", icon: AppWindow, to: "/devices/applications", end: false },
-      { labelKey: "groups", icon: Layers, to: "/devices/groups", end: true },
       { labelKey: "smartGroupCost", icon: Gauge, to: "/devices/groups/cost", end: false },
-      { labelKey: "compliance", icon: ShieldCheck, to: "/devices/compliance", end: false },
       { labelKey: "changes", icon: History, to: "/devices/changes", end: false }
     ]
   },
-  { labelKey: "vulnerabilities", icon: AlertTriangle, to: "/vulnerabilities", end: false },
-  { labelKey: "integrations", icon: Plug, to: "/integrations", end: false },
-  { labelKey: "ai", icon: FlaskLogo, to: "/ai", end: false },
   {
     labelKey: "settings",
     icon: Settings,

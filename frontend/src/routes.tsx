@@ -11,11 +11,7 @@ import { OverviewPage } from "@/features/overview/OverviewPage";
 import { DevicesPage } from "@/features/devices/DevicesPage";
 import { ApplicationsPage } from "@/features/devices/ApplicationsPage";
 import { ApplicationsOverviewPage } from "@/features/devices/ApplicationsOverviewPage";
-import { GroupsPage } from "@/features/devices/GroupsPage";
 import { SmartGroupCostPage } from "@/features/smartGroups/SmartGroupCostPage";
-import { CompliancePage } from "@/features/devices/CompliancePage";
-import { IntegrationsPage } from "@/features/integrations/IntegrationsPage";
-import { AIPage } from "@/features/ai/AIPage";
 import { ChangesPage } from "@/features/changes/ChangesPage";
 import { ChangeTrackingPage } from "@/features/changes/ChangeTrackingPage";
 import { ConnectionsPage } from "@/features/mdm/ConnectionsPage";
@@ -23,7 +19,6 @@ import { FeatureFlagsPage } from "@/features/settings/FeatureFlagsPage";
 import { DataSharingPage } from "@/features/system/DataSharingPage";
 import { ApiTokensPage } from "@/features/tokens/ApiTokensPage";
 import { DestinationsPage } from "@/features/destinations/DestinationsPage";
-import { VulnerabilitiesPage } from "@/features/vulnerabilities/VulnerabilitiesPage";
 import { JamfPatchPage } from "@/features/jamfPatch/JamfPatchPage";
 import { JamfPatchDetailPage } from "@/features/jamfPatch/JamfPatchDetailPage";
 import { CatalogPage } from "@/features/catalog/CatalogPage";
@@ -48,15 +43,25 @@ export function AppRoutes() {
           <Route path="jamf-patch" element={<JamfPatchPage />} />
           <Route path="jamf-patch/:titleId" element={<JamfPatchDetailPage />} />
         </Route>
-        <Route path="devices/groups" element={<GroupsPage />} />
+        {/* No /devices/groups and no /devices/compliance: both rendered rows a
+            developer typed (#95). What each promised already exists under a truer
+            name — the groups the ledger holds are on the cost page below, and
+            per-title devices-on-latest is on Devices › Applications › Jamf Patch,
+            from real matching. Either returns only once it can show something
+            those two cannot. */}
         <Route path="devices/groups/cost" element={<SmartGroupCostPage />} />
-        <Route path="devices/compliance" element={<CompliancePage />} />
         <Route path="devices/changes" element={<ChangesPage />} />
         {/* No /users route: nothing on the backend serves MDM-synced people, and a
             route rendering an empty table of eight columns Jamf's users would fill
             is a promise, not a page. It comes back with the endpoint (#95). */}
-        <Route path="integrations" element={<IntegrationsPage />} />
-        <Route path="ai" element={<AIPage />} />
+        {/* No /integrations: eleven of its sixteen cards were "coming soon" — one of
+            them (Webhook) for a destination type that ships — and the two surfaces
+            that connect anything are Settings › Connections and Destinations. The
+            vendor marks under public/logos/ are deliberately left in place: the
+            page comes back once its grid is mostly real (#95). */}
+        {/* No /ai: nothing AI lands before the public flip (#28 is v1). The
+            `ai_features` switch under Settings › Feature Flags is where "it's
+            coming" lives now that the page does not (#112, #95). */}
         <Route element={<RequirePermission permission={PERMISSIONS.CONNECTION_READ} />}>
           <Route path="settings/connections" element={<ConnectionsPage />} />
           <Route path="settings/change-tracking" element={<ChangeTrackingPage />} />
@@ -80,7 +85,12 @@ export function AppRoutes() {
         </Route>
         {/* No permission gate — everyone manages their own profile. */}
         <Route path="settings/my-account" element={<MyAccountPage />} />
-        <Route path="vulnerabilities" element={<VulnerabilitiesPage />} />
+        {/* No /vulnerabilities for now, and this is the slot it returns to — soon.
+            The placeholder's copy predated the contract (docs/vulnerabilities.md)
+            and tied assessment to a patch provider it does not depend on. #251
+            puts the corpus edge — covered / unknown_app / off, dated by corpusAsOf —
+            in front of a person; where exactly is that session's call, and this
+            route is open for it (#95). */}
         {/* Last child on purpose, and inside the shell rather than beside /login: a
             signed-out visitor keeps getting the same sign-in redirect for a typo as
             for a real page, so an unmatched path never reveals which paths exist.

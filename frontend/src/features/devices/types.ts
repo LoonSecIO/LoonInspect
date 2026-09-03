@@ -27,7 +27,6 @@ export type VersionOperator = "eq" | "lt" | "lte" | "gt" | "gte" | "regex";
 
 export interface DeviceFilters {
   q?: string;
-  ai?: string;
   osVersion?: string;
   osVersionOperator?: VersionOperator;
   site?: string;

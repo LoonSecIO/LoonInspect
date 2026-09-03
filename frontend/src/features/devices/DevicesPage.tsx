@@ -12,7 +12,6 @@ function filtersFromSearchParams(params: URLSearchParams): DeviceFilters {
 
   return {
     q: params.get("q") ?? undefined,
-    ai: params.get("ai") ?? undefined,
     osVersion: params.get("osVersion") ?? undefined,
     osVersionOperator: (params.get("osVersionOperator") as VersionOperator | null) ?? undefined,
     site: params.get("site") ?? undefined,
@@ -27,7 +26,6 @@ function filtersFromSearchParams(params: URLSearchParams): DeviceFilters {
 function searchParamsFromFilters(filters: DeviceFilters): URLSearchParams {
   const params = new URLSearchParams();
   if (filters.q) params.set("q", filters.q);
-  if (filters.ai) params.set("ai", filters.ai);
   if (filters.osVersion) {
     params.set("osVersion", filters.osVersion);
     params.set("osVersionOperator", filters.osVersionOperator ?? "eq");
