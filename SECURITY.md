@@ -11,6 +11,9 @@ Report privately via GitHub's private vulnerability reporting: **Security → Re
 vulnerability** on this repository. That channel reaches the maintainer directly and
 keeps the report out of public view while a fix is prepared.
 
+If that form is unavailable to you, email **security@loonsec.io** instead — it reaches
+the same maintainer and stays out of public view.
+
 You can expect an acknowledgement within a few days. LoonInspect is a small project —
 there is no bounty program — but reports are taken seriously, fixes are prioritized
 over feature work, and reporters are credited in the fix's release notes unless they
