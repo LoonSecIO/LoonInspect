@@ -158,6 +158,16 @@ This builds the frontend, bundles it into the FastAPI image, and starts the app 
 
 > **Note:** the container logs and `docker ps` will show the address as `0.0.0.0:8001` — that's the server listening on all interfaces, not a URL you can open. Use `http://localhost:8001` (or `127.0.0.1:8001`) in your browser instead; some browsers will refuse to navigate to `0.0.0.0` directly.
 
+The static assets that ship inside the image have a deliberate caching policy: a
+content-hashed file under `/assets/` (Vite's fingerprinted JS, CSS and imported assets)
+is served `Cache-Control: public, max-age=31536000, immutable` and gzip-compressed when
+your browser accepts it, since the filename changes on every rebuild. The page shell
+(`index.html`) and anything else — favicons included — is served `no-cache` instead, so
+a returning browser always revalidates and a new build is picked up immediately; a
+matching `ETag`/`If-None-Match` earns a real `304` rather than re-sending the body. A
+request for a bundle that no longer exists under `/assets/` gets a `404`, not the SPA
+shell as a misleading `200`.
+
 ### 5. Point it at Splunk
 
 The onboarding stepper's third step is "Send it to Splunk", and there is more to it than

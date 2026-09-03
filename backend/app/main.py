@@ -5,15 +5,17 @@ import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate
 from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -373,6 +375,18 @@ app = FastAPI(
     openapi_url=None,
 )
 
+# Registered first so it ends up innermost, closest to the router — it only needs to
+# compress what a route actually produced. #172: 964 KB of static payload (a ~500 KB JS
+# bundle, ~230 KB of woff/woff2) was going out uncompressed on every load; the default
+# `exclude_content_types` already leaves woff/woff2 alone (already-compressed formats),
+# so this mainly buys the JS/CSS/HTML. The Vary: Accept-Encoding it adds is also what
+# keeps a cache from handing a gzip'd body to a client that never asked for one — a
+# free complement to the conditional-GET support added below, not a competing concern.
+# Picked over precompressed assets as the smaller, safer change: one line, well-tested
+# upstream, no frontend build step or new dependency, and it compresses API JSON
+# responses too as a side effect.
+app.add_middleware(GZipMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -425,6 +439,16 @@ async def redoc_ui() -> HTMLResponse:
 
 static_dir = Path(__file__).parent / "static"
 
+# Vite's default build.assetsDir: every JS/CSS chunk and imported asset is fingerprinted
+# into assets/<name>-<hash>.<ext>, so the filename *is* the cache key — a rebuild ships
+# under a new URL and the old one is simply orphaned, never requested again. Anything
+# else under static_dir — index.html, and files copied verbatim from frontend/public/
+# (favicon.svg, favicon-dark.svg, logos/) — keeps the same URL across a rebuild, so it
+# must revalidate every time instead of being cached blindly.
+_ASSETS_PREFIX = "assets/"
+_IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable"
+_NO_CACHE_CACHE_CONTROL = "no-cache"
+
 
 def _resolve_static_asset(full_path: str) -> Path | None:
     """Resolve a request path to a file inside static_dir, or None.
@@ -448,35 +472,94 @@ def _resolve_static_asset(full_path: str) -> Path | None:
     return candidate
 
 
+def _not_modified(etag: str | None, last_modified: str | None, request: Request) -> bool:
+    """Mirrors starlette.staticfiles.StaticFiles.is_not_modified — this app has no
+    StaticFiles mount to inherit that check from (#170's finding: FileResponse stamps
+    ETag/Last-Modified but never looks at the request, so a correct If-None-Match used
+    to re-send the full body every time). If-None-Match wins when both are present, per
+    RFC 9110 §13.1.1/§13.1.3; a `W/` weak-validator prefix is ignored on either side.
+    """
+    if_none_match = request.headers.get("if-none-match")
+    if etag and if_none_match:
+        sent = (tag.strip(" W/") for tag in if_none_match.split(","))
+        return etag.strip(" W/") in sent
+
+    if_modified_since = request.headers.get("if-modified-since")
+    if last_modified and if_modified_since:
+        since = parsedate(if_modified_since)
+        modified = parsedate(last_modified)
+        if since is not None and modified is not None:
+            return since >= modified
+
+    return False
+
+
+def _static_response(request: Request, path: Path, *, cache_control: str) -> Response:
+    """Serve `path` with a deliberate response policy (#172): a validator that
+    actually earns a 304, and the Cache-Control the caller decided for this class of
+    file. `HEAD` needs no special handling here — `FileResponse.__call__` already
+    suppresses the body for a HEAD request once it is registered for the route (see
+    the `methods=` on the catch-all below); it is the route registration that was
+    missing, not this function.
+
+    `stat_result` is read once, up front, and handed to `FileResponse` explicitly —
+    not only to avoid a second stat when `FileResponse.__call__` runs, but because it
+    is the only way to actually control the ETag/Last-Modified it stamps.
+    `del response.headers["etag"]` after construction is a silent no-op: `__call__`
+    re-stats and re-adds the header via `setdefault` whenever `stat_result` is None.
+    """
+    stat_result = path.stat()
+    response = FileResponse(path, stat_result=stat_result, headers={"Cache-Control": cache_control})
+
+    etag = response.headers.get("etag")
+    last_modified = response.headers.get("last-modified")
+    if _not_modified(etag, last_modified, request):
+        not_modified_headers = {"Cache-Control": cache_control}
+        if etag:
+            not_modified_headers["ETag"] = etag
+        if last_modified:
+            not_modified_headers["Last-Modified"] = last_modified
+        return Response(status_code=304, headers=not_modified_headers)
+
+    return response
+
+
 if static_dir.exists():
     # Accepted exposure, ruled 2026-08-30 on #170 (closed as documented): every response
-    # below carries a `Last-Modified` of the image build time, because FileResponse
-    # stamps it from the file's mtime. That is the CalVer half of the version #130 took
-    # off the sign-in page, readable by anyone who can reach the port. Kept, knowingly.
+    # below still carries a `Last-Modified` of the image build time, because
+    # `FileResponse` stamps it from the file's mtime — the CalVer half of the version
+    # #130 took off the sign-in page, readable by anyone who can reach the port. Kept,
+    # knowingly; nothing in #172 touches that mtime or that trade.
     #
-    # Read the rest before "fixing" it. Freezing the mtime to a constant is the obvious
-    # move and is worse than the leak: nothing here sets Cache-Control, so browsers fall
-    # back to heuristic freshness of roughly 10% of (now - Last-Modified). A build-time
-    # mtime keeps that window at minutes, which is the only reason a redeploy reaches
-    # returning browsers at all. Pin it to an epoch and they will serve a stale shell —
-    # one that asks for an /assets/<hash>.js this build no longer contains — for years,
-    # from disk, without ever asking. If this is revisited: remove the headers and set
-    # an explicit Cache-Control; never fake them. And note `del headers["etag"]` after
-    # construction silently no-ops, because __call__ re-stats and re-adds via setdefault
-    # when stat_result is None.
+    # What #172 changes is the response *policy* around it, which #170 explicitly left
+    # for this issue: the shell now gets `Cache-Control: no-cache`, so a returning
+    # browser always revalidates instead of leaning on RFC 9111 heuristic freshness —
+    # and revalidation now actually earns a 304 (`_static_response`) instead of
+    # re-sending the body every time. A content-hashed asset under assets/ gets
+    # `public, max-age=31536000, immutable` instead, because the filename is the cache
+    # key and a stale copy is simply never requested again.
     #
     # Catch-all so client-side routes (e.g. /devices) resolve to the SPA shell on a
     # direct navigation/refresh, not a 404 — real static assets are served as-is.
-    # Unmatched /api or /webhooks paths still 404 instead of silently returning HTML.
-    @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str) -> FileResponse:
+    # Unmatched /api or /webhooks paths still 404. So, now, does a miss under assets/
+    # specifically: a stale index.html asking for a bundle this build no longer ships
+    # used to get the SPA shell back as 200 text/html, which a `<script type="module">`
+    # then silently rejected on MIME grounds — the failure that would have made a bad
+    # deploy invisible in an access log full of 200s. A traversal attempt anywhere
+    # *else* still gets the same harmless HTML as a typo — main.py's long-standing
+    # contract, unchanged outside assets/. GET and HEAD both route here (methods=);
+    # FastAPI's own `@app.get` does not register HEAD the way plain Starlette routes do.
+    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
+    async def serve_spa(full_path: str, request: Request) -> Response:
         if full_path.startswith("api/") or full_path.startswith("webhooks/"):
             raise HTTPException(status_code=404, detail="Not Found")
 
         asset = _resolve_static_asset(full_path)
         if asset is not None:
-            return FileResponse(asset)
+            cache_control = _IMMUTABLE_CACHE_CONTROL if full_path.startswith(_ASSETS_PREFIX) else _NO_CACHE_CACHE_CONTROL
+            return _static_response(request, asset, cache_control=cache_control)
 
-        # Anything else is a client-side route; the SPA shell resolves it. A traversal
-        # attempt lands here too, and gets the same harmless HTML as a typo.
-        return FileResponse(static_dir / "index.html")
+        if full_path.startswith(_ASSETS_PREFIX):
+            raise HTTPException(status_code=404, detail="Not Found")
+
+        return _static_response(request, static_dir / "index.html", cache_control=_NO_CACHE_CACHE_CONTROL)
