@@ -131,9 +131,15 @@ kind. `group` is already the device's `group_memberships` section, and a group h
 distinguishable from the definition of a group (§3). The bare `loon:jamf:mac:computerGroup`
 is implied by the tree and deliberately not minted — nothing writes it.
 
-Ruled 2026-09-03 on [#243](https://github.com/LoonSecIO/LoonInspect/issues/243). Nothing stamps these yet: [#223](https://github.com/LoonSecIO/LoonInspect/issues/223) owns the
-stamp, and this family is the stated exception to "the first sourcetype arrives with the
-fan-out" (§7).
+Ruled 2026-09-03 on [#243](https://github.com/LoonSecIO/LoonInspect/issues/243) and
+stamped the same day by [#223](https://github.com/LoonSecIO/LoonInspect/issues/223).
+**These fifteen are the only sourcetypes the product sends** — the stated exception to
+"the first sourcetype arrives with the fan-out" (§7), because a change is already one
+event per changed thing. `wire_vocabulary.change_sourcetype()` decides the string and
+`outbox._build_body` sends it, on Splunk HEC deliveries only; a subject with no wrapper is
+delivered unstamped rather than failing, and every other destination type gets the
+canonical event. The operator's side of it — which stanzas this implies — is
+[`splunk-setup.md`](splunk-setup.md) §6.
 
 And LoonInspect's own assertions: `loon:run`.
 
@@ -273,6 +279,5 @@ issue rather than living on as a footnote.
 
 | Consequence | Issue |
 | --- | --- |
-| `sourcetype` is not stamped on delivered events — the tree names fan-out sub-events that are not built, so `app/core/outbox.py` deliberately sends none and the operator sets it on the HEC input | [#222](https://github.com/LoonSecIO/LoonInspect/issues/222) |
-| The `:change` family is ruled (§2) and nothing stamps it — `changes/derive.py` emits `device.change` with no sourcetype, no `eventID` and no `deviceMeta`, and group ids share the computer id space. #243 ruled this family may be stamped first rather than waiting for the fan-out | [#223](https://github.com/LoonSecIO/LoonInspect/issues/223) |
+| `sourcetype` is not stamped on the **section tree** — those strings name fan-out sub-events that are not built, so `app/core/outbox.py` sends none for the inventory and run families and whatever the operator set on the HEC input still names them. The `:change` family (§2) is the one exception and is built | [#222](https://github.com/LoonSecIO/LoonInspect/issues/222) |
 | `alert` is minted with no writer — #101 ships the alerts table and the Needs Attention rows with nothing on the wire; the block's shape (a keyed list on the app, per the 2026-08-29 ruling) and its kind vocabulary are named when it is built, additive under clause 1 | [#101](https://github.com/LoonSecIO/LoonInspect/issues/101) |

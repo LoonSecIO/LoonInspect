@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.wire import ENVELOPE
+from app.core.wire_vocabulary import change_sourcetype
 from app.models.schema import Destination, EventOutbox, OutboxDelivery
 
 logger = logging.getLogger(__name__)
@@ -129,11 +130,26 @@ def _build_body(destination: Destination, payload: dict) -> dict:
         # joins outward to EDR, DHCP and identity logs is not left somewhere a customer
         # can quietly take away. It is a duplicate on purpose, not an oversight.
         #
-        # `sourcetype` is deliberately absent. The ruled tree names the fan-out
-        # sub-events (`loon:jamf:mac:app`), and the fan-out is not built — minting a
-        # string for this one event type would create a permanent props.conf stanza for
-        # a shape that is about to change. It rides the same hints dict the day it is
-        # ruled.
+        # `sourcetype`, for the `:change` family and nothing else (#243, ruled
+        # 2026-09-03; stamped by #223). This is the first sourcetype the product ever
+        # sends, and it is sent HERE rather than carried from the producer for two
+        # reasons: this is the one place a HEC body is assembled, so "HEC only" is
+        # structural rather than a convention; and the outbox holds events for the whole
+        # retention window, so a change enqueued before the stamp existed still arrives
+        # stamped instead of splitting the family across a deploy.
+        #
+        # Every other family is still deliberately unstamped. The ruled section tree names
+        # fan-out sub-events (`loon:jamf:mac:app`) that are not built, and minting a string
+        # for a shape that is about to change would create a permanent props.conf stanza
+        # for it — that is #222, absorbed by the fan-out (#242). `device.change` was never
+        # blocked that way: it is already at sub-event grain, one event per kept change
+        # row. The string itself comes from `app.core.wire_vocabulary` and nowhere else,
+        # which is #222's own acceptance criterion.
+        stamped = change_sourcetype(
+            payload.get("event"), subject_kind=payload.get("subjectKind"), section=payload.get("section")
+        )
+        if stamped is not None:
+            body["sourcetype"] = stamped
         body.update(hints)
         return body
 

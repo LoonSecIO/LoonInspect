@@ -18,6 +18,7 @@ Two derived judgements live here because they need more than one section:
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -33,8 +34,9 @@ from app.changes.policy import (
 )
 from app.core.context import get_request_id
 from app.core.outbox import enqueue_event
-from app.core.runs import event_time, get_run
+from app.core.runs import event_time, get_run, run_meta
 from app.core.wire import ENVELOPE, envelope, instance_label
+from app.core.wire_vocabulary import CHANGE_EVENT_TYPE
 from app.mdm.jamf.contract import SECTIONS, SUBJECT_COMPUTER, Observation, SectionContent
 from app.models.schema import (
     ChangePolicy,
@@ -45,11 +47,19 @@ from app.models.schema import (
     ObservationSpan,
 )
 from app.observations.ledger import RecordResult
+from app.schemas.payload import WIRE_SCHEMA_VERSION
 
 logger = logging.getLogger(__name__)
 
-EVENT_TYPE = "device.change"
+# The family's single subscribable type, taken from the vocabulary rather than spelled
+# again here: `app.core.outbox._build_body` stamps the `:change` sourcetype on exactly this
+# type, and a second literal is how a producer and its stamp drift apart.
+EVENT_TYPE = CHANGE_EVENT_TYPE
 _OS_VERSION_FIELDS = ("version", "build", "supplementalBuildVersion", "rapidSecurityResponse")
+# The one section the `deviceMeta` block reads a value out of: `managed` lives in
+# GENERAL's canonical body, where the current-state normalizer also reads it. The block's
+# other device-half keys come off the observation itself (`_change_device_meta`).
+_GENERAL_SECTION = "general"
 
 
 async def load_policy(db: AsyncSession) -> EffectivePolicy:
@@ -220,8 +230,12 @@ async def derive_and_record(
     for row in rows:
         db.add(row)
     await db.flush()
+    # Built once per subject, not once per row: every change derived from one observation
+    # describes the same device on the same pull, so the block is the same object for all
+    # of them and re-deriving it per row would only invite the copies to disagree.
+    device_meta = _change_device_meta(observation)
     for row in rows:
-        await enqueue_event(db, EVENT_TYPE, _event_payload(row, connection), request_id=get_request_id())
+        await enqueue_event(db, EVENT_TYPE, _event_payload(row, connection, device_meta), request_id=get_request_id())
     if rows:
         logger.info(
             "changes recorded",
@@ -265,13 +279,91 @@ def _wrap(value) -> dict | None:
     return {"value": value}
 
 
-def _event_payload(row: DeviceChange, connection: MdmConnection) -> dict:
+def _change_device_meta(observation: Observation) -> dict[str, object]:
+    """#189's `deviceMeta` block for one subject's changes — built from the observation
+    and the run, never from the `Device` row.
+
+    #223 filed the absence: a `device.change` carried no block at all, so a change joined
+    to its own inventory pass through `jobID` + `jamfProID`, the two-term join #189
+    rejected for the inventory family because a two-term join "can be half-used, returning
+    a plausible superset with no error". #243 ruled the fix and named the constraint this
+    function is written around: `mdm.service._device_meta` reads the `Device` row, and in
+    `ingest_computer` the derivation runs BEFORE `process_sync` updates that row — so
+    reading it here would ship the *previous* pull's hostname, report date and managed
+    flag beside this pull's change, and the two device families would disagree about the
+    device on the very pull the fold exists to correlate. The observation is this pull, by
+    construction.
+
+    Names are #189's and no others (`tests/test_device_meta.py::RULED_TWELVE`): nothing is
+    added, nothing is renamed, and the null-drop rule the block already lives under is what
+    covers a value this producer cannot know. A section outside the aperture is absence of
+    observation, not absence of the fact (#98's discipline), so `managed`, `hostName` and
+    `lastReportDate` — all three from GENERAL — drop together when GENERAL was not read,
+    and `serialNumber` drops with HARDWARE.
+
+    A `computer_group` subject keeps the run half and `jamfProID`, and nothing else:
+
+    * **no `eventID`.** It is `uuid5(run, jamfProID)`, and a group id is a different id
+      space from a computer id (#234) — deriving one from the same formula would mint a
+      correlation key that collides with a computer's by construction. #243's rider.
+    * **no `hostName`, no `serialNumber`.** A smart group is not a Mac; its label is a
+      group name. The same ruling that keeps `host` off the envelope for this subject
+      (`_event_payload` below) keeps the hostname out of the body, for the same reason —
+      an absent identity is recoverable, an invented one is not.
+
+    `jamfProID` stays the object's own id on both subjects, which is #212's ruling kept by
+    #243: `subjectKind` says which kind of object it belongs to, and the sourcetype
+    (`loon:jamf:mac:computerGroup:change`) is what separates the two id spaces at search
+    time.
+    """
+    run = get_run()
+    is_computer = observation.subject_kind == SUBJECT_COMPUTER
+    general = observation.sections.get(_GENERAL_SECTION)
+    remote_management = (general.body or {}).get("remoteManagement") if general is not None else None
+    meta: dict[str, object | None] = {
+        # The run's half — jobID, trigger, connectionID, shortDate — from the one producer
+        # #189's refusals are enforced in, so `comparison` and `collectionID` cannot arrive
+        # here by a route the inventory family closed.
+        **run_meta(),
+        # Derived, not minted: `uuid5(run.id, jamfProID)` is the same formula
+        # `mdm.service._device_meta` uses, over the same id, so a change and the inventory
+        # event from the same pull name that pull with one value without either side
+        # passing it along. The ids agree on both call paths today but not by construction
+        # — the inventory side falls back on a falsy id (`computer.id or general.id`) and
+        # the ledger side on a null one — so the agreement is pinned in
+        # `tests/test_device_meta.py` rather than inherited (PR #255's note to this issue).
+        "eventID": str(uuid.uuid5(run.id, observation.subject_id)) if run and is_computer else None,
+        "serialNumber": observation.serial_number if is_computer else None,
+        "jamfProID": observation.subject_id,
+        # The observation's label IS the hostname for a computer: both are Jamf's
+        # `general.name`, which is also what the Device row stores and what the envelope
+        # ships as `host`.
+        "hostName": observation.label if is_computer else None,
+        # The device's own report date, which is what `observed_at` was parsed from and
+        # what the inventory family reads off the row it writes from the same field. NOT
+        # the row's `observed_at`, which falls back to collection time when GENERAL was not
+        # read — a fallback is the right answer for `_time` and a lie for a freshness key.
+        "lastReportDate": observation.observed_at.isoformat() if observation.observed_at else None,
+        "managed": remote_management.get("managed") if isinstance(remote_management, dict) else None,
+        "schemaVersion": WIRE_SCHEMA_VERSION,
+    }
+    return {key: value for key, value in meta.items() if value is not None}
+
+
+def _event_payload(row: DeviceChange, connection: MdmConnection, device_meta: dict[str, object]) -> dict:
     """One change row as it goes out on the wire.
 
     camelCase with the token `ID` uppercased (#188), spelled to agree with the
     `deviceMeta` block on `device.inventory.changed` rather than merely to be camelCase:
     `jobID`, `jamfProID` and `serialNumber` are the same names carrying the same values,
-    so a change and the inventory event from the same pull join on identical keys.
+    so a change and the inventory event from the same pull join on identical keys. Since
+    #223 the block itself rides here too, so the join is `deviceMeta.eventID` — one key,
+    one path, both device families — rather than the two-term join #189 rejected.
+
+    The event's `sourcetype` is not set here. It is decided by
+    `wire_vocabulary.change_sourcetype` and stamped by `app.core.outbox._build_body` on
+    Splunk HEC deliveries only (#243, #223): a sourcetype is not part of the event, it is
+    part of the delivery, and every other destination type gets this payload verbatim.
 
     Two spellings were genuinely ambiguous and are ruled here:
 
@@ -293,6 +385,18 @@ def _event_payload(row: DeviceChange, connection: MdmConnection) -> dict:
         # same pull, which is what lets a search collect everything one sweep produced —
         # the correlation triple below identifies the *device*, not the pass that saw it.
         "jobID": str(run.id) if run else None,
+        # #189's block, whole (`_change_device_meta`). With `event` and `jobID` above it,
+        # this event now carries all three of the keys #220 ruled every sub-event carries
+        # — `wire_vocabulary.SUB_EVENT_KEYS` — though a change is not a fan-out sub-event:
+        # it was already at sub-event grain, one outbox event per kept change row.
+        #
+        # The keys it duplicates from the top level are duplicated deliberately, the way
+        # `deviceMeta.jobID` duplicates the root `jobID` (#220) and `host` rides in both
+        # the envelope and the body: the block is meant to be the self-contained identity
+        # of the pull, and the top-level names are shipped and never removed (clause 3).
+        # `trigger` and `connectionID` agree by construction — the derivation is handed the
+        # same trigger the run was acquired with, on every path.
+        "deviceMeta": device_meta,
         "comparison": run.comparison if run else None,
         "connectionID": connection.id,
         "jamfUrl": connection.base_url,

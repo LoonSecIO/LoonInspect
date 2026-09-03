@@ -25,6 +25,7 @@ from sqlalchemy import delete, func, select
 
 from app.core.outbox import _build_body
 from app.core.wire import ENVELOPE, instance_label
+from app.core.wire_vocabulary import SECTION_WRAPPERS
 from tests.jamf_fake import HOST, FakeJamf
 
 pytestmark = [
@@ -227,6 +228,18 @@ async def test_changes_are_derived_under_the_default_policy(db, connection, jamf
     assert body["host"] == hostname and body["time"] == hints["time"]
     assert ENVELOPE not in body["event"]
     assert _build_body(SimpleNamespace(type="webhook"), latest.payload).get(ENVELOPE) is None
+    # The `:change` sourcetype (#223), on the webhook path — one entity's string, taken
+    # from the wrapper table, and only for Splunk: a sourcetype is part of the delivery,
+    # not part of the event.
+    assert body["sourcetype"] == f"loon:jamf:mac:{SECTION_WRAPPERS[latest.payload['section']]}:change"
+    assert "sourcetype" not in _build_body(SimpleNamespace(type="webhook"), latest.payload)
+    # #189's block, on a webhook run: the same names and the same values the inventory
+    # event from this pull carries, so a change joins to its pull on `deviceMeta.eventID`
+    # rather than on jobID + jamfProID (#243, question 4).
+    meta = latest.payload["deviceMeta"]
+    assert meta["jamfProID"] == real_id and meta["serialNumber"] == "LOONMINI0M4" and meta["hostName"] == hostname
+    assert meta["eventID"] == str(uuidlib.uuid5(uuidlib.UUID(latest.payload["jobID"]), real_id))
+    assert meta["trigger"] == "webhook"
     assert all(r.span_id is not None and r.previous_span_id is not None for r in rows)
     assert by_key  # sanity
 

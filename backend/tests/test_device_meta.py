@@ -16,10 +16,17 @@ times per device per sync — and after the public flip it can never be taken ba
 additive-only clause 3 (`docs/splunk-wire-vocabulary.md` §5) says a key that ships is
 never removed.
 
-Pure logic, no database: `_device_meta` reads a `RunContext` out of a ContextVar and a
-`Device` row, and both can be built in hand. `tests/test_runs.py` asserts the same block
-end to end against a real sweep, and `tests/test_wire_casing.py` judges the casing of
-every family at once; this file is the one that judges the *membership* of the set.
+Since #223 (2026-09-03) it judges the set on **both** device families. `device.change`
+carries the same block, built by `app.changes.derive._change_device_meta` from the
+observation and the run rather than from the `Device` row — the fold #243 ruled — so the
+membership question is now asked of two producers, and the second half of this file is
+what holds them to one vocabulary and one `eventID` derivation.
+
+Pure logic, no database: both builders read a `RunContext` out of a ContextVar, and a
+`Device` row and an `Observation` can be built in hand. `tests/test_runs.py` asserts the
+inventory block end to end against a real sweep, `tests/test_wire_casing.py` judges the
+casing of every family at once and pins the two blocks against each other on real
+payloads; this file is the one that judges the *membership* of the set.
 """
 
 from __future__ import annotations
@@ -31,6 +38,7 @@ from pathlib import Path
 
 import pytest
 
+from app.changes.derive import _change_device_meta
 from app.core.runs import (
     LOCK_DEVICE_SWEEP,
     TRIGGER_SWEEP,
@@ -39,6 +47,12 @@ from app.core.runs import (
     run_meta,
 )
 from app.core.runs import set_run as _set_run
+from app.mdm.jamf.contract import (
+    SUBJECT_COMPUTER,
+    SUBJECT_COMPUTER_GROUP,
+    Observation,
+    SectionContent,
+)
 from app.mdm.service import _device_meta
 from app.models.schema import Device
 from app.schemas.payload import WIRE_SCHEMA_VERSION
@@ -236,6 +250,133 @@ def test_outside_a_run_the_block_is_the_device_half_alone() -> None:
     assert "eventID" not in meta
     assert set(meta) == {"serialNumber", "jamfProID", "hostName", "lastReportDate", "managed", "schemaVersion"}
     assert set(meta) < set(SHIPPED_ELEVEN)
+
+
+# --- the same block on the other device family (#223, on the fold #243 ruled) --------
+
+
+def _observation(subject_kind: str = SUBJECT_COMPUTER, **overrides) -> Observation:
+    """One pull as the ledger saw it. GENERAL is present with the one field the block
+    reads out of a section, so the emitted set is what a full aperture produces."""
+    general = SectionContent(
+        name="general", digest="sha256:general", body={"name": "kyle-mbp", "remoteManagement": {"managed": True}}
+    )
+    fields = {
+        "subject_kind": subject_kind,
+        "subject_id": "1743",
+        "sections": {"general": general},
+        "observed_at": datetime(2026, 8, 31, 21, 44, 3, tzinfo=timezone.utc),
+        "serial_number": "C02XL0THJGH5",
+        "label": "kyle-mbp",
+    }
+    return Observation(**(fields | overrides))
+
+
+def test_a_change_carries_the_ruled_names_and_no_others(run: RunContext) -> None:
+    """#223: `device.change` carried no block at all, so a change joined to its own
+    inventory pass through `jobID` + `jamfProID` — the two-term join #189 rejected because
+    it "can be half-used, returning a plausible superset with no error".
+
+    The names are the ruling's, in both directions: nothing invented for this family, and
+    nothing here that `deviceMeta` does not already mean on the other one. A key minted on
+    one family only would be the fan-out's cost paid twice for one fact.
+    """
+    meta = _change_device_meta(_observation())
+    assert set(meta) < set(RULED_TWELVE)
+    assert RESERVED not in meta
+    assert set(meta) == {
+        "jobID", "trigger", "connectionID", "shortDate", "eventID",
+        "serialNumber", "jamfProID", "hostName", "lastReportDate", "managed", "schemaVersion",
+    }
+    assert all(value is not None for value in meta.values())
+
+
+def test_the_two_device_families_derive_one_event_id_from_one_formula(run: RunContext) -> None:
+    """#243 question 4, and PR #255's note asking #223 to pin it rather than inherit it.
+
+    `eventID` is derivable ON PURPOSE so that any other producer of the same pull can
+    arrive at the value without either side passing it along — this is the second producer,
+    and this assertion is what makes "same formula, same value" a fact rather than a
+    coincidence of two call paths.
+
+    The one seam left open, honestly: the two ids are reached differently — the inventory
+    side is `str(computer.get("id") or general.get("id"))` and the ledger side is
+    `raw.get("id")` with a null fallback — so at a Jamf id of `0` they would diverge and
+    produce a silently wrong join key. Jamf Pro numbers objects from 1.
+    """
+    device_meta = _device_meta(_device())
+    change_meta = _change_device_meta(_observation())
+
+    assert change_meta["eventID"] == device_meta["eventID"] == str(uuidlib.uuid5(_RUN_ID, "1743"))
+    # And the whole block agrees, key for key, on the pull both families are describing.
+    assert {key: change_meta[key] for key in change_meta} == {key: device_meta[key] for key in change_meta}
+
+
+def test_a_change_reads_this_pull_rather_than_the_row_the_last_one_left(run: RunContext) -> None:
+    """Why the block is built from the observation and not from the `Device` row.
+
+    In `mdm.service.ingest_computer` the derivation runs BEFORE `process_sync` writes the
+    row, so a block read from the row would carry the PREVIOUS pull's hostname, report date
+    and managed flag beside this pull's change — and the two families would disagree about
+    the device on exactly the pull the fold exists to correlate. A renamed Mac is the case
+    that shows it.
+    """
+    stale = _device(hostname="old-name", last_inventory_at=datetime(2026, 8, 30, tzinfo=timezone.utc))
+    renamed = _observation(label="kyle-mbp-2")
+
+    assert _change_device_meta(renamed)["hostName"] == "kyle-mbp-2" != _device_meta(stale)["hostName"]
+    assert _change_device_meta(renamed)["lastReportDate"] == "2026-08-31T21:44:03+00:00"
+
+
+def test_a_narrow_aperture_drops_keys_rather_than_inventing_them(run: RunContext) -> None:
+    """The null-drop rule, on the keys a section feeds.
+
+    A collection that does not ask Jamf for GENERAL gets a record with no `general` object,
+    so `canonicalize_computer` has no name, no report date and no managed flag to carry —
+    and HARDWARE is where the serial lives. Absence of observation is not absence of the
+    fact (#98's discipline on the current-state row), so those keys are absent rather than
+    null, empty or guessed at, exactly as they are on the inventory family.
+    """
+    meta = _change_device_meta(_observation(sections={}, label=None, observed_at=None, serial_number=None))
+
+    assert set(meta) == {"jobID", "trigger", "connectionID", "shortDate", "eventID", "jamfProID", "schemaVersion"}
+    assert set(meta) < set(SHIPPED_ELEVEN)
+    # The pull's own identity survives any aperture: this is still the join key.
+    assert meta["eventID"] == str(uuidlib.uuid5(_RUN_ID, "1743"))
+
+
+def test_a_group_subject_gets_the_run_half_and_its_own_id_only(run: RunContext) -> None:
+    """A smart group's definition is a subject, not a Mac.
+
+    No `eventID`, because it is `uuid5(run, jamfProID)` over an id from a different id
+    space (#234) — deriving one from the same formula would mint a correlation key that
+    collides with a computer's by construction. No `hostName` and no `serialNumber`, for
+    the reason the envelope's `host` is also left absent: an absent identity is
+    recoverable, an invented one is not.
+
+    `jamfProID` stays the object's own id, which is #212's ruling kept by #243 — the
+    sourcetype `loon:jamf:mac:computerGroup:change` is what separates the id spaces.
+    """
+    meta = _change_device_meta(
+        Observation(
+            subject_kind=SUBJECT_COMPUTER_GROUP,
+            subject_id="12",
+            sections={},
+            label="Devices out of Checkin Compliance",
+        )
+    )
+    assert set(meta) == {"jobID", "trigger", "connectionID", "shortDate", "jamfProID", "schemaVersion"}
+    assert meta["jamfProID"] == "12"
+    assert set(meta) < set(SHIPPED_ELEVEN)
+
+
+def test_outside_a_run_a_change_block_is_the_subject_half_alone() -> None:
+    """No run fixture. `run_meta()` is empty outside a run and `eventID` needs the run, so
+    the block degrades instead of raising or shipping a half-derived id — the same
+    behaviour the inventory family has."""
+    meta = _change_device_meta(_observation())
+    assert "eventID" not in meta and "jobID" not in meta
+    assert set(meta) == {"serialNumber", "jamfProID", "hostName", "lastReportDate", "managed", "schemaVersion"}
 
 
 def test_the_docs_name_the_same_keys() -> None:
