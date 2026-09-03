@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -64,7 +65,10 @@ def _in_batches(values: Collection, size: int = _PURGE_BATCH) -> Iterator[list]:
 # shrinks the constant but leaves a tick's cost proportional to the backlog, so the
 # same fleet one size larger is the same incident again. A ceiling makes it
 # proportional to the ceiling. Nothing is dropped — what a tick does not reach is
-# simply the head of the next tick's set, thirty seconds later.
+# simply the head of the next tick's set, thirty seconds later. (#244 later narrowed
+# the fan-out pass's select as well, once the row itself grew to a ~28 KB snapshot:
+# the two compose — the ceiling bounds how many rows a tick holds, the narrowing
+# bounds how wide each one is. The delivery pass still needs the payload to POST.)
 #
 # Deliberately NOT shared with _PURGE_BATCH above, which is the same number for an
 # unrelated reason (asyncpg's bind-parameter cap). Tuning the tick ceiling must not
@@ -347,16 +351,12 @@ async def fan_out_pending(db: AsyncSession) -> int:
     subscribed to — keeping that logic in one spot rather than duplicating it at every
     event-producing call site is the point of splitting fan-out from delivery.
     """
-    # Destinations first, and the order is load-bearing now that events are held. The
-    # events select below is still every column of every un-fanned row it reads, JSONB
-    # payload included to flip a boolean (§2 of the characterization tests; #81's to
-    # fix) — _TICK_LIMIT caps how many of those rows land in the worker at once, not
-    # how wide each one is. While events were burned on the first tick that set could
-    # never outgrow one tick's production. Held, it grows for the whole retention
-    # window in exactly the state the stepper calls optional — so asking the cheap
-    # indexed question first is what keeps a destination-less pod from dragging a
-    # thousand payloads through the worker every 30 seconds to discover it has nothing
-    # to do.
+    # Destinations first, and the order is load-bearing now that events are held. While
+    # events were burned on the first tick the un-fanned set could never outgrow one
+    # tick's production. Held, it grows for the whole retention window in exactly the
+    # state the stepper calls optional — so asking the cheap indexed question first is
+    # what keeps a destination-less pod from touching `event_outbox` at all, every 30
+    # seconds, to discover it has nothing to do.
     result = await db.execute(select(Destination).where(Destination.enabled.is_(True)))
     destinations = result.scalars().all()
 
@@ -385,22 +385,40 @@ async def fan_out_pending(db: AsyncSession) -> int:
     # Whatever the ceiling leaves behind keeps fanned_out false — the state it was
     # already in — so being deferred is indistinguishable from never having been
     # looked at, which is the point.
+    #
+    # Two columns, not the row (#244). This pass reads `event_type` and writes
+    # `fanned_out`; it never needs the payload, and since #241 the payload is a ~28 KB
+    # snapshot per device per pass — a thousand of them a tick was ~28 MB through the
+    # ORM every thirty seconds, for the twenty minutes a 40,000-device backlog takes,
+    # to flip a boolean. Measured with `tracemalloc` around one call at 20,000 un-fanned
+    # events: the numbers are in the #244 PR. `deliver_pending` keeps the full row — it
+    # has to POST the payload.
     result = await db.execute(
-        select(EventOutbox).where(EventOutbox.fanned_out.is_(False)).order_by(EventOutbox.id).limit(_TICK_LIMIT)
+        select(EventOutbox.id, EventOutbox.event_type)
+        .where(EventOutbox.fanned_out.is_(False))
+        .order_by(EventOutbox.id)
+        .limit(_TICK_LIMIT)
     )
-    pending_events = result.scalars().all()
+    pending_events = result.all()
     if not pending_events:
         return 0
 
     created = 0
-    for event in pending_events:
+    for event_id, event_type in pending_events:
         for destination in destinations:
             subscribed = destination.subscribed_events
-            if subscribed and event.event_type not in subscribed:
+            if subscribed and event_type not in subscribed:
                 continue
-            db.add(OutboxDelivery(outbox_event_id=event.id, destination_id=destination.id))
+            db.add(OutboxDelivery(outbox_event_id=event_id, destination_id=destination.id))
             created += 1
-        event.fanned_out = True
+
+    # One UPDATE for the tick rather than one per row at flush. Batched for the reason
+    # the purge is: _TICK_LIMIT and _PURGE_BATCH are the same number for unrelated
+    # reasons, and raising the tick ceiling must not quietly reintroduce asyncpg's
+    # bind-parameter crash. The same transaction as the delivery rows, so "considered"
+    # and "has a delivery row" commit together or not at all.
+    for batch in _in_batches([event_id for event_id, _event_type in pending_events]):
+        await db.execute(sa_update(EventOutbox).where(EventOutbox.id.in_(batch)).values(fanned_out=True))
 
     await db.commit()
     return created
