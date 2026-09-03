@@ -796,11 +796,10 @@ async def test_a_sweep_stamps_its_job_id_on_the_events_it_produces(db, connectio
     # clock reads and only one of them is what `time` is built from.
     assert body["time"] == datetime.fromisoformat(event.payload["occurredAt"]).timestamp()
     assert ENVELOPE not in body["event"]
-    # Still unstamped, deliberately: the delta family has no ruled string and no issue
-    # owns one, so it lands under the sourcetype set on the HEC input. The families that
-    # carry one since the fan-out (#242) — the snapshot's sub-events, `loon:run`, `:change`
-    # — are asserted in test_hec_fanout.py and test_wire.py.
-    assert "sourcetype" not in body
+    # Stamped since #277: the delta family carries its own string, the day before the
+    # flip. The other families that carry one — the snapshot's sub-events (#242),
+    # `loon:run`, `:change` — are asserted in test_hec_fanout.py and test_wire.py.
+    assert body["sourcetype"] == "loon:inventory:changed"
 
     # And the second run of the same connection and class is a delta, not another
     # baseline — the distinction the contract's `run_type` was carrying.

@@ -26,7 +26,14 @@ from app.changes.derive import EVENT_TYPE as CHANGE_EVENT
 from app.changes.derive import _change_device_meta, _event_payload
 from app.core.outbox import _attempt_delivery, _build_body, _elastic_bulk_body, hec_events
 from app.core.wire import ENVELOPE, envelope, instance_label
-from app.core.wire_vocabulary import ASSERTION_SOURCETYPE, SUBJECT_WRAPPERS, change_rows, change_sourcetype, sourcetype
+from app.core.wire_vocabulary import (
+    ASSERTION_SOURCETYPE,
+    DELTA_SOURCETYPE,
+    SUBJECT_WRAPPERS,
+    change_rows,
+    change_sourcetype,
+    sourcetype,
+)
 from app.mdm.jamf.contract import GROUP_DEFINITION_SECTION, SUBJECT_COMPUTER, SUBJECT_COMPUTER_GROUP, Observation
 from app.models.schema import Destination, DeviceChange, EventOutbox
 
@@ -107,11 +114,10 @@ def test_the_envelope_is_lifted_beside_the_body_and_never_into_it() -> None:
     assert body["host"] == "kyle-mbp"
     assert body["source"] == "acme.jamfcloud.com"
     assert ENVELOPE not in body["event"]
-    # Still absent on the delta family: it has no ruled string and no issue owns one, so it
-    # keeps the sourcetype the operator set on the HEC input. The families that carry one
-    # — `:change`, `loon:run`, and the fan-out's section tree (#242) — are asserted below
-    # and in test_hec_fanout.py.
-    assert "sourcetype" not in body
+    # The delta family carries its own string since #277 — asserted here because it rides
+    # beside the envelope on every delta delivery, and in full (against every other
+    # family) in test_which_single_event_families_are_stamped below.
+    assert body["sourcetype"] == "loon:inventory:changed" == DELTA_SOURCETYPE
 
 
 def test_no_index_is_sent_so_the_hec_token_alone_decides_where_events_land() -> None:
@@ -132,9 +138,9 @@ def test_no_index_is_sent_so_the_hec_token_alone_decides_where_events_land() -> 
     body = _build_body(SPLUNK, payload)
 
     assert "index" not in body
-    # Nor smuggled in beside the envelope hints: the body is the wrapper plus exactly
-    # the three fields wire.envelope() produces.
-    assert set(body) == {"event", "time", "host", "source"}
+    # Nor smuggled in beside the envelope hints: the body is the wrapper, the three fields
+    # wire.envelope() produces, and — since #277 — the delta's own `sourcetype`.
+    assert set(body) == {"event", "time", "host", "source", "sourcetype"}
 
 
 def test_the_envelope_never_reaches_a_non_splunk_destination() -> None:
@@ -338,14 +344,17 @@ def test_no_destination_but_splunk_gets_a_sourcetype() -> None:
 
 def test_which_single_event_families_are_stamped() -> None:
     """The change rule stamps the change family and nothing else; the run family carries
-    `loon:run` (#242 item 6); the delta family and the test event carry nothing — the
-    delta has no ruled string and no issue owns one, the test event is meant to be
-    identifiable rather than routed. The guard is on the event type, so a family added
-    later is unstamped until it is ruled. The snapshot is not a single event and is
-    asserted in test_hec_fanout.py."""
-    for event in ("device.inventory.changed", "destination.test"):
-        body = _build_body(SPLUNK, {"event": event, "subjectKind": "computer", "section": "applications"})
-        assert "sourcetype" not in body, f"{event} must not be stamped"
+    `loon:run` (#242 item 6); the delta family carries `loon:inventory:changed` (#277);
+    only the test event carries nothing, because it is meant to be identifiable rather
+    than routed. The guard is on the event type, so a family added later is unstamped
+    until it is ruled. The snapshot is not a single event and is asserted in
+    test_hec_fanout.py."""
+    body = _build_body(SPLUNK, {"event": "destination.test", "subjectKind": "computer", "section": "applications"})
+    assert "sourcetype" not in body, "destination.test must not be stamped"
+    body = _build_body(
+        SPLUNK, {"event": "device.inventory.changed", "subjectKind": "computer", "section": "applications"}
+    )
+    assert body["sourcetype"] == "loon:inventory:changed", "the delta family carries the assertion string"
     for event in ("run.completed", "run.failed"):
         body = _build_body(SPLUNK, {"event": event, "subjectKind": "computer", "section": "applications"})
         assert body["sourcetype"] == "loon:run", f"{event} carries the assertion string"

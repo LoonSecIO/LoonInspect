@@ -19,17 +19,17 @@ the read aperture that decides which sections are fetched at all is
 `app.mdm.jamf.contract.SECTIONS`, which this module reads rather than restates, so a
 section cannot be collected without a name to travel under.
 
-What is stamped, and by whom. Three families carry a sourcetype on Splunk HEC deliveries,
+What is stamped, and by whom. Four families carry a sourcetype on Splunk HEC deliveries,
 and every string comes from this module and nowhere else (#222's acceptance): the
 `:change` family (#223, 2026-09-03 — the first the product ever stamped, because
 `device.change` was already at sub-event grain); the section tree, on the sub-events the
 fan-out (#242, 2026-09-03) expands one `device.inventory` snapshot into — `sourcetype()`
-read through `registry_rows()`; and the run family, `run.completed` and `run.failed`,
-under `ASSERTION_SOURCETYPE`. `app.core.outbox` stamps all three, on the `splunk_hec`
-destination type only. Still under the HEC input's own default: `device.inventory.changed`
-(the delta family has no ruled string; #277 puts the ruling to Kyle before the flip) and
-`destination.test` (deliberately identifiable). The three enrichment strings are minted with no writer,
-because an enrichment rides inline on the app sub-event.
+read through `registry_rows()`; the run family, `run.completed` and `run.failed`, under
+`ASSERTION_SOURCETYPE`; and the delta family, `device.inventory.changed`, under
+`DELTA_SOURCETYPE` (#277, 2026-09-03, stamped the day before the flip). `app.core.outbox`
+stamps all four, on the `splunk_hec` destination type only. Still under the HEC input's
+own default: only `destination.test` (deliberately identifiable). The three enrichment
+strings are minted with no writer, because an enrichment rides inline on the app sub-event.
 """
 
 from __future__ import annotations
@@ -59,6 +59,22 @@ ASSERTION_SOURCETYPE = f"{PRODUCER}:run"
 RUN_COMPLETED_EVENT_TYPE = "run.completed"
 RUN_FAILED_EVENT_TYPE = "run.failed"
 ASSERTION_EVENT_TYPES: frozenset[str] = frozenset({RUN_COMPLETED_EVENT_TYPE, RUN_FAILED_EVENT_TYPE})
+
+# The delta family's own string — ruled 2026-09-03 (#277), stamped before the public flip
+# so a customer's `props.conf` stanza and saved searches can key on
+# `device.inventory.changed` by name rather than the HEC input's own default, which is
+# free to move out from under an unstamped family before the flip and breaking the day it
+# does after. Named under #188 ruling 3's assertion form, the way `loon:run` is: the delta
+# is LoonInspect's own derivation — what happened to a device's app list between two
+# pulls, computed in `app.mdm.service.process_sync` — not a wrapper around one Jamf
+# object, so ruling 5 (the leaf equals the body's wrapper key) has no answer for it; the
+# delta carries root-level `addedApps[]` / `removedApps[]`, not one wrapper key to be a
+# leaf of. `loon:delta` was set aside on the ambiguity rule — `comparison=delta` on
+# `run.completed` already means something else (docs/runs.md §4) — and the
+# vendor-stamped alternative, `loon:jamf:mac:app:delta`, was on the record and refused:
+# unlike `:change` and `vuln`, the delta is not a claim about a Jamf object's own fields,
+# so the cross-vendor argument that won for those does not carry here.
+DELTA_SOURCETYPE = f"{PRODUCER}:inventory:changed"
 
 # Ruling 4 (#188): short where the fan-out is high, long where the section is one-per-
 # device or low fan-out. Ambiguity overrides brevity — `user` / `account` was rejected

@@ -55,6 +55,7 @@ from app.core.outbox import _build_body, hec_events
 from app.core.wire import ENVELOPE
 from app.core.wire_vocabulary import (
     ASSERTION_SOURCETYPE,
+    DELTA_SOURCETYPE,
     SECTION_WRAPPERS,
     SUB_EVENT_KEYS,
     SUBJECT_WRAPPERS,
@@ -491,9 +492,9 @@ async def test_every_change_is_delivered_under_its_entitys_change_sourcetype(fiv
 
     assert len(seen) > 1, "the sweep must move more than one section, or this proves one string"
     # The change rule stamps nothing else. What the other families carry, on real rows:
-    # the run family `loon:run`; the delta nothing (no ruled string); and the snapshot is
-    # fanned out (#242) into sub-events every one of which carries a registry string —
-    # `eventID` included, which only a real run produces.
+    # the run family `loon:run`; the delta `loon:inventory:changed` (#277); and the
+    # snapshot is fanned out (#242) into sub-events every one of which carries a registry
+    # string — `eventID` included, which only a real run produces.
     assert any(row.event_type == "device.inventory" for row in rows)
     registry = {stype for _section, _key, _wrapper, stype in registry_rows()}
     for row in rows:
@@ -508,5 +509,7 @@ async def test_every_change_is_delivered_under_its_entitys_change_sourcetype(fiv
         body = _build_body(SimpleNamespace(type="splunk_hec"), row.payload)
         if row.event_type in ("run.completed", "run.failed"):
             assert body["sourcetype"] == ASSERTION_SOURCETYPE
+        elif row.event_type == "device.inventory.changed":
+            assert body["sourcetype"] == DELTA_SOURCETYPE
         else:
             assert "sourcetype" not in body

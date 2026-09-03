@@ -5,7 +5,7 @@ both worker passes, and a mocked HEC. Gated on RUN_DB_TESTS.
 pins that the outbox worker actually sends it — one delivery row, one POST, N objects —
 on rows the producer stored, carrying the `eventID` only a real run produces, beside a
 generic webhook receiving the same rows whole, the run family arriving under `loon:run`,
-the delta unstamped, and the test button unchanged.
+the delta under its own `loon:inventory:changed` (#277), and the test button unchanged.
 
 Its own tenant, like `test_outbox_passes_db.py`: both passes act on every row and every
 enabled destination they can see, so exact request counts need a tenant nothing else
@@ -26,7 +26,7 @@ from sqlalchemy import delete, select
 
 from app.core.outbox import TEST_EVENT_TYPE, deliver_pending, fan_out_pending, hec_events, send_test_event
 from app.core.wire import ENVELOPE
-from app.core.wire_vocabulary import ASSERTION_SOURCETYPE, SUB_EVENT_KEYS, registry_rows
+from app.core.wire_vocabulary import ASSERTION_SOURCETYPE, DELTA_SOURCETYPE, SUB_EVENT_KEYS, registry_rows
 from tests.jamf_fake import HOST, FakeJamf
 
 pytestmark = [
@@ -241,7 +241,8 @@ async def test_one_snapshot_delivery_is_one_request_of_n_sub_events_on_the_real_
             assert sum(1 for obj in objects if obj["sourcetype"] == "loon:jamf:mac:general") == 1
     for objects in requests_by_family["device.inventory.changed"]:
         (obj,) = objects
-        assert "sourcetype" not in obj and set(obj) == {"event", "time", "host", "source"}
+        assert obj["sourcetype"] == DELTA_SOURCETYPE == "loon:inventory:changed"
+        assert set(obj) == {"event", "time", "host", "source", "sourcetype"}
     ((completed,),) = requests_by_family["run.completed"]
     assert completed["sourcetype"] == ASSERTION_SOURCETYPE == "loon:run"
     assert "host" not in completed
