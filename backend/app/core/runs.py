@@ -46,6 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.context import get_request_id
 from app.core.outbox import enqueue_event
+from app.core.uuid7 import uuid7
 from app.core.wire import ENVELOPE, envelope, instance_label
 from app.models.schema import MdmConnection, Run, RunLogLine
 
@@ -587,12 +588,19 @@ async def acquire(
     run's events are back-dated to. The tick passes the `next_due_at` it claimed — the
     time the run was *due* — so a sweep delayed by a busy tick still stamps its events
     at the hour the customer configured.
+
+    The id is minted here, not left to the column's own default (`app.models.schema.
+    Run.id`) — this is the one place a `Run` is ever constructed, and minting explicitly
+    keeps that fact visible rather than implicit in a default two files away. `uuid7()`,
+    not `uuid.uuid4()`, since #225: `jobID` — this same value — is a correlation key on
+    the wire now, and a fan-out sourcetype's `eventstats max(jobID) by serialNumber`
+    needs an id that sorts by creation time to mean anything.
     """
     await _reclaim_stale(db)
 
     now = _utcnow()
     run = Run(
-        id=uuid.uuid4(),
+        id=uuid7(),
         mdm_connection_id=connection.id,
         collection_id=collection_id,
         trigger=trigger,
