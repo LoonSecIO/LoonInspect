@@ -227,7 +227,7 @@ event's own `occurredAt`, `host` from the hostname, and `source` from the Jamf i
 (scheme dropped, non-default port kept — `jamf.corp.local:8443`). They are indexed
 metadata, so they cost no licence volume.
 
-**`sourcetype` is set on three families, on Splunk HEC deliveries only**, decided by
+**`sourcetype` is set on four families, on Splunk HEC deliveries only**, decided by
 `app/core/wire_vocabulary.py` and stamped in `app/core/outbox.py`; every other destination
 type gets the canonical event with no sourcetype at all. The strings are ruled in
 [`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md) §2 and the stanzas they imply are
@@ -244,10 +244,13 @@ in [`splunk-setup.md`](splunk-setup.md) §6.
   [#222](https://github.com/LoonSecIO/LoonInspect/issues/222)). The shape is below.
 - `run.completed` and `run.failed` — `loon:run`, LoonInspect's own assertion about a run,
   no vendor segment (#242 item 6, in the same change as the section tree).
+- `device.inventory.changed` — `loon:inventory:changed`, LoonInspect's own assertion about
+  the delta between two pulls, the same no-vendor form as `loon:run`
+  ([#277](https://github.com/LoonSecIO/LoonInspect/issues/277), 2026-09-03, stamped the day
+  before the flip).
 
-Still under the HEC input's own sourcetype, deliberately: `device.inventory.changed` — the
-delta family has no ruled string; [#277](https://github.com/LoonSecIO/LoonInspect/issues/277) puts the ruling to Kyle before the flip — and
-the test event, which is meant to be identifiable rather than routed.
+Still under the HEC input's own sourcetype, deliberately: only the test event, which is
+meant to be identifiable rather than routed.
 
 ### The snapshot family: `device.inventory` (#241)
 

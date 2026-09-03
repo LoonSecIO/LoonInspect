@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.hec_fanout import fan_out
 from app.core.wire import ENVELOPE, hec_event
-from app.core.wire_vocabulary import ASSERTION_EVENT_TYPES, ASSERTION_SOURCETYPE, change_sourcetype
+from app.core.wire_vocabulary import ASSERTION_EVENT_TYPES, ASSERTION_SOURCETYPE, DELTA_SOURCETYPE, change_sourcetype
 from app.models.schema import Destination, EventOutbox, OutboxDelivery
 from app.schemas.payload import INVENTORY_EVENT_TYPE
 
@@ -129,7 +129,7 @@ def _single_event_sourcetype(payload: Mapping[str, object]) -> str | None:
 
     Decided by `app.core.wire_vocabulary` and stamped here — #222's rule, "`sourcetype`
     comes from `app.core.wire_vocabulary` and nowhere else" — on the `splunk_hec`
-    destination type only. Two single-event families carry one:
+    destination type only. Three single-event families carry one:
 
     * `device.change` — `loon:jamf:mac:<wrapper>:change` (#243, stamped by #223). It was
       never blocked on the fan-out: it is already at sub-event grain, one event per kept
@@ -137,11 +137,15 @@ def _single_event_sourcetype(payload: Mapping[str, object]) -> str | None:
     * `run.completed` / `run.failed` — `loon:run` (#242 item 6, carrying #81's close-out:
       "`loon:run` on the run family in the same change"). The "shape about to change"
       reason that held the section tree back never applied to a run event.
+    * `device.inventory.changed` — `DELTA_SOURCETYPE`, `loon:inventory:changed` (#277,
+      2026-09-03, stamped the day before the flip so a customer's saved search never has
+      to move under it after). The delta is LoonInspect's own derivation, not a wrapper
+      around a Jamf object, so it takes #188 ruling 3's no-vendor assertion form the way
+      `loon:run` does, rather than a leaf under `sourcetype()`.
 
-    `device.inventory.changed` carries none — the delta family has no ruled string; #277
-    puts the ruling to Kyle before the flip — and neither does `destination.test`, which is meant to be
-    identifiable rather than routed. Both land under the sourcetype the operator set on
-    the HEC input, exactly as every event did before any string was stamped.
+    Only `destination.test` carries none — it is meant to be identifiable rather than
+    routed, and lands under the sourcetype the operator set on the HEC input, exactly as
+    every event did before any string was stamped.
 
     The snapshot, `device.inventory`, is not a single event: `hec_events` fans it out and
     stamps each sub-event from the registry.
@@ -149,6 +153,8 @@ def _single_event_sourcetype(payload: Mapping[str, object]) -> str | None:
     event = payload.get("event")
     if event in ASSERTION_EVENT_TYPES:
         return ASSERTION_SOURCETYPE
+    if event == "device.inventory.changed":
+        return DELTA_SOURCETYPE
     return change_sourcetype(event, subject_kind=payload.get("subjectKind"), section=payload.get("section"))
 
 

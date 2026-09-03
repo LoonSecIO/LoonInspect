@@ -62,6 +62,7 @@ from app.core.wire import ENVELOPE, envelope
 from app.core.wire_vocabulary import (
     ASSERTION_EVENT_TYPES,
     ASSERTION_SOURCETYPE,
+    DELTA_SOURCETYPE,
     ENRICHMENTS,
     SECTION_WRAPPERS,
     SUB_EVENT_KEYS,
@@ -494,16 +495,18 @@ def test_a_single_event_family_is_byte_identical_to_the_json_encoding_httpx_used
         assert json.loads(body) == _build_body(SPLUNK, payload)
 
 
-def test_the_run_family_carries_loon_run_and_the_delta_and_test_event_carry_nothing() -> None:
+def test_the_run_family_carries_loon_run_the_delta_carries_its_own_and_the_test_event_carries_nothing() -> None:
     """#242 item 6: `run.completed` and `run.failed` carry `ASSERTION_SOURCETYPE` in the
     same change as the section tree — one mapping in the body builder, no fan-out
-    involved. Still under the operator's input default: the delta family (no ruled
-    string; no issue owns one) and the test event (deliberately identifiable)."""
+    involved. The delta family carries `DELTA_SOURCETYPE` since #277, stamped the day
+    before the flip. Still under the operator's input default: only the test event
+    (deliberately identifiable)."""
     for event in sorted(ASSERTION_EVENT_TYPES):
         assert _build_body(SPLUNK, {"event": event, "jobID": "x"})["sourcetype"] == ASSERTION_SOURCETYPE == "loon:run"
     assert {"run.completed", "run.failed"} == ASSERTION_EVENT_TYPES
-    for event in ("device.inventory.changed", TEST_EVENT_TYPE):
-        assert "sourcetype" not in _build_body(SPLUNK, {"event": event})
+    delta_body = _build_body(SPLUNK, {"event": "device.inventory.changed"})
+    assert delta_body["sourcetype"] == DELTA_SOURCETYPE == "loon:inventory:changed"
+    assert "sourcetype" not in _build_body(SPLUNK, {"event": TEST_EVENT_TYPE})
     # A generic webhook never sees a sourcetype, whatever the family.
     assert _build_body(WEBHOOK, {"event": "run.completed", "jobID": "x"}) == {"event": "run.completed", "jobID": "x"}
 

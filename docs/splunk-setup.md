@@ -35,11 +35,12 @@ search head; take the URL from the token's own page rather than assuming the sha
 - *Source type*: set one explicitly, but know that most of what arrives ignores it.
   Since 2026-09-03 the events carry their own `sourcetype`, which overrides the input's:
   the `device.inventory` snapshot arrives as sub-events under the fourteen section strings
-  (`loon:jamf:mac:app`, …), the change stream under its fifteen `:change` strings, and
-  `run.completed` / `run.failed` under `loon:run` (§6). What still lands under the name
-  you set here is `device.inventory.changed` — the delta family has no ruled string;
-  [#277](https://github.com/LoonSecIO/LoonInspect/issues/277) puts the ruling to Kyle before the flip — and the test event. Set one anyway: it is what those get for ever, and it is where an event
-  from a LoonInspect build that predates a family's stamp would land.
+  (`loon:jamf:mac:app`, …), the change stream under its fifteen `:change` strings,
+  `run.completed` / `run.failed` under `loon:run`, and the inventory delta,
+  `device.inventory.changed`, under `loon:inventory:changed` (§6). What still lands under
+  the name you set here is the test event. Set one anyway: it is what that gets for ever,
+  and it is where an event from a LoonInspect build that predates a family's stamp would
+  land.
 - *Allowed indexes* and *Default index*: **this is the only thing that decides where the
   events land.** LoonInspect never sends an `index` field — every HEC event object
   carries the three envelope hints `wire.envelope()` emits (`time`, `host` and `source`),
@@ -168,7 +169,7 @@ instance, not a fix.
 
 ## 6. `sourcetype`, and the `props.conf` stanzas to hand your Splunk team
 
-**Three families carry their own; two take the input's.** Every string is minted in
+**Four families carry their own; one takes the input's.** Every string is minted in
 [`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md) §2 and stamped by
 `core/outbox.py` on this destination type only; a `sourcetype` in the HEC body overrides
 the input's for that event.
@@ -185,22 +186,25 @@ the input's for that event.
   sections plus `computerGroup`. Fifteen strings.
 - `run.completed` and `run.failed` arrive under `loon:run` — LoonInspect's own assertion
   about a run, with no vendor segment.
-- `device.inventory.changed` and the test event send none and arrive under whichever
-  sourcetype **you** set on the input (§2). The delta family has no ruled string
-  ([#277](https://github.com/LoonSecIO/LoonInspect/issues/277) rules it, before the flip), and a string once minted is a permanent stanza, so
-  none was invented in passing.
+- `device.inventory.changed` arrives under `loon:inventory:changed` — LoonInspect's own
+  assertion about the delta between two pulls, the same no-vendor form as `loon:run`
+  ([#277](https://github.com/LoonSecIO/LoonInspect/issues/277), 2026-09-03, stamped the
+  day before the flip).
+- Only the test event sends none and arrives under whichever sourcetype **you** set on
+  the input (§2), and a string once minted is a permanent stanza, so none was invented in
+  passing.
 
-The stanza below keys on the input's name and so covers the delta and the test event; the
-same three lines belong under each of the thirty minted strings, and the section after it
-says how to avoid writing them thirty times. It assumes you called the input
+The stanza below keys on the input's name and so covers the test event only; the same
+three lines belong under each of the thirty-one minted strings, and the section after it
+says how to avoid writing them thirty-one times. It assumes you called the input
 `loon:inspect`, so substitute your own.
 
 ```ini
 # props.conf — LoonInspect events arriving over HEC.
-# Key: the sourcetype set on the HEC input. It decides for device.inventory.changed and
-# the test event only; the snapshot's sub-events, the change stream and the run family
-# send their own strings and need the same three settings under each of them — a
-# sourcetype stanza takes no wildcards.
+# Key: the sourcetype set on the HEC input. It decides for the test event only; the
+# snapshot's sub-events, the change stream, the run family and the inventory delta send
+# their own strings and need the same three settings under each of them — a sourcetype
+# stanza takes no wildcards.
 [loon:inspect]
 
 # The event body is a JSON object. Search-time extraction, so this line belongs on the
@@ -230,10 +234,10 @@ TRUNCATE = 0
 they live in different places in a distributed deployment. Handing the whole stanza over
 is fine — each line is inert where it does not apply.
 
-**The thirty-one-stanza question.** `[<sourcetype>]` accepts no wildcards, so covering
+**The thirty-two-stanza question.** `[<sourcetype>]` accepts no wildcards, so covering
 every minted string the same way means repeating these three lines under each of the
-fourteen section strings, `loon:run`, and the fifteen `loon:jamf:mac:*:change` strings.
-Two ways out, in order of preference:
+fourteen section strings, `loon:run`, `loon:inventory:changed`, and the fifteen
+`loon:jamf:mac:*:change` strings. Two ways out, in order of preference:
 
 1. **Key on `source` instead.** Every LoonInspect event carries the Jamf instance as
    `source`, and a `[source::...]` stanza is the kind that *does* accept wildcards — so
@@ -242,7 +246,7 @@ Two ways out, in order of preference:
 2. **Check whether you need `KV_MODE` at all.** Splunk's default search-time extraction
    already reads pure-JSON events on recent versions; the line above is belt-and-braces.
    If `deviceMeta.serialNumber` resolves in a search against an unconfigured sourcetype on
-   your version, the thirty stanzas are a convenience, not a requirement.
+   your version, the thirty-one stanzas are a convenience, not a requirement.
 
 Neither claim has been tested against a real Splunk here, which is exactly why the count
 is written down rather than glossed: it is the argument for shipping a LoonInspect TA, and
@@ -386,7 +390,7 @@ moved:
 index=your_index event=device.inventory | stats count by sourcetype
 index=your_index sourcetype=loon:jamf:mac:app | stats dc(deviceMeta.serialNumber) AS macs, count AS apps
 index=your_index sourcetype=loon:jamf:mac:app deviceMeta.eventID=<one id> | stats count
-index=your_index "device.inventory.changed" | head 5
+index=your_index sourcetype=loon:inventory:changed | head 5
 ```
 
 The first shows one row per section present plus `loon:run` for the sweep's own event;

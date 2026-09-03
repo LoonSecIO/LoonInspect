@@ -16,6 +16,7 @@ from app.core.wire_vocabulary import (
     ASSERTION_EVENT_TYPES,
     ASSERTION_SOURCETYPE,
     CHANGE_LEAF,
+    DELTA_SOURCETYPE,
     ENRICHMENTS,
     PRODUCER,
     RUN_COMPLETED_EVENT_TYPE,
@@ -99,6 +100,33 @@ def test_the_run_family_event_types_are_the_vocabularys() -> None:
     assert RUN_COMPLETED_EVENT is RUN_COMPLETED_EVENT_TYPE and RUN_FAILED_EVENT is RUN_FAILED_EVENT_TYPE
     assert ASSERTION_EVENT_TYPES <= KNOWN_EVENT_TYPES
     assert ASSERTION_SOURCETYPE == "loon:run"
+
+
+def test_the_delta_sourcetype_is_the_ruled_string_and_the_refused_spellings_stay_out() -> None:
+    """#277, 2026-09-03: `loon:inventory:changed`, minted the day before the flip so the
+    delta family — the one Splunk-bound family that had no ruled string — stops riding
+    under whatever sourcetype the operator happened to set on the HEC input.
+
+    Named under #188 ruling 3's assertion form, the way `loon:run` is: the delta is
+    LoonInspect's own derivation — what happened to a device's app list between two pulls
+    — not a wrapper around one Jamf object, so ruling 5 (the leaf equals the body's
+    wrapper key) has no answer for it and `inventory` is not minted as a wrapper key.
+    Two spellings were on the record and refused: `loon:delta` collides in sense with
+    `comparison=delta` on `run.completed` (the ambiguity rule, ruling 4), and the
+    vendor-stamped `loon:jamf:mac:app:delta` was refused because, unlike `:change` and
+    `vuln`, the delta is not a claim about a Jamf object's own fields — the cross-vendor
+    argument that won for those does not carry here.
+    """
+    assert DELTA_SOURCETYPE == "loon:inventory:changed" == f"{PRODUCER}:inventory:changed"
+    assert not DELTA_SOURCETYPE.startswith(f"{PRODUCER}:jamf:"), "the delta takes the no-vendor assertion form"
+    for refused in ("loon:delta", "loon:jamf:mac:app:delta", "loon:jamf:mac:inventory:changed"):
+        assert refused != DELTA_SOURCETYPE, f"{refused} was ruled out on #277"
+    wrappers = (
+        set(SECTION_WRAPPERS.values())
+        | set(SUBJECT_WRAPPERS.values())
+        | {leaf for leaves in ENRICHMENTS.values() for leaf in leaves}
+    )
+    assert "inventory" not in wrappers, "the delta is not a leaf under sourcetype() — it names a family, not a wrapper"
 
 
 def test_enrichments_hang_off_a_real_wrapper() -> None:

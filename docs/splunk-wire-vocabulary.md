@@ -6,9 +6,10 @@ Status: **frozen** · Ruled in [#188](https://github.com/LoonSecIO/LoonInspect/i
 [#220](https://github.com/LoonSecIO/LoonInspect/issues/220) and
 [#113](https://github.com/LoonSecIO/LoonInspect/issues/113), 2026-09-02 and
 [#243](https://github.com/LoonSecIO/LoonInspect/issues/243), 2026-09-03 · Stamped on the
-wire by [#223](https://github.com/LoonSecIO/LoonInspect/issues/223) (the `:change` family)
-and [#242](https://github.com/LoonSecIO/LoonInspect/issues/242) (the section tree and
-`loon:run`), 2026-09-03 · Registry generated from
+wire by [#223](https://github.com/LoonSecIO/LoonInspect/issues/223) (the `:change`
+family), [#242](https://github.com/LoonSecIO/LoonInspect/issues/242) (the section tree
+and `loon:run`) and [#277](https://github.com/LoonSecIO/LoonInspect/issues/277) (the
+delta family), 2026-09-03 · Registry generated from
 [`app/core/wire_vocabulary.py`](../backend/app/core/wire_vocabulary.py)
 
 The vocabulary had been ruled three times, differently — the draft, #81 on 2026-08-24,
@@ -157,13 +158,14 @@ section tree, because the "shape about to change" reason that held the tree back
 applied to a run event. `ASSERTION_EVENT_TYPES` names the two, and `app/core/runs.py`
 reads its event-type constants from there so the string and the producer cannot drift.
 
-**Thirty strings are stamped, and every one comes from this module** (#222's acceptance,
-closed by #242): the fourteen section strings on the fan-out, `loon:run` on the run family,
-the fifteen `:change` strings on the change family. Still under the HEC input's own
-default: `device.inventory.changed` — the delta family has no ruled string; [#277](https://github.com/LoonSecIO/LoonInspect/issues/277)
-puts the ruling to Kyle before the flip — and the test event, which is meant to be
-identifiable rather than routed. The
-three enrichment strings are minted with no writer (§7).
+**Thirty-one strings are stamped, and every one comes from this module** (#222's
+acceptance, closed by #242): the fourteen section strings on the fan-out, `loon:run` on
+the run family, the fifteen `:change` strings on the change family, and
+`loon:inventory:changed` on the delta family
+([#277](https://github.com/LoonSecIO/LoonInspect/issues/277), 2026-09-03, stamped the day
+before the flip). Still under the HEC input's own default: only the test event, which is
+meant to be identifiable rather than routed. The three enrichment strings are minted with
+no writer (§7).
 
 ## 3. Why some wrapper keys are short and some are not
 
@@ -315,5 +317,4 @@ issue rather than living on as a footnote.
 | Consequence | Issue |
 | --- | --- |
 | The three enrichment strings — `loon:jamf:mac:app:patch`, `:vuln`, `:alert` — are minted with no writer, because an enrichment rides inline on the app sub-event under its own key (§2). `:vuln` is reserved for the lifecycle records of [`vulnerabilities.md`](vulnerabilities.md) §6; `:patch` and `:alert` name shapes nothing produces. `patch{}` and `vuln{}` themselves ship on every app sub-event since #241/#242 | post-v0 (`vulnerabilities.md` §10) |
-| `device.inventory.changed` carries no `sourcetype` — the delta family has no ruled string, so it lands under the sourcetype the operator set on the HEC input ([`splunk-setup.md`](splunk-setup.md) §2). A string for it is a ruling, not a build: free before the flip, breaking after, because saved searches will already find the family under the input default | [#277](https://github.com/LoonSecIO/LoonInspect/issues/277) |
 | `alert` is minted with no writer — #101 ships the alerts table and the Needs Attention rows with nothing on the wire; the block's shape (a keyed list on the app, per the 2026-08-29 ruling) and its kind vocabulary are named when it is built, additive under clause 1 | [#101](https://github.com/LoonSecIO/LoonInspect/issues/101) |
