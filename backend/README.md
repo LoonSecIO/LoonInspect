@@ -63,20 +63,22 @@ uv sync
 
 ### 3. Set an encryption key
 
-MDM connection secrets (Jamf client secret, LoonSecIO license key, etc.) are encrypted at rest. Generate a key and put it in `.env`:
+MDM connection secrets (Jamf client secret, LoonSecIO license key, etc.) are encrypted at rest, read from `backend/.env` — a separate file from the `.env` the root [README](../README.md) has you create at the repo root for Docker Compose; this local setup runs the backend directly against a Postgres of your own instead. Generate a key:
 
 ```bash
 uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
+Then, from the **repo root** (`cd ..` first if you're still inside `backend/`):
+
 ```bash
-cp .env.example .env
-# then paste the generated key as ENCRYPTION_KEY=...
+cp backend/.env.example backend/.env
+# paste the generated key as ENCRYPTION_KEY=...
 ```
 
 ### 4. Run the development server
 
-FastAPI standardized its CLI. Instead of calling `uvicorn` directly, use the modern `fastapi dev` command wrapped via `uv run`:
+FastAPI standardized its CLI. Instead of calling `uvicorn` directly, use the modern `fastapi dev` command wrapped via `uv run`. Back inside `backend/` (`cd backend` if step 3 left you at the repo root):
 
 ```bash
 uv run fastapi dev app/main.py
