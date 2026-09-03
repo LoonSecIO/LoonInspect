@@ -14,10 +14,13 @@ from pathlib import Path
 from app.core.wire_vocabulary import (
     ADDITIVE_ONLY_CLAUSES,
     ASSERTION_SOURCETYPE,
+    CHANGE_LEAF,
     ENRICHMENTS,
     PRODUCER,
     SECTION_WRAPPERS,
     SUB_EVENT_KEYS,
+    SUBJECT_WRAPPERS,
+    change_rows,
     enrichment_rows,
     registry_rows,
     sourcetype,
@@ -61,7 +64,11 @@ def test_every_collected_section_has_a_wire_name() -> None:
 
 
 def test_wrapper_keys_are_unique_and_obey_the_casing_law() -> None:
-    wrappers = list(SECTION_WRAPPERS.values()) + [leaf for leaves in ENRICHMENTS.values() for leaf in leaves]
+    wrappers = (
+        list(SECTION_WRAPPERS.values())
+        + list(SUBJECT_WRAPPERS.values())
+        + [leaf for leaves in ENRICHMENTS.values() for leaf in leaves]
+    )
     assert len(set(wrappers)) == len(wrappers), "two sections cannot share one wrapper key"
     assert all(_WIRE_KEY.match(wrapper) for wrapper in wrappers)
     assert "Id" not in "".join(wrappers), "the token ID is uppercase (#188, 2026-09-01)"
@@ -95,6 +102,76 @@ def test_doc_registry_table_is_generated_from_sections() -> None:
 def test_doc_enrichment_table_matches_the_registry() -> None:
     documented = _doc_rows("| Carrier | Enrichment | Sourcetype |")
     assert documented == enrichment_rows()
+
+
+def test_the_change_family_is_a_marker_not_a_wrapper_key() -> None:
+    """#243, 2026-09-03: ruling 5 is scoped to section and enrichment leaves.
+
+    `device.change` already ships `change` as a scalar verb — `changed` / `added` /
+    `removed` / `updated` — and clause 2 forbids changing a shipped key's type or meaning,
+    so the `:change` leaf promises no `change{}` wrapper. What it buys instead is ruling
+    2's trailing-compound property: `*:change` pulls every change across every subject and
+    every vendor, exactly the way `*:vuln` reads.
+    """
+    wrappers = (
+        set(SECTION_WRAPPERS.values())
+        | set(SUBJECT_WRAPPERS.values())
+        | {leaf for leaves in ENRICHMENTS.values() for leaf in leaves}
+    )
+    assert CHANGE_LEAF == "change"
+    assert CHANGE_LEAF not in wrappers, (
+        "`change` is a family marker, not a wrapper key — minting it as one would collide "
+        "with the scalar verb device.change already ships under that name"
+    )
+    assert all(stype.endswith(":change") for _subject, _wrapper, stype in change_rows())
+
+
+def test_every_change_subject_has_a_change_sourcetype() -> None:
+    """Every section, plus every subject that is not one.
+
+    Fifteen strings is fifteen hand-written `props.conf` stanzas in a customer's Splunk,
+    because a sourcetype stanza takes no wildcards — the count #243 put on the record as
+    the argument for a LoonInspect TA.
+    """
+    rows = change_rows()
+    assert {subject for subject, _w, _s in rows} == set(SECTIONS) | set(SUBJECT_WRAPPERS)
+    assert len(rows) == len(SECTIONS) + len(SUBJECT_WRAPPERS) == 15
+    for _subject, wrapper, stype in rows:
+        assert stype == sourcetype(wrapper, leaf=CHANGE_LEAF)
+    assert ("computer_group", "computerGroup", "loon:jamf:mac:computerGroup:change") in rows
+
+
+def test_the_superseded_change_spellings_are_not_reintroduced() -> None:
+    """#243 refused three spellings, and each refusal is a permanent string not minted.
+
+    `groupDefinition` says what changed and hides whose. `definition` alone collides in
+    sense with `group`, which is already the device's `group_memberships` section — a group
+    and the definition of a group have to stay distinguishable (ruling 4). And the
+    no-vendor form `loon:change` was refused because the assertion rule's own rationale is
+    that a run event is about a run rather than a fleet; a change is about the fleet.
+    `vuln` is the precedent both ways — equally LoonInspect's own derivation about a Jamf
+    object, and equally vendor-stamped so `loon:*:mac:app:vuln` keeps working.
+    """
+    wrappers = set(SECTION_WRAPPERS.values()) | set(SUBJECT_WRAPPERS.values())
+    for refused in ("groupDefinition", "definition", "group_definition", "computerGroupDefinition"):
+        assert refused not in wrappers, f"{refused} was ruled out on #243"
+    assert SUBJECT_WRAPPERS["computer_group"] == "computerGroup"
+
+    strings = {stype for _subject, _wrapper, stype in change_rows()}
+    assert not any(stype.startswith(f"{PRODUCER}:{CHANGE_LEAF}") for stype in strings), (
+        "the no-vendor assertion form was refused on #243: a change is about the fleet, "
+        "not about a run"
+    )
+    assert all(stype.startswith(f"{PRODUCER}:jamf:mac:") for stype in strings)
+
+
+def test_doc_change_table_is_generated_from_the_registry() -> None:
+    documented = _doc_rows("| Subject | Wrapper key | Sourcetype |")
+    assert documented == change_rows(), (
+        "docs/splunk-wire-vocabulary.md's change table must match "
+        "app.core.wire_vocabulary.change_rows() exactly, in order. Regenerate it rather "
+        "than editing it by hand."
+    )
 
 
 def test_the_sub_event_keys_are_the_ruled_three() -> None:

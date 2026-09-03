@@ -4,7 +4,8 @@ Status: **frozen** · Ruled in [#188](https://github.com/LoonSecIO/LoonInspect/i
 2026-08-31 and 2026-09-01 · Amended, additively, in
 [#229](https://github.com/LoonSecIO/LoonInspect/issues/229),
 [#220](https://github.com/LoonSecIO/LoonInspect/issues/220) and
-[#113](https://github.com/LoonSecIO/LoonInspect/issues/113), 2026-09-02 · Registry
+[#113](https://github.com/LoonSecIO/LoonInspect/issues/113), 2026-09-02 and
+[#243](https://github.com/LoonSecIO/LoonInspect/issues/243), 2026-09-03 · Registry
 generated from [`app/core/wire_vocabulary.py`](../backend/app/core/wire_vocabulary.py)
 
 The vocabulary had been ruled three times, differently — the draft, #81 on 2026-08-24,
@@ -92,6 +93,47 @@ app, the NEW-app latch first ([#101](https://github.com/LoonSecIO/LoonInspect/is
 — never the customer's Splunk saved-search alert. A LoonInspect `alert` is what a saved
 search fires *on*; everywhere else this product's documentation says *alert*, it means the
 customer's. Nothing writes the block in v0 (§6).
+
+Changes are their own sourcetypes, not inline keys (#81 ruling 6): an inline key describes
+what IS, a sourcetype describes what HAPPENED. One string per entity a `device.change` can
+name, generated the same way — fourteen sections plus the one subject that is not a
+section:
+
+| Subject | Wrapper key | Sourcetype |
+| --- | --- | --- |
+| `general` | `general` | `loon:jamf:mac:general:change` |
+| `hardware` | `hardware` | `loon:jamf:mac:hardware:change` |
+| `operating_system` | `operatingSystem` | `loon:jamf:mac:operatingSystem:change` |
+| `user_and_location` | `userAndLocation` | `loon:jamf:mac:userAndLocation:change` |
+| `purchasing` | `purchasing` | `loon:jamf:mac:purchasing:change` |
+| `security` | `security` | `loon:jamf:mac:security:change` |
+| `disk_encryption` | `diskEncryption` | `loon:jamf:mac:diskEncryption:change` |
+| `applications` | `app` | `loon:jamf:mac:app:change` |
+| `extension_attributes` | `ea` | `loon:jamf:mac:ea:change` |
+| `group_memberships` | `group` | `loon:jamf:mac:group:change` |
+| `configuration_profiles` | `profile` | `loon:jamf:mac:profile:change` |
+| `local_user_accounts` | `localUserAccount` | `loon:jamf:mac:localUserAccount:change` |
+| `certificates` | `cert` | `loon:jamf:mac:cert:change` |
+| `software_updates` | `update` | `loon:jamf:mac:update:change` |
+| `computer_group` | `computerGroup` | `loon:jamf:mac:computerGroup:change` |
+
+**`:change` is a family marker, not a wrapper-key promise.** The leaf rule in §1 is scoped
+to section and enrichment leaves. `device.change` already ships `change` as a scalar verb
+— `changed` / `added` / `removed` / `updated` — and that is the key an analyst's
+`change=removed` search wants; giving the family a `change{}` wrapper would have meant
+renaming a shipped key, which clause 2 forbids. What the leaf carries instead is the
+trailing-compound property: `*:change` pulls every change across every subject and every
+vendor, exactly as `*:vuln` does.
+
+**`computerGroup` names a subject, not a section.** A smart group's definition is its own
+ledger subject with no entry in `SECTIONS`, so its segment is the camelCase of that subject
+kind. `group` is already the device's `group_memberships` section, and a group has to stay
+distinguishable from the definition of a group (§3). The bare `loon:jamf:mac:computerGroup`
+is implied by the tree and deliberately not minted — nothing writes it.
+
+Ruled 2026-09-03 on [#243](https://github.com/LoonSecIO/LoonInspect/issues/243). Nothing stamps these yet: [#223](https://github.com/LoonSecIO/LoonInspect/issues/223) owns the
+stamp, and this family is the stated exception to "the first sourcetype arrives with the
+fan-out" (§7).
 
 And LoonInspect's own assertions: `loon:run`.
 
@@ -229,7 +271,7 @@ issue rather than living on as a footnote.
 | Consequence | Issue |
 | --- | --- |
 | `sourcetype` is not stamped on delivered events — the tree names fan-out sub-events that are not built, so `app/core/outbox.py` deliberately sends none and the operator sets it on the HEC input | [#222](https://github.com/LoonSecIO/LoonInspect/issues/222) |
-| `changes/derive.py` emits `device.change` outside this vocabulary — no `eventID`, no `deviceMeta`, and group ids sharing the computer id space | [#223](https://github.com/LoonSecIO/LoonInspect/issues/223) |
+| The `:change` family is ruled (§2) and nothing stamps it — `changes/derive.py` emits `device.change` with no sourcetype, no `eventID` and no `deviceMeta`, and group ids share the computer id space. #243 ruled this family may be stamped first rather than waiting for the fan-out | [#223](https://github.com/LoonSecIO/LoonInspect/issues/223) |
 | `run.completed` fires only for the full sweep, so every intraday `jobID` from a webhook run is a dangling pointer | [#224](https://github.com/LoonSecIO/LoonInspect/issues/224) |
 | The run id is `uuid4`, so `max(jobID)` — the latest-state idiom on a fan-out sourcetype — is meaningless. UUIDv7 is free until the flip | [#225](https://github.com/LoonSecIO/LoonInspect/issues/225) |
 | `JamfClient.host` drops the port that `source` retains, so the aperture merges two instances Splunk separates | [#226](https://github.com/LoonSecIO/LoonInspect/issues/226) |
