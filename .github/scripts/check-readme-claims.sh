@@ -129,6 +129,15 @@ claim anchor fernet \
   '\bFernet\b' \
   "grep -rq 'Fernet' backend/app/core"
 
+# The licence is the one claim a stranger acts on without reading anything else.
+# The proof is the file and both manifests agreeing with the README, so a licence
+# that changes in one place and not the others fails here, not in a fork.
+claim anchor license \
+  'Apache-2\.0' \
+  "grep -q 'Version 2.0, January 2004' LICENSE \
+   && grep -q '^license = \"Apache-2.0\"' backend/pyproject.toml \
+   && grep -q '\"license\": \"Apache-2.0\"' frontend/package.json"
+
 # --- guards: every one of these was claimed and false before #192 ---
 
 # Comments about SCIM are all over app/models/schema.py, describing columns kept

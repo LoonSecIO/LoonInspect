@@ -3,6 +3,7 @@ name = "looninspect-backend"
 version = "0.1.0"
 description = "FastAPI backend for LoonInspect: MDM inventory sync, vulnerability hashing, and SIEM streaming."
 readme = "README.md"
+license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi[standard]>=0.115",
