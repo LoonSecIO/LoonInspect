@@ -363,3 +363,8 @@ real account. Disabling revokes that account's sessions and API tokens immediate
 rather than waiting for them to expire. There is no email delivery, so new accounts get
 an initial password set by an administrator, and an administrator can reset a forgotten
 one from the same page.
+
+## 📄 License
+
+Apache-2.0 — the full text is in [LICENSE](LICENSE). Contributions are accepted under
+the same terms; see [CONTRIBUTING.md](CONTRIBUTING.md#license).
