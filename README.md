@@ -246,6 +246,27 @@ the cookie is dropped, and everything afterwards looks logged out. The startup l
 warn about this. Either terminate TLS in front, use `TLS_MODE=self-signed`, or set
 `SECURE_COOKIES=false` if you genuinely intend to run without TLS.
 
+**Response headers.** Every response carries `X-Content-Type-Options: nosniff`,
+`X-Frame-Options: DENY`, `Referrer-Policy: same-origin`, and a `Permissions-Policy` that
+denies what a Jamf console never asks for. `SECURITY_HEADERS=false` turns off all five
+headers described here at once — there is deliberately no way to keep some and drop
+others. `Strict-Transport-Security` is not one of the four defaults: the app can judge
+its own bundle, but only you know whether this hostname will still terminate valid
+HTTPS in six months, so HSTS is relayed verbatim from `HSTS_MAX_AGE` (seconds; `0`, the
+default, means never send it) and is never `includeSubDomains` or `preload`. Set it only
+once you're sure — a `max-age` a browser has already seen can only be withdrawn over a
+still-validating HTTPS connection on the same hostname, which is unavailable in exactly
+the situation that makes you want to withdraw it. Content-Security-Policy is not in this
+list yet; it enforces nothing today (tracked for a later release).
+
+Self-signed certificates (`TLS_MODE=self-signed`) now renew themselves: at boot, a
+certificate past the midpoint of its own validity window (capped at 183 days) is
+regenerated in place and the previous one stops being served, so a self-signed pair
+generated once is no longer served indefinitely past its own expiry. A `TLS_MODE=provided`
+certificate is never touched — the app logs a warning as it nears that same point and an
+error once it has actually expired, but only ever regenerates a certificate it minted
+itself.
+
 ---
 
 ## 🏷️ Which build am I running?
