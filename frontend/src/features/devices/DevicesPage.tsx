@@ -155,7 +155,14 @@ export function DevicesPage() {
       </div>
 
       <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>{t.devices.total(total)}</span>
+        {/* The count says which population it counts (#232): v0's devices are
+            computers, full stop, so the total is named next to what it is a total
+            of rather than left for someone to notice a Mac-sized number against an
+            iPad-sized fleet. */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span>{t.devices.total(total)}</span>
+          <span className="text-xs">{t.common.computersOnlyScope}</span>
+        </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => goToPage(page - 1)}>
             {t.devices.previous}

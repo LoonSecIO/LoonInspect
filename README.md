@@ -2,6 +2,8 @@
 
 **The software-change feed for Jamf Pro fleets — what changed on every Mac, in your own SIEM, without installing anything on the Mac.**
 
+Computers only — mobile devices are not collected. See [docs/mobile-devices.md](docs/mobile-devices.md).
+
 LoonInspect reads inventory from Jamf Pro, works out what actually changed since the last read, and streams those changes as structured events into Splunk, Elastic, RunReveal, or any webhook endpoint. It is agentless: nothing is installed on managed devices.
 
 ---
@@ -17,7 +19,7 @@ LoonInspect reads inventory from Jamf Pro, works out what actually changed since
 
 ### What it does not do
 
-No CVE or EPSS enrichment. No vulnerability scoring. No SCIM, no MFA. Jamf Patch title compliance is implemented; nothing else vulnerability-shaped is. The wire already carries a `vuln` slot for the rest — every device event ships `assessment: off` until the community corpus and its matching land ([docs/vulnerabilities.md](docs/vulnerabilities.md), tracked in [#248](https://github.com/LoonSecIO/LoonInspect/issues/248)/[#249](https://github.com/LoonSecIO/LoonInspect/issues/249)). Computers only, not mobile — v0 reads Jamf Pro's computer inventory; the boundary and what changes when mobile is added are in [docs/mobile-devices.md](docs/mobile-devices.md). If you need vulnerability scoring or mobile coverage today, this is not that tool yet.
+No CVE or EPSS enrichment. No vulnerability scoring. No SCIM, no MFA. Jamf Patch title compliance is implemented; nothing else vulnerability-shaped is. The wire already carries a `vuln` slot for the rest — every device event ships `assessment: off` until the community corpus and its matching land ([docs/vulnerabilities.md](docs/vulnerabilities.md), tracked in [#248](https://github.com/LoonSecIO/LoonInspect/issues/248)/[#249](https://github.com/LoonSecIO/LoonInspect/issues/249)). If you need vulnerability scoring today, this is not that tool yet.
 
 ---
 
