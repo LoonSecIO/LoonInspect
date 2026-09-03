@@ -328,9 +328,7 @@ nothing to join against: `patch.supported` is a bool, always present, `true` iff
 installed-app row's Jamf Patch answer names a title (Kyle, 2026-09-01: "we need a default
 for the patching... a boolean ... set that equal to false. That way you can always search
 for it or not it easy"), read off the row already in the transaction — cache, don't
-calculate; `vuln` is `{"assessment": "off"}` until the corpus lands
-([`vulnerabilities.md`](vulnerabilities.md) §4a). `alert` is name-only in v0 (#229) and
-rides nothing.
+calculate. `alert` is name-only in v0 (#229) and rides nothing.
 
 **`supported: false` has two causes and, in v0, no discriminator.** It means either that
 no Jamf Patch title matches the app, or that the Jamf Patch catalog has not been synced
@@ -338,8 +336,44 @@ yet: the catalog refreshes on the hour (`hourly_jamf_patch_sync`, `CronTrigger(m
 in `app/main.py`) with no run at startup, so a first sweep that beats the hour ships
 `supported: false` for every app in the fleet — Wireshark included — and the next sweep
 flips the matched ones. The key's meaning is the ruled one and does not change; a
-discriminator that says *not yet judged* is additive under clause 1 and is left to
-[#249](https://github.com/LoonSecIO/LoonInspect/issues/249).
+discriminator that says *not yet judged* is additive under clause 1 and was **not** taken
+by [#249](https://github.com/LoonSecIO/LoonInspect/issues/249), which ruled `vuln{}`
+alone: a new `patch.*` key is not in the vulnerability contract, so it stays a follow-on
+with no issue yet.
+
+**`vuln{}` says which of three things happened, and its absences are the ruling**
+([`vulnerabilities.md`](vulnerabilities.md) §4, built by #249). `assessment` is always
+present and always says why, which is what makes the rest of the block safe to omit:
+
+| `assessment` | The block carries | Means |
+| --- | --- | --- |
+| `off` | `assessment` alone | Nobody looked — unlicensed, unconsented, or no corpus loaded. **This is what ships today**, on every app, until [#248](https://github.com/LoonSecIO/LoonInspect/issues/248) loads a corpus |
+| `unknown_app` | `assessment`, `corpusAsOf` | The corpus does not know this application. Dated, and **never zero vulnerabilities** |
+| `covered` | all six keys | We looked at this build. `counts.total: 0` here is a clean bill |
+
+```json
+{"app": {"name": "Wireshark.app", "bundleId": "org.wireshark.Wireshark", "version": "4.2.0", "…": "…"},
+ "patch": {"supported": true},
+ "vuln": {"assessment": "covered", "corpusAsOf": "2026-09-01",
+          "counts": {"total": 3, "kev": 1, "severity": {"critical": 1, "high": 1, "medium": 0, "low": 0}},
+          "daysOldestPublished": {"total": 412, "severity": {"critical": 412, "high": 90, "medium": -1, "low": -1}},
+          "vulnIDs": ["CVE-2026-1000", "CVE-2026-1001", "LoonVD-2026-000001"], "vulnIDsTruncated": false}}
+```
+
+Four things to read off it. **Every number is scoped to this app on this device** — never
+the fleet, never the app across the fleet. **The bands need not sum to `total`**: a
+finding the corpus carries with no severity score is in `total` and in no band, so the
+obvious `stats sum()` over the four bands under-reports. **`-1` means never**, and it is
+minted on the way into the Splunk sub-event only: the stored payload and every other
+destination carry `null`, so a warehouse renders SQL `NULL`
+([`vulnerabilities.md`](vulnerabilities.md) §4c). And the invariant a dashboard can rely
+on, in both directions: `daysOldestPublished.severity.X >= 0` exactly when
+`counts.severity.X > 0`.
+
+The summary rides `loon:jamf:mac:app` — it is an inline enrichment, so an app does not
+become a different kind of event by being assessed, and `loon:jamf:mac:app:vuln` stays
+reserved for the post-v0 lifecycle records. Cost, measured on the fixture: 20 bytes an app
+for `off`, 54 for `unknown_app`, 1,067 for `covered` at the fifty-id cap.
 
 **Three meanings of absence**, and a consumer can rely on all three:
 
@@ -399,7 +433,10 @@ enqueued before the fan-out existed arrives split rather than whole.
   is minted, renamed or dropped; the wrapper object is Jamf's, byte for byte. `occurredAt`
   does not ride: the three are the complete list, and the same instant is the envelope's
   `time` on every sub-event. `patch{}` and `vuln{}` ride the app sub-event inline and
-  nowhere else, and the three enrichment strings stay unstamped (#242 item 6).
+  nowhere else, and the three enrichment strings stay unstamped (#242 item 6). One thing
+  IS rewritten on the way through, and only one: `vuln.daysOldestPublished`'s `null`s
+  become `-1`, the sentinel this seam owns (#249,
+  [`vulnerabilities.md`](vulnerabilities.md) §4c).
 - **The envelope rides every sub-event** — the snapshot's `time`, `host` and `source`,
   the same values on all of them.
 

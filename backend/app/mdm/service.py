@@ -35,6 +35,7 @@ from app.core.runs import (
     run_meta,
 )
 from app.core.runs import log as run_log
+from app.core.vuln import loaded_corpus
 from app.core.wire import ENVELOPE, envelope, instance_label
 from app.mdm.factory import get_mdm_client
 from app.mdm.jamf.client import (
@@ -1075,6 +1076,10 @@ async def process_sync(
         apps=current_rows,
         occurred_at=occurred_at,
         device_meta=meta,
+        # The one place the container's corpus reaches the wire (#249). `NO_CORPUS` until
+        # #248 loads one, which is what makes every `vuln{}` read `assessment: off`;
+        # #248 changes `loaded_corpus()` and nothing here.
+        corpus=loaded_corpus(),
     )
     payload = snapshot.to_payload()
     payload[ENVELOPE] = dict(hints)
