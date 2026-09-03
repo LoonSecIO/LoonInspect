@@ -287,28 +287,39 @@ with the count in its error and processing stops where the threshold was crossed
 night on a big fleet, and hiding the 2 inside a bare `succeeded` is how evidence rots.
 The API returns both; the run panel shows a failed count only when it is non-zero.
 
-**On the wire.** Every device-sweep run that closes — `succeeded` or `failed` — emits
-`run.completed` through the outbox, in the same transaction as the status flip, so the
-row and the wire cannot drift apart. Always-emitting is the least-regret choice: it
-makes absence detection one SPL search (`no run.completed today` = the sweep did not
-run to completion) and puts partial failure in the evidence trail, where the silent gap
-— this product's worst class of bug — cannot hide. Deliberately *not* emitted for
-webhook runs (one device each; a busy tenant would double its event volume for no
-signal) or catalog refreshes (an hourly catalog `run.completed` would satisfy the
-absence search the nightly sweep was supposed to answer). A *reclaimed* run emits no
-`run.completed` either — the reclaim is not a finish, and the absence downstream is the
-signal that the sweep died (it does emit `run.failed`; see below). Payload, camelCase
-under the casing law above — every key on every family, not just the inventory one:
+**On the wire.** Every device-sweep or webhook run that closes — `succeeded` or
+`failed` — emits `run.completed` through the outbox, in the same transaction as the
+status flip, so the row and the wire cannot drift apart. Widened to webhook runs by
+[#224](https://github.com/LoonSecIO/LoonInspect/issues/224): every inventory event
+carries a `jobID`, sweep or webhook alike, and a webhook's `jobID` pointing at a
+`run.completed` that could never arrive broke the one join a SIEM most wants to make —
+"show me everything this run produced" — and voided the #188 ruling that the
+`shortDate` basis and the aperture digest ride `run.completed`, joined by `jobID`, for
+every run those events named. Catalog refreshes are the one lock class still excluded:
+an hourly catalog `run.completed` would satisfy the absence search the nightly sweep
+was supposed to answer, and a catalog pull has no device count worth reporting. A
+*reclaimed* run emits no `run.completed` either — the reclaim is not a finish, and the
+absence downstream is the signal that the run died (it does emit `run.failed`; see
+below).
+
+Always-emitting for a sweep or a webhook is the least-regret choice: it puts partial
+failure in the evidence trail, where the silent gap — this product's worst class of bug
+— cannot hide. It also moves a cost onto the one search this event exists to serve:
+**"is the fleet fully inventoried" is `trigger=sweep OR trigger=manual` now, not a bare
+`event=run.completed`.** A busy tenant's webhooks emit this event too, several times an
+hour, and would silence a naive absence search on a night the actual nightly sweep never
+closed. Payload, camelCase under the casing law above — every key on every family, not
+just the inventory one:
 
 | Field | Meaning |
 | --- | --- |
 | `event` | `run.completed` |
 | `jobID` | The run — the same name and value `deviceMeta.jobID` carries |
 | `connectionID` | Which connection swept |
-| `trigger` | `sweep` \| `manual` (webhook runs never emit this event) |
+| `trigger` | `sweep` \| `manual` \| `webhook` |
 | `comparison` | `baseline` \| `delta` |
 | `occurredAt` | The run's window end — the instant the row's `window_end` was stamped |
-| `devicesTotal` | Devices attempted (`processed + failed`) |
+| `devicesTotal` | Devices attempted (`processed + failed`) — `1` for a webhook run |
 | `devicesProcessed` | Devices ingested |
 | `devicesFailed` | Devices that raised and were isolated |
 | `status` | `succeeded` \| `failed` |

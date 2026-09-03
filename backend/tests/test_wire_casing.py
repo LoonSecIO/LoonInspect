@@ -192,7 +192,7 @@ async def four_families(db, jamf: FakeJamf, connection):
     across the whole suite, and filtering on a payload key would mean reading the very
     vocabulary under test.
     """
-    from app.core.runs import LOCK_WEBHOOK, TRIGGER_WEBHOOK, acquire, finish
+    from app.core.runs import LOCK_CATALOG, TRIGGER_SWEEP, acquire, finish
     from app.mdm.service import sync_connection
     from app.models.schema import EventOutbox
 
@@ -210,11 +210,12 @@ async def four_families(db, jamf: FakeJamf, connection):
     sweep = await sync_connection(db, connection)
     assert sweep.ok, sweep
 
-    # A failed run is the only producer of run.failed. Under the webhook lock class on
-    # purpose: a failed *device sweep* also emits run.completed (#92 — every sweep that
-    # closes does, succeeded or failed), which would put a second run's jobID into the
-    # set the join test reads.
-    failed = await acquire(db, connection, trigger=TRIGGER_WEBHOOK, lock_class=LOCK_WEBHOOK)
+    # A failed run is the only producer of run.failed. Under the catalog lock class on
+    # purpose: a failed device sweep OR webhook run also emits run.completed (#224 widened
+    # the webhook case to match — every lock class that closes over real inventory does,
+    # succeeded or failed), which would put a second run's jobID into the set the join
+    # test reads. LOCK_CATALOG is the one lock class #224 left outside run.completed.
+    failed = await acquire(db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_CATALOG)
     failed_run_id = failed.run.id
     await finish(db, failed.run, ok=False, error="Jamf returned 502 at page 41")
 

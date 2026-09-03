@@ -14,8 +14,8 @@ must not kill a 40,000-device run. What this suite pins, in order:
    a fleet-wide outage is not ground through 40,000 individually-logged failures.
 3. RunReclaimed is not a device failure. The #94 fence must unwind the whole run,
    uncounted, with the reclaim's verdict left exactly as the reclaim wrote it.
-4. A webhook ingest — one device, its own run — emits no run.completed; per-webhook
-   emission would double the event volume for no signal.
+4. A webhook ingest — one device, its own run — emits run.completed too (#224): the
+   same accounting the sweep gets, just for a run of one.
 
 Gated on RUN_DB_TESTS like the other database-backed suites.
 """
@@ -392,18 +392,13 @@ async def test_a_reclaim_still_aborts_the_run_and_is_not_a_device_failure(
     assert await _run_failed_events(db, run.id) == []
 
 
-async def test_a_webhook_ingest_emits_no_run_completed(db, jamf: FakeJamf, connection) -> None:
-    """A webhook is a run with one device in it; per-webhook run.completed would double
-    a busy tenant's event volume for no signal. The exclusion is the lock class, so the
-    accounting columns still land on the webhook's run row."""
+async def test_a_webhook_ingest_emits_run_completed(db, jamf: FakeJamf, connection) -> None:
+    """#224: a webhook is a run with one device in it, and it now gets the same
+    run.completed heartbeat a sweep gets — the identical ruled fields, for a run of
+    one device rather than a fleet. Every jobID an inventory event carries, sweep or
+    webhook, now resolves to a run.completed that actually arrives."""
     from app.mdm.service import ingest_webhook
-    from app.models.schema import EventOutbox, Run
-
-    before = (
-        await db.execute(
-            select(EventOutbox.id).where(EventOutbox.event_type == "run.completed")
-        )
-    ).scalars().all()
+    from app.models.schema import Run
 
     payload = {
         "webhook": {"webhookEvent": "ComputerInventoryCompleted"},
@@ -411,13 +406,6 @@ async def test_a_webhook_ingest_emits_no_run_completed(db, jamf: FakeJamf, conne
     }
     result = await ingest_webhook(db, connection, payload)
     assert result is not None
-
-    after = (
-        await db.execute(
-            select(EventOutbox.id).where(EventOutbox.event_type == "run.completed")
-        )
-    ).scalars().all()
-    assert after == before
 
     run = (
         await db.execute(
@@ -429,3 +417,30 @@ async def test_a_webhook_ingest_emits_no_run_completed(db, jamf: FakeJamf, conne
     await db.refresh(run)
     assert run.status == "succeeded"
     assert run.devices_processed == 1 and run.devices_failed == 0
+
+    events = await _run_completed_events(db, run.id)
+    assert len(events) == 1
+    # Same envelope-stripping discipline as test_one_dead_device_does_not_kill_the_sweep
+    # above: popping ENVELOPE rather than widening the set keeps this failing if a real
+    # key is ever added or renamed without a ruling.
+    emitted = dict(events[0].payload)
+    emitted.pop(ENVELOPE)
+    assert set(emitted) == {
+        "event", "jobID", "connectionID", "trigger", "comparison",
+        "occurredAt", "devicesTotal", "devicesProcessed", "devicesFailed", "status",
+    }
+    assert emitted["status"] == "succeeded"
+    assert emitted["trigger"] == "webhook"
+    assert emitted["devicesTotal"] == 1
+    assert emitted["devicesProcessed"] == 1
+    assert emitted["devicesFailed"] == 0
+    assert emitted["connectionID"] == connection.id
+    assert emitted["jobID"] == str(run.id)
+
+    # The envelope: a webhook's run is still not a Mac, so no `host` here either.
+    hints = events[0].payload[ENVELOPE]
+    assert hints["source"] == "e2e.jamfcloud.com"
+    assert "host" not in hints
+    body = _build_body(SimpleNamespace(type="splunk_hec"), events[0].payload)
+    assert body["source"] == "e2e.jamfcloud.com"
+    assert "host" not in body
