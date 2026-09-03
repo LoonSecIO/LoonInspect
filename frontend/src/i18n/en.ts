@@ -54,7 +54,11 @@ export const en = {
     sidebar: "Sidebar",
     sidebarExpanded: "Icons + text",
     sidebarCollapsed: "Icons only",
-    sidebarHidden: "Hidden"
+    sidebarHidden: "Hidden",
+    // The scope note repeated in three places an admin forms an expectation (#232):
+    // the connection form, the run summary, and the devices count. v0 reads
+    // computers only, and this says so rather than leaving a short count to imply it.
+    computersOnlyScope: "Computers only — mobile devices are not collected."
   },
   auth: {
     versionLabel: "Version",

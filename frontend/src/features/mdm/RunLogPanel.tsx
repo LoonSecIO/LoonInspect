@@ -38,6 +38,14 @@ export function RunLogPanel({ jobId, joined, onFinished }: {
             {t.settings.runSummary(run.deviceCount, run.groupCount)}
           </span>
         )}
+        {/* The population those counts are of (#232): a finished sweep says what it
+            read, not just how many it found. Static rather than derived from
+            run.observations -- that field carries ledger outcomes (new/changed/
+            unchanged/...), not an object type, and v0's aperture is computers only
+            for every run there is, so there is nothing to compute here. */}
+        {run && !running && (
+          <span className="text-muted-foreground">{t.common.computersOnlyScope}</span>
+        )}
         {run && !running && run.devicesFailed > 0 && (
           <span className="text-muted-foreground">
             {t.settings.runDevicesFailed(run.devicesFailed)}
