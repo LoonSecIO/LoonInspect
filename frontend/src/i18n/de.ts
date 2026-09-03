@@ -407,7 +407,31 @@ export const de: Translations = {
     empty: "Noch keine Apps katalogisiert – der Katalog füllt sich, sobald Geräte verarbeitet werden.",
     noMatches: "Keine Zeilen entsprechen diesem Filter.",
     filteredTotal: (shown: number, total: number) =>
-      shown === total ? `${total} Zeile${total === 1 ? "" : "n"}` : `${shown} von ${total} Zeilen`
+      shown === total ? `${total} Zeile${total === 1 ? "" : "n"}` : `${shown} von ${total} Zeilen`,
+    tableVuln: "Schwachstellen"
+  },
+  vulnerabilities: {
+    corpusHeading: (date: string) => `Schwachstellen-Korpus vom ${date}`,
+    corpusHeadingNone: "Schwachstellen: nicht geprüft",
+    corpusBody: (date: string) =>
+      `Diese Apps wurden gegen einen Korpus vom ${date} geprüft. Alles, was seither veröffentlicht wurde, wurde nicht betrachtet; dieses Datum bewegt sich nur, wenn der Korpus aktualisiert wird.`,
+    corpusBodyNone:
+      "In diesem Container ist kein Schwachstellen-Korpus geladen; LoonInspect hat daher keine dieser Apps geprüft. Jede Zeile steht auf nicht geprüft und trägt kein Datum – weil es kein Korpus-Datum gibt.",
+    edge: (date: string) =>
+      `Was dieser Korpus nicht abdeckt, wird benannt statt verschwiegen: Eine App, die er nicht kennt, steht auf außerhalb des Korpus, datiert auf den ${date} – nie auf null Schwachstellen.`,
+    edgeNone:
+      "Was dieser Container nicht geprüft hat, wird benannt statt verschwiegen: Ohne geladenen Korpus steht jede App auf nicht geprüft und trägt kein Datum – nie null Schwachstellen.",
+    stateCoveredClean: "Keine Funde",
+    stateUnknownApp: "Außerhalb des Korpus",
+    stateOff: "Nicht geprüft",
+    stateOffReason: "kein Korpus geladen",
+    checkedAgainstCorpusOf: (date: string) => `geprüft gegen den Korpus vom ${date}`,
+    notInCorpusOf: (date: string) => `nicht im Korpus vom ${date}`,
+    findings: (count: number) => `${count} Fund${count === 1 ? "" : "e"}`,
+    kev: (count: number) => `${count} auf der CISA-KEV-Liste`,
+    oldestPublished: (days: number) => `ältester Fund vor ${days} Tag${days === 1 ? "" : "en"} veröffentlicht`,
+    moreIds: (count: number) => `+${count} weitere`,
+    idsCapped: "Liste gekürzt"
   },
   jamfPatch: {
     tabLabel: "Jamf Patch",

@@ -85,12 +85,17 @@ export function AppRoutes() {
         </Route>
         {/* No permission gate — everyone manages their own profile. */}
         <Route path="settings/my-account" element={<MyAccountPage />} />
-        {/* No /vulnerabilities for now, and this is the slot it returns to — soon.
-            The placeholder's copy predated the contract (docs/vulnerabilities.md)
-            and tied assessment to a patch provider it does not depend on. #251
-            puts the corpus edge — covered / unknown_app / off, dated by corpusAsOf —
-            in front of a person; where exactly is that session's call, and this
-            route is open for it (#95). */}
+        {/* Still no /vulnerabilities, and #251 is the session that decided so rather
+            than deferring again. The corpus edge — covered / unknown_app / off,
+            dated by corpusAsOf — is now on Devices › Applications › Catalog, beside
+            the apps it is an answer about, because that tab's grain (one row per
+            distinct build) is exactly the grain the corpus is keyed on. A page here
+            would have been a heading, one date and a link to that table: the "nav
+            destination that does nothing" #95 ruled against, and it would have put
+            the honest sentence about what we do not know somewhere a person has to
+            go looking for it instead of where they are already reading. It comes
+            back when it can show something the Catalog tab cannot — the per-finding
+            lifecycle records, which are post-v0 (docs/vulnerabilities.md §6). */}
         {/* Last child on purpose, and inside the shell rather than beside /login: a
             signed-out visitor keeps getting the same sign-in redirect for a typo as
             for a real page, so an unmatched path never reveals which paths exist.

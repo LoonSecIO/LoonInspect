@@ -398,6 +398,32 @@ class VulnEnrichment(BaseModel):
         """
         return {key: value for key, value in handler(self).items() if value is not None}
 
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema, handler):  # type: ignore[override]
+        """Describe the block in OpenAPI as the keys it has, not as a bare object (#251).
+
+        A custom `model_serializer` makes pydantic give up on the serialization JSON
+        schema and emit `{"type": "object", "additionalProperties": true}` — it cannot know
+        what an arbitrary function returns. That was invisible while this model rode the
+        wire alone; #251 put it on REST responses, where the generated OpenAPI is the
+        documentation a client is written against, and "object" documents nothing.
+
+        The serializer above only ever *drops* keys, so the schema pydantic would generate
+        without it is already correct — every ruled key, under its serialization alias,
+        with `assessment` as the three-value enum. This asks for exactly that by handing
+        the generator the same core schema minus the custom serializer.
+
+        **Schema only.** Nothing here runs during validation or serialization: the bytes on
+        the wire and in a REST response are unchanged, byte for byte, and
+        `test_vuln_block.py` still pins them.
+        """
+        model = core_schema.get("schema") if core_schema.get("type") != "model" else core_schema
+        if isinstance(model, dict) and "serialization" in model:
+            without = {**model}
+            without.pop("serialization")
+            core_schema = without if core_schema is model else {**core_schema, "schema": without}
+        return handler(core_schema)
+
 
 class InventoryAppItem(BaseModel):
     """One `app[]` item on the snapshot: Jamf's application object beside LoonInspect's two

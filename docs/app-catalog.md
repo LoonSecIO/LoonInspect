@@ -101,7 +101,18 @@ tests are not applicable. A per-device override that reads a carried attribute i
 - `GET /api/catalog` — the tenant's rows with the fleet on them: `deviceCount` (distinct devices
   carrying the exact version now), the Jamf titles by name, state, latest, released; `q`,
   `jamf=all|matched|unmatched`, `installedOnly` (default on), paging; plus a summary (entries,
-  installed now, known to Jamf, not in Jamf's catalog).
+  installed now, known to Jamf, not in Jamf's catalog) and `corpusAsOf` (#251 — see below).
+- **`vuln` on every row** (#251): LoonInspect's own answer for that exact build —
+  `covered` | `unknown_app` | `off`, with the summary block of
+  [`docs/vulnerabilities.md`](vulnerabilities.md) §4 under `covered`. The join is the
+  local hash-join this document is built for: the corpus is asked one question per row, on
+  the `key_title` / `key_full` the row already carries, and it reads no table. The response
+  also carries **`corpusAsOf`**, the corpus generation those blocks came from — `null` when
+  no corpus is loaded, which is why every row reads `off` until #248 lands. The stamp rides
+  the same response as the rows so a header can never date a column the server answered
+  from a different corpus. `corpusAsOf` is deliberately **not** on the summary: the four
+  tiles count every row the tenant has, and counting the three assessments across all of
+  them is a scan per request rather than a lookup (§0).
 - `GET /api/catalog/lookup?versionHash=…&keyFull=…&appHash=…` and `POST /api/catalog/lookup`
   `{versionHashes, keyFulls, appHashes}` — the local lookup: per key, the tenant's row if the
   fleet has shown the app (with its answer) and what Jamf knows about that exact (appName,
@@ -115,8 +126,18 @@ tests are not applicable. A per-device override that reads a carried attribute i
 
 Devices › Applications › **Catalog**: one row per distinct app version — name, bundle ID,
 version, devices, first seen, last seen, Jamf title(s) (linking to the title page), state, latest,
-released — with search, the Jamf filter, and "installed now only"; four tiles (distinct app
-versions, installed now, known to Jamf, not in Jamf's catalog). en + de.
+released, **vulnerabilities** — with search, the Jamf filter, and "installed now only"; four tiles
+(distinct app versions, installed now, known to Jamf, not in Jamf's catalog). en + de.
+
+The **Vulnerabilities** column (#251) is where the corpus's edge is shown, because this tab's
+grain — one row per distinct build — is exactly the grain the corpus is keyed on. It renders
+three states that never look alike: *no findings* (green, dated by the corpus it was checked
+against), *outside the corpus* (amber, dated), and *not assessed · no corpus loaded* (grey, with
+no date at all). Sorting on it puts findings first, then the apps the corpus could not look up,
+then the clean bills, then the apps nobody looked at. Above the table, the corpus banner carries
+`corpusAsOf` and one sentence naming what this container does **not** know — which is the whole
+point: a small corpus is only honest if its edge is legible.
+See [`docs/vulnerabilities.md`](vulnerabilities.md) §4f.
 
 ## 6. Not here (follow-ups)
 

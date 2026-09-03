@@ -3,6 +3,7 @@ the local lookup by the hashes every installed app carries. See docs/app-catalog
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
@@ -14,6 +15,8 @@ from app.catalog.service import refresh_tenant
 from app.core.auth import require
 from app.core.database import get_db
 from app.core.permissions import Permission
+from app.core.vuln import VulnCorpus, loaded_corpus
+from app.core.vuln_read import assess, corpus_as_of, today
 from app.mdm.patch.requirements import version_tuple
 from app.models.schema import AppCatalogEntry, AppCatalogVersion, InstalledApp, JamfPatchTitle
 from app.schemas.catalog import (
@@ -47,10 +50,23 @@ async def _title_refs(db: AsyncSession, entries: list[AppCatalogEntry]) -> dict[
     return {title_id: CatalogTitleRef(id=title_id, name=name) for title_id, name in rows}
 
 
-def _entry_out(entry: AppCatalogEntry, devices: int, refs: dict[str, CatalogTitleRef]) -> CatalogEntryOut:
+def _entry_out(
+    entry: AppCatalogEntry,
+    devices: int,
+    refs: dict[str, CatalogTitleRef],
+    *,
+    corpus: VulnCorpus,
+    as_of: date,
+) -> CatalogEntryOut:
     out = CatalogEntryOut.model_validate(entry)
     out.device_count = int(devices or 0)
     out.jamf_titles = [refs[title_id] for title_id in (entry.jamf_title_ids or []) if title_id in refs]
+    # #251: the corpus's answer for this exact build, keyed on the content keys the row
+    # already carries — the same local hash-join the wire runs, through the same seam. The
+    # corpus is a required argument rather than a default so a `CatalogEntryOut` built
+    # anywhere carries a real answer; a row that quietly defaulted to `off` while a corpus
+    # was loaded would be a lie in the one column that exists to prevent them.
+    out.vuln = assess(corpus, entry, as_of=as_of)
     return out
 
 
@@ -85,7 +101,15 @@ async def list_catalog(
     page_rows = (await db.execute(ordered.offset((page - 1) * page_size).limit(page_size))).all()
     entries = [row[0] for row in page_rows]
     refs = await _title_refs(db, entries)
-    items = [_entry_out(entry, row[1], refs) for entry, row in zip(entries, page_rows, strict=True)]
+    # One corpus object for the whole response, so every row's `corpusAsOf` and the
+    # header stamp below are the same fact rather than two reads of a moving one. The
+    # lookup is per row of THIS page — distinct builds, not installs, so it does not grow
+    # with the fleet — and reads no database; under `NO_CORPUS` it does no per-row work.
+    corpus, as_of = loaded_corpus(), today()
+    items = [
+        _entry_out(entry, row[1], refs, corpus=corpus, as_of=as_of)
+        for entry, row in zip(entries, page_rows, strict=True)
+    ]
 
     summary_row = (
         await db.execute(
@@ -102,7 +126,9 @@ async def list_catalog(
     summary = CatalogSummaryOut(
         entries=int(summary_row[0]), installed=int(summary_row[1]), matched=int(summary_row[2]), unmatched=int(summary_row[3])
     )
-    return CatalogListResponse(items=items, total=int(total), summary=summary)
+    return CatalogListResponse(
+        items=items, total=int(total), summary=summary, corpus_as_of=corpus_as_of(corpus)
+    )
 
 
 def _answer(key: str, tenant: CatalogEntryOut | None, versions: list[AppCatalogVersion]) -> CatalogLookupOut:
@@ -155,9 +181,10 @@ async def _lookup(
     ).all()
     entries = [row[0] for row in tenant_rows]
     refs = await _title_refs(db, entries)
+    corpus, as_of = loaded_corpus(), today()
     by_key: dict[str, CatalogEntryOut] = {}
     for entry, count in tenant_rows:
-        out = _entry_out(entry, count, refs)
+        out = _entry_out(entry, count, refs, corpus=corpus, as_of=as_of)
         by_key.setdefault(entry.version_hash, out)
         by_key.setdefault(entry.key_full, out)
         # app_hash answers the *title*, not a version; the newest version seen stands in.
