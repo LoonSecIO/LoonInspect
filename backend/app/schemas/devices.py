@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 from pydantic.alias_generators import to_camel
 
-from app.schemas.payload import MdmProvider
+from app.schemas.payload import MdmProvider, VulnEnrichment
 
 
 class VersionOperator(str, Enum):
@@ -66,6 +66,14 @@ class InstalledAppOut(BaseModel):
     # releases missed" — are patch_available_since and this count. The day count below stays
     # for consumers that want it; it is derived from an unbounded date and is never the headline.
     releases_missed: int | None = None
+    # #251: LoonInspect's own answer about this app, in the wire's own words. The default
+    # is `off` — no corpus loaded, nobody looked — which is what every app reads until
+    # #248 ships one, and it is deliberately NOT an absent field: a surface that cannot
+    # tell "we looked and found nothing" from "we never looked" has re-created the exact
+    # failure `assessment` was minted to prevent (docs/vulnerabilities.md §4a). The block
+    # is the wire's `VulnEnrichment` rather than a REST copy of it, so the three states
+    # are spelled the same in a Splunk event and on the page.
+    vuln: VulnEnrichment = Field(default_factory=VulnEnrichment)
 
     @computed_field
     @property
@@ -105,6 +113,14 @@ class DeviceOut(BaseModel):
 class DeviceDetailOut(DeviceOut):
     apps: list[InstalledAppOut] = []
     extension_attributes: list[ExtensionAttributeOut] = []
+    # #251: the corpus generation every `vuln` block below came from, so a header can
+    # never disagree with the rows under it — both are read off one corpus object in one
+    # request. `null` means no corpus is loaded, which is why every app reads `off`; a
+    # surface says that in words and dates it with nothing, rather than showing a date it
+    # does not have (docs/vulnerabilities.md §4a). It rides the device rather than a
+    # separate call on purpose: a stamp fetched apart from the rows it describes can be
+    # from a different moment than they are.
+    corpus_as_of: date | None = None
 
 
 class DeviceListResponse(BaseModel):

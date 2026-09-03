@@ -10,14 +10,18 @@ This document exists because the vulnerability design lived in a session record 
 issue comments, and a contract that lives only in a session record is one that gets
 re-argued by whoever builds it. Everything below is a decision with an argument.
 
-**What is built, as of 2026-09-03** ([#249](https://github.com/LoonSecIO/LoonInspect/issues/249)):
-the summary block of §4 in full — every key, the presence rules, the cap, the clock and
-the sentinel — plus the lookup seam it reads (`VulnCorpus` in `app/core/vuln.py`). What
-is not built is the corpus behind that seam ([#248](https://github.com/LoonSecIO/LoonInspect/issues/248)),
-so the container ships `NO_CORPUS` and every app on every device still reads
-`assessment: off`. The day #248 loads a corpus, the block starts answering with no wire
-change at all — which is the whole reason the vocabulary was frozen before the data
-existed. §10 tracks the rest.
+**What is built, as of 2026-09-03** ([#249](https://github.com/LoonSecIO/LoonInspect/issues/249),
+[#251](https://github.com/LoonSecIO/LoonInspect/issues/251)): the summary block of §4 in
+full — every key, the presence rules, the cap, the clock and the sentinel — plus the
+lookup seam it reads (`VulnCorpus` in `app/core/vuln.py`), **and the UI half**: the same
+block on the REST responses that carry installed apps, and the three states rendered
+distinctly with `corpusAsOf` beside them (§4g). What is not built is the corpus behind
+that seam ([#248](https://github.com/LoonSecIO/LoonInspect/issues/248)), so the container
+ships `NO_CORPUS` and every app on every device still reads `assessment: off` — on the
+wire and on the page, which now says so in words rather than showing an empty column. The
+day #248 loads a corpus, both halves start answering with no wire change and no UI change
+at all — which is the whole reason the vocabulary was frozen before the data existed. §10
+tracks the rest.
 
 The block it rules is `vuln{}` — LoonInspect's own answer about an app Jamf reported,
 riding that app's sub-event beside `patch{}`. It is the highest fan-out object the
@@ -292,6 +296,61 @@ build from a positively clean one; both arrive as `()`. So `findings()` must not
 to `()` (a `dict.get(key_full, ())` reads exactly like a positive clean bill) — it must
 answer `None` unless it can name the assessment that produced the empty result.
 
+### 4g. The same three words in front of a person
+
+Built 2026-09-03 (#251). `assessment` was ruled visible **on the wire and in the UI**, and
+the UI half is where the rule is easiest to break silently: a page that renders
+`0 vulnerabilities` for an app nobody assessed breaks §4a in the surface a buyer looks at,
+where no saved search exists to catch it.
+
+So the block a person's browser receives **is** the block above — `VulnEnrichment` itself
+on the REST response, not a REST-shaped copy of it. One model, one vocabulary: a person
+reading a Splunk event and a person reading the page use the same three words for the same
+three facts, and there is no second place for the vocabulary to drift. The only dialect
+difference is the one §4c already rules: no `-1` on the read path, because the sentinel
+belongs to the HEC-shaping seam and a REST client gets the canonical `null`.
+
+| Surface | What it gained |
+| --- | --- |
+| `GET /api/devices/{id}` | `apps[].vuln` — the block per installed app; `corpusAsOf` on the device |
+| `GET /api/catalog`, `/api/catalog/lookup` | `items[].vuln` — the block per distinct build; `corpusAsOf` on the list response |
+| Devices › Applications › **Catalog** | A **Vulnerabilities** column, and the corpus banner above it |
+
+**Why the catalog tab and not a Vulnerabilities page.** The corpus is keyed on `key_full`
+— one answer per distinct build — which is exactly one row of the app catalog, so the
+column is an attribute of a row a person is already reading rather than a second place to
+go. A standalone page would have been a heading, one date and a link to that table: the
+"nav destination that does nothing" ruled against on
+[#95](https://github.com/LoonSecIO/LoonInspect/issues/95). It returns when it can show
+something the catalog cannot — the per-finding lifecycle records of §6, which are post-v0.
+
+**The three renderings, and why they cannot collapse.** `covered` with nothing found is
+green, says *no findings*, and carries the date it was checked against. `unknown_app` is
+amber, says *outside the corpus*, and carries the date the corpus was generated —
+deliberately not green, because "we did not look at this" is a gap in the answer and a gap
+coloured green is the picture this issue exists to prevent. `off` is grey, says *not
+assessed · no corpus loaded*, and carries **no date at all** rather than borrowing today's.
+
+That is held by the compiler rather than by care: the REST block's three shapes differ by
+key set (§4a's absences), the frontend types them as a union discriminated on `assessment`,
+and `counts` exists on the `covered` member alone — so `vuln.counts.total` does not compile
+until a value has been narrowed to `covered`. There is no expression in which an
+unassessed app yields a zero.
+`frontend/src/features/vulnerabilities/noCollapse.ts` asserts exactly that, in the one
+checker CI runs for the frontend (`tsc`, since there is no test lane — #138): three
+`@ts-expect-error` directives that fail the build the day the errors they name stop
+happening.
+
+**The stamp rides the rows.** `corpusAsOf` is returned on the response that carries the
+apps it describes, never from a separate call, so a header can never date a column the
+server answered from a different corpus. `null` means no corpus is loaded; the page says
+that in a sentence and dates it with nothing.
+
+**What is deliberately not counted.** No fleet-wide "*n* covered / *m* unknown" tile. The
+per-request lookup is bounded by the rows in one response — one device's apps, or one page
+of distinct builds — and counting the three states across the whole tenant is a scan per
+request. Those counts are #250's, off the join #248 stores.
+
 ## 5. Three id namespaces, one shape
 
 | Prefix | Minted by | Status |
@@ -424,5 +483,5 @@ block each other.
 | The v0 corpus and the local hash-join — ~100 titles, public sources, `corpusAsOf`, Wireshark included, and the publication date §4d requires of the format | [#248](https://github.com/LoonSecIO/LoonInspect/issues/248) | Open. It plugs into `app.core.vuln.VulnCorpus` and swaps `loaded_corpus()`; the rest of the wire is built and waiting |
 | `vuln{}` populated on the app sub-event; `assessment` stops being a constant `off`. Also needs the fan-out ([#242](https://github.com/LoonSecIO/LoonInspect/issues/242)) | [#249](https://github.com/LoonSecIO/LoonInspect/issues/249) | **Built 2026-09-03.** `app/core/vuln.py`, `VulnEnrichment` in `app/schemas/payload.py`, the sentinel in `app/core/hec_fanout.py`, pinned in `backend/tests/test_vuln_block.py` |
 | The four `vuln.*` posture keys go ACTIVE, under §7's no-zero rule | [#250](https://github.com/LoonSecIO/LoonInspect/issues/250) | Open. Still RESERVED, deliberately: the join has stored nothing to count |
-| The corpus's edge made visible in the UI — `assessment`, `corpusAsOf`, three empty states | [#251](https://github.com/LoonSecIO/LoonInspect/issues/251) | Open |
+| The corpus's edge made visible in the UI — `assessment`, `corpusAsOf`, three empty states | [#251](https://github.com/LoonSecIO/LoonInspect/issues/251) | **Built 2026-09-03.** §4g. `app/core/vuln_read.py` over the same seam, `vuln` + `corpusAsOf` on the device and catalog responses, the Catalog tab's column and banner; pinned in `backend/tests/test_vuln_read.py` and `frontend/src/features/vulnerabilities/noCollapse.ts` |
 | The lifecycle fan-out under `loon:jamf:mac:app:vuln`, and `LOCAL-` ids behind their reservation | post-v0 (§5, §6) | Named, not built. The string stays minted with no writer |

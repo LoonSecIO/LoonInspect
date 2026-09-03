@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from datetime import datetime
 from typing import TypeVar
 
@@ -12,8 +13,10 @@ from sqlalchemy.orm import selectinload
 from app.core.auth import require
 from app.core.database import get_db
 from app.core.permissions import Permission
+from app.core.vuln import loaded_corpus
+from app.core.vuln_read import assess, corpus_as_of, today
 from app.mdm.org_units import BUILDING, DEPARTMENT, OrgUnitNames, ids_for_name, load_names, name_for
-from app.models.schema import Device, DeviceExtensionAttribute
+from app.models.schema import Device, DeviceExtensionAttribute, InstalledApp
 from app.schemas.devices import (
     DeviceDetailOut,
     DeviceListResponse,
@@ -211,6 +214,32 @@ async def list_devices(
     )
 
 
+def _assessed(out: DeviceDetailOut, rows: Sequence[InstalledApp]) -> DeviceDetailOut:
+    """LoonInspect's own answer for each of this device's apps, and the stamp it came from
+    (#251, `docs/vulnerabilities.md` §4a).
+
+    The corpus is asked once per app, keyed on the content keys the row already carries —
+    the same local hash-join the wire runs, through the same seam (`app.core.vuln_read`),
+    so a person reading this response and a person reading the Splunk event see the same
+    three words. One device's apps is ~100 rows and the lookup touches no database; under
+    the corpus every container ships today (`NO_CORPUS`) it is one `is None` and no
+    per-row work at all.
+
+    Rows are paired by id rather than by position: `model_validate` does preserve list
+    order, but `selectinload` does not promise one, and pairing a `vuln` block with the
+    wrong app is the kind of wrong that looks right.
+    """
+    corpus = loaded_corpus()
+    as_of = today()
+    by_id = {row.id: row for row in rows}
+    return out.model_copy(
+        update={
+            "corpus_as_of": corpus_as_of(corpus),
+            "apps": [app.model_copy(update={"vuln": assess(corpus, by_id[app.id], as_of=as_of)}) for app in out.apps],
+        }
+    )
+
+
 @router.get("/{device_id}", response_model=DeviceDetailOut)
 async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> DeviceDetailOut:
     result = await db.execute(
@@ -221,4 +250,5 @@ async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> Devi
     device = result.scalar_one_or_none()
     if device is None:
         raise HTTPException(status_code=404, detail="Device not found")
-    return _with_names(DeviceDetailOut.model_validate(device), device, await load_names(db))
+    detail = _with_names(DeviceDetailOut.model_validate(device), device, await load_names(db))
+    return _assessed(detail, device.apps)

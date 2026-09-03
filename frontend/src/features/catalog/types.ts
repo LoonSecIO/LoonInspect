@@ -1,3 +1,5 @@
+import type { AppVulnerability } from "@/features/vulnerabilities/types";
+
 export interface CatalogTitleRef {
   id: string;
   name: string;
@@ -30,6 +32,9 @@ export interface CatalogEntry {
   latestReleasedAt: string | null;
   releasedAt: string | null;
   evaluatedAt: string | null;
+  /** LoonInspect's own answer about this exact build — `covered`, `unknown_app` or `off`
+   *  (#251). Always present; the shape is what says which of the three it is. */
+  vuln: AppVulnerability;
 }
 
 export interface CatalogSummary {
@@ -43,6 +48,9 @@ export interface CatalogListResponse {
   items: CatalogEntry[];
   total: number;
   summary: CatalogSummary;
+  /** The corpus generation every `vuln` block on `items` came from. `null` means no corpus
+   *  is loaded, which is why every row reads `off` — the page says that in words (#251). */
+  corpusAsOf: string | null;
 }
 
 export type CatalogJamfFilter = "all" | "matched" | "unmatched";

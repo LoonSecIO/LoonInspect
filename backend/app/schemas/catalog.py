@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
+
+from app.schemas.payload import VulnEnrichment
 
 
 class _CamelModel(BaseModel):
@@ -43,6 +45,12 @@ class CatalogEntryOut(_CamelModel):
     latest_released_at: datetime | None = None
     released_at: datetime | None = None
     evaluated_at: datetime | None = None
+    # #251: LoonInspect's own answer about this build, in the wire's own words —
+    # `covered` (we looked), `unknown_app` (outside the corpus, dated) or `off` (nobody
+    # looked). Defaults to `off`, which is what every row reads until #248 loads a corpus,
+    # and is never absent: a column that cannot tell "no findings" from "not assessed" is
+    # the failure `assessment` exists to prevent (docs/vulnerabilities.md §4a).
+    vuln: VulnEnrichment = Field(default_factory=VulnEnrichment)
 
 
 class CatalogSummaryOut(_CamelModel):
@@ -56,6 +64,15 @@ class CatalogListResponse(_CamelModel):
     items: list[CatalogEntryOut]
     total: int
     summary: CatalogSummaryOut
+    # #251: the corpus generation the blocks on `items` came from — the page's header
+    # stamp, read off the same corpus object in the same request as the rows, so the two
+    # can never disagree. `null` is the honest answer while no corpus is loaded, and the
+    # page says so in words rather than dating the column with nothing or with today.
+    #
+    # Deliberately NOT on the summary: the four summary tiles count every row the tenant
+    # has, and counting `covered` / `unknown_app` / `off` across all of them is a scan of
+    # the whole catalog per request. Those counts are #250's, off the join #248 stores.
+    corpus_as_of: date | None = None
 
 
 class CatalogVersionOut(_CamelModel):

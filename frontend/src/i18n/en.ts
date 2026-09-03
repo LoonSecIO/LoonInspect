@@ -413,7 +413,36 @@ export const en = {
     empty: "No apps catalogued yet — the catalog fills as devices are processed.",
     noMatches: "No rows match this filter.",
     filteredTotal: (shown: number, total: number) =>
-      shown === total ? `${total} row${total === 1 ? "" : "s"}` : `${shown} of ${total} rows`
+      shown === total ? `${total} row${total === 1 ? "" : "s"}` : `${shown} of ${total} rows`,
+    tableVuln: "Vulnerabilities"
+  },
+  // #251 — the corpus's edge, in words. The three state labels are the wire's three
+  // values (docs/vulnerabilities.md §4) in English, so a person reading a Splunk event
+  // and a person reading this page are looking at the same fact. What must never happen
+  // here is the two empty states sounding alike: "No findings" is an answer and "Not
+  // assessed" is the absence of one.
+  vulnerabilities: {
+    corpusHeading: (date: string) => `Vulnerability corpus as of ${date}`,
+    corpusHeadingNone: "Vulnerabilities: not assessed",
+    corpusBody: (date: string) =>
+      `These apps were checked against a corpus generated on ${date}. Anything published since then has not been looked at, and this date only moves when the corpus is refreshed.`,
+    corpusBodyNone:
+      "No vulnerability corpus is loaded in this container, so LoonInspect has looked at none of these apps. Every row reads not assessed, and carries no date — because there is no corpus date to give.",
+    edge: (date: string) =>
+      `What this corpus does not cover is named rather than hidden: an app it does not know reads outside the corpus, dated ${date} — never as zero vulnerabilities.`,
+    edgeNone:
+      "What this container has not looked at is named rather than hidden: with no corpus loaded, every app reads not assessed and is dated with nothing — never as zero vulnerabilities.",
+    stateCoveredClean: "No findings",
+    stateUnknownApp: "Outside the corpus",
+    stateOff: "Not assessed",
+    stateOffReason: "no corpus loaded",
+    checkedAgainstCorpusOf: (date: string) => `checked against the corpus of ${date}`,
+    notInCorpusOf: (date: string) => `not in the corpus of ${date}`,
+    findings: (count: number) => `${count} finding${count === 1 ? "" : "s"}`,
+    kev: (count: number) => `${count} on CISA KEV`,
+    oldestPublished: (days: number) => `oldest published ${days} day${days === 1 ? "" : "s"} ago`,
+    moreIds: (count: number) => `+${count} more`,
+    idsCapped: "list capped"
   },
   jamfPatch: {
     tabLabel: "Jamf Patch",

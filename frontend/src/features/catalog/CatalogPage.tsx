@@ -2,9 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { listCatalog } from "@/features/catalog/api";
 import type { CatalogEntry, CatalogJamfFilter } from "@/features/catalog/types";
+import { AssessmentCell, CorpusBanner } from "@/features/vulnerabilities/AppAssessment";
 import { useLocale } from "@/i18n/LocaleContext";
 
-type SortKey = "name" | "version" | "deviceCount" | "firstSeenAt" | "lastSeenAt" | "patchState" | "latestVersion";
+type SortKey =
+  | "name"
+  | "version"
+  | "deviceCount"
+  | "firstSeenAt"
+  | "lastSeenAt"
+  | "patchState"
+  | "latestVersion"
+  | "vuln";
 type SortDir = "asc" | "desc";
 
 const inputClasses =
@@ -34,6 +43,13 @@ function sortValue(entry: CatalogEntry, key: SortKey): string | number {
       return entry.patchState ?? "";
     case "latestVersion":
       return entry.latestVersion ?? "";
+    case "vuln":
+      // Ascending puts what is worth looking at first: findings (most, first), then the
+      // apps nobody could look up, then the clean bills, then the apps nobody looked at.
+      // `counts` is reachable only inside the `covered` narrowing — which is the point of
+      // the union: there is no branch here where an unassessed app can contribute a zero.
+      if (entry.vuln.assessment === "covered") return entry.vuln.counts.total > 0 ? -entry.vuln.counts.total : 2;
+      return entry.vuln.assessment === "unknown_app" ? 1 : 3;
   }
 }
 
@@ -50,6 +66,9 @@ export function CatalogPage() {
   const { t } = useLocale();
   const [entries, setEntries] = useState<CatalogEntry[]>([]);
   const [summary, setSummary] = useState({ entries: 0, installed: 0, matched: 0, unmatched: 0 });
+  // The corpus stamp arrives with the rows it describes, so the banner and the column can
+  // never be answering from two different corpora (#251).
+  const [corpusAsOf, setCorpusAsOf] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -68,6 +87,7 @@ export function CatalogPage() {
           if (cancelled) return;
           setEntries(response.items);
           setSummary(response.summary);
+          setCorpusAsOf(response.corpusAsOf);
         })
         .catch(() => {
           if (!cancelled) setError(t.catalog.errorLoading);
@@ -128,6 +148,8 @@ export function CatalogPage() {
     <section className="space-y-4">
       <p className="text-sm text-muted-foreground">{t.catalog.description}</p>
 
+      <CorpusBanner corpusAsOf={corpusAsOf} t={t} />
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
           [t.catalog.summaryEntries, summary.entries],
@@ -174,26 +196,27 @@ export function CatalogPage() {
               {header("patchState", t.catalog.tableState)}
               {header("latestVersion", t.catalog.tableLatest)}
               <th className="px-4 py-2 font-medium">{t.catalog.tableReleased}</th>
+              {header("vuln", t.catalog.tableVuln)}
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={10}>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={11}>
                   {t.catalog.loading}
                 </td>
               </tr>
             )}
             {!loading && error && (
               <tr>
-                <td className="px-4 py-4 text-destructive" colSpan={10}>
+                <td className="px-4 py-4 text-destructive" colSpan={11}>
                   {error}
                 </td>
               </tr>
             )}
             {!loading && !error && visible.length === 0 && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={10}>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={11}>
                   {entries.length === 0 ? t.catalog.empty : t.catalog.noMatches}
                 </td>
               </tr>
@@ -249,6 +272,9 @@ export function CatalogPage() {
                   </td>
                   <td className="px-4 py-2 tabular-nums">{entry.latestVersion ?? "—"}</td>
                   <td className="px-4 py-2">{formatDate(entry.releasedAt)}</td>
+                  <td className="px-4 py-2">
+                    <AssessmentCell vuln={entry.vuln} t={t} />
+                  </td>
                 </tr>
               ))}
           </tbody>
