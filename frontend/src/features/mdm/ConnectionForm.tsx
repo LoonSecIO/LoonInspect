@@ -305,6 +305,14 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
           </div>
         )}
 
+        {/* The scope this connection reads (#232), beside the privilege hint below:
+            v0 is computers only, so an admin sees the boundary at the moment they
+            are granting access rather than discovering it in a lower device count
+            after the first sweep. Always shown, not folded into the toggle below --
+            the privileges are setup-time detail; this is the fact that matters
+            whether or not that detail is ever opened. */}
+        <p className="text-xs text-muted-foreground">{t.common.computersOnlyScope}</p>
+
         {/* The privileges the credentials will need on the other side, served by
             /api/mdm/providers rather than written out here: this is the second place an
             operator could read them and the first place they will, and a list kept in

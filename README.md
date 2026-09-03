@@ -2,6 +2,8 @@
 
 **The software-change feed for Jamf Pro fleets — what changed on every Mac, in your own SIEM, without installing anything on the Mac.**
 
+Computers only — mobile devices are not collected. See [docs/mobile-devices.md](docs/mobile-devices.md).
+
 LoonInspect reads inventory from Jamf Pro, works out what actually changed since the last read, and streams those changes as structured events into Splunk, Elastic, RunReveal, or any webhook endpoint. It is agentless: nothing is installed on managed devices.
 
 ---

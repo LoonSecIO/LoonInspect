@@ -56,7 +56,8 @@ export const de: Translations = {
     sidebar: "Seitenleiste",
     sidebarExpanded: "Symbole + Text",
     sidebarCollapsed: "Nur Symbole",
-    sidebarHidden: "Ausgeblendet"
+    sidebarHidden: "Ausgeblendet",
+    computersOnlyScope: "Nur Computer — mobile Geräte werden nicht erfasst."
   },
   auth: {
     versionLabel: "Version",
