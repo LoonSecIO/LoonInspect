@@ -136,9 +136,11 @@ get written. This was confirmed as sound and doesn't need re-litigating.
 
 **HEC batching — built as proposed (#242).** A single HEC POST carries multiple
 concatenated JSON event objects, which Splunk indexes as separate events; all of one
-device's sub-events go in one POST — 107 events and 84,135 bytes for the 83-app fixture,
-verified against a local Splunk 10.4 on 2026-09-03 — rather than 107 HTTP requests. The
-per-`OutboxDelivery`-row retry/backoff/dead-letter machinery did not change: the expansion
+device's sub-events go in one POST — 107 events and 84,135 bytes for the 83-app fixture
+under today's shipped `vuln.assessment: off`, verified against a local Splunk 10.4 on
+2026-09-03, up to 171,036 bytes (2.03×) once a vulnerability corpus assesses every app at
+the fifty-id cap ([vulnerabilities.md](vulnerabilities.md) §4) — rather than 107 HTTP
+requests. The per-`OutboxDelivery`-row retry/backoff/dead-letter machinery did not change: the expansion
 happens inside body construction for one delivery attempt, not as N delivery rows. The
 one addition is a ceiling on a request body, `SPLUNK_HEC_MAX_REQUEST_BYTES` (default
 900,000 — Splunk Cloud Platform documents a 1 MB `max_content_length` for HEC), above which
