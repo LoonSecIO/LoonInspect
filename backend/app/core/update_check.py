@@ -1,3 +1,12 @@
+"""Daily check of the provider's HEAD against this build's stamped commit (#43).
+
+Unauthenticated api.github.com allows 60 requests per hour per source IP. Every
+instance behind a shared egress address — a corporate NAT, one customer's whole
+fleet — draws against that same budget without knowing it, and a 403 from it is
+swallowed exactly like being offline (see `_fetch_head_sha`), so the sharing stays
+invisible unless someone goes looking for it.
+"""
+
 from __future__ import annotations
 
 import asyncio
