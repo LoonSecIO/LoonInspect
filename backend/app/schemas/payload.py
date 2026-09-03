@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -204,11 +204,14 @@ class InventoryChangedEvent(BaseModel):
 INVENTORY_EVENT_TYPE = "device.inventory"
 
 # `vuln.assessment` — docs/vulnerabilities.md §4a. Always present on the app item, and
-# `off` is the whole block until the corpus (#248) and the join (#249) land: the
-# discriminator is populated from night one so presence is searchable
-# (`vuln.assessment=off` extracts to a field; `{}` does not). `unknown_app` is
-# snake_case on purpose — values are not governed by the casing law (§4b).
+# `off` is the whole block until a corpus (#248) is loaded: the discriminator is populated
+# from night one so presence is searchable (`vuln.assessment=off` extracts to a field;
+# `{}` does not). `unknown_app` is snake_case on purpose — values are not governed by the
+# casing law (§4b), it is the founder's word on the record twice, and a later conformance
+# sweep must not "fix" it into `unknownApp` and break every saved search that names it.
 VULN_ASSESSMENT_OFF = "off"
+VULN_ASSESSMENT_UNKNOWN_APP = "unknown_app"
+VULN_ASSESSMENT_COVERED = "covered"
 VulnAssessment = Literal["covered", "unknown_app", "off"]
 
 
@@ -227,15 +230,173 @@ class PatchEnrichment(BaseModel):
     supported: bool
 
 
-class VulnEnrichment(BaseModel):
-    """`vuln{}` on the app item, at its v0 floor: `{"assessment": "off"}`.
+class VulnSeverityCounts(BaseModel):
+    """`vuln.counts.severity` — findings by the corpus's severity band, this app, this
+    device. The four bands are a closed set, so a corpus that invents a fifth is refused
+    at enqueue rather than indexed under a name no dashboard knows.
 
-    Under `off` the block is exactly this — the counts, the days and the id list are
-    absent, not zero (docs/vulnerabilities.md §4a). Typed as the ruled closed set so a
-    misspelled assessment is refused at enqueue rather than indexed for ever.
+    **Bands do not have to sum to `total`.** A finding the corpus carries with no severity
+    score is counted in `counts.total` and in no band (docs/vulnerabilities.md §4). Said
+    out loud in the schema as well as the doc, because the obvious `stats sum()` over the
+    four bands silently under-reports otherwise.
+    """
+
+    critical: int
+    high: int
+    medium: int
+    low: int
+
+
+# The bands, worst first — read off the model rather than restated, so the schema is the
+# one place a band exists. The order is load-bearing twice: it is the severity leg of the
+# `vulnIDs` cap's priority (§4e), and it is the order the validator below walks.
+VULN_SEVERITY_BANDS: tuple[str, ...] = tuple(VulnSeverityCounts.model_fields)
+
+
+class VulnCounts(BaseModel):
+    """`vuln.counts` — active findings against THIS installed version on THIS device.
+    Never the fleet, never the app across the fleet (docs/vulnerabilities.md §4).
+
+    `kev` is CISA's Known Exploited Vulnerabilities list and is **not** a severity band:
+    a KEV finding is also counted in whatever band it carries, so `kev` and the four bands
+    overlap by design.
+    """
+
+    total: int
+    kev: int
+    severity: VulnSeverityCounts
+
+
+class VulnSeverityDays(BaseModel):
+    """`vuln.daysOldestPublished.severity` — the same clock, per band.
+
+    `None` is the canonical form of *never*; the `-1` the wire ships is minted at the
+    HEC-shaping seam (`app.core.vuln.mint_hec_sentinels`, docs/vulnerabilities.md §4c), so
+    a warehouse destination can still render SQL `NULL`.
+    """
+
+    critical: int | None
+    high: int | None
+    medium: int | None
+    low: int | None
+
+
+class VulnDaysOldestPublished(BaseModel):
+    """`vuln.daysOldestPublished` — days since the publication date of the OLDEST active
+    finding, overall and per band (docs/vulnerabilities.md §4d).
+
+    Publication, not first-detected, and the key name says which clock: under a
+    hand-refreshed corpus a knew-about-it basis collapses the whole backlog onto the
+    refresh date, so every fleet would look better the slower we refresh — the number
+    would measure our cadence, not the customer's exposure. First-detected-in-tenant is
+    recoverable from the customer's own index (a snapshot stream's first appearance of an
+    id); publication is not, so publication is what ships.
+
+    `total` is not the maximum of the four bands: an unscored finding is in the total and
+    in no band.
+    """
+
+    total: int | None
+    severity: VulnSeverityDays
+
+
+class VulnEnrichment(BaseModel):
+    """`vuln{}` on the app item — LoonInspect's own answer about an app Jamf reported,
+    riding that app's sub-event beside `patch{}` (docs/vulnerabilities.md §3 and §4).
+
+    It is an INLINE enrichment on `loon:jamf:mac:app`. `loon:jamf:mac:app:vuln` is minted
+    and reserved for the post-v0 lifecycle records — one event per finding transition, not
+    one per app — because taking the compound here would force
+    `loon:jamf:mac:app:patch:vuln` on an app carrying both blocks, and sourcetypes are
+    permanent hand-written `props.conf` stanzas.
+
+    **Which keys ride is decided by `assessment`, and the shape is refused if it is not**
+    (§4a). This is the "zero is not a clean bill" rule, made unwritable rather than
+    documented:
+
+    * `off` — the whole block is `{"assessment": "off"}`. An unlicensed or unconsented
+      pod, or a container with no corpus loaded, leaks nothing;
+    * `unknown_app` — `assessment` and `corpusAsOf`, dated. **Never** `counts.total: 0`:
+      shipping a zero beside it hands a careless `stats sum(vuln.counts.total)` a clean
+      bill for a fleet nobody assessed, which is the exact failure the `assessment`
+      vocabulary exists to prevent;
+    * `covered` — every key. `counts.total: 0` here IS a clean bill, and it is honest
+      precisely because `covered` says we looked.
+
+    The reconciliation with additive-only clause 4 (*absence means the event predates the
+    key*) is mechanical: `assessment` is always present and always says why. An absence
+    next to a discriminator that explains it is not the ambiguous absence clause 4
+    protects against — the same doctrine the posture tape runs one layer down.
+
+    The cap on `vulnIDs` is deliberately **not** a wire key (§4e): ~50 ids, priority
+    KEV → severity → recency, a server-side knob that can move at any time — which stays
+    safe only because `vulnIDsTruncated` ships beside the list to say when it bit.
     """
 
     assessment: VulnAssessment = VULN_ASSESSMENT_OFF
+    # Present when `assessment` is `covered` or `unknown_app`: the corpus generation this
+    # answer came from, so a hand-refreshed corpus decays visibly instead of silently, and
+    # the NVD ingest's eventual arrival is self-evident when the date starts moving on its
+    # own (Kyle, 2026-09-01, ruling 4).
+    corpus_as_of: date | None = Field(default=None, serialization_alias="corpusAsOf")
+    # The four below ride `covered` only.
+    counts: VulnCounts | None = None
+    days_oldest_published: VulnDaysOldestPublished | None = Field(
+        default=None, serialization_alias="daysOldestPublished"
+    )
+    vuln_ids: list[str] | None = Field(default=None, serialization_alias="vulnIDs")
+    vuln_ids_truncated: bool | None = Field(default=None, serialization_alias="vulnIDsTruncated")
+
+    @model_validator(mode="after")
+    def _absence_says_why(self) -> VulnEnrichment:
+        """§4a and §4c, in both directions, refused at enqueue rather than indexed.
+
+        Two rules. Which keys are present is a function of `assessment` and nothing else —
+        so a producer cannot ship a zero count under `unknown_app`, and cannot ship a
+        `covered` that says nothing. And the sentinel invariant, which is the one a
+        dashboard divides by:
+
+            daysOldestPublished.severity.X is not None  <=>  counts.severity.X > 0
+            daysOldestPublished.total       is not None  <=>  counts.total       > 0
+
+        (on the wire, with the sentinel minted, that reads `>= 0` — §4c.)
+        """
+        dated = self.assessment != VULN_ASSESSMENT_OFF
+        if (self.corpus_as_of is not None) != dated:
+            raise ValueError(
+                "`corpusAsOf` rides `covered` and `unknown_app` and only those, so under "
+                f"`{self.assessment}` it must be {'present' if dated else 'absent'}"
+            )
+        populated = self.assessment == VULN_ASSESSMENT_COVERED
+        for name in ("counts", "days_oldest_published", "vuln_ids", "vuln_ids_truncated"):
+            if (getattr(self, name) is not None) != populated:
+                raise ValueError(
+                    f"`{name}` rides `covered` and only `covered`, so under `{self.assessment}` it must be "
+                    f"{'present' if populated else 'absent'} — the counts, the days and the id list are "
+                    "absent, not zero (docs/vulnerabilities.md §4a)"
+                )
+        if self.counts is None or self.days_oldest_published is None:
+            return self
+        pairs = [(self.counts.total, self.days_oldest_published.total, "total")]
+        pairs += [
+            (getattr(self.counts.severity, band), getattr(self.days_oldest_published.severity, band), band)
+            for band in VULN_SEVERITY_BANDS
+        ]
+        for count, days, band in pairs:
+            if (days is not None) != (count > 0):
+                raise ValueError(f"daysOldestPublished.{band} and counts.{band} disagree about whether a finding exists")
+        return self
+
+    @model_serializer(mode="wrap")
+    def _only_the_keys_the_assessment_carries(self, handler) -> dict:
+        """Drop the absent keys rather than shipping them as null — §4a's "absent, not
+        zero", which is also "absent, not null".
+
+        Scoped to THIS block's own keys. It never descends: `daysOldestPublished.total` is
+        `None` under a clean bill and must stay present as null, because §4c makes those
+        keys always-present-and-always-int on the wire once the sentinel is minted.
+        """
+        return {key: value for key, value in handler(self).items() if value is not None}
 
 
 class InventoryAppItem(BaseModel):

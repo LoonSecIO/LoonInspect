@@ -42,7 +42,19 @@ every sub-event as the envelope's `time`.
 acceptance; #81 ruling 7: the sourcetype tree is the routing dimension). The enrichment
 strings (`loon:jamf:mac:app:patch`, `:vuln`, `:alert`) stay minted with no writer: an
 enrichment rides inline on the app sub-event, under its own key beside Jamf's object
-(#242 item 6; docs/vulnerabilities.md §3).
+(#242 item 6; docs/vulnerabilities.md §3). A populated `vuln{}` does not change that —
+#249 ruled the summary rides `loon:jamf:mac:app`, because taking `:vuln` for it would
+force `loon:jamf:mac:app:patch:vuln` on an app carrying both blocks, and a sourcetype is
+a permanent hand-written `props.conf` stanza. `:vuln` stays reserved for the post-v0
+lifecycle records.
+
+The ONE thing this seam mints is `-1`. `daysOldestPublished` is always present and always
+int on the wire, with `-1` for "no finding in this band" (docs/vulnerabilities.md §4c) —
+and the canonical payload keeps `None`, so the stored row, a generic webhook and an
+Elastic document can all render it natively as SQL `NULL`. That conversion belongs to the
+HEC shaping and to nothing upstream, which is `mint_hec_sentinels` on the item below: a
+no-op returning the same object for every item that carries no populated `vuln{}`, which
+today is all of them.
 
 Order is fixed — registry order, which puts the seven anchors first in the contract's
 declaration order, then the list sections, items in payload order — so building twice
@@ -71,6 +83,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 
+from app.core.vuln import mint_hec_sentinels
 from app.core.wire import hec_event
 from app.core.wire_vocabulary import SUB_EVENT_KEYS, registry_rows
 from app.mdm.jamf.contract import SECTIONS
@@ -103,7 +116,7 @@ def fan_out(payload: Mapping[str, object], hints: Mapping[str, object]) -> list[
     meta = payload.get(_DEVICE_META)
 
     def sub_event(item: Mapping[str, object], sourcetype: str | None) -> dict[str, object]:
-        body: dict[str, object] = {**head, **item}
+        body: dict[str, object] = {**head, **mint_hec_sentinels(item)}
         if isinstance(meta, Mapping):
             body[_DEVICE_META] = dict(meta)
         return hec_event(body, hints, sourcetype=sourcetype)

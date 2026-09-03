@@ -27,19 +27,21 @@ import logging
 import unicodedata
 import uuid as uuidlib
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
+from app.core.content_keys import app_full_key, app_title_key
 from app.core.runs import LOCK_DEVICE_SWEEP, TRIGGER_SWEEP, RunContext, reset_run
 from app.core.runs import set_run as _set_run
+from app.core.vuln import NO_CORPUS, VulnCorpus
 from app.core.wire_vocabulary import ENRICHMENTS, SECTION_WRAPPERS, SUB_EVENT_KEYS
 from app.mdm.jamf.client import normalize_computer
 from app.mdm.jamf.contract import SECTIONS, V0_SECTIONS, Observation, SectionContent, canonicalize_computer
 from app.mdm.service import _device_meta, apply_hashes
-from app.mdm.snapshot import app_identity, build_inventory_snapshot
+from app.mdm.snapshot import app_identity, build_inventory_snapshot, content_keys
 from app.models.schema import Device, InstalledApp
 from app.schemas.payload import (
     INVENTORY_EVENT_TYPE,
@@ -134,9 +136,18 @@ def _device(raw: dict) -> Device:
     )
 
 
-def _snapshot(raw: dict, sections=V0_SECTIONS, *, titles: dict[str, list[str]] | None = None) -> dict:
+def _snapshot(
+    raw: dict,
+    sections=V0_SECTIONS,
+    *,
+    titles: dict[str, list[str]] | None = None,
+    corpus: VulnCorpus = NO_CORPUS,
+) -> dict:
     """The fixture through the two views `ingest_computer` builds and the builder, to the
-    stored payload — the same path process_sync takes, minus the session."""
+    stored payload — the same path process_sync takes, minus the session.
+
+    `corpus` defaults to the one the container ships (`NO_CORPUS`), so every existing
+    assertion in this suite and in `test_hec_fanout.py` describes the shipped wire."""
     observation = canonicalize_computer(raw, sections)
     view = normalize_computer(raw, sections)
     event = build_inventory_snapshot(
@@ -145,6 +156,7 @@ def _snapshot(raw: dict, sections=V0_SECTIONS, *, titles: dict[str, list[str]] |
         apps=_rows(view, titles),
         occurred_at=_WINDOW,
         device_meta=_device_meta(_device(raw)),
+        corpus=corpus,
     )
     return event.to_payload()
 
@@ -292,6 +304,7 @@ def test_patch_supported_reads_the_row_and_survives_canonicalisation(run: RunCon
         apps=rows,
         occurred_at=_WINDOW,
         device_meta={},
+        corpus=NO_CORPUS,
     )
     by_name = {item.app["name"]: item for item in event.app or ()}
     assert set(by_name) == {"Café.app", "Plain.app", "Nameless.app"}
@@ -302,6 +315,28 @@ def test_patch_supported_reads_the_row_and_survives_canonicalisation(run: RunCon
     # is dropped from the canonical entry; the identity agrees on both sides regardless.
     assert by_name["Nameless.app"].patch.supported is True
     assert app_identity(accented, "", " 1.0") == ("Café.app", "Café.app", "1.0")
+
+
+def test_the_row_and_the_canonical_entry_agree_on_the_content_keys(payload: dict, raw: dict) -> None:
+    """The join #249's `vuln{}` is looked up on, pinned on all 83 apps of the fixture.
+
+    `content_keys()` reads `key_title` / `key_full` off the `installed_apps` row, which
+    hashed Jamf's RAW strings in `apply_hashes`; the fallback for an app with no row
+    computes them from the CANONICAL entry body. The two are the same string because
+    `content_keys.canonical_key` NFC-normalises and strips every field before hashing and
+    the entry body is already in that form — the property that lets the corpus be keyed on
+    one hash whichever side computes it. Unlike `version_hash`, which really does differ
+    between the two sides (see the `patch.supported` test below) and is why the patch join
+    is on the canonical identity triple instead.
+    """
+    view = normalize_computer(raw, V0_SECTIONS)
+    from_rows = content_keys(_rows(view))
+    assert len(from_rows) == 83
+    for item in payload["app"]:
+        app = item["app"]
+        identity = app_identity(app.get("name"), app.get("bundleId"), app.get("version"))
+        name, bundle, version = identity
+        assert from_rows[identity] == (app_title_key(name, bundle), app_full_key(name, bundle, version, None))
 
 
 def test_a_removed_app_is_absent_and_a_rowless_app_is_unsupported_and_logged(run: RunContext, caplog) -> None:
@@ -325,6 +360,7 @@ def test_a_removed_app_is_absent_and_a_rowless_app_is_unsupported_and_logged(run
             apps=[removed],
             occurred_at=_WINDOW,
             device_meta={},
+            corpus=NO_CORPUS,
         )
     assert [item.app["name"] for item in event.app or ()] == ["Kept.app"]
     assert event.app is not None and event.app[0].patch.supported is False
@@ -443,7 +479,9 @@ def test_a_read_that_disagrees_with_itself_about_the_ea_aperture_raises(raw: dic
     it fails the device loudly rather than shipping `"ea": []` for a section nobody read."""
     observation = canonicalize_computer(raw, ("extension_attributes",))
     with pytest.raises(ValueError, match="must agree on the aperture"):
-        build_inventory_snapshot(observation, extension_attributes=None, apps=(), occurred_at=_WINDOW, device_meta={})
+        build_inventory_snapshot(
+            observation, extension_attributes=None, apps=(), occurred_at=_WINDOW, device_meta={}, corpus=NO_CORPUS
+        )
 
 
 # --- refusals at enqueue -------------------------------------------------------------
@@ -458,10 +496,11 @@ def test_a_missing_enrichment_block_is_refused_at_enqueue() -> None:
         InventoryAppItem(app=app, vuln=VulnEnrichment())  # type: ignore[call-arg]
     with pytest.raises(ValidationError):
         InventoryAppItem(app=app, patch=PatchEnrichment(supported=False))  # type: ignore[call-arg]
-    # `assessment` is the ruled closed set, `unknown_app` spelled the founder's way.
-    VulnEnrichment(assessment="unknown_app")
+    # `assessment` is the ruled closed set, `unknown_app` spelled the founder's way —
+    # and it carries `corpusAsOf`, because a dated edge is what makes it honest (§4a).
+    VulnEnrichment(assessment="unknown_app", corpus_as_of=date(2026, 9, 1))
     with pytest.raises(ValidationError):
-        VulnEnrichment(assessment="unknownApp")
+        VulnEnrichment(assessment="unknownApp", corpus_as_of=date(2026, 9, 1))
 
 
 def test_a_bare_jamf_object_in_a_list_section_is_refused() -> None:

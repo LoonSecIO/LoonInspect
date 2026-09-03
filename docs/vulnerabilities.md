@@ -1,6 +1,6 @@
 # The vulnerability contract
 
-Status: **ruled, nothing built** · Ruled on
+Status: **ruled; the wire block is built, the corpus is not** · Ruled on
 [#113](https://github.com/LoonSecIO/LoonInspect/issues/113): the corpus cut and
 `assessment` on 2026-09-01, the four naming and lifecycle items on 2026-09-02 · Wire
 keys obey the frozen vocabulary in
@@ -8,8 +8,16 @@ keys obey the frozen vocabulary in
 
 This document exists because the vulnerability design lived in a session record and two
 issue comments, and a contract that lives only in a session record is one that gets
-re-argued by whoever builds it. Everything below is a decision with an argument. None of
-it is code yet.
+re-argued by whoever builds it. Everything below is a decision with an argument.
+
+**What is built, as of 2026-09-03** ([#249](https://github.com/LoonSecIO/LoonInspect/issues/249)):
+the summary block of §4 in full — every key, the presence rules, the cap, the clock and
+the sentinel — plus the lookup seam it reads (`VulnCorpus` in `app/core/vuln.py`). What
+is not built is the corpus behind that seam ([#248](https://github.com/LoonSecIO/LoonInspect/issues/248)),
+so the container ships `NO_CORPUS` and every app on every device still reads
+`assessment: off`. The day #248 loads a corpus, the block starts answering with no wire
+change at all — which is the whole reason the vocabulary was frozen before the data
+existed. §10 tracks the rest.
 
 The block it rules is `vuln{}` — LoonInspect's own answer about an app Jamf reported,
 riding that app's sub-event beside `patch{}`. It is the highest fan-out object the
@@ -76,7 +84,11 @@ does not become a different kind of event by being assessed.
 one event per finding transition, not one per app. This is what §1 of the vocabulary doc
 means by *"the trailing compound survives"*: `*:vuln` finds every lifecycle record
 across every subject and every vendor, and it does not accidentally collect the whole
-app inventory along with them.
+app inventory along with them. #249 built the summary and stamped nothing: the string
+stays minted with no writer
+([`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md) §7), the fan-out's registry
+drift test is untouched, and a populated `vuln{}` rides `loon:jamf:mac:app` exactly as an
+empty one did.
 
 Stated because the alternative reading is available and wrong: if the summary took the
 compound sourcetype, then an app carrying both `patch{}` and `vuln{}` would need
@@ -110,6 +122,16 @@ score is counted in `counts.total` and in no band. Said out loud because the obv
 and `-1` in every `daysOldestPublished`. That is honest precisely because `covered` says
 we looked.
 
+**What each answer costs.** Measured 2026-09-03 on the real fixture (one Mac mini, 83
+apps), as compact JSON, per app: **20 bytes** to say `off`, **54** to say `unknown_app`
+with a date, **1,067** to say `covered` at the full fifty-id cap. As a Splunk request of
+107 sub-events that is 84,135 bytes today, 86,957 if every app were `unknown_app`, and
+171,036 — 2.03× — if every app were `covered` at the cap. All three are far inside the
+900,000-byte request setting, and the third is the number #248 turns on; the arithmetic
+lives in `backend/tests/test_vuln_block.py` so nobody discovers it in the field. The 20
+bytes are also the answer to *why say `off` at all*: `vuln.assessment=off` extracts to a
+Splunk field and `{}` does not.
+
 ### 4a. `assessment`, and why absence is legible here
 
 Ruled 2026-09-01: a small corpus is only honest if its edge is countable. An app LoonVD
@@ -132,13 +154,18 @@ means 'did not apply', never zero"* ([`posture-snapshot.md`](posture-snapshot.md
 `patch.supported` is the same instinct in bool form: always present, so a search can
 `NOT` it.
 
-Under `off` the whole block is `{"assessment": "off"}` — the constant
-[#241](https://github.com/LoonSecIO/LoonInspect/issues/241) stamps on every `app` item of
-the `device.inventory` snapshot at enqueue (`VulnEnrichment`, `app/schemas/payload.py`,
-typed to this closed set so a misspelled assessment is refused rather than indexed) and
+Under `off` the whole block is `{"assessment": "off"}` — what
+[#241](https://github.com/LoonSecIO/LoonInspect/issues/241) stamped on every `app` item of
+the `device.inventory` snapshot at enqueue and
 [#242](https://github.com/LoonSecIO/LoonInspect/issues/242) copies through to the app
-sub-event while no corpus exists; the only vulnerability key on the wire until
-[#249](https://github.com/LoonSecIO/LoonInspect/issues/249) lands.
+sub-event. Since [#249](https://github.com/LoonSecIO/LoonInspect/issues/249) it is no
+longer a constant but the answer the seam gives when no corpus is loaded
+(`app/core/vuln.py`, `NO_CORPUS`), which is still every app on every device until #248
+lands. **The three states' presence rules are refused rather than documented**:
+`VulnEnrichment` (`app/schemas/payload.py`) is typed to the closed set of assessments and
+validates, in both directions, that `corpusAsOf` rides `covered` and `unknown_app` and
+that the counts, the days and the id list ride `covered` alone — so a producer cannot
+ship `counts.total: 0` beside `unknown_app` even by accident.
 
 ### 4b. Values are not camelCase, and `unknown_app` is not a typo
 
@@ -169,6 +196,12 @@ daysOldestPublished.total       >= 0   ⟺   counts.total       > 0
 The sentinel is minted in the HEC-shaping seam. The canonical layer keeps `None`, and
 other destination dialects may render it natively — SQL `NULL`, for instance.
 
+Built that way (#249): the stored outbox payload and every non-Splunk destination carry
+`null`, and `app.core.vuln.mint_hec_sentinels` — called from `app/core/hec_fanout.py` and
+from nowhere else, so no second dialect of `-1` can grow — rewrites them on the way into
+the sub-event. The invariant above is asserted at enqueue by the model, not left to the
+producer.
+
 ### 4d. `daysOldestPublished`: the clock, and why the key says which clock
 
 **Basis: days since the finding's publication date.** Ruled 2026-09-01, and it is #68's
@@ -194,7 +227,16 @@ as an excuse.
 
 **This places one requirement on the corpus format:** a detection record must carry a
 publication date. The format is still provisional, so this ruling is asking for the
-field before the format sets, which is cheap now and a migration later.
+field before the format sets, which is cheap now and a migration later. #249 turned the
+requirement into a type: `app.core.vuln.VulnFinding` has no constructor without
+`published`.
+
+**Which "today" the days are counted from:** the snapshot's own `occurredAt`, never the
+wall clock. The builder is pure and clock-free, and a delivery is retried against the
+stored row up to ten times — so a day boundary crossed between attempts must not change
+the bytes. A publication date later than the event (a snapshot replayed out of the
+retention window against a corpus refreshed since) reads `0`, never a negative, because
+a negative would collide with the sentinel.
 
 ### 4e. `vulnIDs`, and the name that was rejected
 
@@ -216,6 +258,14 @@ number stays a server-side knob that can move any time — which is only true be
 `vulnIDsTruncated` exists to say when it bit. The list is load-bearing for
 summary-tier customers: with no fan-out, *"is CVE-X on my fleet"* is answered from this
 list alone.
+
+Built as `VULN_IDS_CAP = 50` in `app/core/vuln.py`, with the ordering done there rather
+than asked of the corpus — the cap and the priority that protects it are one decision.
+**The cap never touches the counts**: `counts.total` is every active finding, so a
+truncated list under-names findings and never under-reports them. Two orderings the
+contract leaves open are labelled as assumptions in the code: *recency* is read as
+most-recently-published first, and a finding the corpus carries with no severity score
+sorts after `low` — counted in `total`, never dropped.
 
 ## 5. Three id namespaces, one shape
 
@@ -244,6 +294,11 @@ accompli before anyone notices. **Rule the namespace; build nothing behind it.**
 
 **Rider:** `LOCAL-` ids never leave the pod. Not in the data-sharing payload, not in
 community keys. They are tenant-local by definition and customer-identifying by content.
+
+Enforced by #249 where a finding is constructed: `app.core.vuln.VulnFinding` refuses a
+`LOCAL-` id outright. For a static corpus that is load time, so a bad record fails the
+corpus loudly rather than failing every device sync on a per-lookup raise — **which is a
+requirement on #248: build the findings when the corpus is loaded, not per lookup.**
 
 ## 6. Supersede: the id swaps, nothing resolves
 
@@ -339,10 +394,10 @@ ruling issue edits the module, regenerates the doc, and leaves a pointer on #188
 Four sessions, in this order. The first blocks the other three; the other three do not
 block each other.
 
-| Consequence | Issue |
-| --- | --- |
-| The v0 corpus and the local hash-join — ~100 titles, public sources, `corpusAsOf`, Wireshark included, and the publication date §4d requires of the format | [#248](https://github.com/LoonSecIO/LoonInspect/issues/248) |
-| `vuln{}` populated on the app sub-event; `assessment` stops being a constant `off`. Also needs the fan-out ([#242](https://github.com/LoonSecIO/LoonInspect/issues/242)) | [#249](https://github.com/LoonSecIO/LoonInspect/issues/249) |
-| The four `vuln.*` posture keys go ACTIVE, under §7's no-zero rule | [#250](https://github.com/LoonSecIO/LoonInspect/issues/250) |
-| The corpus's edge made visible in the UI — `assessment`, `corpusAsOf`, three empty states | [#251](https://github.com/LoonSecIO/LoonInspect/issues/251) |
-| The lifecycle fan-out under `loon:jamf:mac:app:vuln`, and `LOCAL-` ids behind their reservation | post-v0 (§5, §6) |
+| Consequence | Issue | State |
+| --- | --- | --- |
+| The v0 corpus and the local hash-join — ~100 titles, public sources, `corpusAsOf`, Wireshark included, and the publication date §4d requires of the format | [#248](https://github.com/LoonSecIO/LoonInspect/issues/248) | Open. It plugs into `app.core.vuln.VulnCorpus` and swaps `loaded_corpus()`; the rest of the wire is built and waiting |
+| `vuln{}` populated on the app sub-event; `assessment` stops being a constant `off`. Also needs the fan-out ([#242](https://github.com/LoonSecIO/LoonInspect/issues/242)) | [#249](https://github.com/LoonSecIO/LoonInspect/issues/249) | **Built 2026-09-03.** `app/core/vuln.py`, `VulnEnrichment` in `app/schemas/payload.py`, the sentinel in `app/core/hec_fanout.py`, pinned in `backend/tests/test_vuln_block.py` |
+| The four `vuln.*` posture keys go ACTIVE, under §7's no-zero rule | [#250](https://github.com/LoonSecIO/LoonInspect/issues/250) | Open. Still RESERVED, deliberately: the join has stored nothing to count |
+| The corpus's edge made visible in the UI — `assessment`, `corpusAsOf`, three empty states | [#251](https://github.com/LoonSecIO/LoonInspect/issues/251) | Open |
+| The lifecycle fan-out under `loon:jamf:mac:app:vuln`, and `LOCAL-` ids behind their reservation | post-v0 (§5, §6) | Named, not built. The string stays minted with no writer |
