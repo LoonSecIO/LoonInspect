@@ -52,6 +52,11 @@ key = "v1:" + lowercase_hex(sha256(utf8(domain ⟂ field₁ ⟂ field₂ ⟂ …
 | `os` | platform, os_version, os_build |
 | `hw` | model_identifier, cpu_arch |
 
+The app and hardware domains hash **no platform**, and gain none: the corpus tables are
+partitioned by platform, so the platform travels *beside* the key as a snapshot-row field
+(see the request body below) rather than inside it. Putting it in the hash would mean a `v2:`
+prefix, which invalidates every vector below and every count already summed against them.
+
 `app.title` is the disclosure-control and feed-join key (the app's *identity*);
 `app.full` is the prevalence key (the exact tuple). The split exists because
 vulnerability rules are ranges while keys are points, and because reveal thresholds
@@ -79,10 +84,13 @@ Snapshots are **aggregated before they leave the box**: distinct tuples with cou
 summed per tenant. Never per-device rows.
 
 Shared, per tenant, daily: the key pairs above with raw install counts; OS and hardware
-tuples with counts; the tenant's random submission UUID; the container build version;
-the contract version. Counts are raw (not bucketed) because the cloud's whole job is
-summation across customers, and buckets don't sum — the cost, that a tenant's top-app
-count approximates its fleet size, is disclosed rather than obfuscated.
+tuples with counts; the platform each of those rows was counted on; the tenant's random
+submission UUID; the container build version; the contract version. The platform is the
+one addition that is not a hash — it is a fixed vocabulary word (`macos` today), it says
+nothing a fleet is not already telling the collector by the OS keys it sends, and the
+corpus cannot be partitioned without it. Counts are raw (not bucketed) because the
+cloud's whole job is summation across customers, and buckets don't sum — the cost, that a
+tenant's top-app count approximates its fleet size, is disclosed rather than obfuscated.
 
 Never shared, by construction: device identifiers, serials, hostnames, user names,
 file paths (macOS paths embed user names), extension attributes, connection names,
@@ -198,9 +206,9 @@ thing that distinguishes an exchange from an update check.
   "tier": "keys" | "reveal",
   "build": "2026.08.20+d4488cd",         // container build (public builds; coarse)
   "snapshot": {                           // full replacement, idempotent
-    "apps":     [ { "title": "v1:…", "full": "v1:…", "count": 412 }, … ],
-    "os":       [ { "key": "v1:…", "count": 380 }, … ],
-    "hardware": [ { "key": "v1:…", "count": 380 }, … ]
+    "apps":     [ { "title": "v1:…", "full": "v1:…", "count": 412, "platform": "macos" }, … ],
+    "os":       [ { "key": "v1:…", "count": 380, "platform": "macos" }, … ],
+    "hardware": [ { "key": "v1:…", "count": 380, "platform": "macos" }, … ]
   },
   "reveals": [                            // answers to a PRIOR response's requests;
     {                                     // [] always, when tier is "keys"
@@ -225,6 +233,23 @@ thing that distinguishes an exchange from an update check.
 
 Semantics the server may rely on:
 
+- **Every snapshot row names its platform.** `platform` is present on every `apps`, `os` and
+  `hardware` row, and it is the routing token: the cloud corpus tables are partitioned by
+  platform (Kyle, R4), and a content key cannot route a row to a table — not even the `os`
+  key, which hashes the platform but is not reversible into a partition name. The vocabulary
+  is one value per Apple OS — `macos`, `ios`, `ipados`, `tvos`, `visionos` — and it is the
+  **content-key** spelling, not the Splunk sourcetype's `mac`; the two are different frozen
+  namespaces (`docs/mobile-devices.md` §2). A value is never reused for a different
+  population, and there is deliberately no submission-level platform: one container reads
+  more than one platform from a single connection, so a per-submission field would have had
+  to be deprecated rather than extended.
+  Added in the container release that closed [#231](https://github.com/LoonSecIO/LoonInspect/issues/231),
+  additively — a server reading a `v1` submission from an older container sees rows without
+  the key and must treat those as **unknown platform**, never as `macos` by default. Rows
+  already summed cloud-side cannot be given a platform after the fact, which is the entire
+  reason the key ships before the first exchange rather than after.
+  `hardware` is `[]` from every container shipped so far: the `devices` columns the `hw` key
+  needs do not exist yet, so the row above is the shape it will take, not one being sent.
 - **Idempotent replacement.** A request fully supersedes the previous snapshot for its
   `submission`. Aggregation is sum-over-latest; UUIDs unseen for N days age out (the
   ingest store's TTL is the natural mechanism).

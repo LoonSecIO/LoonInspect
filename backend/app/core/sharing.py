@@ -30,6 +30,21 @@ from app.models.schema import DataSharingSettings, Device, InstalledApp, ShareLo
 
 CONTRACT_VERSION = "v1"
 
+# The population every snapshot row came from (#231). v0 reads computers only
+# (docs/mobile-devices.md P-2), so every row this builder emits is `macos` — a fact about
+# what the sweep observed, not a default standing in for an unknown.
+#
+# It is a constant because the fact has no column yet: when `devices.platform` exists
+# (P-3 / #233) the rows read it per device and this constant is deleted rather than edited.
+# Until then it is the single source both row kinds read, so the platform cannot be stated
+# two ways in one submission — which is the whole failure mode a second literal invites.
+#
+# Spelling is the content-key OS domain's, not the sourcetype segment's (Kyle, 2026-09-02):
+# `macos` here, `mac` in `app.core.wire_vocabulary`. Both are frozen, they are different
+# namespaces, and neither was renamed to match the other. The siblings are `ios`, `ipados`,
+# `tvos`, `visionos`.
+SNAPSHOT_PLATFORM = "macos"
+
 
 async def get_or_create_settings(db: AsyncSession) -> DataSharingSettings:
     """The tenant's consent row, created with the defaults on first access.
@@ -81,7 +96,19 @@ async def build_exchange_request(db: AsyncSession, settings_row: DataSharingSett
     """The v1 exchange request body, aggregated in SQL: distinct tuples with counts,
     never per-device rows. `reveals` is always empty here — answers to reveal
     requests are assembled by the exchange job (`build_reveals`, below), because they
-    depend on the previous response, which a preview does not have."""
+    depend on the previous response, which a preview does not have.
+
+    Every snapshot row names its platform (#231). The cloud corpus tables are partitioned
+    by platform (Kyle, R4), so the content key alone cannot route a row to a table — and a
+    sha256 is not a routing token even when the platform was hashed into it. Per row rather
+    than once per submission because one container will read computers *and* mobile from a
+    single connection (docs/mobile-devices.md §2), at which point an envelope field would
+    have to be deprecated rather than extended.
+
+    Stating it is additive and costs one key. Not stating it means the cloud holds older
+    rows with no platform and newer rows with one, and nothing but the container release
+    history to date the boundary — the same argument #230 made at `posture_snapshot`, here
+    with someone else's data and no way to backfill summed counts."""
     globs = list(settings_row.exclude_globs or [])
 
     app_rows = (
@@ -96,7 +123,12 @@ async def build_exchange_request(db: AsyncSession, settings_row: DataSharingSett
     ).all()
 
     apps = [
-        {"title": row.key_title, "full": row.key_full, "count": row.count}
+        {
+            "title": row.key_title,
+            "full": row.key_full,
+            "count": row.count,
+            "platform": SNAPSHOT_PLATFORM,
+        }
         for row in app_rows
         if not _excluded(row.bundle_id, globs)
     ]
@@ -112,8 +144,17 @@ async def build_exchange_request(db: AsyncSession, settings_row: DataSharingSett
             .group_by(Device.os_version)
         )
     ).all()
+    # The os key already hashes the platform, and the row states it anyway: the hash is not
+    # reversible into a partition name, so a reader routing os rows would otherwise have to
+    # guess-and-check the whole OS vocabulary against every key. Same constant as the app
+    # rows above, so one submission can never claim two platforms.
     os_tuples = [
-        {"key": os_key("macos", row.os_version, None), "count": row.count} for row in os_rows
+        {
+            "key": os_key(SNAPSHOT_PLATFORM, row.os_version, None),
+            "count": row.count,
+            "platform": SNAPSHOT_PLATFORM,
+        }
+        for row in os_rows
     ]
 
     return {
