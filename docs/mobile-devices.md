@@ -82,7 +82,7 @@ but each one silently wrong the first time a mobile record reaches it.
 | | What assumes computers | Where | When it must land |
 | --- | --- | --- | --- |
 | **P‑1** | ~~`posture_snapshot` has no population column; 11 of the 25 keys change meaning~~ | `schema.py:1293` | **LANDED 2026-09-02** — [#230](https://github.com/LoonSecIO/LoonInspect/issues/230) |
-| **P‑2** | The data-sharing submission carries no platform; `snapshot.apps` rows are `{title, full, count}` | `sharing.py:98–116` | **v0** — [#231](https://github.com/LoonSecIO/LoonInspect/issues/231) |
+| **P‑2** | ~~The data-sharing submission carries no platform; `snapshot.apps` rows are `{title, full, count}`~~ | `sharing.py:98–116` | **LANDED 2026-09-03** — [#231](https://github.com/LoonSecIO/LoonInspect/issues/231) |
 | **P‑3** | `devices` is unique on `(mdm_connection_id, external_id)` — one Jamf ID space | `schema.py:130` | 1st mobile sweep — [#233](https://github.com/LoonSecIO/LoonInspect/issues/233) |
 | **P‑4** | `deviceMeta.eventID` is `uuid5(run.id, external_id)` — no platform in the name | `service.py:871` | 1st mobile sweep — [#234](https://github.com/LoonSecIO/LoonInspect/issues/234) |
 | **P‑5** | `registry_rows()` iterates the computer section table whatever platform it is passed | `wire_vocabulary.py:92` | with the registry — [#235](https://github.com/LoonSecIO/LoonInspect/issues/235) |
@@ -108,13 +108,19 @@ and unchangeable there) — and neither was renamed to match the other. So the t
 siblings are `ios`, `ipados`, `tvos`, `visionos`, which agree with §2 on every value
 except Mac.
 
-`sharing.py` is the same argument at a different table. Its rows are *correct* for v0 — every
-device is a Mac, so `os_key("macos", …)` is a fact, not a guess. The gap is that the
-submission never **says** so: app rows carry no platform and the envelope carries no
-platform. The cloud-side corpus is partitioned by platform (Kyle, R4), so a v0 corpus of
-platform-less rows has to be retroactively assumed Mac at exactly the moment mixed
-submissions start arriving. Stating the platform in the submission is additive, cheap, and
-only cheap before the first exchange.
+`sharing.py` was the same argument at a different table. Its rows were *correct* for v0 —
+every device is a Mac, so `os_key("macos", …)` is a fact, not a guess. The gap was that the
+submission never **said** so: app rows carried no platform and neither did the envelope. The
+cloud-side corpus is partitioned by platform (Kyle, R4), so a v0 corpus of platform-less rows
+would have had to be retroactively assumed Mac at exactly the moment mixed submissions start
+arriving. #231 **landed 2026-09-03**, before the first exchange, which is the only time it was
+cheap: every `apps` and `os` row now carries `platform`, from the single constant
+`sharing.SNAPSHOT_PLATFORM` that also feeds `os_key` — the literal is gone, so a submission
+cannot state two platforms. The decision it records is that the platform rides **per row**
+and not on the envelope, because one container reads both axes from one connection (§2) and a
+v1 envelope field could then only be deprecated, never extended. When `devices.platform`
+exists (P‑3) the rows read the column and the constant is deleted. No hash moved:
+`app_title_key` / `app_full_key` still hash no platform, by the same R4 reasoning.
 
 ### P‑4 is not solved by the sourcetype
 
