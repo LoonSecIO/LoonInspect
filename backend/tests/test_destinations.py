@@ -22,10 +22,29 @@ def test_enqueued_event_types_are_known() -> None:
     from app.changes.derive import EVENT_TYPE
     from app.core.outbox import KNOWN_EVENT_TYPES
     from app.core.runs import RUN_COMPLETED_EVENT, RUN_FAILED_EVENT
+    from app.schemas.payload import INVENTORY_EVENT_TYPE, InventoryChangedEvent, InventorySnapshotEvent
 
     assert EVENT_TYPE in KNOWN_EVENT_TYPES
     assert RUN_COMPLETED_EVENT in KNOWN_EVENT_TYPES
     assert RUN_FAILED_EVENT in KNOWN_EVENT_TYPES
+    assert INVENTORY_EVENT_TYPE in KNOWN_EVENT_TYPES
+    # The two inventory families are distinct subscribable types: the state and the delta.
+    assert InventorySnapshotEvent.model_fields["event"].default == INVENTORY_EVENT_TYPE
+    assert InventoryChangedEvent.model_fields["event"].default in KNOWN_EVENT_TYPES
+    assert InventoryChangedEvent.model_fields["event"].default != INVENTORY_EVENT_TYPE
+
+
+def test_destination_can_subscribe_to_the_snapshot_alone_or_the_delta_alone() -> None:
+    """Volume is a subscription knob, not a wire change (#241): a destination subscribed
+    only to the delta never receives a ~30 KB snapshot per device per pass, and one
+    subscribed only to the snapshot gets the state without the deltas."""
+    from app.schemas.destinations import DestinationCreate
+    from app.schemas.payload import INVENTORY_EVENT_TYPE
+
+    snapshot_only = DestinationCreate(name="state", url="https://siem.example/hook", subscribed_events=[INVENTORY_EVENT_TYPE])
+    assert snapshot_only.subscribed_events == ["device.inventory"]
+    delta_only = DestinationCreate(name="deltas", url="https://siem.example/hook", subscribed_events=["device.inventory.changed"])
+    assert delta_only.subscribed_events == ["device.inventory.changed"]
 
 
 def test_destination_can_subscribe_to_device_change() -> None:

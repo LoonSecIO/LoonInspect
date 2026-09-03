@@ -31,7 +31,9 @@ search head; take the URL from the token's own page rather than assuming the sha
 - *Name*: anything — `LoonInspect`.
 - *Source type*: set one explicitly. It names every event except the change stream:
   `device.change` carries its own `sourcetype` and overrides the input's, and nothing
-  else sends one (§6). Whatever you set here is what those other events get for ever.
+  else sends one (§6) — the per-device snapshot `device.inventory` included, which
+  arrives whole under this name until the fan-out (#242) splits it. Whatever you set here
+  is what those other events get for ever.
 - *Allowed indexes* and *Default index*: **this is the only thing that decides where the
   events land.** LoonInspect never sends an `index` field — `_build_body` adds the three
   envelope hints `wire.envelope()` emits (`time`, `host` and `source`) plus, on
@@ -167,15 +169,15 @@ instance, not a fix.
   fifteen: the fourteen inventory sections plus `computerGroup`, listed in
   [`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md) §2. A `sourcetype` in the HEC
   body overrides the input's for those events only.
-- `device.inventory.changed`, `run.completed` and `run.failed` send none, so they arrive
-  under whichever sourcetype **you** set on the input (§2). The reason, from
-  `core/outbox.py`:
+- `device.inventory`, `device.inventory.changed`, `run.completed` and `run.failed` send
+  none, so they arrive under whichever sourcetype **you** set on the input (§2). The
+  reason, from `core/outbox.py`:
 
 > Every other family is still deliberately unstamped. The ruled section tree names
 > fan-out sub-events (`loon:jamf:mac:app`) that are not built, and minting a string for a
 > shape that is about to change would create a permanent props.conf stanza for it.
 
-The stanza below keys on the input's name and so covers those three families; it assumes
+The stanza below keys on the input's name and so covers those four families; it assumes
 you called it `loon:inspect`, so substitute your own.
 
 ```ini
@@ -192,11 +194,14 @@ KV_MODE = json
 # One POST is one event; there is nothing to merge. Index-time.
 SHOULD_LINEMERGE = false
 
-# One event carries every app that changed on one device, so it is not small: measured
+# One delta carries every app that changed on one device, so it is not small: measured
 # from the real payload builder, the body is 509 bytes plus roughly 330 per changed app,
 # which puts a device with ~30 app changes — an OS upgrade, a re-image — past the 10,000
-# byte TRUNCATE default. Truncation would cut the JSON mid-object and take the field
-# extraction down with it. Index-time.
+# byte TRUNCATE default. The per-device snapshot (device.inventory, #241) is larger
+# still and arrives EVERY pass: measured against the real fixture record, 28,783 bytes
+# for a Mac with 83 apps, whole, until the fan-out (#242) splits it into ~106 sub-events.
+# Truncation would cut the JSON mid-object and take the field extraction down with it.
+# Index-time.
 TRUNCATE = 0
 
 # Deliberately NOT set:
@@ -232,9 +237,10 @@ that is not built.
 
 `_time` is the event's own occurrence time, not the time Splunk received it: `time` in the
 envelope is set at enqueue, on every family, from the instant the event is about — the
-body's `occurredAt` on `device.inventory.changed` and `run.completed`, its `windowEnd` on
-`run.failed`, and on `device.change` the same clock as the inventory event of the same
-pull. A sweep's events carry the run's window, a webhook's carry Jamf's `reportDate`.
+body's `occurredAt` on `device.inventory`, `device.inventory.changed` and `run.completed`,
+its `windowEnd` on `run.failed`, and on `device.change` the same clock as the inventory
+event of the same pull. A sweep's events carry the run's window, a webhook's carry Jamf's
+`reportDate`.
 This matters most on day one — events produced before any destination existed are held,
 not discarded, so adding Splunk on Friday after Monday's baseline delivers four days of
 events onto their own days rather than as one Friday spike.
@@ -252,27 +258,52 @@ the code cannot disagree. ([#90](https://github.com/LoonSecIO/LoonInspect/issues
 which this paragraph used to cite as still open, closed on 2026-09-03 with each of its
 decision points forwarded to that ruling.) Where each shape is written down: the
 `deviceMeta` block and the `run.completed` / `run.failed` payloads in [runs.md](runs.md)
-§4 and §7; the change stream in [change-log.md](change-log.md); the inventory delta's
-own keys — `addedApps` and `removedApps`, each a list of app objects — in
-`app/schemas/payload.py` (`InventoryChangedEvent`), the one place that serializes them.
+§4 and §7; the per-device snapshot `device.inventory` — its section wrappers, and the
+`app` item carrying `patch` and `vuln` beside Jamf's object — in [runs.md](runs.md) §4 and
+`app/schemas/payload.py` (`InventorySnapshotEvent`); the change stream in
+[change-log.md](change-log.md); the inventory delta's own keys — `addedApps` and
+`removedApps`, each a list of app objects — in `app/schemas/payload.py`
+(`InventoryChangedEvent`), the one place that serializes them.
 
-One casing law covers all four families. Every key LoonInspect mints is camelCase with
+One casing law covers all five families. Every key LoonInspect mints is camelCase with
 the token `ID` uppercased — `occurredAt`, `jobID`, `connectionID`, `eventID` — and a
-vendor's native key keeps the vendor's spelling, so an app's `bundleId` is Jamf's.
-`event` is the discriminator on every family and `jobID` is the run id everywhere, so
-`event=device.*`, `event=run.*` and a bare `jobID=$id$` each work across the whole feed.
+vendor's native key keeps the vendor's spelling, so an app's `bundleId` is Jamf's, inside
+a snapshot's `app[].app` object as much as inside `addedApps`. `event` is the
+discriminator on every family and `jobID` is the run id everywhere, so `event=device.*`,
+`event=run.*` and a bare `jobID=$id$` each work across the whole feed.
 `tests/test_wire_casing.py` holds that on the payloads the outbox actually stores, all
-four families judged together, not on the source that built them.
+five families judged together, not on the source that built them.
 
 What "frozen" licenses is §5 of the vocabulary document: new keys may appear and
 consumers must ignore unknown keys; a key's name, type and meaning never change once
 shipped; a shipped key is never removed; a sourcetype string, once minted, is permanent.
 SPL written against these names today does not need revisiting. What still changes is
-shape, not names: when the per-app fan-out lands, the sub-events it adds arrive under the
-section sourcetypes in the registry (`loon:jamf:mac:app` and the rest) rather than under
-the one you set on the input — the move `device.change` has already made (§6). So pin
-dashboards to the index and to `source` (one Jamf instance's whole feed) or to `event`,
-not to the input's sourcetype alone.
+shape, not names: when the per-app fan-out lands, the sub-events it adds — the
+`device.inventory` snapshot split by section — arrive under the section sourcetypes in
+the registry (`loon:jamf:mac:app` and the rest) rather than under the one you set on the
+input — the move `device.change` has already made (§6). So pin dashboards to the index
+and to `source` (one Jamf instance's whole feed) or to `event`, not to the input's
+sourcetype alone.
+
+**What each destination type receives for the per-device snapshot** (`device.inventory`,
+one per device per pass, ~28 KB for a Mac with 83 apps — [runs.md](runs.md) §4):
+
+- A `splunk_hec` destination gets it wrapped as `{"event": …}` with `time`, `host` and
+  `source` beside it and **no `sourcetype`** — one nested event per device under the
+  input's own sourcetype — until the fan-out (#242) splits it into one sub-event per
+  section item under the ruled section tree. Until then the nested `app[]` list has the
+  multivalue-pairing hazard [splunk-event-shaping.md](splunk-event-shaping.md) describes:
+  do not write `app.app.name=X app.app.version=Y` against it and expect one app.
+- A generic webhook, and the `runreveal` preset, get the bare document.
+- An Elastic destination gets one `create` document per snapshot with `@timestamp` from
+  `occurredAt`, nested `app[]` and all. Per-app expansion for Elastic is not v0.
+
+**Volume is a subscription knob, not a wire change.** Null or empty `subscribed_events`
+means every event, so a destination on the default receives the snapshot from the day it
+ships; a destination subscribed only to `device.inventory.changed` never receives one,
+and one subscribed only to `device.inventory` gets the state without the deltas. The
+field is on the API (`subscribedEvents` on `POST`/`PATCH /api/destinations`); the UI
+carries it but has no editor for it yet.
 
 ## 8. Prove it end to end
 
@@ -292,9 +323,11 @@ Then look in Splunk. A bare term search works before the props stanza is in plac
 index=your_index "destination.test"
 ```
 
-and after a sync has produced something real:
+and after a sync has produced something real — one snapshot per device, and a delta for
+every device whose app list moved:
 
 ```
+index=your_index event=device.inventory | stats count by deviceMeta.serialNumber
 index=your_index "device.inventory.changed" | head 5
 ```
 
@@ -310,7 +343,7 @@ success/failure times. Every failed attempt is also logged, not just the tenth.
 | `HTTP 401` / `HTTP 403` | The token — wrong value, disabled token, or the global *All Tokens* switch still off. |
 | `HTTP 400` naming the index | The token is not allowed to write the index it was asked for. |
 | Connection refused / timeout | Reachability. From inside the container, not from your laptop — see §3. |
-| No error, and no `device.inventory.changed` | Nothing changed. A sweep where no app changed on any device emits no inventory event at all, by design — the sweep's own `run.completed` event still arrives. |
+| No error, and no `device.inventory.changed` | Nothing changed. A sweep where no app changed on any device emits no delta, by design — one `device.inventory` snapshot per device and the sweep's own `run.completed` event still arrive. No snapshot either means the destination is subscribed to other event types only. |
 | Events stop after a while | Ten failed attempts dead-letter a delivery; fix the cause and the *next* events flow, but the dead-lettered ones are not retried. |
 
 Two timing facts worth knowing before you go looking for a bug:

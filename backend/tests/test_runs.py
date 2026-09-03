@@ -738,6 +738,22 @@ async def test_a_sweep_stamps_its_job_id_on_the_events_it_produces(db, connectio
     assert meta["serialNumber"]
     assert meta["shortDate"] == run.window_start.strftime("%Y-%m-%d")
 
+    # The same device's snapshot from the same run (#241) carries the identical block —
+    # `eventID` included, one id per device per pull — the same root `jobID` and the same
+    # `occurredAt`: two events, one pull, one identity.
+    snapshot = next(
+        row
+        for row in (
+            await db.execute(
+                select(EventOutbox).where(EventOutbox.event_type == "device.inventory").order_by(EventOutbox.id.desc())
+            )
+        ).scalars()
+        if row.payload["deviceMeta"].get("jamfProID") == meta["jamfProID"] and row.payload["jobID"] == str(run.id)
+    )
+    assert snapshot.payload["deviceMeta"] == meta
+    assert snapshot.payload["jobID"] == event.payload["jobID"] == str(run.id)
+    assert snapshot.payload["occurredAt"] == event.payload["occurredAt"]
+
     # The ruled block (#189): identity, correlation, provenance, freshness, integrity.
     # Asserted by name because every one of these is permanent the moment a customer
     # writes SPL against it, and a silent rename returns zero rows rather than an error.

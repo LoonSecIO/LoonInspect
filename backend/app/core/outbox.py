@@ -19,7 +19,17 @@ logger = logging.getLogger(__name__)
 # Extend this as new producers land (group membership changes, enrichment results).
 # Validated against in schemas/destinations.py so a typo in subscribedEvents doesn't
 # silently create a destination that never receives anything.
-KNOWN_EVENT_TYPES = frozenset({"device.inventory.changed", "device.change", "run.completed", "run.failed"})
+#
+# `device.inventory` (#241) joined on the subscription default the type was born under:
+# null/empty `subscribed_events` keeps meaning every event, so a destination on the
+# default receives one ~30 KB snapshot per device per pass from the day this ships;
+# explicit lists were NOT appended to, unlike `run.failed` (migration a9d4c7e1f3b8),
+# because a destination that curated its list never asked for a state stream and the
+# reason a failure must be loud has no analogue for a per-device snapshot. Opting out is
+# `subscribed_events` on the API (docs/splunk-setup.md §7).
+KNOWN_EVENT_TYPES = frozenset(
+    {"device.inventory", "device.inventory.changed", "device.change", "run.completed", "run.failed"}
+)
 
 # Not in KNOWN_EVENT_TYPES: nothing produces it and nothing can subscribe to it. It
 # exists only so the destination test button sends something identifiable rather than a

@@ -10,18 +10,25 @@ LoonInspect events at all.
 
 This suite exists because per-family tests could not catch that. Each family's own test
 asserted its own key set and passed; the defect was only visible across families, which
-is precisely the view a customer's SPL has. So this module drives all four producers in
+is precisely the view a customer's SPL has. So this module drives all five producers in
 one transaction sequence and then judges the payloads *together*:
 
 1. Every emitted key on every family is camelCase with `ID` uppercased.
-2. One discriminator, `event`, selects all four types with one predicate.
+2. One discriminator, `event`, selects all five types with one predicate.
 3. The run UUID has exactly one name, `jobID` — and the documented join works, with the
    one nesting caveat pinned honestly rather than glossed.
-4. The two device families carry ONE `deviceMeta` block, agreeing key for key on the pull
-   they both describe, and every `device.change` is delivered under the `:change`
-   sourcetype its entity was minted (#223, on the family #243 ruled). Casing was only the
-   first half of that ruling: a change event that spelled every key correctly and carried
-   no block at all was still outside the vocabulary.
+4. The three device families carry ONE `deviceMeta` block, agreeing key for key on the
+   pull they all describe — the snapshot's (#241) equal to the delta's, `eventID`
+   included — and every `device.change` is delivered under the `:change` sourcetype its
+   entity was minted (#223, on the family #243 ruled). Casing was only the first half of
+   that ruling: a change event that spelled every key correctly and carried no block at
+   all was still outside the vocabulary.
+
+The fifth family, `device.inventory`, is the per-device snapshot (#241): fourteen section
+wrapper keys whose VALUES are Jamf's own objects under Jamf's spelling. The law judges
+the keys LoonInspect minted — the head and `deviceMeta` — and the wrapper keys themselves,
+which are the frozen registry's and pass on their own; it does not descend into a
+vendor's object, so `bundleId` inside `app[].app` is never an offence.
 
 It asserts on the serialized payload rows the outbox actually holds, never on the source
 that built them: a rename that changed a literal in one producer and not another would
@@ -55,7 +62,7 @@ pytestmark = [
     pytest.mark.asyncio(loop_scope="session"),
 ]
 
-FAMILIES = {"device.inventory.changed", "device.change", "run.completed", "run.failed"}
+FAMILIES = {"device.inventory", "device.inventory.changed", "device.change", "run.completed", "run.failed"}
 
 # camelCase: a lower-case first word, then letters and digits only. Underscores are the
 # whole point of the rule, so they are rejected by construction rather than by a second
@@ -67,8 +74,11 @@ _LOWERCASE_ID_TOKEN = re.compile(r"Id(?:[A-Z]|$)")
 
 # Keys whose *values* are objects full of a vendor's own vocabulary — Jamf writes
 # `bundleId`, and the law says a vendor's native key keeps the vendor's spelling. Only
-# LoonInspect-minted key names are judged here, so these are not descended into.
-_VENDOR_VALUED = {"entryIdentity", "old", "new", "details", "addedApps", "removedApps"}
+# LoonInspect-minted key names are judged here, so these are not descended into. The
+# snapshot's fourteen section wrappers (#241) are listed by reference to the registry:
+# they would pass the regex on their own, but the exemption is then documented rather
+# than accidental, and a wrapper the registry stops naming stops being exempt.
+_VENDOR_VALUED = {"entryIdentity", "old", "new", "details", "addedApps", "removedApps", *SECTION_WRAPPERS.values()}
 
 
 def _loon_keys(payload: dict) -> set[str]:
@@ -187,11 +197,11 @@ def _second_inventory(jamf: FakeJamf) -> None:
 
 
 @pytest_asyncio.fixture(loop_scope="session")
-async def four_families(db, jamf: FakeJamf, connection):
+async def five_families(db, jamf: FakeJamf, connection):
     """One run of every producer on the wire, returned as the rows the outbox holds.
 
-    The shape matters as much as the coverage. The three non-alarm families are produced
-    by ONE sweep — the second, where the fleet has moved — so all three carry the same
+    The shape matters as much as the coverage. The four non-alarm families are produced
+    by ONE sweep — the second, where the fleet has moved — so all four carry the same
     run and the cross-family join has something real to join. Producing the changes
     through the webhook path instead would open a second run, and the events would
     legitimately carry two different jobIDs: a green test that proved nothing.
@@ -212,9 +222,9 @@ async def four_families(db, jamf: FakeJamf, connection):
 
     high_water = (await db.execute(select(func.coalesce(func.max(EventOutbox.id), 0)))).scalar_one()
 
-    # The sweep that produces three of the four families under one run: an inventory
-    # event for the app that appeared, a device.change per derived row, and the
-    # run.completed that closes over both.
+    # The sweep that produces four of the five families under one run: a snapshot per
+    # device, an inventory delta for the app that appeared, a device.change per derived
+    # row, and the run.completed that closes over all of them.
     _second_inventory(jamf)
     sweep = await sync_connection(db, connection)
     assert sweep.ok, sweep
@@ -238,22 +248,22 @@ async def four_families(db, jamf: FakeJamf, connection):
     return rows, failed_run_id
 
 
-async def test_every_family_is_produced_so_the_judgements_below_are_not_vacuous(four_families) -> None:
+async def test_every_family_is_produced_so_the_judgements_below_are_not_vacuous(five_families) -> None:
     """The guard on the other three tests. If a producer ever stops firing in this
     sequence, the casing assertions would pass by having nothing to judge — the exact
     failure mode that let three families drift out of the law for a year."""
-    rows, _ = four_families
+    rows, _ = five_families
     assert {row.event_type for row in rows} == FAMILIES, "every family must be exercised here"
 
 
-async def test_every_emitted_key_on_every_family_is_camel_case_with_id_uppercased(four_families) -> None:
+async def test_every_emitted_key_on_every_family_is_camel_case_with_id_uppercased(five_families) -> None:
     """The law itself, over the serialized payloads.
 
     Judged per family so a failure names which producer drifted, and reported as the
     offending keys rather than a bare False — the useful output of this test is the
     list of names to fix.
     """
-    rows, _ = four_families
+    rows, _ = five_families
     offences = {}
     for row in rows:
         bad = _offences(row.payload)
@@ -270,7 +280,7 @@ async def test_every_emitted_key_on_every_family_is_camel_case_with_id_uppercase
     assert _offences({"addedApps": [{"bundleId": "com.example"}]}) == []
 
 
-async def test_one_predicate_selects_all_four_types(four_families) -> None:
+async def test_one_predicate_selects_all_five_types(five_families) -> None:
     """`event=...` is the whole discriminator, on every family.
 
     Before this, device events said `event` and run events said `event_type`, so
@@ -279,7 +289,7 @@ async def test_one_predicate_selects_all_four_types(four_families) -> None:
     visible to a customer's saved searches, and it is worth its own assertion that no
     second discriminator survives anywhere on the wire.
     """
-    rows, _ = four_families
+    rows, _ = five_families
     selected = {row.payload["event"] for row in rows if "event" in row.payload}
     assert selected == FAMILIES
     assert len(selected) == len({row.event_type for row in rows})
@@ -288,7 +298,7 @@ async def test_one_predicate_selects_all_four_types(four_families) -> None:
         assert "event_type" not in row.payload and "eventType" not in row.payload
 
 
-async def test_the_run_uuid_has_one_name_and_the_documented_join_works(four_families) -> None:
+async def test_the_run_uuid_has_one_name_and_the_documented_join_works(five_families) -> None:
     """docs/runs.md promises the run id is "joinable against every event the run
     produced". Under three names it was not joinable at all; under one name and two paths
     it took two terms; under the #220 hoist it is a bare `jobID=$id$`.
@@ -301,7 +311,7 @@ async def test_the_run_uuid_has_one_name_and_the_documented_join_works(four_fami
     duplicate is the ruling, and a copy that can go missing on one path is worse than no
     copy at all.
     """
-    rows, failed_run_id = four_families
+    rows, failed_run_id = five_families
 
     def carriers(payload: dict, value: str) -> set[str]:
         """Every key path on one event holding this UUID."""
@@ -325,14 +335,18 @@ async def test_the_run_uuid_has_one_name_and_the_documented_join_works(four_fami
     # selected — inventory, changes and the closing run event alike — which is the
     # docs/runs.md claim, now true without a qualification attached.
     joined = [row for row in sweep_events if row.payload.get("jobID") == sweep_id]
-    assert {row.event_type for row in joined} == {"device.inventory.changed", "device.change", "run.completed"}
+    assert {row.event_type for row in joined} == {
+        "device.inventory", "device.inventory.changed", "device.change", "run.completed",
+    }
     assert len(joined) == len(sweep_events), "no event of this sweep is left out of the join"
 
-    # The hoist itself, both halves. The root copy is what the bare join above selects on;
-    # `deviceMeta.jobID` is kept because removing it would break existing SPL in the
-    # silent direction, and it is what every fan-out sub-event will still carry (#242).
-    inventory = [row for row in sweep_events if row.event_type == "device.inventory.changed"]
-    assert inventory
+    # The hoist itself, both halves, on both inventory families. The root copy is what the
+    # bare join above selects on; `deviceMeta.jobID` is kept because removing it would
+    # break existing SPL in the silent direction, and it is what every fan-out sub-event
+    # will still carry (#242) — the snapshot is the event that fan-out expands, so the
+    # bare `jobID` join has to hold for it from its first byte.
+    inventory = [row for row in sweep_events if row.event_type in ("device.inventory", "device.inventory.changed")]
+    assert {row.event_type for row in inventory} == {"device.inventory", "device.inventory.changed"}
     assert all(row.payload["jobID"] == sweep_id for row in inventory)
     assert all(row.payload["deviceMeta"]["jobID"] == sweep_id for row in inventory)
 
@@ -342,7 +356,7 @@ async def test_the_run_uuid_has_one_name_and_the_documented_join_works(four_fami
     assert alarms and all(row.payload["jobID"] == str(failed_run_id) for row in alarms)
 
 
-async def test_the_two_device_families_agree_on_the_device_not_merely_on_casing(four_families) -> None:
+async def test_the_two_device_families_agree_on_the_device_not_merely_on_casing(five_families) -> None:
     """The half of the ruling that "both camelCase" would not have delivered.
 
     A `device.change` and the `device.inventory.changed` from the same pull now spell the
@@ -350,7 +364,7 @@ async def test_the_two_device_families_agree_on_the_device_not_merely_on_casing(
     same values — so correlating a change to its inventory pass is a join on keys, not a
     translation table.
     """
-    rows, _ = four_families
+    rows, _ = five_families
     # A computer subject specifically: `derive_and_record` also runs for computer_group
     # subjects, whose jamfProID is a group's id and has no inventory event to agree with.
     change = next(
@@ -362,7 +376,39 @@ async def test_the_two_device_families_agree_on_the_device_not_merely_on_casing(
     assert match.payload["deviceMeta"]["jobID"] == change.payload["jobID"]
 
 
-async def test_the_change_family_carries_the_inventory_familys_own_device_block(four_families) -> None:
+async def test_the_snapshot_and_the_delta_from_one_pull_share_the_block_the_time_and_the_envelope(
+    five_families,
+) -> None:
+    """#241: a `device.inventory` and the `device.inventory.changed` from the same pull share
+    `occurredAt`, `jobID`, the whole `deviceMeta` block — `eventID` included, one id per
+    device per pull (#81 ruling 4) — and the envelope hints, by design. Asserted on the
+    rows the outbox holds rather than on the builder, because the two are built by two
+    calls in `process_sync` and the failure this exists for is those calls drifting."""
+    rows, _ = five_families
+    snapshots = [row for row in rows if row.event_type == "device.inventory"]
+    deltas = [row for row in rows if row.event_type == "device.inventory.changed"]
+    assert snapshots and deltas
+    # Every device of the sweep has a snapshot; only the one whose app list moved has a delta.
+    assert len(snapshots) == 2 and len(deltas) == 1
+    (delta,) = deltas
+    match = next(row for row in snapshots if row.payload["deviceMeta"]["jamfProID"] == delta.payload["deviceMeta"]["jamfProID"])
+
+    assert match.payload["deviceMeta"] == delta.payload["deviceMeta"]
+    assert match.payload["deviceMeta"]["eventID"] == delta.payload["deviceMeta"]["eventID"]
+    assert match.payload["jobID"] == delta.payload["jobID"]
+    assert match.payload["occurredAt"] == delta.payload["occurredAt"]
+    assert match.payload[ENVELOPE] == delta.payload[ENVELOPE]
+    # The snapshot's own shape, on a real row: the head, then the registry's wrappers.
+    assert set(match.payload) - {ENVELOPE, "event", "jobID", "occurredAt", "deviceMeta"} == set(SECTION_WRAPPERS.values())
+    # The app the second sweep added is in the snapshot's state and in the delta's `addedApps`.
+    assert "io.loonsec.inspector" in {item["app"].get("bundleId") for item in match.payload["app"]}
+    assert [app["bundleId"] for app in delta.payload["addedApps"]] == ["io.loonsec.inspector"]
+    # And the other device — unchanged — has a snapshot with no delta beside it.
+    other = next(row for row in snapshots if row is not match)
+    assert other.payload["deviceMeta"]["jamfProID"] not in {row.payload["deviceMeta"]["jamfProID"] for row in deltas}
+
+
+async def test_the_change_family_carries_the_inventory_familys_own_device_block(five_families) -> None:
     """#223, ruled on #243: `device.change` was outside the vocabulary in a way casing
     alone could not fix — it carried no `deviceMeta` at all, so a change joined to its own
     inventory pass through `jobID` + `jamfProID`, the two-term join #189 rejected because
@@ -374,7 +420,7 @@ async def test_the_change_family_carries_the_inventory_familys_own_device_block(
     the failure this test exists for is exactly the one a per-producer test cannot see: two
     blocks describing the same pull that disagree about the device.
     """
-    rows, _ = four_families
+    rows, _ = five_families
     changes = [row for row in rows if row.event_type == "device.change"]
     inventory = [row for row in rows if row.event_type == "device.inventory.changed"]
     assert changes and inventory
@@ -406,7 +452,7 @@ async def test_the_change_family_carries_the_inventory_familys_own_device_block(
     assert set(change_meta) == set(inventory_meta)
 
 
-async def test_every_change_is_delivered_under_its_entitys_change_sourcetype(four_families) -> None:
+async def test_every_change_is_delivered_under_its_entitys_change_sourcetype(five_families) -> None:
     """The stamp, on the events a real sweep produced (#223).
 
     `device.change` is the first sourcetype the product ever sends. The string is the whole
@@ -415,7 +461,7 @@ async def test_every_change_is_delivered_under_its_entitys_change_sourcetype(fou
     on the delivered HEC body rather than on the payload, because a sourcetype is part of
     the delivery and not part of the event.
     """
-    rows, _ = four_families
+    rows, _ = five_families
     changes = [row for row in rows if row.event_type == "device.change"]
     assert changes
 
@@ -437,8 +483,9 @@ async def test_every_change_is_delivered_under_its_entitys_change_sourcetype(fou
         assert "sourcetype" not in _build_body(SimpleNamespace(type="webhook"), payload)
 
     assert len(seen) > 1, "the sweep must move more than one section, or this proves one string"
-    # No other family is stamped — #242 owns the section tree, and #241's snapshot is
-    # untouched.
+    # No other family is stamped — #242 owns the section tree, and #241's snapshot passes
+    # through `_build_body` whole and unstamped until that fan-out splits it.
+    assert any(row.event_type == "device.inventory" for row in rows)
     for row in rows:
         if row.event_type == "device.change":
             continue
