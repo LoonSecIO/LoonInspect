@@ -29,8 +29,9 @@ search head; take the URL from the token's own page rather than assuming the sha
 **Settings → Data inputs → HTTP Event Collector → New Token**
 
 - *Name*: anything — `LoonInspect`.
-- *Source type*: set one explicitly. LoonInspect deliberately sends no `sourcetype`
-  (§6), so whatever the input names is what these events get for ever.
+- *Source type*: set one explicitly. It names every event except the change stream:
+  `device.change` carries its own `sourcetype` and overrides the input's, and nothing
+  else sends one (§6). Whatever you set here is what those other events get for ever.
 - *Allowed indexes* and *Default index*: **this is the only thing that decides where the
   events land.** LoonInspect never sends an `index` field — `_build_body` adds only the
   three envelope hints, and `wire.envelope()` emits only `time`, `host` and `source`.
@@ -158,20 +159,29 @@ instance, not a fix.
 
 ## 6. `sourcetype`, and a `props.conf` stanza to hand your Splunk team
 
-LoonInspect sends **no** `sourcetype`. The reason, from `core/outbox.py`:
+**One family carries its own; everything else takes the input's.**
 
-> `sourcetype` is deliberately absent. The ruled tree names the fan-out sub-events
-> (`loon:jamf:mac:app`), and the fan-out is not built — minting a string for this one
-> event type would create a permanent props.conf stanza for a shape that is about to
-> change.
+- `device.change` — the change stream — is delivered under
+  `loon:jamf:mac:<entity>:change`, one string per entity a change can name. There are
+  fifteen: the fourteen inventory sections plus `computerGroup`, listed in
+  [`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md) §2. A `sourcetype` in the HEC
+  body overrides the input's for those events only.
+- `device.inventory.changed`, `run.completed` and `run.failed` send none, so they arrive
+  under whichever sourcetype **you** set on the input (§2). The reason, from
+  `core/outbox.py`:
 
-So the sourcetype is whichever one **you** set on the HEC input (§2), and it is the name
-the stanza below keys on. The stanza assumes you named it `loon:inspect`; substitute
-your own.
+> Every other family is still deliberately unstamped. The ruled section tree names
+> fan-out sub-events (`loon:jamf:mac:app`) that are not built, and minting a string for a
+> shape that is about to change would create a permanent props.conf stanza for it.
+
+The stanza below keys on the input's name and so covers those three families; it assumes
+you called it `loon:inspect`, so substitute your own.
 
 ```ini
 # props.conf — LoonInspect events arriving over HEC.
-# Key: the sourcetype set on the HEC input. LoonInspect sends none, so the input decides.
+# Key: the sourcetype set on the HEC input. It decides for every family but the change
+# stream, which sends its own (above) and needs the same three settings under each of its
+# fifteen strings — a sourcetype stanza takes no wildcards.
 [loon:inspect]
 
 # The event body is a JSON object. Search-time extraction, so this line belongs on the
@@ -198,6 +208,24 @@ TRUNCATE = 0
 `KV_MODE` is search-time and `SHOULD_LINEMERGE`/`TRUNCATE` are index-time, so strictly
 they live in different places in a distributed deployment. Handing the whole stanza over
 is fine — each line is inert where it does not apply.
+
+**The change stream, and the sixteen-stanza question.** `[<sourcetype>]` accepts no
+wildcards, so covering `device.change` the same way means repeating these three lines
+under each of the fifteen `loon:jamf:mac:*:change` strings. Two ways out, in order of
+preference:
+
+1. **Key on `source` instead.** Every LoonInspect event carries the Jamf instance as
+   `source`, and a `[source::...]` stanza is the kind that *does* accept wildcards — so
+   `[source::acme.jamfcloud.com]` (or `[source::*.jamfcloud.com]`) is one stanza covering
+   every family and every entity from that Jamf Pro.
+2. **Check whether you need `KV_MODE` at all.** Splunk's default search-time extraction
+   already reads pure-JSON events on recent versions; the line above is belt-and-braces.
+   If `deviceMeta.serialNumber` resolves in a search against an unconfigured sourcetype on
+   your version, the fifteen stanzas are a convenience, not a requirement.
+
+Neither claim has been tested against a real Splunk here, which is exactly why the count
+is written down rather than glossed: it is the argument for shipping a LoonInspect TA, and
+that is not built.
 
 ## 7. What arrives, and where `_time` comes from
 

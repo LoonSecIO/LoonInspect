@@ -93,6 +93,15 @@ Every row and event carries the correlation triple (serial, Jamf URL, Jamf id), 
 UDID, both span ids, the device's own `observed_at`, the trigger, and the policy
 version. The legacy `device.inventory.changed` event is unchanged.
 
+**On the wire** the event also carries `deviceMeta` — #189's block, the same names and
+values the inventory event from the same pull carries, including the `eventID` that names
+that pull — and a Splunk HEC delivery stamps it with the entity's own sourcetype,
+`loon:jamf:mac:<entity>:change`. Both landed in
+[#223](https://github.com/LoonSecIO/LoonInspect/issues/223) on the family ruled in
+[#243](https://github.com/LoonSecIO/LoonInspect/issues/243); the shape is
+[`runs.md`](runs.md) §4 and the strings are
+[`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md) §2.
+
 ---
 
 ## 4. The defaults

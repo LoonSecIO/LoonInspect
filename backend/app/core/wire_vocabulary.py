@@ -19,12 +19,13 @@ the read aperture that decides which sections are fetched at all is
 `app.mdm.jamf.contract.SECTIONS`, which this module reads rather than restates, so a
 section cannot be collected without a name to travel under.
 
-`sourcetype` is not yet stamped on delivered events (`app.core.outbox`). For the section
-tree that is #222, blocked on the fan-out that has to build the sub-events first. The
-`:change` family is not blocked the same way — it is already at sub-event grain, one
-outbox event per kept change row — so #243 ruled it may be the first sourcetype the
-product ever stamps, and #223 owns that stamp. This module is the ruling either way:
-nothing here writes one.
+The `:change` family is the one sourcetype the product stamps today, and the first it ever
+stamped (#223, 2026-09-03): it was never blocked on the fan-out the way the section tree
+is, because `device.change` is already at sub-event grain — one outbox event per kept
+change row. `change_sourcetype` below decides that string and `app.core.outbox._build_body`
+sends it, on Splunk HEC deliveries only. Every other family still travels under whatever
+sourcetype the operator set on the HEC input; stamping the section tree is #222, absorbed
+by the fan-out (#242) that has to build the sub-events first.
 """
 
 from __future__ import annotations
@@ -145,6 +146,15 @@ ENRICHMENTS: dict[str, tuple[str, ...]] = {
 # cross-vendor search the segment was declared as insurance for.
 CHANGE_LEAF = "change"
 
+# The event type the family travels under, and the only type this module stamps. #243's
+# rider on ruling 1: the event TYPE does not split — `device.change` stays the family's
+# single subscribable type, one entry in `app.core.outbox.KNOWN_EVENT_TYPES` and the unit
+# a destination subscribes to, while the sourcetype fans out by entity. It is named here
+# rather than only in the producer so the module that mints the string and the module
+# that emits the event cannot drift apart: `app.changes.derive.EVENT_TYPE` is this
+# constant.
+CHANGE_EVENT_TYPE = "device.change"
+
 
 # What survives the split: the body keys every fan-out sub-event carries, whatever
 # sourcetype it lands under. Ruled 2026-09-02 on #220 — D1, carried over from #81's
@@ -222,6 +232,50 @@ def change_rows(*, vendor: str = "jamf", platform: str = "mac") -> list[tuple[st
     for subject, wrapper in SUBJECT_WRAPPERS.items():
         rows.append((subject, wrapper, sourcetype(wrapper, vendor=vendor, platform=platform, leaf=CHANGE_LEAF)))
     return rows
+
+
+def change_sourcetype(
+    event: str | None,
+    *,
+    subject_kind: str | None,
+    section: str | None,
+    vendor: str = "jamf",
+    platform: str = "mac",
+) -> str | None:
+    """The `:change` string one emitted event carries — or None if it carries none.
+
+    The one place a delivered event's sourcetype is decided (#222: "`sourcetype` comes
+    from `app.core.wire_vocabulary` and nowhere else"). Its caller is
+    `app.core.outbox._build_body`, for the `splunk_hec` destination type only; every
+    other destination gets the canonical event with no sourcetype at all.
+
+    **The subject decides first, the section second.** A `computer_group`'s only section
+    is `definition`, which `SECTION_WRAPPERS` has no answer for, and #243 ruled the entity
+    segment names the *subject* there — `loon:jamf:mac:computerGroup:change`, never the
+    section's own name. A computer subject is not in `SUBJECT_WRAPPERS`, so it falls
+    through to its section and gets the fourteen section strings.
+
+    **None rather than a raise, deliberately.** This runs inside the delivery path, where
+    an exception is retried ten times and then dead-lettered — so an event whose section
+    has no wrapper (a shape from a future aperture arriving on an older worker, a payload
+    replayed from the retention window) must cost one unstamped event, not a delivery that
+    fails for ever. Unstamped means the HEC input's own sourcetype applies, which is
+    exactly where every event was before this stamp existed.
+
+    `vendor` and `platform` are the v0 constants, and both are arguments rather than
+    literals so the day a second value exists is an argument change and not a rewrite. The
+    platform is `mac` while v0 is computers-only; when a second value exists it is derived
+    from the device's own OS at enqueue and reaches this function on the payload, the same
+    way `subjectKind` and `section` do — the same source the per-device snapshot reads, so
+    the two families cannot disagree about a device's platform (#243's rider on ruling 1,
+    `docs/mobile-devices.md` §2).
+    """
+    if event != CHANGE_EVENT_TYPE:
+        return None
+    wrapper = SUBJECT_WRAPPERS.get(subject_kind or "") or SECTION_WRAPPERS.get(section or "")
+    if wrapper is None:
+        return None
+    return sourcetype(wrapper, vendor=vendor, platform=platform, leaf=CHANGE_LEAF)
 
 
 # The additive-only policy, in testable clauses. Clause one is verbatim from #188's

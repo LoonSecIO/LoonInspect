@@ -146,6 +146,30 @@ Two rules a consumer can rely on:
   inventory pass: two sweeps in a day share a `shortDate`, and one sweep's `jobID` is
   shared by every device in the fleet.
 
+**`device.change` carries the same block**, since
+[#223](https://github.com/LoonSecIO/LoonInspect/issues/223) (2026-09-03) on the fold ruled
+in [#243](https://github.com/LoonSecIO/LoonInspect/issues/243) — the same names, the same
+values, and the same `eventID` derived from the same formula, so a change joins to the
+inventory pass that produced it on `deviceMeta.eventID` alone rather than on
+`jobID` + `jamfProID`, the two-term join #189 rejected because it can be half-used and
+return a plausible superset with no error.
+
+It is built from the **observation and the run**, not from the device row
+(`app/changes/derive.py`): the derivation runs before `process_sync` writes that row, so
+reading it would put the *previous* pull's hostname, report date and managed flag beside
+this pull's change, and the two families would disagree about the device on the one pull
+the block exists to correlate. Two consequences a consumer sees:
+
+- A section outside the aperture drops its keys under the null rule above rather than
+  carrying the last read's answer — `managed` and `hostName` come from GENERAL,
+  `serialNumber` from HARDWARE.
+- A `computer_group` subject — a smart group's definition, which is a subject and not a
+  Mac — carries the run's half and `jamfProID` and nothing else. No `hostName` or
+  `serialNumber`, for the same reason the envelope gives it no `host`; and **no
+  `eventID`**, because that id is `uuid5(jobID, jamfProID)` over an id from a different id
+  space, and deriving one would mint a correlation key that collides with a computer's by
+  construction.
+
 Casing is camelCase throughout with the token `ID` uppercased on LoonInspect's own keys
 (#188). A vendor's native key keeps the vendor's spelling — Jamf writes `bundleId`, so
 the wire does too.
@@ -167,7 +191,10 @@ select LoonInspect events by type. Three decisions closed that:
   `job_id`, and the run events said `run_id`; all three are now `jobID`, carrying the
   same value. `runID` was rejected for the same reason: one value, one name.
 - **`jamfProID` is the object's id in Jamf Pro on both device families**, computer or
-  group — `subjectKind` says which kind of object it belongs to.
+  group — `subjectKind` says which kind of object it belongs to, and since #223 the
+  sourcetype does too: a group's change arrives as `loon:jamf:mac:computerGroup:change`,
+  so the two id spaces are separated by the field Splunk routes on. Joining across
+  sourcetypes on the id alone still mixes them, and this sentence is the warning.
 
 `jobID` is **top-level on all four families**, and on `device.inventory.changed` it is
 carried a second time inside `deviceMeta`, where Splunk's JSON extraction names it
@@ -197,9 +224,22 @@ Two spellings were genuinely ambiguous and are ruled here so nobody has to guess
 Alongside the body, a Splunk HEC delivery sets three envelope fields: `time` from the
 event's own `occurredAt`, `host` from the hostname, and `source` from the Jamf instance
 (scheme dropped, non-default port kept — `jamf.corp.local:8443`). They are indexed
-metadata, so they cost no licence volume. `sourcetype` is deliberately not set yet: the
-ruled tree names fan-out sub-events that do not exist, and a sourcetype is a permanent
-`props.conf` stanza.
+metadata, so they cost no licence volume.
+
+**`sourcetype` is set for one family: `device.change`.** Each change is delivered under
+its entity's string — `loon:jamf:mac:security:change`, `loon:jamf:mac:app:change`,
+`loon:jamf:mac:computerGroup:change`, fifteen in all — decided by
+`app/core/wire_vocabulary.py` and stamped in `_build_body` on Splunk HEC deliveries only;
+every other destination type gets the canonical event with no sourcetype at all. The
+strings are ruled in [`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md) §2 and the
+stanzas they imply are in [`splunk-setup.md`](splunk-setup.md) §6. Every other family is
+still deliberately unstamped: the ruled section tree names fan-out sub-events that do not
+exist, and a sourcetype is a permanent `props.conf` stanza, so minting one for a shape
+about to change would be the expensive kind of mistake
+([#222](https://github.com/LoonSecIO/LoonInspect/issues/222), absorbed by the fan-out,
+[#242](https://github.com/LoonSecIO/LoonInspect/issues/242)). `device.change` was never
+blocked that way — it is already at sub-event grain, one event per kept change row — which
+is why #243 ruled it may be stamped first.
 
 **The run id is UUIDv7, not `uuid4`, since
 [#225](https://github.com/LoonSecIO/LoonInspect/issues/225).** `jobID` being a

@@ -17,6 +17,11 @@ one transaction sequence and then judges the payloads *together*:
 2. One discriminator, `event`, selects all four types with one predicate.
 3. The run UUID has exactly one name, `jobID` — and the documented join works, with the
    one nesting caveat pinned honestly rather than glossed.
+4. The two device families carry ONE `deviceMeta` block, agreeing key for key on the pull
+   they both describe, and every `device.change` is delivered under the `:change`
+   sourcetype its entity was minted (#223, on the family #243 ruled). Casing was only the
+   first half of that ruling: a change event that spelled every key correctly and carried
+   no block at all was still outside the vocabulary.
 
 It asserts on the serialized payload rows the outbox actually holds, never on the source
 that built them: a rename that changed a literal in one producer and not another would
@@ -32,14 +37,18 @@ import os
 import re
 import uuid as uuidlib
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 
 import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy import delete, func, select
 
+from app.core.outbox import _build_body
 from app.core.wire import ENVELOPE
+from app.core.wire_vocabulary import SECTION_WRAPPERS, SUB_EVENT_KEYS, SUBJECT_WRAPPERS, change_rows
 from tests.jamf_fake import HOST, FakeJamf
+from tests.test_device_meta import SHIPPED_ELEVEN
 
 pytestmark = [
     pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
@@ -351,3 +360,86 @@ async def test_the_two_device_families_agree_on_the_device_not_merely_on_casing(
     match = next(row for row in inventory if row.payload["deviceMeta"]["jamfProID"] == change.payload["jamfProID"])
     assert match.payload["deviceMeta"]["serialNumber"] == change.payload["serialNumber"]
     assert match.payload["deviceMeta"]["jobID"] == change.payload["jobID"]
+
+
+async def test_the_change_family_carries_the_inventory_familys_own_device_block(four_families) -> None:
+    """#223, ruled on #243: `device.change` was outside the vocabulary in a way casing
+    alone could not fix — it carried no `deviceMeta` at all, so a change joined to its own
+    inventory pass through `jobID` + `jamfProID`, the two-term join #189 rejected because
+    it "can be half-used, returning a plausible superset with no error".
+
+    Judged here rather than only in `tests/test_device_meta.py` because the two blocks are
+    built by two functions from two sources — the inventory family from the `Device` row
+    after `process_sync` writes it, the change family from the observation and the run — and
+    the failure this test exists for is exactly the one a per-producer test cannot see: two
+    blocks describing the same pull that disagree about the device.
+    """
+    rows, _ = four_families
+    changes = [row for row in rows if row.event_type == "device.change"]
+    inventory = [row for row in rows if row.event_type == "device.inventory.changed"]
+    assert changes and inventory
+
+    for row in changes:
+        meta = row.payload["deviceMeta"]
+        # #189's names and no others, and nothing null: the block a customer's
+        # `| fields deviceMeta.*` expands is one vocabulary across both families.
+        assert set(meta) <= set(SHIPPED_ELEVEN), f"unruled deviceMeta keys: {set(meta) - set(SHIPPED_ELEVEN)}"
+        assert all(value is not None for value in meta.values())
+        # #220's three, which this event now carries in full — though a change is not a
+        # fan-out sub-event: it was already at sub-event grain.
+        assert set(SUB_EVENT_KEYS) <= set(row.payload)
+
+    change = next(row for row in changes if row.payload["subjectKind"] == "computer")
+    match = next(row for row in inventory if row.payload["deviceMeta"]["jamfProID"] == change.payload["jamfProID"])
+    change_meta, inventory_meta = change.payload["deviceMeta"], match.payload["deviceMeta"]
+
+    # The correlation key #189 named and #243 ruled onto this family: derived, not minted,
+    # so two producers of one pull arrive at one value without either passing it along.
+    assert change_meta["eventID"] == inventory_meta["eventID"]
+    # And every other key agrees, key for key. Asserted in this direction because the
+    # change family may legitimately carry fewer — a section outside the aperture is
+    # absence of observation, and the null-drop rule covers it — but never a different
+    # answer about the same device on the same pull.
+    assert {key: change_meta[key] for key in change_meta} == {key: inventory_meta[key] for key in change_meta}
+    # This fixture sweeps the full v0 aperture, so "fewer" is empty here and the two blocks
+    # are the same set. A narrower aperture is pinned in tests/test_device_meta.py.
+    assert set(change_meta) == set(inventory_meta)
+
+
+async def test_every_change_is_delivered_under_its_entitys_change_sourcetype(four_families) -> None:
+    """The stamp, on the events a real sweep produced (#223).
+
+    `device.change` is the first sourcetype the product ever sends. The string is the whole
+    contract — a `props.conf` stanza keys on it exactly and takes no wildcards — so it is
+    asserted against the wrapper table rather than against the function that builds it, and
+    on the delivered HEC body rather than on the payload, because a sourcetype is part of
+    the delivery and not part of the event.
+    """
+    rows, _ = four_families
+    changes = [row for row in rows if row.event_type == "device.change"]
+    assert changes
+
+    minted = {stype for _subject, _wrapper, stype in change_rows()}
+    seen: set[str] = set()
+    for row in changes:
+        payload = row.payload
+        # The entity segment names the subject where the subject is not a device section
+        # (a smart group's definition), and the section otherwise.
+        wrapper = SUBJECT_WRAPPERS.get(payload["subjectKind"]) or SECTION_WRAPPERS[payload["section"]]
+        expected = f"loon:jamf:mac:{wrapper}:change"
+        body = _build_body(SimpleNamespace(type="splunk_hec"), payload)
+
+        assert body["sourcetype"] == expected
+        assert expected in minted, "a string outside the registry is a stanza nobody was told to write"
+        seen.add(expected)
+        # Splunk's routing dimension, not the event: every other destination gets the
+        # canonical body.
+        assert "sourcetype" not in _build_body(SimpleNamespace(type="webhook"), payload)
+
+    assert len(seen) > 1, "the sweep must move more than one section, or this proves one string"
+    # No other family is stamped — #242 owns the section tree, and #241's snapshot is
+    # untouched.
+    for row in rows:
+        if row.event_type == "device.change":
+            continue
+        assert "sourcetype" not in _build_body(SimpleNamespace(type="splunk_hec"), row.payload)

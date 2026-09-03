@@ -276,7 +276,10 @@ the container the worker runs in, which a customer's SPL cannot join to anything
 means one thing on this wire, and where there is no device it is left genuinely absent so
 HEC applies the input's own visible, overridable default. `device.change` follows the
 same rule one level down: a computer subject carries its hostname, a `computer_group`
-subject carries none, because a smart group is not a Mac either.
+subject carries none, because a smart group is not a Mac either. Since #223 the same rule
+governs that event's body block — a group's `deviceMeta` carries the run's half and
+`jamfProID`, with no `hostName`, no `serialNumber` and no `eventID`
+([`runs.md`](runs.md) §4).
 
 Per-family `_time`, all four now set:
 
@@ -290,10 +293,25 @@ Per-family `_time`, all four now set:
 The run events are deliberately **not** back-dated by `event_time()`: a sweep's closing
 event stamped at the window start would sort before every event it closes over.
 
-**`sourcetype` is still not set**, deliberately. The ruled tree (`loon:jamf:mac:app`)
-names the fan-out sub-events, and the fan-out below is not built; a sourcetype is a
-permanent hand-written `props.conf` stanza, so minting one for a shape that is about to
-change would be the expensive kind of mistake.
+**Amended 2026-09-03: `sourcetype` is now set on one family.** This section said it was
+not set at all, which stopped being true when
+[#223](https://github.com/LoonSecIO/LoonInspect/issues/223) stamped the `:change` family
+ruled in [#243](https://github.com/LoonSecIO/LoonInspect/issues/243). Every
+`device.change` is delivered under its entity's string —
+`loon:jamf:mac:<wrapper>:change`, fifteen of them, one per collected section plus
+`computerGroup` — decided in `app/core/wire_vocabulary.py` and stamped in `_build_body`
+for the `splunk_hec` destination type only. It is the first sourcetype the product ever
+sent, and it changes what `_time`'s neighbours look like on a customer's search head: a
+change event no longer arrives under the sourcetype set on the HEC input, so a saved
+search keyed on that input name must add the `:change` strings
+([`splunk-setup.md`](splunk-setup.md) §6).
+
+**The other three families are still unstamped**, deliberately, and for the reason this
+section always gave: the ruled tree (`loon:jamf:mac:app`) names the fan-out sub-events,
+the fan-out below is not built, and a sourcetype is a permanent hand-written `props.conf`
+stanza, so minting one for a shape that is about to change would be the expensive kind of
+mistake. `device.change` was never in that position — it is already one event per changed
+thing — which is exactly why #243 let it go first.
 
 **Still open:** `deliver_pending` has no `ORDER BY`, so a drained backlog is delivered in
 arbitrary order. With `time` now set this no longer affects where events land on the time

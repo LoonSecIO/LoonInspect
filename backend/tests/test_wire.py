@@ -15,18 +15,25 @@ a test behind it.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import httpx
 import pytest
 
-from app.core.outbox import _attempt_delivery, _build_body
+from app.changes.derive import EVENT_TYPE as CHANGE_EVENT
+from app.changes.derive import _change_device_meta, _event_payload
+from app.core.outbox import _attempt_delivery, _build_body, _elastic_bulk_body
 from app.core.wire import ENVELOPE, envelope, instance_label
-from app.models.schema import Destination, EventOutbox
+from app.core.wire_vocabulary import SUBJECT_WRAPPERS, change_rows, change_sourcetype
+from app.mdm.jamf.contract import GROUP_DEFINITION_SECTION, SUBJECT_COMPUTER, SUBJECT_COMPUTER_GROUP, Observation
+from app.models.schema import Destination, DeviceChange, EventOutbox
 
 SPLUNK = SimpleNamespace(type="splunk_hec")
 WEBHOOK = SimpleNamespace(type="webhook")
+ELASTIC = SimpleNamespace(type="elastic")
+CONNECTION = SimpleNamespace(id=1, base_url="https://acme.jamfcloud.com")
 
 
 @pytest.mark.parametrize(
@@ -100,8 +107,10 @@ def test_the_envelope_is_lifted_beside_the_body_and_never_into_it() -> None:
     assert body["host"] == "kyle-mbp"
     assert body["source"] == "acme.jamfcloud.com"
     assert ENVELOPE not in body["event"]
-    # Ruled absent until the fan-out lands: a sourcetype is a permanent props.conf
-    # stanza, and the ruled tree names sub-events that do not exist yet (#188).
+    # Still absent on the inventory family, and on every family but `device.change`: the
+    # ruled section tree names fan-out sub-events that do not exist yet, and a sourcetype
+    # is a permanent props.conf stanza (#188, #222 — absorbed by the fan-out, #242). The
+    # `:change` family is the stated exception and is asserted below.
     assert "sourcetype" not in body
 
 
@@ -205,11 +214,7 @@ def test_a_group_change_carries_no_host_because_a_group_is_not_a_mac() -> None:
     `subject_label` is a group name. Shipping it as `host` would invent Macs called
     "Devices out of Checkin Compliance" and corrupt `dc(host)` across the index. The
     instance is still known, so `source` stays."""
-    from app.changes.derive import _event_payload
-    from app.mdm.jamf.contract import SUBJECT_COMPUTER, SUBJECT_COMPUTER_GROUP
-    from app.models.schema import DeviceChange
-
-    connection = SimpleNamespace(id=1, base_url="https://acme.jamfcloud.com")
+    connection = CONNECTION
     observed = datetime(2026, 8, 23, 9, 0, tzinfo=timezone.utc)
 
     def _row(subject_kind: str, subject_label: str) -> DeviceChange:
@@ -226,14 +231,133 @@ def test_a_group_change_carries_no_host_because_a_group_is_not_a_mac() -> None:
             policy_version="v0",
         )
 
-    group = _event_payload(_row(SUBJECT_COMPUTER_GROUP, "Devices out of Checkin Compliance"), connection)
+    group = _event_payload(_row(SUBJECT_COMPUTER_GROUP, "Devices out of Checkin Compliance"), connection, {})
     assert "host" not in group[ENVELOPE]
     assert group[ENVELOPE]["source"] == "acme.jamfcloud.com"
 
     # A computer subject does get one: its label IS the hostname — both are Jamf's
     # general.name — so the change family and the inventory family name one `host`.
-    computer = _event_payload(_row(SUBJECT_COMPUTER, "mbp-ada"), connection)
+    computer = _event_payload(_row(SUBJECT_COMPUTER, "mbp-ada"), connection, {})
     assert computer[ENVELOPE]["host"] == "mbp-ada"
     # Outside a run, `event_time` is now; the row's own observed_at is what a run
     # back-dates to, and either way the time is the event's, never the delivery's.
     assert computer[ENVELOPE]["time"] >= observed.timestamp()
+
+
+# --- the `:change` sourcetype (#223, on the family #243 ruled) -----------------------
+
+
+def _change_payload(*, subject_kind: str, section: str) -> dict:
+    """One `device.change` exactly as `changes/derive.py` enqueues it, for one subject.
+
+    Driven through the real producer rather than hand-written: what is under test is that
+    the section names the derivation actually writes are the registry's own keys, and a
+    literal payload here would assert that against itself.
+    """
+    observed = datetime(2026, 8, 23, 9, 0, tzinfo=timezone.utc)
+    observation = Observation(
+        subject_kind=subject_kind,
+        subject_id="12",
+        sections={},
+        observed_at=observed,
+        serial_number="C02XL0THJGH5",
+        label="mbp-ada",
+    )
+    row = DeviceChange(
+        subject_kind=subject_kind,
+        subject_id="12",
+        subject_label="mbp-ada",
+        observed_at=observed,
+        collected_at=observed,
+        trigger="sweep",
+        section=section,
+        change="changed",
+        level="normal",
+        policy_version="v0",
+    )
+    return _event_payload(row, CONNECTION, _change_device_meta(observation))
+
+
+def _subject_of(subject: str) -> tuple[str, str]:
+    """A registry row's subject as the `(subject_kind, section)` a real change row carries.
+
+    The fifteenth is the one that is not a section: a smart group's definition is its own
+    ledger subject, whose section is `definition` and whose entity segment names the
+    subject (`computerGroup`) rather than the section — #243's ruling on question 5.
+    """
+    if subject in SUBJECT_WRAPPERS:
+        return SUBJECT_COMPUTER_GROUP, GROUP_DEFINITION_SECTION
+    return SUBJECT_COMPUTER, subject
+
+
+@pytest.mark.parametrize(("subject", "wrapper", "expected"), change_rows())
+def test_every_change_subject_carries_the_string_the_registry_generates(subject, wrapper, expected) -> None:
+    """One assertion per minted string, over an event the producer built.
+
+    A sourcetype is permanent (clause 5) and a `props.conf` stanza keys on it exactly, so
+    the string a subject arrives under is the whole contract — a wrong one is a stanza that
+    matches nothing, silently.
+    """
+    subject_kind, section = _subject_of(subject)
+    body = _build_body(SPLUNK, _change_payload(subject_kind=subject_kind, section=section))
+
+    assert body["sourcetype"] == expected
+    assert body["sourcetype"].endswith(f":{wrapper}:change")
+
+
+def test_the_stamped_strings_are_the_registrys_fifteen_and_no_others() -> None:
+    """Coverage in both directions, which the per-row test above cannot give on its own:
+    no subject is left unstamped, and nothing is stamped that the registry does not
+    generate. Fifteen strings is fifteen hand-written stanzas in a customer's Splunk."""
+    stamped = {
+        _build_body(SPLUNK, _change_payload(subject_kind=kind, section=section))["sourcetype"]
+        for kind, section in (_subject_of(subject) for subject, _wrapper, _stype in change_rows())
+    }
+    assert stamped == {stype for _subject, _wrapper, stype in change_rows()}
+    assert len(stamped) == 15
+
+
+def test_no_destination_but_splunk_gets_a_sourcetype() -> None:
+    """A sourcetype is Splunk's routing dimension, not part of the event. Every other
+    destination keeps the canonical body — a generic webhook receiver and an Elastic
+    document must not gain a Splunk field because the same payload happened to be
+    subscribed twice."""
+    payload = _change_payload(subject_kind=SUBJECT_COMPUTER, section="applications")
+    canonical = {key: value for key, value in payload.items() if key != ENVELOPE}
+
+    assert _build_body(WEBHOOK, payload) == canonical
+    assert _build_body(ELASTIC, payload) == canonical
+    # The real Elastic path does not go through `_build_body` at all, so it is asserted on
+    # its own document rather than by implication.
+    document = json.loads(_elastic_bulk_body(EventOutbox(event_type=CHANGE_EVENT, payload=payload)).splitlines()[1])
+    assert "sourcetype" not in document
+
+
+def test_only_the_change_family_is_stamped() -> None:
+    """#242's job is not done here. The section tree names fan-out sub-events that do not
+    exist, so minting one of those strings now would be a permanent stanza for a shape
+    about to change (#222), and the per-device snapshot (#241) is likewise untouched. The
+    guard is on the event type, so a family added later is unstamped until it is ruled."""
+    for event in ("device.inventory.changed", "run.completed", "run.failed", "destination.test"):
+        body = _build_body(SPLUNK, {"event": event, "subjectKind": "computer", "section": "applications"})
+        assert "sourcetype" not in body, f"{event} must not be stamped by the change family's rule"
+
+
+def test_an_unknown_section_costs_one_unstamped_event_not_a_dead_letter() -> None:
+    """The delivery path's failure mode. `_build_body` runs inside `_attempt_delivery`,
+    where a raise is retried ten times and then dead-lettered, so a payload whose section
+    has no wrapper — a shape from a newer aperture, replayed on an older worker — must
+    degrade to the HEC input's own sourcetype, which is where every event was before this
+    stamp existed."""
+    assert change_sourcetype(CHANGE_EVENT, subject_kind="computer", section="quantum_state") is None
+    assert change_sourcetype(CHANGE_EVENT, subject_kind=None, section=None) is None
+    body = _build_body(SPLUNK, {"event": CHANGE_EVENT, "subjectKind": "computer", "section": "quantum_state"})
+    assert "sourcetype" not in body
+
+    # And the subject decides before the section: a group's own section is `definition`,
+    # which no wrapper answers to, so reading the section first would leave the one subject
+    # #243 minted a string for as the only one with no stamp at all.
+    assert (
+        change_sourcetype(CHANGE_EVENT, subject_kind=SUBJECT_COMPUTER_GROUP, section=GROUP_DEFINITION_SECTION)
+        == "loon:jamf:mac:computerGroup:change"
+    )
