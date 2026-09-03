@@ -186,7 +186,10 @@ into a search bar, not to this product's own HTTP contract, and renaming the que
 parameter would churn the frontend and break bookmarked URLs for no consumer's benefit.
 
 The id vocabulary, ruled in #189 and applied: `eventID`, `jobID`, `connectionID`,
-`collectionID`, `jamfProID`.
+`jamfProID`. `collectionID` was in this list because the block shipped it, not because
+#189 ruled it in — the ruling refused it, and it was removed from `deviceMeta` along with
+`comparison`. Its casing stands if a run-family key ever carries the collection; nothing
+emits one today. See [`runs.md`](runs.md) §4.
 
 **One minted key on a vendor object.** The extension-attribute item is Jamf's object
 verbatim — `definitionId`, `name`, `values`, `dataType`, `inputType`, `multiValue`,

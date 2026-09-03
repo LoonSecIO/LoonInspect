@@ -84,7 +84,7 @@ but each one silently wrong the first time a mobile record reaches it.
 | **P‑1** | ~~`posture_snapshot` has no population column; 11 of the 25 keys change meaning~~ | `schema.py:1293` | **LANDED 2026-09-02** — [#230](https://github.com/LoonSecIO/LoonInspect/issues/230) |
 | **P‑2** | The data-sharing submission carries no platform; `snapshot.apps` rows are `{title, full, count}` | `sharing.py:98–116` | **v0** — [#231](https://github.com/LoonSecIO/LoonInspect/issues/231) |
 | **P‑3** | `devices` is unique on `(mdm_connection_id, external_id)` — one Jamf ID space | `schema.py:130` | 1st mobile sweep — [#233](https://github.com/LoonSecIO/LoonInspect/issues/233) |
-| **P‑4** | `deviceMeta.eventID` is `uuid5(run.id, external_id)` — no platform in the name | `service.py:848` | 1st mobile sweep — [#234](https://github.com/LoonSecIO/LoonInspect/issues/234) |
+| **P‑4** | `deviceMeta.eventID` is `uuid5(run.id, external_id)` — no platform in the name | `service.py:871` | 1st mobile sweep — [#234](https://github.com/LoonSecIO/LoonInspect/issues/234) |
 | **P‑5** | `registry_rows()` iterates the computer section table whatever platform it is passed | `wire_vocabulary.py:92` | with the registry — [#235](https://github.com/LoonSecIO/LoonInspect/issues/235) |
 | **P‑6** | `Facts.platform` defaults to the string `"Mac"`, so every catalog row is judged as a Mac | `requirements.py:79` | with catalog rows — [#236](https://github.com/LoonSecIO/LoonInspect/issues/236) |
 | **P‑7** | The `application` entry hashes `path` and `macAppStore`; entries de-duplicate tenant-wide | `contract.py:322` | with the registry — [#237](https://github.com/LoonSecIO/LoonInspect/issues/237) |
@@ -118,7 +118,7 @@ only cheap before the first exchange.
 
 ### P‑4 is not solved by the sourcetype
 
-The platform rides the sourcetype rather than a fourteenth `deviceMeta` key (Kyle, R3), which
+The platform rides the sourcetype rather than a new `deviceMeta` key (Kyle, R3), which
 is right: the block is over half the raw feed and the segment already exists. But the
 sourcetype disambiguates *between* sourcetypes, and `eventID` is the fan-out selector
 `app.core.runs.run_meta` teaches analysts to use — `stats … by deviceMeta.eventID` across
@@ -138,8 +138,9 @@ currently tell those apart.
 `general` section, rated HIGH in the change policy — "supervision governs which MDM commands
 are possible" — and filterable on the devices API. It is absent from exactly one place: the
 `deviceMeta` block. Adding a key there is permitted by the additive-only policy and does not
-need to happen before v0, but it is the likeliest fourteenth key and should be ruled with the
-mobile work rather than discovered during it.
+need to happen before v0, but it is the likeliest claimant on the thirteenth slot — the one
+#189 held open deliberately, and the only one left once `custom` reserves the twelfth — and
+should be ruled with the mobile work rather than discovered during it.
 
 ## 5. What the product says
 
