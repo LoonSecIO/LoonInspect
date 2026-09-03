@@ -33,8 +33,9 @@ search head; take the URL from the token's own page rather than assuming the sha
   `device.change` carries its own `sourcetype` and overrides the input's, and nothing
   else sends one (§6). Whatever you set here is what those other events get for ever.
 - *Allowed indexes* and *Default index*: **this is the only thing that decides where the
-  events land.** LoonInspect never sends an `index` field — `_build_body` adds only the
-  three envelope hints, and `wire.envelope()` emits only `time`, `host` and `source`.
+  events land.** LoonInspect never sends an `index` field — `_build_body` adds the three
+  envelope hints `wire.envelope()` emits (`time`, `host` and `source`) plus, on
+  `device.change` alone, its `sourcetype` (§6), and nothing else.
 - Select **exactly one** index and make it the default. A HEC token is a write
   credential; leaving every index selected means a compromised or fat-fingered token can
   write anywhere in your Splunk, and it buys nothing here because LoonInspect writes to
@@ -230,22 +231,48 @@ that is not built.
 ## 7. What arrives, and where `_time` comes from
 
 `_time` is the event's own occurrence time, not the time Splunk received it: `time` in the
-envelope is set from `occurredAt` at enqueue. A sweep's events carry the run's window, a
-webhook's carry Jamf's `reportDate`. This matters most on day one — events produced before
-any destination existed are held, not discarded, so adding Splunk on Friday after
-Monday's baseline delivers four days of events onto their own days rather than as one
-Friday spike.
+envelope is set at enqueue, on every family, from the instant the event is about — the
+body's `occurredAt` on `device.inventory.changed` and `run.completed`, its `windowEnd` on
+`run.failed`, and on `device.change` the same clock as the inventory event of the same
+pull. A sweep's events carry the run's window, a webhook's carry Jamf's `reportDate`.
+This matters most on day one — events produced before any destination existed are held,
+not discarded, so adding Splunk on Friday after Monday's baseline delivers four days of
+events onto their own days rather than as one Friday spike.
 
 `host` is the device hostname and `source` is the Jamf instance (`acme.jamfcloud.com`,
 or `jamf.corp.local:8443` when the port is not the scheme's default).
 
-The body's field names — `deviceMeta`, `addedApps`, and the rest — are documented in
-[runs.md](runs.md) §4. **Treat them as not yet frozen:** the casing rules are ruled for
-the inventory event but still open for the other producers (#188, #90). Today that
-difference is visible on the wire — `device.inventory.changed` is camelCase
-(`occurredAt`), while `run.completed` is still snake_case (`occurred_at`) — and it is
-expected to be reconciled before 1.0. Pin dashboards to the index and the sourcetype,
-and expect to revisit field-level SPL.
+**The body's field names are frozen.** The vocabulary — the sourcetype tree, the wrapper
+keys, the casing law and the additive-only clauses — is
+[`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md), ruled in
+[#188](https://github.com/LoonSecIO/LoonInspect/issues/188) and frozen on 2026-09-01.
+Its registry is generated from `app/core/wire_vocabulary.py`, and
+`tests/test_wire_vocabulary.py` fails on drift in either direction, so the document and
+the code cannot disagree. ([#90](https://github.com/LoonSecIO/LoonInspect/issues/90),
+which this paragraph used to cite as still open, closed on 2026-09-03 with each of its
+decision points forwarded to that ruling.) Where each shape is written down: the
+`deviceMeta` block and the `run.completed` / `run.failed` payloads in [runs.md](runs.md)
+§4 and §7; the change stream in [change-log.md](change-log.md); the inventory delta's
+own keys — `addedApps` and `removedApps`, each a list of app objects — in
+`app/schemas/payload.py` (`InventoryChangedEvent`), the one place that serializes them.
+
+One casing law covers all four families. Every key LoonInspect mints is camelCase with
+the token `ID` uppercased — `occurredAt`, `jobID`, `connectionID`, `eventID` — and a
+vendor's native key keeps the vendor's spelling, so an app's `bundleId` is Jamf's.
+`event` is the discriminator on every family and `jobID` is the run id everywhere, so
+`event=device.*`, `event=run.*` and a bare `jobID=$id$` each work across the whole feed.
+`tests/test_wire_casing.py` holds that on the payloads the outbox actually stores, all
+four families judged together, not on the source that built them.
+
+What "frozen" licenses is §5 of the vocabulary document: new keys may appear and
+consumers must ignore unknown keys; a key's name, type and meaning never change once
+shipped; a shipped key is never removed; a sourcetype string, once minted, is permanent.
+SPL written against these names today does not need revisiting. What still changes is
+shape, not names: when the per-app fan-out lands, the sub-events it adds arrive under the
+section sourcetypes in the registry (`loon:jamf:mac:app` and the rest) rather than under
+the one you set on the input — the move `device.change` has already made (§6). So pin
+dashboards to the index and to `source` (one Jamf instance's whole feed) or to `event`,
+not to the input's sourcetype alone.
 
 ## 8. Prove it end to end
 
@@ -290,5 +317,8 @@ Two timing facts worth knowing before you go looking for a bug:
 
 - A destination added after the baseline sweep still receives it. Events are held while
   no destination is enabled, for `event_outbox_retention_days` (default **7**).
-- `deliver_pending` has no `ORDER BY`, so a drained backlog arrives in arbitrary order.
-  `_time` is still correct for each event; only arrival order is unspecified.
+- A backlog drains oldest-first, at most 1,000 deliveries per 30-second tick, so a week
+  of held events on a large fleet arrives over minutes rather than at once — 40,000
+  events to one destination is about twenty minutes. A failed delivery re-queues behind
+  whatever is due before its next attempt, so arrival order is not occurrence order.
+  `_time` is each event's own and does not depend on when it arrives.
