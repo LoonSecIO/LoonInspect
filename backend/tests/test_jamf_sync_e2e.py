@@ -281,6 +281,51 @@ async def test_sweep_then_repeat_then_webhook(db, jamf: FakeJamf, connection) ->
     assert current.last_trigger == "webhook" and current.previous_id == real_span.id
 
 
+async def test_a_stale_observation_enqueues_no_snapshot_and_no_delta(db, jamf: FakeJamf, connection) -> None:
+    """#241's Done-when 1, promised and unpinned until PR #273's verify pass named it: an
+    observation older than what the ledger already holds is refused by the monotonic guard
+    before `process_sync` runs, so it opens no span, touches no row and enqueues NOTHING —
+    not a snapshot, not a delta, not a change. A stale webhook that produced a
+    `device.inventory` would assert the device IS what it was, dated after the truth."""
+    from app.mdm.service import ingest_webhook, sync_connection
+    from app.models.schema import Device, EventOutbox, InstalledApp, ObservationSpan
+
+    real_id = jamf.real["id"]
+    first = await sync_connection(db, connection)
+    assert first.ok and first.device_count == 2
+    device_events = (
+        select(func.count())
+        .select_from(EventOutbox)
+        .where(EventOutbox.event_type.in_(("device.inventory", "device.inventory.changed", "device.change")))
+    )
+    spans = select(func.count()).select_from(ObservationSpan).where(ObservationSpan.mdm_connection_id == connection.id)
+    real_device = (
+        await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == real_id))
+    ).scalar_one()
+    real_apps = select(func.count()).select_from(InstalledApp).where(InstalledApp.device_id == real_device.id)
+    events_before = await _count(db, device_events)
+    spans_before = await _count(db, spans)
+    apps_before = await _count(db, real_apps)
+
+    # The sweep observed the record at its reportDate of 2026-08-22T01:44:27Z. An OLDER
+    # inventory now arrives by webhook — carrying an app the sweep never saw, so that if
+    # the guard let it through, something would move and something would be enqueued.
+    jamf.real["general"]["reportDate"] = "2026-08-21T09:00:00.000Z"
+    jamf.real["applications"].append(
+        {"name": "Stale.app", "path": "/Applications/Stale.app", "version": "0.9", "bundleId": "io.loonsec.stale"}
+    )
+    payload = {
+        "webhook": {"webhookEvent": "ComputerInventoryCompleted"},
+        "event": {"jssID": real_id, "serialNumber": "LOONMINI0M4"},
+    }
+    result = await ingest_webhook(db, connection, payload)
+    assert result is not None and result.outcome == "stale"
+
+    assert await _count(db, device_events) == events_before
+    assert await _count(db, spans) == spans_before
+    assert await _count(db, real_apps) == apps_before
+
+
 async def test_narrow_webhook_scope_never_wipes_apps(db, jamf: FakeJamf, connection) -> None:
     """Kyle's ruling (#93): device state is wiped only when a webhook properly pulls
     the device — an absent section must never read as "everything was removed".

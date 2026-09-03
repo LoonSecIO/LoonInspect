@@ -48,6 +48,7 @@ from app.core.context import get_request_id
 from app.core.outbox import enqueue_event
 from app.core.uuid7 import uuid7
 from app.core.wire import ENVELOPE, envelope, instance_label
+from app.core.wire_vocabulary import RUN_COMPLETED_EVENT_TYPE, RUN_FAILED_EVENT_TYPE
 from app.models.schema import MdmConnection, Run, RunLogLine
 
 logger = logging.getLogger(__name__)
@@ -92,7 +93,12 @@ STATUS_FAILED = "failed"
 # webhooks emit this event too, and would silence a naive absence search on a night the
 # actual sweep never closed. Payload is snake_case, matching the envelope convention and
 # staying out of the way of the pending casing ruling (#90).
-RUN_COMPLETED_EVENT = "run.completed"
+#
+# The literal lives in `app.core.wire_vocabulary`, beside the `loon:run` sourcetype this
+# family is delivered under (#242): the module that mints the string and the module that
+# emits the event cannot drift apart, the way `app.changes.derive.EVENT_TYPE` is the
+# vocabulary's `CHANGE_EVENT_TYPE`.
+RUN_COMPLETED_EVENT = RUN_COMPLETED_EVENT_TYPE
 
 # Lock classes whose closed run also gets a run.completed. LOCK_CATALOG is the one
 # exclusion left standing after #224 — see RUN_COMPLETED_EVENT above.
@@ -107,8 +113,9 @@ RUN_COMPLETED_LOCK_CLASSES = frozenset({LOCK_DEVICE_SWEEP, LOCK_WEBHOOK})
 # Default-on for every destination — null/empty subscriptions already mean "all", and
 # the a9d4c7e1f3b8 migration appends the type to every explicit list; the subs model
 # stays in charge, so an org unsubscribes a destination the ordinary way. Payload is
-# snake_case like run.completed's, one casing throughout (#90).
-RUN_FAILED_EVENT = "run.failed"
+# snake_case like run.completed's, one casing throughout (#90). The literal is the
+# vocabulary's, as above.
+RUN_FAILED_EVENT = RUN_FAILED_EVENT_TYPE
 
 # The error summary a run.failed event carries: the stored run error, truncated at the
 # same cap the delivery worker puts on an HTTP error — enough to say what happened,

@@ -475,6 +475,20 @@ def test_a_bare_jamf_object_in_a_list_section_is_refused() -> None:
         InventorySnapshotEvent(occurredAt=_WINDOW, cert=[{"cert": {"commonName": "x"}, "patch": {}}])
 
 
+def test_a_wrapper_the_model_has_no_field_for_is_refused_at_enqueue() -> None:
+    """`extra="forbid"` (PR #273's verify pass, should-fix 1). Pydantic's default is
+    `ignore`, under which a fifteenth section added to the registry without a field here
+    would be silently dropped from every snapshot in production while only the pure tests
+    went red. Refused at enqueue instead — the posture the app item already had — and the
+    alias and the Python name both still populate."""
+    InventorySnapshotEvent(occurredAt=_WINDOW, operatingSystem={"version": "27.0"})
+    InventorySnapshotEvent(occurredAt=_WINDOW, operating_system={"version": "27.0"})
+    with pytest.raises(ValidationError, match="fonts"):
+        InventorySnapshotEvent(occurredAt=_WINDOW, fonts=[{"fonts": {"name": "Menlo"}}])
+    with pytest.raises(ValidationError, match="storage"):
+        InventorySnapshotEvent(occurredAt=_WINDOW, storage={"disks": []})
+
+
 def test_to_payload_drops_only_the_unread_wrappers_and_a_run_less_job_id() -> None:
     """Absent-not-null on exactly two kinds of key, and nothing inside a Jamf object is
     touched: the extension-attribute item keeps Jamf's nulls verbatim (#197)."""

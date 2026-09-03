@@ -227,21 +227,27 @@ event's own `occurredAt`, `host` from the hostname, and `source` from the Jamf i
 (scheme dropped, non-default port kept — `jamf.corp.local:8443`). They are indexed
 metadata, so they cost no licence volume.
 
-**`sourcetype` is set for one family: `device.change`.** Each change is delivered under
-its entity's string — `loon:jamf:mac:security:change`, `loon:jamf:mac:app:change`,
-`loon:jamf:mac:computerGroup:change`, fifteen in all — decided by
-`app/core/wire_vocabulary.py` and stamped in `_build_body` on Splunk HEC deliveries only;
-every other destination type gets the canonical event with no sourcetype at all. The
-strings are ruled in [`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md) §2 and the
-stanzas they imply are in [`splunk-setup.md`](splunk-setup.md) §6. Every other family is
-still deliberately unstamped — the per-device snapshot `device.inventory` included: the
-ruled section tree names the fan-out sub-events that snapshot will be split into, they are
-not built, and a sourcetype is a permanent `props.conf` stanza, so minting one for a shape
-about to change would be the expensive kind of mistake
-([#222](https://github.com/LoonSecIO/LoonInspect/issues/222), absorbed by the fan-out,
-[#242](https://github.com/LoonSecIO/LoonInspect/issues/242)). `device.change` was never
-blocked that way — it is already at sub-event grain, one event per kept change row — which
-is why #243 ruled it may be stamped first.
+**`sourcetype` is set on three families, on Splunk HEC deliveries only**, decided by
+`app/core/wire_vocabulary.py` and stamped in `app/core/outbox.py`; every other destination
+type gets the canonical event with no sourcetype at all. The strings are ruled in
+[`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md) §2 and the stanzas they imply are
+in [`splunk-setup.md`](splunk-setup.md) §6.
+
+- `device.change` — its entity's string, `loon:jamf:mac:<wrapper>:change`, fifteen in all
+  ([#243](https://github.com/LoonSecIO/LoonInspect/issues/243), stamped by
+  [#223](https://github.com/LoonSecIO/LoonInspect/issues/223)). It went first because it was
+  already at sub-event grain, one event per kept change row.
+- `device.inventory` — not one string but a fan-out: on Splunk the snapshot is expanded at
+  delivery into one HEC event per section item, each under the registry's string for its
+  wrapper, `loon:jamf:mac:app` and its thirteen siblings
+  ([#242](https://github.com/LoonSecIO/LoonInspect/issues/242), 2026-09-03, absorbing
+  [#222](https://github.com/LoonSecIO/LoonInspect/issues/222)). The shape is below.
+- `run.completed` and `run.failed` — `loon:run`, LoonInspect's own assertion about a run,
+  no vendor segment (#242 item 6, in the same change as the section tree).
+
+Still under the HEC input's own sourcetype, deliberately: `device.inventory.changed` — the
+delta family has no ruled string, and no issue owns one — and the test event, which is
+meant to be identifiable rather than routed.
 
 ### The snapshot family: `device.inventory` (#241)
 
@@ -323,6 +329,15 @@ calculate; `vuln` is `{"assessment": "off"}` until the corpus lands
 ([`vulnerabilities.md`](vulnerabilities.md) §4a). `alert` is name-only in v0 (#229) and
 rides nothing.
 
+**`supported: false` has two causes and, in v0, no discriminator.** It means either that
+no Jamf Patch title matches the app, or that the Jamf Patch catalog has not been synced
+yet: the catalog refreshes on the hour (`hourly_jamf_patch_sync`, `CronTrigger(minute=0)`
+in `app/main.py`) with no run at startup, so a first sweep that beats the hour ships
+`supported: false` for every app in the fleet — Wireshark included — and the next sweep
+flips the matched ones. The key's meaning is the ruled one and does not change; a
+discriminator that says *not yet judged* is additive under clause 1 and is left to
+[#249](https://github.com/LoonSecIO/LoonInspect/issues/249).
+
 **Three meanings of absence**, and a consumer can rely on all three:
 
 - **A section wrapper absent** — the section was outside this read's aperture. The
@@ -348,14 +363,98 @@ never a silent reshape.
 **Size and the subscription default.** Measured against the captured Jamf Pro 11.31
 record (`backend/tests/fixtures/jamf/computer_inventory_detail_real.json`, 83 apps) as
 compact JSON: **28,783 bytes** for one device — ~22.3 KB of it the `app` list at ~268
-bytes an item — every pass, not once. `device.inventory` joined `KNOWN_EVENT_TYPES` under
-the default the type was born with: null or empty `subscribed_events` keeps meaning every
-event, so a destination on the default receives one snapshot per device per pass from the
-day it ships, and explicit lists were **not** appended to (unlike `run.failed`, migration
-`a9d4c7e1f3b8`): a destination that curated its list never asked for a state stream.
-Opting out, or in, is `subscribed_events` on the API — what each destination type receives
-is in [`splunk-setup.md`](splunk-setup.md) §7. The snapshot's shape is pinned against the
-fixture in `backend/tests/test_inventory_snapshot.py`, size ceiling included.
+bytes an item — every pass, not once. On a Splunk destination the same device is
+**84,135 bytes** as 107 sub-events (2.92×; see the fan-out below). `device.inventory`
+joined `KNOWN_EVENT_TYPES` under the default the type was born with: null or empty
+`subscribed_events` keeps meaning every event, so a destination on the default receives
+one snapshot per device per pass from the day it ships, and explicit lists were **not**
+appended to (unlike `run.failed`, migration `a9d4c7e1f3b8`): a destination that curated its
+list never asked for a state stream. Opting out, or in, is `subscribed_events` on the API
+— what each destination type receives is in [`splunk-setup.md`](splunk-setup.md) §7. The
+snapshot's shape is pinned against the fixture in
+`backend/tests/test_inventory_snapshot.py`, size ceiling included.
+
+#### The fan-out: what a Splunk destination receives (#242)
+
+On a `splunk_hec` destination — and only there — the snapshot is expanded **at delivery**
+into one HEC event per section item, under the registry's string for its wrapper
+(`app/core/hec_fanout.py`, called from `app/core/outbox.py`). It is #81's HEC expansion:
+*"snapshot event → N per-app events + device anchor … Splunk-destination-scoped; other
+destination types keep the canonical event."* The outbox still stores one row per device
+per pass, never N; the split happens in the one place a HEC body is assembled, so an event
+enqueued before the fan-out existed arrives split rather than whole.
+
+- **The seven one-per-device sections are one sub-event each** — `general`, `hardware`,
+  `operatingSystem`, `userAndLocation`, `purchasing`, `security`, `diskEncryption` — the
+  *device anchor*. **The seven list sections fan one sub-event per item**, in the
+  payload's order. Cardinality is the contract's `SectionSpec.is_list`, so
+  `localUserAccount` fans per item whatever the registry's naming comment says.
+- **The sub-event body is the item plus the three sub-event keys** of
+  [`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md) §6 — `event` (the snapshot's
+  own type, `device.inventory`, verbatim: D1, ruled on #220), `jobID` at the root, and
+  `deviceMeta` copied whole — laid out as the snapshot is, head first, block last. Nothing
+  is minted, renamed or dropped; the wrapper object is Jamf's, byte for byte. `occurredAt`
+  does not ride: the three are the complete list, and the same instant is the envelope's
+  `time` on every sub-event. `patch{}` and `vuln{}` ride the app sub-event inline and
+  nowhere else, and the three enrichment strings stay unstamped (#242 item 6).
+- **The envelope rides every sub-event** — the snapshot's `time`, `host` and `source`,
+  the same values on all of them.
+
+One app sub-event of the real fixture as the fan-out posts it, the two UUIDs elided:
+
+```json
+{"event": {"event": "device.inventory", "jobID": "0199a5c4-…",
+           "app": {"bundleId": "com.apple.Maps", "cfBundleShortVersionString": "3.0",
+                   "cfBundleVersion": "2972.20.6.12.13", "macAppStore": false, "name": "Maps.app",
+                   "path": "/System/Applications/Maps.app", "version": "3.0"},
+           "patch": {"supported": false}, "vuln": {"assessment": "off"},
+           "deviceMeta": {"jobID": "0199a5c4-…", "trigger": "sweep", "connectionID": 1,
+                          "shortDate": "2026-09-02", "eventID": "a0022c4f-…", "serialNumber": "LOONMINI0M4",
+                          "jamfProID": "3", "hostName": "Loon’s Mac mini",
+                          "lastReportDate": "2026-08-22T01:44:27+00:00", "managed": true, "schemaVersion": "v0"}},
+ "sourcetype": "loon:jamf:mac:app", "time": 1788314400.0, "host": "Loon’s Mac mini", "source": "e2e.jamfcloud.com"}
+```
+
+and the `general` anchor is `{"event": "device.inventory", "jobID": "…", "general": {…Jamf's
+object…}, "deviceMeta": {…}}` under `loon:jamf:mac:general`.
+
+**One delivery, one request, N events.** All of a device's sub-events go in one POST as
+newline-concatenated JSON objects, which `/services/collector/event` indexes one by one —
+per-event expansion, not cross-event batching: two devices' snapshots are two requests.
+The `OutboxDelivery` row, its backoff and its dead-letter are unchanged. Measured on the
+real fixture: **107 sub-events, 84,135 bytes** — `deviceMeta` is 314 bytes × 107 = 33.6 KB of
+it, the envelope and sourcetype ~109 bytes per sub-event, `event` + `jobID` 73 — verified
+against a local Splunk 10.4 (the #242 PR). A device whose expansion exceeds
+`SPLUNK_HEC_MAX_REQUEST_BYTES` (default **900,000**: 10% under the 1 MB `max_content_length`
+Splunk Cloud Platform documents for HEC) is sent as consecutive requests of at most that
+size, whole events only, in order. Order is fixed — registry order, anchors first, items in
+payload order — so a retry re-expands the same row to the same bytes.
+
+**Failure is per request, retry is per delivery.** Any non-2xx or transport error fails
+the delivery, which stays pending, backs off and retries the whole delivery — every
+request, rebuilt from the same row — until it lands or dead-letters after ten attempts.
+HEC parses a request in order and, on a malformed event, indexes the events before it and
+reports the position (`invalid-event-number`, HTTP 400); nothing built here can produce a
+malformed event, so that 400 is a producer bug on the ordinary path. A retry therefore
+re-sends sub-events Splunk may already hold — the at-least-once story the outbox always
+had, one level down. The dedup key on a fan-out sourcetype is the pull plus the item:
+`dedup deviceMeta.eventID app.bundleId app.path app.version` on `loon:jamf:mac:app`, each
+sibling section's own identity on its sourcetype — never `deviceMeta.eventID` alone,
+which collapses a device's pass to one arbitrary row.
+
+**What the wire cannot say.** A section outside the read's aperture is absent from the
+snapshot and fans out nothing; a section read and genuinely empty fans out nothing too.
+On the wire the two look the same: `loon:jamf:mac:general` with no `loon:jamf:mac:cert` for
+the same `deviceMeta.eventID` means *either* zero certificates *or* certificates not read.
+The payload keeps the distinction (absent versus `[]`); the fan-out loses it, and a key
+saying "unread" on the most-multiplied event is #189's decision, not taken. Under a
+full-contract sweep "zero" is the right reading; under a scoped webhook collection it is
+not ([`splunk-setup.md`](splunk-setup.md) §7).
+
+**A section the registry does not name** — a shape from a newer producer replayed on an
+older worker — is delivered unstamped rather than dropped or raised, the same degrade the
+change family uses: `InventorySnapshotEvent` refuses unknown wrappers at enqueue, so this
+is version skew, never a producer bug.
 
 **The run id is UUIDv7, not `uuid4`, since
 [#225](https://github.com/LoonSecIO/LoonInspect/issues/225).** `jobID` being a

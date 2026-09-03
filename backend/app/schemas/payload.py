@@ -303,9 +303,17 @@ class InventorySnapshotEvent(BaseModel):
     Aliases are the wire spellings, and the model is populated BY those spellings
     (`populate_by_name` keeps the Python names usable too): the producer builds the
     wrappers from the registry and never spells one by hand.
+
+    `extra="forbid"`: a wrapper this model has no field for is refused at enqueue, not
+    dropped. Pydantic's default is `ignore`, under which a fifteenth section added to the
+    registry without a field here would be silently left out of every snapshot in
+    production while the pure tests went red — the refuse-at-enqueue posture the app item
+    already claims, made true for wrappers (PR #273's verify pass, should-fix 1). The fan-out
+    (#242) relies on it from the other side: a key the registry does not name can reach it
+    only through version skew, never from this producer.
     """
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     event: str = INVENTORY_EVENT_TYPE
     # The run, at the root and inside `deviceMeta`, both — #220's ruling, the same as the

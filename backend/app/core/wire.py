@@ -12,20 +12,25 @@ survive a summary index or an export into a case file, while the body always tra
 so the identity that joins outward to EDR, DHCP and identity logs is not left somewhere
 a customer can quietly remove.
 
-The catch is that `app.core.outbox._build_body` — the one place the HEC body is
-assembled — receives only the destination and the frozen payload. No session, no Device,
-no run. So the envelope's values have to be computed at *enqueue*, carried on the
-payload under `ENVELOPE`, and lifted back out at delivery. `_build_body` removes the key
-whatever the destination type, so it never reaches a customer's index or a generic
-webhook receiver.
+The catch is that `app.core.outbox` — the one place a HEC body is assembled — receives
+only the destination and the frozen payload at delivery. No session, no Device, no run.
+So the envelope's values have to be computed at *enqueue*, carried on the payload under
+`ENVELOPE`, and lifted back out at delivery. The outbox removes the key whatever the
+destination type, so it never reaches a customer's index or a generic webhook receiver.
+
+`hec_event` below is the one shape a HEC event object takes on this wire — the body
+wrapped, the ruled `sourcetype` beside it when the family has one, the envelope hints
+beside that. Every single-event family and every fan-out sub-event (#242,
+`app.core.hec_fanout`) goes through it, so the envelope cannot be applied two ways.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from urllib.parse import urlparse
 
-# Reserved payload key holding the envelope hints. Popped by `_build_body` before the
-# body is sent, so it is a transport detail of the outbox and never part of the wire
+# Reserved payload key holding the envelope hints. Popped by the outbox (`hec_events` and
+# `_build_body`) before any body is sent, so it is a transport detail of the outbox and never part of the wire
 # vocabulary a customer writes SPL against.
 ENVELOPE = "_envelope"
 
@@ -89,3 +94,30 @@ def envelope(*, occurred_at, host: str | None, source: str | None) -> dict[str, 
         "source": source or None,
     }
     return {key: value for key, value in hints.items() if value is not None}
+
+
+def hec_event(
+    body: Mapping[str, object], hints: Mapping[str, object], *, sourcetype: str | None
+) -> dict[str, object]:
+    """One HEC event object: `{"event": body, ["sourcetype": …], time, host, source}`.
+
+    HEC's JSON collector endpoint expects the event wrapped, not posted bare — without the
+    wrapper "Splunk support" would silently fail to ingest. `time`, `host` and `source`
+    ride beside the body as indexed metadata: they cost no licence volume and are faster
+    to search than the same string in `_raw`, which is why the instance URL is envelope-only
+    and never a `deviceMeta` key. `sourcetype` is Splunk's routing dimension (#81 ruling 7)
+    and is decided by `app.core.wire_vocabulary`, never here: this function stamps whatever
+    string it is handed and stamps nothing when handed none, so an event whose family has
+    no ruled string lands under the HEC input's own default.
+
+    `host` is the deliberate exception to envelope-only: the hostname is carried in BOTH
+    places (Kyle's ruling, 2026-08-31). A Splunk admin can silently override `host` at the
+    HEC input, and envelope fields may not survive a summary index or an export into a case
+    file, whereas the body always travels — so the one identity that joins outward to EDR,
+    DHCP and identity logs is not left somewhere a customer can quietly take away.
+    """
+    event: dict[str, object] = {"event": body}
+    if sourcetype is not None:
+        event["sourcetype"] = sourcetype
+    event.update(hints)
+    return event

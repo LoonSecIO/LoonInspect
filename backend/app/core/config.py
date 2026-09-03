@@ -44,6 +44,24 @@ class Settings(BaseSettings):
 
     event_outbox_retention_days: int = 7
 
+    # The ceiling on one Splunk HEC request body, in bytes. A `device.inventory` snapshot
+    # is expanded at delivery into one HEC event per section item (app.core.hec_fanout)
+    # and sent as ONE request of N concatenated events — ~90 KB for a Mac with 83 apps.
+    # A device whose expansion exceeds this ceiling is sent as consecutive requests of at
+    # most this many bytes, whole events only, in order (app.core.outbox); the delivery
+    # succeeds only when every request does.
+    #
+    # The number is set against the tightest ceiling Splunk documents, with headroom:
+    # Splunk Cloud Platform's service description states HEC is enabled "with a 1 MB size
+    # limit on the maximum content length", and 1,000,000 bytes was Splunk Enterprise's
+    # own `[http_input] max_content_length` default before it was raised to 838,860,800
+    # (the value shipped in a 10.4 `limits.conf`). A request over the ceiling is refused
+    # whole with HTTP 413 and would be retried ten times and dead-lettered — so the
+    # default sits 10% under that 1,000,000, and the upper bound below is Enterprise's
+    # shipped default. An operator on Enterprise with a large fleet of large devices may
+    # raise it; nothing else about delivery changes.
+    splunk_hec_max_request_bytes: int = 900_000
+
     # How long a run may go without a heartbeat before the next acquirer reclaims it as
     # dead. The floor is a device that takes longer than this to process: the sweep beats
     # every 15s between devices, so five minutes is twenty missed beats, not a slow one.
@@ -222,6 +240,16 @@ class Settings(BaseSettings):
         if 1 <= value <= 3650:
             return value
         raise ValueError("run_retention_days must be between 1 and 3650")
+
+    @field_validator("splunk_hec_max_request_bytes")
+    @classmethod
+    def _validate_splunk_hec_max_request_bytes(cls, value: int) -> int:
+        # The floor is one sub-event with room to spare (a sub-event is ~1 KB); the ceiling
+        # is Splunk Enterprise's shipped `max_content_length`. A single event larger than
+        # the ceiling is still sent, alone — the setting bounds requests, not events.
+        if 4_096 <= value <= 838_860_800:
+            return value
+        raise ValueError("splunk_hec_max_request_bytes must be between 4096 and 838860800")
 
     @field_validator("run_stale_after_seconds")
     @classmethod

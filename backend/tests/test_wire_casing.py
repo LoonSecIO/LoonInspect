@@ -51,9 +51,16 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import delete, func, select
 
-from app.core.outbox import _build_body
+from app.core.outbox import _build_body, hec_events
 from app.core.wire import ENVELOPE
-from app.core.wire_vocabulary import SECTION_WRAPPERS, SUB_EVENT_KEYS, SUBJECT_WRAPPERS, change_rows
+from app.core.wire_vocabulary import (
+    ASSERTION_SOURCETYPE,
+    SECTION_WRAPPERS,
+    SUB_EVENT_KEYS,
+    SUBJECT_WRAPPERS,
+    change_rows,
+    registry_rows,
+)
 from tests.jamf_fake import HOST, FakeJamf
 from tests.test_device_meta import SHIPPED_ELEVEN
 
@@ -483,10 +490,23 @@ async def test_every_change_is_delivered_under_its_entitys_change_sourcetype(fiv
         assert "sourcetype" not in _build_body(SimpleNamespace(type="webhook"), payload)
 
     assert len(seen) > 1, "the sweep must move more than one section, or this proves one string"
-    # No other family is stamped — #242 owns the section tree, and #241's snapshot passes
-    # through `_build_body` whole and unstamped until that fan-out splits it.
+    # The change rule stamps nothing else. What the other families carry, on real rows:
+    # the run family `loon:run`; the delta nothing (no ruled string); and the snapshot is
+    # fanned out (#242) into sub-events every one of which carries a registry string —
+    # `eventID` included, which only a real run produces.
     assert any(row.event_type == "device.inventory" for row in rows)
+    registry = {stype for _section, _key, _wrapper, stype in registry_rows()}
     for row in rows:
         if row.event_type == "device.change":
             continue
-        assert "sourcetype" not in _build_body(SimpleNamespace(type="splunk_hec"), row.payload)
+        if row.event_type == "device.inventory":
+            sub_events = hec_events(row.payload)
+            assert sub_events and {sub["sourcetype"] for sub in sub_events} <= registry
+            assert {sub["event"]["deviceMeta"]["eventID"] for sub in sub_events} == {row.payload["deviceMeta"]["eventID"]}
+            assert all(set(SUB_EVENT_KEYS) <= set(sub["event"]) for sub in sub_events)
+            continue
+        body = _build_body(SimpleNamespace(type="splunk_hec"), row.payload)
+        if row.event_type in ("run.completed", "run.failed"):
+            assert body["sourcetype"] == ASSERTION_SOURCETYPE
+        else:
+            assert "sourcetype" not in body
