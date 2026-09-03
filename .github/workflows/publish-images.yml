@@ -63,17 +63,26 @@ jobs:
             echo "published=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # The runner is linux/amd64 only; building the linux/arm64 half of the
+      # manifest below needs emulation registered first. The image that comes
+      # out is still native on either architecture — only its arm64 build is
+      # emulated, not anything that runs from it.
+      - uses: docker/setup-qemu-action@v3
+        if: steps.exists.outputs.published == 'false'
+
       - uses: docker/setup-buildx-action@v3
         if: steps.exists.outputs.published == 'false'
 
-      # linux/amd64 to match the pod stack's RuntimePlatform (X86_64). These
-      # move together — see the comment in ops/aws/pod.template.yml.
+      # Multi-arch manifest under one tag: linux/amd64 is what the pod stack's
+      # RuntimePlatform (X86_64, see ops/aws/pod.template.yml) actually pulls
+      # today; linux/arm64 means anyone who pulls this tag directly on Apple
+      # Silicon gets a native image instead of amd64 under emulation.
       - name: Build and push app image
         if: steps.exists.outputs.published == 'false'
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.ecr.outputs.registry }}/looninspect:${{ github.sha }}
           build-args: |
@@ -86,6 +95,6 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ops/postgres
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.ecr.outputs.registry }}/looninspect-db:${{ github.sha }}
