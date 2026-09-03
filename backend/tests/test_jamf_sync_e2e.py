@@ -363,8 +363,10 @@ async def test_narrow_scope_leaves_scalars_and_eas_untouched(db, jamf: FakeJamf,
     hostname_before = real_device.hostname
     assert hostname_before and real_device.os_version == "27.0" and real_device.supervised is True
     ea_rows = select(DeviceExtensionAttribute).where(DeviceExtensionAttribute.device_id == real_device.id)
-    eas_before = {(ea.key, ea.value) for ea in (await db.execute(ea_rows)).scalars()}
-    assert len(eas_before) == 2
+    eas_before = {(ea.definition_id, tuple(ea.values)) for ea in (await db.execute(ea_rows)).scalars()}
+    # Two in the top-level array and one displayed under General — all three reach the
+    # rows since the hoist (#197); the nested one was invisible before it.
+    assert len(eas_before) == 3
 
     webhook = next(row for row in await list_collections(db, connection.id) if row.kind == "webhook")
     webhook.sections = ["applications"]
@@ -386,7 +388,7 @@ async def test_narrow_scope_leaves_scalars_and_eas_untouched(db, jamf: FakeJamf,
     await db.refresh(real_device)
     assert real_device.hostname == hostname_before
     assert real_device.os_version == "27.0" and real_device.supervised is True
-    assert {(ea.key, ea.value) for ea in (await db.execute(ea_rows)).scalars()} == eas_before
+    assert {(ea.definition_id, tuple(ea.values)) for ea in (await db.execute(ea_rows)).scalars()} == eas_before
 
     # Any full-aperture read heals: the next sweep reads everything and writes it.
     second = await sync_connection(db, connection)
@@ -394,8 +396,8 @@ async def test_narrow_scope_leaves_scalars_and_eas_untouched(db, jamf: FakeJamf,
     await db.refresh(real_device)
     assert real_device.hostname == "renamed while unwatched"
     assert real_device.os_version == "27.1"
-    healed = {(ea.key, ea.value) for ea in (await db.execute(ea_rows)).scalars()}
-    assert ("Non Inventory Reason", "set while unwatched") in healed
+    healed = {(ea.definition_id, tuple(ea.values)) for ea in (await db.execute(ea_rows)).scalars()}
+    assert ("3", ("set while unwatched",)) in healed
 
 
 async def test_a_full_scope_read_of_genuinely_empty_values_still_writes(db, jamf: FakeJamf, connection) -> None:
@@ -416,13 +418,15 @@ async def test_a_full_scope_read_of_genuinely_empty_values_still_writes(db, jamf
         .select_from(DeviceExtensionAttribute)
         .where(DeviceExtensionAttribute.device_id == real_device.id)
     )
-    assert await _count(db, ea_count) == 2
+    assert await _count(db, ea_count) == 3
 
-    # The tenant unsupervises the device and deletes every EA definition; the full
-    # detail read genuinely carries the emptiness, and it lands.
+    # The tenant unsupervises the device and deletes every EA definition — the one
+    # displayed under General included; the full detail read genuinely carries the
+    # emptiness, and it lands.
     jamf.real["general"]["reportDate"] = "2026-08-30T09:00:00.000Z"
     jamf.real["general"]["supervised"] = False
     jamf.real["extensionAttributes"] = []
+    jamf.real["general"]["extensionAttributes"] = []
     payload = {
         "webhook": {"webhookEvent": "ComputerInventoryCompleted"},
         "event": {"jssID": real_id, "serialNumber": "LOONMINI0M4"},

@@ -146,6 +146,17 @@ parameter would churn the frontend and break bookmarked URLs for no consumer's b
 The id vocabulary, ruled in #189 and applied: `eventID`, `jobID`, `connectionID`,
 `collectionID`, `jamfProID`.
 
+**One minted key on a vendor object.** The extension-attribute item is Jamf's object
+verbatim — `definitionId`, `name`, `values`, `dataType`, `inputType`, `multiValue`,
+`options`, `description`, `enabled`, each under Jamf's spelling — plus `source`, the one
+key LoonInspect mints inside a Jamf object anywhere on the wire: the response key the
+array was found under (`extensionAttributes`, or the display section `general`,
+`hardware`, `operatingSystem`, `userAndLocation`, `purchasing`). Ruled on
+[#197](https://github.com/LoonSecIO/LoonInspect/issues/197); the contract discards it and
+the wire keeps it, on purpose — [`jamf-observations.md`](jamf-observations.md) §7. It is
+unrelated to the envelope's `source` (the Jamf instance): the item's key lands as
+`ea.source` under Splunk's JSON extraction, and the envelope field is never in the body.
+
 ## 5. Additive-only
 
 Without this in writing there is no licence to add `patch{}` or `vuln{}` later at all —

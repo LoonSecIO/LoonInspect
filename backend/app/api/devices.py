@@ -35,12 +35,14 @@ _DeviceOutT = TypeVar("_DeviceOutT", bound=DeviceOut)
 
 
 def _parse_ea_filters(ea: list[str] | None) -> list[ExtensionAttributeFilter]:
+    """`ea=<definition id or name>:<value>`, repeated. A term with no colon asks only
+    that the device carry the attribute, whatever its value."""
     filters: list[ExtensionAttributeFilter] = []
     for item in ea or []:
-        if ":" not in item:
+        key, colon, value = item.partition(":")
+        if not key:
             continue
-        key, value = item.split(":", 1)
-        filters.append(ExtensionAttributeFilter(key=key, value=value))
+        filters.append(ExtensionAttributeFilter(key=key, value=value if colon else None))
     return filters
 
 
@@ -158,14 +160,18 @@ async def list_devices(
         stmt = stmt.where(Device.mdm_connection_id == mdm_connection_id)
 
     for ea_filter in _parse_ea_filters(ea):
-        stmt = stmt.where(
-            Device.id.in_(
-                select(DeviceExtensionAttribute.device_id).where(
-                    DeviceExtensionAttribute.key == ea_filter.key,
-                    DeviceExtensionAttribute.value == ea_filter.value,
-                )
+        # By definition id or by name (#197): the id is the identity a script can rely
+        # on across a rename, the name is what a person types.
+        carrying = select(DeviceExtensionAttribute.device_id).where(
+            or_(
+                DeviceExtensionAttribute.definition_id == ea_filter.key,
+                DeviceExtensionAttribute.name == ea_filter.key,
             )
         )
+        if ea_filter.value is not None:
+            # Containment, not equality: a multi-value EA matches on any of its elements.
+            carrying = carrying.where(DeviceExtensionAttribute.values.contains([ea_filter.value]))
+        stmt = stmt.where(Device.id.in_(carrying))
 
     # os_version is a free-text string, and comparing it as one misorders multi-digit
     # segments (e.g. "14.9" > "14.10"), so lt/lte/gt/gte/regex are evaluated in Python

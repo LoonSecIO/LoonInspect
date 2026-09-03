@@ -442,11 +442,25 @@ SECTIONS: dict[str, SectionSpec] = {
 # rather than as every omitted section "disappearing".
 V0_SECTIONS: tuple[str, ...] = tuple(SECTIONS)
 
-# Extension attributes are reported in four places — a top-level array, and one nested
-# under each section an admin chose as the EA's "inventory display". The contract merges
-# all of them into one section keyed by definition id, so moving an EA between display
-# sections in Jamf changes nothing here.
-_NESTED_EA_SECTIONS = ("general", "hardware", "operating_system", "user_and_location", "purchasing")
+# Extension attributes are reported in SIX places — a top-level array, and one nested
+# inside each of the five sections an admin can choose as an EA's "inventory display".
+# These are the five. The contract merges all six into one section keyed by definition
+# id, so moving an EA between display sections in Jamf changes nothing here; the
+# current-state view keeps the section it was found under as `source` (#197). The two
+# are meant to disagree and must not be reconciled — docs/jamf-observations.md §7.
+#
+# Expected, not exhaustive: `hoist_extension_attributes` discovers the arrays by walking
+# the record, so a display section Jamf adds later is found and reported rather than
+# dropped. This tuple serves the aperture only — `with_extension_attribute_carriers` is
+# what makes a collection that asks for EAs also read the sections they are displayed
+# under, and the collection editor reads it to say which sections those are.
+EXTENSION_ATTRIBUTE_CARRIERS: tuple[str, ...] = (
+    "general",
+    "hardware",
+    "operating_system",
+    "user_and_location",
+    "purchasing",
+)
 
 # Jamf's group membership scope is computers; definitions come from a different endpoint
 # and are observed as their own subject kind.
@@ -459,6 +473,32 @@ def jamf_section_param(sections: Iterable[str]) -> str:
     """The `section` query parameter for computers-inventory, in registry order."""
     wanted = set(sections)
     return ",".join(spec.jamf_section for spec in SECTIONS.values() if spec.name in wanted)
+
+
+def with_extension_attribute_carriers(sections: Iterable[str]) -> tuple[str, ...]:
+    """The aperture a request needs: when `extension_attributes` is asked for, the five
+    display sections come with it, appended in registry order after the caller's own.
+
+    Nested EAs arrive inside their display section's object, so a collection that
+    dropped `purchasing` to save bytes was silently dropping every EA an admin displays
+    under Purchasing — the section picker was a hidden EA picker, and nothing said so
+    (#197). Ruled: the carriers are forced in rather than warned about. They are the
+    five cheapest sections in the contract (one small object per device each; the cost
+    lives in applications, certificates and accounts), the aperture then records what
+    was actually read, and the alternative — naming the EAs about to be lost at save
+    time — needs the EA-definition fetch that does not exist yet.
+
+    Applied wherever an aperture is built from a collection: at save
+    (app.api.collections._validate_scope), at the top of a sweep
+    (app.mdm.service.run_jamf) and on the webhook path (app.mdm.service.webhook_scope),
+    so a row saved before this rule behaves like one saved after it. Idempotent,
+    order-preserving, a no-op without EAs, and it never drops a name it does not know:
+    canonicalize_computer is the place an unknown section is refused.
+    """
+    present = list(dict.fromkeys(sections))
+    if "extension_attributes" in present:
+        present.extend(name for name in EXTENSION_ATTRIBUTE_CARRIERS if name not in present)
+    return tuple(present)
 
 
 # --- results ------------------------------------------------------------------------
@@ -540,27 +580,103 @@ def _list_section(spec: SectionSpec, items: Iterable[Any]) -> SectionContent:
     return SectionContent(name=spec.name, digest=digest(f"section:{spec.name}", canonical), entries=entries)
 
 
-def _collect_extension_attributes(
-    raw: Mapping, requested: set[str], quarantined: frozenset[str]
-) -> list[Mapping]:
-    items: list[Mapping] = []
-    sources: list[Any] = [raw.get("extensionAttributes")]
-    for name in _NESTED_EA_SECTIONS:
-        if name in requested:
-            section = raw.get(SECTIONS[name].response_key)
-            if isinstance(section, Mapping):
-                sources.append(section.get("extensionAttributes"))
-    for source in sources:
-        if not isinstance(source, list):
+# --- extension attributes: the hoist ------------------------------------------------
+
+# The key Jamf uses for every extension-attribute array — at the top level of the record
+# and inside each display section alike.
+EXTENSION_ATTRIBUTES_KEY = "extensionAttributes"
+
+
+@dataclass(frozen=True)
+class HoistedExtensionAttribute:
+    """One EA as Jamf reported it, and where. `source` is the response key the array was
+    found under: `extensionAttributes` for the top-level array, else the display section
+    (`general`, `hardware`, `operatingSystem`, `userAndLocation`, `purchasing`)."""
+
+    item: Mapping[str, Any]
+    source: str
+
+
+@dataclass(frozen=True)
+class ExtensionAttributeHoist:
+    """What `hoist_extension_attributes` found.
+
+    `items` — every admitted EA with its source, quarantine applied; the top-level array
+      first, then the sections in the order the record lists them.
+    `computer` — a shallow copy of the record with every `extensionAttributes` array
+      removed, top-level and nested, so no section object still carries one: a section
+      event on the wire must never ship a partial EA list beside the real one. The
+      caller's record is not touched.
+    `unadmitted` — sources that carried a non-empty array the aperture did not admit,
+      for the caller to surface: a display section outside the requested set, or a key
+      the contract has no section for. Empty unless `extension_attributes` was requested.
+    """
+
+    items: tuple[HoistedExtensionAttribute, ...]
+    computer: dict[str, Any]
+    unadmitted: tuple[str, ...]
+
+
+def hoist_extension_attributes(
+    raw: Mapping, *, sections: Iterable[str], quarantined: Iterable[str] = ()
+) -> ExtensionAttributeHoist:
+    """Gather every extension attribute in one computer record into one list — the single
+    implementation the observation contract and the current-state normalizer both use.
+
+    #197: the merge existed once, in the contract, and not at all in the normalizer, so
+    every EA an admin displayed on a section tab reached the ledger and never the
+    product or the wire — two truths about one device, and the one silently dropped
+    included the EDR sensor version. Two copies is how that recurs; this is the one.
+
+    Discovery-driven: the top-level array and every mapping-valued key carrying one are
+    taken — not a hard-coded list of five — so a display section Jamf adds later is
+    found. Admission is the aperture's: the top-level array counts when
+    `extension_attributes` is requested; a nested array counts when its section is
+    requested too. A nested array whose section is *not* requested, or whose key the
+    contract has no section for, is stripped from the copy and named in `unadmitted`
+    rather than merged: a sweep cannot request a section the contract cannot name, so
+    admitting it would make a detail fetch (every section) and a sweep page (the
+    requested ones) disagree about one device, which is the invariant the merge exists
+    to keep. Adding the section to SECTIONS and EXTENSION_ATTRIBUTE_CARRIERS is the fix;
+    the warning the normalizer logs from `unadmitted` is what says it is needed.
+
+    Quarantined definition ids are dropped here, so neither path can forget to. One
+    level deep on purpose: Jamf nests the array directly under the section object, and
+    a deeper walk would be a guess about a shape that does not exist.
+    """
+    requested = set(sections)
+    quarantine = frozenset(str(item) for item in quarantined)
+    section_of = {spec.response_key: spec.name for spec in SECTIONS.values()}
+    ea_requested = "extension_attributes" in requested
+
+    computer: dict[str, Any] = dict(raw)
+    found: list[tuple[str, Any]] = []
+    if EXTENSION_ATTRIBUTES_KEY in computer:
+        found.append((EXTENSION_ATTRIBUTES_KEY, computer.pop(EXTENSION_ATTRIBUTES_KEY)))
+    for key, value in list(computer.items()):
+        if isinstance(value, Mapping) and EXTENSION_ATTRIBUTES_KEY in value:
+            section = dict(value)
+            found.append((key, section.pop(EXTENSION_ATTRIBUTES_KEY)))
+            computer[key] = section
+
+    items: list[HoistedExtensionAttribute] = []
+    unadmitted: list[str] = []
+    for source, array in found:
+        admitted = ea_requested and (source == EXTENSION_ATTRIBUTES_KEY or section_of.get(source) in requested)
+        if not admitted:
+            if ea_requested and isinstance(array, list) and array:
+                unadmitted.append(source)
             continue
-        for item in source:
+        if not isinstance(array, list):
+            continue
+        for item in array:
             if not isinstance(item, Mapping):
                 continue
             definition_id = item.get("definitionId")
-            if definition_id is not None and str(definition_id) in quarantined:
+            if definition_id is not None and str(definition_id) in quarantine:
                 continue
-            items.append(item)
-    return items
+            items.append(HoistedExtensionAttribute(item=item, source=source))
+    return ExtensionAttributeHoist(items=tuple(items), computer=computer, unadmitted=tuple(unadmitted))
 
 
 def canonicalize_computer(
@@ -579,28 +695,36 @@ def canonicalize_computer(
     extension_attributes section entirely. The aperture records the quarantine list, so
     the omission is explicit. This is the churn valve for EAs that report uptime,
     battery, or free disk on every recon.
+
+    Extension attributes are gathered by `hoist_extension_attributes` — the same helper
+    the current-state normalizer uses — before any section is read, and the sections
+    are read from the copy it stripped. The `source` it stamps on each item is
+    discarded here on purpose — see the note on EXTENSION_ATTRIBUTE_CARRIERS.
     """
     unknown = [name for name in sections if name not in SECTIONS]
     if unknown:
         raise ValueError(f"sections outside contract {CONTRACT_VERSION}: {unknown}")
     requested = set(sections)
-    quarantined = frozenset(str(item) for item in quarantined_extension_attributes)
+    hoist = hoist_extension_attributes(raw, sections=requested, quarantined=quarantined_extension_attributes)
+    record = hoist.computer
 
     contents: dict[str, SectionContent] = {}
     for name in sections:
         spec = SECTIONS[name]
         if name == "extension_attributes":
-            contents[name] = _list_section(spec, _collect_extension_attributes(raw, requested, quarantined))
+            # Items only: where each came from is not content (rule 2's spirit — the
+            # admin's display choice is not a fact about the device).
+            contents[name] = _list_section(spec, [hoisted.item for hoisted in hoist.items])
         elif spec.is_list:
-            items = raw.get(spec.response_key)
+            items = record.get(spec.response_key)
             contents[name] = _list_section(spec, items if isinstance(items, list) else [])
         else:
-            contents[name] = _scalar_section(spec, raw)
+            contents[name] = _scalar_section(spec, record)
 
-    general = raw.get("general") if isinstance(raw.get("general"), Mapping) else {}
-    hardware = raw.get("hardware") if isinstance(raw.get("hardware"), Mapping) else {}
+    general = record.get("general") if isinstance(record.get("general"), Mapping) else {}
+    hardware = record.get("hardware") if isinstance(record.get("hardware"), Mapping) else {}
 
-    subject_id = raw.get("id")
+    subject_id = record.get("id")
     if subject_id is None:
         subject_id = general.get("id")
     if subject_id is None:
@@ -611,7 +735,7 @@ def canonicalize_computer(
         subject_id=str(subject_id),
         sections=contents,
         observed_at=parse_jamf_datetime(general.get("reportDate")),
-        udid=_optional_string(raw.get("udid")),
+        udid=_optional_string(record.get("udid")),
         serial_number=_optional_string(hardware.get("serialNumber")),
         management_id=_optional_string(general.get("managementId")),
         label=_optional_string(general.get("name")),

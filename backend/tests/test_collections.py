@@ -295,6 +295,70 @@ async def test_tick_skips_a_collection_inside_its_rate_floor(db, connection, jam
     assert not any(path.startswith("GET /api/v4/computers-inventory") for path in jamf.requests)
 
 
+async def test_a_sweep_that_asks_for_eas_reads_the_sections_they_are_displayed_under(db, connection, jamf: FakeJamf) -> None:
+    """#197's aperture rule at run time. A row written straight to the table — as a row
+    saved before the rule was — still fetches the five carriers, records them in the
+    aperture, and lands the purchasing-displayed EA in the current-state rows with the
+    section it came from."""
+    from app.mdm.collections import apply_schedule, run_collection
+    from app.models.schema import Collection, Device, DeviceExtensionAttribute, ObservationAperture
+
+    narrowed = Collection(
+        mdm_connection_id=connection.id,
+        name="Apps + EAs",
+        kind="device_sweep",
+        enabled=True,
+        sections=["applications", "extension_attributes"],
+        quarantined_extension_attributes=[],
+        frequency="daily",
+        at_hour=2,
+        at_minute=30,
+        timezone="UTC",
+    )
+    apply_schedule(narrowed)
+    db.add(narrowed)
+    await db.commit()
+
+    result = await run_collection(db, narrowed, trigger="manual")
+    assert result.ok and result.collection_id == narrowed.id
+
+    closed = "GENERAL,HARDWARE,OPERATING_SYSTEM,USER_AND_LOCATION,PURCHASING,APPLICATIONS,EXTENSION_ATTRIBUTES"
+    assert jamf.sections and all(s == closed for s in jamf.sections)
+    aperture = (
+        await db.execute(
+            select(ObservationAperture)
+            .where(ObservationAperture.mdm_connection_id == connection.id)
+            .order_by(ObservationAperture.id.desc())
+            .limit(1)
+        )
+    ).scalar_one()
+    assert aperture.document["sections"] == sorted(
+        ["applications", "extension_attributes", "general", "hardware", "operating_system", "user_and_location", "purchasing"]
+    )
+
+    synthetic = (
+        await db.execute(
+            select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == jamf.synthetic["id"])
+        )
+    ).scalar_one()
+    rows = (
+        await db.execute(select(DeviceExtensionAttribute).where(DeviceExtensionAttribute.device_id == synthetic.id))
+    ).scalars().all()
+    assert {(row.definition_id, row.source) for row in rows} == {
+        ("5", "extensionAttributes"),
+        ("27", "extensionAttributes"),
+        ("12", "general"),
+        ("9", "hardware"),
+        ("22", "operatingSystem"),
+        ("18", "userAndLocation"),
+        ("31", "purchasing"),
+    }
+    cost_center = next(row for row in rows if row.definition_id == "31")
+    assert cost_center.name == "Cost Center" and cost_center.values == ["CC-4410"] and cost_center.enabled is True
+    departments = next(row for row in rows if row.definition_id == "27")
+    assert departments.values == ["Research", "Engineering"]
+
+
 async def test_webhook_path_is_scoped_by_its_collection(db, connection, jamf: FakeJamf) -> None:
     from app.mdm.collections import ensure_default_collections, list_collections
     from app.mdm.service import ingest_webhook

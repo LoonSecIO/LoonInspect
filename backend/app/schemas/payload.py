@@ -54,8 +54,43 @@ class NormalizedApp(BaseModel):
 
 
 class NormalizedExtensionAttribute(BaseModel):
-    key: str
-    value: str | None = None
+    """One extension attribute as the device reports it: Jamf's object under Jamf's keys,
+    plus `source` (#197).
+
+    Keyed by `definitionId` — the identity the observation contract and the change log
+    already use — with `name` as its label, so an admin renaming an EA in Jamf changes a
+    label on the wire and never the key a dashboard groups by. `values` is the whole
+    list: a multi-value EA (an LDAP attribute, a pop-up menu) reports every element, as
+    the ledger has always hashed it. `enabled` rides verbatim rather than filtering: a
+    definition an admin disabled still holds whatever value Jamf reports for the device,
+    hiding it would be the silent drop this model exists to end, and the flag is there so
+    a consumer can tell a live value from a frozen one.
+
+    `source` is the one key LoonInspect mints on this object — the Jamf response key the
+    array was found under: `extensionAttributes` for the top-level array, else the
+    display section (`general`, `hardware`, `operatingSystem`, `userAndLocation`,
+    `purchasing`). The contract discards it on purpose, so that moving an EA between
+    display sections changes nothing in the ledger; the wire carries it because an
+    analyst wants to know where the admin put it. Both are right and neither is to be
+    "fixed" to match the other (docs/jamf-observations.md §7). Corollary: a move changes
+    the wire event and no span, so `source` is excluded from anything that derives a
+    change.
+
+    Jamf's own keys keep Jamf's spelling on the wire — `definitionId`, `multiValue`,
+    `dataType`, `inputType` — because the casing law leaves a vendor's native keys alone
+    (#188); the aliases are serialization-only, like NormalizedApp's.
+    """
+
+    definition_id: str = Field(serialization_alias="definitionId")
+    name: str | None = None
+    description: str | None = None
+    enabled: bool | None = None
+    multi_value: bool | None = Field(default=None, serialization_alias="multiValue")
+    values: list[str] = Field(default_factory=list)
+    data_type: str | None = Field(default=None, serialization_alias="dataType")
+    options: list[str] = Field(default_factory=list)
+    input_type: str | None = Field(default=None, serialization_alias="inputType")
+    source: str
 
 
 class NormalizedDevice(BaseModel):

@@ -261,21 +261,70 @@ path inherits the latest aperture recorded on its connection.
 
 ## 7. Extension attributes
 
-Jamf reports EAs in four places — a top-level array and one nested under each section
-an admin chose as the EA's "inventory display". The contract merges all of them into one
-section keyed by `definitionId`, reading nested arrays only from *requested* sections,
-so moving an EA between display sections changes nothing and a detail record (every
-section) hashes identically to a sweep page (the requested ones).
+Jamf reports EAs in **six** places — a top-level array and one nested inside each of the
+five sections an admin can choose as an EA's "inventory display": `general`, `hardware`,
+`operatingSystem`, `userAndLocation`, `purchasing`. One helper,
+`hoist_extension_attributes` (`contract.py`), gathers all six for both readers — the
+contract's `canonicalize_computer` and the current-state `normalize_computer` — and it is
+discovery-driven: it walks the record for every key carrying an `extensionAttributes`
+array rather than checking a list of five, so a display section Jamf adds later is found
+and named rather than dropped. It also strips every array out of the copy the sections
+are read from, so no section object ever carries a partial EA list beside the real one.
+(#197: the merge had been written once, in the contract, and not at all in the
+normalizer, so every EA displayed on a section tab reached the ledger and never the
+product or the wire — two truths about one device, the EDR sensor version among the
+dropped.)
+
+The contract merges the six into one section keyed by `definitionId`, reading nested
+arrays only from *requested* sections, so a detail record (every section) hashes
+identically to a sweep page (the requested ones). An array under a key the contract has
+no section for is stripped and reported, never merged: a sweep cannot request a section
+the contract cannot name, so admitting it would break exactly that agreement. Adding the
+section to `SECTIONS` and `EXTENSION_ATTRIBUTE_CARRIERS` is the fix, and the warning
+`normalize_computer` logs — once per process per source — is what says it is needed.
+
+**`source`: the deliberate tension.** The contract discards which array an EA came from,
+so moving an EA between display sections changes nothing here — asserted by moving one
+from `hardware` to the top level. The current-state view and the wire *keep* it, as
+`source` on each item (`extensionAttributes` for the top-level array, else the section's
+response key), because an analyst wants to know where the admin put it. Both are correct
+and they are not to be reconciled: the digest ignores `source` for stability; the wire
+carries it for legibility. Corollary: a move changes the wire event with no ledger
+change, so `source` is excluded from anything that derives a change.
+
+**The wire object** is Jamf's EA object verbatim plus that one minted key
+(`NormalizedExtensionAttribute`, `app/schemas/payload.py`): keyed on `definitionId` with
+`name` as the label, so a rename in Jamf changes a label and never the key a dashboard
+groups by; `values` whole, so a multi-value EA reports every element as the ledger has
+always hashed it. `enabled` rides verbatim rather than filtering: a definition the admin
+disabled still holds a value on the device, hiding it would be the silent drop this
+section exists to end, and the flag lets a consumer tell a live value from a frozen one.
+The same identity keys the current-state rows (`device_extension_attributes`, migration
+`d7e3b9c5a1f4`), which carry every value and the source too.
+
+**The aperture consequence.** Nested EAs arrive *inside* their display section, so a
+collection that dropped Purchasing to save bytes was silently dropping every EA displayed
+under it — the section picker was a hidden EA picker. Ruled: a collection that asks for
+`extension_attributes` reads the five carriers too (`with_extension_attribute_carriers`),
+applied at save, at the top of every sweep and on the webhook path, so a row saved before
+the rule behaves like one saved after it, the editor shows the set actually fetched, and
+the aperture records it. Forced rather than warned about: the five are the cheapest
+sections in the contract, and naming the EAs about to be lost would need the
+EA-definition fetch that does not exist yet (`ingest-scheduling.md` §6.2). The same
+dependency reaches #189: an EA pinned into `deviceMeta` can only be as present as its
+display section is readable, and the closure is what keeps that true.
 
 An EA defined on the server but unanswered by the device is still an entry —
-`{"definitionId": "2"}` — so a first value later is a change, not an appearance.
+`{"definitionId": "2"}` — so a first value later is a change, not an appearance. The view
+keeps it too, as an item with an empty `values`.
 
 **Quarantine.** EAs that report uptime, battery, or free disk change on every recon and
-would open a new span per device per sweep. `canonicalize_computer(…,
-quarantined_extension_attributes=ids)` drops them from the section, and the quarantine
-list is part of the aperture so the omission is explicit. The mechanism ships in v0; the
-knob to set it arrives with ingest profiles (#27), since a quarantine is a property of
-how a connection is read.
+would open a new span per device per sweep. The quarantine is applied inside the hoist,
+so a quarantined definition id is absent from the ledger, the current-state rows and the
+wire alike — `canonicalize_computer(…, quarantined_extension_attributes=ids)` and
+`normalize_computer` take the same argument — and the list is part of the aperture so the
+omission is explicit. The knob is per collection (#27), since a quarantine is a property
+of how a connection is read.
 
 ---
 

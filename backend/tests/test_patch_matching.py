@@ -46,7 +46,9 @@ def device_matches(catalog: Catalog) -> dict[str, list[TitleMatch]]:
     OS version and extension attributes."""
     raw = json.loads((FIXTURES / "computer_inventory_detail_real.json").read_text())
     device = normalize_computer(raw)
-    extension_attributes = {ea.key: ea.value for ea in device.extension_attributes}
+    # Requirements name an attribute by its display name and compare one value; the
+    # normalized item carries every value and the definition id beside it (#197).
+    extension_attributes = {ea.name: (ea.values[0] if ea.values else None) for ea in device.extension_attributes if ea.name}
     result: dict[str, list[TitleMatch]] = {}
     for app in device.apps:
         facts = Facts(
