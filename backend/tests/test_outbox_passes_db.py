@@ -18,11 +18,12 @@ What is pinned, by section:
    *considered* against the enabled destinations. Considered-and-declined counts: a
    destination subscribed to other event types marks the event without producing a
    row. Nothing enabled at all does not count, and the event is held (#157).
-2. **The shape of the passes.** Both read every column of every row they take, and
-   both now stop at a per-tick ceiling with an ORDER BY that makes the remainder the
-   next tick's head. `fan_out_pending` still drags the full JSONB payload out of the
-   database purely to flip a boolean — narrowing the columns is #81's, and the
-   assertion stays until it moves. Pinned by capturing the SQL, because a LIMIT with
+2. **The shape of the passes.** Both stop at a per-tick ceiling with an ORDER BY that
+   makes the remainder the next tick's head. `fan_out_pending` reads two columns — `id`
+   and `event_type` — and flips `fanned_out` with one UPDATE for the tick (#244; it used
+   to drag the full JSONB payload out of the database purely to flip a boolean, and the
+   payload is a ~28 KB snapshot since #241); `deliver_pending` still reads the full row,
+   because it has to POST the payload. Pinned by capturing the SQL, because a LIMIT with
    the wrong ORDER BY passes every behavioural test here while starving the back of
    the queue.
 3. **Producer volume.** One connection sync of a two-device tenant: how many events
@@ -399,35 +400,46 @@ def _capture_sql():
     return statements, lambda: sa_event.remove(engine.sync_engine, "before_cursor_execute", _record)
 
 
-async def test_the_fan_out_pass_still_selects_the_whole_payload_but_only_a_tickful(db) -> None:
-    """Two halves, one statement.
+async def test_the_fan_out_pass_reads_two_columns_flips_the_flag_once_and_takes_a_tickful(db) -> None:
+    """Three halves, two statements.
 
-    Unchanged: `select(EventOutbox)` is still every column of every row it reads,
-    JSONB payload included, when the pass only reads `event_type` and writes
-    `fanned_out`. Narrowing the columns is #81's work, not this change's, and the
-    assertion stays so the day it moves is visible.
+    Narrowed (#244): the select is `id` and `event_type` — never the JSONB payload,
+    which this pass has no use for and which is a ~28 KB snapshot per device per pass
+    since #241. The day this file's earlier assertion said would be visible has come;
+    the assertion now guards the other direction.
 
-    Changed: the row count is now capped, and ordered oldest-first by `id` so the
+    Flipped once: `fanned_out` is set by one UPDATE for the whole tick, not one per
+    row at flush — three events, one statement.
+
+    Capped, as before: ordered oldest-first by `id` and limited to a tick, so the
     remainder the next tick sees is the tail of this one rather than an arbitrary
     re-slice of the same set."""
     from app.core.outbox import _TICK_LIMIT, enqueue_event, fan_out_pending
 
     db.add(_destination("siem"))
-    await enqueue_event(db, EVENT_TYPE, {"event": EVENT_TYPE, "big": "x" * 1000})
+    events = [await enqueue_event(db, EVENT_TYPE, {"event": EVENT_TYPE, "big": "x" * 1000}) for _ in range(3)]
     await db.commit()
 
     statements, stop = _capture_sql()
     try:
-        await fan_out_pending(db)
+        assert await fan_out_pending(db) == 3
     finally:
         stop()
 
     selects = [text for text in statements if "FROM event_outbox" in text and text.lstrip().startswith("SELECT")]
     assert selects, "the fan-out pass must have read the outbox"
-    assert "event_outbox.payload" in selects[0]
+    assert "event_outbox.payload" not in selects[0]
+    assert "event_outbox.id" in selects[0] and "event_outbox.event_type" in selects[0]
     assert "ORDER BY event_outbox.id" in selects[0]
     assert "LIMIT" in selects[0].upper()
     assert _TICK_LIMIT == 1000
+
+    updates = [text for text in statements if text.lstrip().startswith("UPDATE event_outbox")]
+    assert len(updates) == 1, f"one UPDATE for the tick, not one per row: {updates}"
+    assert "fanned_out" in updates[0] and "event_outbox.id IN" in updates[0]
+    # And the flag really did flip, on every row, visible to the same session.
+    assert all(event.fanned_out is True for event in events)
+    assert await fan_out_pending(db) == 0
 
 
 async def test_a_destination_less_pass_never_reads_the_held_backlog(db) -> None:
