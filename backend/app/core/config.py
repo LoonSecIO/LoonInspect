@@ -151,6 +151,29 @@ class Settings(BaseSettings):
     # plain-HTTP deployment — see the startup warning in app.serve.
     secure_cookies: bool = True
 
+    # The one knob (#186, ruling 3 on #133): off suppresses all five headers
+    # SecurityHeadersMiddleware stamps, HSTS included, or it is not one knob. On by
+    # default — none of X-Content-Type-Options, X-Frame-Options, Referrer-Policy or
+    # Permissions-Policy can break a same-origin SPA with zero embeds, and CSP (the one
+    # header here that could) is deliberately not in this cut (see #187).
+    security_headers: bool = True
+
+    # The HSTS relay's argument, not a second knob (#186, ruling 4 on #133): the app
+    # cannot know whether this hostname will still terminate valid HTTPS in six months,
+    # only the operator can, so unlike the other four headers this one is never on by
+    # default. 0 means never emit — the repo's existing sentinel idiom, see
+    # session_lifetime_seconds above. Any positive value is copied verbatim into
+    # `Strict-Transport-Security: max-age=<n>`; includeSubDomains and preload are never
+    # emitted and are not configurable — no code path here can produce either.
+    hsts_max_age: int = 0
+
+    @field_validator("hsts_max_age")
+    @classmethod
+    def _validate_hsts_max_age(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("hsts_max_age must be >= 0 (0 disables HSTS entirely)")
+        return value
+
     @field_validator("database_url")
     @classmethod
     def _require_asyncpg(cls, value: str) -> str:

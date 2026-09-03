@@ -44,7 +44,7 @@ from app.core.context import SYSTEM, reset_actor, set_actor, system_actor_for
 from app.core.crypto import validate_encryption_key
 from app.core.database import init_db, session_for_tenant, unscoped_session
 from app.core.logging import configure_logging
-from app.core.middleware import RequestContextMiddleware
+from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware
 from app.core.outbox import deliver_pending, fan_out_pending, purge_delivered_events
 from app.core.runs import purge_runs
 from app.core.sharing import exchange_due, run_exchange
@@ -383,8 +383,12 @@ app.add_middleware(
 
 # Registered last so it ends up outermost — Starlette prepends each added middleware,
 # so this wraps CORS and sees every request, including preflights and anything an
-# inner layer rejects before a route matches.
+# inner layer rejects before a route matches. SecurityHeadersMiddleware is registered
+# after this one for the same reason: it must end up outermost of *both*, so the four
+# headers (plus a relayed HSTS, #186) land on every response this process sends,
+# including a CORS preflight and a 401 from auth.py.
 app.add_middleware(RequestContextMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(auth_router)
 app.include_router(accounts_router)

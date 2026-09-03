@@ -9,6 +9,7 @@ from typing import Any
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.core.config import settings
 from app.core.context import ClientInfo, reset_client, reset_request_id, set_client, set_request_id
 from app.core.tenancy import IDENTITY_RESOLUTION_TENANT_ID, reset_tenant_id, set_tenant_id
 
@@ -126,3 +127,64 @@ class RequestContextMiddleware:
             reset_tenant_id(tenant_token)
             reset_client(client_token)
             reset_request_id(token)
+
+
+# Deny what a Jamf console will never ask for. `clipboard-write` is deliberately
+# absent: frontend/src/features/tokens/ApiTokensPage.tsx calls
+# navigator.clipboard.writeText to hand the operator a freshly minted API token, and
+# Permissions-Policy binds the document's own origin — a tidy-looking
+# `clipboard-write=()` would break our own feature on the one screen where the value is
+# unrecoverable if not copied. See #186 / #133.
+_PERMISSIONS_POLICY = (
+    "accelerometer=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), "
+    "magnetometer=(), microphone=(), midi=(), payment=(), usb=()"
+)
+
+
+class SecurityHeadersMiddleware:
+    """Stamps the four headers the app can be sure of about its own artifact, plus a
+    relayed Strict-Transport-Security the operator opts into (#186, the v0 half of the
+    #133 rulings — CSP enforcement is deliberately not here, see #187).
+
+    Same shape as RequestContextMiddleware just above: pure ASGI wrapping `send`
+    rather than BaseHTTPMiddleware, so streaming responses take no buffering penalty
+    and every response gets the same treatment — a same-origin route, a 401 from
+    auth.py, a CORS preflight, or /docs and /redoc — regardless of which layer
+    produced it. Must be registered *after* RequestContextMiddleware in main.py so it
+    ends up outermost (Starlette prepends each added middleware) and can stamp
+    everything inside it, CORS preflights included.
+
+    Settings are read on every call rather than cached at import, matching every other
+    settings-gated behaviour in this module — it keeps tests able to monkeypatch
+    `settings.security_headers` / `settings.hsts_max_age` with no reload.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or not settings.security_headers:
+            await self.app(scope, receive, send)
+            return
+
+        async def send_wrapper(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                headers["X-Content-Type-Options"] = "nosniff"
+                headers["X-Frame-Options"] = "DENY"
+                headers["Referrer-Policy"] = "same-origin"
+                headers["Permissions-Policy"] = _PERMISSIONS_POLICY
+                # Relay only — never on by default. The app cannot know whether this
+                # hostname will still terminate valid HTTPS in six months; only the
+                # operator can, which is why this is the one header with no default
+                # and no scheme gate (browsers ignore HSTS received over plain HTTP by
+                # specification, so gating on the request scheme would buy nothing and
+                # gating on X-Forwarded-Proto would make a misconfigured
+                # FORWARDED_ALLOW_IPS present as "my HSTS setting silently does
+                # nothing"). Never includeSubDomains, never preload — ruled out, no
+                # code path here can emit either.
+                if settings.hsts_max_age:
+                    headers["Strict-Transport-Security"] = f"max-age={settings.hsts_max_age}"
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
