@@ -5,8 +5,11 @@ Status: **frozen** · Ruled in [#188](https://github.com/LoonSecIO/LoonInspect/i
 [#229](https://github.com/LoonSecIO/LoonInspect/issues/229),
 [#220](https://github.com/LoonSecIO/LoonInspect/issues/220) and
 [#113](https://github.com/LoonSecIO/LoonInspect/issues/113), 2026-09-02 and
-[#243](https://github.com/LoonSecIO/LoonInspect/issues/243), 2026-09-03 · Registry
-generated from [`app/core/wire_vocabulary.py`](../backend/app/core/wire_vocabulary.py)
+[#243](https://github.com/LoonSecIO/LoonInspect/issues/243), 2026-09-03 · Stamped on the
+wire by [#223](https://github.com/LoonSecIO/LoonInspect/issues/223) (the `:change` family)
+and [#242](https://github.com/LoonSecIO/LoonInspect/issues/242) (the section tree and
+`loon:run`), 2026-09-03 · Registry generated from
+[`app/core/wire_vocabulary.py`](../backend/app/core/wire_vocabulary.py)
 
 The vocabulary had been ruled three times, differently — the draft, #81 on 2026-08-24,
 and the schema review on 2026-08-31 — with no single artifact holding the answer.
@@ -79,6 +82,14 @@ declares them.
 | `certificates` | `certificates` | `cert` | `loon:jamf:mac:cert` |
 | `software_updates` | `softwareUpdates` | `update` | `loon:jamf:mac:update` |
 
+**Stamped since [#242](https://github.com/LoonSecIO/LoonInspect/issues/242), 2026-09-03.**
+Each string above is the `sourcetype` of the sub-events the fan-out expands one
+`device.inventory` snapshot into — one HEC event per section item, `app/core/hec_fanout.py`,
+read off `registry_rows()` and spelled nowhere else — on Splunk HEC deliveries only. A
+scalar section is one sub-event; a list section is one per item; the sub-event body is the
+item plus the three keys of §6. What one looks like, and what a delivery carries, is
+[`runs.md`](runs.md) §4; the operator's stanzas are [`splunk-setup.md`](splunk-setup.md) §6.
+
 Enrichments — LoonInspect's own answers about a Jamf object, carried on that object's
 sub-event rather than as sub-events of their own:
 
@@ -132,16 +143,27 @@ distinguishable from the definition of a group (§3). The bare `loon:jamf:mac:co
 is implied by the tree and deliberately not minted — nothing writes it.
 
 Ruled 2026-09-03 on [#243](https://github.com/LoonSecIO/LoonInspect/issues/243) and
-stamped the same day by [#223](https://github.com/LoonSecIO/LoonInspect/issues/223).
-**These fifteen are the only sourcetypes the product sends** — the stated exception to
-"the first sourcetype arrives with the fan-out" (§7), because a change is already one
-event per changed thing. `wire_vocabulary.change_sourcetype()` decides the string and
-`outbox._build_body` sends it, on Splunk HEC deliveries only; a subject with no wrapper is
+stamped the same day by [#223](https://github.com/LoonSecIO/LoonInspect/issues/223) — the
+first sourcetypes the product ever sent, because a change is already one event per
+changed thing. `wire_vocabulary.change_sourcetype()` decides the string and
+`app/core/outbox.py` sends it, on Splunk HEC deliveries only; a subject with no wrapper is
 delivered unstamped rather than failing, and every other destination type gets the
 canonical event. The operator's side of it — which stanzas this implies — is
 [`splunk-setup.md`](splunk-setup.md) §6.
 
-And LoonInspect's own assertions: `loon:run`.
+And LoonInspect's own assertions: `loon:run`, carrying `run.completed` and `run.failed`
+since [#242](https://github.com/LoonSecIO/LoonInspect/issues/242) — the same change as the
+section tree, because the "shape about to change" reason that held the tree back never
+applied to a run event. `ASSERTION_EVENT_TYPES` names the two, and `app/core/runs.py`
+reads its event-type constants from there so the string and the producer cannot drift.
+
+**Thirty strings are stamped, and every one comes from this module** (#222's acceptance,
+closed by #242): the fourteen section strings on the fan-out, `loon:run` on the run family,
+the fifteen `:change` strings on the change family. Still under the HEC input's own
+default: `device.inventory.changed` — the delta family has no ruled string; [#277](https://github.com/LoonSecIO/LoonInspect/issues/277)
+puts the ruling to Kyle before the flip — and the test event, which is meant to be
+identifiable rather than routed. The
+three enrichment strings are minted with no writer (§7).
 
 ## 3. Why some wrapper keys are short and some are not
 
@@ -245,7 +267,9 @@ delivered event. It ships today as `WIRE_SCHEMA_VERSION` in `app/schemas/payload
 Three, whatever sourcetype the sub-event lands under. Ruled on
 [#220](https://github.com/LoonSecIO/LoonInspect/issues/220), 2026-09-02, and named here
 rather than in the builder because the fan-out ([#242](https://github.com/LoonSecIO/LoonInspect/issues/242))
-is not written yet and the first sub-event ever emitted has to be right.
+was not written yet and the first sub-event ever emitted had to be right. The fan-out is
+built (2026-09-03, `app/core/hec_fanout.py`) and reads this tuple; it spells none of the
+three by hand.
 
 | Key | What it carries | Ruled |
 | --- | --- | --- |
@@ -258,8 +282,8 @@ is not written yet and the first sub-event ever emitted has to be right.
 certificate — §1's leaf rule already guarantees that — and `event` is what keeps
 `event=device.*` selecting the whole fan-out from one predicate, the same
 single-discriminator argument that moved the run families off `event_type`
-([`runs.md`](runs.md) §4). It also leaves a sub-event legible with no sourcetype set,
-which is the state the wire is in today (#222).
+([`runs.md`](runs.md) §4). It also leaves a sub-event legible on a destination that carries
+no sourcetype at all.
 
 **`jobID` sits at the sub-event root and inside `deviceMeta`.** The duplicate is the
 ruling: the root copy makes the bare `jobID=$id$` join work across every family and every
@@ -276,7 +300,12 @@ The event the fan-out expands is the per-device snapshot, `device.inventory`
 ([#241](https://github.com/LoonSecIO/LoonInspect/issues/241)): it carries all three at its
 root, once, and each of its list items is already the sub-event body minus these three —
 `{"app": {…}, "patch": {…}, "vuln": {…}}` — so the split is iteration, not reshaping
-([`runs.md`](runs.md) §4).
+([`runs.md`](runs.md) §4). That is what `app/core/hec_fanout.py` does: the sub-event body
+is `{event, jobID, …the item…, deviceMeta}` — the snapshot's own layout, head first, block
+last — under `sourcetype(wrapper)`, with the envelope hints beside it. The snapshot's fourth
+head key, `occurredAt`, does **not** ride the sub-event: these three are the complete list,
+and the same instant travels beside every sub-event as the envelope's `time`. Under
+additive-only clause 3 omitting it is the reversible direction.
 
 ## 7. What is ruled here but not yet built
 
@@ -285,5 +314,6 @@ issue rather than living on as a footnote.
 
 | Consequence | Issue |
 | --- | --- |
-| `sourcetype` is not stamped on the **section tree** — those strings name fan-out sub-events that are not built, so `app/core/outbox.py` sends none for the two inventory families and the run families and whatever the operator set on the HEC input still names them. The per-device snapshot `device.inventory` ([#241](https://github.com/LoonSecIO/LoonInspect/issues/241), built 2026-09-03; [`runs.md`](runs.md) §4) is the event those strings will be minted for: it carries every section under its wrapper key from §2 and travels **unstamped and whole** until the fan-out splits it. The `:change` family (§2) is the one exception and is built | [#222](https://github.com/LoonSecIO/LoonInspect/issues/222) |
+| The three enrichment strings — `loon:jamf:mac:app:patch`, `:vuln`, `:alert` — are minted with no writer, because an enrichment rides inline on the app sub-event under its own key (§2). `:vuln` is reserved for the lifecycle records of [`vulnerabilities.md`](vulnerabilities.md) §6; `:patch` and `:alert` name shapes nothing produces. `patch{}` and `vuln{}` themselves ship on every app sub-event since #241/#242 | post-v0 (`vulnerabilities.md` §10) |
+| `device.inventory.changed` carries no `sourcetype` — the delta family has no ruled string, so it lands under the sourcetype the operator set on the HEC input ([`splunk-setup.md`](splunk-setup.md) §2). A string for it is a ruling, not a build: free before the flip, breaking after, because saved searches will already find the family under the input default | [#277](https://github.com/LoonSecIO/LoonInspect/issues/277) |
 | `alert` is minted with no writer — #101 ships the alerts table and the Needs Attention rows with nothing on the wire; the block's shape (a keyed list on the app, per the 2026-08-29 ruling) and its kind vocabulary are named when it is built, additive under clause 1 | [#101](https://github.com/LoonSecIO/LoonInspect/issues/101) |

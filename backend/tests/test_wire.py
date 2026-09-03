@@ -24,9 +24,9 @@ import pytest
 
 from app.changes.derive import EVENT_TYPE as CHANGE_EVENT
 from app.changes.derive import _change_device_meta, _event_payload
-from app.core.outbox import _attempt_delivery, _build_body, _elastic_bulk_body
+from app.core.outbox import _attempt_delivery, _build_body, _elastic_bulk_body, hec_events
 from app.core.wire import ENVELOPE, envelope, instance_label
-from app.core.wire_vocabulary import SUBJECT_WRAPPERS, change_rows, change_sourcetype
+from app.core.wire_vocabulary import ASSERTION_SOURCETYPE, SUBJECT_WRAPPERS, change_rows, change_sourcetype, sourcetype
 from app.mdm.jamf.contract import GROUP_DEFINITION_SECTION, SUBJECT_COMPUTER, SUBJECT_COMPUTER_GROUP, Observation
 from app.models.schema import Destination, DeviceChange, EventOutbox
 
@@ -107,10 +107,10 @@ def test_the_envelope_is_lifted_beside_the_body_and_never_into_it() -> None:
     assert body["host"] == "kyle-mbp"
     assert body["source"] == "acme.jamfcloud.com"
     assert ENVELOPE not in body["event"]
-    # Still absent on the inventory family, and on every family but `device.change`: the
-    # ruled section tree names fan-out sub-events that do not exist yet, and a sourcetype
-    # is a permanent props.conf stanza (#188, #222 — absorbed by the fan-out, #242). The
-    # `:change` family is the stated exception and is asserted below.
+    # Still absent on the delta family: it has no ruled string and no issue owns one, so it
+    # keeps the sourcetype the operator set on the HEC input. The families that carry one
+    # — `:change`, `loon:run`, and the fan-out's section tree (#242) — are asserted below
+    # and in test_hec_fanout.py.
     assert "sourcetype" not in body
 
 
@@ -207,6 +207,9 @@ def test_an_absent_host_is_a_ruling_the_run_family_relies_on() -> None:
     assert "host" not in body
     assert body["source"] == "acme.jamfcloud.com"
     assert "time" in body
+    # And the run family's own string, `loon:run` — LoonInspect's assertion about a run,
+    # no vendor segment — stamped since the fan-out landed (#242 item 6).
+    assert body["sourcetype"] == ASSERTION_SOURCETYPE == "loon:run"
 
 
 def test_a_group_change_carries_no_host_because_a_group_is_not_a_mac() -> None:
@@ -333,23 +336,27 @@ def test_no_destination_but_splunk_gets_a_sourcetype() -> None:
     assert "sourcetype" not in document
 
 
-def test_only_the_change_family_is_stamped() -> None:
-    """#242's job is not done here. The section tree names fan-out sub-events that do not
-    exist, so minting one of those strings now would be a permanent stanza for a shape
-    about to change (#222). The per-device snapshot (#241) passes through unstamped for
-    the same reason: it is the whole device in one event, and the strings name the
-    sub-events #242 splits it into. The guard is on the event type, so a family added
-    later is unstamped until it is ruled."""
-    for event in ("device.inventory", "device.inventory.changed", "run.completed", "run.failed", "destination.test"):
+def test_which_single_event_families_are_stamped() -> None:
+    """The change rule stamps the change family and nothing else; the run family carries
+    `loon:run` (#242 item 6); the delta family and the test event carry nothing — the
+    delta has no ruled string and no issue owns one, the test event is meant to be
+    identifiable rather than routed. The guard is on the event type, so a family added
+    later is unstamped until it is ruled. The snapshot is not a single event and is
+    asserted in test_hec_fanout.py."""
+    for event in ("device.inventory.changed", "destination.test"):
         body = _build_body(SPLUNK, {"event": event, "subjectKind": "computer", "section": "applications"})
-        assert "sourcetype" not in body, f"{event} must not be stamped by the change family's rule"
+        assert "sourcetype" not in body, f"{event} must not be stamped"
+    for event in ("run.completed", "run.failed"):
+        body = _build_body(SPLUNK, {"event": event, "subjectKind": "computer", "section": "applications"})
+        assert body["sourcetype"] == "loon:run", f"{event} carries the assertion string"
 
 
-def test_the_snapshot_passes_through_the_body_builder_whole_and_unstamped() -> None:
-    """Between #241 and #242 a `splunk_hec` destination receives the snapshot as one nested
-    HEC event under the input's own sourcetype: wrapped, with the three envelope hints
-    beside it and nothing else, and every wrapper key intact — `_build_body` reshapes
-    nothing for this family."""
+def test_the_snapshot_is_fanned_out_on_splunk_and_travels_whole_everywhere_else() -> None:
+    """Since #242 a `splunk_hec` destination never receives the snapshot as one nested HEC
+    event: `_build_body` — the one-document view — refuses it, and `hec_events` expands
+    it into one HEC event per section item under the registry's strings, the envelope
+    hints on each. Every other destination type still gets the whole snapshot, wrappers
+    intact, unstamped. The full golden is tests/test_hec_fanout.py."""
     occurred = datetime(2026, 9, 2, 2, 0, tzinfo=timezone.utc)
     payload = {
         "event": "device.inventory",
@@ -360,11 +367,21 @@ def test_the_snapshot_passes_through_the_body_builder_whole_and_unstamped() -> N
         "app": [{"app": {"name": "Maps.app"}, "patch": {"supported": False}, "vuln": {"assessment": "off"}}],
         ENVELOPE: envelope(occurred_at=occurred, host="Loon's Mac mini", source="e2e.jamfcloud.com"),
     }
-    body = _build_body(SPLUNK, payload)
-    assert set(body) == {"event", "time", "host", "source"}
-    assert body["event"] == {key: value for key, value in payload.items() if key != ENVELOPE}
-    assert body["time"] == occurred.timestamp()
-    assert _build_body(WEBHOOK, payload) == body["event"]
+    with pytest.raises(ValueError, match="fanned out"):
+        _build_body(SPLUNK, payload)
+
+    anchor, app = hec_events(payload)
+    assert set(anchor) == set(app) == {"event", "sourcetype", "time", "host", "source"}
+    assert anchor["sourcetype"] == sourcetype("general") and app["sourcetype"] == sourcetype("app")
+    head = {"event": "device.inventory", "jobID": payload["jobID"], "deviceMeta": payload["deviceMeta"]}
+    assert anchor["event"] == {**head, "general": {"name": "Loon's Mac mini"}}
+    assert app["event"] == {**head, **payload["app"][0]}
+    assert anchor["time"] == app["time"] == occurred.timestamp()
+    assert ENVELOPE not in anchor["event"] and "occurredAt" not in app["event"]
+
+    canonical = {key: value for key, value in payload.items() if key != ENVELOPE}
+    assert _build_body(WEBHOOK, payload) == canonical
+    assert _build_body(ELASTIC, payload) == canonical
 
 
 def test_an_unknown_section_costs_one_unstamped_event_not_a_dead_letter() -> None:

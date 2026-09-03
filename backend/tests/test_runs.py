@@ -328,6 +328,8 @@ async def test_a_run_with_no_heartbeat_is_reclaimed(db, connection) -> None:
     body = _build_body(SimpleNamespace(type="splunk_hec"), events[0].payload)
     assert body["time"] == hints["time"] and "host" not in body
     assert ENVELOPE not in body["event"]
+    # `loon:run` on the alarm as on the heartbeat (#242 item 6).
+    assert body["sourcetype"] == "loon:run"
 
     await finish(db, revived.run, ok=True)
     # A run that closed cleanly emits no run.failed — the alarm never cries wolf.
@@ -794,8 +796,10 @@ async def test_a_sweep_stamps_its_job_id_on_the_events_it_produces(db, connectio
     # clock reads and only one of them is what `time` is built from.
     assert body["time"] == datetime.fromisoformat(event.payload["occurredAt"]).timestamp()
     assert ENVELOPE not in body["event"]
-    # Not yet ruled for this event type, and a minted sourcetype is a permanent
-    # props.conf stanza — so it stays absent until the fan-out lands (#188).
+    # Still unstamped, deliberately: the delta family has no ruled string and no issue
+    # owns one, so it lands under the sourcetype set on the HEC input. The families that
+    # carry one since the fan-out (#242) — the snapshot's sub-events, `loon:run`, `:change`
+    # — are asserted in test_hec_fanout.py and test_wire.py.
     assert "sourcetype" not in body
 
     # And the second run of the same connection and class is a delta, not another

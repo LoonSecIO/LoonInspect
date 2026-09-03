@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Collection, Iterator
+from collections.abc import Collection, Iterator, Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -10,9 +10,12 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.wire import ENVELOPE
-from app.core.wire_vocabulary import change_sourcetype
+from app.core.config import settings
+from app.core.hec_fanout import fan_out
+from app.core.wire import ENVELOPE, hec_event
+from app.core.wire_vocabulary import ASSERTION_EVENT_TYPES, ASSERTION_SOURCETYPE, change_sourcetype
 from app.models.schema import Destination, EventOutbox, OutboxDelivery
+from app.schemas.payload import INVENTORY_EVENT_TYPE
 
 logger = logging.getLogger(__name__)
 
@@ -117,56 +120,132 @@ def _build_headers(destination: Destination) -> dict[str, str]:
     return headers
 
 
+def _single_event_sourcetype(payload: Mapping[str, object]) -> str | None:
+    """The string one single-event payload is stamped with on Splunk, or None.
+
+    Decided by `app.core.wire_vocabulary` and stamped here — #222's rule, "`sourcetype`
+    comes from `app.core.wire_vocabulary` and nowhere else" — on the `splunk_hec`
+    destination type only. Two single-event families carry one:
+
+    * `device.change` — `loon:jamf:mac:<wrapper>:change` (#243, stamped by #223). It was
+      never blocked on the fan-out: it is already at sub-event grain, one event per kept
+      change row. A subject with no wrapper is delivered unstamped rather than failing.
+    * `run.completed` / `run.failed` — `loon:run` (#242 item 6, carrying #81's close-out:
+      "`loon:run` on the run family in the same change"). The "shape about to change"
+      reason that held the section tree back never applied to a run event.
+
+    `device.inventory.changed` carries none — the delta family has no ruled string; #277
+    puts the ruling to Kyle before the flip — and neither does `destination.test`, which is meant to be
+    identifiable rather than routed. Both land under the sourcetype the operator set on
+    the HEC input, exactly as every event did before any string was stamped.
+
+    The snapshot, `device.inventory`, is not a single event: `hec_events` fans it out and
+    stamps each sub-event from the registry.
+    """
+    event = payload.get("event")
+    if event in ASSERTION_EVENT_TYPES:
+        return ASSERTION_SOURCETYPE
+    return change_sourcetype(event, subject_kind=payload.get("subjectKind"), section=payload.get("section"))
+
+
+def hec_events(payload: Mapping[str, object]) -> list[dict[str, object]]:
+    """Every HEC event object one stored payload becomes on a `splunk_hec` destination.
+
+    N for `device.inventory` — the fan-out, `app.core.hec_fanout` — and exactly one for
+    every other family. The envelope hints are popped from a COPY of the payload: delivery
+    is retried against the same row up to ten times, and stripping the row's own dict on
+    the first attempt would deliver every retry without `time`, `host` or `source`.
+
+    The stamp happens HERE, at delivery, rather than being carried from the producer, for
+    two reasons worth keeping (#223's argument): this is the one place a HEC body is
+    assembled, so "Splunk only" is structural rather than a convention; and the outbox
+    holds events for the whole retention window, so an event enqueued before a stamp
+    existed still arrives stamped instead of splitting its family across a deploy.
+    """
+    body = dict(payload)
+    hints = body.pop(ENVELOPE, None) or {}
+    if body.get("event") == INVENTORY_EVENT_TYPE:
+        return fan_out(body, hints)
+    return [hec_event(body, hints, sourcetype=_single_event_sourcetype(body))]
+
+
 def _build_body(destination: Destination, payload: dict) -> dict:
-    # The envelope hints are a transport detail, computed at enqueue because nothing
-    # here can reach a run or a Device (app.core.wire). Popped for EVERY destination
-    # type, not just Splunk, so the key never reaches a customer's index or a generic
-    # webhook receiver.
-    payload = dict(payload)
-    hints = payload.pop(ENVELOPE, None) or {}
+    """The one JSON document a delivery sends — for the destination types, and the
+    families, whose delivery IS one document.
 
+    Generic webhooks and the `runreveal` preset get the canonical event, envelope key
+    removed, exactly as enqueued; the preset exists for the UI (prefilled ingest-URL
+    shape, bearer auth locked in), not for a different wire format. A `splunk_hec`
+    destination gets the one HEC event object of a single-event family — the wrapped
+    body, the ruled sourcetype where the family has one, the envelope hints beside it.
+
+    `device.inventory` on Splunk has no one-document form: it is fanned out into N HEC
+    events (`hec_events`) and sent by `_attempt_hec_delivery` through
+    `hec_request_bodies`, which never calls this. Asking this function for it is a
+    programming error and raises — deliberately not a silent whole-snapshot body, which
+    is what this function returned between #241 and #242 and what a caller that bypassed
+    the fan-out would otherwise send, unstamped. Unreachable from the delivery path, so it
+    spends no retry budget.
+
+    The envelope hints are popped for EVERY destination type, not just Splunk, so the
+    key never reaches a customer's index or a generic webhook receiver.
+    """
     if destination.type == "splunk_hec":
-        # HEC's raw-JSON collector endpoint expects the event wrapped, not posted
-        # bare — without this, "Splunk support" would silently fail to ingest.
-        body: dict = {"event": payload}
-        # `time`, `host` and `source` ride beside the body as indexed metadata: they
-        # cost no licence volume and are faster to search than the same string in `_raw`.
-        # That is why the instance URL is envelope-ONLY and never a deviceMeta key.
-        #
-        # `host` is the deliberate exception: the hostname is carried in BOTH places
-        # (Kyle's ruling, 2026-08-31). A Splunk admin can silently override `host` at the
-        # HEC input, and envelope fields may not survive a summary index or an export
-        # into a case file, whereas the body always travels — so the one identity that
-        # joins outward to EDR, DHCP and identity logs is not left somewhere a customer
-        # can quietly take away. It is a duplicate on purpose, not an oversight.
-        #
-        # `sourcetype`, for the `:change` family and nothing else (#243, ruled
-        # 2026-09-03; stamped by #223). This is the first sourcetype the product ever
-        # sends, and it is sent HERE rather than carried from the producer for two
-        # reasons: this is the one place a HEC body is assembled, so "HEC only" is
-        # structural rather than a convention; and the outbox holds events for the whole
-        # retention window, so a change enqueued before the stamp existed still arrives
-        # stamped instead of splitting the family across a deploy.
-        #
-        # Every other family is still deliberately unstamped. The ruled section tree names
-        # fan-out sub-events (`loon:jamf:mac:app`) that are not built, and minting a string
-        # for a shape that is about to change would create a permanent props.conf stanza
-        # for it — that is #222, absorbed by the fan-out (#242). `device.change` was never
-        # blocked that way: it is already at sub-event grain, one event per kept change
-        # row. The string itself comes from `app.core.wire_vocabulary` and nowhere else,
-        # which is #222's own acceptance criterion.
-        stamped = change_sourcetype(
-            payload.get("event"), subject_kind=payload.get("subjectKind"), section=payload.get("section")
-        )
-        if stamped is not None:
-            body["sourcetype"] = stamped
-        body.update(hints)
-        return body
+        if payload.get("event") == INVENTORY_EVENT_TYPE:
+            raise ValueError(
+                f"{INVENTORY_EVENT_TYPE} has no one-document HEC body: it is fanned out into one "
+                "HEC event per section item (app.core.outbox.hec_request_bodies)"
+            )
+        (event,) = hec_events(payload)
+        return event
+    body = dict(payload)
+    body.pop(ENVELOPE, None)
+    return body
 
-    # "runreveal" deliberately falls through: their webhook source ingests the same
-    # bare JSON a generic webhook receives. The preset exists for the UI (prefilled
-    # ingest-URL shape, bearer auth locked in), not for a different wire format.
-    return payload
+
+def _encode_hec_event(event: Mapping[str, object]) -> bytes:
+    """Compact UTF-8 JSON — the encoding httpx applies to `json=`, reproduced here so the
+    request body a single-event family sends is byte-identical to the one it sent before
+    the fan-out existed. Pinned against httpx itself in tests/test_hec_fanout.py."""
+    return json.dumps(event, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+
+
+def _chunk(lines: Sequence[bytes], max_bytes: int) -> list[bytes]:
+    """Newline-concatenated request bodies of at most `max_bytes` each, whole lines only.
+
+    HEC's collector endpoint indexes each concatenated JSON object in a request body as
+    its own event, so the unit that may be split across requests is the event and never a
+    byte range: a line longer than the ceiling on its own is sent alone rather than cut.
+    Order is preserved and nothing is dropped — the ceiling bounds what one request
+    carries, not what the delivery carries.
+    """
+    bodies: list[bytes] = []
+    current: list[bytes] = []
+    size = 0
+    for line in lines:
+        added = len(line) + (1 if current else 0)
+        if current and size + added > max_bytes:
+            bodies.append(b"\n".join(current))
+            current, size, added = [], 0, len(line)
+        current.append(line)
+        size += added
+    if current:
+        bodies.append(b"\n".join(current))
+    return bodies
+
+
+def hec_request_bodies(payload: Mapping[str, object], *, max_bytes: int) -> list[bytes]:
+    """The request bodies one delivery to a `splunk_hec` destination sends, in order.
+
+    One body for every single-event family and, for a snapshot, one request carrying all
+    of a device's sub-events concatenated — #242's per-event expansion, not cross-event
+    batching: two devices' snapshots are two deliveries and two requests. A snapshot whose
+    expansion exceeds `max_bytes` (`settings.splunk_hec_max_request_bytes`; the real
+    fixture's 83-app Mac is ~90 KB against a 900,000-byte default) is sent as consecutive
+    requests of at most that size. A snapshot that expands to nothing — every section it
+    read was empty, which only a scoped read can produce — sends no request at all.
+    """
+    return _chunk([_encode_hec_event(event) for event in hec_events(payload)], max_bytes)
 
 
 def _elastic_bulk_url(destination: Destination) -> str:
@@ -327,6 +406,41 @@ async def fan_out_pending(db: AsyncSession) -> int:
     return created
 
 
+async def _attempt_hec_delivery(
+    client: httpx.AsyncClient, destination: Destination, event: EventOutbox
+) -> tuple[bool, str | None]:
+    """A `splunk_hec` delivery: one POST per request body, in order, stopping at the
+    first failure.
+
+    One request of N events either lands or fails as one, from the outbox's point of
+    view: any non-2xx or transport error fails the delivery, which stays pending, backs
+    off and retries the WHOLE delivery — every request body, rebuilt from the same row —
+    until it lands or dead-letters after ten attempts (`deliver_pending`). What HEC does
+    inside one request is its own: it parses the body in order and, on a malformed event,
+    reports its position (`invalid-event-number`, HTTP 400) having already indexed the
+    events before it. Nothing built here can produce a malformed event — every sub-event
+    is JSON the producer's model validated — so that 400 would be a producer bug, and it
+    takes the ordinary retry path rather than a bespoke one. Across chunks the same holds:
+    a failed second request leaves the first request's events indexed, and the retry
+    re-sends both. That is the outbox's existing at-least-once story one level down — a
+    device's sub-events duplicate together, and the dedup key on a fan-out sourcetype is
+    the pull plus the item (`deviceMeta.eventID` with the item's own identity), never
+    `deviceMeta.eventID` alone (docs/splunk-setup.md §7). Redrive of a dead-lettered
+    delivery is #91, not built.
+    """
+    headers = _build_headers(destination)
+    bodies = hec_request_bodies(event.payload, max_bytes=settings.splunk_hec_max_request_bytes)
+    for body in bodies:
+        try:
+            response = await client.post(destination.url, content=body, headers=headers, timeout=10)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            return False, f"HTTP {exc.response.status_code}: {exc.response.text[:500]}"
+        except httpx.HTTPError as exc:
+            return False, str(exc)[:500]
+    return True, None
+
+
 async def _attempt_delivery(
     client: httpx.AsyncClient, destination: Destination, event: EventOutbox
 ) -> tuple[bool, str | None]:
@@ -334,6 +448,11 @@ async def _attempt_delivery(
         # Different enough to branch whole: NDJSON body, the index in the URL, and a
         # success status that still has to be read for per-item failures.
         return await _attempt_elastic_delivery(client, destination, event)
+    if destination.type == "splunk_hec":
+        # Its own branch for the same reason: the body is bytes rather than one JSON
+        # document — N concatenated HEC events for a snapshot (#242) — and a delivery may
+        # be more than one request.
+        return await _attempt_hec_delivery(client, destination, event)
     try:
         response = await client.post(
             destination.url,

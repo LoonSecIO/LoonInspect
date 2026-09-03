@@ -8,10 +8,10 @@ is a hand-written stanza in a customer's Splunk forever, and SPL field names are
 case-sensitive — a wrong one returns zero rows with no error.
 
 Amendments are additive and owned by the issue that rules them — #229 added the `alert`
-enrichment and #220 the sub-event keys on 2026-09-02, #243 the `:change` family on
-2026-09-03 — and #188 stays closed: the ruling issue edits this module, regenerates the
-doc, pins the refused spelling in `tests/test_wire_vocabulary.py`, and leaves one pointer
-on #188.
+enrichment and #220 the sub-event keys on 2026-09-02, #243 the `:change` family and #242
+the run-family event types on 2026-09-03 — and #188 stays closed: the ruling issue edits
+this module, regenerates the doc, pins the refused spelling in
+`tests/test_wire_vocabulary.py`, and leaves one pointer on #188.
 
 Where the rest of the contract lives: the casing law and the `deviceMeta` block are in
 `docs/runs.md` (#189); the envelope — `time` / `host` / `source` — is `app.core.wire`;
@@ -19,13 +19,17 @@ the read aperture that decides which sections are fetched at all is
 `app.mdm.jamf.contract.SECTIONS`, which this module reads rather than restates, so a
 section cannot be collected without a name to travel under.
 
-The `:change` family is the one sourcetype the product stamps today, and the first it ever
-stamped (#223, 2026-09-03): it was never blocked on the fan-out the way the section tree
-is, because `device.change` is already at sub-event grain — one outbox event per kept
-change row. `change_sourcetype` below decides that string and `app.core.outbox._build_body`
-sends it, on Splunk HEC deliveries only. Every other family still travels under whatever
-sourcetype the operator set on the HEC input; stamping the section tree is #222, absorbed
-by the fan-out (#242) that has to build the sub-events first.
+What is stamped, and by whom. Three families carry a sourcetype on Splunk HEC deliveries,
+and every string comes from this module and nowhere else (#222's acceptance): the
+`:change` family (#223, 2026-09-03 — the first the product ever stamped, because
+`device.change` was already at sub-event grain); the section tree, on the sub-events the
+fan-out (#242, 2026-09-03) expands one `device.inventory` snapshot into — `sourcetype()`
+read through `registry_rows()`; and the run family, `run.completed` and `run.failed`,
+under `ASSERTION_SOURCETYPE`. `app.core.outbox` stamps all three, on the `splunk_hec`
+destination type only. Still under the HEC input's own default: `device.inventory.changed`
+(the delta family has no ruled string; #277 puts the ruling to Kyle before the flip) and
+`destination.test` (deliberately identifiable). The three enrichment strings are minted with no writer,
+because an enrichment rides inline on the app sub-event.
 """
 
 from __future__ import annotations
@@ -44,6 +48,17 @@ PRODUCER = "loon"
 # docs/splunk-event-shaping.md — augmentations are namespaced, not flattened into Jamf's
 # native fields.
 ASSERTION_SOURCETYPE = f"{PRODUCER}:run"
+
+# The two event types that string carries — stamped since #242 (2026-09-03), in the same
+# change as the section tree (#81's close-out: "`loon:run` on the run family in the same
+# change"). The "shape about to change" reason that held the section tree back never
+# applied to a run event. Named here rather than only in `app.core.runs` for the reason
+# `CHANGE_EVENT_TYPE` is: the module that mints the string and the module that emits the
+# event must not be able to drift apart, so `runs.RUN_COMPLETED_EVENT` and
+# `runs.RUN_FAILED_EVENT` are these constants.
+RUN_COMPLETED_EVENT_TYPE = "run.completed"
+RUN_FAILED_EVENT_TYPE = "run.failed"
+ASSERTION_EVENT_TYPES: frozenset[str] = frozenset({RUN_COMPLETED_EVENT_TYPE, RUN_FAILED_EVENT_TYPE})
 
 # Ruling 4 (#188): short where the fan-out is high, long where the section is one-per-
 # device or low fan-out. Ambiguity overrides brevity — `user` / `account` was rejected
@@ -158,16 +173,17 @@ CHANGE_EVENT_TYPE = "device.change"
 
 # What survives the split: the body keys every fan-out sub-event carries, whatever
 # sourcetype it lands under. Ruled 2026-09-02 on #220 — D1, carried over from #81's
-# close-out — and named here rather than in the builder because the fan-out (#242) is not
-# written yet, and the first sub-event ever emitted has to be right.
+# close-out — and named here rather than in the builder because the fan-out (#242) was not
+# written yet, and the first sub-event ever emitted had to be right. `app.core.hec_fanout`
+# reads this tuple; it spells none of the three by hand.
 #
 # `event` — the snapshot's own type, verbatim, on every sub-event it expands into. NOT a
 #   per-sub-event discriminator: nothing mints `device.inventory.app`. `sourcetype` is
 #   what says an event is an app rather than a certificate (#188 ruling 5, below: the
 #   leaf is the wrapper key), and `event` is what keeps `event=device.*` selecting the
 #   whole fan-out from one predicate — the same single-discriminator argument that moved the
-#   run families off `event_type` (docs/runs.md §4). It also makes a sub-event legible
-#   with no sourcetype set, which is exactly the state #222 leaves the wire in today.
+#   run families off `event_type` (docs/runs.md §4). It also keeps a sub-event legible
+#   on a destination that carries no sourcetype at all.
 # `jobID` — the run, at the sub-event root. #220's hoist: one bare `jobID=$id$` joins
 #   every family and every sub-event, rather than the two-term join the nested-only path
 #   forced. Carried a second time inside `deviceMeta`, deliberately.
@@ -244,10 +260,11 @@ def change_sourcetype(
 ) -> str | None:
     """The `:change` string one emitted event carries — or None if it carries none.
 
-    The one place a delivered event's sourcetype is decided (#222: "`sourcetype` comes
-    from `app.core.wire_vocabulary` and nowhere else"). Its caller is
-    `app.core.outbox._build_body`, for the `splunk_hec` destination type only; every
-    other destination gets the canonical event with no sourcetype at all.
+    One of the three places a delivered event's sourcetype is decided, all in this module
+    (#222: "`sourcetype` comes from `app.core.wire_vocabulary` and nowhere else") — the
+    other two are `registry_rows()` for the fan-out sub-events and `ASSERTION_SOURCETYPE`
+    for the run family. Its caller is `app.core.outbox`, for the `splunk_hec` destination
+    type only; every other destination gets the canonical event with no sourcetype at all.
 
     **The subject decides first, the section second.** A `computer_group`'s only section
     is `definition`, which `SECTION_WRAPPERS` has no answer for, and #243 ruled the entity

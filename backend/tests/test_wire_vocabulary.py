@@ -13,10 +13,13 @@ from pathlib import Path
 
 from app.core.wire_vocabulary import (
     ADDITIVE_ONLY_CLAUSES,
+    ASSERTION_EVENT_TYPES,
     ASSERTION_SOURCETYPE,
     CHANGE_LEAF,
     ENRICHMENTS,
     PRODUCER,
+    RUN_COMPLETED_EVENT_TYPE,
+    RUN_FAILED_EVENT_TYPE,
     SECTION_WRAPPERS,
     SUB_EVENT_KEYS,
     SUBJECT_WRAPPERS,
@@ -82,6 +85,20 @@ def test_sourcetype_tree_is_producer_first_and_leaf_equals_wrapper() -> None:
     # Ruling 5: the leaf equals the body's wrapper key, so one vocabulary serves both.
     for _section, _response_key, wrapper, stype in registry_rows():
         assert stype.rsplit(":", 1)[-1] == wrapper
+
+
+def test_the_run_family_event_types_are_the_vocabularys() -> None:
+    """#242 item 6: `loon:run` on `run.completed` and `run.failed`, in the same change as
+    the section tree. The producer's constants ARE these — the `CHANGE_EVENT_TYPE`
+    precedent — so the module that mints the string and the module that emits the event
+    cannot drift, and the outbox stamps by membership rather than by a second literal."""
+    from app.core.outbox import KNOWN_EVENT_TYPES
+    from app.core.runs import RUN_COMPLETED_EVENT, RUN_FAILED_EVENT
+
+    assert ASSERTION_EVENT_TYPES == {"run.completed", "run.failed"} == {RUN_COMPLETED_EVENT, RUN_FAILED_EVENT}
+    assert RUN_COMPLETED_EVENT is RUN_COMPLETED_EVENT_TYPE and RUN_FAILED_EVENT is RUN_FAILED_EVENT_TYPE
+    assert ASSERTION_EVENT_TYPES <= KNOWN_EVENT_TYPES
+    assert ASSERTION_SOURCETYPE == "loon:run"
 
 
 def test_enrichments_hang_off_a_real_wrapper() -> None:

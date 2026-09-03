@@ -1,10 +1,14 @@
 # Splunk event shaping for Jamf data
 
-Status: **partly built.** The per-device snapshot the expansion reads — one
+Status: **built.** The per-device snapshot the expansion reads — one
 `device.inventory` per device per pass, fattened at enqueue under the frozen vocabulary —
 ships since [#241](https://github.com/LoonSecIO/LoonInspect/issues/241) (2026-09-03; shape
-in [`runs.md`](runs.md) §4). The Splunk-side expansion of it into per-section sub-events
-is [#242](https://github.com/LoonSecIO/LoonInspect/issues/242) and is not built.
+in [`runs.md`](runs.md) §4), and the Splunk-side expansion of it into per-section
+sub-events, each under its ruled sourcetype, ships since
+[#242](https://github.com/LoonSecIO/LoonInspect/issues/242) (the same day;
+`backend/app/core/hec_fanout.py`, described in [`runs.md`](runs.md) §4). What this
+document still holds open is the meta-block configuration surface (#189 reserved
+`deviceMeta.custom`, v1) and the aperture gap the fan-out records.
 Continuation of the destinations/outbox work (Phase complete, see below) — this document
 was the handoff for the next conversation to pick up from, written because the prior
 session hit a context limit mid-design.
@@ -95,16 +99,17 @@ The same "precompute what's annoying to derive inline" principle extends to *tim
 handling — see `short_date` / `days_since` below, which exist to avoid making a Splunk
 analyst write `strftime`/staleness math inline in every search.
 
-## Architecture conclusion already reached (the expansion half not yet implemented)
+## Architecture conclusion already reached (both halves built)
 
-> **Superseded in part, 2026-09-03 (#241).** The canonical payload is no longer only a
-> delta. `process_sync` now enqueues one `device.inventory` **snapshot** per device per
-> pass — every section inside the read's aperture under its frozen wrapper key, Jamf's
+> **Superseded in part, 2026-09-03 (#241, then #242).** The canonical payload is no longer
+> only a delta. `process_sync` now enqueues one `device.inventory` **snapshot** per device
+> per pass — every section inside the read's aperture under its frozen wrapper key, Jamf's
 > object under Jamf's v4 names, `patch{}` and `vuln{}` on each `app` item, `deviceMeta`
-> once at the top — fattened at enqueue because `_build_body` can reach neither a run nor
-> a device (the same constraint that put the envelope on the payload). The delta keeps
-> shipping beside it. What remains for #242 is exactly the paragraph below: the Splunk-side
-> expansion of that one snapshot into N HEC sub-events, and the sourcetype stamp.
+> once at the top — fattened at enqueue because the outbox can reach neither a run nor a
+> device at delivery (the same constraint that put the envelope on the payload). The delta
+> keeps shipping beside it. And #242 built exactly the paragraph below, the same day: the
+> Splunk-side expansion of that one snapshot into N HEC sub-events, and the sourcetype
+> stamp from the frozen registry.
 
 This is a **Splunk-HEC-specific delivery-time transformation**, not a change to the
 canonical event LoonInspect produces internally. The canonical `EventOutbox.payload`
@@ -114,10 +119,13 @@ destinations, which don't have Splunk's multivalue-matching problem. What change
 Splunk HEC destination *expanding* that one canonical snapshot into N HEC-shaped
 sub-events at send time.
 
-This hooks into `backend/app/core/outbox.py::_build_body()` — already the one place
-that's destination-type-aware (it currently only wraps the payload in `{"event": ...}`
-for `splunk_hec`). The expansion logic belongs there or adjacent to it, still gated on
-`destination.type == "splunk_hec"`.
+It hooks into `backend/app/core/outbox.py` beside `_build_body()` — the one place that
+is destination-type-aware: `hec_events()` expands a `device.inventory` payload through
+`backend/app/core/hec_fanout.py` and wraps every other family as one event, and
+`_attempt_hec_delivery()` sends the result, gated on `destination.type == "splunk_hec"`.
+`_build_body()` keeps its one-document contract for the destinations whose delivery is one
+document, and refuses the snapshot on Splunk rather than answering with the whole nested
+event.
 
 Because every ingest path (manual sync, nightly sweep, and eventually an inbound
 webhook) already funnels through `process_sync` → `enqueue_event()` — the one place
@@ -126,13 +134,16 @@ requirement the author stated is satisfied structurally: the Splunk-shaping logi
 downstream of that single choke point, so there's nowhere for a second, drifted copy to
 get written. This was confirmed as sound and doesn't need re-litigating.
 
-**HEC batching:** a single HEC POST can contain multiple concatenated JSON event
-objects, which Splunk splits into multiple indexed events. For a device with, say, 80
-apps, this should almost certainly be one batched POST rather than 80 separate HTTP
-requests — proposed default, not yet confirmed with the author. If done this way, the
-existing per-`OutboxDelivery`-row retry/backoff/dead-letter machinery (already built,
-already verified) doesn't need to change — the expansion happens inside body
-construction for one delivery attempt, not as N separate delivery rows.
+**HEC batching — built as proposed (#242).** A single HEC POST carries multiple
+concatenated JSON event objects, which Splunk indexes as separate events; all of one
+device's sub-events go in one POST — 107 events and 84,135 bytes for the 83-app fixture,
+verified against a local Splunk 10.4 on 2026-09-03 — rather than 107 HTTP requests. The
+per-`OutboxDelivery`-row retry/backoff/dead-letter machinery did not change: the expansion
+happens inside body construction for one delivery attempt, not as N delivery rows. The
+one addition is a ceiling on a request body, `SPLUNK_HEC_MAX_REQUEST_BYTES` (default
+900,000 — Splunk Cloud Platform documents a 1 MB `max_content_length` for HEC), above which
+a device's expansion is sent as consecutive requests of whole events; the retry and
+partial-failure semantics are in [`runs.md`](runs.md) §4.
 
 ## The meta block (`device_meta` equivalent) — confirmed requirements
 
@@ -308,32 +319,29 @@ Per-family `_time`, all five now set:
 The run events are deliberately **not** back-dated by `event_time()`: a sweep's closing
 event stamped at the window start would sort before every event it closes over.
 
-**Amended 2026-09-03: `sourcetype` is now set on one family.** This section said it was
-not set at all, which stopped being true when
+**Amended 2026-09-03: `sourcetype` is now set on three families.** This section said it
+was not set at all, which stopped being true when
 [#223](https://github.com/LoonSecIO/LoonInspect/issues/223) stamped the `:change` family
-ruled in [#243](https://github.com/LoonSecIO/LoonInspect/issues/243). Every
-`device.change` is delivered under its entity's string —
-`loon:jamf:mac:<wrapper>:change`, fifteen of them, one per collected section plus
-`computerGroup` — decided in `app/core/wire_vocabulary.py` and stamped in `_build_body`
-for the `splunk_hec` destination type only. It is the first sourcetype the product ever
-sent, and it changes what `_time`'s neighbours look like on a customer's search head: a
-change event no longer arrives under the sourcetype set on the HEC input, so a saved
-search keyed on that input name must add the `:change` strings
+ruled in [#243](https://github.com/LoonSecIO/LoonInspect/issues/243) — every
+`device.change` under its entity's string, `loon:jamf:mac:<wrapper>:change`, fifteen of
+them — and then, the same day, when
+[#242](https://github.com/LoonSecIO/LoonInspect/issues/242) split the per-device snapshot
+into its sub-events under the fourteen section strings (`loon:jamf:mac:app` and its
+siblings) and put `loon:run` on `run.completed` and `run.failed`. All of it is decided in
+`app/core/wire_vocabulary.py` and stamped in `app/core/outbox.py` for the `splunk_hec`
+destination type only. It changes what `_time`'s neighbours look like on a customer's
+search head: those events no longer arrive under the sourcetype set on the HEC input, so a
+saved search keyed on that input name must add the strings
 ([`splunk-setup.md`](splunk-setup.md) §6).
 
-**The other four families are still unstamped**, deliberately, and for the reason this
-section always gave: the ruled tree (`loon:jamf:mac:app`) names the fan-out sub-events,
-the fan-out below is not built, and a sourcetype is a permanent hand-written `props.conf`
-stanza, so minting one for a shape that is about to change would be the expensive kind of
-mistake. That includes the per-device snapshot `device.inventory` (#241), which is the
-very event those strings will be minted for once #242 splits it: until then it arrives
-whole, under the HEC input's own sourcetype, as one nested event per device.
-`device.change` was never in that position — it is already one event per changed thing —
-which is exactly why #243 let it go first.
+**Two families are still unstamped**, deliberately: `device.inventory.changed`, because the
+delta family has no ruled string ([#277](https://github.com/LoonSecIO/LoonInspect/issues/277) puts the ruling to Kyle before the flip), and the
+test event, which is meant to be identifiable rather than routed. Both land under the HEC
+input's own sourcetype.
 
-**Still open:** `deliver_pending` has no `ORDER BY`, so a drained backlog is delivered in
-arbitrary order. With `time` now set this no longer affects where events land on the time
-axis, but it does affect the order in which they arrive.
+**Closed (#213):** `deliver_pending` orders by `next_attempt_at`, then `id`, so a drained
+backlog arrives most-overdue first rather than in arbitrary order; `_time` is each event's
+own either way.
 
 ## Adjacent unbuilt features referenced by this design (context, not yet built)
 

@@ -5,10 +5,13 @@ Everything here is read out of the delivery code (`backend/app/core/outbox.py`,
 claim is about Splunk's own defaults rather than about LoonInspect, it says so.
 
 One delivery is one HTTPS POST: `Content-Type: application/json`,
-`Authorization: Splunk <token>`, a 10-second timeout, and the event wrapped as
-`{"event": {…}}` with `time`, `host` and `source` beside it. Deliveries are attempted on
-a 30-second tick, retried with exponential backoff (30s doubling to a 1-hour cap) and
-dead-lettered after 10 attempts.
+`Authorization: Splunk <token>`, a 10-second timeout, and each event wrapped as
+`{"event": {…}}` with `time`, `host` and `source` beside it — plus `sourcetype`, for the
+families that carry one (§6). A `device.inventory` snapshot is the one delivery that is
+many events: it is split at delivery into one HEC event per section item and posted as
+one request of all of them (§7). Deliveries are attempted on a 30-second tick, retried
+with exponential backoff (30s doubling to a 1-hour cap) and dead-lettered after 10
+attempts.
 
 ## 1. Turn HEC on — it ships disabled
 
@@ -29,15 +32,18 @@ search head; take the URL from the token's own page rather than assuming the sha
 **Settings → Data inputs → HTTP Event Collector → New Token**
 
 - *Name*: anything — `LoonInspect`.
-- *Source type*: set one explicitly. It names every event except the change stream:
-  `device.change` carries its own `sourcetype` and overrides the input's, and nothing
-  else sends one (§6) — the per-device snapshot `device.inventory` included, which
-  arrives whole under this name until the fan-out (#242) splits it. Whatever you set here
-  is what those other events get for ever.
+- *Source type*: set one explicitly, but know that most of what arrives ignores it.
+  Since 2026-09-03 the events carry their own `sourcetype`, which overrides the input's:
+  the `device.inventory` snapshot arrives as sub-events under the fourteen section strings
+  (`loon:jamf:mac:app`, …), the change stream under its fifteen `:change` strings, and
+  `run.completed` / `run.failed` under `loon:run` (§6). What still lands under the name
+  you set here is `device.inventory.changed` — the delta family has no ruled string;
+  [#277](https://github.com/LoonSecIO/LoonInspect/issues/277) puts the ruling to Kyle before the flip — and the test event. Set one anyway: it is what those get for ever, and it is where an event
+  from a LoonInspect build that predates a family's stamp would land.
 - *Allowed indexes* and *Default index*: **this is the only thing that decides where the
-  events land.** LoonInspect never sends an `index` field — `_build_body` adds the three
-  envelope hints `wire.envelope()` emits (`time`, `host` and `source`) plus, on
-  `device.change` alone, its `sourcetype` (§6), and nothing else.
+  events land.** LoonInspect never sends an `index` field — every HEC event object
+  carries the three envelope hints `wire.envelope()` emits (`time`, `host` and `source`),
+  its `sourcetype` where the family has one (§6), and nothing else.
 - Select **exactly one** index and make it the default. A HEC token is a write
   credential; leaving every index selected means a compromised or fat-fingered token can
   write anywhere in your Splunk, and it buys nothing here because LoonInspect writes to
@@ -160,48 +166,57 @@ sending the token in clear text on every delivery. Anyone who can read one packe
 then write whatever they like into your index. It is a lab shortcut on a throwaway
 instance, not a fix.
 
-## 6. `sourcetype`, and a `props.conf` stanza to hand your Splunk team
+## 6. `sourcetype`, and the `props.conf` stanzas to hand your Splunk team
 
-**One family carries its own; everything else takes the input's.**
+**Three families carry their own; two take the input's.** Every string is minted in
+[`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md) §2 and stamped by
+`core/outbox.py` on this destination type only; a `sourcetype` in the HEC body overrides
+the input's for that event.
 
+- `device.inventory` — the per-device snapshot — never arrives whole. It is split at
+  delivery into one HEC event per section item, each under the registry's string for its
+  section: the seven one-per-device sections as one event each (`loon:jamf:mac:general`,
+  `:hardware`, `:operatingSystem`, `:userAndLocation`, `:purchasing`, `:security`,
+  `:diskEncryption`) and the seven list sections as one event per item (`loon:jamf:mac:app`,
+  `:ea`, `:group`, `:profile`, `:localUserAccount`, `:cert`, `:update`). Fourteen strings.
+  What one sub-event looks like is in [`runs.md`](runs.md) §4.
 - `device.change` — the change stream — is delivered under
-  `loon:jamf:mac:<entity>:change`, one string per entity a change can name. There are
-  fifteen: the fourteen inventory sections plus `computerGroup`, listed in
-  [`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md) §2. A `sourcetype` in the HEC
-  body overrides the input's for those events only.
-- `device.inventory`, `device.inventory.changed`, `run.completed` and `run.failed` send
-  none, so they arrive under whichever sourcetype **you** set on the input (§2). The
-  reason, from `core/outbox.py`:
+  `loon:jamf:mac:<entity>:change`, one string per entity a change can name: the fourteen
+  sections plus `computerGroup`. Fifteen strings.
+- `run.completed` and `run.failed` arrive under `loon:run` — LoonInspect's own assertion
+  about a run, with no vendor segment.
+- `device.inventory.changed` and the test event send none and arrive under whichever
+  sourcetype **you** set on the input (§2). The delta family has no ruled string
+  ([#277](https://github.com/LoonSecIO/LoonInspect/issues/277) rules it, before the flip), and a string once minted is a permanent stanza, so
+  none was invented in passing.
 
-> Every other family is still deliberately unstamped. The ruled section tree names
-> fan-out sub-events (`loon:jamf:mac:app`) that are not built, and minting a string for a
-> shape that is about to change would create a permanent props.conf stanza for it.
-
-The stanza below keys on the input's name and so covers those four families; it assumes
-you called it `loon:inspect`, so substitute your own.
+The stanza below keys on the input's name and so covers the delta and the test event; the
+same three lines belong under each of the thirty minted strings, and the section after it
+says how to avoid writing them thirty times. It assumes you called the input
+`loon:inspect`, so substitute your own.
 
 ```ini
 # props.conf — LoonInspect events arriving over HEC.
-# Key: the sourcetype set on the HEC input. It decides for every family but the change
-# stream, which sends its own (above) and needs the same three settings under each of its
-# fifteen strings — a sourcetype stanza takes no wildcards.
+# Key: the sourcetype set on the HEC input. It decides for device.inventory.changed and
+# the test event only; the snapshot's sub-events, the change stream and the run family
+# send their own strings and need the same three settings under each of them — a
+# sourcetype stanza takes no wildcards.
 [loon:inspect]
 
 # The event body is a JSON object. Search-time extraction, so this line belongs on the
 # search head. Without it, deviceMeta.serialNumber needs spath in every search.
 KV_MODE = json
 
-# One POST is one event; there is nothing to merge. Index-time.
+# Each JSON object in a POST is one event; there is nothing to merge. Index-time.
 SHOULD_LINEMERGE = false
 
 # One delta carries every app that changed on one device, so it is not small: measured
 # from the real payload builder, the body is 509 bytes plus roughly 330 per changed app,
 # which puts a device with ~30 app changes — an OS upgrade, a re-image — past the 10,000
-# byte TRUNCATE default. The per-device snapshot (device.inventory, #241) is larger
-# still and arrives EVERY pass: measured against the real fixture record, 28,783 bytes
-# for a Mac with 83 apps, whole, until the fan-out (#242) splits it into ~106 sub-events.
-# Truncation would cut the JSON mid-object and take the field extraction down with it.
-# Index-time.
+# byte TRUNCATE default. A snapshot sub-event is small (an app is ~790 bytes, measured on
+# the real fixture) but an extension-attribute sub-event carries Jamf's value list
+# verbatim, and an EA is arbitrary script output. Truncation would cut the JSON mid-object
+# and take the field extraction down with it. Index-time.
 TRUNCATE = 0
 
 # Deliberately NOT set:
@@ -215,10 +230,10 @@ TRUNCATE = 0
 they live in different places in a distributed deployment. Handing the whole stanza over
 is fine — each line is inert where it does not apply.
 
-**The change stream, and the sixteen-stanza question.** `[<sourcetype>]` accepts no
-wildcards, so covering `device.change` the same way means repeating these three lines
-under each of the fifteen `loon:jamf:mac:*:change` strings. Two ways out, in order of
-preference:
+**The thirty-one-stanza question.** `[<sourcetype>]` accepts no wildcards, so covering
+every minted string the same way means repeating these three lines under each of the
+fourteen section strings, `loon:run`, and the fifteen `loon:jamf:mac:*:change` strings.
+Two ways out, in order of preference:
 
 1. **Key on `source` instead.** Every LoonInspect event carries the Jamf instance as
    `source`, and a `[source::...]` stanza is the kind that *does* accept wildcards — so
@@ -227,11 +242,25 @@ preference:
 2. **Check whether you need `KV_MODE` at all.** Splunk's default search-time extraction
    already reads pure-JSON events on recent versions; the line above is belt-and-braces.
    If `deviceMeta.serialNumber` resolves in a search against an unconfigured sourcetype on
-   your version, the fifteen stanzas are a convenience, not a requirement.
+   your version, the thirty stanzas are a convenience, not a requirement.
 
 Neither claim has been tested against a real Splunk here, which is exactly why the count
 is written down rather than glossed: it is the argument for shipping a LoonInspect TA, and
-that is not built.
+that is not built. What *was* tested (2026-09-03, a local Splunk Enterprise 10.4): the
+whole 107-event request for the real fixture is accepted by
+`/services/collector/event` as one POST.
+
+**The size of a request, and the one setting.** All of a device's sub-events travel in
+one POST — 84,135 bytes for a Mac with 83 apps, measured — and Splunk Cloud Platform
+documents a 1 MB `max_content_length` for HEC (Splunk Enterprise ships
+`[http_input] max_content_length = 838860800` in its default `limits.conf`; it was
+1,000,000 before 7.x). A request over the input's limit is refused whole with HTTP 413.
+`SPLUNK_HEC_MAX_REQUEST_BYTES` (default **900000**, 10% under that 1 MB) is the ceiling on
+one request body: a device whose expansion exceeds it is sent as consecutive requests of
+at most that many bytes, whole events only, in order, and the delivery succeeds only when
+every request does. Raise it on Enterprise if you like; lower it if your HEC input's
+`max_content_length` is smaller. It bounds requests, not events — a single event larger
+than the ceiling is still sent, alone.
 
 ## 7. What arrives, and where `_time` comes from
 
@@ -277,26 +306,52 @@ five families judged together, not on the source that built them.
 What "frozen" licenses is §5 of the vocabulary document: new keys may appear and
 consumers must ignore unknown keys; a key's name, type and meaning never change once
 shipped; a shipped key is never removed; a sourcetype string, once minted, is permanent.
-SPL written against these names today does not need revisiting. What still changes is
-shape, not names: when the per-app fan-out lands, the sub-events it adds — the
-`device.inventory` snapshot split by section — arrive under the section sourcetypes in
-the registry (`loon:jamf:mac:app` and the rest) rather than under the one you set on the
-input — the move `device.change` has already made (§6). So pin dashboards to the index
-and to `source` (one Jamf instance's whole feed) or to `event`, not to the input's
-sourcetype alone.
+SPL written against these names today does not need revisiting. Since 2026-09-03 the
+`device.inventory` snapshot arrives split by section under the section sourcetypes in the
+registry (`loon:jamf:mac:app` and the rest) rather than under the one you set on the input
+— the move `device.change` had already made (§6). So pin dashboards to the index and to
+`source` (one Jamf instance's whole feed) or to `event`, not to the input's sourcetype
+alone.
 
 **What each destination type receives for the per-device snapshot** (`device.inventory`,
 one per device per pass, ~28 KB for a Mac with 83 apps — [runs.md](runs.md) §4):
 
-- A `splunk_hec` destination gets it wrapped as `{"event": …}` with `time`, `host` and
-  `source` beside it and **no `sourcetype`** — one nested event per device under the
-  input's own sourcetype — until the fan-out (#242) splits it into one sub-event per
-  section item under the ruled section tree. Until then the nested `app[]` list has the
-  multivalue-pairing hazard [splunk-event-shaping.md](splunk-event-shaping.md) describes:
-  do not write `app.app.name=X app.app.version=Y` against it and expect one app.
-- A generic webhook, and the `runreveal` preset, get the bare document.
+- A `splunk_hec` destination gets it **split**: one HEC event per section item — one for
+  each of the seven one-per-device sections, one per app, per extension attribute, per
+  group membership, per profile, per local user account, per certificate, per software
+  update — 107 for that Mac, each carrying `event=device.inventory`, `jobID`, the whole
+  `deviceMeta` block, its section's object under its wrapper key, and the snapshot's
+  `time`, `host` and `source`, under `sourcetype=loon:jamf:mac:<wrapper>`. All of them in
+  one POST (84,135 bytes for that Mac), so `app.name=X app.version=Y` is one app, as it
+  should be — the multivalue-pairing hazard [splunk-event-shaping.md](splunk-event-shaping.md)
+  describes is why the split exists.
+- A generic webhook, and the `runreveal` preset, get the bare document, whole.
 - An Elastic destination gets one `create` document per snapshot with `@timestamp` from
   `occurredAt`, nested `app[]` and all. Per-app expansion for Elastic is not v0.
+
+**Selecting one device's pass, and deduplicating a retry.** `deviceMeta.eventID` is one
+id per device per pull, on every sub-event of that pull; a retry after a lost response
+re-sends a device's sub-events together, so the dedup key on a fan-out sourcetype is the
+pull plus the item — `| dedup keepempty=true deviceMeta.eventID app.path app.version` on
+`loon:jamf:mac:app`, and each section's own identity on its sourcetype — never
+`deviceMeta.eventID` alone, which collapses a device's whole pass to one arbitrary row.
+Keyed on `path` rather than `bundleId`, and with `keepempty=true`, because the
+canonicalizer omits an empty `bundleId` and `dedup` drops every event missing one of its
+fields unless told to keep them — a key on `bundleId` would silently lose every app Jamf
+reports without one.
+
+**What an absent sub-event means.** A section outside the webhook collection's aperture
+is not read and fans out nothing. A *list* section read and genuinely empty fans out
+nothing too, so on the wire the two look the same: `loon:jamf:mac:general` with no
+`loon:jamf:mac:cert` for the same `deviceMeta.eventID` is *either* zero certificates *or*
+certificates not read. Under the nightly sweep — the whole contract — "zero" is the right
+reading; under a webhook collection scoped to a few sections it is not, and nothing on the
+sub-event says which (a key that would is a #189 decision, not taken). If you scope the
+webhook collection, know that its snapshots are partial by design. A *scalar* section read
+and genuinely empty still arrives — as its anchor with an empty object, `{"userAndLocation":
+{}}` under `loon:jamf:mac:userAndLocation` — so for the seven one-per-device sections a
+missing anchor means unread, an empty one means read-and-empty, and a full read always
+sends all seven.
 
 **Volume is a subscription knob, not a wire change.** Null or empty `subscribed_events`
 means every event, so a destination on the default receives the snapshot from the day it
@@ -323,13 +378,20 @@ Then look in Splunk. A bare term search works before the props stanza is in plac
 index=your_index "destination.test"
 ```
 
-and after a sync has produced something real — one snapshot per device, and a delta for
-every device whose app list moved:
+and after a sync has produced something real — one snapshot per device, split into its
+sub-events under the section sourcetypes, and a delta for every device whose app list
+moved:
 
 ```
-index=your_index event=device.inventory | stats count by deviceMeta.serialNumber
+index=your_index event=device.inventory | stats count by sourcetype
+index=your_index sourcetype=loon:jamf:mac:app | stats dc(deviceMeta.serialNumber) AS macs, count AS apps
+index=your_index sourcetype=loon:jamf:mac:app deviceMeta.eventID=<one id> | stats count
 index=your_index "device.inventory.changed" | head 5
 ```
+
+The first shows one row per section present plus `loon:run` for the sweep's own event;
+the third returns that device's app count for that pull, and the same search under
+`sourcetype=loon:jamf:mac:general` returns 1.
 
 ## 9. When nothing arrives
 
@@ -342,6 +404,7 @@ success/failure times. Every failed attempt is also logged, not just the tenth.
 | `[SSL: CERTIFICATE_VERIFY_FAILED] …` | §5. The certificate, not the token. |
 | `HTTP 401` / `HTTP 403` | The token — wrong value, disabled token, or the global *All Tokens* switch still off. |
 | `HTTP 400` naming the index | The token is not allowed to write the index it was asked for. |
+| `HTTP 413` | One request exceeded the HEC input's `max_content_length`. Lower `SPLUNK_HEC_MAX_REQUEST_BYTES` (§6) below that limit; the snapshot is then sent as more, smaller requests. |
 | Connection refused / timeout | Reachability. From inside the container, not from your laptop — see §3. |
 | No error, and no `device.inventory.changed` | Nothing changed. A sweep where no app changed on any device emits no delta, by design — one `device.inventory` snapshot per device and the sweep's own `run.completed` event still arrive. No snapshot either means the destination is subscribed to other event types only. |
 | Events stop after a while | Ten failed attempts dead-letter a delivery; fix the cause and the *next* events flow, but the dead-lettered ones are not retried. |
