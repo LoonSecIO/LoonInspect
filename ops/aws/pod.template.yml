@@ -113,10 +113,9 @@ Resources:
       NetworkMode: awsvpc
       Cpu: "512"
       Memory: "1024"
-      # X86_64 because CI's ubuntu runners build amd64 images. Switching to ARM64
-      # (~20% cheaper) is a two-place change: this field and the publish
-      # workflow's runner/platform — change both together or the task pulls an
-      # image it cannot execute.
+      # X86_64 because that's the commodity Fargate default, not because the
+      # image is amd64-only — publish-images.yml pushes a linux/amd64+arm64
+      # manifest, so switching to ARM64 (~20% cheaper) is just this field.
       RuntimePlatform:
         CpuArchitecture: X86_64
         OperatingSystemFamily: LINUX

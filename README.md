@@ -50,8 +50,9 @@ is what stops 40k devices fitting in ten minutes. See [docs/app-catalog.md](docs
 
 LoonInspect is deployed as two containers: the application — one image carrying both the
 React frontend and the FastAPI backend — and a Postgres alongside it. `docker compose up
---build` builds natively for your machine, Apple Silicon included; the image published by
-CI is `linux/amd64`.
+--build` builds natively for your machine, Apple Silicon included, and the images CI
+publishes are multi-arch (`linux/amd64` + `linux/arm64`), so pulling one directly is native
+too.
 Both are in the bundle; nothing external is required, and the database port is never
 published to the host.
 
