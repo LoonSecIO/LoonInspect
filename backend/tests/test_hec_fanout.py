@@ -224,9 +224,10 @@ def test_a_list_sub_event_is_the_item_plus_the_three_ruled_keys(payload: dict, e
         for body, item in zip(subs, items, strict=True):
             assert body[wrapper] == item[wrapper]
             assert set(body) == set(item) | set(SUB_EVENT_KEYS)
-            # The snapshot's own layout, one level down: the head first, the block last.
-            assert list(body)[:2] == ["event", "jobID"]
-            assert list(body)[-1] == "deviceMeta"
+            # The snapshot's own layout, one level down (#286): the item leads, then the
+            # head, then the block. This assertion led with the head until 2026-09-04.
+            assert next(iter(body)) == wrapper
+            assert list(body)[-3:] == ["event", "jobID", "deviceMeta"]
 
 
 def test_the_anchor_is_one_sub_event_per_scalar_section_carrying_jamfs_object_whole(
@@ -398,7 +399,9 @@ def test_outside_a_run_job_id_is_absent_on_every_sub_event_not_null(raw: dict) -
     for event in events:
         body = event["event"]
         assert "jobID" not in body and "jobID" not in body["deviceMeta"] and "eventID" not in body["deviceMeta"]
-        assert body["event"] == INVENTORY_EVENT_TYPE and next(iter(body)) == "event"
+        # `event` still rides every sub-event; since #286 it trails the section object
+        # rather than leading it, and `jobID` is absent here rather than null.
+        assert body["event"] == INVENTORY_EVENT_TYPE and list(body)[-2:] == ["event", "deviceMeta"]
 
 
 def test_a_wrapper_the_registry_does_not_name_is_delivered_unstamped_not_dropped(
@@ -665,3 +668,110 @@ def test_the_request_ceiling_is_a_validated_setting_with_the_documented_default(
     for bad in (0, 4_095, 838_860_801):
         with pytest.raises(ValidationError, match="splunk_hec_max_request_bytes"):
             Settings(_env_file=None, splunk_hec_max_request_bytes=bad)
+
+
+# --- #286: the designed key order, on every family ------------------------------------
+#
+# Every other assertion in this suite compares `set(body)`, which is order-blind by
+# construction — so before #286 nothing anywhere pinned the order of a delivered event,
+# in either direction. These are the tests that make the order a contract rather than
+# whatever `dict(payload)` happened to yield.
+#
+# The rule (wire vocabulary §6a, Kyle 2026-09-04): the family's own keys lead, `event` and
+# `jobID` follow, `deviceMeta` trails. `event` and `jobID` are search keys — identical on
+# every row of a result set — so they do not earn the top of the object.
+
+# The exact key order Postgres returned for a real `device.inventory.changed` row on
+# 2026-09-04 (main 8e6f0d6), copied verbatim: `jsonb` normalises by key length, then
+# bytewise. `deviceMeta` sits mid-content, between `addedApps` and `occurredAt`, which is
+# the defect #286 was filed for.
+_JSONB_SCRAMBLED_DELTA = (
+    "event", "jobID", "provider", "addedApps", "deviceMeta",
+    "occurredAt", "removedApps", "deviceExternalID",
+)
+
+
+def test_the_content_leads_the_head_follows_and_device_meta_trails_every_family() -> None:
+    """The family's own keys, then `event` and `jobID`, then `deviceMeta`.
+
+    Asserted as a list. `set(body)` — which every older assertion in this file uses —
+    passes identically whatever the order is, and is why this went unnoticed until
+    someone read the events in Splunk.
+    """
+    delta = {
+        "occurredAt": "2026-09-04T00:00:00Z",
+        "deviceMeta": {"hostName": "mbp-ada"},
+        "addedApps": [],
+        "jobID": "01a0-JOB",
+        "event": "device.inventory.changed",
+    }
+    body = _build_body(SPLUNK, delta)["event"]
+    assert list(body) == ["occurredAt", "addedApps", "event", "jobID", "deviceMeta"]
+
+    run = {
+        "status": "succeeded",
+        "devicesTotal": 2,
+        "connectionID": 1,
+        "jobID": "01a0-JOB",
+        "event": "run.completed",
+    }
+    assert list(_build_body(SPLUNK, run)["event"]) == [
+        "status", "devicesTotal", "connectionID", "event", "jobID",
+    ]
+
+    # A family carrying no `deviceMeta` simply has no trailer; the head still comes last.
+    change = {"section": "security", "change": "changed", "jobID": "x", "event": "device.change"}
+    assert list(_build_body(SPLUNK, change)["event"]) == ["section", "change", "event", "jobID"]
+
+
+def test_the_designed_order_survives_the_jsonb_scramble() -> None:
+    """The regression this exists to catch, reproduced from its cause.
+
+    The order a producer writes never reaches delivery: `event_outbox.payload` is `jsonb`
+    and Postgres hands back its own. Feeding that exact scrambled order in must still
+    yield the designed one — otherwise the fix only works on dicts Python happened to
+    build in a friendly order, which is every dict in a unit test and no dict in
+    production. A hand-written dict literal at the producer, the technique the SplunkBase
+    predecessor used, is exactly what cannot survive this round trip.
+    """
+    stored = {key: key for key in _JSONB_SCRAMBLED_DELTA}
+    stored["event"] = "device.inventory.changed"
+    body = _build_body(SPLUNK, stored)["event"]
+
+    assert list(body)[-3:] == ["event", "jobID", "deviceMeta"]
+    assert next(iter(body)) not in {"event", "jobID", "deviceMeta"}
+    # Nothing was dropped, renamed or revalued on the way through — this reorders only.
+    assert body == stored
+
+
+def test_the_webhook_body_reads_in_the_same_order_as_the_hec_body() -> None:
+    """Splunk is where the cost was noticed; it is not where it is. A generic webhook
+    receiver reads the same JSON document, so it gets the same reading order."""
+    stored = {key: key for key in _JSONB_SCRAMBLED_DELTA}
+    stored["event"] = "device.inventory.changed"
+    assert list(_build_body(WEBHOOK, stored)) == list(_build_body(SPLUNK, stored)["event"])
+
+
+def test_the_order_is_deterministic_so_a_retry_stays_byte_identical() -> None:
+    """Delivery retries the same stored row up to ten times and the bytes must not move
+    between attempts — the property `_encode_hec_event` exists to hold. Ordering is a pure
+    function of the row, so it does not disturb it."""
+    stored = {key: key for key in _JSONB_SCRAMBLED_DELTA}
+    stored["event"] = "device.inventory.changed"
+    stored[ENVELOPE] = envelope(occurred_at=_WINDOW, host="mbp-ada", source=SOURCE)
+
+    first, *rest = [hec_request_bodies(stored, max_bytes=settings.splunk_hec_max_request_bytes) for _ in range(3)]
+    assert all(attempt == first for attempt in rest)
+    # And the stored row itself is untouched, scrambled order and all.
+    assert tuple(key for key in stored if key != ENVELOPE) == _JSONB_SCRAMBLED_DELTA
+
+
+def test_the_fan_out_obeys_the_same_rule_from_the_same_implementation(payload: dict) -> None:
+    """One rule, all four families. The fan-out routes through `ordered_event_keys` rather
+    than building the layout itself, so the highest-volume family on the wire cannot drift
+    from the three single-event ones."""
+    for event in fan_out(dict(payload), {}):
+        keys = list(event["event"])
+        assert keys[-3:] == ["event", "jobID", "deviceMeta"]
+        # The section object — what the reader opened the sub-event for — is first.
+        assert keys[0] not in SUB_EVENT_KEYS

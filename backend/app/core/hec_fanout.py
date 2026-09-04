@@ -85,7 +85,7 @@ from collections.abc import Mapping
 
 from app.core.vuln import mint_hec_sentinels
 from app.core.wire import hec_event
-from app.core.wire_vocabulary import SUB_EVENT_KEYS, registry_rows
+from app.core.wire_vocabulary import SUB_EVENT_KEYS, ordered_event_keys, registry_rows
 from app.mdm.jamf.contract import SECTIONS
 from app.schemas.payload import SNAPSHOT_HEAD_KEYS
 
@@ -109,8 +109,9 @@ def fan_out(payload: Mapping[str, object], hints: Mapping[str, object]) -> list[
     device's whole pass; the enqueue-side model refuses unknown wrappers, so this path is
     version skew, not a producer bug.
     """
-    # The sub-event's own keys, in the snapshot's own layout: the head first, the item,
-    # `deviceMeta` last. `jobID` is copied iff the snapshot carries it — absent rather than
+    # The sub-event's own keys. Assembled head-first here and reordered on the way out by
+    # `ordered_event_keys` (#286) — the delivered layout is the item, then the head, then
+    # `deviceMeta`. `jobID` is copied iff the snapshot carries it — absent rather than
     # null outside a run, the rule the block itself follows.
     head = {key: payload[key] for key in SUB_EVENT_KEYS if key != _DEVICE_META and key in payload}
     meta = payload.get(_DEVICE_META)
@@ -119,7 +120,11 @@ def fan_out(payload: Mapping[str, object], hints: Mapping[str, object]) -> list[
         body: dict[str, object] = {**head, **mint_hec_sentinels(item)}
         if isinstance(meta, Mapping):
             body[_DEVICE_META] = dict(meta)
-        return hec_event(body, hints, sourcetype=sourcetype)
+        # One rule for all four families, from the one implementation of it (#286):
+        # the section object leads, `event`/`jobID` follow, `deviceMeta` trails. Routed
+        # through the helper rather than built in this order here, so the fan-out and the
+        # single-event families cannot drift into two agreeing-until-they-don't layouts.
+        return hec_event(ordered_event_keys(body), hints, sourcetype=sourcetype)
 
     events: list[dict[str, object]] = []
     emitted: set[str] = set()

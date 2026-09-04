@@ -14,7 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.hec_fanout import fan_out
 from app.core.wire import ENVELOPE, hec_event
-from app.core.wire_vocabulary import ASSERTION_EVENT_TYPES, ASSERTION_SOURCETYPE, DELTA_SOURCETYPE, change_sourcetype
+from app.core.wire_vocabulary import (
+    ASSERTION_EVENT_TYPES,
+    ASSERTION_SOURCETYPE,
+    DELTA_SOURCETYPE,
+    change_sourcetype,
+    ordered_event_keys,
+)
 from app.models.schema import Destination, EventOutbox, OutboxDelivery
 from app.schemas.payload import INVENTORY_EVENT_TYPE
 
@@ -176,7 +182,10 @@ def hec_events(payload: Mapping[str, object]) -> list[dict[str, object]]:
     hints = body.pop(ENVELOPE, None) or {}
     if body.get("event") == INVENTORY_EVENT_TYPE:
         return fan_out(body, hints)
-    return [hec_event(body, hints, sourcetype=_single_event_sourcetype(body))]
+    # `ordered_event_keys` here and not inside `hec_event`: the fan-out builds its own
+    # layout key by key and is already right, so ordering there would be a second pass
+    # over N sub-events to reach the order they were constructed in (#286).
+    return [hec_event(ordered_event_keys(body), hints, sourcetype=_single_event_sourcetype(body))]
 
 
 def _build_body(destination: Destination, payload: dict) -> dict:
@@ -210,7 +219,9 @@ def _build_body(destination: Destination, payload: dict) -> dict:
         return event
     body = dict(payload)
     body.pop(ENVELOPE, None)
-    return body
+    # A webhook receiver reads the same document a HEC consumer does, so it gets the same
+    # reading order (#286). Splunk is where the cost was noticed; it is not where it is.
+    return ordered_event_keys(body)
 
 
 def _encode_hec_event(event: Mapping[str, object]) -> bytes:

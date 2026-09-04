@@ -432,7 +432,8 @@ enqueued before the fan-out existed arrives split rather than whole.
 - **The sub-event body is the item plus the three sub-event keys** of
   [`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md) §6 — `event` (the snapshot's
   own type, `device.inventory`, verbatim: D1, ruled on #220), `jobID` at the root, and
-  `deviceMeta` copied whole — laid out as the snapshot is, head first, block last. Nothing
+  `deviceMeta` copied whole — laid out per `splunk-wire-vocabulary.md` §6a: the item first,
+  then `event` and `jobID`, then the block. Nothing
   is minted, renamed or dropped; the wrapper object is Jamf's, byte for byte. `occurredAt`
   does not ride: the three are the complete list, and the same instant is the envelope's
   `time` on every sub-event. `patch{}` and `vuln{}` ride the app sub-event inline and
