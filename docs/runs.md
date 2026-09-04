@@ -624,6 +624,7 @@ just the inventory one:
 | `event` | `run.completed` |
 | `jobID` | The run — the same name and value `deviceMeta.jobID` carries |
 | `connectionID` | Which connection swept |
+| `connectionName` | The same connection, readable without a join — added [#287](https://github.com/LoonSecIO/LoonInspect/issues/287), 2026-09-04, additively, to match `run.failed` |
 | `trigger` | `sweep` \| `manual` \| `webhook` |
 | `comparison` | `baseline` \| `delta` |
 | `occurredAt` | The run's window end — the instant the row's `window_end` was stamped |

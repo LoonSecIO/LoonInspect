@@ -370,7 +370,11 @@ async def _enqueue_run_completed(
     comment below is the payload `finish` built before the lift (#212's casing included), and the tests assert
     the set of keys exactly.
     """
-    _, source = await _connection_wire(db, connection_id)
+    # Both halves, not just `source` (#287). `run.failed` has carried `connectionName`
+    # since it was written; this path read it from the same helper on every closed run and
+    # dropped it on the floor, so the two run families disagreed about whether a run says
+    # which connection it belongs to in words. No new query — one binding.
+    connection_name, source = await _connection_wire(db, connection_id)
     await enqueue_event(
         db,
         RUN_COMPLETED_EVENT,
@@ -381,6 +385,11 @@ async def _enqueue_run_completed(
             "event": RUN_COMPLETED_EVENT,
             "jobID": str(run_id),
             "connectionID": connection_id,
+            # Beside `connectionID`, the position it occupies on `run.failed`, so the two
+            # families read alike (#287). Additive-only clause 1; clause 2 is satisfied by
+            # construction — same name, same type, same meaning `run.failed` already gave
+            # it, which is why this needed no new ruling on a name.
+            "connectionName": connection_name,
             "trigger": trigger,
             "comparison": comparison,
             # The run's window end — the same instant the row's window_end was
