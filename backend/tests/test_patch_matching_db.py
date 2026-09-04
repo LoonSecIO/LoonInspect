@@ -225,3 +225,25 @@ async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connec
     assert judged >= len(entries)
     await db.refresh(xcode_entry)
     assert xcode_entry.jamf_title_ids == ["0C3"]
+
+    # THE TWO COPY PATHS WRITE THE SAME COLUMNS (#311). `copy_answer` runs per app row at
+    # device process; `refresh_tenant` runs a bulk UPDATE per catalog row after a catalog
+    # sync — and for a stable fleet the second is the one that maintains `installed_apps`,
+    # because `copy_answer` only fires on a row that is new or whose catalog row just moved.
+    # They used to spell the column list twice, which made a column added to one of them
+    # permanently null everywhere the other path maintained. Now both read `answer_columns`,
+    # and this asserts the property rather than the implementation: refresh, then copy, and
+    # the row does not move.
+    from app.catalog.service import answer_columns, copy_answer
+
+    await db.refresh(xcode)
+    after_refresh = {column: getattr(xcode, column) for column in answer_columns(xcode_entry)}
+    assert set(after_refresh) == set(answer_columns(xcode_entry))
+    copy_answer(xcode_entry, xcode, now=xcode.last_patch_check_at)
+    assert {column: getattr(xcode, column) for column in after_refresh} == after_refresh
+    # And the list really is every answer column on the row — a new one added to the model
+    # without being added to `answer_columns` is caught here rather than in production.
+    assert set(answer_columns(xcode_entry)) == {
+        "jamf_title_ids", "patch_state", "is_compliant", "patch_available", "patch_available_since",
+        "releases_missed", "this_version_seen", "latest_version", "latest_released_at", "ea_assumed",
+    }

@@ -4,8 +4,9 @@ Status: **frozen** · Ruled in [#188](https://github.com/LoonSecIO/LoonInspect/i
 2026-08-31 and 2026-09-01 · Amended, additively, in
 [#229](https://github.com/LoonSecIO/LoonInspect/issues/229),
 [#220](https://github.com/LoonSecIO/LoonInspect/issues/220) and
-[#113](https://github.com/LoonSecIO/LoonInspect/issues/113), 2026-09-02 and
-[#243](https://github.com/LoonSecIO/LoonInspect/issues/243), 2026-09-03 · Stamped on the
+[#113](https://github.com/LoonSecIO/LoonInspect/issues/113), 2026-09-02,
+[#243](https://github.com/LoonSecIO/LoonInspect/issues/243), 2026-09-03 and
+[#311](https://github.com/LoonSecIO/LoonInspect/issues/311), 2026-09-04 · Stamped on the
 wire by [#223](https://github.com/LoonSecIO/LoonInspect/issues/223) (the `:change`
 family), [#242](https://github.com/LoonSecIO/LoonInspect/issues/242) (the section tree
 and `loon:run`) and [#277](https://github.com/LoonSecIO/LoonInspect/issues/277) (the
@@ -360,5 +361,5 @@ issue rather than living on as a footnote.
 
 | Consequence | Issue |
 | --- | --- |
-| The three enrichment strings — `loon:jamf:mac:app:patch`, `:vuln`, `:alert` — are minted with no writer, because an enrichment rides inline on the app sub-event under its own key (§2). `:vuln` is reserved for the lifecycle records of [`vulnerabilities.md`](vulnerabilities.md) §6; `:patch` and `:alert` name shapes nothing produces. `patch{}` and `vuln{}` themselves ship on every app sub-event since #241/#242, and [#249](https://github.com/LoonSecIO/LoonInspect/issues/249) populated `vuln{}` (2026-09-03) **without stamping anything**: the summary is an inline enrichment on `loon:jamf:mac:app`, because taking the compound for it would force `loon:jamf:mac:app:patch:vuln` on an app carrying both blocks, and a `props.conf` stanza takes no wildcards. Thirty-one strings are still stamped; the registry did not move | post-v0 (`vulnerabilities.md` §10) |
+| The three enrichment strings — `loon:jamf:mac:app:patch`, `:vuln`, `:alert` — are minted with no writer, because an enrichment rides inline on the app sub-event under its own key (§2). `:vuln` is reserved for the lifecycle records of [`vulnerabilities.md`](vulnerabilities.md) §6; `:patch` and `:alert` name shapes nothing produces. `patch{}` and `vuln{}` themselves ship on every app sub-event since #241/#242, and both have since been populated **without stamping anything** — [#249](https://github.com/LoonSecIO/LoonInspect/issues/249) for `vuln{}` (2026-09-03) and [#311](https://github.com/LoonSecIO/LoonInspect/issues/311) for `patch.jamfPatch{}` (2026-09-04): each is an inline enrichment on `loon:jamf:mac:app`, because taking the compound for either would force `loon:jamf:mac:app:patch:vuln` on an app carrying both blocks, and a `props.conf` stanza takes no wildcards. Thirty-one strings are still stamped; the registry did not move | post-v0 (`vulnerabilities.md` §10) |
 | `alert` is still minted with no writer. #101 shipped the alerts table and the Needs Attention rows (2026-09-04) with **nothing on the wire** — but it wrote the block's shape down rather than leaving it to be invented under deadline: always present, `{"open": false}` or `{"open": true, "kinds": ["new_app"]}`, graded by the change log's `level`. The shape and the closed kind vocabulary are [`alerts.md`](alerts.md) §8 and §2; emitting them later is additive under clause 1, and clause 2 will freeze them the day they first ship | [#101](https://github.com/LoonSecIO/LoonInspect/issues/101) |

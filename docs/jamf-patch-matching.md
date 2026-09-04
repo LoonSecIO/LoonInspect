@@ -1,6 +1,6 @@
 # Jamf Patch matching: which title, is it the latest, has Jamf seen the version
 
-Status: v0, built under #65 (2026-08-22). Code: `backend/app/mdm/patch/requirements.py` (the
+Status: v0, built under #65 (2026-08-22); on the Splunk wire since #311 (2026-09-04, §7). Code: `backend/app/mdm/patch/requirements.py` (the
 pure evaluator), `backend/app/mdm/patch/matching.py` (the matcher and the write),
 `frontend/src/features/jamfPatch/requirementsEvaluator.ts` (the same rule, for the admin's hand
 check on a title page). Tests: `tests/test_patch_requirements.py`, `tests/test_patch_matching.py`,
@@ -145,6 +145,7 @@ vendor ships now:
 | `releases_missed` | that same title's count of listed versions newer than the installed one; null unless a patch is available |
 | `this_version_seen` | Jamf lists the installed version on any matched title |
 | `latest_version`, `latest_released_at` | the reference title's |
+| `ea_assumed` | any matched title needed an extension attribute the device does not carry (#311) |
 | `last_patch_check_at` | when the app was last evaluated (set even when nothing matched) |
 
 All null when nothing matched. `ahead` is its own state: neither compliant nor patch-available.
@@ -177,14 +178,79 @@ under `/System` — match nothing. `tests/test_patch_matching.py` pins exactly t
   version and how many devices sit on a version Jamf has not listed.
 - Applications overview: Compliant / Patch available per build, from the summary.
 - `GET /api/devices/{id}`: each app carries `jamfTitleIds`, `patchState`, `thisVersionSeen`,
-  `latestVersion`, `latestReleasedAt` beside the older compliance fields.
+  `latestVersion`, `latestReleasedAt` beside the older compliance fields. Note the spelling:
+  `jamfTitleIds`, lowercase `Ids`. The `ID` casing rule is wire-only
+  (`docs/splunk-wire-vocabulary.md` §4) and this surface is not the wire.
+- **The Splunk wire, since #311** (2026-09-04): every one of those columns rides
+  `patch.jamfPatch{}` on the app's `device.inventory` sub-event — §7 below.
 - The title page's "Test requirements" panel applies the same rule by hand; keep the two
   evaluators in lockstep when either changes.
 
-## 7. Not here (follow-ups)
+## 7. The wire (#311)
+
+Ruled 2026-09-04 and built the same day. `patch{}` had shipped one bit since #241 —
+`supported`, true when the app matched a title — while every column of §5 sat on the
+`installed_apps` rows the producer already held. Kyle raised it off a live event: *"it says
+`patch.supported=true` but it doesn't give any kind of source in here… if it is supported it
+needs to say from where."*
+
+```json
+"patch": {
+  "supported": true,
+  "jamfPatch": {
+    "titleIDs": ["612", "5F6"], "titleNames": ["Wireshark", "Wireshark 4.2"],
+    "state": "behind", "onLatest": false, "versionKnown": true, "eaAssumed": false,
+    "latestVersion": "4.6.8", "latestReleasedAt": "2026-08-11T17:00:00Z",
+    "patchAvailableSince": "2024-01-03T18:00:00Z", "releasesMissed": 14
+  }
+}
+```
+
+**Five rulings, all Kyle's, 2026-09-04.**
+
+1. **The source is a key, not a value.** §1 already says a connection's own patch provider
+   overlays these columns later, and an overlay onto keys that name no source is a silent lie
+   about provenance. Under `jamfPatch` two providers can answer at once, each keeping its own
+   vocabulary. `patch.sources` was refused for v0 — ~25 bytes on every supported app to name
+   the only source there is; it arrives with the second one, additive under clause 1.
+2. **`supported` is the discriminator and `false` stays one key wide.** 72 of the real Mac
+   mini's 83 apps match nothing, so a `false` padded with nine nulls would make ~87% of the
+   highest fan-out object on the wire into padding. It is also how the block satisfies
+   additive-only clause 4 without an argument: `supported` is always present and always says
+   why the rest is missing. Refused at enqueue if the two disagree.
+3. **`ea_assumed` earns a column.** The 2026-08-22 ruling recorded `basis` "so the assumption
+   stays visible", and it was visible only in `app_catalog_title_matches` — a reader of a
+   Splunk event could not tell a fully-evaluated match from an assumed one, which is the
+   outcome `basis` exists to prevent. Folded across the matches (TRUE if ANY title assumed),
+   nullable with no backfill, so a row nobody has re-judged says nothing rather than `false`.
+   `installed_released_at` was considered and deferred to v1.
+4. **No day count, and no `catalogAsOf`.** #68's ruling stands: the wire carries the raw date
+   and the raw integer, and buckets are a renderer's business. A catalog generation would be
+   ~30 bytes of the same hour on every app on every device, and would be *wrong* on the scoped
+   read path — `record_device_apps` is skipped there, so the loaded catalog is not the one the
+   row was judged against. Whether it belongs on `loon:run` is open.
+5. **Wire only.** `InstalledAppOut` keeps its flat columns; reshaping that surface is
+   [#300](https://github.com/LoonSecIO/LoonInspect/issues/300)'s business.
+
+**Two flat arrays, not an array of objects.** Splunk extracts flat arrays as clean multivalue
+fields and `mvzip` / `mvindex` exist to pair them; `titles{}.name` pivots worse at the SPL
+prompt. The alignment is the contract, so a name the loaded catalog cannot resolve drops the
+whole `titleNames` list rather than shipping a hole or an id in disguise.
+
+**It costs no query.** `copy_answer` writes the answer onto the very `installed_apps`
+instances `process_sync` holds, so the producer reads them out of the session's identity map;
+title names come from the process-cached `Catalog` that `record_device_apps` refreshed a few
+statements earlier (`matching.cached_title_names`). Measured on the real record: **+2.94 KB per
+device per sync, 9.0% of what `deviceMeta` alone already costs**, pinned in
+`tests/test_patch_wire.py`.
+
+## 8. Not here (follow-ups)
 
 Re-evaluating matches when the hourly catalog sync changes a title — since shipped:
 `hourly_jamf_patch_sync` re-judges every tenant's catalog after each sync
 (docs/app-catalog.md §3, item 2). Still follow-ups: change-log entries for "fell behind" /
 "patch available"; device-level titles ("Apple macOS …" — is the device on the latest macOS);
-vulnerability columns (LoonSecIO); fleet findings.
+vulnerability columns (LoonSecIO); fleet findings. From #311: `installedReleasedAt` on the wire
+(the build's own release date — stored as `app_catalog.released_at`, not copied to
+`installed_apps`), `patch.sources` the day a second provider exists, catalog generation on
+`loon:run`, and whether the UI should render what the wire now carries.

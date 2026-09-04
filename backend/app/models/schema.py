@@ -246,6 +246,12 @@ class InstalledApp(Base):
     latest_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     latest_released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     releases_missed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # TRUE when any matched title needed an extension attribute this device does not carry, which
+    # the matcher resolves TRUE as Jamf's scoping device (2026-08-22) and records per title as
+    # `basis = ea_assumed`. Folded here so the wire can say it (#311): before that the assumption
+    # was visible only in app_catalog_title_matches, and a reader of a Splunk event could not tell
+    # a fully-evaluated match from an assumed one — the outcome `basis` exists to prevent.
+    ea_assumed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     device: Mapped[Device] = relationship(back_populates="apps")
 
@@ -370,6 +376,8 @@ class AppCatalogEntry(Base):
     # patch_available_since — the two halves of one sentence (#68); null unless a patch is
     # available.
     releases_missed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The fold of `basis` across the row's matches (#311); see InstalledApp.ea_assumed.
+    ea_assumed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     # Jamf's release date of the installed version itself.
     released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

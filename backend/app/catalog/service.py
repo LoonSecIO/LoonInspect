@@ -85,6 +85,7 @@ def _apply_summary(entry: AppCatalogEntry, matches: Sequence[TitleMatch], *, now
         entry.this_version_seen = None
         entry.latest_version = None
         entry.latest_released_at = None
+        entry.ea_assumed = None
         entry.released_at = None
         return
     entry.jamf_title_ids = summary.title_ids
@@ -96,6 +97,7 @@ def _apply_summary(entry: AppCatalogEntry, matches: Sequence[TitleMatch], *, now
     entry.this_version_seen = summary.this_version_seen
     entry.latest_version = summary.latest_version
     entry.latest_released_at = summary.latest_released_at
+    entry.ea_assumed = summary.ea_assumed
     entry.released_at = _released_at(matches)
 
 
@@ -135,18 +137,40 @@ async def evaluate_entries(db: AsyncSession, entries: Sequence[AppCatalogEntry],
     return len(entries)
 
 
+def answer_columns(entry: AppCatalogEntry) -> dict[str, object]:
+    """The catalog row's answer as `installed_apps` column values — the ONE definition of what
+    "the answer" is, in column terms.
+
+    It exists because there are two paths that copy it and they used to spell the list twice:
+    `copy_answer` below (per row, at device process) and `refresh_tenant`'s bulk UPDATE (per
+    catalog row, after a catalog sync). #311 added `ea_assumed` to one of them and the other
+    silently kept writing nine columns — the answer was correct on a freshly judged build and
+    permanently null on every row the hourly refresh maintained, which is most of a stable
+    fleet. Caught in the container, not by a test, which is exactly the failure mode a second
+    hand-written list produces. Now a column added here reaches both paths or neither.
+
+    `last_patch_check_at` is deliberately NOT here: it is the copier's own clock, not the
+    entry's answer, and both callers set it themselves from their own `now`.
+    """
+    return {
+        "jamf_title_ids": entry.jamf_title_ids,
+        "patch_state": entry.patch_state,
+        "is_compliant": entry.is_latest,
+        "patch_available": entry.patch_available,
+        "patch_available_since": entry.patch_available_since,
+        "releases_missed": entry.releases_missed,
+        "this_version_seen": entry.this_version_seen,
+        "latest_version": entry.latest_version,
+        "latest_released_at": entry.latest_released_at,
+        "ea_assumed": entry.ea_assumed,
+    }
+
+
 def copy_answer(entry: AppCatalogEntry, app: InstalledApp, *, now: datetime) -> None:
     """The row's answer onto a device's installed-app row (the older compliance columns and the
     #65 summary columns), so device pages and the Applications overview need no join."""
-    app.jamf_title_ids = entry.jamf_title_ids
-    app.patch_state = entry.patch_state
-    app.is_compliant = entry.is_latest
-    app.patch_available = entry.patch_available
-    app.patch_available_since = entry.patch_available_since
-    app.releases_missed = entry.releases_missed
-    app.this_version_seen = entry.this_version_seen
-    app.latest_version = entry.latest_version
-    app.latest_released_at = entry.latest_released_at
+    for column, value in answer_columns(entry).items():
+        setattr(app, column, value)
     app.last_patch_check_at = now
 
 
@@ -219,18 +243,10 @@ async def refresh_tenant(db: AsyncSession, *, force: bool = False, now: datetime
         await db.execute(
             update(InstalledApp)
             .where(InstalledApp.version_hash == entry.version_hash)
-            .values(
-                jamf_title_ids=entry.jamf_title_ids,
-                patch_state=entry.patch_state,
-                is_compliant=entry.is_latest,
-                patch_available=entry.patch_available,
-                patch_available_since=entry.patch_available_since,
-                releases_missed=entry.releases_missed,
-                this_version_seen=entry.this_version_seen,
-                latest_version=entry.latest_version,
-                latest_released_at=entry.latest_released_at,
-                last_patch_check_at=now,
-            )
+            # The same column list `copy_answer` uses, from the same function — see
+            # `answer_columns`. Spelling it here a second time is what left `ea_assumed`
+            # permanently null on the path that maintains a stable fleet.
+            .values(**answer_columns(entry), last_patch_check_at=now)
         )
     if judged:
         logger.info("app catalog refreshed", extra={"rows": judged, "signature": signature})

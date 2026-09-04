@@ -55,6 +55,7 @@ from app.mdm.jamf.contract import SECTIONS, Entry, Observation, canonical_string
 from app.schemas.payload import (
     InventoryAppItem,
     InventorySnapshotEvent,
+    JamfPatchAnswer,
     NormalizedExtensionAttribute,
     PatchEnrichment,
 )
@@ -86,25 +87,99 @@ def app_identity(name: str | None, bundle_id: str | None, version: str | None) -
     return canonical_name, canonical_bundle, canonical_string(version or "")
 
 
-def patch_support(apps: Iterable[InstalledApp]) -> dict[tuple[str, str, str], bool]:
-    """`patch.supported` per app identity, read off rows already in the transaction.
+def patch_answer(
+    apps: Iterable[InstalledApp], title_names: Mapping[str, str] | None = None
+) -> dict[tuple[str, str, str], PatchEnrichment]:
+    """`patch{}` per app identity, read off rows already in the transaction (#311).
 
-    `true` iff the row's `jamf_title_ids` names at least one title — `None` is "no titles"
-    (`schema.InstalledApp`), and `summarize()` in app.mdm.patch.matching returns a
-    non-empty list or nothing. Two rows collapsing onto one canonical identity (a name that
-    differs only in whitespace) answer `true` if either does.
+    `supported` is `true` iff the row carries a COMPLETE answer: `jamf_title_ids` names at
+    least one title and `patch_state` says what it found. `None` is "no titles"
+    (`schema.InstalledApp`), and `summarize()` in app.mdm.patch.matching returns a non-empty
+    list or nothing. Under #311 `supported` no longer means "a title matched" but "a source
+    answered", and a block is the answer — so a row that names titles and cannot state its
+    verdict is not a `true` with a hole in it, it is the alarm below. Two rows collapsing onto
+    one canonical identity (a name that differs only in whitespace) answer `true` if either
+    does, and the answering row is the one whose block rides: the first row seen with a
+    complete answer wins, which is the same "first one seen" rule `content_keys` below uses
+    for its pair.
+
+    **Nine column reads and no query.** `copy_answer` (`app.catalog.service`) has already
+    written the whole Jamf Patch answer onto these very instances — `process_sync` hands the
+    producer the same objects the session's identity map gave `record_device_apps` — so
+    every value here is in memory before this function is called. Until #311 this read the
+    same rows and returned `bool(row.jamf_title_ids)`, throwing nine populated columns away.
+
+    `title_names` is the loaded catalog's id -> name map (`matching.cached_title_names`),
+    or `None` on a path where no catalog was consulted. A name missing for ANY matched title
+    drops the whole `titleNames` list rather than shipping a hole: the two arrays are
+    index-aligned by contract, and an id in disguise would be indistinguishable from a title
+    genuinely named "612".
     """
-    support: dict[tuple[str, str, str], bool] = {}
+    answers: dict[tuple[str, str, str], PatchEnrichment] = {}
+    unsupported = PatchEnrichment(supported=False)
     for row in apps:
         key = app_identity(row.name, row.bundle_id, row.version)
-        support[key] = support.get(key, False) or bool(row.jamf_title_ids)
-    return support
+        existing = answers.get(key)
+        if existing is not None and existing.supported:
+            continue
+        title_ids = list(row.jamf_title_ids or ())
+        if not title_ids or not row.patch_state:
+            if title_ids:
+                # Both columns are written by one statement in `_apply_summary` and copied by
+                # one statement in `copy_answer`, so they cannot diverge — this is the alarm
+                # for that construction breaking, not a case with a right answer. Degrade the
+                # way the rowless app below degrades (warn, `supported: false`) rather than
+                # raising: one corrupt row must not fail a whole device's sync, and half an
+                # answer on the wire is worse than none.
+                logger.warning(
+                    "installed app names Jamf Patch titles but carries no patch state; shipping supported=false",
+                    extra={"app_name": row.name, "bundle_id": row.bundle_id, "title_ids": title_ids},
+                )
+            answers.setdefault(key, unsupported)
+            continue
+        answers[key] = PatchEnrichment(
+            supported=True,
+            jamf_patch=JamfPatchAnswer(
+                title_ids=title_ids,
+                title_names=_title_names(title_ids, title_names),
+                state=row.patch_state,
+                on_latest=bool(row.is_compliant),
+                version_known=bool(row.this_version_seen),
+                ea_assumed=row.ea_assumed,
+                latest_version=row.latest_version,
+                latest_released_at=row.latest_released_at,
+                patch_available_since=row.patch_available_since,
+                releases_missed=row.releases_missed,
+            ),
+        )
+    return answers
+
+
+def _title_names(title_ids: Sequence[str], names: Mapping[str, str] | None) -> list[str] | None:
+    """The names for these ids, index-aligned — or `None` if any one of them is unresolvable.
+
+    All or nothing, because the alignment is the contract: a consumer pairs the two arrays by
+    position (`mvzip`), so one missing name would silently re-label every title after it.
+    Unresolvable happens legitimately — a scoped read consults no catalog, and a title Jamf
+    dropped between the judge and this pull is gone from the loaded one — so it is a WARNING
+    with the ids on it, not an exception: the ids themselves are still true and still ship.
+    """
+    if not names:
+        return None
+    resolved = [names.get(title_id) for title_id in title_ids]
+    if any(name is None for name in resolved):
+        logger.warning(
+            "jamf patch title has no name in the loaded catalog; shipping titleIDs without titleNames",
+            extra={"title_ids": list(title_ids)},
+        )
+        return None
+    return [name for name in resolved if name is not None]
 
 
 def content_keys(apps: Iterable[InstalledApp]) -> dict[tuple[str, str, str], tuple[str, str]]:
     """`(key_title, key_full)` per app identity — the corpus lookup key (#249).
 
-    Read off the same rows `patch_support` reads and never recomputed here: the pair is
+    Read off the same rows `patch_answer` reads and never recomputed here: the pair is
     stamped once, in `app.mdm.service.apply_hashes`, for every ingest path there is, so a
     second computation is a second definition waiting to drift. Cache, don't calculate —
     the enrichment is a lookup keyed on a hash the container already holds, not a hash
@@ -113,7 +188,7 @@ def content_keys(apps: Iterable[InstalledApp]) -> dict[tuple[str, str, str], tup
     `key_title` identifies the application and answers *does the corpus know this app at
     all*; `key_full` identifies the build and answers *which findings are active against
     it* (`app.core.content_keys`). Rows collapsing onto one canonical identity keep the
-    first pair seen, which is the same rule `patch_support` uses in bool form.
+    first pair seen, which is the same rule `patch_answer` uses to pick the answering row.
     """
     keys: dict[tuple[str, str, str], tuple[str, str]] = {}
     for row in apps:
@@ -157,7 +232,7 @@ def _fallback_content_keys(body: Mapping[str, object]) -> tuple[str, str]:
 
 def _app_item(
     entry: Entry,
-    support: Mapping[tuple[str, str, str], bool],
+    answers: Mapping[tuple[str, str, str], PatchEnrichment],
     keys: Mapping[tuple[str, str, str], tuple[str, str]],
     *,
     subject_id: str,
@@ -166,8 +241,8 @@ def _app_item(
 ) -> InventoryAppItem:
     body = entry.body
     key = app_identity(body.get("name"), body.get("bundleId"), body.get("version"))
-    supported = support.get(key)
-    if supported is None:
+    patch = answers.get(key)
+    if patch is None:
         # A genuine miss is `supported: false` plus a log line, never an exception: every
         # entry has a row by construction (both views are built from the same raw list),
         # so this is the alarm for that construction breaking, not a per-device failure.
@@ -177,11 +252,11 @@ def _app_item(
             "installed app has no row to read patch support from; shipping supported=false",
             extra={"subject_id": subject_id, "app_name": body.get("name"), "bundle_id": body.get("bundleId")},
         )
-        supported = False
+        patch = PatchEnrichment(supported=False)
     key_title, key_full = keys.get(key) or _fallback_content_keys(body)
     return InventoryAppItem(
         app=dict(body),
-        patch=PatchEnrichment(supported=supported),
+        patch=patch,
         vuln=vuln_block(corpus, key_title=key_title, key_full=key_full, as_of=as_of),
     )
 
@@ -207,6 +282,7 @@ def build_inventory_snapshot(
     occurred_at: datetime,
     device_meta: Mapping[str, object],
     corpus: VulnCorpus,
+    title_names: Mapping[str, str] | None = None,
 ) -> InventorySnapshotEvent:
     """The snapshot for one pull.
 
@@ -233,12 +309,18 @@ def build_inventory_snapshot(
     here would make a forgotten wiring look exactly like a fleet nobody assessed, which is
     the one failure the `assessment` vocabulary exists to prevent.
 
+    `title_names` is the loaded patch catalog's id -> name map, for `patch.jamfPatch.titleNames`
+    (#311). A plain mapping rather than the `Catalog` itself, so this function stays a pure
+    function of plain data and needs no patch-matching import to be tested. `None` is the honest
+    default: on a scoped read no catalog is consulted, and names read off a catalog that was
+    never asked about these rows would be a guess.
+
     `occurredAt` is the clock the block's day arithmetic uses — the event's own instant,
     never the wall clock. This function stays pure and clock-free, and a delivery retried
     across a day boundary re-expands the stored row to the same bytes.
     """
     apps = list(apps)
-    support = patch_support(apps)
+    answers = patch_answer(apps, title_names)
     keys = content_keys(apps)
     sections: dict[str, dict | list] = {}
     for name, content in observation.sections.items():
@@ -257,7 +339,7 @@ def build_inventory_snapshot(
             sections[wrapper] = [
                 _app_item(
                     entry,
-                    support,
+                    answers,
                     keys,
                     subject_id=observation.subject_id,
                     corpus=corpus,

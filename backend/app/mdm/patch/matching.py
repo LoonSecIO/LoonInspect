@@ -371,6 +371,14 @@ class AppPatchSummary:
     2024-01-03 · 14 releases missed" is true of one line (Wireshark 4.2.0 reads its 4.2 line, not
     the rolling title). When no behind title dates its patches, the largest count stands alone.
     Both are None unless a patch is available (#68).
+
+    `ea_assumed` folds `basis` across the matches: TRUE when ANY matched title needed an
+    extension attribute the device does not carry. The 2026-08-22 ruling resolved an absent
+    attribute TRUE and recorded `basis = ea_assumed` *"so the assumption stays visible"* — and
+    until #311 it was visible only in `app_catalog_title_matches`, never on the wire, where a
+    reader could not tell a fully-evaluated match from an assumed one. `any`, not the reference
+    title's basis: the flag says "some part of this answer rests on an assumption", which is the
+    conservative direction and the only one that cannot quietly clear an assumed match.
     """
 
     title_ids: list[str]
@@ -382,6 +390,7 @@ class AppPatchSummary:
     this_version_seen: bool
     latest_version: str
     latest_released_at: datetime | None
+    ea_assumed: bool
 
 
 def summarize(matches: Sequence[TitleMatch]) -> AppPatchSummary | None:
@@ -413,6 +422,7 @@ def summarize(matches: Sequence[TitleMatch]) -> AppPatchSummary | None:
         this_version_seen=any(match.version_known for match in matches),
         latest_version=reference.latest_version,
         latest_released_at=reference.latest_released_at,
+        ea_assumed=any(match.basis == BASIS_EA_ASSUMED for match in matches),
     )
 
 
@@ -437,3 +447,25 @@ async def load_catalog(db: AsyncSession) -> Catalog:
 def reset_catalog_cache() -> None:
     global _cache
     _cache = None
+
+
+def cached_title_names() -> dict[str, str] | None:
+    """Title id -> name off the process cache, for the wire's `patch.jamfPatch.titleNames` (#311).
+
+    **No query, and deliberately no `db`.** `record_device_apps` calls `load_catalog` a few
+    statements before the snapshot is built (`app.catalog.service`, `app.mdm.service.process_sync`),
+    so by the time the producer asks, this global holds the very catalog the app rows were judged
+    against. Re-loading it here would be one `SELECT count(*), max(synced_at)` per device — forty
+    thousand of them per sweep to re-fetch an object that has not moved. Cache, don't calculate.
+
+    `None` when no catalog has ever been loaded in this process, which is also the honest answer
+    on the scoped-read path: `record_device_apps` is skipped there (`process_sync`), so the rows
+    carry an older answer and the caller passes nothing rather than names read off a catalog that
+    was never consulted for them.
+
+    Names, not the `Catalog`: the producer stays a pure function of plain data and needs no
+    patch-matching import to be tested.
+    """
+    if _cache is None:
+        return None
+    return {title.id: title.name for title in _cache.titles}

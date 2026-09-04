@@ -56,6 +56,7 @@ from app.mdm.jamf.contract import (
     with_extension_attribute_carriers,
 )
 from app.mdm.org_units import BUILDING, DEPARTMENT, record_org_units
+from app.mdm.patch.matching import cached_title_names
 from app.mdm.snapshot import build_inventory_snapshot
 from app.models.schema import (
     Collection,
@@ -1109,6 +1110,12 @@ async def process_sync(
         apps=current_rows,
         occurred_at=occurred_at,
         device_meta=meta,
+        # Title names for `patch.jamfPatch.titleNames` (#311), off the process cache that
+        # `record_device_apps` refreshed a few statements above — no query, and `None` on the
+        # scoped path where it was never called, which is the same path whose rows carry an
+        # older answer. Reading it here rather than inside the producer keeps that coupling
+        # visible at the one call site where the ordering is guaranteed.
+        title_names=cached_title_names() if device.apps is not None else None,
         # The one place the container's corpus reaches the wire (#249). `NO_CORPUS` until
         # #248 loads one, which is what makes every `vuln{}` read `assessment: off`;
         # #248 changes `loaded_corpus()` and nothing here.
