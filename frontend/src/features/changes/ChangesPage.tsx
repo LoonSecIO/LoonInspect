@@ -1,7 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
-import { listChanges } from "@/features/changes/api";
+import { getChangePolicy, listChanges } from "@/features/changes/api";
+import {
+  artifactValueOf,
+  diffLines,
+  labelsFromPolicy,
+  SECTION_ORDER,
+  whatOf,
+  type DiffLine,
+  type LabelMap
+} from "@/features/changes/render";
 import type { ChangeFilters, ChangeLevel, DeviceChange } from "@/features/changes/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
@@ -38,15 +47,37 @@ function paramsFromFilters(filters: ChangeFilters): URLSearchParams {
   return params;
 }
 
-function renderValue(value: Record<string, unknown> | null): string {
-  if (value === null) return "—";
-  if ("value" in value && Object.keys(value).length === 1) {
-    const inner = value.value;
-    if (inner === null || inner === undefined) return "—";
-    if (Array.isArray(inner)) return inner.map(String).join(", ");
-    return String(inner);
-  }
-  return JSON.stringify(value);
+/**
+ * What moved, field by field.
+ *
+ * Values wrap rather than truncate. The column exists because truncation put an app's new
+ * version off the right-hand edge while the two cells beside it stayed identical for their
+ * whole visible width — so a cell that runs long here takes a second line instead.
+ */
+function DiffCell({ lines }: { lines: DiffLine[] }) {
+  // Nothing to pair: the collapsed-system-apps row carries a count and no entry, and its
+  // sentence is already printed under What.
+  if (lines.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
+  return (
+    <div className="max-w-sm space-y-0.5 break-words">
+      {lines.map((line) => (
+        <div key={line.key} className="flex flex-wrap items-baseline gap-x-2">
+          {line.label && <span className="text-xs text-muted-foreground">{line.label}</span>}
+          <span className="font-mono text-xs">
+            {line.pair ? (
+              <>
+                <span className="text-muted-foreground">{line.from ?? "—"}</span>
+                <span className="px-1.5 text-muted-foreground">→</span>
+                <span className="font-medium text-foreground">{line.to ?? "—"}</span>
+              </>
+            ) : (
+              (line.from ?? line.to)
+            )}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function ChangesPage() {
@@ -60,7 +91,40 @@ export function ChangesPage() {
   const [error, setError] = useState<string | null>(null);
   const [draftQuery, setDraftQuery] = useState(filters.q ?? "");
   const [draftArtifact, setDraftArtifact] = useState(filters.artifact ?? "");
+  const [labels, setLabels] = useState<LabelMap>({});
   const pageSize = 50;
+
+  // The two text boxes are drafts — typed, then applied. They still have to follow the URL
+  // when something else moves it: the back button, and a click on an identity in the table
+  // below, which sets `artifact` without going through the box. Adjusted during render
+  // rather than from an effect (React's own "adjusting state when a prop changes"), so the
+  // box never paints a frame still showing the filter that was just replaced.
+  const applied = { q: filters.q ?? "", artifact: filters.artifact ?? "" };
+  const [lastApplied, setLastApplied] = useState(applied);
+  if (lastApplied.q !== applied.q || lastApplied.artifact !== applied.artifact) {
+    setLastApplied(applied);
+    setDraftQuery(applied.q);
+    setDraftArtifact(applied.artifact);
+  }
+
+  // Field labels only — "Version" rather than `version`, "Bundle version" rather than
+  // `cfBundleVersion`. The policy document already carries one for every field the ledger
+  // can log and needs no permission this page does not already hold, and a failure here
+  // degrades to the raw field name rather than to a missing control, which is why the
+  // *section* list beside it is a constant instead of a second read of this document.
+  useEffect(() => {
+    let cancelled = false;
+    getChangePolicy()
+      .then((policy) => {
+        if (!cancelled) setLabels(labelsFromPolicy(policy));
+      })
+      .catch(() => {
+        /* raw field names are a fine answer; nothing to tell the operator */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,21 +156,13 @@ export function ChangesPage() {
     setSearchParams(paramsFromFilters({ ...filters, ...next, ...cleared, page: next.page ?? 1 }));
   }
 
-  function describe(row: DeviceChange): string {
-    if (row.field) return `${row.section} · ${row.field}`;
-    const kind = row.entryKind ? tc.entryKinds[row.entryKind] ?? row.entryKind : row.section;
-    const identity = row.entryLabel ?? summarizeIdentity(row.entryIdentity);
-    return identity ? `${kind} · ${identity}` : kind;
-  }
-
-  function summarizeIdentity(identity: Record<string, unknown> | null): string {
-    if (!identity) return "";
-    const preferred = ["name", "username", "groupId", "profileIdentifier", "definitionId", "commonName"];
-    for (const key of preferred) {
-      if (identity[key] !== undefined && identity[key] !== null) return String(identity[key]);
-    }
-    return Object.values(identity).map(String).join(" ");
-  }
+  const sectionLabels = useMemo(
+    () => ({
+      section: (name: string) => tc.sections[name] ?? name,
+      entryKind: (kind: string) => tc.entryKinds[kind] ?? kind
+    }),
+    [tc]
+  );
 
   function detailText(row: DeviceChange): string | null {
     const details = row.details ?? {};
@@ -115,7 +171,8 @@ export function ChangesPage() {
     if (typeof details.collapsedSystemApps === "number") parts.push(tc.systemAppsUpdated(details.collapsedSystemApps));
     if (details.criteriaChanged === true) parts.push(tc.criteriaMoved);
     if (details.criteriaChanged === false) parts.push(tc.deviceDrifted);
-    if (Array.isArray(details.changedFields)) parts.push(tc.changedFields(details.changedFields.map(String).join(", ")));
+    // `changedFields` is no longer named here: the What-changed column prints those fields
+    // with both of their values, which is what naming them was standing in for.
     return parts.length ? parts.join(" · ") : null;
   }
 
@@ -131,7 +188,7 @@ export function ChangesPage() {
       </div>
 
       <form
-        className="flex flex-wrap items-end gap-3"
+        className="flex flex-wrap items-start gap-3"
         onSubmit={(event) => {
           event.preventDefault();
           update({ q: draftQuery.trim() || undefined, artifact: draftArtifact.trim() || undefined });
@@ -142,10 +199,30 @@ export function ChangesPage() {
           <input className={inputClasses} value={draftQuery} onChange={(e) => setDraftQuery(e.target.value)} placeholder={tc.searchPlaceholder} />
         </label>
         {/* Deliberately its own box rather than a mode switch on the one above: the two
-            compose, and the pair "this fleet" + "this app" is the whole investigation. */}
+            compose, and the pair "this fleet" + "this app" is the whole investigation.
+            The hint names what it refuses, because the API refuses those on purpose and
+            a reasonable guess would otherwise be answered with an empty feed. */}
         <label className="space-y-1 text-sm">
           <span className="block text-muted-foreground">{tc.artifact}</span>
-          <input className={inputClasses} value={draftArtifact} onChange={(e) => setDraftArtifact(e.target.value)} placeholder={tc.artifactPlaceholder} />
+          <span className="relative block">
+            <input
+              className={`${inputClasses} pr-8`}
+              value={draftArtifact}
+              onChange={(e) => setDraftArtifact(e.target.value)}
+              placeholder={tc.artifactPlaceholder}
+            />
+            {filters.artifact && (
+              <button
+                type="button"
+                className="absolute inset-y-0 right-0 px-2 text-muted-foreground hover:text-foreground"
+                onClick={() => update({ artifact: undefined })}
+                aria-label={tc.clearFilter}
+              >
+                ✕
+              </button>
+            )}
+          </span>
+          <span className="block max-w-xs text-xs text-muted-foreground">{tc.artifactHint}</span>
         </label>
         <label className="space-y-1 text-sm">
           <span className="block text-muted-foreground">{tc.level}</span>
@@ -160,11 +237,26 @@ export function ChangesPage() {
             <option value="low">{tc.levels.low}</option>
           </select>
         </label>
+        {/* A closed vocabulary of fifteen snake_case names, so it is picked and not typed.
+            As a text box this was the one route to a whole entry kind — a certificate
+            carries no label and is reachable by section alone — behind a control whose
+            only hint was the word "security", where a near miss returned an empty feed. */}
         <label className="space-y-1 text-sm">
           <span className="block text-muted-foreground">{tc.section}</span>
-          <input className={inputClasses} value={filters.section ?? ""} onChange={(e) => update({ section: e.target.value || undefined })} placeholder="security" />
+          <select
+            className={inputClasses}
+            value={filters.section ?? ""}
+            onChange={(e) => update({ section: e.target.value || undefined })}
+          >
+            <option value="">{tc.anySection}</option>
+            {SECTION_ORDER.map((name) => (
+              <option key={name} value={name}>
+                {tc.sections[name] ?? name}
+              </option>
+            ))}
+          </select>
         </label>
-        <Button type="submit" variant="outline" size="sm">
+        <Button type="submit" variant="outline" size="sm" className="mt-6">
           {tc.apply}
         </Button>
       </form>
@@ -179,24 +271,27 @@ export function ChangesPage() {
               <th className="px-4 py-2 font-medium">{tc.colDevice}</th>
               <th className="px-4 py-2 font-medium">{tc.colWhat}</th>
               <th className="px-4 py-2 font-medium">{tc.colChange}</th>
-              <th className="px-4 py-2 font-medium">{tc.colFrom}</th>
-              <th className="px-4 py-2 font-medium">{tc.colTo}</th>
+              <th className="px-4 py-2 font-medium">{tc.colWhatChanged}</th>
               <th className="px-4 py-2 font-medium">{tc.level}</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={7}>{tc.loading}</td>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={6}>{tc.loading}</td>
               </tr>
             )}
             {!loading && rows.length === 0 && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={7}>{tc.empty}</td>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={6}>{tc.empty}</td>
               </tr>
             )}
             {rows.map((row) => {
               const detail = detailText(row);
+              const what = whatOf(row, labels, sectionLabels);
+              // Offered only where the filter would actually find the row again — see
+              // `artifactValueOf`. A certificate and a field change get plain text.
+              const artifact = artifactValueOf(row);
               return (
                 <tr key={row.id} className="border-b align-top last:border-0">
                   <td className="whitespace-nowrap px-4 py-2 text-xs text-muted-foreground">{new Date(row.observedAt).toLocaleString()}</td>
@@ -205,15 +300,25 @@ export function ChangesPage() {
                     <div className="text-xs text-muted-foreground">{row.serialNumber ?? row.subjectKind}</div>
                   </td>
                   <td className="px-4 py-2">
-                    <div>{describe(row)}</div>
+                    <div className="text-xs text-muted-foreground">{what.head}</div>
+                    {what.identity &&
+                      (artifact ? (
+                        <button
+                          type="button"
+                          className="text-left underline decoration-dotted underline-offset-4 hover:decoration-solid"
+                          title={tc.filterTo(artifact)}
+                          onClick={() => update({ artifact })}
+                        >
+                          {what.identity}
+                        </button>
+                      ) : (
+                        <div>{what.identity}</div>
+                      ))}
                     {detail && <div className="text-xs text-muted-foreground">{detail}</div>}
                   </td>
                   <td className="px-4 py-2">{tc.changeKinds[row.change] ?? row.change}</td>
-                  <td className="max-w-xs truncate px-4 py-2 text-xs" title={renderValue(row.oldValue)}>
-                    {row.change === "added" ? "—" : renderValue(row.oldValue)}
-                  </td>
-                  <td className="max-w-xs truncate px-4 py-2 text-xs" title={renderValue(row.newValue)}>
-                    {row.change === "removed" ? "—" : renderValue(row.newValue)}
+                  <td className="px-4 py-2">
+                    <DiffCell lines={diffLines(row, labels)} />
                   </td>
                   <td className="px-4 py-2">
                     <span className={row.level === "high" ? "font-medium text-destructive" : row.level === "low" ? "text-muted-foreground" : ""}>
