@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import type { Translations } from "@/i18n/en";
 
 /** How often the panel re-runs its checks. Slower than the run watcher above it: none of
- *  these facts change on a fifteen-second scale, and this is four requests. */
+ *  these facts change on a fifteen-second scale, and this is five requests. */
 const REFRESH_INTERVAL_MS = 60000;
 
 /** The stripe. The three levels are the change policy's, so the colours are the ones the
@@ -40,13 +40,18 @@ function ageOf(t: Translations, iso: string, now: Date): string | null {
  * The verb the row leads with.
  *
  * A collapsed row (`count > 1`) gets a sentence of its own rather than the singular verb
- * with a number appended: only the overdue check can storm — its subjects share one
- * cause, the claim that never happened — so this is one explicit branch rather than a
- * general "plural form of every kind" mechanism nothing else would ever use.
+ * with a number appended. Three checks can collapse — overdue, stale and failed — and
+ * each names the shared cause its subjects failed for rather than counting the subjects:
+ * nothing claimed them, nothing has read them, or the connection they share refused them.
+ * So this is three explicit branches rather than a general "plural form of every kind"
+ * mechanism the other three kinds would never use; a kind whose members fail
+ * independently has nothing to collapse *to*.
  */
 function headlineFor(t: Translations, row: AttentionRow): string {
-  if (row.kind === "collection_overdue" && row.count > 1) {
-    return t.overview.attention.schedulerStalled(row.count);
+  if (row.count > 1) {
+    if (row.kind === "collection_overdue") return t.overview.attention.schedulerStalled(row.count);
+    if (row.kind === "inventory_stale") return t.overview.attention.inventoryStalled(row.count);
+    if (row.kind === "run_failed") return t.overview.attention.syncsFailing(row.count);
   }
   return t.overview.attention.kinds[row.kind];
 }
@@ -170,11 +175,15 @@ export function NeedsAttentionPanel() {
 
   // Nothing was examined, so nothing is attested.
   //
-  // `Role.viewer` holds inventory read and nothing else, and `/` is not role-gated, so
-  // every check this panel makes came back denied and the composition produced no rows
-  // and no degraded entries. That emptiness used to reach the green line — a dated
-  // all-clear about a fleet on which zero checks had run, handed to the one role least
+  // Every check this session can make came back denied, so the composition produced no
+  // rows and no degraded entries. That emptiness used to reach the green line — a dated
+  // all-clear about a fleet on which zero checks had run, handed to the session least
   // able to notice it was hollow. Failure must never read as emptiness (#150).
+  //
+  // Written for `Role.viewer`, which had all four checks denied. Since #101 a Viewer
+  // holds the alerts check (`device:read` + `app:read`) and so is no longer blind — see
+  // the note in `needsAttention.ts`. The state is still live for a principal denied all
+  // four, and for any future role that is.
   //
   // No timestamp on this state, deliberately. A clock here would date *something*, and
   // the only honest thing to date is a check, of which there were none. It is also not

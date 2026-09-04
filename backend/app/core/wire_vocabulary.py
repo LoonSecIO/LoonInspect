@@ -143,8 +143,11 @@ SUBJECT_WRAPPERS: dict[str, str] = {
 # is a fact about the app on this pull, so it rides inline; a lifecycle fan-out of what
 # happened, if one is ever built, takes the reserved `loon:jamf:mac:app:alert` string
 # the way #113's vulnerability design pairs an inline summary with lifecycle records.
-# Nothing writes it in v0 — #101 ships the alerts table and the Needs Attention rows
-# with nothing on the wire, and emitting the block later is additive under clause 1.
+# Nothing writes it in v0 — #101 shipped the alerts table and the Needs Attention rows
+# (2026-09-04) with nothing on the wire, and emitting the block later is additive under
+# clause 1. The shape it will take when someone does is written down in docs/alerts.md
+# §8 — always present, `{"open": false}` or `{"open": true, "kinds": [...]}` — so the
+# emitting session has a shape to freeze under clause 2 rather than one to invent.
 # The field that grades an alert is `level`, reusing `app.changes.policy.LEVELS`, never
 # `severity`. `app` is the only carrier: a device-scoped alert kind, if #101's close-out
 # ever names one, is a carrier decision on the structure #243 rules for `change`, not a

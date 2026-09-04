@@ -375,24 +375,49 @@ export const de: Translations = {
         // also, dass niemand sie abgeholt hat.
         collection_overdue: "Nichts hat sie gestartet",
         inventory_stale: "Inventar ist veraltet",
-        update_available: "Ein neuerer Build ist verfügbar"
+        update_available: "Ein neuerer Build ist verfügbar",
+        // #101. „Neue App“ und nicht „nicht genehmigte App“: bekannt ist nur, dass der
+        // Mac sie beim letzten Inventar nicht hatte — über eine Genehmigung weiß das
+        // Produkt nichts. Name der App und Mac stehen daneben.
+        new_app: "Neue App installiert"
       },
       // Der zusammengefasste Eintrag: ein ausgefallener Tick lässt binnen einer Stunde
       // jede aktivierte Sammlung überfällig werden, und fünf Zeilen mit fünf Namen
       // benennen nichts, was man reparieren kann.
       schedulerStalled: (count: number) =>
         `${count} Sammlungen wurden fällig und nichts hat sie gestartet — bitte die Zeitplanung prüfen`,
+      // Der zusammengefasste Eintrag für veraltetes Inventar (#106, entschieden am
+      // 2026-09-04): Veralten ist bauartbedingt korreliert — eine Zugangsberechtigung,
+      // ein Netzwerkpfad, eine Zeitplanung für alle Sammlungen. Fünf Zeilen mit fünf
+      // Namen belegten die ganze Liste, um eine einzige Tatsache zu wiederholen. Benannt
+      // wird deshalb die Verbindung, nicht die Sammlungen.
+      inventoryStalled: (count: number) =>
+        `${count} Sammlungen haben die Flotte seit dem Doppelten ihres eigenen Zeitplans nicht gelesen — bitte die Verbindung prüfen`,
+      // Der zusammengefasste Eintrag für fehlgeschlagene Durchläufe (#106, entschieden am
+      // 2026-09-04). Dritte Anwendung derselben Regel: Auch hier ist die Ursache
+      // bauartbedingt geteilt — eine Zugangsberechtigung, ein Netzwerkpfad, eine
+      // Zeitplanung. Fünf Namen verdrängten sonst „Zustellungen schlagen fehl“ aus der
+      // Liste, denn ein gerade ausgefallenes Ziel ist immer der jüngste Eintrag im
+      // Bereich. Benannt wird deshalb die Verbindung, nicht die Sammlungen.
+      syncsFailing: (count: number) =>
+        `${count} Sammlungen sind bei ihrer letzten Synchronisierung fehlgeschlagen — bitte die Verbindung prüfen`,
       checkNames: {
         run_failed: "letzte Durchläufe",
         destination_failing: "Ziele",
         collection_overdue: "Zeitpläne der Sammlungen",
         inventory_stale: "Aktualität des Inventars",
-        update_available: "Aktualisierungen"
+        update_available: "Aktualisierungen",
+        new_app: "neue Anwendungen"
       },
       couldNotCheck: (what: string) => `${what} konnten nicht geprüft werden`,
       // Die Fußzeile einer gekürzten Liste: N *zusätzlich* zu den fünf angezeigten.
+      //
+      // Nicht mehr „… erfordern Aufmerksamkeit“: das versprach einen Posteingang, den es
+      // nicht gibt — in v0 ist keine Alarmseite vorgesehen (#101). Die Zahl mischt zudem
+      // gekappte Zeilen aller Art mit ungeladenen Latches, hat also gar kein einzelnes
+      // Ziel, auf das sie verweisen könnte.
       andMore: (count: number) =>
-        `${count} weitere${count === 1 ? "r Punkt erfordert" : " Punkte erfordern"} Aufmerksamkeit`,
+        `${count} ${count === 1 ? "weiterer Eintrag" : "weitere Einträge"}, nicht angezeigt`,
       // Die Beschriftung der Kennzahl in der Seitenleiste — bewusst nicht `andMore`:
       // hier ist die Zahl die ganze Liste, nicht deren Rest.
       badge: (count: number) =>

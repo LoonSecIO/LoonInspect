@@ -28,7 +28,7 @@ Three writing rules the reader of the table must be able to rely on:
   the percentage derives at render, so the inputs stay auditable forever.
 * **Every row names the population it counted.** `platform` is stamped from
   `CAPTURE_PLATFORM`, so a number is never read against a fleet it did not measure.
-  Eleven active keys change meaning the night a sweep observes more than Macs, and
+  Thirteen active keys change meaning the night a sweep observes more than Macs, and
   immutable definitions leave no way to say so afterwards (#230).
 
 Recorder failure never fails the run: the caller (runs.finish) catches everything,
@@ -52,6 +52,7 @@ from app.mdm.patch.matching import STATE_BEHIND, STATE_UNKNOWN
 from app.models.schema import (
     Account,
     AccountRole,
+    Alert,
     ApiToken,
     AppCatalogEntry,
     AppCatalogTitleMatch,
@@ -84,7 +85,7 @@ _LAGGARD_HOURS = 336
 # had moved only one of them.
 NOTABLE_LEVELS: tuple[str, ...] = levels_at_least(NORMAL)
 
-# Definitions v1 — the 25 active keys, in the order their rows are written. The names
+# Definitions v1 — the 27 active keys, in the order their rows are written. The names
 # are the contract: a definition change mints a new key, so a name in this tuple means
 # exactly what docs/posture-snapshot.md says it means, forever.
 ACTIVE_KEYS: tuple[str, ...] = (
@@ -104,6 +105,8 @@ ACTIVE_KEYS: tuple[str, ...] = (
     "patch.pairs_laggard_over_14d",
     "patch.pairs_unknown_build",
     "changes.notable_24h",
+    "alerts.open",
+    "alerts.opened_24h",
     "runs.sweeps_succeeded_24h",
     "runs.failed_24h",
     "runs.full_sweep_duration_s",
@@ -131,8 +134,6 @@ PLATFORM_ROLLUP = "all"
 # Frozen definitions, no writer yet — each activates with its feature's table, never
 # before (docs/posture-snapshot.md carries the definitions and the gates).
 RESERVED_KEYS: tuple[str, ...] = (
-    "alerts.open",
-    "alerts.opened_24h",
     "vuln.apps_affected",
     "vuln.apps_kev_affected",
     "vuln.apps_unknown",
@@ -149,6 +150,20 @@ def _devices_on_active_connections():
     return (
         select(func.count())
         .select_from(Device)
+        .join(MdmConnection, MdmConnection.id == Device.mdm_connection_id)
+        .where(MdmConnection.is_active.is_(True))
+    )
+
+
+def _alerts_on_active_connections():
+    """The alert population both alerts.* keys count over: latches on devices whose
+    connection is active — the same cut `_devices_on_active_connections` draws, and the
+    same cut `GET /api/alerts` returns, so the tape and the surface can never disagree
+    about how many things need attention."""
+    return (
+        select(func.count())
+        .select_from(Alert)
+        .join(Device, Device.id == Alert.device_id)
         .join(MdmConnection, MdmConnection.id == Device.mdm_connection_id)
         .where(MdmConnection.is_active.is_(True))
     )
@@ -299,6 +314,20 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
             DeviceChange.level.in_(NOTABLE_LEVELS),
             DeviceChange.observed_at > window_start,
             DeviceChange.observed_at <= captured_at,
+        ),
+    )
+
+    # alerts.* — the derived latch (#101, docs/alerts.md), on the same active-connection
+    # population every devices.* key counts over. `open` is literally "true of the fleet
+    # at capture": the latch has no acknowledge path, so an open row is a live fact and
+    # never a chore nobody ticked off. `opened_24h` counts rows that have since closed —
+    # which is why closed rows are purged on a clock rather than deleted at close, and
+    # why the count cannot ride the partial index the open read uses.
+    values["alerts.open"] = await _count(db, _alerts_on_active_connections().where(Alert.closed_at.is_(None)))
+    values["alerts.opened_24h"] = await _count(
+        db,
+        _alerts_on_active_connections().where(
+            Alert.opened_at > window_start, Alert.opened_at <= captured_at
         ),
     )
 

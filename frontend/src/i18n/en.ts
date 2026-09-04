@@ -396,22 +396,56 @@ export const en = {
         // advances at claim, so what actually happened is that nothing picked this up.
         collection_overdue: "Nothing started it",
         inventory_stale: "Inventory is stale",
-        update_available: "A newer build is available"
+        update_available: "A newer build is available",
+        // #101. "New app" and not "unapproved app": the product knows the Mac did not
+        // have it at the last inventory and knows nothing at all about whether anyone
+        // approved it. The app name and the Mac are interpolated beside this.
+        new_app: "New app installed"
       },
       // The collapsed overdue row. One dead tick puts every enabled collection past due
       // inside the same hour, and five rows naming five collections name nothing that
       // can be fixed — so above one they become this, which names the scheduler.
       schedulerStalled: (count: number) => `${count} collections came due and nothing started them — check the scheduler`,
+      // The collapsed stale row (#106, ruled 2026-09-04), and the same shape as the line
+      // above for the same reason: staleness is correlated by construction — one
+      // credential, one network path, one scheduler serve every collection — so five rows
+      // naming five collections spent the whole five-row cap saying one thing once.
+      //
+      // It names the *connection*, not the collections, because that is where all three
+      // shared causes live and it is the page the row already links to.
+      inventoryStalled: (count: number) =>
+        `${count} collections have not read the fleet in twice their own schedule — check the connection`,
+      // The collapsed failed-run row (#106, ruled 2026-09-04, "collapse run_failed too"),
+      // and the third instance of one sentence for one shared cause. It exists because
+      // promoting a failed run to `high` put five of these in the band that "Deliveries
+      // are failing" lives in, and a currently-dead pipe is always the newest row there —
+      // so five names pushed the one row this panel exists for off the list.
+      //
+      // Names the connection for the same reason the stale line does: one credential, one
+      // network path and one scheduler are what five collections share, and it is the page
+      // the row already links to. "Failed their last sync" and not "are failing" — the
+      // check reads a stored last outcome, not a live state, and the next run may already
+      // have fixed it.
+      syncsFailing: (count: number) => `${count} collections failed their last sync — check the connection`,
       checkNames: {
         run_failed: "recent runs",
         destination_failing: "destinations",
         collection_overdue: "collection schedules",
         inventory_stale: "inventory freshness",
-        update_available: "updates"
+        update_available: "updates",
+        new_app: "new applications"
       },
       couldNotCheck: (what: string) => `Could not check ${what}`,
       // The footer under a capped list: N *beyond* the five on screen.
-      andMore: (count: number) => `${count} more ${count === 1 ? "item needs" : "items need"} attention`,
+      //
+      // NOT "395 more items need attention", which was the first spelling. That sentence
+      // is a promise of an inbox, and there is no alerts page in v0 (#101 ruled one out),
+      // so the only route to those 395 is curl. It also cannot be given somewhere to go:
+      // `dropped` is a mixed count — rows of any kind the cap hid, plus open latches the
+      // bounded page never fetched — so no single destination is the right one. Saying
+      // plainly that they exist and are not on screen is the honest version of a number
+      // with no link, and building the page would be inventing a surface Kyle cut.
+      andMore: (count: number) => `${count} more ${count === 1 ? "item" : "items"}, not shown`,
       // The sidebar badge's label, and deliberately not `andMore`: this count is the
       // whole list, not the remainder of one, and a badge announcing "3 more items"
       // when three is everything is simply wrong.

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { ApiError } from "@/config/api";
+import { listAlerts } from "@/features/alerts/api";
 import { useAuthStore } from "@/features/auth/store";
 import { PERMISSIONS, type PermissionName } from "@/features/auth/types";
 import { listDestinations } from "@/features/destinations/api";
@@ -7,10 +8,18 @@ import { listAllCollections, listConnections } from "@/features/mdm/api";
 import { getUpdateStatus } from "@/features/system/api";
 import {
   composeAttention,
+  MAX_ROWS,
   type AttentionKind,
   type AttentionRow,
   type Fetched
 } from "@/features/overview/needsAttention";
+
+/** How many open latches to fetch (#101). Twice the cap, and no more: the endpoint
+ *  returns them oldest first — the same order the composition ranks by within a level —
+ *  so this page is the one whose rows would actually show, and the response's `total`
+ *  carries the rest as a number rather than as a payload. A pod mid-rollout has thousands
+ *  of open latches, and this poll runs every minute. */
+const ALERT_WINDOW = MAX_ROWS * 2;
 
 interface AttentionStore {
   rows: AttentionRow[];
@@ -45,7 +54,7 @@ const NOTHING_CHECKED = {
  * Which session the current contents belong to.
  *
  * Bumped on every reset, and read back by `loadAttention` after its awaits. A load that
- * started as the admin can finish after the viewer has signed in — four requests take
+ * started as the admin can finish after the viewer has signed in — five requests take
  * long enough for that to be ordinary, not exotic — and without this guard it would
  * write the admin's rows into the viewer's store *after* the reset cleared them.
  */
@@ -76,12 +85,12 @@ async function attempt<T>(allowed: boolean, request: () => Promise<T>): Promise<
  * A store rather than a hook in the panel, because the composition has exactly **one**
  * implementation by ruling and two surfaces read it: the panel on `/` and the sidebar's
  * count badge. A badge that counted rows itself would be a second implementation of the
- * list, which is the thing the ruling forbids — and a second set of four requests on
+ * list, which is the thing the ruling forbids — and a second set of five requests on
  * every page besides.
  *
  * The cost of that choice, stated rather than hidden: the badge is only as fresh as the
  * last `loadAttention()`, so on a cold load of `/devices` it is blank until `/` has been
- * visited once. Mounting the loader app-wide would fix it and would spend four requests
+ * visited once. Mounting the loader app-wide would fix it and would spend five requests
  * on every page in the product to keep a number on a nav item warm.
  *
  * The other cost of a module singleton is that it outlives the session, and that one is
@@ -99,15 +108,25 @@ export const useAttentionStore = create<AttentionStore>((set) => ({
     const granted = new Set<string>(useAuthStore.getState().user?.permissions ?? []);
     const can = (permission: PermissionName) => granted.has(permission);
 
-    const [collections, connections, destinations, update] = await Promise.all([
-      // Three of the five checks read this one list — failed run, overdue, stale — and
+    const [collections, connections, destinations, update, alerts] = await Promise.all([
+      // Three of the six checks read this one list — failed run, overdue, stale — and
       // it is the tenant-wide summary rather than a page of `/api/runs`, for the reason
       // written out in `needsAttention.ts`: the webhook path mints a run row per Jamf
       // event and a 50-row window over that is blind by 03:25.
       attempt(can(PERMISSIONS.CONNECTION_READ), listAllCollections),
       attempt(can(PERMISSIONS.CONNECTION_READ), listConnections),
       attempt(can(PERMISSIONS.DESTINATION_READ), listDestinations),
-      attempt(can(PERMISSIONS.SYSTEM_READ), getUpdateStatus)
+      attempt(can(PERMISSIONS.SYSTEM_READ), getUpdateStatus),
+      // **Both** permissions, mirroring the route's own guard exactly (Kyle, 2026-09-04;
+      // `backend/app/api/alerts.py`): an alert row hands over a named Mac *and* an
+      // application, so the gate names both. Every role holds both today — `Role.viewer`
+      // is exactly `_INVENTORY_READ` — which is precisely why the client-side copy has to
+      // be kept in step now rather than the day someone splits them: a client that asked
+      // on `device:read` alone would turn a correct 403 into a request nobody expected.
+      attempt(
+        can(PERMISSIONS.DEVICE_READ) && can(PERMISSIONS.APP_READ),
+        () => listAlerts({ open: true, pageSize: ALERT_WINDOW })
+      )
     ]);
 
     // The session changed while these were in flight. Whatever came back describes
@@ -119,7 +138,8 @@ export const useAttentionStore = create<AttentionStore>((set) => ({
       collections,
       connections,
       destinations,
-      update
+      update,
+      alerts
     });
     set({
       rows: result.rows,

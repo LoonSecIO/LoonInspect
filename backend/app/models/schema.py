@@ -1308,6 +1308,94 @@ class DeviceChange(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+# --- Alerts ---------------------------------------------------------------------------
+
+
+class Alert(Base):
+    """One latch LoonInspect holds open on an object because something is true of the
+    fleet right now — today only `new_app`, the NEW-app latch (#101, docs/alerts.md).
+
+    **Derived, not owned** (Kyle, 2026-09-04). A row is opened by `process_sync` when the
+    app is present on this device and absent from the device's previous inventory, and
+    closed by the same code path when the app is gone. There is no dismiss, no
+    `acknowledged_at`, no audit action and no human state anywhere in this table: #101
+    rules out a dedicated alerts page in v0, so a manual acknowledge would have nowhere
+    to be clicked and the open set would accumulate forever. `closed_at IS NULL` therefore
+    reads as "true of the fleet right now", which is exactly what the posture key
+    `alerts.open` is defined to count.
+
+    `app_name` and `bundle_id` are denormalised on purpose, against the usual rule. The
+    `installed_apps` row is deleted the instant the latch closes — that deletion is the
+    close — so a closed row that joined for its label would have nothing to join to, and
+    `alerts.opened_24h` would be a count of rows nobody can read.
+
+    Both run ids are `SET NULL` for the reason `PostureSnapshot.full_sweep_run_id` is:
+    runs are purged after 30 days (`app.core.runs.purge_runs`) and an alert must outlive
+    the sweep that noticed it. Closed rows are purged on their own clock
+    (`app.alerts.service.purge_closed_alerts`) rather than deleted at close, because
+    deleting at close would silently redefine `alerts.opened_24h` from "alerts opened in
+    the trailing 24h" to "…that are still open". Migration a1c8f4b62d70.
+    """
+
+    __tablename__ = "alerts"
+    __table_args__ = (
+        # The only thing standing between one device and two identical open latches.
+        # Webhook runs deliberately never take the sweep lock (docs/runs.md), so two
+        # ingests of one device can be in flight at once; the opens go through
+        # ON CONFLICT DO NOTHING against this index, never through `db.add()`, which
+        # would bypass it silently. Partial on `closed_at IS NULL` so a re-install after
+        # a close is a new row rather than a constraint violation.
+        Index(
+            "uq_alerts_open",
+            "tenant_id",
+            "kind",
+            "device_id",
+            "app_hash",
+            unique=True,
+            postgresql_where=text("closed_at IS NULL"),
+        ),
+        # The read: the open list in time order, without touching closed rows.
+        Index("ix_alerts_open", "tenant_id", "opened_at", postgresql_where=text("closed_at IS NULL")),
+        # `alerts.opened_24h` counts rows that have since closed, so it cannot ride the
+        # partial index above. Named for the window it serves, because `ix_alerts_open`
+        # and `ix_alerts_opened` beside each other is a trap in an EXPLAIN.
+        Index("ix_alerts_opened_window", "tenant_id", "opened_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    # `kind` and `app_hash` carry no index of their own, deliberately. Both are inside
+    # `uq_alerts_open` as `(tenant_id, kind, device_id, app_hash)`, whose leading columns
+    # serve the kind filter and whose whole width serves the close; a second copy of each
+    # would be pure write cost on the path that has to move 40k devices in ten minutes,
+    # and `kind` has one distinct value today besides. `device_id` keeps its index: the
+    # CASCADE from `devices` and the closed-row history read both need it, and neither can
+    # use a partial index.
+    #
+    # The closed vocabulary lives in `app.alerts.service.KINDS`, documented in
+    # docs/alerts.md. Stored as a string rather than a Postgres enum so a later kind is a
+    # tuple entry and a doc row, never a migration on a type.
+    kind: Mapped[str] = mapped_column(String(32))
+    # `high | normal | low` — `app.changes.policy.LEVELS`, reused rather than a minted
+    # `severity` (#229). The product already has one word for how much a thing matters.
+    level: Mapped[str] = mapped_column(String(8))
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
+    # The app *identity* (md5(name:bundle_id)), never `version_hash`: a version bump is
+    # not a new app, and keying this on the build would make every update an alert.
+    app_hash: Mapped[str] = mapped_column(String(32))
+    app_name: Mapped[str] = mapped_column(String(255))
+    bundle_id: Mapped[str] = mapped_column(String(255))
+
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    opened_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("runs.id", ondelete="SET NULL"), nullable=True
+    )
+    closed_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("runs.id", ondelete="SET NULL"), nullable=True
+    )
+
+
 # --- The posture snapshot -------------------------------------------------------------
 
 

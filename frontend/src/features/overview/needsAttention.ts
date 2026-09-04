@@ -1,3 +1,4 @@
+import type { AlertListResponse } from "@/features/alerts/types";
 import type { ChangeLevel } from "@/features/changes/types";
 import type { Destination } from "@/features/destinations/types";
 import type { CollectionSummary, MdmConnection } from "@/features/mdm/types";
@@ -11,8 +12,13 @@ import type { UpdateStatusResponse } from "@/features/system/api";
  * is a decision that can be wrong in a way a screenshot will not reveal. Nothing in this
  * module fetches, renders, or translates. It has no test today because the frontend has
  * no test runner at all — that is
- * [#285](https://github.com/LoonSecIO/LoonInspect/issues/285), and this file should be
- * near the front of the queue: it now encodes two founder rulings and five predicates.
+ * [#285](https://github.com/LoonSecIO/LoonInspect/issues/285), and **this is the module
+ * #285 should aim at first**: it now encodes six predicates, three collapses and six
+ * founder rulings, and `composeAttention` and `isAllClear` are both pure functions of
+ * plain data — a test runner can drive them the moment one exists, with no DOM, no
+ * fetch and no store. Five separate claims about this comparator have been refuted by
+ * *executing* it — the fifth was a defect introduced by the fix for the fourth — which
+ * is the argument for the runner in one sentence.
  *
  * ## Two rules this module exists to keep
  *
@@ -41,16 +47,30 @@ import type { UpdateStatusResponse } from "@/features/system/api";
  * two backwards is the single highest-consequence mistake available in this file.
  *
  * That rationale is about a *partial* denial, and it stops being true at the end of its
- * own range. `Role.viewer` holds inventory read and nothing else
- * (`backend/app/core/permissions.py`), so every input this panel checks resolves
- * `denied` — and silence over all of them left `rows` and `degraded` both empty, which
- * is indistinguishable from a clean fleet. `/` is not role-gated, so a viewer opened the
- * front page and was handed *"Nothing needs your attention · checked 08:14 UTC"*: a
- * dated attestation about a fleet on which zero checks had executed. `blind` is the
- * whole-range case, and it is not a fifth `denied` row — it is the panel saying which
- * question it is not in a position to answer. Failure must never read as emptiness
- * (#150), and saying what the product cannot see is the doctrine (#251), not a gap to
- * paper over.
+ * own range. When **every** input resolves `denied`, silence over all of them leaves
+ * `rows` and `degraded` both empty, which is indistinguishable from a clean fleet — and
+ * `/` is not role-gated, so such a session opened the front page and was handed
+ * *"Nothing needs your attention · checked 08:14 UTC"*: a dated attestation about a
+ * fleet on which zero checks had executed. `blind` is that whole-range case, and it is
+ * not a sixth `denied` row — it is the panel saying which question it is not in a
+ * position to answer. Failure must never read as emptiness (#150), and saying what the
+ * product cannot see is the doctrine (#251), not a gap to paper over.
+ *
+ * **What #101 changed about who reaches it, stated because the old note said otherwise.**
+ * `blind` was written for `Role.viewer`, which holds `_INVENTORY_READ` and nothing else
+ * (`backend/app/core/permissions.py`) and therefore had every one of the four checks
+ * denied. The alerts check is gated on `device:read` + `app:read` — which a Viewer
+ * *holds* — so a Viewer now resolves one check of four and is no longer blind. Executed,
+ * not assumed: a Viewer with no open latch composes `blind=false, rows=0, degraded=0`,
+ * and `isAllClear` therefore prints the dated line over three checks that were refused.
+ *
+ * That is the partial-denial branch of the same ruling, applied consistently — a Viewer
+ * genuinely did examine something, and the ruling is explicit that a partial denial is
+ * silent and does not withhold the line. But it means no *role* reaches `blind` today;
+ * it is now reached only by a principal denied all four, such as an API token scoped
+ * away from inventory read. Whether the all-clear should still be printable when the
+ * only check that ran is about apps rather than the pipeline is a question for a ruling,
+ * not for this file to decide on its own.
  *
  * ## Stored latest-fields, and why there is no page of runs here
  *
@@ -84,19 +104,33 @@ import type { UpdateStatusResponse } from "@/features/system/api";
  *
  * ## The alerts socket
  *
- * #101's NEW-app latch lands here as another row type with no redesign: add its member
- * to `AttentionKind`, add one `Fetched<>` field to `AttentionInputs`, push rows inside
- * `composeAttention`, add one string to both locales. No component changes.
+ * Filled by #101 exactly as it was cut: `"new_app"` joined `AttentionKind`, one
+ * `Fetched<>` field joined `AttentionInputs`, one block pushes rows inside
+ * `composeAttention`, one string per locale. No component changed.
+ *
+ * `new_app` is the first row here that is about the **fleet** rather than the pipeline,
+ * and it is the only one whose level this file does not decide: an alert row carries a
+ * stored `level` from `app.alerts.service.KIND_LEVELS`, and re-grading it here would be a
+ * second opinion on one fact. It is also the only source that can have more rows than the
+ * API returned — a tool pushed to two thousand Macs opens two thousand latches — which is
+ * why its input carries a `total` and `dropped` counts the remainder rather than
+ * pretending the page was the whole answer.
+ *
+ * It is also the only kind that is *ranked* rather than merely levelled, and the two
+ * facts are the same fact: unbounded rows that never close would otherwise take the whole
+ * five-row budget from the checks this panel exists for. `RANK_WITHIN_LEVEL` carries the
+ * ruling and the reasoning.
  */
 
-/** What a row can be about. `#101` appends `"new_app"`; nothing else in this file is
- *  additive, so that is the whole extension point. */
+/** What a row can be about. `new_app` is #101's, and arrived as one more member — which
+ *  is the whole extension point this union exists to be. */
 export type AttentionKind =
   | "run_failed"
   | "destination_failing"
   | "collection_overdue"
   | "inventory_stale"
-  | "update_available";
+  | "update_available"
+  | "new_app";
 
 /**
  * One input, and what happened when the session asked for it.
@@ -131,9 +165,10 @@ export interface AttentionRow {
    *  order rows within a level; null sorts last and renders nothing. */
   at: string | null;
   /** How many things this row stands for. `1` is the ordinary row that names its
-   *  subject. Above 1 the row is a **collapse** — see the overdue check for the only
-   *  case that produces one — and the panel gives it a sentence of its own rather than
-   *  gluing a number onto a singular verb. */
+   *  subject. Above 1 the row is a **collapse** — the overdue check, the stale check and
+   *  the failed-run check each produce one, all three for the same reason: their subjects
+   *  fail together by construction — and the panel gives it a sentence of its own rather
+   *  than gluing a number onto a singular verb. */
   count: number;
 }
 
@@ -149,13 +184,18 @@ export interface AttentionInputs {
   connections: Fetched<MdmConnection[]>;
   destinations: Fetched<Destination[]>;
   update: Fetched<UpdateStatusResponse>;
+  /** Open alert latches (#101). The whole response rather than its items, because the
+   *  page is bounded and one fleet-wide install opens a latch per device — `total` is
+   *  what lets `dropped` say how many rows are really behind the cap. */
+  alerts: Fetched<AlertListResponse>;
 }
 
 export interface AttentionResult {
   rows: AttentionRow[];
-  /** Rows the cap hid. Reported rather than swallowed — a pod with four connections and
-   *  a dead tick can produce more than five real rows, and a cap that silently ate them
-   *  would be a worse lie than a long list. */
+  /** Rows the cap hid, plus open latches the bounded page never fetched. Reported rather
+   *  than swallowed — a pod with four connections and a dead tick can produce more than
+   *  five real rows, one new tool pushed fleet-wide produces thousands, and a cap that
+   *  silently ate them would be a worse lie than a long list. */
   dropped: number;
   /** Checks that errored. Rendered as rows, and they withhold the all-clear line. */
   degraded: AttentionKind[];
@@ -212,26 +252,100 @@ const LEVEL_ORDER: ChangeLevel[] = ["high", "normal", "low"];
  *
  * `high` is reserved for **a claim the product is currently making that is false**:
  * evidence is not reaching the SIEM (`destination_failing`), or the numbers on these
- * pages no longer describe the fleet (`inventory_stale`). `normal` is a mechanism that
- * failed — a run broke, a tick did not fire — which is a symptom of a disease that may
+ * pages no longer describe the fleet (`inventory_stale`, `run_failed`). `normal` is a
+ * mechanism that failed — a tick did not fire — which is a symptom of a disease that may
  * not have set in yet. `low` is an improvement available, not a thing that is wrong.
+ *
+ * **`run_failed` is `high`, and moved there by ruling** (Kyle, 2026-09-04). It was filed
+ * as mechanism, and that was the inconsistency: a sweep that failed means the fleet was
+ * **not read**, so the numbers on these pages describe a fleet as it was before the
+ * failure — the identical condition `inventory_stale` is `high` for, arriving by a faster
+ * route. `inventory_stale` is that state noticed late; `run_failed` is the same state
+ * noticed immediately. Filing the two at different levels said the delay was the thing
+ * that mattered.
+ *
+ * The consequence the ruling was made for: `RANK_WITHIN_LEVEL` gives `new_app` rank 1 and
+ * every other kind rank 0, so with `run_failed` in the same band a failed run now
+ * outranks new-app noise **unconditionally**, through the mechanism already built. A
+ * cross-level rank was rejected — a `normal` row sorting above a `high` one would make
+ * the level vocabulary mean nothing, and a level is only for the promise that a red row
+ * outranks a grey one.
+ *
+ * `new_app` is deliberately absent, and the `Exclude` says so out loud rather than
+ * leaving a reader to notice. Its level is *stored* — graded once in the backend by
+ * `app.alerts.service.KIND_LEVELS` (`high`, founder-ruled 2026-08-29) and carried on the
+ * row — so deciding it again here would be two gradings of one fact that agree right up
+ * until the day they do not.
  */
-const LEVEL_OF: Record<AttentionKind, ChangeLevel> = {
+const LEVEL_OF: Record<Exclude<AttentionKind, "new_app">, ChangeLevel> = {
   destination_failing: "high",
   inventory_stale: "high",
-  run_failed: "normal",
+  run_failed: "high",
   collection_overdue: "normal",
   update_available: "low"
 };
 
+/**
+ * The tie-break **inside** a level. Lower sorts first; everything is 0 but `new_app`.
+ *
+ * Ruled by Kyle on 2026-09-04, and it exists because the ordinary tie-break — oldest
+ * first — is exactly wrong for a latch that never closes. `new_app` is `high`, and that
+ * ruling stands. But an open latch closes only when the app is uninstalled, which for a
+ * Jamf-deployed app never happens, so latches accumulate and their age only ever grows.
+ * A destination carries `lastFailureAt`, refreshed on every retry, so a *currently dead*
+ * Splunk pipe is always the **newest** thing in the band. Age-only, five open latches
+ * older than the last delivery attempt push "Deliveries are failing" off a five-row list
+ * permanently — on the panel whose whole job is to be the one place a dead pipe shows up.
+ *
+ * The same rank is what makes `run_failed` beat a wall of latches now that it is `high`
+ * (see `LEVEL_OF`): one table, no exception list.
+ *
+ * **Three starvations of `destination_failing` are closed on this panel, and this table
+ * closes only the first of them.** The other two are collapses, in
+ * `composeAttention` — `inventory_stale`, then `run_failed`, and the third was opened by
+ * the very promotion described above: with `run_failed` in `high` at rank 0, five failed
+ * collections fill the cap and the dead pipe, always the newest row in the band, drops
+ * off. That split is the point rather than an accident of order. A rank fixes the one
+ * kind it names; a collapse fixes the **cause**, which is that these failures are
+ * correlated by construction — one credential, one network path and one scheduler serve
+ * every collection, so five failed collections were always five renderings of one fact,
+ * spending five of five slots to say it once. The third collapse is therefore not a
+ * postscript to the level promotion: it is what makes the promotion safe.
+ *
+ * Giving `destination_failing` a rank of `-1` was the obvious alternative both times and
+ * was refused both times, for the reason this table exists to state once: a per-kind
+ * exemption turns the ranking into a list of exceptions maintained by whoever last got
+ * bitten, and the next `high` kind with correlated failures starves the pipe again.
+ *
+ * Rejected: demoting `new_app` to `normal`, which would have made a genuinely high signal
+ * quiet on every surface that reads the level rather than only inside a five-row budget;
+ * and capping latches at N inside the composition, which would have made the panel lie
+ * about how many there are instead of ordering them honestly.
+ *
+ * The comparator is `Record<AttentionKind, …>` rather than a `kind === "new_app"` test so
+ * that a kind added to the union has to state its rank rather than inherit one silently.
+ */
+const RANK_WITHIN_LEVEL: Record<AttentionKind, number> = {
+  destination_failing: 0,
+  inventory_stale: 0,
+  run_failed: 0,
+  collection_overdue: 0,
+  update_available: 0,
+  new_app: 1
+};
+
 /** Which input answers which check. Used to turn an errored input into `degraded`
  *  entries, so the mapping lives in one place rather than in four catch blocks. The
- *  collections list answers three of the five: one request, three blind spots when it
+ *  collections list answers three of the six: one request, three blind spots when it
  *  fails, and the panel says all three rather than one vague line. */
-const CHECKS_BY_INPUT: Record<"collections" | "destinations" | "update", AttentionKind[]> = {
+const CHECKS_BY_INPUT: Record<
+  "collections" | "destinations" | "update" | "alerts",
+  AttentionKind[]
+> = {
   collections: ["run_failed", "collection_overdue", "inventory_stale"],
   destinations: ["destination_failing"],
-  update: ["update_available"]
+  update: ["update_available"],
+  alerts: ["new_app"]
 };
 
 /** A collection row is only worth a *failed* row. `skipped` is the rate floor doing its
@@ -283,6 +397,7 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
   // on failures too, so a collection that has been failing for a week would read as
   // having run a minute ago. This is the trap the backend column was added to close.
   const staleCollectionIds = new Set<number>();
+  const stale: CollectionSummary[] = [];
   for (const collection of collections) {
     if (collection.kind !== "device_sweep" || !collection.enabled) continue;
     if (collection.staleAfterSeconds === null) continue;
@@ -294,6 +409,52 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
     const since = lastSuccess ?? millis(collection.createdAt);
     if (since === null || nowMs - since <= window) continue;
     staleCollectionIds.add(collection.id);
+    stale.push(collection);
+  }
+
+  // One row for the outage, not one row per collection — the same collapse the overdue
+  // check makes below, ruled onto this check on 2026-09-04 for the same reason.
+  //
+  // These failures are correlated **by construction**: one credential, one network path
+  // and one scheduler serve every collection on a connection, so a rotated token or a
+  // firewall rule puts all of them past their window inside one cadence. Five rows naming
+  // five collections were always five renderings of one fact, and they spent the whole
+  // five-row cap saying it — which is how a *currently failing* `destination_failing` row
+  // (always the newest thing in the `high` band, because `last_failure_at` is rewritten on
+  // every delivery retry) got starved off the panel entirely. Executed, not argued: the
+  // proof harness in this PR drives five stale collections against one fresh destination.
+  //
+  // Not a re-rank. Giving `destination_failing` a rank of its own would have fixed this
+  // one instance and left the shape intact — the next `high` kind with correlated
+  // failures starves it again, and `RANK_WITHIN_LEVEL` becomes a list of exceptions
+  // maintained by whoever last got bitten.
+  //
+  // Oldest last-success, because the ranking within a level is oldest-first and the
+  // outage is as old as the longest silence in it. A collection that has *never*
+  // succeeded contributes no instant — same as it does on its own row, where creation is
+  // not a success and must not be rendered as one — so a collapse of only such
+  // collections carries `at: null` and sorts last, exactly as the single row would.
+  if (stale.length > 1) {
+    const oldestSuccess = stale.reduce<string | null>((earliest, collection) => {
+      const at = millis(collection.lastSuccessAt);
+      if (at === null) return earliest;
+      const best = millis(earliest);
+      return best === null || at < best ? collection.lastSuccessAt : earliest;
+    }, null);
+    rows.push({
+      // Not keyed on the members, for the reason the overdue collapse is not: collections
+      // cross their windows one after another and a churning key would remount the row.
+      id: "inventory_stale:all",
+      kind: "inventory_stale",
+      level: LEVEL_OF.inventory_stale,
+      subject: null,
+      context: null,
+      href: "/settings/connections",
+      at: oldestSuccess,
+      count: stale.length
+    });
+  } else if (stale.length === 1) {
+    const collection = stale[0];
     rows.push(
       one({
         id: `inventory_stale:${collection.id}`,
@@ -302,7 +463,7 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
         subject: collection.name,
         context: nameOfConnection.get(collection.mdmConnectionId) ?? null,
         href: "/settings/connections",
-        at: lastSuccess === null ? null : collection.lastSuccessAt
+        at: millis(collection.lastSuccessAt) === null ? null : collection.lastSuccessAt
       })
     );
   }
@@ -375,13 +536,71 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
   //
   // Enabled only, matching every other check: an operator who turned a collection off is
   // not asked about the run it failed before they did.
+  const failed: CollectionSummary[] = [];
   for (const collection of collections) {
     if (!collection.enabled || collection.lastRunStatus !== RUN_FAILED) continue;
     // A stale collection already says something strictly worse about the same
     // collection — "it has not succeeded in twice its cadence" contains "its last run
     // failed". Two rows for one problem would eat the cap and tell the operator nothing
-    // the first row did not.
+    // the first row did not. Kept where it has always been — on the member, before the
+    // collapse — so the collapse counts the rows that would have rendered and never
+    // announces "3 collections failed" over a list of two.
     if (staleCollectionIds.has(collection.id)) continue;
+    failed.push(collection);
+  }
+
+  // One row for the outage, not one row per collection — the third application of a rule
+  // this panel already held twice, ruled 2026-09-04 ("collapse `run_failed` too").
+  //
+  // This one was opened by the fix above it. Promoting `run_failed` to `high` (#101) put
+  // it at rank 0 beside `destination_failing`, ordered oldest-first, and a *currently*
+  // dead pipe is always the **newest** thing in the band because `last_failure_at` is
+  // rewritten on every delivery retry (`backend/app/core/outbox.py`). So five failed
+  // collections filled the cap and the dead pipe dropped off — the same starvation the
+  // stale collapse had been ruled to close two hours earlier, arriving through the door
+  // the promotion opened. Measured, not argued: 1,120 swept inputs where main showed
+  // `destination_failing` and this composition did not, all of them that kind, and the
+  // minimal repro is five collections failed eight hours ago beside one destination that
+  // refused five minutes ago.
+  //
+  // Permanent for `catalog` and `webhook` collections, which the stale check skips
+  // outright (`kind !== "device_sweep"`), and unavoidable for one full cadence on device
+  // sweeps — this check fires at the first failure, staleness needs twice the cadence.
+  //
+  // Not a re-rank, for the third time and for the reason `RANK_WITHIN_LEVEL`'s docstring
+  // gives: a rank of `-1` for `destination_failing` fixes the instance and leaves the
+  // shape, and the next `high` kind with correlated failures starves it again. The
+  // collapse addresses the cause instead — these failures are correlated **by
+  // construction**, one credential and one network path and one scheduler serving every
+  // collection, so five failed collections were always five renderings of one fact.
+  //
+  // Oldest failure, because the ranking within a level is oldest-first and the outage is
+  // as old as the first thing that broke in it. A `failed` status with no `lastRunAt` is
+  // a contradiction the API should never produce, but it is not this module's job to
+  // assume so: such a member contributes no instant, exactly as it would on its own row,
+  // and a collapse of only those carries `at: null` and sorts last.
+  if (failed.length > 1) {
+    const oldestRun = failed.reduce<string | null>((earliest, collection) => {
+      const at = millis(collection.lastRunAt);
+      if (at === null) return earliest;
+      const best = millis(earliest);
+      return best === null || at < best ? collection.lastRunAt : earliest;
+    }, null);
+    rows.push({
+      // Not keyed on the members, for the reason neither of the other two collapses is:
+      // collections fail and recover one after another, and a churning key would remount
+      // the row on every poll.
+      id: "run_failed:all",
+      kind: "run_failed",
+      level: LEVEL_OF.run_failed,
+      subject: null,
+      context: null,
+      href: "/settings/connections",
+      at: oldestRun,
+      count: failed.length
+    });
+  } else if (failed.length === 1) {
+    const collection = failed[0];
     rows.push(
       one({
         id: `run_failed:${collection.id}`,
@@ -440,12 +659,63 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
     );
   }
 
-  // Level first, then **oldest first** within a level: a destination that has been
-  // refusing deliveries for three days outranks one that failed five minutes ago, which
-  // may still be a blip. A row with no instant has no age and sorts last.
+  // --- New app: something is installed that was not there last time -------------------
+  //
+  // The latch is derived and closes itself (`docs/alerts.md`): a row is here because the
+  // app is on that Mac *now* and was absent from that Mac's previous inventory, and it
+  // disappears when the app does. There is nothing to acknowledge, which is why the panel
+  // offers no way to — and why this count is safe to read as a fact about the fleet.
+  //
+  // `level` comes off the row rather than out of `LEVEL_OF`; see that table's note, and
+  // `RANK_WITHIN_LEVEL` for why being `high` does not let these rows eat the cap.
+  //
+  // The link is the change that recorded the install, on a page that already reads both
+  // of these from the URL — no new route, and no alerts page, which #101 ruled out for v0.
+  // **Both** parameters, because the row names a Mac: `artifact` alone lands on every
+  // install of that app across the fleet, with the one device the row is about nowhere on
+  // screen, so the operator arrives at a page that has thrown away half of what they
+  // clicked. `q` is the device search (`backend/app/api/changes.py`) and matches the
+  // hostname — the same `general.name` that `Device.hostname` and `subject_label` are both
+  // written from, so the two agree by construction rather than by luck. It is an ILIKE
+  // substring, so a hostname contained in another hostname widens the result; widening a
+  // fleet-wide page toward the right device is strictly better than not narrowing at all.
+  const alerts = valueOrNull(inputs.alerts);
+  for (const alert of alerts?.items ?? []) {
+    const artifact = encodeURIComponent(alert.appName);
+    const device = encodeURIComponent(alert.deviceLabel);
+    rows.push(
+      one({
+        id: `new_app:${alert.id}`,
+        kind: "new_app",
+        level: alert.level,
+        subject: alert.appName,
+        context: alert.deviceLabel,
+        href: `/devices/changes?artifact=${artifact}&q=${device}`,
+        at: alert.openedAt
+      })
+    );
+  }
+  // Latches the bounded page never asked for. Counted into `dropped` rather than dropped
+  // on the floor: one new tool pushed to two thousand Macs is two thousand open latches,
+  // and a panel that showed five while implying five was all of them would be the same
+  // lie the cap exists to avoid telling.
+  const unfetchedAlerts = alerts ? Math.max(0, alerts.total - alerts.items.length) : 0;
+
+  // Level first, then the kind's rank within that level, then **oldest first**: a
+  // destination that has been refusing deliveries for three days outranks one that failed
+  // five minutes ago, which may still be a blip. A row with no instant has no age and
+  // sorts last.
+  //
+  // The rank sits *between* level and age, not after it, because it exists precisely to
+  // beat age: see `RANK_WITHIN_LEVEL` for the starvation it was ruled to stop, and for
+  // why the other two are closed by the collapses above rather than by another rank.
+  // Levels still sort in whole blocks, so the coloured stripes down the left of the panel
+  // never read as unsorted.
   rows.sort((a, b) => {
     const byLevel = LEVEL_ORDER.indexOf(a.level) - LEVEL_ORDER.indexOf(b.level);
     if (byLevel !== 0) return byLevel;
+    const byRank = RANK_WITHIN_LEVEL[a.kind] - RANK_WITHIN_LEVEL[b.kind];
+    if (byRank !== 0) return byRank;
     const aAt = millis(a.at);
     const bAt = millis(b.at);
     if (aAt === null) return bAt === null ? 0 : 1;
@@ -454,11 +724,11 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
   });
 
   const degraded: AttentionKind[] = [];
-  // Counted over the same registry that produces `degraded`, so #101's sixth input joins
-  // both by adding one line to `CHECKS_BY_INPUT` and nothing else. `connections` is
-  // correctly outside it: it answers *which* connection a row is about, never *whether*
-  // there is a row, so a session that could read every check but not the connection names
-  // is not blind — its rows would just lose their context.
+  // Counted over the same registry that produces `degraded`, which is why #101's alerts
+  // input joined both by adding one line to `CHECKS_BY_INPUT` and nothing else.
+  // `connections` is correctly outside it: it answers *which* connection a row is about,
+  // never *whether* there is a row, so a session that could read every check but not the
+  // connection names is not blind — its rows would just lose their context.
   let checksAsked = 0;
   let checksDenied = 0;
   for (const [key, kinds] of Object.entries(CHECKS_BY_INPUT) as [
@@ -476,7 +746,7 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
 
   return {
     rows: rows.slice(0, MAX_ROWS),
-    dropped: Math.max(0, rows.length - MAX_ROWS),
+    dropped: Math.max(0, rows.length - MAX_ROWS) + unfetchedAlerts,
     degraded,
     blind: checksDenied === checksAsked,
     total: rows.length + degraded.length,
