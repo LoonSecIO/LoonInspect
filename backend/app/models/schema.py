@@ -246,6 +246,21 @@ class InstalledApp(Base):
     latest_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     latest_released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     releases_missed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # WHICH matched title the scalar columns above are about (#311). The summary folds three
+    # ways — `is_compliant` / `this_version_seen` / `ea_assumed` are `any()` over every match,
+    # `patch_state` / `latest_version` / `latest_released_at` are the reference title's, and
+    # `patch_available_since` / `releases_missed` are the sentence title's — and on a
+    # multi-title app the last two groups are routinely different titles (Wireshark 4.2.0:
+    # 4.6.8 from the rolling title, 14 missed from the 4.2 line). Neither id is derivable from
+    # this row, which is why they are stored rather than computed at read.
+    reference_title_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    sentence_title_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # TRUE when any matched title needed an extension attribute this device does not carry, which
+    # the matcher resolves TRUE as Jamf's scoping device (2026-08-22) and records per title as
+    # `basis = ea_assumed`. Folded here so the wire can say it (#311): before that the assumption
+    # was visible only in app_catalog_title_matches, and a reader of a Splunk event could not tell
+    # a fully-evaluated match from an assumed one — the outcome `basis` exists to prevent.
+    ea_assumed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     device: Mapped[Device] = relationship(back_populates="apps")
 
@@ -370,6 +385,11 @@ class AppCatalogEntry(Base):
     # patch_available_since — the two halves of one sentence (#68); null unless a patch is
     # available.
     releases_missed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The fold of `basis` across the row's matches (#311); see InstalledApp.ea_assumed.
+    ea_assumed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Which title the scalar columns are about (#311); see InstalledApp.reference_title_id.
+    reference_title_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    sentence_title_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Jamf's release date of the installed version itself.
     released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

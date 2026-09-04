@@ -215,19 +215,185 @@ VULN_ASSESSMENT_COVERED = "covered"
 VulnAssessment = Literal["covered", "unknown_app", "off"]
 
 
+# The four states a matched build can be in, as `app.mdm.patch.matching` spells them.
+# Restated rather than imported: `app.schemas` is below `app.mdm` and importing upwards to
+# read four strings would invert the dependency for no gain. `test_patch_wire.py` asserts
+# the two definitions are the same set, which is the same drift guard the wire registry
+# and `ADDITIVE_ONLY_CLAUSES` already run.
+PATCH_STATES = Literal["latest", "behind", "ahead", "unknown"]
+
+
+class JamfPatchAnswer(BaseModel):
+    """`patch.jamfPatch{}` — Jamf's Patch Management catalog's answer about THIS build (#311).
+
+    **Why the source is a key and not a value** (Kyle, 2026-09-04, ruling 2). `patch{}` was
+    minted with room for more than one answer: `docs/jamf-patch-matching.md` §1 says a
+    connection's own patch provider "overlays" these columns later, and an overlay onto keys
+    that name no source is a silent lie about provenance — every historical event becomes
+    unattributable the day a second provider disagrees about "latest". Under `jamfPatch` both
+    can ride at once, each keeping its own vocabulary, and `patch.jamfPatch.state` means one
+    thing forever. `patch.sources` was considered and refused for v0: it costs ~25 bytes on
+    every supported app to name the only source there is, and clause 1 lets it arrive with the
+    second one.
+
+    **No sourcetype is minted.** This is an inline enrichment on `loon:jamf:mac:app`, exactly
+    as #249 populated `vuln{}` without stamping anything — a compound leaf would force
+    `loon:jamf:mac:app:patch:vuln` on an app carrying both blocks, and `props.conf` stanzas
+    take no wildcards. `loon:jamf:mac:app:patch` stays reserved and unused
+    (docs/splunk-wire-vocabulary.md §7); the generated registry does not move.
+
+    **Every value is a column read, not a calculation.** `copy_answer`
+    (`app.catalog.service`) writes the whole answer onto the very `installed_apps` instances
+    `process_sync` holds, so the producer reads them out of the session's identity map with no
+    second query. A live re-evaluation would be ~4M runs of the matcher against a 1,543-title
+    catalog per sweep, which is the thing "cache, don't calculate" exists to forbid.
+
+    **`titleIDs` and `titleNames` are index-aligned, or `titleNames` is absent.** Two flat
+    arrays rather than one array of objects because Splunk extracts flat arrays as clean
+    multivalue fields and `mvzip` / `mvindex` exist to pair them; `titles{}.name` pivots worse
+    and is clumsier at the SPL prompt. The alignment is load-bearing, so a name the loaded
+    catalog cannot resolve — a title Jamf deleted between the judge and a scoped-read snapshot
+    — drops the whole list rather than shipping a hole or the id in disguise. The producer
+    logs when that happens.
+
+    **The block has three subjects, and names two of them.** `onLatest`, `versionKnown` and
+    `eaAssumed` are `any()` over every matched title. `state`, `latestVersion` and
+    `latestReleasedAt` are the REFERENCE title's — the one that says latest, else the rolling
+    title, so an app behind everywhere shows what the vendor ships now (#65). `releasesMissed`
+    and `patchAvailableSince` are the SENTENCE title's — #68's rule that both halves of "behind
+    since <date> · <n> releases missed" come from one line. On a multi-title app the last two
+    groups are routinely different titles: Wireshark 4.2.0 reads `latestVersion: "4.6.8"` off
+    the rolling "Wireshark" and `releasesMissed: 14` off the "Wireshark 4.2" line, whose own
+    latest is 4.2.14 and whose rolling sibling has missed 25. Adjacent, and about different
+    things — so `referenceTitleID` and `sentenceTitleID` say which, and only when there is more
+    than one title to be ambiguous between (Kyle, 2026-09-04). The folds themselves are ruled
+    and unchanged; what was missing was the subject.
+
+    Keys absent rather than null throughout (`_only_the_keys_the_answer_carries`), under the
+    same null-dropping rule clause 3 blesses for `deviceMeta`. `patchAvailableSince` and
+    `releasesMissed` are #68's ruled sentence — "behind since 2024-01-03 · 14 releases missed"
+    — and are absent unless a patch is actually available; both come from ONE title (the line
+    whose first missed update is earliest), never a fold across titles. A day count is NOT
+    minted here: #68 ruled that buckets and caps are a renderer's business and the wire carries
+    the raw date and the raw integer, and a day computed at enqueue is wrong the moment the
+    event is read.
+    """
+
+    # The matched titles, fully-evaluated first then by name (`summarize`). Non-empty by
+    # construction: `supported` is true iff this list has something in it.
+    title_ids: list[str] = Field(serialization_alias="titleIDs")
+    # The only key in this block a person can read — "612" and "5F6" mean nothing in a search
+    # bar, and `stats count by ...titleNames` is the query a patch dashboard opens with.
+    title_names: list[str] | None = Field(default=None, serialization_alias="titleNames")
+    state: PATCH_STATES
+    # Kyle's #65 rule: at least one matched title says the installed version is its current
+    # one — so a Firefox ESR user on the latest ESR is latest even though the rolling title
+    # says behind. `state` is the folded answer; this is the bit it folds.
+    on_latest: bool = Field(serialization_alias="onLatest")
+    # Jamf lists this exact version on any matched title. False with `ahead` or `unknown`
+    # says "running a build Jamf never published", which is a finding on its own.
+    version_known: bool = Field(serialization_alias="versionKnown")
+    # Absent on a row judged before #311 added the column — clause 4 exactly: absence means
+    # the event predates the key. Never defaulted to `false`, which would assert that nothing
+    # was assumed on a row nobody has re-judged.
+    ea_assumed: bool | None = Field(default=None, serialization_alias="eaAssumed")
+    # What the vendor ships now, per the reference title. The key that turns a Splunk alert
+    # into a ticket a technician can act on without calling back.
+    latest_version: str | None = Field(default=None, serialization_alias="latestVersion")
+    latest_released_at: datetime | None = Field(default=None, serialization_alias="latestReleasedAt")
+    # Which of `titleIDs` the three scalars above are about. See the subject note in the class
+    # docstring; present only when there is more than one title, because with one there is
+    # nothing to disambiguate and `titleIDs` already names it.
+    reference_title_id: str | None = Field(default=None, serialization_alias="referenceTitleID")
+    patch_available_since: datetime | None = Field(default=None, serialization_alias="patchAvailableSince")
+    releases_missed: int | None = Field(default=None, serialization_alias="releasesMissed")
+    # Which title the two keys above are about — #68's sentence comes from ONE line, and on a
+    # multi-title app it is routinely not the reference title.
+    sentence_title_id: str | None = Field(default=None, serialization_alias="sentenceTitleID")
+
+    @model_validator(mode="after")
+    def _a_supported_app_names_its_titles(self) -> JamfPatchAnswer:
+        """An answer with no title is not an answer. `PatchEnrichment.supported` is defined as
+        "this list is non-empty", so an empty one here would ship `supported: true` beside a
+        block that claims nothing — refused at enqueue rather than indexed."""
+        if not self.title_ids:
+            raise ValueError("jamfPatch names no title; an app with no matched title is supported: false")
+        if self.title_names is not None and len(self.title_names) != len(self.title_ids):
+            raise ValueError("titleNames must be index-aligned with titleIDs, or absent")
+        return self
+
+    @model_validator(mode="after")
+    def _every_scalar_group_names_its_subject(self) -> JamfPatchAnswer:
+        """The subject keys are present exactly when they say something, and never name a title
+        this answer did not match.
+
+        The "exactly when" is what keeps their absence unambiguous under clause 4 without a
+        discriminator of their own: with one matched title the subject is that title by
+        construction, and `mvcount(titleIDs) == 1` is the test a consumer can write. Shipping
+        them anyway would pay ~50 bytes on the nine-in-eleven apps that match a single title in
+        order to repeat a value already on the event.
+
+        `sentenceTitleID` additionally rides only when the sentence does: naming the line a
+        missed-release count came from, on an event carrying no count, would be an answer to a
+        question nobody asked.
+        """
+        for key, value in (("referenceTitleID", self.reference_title_id), ("sentenceTitleID", self.sentence_title_id)):
+            if value is not None and value not in self.title_ids:
+                raise ValueError(f"{key} names a title this answer did not match")
+        multiple = len(self.title_ids) > 1
+        if multiple and self.reference_title_id is None:
+            raise ValueError("referenceTitleID is required when more than one title matched")
+        if not multiple and (self.reference_title_id or self.sentence_title_id):
+            raise ValueError("a single-title answer needs no subject keys; titleIDs already names it")
+        has_sentence = self.patch_available_since is not None or self.releases_missed is not None
+        if self.sentence_title_id is not None and not has_sentence:
+            raise ValueError("sentenceTitleID rides only with patchAvailableSince / releasesMissed")
+        if multiple and has_sentence and self.sentence_title_id is None:
+            raise ValueError("the #68 sentence comes from one title and must name it when several matched")
+        return self
+
+    @model_serializer(mode="wrap")
+    def _only_the_keys_the_answer_carries(self, handler) -> dict:
+        """Drop absent keys rather than shipping them as null — the same rule `VulnEnrichment`
+        runs, and the reason `{"supported": false}` stays one key wide below."""
+        return {key: value for key, value in handler(self).items() if value is not None}
+
+
 class PatchEnrichment(BaseModel):
-    """`patch{}` on the app item — the Jamf Patch answer, at its v0 floor.
+    """`patch{}` on the app item — the Jamf Patch answer, riding that app's sub-event beside
+    `vuln{}`.
 
     `supported` is a bool and always present, `false` when the app matches no Jamf Patch
     title (Kyle, 2026-09-01: "we need a default for the patching... a boolean ... set that
     equal to false. That way you can always search for it or not it easy"). Computed at
     enqueue from the `installed_apps` row already in the transaction — cache, don't
-    calculate — and copied through by the fan-out, never stamped at delivery. What the
-    block holds when `true` is ruled (#68, PR #239) and is a follow-on under additive-only
-    clause 1; nothing beyond `supported` is minted here.
+    calculate — and copied through by the fan-out, never stamped at delivery.
+
+    **`supported` is the discriminator, and `false` ships nothing else** (#311). This is the
+    rule `vuln{}` already runs one layer down with `assessment`, and it is load-bearing rather
+    than tidy: on the real Mac mini 72 of 83 apps match no title, so a `false` carrying nine
+    nulls would make ~87% of the highest fan-out object on the wire into padding. It also
+    settles additive-only clause 4 mechanically — `supported` is always present and always
+    says why the rest is missing, and an absence next to a discriminator that explains it is
+    not the ambiguous absence clause 4 protects against.
+
+    The shape is refused at enqueue if the two disagree, rather than papered over downstream.
     """
 
     supported: bool
+    jamf_patch: JamfPatchAnswer | None = Field(default=None, serialization_alias="jamfPatch")
+
+    @model_validator(mode="after")
+    def _supported_says_whether_there_is_an_answer(self) -> PatchEnrichment:
+        if self.supported and self.jamf_patch is None:
+            raise ValueError("patch.supported is true with no source block; supported means a source answered")
+        if not self.supported and self.jamf_patch is not None:
+            raise ValueError("patch.supported is false with a jamfPatch block; false means no title matched")
+        return self
+
+    @model_serializer(mode="wrap")
+    def _false_stays_one_key_wide(self, handler) -> dict:
+        return {key: value for key, value in handler(self).items() if value is not None}
 
 
 class VulnSeverityCounts(BaseModel):

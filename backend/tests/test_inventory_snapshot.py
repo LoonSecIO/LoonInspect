@@ -104,12 +104,34 @@ def raw() -> dict:
     return json.loads(FIXTURE.read_text())
 
 
-def _rows(view: NormalizedDevice, titles: dict[str, list[str]] | None = None) -> list[InstalledApp]:
+def _rows(
+    view: NormalizedDevice,
+    titles: dict[str, list[str]] | None = None,
+    answers: dict[str, dict] | None = None,
+) -> list[InstalledApp]:
     """`installed_apps` rows exactly as process_sync would create them from the normalized
-    view: raw strings, hashed by apply_hashes, the Jamf Patch answer copied on."""
+    view: raw strings, hashed by apply_hashes, the Jamf Patch answer copied on.
+
+    A row that names titles carries a STATE too — `copy_answer` writes every summary column
+    in one statement, so a row with ids and no verdict is not a state production can reach
+    (#311). `answers` overrides the per-column defaults for one bundle ID."""
     rows = []
     for app in view.apps or ():
         apply_hashes(app)
+        matched = (titles or {}).get(app.bundle_id)
+        answer = (
+            {
+                "patch_state": "behind",
+                "is_compliant": False,
+                "this_version_seen": True,
+                # Required by JamfPatchAnswer once more than one title matched (#311): the
+                # scalars have a subject and must name it.
+                "reference_title_id": matched[0] if len(matched) > 1 else None,
+            }
+            if matched
+            else {}
+        )
+        answer.update((answers or {}).get(app.bundle_id) or {})
         rows.append(
             InstalledApp(
                 name=app.name,
@@ -120,7 +142,8 @@ def _rows(view: NormalizedDevice, titles: dict[str, list[str]] | None = None) ->
                 version_hash=app.version_hash,
                 key_title=app.key_title,
                 key_full=app.key_full,
-                jamf_title_ids=(titles or {}).get(app.bundle_id),
+                jamf_title_ids=matched,
+                **answer,
             )
         )
     return rows
@@ -291,10 +314,9 @@ def test_patch_supported_reads_the_row_and_survives_canonicalisation(run: RunCon
         ],
     }
     view = normalize_computer(raw, ("applications",))
-    rows = _rows(view)
-    rows[0].jamf_title_ids = ["42"]
-    rows[1].jamf_title_ids = []
-    rows[2].jamf_title_ids = ["7", "9"]
+    # Keyed on the ROW's bundle id, which `normalize_computer` falls back to the app's name
+    # when Jamf sent none — the same fallback `app_identity` reproduces.
+    rows = _rows(view, {"com.example.cafe": ["42"], "com.example.plain": [], "Nameless.app": ["7", "9"]})
     # The two sides really do hash different strings — this is why the join is not on it.
     assert rows[0].name == accented and rows[0].name != unicodedata.normalize("NFC", accented).strip()
 
@@ -364,7 +386,7 @@ def test_a_removed_app_is_absent_and_a_rowless_app_is_unsupported_and_logged(run
     }
     removed = InstalledApp(
         name="Gone.app", bundle_id="com.example.gone", version="9.9", app_hash="x", version_hash="y",
-        key_title="v1:t", key_full="v1:f", jamf_title_ids=["1"],
+        key_title="v1:t", key_full="v1:f", jamf_title_ids=["1"], patch_state="behind",
     )
     with caplog.at_level(logging.WARNING, logger="app.mdm.snapshot"):
         event = build_inventory_snapshot(
