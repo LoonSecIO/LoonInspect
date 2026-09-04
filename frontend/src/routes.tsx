@@ -86,8 +86,10 @@ export function AppRoutes() {
         </Route>
         {/* No permission gate — everyone manages their own profile. */}
         <Route path="settings/my-account" element={<MyAccountPage />} />
-        {/* Gated like every other /settings route, and DEVICE_READ is the gate on
-            purpose (#301).
+        {/* Gated like the seven other /settings routes that carry a permission, and
+            DEVICE_READ is the gate on purpose (#301). (The exception above,
+            /settings/my-account, is deliberately ungated — everyone manages their own
+            profile — so "every /settings route" would be one route too many.)
 
             This was first built ungated, on the product argument that a support page
             serves the person something is already broken for — possibly their own

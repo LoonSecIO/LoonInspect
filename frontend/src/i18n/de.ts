@@ -262,7 +262,7 @@ export const de: Translations = {
     githubBody: (repo: string) =>
       `Fehler, Fragen und Feature-Wünsche gehören in den Issue-Tracker unter ${repo}. Sehen Sie zuerst die offenen Issues durch — bei einem dokumentierten Problem steht der Workaround oft daneben — und legen Sie dann eines an, wenn Ihres nicht dabei ist.`,
     githubInclude:
-      "Ein brauchbarer Bericht besteht aus dem Build-String oben, dem erwarteten Verhalten, dem tatsächlichen Verhalten und dem Weg dorthin. Screenshots helfen; Gerätenamen, Seriennummern, Hostnamen und E-Mail-Adressen nicht — lassen Sie sie weg.",
+      "Ein brauchbarer Bericht besteht aus dem Build-String oben, dem erwarteten Verhalten, dem tatsächlichen Verhalten und dem Weg dorthin. Lassen Sie Gerätenamen, Seriennummern, Hostnamen und E-Mail-Adressen weg. Ein Screenshot von LoonInspect besteht zum großen Teil genau daraus: Die Geräteliste zeigt Hostnamen und Seriennummern, und Ihr eigener Name steht in der Kopfleiste. Schneiden Sie diese Stellen weg oder schwärzen Sie sie, bevor Sie einen Screenshot anhängen.",
     githubBrowse: "Issues durchsehen",
     githubOpen: "Issue anlegen",
     slackHeading: "MacAdmins Slack",
@@ -272,7 +272,7 @@ export const de: Translations = {
       `MacAdmins Slack ist eine eigenständige Community mit eigener Anmeldung. Sind Sie bereits in diesem Workspace, öffnet der Kanal-Link ${channel} direkt. Falls nicht, treten Sie zuerst bei — allein bringt der Kanal-Link Sie nicht hinein.`,
     slackJoin: "MacAdmins Slack beitreten",
     slackOpenChannel: (channel: string) => `${channel} öffnen`,
-    securityHeading: "Eine Schwachstelle gefunden? Keines von beiden.",
+    securityHeading: "Eine Schwachstelle gefunden? Melden Sie sie vertraulich.",
     securityBody:
       "Ein Sicherheitsfund gehört nie in ein öffentliches Issue. Melden Sie ihn vertraulich über GitHubs private Vulnerability-Meldung in diesem Repository — Security → Report a vulnerability. Das erreicht die Maintainerin oder den Maintainer direkt und hält die Meldung nicht öffentlich, während ein Fix vorbereitet wird.",
     securityFallback: (email: string, channel: string) =>

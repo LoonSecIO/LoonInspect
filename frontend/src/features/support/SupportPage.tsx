@@ -16,14 +16,16 @@ import { useLocale } from "@/i18n/LocaleContext";
  *  Overview status strip, which copies a job ID the same way. */
 const COPIED_VISIBLE_MS = 2000;
 
-/** Settings → Support: the two channels, the security carve-out, and the build
- *  string a report needs.
+/** Settings → Support: the security carve-out, the build string a report needs, and
+ *  the two channels — in that order on purpose, because the carve-out is the only one
+ *  of the three that costs something when it is read second (see the comment on it).
  *
- *  Gated on DEVICE_READ, like every other /settings route (see routes.tsx for why that
- *  permission and not a new one). DEVICE_READ is the floor every authenticated role
- *  holds, so the route table shows a gate without locking a Viewer out of the page
- *  they reach when something is already broken. A reader with no session at all is
- *  answered on the login page instead.
+ *  Gated on DEVICE_READ, like the seven other /settings routes that carry a permission
+ *  (/settings/my-account is the one that does not; see routes.tsx for why DEVICE_READ
+ *  and not a new permission). DEVICE_READ is the floor every authenticated role holds,
+ *  so the route table shows a gate without locking a Viewer out of the page they reach
+ *  when something is already broken. A reader with no session at all is answered on
+ *  the login page instead.
  *
  *  It reads one endpoint (`/system/version`, via useBuildVersion) and posts nothing.
  *  No ticketing, no contact form, no telemetry: LoonInspect is self-hosted and this
@@ -59,8 +61,36 @@ export function SupportPage() {
         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{t.support.description}</p>
       </div>
 
-      {/* First, because it is the round trip every support conversation otherwise
-          starts with: "which build?" */}
+      {/* First, above both channels, because reading order here is a safety property.
+          Rendered, the old order put this heading below the fold on anything shorter
+          than about 900px while "Open an issue" stayed fully visible — 1164px down a
+          375x812 phone, and clipped at 800x450 — so the one reader who must not use
+          the public tracker met the public tracker first and the carve-out second, or
+          never. It fit on a 1440x900 laptop, which is why the order looked fine when
+          it was written. On the day the repository goes public the cost of that is a
+          vulnerability report sitting in a public issue, so it leads: still not a card
+          among cards, still its own tint, just no longer something to scroll for. */}
+      <div className="space-y-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4">
+        <div className="flex items-center gap-2">
+          <ShieldAlert aria-hidden="true" className="h-4 w-4 text-destructive" />
+          <h2 className="text-lg font-semibold">{t.support.securityHeading}</h2>
+        </div>
+        <p className="max-w-3xl text-sm text-muted-foreground">{t.support.securityBody}</p>
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          {t.support.securityFallback(SECURITY_EMAIL, SLACK_CHANNEL)}
+        </p>
+        <div className="flex flex-wrap gap-x-6 gap-y-2 pt-1 text-sm">
+          <ExternalLink href={SUPPORT_LINKS.privateReport}>
+            {t.support.securityReport}
+          </ExternalLink>
+          <ExternalLink href={SUPPORT_LINKS.securityPolicy}>
+            {t.support.securityPolicy}
+          </ExternalLink>
+        </div>
+      </div>
+
+      {/* Before the two channels, because it is the round trip every support
+          conversation otherwise starts with: "which build?" */}
       <div className="space-y-3 rounded-lg border bg-card p-4">
         <h2 className="text-lg font-semibold">{t.support.buildHeading}</h2>
         <p className="max-w-3xl text-sm text-muted-foreground">{t.support.buildHelp}</p>
@@ -111,27 +141,6 @@ export function SupportPage() {
               {t.support.slackOpenChannel(SLACK_CHANNEL)}
             </ExternalLink>
           </div>
-        </div>
-      </div>
-
-      {/* Not a card among cards: on the day the repository goes public, the cost of a
-          reader missing this is a vulnerability report sitting in a public tracker. */}
-      <div className="space-y-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4">
-        <div className="flex items-center gap-2">
-          <ShieldAlert aria-hidden="true" className="h-4 w-4 text-destructive" />
-          <h2 className="text-lg font-semibold">{t.support.securityHeading}</h2>
-        </div>
-        <p className="max-w-3xl text-sm text-muted-foreground">{t.support.securityBody}</p>
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          {t.support.securityFallback(SECURITY_EMAIL, SLACK_CHANNEL)}
-        </p>
-        <div className="flex flex-wrap gap-x-6 gap-y-2 pt-1 text-sm">
-          <ExternalLink href={SUPPORT_LINKS.privateReport}>
-            {t.support.securityReport}
-          </ExternalLink>
-          <ExternalLink href={SUPPORT_LINKS.securityPolicy}>
-            {t.support.securityPolicy}
-          </ExternalLink>
         </div>
       </div>
 

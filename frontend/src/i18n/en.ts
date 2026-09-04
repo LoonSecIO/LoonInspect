@@ -269,7 +269,7 @@ export const en = {
     githubBody: (repo: string) =>
       `Bugs, questions and feature requests go to the issue tracker on ${repo}. Search what is already open first — a documented issue often has the workaround attached — then file one if yours isn't there.`,
     githubInclude:
-      "A useful report is the build string above, what you expected, what happened instead, and how to get back to it. Screenshots help; device names, serial numbers, hostnames and email addresses do not — leave them out.",
+      "A useful report is the build string above, what you expected, what happened instead, and how to get back to it. Leave out device names, serial numbers, hostnames and email addresses. A screenshot of LoonInspect is largely made of those — the Devices table is hostnames and serial numbers, and your own name sits in the top bar — so crop or black them out before you attach one.",
     githubBrowse: "Browse issues",
     githubOpen: "Open an issue",
     slackHeading: "MacAdmins Slack",
@@ -279,7 +279,7 @@ export const en = {
       `MacAdmins Slack is a separate community with its own signup. Already in that workspace? The channel link opens ${channel} directly. If not, join first — the channel link cannot let you in on its own.`,
     slackJoin: "Join MacAdmins Slack",
     slackOpenChannel: (channel: string) => `Open ${channel}`,
-    securityHeading: "Found a vulnerability? Neither of those.",
+    securityHeading: "Found a vulnerability? Report it privately.",
     securityBody:
       "A security finding never goes in a public issue. Report it privately through GitHub's private vulnerability reporting on this repository — Security → Report a vulnerability. That reaches the maintainer directly and keeps the report out of public view while a fix is prepared.",
     securityFallback: (email: string, channel: string) =>
