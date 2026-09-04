@@ -146,6 +146,8 @@ vendor ships now:
 | `this_version_seen` | Jamf lists the installed version on any matched title |
 | `latest_version`, `latest_released_at` | the reference title's |
 | `ea_assumed` | any matched title needed an extension attribute the device does not carry (#311) |
+| `reference_title_id` | which title `patch_state` / `latest_version` / `latest_released_at` are about (#311) |
+| `sentence_title_id` | which title `patch_available_since` / `releases_missed` are about — routinely not the same one (#311) |
 | `last_patch_check_at` | when the app was last evaluated (set even when nothing matched) |
 
 All null when nothing matched. `ahead` is its own state: neither compliant nor patch-available.
@@ -201,12 +203,47 @@ needs to say from where."*
     "titleIDs": ["612", "5F6"], "titleNames": ["Wireshark", "Wireshark 4.2"],
     "state": "behind", "onLatest": false, "versionKnown": true, "eaAssumed": false,
     "latestVersion": "4.6.8", "latestReleasedAt": "2026-08-11T17:00:00Z",
-    "patchAvailableSince": "2024-01-03T18:00:00Z", "releasesMissed": 14
+    "referenceTitleID": "612",
+    "patchAvailableSince": "2024-01-03T18:00:00Z", "releasesMissed": 14,
+    "sentenceTitleID": "5F6"
   }
 }
 ```
 
-**Five rulings, all Kyle's, 2026-09-04.**
+### The three subjects
+
+The block folds §5's columns three different ways, and the keys sit next to each other as if
+they were about one thing. They are not:
+
+| Keys | Subject |
+| --- | --- |
+| `onLatest`, `versionKnown`, `eaAssumed` | `any()` over **every** matched title |
+| `state`, `latestVersion`, `latestReleasedAt` | the **reference** title (§5: the one that says latest, else the rolling title) |
+| `patchAvailableSince`, `releasesMissed` | the **sentence** title (#68: both halves from one line) |
+
+On a single-title app that is invisible. On a multi-title app the last two groups are routinely
+different titles. Wireshark 4.2.0 is the case to keep in mind:
+
+```
+612  Wireshark       currentVersion 4.6.8   behind  missed 25
+5F6  Wireshark 4.2   currentVersion 4.2.14  behind  missed 14
+```
+
+`latestVersion` reads **4.6.8** off 612 and `releasesMissed` reads **14** off 5F6. Read together
+they say "14 releases behind 4.6.8" — true of neither title: it is 25 behind 4.6.8, or 14 behind
+4.2.14. Kyle caught it reviewing #312 and ruled the fix on 2026-09-04: **name the subject, keep
+the folds.** `referenceTitleID` and `sentenceTitleID` do that, and ride only when more than one
+title matched — with one there is nothing to disambiguate and `titleIDs` already names it, so
+`mvcount(titleIDs) == 1` is the test a consumer writes rather than a discriminator the block has
+to carry. `JamfPatchAnswer` refuses every violation of that rule in both directions, and refuses
+a subject naming a title outside `titleIDs`.
+
+The alternative — a per-title `titles[]` array replacing the folds — was weighed and deferred:
+`releasesMissed` and `state` per title live only in `app_catalog_title_matches`, so it costs a
+query per device (40k a sweep) or a new JSONB column, against two strings on the two-in-eleven
+apps that need them. The v1 shape, not the v0 one.
+
+**Six rulings, all Kyle's, 2026-09-04.**
 
 1. **The source is a key, not a value.** §1 already says a connection's own patch provider
    overlays these columns later, and an overlay onto keys that name no source is a silent lie
@@ -231,6 +268,9 @@ needs to say from where."*
    row was judged against. Whether it belongs on `loon:run` is open.
 5. **Wire only.** `InstalledAppOut` keeps its flat columns; reshaping that surface is
    [#300](https://github.com/LoonSecIO/LoonInspect/issues/300)'s business.
+6. **Every scalar names its subject** — `referenceTitleID` and `sentenceTitleID`, on multi-title
+   answers only. See "The three subjects" below; this one came out of reviewing the built block,
+   not out of designing it.
 
 **Two flat arrays, not an array of objects.** Splunk extracts flat arrays as clean multivalue
 fields and `mvzip` / `mvindex` exist to pair them; `titles{}.name` pivots worse at the SPL

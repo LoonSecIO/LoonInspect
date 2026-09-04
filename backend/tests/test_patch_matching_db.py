@@ -246,4 +246,7 @@ async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connec
     assert set(answer_columns(xcode_entry)) == {
         "jamf_title_ids", "patch_state", "is_compliant", "patch_available", "patch_available_since",
         "releases_missed", "this_version_seen", "latest_version", "latest_released_at", "ea_assumed",
+        "reference_title_id", "sentence_title_id",
     }
+    # Xcode matches one title, so it is its own reference and has no sentence.
+    assert xcode.reference_title_id == "0C3" and xcode.sentence_title_id is None

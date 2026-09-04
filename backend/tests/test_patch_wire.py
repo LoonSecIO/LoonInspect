@@ -69,8 +69,10 @@ RULED_KEYS = (
     "eaAssumed",
     "latestVersion",
     "latestReleasedAt",
+    "referenceTitleID",
     "patchAvailableSince",
     "releasesMissed",
+    "sentenceTitleID",
 )
 
 
@@ -218,6 +220,12 @@ def test_wireshark_carries_both_halves_of_the_sentence_from_one_title(blocks: di
     assert answer["patchAvailableSince"].startswith("2024-01-03")
     assert answer["releasesMissed"] == 14
     assert not any(key.lower().startswith("days") for key in answer)
+    # THE TWO SCALARS ARE ABOUT DIFFERENT TITLES, and the block says so (#311, Kyle
+    # 2026-09-04). 4.6.8 is the rolling "Wireshark" (612); 14 is the "Wireshark 4.2" line
+    # (5F6), whose own latest is 4.2.14 and whose rolling sibling has missed 25. Without the
+    # subjects the two keys read as "14 releases behind 4.6.8", which is true of neither.
+    assert answer["referenceTitleID"] == "612"
+    assert answer["sentenceTitleID"] == "5F6"
 
 
 def test_camtasia_is_latest_on_its_line_and_says_so_with_both_titles_named(blocks: dict[str, dict]) -> None:
@@ -230,6 +238,11 @@ def test_camtasia_is_latest_on_its_line_and_says_so_with_both_titles_named(block
     assert answer["state"] == STATE_LATEST and answer["onLatest"] is True
     assert answer["latestVersion"] == "2022.6.10"
     assert "patchAvailableSince" not in answer
+    # 2022.6.10 is the 2022 line's (514). The rolling title (608) is in `titleIDs` saying the
+    # vendor ships 2026.2.0, so naming the subject is what stops `latestVersion` reading as
+    # "the newest Camtasia there is". No sentence, so no `sentenceTitleID` to go with it.
+    assert answer["referenceTitleID"] == "514"
+    assert "sentenceTitleID" not in answer
 
 
 def test_safari_ahead_of_the_catalog_is_neither_compliant_nor_behind(blocks: dict[str, dict]) -> None:
@@ -320,7 +333,7 @@ def test_a_name_missing_for_any_title_drops_the_whole_list(caplog) -> None:
     """All or nothing, because the alignment is the contract: one missing name would silently
     re-label every title after it under `mvzip`. The ids are still true and still ship, and an
     id is never passed off as a name — the same rule `DeviceOut.building` follows."""
-    row = _row(jamf_title_ids=["M1", "GONE"])
+    row = _row(jamf_title_ids=["M1", "GONE"], reference_title_id="M1")
     with caplog.at_level("WARNING", logger="app.mdm.snapshot"):
         answer = patch_answer([row], {"M1": "Mixed"})[("Mixed.app", "com.example.mixed", "14.2")]
     dumped = answer.model_dump(by_alias=True)["jamfPatch"]
@@ -387,6 +400,70 @@ def test_a_row_naming_titles_with_no_state_degrades_rather_than_raising(caplog) 
         answers = patch_answer([_row(patch_state=None)], None)
     assert answers[("Mixed.app", "com.example.mixed", "14.2")] == PatchEnrichment(supported=False)
     assert any("carries no patch state" in record.message for record in caplog.records)
+
+
+# --- the subjects ---------------------------------------------------------------------
+
+
+def test_a_single_title_answer_carries_no_subject_keys(blocks: dict[str, dict]) -> None:
+    """With one matched title every scalar is about that title by construction, and `titleIDs`
+    already names it. Shipping the subjects anyway would repeat a value already on the event on
+    the nine-in-eleven apps that match one title — and `mvcount(titleIDs) == 1` is the test a
+    consumer writes, so the absence needs no discriminator of its own."""
+    single = {
+        name: block["jamfPatch"]
+        for name, block in blocks.items()
+        if block["supported"] and len(block["jamfPatch"]["titleIDs"]) == 1
+    }
+    assert len(single) == 9
+    for name, answer in single.items():
+        assert "referenceTitleID" not in answer and "sentenceTitleID" not in answer, name
+
+
+def test_only_the_multi_title_apps_carry_them(blocks: dict[str, dict]) -> None:
+    """Two of the device's eleven matched apps belong to more than one title — Jamf keeps
+    versioned lines beside rolling ones — and they are exactly the two that need a subject."""
+    with_subject = {name for name, block in blocks.items() if "referenceTitleID" in block.get("jamfPatch", {})}
+    assert with_subject == {"Wireshark.app", "Camtasia 2022.app"}
+
+
+def test_the_subject_must_be_a_title_this_answer_matched() -> None:
+    """A subject naming a title outside `titleIDs` is not a subject, it is a dangling
+    reference — refused at enqueue rather than joined against nothing in a dashboard."""
+    with pytest.raises(ValidationError, match="did not match"):
+        JamfPatchAnswer(
+            title_ids=["M1", "M2"], state=STATE_BEHIND, on_latest=False, version_known=True,
+            reference_title_id="ELSEWHERE",
+        )
+
+
+def test_a_multi_title_answer_must_name_its_reference() -> None:
+    with pytest.raises(ValidationError, match="required when more than one title"):
+        JamfPatchAnswer(title_ids=["M1", "M2"], state=STATE_BEHIND, on_latest=False, version_known=True)
+
+
+def test_a_single_title_answer_refuses_them() -> None:
+    """Both directions, so the producer's rule and the model's cannot drift apart."""
+    with pytest.raises(ValidationError, match="needs no subject keys"):
+        JamfPatchAnswer(
+            title_ids=["M1"], state=STATE_LATEST, on_latest=True, version_known=True, reference_title_id="M1"
+        )
+
+
+def test_the_sentence_subject_rides_only_with_the_sentence() -> None:
+    """Naming the line a missed-release count came from, on an event carrying no count, answers
+    a question nobody asked — and the other direction leaves #68's sentence unattributed on
+    exactly the apps where it is ambiguous."""
+    with pytest.raises(ValidationError, match="rides only with"):
+        JamfPatchAnswer(
+            title_ids=["M1", "M2"], state=STATE_BEHIND, on_latest=False, version_known=True,
+            reference_title_id="M1", sentence_title_id="M2",
+        )
+    with pytest.raises(ValidationError, match="must name it when several matched"):
+        JamfPatchAnswer(
+            title_ids=["M1", "M2"], state=STATE_BEHIND, on_latest=False, version_known=True,
+            reference_title_id="M1", releases_missed=3,
+        )
 
 
 # --- what it costs --------------------------------------------------------------------

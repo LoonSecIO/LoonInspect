@@ -119,7 +119,18 @@ def _rows(
     for app in view.apps or ():
         apply_hashes(app)
         matched = (titles or {}).get(app.bundle_id)
-        answer = {"patch_state": "behind", "is_compliant": False, "this_version_seen": True} if matched else {}
+        answer = (
+            {
+                "patch_state": "behind",
+                "is_compliant": False,
+                "this_version_seen": True,
+                # Required by JamfPatchAnswer once more than one title matched (#311): the
+                # scalars have a subject and must name it.
+                "reference_title_id": matched[0] if len(matched) > 1 else None,
+            }
+            if matched
+            else {}
+        )
         answer.update((answers or {}).get(app.bundle_id) or {})
         rows.append(
             InstalledApp(

@@ -86,6 +86,8 @@ def _apply_summary(entry: AppCatalogEntry, matches: Sequence[TitleMatch], *, now
         entry.latest_version = None
         entry.latest_released_at = None
         entry.ea_assumed = None
+        entry.reference_title_id = None
+        entry.sentence_title_id = None
         entry.released_at = None
         return
     entry.jamf_title_ids = summary.title_ids
@@ -98,6 +100,8 @@ def _apply_summary(entry: AppCatalogEntry, matches: Sequence[TitleMatch], *, now
     entry.latest_version = summary.latest_version
     entry.latest_released_at = summary.latest_released_at
     entry.ea_assumed = summary.ea_assumed
+    entry.reference_title_id = summary.reference_title_id
+    entry.sentence_title_id = summary.sentence_title_id
     entry.released_at = _released_at(matches)
 
 
@@ -163,6 +167,8 @@ def answer_columns(entry: AppCatalogEntry) -> dict[str, object]:
         "latest_version": entry.latest_version,
         "latest_released_at": entry.latest_released_at,
         "ea_assumed": entry.ea_assumed,
+        "reference_title_id": entry.reference_title_id,
+        "sentence_title_id": entry.sentence_title_id,
     }
 
 

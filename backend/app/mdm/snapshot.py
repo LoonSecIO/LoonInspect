@@ -150,9 +150,28 @@ def patch_answer(
                 latest_released_at=row.latest_released_at,
                 patch_available_since=row.patch_available_since,
                 releases_missed=row.releases_missed,
+                # The subjects, and only where there is something to disambiguate — the model
+                # refuses them on a single-title answer, where `titleIDs` already names the one
+                # title every scalar is about. A row judged before the columns existed carries
+                # None and simply says less, which is what clause 4's absence means.
+                **_subjects(row),
             ),
         )
     return answers
+
+
+def _subjects(row: InstalledApp) -> dict[str, str | None]:
+    """`referenceTitleID` / `sentenceTitleID`, dropped on a single-title answer.
+
+    The producer applies the presence rule and `JamfPatchAnswer` refuses a violation of it, so
+    the two agree by construction rather than by comment. `sentence_title_id` is already null
+    on a row with no #68 sentence — `_apply_summary` writes it from `summarize`'s `sentence`,
+    which is None unless a patch is available — so there is nothing to guard here beyond the
+    count.
+    """
+    if len(row.jamf_title_ids or ()) < 2:
+        return {}
+    return {"reference_title_id": row.reference_title_id, "sentence_title_id": row.sentence_title_id}
 
 
 def _title_names(title_ids: Sequence[str], names: Mapping[str, str] | None) -> list[str] | None:

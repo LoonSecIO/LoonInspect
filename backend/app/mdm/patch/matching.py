@@ -391,6 +391,18 @@ class AppPatchSummary:
     latest_version: str
     latest_released_at: datetime | None
     ea_assumed: bool
+    # WHICH title each group of scalars above is about (#311, Kyle 2026-09-04). The summary has
+    # three subjects and used to name none of them: `is_compliant` / `this_version_seen` /
+    # `ea_assumed` are `any()` over every match, `state` / `latest_version` /
+    # `latest_released_at` are the reference title's, and `patch_available_since` /
+    # `releases_missed` are the sentence title's. On Wireshark 4.2.0 those last two are
+    # different titles — `latest_version` reads 4.6.8 off the rolling "Wireshark" while
+    # `releases_missed` reads 14 off the "Wireshark 4.2" line, whose own latest is 4.2.14 (the
+    # rolling title's count is 25). Adjacent and about different things, so "14 releases behind
+    # 4.6.8" is a reading the data invites and does not support. Naming the subjects costs two
+    # strings and removes the reading.
+    reference_title_id: str
+    sentence_title_id: str | None
 
 
 def summarize(matches: Sequence[TitleMatch]) -> AppPatchSummary | None:
@@ -423,6 +435,8 @@ def summarize(matches: Sequence[TitleMatch]) -> AppPatchSummary | None:
         latest_version=reference.latest_version,
         latest_released_at=reference.latest_released_at,
         ea_assumed=any(match.basis == BASIS_EA_ASSUMED for match in matches),
+        reference_title_id=reference.title.id,
+        sentence_title_id=sentence.title.id if sentence is not None else None,
     )
 
 
