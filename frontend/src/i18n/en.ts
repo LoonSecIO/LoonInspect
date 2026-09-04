@@ -315,6 +315,40 @@ export const en = {
       `${groups.toLocaleString("en-US")} group${groups === 1 ? "" : "s"} in ${duration}`,
     seeYourFleet: "See your fleet",
 
+    // The status strip (#105). One line per connection, states facts only, never turns
+    // red — a threshold breach is a Needs Attention row (#106), not a colour here.
+    // Every relative and plural form is a function rather than a concatenation: German
+    // puts the relation in front ("vor 2 Std."), so a component appending a translated
+    // suffix to a number would render "2 Std. vor".
+    strip: {
+      identity: (name: string, host: string) => `${name} (${host})`,
+      // Grouped in this language's own convention, matching `baselineCounts` above.
+      devices: (n: number) => `${n.toLocaleString("en-US")} device${n === 1 ? "" : "s"}`,
+      // Not "0 devices". A connection with no sync state has not measured zero devices;
+      // it has not measured anything, and the two are different claims.
+      noInventoryYet: "no inventory yet",
+      inventoryAsOf: (utc: string, age: string) => `inventory as of ${utc} (${age})`,
+      agoNow: "just now",
+      agoMinutes: (n: number) => `${n}m ago`,
+      agoHours: (n: number) => `${n}h ago`,
+      agoDays: (n: number) => `${n}d ago`,
+      // The compound stamp, docs/runs.md §8: the id names the last completed FULL sweep,
+      // and the "+N" clause is what admits the numbers beside it may be newer.
+      fullSweep: "full sweep",
+      webhookSweepsSince: (n: number) => `+${n} webhook sweep${n === 1 ? "" : "s"} since`,
+      noFullSweepYet: "no full sweep yet",
+      copied: "job ID copied",
+      nextSweep: (when: string) => `next sweep ${when}`,
+      noScheduledSweep: "no scheduled sweep",
+      sweepsPaused: "sweeps paused",
+      destinationOk: (name: string, utc: string) => `${name} OK ${utc}`,
+      destinationLastDelivered: (name: string, utc: string) => `${name} last delivered ${utc}`,
+      destinationNothingYet: (name: string) => `${name} nothing delivered yet`,
+      // Said rather than left blank. Every fact on this line would be stale, and a line
+      // that disappeared would read as "nothing to report".
+      loadError: "Connection status could not be loaded."
+    },
+
     // The changes feed (#107). The anchor is per-browser, but the instant it names is
     // absolute and appears verbatim in the header and in every link out, so a shared
     // link or a screenshot reproduces the window the sender saw.

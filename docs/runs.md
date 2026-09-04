@@ -659,7 +659,48 @@ lines (the run id is the pointer to the full story):
 | `windowEnd` | When it died — the instant the row's `window_end` was stamped |
 | `error` | The stored run error, truncated to 500 characters |
 
-## 8. What this does not do
+## 8. The stamp: what a rendered run id claims (#105)
+
+A run id printed in the product is evidence, and evidence has to say exactly what it
+covers. The founder-ruled form is **compound**, and every surface that renders a stamp
+reuses this wording rather than inventing a shorter one:
+
+```
+run 8f3a…c1 full sweep, +3 webhook sweeps since
+```
+
+**The id pins to the last COMPLETED FULL sweep** — lock class `device_sweep`, trigger
+`sweep` or `manual`, status `succeeded`. Not "the newest run": on a connection with
+webhooks enabled the newest run is routinely a two-device `ComputerAdded` sweep that
+happened forty seconds ago, and naming it beside a fleet-wide device count would claim a
+whole-fleet measurement for a single record landing. The predicate is the same one
+`heroRun.ts:takesTheHero` uses to decide what may take the front page over, deliberately:
+the hero and the stamp are two renderings of "the fleet arrived", and a pod where they
+disagree about which run that was has no evidence story left.
+
+**"+N webhook sweeps since" is part of the template, not decoration.** It is what makes
+the compound form honest — the numbers printed next to the stamp *may be newer than the
+run the stamp names*, and rather than hiding that, the line states how much has landed
+since. N counts **succeeded** webhook runs that started after the pinned run finished:
+only a webhook that succeeded wrote data, so a failed one is not a correction to the
+stamp (it is a Needs Attention row, #106). The clause is omitted entirely when N is zero
+— a correction of nothing is not a fact worth printing.
+
+**Absolute UTC, with the relative time in parentheses.** `2026-08-29 14:32 UTC (2h ago)`.
+UTC because the stamp's whole purpose is to be pasted into a SIEM search, and a locally
+rendered time would not match what the operator searches; the relative in parentheses
+because "2h ago" is what a human reads first. Both, so every screenshot self-dates —
+a screenshot showing only "2h ago" is worthless in a ticket a day later.
+
+**Served by `GET /api/runs/summary`**, one row per connection: `lastFullSweep`,
+`webhookSweepsSince`, `latestRun`. This is a small endpoint that exists for one reason —
+the pinning question cannot be answered client-side from `/api/runs`. `ingest_webhook`
+mints one run row per allowlisted webhook, retention is 30 days (§6), and the list
+endpoint caps `limit` at 200, so on a busy tenant the last full sweep has already fallen
+off any page the API will serve. A client-side filter would make the run segment
+disappear and the "+N" undercount on exactly the pods where the stamp matters most.
+
+## 9. What this does not do
 
 - **The concurrency cap** (`ingest-scheduling.md` §4.3) — thirty connections due at 02:00
   are still admitted one at a time only because the tick runs sequentially, not because
