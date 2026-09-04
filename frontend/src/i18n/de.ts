@@ -346,8 +346,13 @@ export const de: Translations = {
       },
       couldNotCheck: (what: string) => `${what} konnten nicht geprüft werden`,
       // Die Fußzeile einer gekürzten Liste: N *zusätzlich* zu den fünf angezeigten.
+      //
+      // Nicht mehr „… erfordern Aufmerksamkeit“: das versprach einen Posteingang, den es
+      // nicht gibt — in v0 ist keine Alarmseite vorgesehen (#101). Die Zahl mischt zudem
+      // gekappte Zeilen aller Art mit ungeladenen Latches, hat also gar kein einzelnes
+      // Ziel, auf das sie verweisen könnte.
       andMore: (count: number) =>
-        `${count} weitere${count === 1 ? "r Punkt erfordert" : " Punkte erfordern"} Aufmerksamkeit`,
+        `${count} ${count === 1 ? "weiterer Eintrag" : "weitere Einträge"}, nicht angezeigt`,
       // Die Beschriftung der Kennzahl in der Seitenleiste — bewusst nicht `andMore`:
       // hier ist die Zahl die ganze Liste, nicht deren Rest.
       badge: (count: number) =>

@@ -355,7 +355,15 @@ export const en = {
       },
       couldNotCheck: (what: string) => `Could not check ${what}`,
       // The footer under a capped list: N *beyond* the five on screen.
-      andMore: (count: number) => `${count} more ${count === 1 ? "item needs" : "items need"} attention`,
+      //
+      // NOT "395 more items need attention", which was the first spelling. That sentence
+      // is a promise of an inbox, and there is no alerts page in v0 (#101 ruled one out),
+      // so the only route to those 395 is curl. It also cannot be given somewhere to go:
+      // `dropped` is a mixed count — rows of any kind the cap hid, plus open latches the
+      // bounded page never fetched — so no single destination is the right one. Saying
+      // plainly that they exist and are not on screen is the honest version of a number
+      // with no link, and building the page would be inventing a surface Kyle cut.
+      andMore: (count: number) => `${count} more ${count === 1 ? "item" : "items"}, not shown`,
       // The sidebar badge's label, and deliberately not `andMore`: this count is the
       // whole list, not the remainder of one, and a badge announcing "3 more items"
       // when three is everything is simply wrong.

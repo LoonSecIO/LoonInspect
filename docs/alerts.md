@@ -99,6 +99,30 @@ the rest rather than swallowing them (`dropped`), which is honest but not yet *u
 grouping by app on the read side is the obvious follow-on and is deliberately not in
 #101.
 
+**`new_app` ranks last within `high` (Kyle, 2026-09-04).** The level ruling above stands
+— the signal *is* `high`. What is ruled here is the tie-break, and it exists because the
+level alone starves the panel. Needs Attention orders oldest-first inside a level and
+shows five rows. An open latch only closes when the app is uninstalled, which for a
+Jamf-deployed app never happens, so latches accumulate and age monotonically; a
+destination carries a `lastFailureAt` refreshed on every retry, so a *currently dead*
+Splunk pipe is always the newest thing in the band. Five latches older than the last
+delivery attempt therefore push "Deliveries are failing" off the list permanently — on
+the one surface where a dead pipe reliably shows up.
+
+So within `high`, `new_app` sorts after every other kind, no matter how old the latches
+are. One comparator, no schema change, no level change, nothing else's behaviour changed
+(`RANK_WITHIN_LEVEL` in `frontend/src/features/overview/needsAttention.ts`). Demoting the
+level was rejected: it would have made a genuinely high-severity signal quiet everywhere
+rather than only inside a five-row budget.
+
+Two things this does **not** fix, stated so nobody reads more into it. The unbounded
+count is untouched — one rollout still opens hundreds of latches, and grouping them into
+a single row is the named follow-on for whichever session next touches this panel. And
+the tie-break is *within* a level, so a `normal` row (`run_failed`, `collection_overdue`)
+still sorts below a `high` `new_app` row: level ordering is prior to rank, which is what
+keeps the panel's coloured stripes in blocks. Beating a `normal` row would require the
+level to move, which is exactly what the ruling declined to do.
+
 ## 4. Cost
 
 The latch runs once per device per pull, on the path written to move 40k devices in ten

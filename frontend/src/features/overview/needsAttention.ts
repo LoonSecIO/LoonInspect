@@ -84,6 +84,11 @@ import type { UpdateStatusResponse } from "@/features/system/api";
  * API returned — a tool pushed to two thousand Macs opens two thousand latches — which is
  * why its input carries a `total` and `dropped` counts the remainder rather than
  * pretending the page was the whole answer.
+ *
+ * It is also the only kind that is *ranked* rather than merely levelled, and the two
+ * facts are the same fact: unbounded rows that never close would otherwise take the whole
+ * five-row budget from the checks this panel exists for. `RANK_WITHIN_LEVEL` carries the
+ * ruling and the reasoning.
  */
 
 /** What a row can be about. `new_app` is #101's, and arrived as one more member — which
@@ -214,6 +219,35 @@ const LEVEL_OF: Record<Exclude<AttentionKind, "new_app">, ChangeLevel> = {
   run_failed: "normal",
   collection_overdue: "normal",
   update_available: "low"
+};
+
+/**
+ * The tie-break **inside** a level. Lower sorts first; everything is 0 but `new_app`.
+ *
+ * Ruled by Kyle on 2026-09-04, and it exists because the ordinary tie-break — oldest
+ * first — is exactly wrong for a latch that never closes. `new_app` is `high`, and that
+ * ruling stands. But an open latch closes only when the app is uninstalled, which for a
+ * Jamf-deployed app never happens, so latches accumulate and their age only ever grows.
+ * A destination carries `lastFailureAt`, refreshed on every retry, so a *currently dead*
+ * Splunk pipe is always the **newest** thing in the band. Age-only, five open latches
+ * older than the last delivery attempt push "Deliveries are failing" off a five-row list
+ * permanently — on the panel whose whole job is to be the one place a dead pipe shows up.
+ *
+ * Rejected: demoting `new_app` to `normal`, which would have made a genuinely high signal
+ * quiet on every surface that reads the level rather than only inside a five-row budget;
+ * and capping latches at N inside the composition, which would have made the panel lie
+ * about how many there are instead of ordering them honestly.
+ *
+ * The comparator is `Record<AttentionKind, …>` rather than a `kind === "new_app"` test so
+ * that a kind added to the union has to state its rank rather than inherit one silently.
+ */
+const RANK_WITHIN_LEVEL: Record<AttentionKind, number> = {
+  destination_failing: 0,
+  inventory_stale: 0,
+  run_failed: 0,
+  collection_overdue: 0,
+  update_available: 0,
+  new_app: 1
 };
 
 /** Which input answers which check. Used to turn an errored input into `degraded`
@@ -443,20 +477,34 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
   // disappears when the app does. There is nothing to acknowledge, which is why the panel
   // offers no way to — and why this count is safe to read as a fact about the fleet.
   //
-  // `level` comes off the row rather than out of `LEVEL_OF`; see that table's note. The
-  // link is the change that recorded the install, on a page that already reads `artifact`
-  // from the URL — no new route, and no alerts page, which #101 ruled out for v0.
+  // `level` comes off the row rather than out of `LEVEL_OF`; see that table's note, and
+  // `RANK_WITHIN_LEVEL` for why being `high` does not let these rows eat the cap.
+  //
+  // The link is the change that recorded the install, on a page that already reads both
+  // of these from the URL — no new route, and no alerts page, which #101 ruled out for v0.
+  // **Both** parameters, because the row names a Mac: `artifact` alone lands on every
+  // install of that app across the fleet, with the one device the row is about nowhere on
+  // screen, so the operator arrives at a page that has thrown away half of what they
+  // clicked. `q` is the device search (`backend/app/api/changes.py`) and matches the
+  // hostname — the same `general.name` that `Device.hostname` and `subject_label` are both
+  // written from, so the two agree by construction rather than by luck. It is an ILIKE
+  // substring, so a hostname contained in another hostname widens the result; widening a
+  // fleet-wide page toward the right device is strictly better than not narrowing at all.
   const alerts = valueOrNull(inputs.alerts);
   for (const alert of alerts?.items ?? []) {
-    rows.push({
-      id: `new_app:${alert.id}`,
-      kind: "new_app",
-      level: alert.level,
-      subject: alert.appName,
-      context: alert.deviceLabel,
-      href: `/devices/changes?artifact=${encodeURIComponent(alert.appName)}`,
-      at: alert.openedAt
-    });
+    const artifact = encodeURIComponent(alert.appName);
+    const device = encodeURIComponent(alert.deviceLabel);
+    rows.push(
+      one({
+        id: `new_app:${alert.id}`,
+        kind: "new_app",
+        level: alert.level,
+        subject: alert.appName,
+        context: alert.deviceLabel,
+        href: `/devices/changes?artifact=${artifact}&q=${device}`,
+        at: alert.openedAt
+      })
+    );
   }
   // Latches the bounded page never asked for. Counted into `dropped` rather than dropped
   // on the floor: one new tool pushed to two thousand Macs is two thousand open latches,
@@ -464,12 +512,20 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
   // lie the cap exists to avoid telling.
   const unfetchedAlerts = alerts ? Math.max(0, alerts.total - alerts.items.length) : 0;
 
-  // Level first, then **oldest first** within a level: a destination that has been
-  // refusing deliveries for three days outranks one that failed five minutes ago, which
-  // may still be a blip. A row with no instant has no age and sorts last.
+  // Level first, then the kind's rank within that level, then **oldest first**: a
+  // destination that has been refusing deliveries for three days outranks one that failed
+  // five minutes ago, which may still be a blip. A row with no instant has no age and
+  // sorts last.
+  //
+  // The rank sits *between* level and age, not after it, because it exists precisely to
+  // beat age: see `RANK_WITHIN_LEVEL` for the starvation it was ruled to stop. Levels
+  // still sort in whole blocks, so the coloured stripes down the left of the panel never
+  // read as unsorted.
   rows.sort((a, b) => {
     const byLevel = LEVEL_ORDER.indexOf(a.level) - LEVEL_ORDER.indexOf(b.level);
     if (byLevel !== 0) return byLevel;
+    const byRank = RANK_WITHIN_LEVEL[a.kind] - RANK_WITHIN_LEVEL[b.kind];
+    if (byRank !== 0) return byRank;
     const aAt = millis(a.at);
     const bAt = millis(b.at);
     if (aAt === null) return bAt === null ? 0 : 1;
