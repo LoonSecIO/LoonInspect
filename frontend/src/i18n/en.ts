@@ -886,7 +886,11 @@ export const en = {
   },
   changes: {
     title: "Changes",
-    description: "What changed on each device between observations, after your change-tracking policy decided it matters. Every row links back to the two observations it was derived from.",
+    // No claim here that the page cannot keep. The second sentence used to promise
+    // "every row links back to the two observations it was derived from" — there has
+    // never been such a link, on this page or any other (#307).
+    description:
+      "The change log for each device, between observation periods. Every row is one your change-tracking policy decided mattered.",
     search: "Search",
     searchPlaceholder: "Device name, serial, or Jamf id",
     artifact: "Filter to one thing",

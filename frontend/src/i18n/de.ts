@@ -847,7 +847,8 @@ export const de: Translations = {
   },
   changes: {
     title: "Änderungen",
-    description: "Was sich an jedem Gerät zwischen zwei Beobachtungen geändert hat, nachdem die Änderungsverfolgung entschieden hat, dass es zählt. Jede Zeile verweist auf die beiden Beobachtungen, aus denen sie abgeleitet wurde.",
+    description:
+      "Das Änderungsprotokoll jedes Geräts zwischen zwei Beobachtungszeiträumen. Enthalten ist, was Ihre Änderungsverfolgung als relevant eingestuft hat.",
     search: "Suche",
     searchPlaceholder: "Gerätename, Seriennummer oder Jamf-ID",
     artifact: "Auf ein Objekt filtern",
