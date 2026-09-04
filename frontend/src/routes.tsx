@@ -92,7 +92,7 @@ export function AppRoutes() {
             they lack access — and a support page you need a capability to read
             refuses exactly the reader who came to it. It reads nothing privileged:
             /system/version is authenticated-but-unprivileged for this reason, and
-            the rest of the page is four links. */}
+            the rest of the page is links out to GitHub and Slack. */}
         <Route path="settings/support" element={<SupportPage />} />
         {/* Still no /vulnerabilities, and #251 is the session that decided so rather
             than deferring again. The corpus edge — covered / unknown_app / off,

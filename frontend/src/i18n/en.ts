@@ -275,7 +275,7 @@ export const en = {
     securityReport: "Report a vulnerability privately",
     securityPolicy: "Read the security policy",
     privacyNote:
-      "This page sends nothing anywhere. It reads the build string from your own instance and draws four links; there is no telemetry on it, and no report leaves this browser unless you write one yourself."
+      "This page sends nothing anywhere. It reads the build string from your own instance and draws five links out; there is no telemetry on it, and no report leaves this browser unless you write one yourself."
   },
   apiTokens: {
     title: "API Tokens",

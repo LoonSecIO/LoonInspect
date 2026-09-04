@@ -272,7 +272,7 @@ export const de: Translations = {
     securityReport: "Schwachstelle vertraulich melden",
     securityPolicy: "Sicherheitsrichtlinie lesen",
     privacyNote:
-      "Diese Seite sendet nichts nach außen. Sie liest den Build-String Ihrer eigenen Instanz und zeigt vier Links; es gibt keine Telemetrie darauf, und kein Bericht verlässt diesen Browser, sofern Sie ihn nicht selbst schreiben."
+      "Diese Seite sendet nichts nach außen. Sie liest den Build-String Ihrer eigenen Instanz und zeigt fünf Links nach außen; es gibt keine Telemetrie darauf, und kein Bericht verlässt diesen Browser, sofern Sie ihn nicht selbst schreiben."
   },
   apiTokens: {
     title: "API-Token",
