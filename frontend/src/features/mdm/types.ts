@@ -127,6 +127,24 @@ export interface Run {
   actorLabel: string | null;
 }
 
+/** What the status strip's run segment is built from, one row per connection (#105) —
+ *  mirrors the backend's `RunSummaryOut`.
+ *
+ *  This is served rather than filtered client-side because a webhook mints a run row per
+ *  Jamf event and `/api/runs` caps at 200: on a busy pod the last full sweep is already
+ *  off the end of any page the browser could ask for. See `docs/runs.md` §8. */
+export interface RunSummary {
+  mdmConnectionId: number;
+  /** The last COMPLETED FULL sweep — what a rendered run id claims to name. */
+  lastFullSweep: Run | null;
+  /** Succeeded webhook sweeps since that one finished. The strip prints this only when
+   *  it is non-zero: it is a correction to the stamp, and a correction of nothing is not
+   *  a fact worth printing. */
+  webhookSweepsSince: number;
+  /** Newest run of any lock class — what #106's failed-run row reads. */
+  latestRun: Run | null;
+}
+
 export interface RunLogLine {
   id: number;
   ts: string;

@@ -12,6 +12,7 @@ import type {
   ProviderInfo,
   Run,
   RunLogResponse,
+  RunSummary,
   SectionInfo
 } from "@/features/mdm/types";
 
@@ -59,6 +60,17 @@ export function listRuns(connectionId?: number, limit = 25): Promise<Run[]> {
   const query = new URLSearchParams({ limit: String(limit) });
   if (connectionId !== undefined) query.set("connectionId", String(connectionId));
   return apiRequest<Run[]>(`/runs?${query.toString()}`);
+}
+
+/** The status strip's run facts, one row per connection (#105): which run the stamp
+ *  names, how many webhook sweeps have landed since it, and what ran most recently.
+ *
+ *  Not derivable from `listRuns` — see `RunSummary` and `docs/runs.md` §8. */
+export function listRunSummaries(connectionId?: number): Promise<RunSummary[]> {
+  const query = new URLSearchParams();
+  if (connectionId !== undefined) query.set("connectionId", String(connectionId));
+  const suffix = query.toString();
+  return apiRequest<RunSummary[]>(`/runs/summary${suffix ? `?${suffix}` : ""}`);
 }
 
 /** Engine lines for one run, incrementally. `after` is the last line id already held,

@@ -972,3 +972,359 @@ async def test_a_run_whose_connection_is_gone_ships_a_null_name_on_both_families
 
     missing_name, missing_source = await _connection_wire(db, connection.id + 10_000)
     assert missing_name is None and missing_source is None
+
+
+# --- the stamp (#105): what /api/runs/summary pins to ---------------------------------
+#
+# These assert the pinning rule, not a status string. The rule is that a rendered run id
+# names the last COMPLETED FULL sweep and nothing else (docs/runs.md §8), and every case
+# below is a way a naive "newest run" answer gets that wrong on a real pod.
+
+
+def _seed_run(connection_id, *, lock_class, trigger, status, started_at, finished_at=None):
+    """A run row written directly, no acquisition.
+
+    `acquire` takes the mutex, writes a log line and scans for reclaims; these tests need
+    a few hundred rows in a shape the mutex forbids anyway (many concurrent succeeded
+    sweeps sitting in the past), and the pinning query reads columns, not history.
+    """
+    from app.models.schema import Run
+
+    return Run(
+        mdm_connection_id=connection_id,
+        collection_id=None,
+        trigger=trigger,
+        comparison="delta",
+        lock_class=lock_class,
+        status=status,
+        window_start=started_at,
+        window_end=finished_at,
+        started_at=started_at,
+        heartbeat_at=started_at,
+        finished_at=finished_at,
+    )
+
+
+async def _summary(db, connection_id):
+    from app.api.runs import run_summary
+
+    rows = await run_summary(connection_id=connection_id, db=db)
+    assert len(rows) == 1, f"expected exactly one summary for connection {connection_id}"
+    return rows[0]
+
+
+async def test_the_stamp_pins_the_full_sweep_under_a_pile_of_webhook_runs(db, connection) -> None:
+    """The case a client-side filter over `/api/runs?limit=200` gets wrong, and the whole
+    reason this endpoint exists.
+
+    `ingest_webhook` mints one run per allowlisted Jamf event and runs live 30 days, so a
+    fleet on ComputerAdded + InventoryCompleted buries the last full sweep thousands of
+    rows deep. `/api/runs` caps `limit` at 200. Filtering a page in the browser would
+    therefore drop the run segment entirely — silently, and only on the busy pods where
+    the stamp is worth the most.
+    """
+    base = _now() - timedelta(hours=6)
+    sweep = _seed_run(
+        connection.id,
+        lock_class="device_sweep",
+        trigger="sweep",
+        status="succeeded",
+        started_at=base,
+        finished_at=base + timedelta(minutes=8),
+    )
+    db.add(sweep)
+    db.add_all(
+        [
+            _seed_run(
+                connection.id,
+                lock_class="webhook",
+                trigger="webhook",
+                status="succeeded",
+                started_at=base + timedelta(minutes=10 + n),
+                finished_at=base + timedelta(minutes=10 + n, seconds=2),
+            )
+            for n in range(250)
+        ]
+    )
+    await db.commit()
+
+    summary = await _summary(db, connection.id)
+    assert summary.last_full_sweep is not None
+    assert summary.last_full_sweep.id == sweep.id
+    assert summary.webhook_sweeps_since == 250
+    # And the newest run of any class is one of the webhooks — the value that would have
+    # been printed as the stamp had `limit=1` been trusted.
+    assert summary.latest_run is not None and summary.latest_run.lock_class == "webhook"
+
+
+async def test_a_webhook_class_run_never_pins_whatever_its_trigger(db, connection) -> None:
+    """Lock class is the predicate, not the trigger word.
+
+    A webhook run carries `trigger="webhook"` today, but the two columns are set at
+    different call sites and the strip's claim is about *what was swept*, not about who
+    asked. A `webhook`-class row with a sweep trigger is a shape nothing should ever
+    write; if one appears it must still not be able to claim a whole-fleet measurement.
+    """
+    base = _now() - timedelta(hours=2)
+    db.add(
+        _seed_run(
+            connection.id,
+            lock_class="webhook",
+            trigger="sweep",
+            status="succeeded",
+            started_at=base,
+            finished_at=base + timedelta(seconds=3),
+        )
+    )
+    await db.commit()
+
+    summary = await _summary(db, connection.id)
+    assert summary.last_full_sweep is None
+    assert summary.webhook_sweeps_since == 0
+
+
+async def test_a_failed_or_running_sweep_does_not_pin_and_the_last_good_one_does(db, connection) -> None:
+    """"Completed" is load-bearing in "last completed full sweep".
+
+    A sweep that died at device 12,000 measured a twelfth of the fleet, and one still in
+    flight has measured an unknown fraction of it. Either naming the device count beside
+    it would be a whole-fleet claim nobody made. The stamp falls back to the last run
+    that actually finished.
+    """
+    base = _now() - timedelta(hours=9)
+    good = _seed_run(
+        connection.id,
+        lock_class="device_sweep",
+        trigger="sweep",
+        status="succeeded",
+        started_at=base,
+        finished_at=base + timedelta(minutes=11),
+    )
+    db.add_all(
+        [
+            good,
+            _seed_run(
+                connection.id,
+                lock_class="device_sweep",
+                trigger="sweep",
+                status="failed",
+                started_at=base + timedelta(hours=1),
+                finished_at=base + timedelta(hours=1, minutes=2),
+            ),
+            _seed_run(
+                connection.id,
+                lock_class="device_sweep",
+                trigger="manual",
+                status="running",
+                started_at=base + timedelta(hours=2),
+            ),
+        ]
+    )
+    await db.commit()
+
+    summary = await _summary(db, connection.id)
+    assert summary.last_full_sweep is not None and summary.last_full_sweep.id == good.id
+    # The failed one is still the connection's story for #106 to tell — it just is not
+    # the stamp. `latest_run` is what that row reads, so it must be the running one here.
+    assert summary.latest_run is not None and summary.latest_run.status == "running"
+
+
+async def test_a_manual_sweep_pins_exactly_as_a_scheduled_one_does(db, connection) -> None:
+    """`takesTheHero`'s rule, server-side: sweep and manual are both the fleet arriving.
+
+    Someone pressing Sync now has measured the whole fleet just as a cron sweep has, and
+    a stamp that ignored manual runs would tell an operator who had just resynced that
+    their newest evidence is yesterday's.
+    """
+    base = _now() - timedelta(minutes=40)
+    manual = _seed_run(
+        connection.id,
+        lock_class="device_sweep",
+        trigger="manual",
+        status="succeeded",
+        started_at=base,
+        finished_at=base + timedelta(minutes=6),
+    )
+    db.add(manual)
+    await db.commit()
+
+    summary = await _summary(db, connection.id)
+    assert summary.last_full_sweep is not None and summary.last_full_sweep.id == manual.id
+
+
+async def test_the_since_count_starts_at_the_pin_and_stays_on_its_own_connection(
+    db, connection, sibling_connection
+) -> None:
+    """"+N webhook sweeps since" is a correction to *this* stamp.
+
+    Three ways to get it wrong, all pinned here: counting webhooks that landed before the
+    pinned sweep (they are already inside it — the sweep re-read every device), counting
+    a neighbouring connection's webhooks (a pod with two Jamf instances gets one line
+    each, and the lines must not borrow each other's traffic), and counting failed ones.
+    A failed webhook wrote nothing, so it corrects nothing: it is a Needs Attention row
+    (#106), not a bigger N.
+    """
+    base = _now() - timedelta(hours=4)
+    sweep = _seed_run(
+        connection.id,
+        lock_class="device_sweep",
+        trigger="sweep",
+        status="succeeded",
+        started_at=base,
+        finished_at=base + timedelta(minutes=5),
+    )
+    db.add_all(
+        [
+            sweep,
+            # Before the pin — inside the sweep's own measurement.
+            _seed_run(
+                connection.id,
+                lock_class="webhook",
+                trigger="webhook",
+                status="succeeded",
+                started_at=base - timedelta(minutes=30),
+                finished_at=base - timedelta(minutes=30) + timedelta(seconds=2),
+            ),
+            # After the pin, and counted.
+            _seed_run(
+                connection.id,
+                lock_class="webhook",
+                trigger="webhook",
+                status="succeeded",
+                started_at=base + timedelta(minutes=20),
+                finished_at=base + timedelta(minutes=20, seconds=2),
+            ),
+            _seed_run(
+                connection.id,
+                lock_class="webhook",
+                trigger="webhook",
+                status="succeeded",
+                started_at=base + timedelta(minutes=45),
+                finished_at=base + timedelta(minutes=45, seconds=2),
+            ),
+            # After the pin but failed — wrote nothing, corrects nothing.
+            _seed_run(
+                connection.id,
+                lock_class="webhook",
+                trigger="webhook",
+                status="failed",
+                started_at=base + timedelta(minutes=50),
+                finished_at=base + timedelta(minutes=50, seconds=1),
+            ),
+            # The neighbour's traffic.
+            _seed_run(
+                sibling_connection.id,
+                lock_class="webhook",
+                trigger="webhook",
+                status="succeeded",
+                started_at=base + timedelta(minutes=25),
+                finished_at=base + timedelta(minutes=25, seconds=2),
+            ),
+        ]
+    )
+    await db.commit()
+
+    summary = await _summary(db, connection.id)
+    assert summary.last_full_sweep is not None and summary.last_full_sweep.id == sweep.id
+    assert summary.webhook_sweeps_since == 2
+
+    # And the neighbour's own line sees no full sweep at all, so its count is zero rather
+    # than a raw tally of the one webhook it did handle.
+    neighbour = await _summary(db, sibling_connection.id)
+    assert neighbour.last_full_sweep is None and neighbour.webhook_sweeps_since == 0
+
+
+async def test_with_no_sweep_ever_the_count_is_zero_not_every_webhook(db, connection) -> None:
+    """The clause corrects a stamp. With no stamp there is nothing to correct.
+
+    A raw count would print "+4,812 webhook sweeps since" next to no run id at all on a
+    connection whose nightly sweep has never once succeeded — the most alarming state
+    this product has, rendered as a busy-looking number.
+    """
+    base = _now() - timedelta(hours=3)
+    db.add_all(
+        [
+            _seed_run(
+                connection.id,
+                lock_class="webhook",
+                trigger="webhook",
+                status="succeeded",
+                started_at=base + timedelta(minutes=n),
+                finished_at=base + timedelta(minutes=n, seconds=2),
+            )
+            for n in range(7)
+        ]
+    )
+    await db.commit()
+
+    summary = await _summary(db, connection.id)
+    assert summary.last_full_sweep is None
+    assert summary.webhook_sweeps_since == 0
+    assert summary.latest_run is not None  # the connection has run *something*
+
+
+async def test_a_connection_that_has_never_run_still_gets_a_line(db, connection) -> None:
+    """The connection list comes from `mdm_connections`, not from distinct ids in `runs`.
+
+    A connection added an hour ago and never swept is exactly the state the strip has a
+    sentence for ("no inventory yet"); deriving the list from run rows would drop the
+    line entirely, so the operator would see nothing where they had just added something.
+    """
+    summary = await _summary(db, connection.id)
+    assert summary.last_full_sweep is None
+    assert summary.latest_run is None
+    assert summary.webhook_sweeps_since == 0
+
+
+async def test_the_summary_serializes_the_keys_the_strip_reads(db, connection) -> None:
+    """camelCase, asserted against the names the browser actually uses.
+
+    Nothing else in the stack consumes this endpoint, so a field that serialized as
+    `last_full_sweep` would surface as a missing run segment on the front page and
+    nowhere else — the same silence `test_the_api_serializes_the_keys_the_panel_reads`
+    exists to prevent for the run panel.
+    """
+    base = _now() - timedelta(hours=1)
+    db.add(
+        _seed_run(
+            connection.id,
+            lock_class="device_sweep",
+            trigger="sweep",
+            status="succeeded",
+            started_at=base,
+            finished_at=base + timedelta(minutes=4),
+        )
+    )
+    await db.commit()
+
+    body = (await _summary(db, connection.id)).model_dump(by_alias=True)
+    for key in ("mdmConnectionId", "lastFullSweep", "webhookSweepsSince", "latestRun"):
+        assert key in body, f"{key} missing from the serialized summary"
+    assert body["lastFullSweep"]["lockClass"] == "device_sweep"
+    assert body["lastFullSweep"]["finishedAt"] is not None
+
+
+async def test_summary_is_declared_above_the_job_id_route() -> None:
+    """The one routing mistake this change invites, pinned.
+
+    FastAPI matches in declaration order and `/{job_id}` is typed `uuid.UUID`. A
+    `/summary` declared after it does NOT fall through — the request 422s on UUID
+    parsing, which reads like a client bug and sends whoever debugs it to the frontend.
+    """
+    from app.api.runs import router
+
+    # `route.path` carries the router's own prefix, which is what the app matches on.
+    paths = [route.path for route in router.routes]
+    assert paths.index("/api/runs/summary") < paths.index("/api/runs/{job_id}")
+
+
+async def test_summary_is_gated_by_the_same_permission_as_the_rest_of_the_module() -> None:
+    """`connectionId` is a filter, not a scope: RLS keeps a tenant inside its own rows,
+    and the permission keeps a role without CONNECTION_READ out of the run history
+    altogether. Asserted structurally because the gate *is* a route declaration —
+    forgetting it is a missing line, not a wrong branch.
+    """
+    from app.api.runs import router
+
+    by_path = {route.path: route for route in router.routes}
+    assert len(by_path["/api/runs/summary"].dependencies) == len(by_path["/api/runs"].dependencies) == 1

@@ -309,6 +309,35 @@ export const de: Translations = {
       `${groups.toLocaleString("de-DE")} Gruppe${groups === 1 ? "" : "n"} in ${duration}`,
     seeYourFleet: "Zur Geräteliste",
 
+    // Die Statuszeile (#105). Eine Zeile pro Verbindung, nennt nur Tatsachen und wird
+    // nie rot — eine überschrittene Schwelle ist ein Eintrag unter „Handlungsbedarf“
+    // (#106), keine Farbe hier. Jede relative und jede Pluralform ist eine Funktion:
+    // Deutsch stellt die Relation voran („vor 2 Std.“), eine im Bauteil angehängte
+    // Endung ergäbe „2 Std. vor“.
+    strip: {
+      identity: (name: string, host: string) => `${name} (${host})`,
+      devices: (n: number) => `${n.toLocaleString("de-DE")} Gerät${n === 1 ? "" : "e"}`,
+      // Nicht „0 Geräte“: eine Verbindung ohne Sync-Status hat nicht null Geräte
+      // gemessen, sondern noch gar nichts.
+      noInventoryYet: "noch kein Inventar",
+      inventoryAsOf: (utc: string, age: string) => `Inventar vom ${utc} (${age})`,
+      agoNow: "gerade eben",
+      agoMinutes: (n: number) => `vor ${n} Min.`,
+      agoHours: (n: number) => `vor ${n} Std.`,
+      agoDays: (n: number) => `vor ${n} ${n === 1 ? "Tag" : "Tagen"}`,
+      fullSweep: "vollständiger Durchlauf",
+      webhookSweepsSince: (n: number) => `+${n} Webhook-Durchlauf${n === 1 ? "" : "e"} seitdem`,
+      noFullSweepYet: "noch kein vollständiger Durchlauf",
+      copied: "Job-ID kopiert",
+      nextSweep: (when: string) => `nächster Durchlauf ${when}`,
+      noScheduledSweep: "kein Durchlauf geplant",
+      sweepsPaused: "Durchläufe pausiert",
+      destinationOk: (name: string, utc: string) => `${name} OK ${utc}`,
+      destinationLastDelivered: (name: string, utc: string) => `${name} zuletzt zugestellt ${utc}`,
+      destinationNothingYet: (name: string) => `${name} noch nichts zugestellt`,
+      loadError: "Der Verbindungsstatus konnte nicht geladen werden."
+    },
+
     // Der Änderungs-Feed (#107). Der Bezugspunkt ist browser-lokal, der genannte
     // Zeitpunkt jedoch absolut und steht wörtlich in der Kopfzeile und in jedem Link.
     feed: {
