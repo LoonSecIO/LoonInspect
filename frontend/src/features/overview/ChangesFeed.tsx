@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { listChanges } from "@/features/changes/api";
+import { diffLines, whatOf } from "@/features/changes/render";
 import type { DeviceChange } from "@/features/changes/types";
 import { formatUtc } from "@/features/overview/heroRun";
 import { changesHref, readLastVisit, resolveAnchor, summarise, writeLastVisit } from "@/features/overview/sinceAnchor";
@@ -15,25 +16,6 @@ const VISIBLE_ROWS = 10;
 /** What the feed shows: notable and above. `low` is the noise the change policy already
  *  defaults off, and a front page that reprinted it would bury the reason to look. */
 const FEED_MIN_LEVEL = "normal" as const;
-
-function identityOf(identity: Record<string, unknown> | null): string {
-  if (!identity) return "";
-  for (const key of ["name", "username", "groupId", "profileIdentifier", "definitionId", "commonName"]) {
-    if (identity[key] !== undefined && identity[key] !== null) return String(identity[key]);
-  }
-  return Object.values(identity).map(String).join(" ");
-}
-
-function valueOf(value: Record<string, unknown> | null): string {
-  if (value === null) return "—";
-  if ("value" in value && Object.keys(value).length === 1) {
-    const inner = value.value;
-    if (inner === null || inner === undefined) return "—";
-    if (Array.isArray(inner)) return inner.map(String).join(", ");
-    return String(inner);
-  }
-  return JSON.stringify(value);
-}
 
 /**
  * "Since you last looked" — the centerpiece feed on `/` (#107).
@@ -51,6 +33,32 @@ function valueOf(value: Record<string, unknown> | null): string {
 export function ChangesFeed({ baselineAt }: { baselineAt: string | null }) {
   const { t } = useLocale();
   const tf = t.overview.feed;
+
+  /** The thing that changed. Shared with the Changes table so the two cannot drift. */
+  function describe(row: DeviceChange): string {
+    const what = whatOf(
+      row,
+      // No labels: the feed does not read the change policy, so a field appears under its
+      // own name. Worth a raw `cfBundleVersion` on a glance surface rather than a second
+      // request on "/" for cosmetics — the Changes page fetches them and shows the label.
+      {},
+      {
+        section: (name) => t.changes.sections[name] ?? name,
+        entryKind: (kind) => t.changes.entryKinds[kind] ?? kind
+      }
+    );
+    return what.identity ? `${what.head} · ${what.identity}` : what.head;
+  }
+
+  /** What moved, on one line — the panel gives each row exactly one. */
+  function summariseChange(row: DeviceChange): string {
+    return diffLines(row)
+      .map((line) => {
+        const value = line.pair ? `${line.from ?? "—"} → ${line.to ?? "—"}` : (line.from ?? line.to ?? "");
+        return line.label ? `${line.label} ${value}` : value;
+      })
+      .join(" · ");
+  }
 
   // Resolved once per mount. Recomputing it on every render would slide the window under
   // the reader, and it is the value every click-through URL is built from.
@@ -132,12 +140,12 @@ export function ChangesFeed({ baselineAt }: { baselineAt: string | null }) {
             <li key={row.id}>
               <Link to={href} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-5 py-3 text-sm hover:bg-accent">
                 <span className="font-medium text-card-foreground">{row.subjectLabel ?? row.subjectId}</span>
-                <span className="text-muted-foreground">
-                  {row.field ? `${row.section} · ${row.field}` : `${row.entryKind ?? row.section} · ${identityOf(row.entryIdentity) || row.entryLabel || ""}`}
-                </span>
-                <span className="font-mono text-xs text-muted-foreground">
-                  {row.change === "added" ? "—" : valueOf(row.oldValue)} → {row.change === "removed" ? "—" : valueOf(row.newValue)}
-                </span>
+                <span className="text-muted-foreground">{describe(row)}</span>
+                {/* The fields that moved, not the entries they moved inside. This line
+                    printed two whole JSON bodies with no truncation at all, so one app
+                    update could take the full width of the panel and still not show the
+                    version — the reason #307 exists, at its loudest. */}
+                <span className="font-mono text-xs text-muted-foreground">{summariseChange(row)}</span>
                 <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">{row.trigger}</span>
                 <span className="ml-auto whitespace-nowrap text-xs text-muted-foreground">{formatUtc(row.observedAt)}</span>
               </Link>

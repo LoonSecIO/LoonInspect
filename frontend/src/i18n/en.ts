@@ -889,11 +889,18 @@ export const en = {
     description: "What changed on each device between observations, after your change-tracking policy decided it matters. Every row links back to the two observations it was derived from.",
     search: "Search",
     searchPlaceholder: "Device name, serial, or Jamf id",
-    artifact: "Changed thing",
+    artifact: "Filter to one thing",
     artifactPlaceholder: "App name, bundle id, username, group…",
+    // What the parameter accepts, and what it refuses. `artifact` matches four
+    // expressions and paths is not one of them, deliberately (`api/changes.py`) — so the
+    // box says so rather than answering a reasonable guess with an empty feed.
+    artifactHint: "App, account, group or profile — not paths, and not the values themselves.",
+    filterTo: (name: string) => `Filter to ${name}`,
+    clearFilter: "Clear this filter",
     level: "Level",
     anyLevel: "Any level",
     section: "Section",
+    anySection: "Any section",
     apply: "Apply",
     loading: "Loading changes…",
     empty: "No changes yet — they appear from the second observation of a device onward.",
@@ -902,8 +909,7 @@ export const en = {
     colDevice: "Device",
     colWhat: "What",
     colChange: "Change",
-    colFrom: "From",
-    colTo: "To",
+    colWhatChanged: "What changed",
     levels: { high: "High", normal: "Normal", low: "Low" } as Record<string, string>,
     changeKinds: { changed: "Changed", added: "Added", removed: "Removed", updated: "Updated" } as Record<string, string>,
     entryKinds: {
@@ -915,10 +921,30 @@ export const en = {
       certificate: "Certificate",
       software_update: "Pending update"
     } as Record<string, string>,
+    // The closed section vocabulary the filter offers, all fifteen. The first eight are
+    // the scalar sections (the same names `changeTracking.sections` labels for the policy
+    // page); the last seven are the list sections, named as sections rather than as the
+    // single entries `entryKinds` above labels.
+    sections: {
+      general: "General",
+      hardware: "Hardware",
+      operating_system: "Operating system",
+      user_and_location: "User and location",
+      purchasing: "Purchasing",
+      security: "Security",
+      disk_encryption: "Disk encryption",
+      definition: "Smart group definition",
+      applications: "Applications",
+      extension_attributes: "Extension attributes",
+      group_memberships: "Smart group memberships",
+      configuration_profiles: "Configuration profiles",
+      local_user_accounts: "Local accounts",
+      certificates: "Certificates",
+      software_updates: "Pending updates"
+    } as Record<string, string>,
     systemAppsUpdated: (n: number) => `${n} Apple system app${n === 1 ? "" : "s"} updated with the OS`,
     criteriaMoved: "criteria moved",
     deviceDrifted: "device drifted",
-    changedFields: (fields: string) => `fields: ${fields}`,
     count: (n: number) => `${n} change${n === 1 ? "" : "s"}`,
     pageOf: (page: number, pages: number) => `Page ${page} of ${pages}`,
     previous: "Previous",
