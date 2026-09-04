@@ -73,6 +73,13 @@ export function listCollections(connectionId: number): Promise<Collection[]> {
   return apiRequest<Collection[]>(`/mdm/connections/${connectionId}/collections`);
 }
 
+/** Every collection in the tenant, across connections (#106). For callers asking a
+ *  question about the pod rather than about one connection — the alternative was a
+ *  request per connection on every poll of the front page. */
+export function listAllCollections(): Promise<Collection[]> {
+  return apiRequest<Collection[]>("/mdm/collections");
+}
+
 export function createCollection(connectionId: number, input: CollectionInput): Promise<Collection> {
   return apiRequest<Collection>(`/mdm/connections/${connectionId}/collections`, { method: "POST", json: input });
 }

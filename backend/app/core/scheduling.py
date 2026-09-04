@@ -33,6 +33,19 @@ RATE_FLOORS: dict[str, timedelta] = {
     KIND_CATALOG: timedelta(minutes=15),
 }
 
+# How long one occurrence of each frequency is. `every_n_days` computes its own from
+# interval_n, so it is absent here rather than unrepresentable.
+CADENCE: dict[str, timedelta] = {
+    "hourly": timedelta(hours=1),
+    "daily": timedelta(days=1),
+    "weekly": timedelta(days=7),
+}
+
+# Two missed occurrences is stale (#106, ruled 2026-09-04). One missed occurrence is a
+# hiccup — a tick that lost a race, a Jamf that was restarting — and calling that stale
+# would make the word mean nothing by the second week.
+STALE_OCCURRENCES = 2
+
 
 @dataclass(frozen=True, slots=True)
 class Schedule:
@@ -133,6 +146,42 @@ def _same_wall_time(value: datetime, hour: int, minute: int) -> datetime:
     # timedelta arithmetic on an aware datetime is wall-clock arithmetic; re-pinning the
     # hour and minute keeps a daily 02:00 at 02:00 when the offset changed underneath.
     return value.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+
+def cadence(schedule: Schedule) -> timedelta | None:
+    """How long one occurrence of this schedule is, or None when it has none.
+
+    None covers two cases that both mean "there is no cadence to reason about": an
+    event-driven collection (a webhook fires when Jamf says so), and a frequency this
+    build does not recognise — a row written by a newer version and read by an older
+    one. Returning None rather than guessing a default is deliberate: everything
+    downstream treats it as "no claim", and a wrong guess here would become a wrong
+    claim about whether a customer's inventory is current.
+    """
+    if schedule.frequency is None:
+        return None
+    if schedule.frequency == "every_n_days":
+        return timedelta(days=schedule.interval_n or 2)
+    return CADENCE.get(schedule.frequency)
+
+
+def stale_after(schedule: Schedule) -> timedelta | None:
+    """How long a collection may go without a **successful** run before what it collected
+    stops describing the fleet — twice its own cadence (#106, ruled 2026-09-04).
+
+    Derived from the schedule the operator already configured, and from nothing else:
+    there is no setting behind this and there is deliberately no way to tune it per pod.
+    An hourly collection is stale after two hours and a weekly one after a fortnight,
+    which is the whole argument — a fixed 24-hour cut was rejected because it is wrong at
+    both ends, screaming about an hourly collection twenty-three hours after anyone could
+    have acted and calling a weekly one stale while it is still on time.
+
+    None means "makes no staleness claim", propagated from `cadence`. A caller must
+    render nothing for None; a webhook collection that has never fired is not overdue,
+    it is waiting.
+    """
+    occurrence = cadence(schedule)
+    return None if occurrence is None else STALE_OCCURRENCES * occurrence
 
 
 def within_rate_floor(kind: str, last_run_at: datetime | None, now: datetime) -> bool:

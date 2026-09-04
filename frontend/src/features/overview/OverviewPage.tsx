@@ -7,6 +7,7 @@ import { listConnections, listRuns, listSyncStatus } from "@/features/mdm/api";
 import type { MdmSyncStatus, Run } from "@/features/mdm/types";
 import { ChangesFeed } from "@/features/overview/ChangesFeed";
 import { FirstSyncHero } from "@/features/overview/FirstSyncHero";
+import { NeedsAttentionPanel } from "@/features/overview/NeedsAttentionPanel";
 import { SetupStepper } from "@/features/overview/SetupStepper";
 import { findBaselineRun, findRunningHeroRun, formatUtc, runDuration } from "@/features/overview/heroRun";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -210,8 +211,9 @@ export function OverviewPage() {
       {/* The changes feed (#107) — the centerpiece. It is given the baseline so it can
           tell "nothing to compare against yet" from "measured, and quiet", which are
           different sentences and must never share an empty state. */}
+      <NeedsAttentionPanel />
       <ChangesFeed baselineAt={settledBaseline?.finishedAt ?? settledBaseline?.startedAt ?? null} />
-      {/* #105, #106, #101 (status strip, needs attention, alerts) compose in here. */}
+      {/* #105 and #101 (status strip, alerts) compose in here. */}
     </section>
   );
 }

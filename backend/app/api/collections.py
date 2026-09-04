@@ -12,9 +12,15 @@ from app.core.auth import Principal, current_principal, require
 from app.core.context import Actor, reset_actor, set_actor
 from app.core.database import get_db, session_for_tenant
 from app.core.permissions import Permission
-from app.core.scheduling import KIND_CATALOG, KIND_DEVICE_SWEEP, KIND_WEBHOOK, ScheduleError
+from app.core.scheduling import KIND_CATALOG, KIND_DEVICE_SWEEP, KIND_WEBHOOK, ScheduleError, stale_after
 from app.core.tenancy import reset_tenant_id, set_tenant_id
-from app.mdm.collections import apply_schedule, list_collections, run_collection
+from app.mdm.collections import (
+    apply_schedule,
+    list_all_collections,
+    list_collections,
+    run_collection,
+    schedule_of,
+)
 from app.mdm.jamf.contract import EXTENSION_ATTRIBUTE_CARRIERS, SECTIONS, with_extension_attribute_carriers
 from app.mdm.service import TRIGGER_MANUAL
 from app.models.schema import Collection, MdmConnection, MdmSyncState
@@ -28,6 +34,18 @@ from app.schemas.collections import (
 from app.schemas.payload import MdmProvider, SyncStatus
 
 router = APIRouter(prefix="/api/mdm", tags=["collections"])
+
+
+def _stale_after_seconds(row: Collection) -> int | None:
+    """The row's staleness threshold, in seconds, for whoever is judging freshness.
+
+    Served rather than left to the client to compute, because the multiple and the
+    cadence table are a ruling (#106) and a ruling encoded twice in two languages is a
+    ruling that will eventually disagree with itself. `app.core.scheduling` is the only
+    interpreter of a collection's "when", and this keeps it so.
+    """
+    window = stale_after(schedule_of(row))
+    return None if window is None else int(window.total_seconds())
 
 
 def _to_out(row: Collection) -> CollectionOut:
@@ -51,6 +69,8 @@ def _to_out(row: Collection) -> CollectionOut:
         last_run_at=row.last_run_at,
         last_run_status=row.last_run_status,
         last_run_summary=row.last_run_summary,
+        last_success_at=row.last_success_at,
+        stale_after_seconds=_stale_after_seconds(row),
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -125,6 +145,23 @@ async def list_jamf_sections() -> list[SectionInfo]:
         )
         for spec in SECTIONS.values()
     ]
+
+
+@router.get(
+    "/collections",
+    response_model=list[CollectionOut],
+    dependencies=[Depends(require(Permission.CONNECTION_READ))],
+)
+async def list_tenant_collections(db: AsyncSession = Depends(get_db)) -> list[CollectionOut]:
+    """Every collection in the tenant, across connections (#106).
+
+    The per-connection route below is the one the collection editor uses, because it is
+    editing one connection. A caller asking a question *about the pod* — is anything
+    overdue, is any inventory stale — has no connection in hand and would otherwise
+    issue one request per connection on every poll. Mirrors `/destinations` and
+    `/runs`, which are already tenant-wide for the same reason.
+    """
+    return [_to_out(row) for row in await list_all_collections(db)]
 
 
 @router.get(

@@ -13,8 +13,9 @@ because it merely has not been built; that is a roadmap. A v-never entry is a th
 *could* be built, that someone will ask for, and that is being refused with a reason.
 
 The reverse also holds: anything citing this list as normative should be reachable from
-an entry below. Today that is `docs/data-access-grain.md` §7 and
-`backend/app/core/ai.py`'s module docstring.
+an entry below. Today that is `docs/data-access-grain.md` §7,
+`backend/app/core/ai.py`'s module docstring, and
+`frontend/src/features/overview/needsAttention.ts`'s.
 
 ---
 
@@ -62,6 +63,38 @@ module: a feature that never calls the gate is still bound by them.
 Founder-ruled; transcribed from the module docstring that landed with the gate under
 INSPECT-0112. Source and enforcement:
 [backend/app/core/ai.py](../backend/app/core/ai.py).
+
+---
+
+## A second Needs Attention
+
+> **Needs Attention has exactly one composition, and no other surface mirrors or
+> recomposes it.** There is one function that decides what needs attention, and every
+> surface that shows any part of the answer reads its output rather than asking the
+> questions again. The sidebar's count badge is its only off-page rendering. A second
+> implementation — a tile that counts failures, a header dot with its own thresholds —
+> would be two products disagreeing about whether a customer's pod is healthy, on the
+> same screen, and no amount of care keeps two copies of five predicates in step.
+
+Ruled 2026-09-04 (#106). Transcribed from the module docstring that owns the
+composition: [frontend/src/features/overview/needsAttention.ts](../frontend/src/features/overview/needsAttention.ts).
+
+---
+
+## A written all-clear
+
+> **The dated all-clear line is template-only, forever.** "Nothing needs your attention
+> · checked 14:32 UTC" is not a status message; it is the product attesting, with a
+> timestamp, that it looked and found nothing. Every word of it is a template filled
+> from the same checks that would have produced rows. No model ever writes it, softens
+> it, or summarises it — a generated all-clear is a claim about a fleet whose evidence
+> is a sampled distribution, and this is the one sentence in the product a customer may
+> paste into an audit.
+
+Ruled 2026-09-04 (#106). The narrower, load-bearing case of "no model-sourced numbers
+anywhere" above: here the model is barred from the *sentence*, not only from the figures
+in it. Transcribed from
+[frontend/src/features/overview/needsAttention.ts](../frontend/src/features/overview/needsAttention.ts).
 
 ---
 

@@ -75,6 +75,14 @@ class CollectionOut(_Base):
     last_run_at: datetime | None
     last_run_status: str | None
     last_run_summary: dict | None
+    # When this collection last *succeeded* — distinct from last_run_at, which is the
+    # last attempt whatever its outcome.
+    last_success_at: datetime | None
+    # How long without a success before this collection's data is stale: twice its own
+    # cadence (#106). Computed from the row's schedule, never stored, so editing the
+    # schedule moves the threshold with it. Null means the collection makes no
+    # staleness claim — an event-driven webhook has no cadence to double.
+    stale_after_seconds: int | None
     created_at: datetime
     updated_at: datetime
 

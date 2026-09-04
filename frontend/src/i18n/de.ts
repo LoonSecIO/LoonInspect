@@ -309,6 +309,33 @@ export const de: Translations = {
       `${groups.toLocaleString("de-DE")} Gruppe${groups === 1 ? "" : "n"} in ${duration}`,
     seeYourFleet: "Zur Geräteliste",
 
+    // Handlungsbedarf (#106): die Aufgabenliste und die datierte Entwarnungszeile, die
+    // die Zusicherung des Produkts ist, wenn nichts darauf steht. Alles hier bleibt eine
+    // Vorlage – die grüne Zeile schreibt niemals eine KI (docs/v-never.md).
+    attention: {
+      title: "Handlungsbedarf",
+      loading: "Wird geprüft…",
+      allClear: (clock: string) => `Nichts erfordert Ihre Aufmerksamkeit · geprüft ${clock}`,
+      checked: (clock: string) => `geprüft ${clock}`,
+      kinds: {
+        run_failed: "Synchronisierung fehlgeschlagen",
+        destination_failing: "Zustellungen schlagen fehl",
+        collection_overdue: "Nie gestartet",
+        inventory_stale: "Inventar ist veraltet",
+        update_available: "Ein neuerer Build ist verfügbar"
+      },
+      checkNames: {
+        run_failed: "letzte Durchläufe",
+        destination_failing: "Ziele",
+        collection_overdue: "Zeitpläne der Sammlungen",
+        inventory_stale: "Aktualität des Inventars",
+        update_available: "Aktualisierungen"
+      },
+      couldNotCheck: (what: string) => `${what} konnten nicht geprüft werden`,
+      andMore: (count: number) =>
+        `${count} weitere${count === 1 ? "r Punkt erfordert" : " Punkte erfordern"} Aufmerksamkeit`
+    },
+
     // Der Änderungs-Feed (#107). Der Bezugspunkt ist browser-lokal, der genannte
     // Zeitpunkt jedoch absolut und steht wörtlich in der Kopfzeile und in jedem Link.
     feed: {

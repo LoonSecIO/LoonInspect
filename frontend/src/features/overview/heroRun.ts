@@ -40,6 +40,16 @@ export function formatUtc(iso: string): string {
   );
 }
 
+/** `14:32 UTC` — the time-only half of `formatUtc`, for the all-clear attestation on
+ *  `/` (#106), whose one computed line names the clock and not the date. UTC for the
+ *  same reason the full stamp is: it is the clock the operator's Splunk search runs on. */
+export function formatUtcClock(iso: string): string {
+  const stamp = new Date(iso);
+  if (Number.isNaN(stamp.getTime())) return iso;
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(stamp.getUTCHours())}:${pad(stamp.getUTCMinutes())} UTC`;
+}
+
 /** Elapsed wall time as `38s`, `4m 12s`, `1h 07m`. Untranslated on purpose: h/m/s read
  *  the same in both shipped languages, and a clock is not prose. */
 export function formatDuration(ms: number): string {

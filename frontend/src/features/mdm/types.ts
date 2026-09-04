@@ -165,9 +165,19 @@ export interface Collection {
   weekday: number | null;
   timezone: string | null;
   nextDueAt: string | null;
+  /** The last *attempt*, whatever came of it — set to the run's start on success and
+   *  on failure alike. Not the field to ask "is this data current?" with. */
   lastRunAt: string | null;
   lastRunStatus: string | null;
   lastRunSummary: Record<string, unknown> | null;
+  /** The last time this collection succeeded. Survives a failure that moves
+   *  `lastRunAt`, which is the whole reason it is a separate column (#106). */
+  lastSuccessAt: string | null;
+  /** How long without a success before this collection's data is stale — twice its own
+   *  cadence, computed by the backend so the ruling lives in one language. Null means
+   *  the collection makes no staleness claim: an event-driven webhook has no cadence to
+   *  double, and is waiting rather than late. */
+  staleAfterSeconds: number | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -383,3 +383,306 @@ async def test_webhook_path_is_scoped_by_its_collection(db, connection, jamf: Fa
         )
     ).scalar_one()
     assert aperture.document["sections"] == ["general", "security"]
+
+
+# --- last_success_at: the mark that survives a failure (#106) --------------------------
+#
+# `last_run_at` is the attempt's *start* and is written on every outcome, so it answers
+# "when did we last try", not "when was this data last current". The staleness check on
+# "/" asks the second question, and these four tests are the four ways the first answer
+# would have been wrong.
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def sweep(db, connection):
+    """One enabled device sweep of its own, so a failure injected below lands on a row
+    no other test in this module is asserting about."""
+    from app.mdm.collections import apply_schedule
+    from app.models.schema import Collection
+
+    row = Collection(
+        mdm_connection_id=connection.id,
+        name=f"success mark {uuidlib.uuid4().hex[:8]}",
+        kind="device_sweep",
+        enabled=True,
+        sections=["general"],
+        frequency="daily",
+        at_hour=3,
+        at_minute=0,
+        timezone="UTC",
+    )
+    apply_schedule(row)
+    db.add(row)
+    await db.commit()
+    return row
+
+
+async def test_a_successful_sweep_marks_the_attempt_and_the_success_together(db, sweep, jamf: FakeJamf) -> None:
+    from app.mdm.collections import run_collection
+
+    assert sweep.last_success_at is None  # never run
+
+    assert (await run_collection(db, sweep, trigger="manual")).ok
+    await db.refresh(sweep)
+
+    assert sweep.last_run_status == "ok"
+    # Both are the attempt's start, so on a success they agree. That they can be read
+    # off the same instant is exactly why the second column looks redundant — the next
+    # test is why it is not.
+    assert sweep.last_success_at == sweep.last_run_at
+
+
+async def test_a_failed_sweep_moves_the_attempt_and_leaves_the_success_standing(
+    db, sweep, jamf: FakeJamf, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole reason the column exists.
+
+    Before it, one failed sweep overwrote `last_run_at` and the pod lost every record of
+    when its inventory was last current — so a freshness check reading that column would
+    call a fleet fresh at the exact moment it stopped being collected.
+    """
+    from app.mdm import collections as collections_module
+    from app.mdm.collections import run_collection
+    from app.mdm.service import ConnectionSyncResult
+
+    assert (await run_collection(db, sweep, trigger="manual")).ok
+    await db.refresh(sweep)
+    succeeded_at = sweep.last_success_at
+    assert succeeded_at is not None
+
+    async def _refused(_db, connection, **kwargs) -> ConnectionSyncResult:
+        return ConnectionSyncResult(connection_id=connection.id, ok=False, error="Jamf refused the inventory read")
+
+    monkeypatch.setattr(collections_module, "run_jamf", _refused)
+    assert not (await run_collection(db, sweep, trigger="sweep")).ok
+    await db.refresh(sweep)
+
+    assert sweep.last_run_status == "failed"
+    assert sweep.last_run_at > succeeded_at  # the attempt moved…
+    assert sweep.last_success_at == succeeded_at  # …and the success did not
+
+
+async def test_a_reclaimed_finish_does_not_leave_a_success_mark_behind(
+    db, sweep, jamf: FakeJamf, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The `closed is False` downgrade: the work finished, but the reclaim owns the
+    verdict. The row's cached outcome is forced to failed, and its success mark has to
+    be forced back with it — otherwise the collection claims a success the run history
+    says never happened."""
+    from app.mdm import collections as collections_module
+    from app.mdm.collections import run_collection
+
+    real_finish = collections_module.finish
+
+    async def _finished_but_reclaimed(*args, **kwargs) -> bool:
+        await real_finish(*args, **kwargs)
+        return False
+
+    monkeypatch.setattr(collections_module, "finish", _finished_but_reclaimed)
+    await run_collection(db, sweep, trigger="manual")
+    await db.refresh(sweep)
+
+    assert sweep.last_run_status == "failed"
+    assert sweep.last_success_at is None  # not the instant the sweep actually ran
+
+
+async def test_a_reclaim_mid_flight_leaves_an_earlier_success_alone(
+    db, sweep, jamf: FakeJamf, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Restored, never cleared. A run reclaimed mid-flight did not succeed, but an
+    earlier real success is still a true statement about when this data was current."""
+    from app.core.runs import RunReclaimed
+    from app.mdm import collections as collections_module
+    from app.mdm.collections import run_collection
+
+    assert (await run_collection(db, sweep, trigger="manual")).ok
+    await db.refresh(sweep)
+    succeeded_at = sweep.last_success_at
+    assert succeeded_at is not None
+
+    async def _reclaimed(*args, **kwargs):
+        raise RunReclaimed("reclaimed mid-flight")
+
+    monkeypatch.setattr(collections_module, "run_jamf", _reclaimed)
+    assert not (await run_collection(db, sweep, trigger="sweep")).ok
+    await db.refresh(sweep)
+
+    assert sweep.last_run_status == "failed"
+    assert sweep.last_success_at == succeeded_at
+
+
+# --- GET /api/mdm/collections: the tenant-wide list (#106) -----------------------------
+
+ADMIN = ("collections-admin@example.com", "collections-admin-password")
+VIEWER = ("collections-viewer@example.com", "collections-viewer-password")
+NEIGHBOUR_TENANT_ID = uuidlib.UUID("00000000-0000-0000-0000-0000000c0106")
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def accounts() -> None:
+    from app.core.bootstrap import bootstrap_tenants, create_account
+    from app.core.database import init_db, session_for_tenant, unscoped_session
+    from app.core.tenancy import OPERATIONAL_TENANT_ID
+    from app.models.schema import Account, Tenant
+
+    await init_db()
+    async with unscoped_session() as db:
+        await bootstrap_tenants(db)
+        if await db.get(Tenant, NEIGHBOUR_TENANT_ID) is None:
+            db.add(
+                Tenant(
+                    id=NEIGHBOUR_TENANT_ID,
+                    slug="collections-neighbour",
+                    name="Collections Neighbour",
+                    kind="operational",
+                )
+            )
+            await db.commit()
+
+    async with session_for_tenant(OPERATIONAL_TENANT_ID) as db:
+        for (email, password), role in ((ADMIN, "admin"), (VIEWER, "viewer")):
+            # Get-or-create: CI starts from a clean database, a developer re-running
+            # this locally does not.
+            if (await db.execute(select(Account).where(Account.email == email))).scalars().first() is None:
+                await create_account(db, email=email, display_name=role, password=password, roles=(role,))
+        await db.commit()
+
+
+async def _signed_in(email: str, password: str) -> httpx.AsyncClient:
+    """https, because the session cookie is Secure — a plain-http client discards it
+    silently and every request after the 200 login comes back 401."""
+    from app.main import app
+
+    client = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="https://collections.example.com"
+    )
+    response = await client.post("/api/auth/login", json={"email": email, "password": password})
+    assert response.status_code == 200, f"login failed: {response.status_code} {response.text}"
+    client.headers["X-CSRF-Token"] = client.cookies.get("loon_csrf", "")
+    return client
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def api(accounts):
+    client = await _signed_in(*ADMIN)
+    try:
+        yield client
+    finally:
+        await client.aclose()
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def two_connections(db, accounts):
+    """Two Jamf connections in this tenant, each with its own collections, plus one in a
+    *different* tenant. The neighbour is the point: a query with no tenant predicate is
+    only safe if RLS is doing the work, and without a neighbour row a leak would look
+    identical to a correct answer."""
+    from app.core.database import session_for_tenant
+    from app.mdm.collections import apply_schedule
+    from app.models.schema import Collection, MdmConnection
+
+    made: list[int] = []
+    for index in (1, 2):
+        row = MdmConnection(
+            name=f"tenant-wide jamf {index} {uuidlib.uuid4().hex[:8]}",
+            provider="jamf",
+            base_url=HOST,
+            credentials_encrypted=json.dumps({"clientId": "client", "clientSecret": "secret"}),
+        )
+        db.add(row)
+        await db.flush()
+        made.append(row.id)
+        for kind, frequency in (("device_sweep", "hourly"), ("webhook", None)):
+            collection = Collection(
+                mdm_connection_id=row.id,
+                name=f"{kind} {index}",
+                kind=kind,
+                enabled=True,
+                sections=["general"],
+                frequency=frequency,
+                at_minute=0 if frequency else None,
+                timezone="UTC" if frequency else None,
+            )
+            apply_schedule(collection)
+            db.add(collection)
+    await db.commit()
+
+    async with session_for_tenant(NEIGHBOUR_TENANT_ID) as neighbour_db:
+        theirs = MdmConnection(
+            name=f"neighbour jamf {uuidlib.uuid4().hex[:8]}",
+            provider="jamf",
+            base_url="https://neighbour.jamfcloud.com",
+        )
+        neighbour_db.add(theirs)
+        await neighbour_db.flush()
+        hidden = Collection(
+            mdm_connection_id=theirs.id,
+            name="neighbour sweep",
+            kind="device_sweep",
+            enabled=True,
+            sections=["general"],
+            frequency="daily",
+            at_hour=4,
+            at_minute=0,
+            timezone="UTC",
+        )
+        apply_schedule(hidden)
+        neighbour_db.add(hidden)
+        await neighbour_db.commit()
+        neighbour_connection_id = theirs.id
+
+    try:
+        yield {"mine": made, "theirs": neighbour_connection_id}
+    finally:
+        await db.rollback()
+        await db.execute(delete(MdmConnection).where(MdmConnection.id.in_(made)))  # collections cascade
+        await db.commit()
+        async with session_for_tenant(NEIGHBOUR_TENANT_ID) as neighbour_db:
+            await neighbour_db.execute(delete(MdmConnection).where(MdmConnection.id == neighbour_connection_id))
+            await neighbour_db.commit()
+
+
+async def test_the_tenant_wide_list_spans_every_connection(api, two_connections) -> None:
+    """One request, not one per connection. The panel on "/" has no connection in hand
+    and polls; an N+1 there is an N+1 forever."""
+    response = await api.get("/api/mdm/collections")
+    assert response.status_code == 200, response.text
+
+    assert set(two_connections["mine"]) <= {row["mdmConnectionId"] for row in response.json()}
+
+
+async def test_the_tenant_wide_list_stops_at_the_tenant_line(api, two_connections) -> None:
+    """SECURITY: the query carries no tenant predicate, so this asserts RLS is what
+    scopes it. The neighbour's collection exists and is schedulable — and is not here."""
+    response = await api.get("/api/mdm/collections")
+    assert response.status_code == 200, response.text
+    rows = response.json()
+
+    assert two_connections["theirs"] not in {row["mdmConnectionId"] for row in rows}
+    assert "neighbour sweep" not in {row["name"] for row in rows}
+
+
+async def test_the_tenant_wide_list_needs_connection_read(accounts, two_connections) -> None:
+    """A viewer reads inventory, not configuration. The per-connection route is gated
+    the same way, and the new one must not become the cheaper way in."""
+    viewer = await _signed_in(*VIEWER)
+    try:
+        assert (await viewer.get("/api/mdm/collections")).status_code == 403
+    finally:
+        await viewer.aclose()
+
+
+async def test_every_collection_says_when_it_last_succeeded_and_when_it_goes_stale(api, two_connections) -> None:
+    """The two fields a freshness check reads, and the one row that refuses to make the
+    claim: a webhook is event-driven, has no cadence to double, and is waiting rather
+    than late."""
+    response = await api.get("/api/mdm/collections")
+    assert response.status_code == 200, response.text
+    rows = {(row["mdmConnectionId"], row["kind"]): row for row in response.json()}
+
+    sweep = rows[(two_connections["mine"][0], "device_sweep")]
+    assert sweep["lastSuccessAt"] is None  # never run, and says so rather than guessing
+    assert sweep["staleAfterSeconds"] == 2 * 3600  # hourly, doubled — Kyle's ruling
+
+    webhook = rows[(two_connections["mine"][0], "webhook")]
+    assert webhook["staleAfterSeconds"] is None

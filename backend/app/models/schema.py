@@ -1078,6 +1078,17 @@ class Collection(Base):
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_run_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     last_run_summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # The last time this collection *succeeded*, as distinct from the last time it was
+    # attempted (#106). `last_run_at` is written on every outcome, so one failure erases
+    # the only record of when the data was last actually current — and "is this
+    # inventory stale?" is a question about the last success, not the last try.
+    #
+    # Stored rather than derived from the run table on demand: `every_n_days` has a
+    # validated floor of 2 and no ceiling, so a legal collection can carry a 40-day
+    # staleness threshold while runs are purged at 30 days (app.core.runs.purge_runs).
+    # A query window would lose the evidence and then cry stale forever; a latest-field
+    # survives retention.
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)

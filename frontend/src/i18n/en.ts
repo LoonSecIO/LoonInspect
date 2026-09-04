@@ -315,6 +315,35 @@ export const en = {
       `${groups.toLocaleString("en-US")} group${groups === 1 ? "" : "s"} in ${duration}`,
     seeYourFleet: "See your fleet",
 
+    // Needs attention (#106): the action list, and the dated all-clear line that is the
+    // product's attestation when there is nothing on it. Every string here is a
+    // template and stays one — no AI prose ever writes the green line (docs/v-never.md).
+    attention: {
+      title: "Needs attention",
+      loading: "Checking…",
+      allClear: (clock: string) => `Nothing needs your attention · checked ${clock}`,
+      checked: (clock: string) => `checked ${clock}`,
+      // Verbs. The name of the thing is rendered beside these, never inside them:
+      // English word order is not German word order, and a sentence assembled in the
+      // composition would arrive here already built.
+      kinds: {
+        run_failed: "Sync failed",
+        destination_failing: "Deliveries are failing",
+        collection_overdue: "Never started",
+        inventory_stale: "Inventory is stale",
+        update_available: "A newer build is available"
+      },
+      checkNames: {
+        run_failed: "recent runs",
+        destination_failing: "destinations",
+        collection_overdue: "collection schedules",
+        inventory_stale: "inventory freshness",
+        update_available: "updates"
+      },
+      couldNotCheck: (what: string) => `Could not check ${what}`,
+      andMore: (count: number) => `${count} more ${count === 1 ? "item needs" : "items need"} attention`
+    },
+
     // The changes feed (#107). The anchor is per-browser, but the instant it names is
     // absolute and appears verbatim in the header and in every link out, so a shared
     // link or a screenshot reproduces the window the sender saw.

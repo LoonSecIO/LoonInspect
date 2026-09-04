@@ -17,9 +17,12 @@ from app.core.scheduling import (
     KIND_CATALOG,
     KIND_DEVICE_SWEEP,
     KIND_WEBHOOK,
+    STALE_OCCURRENCES,
     Schedule,
     ScheduleError,
+    cadence,
     next_due,
+    stale_after,
     validate_schedule,
     within_rate_floor,
 )
@@ -134,3 +137,55 @@ class TestRateFloor:
     def test_never_run_is_never_within_the_floor(self) -> None:
         assert within_rate_floor(KIND_DEVICE_SWEEP, None, _utc(2026, 8, 22)) is False
         assert within_rate_floor(KIND_WEBHOOK, _utc(2026, 8, 22), _utc(2026, 8, 22)) is False
+
+
+class TestStaleAfter:
+    """Kyle's 2026-09-04 ruling for #106, pinned as arithmetic.
+
+    "Inventory STALE = no successful full sweep in twice the collection's own configured
+    cadence." Every number below comes from doubling something the operator already
+    chose. A fixed 24-hour cut was rejected as wrong at both ends, and these cases are
+    the two ends.
+    """
+
+    @pytest.mark.parametrize(
+        ("schedule", "expected"),
+        [
+            (Schedule(frequency="hourly", timezone="UTC", at_minute=0), timedelta(hours=2)),
+            (Schedule(frequency="daily", timezone="UTC", at_hour=2), timedelta(hours=48)),
+            (Schedule(frequency="weekly", timezone="UTC", at_hour=2, weekday=0), timedelta(hours=336)),
+            (Schedule(frequency="every_n_days", timezone="UTC", at_hour=2, interval_n=3), timedelta(days=6)),
+            (Schedule(frequency="every_n_days", timezone="UTC", at_hour=2, interval_n=20), timedelta(days=40)),
+        ],
+    )
+    def test_is_twice_the_rows_own_cadence(self, schedule: Schedule, expected: timedelta) -> None:
+        assert stale_after(schedule) == expected
+        assert stale_after(schedule) == STALE_OCCURRENCES * cadence(schedule)
+
+    def test_the_two_ends_a_fixed_cut_gets_wrong(self) -> None:
+        """The argument for the ruling, as a test: one threshold cannot serve both."""
+        hourly = Schedule(frequency="hourly", timezone="UTC", at_minute=0)
+        weekly = Schedule(frequency="weekly", timezone="UTC", at_hour=2, weekday=0)
+        # A fixed 24h cut would let an hourly collection sit dead for most of a day…
+        assert stale_after(hourly) < timedelta(hours=24)
+        # …and would call a weekly one stale while it was still six days from due.
+        assert stale_after(weekly) > timedelta(hours=24)
+
+    def test_event_driven_makes_no_staleness_claim(self) -> None:
+        """A webhook collection that has not fired is waiting, not stale. None means the
+        caller renders nothing — never a zero threshold, which would be "always stale"."""
+        assert cadence(Schedule(frequency=None, timezone=None)) is None
+        assert stale_after(Schedule(frequency=None, timezone=None)) is None
+
+    def test_an_unrecognised_frequency_makes_no_claim_either(self) -> None:
+        """A row written by a newer build. Silence beats a guessed default, which would
+        become a wrong claim about whether a customer's inventory is current."""
+        assert stale_after(Schedule(frequency="fortnightly", timezone="UTC")) is None
+
+    def test_nothing_but_the_schedule_feeds_it(self) -> None:
+        """The "no new setting" half of the ruling. `stale_after` takes exactly one
+        argument — the row's own schedule — so there is nothing to tune per pod and no
+        second input that could drift from what the operator configured."""
+        import inspect
+
+        assert list(inspect.signature(stale_after).parameters) == ["schedule"]
