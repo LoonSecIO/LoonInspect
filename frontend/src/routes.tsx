@@ -109,9 +109,9 @@ export function AppRoutes() {
 
             Rejected: minting a SUPPORT_READ permission. Cleaner semantics, but it
             costs an enum member plus an edit to all four role sets in permissions.py
-            to gate five links — and a permission every role holds unconditionally is
-            a gate in name only, which is what DEVICE_READ already is here. Don't
-            redo this analysis.
+            to gate the six links this page draws — and a permission every role holds
+            unconditionally is a gate in name only, which is what DEVICE_READ already
+            is here. Don't redo this analysis.
 
             The genuinely locked-out reader — no session at all — is answered on the
             login page, which already responds without auth and so adds no new route
