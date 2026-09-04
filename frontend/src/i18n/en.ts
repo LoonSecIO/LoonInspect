@@ -58,7 +58,11 @@ export const en = {
     // The scope note repeated in three places an admin forms an expectation (#232):
     // the connection form, the run summary, and the devices count. v0 reads
     // computers only, and this says so rather than leaving a short count to imply it.
-    computersOnlyScope: "Computers only — mobile devices are not collected."
+    computersOnlyScope: "Computers only — mobile devices are not collected.",
+    // Announced to screen readers by every link that leaves the app
+    // (components/ui/external-link.tsx), because a new tab opening unannounced is a
+    // surprise for anyone who cannot see it happen.
+    opensInNewTab: "(opens in a new tab)"
   },
   auth: {
     versionLabel: "Version",
@@ -118,7 +122,8 @@ export const en = {
     myAccount: "My Account",
     destinations: "Destinations",
     changes: "Changes",
-    changeTracking: "Change tracking"
+    changeTracking: "Change tracking",
+    support: "Support"
   },
   destinations: {
     title: "Destinations",
@@ -237,6 +242,40 @@ export const en = {
     errorChanging: "Could not change the password.",
     sessionsHint:
       "Changing your password signs out your other sessions. API tokens keep working — revoke those separately if you need to."
+  },
+  support: {
+    title: "Support",
+    description:
+      "Two places to ask for help with LoonInspect — and one thing that goes to neither of them. Nothing here files a ticket for you: LoonInspect is self-hosted, and a report is something you write and send yourself.",
+    buildHeading: "Start with the build you're running",
+    buildHelp:
+      "The build string of this instance. Paste it into whatever you write — it is the first thing anyone reading a report has to ask for, and it is the difference between an answer and a round trip.",
+    buildUnavailable:
+      "Not read yet. If it stays blank, this browser could not reach the backend — say that in your report, and name the image tag you deployed instead.",
+    copy: "Copy",
+    copied: "Copied",
+    githubHeading: "GitHub",
+    githubBody: (repo: string) =>
+      `Bugs, questions and feature requests go to the issue tracker on ${repo}. Search what is already open first — a documented issue often has the workaround attached — then file one if yours isn't there.`,
+    githubInclude:
+      "A useful report is the build string above, what you expected, what happened instead, and how to get back to it. Screenshots help; device names, serial numbers, hostnames and email addresses do not — leave them out.",
+    githubBrowse: "Browse issues",
+    githubOpen: "Open an issue",
+    slackHeading: "MacAdmins Slack",
+    slackBody: (channel: string) =>
+      `${channel} is the community channel: how other people have set something up, whether a behaviour is expected, and the questions that are not a bug report yet. It's a conversation, not a queue — nobody is on call.`,
+    slackSignupNote: (channel: string) =>
+      `MacAdmins Slack is a separate community with its own signup, so there is no link that drops you straight into ${channel}. Join the workspace first, then find the channel from inside Slack.`,
+    slackJoin: "Join MacAdmins Slack",
+    securityHeading: "Found a vulnerability? Neither of those.",
+    securityBody:
+      "A security finding never goes in a public issue. Report it privately through GitHub's private vulnerability reporting on this repository — Security → Report a vulnerability. That reaches the maintainer directly and keeps the report out of public view while a fix is prepared.",
+    securityFallback: (email: string, channel: string) =>
+      `If that form is unavailable to you, email ${email} instead. Not ${channel} either: everyone in that workspace can read it.`,
+    securityReport: "Report a vulnerability privately",
+    securityPolicy: "Read the security policy",
+    privacyNote:
+      "This page sends nothing anywhere. It reads the build string from your own instance and draws four links; there is no telemetry on it, and no report leaves this browser unless you write one yourself."
   },
   apiTokens: {
     title: "API Tokens",

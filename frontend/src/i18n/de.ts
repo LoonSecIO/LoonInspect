@@ -57,7 +57,8 @@ export const de: Translations = {
     sidebarExpanded: "Symbole + Text",
     sidebarCollapsed: "Nur Symbole",
     sidebarHidden: "Ausgeblendet",
-    computersOnlyScope: "Nur Computer — mobile Geräte werden nicht erfasst."
+    computersOnlyScope: "Nur Computer — mobile Geräte werden nicht erfasst.",
+    opensInNewTab: "(wird in einem neuen Tab geöffnet)"
   },
   auth: {
     versionLabel: "Version",
@@ -118,7 +119,8 @@ export const de: Translations = {
     myAccount: "Mein Konto",
     destinations: "Ziele",
     changes: "Änderungen",
-    changeTracking: "Änderungsverfolgung"
+    changeTracking: "Änderungsverfolgung",
+    support: "Support"
   },
   destinations: {
     title: "Ziele",
@@ -237,6 +239,40 @@ export const de: Translations = {
     errorChanging: "Das Passwort konnte nicht geändert werden.",
     sessionsHint:
       "Beim Ändern des Passworts werden Ihre anderen Sitzungen abgemeldet. API-Token bleiben gültig – widerrufen Sie diese bei Bedarf separat."
+  },
+  support: {
+    title: "Support",
+    description:
+      "Zwei Stellen, an denen Sie Hilfe zu LoonInspect bekommen — und eine Sache, die an keine von beiden gehört. Nichts hier erstellt ein Ticket für Sie: LoonInspect wird selbst gehostet, und einen Bericht schreiben und senden Sie selbst.",
+    buildHeading: "Beginnen Sie mit dem laufenden Build",
+    buildHelp:
+      "Der Build-String dieser Instanz. Fügen Sie ihn in alles ein, was Sie schreiben — er ist das Erste, wonach jede Person fragen muss, die einen Bericht liest, und er entscheidet zwischen einer Antwort und einer Rückfrage.",
+    buildUnavailable:
+      "Noch nicht gelesen. Bleibt das Feld leer, konnte dieser Browser das Backend nicht erreichen — schreiben Sie das in Ihren Bericht und nennen Sie stattdessen das deployte Image-Tag.",
+    copy: "Kopieren",
+    copied: "Kopiert",
+    githubHeading: "GitHub",
+    githubBody: (repo: string) =>
+      `Fehler, Fragen und Feature-Wünsche gehören in den Issue-Tracker unter ${repo}. Sehen Sie zuerst die offenen Issues durch — bei einem dokumentierten Problem steht der Workaround oft daneben — und legen Sie dann eines an, wenn Ihres nicht dabei ist.`,
+    githubInclude:
+      "Ein brauchbarer Bericht besteht aus dem Build-String oben, dem erwarteten Verhalten, dem tatsächlichen Verhalten und dem Weg dorthin. Screenshots helfen; Gerätenamen, Seriennummern, Hostnamen und E-Mail-Adressen nicht — lassen Sie sie weg.",
+    githubBrowse: "Issues durchsehen",
+    githubOpen: "Issue anlegen",
+    slackHeading: "MacAdmins Slack",
+    slackBody: (channel: string) =>
+      `${channel} ist der Community-Kanal: wie andere etwas eingerichtet haben, ob ein Verhalten erwartbar ist, und die Fragen, die noch kein Fehlerbericht sind. Ein Gespräch, keine Warteschlange — es hat niemand Bereitschaft.`,
+    slackSignupNote: (channel: string) =>
+      `MacAdmins Slack ist eine eigenständige Community mit eigener Anmeldung; es gibt also keinen Link, der Sie direkt in ${channel} bringt. Treten Sie zuerst dem Workspace bei und suchen Sie den Kanal dann in Slack.`,
+    slackJoin: "MacAdmins Slack beitreten",
+    securityHeading: "Eine Schwachstelle gefunden? Keines von beiden.",
+    securityBody:
+      "Ein Sicherheitsfund gehört nie in ein öffentliches Issue. Melden Sie ihn vertraulich über GitHubs private Vulnerability-Meldung in diesem Repository — Security → Report a vulnerability. Das erreicht die Maintainerin oder den Maintainer direkt und hält die Meldung nicht öffentlich, während ein Fix vorbereitet wird.",
+    securityFallback: (email: string, channel: string) =>
+      `Steht Ihnen dieses Formular nicht zur Verfügung, schreiben Sie stattdessen an ${email}. Auch nicht an ${channel}: dort kann jede Person im Workspace mitlesen.`,
+    securityReport: "Schwachstelle vertraulich melden",
+    securityPolicy: "Sicherheitsrichtlinie lesen",
+    privacyNote:
+      "Diese Seite sendet nichts nach außen. Sie liest den Build-String Ihrer eigenen Instanz und zeigt vier Links; es gibt keine Telemetrie darauf, und kein Bericht verlässt diesen Browser, sofern Sie ihn nicht selbst schreiben."
   },
   apiTokens: {
     title: "API-Token",
