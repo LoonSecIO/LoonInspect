@@ -3,6 +3,7 @@ import { AppWindow, Database, Flag, Gauge, History, Home, KeyRound, ListChecks, 
 import { NavLink } from "react-router";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/features/auth/store";
+import { useAttentionStore } from "@/features/overview/attentionStore";
 import { BuildVersion } from "@/features/system/BuildVersion";
 import { PERMISSIONS, type PermissionName } from "@/features/auth/types";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -106,6 +107,19 @@ export function Sidebar() {
   const { t } = useLocale();
   const { sidebarMode } = useSidebarMode();
   const permissions = useAuthStore((state) => state.user?.permissions);
+  // The Needs Attention count (#106), read from the store the panel on "/" fills rather
+  // than counted here. That is the ruling: the composition has exactly one
+  // implementation and this badge is its only off-page rendering — a sidebar that ran
+  // the five checks itself would be a second implementation of the list, and four more
+  // requests on every page in the product. The cost is that the badge is blank until
+  // "/" has been visited once in this session.
+  //
+  // `total`, never `rows.length`. `rows` is post-`slice(0, MAX_ROWS)` and excludes the
+  // degraded entries, so counting it would make the badge under-deliver on the one job
+  // the ruling gives it twice over: nine problems would render "5", and a pod where all
+  // five checks error — the case where nobody knows anything — would render no badge at
+  // all.
+  const attentionCount = useAttentionStore((state) => state.total);
 
   const visibleItems = useMemo(() => {
     const granted = new Set(permissions ?? []);
@@ -143,6 +157,7 @@ export function Sidebar() {
       <nav className="space-y-1">
         {visibleItems.map((item) => {
           const Icon = item.icon;
+          const badge = item.labelKey === "overview" && attentionCount > 0 ? attentionCount : null;
 
           return (
             <div key={item.labelKey}>
@@ -156,6 +171,22 @@ export function Sidebar() {
               >
                 <Icon className="h-4 w-4 shrink-0" />
                 {!collapsed && t.nav[item.labelKey]}
+                {badge !== null && (
+                  // Labelled, not a bare number: a screen reader reading "Overview 3"
+                  // has been told a count without being told of what. Its own string,
+                  // not the footer's `andMore` — that one means "N *more* than the five
+                  // shown", and reusing it made the badge announce "3 more items need
+                  // attention" when three is the whole list.
+                  <span
+                    aria-label={t.overview.attention.badge(badge)}
+                    className={cn(
+                      "flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-xs font-semibold text-destructive-foreground",
+                      !collapsed && "ml-auto"
+                    )}
+                  >
+                    {badge}
+                  </span>
+                )}
               </NavLink>
               {!collapsed && item.children && (
                 <div className="ml-4 mt-1 space-y-1 border-l pl-3">

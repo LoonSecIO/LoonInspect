@@ -315,6 +315,58 @@ export const en = {
       `${groups.toLocaleString("en-US")} group${groups === 1 ? "" : "s"} in ${duration}`,
     seeYourFleet: "See your fleet",
 
+    // Needs attention (#106): the action list, and the dated all-clear line that is the
+    // product's attestation when there is nothing on it. Every string here is a
+    // template and stays one — no AI prose ever writes the green line (docs/v-never.md).
+    attention: {
+      title: "Needs attention",
+      loading: "Checking…",
+      allClear: (clock: string) => `Nothing needs your attention · checked ${clock}`,
+      checked: (clock: string) => `checked ${clock}`,
+      // Every check denied. Not an all-clear and not an error: two sentences that say
+      // what was and was not established, and carry no clock — the green line above is
+      // dated because it attests to something, and this attests to nothing.
+      //
+      // "Not checked" leads, because the thing the reader must not carry away is that
+      // their fleet is fine. The second sentence names the permission rather than the
+      // role, since that is what an administrator acts on.
+      blindTitle: "Not checked.",
+      blindBody:
+        "Your role cannot see connections, destinations or system status, so none of these checks ran — this is not an all-clear. An administrator can grant the access these checks need.",
+      // Verbs. The name of the thing is rendered beside these, never inside them:
+      // English word order is not German word order, and a sentence assembled in the
+      // composition would arrive here already built.
+      kinds: {
+        run_failed: "Sync failed",
+        destination_failing: "Deliveries are failing",
+        // NOT "Never started", which was the first spelling and reads as a claim about
+        // the collection's whole life — an admin whose nightly sweep has run for a year
+        // and missed tonight's tick goes hunting for a broken schedule. `next_due_at`
+        // advances at claim, so what actually happened is that nothing picked this up.
+        collection_overdue: "Nothing started it",
+        inventory_stale: "Inventory is stale",
+        update_available: "A newer build is available"
+      },
+      // The collapsed overdue row. One dead tick puts every enabled collection past due
+      // inside the same hour, and five rows naming five collections name nothing that
+      // can be fixed — so above one they become this, which names the scheduler.
+      schedulerStalled: (count: number) => `${count} collections came due and nothing started them — check the scheduler`,
+      checkNames: {
+        run_failed: "recent runs",
+        destination_failing: "destinations",
+        collection_overdue: "collection schedules",
+        inventory_stale: "inventory freshness",
+        update_available: "updates"
+      },
+      couldNotCheck: (what: string) => `Could not check ${what}`,
+      // The footer under a capped list: N *beyond* the five on screen.
+      andMore: (count: number) => `${count} more ${count === 1 ? "item needs" : "items need"} attention`,
+      // The sidebar badge's label, and deliberately not `andMore`: this count is the
+      // whole list, not the remainder of one, and a badge announcing "3 more items"
+      // when three is everything is simply wrong.
+      badge: (count: number) => `${count} ${count === 1 ? "item needs" : "items need"} attention`
+    },
+
     // The status strip (#105). One line per connection, states facts only, never turns
     // red — a threshold breach is a Needs Attention row (#106), not a colour here.
     // Every relative and plural form is a function rather than a concatenation: German

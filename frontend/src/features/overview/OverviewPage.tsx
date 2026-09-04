@@ -8,6 +8,7 @@ import { listCollections, listConnections, listRunSummaries, listRuns, listSyncS
 import type { Collection, MdmConnection, MdmSyncStatus, Run, RunSummary } from "@/features/mdm/types";
 import { ChangesFeed } from "@/features/overview/ChangesFeed";
 import { FirstSyncHero } from "@/features/overview/FirstSyncHero";
+import { NeedsAttentionPanel } from "@/features/overview/NeedsAttentionPanel";
 import { SetupStepper } from "@/features/overview/SetupStepper";
 import { StatusStrip } from "@/features/overview/StatusStrip";
 import { buildConnectionStatuses } from "@/features/overview/connectionStatus";
@@ -291,9 +292,11 @@ export function OverviewPage() {
       {/* The changes feed (#107) — the centerpiece. It is given the baseline so it can
           tell "nothing to compare against yet" from "measured, and quiet", which are
           different sentences and must never share an empty state. */}
+      <NeedsAttentionPanel />
       <ChangesFeed baselineAt={settledBaseline?.finishedAt ?? settledBaseline?.startedAt ?? null} />
-      {/* #106 (needs attention) and #101 (alerts) compose in here, and both read the same
-          `connectionStatuses` array the strip above was given — one join, one truth. */}
+      {/* #101 (alerts) composes in here — its NEW-app latch lands as rows inside the
+          Needs Attention panel above rather than as a surface of its own, which is
+          #106's one-composition ruling. */}
     </section>
   );
 }

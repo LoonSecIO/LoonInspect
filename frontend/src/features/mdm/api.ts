@@ -3,6 +3,7 @@ import type {
   Collection,
   CollectionInput,
   CollectionRunResult,
+  CollectionSummary,
   MdmConnection,
   MdmConnectionInput,
   MdmConnectionTestInput,
@@ -83,6 +84,17 @@ export function getRunLog(jobId: string, after = 0): Promise<RunLogResponse> {
 
 export function listCollections(connectionId: number): Promise<Collection[]> {
   return apiRequest<Collection[]>(`/mdm/connections/${connectionId}/collections`);
+}
+
+/** Every collection in the tenant, across connections (#106). For callers asking a
+ *  question about the pod rather than about one connection — the alternative was a
+ *  request per connection on every poll of the front page.
+ *
+ *  Answers with `CollectionSummary`, not `Collection`: this is a sixty-second poll on
+ *  the most-open page in the product, and the configuration half of the row — the
+ *  operator's `selector` RSQL above all — is read by nothing here. */
+export function listAllCollections(): Promise<CollectionSummary[]> {
+  return apiRequest<CollectionSummary[]>("/mdm/collections");
 }
 
 export function createCollection(connectionId: number, input: CollectionInput): Promise<Collection> {

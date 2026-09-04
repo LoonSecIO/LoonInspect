@@ -130,6 +130,18 @@ async def list_collections(db: AsyncSession, connection_id: int) -> list[Collect
     return list(result.scalars().all())
 
 
+async def list_all_collections(db: AsyncSession) -> list[Collection]:
+    """Every collection in the tenant, across every connection (#106).
+
+    No tenant predicate: the session is already scoped, so "every" means every one this
+    tenant may see and a second connection's rows cannot appear here by accident.
+    Exists so a caller asking a fleet-wide question — is anything overdue, is anything
+    stale — asks once instead of once per connection.
+    """
+    result = await db.execute(select(Collection).order_by(Collection.mdm_connection_id, Collection.id))
+    return list(result.scalars().all())
+
+
 async def ensure_default_collections(db: AsyncSession, connection: MdmConnection) -> list[Collection]:
     """Add whichever default kinds the connection is missing. Flushes, does not commit.
     Only Jamf connections have collections; other providers keep the generic path."""
@@ -208,6 +220,12 @@ async def run_collection(
     # touching an expired attribute under asyncio raises instead of lazily refreshing,
     # which would turn the reclaim's orderly abort into a crash.
     job_id, connection_id, collection_id = str(run.id), connection.id, collection.id
+    # The success mark as it stands *before* this attempt, read here for the same reason
+    # as the three above and one more: a sweep that tolerates an isolated device failure
+    # rolls the session back mid-flight and returns ok, so by the time the accounting
+    # below runs this attribute can be expired even on the happy path. The downgrade at
+    # the end of this function restores it.
+    success_before = collection.last_success_at
     async with entered(run):
         try:
             if collection.kind == KIND_DEVICE_SWEEP:
@@ -265,6 +283,12 @@ async def run_collection(
             await db.refresh(run)
         collection.last_run_at = started
         collection.last_run_status = "ok" if result.ok else "failed"
+        if result.ok:
+            # Success only, and this is the reason the column exists: last_run_at above
+            # is the attempt's *start* and is written on every outcome, so a single
+            # failure would erase the last record of when this collection's data was
+            # current. #106's staleness check asks about the last success.
+            collection.last_success_at = started
         collection.last_run_summary = {
             "jobId": job_id,
             "trigger": trigger,
@@ -294,6 +318,12 @@ async def run_collection(
                 # but the run's verdict is the reclaim's, and this row's cached outcome
                 # must not disagree with the history it summarizes.
                 collection.last_run_status = "failed"
+                # And neither must its success mark: a run whose verdict is the
+                # reclaim's did not succeed, so the last success is whatever it was
+                # before this frame. Restored rather than cleared — an earlier real
+                # success is still true, and clearing it would make the collection read
+                # as never-succeeded (#106).
+                collection.last_success_at = success_before
                 collection.last_run_summary = {
                     **collection.last_run_summary,
                     "error": "run reclaimed before it could finish",
@@ -402,12 +432,51 @@ async def tick_tenant(db: AsyncSession, now: datetime | None = None) -> list[Con
     results: list[ConnectionSyncResult] = []
     for collection, due_at in await claim_due(db, now):
         if within_rate_floor(collection.kind, collection.last_run_at, now):
-            collection.last_run_status = "skipped"
-            collection.last_run_summary = {"trigger": TRIGGER_SWEEP, "reason": "within rate floor"}
+            # A skip is not a result, and must not erase one.
+            #
+            # `last_run_status` is a cache of the newest thing that *happened* to this
+            # collection, and everything that reads it — #106's Needs Attention panel,
+            # the collections list — treats `failed` as the standing alarm. The floor
+            # declining to start a run is not an outcome that supersedes a failure: it
+            # is this tick choosing not to produce one. Written unconditionally, it made
+            # the alarm self-clearing on a timer. A daily sweep that failed at 03:00 and
+            # was manually re-run at 03:20 goes quiet at the next occurrence and stays
+            # quiet for a day; on an hourly collection it happens every alternate tick,
+            # and nothing on any screen says a failure was ever recorded.
+            #
+            # Conditional in SQL rather than on the in-memory row, because this session
+            # does not expire on commit (`app.core.database`): the reclaim now stamps
+            # `failed` onto collection rows through a Core UPDATE (`app.core.runs.
+            # _mark_collections_reclaimed`), so an instance loaded by `claim_due` at the
+            # top of this loop can be reading a status two writes out of date by the
+            # time the loop reaches it. `IS DISTINCT FROM` and not `!=` so a collection
+            # that has never run (null) still records the skip.
+            skipped = (
+                await db.execute(
+                    update(Collection)
+                    .where(
+                        Collection.id == collection.id,
+                        Collection.last_run_status.is_distinct_from("failed"),
+                    )
+                    .values(
+                        last_run_status="skipped",
+                        last_run_summary={"trigger": TRIGGER_SWEEP, "reason": "within rate floor"},
+                    )
+                    .returning(Collection.id)
+                )
+            ).scalar_one_or_none()
             await db.commit()
             logger.info(
                 "collection skipped: within rate floor",
-                extra={"collection_id": collection.id, "kind": collection.kind, "last_run_at": collection.last_run_at},
+                extra={
+                    "collection_id": collection.id,
+                    "kind": collection.kind,
+                    "last_run_at": collection.last_run_at,
+                    # False when the row was left recording a failure. The skip still
+                    # happened — the tick declined to run — it simply did not become the
+                    # collection's last word.
+                    "status_written": skipped is not None,
+                },
             )
             continue
         results.append(await run_collection(db, collection, trigger=TRIGGER_SWEEP, due_at=due_at))
