@@ -200,6 +200,44 @@ export interface Collection {
   updatedAt: string;
 }
 
+/**
+ * What `GET /mdm/collections` answers with — a projection of the row above, not the row
+ * (#106).
+ *
+ * The tenant-wide list is the front page's sixty-second poll, so it carries only the
+ * fields something on that page reads. `selector` in particular is deliberately absent:
+ * it is the operator's RSQL, it routinely names a person, and nothing on `/` renders it.
+ *
+ * Declared standalone rather than as `Pick<Collection, …>`, which was the obvious
+ * spelling and the wrong one: `Pick` says "the same field, fewer of them", and would let
+ * a field added to `Collection` look available here when the server does not send it.
+ * This type is the wire contract of one endpoint and has to be able to disagree with the
+ * fat one.
+ */
+export interface CollectionSummary {
+  id: number;
+  mdmConnectionId: number;
+  name: string;
+  kind: CollectionKind;
+  enabled: boolean;
+  nextDueAt: string | null;
+  /** The last *attempt*, whatever came of it. Not the field to ask "is this data
+   *  current?" with — `lastSuccessAt` is. */
+  lastRunAt: string | null;
+  /** `ok` | `failed` | `skipped`, or null before the first attempt. Written only by a
+   *  collection run, so the webhook path — which mints a Run row per Jamf event — never
+   *  touches it. That is what makes it a sound source for the failed-run row on a pod
+   *  doing 125 webhook runs an hour. */
+  lastRunStatus: string | null;
+  lastSuccessAt: string | null;
+  /** Twice the collection's own cadence, in seconds, computed by the backend so the
+   *  ruling lives in one language. Null means the collection makes no staleness claim —
+   *  an event-driven webhook has no cadence to double, and is waiting rather than late. */
+  staleAfterSeconds: number | null;
+  /** The floor a never-succeeded collection's age is measured from. */
+  createdAt: string;
+}
+
 export interface CollectionInput {
   name: string;
   kind: CollectionKind;

@@ -28,6 +28,7 @@ from app.schemas.collections import (
     CollectionCreate,
     CollectionOut,
     CollectionRunResult,
+    CollectionSummaryOut,
     CollectionUpdate,
     SectionInfo,
 )
@@ -147,12 +148,28 @@ async def list_jamf_sections() -> list[SectionInfo]:
     ]
 
 
+def _to_summary(row: Collection) -> CollectionSummaryOut:
+    return CollectionSummaryOut(
+        id=row.id,
+        mdm_connection_id=row.mdm_connection_id,
+        name=row.name,
+        kind=row.kind,
+        enabled=row.enabled,
+        next_due_at=row.next_due_at,
+        last_run_at=row.last_run_at,
+        last_run_status=row.last_run_status,
+        last_success_at=row.last_success_at,
+        stale_after_seconds=_stale_after_seconds(row),
+        created_at=row.created_at,
+    )
+
+
 @router.get(
     "/collections",
-    response_model=list[CollectionOut],
+    response_model=list[CollectionSummaryOut],
     dependencies=[Depends(require(Permission.CONNECTION_READ))],
 )
-async def list_tenant_collections(db: AsyncSession = Depends(get_db)) -> list[CollectionOut]:
+async def list_tenant_collections(db: AsyncSession = Depends(get_db)) -> list[CollectionSummaryOut]:
     """Every collection in the tenant, across connections (#106).
 
     The per-connection route below is the one the collection editor uses, because it is
@@ -160,8 +177,13 @@ async def list_tenant_collections(db: AsyncSession = Depends(get_db)) -> list[Co
     overdue, is any inventory stale — has no connection in hand and would otherwise
     issue one request per connection on every poll. Mirrors `/destinations` and
     `/runs`, which are already tenant-wide for the same reason.
+
+    Answered with `CollectionSummaryOut`, deliberately not the row the editor gets. This
+    is the front page's sixty-second poll, and the fat model would put the operator's
+    `selector` RSQL — often a named username — on the wire on every tick, to be read by
+    nothing. Same permission, same tenant line, far less reach.
     """
-    return [_to_out(row) for row in await list_all_collections(db)]
+    return [_to_summary(row) for row in await list_all_collections(db)]
 
 
 @router.get(

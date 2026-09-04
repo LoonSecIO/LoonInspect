@@ -686,3 +686,56 @@ async def test_every_collection_says_when_it_last_succeeded_and_when_it_goes_sta
 
     webhook = rows[(two_connections["mine"][0], "webhook")]
     assert webhook["staleAfterSeconds"] is None
+
+
+async def test_the_tenant_wide_list_is_a_projection_not_the_configuration_row(db, api, two_connections) -> None:
+    """SECURITY-ADJACENT: reach and cadence, not a boundary break.
+
+    This route is polled every sixty seconds by the front page, by everyone holding
+    `connection:read`. The per-connection route may answer with the whole configuration
+    row because someone is editing it; this one may not, because nothing renders it.
+    `selector` is the case that makes it concrete — it is the operator's RSQL, and
+    narrowing a sweep by user means it routinely reads `username=="jdoe"`.
+
+    Asserted as an exact key set rather than "selector is absent", so a field added to
+    `CollectionOut` later cannot arrive here unnoticed — which is the whole reason
+    `CollectionSummaryOut` is a separate model instead of a subclass.
+    """
+    from app.models.schema import Collection
+
+    narrowed = (
+        await db.execute(
+            select(Collection).where(
+                Collection.mdm_connection_id == two_connections["mine"][0],
+                Collection.kind == "device_sweep",
+            )
+        )
+    ).scalar_one()
+    narrowed.selector = 'username=="jdoe"'
+    await db.commit()
+
+    response = await api.get("/api/mdm/collections")
+    assert response.status_code == 200, response.text
+    rows = response.json()
+    assert rows, "the fixture made collections; an empty list would pass every assertion below"
+
+    for row in rows:
+        assert set(row) == {
+            "id",
+            "mdmConnectionId",
+            "name",
+            "kind",
+            "enabled",
+            "nextDueAt",
+            "lastRunAt",
+            "lastRunStatus",
+            "lastSuccessAt",
+            "staleAfterSeconds",
+            "createdAt",
+        }
+
+    # And the per-connection route still carries it, so this is a narrowing of one
+    # answer rather than a field that quietly left the product.
+    editor = await api.get(f"/api/mdm/connections/{two_connections['mine'][0]}/collections")
+    assert editor.status_code == 200, editor.text
+    assert 'username=="jdoe"' in {row["selector"] for row in editor.json()}

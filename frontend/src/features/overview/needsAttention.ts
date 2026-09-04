@@ -1,6 +1,6 @@
 import type { ChangeLevel } from "@/features/changes/types";
 import type { Destination } from "@/features/destinations/types";
-import type { Collection, MdmConnection, Run } from "@/features/mdm/types";
+import type { CollectionSummary, MdmConnection } from "@/features/mdm/types";
 import type { UpdateStatusResponse } from "@/features/system/api";
 
 /**
@@ -40,6 +40,36 @@ import type { UpdateStatusResponse } from "@/features/system/api";
  * who fixes destinations and would otherwise never see a green line again. Getting these
  * two backwards is the single highest-consequence mistake available in this file.
  *
+ * ## Stored latest-fields, and why there is no page of runs here
+ *
+ * Every predicate reads a column that is already written down. That is Kyle's
+ * cache-don't-calculate rule, and on the failed-run check it is also the difference
+ * between a working panel and a blind one.
+ *
+ * `ingest_webhook` mints **one Run row per allowlisted Jamf event**
+ * (`backend/app/mdm/service.py`; `ComputerInventoryCompleted` is on the allowlist in
+ * `backend/app/mdm/jamf/client.py`). At three thousand Macs with daily recon that is
+ * ~125 rows an hour, `GET /runs` orders by `started_at DESC` and takes no lock-class
+ * filter — so a 03:00 sweep that failed is off any page the browser would ask for by
+ * about 03:25, and by 08:00 the operator reads *"Nothing needs your attention · checked
+ * 08:14 UTC"* over a dead sweep. The fetch succeeded, so nothing is `degraded`; nothing
+ * on screen discloses that a window ever existed. A permanently failing **catalog**
+ * collection produces no row from any of the five checks, ever.
+ *
+ * So the failed-run row is composed from `collection.lastRunStatus` / `lastRunAt`
+ * instead: latest-fields on the tenant-wide collections list this panel already fetches,
+ * bounded by nothing, one per collection rather than one per event, and written **only**
+ * by `run_collection` — the webhook path never touches them, so the flood cannot reach
+ * this check by construction rather than by a bigger `limit`.
+ *
+ * `/api/runs/summary` (#105) was the other candidate and was rejected here. Its
+ * `latestRun` is the newest run of **any** lock class per *connection*, so a webhook run
+ * that succeeded a minute ago hides the device sweep that failed at 03:00 — the exact
+ * hiding the old per-lock-class loop existed to prevent — and a failing catalog
+ * collection is invisible to it for the same reason. It is the right shape for the
+ * strip's question ("what ran last here?") and the wrong shape for this one ("is
+ * anything broken?").
+ *
  * ## The alerts socket
  *
  * #101's NEW-app latch lands here as another row type with no redesign: add its member
@@ -77,20 +107,29 @@ export interface AttentionRow {
   level: ChangeLevel;
   /** The name of the thing — a collection, a destination. Never a built sentence: the
    *  panel interpolates it into a translated string, so a sentence assembled here would
-   *  be an English sentence in the German UI. */
+   *  be an English sentence in the German UI. Null on a collapsed row, which stands for
+   *  several things and can name none of them. */
   subject: string | null;
   /** Where the subject lives, when that is not obvious — the connection's name on a pod
    *  with more than one. "Full device sweep" is the same name on every connection. */
   context: string | null;
   href: string | null;
-  /** The instant the row is about. Orders rows within a level; null sorts last. */
+  /** The instant the row is about — when the run failed, when the collection was due,
+   *  when the destination last refused. Rendered as an age beside the row and used to
+   *  order rows within a level; null sorts last and renders nothing. */
   at: string | null;
+  /** How many things this row stands for. `1` is the ordinary row that names its
+   *  subject. Above 1 the row is a **collapse** — see the overdue check for the only
+   *  case that produces one — and the panel gives it a sentence of its own rather than
+   *  gluing a number onto a singular verb. */
+  count: number;
 }
 
 export interface AttentionInputs {
   now: Date;
-  runs: Fetched<Run[]>;
-  collections: Fetched<Collection[]>;
+  /** Three of the five checks read this one list: a collection row carries its own
+   *  schedule, its own last outcome and its own last success. */
+  collections: Fetched<CollectionSummary[]>;
   /** Names only, and deliberately not a check of its own: it answers *which* connection
    *  a row is about, never *whether* there is a row. So a connections request that
    *  errored costs a row its context and does not withhold the all-clear line — nothing
@@ -108,6 +147,16 @@ export interface AttentionResult {
   dropped: number;
   /** Checks that errored. Rendered as rows, and they withhold the all-clear line. */
   degraded: AttentionKind[];
+  /**
+   * Everything the panel would render: rows before the cap, plus the degraded rows.
+   *
+   * This is the number the sidebar badge shows, and it is computed here because the
+   * badge is the list's only off-page rendering (Kyle's A9 ruling) and must not
+   * under-deliver on it. `rows.length` is the wrong count twice over — it is
+   * post-`slice`, so nine problems would render "5", and it excludes `degraded`, so a
+   * pod where all five checks error would render no badge at all.
+   */
+  total: number;
   checkedAt: string;
 }
 
@@ -147,13 +196,18 @@ const LEVEL_OF: Record<AttentionKind, ChangeLevel> = {
 };
 
 /** Which input answers which check. Used to turn an errored input into `degraded`
- *  entries, so the mapping lives in one place rather than in five catch blocks. */
-const CHECKS_BY_INPUT: Record<"runs" | "collections" | "destinations" | "update", AttentionKind[]> = {
-  runs: ["run_failed"],
-  collections: ["collection_overdue", "inventory_stale"],
+ *  entries, so the mapping lives in one place rather than in four catch blocks. The
+ *  collections list answers three of the five: one request, three blind spots when it
+ *  fails, and the panel says all three rather than one vague line. */
+const CHECKS_BY_INPUT: Record<"collections" | "destinations" | "update", AttentionKind[]> = {
+  collections: ["run_failed", "collection_overdue", "inventory_stale"],
   destinations: ["destination_failing"],
   update: ["update_available"]
 };
+
+/** A collection row is only worth a *failed* row. `skipped` is the rate floor doing its
+ *  job, `ok` is fine, and null is a collection that has never been attempted. */
+const RUN_FAILED = "failed";
 
 function millis(iso: string | null | undefined): number | null {
   if (!iso) return null;
@@ -165,11 +219,16 @@ function valueOrNull<T>(fetched: Fetched<T>): T | null {
   return fetched.ok ? fetched.value : null;
 }
 
+/** The ordinary row: one thing, named. */
+function one(row: Omit<AttentionRow, "count">): AttentionRow {
+  return { ...row, count: 1 };
+}
+
 /**
  * The list, from stored latest-fields only.
  *
- * Every predicate below reads a column that is already written down — a run's status, a
- * destination's last failure, a collection's next due and last success. Nothing here
+ * Every predicate below reads a column that is already written down — a collection's
+ * last outcome, last success and next due; a destination's last failure. Nothing here
  * counts, aggregates, or re-derives: this panel polls, and a front page that recomputed
  * the state of the fleet on every tick would be the most expensive query in the product
  * (Kyle's cache-don't-calculate rule).
@@ -206,15 +265,17 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
     const since = lastSuccess ?? millis(collection.createdAt);
     if (since === null || nowMs - since <= window) continue;
     staleCollectionIds.add(collection.id);
-    rows.push({
-      id: `inventory_stale:${collection.id}`,
-      kind: "inventory_stale",
-      level: LEVEL_OF.inventory_stale,
-      subject: collection.name,
-      context: nameOfConnection.get(collection.mdmConnectionId) ?? null,
-      href: "/settings/connections",
-      at: lastSuccess === null ? null : collection.lastSuccessAt
-    });
+    rows.push(
+      one({
+        id: `inventory_stale:${collection.id}`,
+        kind: "inventory_stale",
+        level: LEVEL_OF.inventory_stale,
+        subject: collection.name,
+        context: nameOfConnection.get(collection.mdmConnectionId) ?? null,
+        href: "/settings/connections",
+        at: lastSuccess === null ? null : collection.lastSuccessAt
+      })
+    );
   }
 
   // --- Collection overdue: nothing ever claimed it ----------------------------------
@@ -223,48 +284,86 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
   // `next_due_at` advances at claim time, so an overdue row means the collection was
   // never picked up. A sweep that is running long is *not* here, and should not be — it
   // is being watched by the hero.
+  const overdue: CollectionSummary[] = [];
   for (const collection of collections) {
     if (!collection.enabled || collection.nextDueAt === null) continue;
     const due = millis(collection.nextDueAt);
     if (due === null || nowMs <= due + OVERDUE_GRACE_MS) continue;
-    rows.push({
-      id: `collection_overdue:${collection.id}`,
-      kind: "collection_overdue",
-      level: LEVEL_OF.collection_overdue,
-      subject: collection.name,
-      context: nameOfConnection.get(collection.mdmConnectionId) ?? null,
-      href: "/settings/connections",
-      at: collection.nextDueAt
-    });
+    overdue.push(collection);
   }
 
-  // --- Run failed: the newest run of each connection and lock class ------------------
+  // One row for the storm, not one row per collection.
   //
-  // Per lock class, not per connection: a catalog refresh and a device sweep are
-  // separate mutexes and fail for separate reasons, so "the connection's latest run"
-  // would let a succeeding catalog hide a failing sweep. `listRuns` returns newest
-  // first, so the first row seen for a pair is the newest one.
-  const runs = valueOrNull(inputs.runs) ?? [];
-  const seenLocks = new Set<string>();
-  for (const run of runs) {
-    const lock = `${run.mdmConnectionId}:${run.lockClass}`;
-    if (seenLocks.has(lock)) continue;
-    seenLocks.add(lock);
-    if (run.status !== "failed") continue;
+  // `claim_due` walks every due collection in a single pass and advances `next_due_at`
+  // before any work starts, so one dead minute tick puts *every* enabled collection past
+  // the grace inside the same hour. Rendered one-per-collection that is five identical
+  // `normal` rows naming five collections, eating the whole cap, and nothing on screen
+  // naming the one thing that is actually broken. (The honest reading of the collapsed
+  // sentence is "nothing claimed them" — a long-running sweep holding its connection's
+  // lock can also keep a second sweep on that connection from being claimed — but the
+  // scheduler is far and away the likeliest cause and is the right place to send someone
+  // looking.)
+  //
+  // Oldest due instant, because the ranking within a level is oldest-first and the storm
+  // is as old as the first thing it swallowed.
+  if (overdue.length > 1) {
+    const oldest = overdue.reduce((earliest, collection) =>
+      (millis(collection.nextDueAt) ?? Infinity) < (millis(earliest.nextDueAt) ?? Infinity) ? collection : earliest
+    );
+    rows.push({
+      // Not keyed on the members: the set changes as collections come due one after
+      // another, and a key that churned would remount the row on every poll.
+      id: "collection_overdue:all",
+      kind: "collection_overdue",
+      level: LEVEL_OF.collection_overdue,
+      subject: null,
+      context: null,
+      href: "/settings/connections",
+      at: oldest.nextDueAt,
+      count: overdue.length
+    });
+  } else if (overdue.length === 1) {
+    const collection = overdue[0];
+    rows.push(
+      one({
+        id: `collection_overdue:${collection.id}`,
+        kind: "collection_overdue",
+        level: LEVEL_OF.collection_overdue,
+        subject: collection.name,
+        context: nameOfConnection.get(collection.mdmConnectionId) ?? null,
+        href: "/settings/connections",
+        at: collection.nextDueAt
+      })
+    );
+  }
+
+  // --- Run failed: the collection's own last outcome ---------------------------------
+  //
+  // Per collection, from the row's stored `lastRunStatus`. See the module docstring for
+  // why this is not a page of `/api/runs`: the webhook path mints a run per Jamf event
+  // and would push a failed 03:00 sweep off any window the browser can ask for within
+  // half an hour, while never touching these columns.
+  //
+  // Enabled only, matching every other check: an operator who turned a collection off is
+  // not asked about the run it failed before they did.
+  for (const collection of collections) {
+    if (!collection.enabled || collection.lastRunStatus !== RUN_FAILED) continue;
     // A stale collection already says something strictly worse about the same
     // collection — "it has not succeeded in twice its cadence" contains "its last run
     // failed". Two rows for one problem would eat the cap and tell the operator nothing
     // the first row did not.
-    if (run.collectionId !== null && staleCollectionIds.has(run.collectionId)) continue;
-    rows.push({
-      id: `run_failed:${run.id}`,
-      kind: "run_failed",
-      level: LEVEL_OF.run_failed,
-      subject: collections.find((row) => row.id === run.collectionId)?.name ?? null,
-      context: nameOfConnection.get(run.mdmConnectionId) ?? null,
-      href: "/settings/connections",
-      at: run.finishedAt ?? run.startedAt
-    });
+    if (staleCollectionIds.has(collection.id)) continue;
+    rows.push(
+      one({
+        id: `run_failed:${collection.id}`,
+        kind: "run_failed",
+        level: LEVEL_OF.run_failed,
+        subject: collection.name,
+        context: nameOfConnection.get(collection.mdmConnectionId) ?? null,
+        href: "/settings/connections",
+        at: collection.lastRunAt
+      })
+    );
   }
 
   // --- Destination failing: evidence is not reaching the SIEM ------------------------
@@ -278,15 +377,17 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
     const succeeded = millis(destination.lastSuccessAt);
     if (failed === null) continue;
     if (succeeded !== null && succeeded >= failed) continue;
-    rows.push({
-      id: `destination_failing:${destination.id}`,
-      kind: "destination_failing",
-      level: LEVEL_OF.destination_failing,
-      subject: destination.name,
-      context: null,
-      href: "/settings/destinations",
-      at: destination.lastFailureAt
-    });
+    rows.push(
+      one({
+        id: `destination_failing:${destination.id}`,
+        kind: "destination_failing",
+        level: LEVEL_OF.destination_failing,
+        subject: destination.name,
+        context: null,
+        href: "/settings/destinations",
+        at: destination.lastFailureAt
+      })
+    );
   }
 
   // --- Update available --------------------------------------------------------------
@@ -297,15 +398,17 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
   // page to send anyone to; the banner carries the command.
   const update = valueOrNull(inputs.update);
   if (update?.updateAvailable === true) {
-    rows.push({
-      id: `update_available:${update.latestSha ?? "unknown"}`,
-      kind: "update_available",
-      level: LEVEL_OF.update_available,
-      subject: update.latestSha?.slice(0, 7) ?? null,
-      context: null,
-      href: null,
-      at: update.checkedAt
-    });
+    rows.push(
+      one({
+        id: `update_available:${update.latestSha ?? "unknown"}`,
+        kind: "update_available",
+        level: LEVEL_OF.update_available,
+        subject: update.latestSha?.slice(0, 7) ?? null,
+        context: null,
+        href: null,
+        at: update.checkedAt
+      })
+    );
   }
 
   // Level first, then **oldest first** within a level: a destination that has been
@@ -336,6 +439,7 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
     rows: rows.slice(0, MAX_ROWS),
     dropped: Math.max(0, rows.length - MAX_ROWS),
     degraded,
+    total: rows.length + degraded.length,
     checkedAt: now.toISOString()
   };
 }

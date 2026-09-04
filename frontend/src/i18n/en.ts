@@ -329,10 +329,18 @@ export const en = {
       kinds: {
         run_failed: "Sync failed",
         destination_failing: "Deliveries are failing",
-        collection_overdue: "Never started",
+        // NOT "Never started", which was the first spelling and reads as a claim about
+        // the collection's whole life — an admin whose nightly sweep has run for a year
+        // and missed tonight's tick goes hunting for a broken schedule. `next_due_at`
+        // advances at claim, so what actually happened is that nothing picked this up.
+        collection_overdue: "Nothing started it",
         inventory_stale: "Inventory is stale",
         update_available: "A newer build is available"
       },
+      // The collapsed overdue row. One dead tick puts every enabled collection past due
+      // inside the same hour, and five rows naming five collections name nothing that
+      // can be fixed — so above one they become this, which names the scheduler.
+      schedulerStalled: (count: number) => `${count} collections came due and nothing started them — check the scheduler`,
       checkNames: {
         run_failed: "recent runs",
         destination_failing: "destinations",
@@ -341,7 +349,12 @@ export const en = {
         update_available: "updates"
       },
       couldNotCheck: (what: string) => `Could not check ${what}`,
-      andMore: (count: number) => `${count} more ${count === 1 ? "item needs" : "items need"} attention`
+      // The footer under a capped list: N *beyond* the five on screen.
+      andMore: (count: number) => `${count} more ${count === 1 ? "item needs" : "items need"} attention`,
+      // The sidebar badge's label, and deliberately not `andMore`: this count is the
+      // whole list, not the remainder of one, and a badge announcing "3 more items"
+      // when three is everything is simply wrong.
+      badge: (count: number) => `${count} ${count === 1 ? "item needs" : "items need"} attention`
     },
 
     // The status strip (#105). One line per connection, states facts only, never turns

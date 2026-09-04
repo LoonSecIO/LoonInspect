@@ -320,10 +320,18 @@ export const de: Translations = {
       kinds: {
         run_failed: "Synchronisierung fehlgeschlagen",
         destination_failing: "Zustellungen schlagen fehl",
-        collection_overdue: "Nie gestartet",
+        // Nicht „Nie gestartet“: das las sich als Aussage über die gesamte Laufzeit der
+        // Sammlung. `next_due_at` wird beim Anfordern weitergestellt — passiert ist
+        // also, dass niemand sie abgeholt hat.
+        collection_overdue: "Nichts hat sie gestartet",
         inventory_stale: "Inventar ist veraltet",
         update_available: "Ein neuerer Build ist verfügbar"
       },
+      // Der zusammengefasste Eintrag: ein ausgefallener Tick lässt binnen einer Stunde
+      // jede aktivierte Sammlung überfällig werden, und fünf Zeilen mit fünf Namen
+      // benennen nichts, was man reparieren kann.
+      schedulerStalled: (count: number) =>
+        `${count} Sammlungen wurden fällig und nichts hat sie gestartet — bitte die Zeitplanung prüfen`,
       checkNames: {
         run_failed: "letzte Durchläufe",
         destination_failing: "Ziele",
@@ -332,8 +340,13 @@ export const de: Translations = {
         update_available: "Aktualisierungen"
       },
       couldNotCheck: (what: string) => `${what} konnten nicht geprüft werden`,
+      // Die Fußzeile einer gekürzten Liste: N *zusätzlich* zu den fünf angezeigten.
       andMore: (count: number) =>
-        `${count} weitere${count === 1 ? "r Punkt erfordert" : " Punkte erfordern"} Aufmerksamkeit`
+        `${count} weitere${count === 1 ? "r Punkt erfordert" : " Punkte erfordern"} Aufmerksamkeit`,
+      // Die Beschriftung der Kennzahl in der Seitenleiste — bewusst nicht `andMore`:
+      // hier ist die Zahl die ganze Liste, nicht deren Rest.
+      badge: (count: number) =>
+        `${count} ${count === 1 ? "Eintrag erfordert" : "Einträge erfordern"} Aufmerksamkeit`
     },
 
     // Die Statuszeile (#105). Eine Zeile pro Verbindung, nennt nur Tatsachen und wird
@@ -353,7 +366,9 @@ export const de: Translations = {
       agoHours: (n: number) => `vor ${n} Std.`,
       agoDays: (n: number) => `vor ${n} ${n === 1 ? "Tag" : "Tagen"}`,
       fullSweep: "vollständiger Durchlauf",
-      webhookSweepsSince: (n: number) => `+${n} Webhook-Durchlauf${n === 1 ? "" : "e"} seitdem`,
+      // Der Plural von „Durchlauf“ ist „Durchläufe“, nicht „Durchlaufe“ — eine
+      // angehängte Endung reicht hier nicht, das Wort bekommt einen Umlaut.
+      webhookSweepsSince: (n: number) => `+${n} Webhook-${n === 1 ? "Durchlauf" : "Durchläufe"} seitdem`,
       noFullSweepYet: "noch kein vollständiger Durchlauf",
       copied: "Job-ID kopiert",
       nextSweep: (when: string) => `nächster Durchlauf ${when}`,
