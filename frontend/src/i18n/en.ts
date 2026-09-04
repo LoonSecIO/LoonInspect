@@ -91,6 +91,17 @@ export const en = {
     setupAlreadyDone: "This instance has already been set up. Sign in instead.",
     passwordTooShort: "Password must be at least 12 characters.",
     validationFailed: "Some of those details weren't accepted. Check the form and try again.",
+    // The locked-out case (#301). Settings › Support is gated like every other
+    // settings route, so someone who cannot sign in cannot reach it — and the login
+    // page, which already answers without a session, names the same two channels.
+    // No new route and no new unauthenticated surface.
+    loginSupportTitle: "Can't sign in?",
+    loginSupportBody:
+      "An administrator on this instance can reset a password or check an account — that is the fastest path. If the instance itself looks wrong rather than your account, both support channels are open to anyone.",
+    loginSupportWarning:
+      "Neither one is private: never paste a password, a token or a security finding into either.",
+    loginSupportGithub: "Open an issue on GitHub",
+    loginSupportSlack: (channel: string) => `Ask in ${channel} on MacAdmins Slack`,
     noAccessTitle: "You don't have access to this page",
     noAccessDescription:
       "Your account's role doesn't include permission for this area. Ask an administrator if you need it."
@@ -265,8 +276,9 @@ export const en = {
     slackBody: (channel: string) =>
       `${channel} is the community channel: how other people have set something up, whether a behaviour is expected, and the questions that are not a bug report yet. It's a conversation, not a queue — nobody is on call.`,
     slackSignupNote: (channel: string) =>
-      `MacAdmins Slack is a separate community with its own signup, so there is no link that drops you straight into ${channel}. Join the workspace first, then find the channel from inside Slack.`,
+      `MacAdmins Slack is a separate community with its own signup. Already in that workspace? The channel link opens ${channel} directly. If not, join first — the channel link cannot let you in on its own.`,
     slackJoin: "Join MacAdmins Slack",
+    slackOpenChannel: (channel: string) => `Open ${channel}`,
     securityHeading: "Found a vulnerability? Neither of those.",
     securityBody:
       "A security finding never goes in a public issue. Report it privately through GitHub's private vulnerability reporting on this repository — Security → Report a vulnerability. That reaches the maintainer directly and keeps the report out of public view while a fix is prepared.",
@@ -275,7 +287,7 @@ export const en = {
     securityReport: "Report a vulnerability privately",
     securityPolicy: "Read the security policy",
     privacyNote:
-      "This page sends nothing anywhere. It reads the build string from your own instance and draws five links out; there is no telemetry on it, and no report leaves this browser unless you write one yourself."
+      "This page sends nothing anywhere. It reads the build string from your own instance and draws six links out; there is no telemetry on it, and no report leaves this browser unless you write one yourself."
   },
   apiTokens: {
     title: "API Tokens",

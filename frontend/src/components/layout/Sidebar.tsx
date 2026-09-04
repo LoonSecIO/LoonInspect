@@ -91,10 +91,17 @@ const navigationItems: NavItem[] = [
       },
       // Ungated: everyone has a profile and a password to change.
       { labelKey: "myAccount", icon: UserCircle, to: "/settings/my-account", end: false },
-      // Ungated on purpose, and last so it is where a person scans when nothing else
-      // worked: the one page whose reader may well be someone a permission has
-      // already refused (#301).
-      { labelKey: "support", icon: LifeBuoy, to: "/settings/support", end: false }
+      // Last, so it is where a person scans when nothing else worked. The permission
+      // matches the route's own gate in routes.tsx — DEVICE_READ, the floor every
+      // role holds — so this entry cannot become a nav item pointing at a page the
+      // reader is then refused (#301).
+      {
+        labelKey: "support",
+        icon: LifeBuoy,
+        to: "/settings/support",
+        end: false,
+        permission: PERMISSIONS.DEVICE_READ
+      }
     ]
   }
 ];

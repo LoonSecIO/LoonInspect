@@ -88,6 +88,13 @@ export const de: Translations = {
     passwordTooShort: "Das Passwort muss mindestens 12 Zeichen lang sein.",
     validationFailed:
       "Einige dieser Angaben wurden nicht akzeptiert. Bitte prüfen Sie das Formular und versuchen Sie es erneut.",
+    loginSupportTitle: "Sie können sich nicht anmelden?",
+    loginSupportBody:
+      "Eine Administratorin oder ein Administrator dieser Instanz kann ein Passwort zurücksetzen oder ein Konto prüfen — das ist der schnellste Weg. Wirkt die Instanz selbst fehlerhaft und nicht nur Ihr Konto, stehen beide Support-Kanäle allen offen.",
+    loginSupportWarning:
+      "Keiner von beiden ist vertraulich: Fügen Sie dort niemals ein Passwort, ein Token oder einen Sicherheitsfund ein.",
+    loginSupportGithub: "Issue auf GitHub anlegen",
+    loginSupportSlack: (channel: string) => `In ${channel} auf MacAdmins Slack fragen`,
     noAccessTitle: "Sie haben keinen Zugriff auf diese Seite",
     noAccessDescription:
       "Die Rolle Ihres Kontos umfasst keine Berechtigung für diesen Bereich. Wenden Sie sich an eine Administratorin oder einen Administrator, falls Sie ihn benötigen."
@@ -262,8 +269,9 @@ export const de: Translations = {
     slackBody: (channel: string) =>
       `${channel} ist der Community-Kanal: wie andere etwas eingerichtet haben, ob ein Verhalten erwartbar ist, und die Fragen, die noch kein Fehlerbericht sind. Ein Gespräch, keine Warteschlange — es hat niemand Bereitschaft.`,
     slackSignupNote: (channel: string) =>
-      `MacAdmins Slack ist eine eigenständige Community mit eigener Anmeldung; es gibt also keinen Link, der Sie direkt in ${channel} bringt. Treten Sie zuerst dem Workspace bei und suchen Sie den Kanal dann in Slack.`,
+      `MacAdmins Slack ist eine eigenständige Community mit eigener Anmeldung. Sind Sie bereits in diesem Workspace, öffnet der Kanal-Link ${channel} direkt. Falls nicht, treten Sie zuerst bei — allein bringt der Kanal-Link Sie nicht hinein.`,
     slackJoin: "MacAdmins Slack beitreten",
+    slackOpenChannel: (channel: string) => `${channel} öffnen`,
     securityHeading: "Eine Schwachstelle gefunden? Keines von beiden.",
     securityBody:
       "Ein Sicherheitsfund gehört nie in ein öffentliches Issue. Melden Sie ihn vertraulich über GitHubs private Vulnerability-Meldung in diesem Repository — Security → Report a vulnerability. Das erreicht die Maintainerin oder den Maintainer direkt und hält die Meldung nicht öffentlich, während ein Fix vorbereitet wird.",
@@ -272,7 +280,7 @@ export const de: Translations = {
     securityReport: "Schwachstelle vertraulich melden",
     securityPolicy: "Sicherheitsrichtlinie lesen",
     privacyNote:
-      "Diese Seite sendet nichts nach außen. Sie liest den Build-String Ihrer eigenen Instanz und zeigt fünf Links nach außen; es gibt keine Telemetrie darauf, und kein Bericht verlässt diesen Browser, sofern Sie ihn nicht selbst schreiben."
+      "Diese Seite sendet nichts nach außen. Sie liest den Build-String Ihrer eigenen Instanz und zeigt sechs Links nach außen; es gibt keine Telemetrie darauf, und kein Bericht verlässt diesen Browser, sofern Sie ihn nicht selbst schreiben."
   },
   apiTokens: {
     title: "API-Token",

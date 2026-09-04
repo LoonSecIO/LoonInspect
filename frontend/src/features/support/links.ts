@@ -16,9 +16,15 @@
 export const SUPPORT_REPO = "LoonSecIO/LoonInspect";
 
 /** MacAdmins Slack is a separate community with its own signup, so the join page is
- *  what we link. A deep link to the channel is useless to a reader with no account,
- *  which is most readers the first time they need this page. */
-const MACADMINS_JOIN = "https://macadmins.org";
+ *  the first of the two links. A deep link to the channel is useless to a reader with
+ *  no account, which is most readers the first time they need this page. */
+const MACADMINS_JOIN = "https://macadmins.org/";
+
+/** …and the channel itself, for the reader who is already in that workspace and
+ *  should not have to go back through the front door to find one channel. Both are
+ *  shown, which is the ruling: the join page for the account-less reader, the channel
+ *  for everyone else (#301). */
+const MACADMINS_CHANNEL = "https://macadmins.slack.com/channels/loonsecio";
 
 /** The community channel inside that workspace. Rendered as an identifier, never
  *  translated. */
@@ -39,7 +45,8 @@ export const SUPPORT_LINKS = {
   privateReport: `${GITHUB}/security/advisories/new`,
   /** GitHub's rendering of SECURITY.md, which survives the file moving. */
   securityPolicy: `${GITHUB}/security/policy`,
-  slackJoin: MACADMINS_JOIN
+  slackJoin: MACADMINS_JOIN,
+  slackChannel: MACADMINS_CHANNEL
 } as const;
 
 /** What the copy button puts on the clipboard, or null when there is nothing worth

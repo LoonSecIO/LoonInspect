@@ -19,11 +19,11 @@ const COPIED_VISIBLE_MS = 2000;
 /** Settings → Support: the two channels, the security carve-out, and the build
  *  string a report needs.
  *
- *  Deliberately behind no permission (see routes.tsx). Everything else under
- *  /settings is gated; this page is the one whose whole purpose is to serve someone
- *  for whom something is already broken — a Viewer, or somebody whose problem *is*
- *  that they lack access. A support page you need a permission to read is the failure
- *  it exists to prevent.
+ *  Gated on DEVICE_READ, like every other /settings route (see routes.tsx for why that
+ *  permission and not a new one). DEVICE_READ is the floor every authenticated role
+ *  holds, so the route table shows a gate without locking a Viewer out of the page
+ *  they reach when something is already broken. A reader with no session at all is
+ *  answered on the login page instead.
  *
  *  It reads one endpoint (`/system/version`, via useBuildVersion) and posts nothing.
  *  No ticketing, no contact form, no telemetry: LoonInspect is self-hosted and this
@@ -102,10 +102,14 @@ export function SupportPage() {
           </div>
           <p className="text-sm text-muted-foreground">{t.support.slackBody(SLACK_CHANNEL)}</p>
           {/* Stated rather than left to be discovered by clicking a channel link that
-              refuses an account the reader does not have. */}
+              refuses an account the reader does not have. Both links are shown, in
+              that order: the workspace first, the channel second. */}
           <p className="text-sm text-muted-foreground">{t.support.slackSignupNote(SLACK_CHANNEL)}</p>
           <div className="mt-auto flex flex-wrap gap-x-6 gap-y-2 pt-1 text-sm">
             <ExternalLink href={SUPPORT_LINKS.slackJoin}>{t.support.slackJoin}</ExternalLink>
+            <ExternalLink href={SUPPORT_LINKS.slackChannel}>
+              {t.support.slackOpenChannel(SLACK_CHANNEL)}
+            </ExternalLink>
           </div>
         </div>
       </div>

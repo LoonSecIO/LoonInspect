@@ -86,14 +86,39 @@ export function AppRoutes() {
         </Route>
         {/* No permission gate — everyone manages their own profile. */}
         <Route path="settings/my-account" element={<MyAccountPage />} />
-        {/* Deliberately not wrapped in RequirePermission, unlike every other
-            /settings route above (#301). This page exists for the person something
-            is already broken for — a Viewer, or somebody whose problem *is* that
-            they lack access — and a support page you need a capability to read
-            refuses exactly the reader who came to it. It reads nothing privileged:
-            /system/version is authenticated-but-unprivileged for this reason, and
-            the rest of the page is links out to GitHub and Slack. */}
-        <Route path="settings/support" element={<SupportPage />} />
+        {/* Gated like every other /settings route, and DEVICE_READ is the gate on
+            purpose (#301).
+
+            This was first built ungated, on the product argument that a support page
+            serves the person something is already broken for — possibly their own
+            access — so it should refuse nobody. Kyle overruled it on GRC grounds and
+            that frame wins: this product holds encrypted MDM credentials for a
+            customer's whole Mac fleet, the repository is about to be public, and one
+            row in the route table with no permission on it is a finding on every
+            questionnaire it ever meets. The cost is never the single finding — it is
+            the scrutiny it invites into everything adjacent, forever, and the
+            re-explaining to every reviewer who greps this file.
+
+            DEVICE_READ specifically, because it is the floor every authenticated role
+            already holds: permissions.py defines _INVENTORY_READ = {DEVICE_READ,
+            APP_READ, VULN_READ}, Role.viewer is exactly that set, and analyst, auditor
+            and admin are supersets of it. So the route table shows a gate and no role
+            is locked out of the page they reach precisely when something is already
+            broken. Adding a role without DEVICE_READ would be the one change that
+            breaks that, which is the right place for it to surface.
+
+            Rejected: minting a SUPPORT_READ permission. Cleaner semantics, but it
+            costs an enum member plus an edit to all four role sets in permissions.py
+            to gate five links — and a permission every role holds unconditionally is
+            a gate in name only, which is what DEVICE_READ already is here. Don't
+            redo this analysis.
+
+            The genuinely locked-out reader — no session at all — is answered on the
+            login page, which already responds without auth and so adds no new route
+            and no new finding. */}
+        <Route element={<RequirePermission permission={PERMISSIONS.DEVICE_READ} />}>
+          <Route path="settings/support" element={<SupportPage />} />
+        </Route>
         {/* Still no /vulnerabilities, and #251 is the session that decided so rather
             than deferring again. The corpus edge — covered / unknown_app / off,
             dated by corpusAsOf — is now on Devices › Applications › Catalog, beside
