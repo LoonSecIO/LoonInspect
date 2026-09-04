@@ -364,6 +364,18 @@ export const en = {
       // shared causes live and it is the page the row already links to.
       inventoryStalled: (count: number) =>
         `${count} collections have not read the fleet in twice their own schedule — check the connection`,
+      // The collapsed failed-run row (#106, ruled 2026-09-04, "collapse run_failed too"),
+      // and the third instance of one sentence for one shared cause. It exists because
+      // promoting a failed run to `high` put five of these in the band that "Deliveries
+      // are failing" lives in, and a currently-dead pipe is always the newest row there —
+      // so five names pushed the one row this panel exists for off the list.
+      //
+      // Names the connection for the same reason the stale line does: one credential, one
+      // network path and one scheduler are what five collections share, and it is the page
+      // the row already links to. "Failed their last sync" and not "are failing" — the
+      // check reads a stored last outcome, not a live state, and the next run may already
+      // have fixed it.
+      syncsFailing: (count: number) => `${count} collections failed their last sync — check the connection`,
       checkNames: {
         run_failed: "recent runs",
         destination_failing: "destinations",

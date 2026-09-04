@@ -140,6 +140,49 @@ is untouched. One rollout still opens hundreds of latches, and grouping them int
 row is the named follow-on for whichever session next touches this panel — Kyle left it
 open and explicitly did not ask for it here.
 
+**The promotion opened a third starvation, and a collapse closes it (Kyle, 2026-09-04:
+"collapse `run_failed` too").** The move above delivered exactly what it promised and cost
+something the two rulings before it had just bought. `run_failed` emits one row per failed
+collection; in `high` at rank 0 it sits beside `destination_failing`, ordered oldest-first,
+and a *currently* dead pipe is always the **newest** thing in the band because
+`last_failure_at` is rewritten on every delivery retry. Five failed collections fill the
+five-row cap and the dead pipe drops off — the same row the `inventory_stale` collapse had
+been ruled to protect two hours earlier, starved again through the door the promotion
+opened.
+
+Measured by executing the real `composeAttention` side by side against `main`'s: **1,120
+swept inputs** where main showed `destination_failing` and the promoted composition did
+not, all 1,120 that kind, with the minimal repro five collections failed ~8h ago beside one
+destination that refused five minutes ago. (The same sweep found **5,872** inputs the
+change *recovered* — rows main was dropping. Strongly net positive, with one specific
+regression, and this is it.) Permanent for `catalog` and `webhook` collections, which the
+stale check skips outright, and unavoidable for one full cadence on device sweeps —
+`run_failed` fires at the first failure while `inventory_stale` needs twice the cadence.
+
+So `run_failed` collapses: above one failed collection, a single row carrying a `count`,
+dated to the **oldest** failure. Exactly one failed collection still names itself and its
+connection. `RANK_WITHIN_LEVEL` is untouched and the level ruling stands unchanged.
+
+**Three starvations are closed on this panel, and the ranking table closes only the
+first.** The other two are collapses, and the count is worth keeping straight because the
+mechanisms are not interchangeable:
+
+| Starved | By | Closed by |
+| --- | --- | --- |
+| `destination_failing`, `run_failed` | a wall of `new_app` latches | `RANK_WITHIN_LEVEL` + the level move |
+| `destination_failing` | five stale collections | the `inventory_stale` collapse |
+| `destination_failing` | five failed collections | the `run_failed` collapse |
+
+A rank fixes the one kind it names. A **collapse fixes the cause**, which is that these
+failures are correlated *by construction*: one credential, one network path and one
+scheduler serve every collection on a connection, so five failed collections were always
+five renderings of one fact, spending five of five slots to say it once. That is why
+giving `destination_failing` a rank of `-1` was refused both times it was the obvious
+answer — it turns the ranking into a list of exceptions maintained by whoever last got
+bitten, and the next `high` kind with correlated failures starves the pipe again. The third
+collapse is therefore not a postscript to the level promotion; it is what makes the
+promotion safe.
+
 ## 3a. The read surface's guard
 
 `GET /api/alerts` requires **both** `device:read` and `app:read` (Kyle, 2026-09-04).

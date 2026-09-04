@@ -349,6 +349,14 @@ export const de: Translations = {
       // wird deshalb die Verbindung, nicht die Sammlungen.
       inventoryStalled: (count: number) =>
         `${count} Sammlungen haben die Flotte seit dem Doppelten ihres eigenen Zeitplans nicht gelesen — bitte die Verbindung prüfen`,
+      // Der zusammengefasste Eintrag für fehlgeschlagene Durchläufe (#106, entschieden am
+      // 2026-09-04). Dritte Anwendung derselben Regel: Auch hier ist die Ursache
+      // bauartbedingt geteilt — eine Zugangsberechtigung, ein Netzwerkpfad, eine
+      // Zeitplanung. Fünf Namen verdrängten sonst „Zustellungen schlagen fehl“ aus der
+      // Liste, denn ein gerade ausgefallenes Ziel ist immer der jüngste Eintrag im
+      // Bereich. Benannt wird deshalb die Verbindung, nicht die Sammlungen.
+      syncsFailing: (count: number) =>
+        `${count} Sammlungen sind bei ihrer letzten Synchronisierung fehlgeschlagen — bitte die Verbindung prüfen`,
       checkNames: {
         run_failed: "letzte Durchläufe",
         destination_failing: "Ziele",
