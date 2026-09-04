@@ -312,6 +312,28 @@ def default_on(level: str, minimum_level: str = DEFAULT_MINIMUM_LEVEL) -> bool:
     return _RANK[level] <= _RANK[minimum_level]
 
 
+def levels_at_least(minimum_level: str) -> tuple[str, ...]:
+    """Every level at or above `minimum_level`, in `LEVELS` order — the set form of
+    `default_on` (#107).
+
+    `levels_at_least(NORMAL)` is `("high", "normal")`: what the product calls **notable**,
+    and what `GET /api/changes?minLevel=normal` returns. `LOW` widens it to all three;
+    `HIGH` narrows it to one.
+
+    Exists because the ordering was being spelled out in two places. `_RANK` is private
+    and answers one level at a time, so `app.core.posture` had derived the notable set by
+    slicing `LEVELS` independently (`LEVELS[: LEVELS.index(NORMAL) + 1]`) — a second
+    encoding of the same fact, correct only for as long as both were edited together. A
+    level inserted into `LEVELS` has to move both, and nothing would fail if it moved one.
+
+    Raises `KeyError` on an unknown level rather than returning an empty tuple: an empty
+    filter silently matches nothing, and a caller that typo'd a level should learn that
+    from an error, not from a feed that looks quiet. Callers validate against `LEVELS`
+    first and answer 422; this is the backstop for the ones that forget.
+    """
+    return tuple(level for level in LEVELS if _RANK[level] <= _RANK[minimum_level])
+
+
 class EffectivePolicy:
     """Defaults ⊕ overrides, answering "is this change logged?" and "at what level?"."""
 

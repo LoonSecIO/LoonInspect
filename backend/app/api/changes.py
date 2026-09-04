@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.changes.policy import CHANGE_POLICY_VERSION, LEVELS, EffectivePolicy, Overrides
+from app.changes.policy import CHANGE_POLICY_VERSION, LEVELS, EffectivePolicy, Overrides, levels_at_least
 from app.core.audit import AuditAction, audit
 from app.core.auth import Principal, current_principal, require
 from app.core.database import get_db
@@ -62,6 +62,7 @@ async def list_changes(
     subject_kind: str | None = Query(default=None, alias="subjectKind"),
     section: str | None = None,
     level: str | None = None,
+    min_level: str | None = Query(default=None, alias="minLevel"),
     q: str | None = None,
     artifact: str | None = None,
     since: datetime | None = None,
@@ -97,10 +98,24 @@ async def list_changes(
         conditions.append(DeviceChange.subject_kind == subject_kind)
     if section:
         conditions.append(DeviceChange.section == section)
+    if level and min_level:
+        # Refused rather than composed. ANDing them is well-defined and useless —
+        # `level=low&minLevel=normal` is "low changes that are at least normal", which is
+        # always empty — and an empty feed reads as "nothing happened", which is the one
+        # thing this product refuses to let a shape say by accident (#150, and the
+        # no-zero-priming rule). A caller that meant one of them should be told.
+        raise HTTPException(status_code=422, detail="level and minLevel are mutually exclusive")
     if level:
         if level not in LEVELS:
             raise HTTPException(status_code=422, detail=f"level must be one of {', '.join(LEVELS)}")
         conditions.append(DeviceChange.level == level)
+    if min_level:
+        # The feed's own filter, and the one three surfaces need: "notable and above" is
+        # `minLevel=normal`. `level` stays exact-match — it is what the Changes page's
+        # dropdown means and what any bookmarked URL already carries.
+        if min_level not in LEVELS:
+            raise HTTPException(status_code=422, detail=f"minLevel must be one of {', '.join(LEVELS)}")
+        conditions.append(DeviceChange.level.in_(levels_at_least(min_level)))
     if since is not None:
         conditions.append(DeviceChange.observed_at >= since)
     if q:

@@ -37,8 +37,15 @@ export interface ChangeFilters {
   q?: string;
   /** The changed thing, not the device: an app name or bundle id, a username, an entry label. */
   artifact?: string;
+  /** Exact match. What the Changes page's dropdown means, and what bookmarked URLs carry. */
   level?: ChangeLevel;
+  /** This level and above (#107). Mutually exclusive with `level` — the API answers 422
+   *  for both, rather than returning the empty intersection as if nothing had happened. */
+  minLevel?: ChangeLevel;
   section?: string;
+  /** Absolute ISO instant. The feed's anchor, carried into every click-through so a
+   *  shared link reproduces the window the sender saw. */
+  since?: string;
   connectionId?: number;
   subjectId?: string;
   page?: number;
