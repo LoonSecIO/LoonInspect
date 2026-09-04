@@ -922,3 +922,53 @@ async def test_purge_drops_finished_runs_and_never_a_live_one(db, connection) ->
     # A run still holding its lock is never purged, whatever its age says.
     assert await _exists(live.run.id)
     await finish(db, live.run, ok=True)
+
+
+async def test_run_completed_names_the_connection_in_words_and_agrees_with_run_failed(db, connection) -> None:
+    """#287: `connectionName` beside `connectionID` on `run.completed`.
+
+    `connectionID` alone is a tenant-scoped database primary key — every pod that ever
+    runs this software has a connection `1` — so it says nothing the moment two pods'
+    events share an index. `run.failed` has carried the readable name since it was
+    written; the completed path read it from the same helper on every closed run and
+    discarded it.
+
+    The value is asserted, not just the key. Presence alone would pass against `None`,
+    which is the defect this would most plausibly ship with — and it is asserted equal
+    across BOTH families, because the point of the change is that they stop disagreeing.
+    """
+    from app.core.runs import LOCK_DEVICE_SWEEP, TRIGGER_MANUAL, acquire, finish
+
+    ok = await acquire(db, connection, trigger=TRIGGER_MANUAL, lock_class=LOCK_DEVICE_SWEEP)
+    await finish(db, ok.run, ok=True, device_count=3, devices_processed=3, devices_failed=0)
+    (completed,) = await _run_completed_events(db, ok.run.id)
+
+    assert completed.payload["connectionName"] == connection.name
+    assert completed.payload["connectionID"] == connection.id
+    # Not the string "None": Jamf's own no-site sentinel IS the literal string "None"
+    # (docs/runs.md, test_device_meta.py), so a stringified null is a live confusion in
+    # this codebase rather than a hypothetical one.
+    assert isinstance(completed.payload["connectionName"], str)
+
+    bad = await acquire(db, connection, trigger=TRIGGER_MANUAL, lock_class=LOCK_DEVICE_SWEEP)
+    await finish(db, bad.run, ok=False, error="boom")
+    (failed,) = await _run_failed_events(db, bad.run.id)
+
+    # One connection, one name, whichever way the run ended.
+    assert failed.payload["connectionName"] == completed.payload["connectionName"]
+
+
+async def test_a_run_whose_connection_is_gone_ships_a_null_name_on_both_families(db, connection) -> None:
+    """The reclaim path revives rows another process left behind, and the connection may
+    have been deleted in between — `_connection_wire` returns `(None, None)` for a row it
+    cannot find. Both families then ship `connectionName: null`, which is additive-only
+    clause 3's null-equivalent and is what `run.failed` already did. Asserted so the two
+    stay identical in the absent case as well as the present one.
+    """
+    from app.core.runs import _connection_wire
+
+    name, source = await _connection_wire(db, connection.id)
+    assert name == connection.name and source is not None
+
+    missing_name, missing_source = await _connection_wire(db, connection.id + 10_000)
+    assert missing_name is None and missing_source is None

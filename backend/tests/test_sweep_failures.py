@@ -228,7 +228,7 @@ async def test_one_dead_device_does_not_kill_the_sweep(db, jamf: FakeJamf, conne
     payload = dict(events[0].payload)
     payload.pop(ENVELOPE)
     assert set(payload) == {
-        "event", "jobID", "connectionID", "trigger", "comparison",
+        "event", "jobID", "connectionID", "connectionName", "trigger", "comparison",
         "occurredAt", "devicesTotal", "devicesProcessed", "devicesFailed", "status",
     }
     assert payload["status"] == "succeeded"
@@ -426,7 +426,7 @@ async def test_a_webhook_ingest_emits_run_completed(db, jamf: FakeJamf, connecti
     emitted = dict(events[0].payload)
     emitted.pop(ENVELOPE)
     assert set(emitted) == {
-        "event", "jobID", "connectionID", "trigger", "comparison",
+        "event", "jobID", "connectionID", "connectionName", "trigger", "comparison",
         "occurredAt", "devicesTotal", "devicesProcessed", "devicesFailed", "status",
     }
     assert emitted["status"] == "succeeded"
