@@ -154,6 +154,15 @@ inventory pass that produced it on `deviceMeta.eventID` alone rather than on
 `jobID` + `jamfProID`, the two-term join #189 rejected because it can be half-used and
 return a plausible superset with no error.
 
+Since [#308](https://github.com/LoonSecIO/LoonInspect/issues/308) (2026-09-04) the block
+is the **only** place either device family names the device. `device.change` had also
+hoisted `serialNumber`, `jamfProID`, `trigger` and `connectionID` to its root — added by
+the #223 fold, which under clause 3 could only add — where the inventory sub-event has no
+root identity to match, so a customer's bare `serialNumber=` returned changes and silently
+no inventory: the same plausible-subset failure, one level up. The root copies came off
+while the flip still made that free. `jobID` is the deliberate exception and stays hoisted
+on every family (#220). The change event's own body is [`change-log.md`](change-log.md) §3a.
+
 It is built from the **observation and the run**, not from the device row
 (`app/changes/derive.py`): the derivation runs before `process_sync` writes that row, so
 reading it would put the *previous* pull's hostname, report date and managed flag beside

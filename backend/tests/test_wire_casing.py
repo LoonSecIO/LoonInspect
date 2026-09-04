@@ -367,10 +367,15 @@ async def test_the_run_uuid_has_one_name_and_the_documented_join_works(five_fami
 async def test_the_two_device_families_agree_on_the_device_not_merely_on_casing(five_families) -> None:
     """The half of the ruling that "both camelCase" would not have delivered.
 
-    A `device.change` and the `device.inventory.changed` from the same pull now spell the
-    Jamf Pro id and the serial with the same names as `deviceMeta` does, carrying the
-    same values — so correlating a change to its inventory pass is a join on keys, not a
-    translation table.
+    A `device.change` and the `device.inventory.changed` from the same pull name the Jamf
+    Pro id and the serial in the same place — `deviceMeta` — carrying the same values, so
+    correlating a change to its inventory pass is a join on keys, not a translation table.
+
+    Since #308 that place is the ONLY one on either family. The change event used to hoist
+    the same two to its root, where the inventory sub-event has nothing to match: a bare
+    `serialNumber=` returned changes and silently no inventory, the plausible-subset
+    failure #189 refused the two-term join for. Asserted here on real payloads from one
+    sweep, in both directions.
     """
     rows, _ = five_families
     # A computer subject specifically: `derive_and_record` also runs for computer_group
@@ -379,9 +384,18 @@ async def test_the_two_device_families_agree_on_the_device_not_merely_on_casing(
         row for row in rows if row.event_type == "device.change" and row.payload["subjectKind"] == "computer"
     )
     inventory = [row for row in rows if row.event_type == "device.inventory.changed"]
-    match = next(row for row in inventory if row.payload["deviceMeta"]["jamfProID"] == change.payload["jamfProID"])
-    assert match.payload["deviceMeta"]["serialNumber"] == change.payload["serialNumber"]
-    assert match.payload["deviceMeta"]["jobID"] == change.payload["jobID"]
+    match = next(
+        row
+        for row in inventory
+        if row.payload["deviceMeta"]["jamfProID"] == change.payload["deviceMeta"]["jamfProID"]
+    )
+    assert match.payload["deviceMeta"]["serialNumber"] == change.payload["deviceMeta"]["serialNumber"]
+    # One depth, both families: neither carries a root copy to disagree with.
+    for key in ("jamfProID", "serialNumber", "trigger", "connectionID"):
+        assert key not in change.payload and key not in match.payload
+    # `jobID` is the exception #220 ruled, and it IS hoisted on both — which is what
+    # makes one bare predicate join every family.
+    assert match.payload["deviceMeta"]["jobID"] == change.payload["jobID"] == match.payload["jobID"]
 
 
 async def test_the_snapshot_and_the_delta_from_one_pull_share_the_block_the_time_and_the_envelope(
@@ -444,7 +458,13 @@ async def test_the_change_family_carries_the_inventory_familys_own_device_block(
         assert set(SUB_EVENT_KEYS) <= set(row.payload)
 
     change = next(row for row in changes if row.payload["subjectKind"] == "computer")
-    match = next(row for row in inventory if row.payload["deviceMeta"]["jamfProID"] == change.payload["jamfProID"])
+    # Both sides read the id out of the block: since #308 that is the only place either
+    # family carries it, which is what makes one predicate work on both.
+    match = next(
+        row
+        for row in inventory
+        if row.payload["deviceMeta"]["jamfProID"] == change.payload["deviceMeta"]["jamfProID"]
+    )
     change_meta, inventory_meta = change.payload["deviceMeta"], match.payload["deviceMeta"]
 
     # The correlation key #189 named and #243 ruled onto this family: derived, not minted,

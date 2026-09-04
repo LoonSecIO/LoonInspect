@@ -89,18 +89,66 @@ left carries `criteriaChanged`: whether the group's own definition span moved si
 device was last observed (criteria moved) or not (device drifted). Jamf cannot say; the
 ledger keeps both histories.
 
-Every row and event carries the correlation triple (serial, Jamf URL, Jamf id), the
-UDID, both span ids, the device's own `observed_at`, the trigger, and the policy
+Every `device_changes` **row** carries the correlation triple (serial, Jamf URL, Jamf id),
+the UDID, both span ids, the device's own `observed_at`, the trigger, and the policy
 version. The legacy `device.inventory.changed` event is unchanged.
 
-**On the wire** the event also carries `deviceMeta` — #189's block, the same names and
-values the inventory event from the same pull carries, including the `eventID` that names
-that pull — and a Splunk HEC delivery stamps it with the entity's own sourcetype,
+**On the wire** the event carries `deviceMeta` — #189's block, the same names and values
+the inventory event from the same pull carries, including the `eventID` that names that
+pull — and a Splunk HEC delivery stamps it with the entity's own sourcetype,
 `loon:jamf:mac:<entity>:change`. Both landed in
 [#223](https://github.com/LoonSecIO/LoonInspect/issues/223) on the family ruled in
-[#243](https://github.com/LoonSecIO/LoonInspect/issues/243); the shape is
+[#243](https://github.com/LoonSecIO/LoonInspect/issues/243); the block's shape is
 [`runs.md`](runs.md) §4 and the strings are
 [`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md) §2.
+
+### 3a. The body a consumer receives
+
+The event is **not** the row. Where the row repeats the device on every column,
+[#308](https://github.com/LoonSecIO/LoonInspect/issues/308) (ruled 2026-09-04) cut the
+event down to the change itself plus one identity block — the last such cut available,
+since body keys freeze at the public flip. Nineteen keys:
+
+| Key | What it is |
+| --- | --- |
+| `event` | `device.change` — the family's single subscribable type, whatever the sourcetype |
+| `jobID` | The run. Hoisted to the root on every family (#220), so one bare `jobID=$id$` joins them all |
+| `deviceMeta` | #189's block, whole — and **the only place this event names the device** |
+| `subjectKind` | `computer` \| `computer_group` |
+| `subjectLabel` | The subject's own name. Equal to `deviceMeta.hostName` for a computer; for a smart group it is the only name the event carries |
+| `udid` | The Mac's UDID. Absent on a group |
+| `observedAt` | When the device was observed — see the note below |
+| `collectedAt` | When LoonInspect collected it |
+| `section` | The contract section (`applications`, `definition`, …) |
+| `field` | The dotted path that moved, on a **scalar** section. Absent on a list section, so `field=*` selects field-level changes |
+| `entryKind` | `application`, `certificate`, `group_membership`, … Absent on a scalar section |
+| `entryIdentity` | The entry's identity fields, whatever the kind — so one search reads `entryIdentity.name` without a per-kind table |
+| `entryLabel` | The kind's own label field where it declares one. Absent for applications, local user accounts, certificates and software updates |
+| `change` | `added` \| `removed` \| `updated` \| `changed` |
+| `old` / `new` | The entry or value on each side. `old` is absent on `added`, `new` on `removed` |
+| `level` | `high` \| `normal` \| `low` — the policy's grade, what a saved search alerts on |
+| `details` | Per-change extras: `changedFields`, `criteriaChanged`, `collapsedSystemApps` |
+| `spanID` / `previousSpanID` | Both ledger spans, so any change walks back to its evidence |
+| `policyVersion` | The change policy that judged it — **not** `deviceMeta.schemaVersion`, which versions the wire |
+
+Three rules a consumer can rely on:
+
+- **Nulls are dropped, not sent** — one rule for the whole event, the same one
+  `deviceMeta` follows. A key's absence means this event had nothing to put there.
+- **The device is named once.** `serialNumber`, `jamfProID`, `hostName`, `trigger` and
+  `connectionID` are read from `deviceMeta` on **both** device families, so a predicate
+  written once works on both. They were root keys on this family alone until #308, which
+  made a bare `serialNumber=` match changes and silently return no inventory at all.
+- **The Jamf Pro instance is the envelope's `source`** (`acme.jamfcloud.com` — scheme
+  dropped, non-default port kept), never a body key; `deviceMeta.connectionID` scopes it.
+  The connection's friendly name is `connectionName` on `run.completed` / `run.failed`
+  ([`runs.md`](runs.md) §7), a `jobID` join away.
+
+One trap worth naming: **`observedAt` and `deviceMeta.lastReportDate` are not the same
+key.** Both are the device's own report date when GENERAL was read. When it was not,
+`lastReportDate` is dropped and `observedAt` falls back to collection time — so they
+agree on the happy path and mean different things off it. Use `lastReportDate` for
+freshness and `observedAt` for when the change is claimed to have happened.
 
 ---
 
