@@ -323,6 +323,16 @@ export const en = {
       loading: "Checking…",
       allClear: (clock: string) => `Nothing needs your attention · checked ${clock}`,
       checked: (clock: string) => `checked ${clock}`,
+      // Every check denied. Not an all-clear and not an error: two sentences that say
+      // what was and was not established, and carry no clock — the green line above is
+      // dated because it attests to something, and this attests to nothing.
+      //
+      // "Not checked" leads, because the thing the reader must not carry away is that
+      // their fleet is fine. The second sentence names the permission rather than the
+      // role, since that is what an administrator acts on.
+      blindTitle: "Not checked.",
+      blindBody:
+        "Your role cannot see connections, destinations or system status, so none of these checks ran — this is not an all-clear. An administrator can grant the access these checks need.",
       // Verbs. The name of the thing is rendered beside these, never inside them:
       // English word order is not German word order, and a sentence assembled in the
       // composition would arrive here already built.

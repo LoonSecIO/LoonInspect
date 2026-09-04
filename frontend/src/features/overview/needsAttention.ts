@@ -40,6 +40,18 @@ import type { UpdateStatusResponse } from "@/features/system/api";
  * who fixes destinations and would otherwise never see a green line again. Getting these
  * two backwards is the single highest-consequence mistake available in this file.
  *
+ * That rationale is about a *partial* denial, and it stops being true at the end of its
+ * own range. `Role.viewer` holds inventory read and nothing else
+ * (`backend/app/core/permissions.py`), so every input this panel checks resolves
+ * `denied` — and silence over all of them left `rows` and `degraded` both empty, which
+ * is indistinguishable from a clean fleet. `/` is not role-gated, so a viewer opened the
+ * front page and was handed *"Nothing needs your attention · checked 08:14 UTC"*: a
+ * dated attestation about a fleet on which zero checks had executed. `blind` is the
+ * whole-range case, and it is not a fifth `denied` row — it is the panel saying which
+ * question it is not in a position to answer. Failure must never read as emptiness
+ * (#150), and saying what the product cannot see is the doctrine (#251), not a gap to
+ * paper over.
+ *
  * ## Stored latest-fields, and why there is no page of runs here
  *
  * Every predicate reads a column that is already written down. That is Kyle's
@@ -147,6 +159,23 @@ export interface AttentionResult {
   dropped: number;
   /** Checks that errored. Rendered as rows, and they withhold the all-clear line. */
   degraded: AttentionKind[];
+  /**
+   * **Not one check could run.** Every input in `CHECKS_BY_INPUT` came back `denied`, so
+   * nothing about this fleet was examined and the panel has no finding of any kind —
+   * clean or otherwise — to report.
+   *
+   * A separate field from `degraded` because it is a different sentence to a different
+   * person. A degraded check is a fault the operator can chase; this is a session
+   * without the permissions the panel is built on, and telling a viewer that "recent
+   * runs could not be checked" five times over would read as five faults in the product.
+   * It withholds the all-clear (`isAllClear`) — that is the whole point — and it is
+   * deliberately *not* counted into `total`: the sidebar badge counts things that need
+   * attention, and a role boundary is not one of them.
+   *
+   * `false` the moment any single check resolves, including a partial denial, which is
+   * the case the silent-`denied` ruling was actually made about.
+   */
+  blind: boolean;
   /**
    * Everything the panel would render: rows before the cap, plus the degraded rows.
    *
@@ -425,20 +454,31 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
   });
 
   const degraded: AttentionKind[] = [];
+  // Counted over the same registry that produces `degraded`, so #101's sixth input joins
+  // both by adding one line to `CHECKS_BY_INPUT` and nothing else. `connections` is
+  // correctly outside it: it answers *which* connection a row is about, never *whether*
+  // there is a row, so a session that could read every check but not the connection names
+  // is not blind — its rows would just lose their context.
+  let checksAsked = 0;
+  let checksDenied = 0;
   for (const [key, kinds] of Object.entries(CHECKS_BY_INPUT) as [
     keyof typeof CHECKS_BY_INPUT,
     AttentionKind[]
   ][]) {
     const fetched = inputs[key];
-    // `denied` is deliberately absent: a permission the session does not hold is not a
-    // check that failed, and must not withhold the all-clear line.
+    checksAsked += 1;
+    // `denied` is deliberately absent from `degraded`: a permission the session does not
+    // hold is not a check that failed, and a *partial* denial must not withhold the
+    // all-clear line. All of them denied is the other end of that range — see `blind`.
     if (!fetched.ok && fetched.reason === "error") degraded.push(...kinds);
+    if (!fetched.ok && fetched.reason === "denied") checksDenied += 1;
   }
 
   return {
     rows: rows.slice(0, MAX_ROWS),
     dropped: Math.max(0, rows.length - MAX_ROWS),
     degraded,
+    blind: checksDenied === checksAsked,
     total: rows.length + degraded.length,
     checkedAt: now.toISOString()
   };
@@ -449,13 +489,18 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
  *
  * A function rather than an inline `&&` in the panel, because it is the attestation's
  * gate: the one predicate in this feature that has to be greppable, and the one that
- * must not be re-typed anywhere. Every check that could run came back clean, and no
- * check that should have run failed to.
+ * must not be re-typed anywhere. Every check that could run came back clean, no check
+ * that should have run failed to — and at least one check ran at all.
  *
- * Takes the two fields it reads rather than a whole `AttentionResult`, so the panel can
- * ask it about the store's slices without the store having to hold a result object it
- * would otherwise never use.
+ * That last clause is `blind`, and it is here rather than in the panel for the same
+ * reason the other two are: an emptiness that means "nothing was examined" is the one
+ * state this sentence must never be printed over, and a condition the panel re-typed
+ * would be a second implementation of the attestation rule.
+ *
+ * Takes the fields it reads rather than a whole `AttentionResult`, so the panel can ask
+ * it about the store's slices without the store having to hold a result object it would
+ * otherwise never use.
  */
-export function isAllClear(result: Pick<AttentionResult, "rows" | "degraded">): boolean {
-  return result.rows.length === 0 && result.degraded.length === 0;
+export function isAllClear(result: Pick<AttentionResult, "rows" | "degraded" | "blind">): boolean {
+  return !result.blind && result.rows.length === 0 && result.degraded.length === 0;
 }

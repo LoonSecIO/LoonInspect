@@ -511,6 +511,168 @@ async def test_a_reclaim_mid_flight_leaves_an_earlier_success_alone(
     assert sweep.last_success_at == succeeded_at
 
 
+# --- The process dies: the reclaim is the collection's fifth writer -------------------
+#
+# Every test above drives an outcome through a live `run_collection` frame, which is
+# exactly why this defect survived them. `last_run_status` had four writers and all four
+# sat inside that frame; when the frame's process goes — a deploy, an OOM kill, a node
+# eviction at 03:12 — the reclaim fails the RUN and, before this, left the COLLECTION
+# reading `ok`. Everything that judges a collection's health reads the collection, so the
+# morning after a killed 3,000-Mac sweep #106's panel printed a dated all-clear over it.
+
+
+async def _kill_the_process(db, run_id) -> None:
+    """Stop the heartbeat and nothing else. To the database this is still a perfectly
+    good running run, which is the whole difficulty: nobody is left to say otherwise."""
+    from sqlalchemy import update as sa_update
+
+    from app.core.config import settings
+    from app.models.schema import Run
+
+    stale = _now() - timedelta(seconds=settings.run_stale_after_seconds + 60)
+    await db.execute(sa_update(Run).where(Run.id == run_id).values(heartbeat_at=stale))
+    await db.commit()
+
+
+async def test_a_reclaim_marks_the_collection_the_dead_run_was_serving(
+    db, connection, sweep, jamf: FakeJamf
+) -> None:
+    """The sweep that was killed at 03:12 does not still read `ok` at 08:00."""
+    from app.core.runs import LOCK_DEVICE_SWEEP, TRIGGER_SWEEP, acquire
+    from app.mdm.collections import run_collection
+
+    # Yesterday's sweep succeeded, so the row carries the reassuring cache this defect
+    # was hiding behind.
+    assert (await run_collection(db, sweep, trigger="sweep")).ok
+    await db.refresh(sweep)
+    assert sweep.last_run_status == "ok"
+    succeeded_at = sweep.last_success_at
+    assert succeeded_at is not None
+
+    # Tonight's sweep takes the lock for this collection and its process is killed
+    # mid-flight. No `run_collection` frame ever finishes; nothing writes the row.
+    dead = await acquire(
+        db,
+        connection,
+        trigger=TRIGGER_SWEEP,
+        lock_class=LOCK_DEVICE_SWEEP,
+        collection_id=sweep.id,
+    )
+    assert dead.started
+    started_at = dead.run.started_at
+    await _kill_the_process(db, dead.run.id)
+
+    # Morning. Any acquisition anywhere in the tenant runs the reclaim.
+    revived = await acquire(db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP)
+    assert revived.started and revived.run.id != dead.run.id
+
+    await db.refresh(sweep)
+    assert sweep.last_run_status == "failed"
+    assert sweep.last_run_at == started_at
+    assert "heartbeat" in sweep.last_run_summary["error"]
+    assert sweep.last_run_summary["jobId"] == str(dead.run.id)
+    # The success mark is a separate claim, and an earlier real success is still true.
+    # Clearing it would make a collection with a year of history read as
+    # never-succeeded, which #106 turns into a louder and wronger row.
+    assert sweep.last_success_at == succeeded_at
+
+
+async def test_a_reclaim_leaves_a_collection_that_recorded_its_own_outcome_alone(
+    db, connection, sweep, jamf: FakeJamf
+) -> None:
+    """The freshness guard, which is what keeps the fix from lying in the other direction.
+
+    Run-now hands ONE run to every enabled sweep on a connection, so a process that dies
+    inside the fourth must not restamp the three that finished under the same jobID.
+    `collections.last_run_at` is the attempt's start and is therefore always later than
+    the start of the run the attempt happens inside — a row at or after the dead run's
+    `started_at` has already recorded its own outcome for this run and knows more than
+    the reclaim does.
+    """
+    from app.core.runs import LOCK_DEVICE_SWEEP, TRIGGER_MANUAL, acquire
+    from app.mdm.collections import run_collection
+
+    held = await acquire(
+        db,
+        connection,
+        trigger=TRIGGER_MANUAL,
+        lock_class=LOCK_DEVICE_SWEEP,
+        collection_id=sweep.id,
+    )
+    assert held.started
+    # The collection completes inside the handed-in run…
+    assert (await run_collection(db, sweep, trigger="manual", run=held.run)).ok
+    await db.refresh(sweep)
+    succeeded_at = sweep.last_success_at
+    assert sweep.last_run_status == "ok" and succeeded_at is not None
+
+    # …and only then does the process die, before anything closes the run.
+    await _kill_the_process(db, held.run.id)
+    revived = await acquire(db, connection, trigger=TRIGGER_MANUAL, lock_class=LOCK_DEVICE_SWEEP)
+    assert revived.started
+
+    await db.refresh(sweep)
+    assert sweep.last_run_status == "ok"
+    assert sweep.last_success_at == succeeded_at
+
+
+async def test_a_reclaimed_webhook_run_marks_no_collection(db, connection, sweep) -> None:
+    """Webhook runs carry no `collection_id`, and that is what keeps a reclaim off the
+    webhook collection — by construction, not by a branch that could be edited out."""
+    from app.core.runs import LOCK_DEVICE_SWEEP, LOCK_WEBHOOK, TRIGGER_WEBHOOK, acquire
+
+    before = sweep.last_run_status
+    hook = await acquire(db, connection, trigger=TRIGGER_WEBHOOK, lock_class=LOCK_WEBHOOK)
+    assert hook.started and hook.run.collection_id is None
+    await _kill_the_process(db, hook.run.id)
+
+    revived = await acquire(db, connection, trigger=TRIGGER_WEBHOOK, lock_class=LOCK_DEVICE_SWEEP)
+    assert revived.started
+    await db.refresh(sweep)
+    assert sweep.last_run_status == before
+
+
+# --- A skip is not a result ------------------------------------------------------------
+
+
+async def test_the_rate_floor_does_not_erase_a_failure(db, connection, jamf: FakeJamf) -> None:
+    """`skipped` overwriting `failed` made the alarm self-clearing on a timer.
+
+    A daily sweep that failed at 03:00 and was manually re-run at 03:20 is inside its
+    rate floor at the next occurrence; the tick wrote `skipped`, and every surface that
+    reads this column — #106's panel first — went quiet for a day. On an hourly
+    collection it happened every alternate tick. The skip is this tick declining to
+    produce a result, not a result that supersedes one.
+    """
+    from app.mdm.collections import apply_schedule, tick_tenant
+    from app.models.schema import Collection
+
+    row = Collection(
+        mdm_connection_id=connection.id, name=f"failed then floored {uuidlib.uuid4().hex[:8]}",
+        kind="device_sweep", enabled=True, sections=["general"],
+        frequency="daily", at_hour=1, at_minute=0, timezone="UTC",
+    )
+    apply_schedule(row)
+    row.next_due_at = _now() - timedelta(minutes=1)
+    failed_at = _now() - timedelta(minutes=5)
+    row.last_run_at = failed_at  # a run five minutes ago…
+    row.last_run_status = "failed"  # …that failed
+    row.last_run_summary = {"error": "jamf refused the token"}
+    db.add(row)
+    await db.commit()
+
+    results = await tick_tenant(db, _now())
+    assert not any(r.collection_id == row.id for r in results)
+
+    await db.refresh(row)
+    assert row.last_run_status == "failed"
+    assert row.last_run_at == failed_at
+    # And the reason with it: a summary replaced by "within rate floor" would leave the
+    # status alarming with nothing on the collection saying what went wrong.
+    assert row.last_run_summary["error"] == "jamf refused the token"
+    assert not any(path.startswith("GET /api/v4/computers-inventory") for path in jamf.requests)
+
+
 # --- GET /api/mdm/collections: the tenant-wide list (#106) -----------------------------
 
 ADMIN = ("collections-admin@example.com", "collections-admin-password")

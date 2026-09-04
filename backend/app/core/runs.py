@@ -39,7 +39,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -49,7 +49,7 @@ from app.core.outbox import enqueue_event
 from app.core.uuid7 import uuid7
 from app.core.wire import ENVELOPE, envelope, instance_label
 from app.core.wire_vocabulary import RUN_COMPLETED_EVENT_TYPE, RUN_FAILED_EVENT_TYPE
-from app.models.schema import MdmConnection, Run, RunLogLine
+from app.models.schema import Collection, MdmConnection, Run, RunLogLine
 
 logger = logging.getLogger(__name__)
 
@@ -506,6 +506,17 @@ async def _reclaim_stale(db: AsyncSession) -> int:
     connection whose run went stale — it raises out of every acquire in the tenant,
     including connections with nothing stuck and nothing to reclaim. The lock-freeing
     UPDATE is the one statement here that must not be hostage to anything else.
+
+    **The collection the run served is stamped too, and it rides WITH the verdict** —
+    `_mark_collections_reclaimed`, below, and the one thing here that is not best-effort.
+    `collections.last_run_status` was written in four places, all of them inside the live
+    frame that performs a run; when that frame's process dies there is nobody left to
+    write it, so the run row read `failed` while the collection it served went on reading
+    `ok` forever. Everything the product says about whether a collection is healthy —
+    #106's Needs Attention panel first among them — reads the collection row, so the
+    morning after a killed 3,000-Mac sweep the front page printed a dated all-clear over
+    it. That is the same failure this docstring already names one paragraph up, one table
+    across.
     """
     now = _utcnow()
     cutoff = now - timedelta(seconds=settings.run_stale_after_seconds)
@@ -522,10 +533,20 @@ async def _reclaim_stale(db: AsyncSession) -> int:
             window_end=now,
             error=error,
         )
-        .returning(Run.id, Run.mdm_connection_id, Run.trigger, Run.window_start)
+        .returning(
+            Run.id,
+            Run.mdm_connection_id,
+            Run.collection_id,
+            Run.trigger,
+            Run.started_at,
+            Run.window_start,
+        )
     )
     reclaimed = result.all()
     if reclaimed:
+        # In the same transaction as the verdicts, deliberately — see the function's own
+        # docstring for why this one is not held to `_emit_after_release`'s rule.
+        await _mark_collections_reclaimed(db, reclaimed, error=error)
         # The verdicts alone. Every lock this reclaim freed is free from here on, whatever
         # happens to the recording below.
         await db.commit()
@@ -536,6 +557,79 @@ async def _reclaim_stale(db: AsyncSession) -> int:
         for row in reclaimed:
             await _record_reclaim(db, row, at=now, error=error)
     return len(reclaimed)
+
+
+async def _mark_collections_reclaimed(db: AsyncSession, reclaimed, *, error: str) -> None:
+    """Carry each reclaimed run's verdict onto the collection row it served.
+
+    `collections.last_run_status` is a cache of the newest thing that happened to a
+    collection, and every writer of it lives inside `run_collection` — inside the frame
+    doing the work. A deploy, an OOM kill or a node eviction at 03:12 takes that frame
+    with it, so the four in-process writers cover every outcome a run can *report* and
+    none of the ways a run can stop reporting. This is the fifth writer, and the only one
+    that survives the process.
+
+    **Why it commits with the verdict rather than after it.** The rest of the recording
+    here is best-effort by design (`_emit_after_release`): the lock must be freed even if
+    the run log and the wire event cannot be written. This is not in that class. The
+    collection's cached outcome and the run's verdict are one statement about one event —
+    `run_collection` commits them together for exactly that reason, and its `closed is
+    False` branch says it out loud: "this row's cached outcome must not disagree with the
+    history it summarizes." Split across two transactions they can disagree, and if the
+    second one fails they disagree *permanently*: the run is no longer `running`, so no
+    later reclaim ever revisits it. The blast-radius argument does not carry over either.
+    What `_emit_after_release` guards against is an INSERT that cannot be completed — a
+    full disk, asyncpg's bind-parameter ceiling — poisoning the transaction of every
+    acquisition in the tenant. These are UPDATEs of rows that already exist, keyed by
+    primary key, one per stale run and so bounded by connections times lock classes.
+
+    **The freshness guard is what keeps it from lying in the other direction.**
+    `collections.last_run_at` is the attempt's start, always later than the start of the
+    run the attempt happens inside, so a row whose `last_run_at` is at or after the
+    reclaimed run's `started_at` has already recorded its own outcome *for this run* and
+    is better informed than the reclaim is. Two cases need that: run-now hands one run to
+    every enabled sweep on a connection, and dying inside the fourth must not restamp the
+    three that finished; and a process that died in the sliver between committing a
+    collection's `ok` and calling `finish` did complete that collection's work.
+
+    **`last_success_at` is not touched.** It is written only where a run actually
+    succeeded, an earlier real success stays true, and the reclaim has no way to know
+    what the value was before — the in-frame downgrade can *restore* it because it read
+    it on the way in; this cannot, and clearing it would make a collection with years of
+    history read as never-succeeded, which #106 turns into a louder, wronger row.
+
+    **A run with no `collection_id` marks nothing.** Webhook runs have none by
+    construction, which is what keeps this off the webhook collection. So does run-now,
+    which acquires at the connection and then runs every sweep the connection has: there
+    is no single collection to attribute its death to, and marking all of them would
+    overwrite the ones that finished. That gap is real and left open on purpose — the
+    scheduled tick, which is the unattended path and the one the panel exists for, always
+    passes `collection_id` (`app.mdm.collections.run_collection`).
+    """
+    for row in reclaimed:
+        if row.collection_id is None:
+            continue
+        await db.execute(
+            update(Collection)
+            .where(
+                Collection.id == row.collection_id,
+                or_(
+                    Collection.last_run_at.is_(None),
+                    Collection.last_run_at < row.started_at,
+                ),
+            )
+            .values(
+                last_run_at=row.started_at,
+                # The same word `run_collection` writes on every other failure, so the
+                # panel and the collections list need no second vocabulary.
+                last_run_status="failed",
+                last_run_summary={
+                    "jobId": str(row.id),
+                    "trigger": row.trigger,
+                    "error": error,
+                },
+            )
+        )
 
 
 async def _record_reclaim(db: AsyncSession, row, *, at: datetime, error: str) -> None:
