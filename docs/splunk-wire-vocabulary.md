@@ -303,8 +303,7 @@ The event the fan-out expands is the per-device snapshot, `device.inventory`
 root, once, and each of its list items is already the sub-event body minus these three —
 `{"app": {…}, "patch": {…}, "vuln": {…}}` — so the split is iteration, not reshaping
 ([`runs.md`](runs.md) §4). That is what `app/core/hec_fanout.py` does: the sub-event body
-is `{event, jobID, …the item…, deviceMeta}` — the snapshot's own layout, head first, block
-last — under `sourcetype(wrapper)`, with the envelope hints beside it. The snapshot's fourth
+is the item, then `event` and `jobID`, then `deviceMeta` (§6a) — under `sourcetype(wrapper)`, with the envelope hints beside it. The snapshot's fourth
 head key, `occurredAt`, does **not** ride the sub-event: these three are the complete list,
 and the same instant travels beside every sub-event as the envelope's `time`. Under
 additive-only clause 3 omitting it is the reversible direction.
@@ -314,29 +313,41 @@ additive-only clause 3 omitting it is the reversible direction.
 Added [#286](https://github.com/LoonSecIO/LoonInspect/issues/286), 2026-09-04. **Every
 delivered event, in every family, on every destination type, is laid out the same way:**
 
-1. `event`, then `jobID` — the head above, minus `deviceMeta`.
-2. The family's own keys, in their existing relative order.
+1. The family's own keys — the section object, the delta's `addedApps`, the run's counts —
+   in their existing relative order.
+2. `event`, then `jobID`.
 3. `deviceMeta` last, wherever the family carries it.
 
-This was already the fan-out's layout — *head first, block last* — described one paragraph
-up. #286 lifted it into `wire_vocabulary.ordered_event_keys` and applied it to the three
-families the fan-out does not build (`device.inventory.changed`, the run families,
-`device.change`), which until then had **no designed order at all**: `event_outbox.payload`
-is `jsonb`, Postgres normalises object keys by length then bytewise, and whatever a producer
-wrote was gone before delivery read the row. The delta family was shipping `deviceMeta`
-wedged between `addedApps` and `occurredAt` because that is where key length put it.
+**The content leads, and the head trails, because they are read differently.** `event` and
+`jobID` are *search* keys: within one result set they are the same two values repeated on
+every row, so leading with them spends the most valuable screen space in Splunk on the
+least informative bytes on the event. They are reached for in SPL — `jobID=$id$`,
+`event=device.*` — where position is irrelevant, because a field's worth to a search does
+not depend on where it sits in the document. `deviceMeta` trails for that reason twice
+over: it is the largest block on the event (§6's thirteen keys, written once per app, per
+EA, per certificate and per profile) and it is identical across every sub-event of one
+device. What varies, and what the reader opened the event for, is first.
+
+This is the shape LoonInspect's predecessor shipped on SplunkBase, where each event was a
+hand-written dict literal with the section object at the top. That technique cannot survive
+this product's storage: `event_outbox.payload` is `jsonb`, Postgres normalises object keys
+by length then bytewise, and whatever a producer wrote is gone before delivery reads the
+row — the delta family was shipping `deviceMeta` wedged between `addedApps` and
+`occurredAt` because that is where key *length* put it. So the order is imposed at delivery
+instead, by `wire_vocabulary.ordered_event_keys`, which every family routes through
+including the fan-out. One rule, one implementation: the fan-out and the single-event
+families cannot drift into two layouts that agree until they don't.
 
 **This is a reading rule, not a wire rule, and the distinction is the point.** JSON objects
 are unordered by specification, so no consumer may depend on this and none can — it changes
 no name, no type, no value and no sourcetype. It therefore sits *outside* the additive-only
 clauses of §5 rather than needing one of them, and it is why the order could be imposed
-after the vocabulary froze. What it buys is entirely human: Splunk renders `_raw` in
-document order, `deviceMeta` is the largest block on the event, and a person reading an
-event should not scroll past the biggest thing on it to reach the smallest.
+after the vocabulary froze.
 
-A key added later under clause 1 lands in the middle with no edit to the rule. The
-alternative considered and refused was a per-family table of key orders, which every future
-amendment would have to update and which would be wrong the first time someone forgot.
+A key added later under clause 1 joins the content, ahead of the head, with no edit to the
+rule. The alternative considered and refused was a per-family table of key orders, which
+every future amendment would have to update and which would be wrong the first time someone
+forgot.
 
 Pinned in `tests/test_hec_fanout.py` by assertions over `list(body)` — deliberately not
 `set(body)`, which every older assertion in that file uses and which is order-blind, which

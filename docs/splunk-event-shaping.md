@@ -408,7 +408,10 @@ so the producer's order was gone before delivery read the row, and `device.inven
 was shipping `deviceMeta` between `addedApps` and `occurredAt` for no reason anyone chose.
 
 One rule now covers all four families and both destination shapes (HEC and generic webhook):
-head first, family keys next, `deviceMeta` last. It is stated normatively in
+**the family's own keys first**, then `event` and `jobID`, then `deviceMeta`. The content
+leads because `event` and `jobID` are search keys — the same two values repeated on every
+row of a result set, reached for in SPL where position is irrelevant — so leading with them
+would spend the best screen space on the least informative bytes. It is stated normatively in
 [`splunk-wire-vocabulary.md` §6a](splunk-wire-vocabulary.md) and implemented as
 `wire_vocabulary.ordered_event_keys`. It is a reading rule, not a wire rule — JSON objects
 are unordered, so nothing may depend on it — which is why it could be imposed after the

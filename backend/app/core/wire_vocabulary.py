@@ -222,18 +222,30 @@ _DEVICE_META_KEY = "deviceMeta"
 def ordered_event_keys(body: Mapping[str, object]) -> dict[str, object]:
     """One delivered event, its keys in the order a person reads them (#286).
 
-    `event` and `jobID` first, the family's own keys next in their existing relative
-    order, `deviceMeta` last. This is not a new rule: it is the layout `hec_fanout.fan_out`
-    already builds by hand — head, item, `deviceMeta` — lifted here so the three families
-    that are *not* fanned out obey it too.
+    **The family's own keys first**, in their existing relative order; then `event` and
+    `jobID`; then `deviceMeta` last. The thing you opened the event to read is the first
+    thing in it.
+
+    **Why the head does not lead** (Kyle, 2026-09-04, ruling this against the
+    head-first draft): `event` and `jobID` are *search* keys, not *reading* keys. Within
+    one result set they are the same two values repeated on every row, so putting them
+    first spends the most valuable screen space in Splunk on the least informative bytes
+    on the event. You reach for them in SPL — `jobID=$id$`, `event=device.*` — where
+    position is irrelevant, and a field's worth to a search does not depend on where it
+    sits in the document. This is the shape Kyle's SplunkBase add-on shipped, where the
+    section object led every event and the meta block trailed it.
+
+    `deviceMeta` trails for the same reason twice over: it is the largest block on the
+    event — #189's thirteen keys, written once per app, per EA, per certificate and per
+    profile — and it too is identical across every sub-event of one device.
 
     **Why anything had to impose it.** `event_outbox.payload` is `jsonb`, and Postgres
     normalises object keys by length then bytewise. Whatever order a producer wrote is
     gone before delivery reads the row, so `device.inventory.changed` was shipping
     `deviceMeta` wedged between `addedApps` and `occurredAt` — not a choice anyone made,
-    just what the storage engine happened to return. Splunk renders `_raw` in document
-    order, so that ordering is the whole reading experience for a person, and
-    `deviceMeta` is the largest block on the event.
+    just what the storage engine happened to return. A dict literal at the producer, the
+    technique the add-on used, cannot survive that round trip; this is the same idea
+    applied one layer later, where the row is read rather than written.
 
     Key order is semantically nothing: no consumer may depend on it, and none can, since
     JSON objects are unordered by specification. That is exactly why this is safe to
@@ -244,15 +256,14 @@ def ordered_event_keys(body: Mapping[str, object]) -> dict[str, object]:
     and the bytes must not move between attempts. This is a pure function of `body`, so
     they do not.
 
-    A key added later under clause 1 lands in the middle with no edit here — the
+    A key added later under clause 1 joins the content, ahead of the head — the
     alternative, a per-family table of key orders, would have to be updated by every
     future amendment and would be wrong the first time someone forgot.
     """
     head = tuple(key for key in SUB_EVENT_KEYS if key != _DEVICE_META_KEY)
-    ordered: dict[str, object] = {key: body[key] for key in head if key in body}
-    ordered.update({key: value for key, value in body.items() if key not in head and key != _DEVICE_META_KEY})
-    if _DEVICE_META_KEY in body:
-        ordered[_DEVICE_META_KEY] = body[_DEVICE_META_KEY]
+    trailing = (*head, _DEVICE_META_KEY)
+    ordered: dict[str, object] = {key: value for key, value in body.items() if key not in trailing}
+    ordered.update({key: body[key] for key in trailing if key in body})
     return ordered
 
 
