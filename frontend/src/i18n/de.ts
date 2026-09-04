@@ -342,6 +342,13 @@ export const de: Translations = {
       // benennen nichts, was man reparieren kann.
       schedulerStalled: (count: number) =>
         `${count} Sammlungen wurden fällig und nichts hat sie gestartet — bitte die Zeitplanung prüfen`,
+      // Der zusammengefasste Eintrag für veraltetes Inventar (#106, entschieden am
+      // 2026-09-04): Veralten ist bauartbedingt korreliert — eine Zugangsberechtigung,
+      // ein Netzwerkpfad, eine Zeitplanung für alle Sammlungen. Fünf Zeilen mit fünf
+      // Namen belegten die ganze Liste, um eine einzige Tatsache zu wiederholen. Benannt
+      // wird deshalb die Verbindung, nicht die Sammlungen.
+      inventoryStalled: (count: number) =>
+        `${count} Sammlungen haben die Flotte seit dem Doppelten ihres eigenen Zeitplans nicht gelesen — bitte die Verbindung prüfen`,
       checkNames: {
         run_failed: "letzte Durchläufe",
         destination_failing: "Ziele",

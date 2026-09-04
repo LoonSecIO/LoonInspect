@@ -34,6 +34,11 @@ pytestmark = [
 ]
 
 VIEWER = ("viewer@alerts.example.com", "alerts-viewer-password")
+# Only here to mint the narrowed tokens the guard test needs. No role grants one of
+# `device:read` / `app:read` without the other — `_INVENTORY_READ` hands over both as a
+# block — so the only principal that can hold exactly one is a scoped API token, and
+# minting one takes `token:create`, which Viewer does not have.
+ADMIN = ("admin@alerts.example.com", "alerts-admin-password")
 
 # The install under test: a network scanner nobody deployed, appearing on a managed Mac.
 # Deliberately *not* Wireshark, which is the usual fixture for this story — the reference
@@ -66,6 +71,9 @@ async def tenant_ready() -> None:
     async with session_for_tenant(OPERATIONAL_TENANT_ID) as db:
         if (await db.execute(select(Account).where(Account.email == VIEWER[0]))).scalars().first() is None:
             await create_account(db, email=VIEWER[0], display_name="alerts viewer", password=VIEWER[1], roles=("viewer",))
+            await db.commit()
+        if (await db.execute(select(Account).where(Account.email == ADMIN[0]))).scalars().first() is None:
+            await create_account(db, email=ADMIN[0], display_name="alerts admin", password=ADMIN[1], roles=("admin",))
             await db.commit()
 
 
@@ -155,6 +163,52 @@ async def viewer(tenant_ready):
         assert response.status_code == 200, f"login failed: {response.status_code} {response.text}"
         client.headers["X-CSRF-Token"] = client.cookies.get("loon_csrf", "")
         yield client
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def admin(tenant_ready):
+    """Signed in as admin, and used for one thing only: minting the scoped tokens below
+    through the product's own endpoint, so the principals under test are configurations an
+    operator can actually reach rather than rows constructed to make a point."""
+    from app.main import app
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="https://alerts.example.com") as client:
+        response = await client.post("/api/auth/login", json={"email": ADMIN[0], "password": ADMIN[1]})
+        assert response.status_code == 200, f"login failed: {response.status_code} {response.text}"
+        client.headers["X-CSRF-Token"] = client.cookies.get("loon_csrf", "")
+        yield client
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def scoped(admin):
+    """A factory for `httpx` clients bearing an API token narrowed to exactly the given
+    scopes. Token scopes are an intersection with the owner's set (`scoped_permissions`),
+    so an admin-owned token scoped to one permission holds precisely that one."""
+    from app.main import app
+
+    opened: list[httpx.AsyncClient] = []
+
+    async def _client(*scopes: str) -> httpx.AsyncClient:
+        response = await admin.post(
+            "/api/auth/tokens",
+            json={"name": f"alerts-guard {'+'.join(scopes) or 'none'}", "scopes": list(scopes)},
+        )
+        assert response.status_code == 201, response.text
+        # No CSRF header: bearer auth is exempt.
+        client = httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="https://alerts.example.com",
+            headers={"Authorization": f"Bearer {response.json()['token']}"},
+        )
+        opened.append(client)
+        return client
+
+    try:
+        yield _client
+    finally:
+        for client in opened:
+            await client.aclose()
 
 
 def _at(jamf: FakeJamf, minute: int) -> None:
@@ -464,3 +518,28 @@ async def test_a_viewer_can_read_the_open_latches(db, connection, jamf: FakeJamf
     assert await nmaps() == []
     connection.is_active = True
     await db.commit()
+
+
+async def test_the_guard_names_both_identities_the_row_discloses(scoped) -> None:
+    """`GET /api/alerts` requires **both** `device:read` and `app:read` (Kyle,
+    2026-09-04), because an `AlertOut` hands over two identities at once: a named Mac
+    (`deviceId`, `deviceLabel`) and an application (`appHash`, `appName`, `bundleId`).
+
+    Driven with API tokens rather than roles, because no role can express the failing
+    case: `_INVENTORY_READ` grants the pair as a block, so a principal holding one and
+    not the other only exists as a scoped token. That is exactly the split the ruling is
+    made *for* — "the application team sees the catalog but not the fleet" — and this is
+    the day it would otherwise have leaked `deviceLabel` to an app-scoped caller.
+
+    The 200 case is asserted beside the two 403s so a guard that simply refused everyone
+    could not pass this test. It asserts the status only: the rows themselves belong to
+    the viewer test above, which proves the same endpoint answers the least-privileged
+    *role*, unchanged by this ruling.
+    """
+    fleet_only = await scoped("device:read")
+    apps_only = await scoped("app:read")
+    both = await scoped("device:read", "app:read")
+
+    assert (await fleet_only.get("/api/alerts")).status_code == 403
+    assert (await apps_only.get("/api/alerts")).status_code == 403
+    assert (await both.get("/api/alerts")).status_code == 200

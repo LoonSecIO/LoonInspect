@@ -142,3 +142,43 @@ def test_the_module_never_says_severity() -> None:
     source = (Path(__file__).resolve().parents[1] / "app" / "alerts" / "service.py").read_text()
 
     assert "severity" not in source.replace("`severity`", ""), "alerts are graded by level, not severity"
+
+
+# --- The route's guard, and the claim the ruling rests on --------------------------------
+
+
+def test_no_role_loses_access_when_the_guard_names_both_permissions() -> None:
+    """The ruling of 2026-09-04 rests on one factual claim — *no role loses access* — and
+    a claim a future role table can silently falsify belongs in a test rather than in a
+    docstring.
+
+    `GET /api/alerts` asserts `device:read` **and** `app:read`. Every role holds both
+    today because `_INVENTORY_READ` grants the pair as a block, so the guard is free right
+    now; the day someone splits them ("the application team sees the catalog but not the
+    fleet") this test fails and says which role stopped being able to open the panel,
+    instead of the panel simply going quiet on `/`.
+
+    The refusal half — a principal holding exactly one — cannot be built from a role for
+    the same reason, and is driven with scoped API tokens over HTTP in
+    `tests/test_alerts_db.py`.
+    """
+    from app.core.permissions import ROLE_PERMISSIONS, Permission
+
+    required = {Permission.DEVICE_READ, Permission.APP_READ}
+    lost = sorted(role for role, granted in ROLE_PERMISSIONS.items() if not required <= granted)
+
+    assert lost == [], f"roles that would lose the alerts panel: {lost}"
+
+
+def test_the_route_declares_both_permissions() -> None:
+    """The guard as the route table actually carries it, not as a comment claims it.
+
+    Read off the source rather than by importing `app.main` — the pure lane has no
+    database and building the app touches settings that need one. A regex is enough
+    because there is exactly one route in the module and the assertion is about the two
+    names appearing inside its single `require(...)`.
+    """
+    source = (Path(__file__).resolve().parents[1] / "app" / "api" / "alerts.py").read_text()
+    guards = re.findall(r"Depends\(require\(([^)]*)\)\)", source)
+
+    assert guards == ["Permission.DEVICE_READ, Permission.APP_READ"], guards

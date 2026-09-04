@@ -12,8 +12,12 @@ import type { UpdateStatusResponse } from "@/features/system/api";
  * is a decision that can be wrong in a way a screenshot will not reveal. Nothing in this
  * module fetches, renders, or translates. It has no test today because the frontend has
  * no test runner at all — that is
- * [#285](https://github.com/LoonSecIO/LoonInspect/issues/285), and this file should be
- * near the front of the queue: it now encodes two founder rulings and five predicates.
+ * [#285](https://github.com/LoonSecIO/LoonInspect/issues/285), and **this is the module
+ * #285 should aim at first**: it now encodes six predicates, two collapses and five
+ * founder rulings, and `composeAttention` and `isAllClear` are both pure functions of
+ * plain data — a test runner can drive them the moment one exists, with no DOM, no
+ * fetch and no store. Four separate claims about this comparator have been refuted by
+ * *executing* it, which is the argument for the runner in one sentence.
  *
  * ## Two rules this module exists to keep
  *
@@ -146,9 +150,10 @@ export interface AttentionRow {
    *  order rows within a level; null sorts last and renders nothing. */
   at: string | null;
   /** How many things this row stands for. `1` is the ordinary row that names its
-   *  subject. Above 1 the row is a **collapse** — see the overdue check for the only
-   *  case that produces one — and the panel gives it a sentence of its own rather than
-   *  gluing a number onto a singular verb. */
+   *  subject. Above 1 the row is a **collapse** — the overdue check and the stale check
+   *  each produce one, for the same reason: their subjects fail together by construction
+   *  — and the panel gives it a sentence of its own rather than gluing a number onto a
+   *  singular verb. */
   count: number;
 }
 
@@ -232,9 +237,24 @@ const LEVEL_ORDER: ChangeLevel[] = ["high", "normal", "low"];
  *
  * `high` is reserved for **a claim the product is currently making that is false**:
  * evidence is not reaching the SIEM (`destination_failing`), or the numbers on these
- * pages no longer describe the fleet (`inventory_stale`). `normal` is a mechanism that
- * failed — a run broke, a tick did not fire — which is a symptom of a disease that may
+ * pages no longer describe the fleet (`inventory_stale`, `run_failed`). `normal` is a
+ * mechanism that failed — a tick did not fire — which is a symptom of a disease that may
  * not have set in yet. `low` is an improvement available, not a thing that is wrong.
+ *
+ * **`run_failed` is `high`, and moved there by ruling** (Kyle, 2026-09-04). It was filed
+ * as mechanism, and that was the inconsistency: a sweep that failed means the fleet was
+ * **not read**, so the numbers on these pages describe a fleet as it was before the
+ * failure — the identical condition `inventory_stale` is `high` for, arriving by a faster
+ * route. `inventory_stale` is that state noticed late; `run_failed` is the same state
+ * noticed immediately. Filing the two at different levels said the delay was the thing
+ * that mattered.
+ *
+ * The consequence the ruling was made for: `RANK_WITHIN_LEVEL` gives `new_app` rank 1 and
+ * every other kind rank 0, so with `run_failed` in the same band a failed run now
+ * outranks new-app noise **unconditionally**, through the mechanism already built. A
+ * cross-level rank was rejected — a `normal` row sorting above a `high` one would make
+ * the level vocabulary mean nothing, and a level is only for the promise that a red row
+ * outranks a grey one.
  *
  * `new_app` is deliberately absent, and the `Exclude` says so out loud rather than
  * leaving a reader to notice. Its level is *stored* — graded once in the backend by
@@ -245,7 +265,7 @@ const LEVEL_ORDER: ChangeLevel[] = ["high", "normal", "low"];
 const LEVEL_OF: Record<Exclude<AttentionKind, "new_app">, ChangeLevel> = {
   destination_failing: "high",
   inventory_stale: "high",
-  run_failed: "normal",
+  run_failed: "high",
   collection_overdue: "normal",
   update_available: "low"
 };
@@ -261,6 +281,9 @@ const LEVEL_OF: Record<Exclude<AttentionKind, "new_app">, ChangeLevel> = {
  * Splunk pipe is always the **newest** thing in the band. Age-only, five open latches
  * older than the last delivery attempt push "Deliveries are failing" off a five-row list
  * permanently — on the panel whose whole job is to be the one place a dead pipe shows up.
+ *
+ * The same rank is what makes `run_failed` beat a wall of latches now that it is `high`
+ * (see `LEVEL_OF`): one table, two starvations closed, no exception list.
  *
  * Rejected: demoting `new_app` to `normal`, which would have made a genuinely high signal
  * quiet on every surface that reads the level rather than only inside a five-row budget;
@@ -342,6 +365,7 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
   // on failures too, so a collection that has been failing for a week would read as
   // having run a minute ago. This is the trap the backend column was added to close.
   const staleCollectionIds = new Set<number>();
+  const stale: CollectionSummary[] = [];
   for (const collection of collections) {
     if (collection.kind !== "device_sweep" || !collection.enabled) continue;
     if (collection.staleAfterSeconds === null) continue;
@@ -353,6 +377,52 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
     const since = lastSuccess ?? millis(collection.createdAt);
     if (since === null || nowMs - since <= window) continue;
     staleCollectionIds.add(collection.id);
+    stale.push(collection);
+  }
+
+  // One row for the outage, not one row per collection — the same collapse the overdue
+  // check makes below, ruled onto this check on 2026-09-04 for the same reason.
+  //
+  // These failures are correlated **by construction**: one credential, one network path
+  // and one scheduler serve every collection on a connection, so a rotated token or a
+  // firewall rule puts all of them past their window inside one cadence. Five rows naming
+  // five collections were always five renderings of one fact, and they spent the whole
+  // five-row cap saying it — which is how a *currently failing* `destination_failing` row
+  // (always the newest thing in the `high` band, because `last_failure_at` is rewritten on
+  // every delivery retry) got starved off the panel entirely. Executed, not argued: the
+  // proof harness in this PR drives five stale collections against one fresh destination.
+  //
+  // Not a re-rank. Giving `destination_failing` a rank of its own would have fixed this
+  // one instance and left the shape intact — the next `high` kind with correlated
+  // failures starves it again, and `RANK_WITHIN_LEVEL` becomes a list of exceptions
+  // maintained by whoever last got bitten.
+  //
+  // Oldest last-success, because the ranking within a level is oldest-first and the
+  // outage is as old as the longest silence in it. A collection that has *never*
+  // succeeded contributes no instant — same as it does on its own row, where creation is
+  // not a success and must not be rendered as one — so a collapse of only such
+  // collections carries `at: null` and sorts last, exactly as the single row would.
+  if (stale.length > 1) {
+    const oldestSuccess = stale.reduce<string | null>((earliest, collection) => {
+      const at = millis(collection.lastSuccessAt);
+      if (at === null) return earliest;
+      const best = millis(earliest);
+      return best === null || at < best ? collection.lastSuccessAt : earliest;
+    }, null);
+    rows.push({
+      // Not keyed on the members, for the reason the overdue collapse is not: collections
+      // cross their windows one after another and a churning key would remount the row.
+      id: "inventory_stale:all",
+      kind: "inventory_stale",
+      level: LEVEL_OF.inventory_stale,
+      subject: null,
+      context: null,
+      href: "/settings/connections",
+      at: oldestSuccess,
+      count: stale.length
+    });
+  } else if (stale.length === 1) {
+    const collection = stale[0];
     rows.push(
       one({
         id: `inventory_stale:${collection.id}`,
@@ -361,7 +431,7 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
         subject: collection.name,
         context: nameOfConnection.get(collection.mdmConnectionId) ?? null,
         href: "/settings/connections",
-        at: lastSuccess === null ? null : collection.lastSuccessAt
+        at: millis(collection.lastSuccessAt) === null ? null : collection.lastSuccessAt
       })
     );
   }
@@ -547,7 +617,7 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
   // sorts last.
   //
   // The rank sits *between* level and age, not after it, because it exists precisely to
-  // beat age: see `RANK_WITHIN_LEVEL` for the starvation it was ruled to stop. Levels
+  // beat age: see `RANK_WITHIN_LEVEL` for the two starvations it was ruled to stop. Levels
   // still sort in whole blocks, so the coloured stripes down the left of the panel never
   // read as unsorted.
   rows.sort((a, b) => {

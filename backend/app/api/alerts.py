@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 @router.get(
     "",
     response_model=AlertListResponse,
-    dependencies=[Depends(require(Permission.DEVICE_READ))],
+    dependencies=[Depends(require(Permission.DEVICE_READ, Permission.APP_READ))],
 )
 async def list_alerts(
     open_only: bool = Query(default=True, alias="open"),
@@ -30,9 +30,28 @@ async def list_alerts(
     is the history of closed ones, which exists so an operator can see that a latch closed
     rather than having to infer it from an absence.
 
-    Behind `device:read` rather than a permission of its own: every role including Viewer
-    holds it, and the persona this latch is for — the one who wants to know a Mac grew an
-    app nobody deployed — is exactly the persona given read-only access.
+    **Behind `device:read` AND `app:read`** (Kyle, 2026-09-04), because the guard should
+    name what the response actually hands over and this response hands over two identities
+    at once: `device_id` / `device_label` are the fleet — a named Mac — and `app_hash` /
+    `app_name` / `bundle_id` are the application. `require()` asserts every permission it
+    is given, so this is the whole implementation.
+
+    The spot check that flagged this suggested *moving* the route to `app:read`, and that
+    was backwards: `catalog`, `applications` and `jamf_patch` carry `app:read` because
+    their payloads are about an application and name no device. This one names a device, so
+    moving it would have let a role holding app read but not device read pull
+    `device_label` for every alerted Mac — a strictly weaker guard dressed as a correction.
+
+    Nothing changes today and that is the argument for doing it now. Every role holds both
+    — `_INVENTORY_READ` is `{device:read, app:read, vuln:read}` and `Role.viewer` is
+    exactly that set, with analyst, auditor and admin as supersets — so no role loses
+    access. It bites only the day someone splits them ("the application team sees the
+    catalog but not the fleet"), and on that day it is the difference between a correct 403
+    and a silent leak of fleet identities to an app-scoped caller. The change is free while
+    every role holds both, and stops being free the moment one does not.
+
+    The persona is unaffected: the read-only account is exactly the one told to watch for
+    software nobody deployed, and Viewer still holds everything this route asks for.
 
     **Oldest first, deliberately against the house newest-first convention.** This is not
     a feed; it is a list of things that are still true. The row that has been true longest

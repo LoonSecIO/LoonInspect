@@ -117,10 +117,16 @@ export const useAttentionStore = create<AttentionStore>((set) => ({
       attempt(can(PERMISSIONS.CONNECTION_READ), listConnections),
       attempt(can(PERMISSIONS.DESTINATION_READ), listDestinations),
       attempt(can(PERMISSIONS.SYSTEM_READ), getUpdateStatus),
-      // `device:read`, which every role including Viewer holds — deliberately, because
-      // the read-only account is exactly the persona told to watch for software nobody
-      // deployed (docs/alerts.md §3).
-      attempt(can(PERMISSIONS.DEVICE_READ), () => listAlerts({ open: true, pageSize: ALERT_WINDOW }))
+      // **Both** permissions, mirroring the route's own guard exactly (Kyle, 2026-09-04;
+      // `backend/app/api/alerts.py`): an alert row hands over a named Mac *and* an
+      // application, so the gate names both. Every role holds both today — `Role.viewer`
+      // is exactly `_INVENTORY_READ` — which is precisely why the client-side copy has to
+      // be kept in step now rather than the day someone splits them: a client that asked
+      // on `device:read` alone would turn a correct 403 into a request nobody expected.
+      attempt(
+        can(PERMISSIONS.DEVICE_READ) && can(PERMISSIONS.APP_READ),
+        () => listAlerts({ open: true, pageSize: ALERT_WINDOW })
+      )
     ]);
 
     // The session changed while these were in flight. Whatever came back describes

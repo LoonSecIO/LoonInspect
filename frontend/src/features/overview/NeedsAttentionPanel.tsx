@@ -40,13 +40,16 @@ function ageOf(t: Translations, iso: string, now: Date): string | null {
  * The verb the row leads with.
  *
  * A collapsed row (`count > 1`) gets a sentence of its own rather than the singular verb
- * with a number appended: only the overdue check can storm — its subjects share one
- * cause, the claim that never happened — so this is one explicit branch rather than a
- * general "plural form of every kind" mechanism nothing else would ever use.
+ * with a number appended. Two checks can collapse — overdue and stale — and each names
+ * the shared cause its subjects failed for rather than counting the subjects: nothing
+ * claimed them, or nothing has read them. So this is two explicit branches rather than a
+ * general "plural form of every kind" mechanism the other four kinds would never use;
+ * a kind whose members fail independently has nothing to collapse *to*.
  */
 function headlineFor(t: Translations, row: AttentionRow): string {
-  if (row.kind === "collection_overdue" && row.count > 1) {
-    return t.overview.attention.schedulerStalled(row.count);
+  if (row.count > 1) {
+    if (row.kind === "collection_overdue") return t.overview.attention.schedulerStalled(row.count);
+    if (row.kind === "inventory_stale") return t.overview.attention.inventoryStalled(row.count);
   }
   return t.overview.attention.kinds[row.kind];
 }

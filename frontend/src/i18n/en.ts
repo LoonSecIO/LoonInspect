@@ -355,6 +355,15 @@ export const en = {
       // inside the same hour, and five rows naming five collections name nothing that
       // can be fixed — so above one they become this, which names the scheduler.
       schedulerStalled: (count: number) => `${count} collections came due and nothing started them — check the scheduler`,
+      // The collapsed stale row (#106, ruled 2026-09-04), and the same shape as the line
+      // above for the same reason: staleness is correlated by construction — one
+      // credential, one network path, one scheduler serve every collection — so five rows
+      // naming five collections spent the whole five-row cap saying one thing once.
+      //
+      // It names the *connection*, not the collections, because that is where all three
+      // shared causes live and it is the page the row already links to.
+      inventoryStalled: (count: number) =>
+        `${count} collections have not read the fleet in twice their own schedule — check the connection`,
       checkNames: {
         run_failed: "recent runs",
         destination_failing: "destinations",

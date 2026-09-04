@@ -115,13 +115,54 @@ are. One comparator, no schema change, no level change, nothing else's behaviour
 level was rejected: it would have made a genuinely high-severity signal quiet everywhere
 rather than only inside a five-row budget.
 
-Two things this does **not** fix, stated so nobody reads more into it. The unbounded
-count is untouched — one rollout still opens hundreds of latches, and grouping them into
-a single row is the named follow-on for whichever session next touches this panel. And
-the tie-break is *within* a level, so a `normal` row (`run_failed`, `collection_overdue`)
-still sorts below a `high` `new_app` row: level ordering is prior to rank, which is what
-keeps the panel's coloured stripes in blocks. Beating a `normal` row would require the
-level to move, which is exactly what the ruling declined to do.
+**A failed run outranks new-app noise, unconditionally (Kyle, 2026-09-04).** The clause
+above was first read as shorthand and it is not: the ruling means what it says. A
+tie-break orders rows *inside* a band, and `run_failed` was `normal` while `new_app` is
+`high`, so five latches did not merely out-sort a failed sweep — they sat a whole level
+above it and the comparator never reached the tie-break at all.
+
+The implementation the ruling forces is that **`run_failed` moves to `high`**. With it in
+the same band, the tie-break already built does the rest: `new_app` is the only kind with
+rank 1, so a failed run beats it however old the latches are — no new concept, no
+cross-level rank, no exception table. A cross-level rank was rejected because it would
+deliver the same outcome by making the level vocabulary mean nothing; a reader could no
+longer trust that a red row outranks a grey one, which is the only thing a level is for.
+
+The level taxonomy this changes is stated in `LEVEL_OF`'s own docstring: `high` means
+evidence is not reaching the SIEM, or the numbers on these pages no longer describe the
+fleet. A sweep that failed means the fleet was **not read**, so the pages describe it as
+it was before the failure — the identical condition `inventory_stale` is `high` for,
+arriving by a faster route. `inventory_stale` is that state noticed late; `run_failed` is
+the same state noticed immediately.
+
+One thing this does **not** fix, stated so nobody reads more into it: the unbounded count
+is untouched. One rollout still opens hundreds of latches, and grouping them into a single
+row is the named follow-on for whichever session next touches this panel — Kyle left it
+open and explicitly did not ask for it here.
+
+## 3a. The read surface's guard
+
+`GET /api/alerts` requires **both** `device:read` and `app:read` (Kyle, 2026-09-04).
+`require()` asserts every permission it is given, so that is the whole implementation.
+
+The guard names both because the response hands over two identities at once: `deviceId` /
+`deviceLabel` are the fleet — a named Mac — and `appHash` / `appName` / `bundleId` are the
+application. A spot check suggested *moving* the route to `app:read`, which was backwards:
+`catalog`, `applications` and `jamf_patch` carry `app:read` because their payloads are
+about an application and name no device. This one names a device, so moving it would have
+let a role holding app read but not device read pull `deviceLabel` for every alerted Mac.
+
+**No role loses access.** `_INVENTORY_READ` is `{device:read, app:read, vuln:read}` and
+`Role.viewer` is exactly that set, with analyst, auditor and admin as supersets — so the
+persona this latch serves is unaffected. That is the argument for making the change now:
+it is free while every role holds both, and it stops being free the moment one does not.
+It bites the day someone splits the roles, and on that day it is the difference between a
+correct 403 and a silent leak of fleet identities to an app-scoped caller.
+
+Both halves are pinned. `tests/test_alerts.py` asserts the route's declared guard and that
+no role in `ROLE_PERMISSIONS` loses the pair; `tests/test_alerts_db.py` drives the refusal
+over HTTP with API tokens scoped to one permission each, because no *role* can express a
+principal holding one and not the other.
 
 ## 4. Cost
 
