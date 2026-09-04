@@ -45,7 +45,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import case, distinct, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.changes.policy import LEVELS, NORMAL
+from app.changes.policy import NORMAL, levels_at_least
 from app.core.permissions import Role
 from app.core.runs import STATUS_FAILED, STATUS_SUCCEEDED, TRIGGER_SWEEP
 from app.mdm.patch.matching import STATE_BEHIND, STATE_UNKNOWN
@@ -75,9 +75,14 @@ _WINDOW_HOURS = 24
 _LAGGARD_HOURS = 336
 
 # "Notable" is the closed LEVELS ordering at NORMAL or above — the same cut the change
-# policy's default preset draws ("high + normal on, low off"). Derived from LEVELS
-# rather than spelled as a literal pair so a change to the ordering is a change here.
-NOTABLE_LEVELS: tuple[str, ...] = tuple(LEVELS[: LEVELS.index(NORMAL) + 1])
+# policy's default preset draws ("high + normal on, low off"), and the same cut
+# `GET /api/changes?minLevel=normal` returns.
+#
+# Read from `levels_at_least` rather than sliced here (#107). This line used to compute
+# the set itself, which made the ordering two facts in two modules: `policy._RANK` and
+# this slice. They agreed, and nothing would have failed if a level inserted into LEVELS
+# had moved only one of them.
+NOTABLE_LEVELS: tuple[str, ...] = levels_at_least(NORMAL)
 
 # Definitions v1 — the 25 active keys, in the order their rows are written. The names
 # are the contract: a definition change mints a new key, so a name in this tuple means

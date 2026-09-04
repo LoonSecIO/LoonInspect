@@ -8,12 +8,19 @@ import { useLocale } from "@/i18n/LocaleContext";
 const inputClasses =
   "rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
+const asLevel = (value: string | null): ChangeLevel | undefined =>
+  value === "high" || value === "normal" || value === "low" ? value : undefined;
+
 function filtersFromParams(params: URLSearchParams): ChangeFilters {
-  const level = params.get("level");
   return {
     q: params.get("q") ?? undefined,
     artifact: params.get("artifact") ?? undefined,
-    level: level === "high" || level === "normal" || level === "low" ? level : undefined,
+    level: asLevel(params.get("level")),
+    // #107: the Overview feed links here with `since` and `minLevel`. Before it read
+    // them, that link landed on an unfiltered feed — the window silently dropped, which
+    // is the failure the absolute anchor exists to prevent.
+    minLevel: asLevel(params.get("minLevel")),
+    since: params.get("since") ?? undefined,
     section: params.get("section") ?? undefined,
     page: params.get("page") ? Number(params.get("page")) : 1
   };
@@ -24,6 +31,8 @@ function paramsFromFilters(filters: ChangeFilters): URLSearchParams {
   if (filters.q) params.set("q", filters.q);
   if (filters.artifact) params.set("artifact", filters.artifact);
   if (filters.level) params.set("level", filters.level);
+  if (filters.minLevel) params.set("minLevel", filters.minLevel);
+  if (filters.since) params.set("since", filters.since);
   if (filters.section) params.set("section", filters.section);
   if (filters.page && filters.page !== 1) params.set("page", String(filters.page));
   return params;
@@ -75,7 +84,12 @@ export function ChangesPage() {
   }, [filters, tc.errorLoading]);
 
   function update(next: Partial<ChangeFilters>) {
-    setSearchParams(paramsFromFilters({ ...filters, ...next, page: next.page ?? 1 }));
+    // Picking an exact level drops the range one. Arriving from the Overview feed puts
+    // `minLevel` in the URL, and the API refuses both together (#107) — so without this,
+    // the first touch of the dropdown would turn a working feed into a 422 the operator
+    // did nothing to deserve.
+    const cleared = "level" in next && next.level ? { minLevel: undefined } : {};
+    setSearchParams(paramsFromFilters({ ...filters, ...next, ...cleared, page: next.page ?? 1 }));
   }
 
   function describe(row: DeviceChange): string {

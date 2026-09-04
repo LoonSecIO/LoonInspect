@@ -11,7 +11,9 @@ export function listChanges(filters: ChangeFilters): Promise<DeviceChangeListRes
   if (filters.q) params.set("q", filters.q);
   if (filters.artifact) params.set("artifact", filters.artifact);
   if (filters.level) params.set("level", filters.level);
+  if (filters.minLevel) params.set("minLevel", filters.minLevel);
   if (filters.section) params.set("section", filters.section);
+  if (filters.since) params.set("since", filters.since);
   if (filters.connectionId !== undefined) params.set("connectionId", String(filters.connectionId));
   if (filters.subjectId) params.set("subjectId", filters.subjectId);
   params.set("page", String(filters.page ?? 1));

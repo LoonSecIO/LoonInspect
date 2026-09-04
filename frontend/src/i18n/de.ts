@@ -309,6 +309,19 @@ export const de: Translations = {
       `${groups.toLocaleString("de-DE")} Gruppe${groups === 1 ? "" : "n"} in ${duration}`,
     seeYourFleet: "Zur Geräteliste",
 
+    // Der Änderungs-Feed (#107). Der Bezugspunkt ist browser-lokal, der genannte
+    // Zeitpunkt jedoch absolut und steht wörtlich in der Kopfzeile und in jedem Link.
+    feed: {
+      title: "Seit Ihrem letzten Besuch",
+      loading: "Änderungen werden geladen\u2026",
+      loadError: "Der Änderungs-Feed konnte nicht geladen werden.",
+      summary: (changes: number, devices: number, since: string, notable: number) =>
+        `${changes} ${changes === 1 ? "Änderung" : "Änderungen"} auf ${devices} ${devices === 1 ? "Gerät" : "Geräten"} seit ${since} (${notable} relevant)`,
+      emptyAfterBaseline: "Basislinie erstellt \u2014 Änderungen erscheinen ab dem nächsten Sync.",
+      emptyQuiet: "Keine relevanten Änderungen in diesem Zeitraum.",
+      seeAll: "Alle Änderungen anzeigen"
+    },
+
     loading: "Wird geladen…",
     loadError: "Der Einrichtungsstatus konnte nicht geladen werden.",
     setupHiddenForRole: "Die Einrichtung dieses Pods wird von einer Administratorin oder einem Administrator verwaltet."

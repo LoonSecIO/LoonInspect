@@ -117,3 +117,43 @@ def test_system_app_detection() -> None:
     assert p.is_system_app({"path": "/System/Applications/Mail.app"}) is True
     assert p.is_system_app({"path": "/Applications/Slack.app"}) is False
     assert p.is_system_app({}) is False
+
+
+# --- #107: the set form of the ordering, and the one place it now lives ---------------
+
+
+def test_levels_at_least_is_the_set_form_of_default_on() -> None:
+    """`levels_at_least` and `default_on` are the same rule asked two ways — one level at
+    a time, or all of them at once. If they ever disagree, a feed and the policy that
+    decided what to record would be filtering on different vocabularies."""
+    for minimum in p.LEVELS:
+        assert p.levels_at_least(minimum) == tuple(level for level in p.LEVELS if p.default_on(level, minimum))
+
+
+def test_levels_at_least_widens_downward_and_keeps_levels_order() -> None:
+    assert p.levels_at_least(p.HIGH) == ("high",)
+    assert p.levels_at_least(p.NORMAL) == ("high", "normal")
+    assert p.levels_at_least(p.LOW) == ("high", "normal", "low")
+    # LEVELS order, not sorted order or insertion order of the comprehension.
+    for minimum in p.LEVELS:
+        returned = p.levels_at_least(minimum)
+        assert list(returned) == [level for level in p.LEVELS if level in returned]
+
+
+def test_notable_is_normal_and_above() -> None:
+    """"Notable" is not its own vocabulary — it is the NORMAL cut of the one ordering,
+    which is why `minLevel=normal` and `changes.notable_24h` count the same rows."""
+    from app.core.posture import NOTABLE_LEVELS
+
+    assert NOTABLE_LEVELS == p.levels_at_least(p.NORMAL) == ("high", "normal")
+
+
+def test_an_unknown_level_raises_rather_than_matching_nothing() -> None:
+    """An empty tuple would become an `IN ()` that matches no rows, and a feed that
+    returns nothing reads as "nothing happened" — the one thing a shape must never say by
+    accident. Callers validate and answer 422; this is the backstop for the ones that
+    forget."""
+    import pytest
+
+    with pytest.raises(KeyError):
+        p.levels_at_least("notable")

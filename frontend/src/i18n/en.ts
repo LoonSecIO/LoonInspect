@@ -315,6 +315,23 @@ export const en = {
       `${groups.toLocaleString("en-US")} group${groups === 1 ? "" : "s"} in ${duration}`,
     seeYourFleet: "See your fleet",
 
+    // The changes feed (#107). The anchor is per-browser, but the instant it names is
+    // absolute and appears verbatim in the header and in every link out, so a shared
+    // link or a screenshot reproduces the window the sender saw.
+    feed: {
+      title: "Since you last looked",
+      loading: "Loading changes\u2026",
+      loadError: "The change feed could not be loaded.",
+      summary: (changes: number, devices: number, since: string, notable: number) =>
+        `${changes} ${changes === 1 ? "change" : "changes"} on ${devices} ${devices === 1 ? "device" : "devices"} since ${since} (${notable} notable)`,
+      // Two different silences, never collapsed into one. A fleet with a baseline and no
+      // second sync yet has nothing to compare against; a fleet that has been syncing and
+      // is quiet has been measured and found unchanged.
+      emptyAfterBaseline: "Baseline sync complete \u2014 changes appear from the next sync onward.",
+      emptyQuiet: "No notable changes in this window.",
+      seeAll: "See all changes"
+    },
+
     loading: "Loading…",
     loadError: "Could not load your setup state.",
     setupHiddenForRole: "Setup for this pod is managed by an administrator."

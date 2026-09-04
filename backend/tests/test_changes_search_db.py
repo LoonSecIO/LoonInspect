@@ -335,3 +335,56 @@ async def test_artifact_search_cannot_cross_a_tenant_boundary(client, seeded) ->
         rows = (await db.execute(select(DeviceChange))).scalars().all()
         assert {r.subject_id for r in rows} == {"901", "902"}
         assert all(r.mdm_connection_id == theirs for r in rows)
+
+
+# --- #107: minLevel, the range filter three surfaces need -----------------------------
+#
+# `level` is exact-match and stays that way — it is what the Changes page's dropdown
+# means and what a bookmarked URL already carries. `minLevel` is "this and above", the
+# filter the Overview feed needs to show notable-and-above without naming two levels.
+#
+# This file's seed carries `high` and `normal` rows and no `low`, which is enough to pin
+# the wiring: `minLevel=high` must exclude the normal rows, and `minLevel=normal` must
+# include them. The ordering itself — including `low` — is exhaustively unit-tested in
+# test_change_policy.py, where it needs no database.
+
+
+async def test_min_level_high_returns_only_high(feed) -> None:
+    body = await feed("minLevel=high")
+    assert {row["level"] for row in body["items"]} == {"high"}
+    # And it is a real narrowing of this seed, not a filter that happened to match all.
+    assert _subjects(body) == {"103", "106", "107"}
+
+
+async def test_min_level_normal_is_notable_and_above(feed) -> None:
+    body = await feed("minLevel=normal")
+    assert {row["level"] for row in body["items"]} == {"high", "normal"}
+    # Every seeded row, because this seed has no `low` — which is exactly why the
+    # widening direction is asserted on the levels present rather than on a count.
+    assert _subjects(body) >= {"101", "102", "103", "104", "105", "106", "107"}
+
+
+async def test_min_level_composes_with_the_other_filters(feed) -> None:
+    """It narrows alongside `artifact` rather than replacing it — the same property
+    `level` has, so a caller can move from one to the other without losing a filter."""
+    # `artifact` is a substring match, so "Wireshark" also reaches 103's
+    # WiresharkChmodBPF — the level is what separates them, not the needle.
+    assert _subjects(await feed("artifact=Wireshark&minLevel=normal")) == {"101", "102", "103"}
+    # At `high`, only 103 survives — the same answer `level=high` gives one test above,
+    # which is the point: moving from exact to range must not change what a filter means.
+    assert _subjects(await feed("artifact=Wireshark&minLevel=high")) == {"103"}
+
+
+async def test_level_and_min_level_together_are_refused(client, seeded) -> None:
+    """Composed they are well-defined and useless — `level=low&minLevel=normal` is "low
+    changes that are at least normal", always empty — and an empty feed reads as "nothing
+    happened". Refused rather than answered with a silent zero."""
+    response = await client.get(f"/api/changes?connectionId={seeded['mine']}&level=low&minLevel=normal")
+    assert response.status_code == 422
+    assert "mutually exclusive" in response.text
+
+
+async def test_an_unknown_min_level_is_refused_like_an_unknown_level(client, seeded) -> None:
+    response = await client.get(f"/api/changes?connectionId={seeded['mine']}&minLevel=notable")
+    assert response.status_code == 422
+    assert "minLevel must be one of" in response.text

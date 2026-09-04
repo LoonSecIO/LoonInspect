@@ -5,6 +5,7 @@ import { PERMISSIONS } from "@/features/auth/types";
 import { listDestinations } from "@/features/destinations/api";
 import { listConnections, listRuns, listSyncStatus } from "@/features/mdm/api";
 import type { MdmSyncStatus, Run } from "@/features/mdm/types";
+import { ChangesFeed } from "@/features/overview/ChangesFeed";
 import { FirstSyncHero } from "@/features/overview/FirstSyncHero";
 import { SetupStepper } from "@/features/overview/SetupStepper";
 import { findBaselineRun, findRunningHeroRun, formatUtc, runDuration } from "@/features/overview/heroRun";
@@ -206,8 +207,11 @@ export function OverviewPage() {
         <h1 className="text-3xl font-bold tracking-tight">{t.overview.title}</h1>
       </div>
       <BaselineLine run={settledBaseline} />
-      {/* #105–#110 (status strip, needs attention, changes, new in fleet, hygiene,
-          patch laggards) compose in here. */}
+      {/* The changes feed (#107) — the centerpiece. It is given the baseline so it can
+          tell "nothing to compare against yet" from "measured, and quiet", which are
+          different sentences and must never share an empty state. */}
+      <ChangesFeed baselineAt={settledBaseline?.finishedAt ?? settledBaseline?.startedAt ?? null} />
+      {/* #105, #106, #101 (status strip, needs attention, alerts) compose in here. */}
     </section>
   );
 }
