@@ -99,21 +99,33 @@ export function coarseAge(iso: string, now: Date): CoarseAge | null {
   return { unit: "days", value: Math.floor(seconds / 86_400) };
 }
 
-/** `HH:MM UTC` for an instant inside the next day, the full `formatUtc` stamp beyond it.
+/** A bare `HH:MM UTC` clock where that cannot be misread, the full `formatUtc` stamp
+ *  where it could.
  *
- *  The template says "next sweep 02:00" and that is right for the ordinary case, where
- *  the reader supplies today's date themselves. It stops being right for a weekly
- *  collection due on Thursday, where a bare "02:00" reads as tonight — so the line
- *  self-dates instead of staying short.
+ *  **The tense is a parameter because the strip has two of them, and the ambiguity is
+ *  not symmetric.** `next sweep 02:00` is a promise about the future; `Splunk OK 08:35`
+ *  is a report about the past. A bare clock is safe in opposite directions for the two,
+ *  so one shared rule was wrong for one of them whichever way it was written:
  *
- *  The destination segment's stamp uses this too, for the same reason: "Splunk OK 14:35
- *  UTC" is right until the last delivery was three days ago, at which point the short
- *  form is actively misleading. */
-export function formatDue(iso: string, now: Date): string {
+ *  - `upcoming` — short only for an instant in the next 24 hours. A *past* instant here
+ *    is the anomaly the reader most needs to see: a dead scheduler rendered
+ *    `next sweep 02:00 UTC` for a sweep that was due this morning and never ran, turning
+ *    a failure into a promise.
+ *  - `past` — short only for an instant earlier the same UTC day. `Splunk OK 08:35 UTC`
+ *    at 09:00 is the healthy reading and the template this issue specifies; but a last
+ *    delivery at 22:40 *yesterday* rendered `Splunk OK 22:40 UTC`, which at 09:00 reads
+ *    as thirteen hours from now — a dead pipe rendered as a healthy one.
+ *
+ *  Both bugs came from one symmetric `|due - now| < 24h` window, which accepted the past
+ *  as readily as the future. There is deliberately no default: a caller that has not
+ *  said which direction it means cannot be given a safe answer. */
+export function formatDue(iso: string, now: Date, tense: "upcoming" | "past"): string {
   const due = Date.parse(iso);
   if (!Number.isFinite(due)) return iso;
-  const withinADay = due - now.getTime() < 86_400_000 && due - now.getTime() > -86_400_000;
-  if (!withinADay) return formatUtc(iso);
+  const ahead = due - now.getTime();
+  const sameUtcDay = new Date(due).toISOString().slice(0, 10) === now.toISOString().slice(0, 10);
+  const unambiguous = tense === "upcoming" ? ahead >= 0 && ahead < 86_400_000 : ahead < 0 && sameUtcDay;
+  if (!unambiguous) return formatUtc(iso);
   const stamp = new Date(due);
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${pad(stamp.getUTCHours())}:${pad(stamp.getUTCMinutes())} UTC`;
@@ -227,7 +239,15 @@ export function buildConnectionStatuses(input: ConnectionStatusInput): Connectio
       name: connection.name,
       host: hostOf(connection.baseUrl),
       isActive: connection.isActive,
-      deviceCount: syncState ? syncState.deviceCount : null,
+      // Gated on EVIDENCE, not on the row's existence. `set_sync_status` creates the
+      // MdmSyncState row on the failure path too (`app/mdm/service.py`), and
+      // `device_count` defaults to 0 — so a connection whose very first sweep dies on
+      // bad credentials had a row saying zero, and the strip reported a three-thousand
+      // Mac tenant as `0 devices · no full sweep yet`. `lastSyncAt` is the only field
+      // that means a sweep actually finished, so the count is trusted only alongside it.
+      // Assumption 5 of this PR always said `null` must render "no inventory yet" and
+      // never "0 devices"; this is the gate that makes that true.
+      deviceCount: syncState?.lastSyncAt ? syncState.deviceCount : null,
       // The pinned run first. `MdmSyncState.deviceCount` is a projection written once at
       // the end of each sweep (docs/runs.md §9), so pairing it with that sweep's own
       // finish time is the one reading where "N devices, inventory as of X" is

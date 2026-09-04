@@ -432,12 +432,51 @@ async def tick_tenant(db: AsyncSession, now: datetime | None = None) -> list[Con
     results: list[ConnectionSyncResult] = []
     for collection, due_at in await claim_due(db, now):
         if within_rate_floor(collection.kind, collection.last_run_at, now):
-            collection.last_run_status = "skipped"
-            collection.last_run_summary = {"trigger": TRIGGER_SWEEP, "reason": "within rate floor"}
+            # A skip is not a result, and must not erase one.
+            #
+            # `last_run_status` is a cache of the newest thing that *happened* to this
+            # collection, and everything that reads it — #106's Needs Attention panel,
+            # the collections list — treats `failed` as the standing alarm. The floor
+            # declining to start a run is not an outcome that supersedes a failure: it
+            # is this tick choosing not to produce one. Written unconditionally, it made
+            # the alarm self-clearing on a timer. A daily sweep that failed at 03:00 and
+            # was manually re-run at 03:20 goes quiet at the next occurrence and stays
+            # quiet for a day; on an hourly collection it happens every alternate tick,
+            # and nothing on any screen says a failure was ever recorded.
+            #
+            # Conditional in SQL rather than on the in-memory row, because this session
+            # does not expire on commit (`app.core.database`): the reclaim now stamps
+            # `failed` onto collection rows through a Core UPDATE (`app.core.runs.
+            # _mark_collections_reclaimed`), so an instance loaded by `claim_due` at the
+            # top of this loop can be reading a status two writes out of date by the
+            # time the loop reaches it. `IS DISTINCT FROM` and not `!=` so a collection
+            # that has never run (null) still records the skip.
+            skipped = (
+                await db.execute(
+                    update(Collection)
+                    .where(
+                        Collection.id == collection.id,
+                        Collection.last_run_status.is_distinct_from("failed"),
+                    )
+                    .values(
+                        last_run_status="skipped",
+                        last_run_summary={"trigger": TRIGGER_SWEEP, "reason": "within rate floor"},
+                    )
+                    .returning(Collection.id)
+                )
+            ).scalar_one_or_none()
             await db.commit()
             logger.info(
                 "collection skipped: within rate floor",
-                extra={"collection_id": collection.id, "kind": collection.kind, "last_run_at": collection.last_run_at},
+                extra={
+                    "collection_id": collection.id,
+                    "kind": collection.kind,
+                    "last_run_at": collection.last_run_at,
+                    # False when the row was left recording a failure. The skip still
+                    # happened — the tick declined to run — it simply did not become the
+                    # collection's last word.
+                    "status_written": skipped is not None,
+                },
             )
             continue
         results.append(await run_collection(db, collection, trigger=TRIGGER_SWEEP, due_at=due_at))

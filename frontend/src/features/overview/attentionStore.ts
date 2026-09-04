@@ -25,6 +25,9 @@ interface AttentionStore {
   rows: AttentionRow[];
   dropped: number;
   degraded: AttentionKind[];
+  /** True when not one of the panel's checks could run — every input was `denied`. The
+   *  panel says so instead of attesting; see `needsAttention.ts`. */
+  blind: boolean;
   /** Everything the panel would render, uncapped — the number on the sidebar badge. */
   total: number;
   /** Null until the first load finishes. The panel shows nothing rather than an
@@ -41,6 +44,7 @@ const NOTHING_CHECKED = {
   rows: [] as AttentionRow[],
   dropped: 0,
   degraded: [] as AttentionKind[],
+  blind: false,
   total: 0,
   checkedAt: null,
   loading: false
@@ -50,7 +54,7 @@ const NOTHING_CHECKED = {
  * Which session the current contents belong to.
  *
  * Bumped on every reset, and read back by `loadAttention` after its awaits. A load that
- * started as the admin can finish after the viewer has signed in — four requests take
+ * started as the admin can finish after the viewer has signed in — five requests take
  * long enough for that to be ordinary, not exotic — and without this guard it would
  * write the admin's rows into the viewer's store *after* the reset cleared them.
  */
@@ -81,7 +85,7 @@ async function attempt<T>(allowed: boolean, request: () => Promise<T>): Promise<
  * A store rather than a hook in the panel, because the composition has exactly **one**
  * implementation by ruling and two surfaces read it: the panel on `/` and the sidebar's
  * count badge. A badge that counted rows itself would be a second implementation of the
- * list, which is the thing the ruling forbids — and a second set of six requests on
+ * list, which is the thing the ruling forbids — and a second set of five requests on
  * every page besides.
  *
  * The cost of that choice, stated rather than hidden: the badge is only as fresh as the
@@ -135,6 +139,7 @@ export const useAttentionStore = create<AttentionStore>((set) => ({
       rows: result.rows,
       dropped: result.dropped,
       degraded: result.degraded,
+      blind: result.blind,
       total: result.total,
       checkedAt: result.checkedAt,
       loading: false
@@ -148,10 +153,10 @@ export const useAttentionStore = create<AttentionStore>((set) => ({
  * A module singleton survives sign-out, a 401 (`setUnauthorizedHandler` clears the auth
  * store without unmounting the app), and a same-tab account switch. Without this, an
  * admin's count stays on the sidebar badge into a viewer's session — on *every* page,
- * because the badge renders app-wide — and the viewer cannot clear it: `loadAttention`
- * is only ever called from the panel on `/`, which their role's missing permissions make
- * an all-`denied` no-op. A stale red number the user has no way to dismiss is worse than
- * no badge at all.
+ * because the badge renders app-wide — and the viewer has no way to clear it from the
+ * page they are on: `loadAttention` is only ever called from the panel on `/`, and every
+ * check it makes is denied to their role. A stale red number counting somebody else's
+ * problems, on every page, is worse than no badge at all.
  *
  * Keyed on the user id rather than on `status`, because the case this exists for is two
  * *authenticated* states in a row. Subscribing here rather than resetting inside

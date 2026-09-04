@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { AlertTriangle, CheckCircle2, HelpCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, HelpCircle, Lock } from "lucide-react";
 import { Link } from "react-router";
 import { useAttentionStore } from "@/features/overview/attentionStore";
 import { coarseAge } from "@/features/overview/connectionStatus";
@@ -108,6 +108,12 @@ function Row({ row, now }: { row: AttentionRow; now: Date }) {
  * so it is withheld the moment a check could not run (`degraded`), and it is
  * template-only forever — no AI prose ever writes this line (docs/v-never.md).
  *
+ * There are therefore **four** states here, not three, and the fourth is the one this
+ * panel was quietly getting wrong: nothing checked yet (no claim), nothing the session
+ * is allowed to check (`blind` — a role statement, no clock), something found (rows),
+ * nothing found (the attestation). Only the last of those is dated, because it is the
+ * only one making a claim about the fleet.
+ *
  * **The clock is visible; the full instant rides the element** (Kyle, 2026-09-04, on
  * #106). The line keeps `checked HH:MM UTC` because the panel is read at a glance and a
  * full stamp costs the sentence its shape, but the whole attestation is wrapped in a
@@ -134,6 +140,7 @@ export function NeedsAttentionPanel() {
   const rows = useAttentionStore((state) => state.rows);
   const dropped = useAttentionStore((state) => state.dropped);
   const degraded = useAttentionStore((state) => state.degraded);
+  const blind = useAttentionStore((state) => state.blind);
   const checkedAt = useAttentionStore((state) => state.checkedAt);
   const loadAttention = useAttentionStore((state) => state.loadAttention);
 
@@ -161,9 +168,38 @@ export function NeedsAttentionPanel() {
   // so two rows that are the same age can never render as different ones.
   const now = new Date(checkedAt);
 
+  // Nothing was examined, so nothing is attested.
+  //
+  // `Role.viewer` holds inventory read and nothing else, and `/` is not role-gated, so
+  // every check this panel makes came back denied and the composition produced no rows
+  // and no degraded entries. That emptiness used to reach the green line — a dated
+  // all-clear about a fleet on which zero checks had run, handed to the one role least
+  // able to notice it was hollow. Failure must never read as emptiness (#150).
+  //
+  // No timestamp on this state, deliberately. A clock here would date *something*, and
+  // the only honest thing to date is a check, of which there were none. It is also not
+  // rendered as five denied rows: this is one fact about the session, not five faults in
+  // the product, and naming the missing access is the actionable half — it is what the
+  // reader repeats to whoever administers their account.
+  if (blind) {
+    return (
+      <section className="rounded-lg border bg-card px-5 py-4 text-sm shadow-sm">
+        <p className="flex items-start gap-3 text-card-foreground">
+          <Lock aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+          <span>
+            <span className="font-medium">{ta.blindTitle}</span>{" "}
+            <span className="text-muted-foreground">{ta.blindBody}</span>
+          </span>
+        </p>
+      </section>
+    );
+  }
+
   // The gate lives in the composition, not here. A panel that re-typed the condition
-  // would be the second implementation of the attestation rule.
-  if (isAllClear({ rows, degraded })) {
+  // would be the second implementation of the attestation rule. `blind` is one of its
+  // three clauses, so the branch above is a redundancy the gate does not depend on: if
+  // this component's order were ever changed, `isAllClear` would still refuse the line.
+  if (isAllClear({ rows, degraded, blind })) {
     return (
       <section className="flex items-center gap-3 rounded-lg border bg-card px-5 py-4 text-sm shadow-sm">
         <CheckCircle2 aria-hidden="true" className="h-4 w-4 shrink-0 text-emerald-600" />

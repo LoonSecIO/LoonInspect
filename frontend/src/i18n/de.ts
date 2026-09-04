@@ -317,6 +317,12 @@ export const de: Translations = {
       loading: "Wird geprüft…",
       allClear: (clock: string) => `Nichts erfordert Ihre Aufmerksamkeit · geprüft ${clock}`,
       checked: (clock: string) => `geprüft ${clock}`,
+      // Alle Prüfungen verweigert. Weder Entwarnung noch Fehler — und ohne Uhrzeit: die
+      // grüne Zeile trägt einen Zeitstempel, weil sie etwas bezeugt; hier wurde nichts
+      // geprüft, also gibt es nichts zu datieren.
+      blindTitle: "Nicht geprüft.",
+      blindBody:
+        "Ihre Rolle hat keinen Zugriff auf Verbindungen, Ziele und Systemstatus — daher wurde keine dieser Prüfungen ausgeführt. Das ist keine Entwarnung. Eine Administratorin oder ein Administrator kann die nötigen Berechtigungen erteilen.",
       kinds: {
         run_failed: "Synchronisierung fehlgeschlagen",
         destination_failing: "Zustellungen schlagen fehl",
