@@ -201,11 +201,17 @@ async def test_changes_are_derived_under_the_default_policy(db, connection, jamf
     events_after = (await db.execute(select(func.count()).select_from(EventOutbox).where(EventOutbox.event_type == "device.change"))).scalar_one()
     assert events_after - events_before == len(rows)
     latest = (await db.execute(select(EventOutbox).where(EventOutbox.event_type == "device.change").order_by(EventOutbox.id.desc()).limit(1))).scalar_one()
-    # camelCase with `ID` uppercased (#188), and `jamfProID`/`serialNumber` are the same
-    # names deviceMeta carries — so this event and the inventory event from the same
-    # pull agree on both keys and both values.
-    assert latest.payload["jamfProID"] == real_id and latest.payload["serialNumber"] == "LOONMINI0M4"
-    assert latest.payload["jamfUrl"] == HOST and latest.payload["policyVersion"] == "v0"
+    # camelCase with `ID` uppercased (#188). The device is named in `deviceMeta` and
+    # nowhere else since #308: the root copies of `jamfProID` / `serialNumber` came off,
+    # because the inventory sub-event has no root identity at all and a customer's bare
+    # `serialNumber=` therefore matched changes and silently missed every inventory event.
+    assert latest.payload["deviceMeta"]["jamfProID"] == real_id
+    assert latest.payload["deviceMeta"]["serialNumber"] == "LOONMINI0M4"
+    assert {"jamfProID", "serialNumber", "trigger", "connectionID", "comparison"} & set(latest.payload) == set()
+    assert latest.payload["policyVersion"] == "v0"
+    # `jamfUrl` went with them: the instance is the envelope's `source` below, which
+    # costs no licence volume (app.core.wire's opening doctrine).
+    assert "jamfUrl" not in latest.payload
 
     # The envelope. Before this, device.change shipped with none, so a change observed
     # at Jamf's reportDate landed at whatever moment Splunk accepted the delivery.

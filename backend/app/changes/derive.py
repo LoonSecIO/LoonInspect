@@ -354,25 +354,79 @@ def _event_payload(row: DeviceChange, connection: MdmConnection, device_meta: di
     """One change row as it goes out on the wire.
 
     camelCase with the token `ID` uppercased (#188), spelled to agree with the
-    `deviceMeta` block on `device.inventory.changed` rather than merely to be camelCase:
-    `jobID`, `jamfProID` and `serialNumber` are the same names carrying the same values,
-    so a change and the inventory event from the same pull join on identical keys. Since
-    #223 the block itself rides here too, so the join is `deviceMeta.eventID` — one key,
-    one path, both device families — rather than the two-term join #189 rejected.
+    `deviceMeta` block on `device.inventory.changed` rather than merely to be camelCase.
+    Since #223 that block rides here whole, so a change joins the inventory event from
+    the same pull on `deviceMeta.eventID` — one key, one path, both device families —
+    rather than the two-term join #189 rejected.
+
+    **The device is named once (#308, ruled 2026-09-04).** This payload was built flat,
+    before #189 existed; #223 folded `deviceMeta` in and could only *add*, because clause
+    3 of the freeze ("a key that ships is never removed") was already in force. The result
+    shipped five values twice — `trigger`, `jamfProID`, `connectionID`, `serialNumber`,
+    and `subjectLabel` against `deviceMeta.hostName` — under a comment calling the
+    duplication deliberate by analogy to #220's `jobID` hoist. The analogy did not hold:
+    #220 hoisted `jobID` so ONE bare predicate joins every family, and the hoisted copies
+    here did the opposite, because the inventory sub-event carries no top-level identity
+    at all (`app.core.hec_fanout`). A customer's bare `serialNumber=` matched changes and
+    silently returned nothing from inventory — a plausible subset with no error, the very
+    failure #189 refused the two-term join for. The four exact twins are gone; the block
+    is where both families agree.
+
+    Removals are licensed only because no customer SPL exists yet. Body keys freeze at the
+    public flip, when SPL can first exist (docs/runs.md: "customer SPL written against
+    these names makes them permanent"); sourcetype strings froze the day they were minted,
+    and none moves here, so clause 5 is untouched.
+
+    Two more keys came off on their own arguments:
+
+    * `comparison` — #189 CUT it (it describes run history, not the row: `delta` on every
+      device of every run after the first, so it partitions nothing) and #258 removed it
+      from the block. It survived one level up because both refusal guards read the block.
+      It rides `run.completed`, joined by `jobID`. `tests/test_device_meta.py` now reads
+      this payload's top level too, so it cannot come back at either depth.
+    * `jamfUrl` — `app.core.wire`'s opening doctrine: anything that fits the envelope is
+      envelope-only, "that is why the instance URL is `source` and not a key". This was
+      the only family carrying it, beside an envelope `source` holding the same instance.
+      The friendly name for the connection is `connectionName` on the run family (#103,
+      #287), a `jobID` join away; `deviceMeta.connectionID` is scope, not readability.
+
+    **Nulls are dropped, one rule for the whole event.** `_change_device_meta` already
+    filtered its own; this dict did not, so `field` and `entryLabel` — null on *every*
+    event a list-section sourcetype will ever emit — reached the index, and a group
+    change shipped five structural nulls beside a block that correctly dropped them.
+    Clause 3's own second sentence licenses this: a key that stops being computed "is
+    absent under the null-dropping rule that already governs deviceMeta". It also makes
+    `field=*` a clean selector for scalar changes instead of a predicate matching
+    everything.
+
+    **`subjectLabel` stays, unconditionally** (Kyle, ruling the #308 carve-out). On the
+    fourteen section sourcetypes it can only be `deviceMeta.hostName`; on the fifteenth,
+    `loon:jamf:mac:computerGroup:change`, it is the ONLY name the event carries — the
+    block drops `hostName` for a group, the envelope drops `host`, and a group-definition
+    change is a scalar diff, so `entryLabel` is null too. Without it a criteria change
+    pages as `jamfProID: "12"` and nothing else. It is the subject-kind-agnostic name
+    where `hostName` answers the narrower "this Mac's hostname" — two keys that agree on
+    a computer, not a duplicate. Emitting it only when `hostName` is absent was refused:
+    that forces `deviceMeta.hostName ?? subjectLabel` on every consumer, the coalesce
+    docs/runs.md refuses by name for `jobID`.
+
+    `entryIdentity` stays for the same shape of reason (#308 Q5): it is kind-agnostic, so
+    one SPL reads `entryIdentity.name` across `*:change` without knowing that an app's
+    identity is name+path+bundleId while an EA's is a definition id. It restates fields
+    already in `old`/`new`, and that is the price of not making every consumer carry a
+    per-kind identity table.
 
     The event's `sourcetype` is not set here. It is decided by
     `wire_vocabulary.change_sourcetype` and stamped by `app.core.outbox._build_body` on
     Splunk HEC deliveries only (#243, #223): a sourcetype is not part of the event, it is
     part of the delivery, and every other destination type gets this payload verbatim.
+    That is also why `section`, `entryKind` and `subjectKind` stay though the sourcetype
+    implies all three — a generic webhook receives this body with no sourcetype at all.
 
-    Two spellings were genuinely ambiguous and are ruled here:
-
-    * `jamfUrl`, not `jamfURL`. The law uppercases exactly one token, `ID`. Extending it
-      to `URL` would be a second ruling made in passing, and Jamf's own API spells its
-      url keys `...Url` — so the mechanical reading is also the one a Jamf admin expects.
-    * `udid` unchanged. It is one acronym, not a name ending in an `Id` token, and
-      camelCase puts the leading word in lower case — `UDID` breaks that and `udID`
-      reads as nonsense. Jamf spells it `udid` too.
+    One spelling was genuinely ambiguous and is ruled here: `udid` unchanged. It is one
+    acronym, not a name ending in an `Id` token, and camelCase puts the leading word in
+    lower case — `UDID` breaks that and `udID` reads as nonsense. Jamf spells it `udid`
+    too. (`jamfUrl` vs `jamfURL` was ruled the same way and is moot now the key is gone.)
     """
     run = get_run()
     payload = {
@@ -382,36 +436,32 @@ def _event_payload(row: DeviceChange, connection: MdmConnection, device_meta: di
         # impossible.
         "event": EVENT_TYPE,
         # The run that observed this change. Same jobID as the inventory events from the
-        # same pull, which is what lets a search collect everything one sweep produced —
-        # the correlation triple below identifies the *device*, not the pass that saw it.
+        # same pull, which is what lets a search collect everything one sweep produced.
+        # This hoist stays: #220 ruled it so one bare `jobID=$id$` joins every family and
+        # every sub-event, and the inventory families carry it at the root too — which is
+        # exactly what the identity keys removed above did NOT do.
         "jobID": str(run.id) if run else None,
         # #189's block, whole (`_change_device_meta`). With `event` and `jobID` above it,
-        # this event now carries all three of the keys #220 ruled every sub-event carries
-        # — `wire_vocabulary.SUB_EVENT_KEYS` — though a change is not a fan-out sub-event:
+        # this event carries all three of the keys #220 ruled every sub-event carries —
+        # `wire_vocabulary.SUB_EVENT_KEYS` — though a change is not a fan-out sub-event:
         # it was already at sub-event grain, one outbox event per kept change row.
         #
-        # The keys it duplicates from the top level are duplicated deliberately, the way
-        # `deviceMeta.jobID` duplicates the root `jobID` (#220) and `host` rides in both
-        # the envelope and the body: the block is meant to be the self-contained identity
-        # of the pull, and the top-level names are shipped and never removed (clause 3).
-        # `trigger` and `connectionID` agree by construction — the derivation is handed the
-        # same trigger the run was acquired with, on every path.
+        # It is the one place this event names the device. `serialNumber`, `jamfProID`,
+        # `hostName`, `trigger` and `connectionID` are read from here on both device
+        # families, so a predicate written once works on both (#308).
         "deviceMeta": device_meta,
-        "comparison": run.comparison if run else None,
-        "connectionID": connection.id,
-        "jamfUrl": connection.base_url,
-        # `jamfProID`, the deviceMeta spelling, and the same value for a computer
-        # subject. NOT a second name like `jamfID` for the object's Jamf Pro primary
-        # key: `subjectKind` already says which kind of object the id belongs to, and a
-        # group's id lives in the same Jamf Pro as a computer's.
-        "jamfProID": row.subject_id,
         "subjectKind": row.subject_kind,
+        # The subject's own name, on every subject kind — see the docstring. Equal to
+        # `deviceMeta.hostName` for a computer; the group's name, and the only one, for a
+        # `computer_group`.
         "subjectLabel": row.subject_label,
-        "serialNumber": row.serial_number,
         "udid": row.udid,
+        # The device's own report date where GENERAL was read, and collection time where
+        # it was not (`observed_at` above). NOT interchangeable with
+        # `deviceMeta.lastReportDate`, which has no fallback and is dropped instead —
+        # they agree on the happy path and mean different things off it.
         "observedAt": row.observed_at.isoformat(),
         "collectedAt": row.collected_at.isoformat(),
-        "trigger": row.trigger,
         "section": row.section,
         "field": row.field,
         "entryKind": row.entry_kind,
@@ -426,6 +476,11 @@ def _event_payload(row: DeviceChange, connection: MdmConnection, device_meta: di
         "previousSpanID": str(row.previous_span_id) if row.previous_span_id else None,
         "policyVersion": row.policy_version,
     }
+    # One null rule for the whole event (#308), the rule `_change_device_meta` already
+    # applies to its own half. Built before the envelope is attached, so the reserved
+    # key is never a candidate — and `deviceMeta` is a dict, never None, so the block
+    # survives even when every key in it was dropped.
+    payload = {key: value for key, value in payload.items() if value is not None}
     # The envelope, on the same rule the inventory family uses (app.core.wire). Without
     # it every device.change landed at Splunk's *receive* time, so a change the sweep
     # observed at 01:00 sorted beside whatever the outbox happened to drain at 09:00.
@@ -440,7 +495,8 @@ def _event_payload(row: DeviceChange, connection: MdmConnection, device_meta: di
     # subjects, whose `subject_label` is a group name — shipping that as `host` would
     # invent Macs named "Devices out of Checkin Compliance" and corrupt every
     # `dc(host)` in the customer's index. An absent hint is recoverable; a wrong one
-    # is not.
+    # is not. `source` carries the instance for every subject, which is why no
+    # `jamfUrl` key rides the body (#308).
     payload[ENVELOPE] = envelope(
         occurred_at=event_time(row.observed_at),
         host=row.subject_label if row.subject_kind == SUBJECT_COMPUTER else None,

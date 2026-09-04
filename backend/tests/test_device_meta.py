@@ -35,10 +35,11 @@ import uuid as uuidlib
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from app.changes.derive import _change_device_meta
+from app.changes.derive import _change_device_meta, _event_payload
 from app.core.runs import (
     LOCK_DEVICE_SWEEP,
     TRIGGER_SWEEP,
@@ -47,6 +48,7 @@ from app.core.runs import (
     run_meta,
 )
 from app.core.runs import set_run as _set_run
+from app.core.wire import ENVELOPE
 from app.mdm.jamf.contract import (
     SUBJECT_COMPUTER,
     SUBJECT_COMPUTER_GROUP,
@@ -54,7 +56,7 @@ from app.mdm.jamf.contract import (
     SectionContent,
 )
 from app.mdm.service import _device_meta
-from app.models.schema import Device
+from app.models.schema import Device, DeviceChange
 from app.schemas.payload import WIRE_SCHEMA_VERSION
 
 # The ruling's table, in its own order, in the casing the wire ships today. The table was
@@ -394,3 +396,169 @@ def test_the_docs_name_the_same_keys() -> None:
         assert f'"{key}"' in example, f"docs/runs.md's deviceMeta example is missing {key}"
     for key in ("comparison", "collectionID"):
         assert f'"{key}"' not in example, f"docs/runs.md still shows the refused key {key}"
+
+
+# --- the level a refused key can hide at (#308) ---------------------------------------
+
+# `_event_payload` reads two attributes off the connection and nothing else, so the row
+# is stood up in hand here exactly as tests/test_wire.py does — this file stays pure
+# logic, no database.
+_CONNECTION = SimpleNamespace(id=1, base_url="https://acme.jamfcloud.com")
+
+
+def _change_row(**overrides) -> DeviceChange:
+    """One kept change as `derive_and_record` writes it — an app version bump by default,
+    the shape Kyle pasted onto #308."""
+    fields = {
+        "subject_kind": SUBJECT_COMPUTER,
+        "subject_id": "1743",
+        "subject_label": "kyle-mbp",
+        "serial_number": "C02XL0THJGH5",
+        "udid": "87F31C46-E078-5239-A342-48CA4F59DA6B",
+        "observed_at": datetime(2026, 8, 31, 21, 44, 3, tzinfo=timezone.utc),
+        "collected_at": datetime(2026, 8, 31, 21, 44, 27, tzinfo=timezone.utc),
+        "trigger": TRIGGER_SWEEP,
+        "section": "applications",
+        "entry_kind": "application",
+        "entry_identity": {"name": "Google Chrome.app", "bundleId": "com.google.Chrome"},
+        "change": "updated",
+        "old_value": {"name": "Google Chrome.app", "version": "152.0.7977.65"},
+        "new_value": {"name": "Google Chrome.app", "version": "152.0.7977.83"},
+        "level": "normal",
+        "details": {"changedFields": ["version"]},
+        "policy_version": "v0",
+    }
+    return DeviceChange(**(fields | overrides))
+
+
+# The subset of REFUSED that is refused at EVERY depth of a device event, not merely from
+# the block. #189's table is a *block* table — most of it turns on what `deviceMeta` costs
+# when written once per app, per EA, per cert and per profile, and `udid` and `occurredAt`
+# are refused there while riding the top level by design ("already on the payload top
+# level" is the table's own note on `occurredAt`). These five are different: each was cut
+# because the fact belongs to another event family or to the envelope, joined by `jobID`,
+# which is an argument about the device event as a whole and does not stop at a depth.
+#
+# `jamfHost` is the one to read twice. #189 refused it because "the HEC `source` slot gives
+# it away" — and `device.change` shipped exactly that fact at its root under the spelling
+# `jamfUrl` until #308. Same argument, different spelling, one level up.
+REFUSED_ANYWHERE: tuple[str, ...] = (
+    "comparison", "collectionID", "apertureDigest", "contractVersion", "collectorVersion", "jamfHost",
+)
+
+
+def test_a_refused_key_cannot_return_one_level_up(run: RunContext) -> None:
+    """#308: the defect this file's own mechanism missed for a day.
+
+    `comparison` was cut by #189 and removed from the block by #258 — and `device.change`
+    went on shipping it at the event's TOP LEVEL, where both guards above, which read
+    `_device_meta` and `_change_device_meta`, could not see it. A refusal that only holds
+    at one depth is not a refusal; it is a place for the key to move to.
+
+    So the run-scoped half of the table is now held against the whole delivered event, at
+    both depths. The run fixture carries a real `comparison` and a real `collection_id`,
+    so this fails on the code rather than on the fixture.
+    """
+    payload = _event_payload(_change_row(), _CONNECTION, _change_device_meta(_observation()))
+    assert set(REFUSED_ANYWHERE) < set(REFUSED), "the subset is #189's table, not a second list"
+    for key in REFUSED_ANYWHERE:
+        assert key not in payload, f"#189 refused `{key}` and it is back at the top level: {REFUSED[key]}"
+        assert key not in payload["deviceMeta"], f"#189 refused `{key}`: {REFUSED[key]}"
+    # The block's own table still holds at the block, whole — including the entries that
+    # ride the top level on purpose (`udid`, `occurredAt`) and are refused only from here.
+    for key, why in REFUSED.items():
+        assert key not in payload["deviceMeta"], f"#189 refused `{key}`: {why}"
+    assert payload["udid"] == "87F31C46-E078-5239-A342-48CA4F59DA6B"
+
+
+def test_the_change_event_names_the_device_in_the_block_and_nowhere_else(run: RunContext) -> None:
+    """#308 Q1. Five values were written twice, and the cost was not the bytes.
+
+    The inventory sub-event carries no top-level identity at all (`app.core.hec_fanout`),
+    so the hoisted copies made a customer's bare `serialNumber=` match changes and return
+    nothing from inventory — a plausible subset with no error, which is the exact failure
+    #189 refused the two-term join for. One depth, both families.
+
+    `jobID` is the deliberate exception and stays hoisted: #220 ruled it so that one bare
+    predicate joins every family, and the inventory families carry it at the root too.
+    """
+    payload = _event_payload(_change_row(), _CONNECTION, _change_device_meta(_observation()))
+    meta = payload["deviceMeta"]
+    for key in ("serialNumber", "jamfProID", "trigger", "connectionID"):
+        assert key in meta
+        assert key not in payload, f"`{key}` is `deviceMeta.{key}` on both families, not a root key (#308)"
+    assert payload["jobID"] == meta["jobID"] != None  # noqa: E711 — the one ruled hoist (#220)
+    # And the instance is the envelope's, never a body key: `jamfUrl` duplicated a
+    # `source` that costs no licence volume (app.core.wire's opening doctrine).
+    assert "jamfUrl" not in payload
+    assert payload[ENVELOPE]["source"] == "acme.jamfcloud.com"
+
+
+def test_subject_label_survives_because_a_group_has_no_other_name(run: RunContext) -> None:
+    """#308's carve-out, ruled by Kyle: `subjectLabel` stays on every subject kind.
+
+    On the fourteen section sourcetypes it can only be `deviceMeta.hostName`. On the
+    fifteenth it is the only name the event has — the block drops `hostName` for a group,
+    the envelope drops `host`, and a group-definition change is a scalar diff, so
+    `entryLabel` is null too. Removing it would page an admin with `jamfProID: "12"`.
+    """
+    computer = _event_payload(_change_row(), _CONNECTION, _change_device_meta(_observation()))
+    assert computer["subjectLabel"] == computer["deviceMeta"]["hostName"] == "kyle-mbp"
+
+    group_meta = _change_device_meta(_observation(subject_kind=SUBJECT_COMPUTER_GROUP))
+    group = _event_payload(
+        _change_row(
+            subject_kind=SUBJECT_COMPUTER_GROUP,
+            subject_label="Devices out of Checkin Compliance",
+            serial_number=None,
+            udid=None,
+            section="definition",
+            field="criteria",
+            entry_kind=None,
+            entry_identity=None,
+            change="changed",
+            details=None,
+        ),
+        _CONNECTION,
+        group_meta,
+    )
+    assert "hostName" not in group_meta and "host" not in group[ENVELOPE]
+    assert group["subjectLabel"] == "Devices out of Checkin Compliance"
+
+
+def test_the_event_drops_its_nulls_at_both_depths(run: RunContext) -> None:
+    """#308 Q2. `_change_device_meta` filtered its own nulls and the payload did not, so
+    one event shipped under two rules — which is how `"field": null` and
+    `"entryLabel": null` reached a customer's index on every app change ever emitted.
+
+    Licensed by clause 3's own second sentence: a key that stops being computed "is absent
+    under the null-dropping rule that already governs deviceMeta". It also makes `field=*`
+    a selector for scalar changes rather than a predicate matching everything.
+    """
+    app_change = _event_payload(_change_row(), _CONNECTION, _change_device_meta(_observation()))
+    # `field` is set only by the scalar-section path, so on a list section it is null on
+    # every event that will ever be emitted; `entryLabel` needs a SectionSpec.entry_label,
+    # which `applications` does not declare.
+    assert "field" not in app_change and "entryLabel" not in app_change
+    assert app_change["entryKind"] == "application"
+
+    group = _event_payload(
+        _change_row(
+            subject_kind=SUBJECT_COMPUTER_GROUP,
+            subject_label="Stale check-ins",
+            serial_number=None,
+            udid=None,
+            section="definition",
+            field="criteria",
+            entry_kind=None,
+            entry_identity=None,
+            change="changed",
+            details=None,
+        ),
+        _CONNECTION,
+        _change_device_meta(_observation(subject_kind=SUBJECT_COMPUTER_GROUP)),
+    )
+    for key in ("serialNumber", "udid", "entryKind", "entryIdentity", "entryLabel", "details"):
+        assert key not in group, f"a group change still ships a structural null `{key}` (#308)"
+    assert group["field"] == "criteria"
+    assert all(value is not None for key, value in group.items() if key != ENVELOPE)
