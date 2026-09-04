@@ -656,6 +656,15 @@ async def test_a_mark_that_cannot_be_written_still_frees_the_lock(
     reading `failed`, which is exactly the original defect, now narrowed to the case where
     the UPDATE genuinely cannot be performed. That loss is asserted rather than merely
     tolerated, so nobody re-fixes it by wedging the lock again.
+
+    Two things this test does NOT see, named here so its green is not read as more than it
+    is. It substitutes a stand-in for the mark, so no real `update(Collection)` runs and
+    nothing is ever synchronised into the session; and it reads every collection back
+    through `db.refresh`, which un-expires the instance before the assertion looks at it.
+    Both were how a savepoint rollback could expire the caller's `Collection` and orphan
+    the lock this test watches being freed, with this test green throughout.
+    `test_a_failed_mark_does_not_orphan_the_lock_it_just_freed`, below, is the one that
+    can see it.
     """
     from sqlalchemy import text
     from sqlalchemy import update as sa_update
@@ -711,6 +720,183 @@ async def test_a_mark_that_cannot_be_written_still_frees_the_lock(
     # a stamp no complete mark ever stood behind.
     await db.refresh(sweep)
     assert sweep.last_run_status == "ok"
+
+
+async def test_a_failed_mark_does_not_orphan_the_lock_it_just_freed(
+    db, connection, sweep, jamf: FakeJamf, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dropped mark costs the stamp. It must not cost the caller its session.
+
+    The test above proves the savepoint frees the lock. It cannot prove the caller can
+    still *use* it, and that is not a small gap. It reads every collection back through
+    `db.refresh`, which un-expires the instance before the assertion looks at it, and it
+    substitutes a stand-in for the mark, so no real `update(Collection)` ever runs.
+    `run_collection` — the scheduled tick's caller, the unattended path this whole
+    mechanism exists for — does neither: it holds the `Collection` the tick handed it
+    across `acquire()` and reads `collection.id` straight off it on the next line.
+
+    `update(Collection)` is an ORM-enabled UPDATE. Left to synchronise, SQLAlchemy
+    matches the in-session `Collection` instances against the WHERE clause, writes the
+    new values onto them, and registers them as altered on the innermost transaction —
+    which here is the savepoint. Rolling that savepoint back runs
+    `_restore_snapshot(dirty_only=True)`, and that EXPIRES every instance so registered.
+    The caller's `collection` is one of them, and under asyncio touching an expired
+    attribute raises `MissingGreenlet` rather than lazily reloading. `acquire()` has
+    already committed a new `running` run by the time the caller gets there, so the raise
+    lands on the far side of the mutex: the lock the reclaim just freed is taken and
+    immediately abandoned, held until the next `run_stale_after_seconds` reclaim comes
+    round. Strictly worse than the blind panel the savepoint was chosen to pay for, and
+    the second time this mark has reached out and wedged the thing it rides beside.
+
+    Two collection-bearing stale runs in one batch are the trigger, and they are the
+    ordinary shape rather than a contrived one: a pod dies holding `device_sweep` and
+    `catalog` on the same connection, and the reclaim marks both. One mark lands, the
+    next statement cannot be written, and the savepoint takes the landed one back along
+    with the instance it had synchronised.
+    """
+    from sqlalchemy import text
+
+    from app.core import runs as runs_module
+    from app.core.database import session_for_tenant
+    from app.core.runs import (
+        LOCK_CATALOG,
+        LOCK_DEVICE_SWEEP,
+        STATUS_RUNNING,
+        TRIGGER_SWEEP,
+        acquire,
+    )
+    from app.core.tenancy import OPERATIONAL_TENANT_ID
+    from app.mdm.collections import apply_schedule, run_collection
+    from app.models.schema import Collection, Run
+
+    catalog = Collection(
+        mdm_connection_id=connection.id,
+        name=f"groups {uuidlib.uuid4().hex[:8]}",
+        kind="catalog",
+        enabled=True,
+        sections=[],
+        frequency="hourly",
+        at_minute=11,
+        timezone="UTC",
+    )
+    apply_schedule(catalog)
+    db.add(catalog)
+    sweep.last_run_at = None
+    sweep.last_run_status = "ok"
+    await db.commit()
+
+    # 03:12. The pod is holding both locks on this connection, and then it is not.
+    dead_sweep = await acquire(
+        db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP, collection_id=sweep.id
+    )
+    dead_catalog = await acquire(
+        db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_CATALOG, collection_id=catalog.id
+    )
+    assert dead_sweep.started and dead_catalog.started
+    await _kill_the_process(db, dead_sweep.run.id)
+    await _kill_the_process(db, dead_catalog.run.id)
+
+    real_mark = runs_module._mark_collections_reclaimed
+
+    async def _one_mark_lands_then_the_batch_cannot_go_on(session, rows, *, error: str) -> None:
+        # The real function, on one real row — the sweep's, so the mark that lands is
+        # deterministically the one the caller below is holding. In the field the order
+        # is the reclaim's and either row can be first; pinning it here is what lets the
+        # assertion name an instance instead of a coin toss.
+        ordered = sorted(rows, key=lambda row: row.collection_id != sweep.id)
+        assert len(ordered) >= 2 and all(row.collection_id is not None for row in ordered)
+        await real_mark(session, ordered[:1], error=error)
+        # And then the batch meets something the database refuses — a statement timeout,
+        # a deadlock with the in-frame writer this stands in for. An aborted transaction
+        # is the real failure, not a bare `raise`, and only the savepoint gets it back.
+        await session.execute(text("SELECT 1 / 0"))
+
+    monkeypatch.setattr(runs_module, "_mark_collections_reclaimed", _one_mark_lands_then_the_batch_cannot_go_on)
+
+    # 03:15. The tick reaches this collection and runs it, which is where the reclaim
+    # happens. Whatever the mark managed to do, this call is the customer's sweep.
+    raised: Exception | None = None
+    result = None
+    try:
+        result = await run_collection(db, sweep, trigger="sweep")
+    except Exception as exc:
+        raised = exc
+
+    # Asserted from a second session, and asserted first: whether the caller came back
+    # with a result matters less than whether it left the mutex behind it.
+    async with session_for_tenant(OPERATIONAL_TENANT_ID) as witness:
+        orphaned = (
+            await witness.execute(
+                select(Run.id, Run.lock_class).where(
+                    Run.mdm_connection_id == connection.id,
+                    Run.status == STATUS_RUNNING,
+                )
+            )
+        ).all()
+
+    assert orphaned == [], (
+        f"the acquisition took the freed lock and walked away from it: {orphaned} left running, "
+        f"because run_collection raised {type(raised).__name__ if raised is not None else 'nothing'}: {raised}"
+    )
+    assert raised is None, f"run_collection raised {type(raised).__name__}: {raised}"
+    assert result is not None and result.ok
+
+    # And the sweep that did run recorded its own outcome over the dropped stamp, which
+    # is the whole reason the stamp is allowed to be dropped.
+    await db.refresh(sweep)
+    assert sweep.last_run_status == "ok" and sweep.last_run_at is not None
+
+
+async def test_a_reclaimed_collection_that_then_succeeds_reads_ok(
+    db, connection, sweep, jamf: FakeJamf
+) -> None:
+    """The mark is a stand-in for a run nobody closed. The next real run outranks it.
+
+    03:12, the pod dies. 03:15, the tick reaches the same collection: `acquire` reclaims
+    the dead run and stamps `failed` on the row, and then the sweep it just acquired runs
+    and succeeds. The row must read `ok` — the mark exists to stop a killed sweep printing
+    a dated all-clear, not to hold an alarm over a collection that has since succeeded.
+
+    This is the other end of the fix above, and the reason `synchronize_session=False`
+    could not stand on its own. Both writes land on one `Collection` instance that
+    `run_collection` is holding: the reclaim's, through the session and behind the
+    instance's back, and the frame's own, through the instance. With the UPDATE no longer
+    synchronising and nothing reading the row back, the instance keeps its pre-mark `ok`,
+    so `collection.last_run_status = "ok"` at the end of a successful sweep is not a
+    change the ORM has any reason to flush — and the column keeps the mark's `failed`
+    until some later tick loads the row fresh. A daily sweep succeeding into a permanent
+    red row on #106's panel is a worse lie than the one the mark was added to prevent,
+    and neither the panel nor the run history would contradict it.
+
+    Read back from a second session on purpose: the instance in this one is the thing
+    under suspicion, so it cannot also be the witness.
+    """
+    from app.core.database import session_for_tenant
+    from app.core.runs import LOCK_DEVICE_SWEEP, TRIGGER_SWEEP, acquire
+    from app.core.tenancy import OPERATIONAL_TENANT_ID
+    from app.mdm.collections import run_collection
+    from app.models.schema import Collection
+
+    assert (await run_collection(db, sweep, trigger="sweep")).ok
+    await db.refresh(sweep)
+    assert sweep.last_run_status == "ok"
+
+    dead = await acquire(
+        db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP, collection_id=sweep.id
+    )
+    assert dead.started
+    await _kill_the_process(db, dead.run.id)
+
+    # One call: the reclaim that stamps `failed`, and the sweep that supersedes it.
+    assert (await run_collection(db, sweep, trigger="sweep")).ok
+
+    async with session_for_tenant(OPERATIONAL_TENANT_ID) as witness:
+        row = (await witness.execute(select(Collection).where(Collection.id == sweep.id))).scalar_one()
+        assert row.last_run_status == "ok", (
+            f"the row reads {row.last_run_status!r} after a successful sweep; the session that wrote it "
+            f"holds {sweep.last_run_status!r}, which is how the write went missing"
+        )
+        assert row.last_run_summary["error"] is None
 
 
 # --- A skip is not a result ------------------------------------------------------------

@@ -572,6 +572,11 @@ async def _reclaim_stale(db: AsyncSession) -> int:
         # reclaim freed is free from here on, whatever happens to the recording below —
         # and whatever happened to the marking above.
         await db.commit()
+        # Only now: the marks deliberately do not reach into this session while a
+        # savepoint can still roll that reach into an expiry, so the session is brought
+        # into line here instead, where nothing can undo it. Best-effort, like everything
+        # else below the commit.
+        await _resync_marked_collections(db, [row.collection_id for row in reclaimed if row.collection_id])
         logger.warning(
             "reclaimed runs with no heartbeat",
             extra={"count": len(reclaimed), "run_ids": [str(row.id) for row in reclaimed]},
@@ -623,6 +628,50 @@ async def _mark_collections_reclaimed(db: AsyncSession, reclaimed, *, error: str
     happens instead of passing silently. Pinned by
     `test_a_mark_that_cannot_be_written_still_frees_the_lock`.
 
+    **`synchronize_session=False`, because the savepoint's rollback is not free.** The
+    paragraph above is only true of the *database*. `update(Collection)` is an ORM-enabled
+    UPDATE, and left to synchronise it does a second thing: it matches the in-session
+    `Collection` instances against the criteria, writes the new values onto them, and
+    registers them as altered on the innermost transaction — the savepoint. Rolling that
+    savepoint back runs `SessionTransaction._restore_snapshot(dirty_only=True)`, which
+    EXPIRES every instance so registered, and under asyncio touching an expired attribute
+    raises `MissingGreenlet` rather than lazily reloading. So a batch that marked one
+    collection and then failed on the next handed the failure back to the caller anyway,
+    by a different door: `acquire` returns normally and the lock genuinely is free, but
+    `run_collection` — the scheduled tick, the unattended path — reads `collection.id` off
+    the instance the tick handed it (`app.mdm.collections`, one line after the
+    acquisition) and raises there, *after* `acquire` has committed a fresh `running` run.
+    An orphaned `device_sweep` lock, held until the next `run_stale_after_seconds` reclaim
+    comes round: the wedged mutex the savepoint was added to prevent, reached by way of
+    the ORM session instead of the transaction. Two collection-bearing stale runs in one
+    batch is all it takes, which is the ordinary shape of a pod dying while it holds
+    `device_sweep` and `catalog`. Pinned by
+    `test_a_failed_mark_does_not_orphan_the_lock_it_just_freed`, which holds the caller's
+    `Collection` across the failure and reads it unrefreshed; the test above cannot see
+    this, because it refreshes first.
+
+    So the statement no longer touches the session — and the session is put back in step
+    afterwards instead, by `_resync_marked_collections`, once the marks are committed and
+    a rollback can no longer turn that into an expiry. Both halves are load-bearing, and
+    the first without the second is a worse bug than the one it fixes: with the
+    synchronisation simply off, the caller's instance keeps its pre-mark values, so when
+    `run_collection` finishes a *successful* sweep and assigns `last_run_status = "ok"`
+    over a stale in-memory `"ok"`, the ORM sees no change and leaves the column at the
+    mark's `"failed"`. Same day, same connection: the panel would print a permanent alarm
+    over a collection that had just succeeded — #106's blind panel again, pointing the
+    other way, and self-healing no sooner than the next tick that loads the row fresh.
+    That is `test_a_reclaimed_collection_that_then_succeeds_reads_ok`.
+
+    **What the caller's `except Exception` still does not catch.** `BaseException` is not
+    `Exception`: an `asyncio.CancelledError` delivered inside this function (shutdown,
+    a cancelled task), or a backend that dies mid-mark, unwinds past `_reclaim_stale`'s
+    handler and out of `acquire` with the verdicts uncommitted — the bare-in-the-
+    transaction failure, on the one class of exception the savepoint's handler declines to
+    swallow. Stated rather than caught: swallowing a cancellation to finish committing is
+    its own defect, and neither case wedges anything permanently — the next healthy
+    acquisition reclaims the same runs, since a run whose verdict never committed is still
+    `running` and still without a heartbeat.
+
     **The freshness guard is what keeps it from lying in the other direction.**
     `collections.last_run_at` is the attempt's start, always later than the start of the
     run the attempt happens inside, so a row whose `last_run_at` is at or after the
@@ -651,6 +700,9 @@ async def _mark_collections_reclaimed(db: AsyncSession, reclaimed, *, error: str
             continue
         await db.execute(
             update(Collection)
+            # See the docstring: synchronising this UPDATE into the session is what let a
+            # dropped mark expire the caller's `Collection` and orphan the lock.
+            .execution_options(synchronize_session=False)
             .where(
                 Collection.id == row.collection_id,
                 or_(
@@ -669,6 +721,41 @@ async def _mark_collections_reclaimed(db: AsyncSession, reclaimed, *, error: str
                     "error": error,
                 },
             )
+        )
+
+
+async def _resync_marked_collections(db: AsyncSession, collection_ids: list[int]) -> None:
+    """Bring this session's own copies of the marked rows back into line with the table.
+
+    The other half of `_mark_collections_reclaimed`'s `synchronize_session=False`. That
+    flag stops the UPDATE reaching into the session *while a savepoint can still roll it
+    back into an expiry*; this reads the rows back once the marks are committed and that
+    window is shut. One SELECT keyed by primary key, bounded by connections times lock
+    classes, and only on a reclaim that actually found something — which is to say only
+    after a process died, not on the ordinary acquisition.
+
+    `populate_existing` is the point of it. Without that the ORM returns the instance the
+    session already has and leaves its loaded attributes alone, which is precisely the
+    stale copy that must not survive: `run_collection` holds one across `acquire`, and an
+    instance still reading `last_run_status == "ok"` makes its own later assignment of
+    `"ok"` a no-op, leaving the row on the mark's `"failed"` for as long as that session
+    lives. Overwriting rather than merging is safe here because nothing in this path has
+    pending edits to a `Collection` — the reclaim runs at the top of `acquire`, before its
+    caller has written anything, and the marks were just committed.
+
+    Suppressed rather than raised, and after the commit rather than inside it, for the
+    same reason everything else downstream of `db.commit()` in `_reclaim_stale` is: the
+    verdicts are durable and the locks are free by the time this runs, and a read that
+    cannot be performed must not become the reason an acquisition fails. What is lost when
+    it is suppressed is one session's freshness, which the next tick reloads anyway.
+    """
+    if not collection_ids:
+        return
+    with contextlib.suppress(Exception):
+        await db.execute(
+            select(Collection)
+            .where(Collection.id.in_(collection_ids))
+            .execution_options(populate_existing=True)
         )
 
 
