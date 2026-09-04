@@ -331,14 +331,19 @@ export const en = {
         destination_failing: "Deliveries are failing",
         collection_overdue: "Never started",
         inventory_stale: "Inventory is stale",
-        update_available: "A newer build is available"
+        update_available: "A newer build is available",
+        // #101. "New app" and not "unapproved app": the product knows the Mac did not
+        // have it at the last inventory and knows nothing at all about whether anyone
+        // approved it. The app name and the Mac are interpolated beside this.
+        new_app: "New app installed"
       },
       checkNames: {
         run_failed: "recent runs",
         destination_failing: "destinations",
         collection_overdue: "collection schedules",
         inventory_stale: "inventory freshness",
-        update_available: "updates"
+        update_available: "updates",
+        new_app: "new applications"
       },
       couldNotCheck: (what: string) => `Could not check ${what}`,
       andMore: (count: number) => `${count} more ${count === 1 ? "item needs" : "items need"} attention`

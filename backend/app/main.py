@@ -19,7 +19,9 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.alerts.service import purge_closed_alerts
 from app.api.accounts import router as accounts_router
+from app.api.alerts import router as alerts_router
 from app.api.applications import router as applications_router
 from app.api.auth import router as auth_router
 from app.api.catalog import router as catalog_router
@@ -223,20 +225,34 @@ async def outbox_cleanup() -> None:
 
 
 async def run_cleanup() -> None:
-    """Purges finished runs and their log lines past retention.
+    """Purges finished runs and their log lines past retention, and closed alerts with
+    them.
 
     Follows `audit_retention_days` rather than the outbox's seven: the run log is what
     someone opens to answer "did this run last month", so a week cannot serve its own
     purpose. Runs alongside the other purges rather than at startup, so a long-lived
     process still prunes.
+
+    Closed alerts ride the same clock and the same setting on purpose. They cannot be
+    deleted the moment they close — that would silently redefine the posture key
+    `alerts.opened_24h` from "alerts opened in the trailing 24h" to "…that are still
+    open" — so without a purge the table would grow for the life of the pod. Giving them
+    a retention setting of their own would be one more knob an operator has to have an
+    opinion about, for a row that is run history in the same sense a finished run is.
     """
     for tenant_id in await operational_tenant_ids():
         async with tenant_job(tenant_id) as db:
             purged = await purge_runs(db, settings.run_retention_days)
+            closed_alerts = await purge_closed_alerts(db, settings.run_retention_days)
         if purged:
             logger.info(
                 "purged old runs",
                 extra={"tenant_id": str(tenant_id), "count": purged},
+            )
+        if closed_alerts:
+            logger.info(
+                "purged closed alerts",
+                extra={"tenant_id": str(tenant_id), "count": closed_alerts},
             )
 
 
@@ -413,6 +429,7 @@ app.include_router(connections_router)
 app.include_router(collections_router)
 app.include_router(runs_router)
 app.include_router(changes_router)
+app.include_router(alerts_router)
 app.include_router(destinations_router)
 app.include_router(system_router)
 app.include_router(devices_router)

@@ -1,3 +1,4 @@
+import type { AlertListResponse } from "@/features/alerts/types";
 import type { ChangeLevel } from "@/features/changes/types";
 import type { Destination } from "@/features/destinations/types";
 import type { Collection, MdmConnection, Run } from "@/features/mdm/types";
@@ -42,19 +43,28 @@ import type { UpdateStatusResponse } from "@/features/system/api";
  *
  * ## The alerts socket
  *
- * #101's NEW-app latch lands here as another row type with no redesign: add its member
- * to `AttentionKind`, add one `Fetched<>` field to `AttentionInputs`, push rows inside
- * `composeAttention`, add one string to both locales. No component changes.
+ * Filled by #101 exactly as it was cut: `"new_app"` joined `AttentionKind`, one
+ * `Fetched<>` field joined `AttentionInputs`, one block pushes rows inside
+ * `composeAttention`, one string per locale. No component changed.
+ *
+ * `new_app` is the first row here that is about the **fleet** rather than the pipeline,
+ * and it is the only one whose level this file does not decide: an alert row carries a
+ * stored `level` from `app.alerts.service.KIND_LEVELS`, and re-grading it here would be a
+ * second opinion on one fact. It is also the only source that can have more rows than the
+ * API returned — a tool pushed to two thousand Macs opens two thousand latches — which is
+ * why its input carries a `total` and `dropped` counts the remainder rather than
+ * pretending the page was the whole answer.
  */
 
-/** What a row can be about. `#101` appends `"new_app"`; nothing else in this file is
- *  additive, so that is the whole extension point. */
+/** What a row can be about. `new_app` is #101's, and arrived as one more member — which
+ *  is the whole extension point this union exists to be. */
 export type AttentionKind =
   | "run_failed"
   | "destination_failing"
   | "collection_overdue"
   | "inventory_stale"
-  | "update_available";
+  | "update_available"
+  | "new_app";
 
 /**
  * One input, and what happened when the session asked for it.
@@ -98,13 +108,18 @@ export interface AttentionInputs {
   connections: Fetched<MdmConnection[]>;
   destinations: Fetched<Destination[]>;
   update: Fetched<UpdateStatusResponse>;
+  /** Open alert latches (#101). The whole response rather than its items, because the
+   *  page is bounded and one fleet-wide install opens a latch per device — `total` is
+   *  what lets `dropped` say how many rows are really behind the cap. */
+  alerts: Fetched<AlertListResponse>;
 }
 
 export interface AttentionResult {
   rows: AttentionRow[];
-  /** Rows the cap hid. Reported rather than swallowed — a pod with four connections and
-   *  a dead tick can produce more than five real rows, and a cap that silently ate them
-   *  would be a worse lie than a long list. */
+  /** Rows the cap hid, plus open latches the bounded page never fetched. Reported rather
+   *  than swallowed — a pod with four connections and a dead tick can produce more than
+   *  five real rows, one new tool pushed fleet-wide produces thousands, and a cap that
+   *  silently ate them would be a worse lie than a long list. */
   dropped: number;
   /** Checks that errored. Rendered as rows, and they withhold the all-clear line. */
   degraded: AttentionKind[];
@@ -137,8 +152,14 @@ const LEVEL_ORDER: ChangeLevel[] = ["high", "normal", "low"];
  * pages no longer describe the fleet (`inventory_stale`). `normal` is a mechanism that
  * failed — a run broke, a tick did not fire — which is a symptom of a disease that may
  * not have set in yet. `low` is an improvement available, not a thing that is wrong.
+ *
+ * `new_app` is deliberately absent, and the `Exclude` says so out loud rather than
+ * leaving a reader to notice. Its level is *stored* — graded once in the backend by
+ * `app.alerts.service.KIND_LEVELS` (`high`, founder-ruled 2026-08-29) and carried on the
+ * row — so deciding it again here would be two gradings of one fact that agree right up
+ * until the day they do not.
  */
-const LEVEL_OF: Record<AttentionKind, ChangeLevel> = {
+const LEVEL_OF: Record<Exclude<AttentionKind, "new_app">, ChangeLevel> = {
   destination_failing: "high",
   inventory_stale: "high",
   run_failed: "normal",
@@ -148,11 +169,15 @@ const LEVEL_OF: Record<AttentionKind, ChangeLevel> = {
 
 /** Which input answers which check. Used to turn an errored input into `degraded`
  *  entries, so the mapping lives in one place rather than in five catch blocks. */
-const CHECKS_BY_INPUT: Record<"runs" | "collections" | "destinations" | "update", AttentionKind[]> = {
+const CHECKS_BY_INPUT: Record<
+  "runs" | "collections" | "destinations" | "update" | "alerts",
+  AttentionKind[]
+> = {
   runs: ["run_failed"],
   collections: ["collection_overdue", "inventory_stale"],
   destinations: ["destination_failing"],
-  update: ["update_available"]
+  update: ["update_available"],
+  alerts: ["new_app"]
 };
 
 function millis(iso: string | null | undefined): number | null {
@@ -308,6 +333,34 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
     });
   }
 
+  // --- New app: something is installed that was not there last time -------------------
+  //
+  // The latch is derived and closes itself (`docs/alerts.md`): a row is here because the
+  // app is on that Mac *now* and was absent from that Mac's previous inventory, and it
+  // disappears when the app does. There is nothing to acknowledge, which is why the panel
+  // offers no way to — and why this count is safe to read as a fact about the fleet.
+  //
+  // `level` comes off the row rather than out of `LEVEL_OF`; see that table's note. The
+  // link is the change that recorded the install, on a page that already reads `artifact`
+  // from the URL — no new route, and no alerts page, which #101 ruled out for v0.
+  const alerts = valueOrNull(inputs.alerts);
+  for (const alert of alerts?.items ?? []) {
+    rows.push({
+      id: `new_app:${alert.id}`,
+      kind: "new_app",
+      level: alert.level,
+      subject: alert.appName,
+      context: alert.deviceLabel,
+      href: `/devices/changes?artifact=${encodeURIComponent(alert.appName)}`,
+      at: alert.openedAt
+    });
+  }
+  // Latches the bounded page never asked for. Counted into `dropped` rather than dropped
+  // on the floor: one new tool pushed to two thousand Macs is two thousand open latches,
+  // and a panel that showed five while implying five was all of them would be the same
+  // lie the cap exists to avoid telling.
+  const unfetchedAlerts = alerts ? Math.max(0, alerts.total - alerts.items.length) : 0;
+
   // Level first, then **oldest first** within a level: a destination that has been
   // refusing deliveries for three days outranks one that failed five minutes ago, which
   // may still be a blip. A row with no instant has no age and sorts last.
@@ -334,7 +387,7 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
 
   return {
     rows: rows.slice(0, MAX_ROWS),
-    dropped: Math.max(0, rows.length - MAX_ROWS),
+    dropped: Math.max(0, rows.length - MAX_ROWS) + unfetchedAlerts,
     degraded,
     checkedAt: now.toISOString()
   };

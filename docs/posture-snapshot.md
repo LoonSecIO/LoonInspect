@@ -58,10 +58,11 @@ wrote them observed, and the row says so.** `platform` is stamped by
 computers only ([mobile-devices.md](mobile-devices.md)) and every device the recorder
 counts is a Mac by construction.
 
-The column exists because the guardrails above leave no way to add it later. Eleven of
-the 25 active keys count a *different population* the first night a sweep observes more
-than Macs — the four `devices.*`, the five `catalog.*`, `apps.distinct` and
-`changes.notable_24h` — and at that point both available moves destroy something.
+The column exists because the guardrails above leave no way to add it later. Thirteen of
+the 27 active keys count a *different population* the first night a sweep observes more
+than Macs — the four `devices.*`, the five `catalog.*`, `apps.distinct`,
+`changes.notable_24h` and the two `alerts.*` — and at that point both available moves
+destroy something.
 Redefining `devices.total` in place to mean "Macs and iPads" is forbidden by
 *definitions immutable per key*, and silent besides: no error, no migration, just a
 series that stops meaning what its own history means. Minting `devices.macos.total` and
@@ -98,7 +99,7 @@ The rules the column carries:
   which is why `ix_posture_snapshot_series` was dropped into it rather than widened
   beside it — that would have been the same four columns twice.
 * **Reserved keys are stamped by the run that activates them**, on the same rule: the
-  six names below carry no population today because they carry no rows, and each starts
+  four names below carry no population today because they carry no rows, and each starts
   its tape under the platform its first capture observed.
 
 ## Definitions v1
@@ -159,6 +160,31 @@ is never what the tape counts.
 | --- | --- | --- | --- |
 | `changes.notable_24h` | ACTIVE | `device_changes` rows at level ≥ notable (the closed LEVELS ordering at `normal` or above — one SQL predicate, no API parameter) with `observed_at` in the trailing 24h. | `device_changes` |
 
+### Alerts
+
+Activated 2026-09-04 with the table they measure (#101, [alerts.md](alerts.md)) — in the
+same commit, because a key whose definition ships ahead of its writer is a key nobody
+can check. The population is the active-connection cut every `devices.*` key counts
+over, and `GET /api/alerts` draws the same one, so the tape and the surface can never
+disagree about how many things need attention.
+
+An alert is a **derived latch**: it is opened by the sync path when its condition
+becomes true and closed by the same path when the condition stops being true, with no
+acknowledge, no dismiss and no human state anywhere in the table. That is what licenses
+the plain reading of `alerts.open` — *true of the fleet at capture*, never "not yet
+dealt with", which is a measurement of the operator and would fall foul of *no
+operator-behavior keys ever*.
+
+`alerts.opened_24h` counts rows that have **since closed**, and that is the whole reason
+closed rows age out on a retention clock rather than being deleted at close: a
+delete-on-close would silently redefine this key as "…opened in the trailing 24h and
+still open", which is a different number with the same name.
+
+| Key | Status | Definition | Source |
+| --- | --- | --- | --- |
+| `alerts.open` | ACTIVE | `alerts` rows with `closed_at` null at capture, on devices whose connection is active. | `alerts` ⋈ `devices` ⋈ `mdm_connections.is_active` |
+| `alerts.opened_24h` | ACTIVE | `alerts` rows with `opened_at` in the trailing 24h, on devices whose connection is active — **including rows that have since closed**. | `alerts` ⋈ `devices` ⋈ `mdm_connections.is_active` |
+
 ### Runs
 
 30-day run retention against 12-month audit periods: these captures are the only
@@ -212,7 +238,7 @@ that cell is written for the destination-configured case.
 | `accounts.admins` | ACTIVE | Active accounts holding the admin role — the same cut the accounts API's last-admin guard counts. | `accounts` ⋈ `account_roles` |
 | `tokens.active` | ACTIVE | API tokens with `revoked_at` null. | `api_tokens` |
 
-### Reserved: alerts and vulnerabilities
+### Reserved: vulnerabilities
 
 Frozen definitions, no writer yet. Each activates with its feature's table — no
 zero-priming: no key records before the thing it measures exists. Their population is
@@ -230,8 +256,6 @@ starts then. The contract they gate is [`docs/vulnerabilities.md`](vulnerabiliti
 
 | Key | Status | Definition | Source |
 | --- | --- | --- | --- |
-| `alerts.open` | RESERVED | Open rows in #101's alerts table at capture. Activates with that table. | — |
-| `alerts.opened_24h` | RESERVED | Alerts opened in the trailing 24h. Activates with #101's alerts table. | — |
 | `vuln.apps_affected` | RESERVED | Distinct apps with at least one LoonVD-known vulnerability. Gated on the LoonVD wire. | — |
 | `vuln.apps_kev_affected` | RESERVED | Distinct apps carrying a KEV-listed vulnerability. Gated on the LoonVD wire. | — |
 | `vuln.apps_unknown` | RESERVED | Apps LoonVD cannot assess (`unknown_app` — a ruled wire value, deliberately snake_case). Gated on the LoonVD wire. | — |

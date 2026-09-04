@@ -134,7 +134,8 @@ async def _seed_fleet(db, ns) -> None:
     that must count nowhere; three catalog entries (behind/latest/unmatched) installed
     across the devices; three Jamf Patch titles — one laggard 20 days behind, one on latest,
     one carrying a build Jamf never listed; four device changes
-    straddling the notable cut and the 24h window; a failed run in the window and a
+    straddling the notable cut and the 24h window; four alerts straddling the open/closed
+    split, the 24h window and the active-connection cut; a failed run in the window and a
     succeeded sweep outside it; an outbox holding one pending, one delivered, and one
     dead-lettered event; one extra active admin, one disabled account, one live token,
     one revoked token.
@@ -142,6 +143,7 @@ async def _seed_fleet(db, ns) -> None:
     from app.models.schema import (
         Account,
         AccountRole,
+        Alert,
         ApiToken,
         AppCatalogEntry,
         AppCatalogTitleMatch,
@@ -209,6 +211,23 @@ async def _seed_fleet(db, ns) -> None:
         AppCatalogTitleMatch(app_catalog_id=e2.id, title_id="LOONT2", basis="requirements", state="latest", version_known=True, on_latest=True, installed_version="1.0", latest_version="3.0", releases_missed=0),
         # The same 20-day-old date on an unlisted build: counted under its own key, never as a laggard.
         AppCatalogTitleMatch(app_catalog_id=e1.id, title_id="LOONT3", basis="requirements", state="unknown", version_known=False, on_latest=False, installed_version="1.0", latest_version="4.0", first_newer_released_at=now - timedelta(days=20), releases_missed=5),
+    ])
+
+    # Alerts (#101): the derived latch, seeded across every population edge the two keys
+    # have to respect — an open one, one that opened and closed inside the window (which
+    # `opened_24h` must still count, and `open` must not), one wholly outside the window,
+    # and one on the inactive connection's device, which counts nowhere.
+    def alert(dev, entry, *, opened, closed=None):
+        return Alert(
+            kind="new_app", level="high", device_id=dev.id, app_hash=entry.app_hash,
+            app_name=entry.name, bundle_id=entry.bundle_id, opened_at=opened, closed_at=closed,
+        )
+
+    db.add_all([
+        alert(d1, e1, opened=now - timedelta(hours=2)),
+        alert(d2, e2, opened=now - timedelta(hours=3), closed=now - timedelta(hours=1)),
+        alert(d3, e3, opened=now - timedelta(hours=30), closed=now - timedelta(hours=29)),
+        alert(d9, e1, opened=now - timedelta(hours=2)),
     ])
 
     def change(level, observed):
@@ -330,6 +349,14 @@ async def test_a_closed_full_sweep_captures_every_active_key(db, fleet) -> None:
 
     # Changes: high + normal inside 24h; the low row and the 30h-old high row do not count.
     assert delta("changes.notable_24h") == 2
+
+    # Alerts: one open latch on an active connection — the one on the inactive
+    # connection's device counts nowhere, same population rule as devices.*. Two opened in
+    # the window, and the second of them has already closed: `opened_24h` counts it
+    # anyway, which is exactly why closed rows are purged on a clock rather than deleted
+    # at close (docs/alerts.md §6).
+    assert delta("alerts.open") == 1
+    assert delta("alerts.opened_24h") == 2
 
     # Runs: this sweep joins the succeeded count; the seeded failure joins failed_24h;
     # the 30h-old success is outside the window. (The baseline run is in both captures.)

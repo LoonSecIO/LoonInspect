@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import type { Translations } from "@/i18n/en";
 
 /** How often the panel re-runs its checks. Slower than the run watcher above it: none of
- *  these facts change on a fifteen-second scale, and this is five requests. */
+ *  these facts change on a fifteen-second scale, and this is six requests. */
 const REFRESH_INTERVAL_MS = 60000;
 
 /** The stripe. The three levels are the change policy's, so the colours are the ones the

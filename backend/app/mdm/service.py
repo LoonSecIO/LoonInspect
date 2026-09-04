@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.alerts.service import sync_new_app_latches
 from app.catalog.service import record_device_apps
 from app.changes.derive import derive_and_record
 from app.core.config import settings
@@ -920,6 +921,10 @@ async def process_sync(
     The two share `occurredAt`, the meta block and its `eventID` by design (#81 ruling
     4: one id per device per pull, stamped on every event of that pull).
 
+    The NEW-app latch rides the same transaction (#101, docs/alerts.md): an app present
+    now and absent from this device's previous inventory opens an alert row, an app that
+    has gone closes one. Nothing about it reaches the wire.
+
     `device.apps is None` means the applications section was outside the read's
     aperture (Kyle's ruling, 2026-08-29): app rows, the catalog, and the event stream
     are left exactly as the last real read left them. Only [] — read, and genuinely
@@ -951,6 +956,19 @@ async def process_sync(
     existing = result.scalar_one_or_none()
 
     previous_hashes: dict[str, InstalledApp] = {}
+    # The NEW-app latch's two inputs, both captured here and neither derivable later
+    # (#101, app.alerts.service).
+    #
+    # `device_is_new` has to be read before the row is created: afterwards there is no
+    # way to ask the question, and every other candidate gate is wrong. `Run.comparison`
+    # purges with runs at 30 days and partitions by lock class, so a webhook's first pass
+    # on a year-old connection still reports `full`.
+    #
+    # `previous_app_hashes` is a second set rather than a reuse of `previous_hashes`
+    # below, because that map is keyed by VERSION hash: reusing it would open a NEW-app
+    # alert on every update the fleet takes.
+    device_is_new = existing is None
+    previous_app_hashes: set[str] = set()
     if existing is None:
         existing = Device(
             mdm_connection_id=connection.id,
@@ -964,6 +982,7 @@ async def process_sync(
         # Keyed on the version hash: a version bump is an install change, so the old
         # build shows as removed and the new one as added.
         previous_hashes = {app.version_hash: app for app in existing.apps}
+        previous_app_hashes = {app.app_hash for app in existing.apps if app.app_hash}
 
     # Seen at all is section-independent; every field below is written only when its
     # owning section was inside the read's aperture (#98). The creation path above
@@ -1052,6 +1071,20 @@ async def process_sync(
     # the transaction with no second query. Cache, don't calculate.
     if device.apps is not None:
         await record_device_apps(db, existing)
+        # The NEW-app latch (#101), on the same `device.apps is not None` guard and for
+        # the same reason: a read outside the applications aperture observed no apps, so
+        # it can neither open a latch nor close one. Rides this transaction, so the alert
+        # and the app row it is about commit together. Costs nothing on a quiet pull —
+        # no write when nothing arrived, no query when nothing left.
+        run = get_run()
+        await sync_new_app_latches(
+            db,
+            device_id=existing.id,
+            previous_app_hashes=previous_app_hashes,
+            current_rows=current_rows,
+            device_is_new=device_is_new,
+            run_id=run.id if run else None,
+        )
 
     # Built once and read by both events: the root `jobID` on each is the same string
     # this block carries, taken from the block rather than from a second `get_run()`

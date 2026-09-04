@@ -322,14 +322,19 @@ export const de: Translations = {
         destination_failing: "Zustellungen schlagen fehl",
         collection_overdue: "Nie gestartet",
         inventory_stale: "Inventar ist veraltet",
-        update_available: "Ein neuerer Build ist verfügbar"
+        update_available: "Ein neuerer Build ist verfügbar",
+        // #101. „Neue App“ und nicht „nicht genehmigte App“: bekannt ist nur, dass der
+        // Mac sie beim letzten Inventar nicht hatte — über eine Genehmigung weiß das
+        // Produkt nichts. Name der App und Mac stehen daneben.
+        new_app: "Neue App installiert"
       },
       checkNames: {
         run_failed: "letzte Durchläufe",
         destination_failing: "Ziele",
         collection_overdue: "Zeitpläne der Sammlungen",
         inventory_stale: "Aktualität des Inventars",
-        update_available: "Aktualisierungen"
+        update_available: "Aktualisierungen",
+        new_app: "neue Anwendungen"
       },
       couldNotCheck: (what: string) => `${what} konnten nicht geprüft werden`,
       andMore: (count: number) =>
