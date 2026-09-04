@@ -81,9 +81,9 @@ export function StatusStrip({
     // A newer failure than the last success is still stated as a fact — when the last
     // event actually landed — and never as an alarm. #106 raises the row.
     if (failure !== null && Date.parse(failure) > Date.parse(success)) {
-      return ts.destinationLastDelivered(destination.name, formatDue(success, now));
+      return ts.destinationLastDelivered(destination.name, formatDue(success, now, "past"));
     }
-    return ts.destinationOk(destination.name, formatDue(success, now));
+    return ts.destinationOk(destination.name, formatDue(success, now, "past"));
   };
 
   // Destinations are pod-wide, so on a two-connection pod these segments repeat on both
@@ -162,7 +162,7 @@ export function StatusStrip({
                 ? ts.sweepsPaused
                 : status.nextDueAt === null
                   ? ts.noScheduledSweep
-                  : ts.nextSweep(formatDue(status.nextDueAt, now))}
+                  : ts.nextSweep(formatDue(status.nextDueAt, now, "upcoming"))}
             </span>
 
             {enabledDestinations.map((destination) => (
