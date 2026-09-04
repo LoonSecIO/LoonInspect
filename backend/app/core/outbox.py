@@ -277,13 +277,33 @@ def _elastic_bulk_url(destination: Destination) -> str:
     return f"{destination.url.rstrip('/')}/{index}/_bulk"
 
 
+def _envelope_timestamp(hints: Mapping[str, object]) -> str | None:
+    """The envelope's occurrence as an ISO-8601 instant, or None if it carries none.
+
+    **Converted, never forwarded.** `envelope()` stores `time` as epoch *seconds*, which
+    is what HEC expects; Elastic's default mapping for a date field is
+    `strict_date_optional_time||epoch_millis`, so handing it `1788480942.45` would be read
+    as milliseconds and file the document in **January 1970** — a worse failure than the
+    drain-time skew this fixes, because it is silent and the document still indexes.
+
+    Always UTC and always offset-aware, so `@timestamp` has one spelling across every
+    family whether it came from a body key or from here.
+    """
+    moment = hints.get("time")
+    if not isinstance(moment, (int, float)) or isinstance(moment, bool):
+        return None
+    return datetime.fromtimestamp(moment, timezone.utc).isoformat()
+
+
 def _elastic_bulk_body(event: EventOutbox) -> str:
     """One `create` action line plus one source line, NDJSON. `create` rather than
     `index` because the default index name is a data stream, and data streams accept
     nothing else."""
     document = dict(event.payload)
     # Never index the outbox's own envelope hints — they are Splunk transport, not data.
-    document.pop(ENVELOPE, None)
+    # Kept rather than discarded, because `time` is the occurrence every producer already
+    # computed and it is the only place two of the four families carry it (#218).
+    hints = document.pop(ENVELOPE, None) or {}
     # @timestamp is the time axis of every Elastic index. The event's own occurredAt
     # is authoritative (sweeps back-date to the run's window, webhooks carry Jamf's
     # reportDate — see app.core.runs.event_time); enqueue time is only the fallback
@@ -295,10 +315,19 @@ def _elastic_bulk_body(event: EventOutbox) -> str:
     # only for the pre-rename backlog, which retention keeps deliverable for seven days;
     # after that it is dead code and can go. Removing it in the same change as the rename
     # would have silently re-dated a week of undelivered events to their drain time.
-    # device.change still carries neither (it has `observedAt`, which is a different
-    # fact) and falls through to enqueue time — untouched here, and noted in #188.
+    # `run.failed` and `device.change` carry NEITHER body key — `windowStart`/`windowEnd`
+    # and `observedAt`/`collectedAt` are different facts — so before #218 both took the
+    # fallback on every delivery and landed at drain time. `run.failed` is the alarm,
+    # default-on for every destination (#103): a sweep that dies at 01:00 and drains at
+    # 09:00 indexed at 09:00, so an alert with a one-hour window never saw it.
+    #
+    # The envelope is the fix because it was already right. Every producer builds it with
+    # the occurrence it computed — `window_end` for a failure, `event_time(observed_at)`
+    # for a change — and HEC has read it all along. Reading it here fixes all four
+    # families at once, fixes any family added later, and needs no new body key, so it is
+    # not blocked on #188 naming one.
     if "@timestamp" not in document:
-        occurred_at = document.get("occurredAt") or document.get("occurred_at")
+        occurred_at = document.get("occurredAt") or document.get("occurred_at") or _envelope_timestamp(hints)
         created_at = event.created_at or datetime.now(timezone.utc)
         document["@timestamp"] = occurred_at or created_at.isoformat()
     return json.dumps({"create": {}}) + "\n" + json.dumps(document, default=str) + "\n"

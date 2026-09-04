@@ -17,6 +17,7 @@ httpx.MockTransport, so nothing here needs a database.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 import httpx
 import pytest
@@ -30,6 +31,7 @@ from app.core.outbox import (
     _elastic_bulk_body,
     _elastic_bulk_url,
 )
+from app.core.wire import ENVELOPE, envelope
 from app.models.schema import Destination, EventOutbox
 
 # Deliberately the PRE-#188 spelling, which no producer emits any more. What this
@@ -100,11 +102,79 @@ def test_bulk_body_does_not_mutate_the_stored_payload() -> None:
     assert "@timestamp" not in event.payload
 
 
-def test_bulk_body_survives_a_payload_without_occurred_at() -> None:
-    document = json.loads(_elastic_bulk_body(_event({"event": "run.completed"})).strip().split("\n")[1])
-    # Fallback only — a document must never be unmappable, even for a payload shape
-    # that predates occurred_at.
-    assert document["@timestamp"]
+def test_bulk_body_survives_a_payload_with_no_occurrence_anywhere() -> None:
+    """The genuine fallback: no body key AND no envelope. Enqueue time, so a document is
+    never unmappable.
+
+    **This test used to prove nothing.** Its fixture was `{"event": "run.completed"}` — a
+    family that *does* carry `occurredAt` — and it asserted only that `@timestamp` was
+    truthy, which passes on enqueue time. It was named for the fallback and never
+    exercised it, while the two families that really took the fallback went untested
+    (#218). Now the fixture genuinely lacks an occurrence and the assertion is exact.
+    """
+    event = EventOutbox(event_type="run.failed", payload={"event": "run.failed"})
+    event.created_at = datetime(2026, 9, 4, 9, 0, tzinfo=timezone.utc)
+    document = json.loads(_elastic_bulk_body(event).strip().split("\n")[1])
+    assert document["@timestamp"] == "2026-09-04T09:00:00+00:00"
+
+
+# --- #218: the occurrence lives in the envelope for two of the four families ----------
+
+# The instant the event happened, and the much later instant the outbox drained it. The
+# gap is the whole bug: a sweep that dies at 01:00 and is delivered at 09:00 must index
+# at 01:00, or an alert with a one-hour window never sees the alarm that #103 made
+# default-on for every destination.
+_OCCURRED = datetime(2026, 9, 4, 1, 0, tzinfo=timezone.utc)
+_DRAINED = datetime(2026, 9, 4, 9, 0, tzinfo=timezone.utc)
+
+
+def _event_at(event_type: str, payload: dict) -> EventOutbox:
+    """One stored row: a body with no occurrence key, an envelope that has one, and a
+    created_at eight hours later."""
+    event = EventOutbox(
+        event_type=event_type,
+        payload={**payload, ENVELOPE: envelope(occurred_at=_OCCURRED, host=None, source="jamf.example")},
+    )
+    event.created_at = _DRAINED
+    return event
+
+
+@pytest.mark.parametrize(
+    ("event_type", "payload"),
+    [
+        # Neither family carries occurredAt: run.failed has windowStart/windowEnd, and
+        # device.change has observedAt/collectedAt — different facts, not this one.
+        ("run.failed", {"event": "run.failed", "jobID": "01a0", "windowEnd": _OCCURRED.isoformat()}),
+        ("device.change", {"event": "device.change", "section": "security", "observedAt": _OCCURRED.isoformat()}),
+    ],
+)
+def test_a_family_with_no_body_occurrence_takes_it_from_the_envelope(event_type: str, payload: dict) -> None:
+    document = json.loads(_elastic_bulk_body(_event_at(event_type, payload)).strip().split("\n")[1])
+    assert document["@timestamp"] == _OCCURRED.isoformat()
+    # The assertion that would have caught this on the day it shipped.
+    assert document["@timestamp"] != _DRAINED.isoformat()
+    # And the hints themselves never reach the index — they are transport, not data.
+    assert ENVELOPE not in document
+
+
+def test_the_envelope_instant_is_converted_not_forwarded() -> None:
+    """`envelope()` stores epoch **seconds**; Elastic's default date mapping is
+    `strict_date_optional_time||epoch_millis`. Forwarding the float would be read as
+    milliseconds and file every document in January 1970 — silent, and it still indexes,
+    which is worse than the skew this fixes. So the value must be an ISO string."""
+    document = json.loads(_elastic_bulk_body(_event_at("run.failed", {"event": "run.failed"})).strip().split("\n")[1])
+    stamped = document["@timestamp"]
+    assert isinstance(stamped, str)
+    assert datetime.fromisoformat(stamped).year == 2026
+    assert stamped != _OCCURRED.timestamp()
+
+
+def test_a_body_occurrence_still_wins_over_the_envelope() -> None:
+    """The two families that DO carry `occurredAt` are unchanged by #218 — the body key
+    is read first, and the envelope is consulted only when there is none."""
+    event = _event_at("run.completed", {"event": "run.completed", "occurredAt": "2026-09-04T02:30:00+00:00"})
+    document = json.loads(_elastic_bulk_body(event).strip().split("\n")[1])
+    assert document["@timestamp"] == "2026-09-04T02:30:00+00:00"
 
 
 # --- Auth header ------------------------------------------------------------------
