@@ -2,9 +2,11 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router";
 import { FlaskLogo } from "@/components/icons/FlaskLogo";
 import { Button } from "@/components/ui/button";
+import { ExternalLink } from "@/components/ui/external-link";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/config/api";
 import { useAuthStore } from "@/features/auth/store";
+import { SLACK_CHANNEL, SUPPORT_LINKS } from "@/features/support/links";
 import { useLocale } from "@/i18n/LocaleContext";
 
 export function LoginPage() {
@@ -102,6 +104,27 @@ export function LoginPage() {
             {submitting ? t.auth.signingIn : t.auth.signIn}
           </Button>
         </form>
+
+        {/* The locked-out half of #301. Settings › Support sits behind DEVICE_READ
+            like every other settings route, so a person with no session cannot reach
+            it — and buying them an unauthenticated route to reach it would be the
+            audit finding the gate was added to avoid. This page already answers
+            without a session, so naming the same two channels here costs no new
+            surface. It states no instance fact: no build string, no version, nothing
+            that distinguishes this deployment from any other. */}
+        <div className="space-y-2 px-1 text-xs text-muted-foreground">
+          <p className="font-medium text-foreground">{t.auth.loginSupportTitle}</p>
+          <p>{t.auth.loginSupportBody}</p>
+          <p>{t.auth.loginSupportWarning}</p>
+          <div className="flex flex-wrap gap-x-5 gap-y-1 pt-0.5">
+            <ExternalLink href={SUPPORT_LINKS.newIssue}>
+              {t.auth.loginSupportGithub}
+            </ExternalLink>
+            <ExternalLink href={SUPPORT_LINKS.slackJoin}>
+              {t.auth.loginSupportSlack(SLACK_CHANNEL)}
+            </ExternalLink>
+          </div>
+        </div>
       </div>
     </div>
   );

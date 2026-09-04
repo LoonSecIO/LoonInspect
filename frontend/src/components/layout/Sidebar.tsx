@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { AppWindow, Database, Flag, Gauge, History, Home, KeyRound, ListChecks, Plug, Send, Settings, UserCircle, UserCog, Share2, type LucideIcon } from "lucide-react";
+import { AppWindow, Database, Flag, Gauge, History, Home, KeyRound, LifeBuoy, ListChecks, Plug, Send, Settings, UserCircle, UserCog, Share2, type LucideIcon } from "lucide-react";
 import { NavLink } from "react-router";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/features/auth/store";
@@ -91,7 +91,18 @@ const navigationItems: NavItem[] = [
         permission: PERMISSIONS.ACCOUNT_READ
       },
       // Ungated: everyone has a profile and a password to change.
-      { labelKey: "myAccount", icon: UserCircle, to: "/settings/my-account", end: false }
+      { labelKey: "myAccount", icon: UserCircle, to: "/settings/my-account", end: false },
+      // Last, so it is where a person scans when nothing else worked. The permission
+      // matches the route's own gate in routes.tsx — DEVICE_READ, the floor every
+      // role holds — so this entry cannot become a nav item pointing at a page the
+      // reader is then refused (#301).
+      {
+        labelKey: "support",
+        icon: LifeBuoy,
+        to: "/settings/support",
+        end: false,
+        permission: PERMISSIONS.DEVICE_READ
+      }
     ]
   }
 ];

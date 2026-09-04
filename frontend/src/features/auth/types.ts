@@ -14,8 +14,12 @@ export interface AuthUser {
 }
 
 /** Mirrors app/core/permissions.py. Hand-maintained: these strings must match the
- *  backend enum values exactly, since a typo here fails open in the UI (the API still
- *  refuses, but the user gets a 403 instead of a hidden control). */
+ *  backend enum values exactly, since a typo here fails *closed* in the UI, silently.
+ *  `useHasPermission` is a plain `.includes()` against the permissions the server
+ *  resolved, so a misspelled constant matches nobody: the control it guards never
+ *  renders, and a route behind `RequirePermission` refuses every account, admin
+ *  included. Nothing 403s, because nothing is ever requested — which is why a typo
+ *  here looks like a missing feature rather than an error. */
 export const PERMISSIONS = {
   DEVICE_READ: "device:read",
   APP_READ: "app:read",

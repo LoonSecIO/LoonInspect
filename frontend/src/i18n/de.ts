@@ -57,7 +57,8 @@ export const de: Translations = {
     sidebarExpanded: "Symbole + Text",
     sidebarCollapsed: "Nur Symbole",
     sidebarHidden: "Ausgeblendet",
-    computersOnlyScope: "Nur Computer — mobile Geräte werden nicht erfasst."
+    computersOnlyScope: "Nur Computer — mobile Geräte werden nicht erfasst.",
+    opensInNewTab: "(wird in einem neuen Tab geöffnet)"
   },
   auth: {
     versionLabel: "Version",
@@ -87,6 +88,13 @@ export const de: Translations = {
     passwordTooShort: "Das Passwort muss mindestens 12 Zeichen lang sein.",
     validationFailed:
       "Einige dieser Angaben wurden nicht akzeptiert. Bitte prüfen Sie das Formular und versuchen Sie es erneut.",
+    loginSupportTitle: "Sie können sich nicht anmelden?",
+    loginSupportBody:
+      "Eine Administratorin oder ein Administrator dieser Instanz kann ein Passwort zurücksetzen oder ein Konto prüfen — das ist der schnellste Weg. Wirkt die Instanz selbst fehlerhaft und nicht nur Ihr Konto, stehen beide Support-Kanäle allen offen.",
+    loginSupportWarning:
+      "Keiner von beiden ist vertraulich: Fügen Sie dort niemals ein Passwort, ein Token oder einen Sicherheitsfund ein.",
+    loginSupportGithub: "Issue auf GitHub anlegen",
+    loginSupportSlack: (channel: string) => `In ${channel} auf MacAdmins Slack fragen`,
     noAccessTitle: "Sie haben keinen Zugriff auf diese Seite",
     noAccessDescription:
       "Die Rolle Ihres Kontos umfasst keine Berechtigung für diesen Bereich. Wenden Sie sich an eine Administratorin oder einen Administrator, falls Sie ihn benötigen."
@@ -118,7 +126,8 @@ export const de: Translations = {
     myAccount: "Mein Konto",
     destinations: "Ziele",
     changes: "Änderungen",
-    changeTracking: "Änderungsverfolgung"
+    changeTracking: "Änderungsverfolgung",
+    support: "Support"
   },
   destinations: {
     title: "Ziele",
@@ -237,6 +246,41 @@ export const de: Translations = {
     errorChanging: "Das Passwort konnte nicht geändert werden.",
     sessionsHint:
       "Beim Ändern des Passworts werden Ihre anderen Sitzungen abgemeldet. API-Token bleiben gültig – widerrufen Sie diese bei Bedarf separat."
+  },
+  support: {
+    title: "Support",
+    description:
+      "Zwei Stellen, an denen Sie Hilfe zu LoonInspect bekommen — und eine Sache, die an keine von beiden gehört. Nichts hier erstellt ein Ticket für Sie: LoonInspect wird selbst gehostet, und einen Bericht schreiben und senden Sie selbst.",
+    buildHeading: "Beginnen Sie mit dem laufenden Build",
+    buildHelp:
+      "Der Build-String dieser Instanz. Fügen Sie ihn in alles ein, was Sie schreiben — er ist das Erste, wonach jede Person fragen muss, die einen Bericht liest, und er entscheidet zwischen einer Antwort und einer Rückfrage.",
+    buildUnavailable:
+      "Noch nicht gelesen. Bleibt das Feld leer, konnte dieser Browser das Backend nicht erreichen — schreiben Sie das in Ihren Bericht und nennen Sie stattdessen das deployte Image-Tag.",
+    copy: "Kopieren",
+    copied: "Kopiert",
+    githubHeading: "GitHub",
+    githubBody: (repo: string) =>
+      `Fehler, Fragen und Feature-Wünsche gehören in den Issue-Tracker unter ${repo}. Sehen Sie zuerst die offenen Issues durch — bei einem dokumentierten Problem steht der Workaround oft daneben — und legen Sie dann eines an, wenn Ihres nicht dabei ist.`,
+    githubInclude:
+      "Ein brauchbarer Bericht besteht aus dem Build-String oben, dem erwarteten Verhalten, dem tatsächlichen Verhalten und dem Weg dorthin. Lassen Sie Gerätenamen, Seriennummern, Hostnamen und E-Mail-Adressen weg. Ein Screenshot von LoonInspect besteht zum großen Teil genau daraus: Die Geräteliste zeigt Hostnamen und Seriennummern, und Ihr eigener Name steht in der Kopfleiste. Schneiden Sie diese Stellen weg oder schwärzen Sie sie, bevor Sie einen Screenshot anhängen.",
+    githubBrowse: "Issues durchsehen",
+    githubOpen: "Issue anlegen",
+    slackHeading: "MacAdmins Slack",
+    slackBody: (channel: string) =>
+      `${channel} ist der Community-Kanal: wie andere etwas eingerichtet haben, ob ein Verhalten erwartbar ist, und die Fragen, die noch kein Fehlerbericht sind. Ein Gespräch, keine Warteschlange — es hat niemand Bereitschaft.`,
+    slackSignupNote: (channel: string) =>
+      `MacAdmins Slack ist eine eigenständige Community mit eigener Anmeldung. Sind Sie bereits in diesem Workspace, öffnet der Kanal-Link ${channel} direkt. Falls nicht, treten Sie zuerst bei — allein bringt der Kanal-Link Sie nicht hinein.`,
+    slackJoin: "MacAdmins Slack beitreten",
+    slackOpenChannel: (channel: string) => `${channel} öffnen`,
+    securityHeading: "Eine Schwachstelle gefunden? Melden Sie sie vertraulich.",
+    securityBody:
+      "Ein Sicherheitsfund gehört nie in ein öffentliches Issue. Melden Sie ihn vertraulich über GitHubs private Vulnerability-Meldung in diesem Repository — Security → Report a vulnerability. Das erreicht die Maintainerin oder den Maintainer direkt und hält die Meldung nicht öffentlich, während ein Fix vorbereitet wird.",
+    securityFallback: (email: string, channel: string) =>
+      `Steht Ihnen dieses Formular nicht zur Verfügung, schreiben Sie stattdessen an ${email}. Auch nicht an ${channel}: dort kann jede Person im Workspace mitlesen.`,
+    securityReport: "Schwachstelle vertraulich melden",
+    securityPolicy: "Sicherheitsrichtlinie lesen",
+    privacyNote:
+      "Diese Seite sendet nichts nach außen. Sie liest den Build-String Ihrer eigenen Instanz und zeigt sechs Links nach außen; es gibt keine Telemetrie darauf, und kein Bericht verlässt diesen Browser, sofern Sie ihn nicht selbst schreiben."
   },
   apiTokens: {
     title: "API-Token",
