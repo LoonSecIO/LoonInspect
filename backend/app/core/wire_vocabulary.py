@@ -34,6 +34,8 @@ strings are minted with no writer, because an enrichment rides inline on the app
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from app.mdm.jamf.contract import SECTIONS
 
 # The producer token leads because `loon:*` is then the one search that finds everything
@@ -210,6 +212,48 @@ CHANGE_EVENT_TYPE = "device.change"
 # #189 decision about a cost measured in fields x events x devices x syncs — ruff
 # rejects the multiplication sign in a comment, so the doc carries the typography.
 SUB_EVENT_KEYS: tuple[str, ...] = ("event", "jobID", "deviceMeta")
+
+
+# Named once rather than spelled in `ordered_event_keys` and `hec_fanout` both: the block
+# that trails every event it appears on is the same block `SUB_EVENT_KEYS` ends with.
+_DEVICE_META_KEY = "deviceMeta"
+
+
+def ordered_event_keys(body: Mapping[str, object]) -> dict[str, object]:
+    """One delivered event, its keys in the order a person reads them (#286).
+
+    `event` and `jobID` first, the family's own keys next in their existing relative
+    order, `deviceMeta` last. This is not a new rule: it is the layout `hec_fanout.fan_out`
+    already builds by hand — head, item, `deviceMeta` — lifted here so the three families
+    that are *not* fanned out obey it too.
+
+    **Why anything had to impose it.** `event_outbox.payload` is `jsonb`, and Postgres
+    normalises object keys by length then bytewise. Whatever order a producer wrote is
+    gone before delivery reads the row, so `device.inventory.changed` was shipping
+    `deviceMeta` wedged between `addedApps` and `occurredAt` — not a choice anyone made,
+    just what the storage engine happened to return. Splunk renders `_raw` in document
+    order, so that ordering is the whole reading experience for a person, and
+    `deviceMeta` is the largest block on the event.
+
+    Key order is semantically nothing: no consumer may depend on it, and none can, since
+    JSON objects are unordered by specification. That is exactly why this is safe to
+    impose after the vocabulary froze — it changes no name, no type, no value, and no
+    sourcetype, so it sits outside the additive-only clauses rather than needing one.
+
+    Deterministic, and that matters: delivery retries the same stored row up to ten times,
+    and the bytes must not move between attempts. This is a pure function of `body`, so
+    they do not.
+
+    A key added later under clause 1 lands in the middle with no edit here — the
+    alternative, a per-family table of key orders, would have to be updated by every
+    future amendment and would be wrong the first time someone forgot.
+    """
+    head = tuple(key for key in SUB_EVENT_KEYS if key != _DEVICE_META_KEY)
+    ordered: dict[str, object] = {key: body[key] for key in head if key in body}
+    ordered.update({key: value for key, value in body.items() if key not in head and key != _DEVICE_META_KEY})
+    if _DEVICE_META_KEY in body:
+        ordered[_DEVICE_META_KEY] = body[_DEVICE_META_KEY]
+    return ordered
 
 
 def sourcetype(wrapper: str, *, vendor: str = "jamf", platform: str = "mac", leaf: str | None = None) -> str:

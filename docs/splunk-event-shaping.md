@@ -395,3 +395,21 @@ size-bounded meta block**. That was the last thing discussed before the context 
 it's the most actionable, and answering it (what fields, what cap, per-connection or
 global config) will likely clarify `days_since` semantics and the embed-vs-namespace
 question along the way, since all three touch the same output object.
+
+---
+
+**Amendment, 2026-09-04 ([#286](https://github.com/LoonSecIO/LoonInspect/issues/286)) — the
+key order of a delivered event is now designed, and is contract.**
+
+The fan-out always laid its sub-events out deliberately — `event`, `jobID`, the item,
+`deviceMeta` last. The three families it does not build had no designed order at all:
+`event_outbox.payload` is `jsonb`, Postgres normalises object keys by length then bytewise,
+so the producer's order was gone before delivery read the row, and `device.inventory.changed`
+was shipping `deviceMeta` between `addedApps` and `occurredAt` for no reason anyone chose.
+
+One rule now covers all four families and both destination shapes (HEC and generic webhook):
+head first, family keys next, `deviceMeta` last. It is stated normatively in
+[`splunk-wire-vocabulary.md` §6a](splunk-wire-vocabulary.md) and implemented as
+`wire_vocabulary.ordered_event_keys`. It is a reading rule, not a wire rule — JSON objects
+are unordered, so nothing may depend on it — which is why it could be imposed after the
+vocabulary froze without touching §5's additive-only clauses.

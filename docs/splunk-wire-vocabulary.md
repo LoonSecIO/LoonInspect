@@ -309,6 +309,39 @@ head key, `occurredAt`, does **not** ride the sub-event: these three are the com
 and the same instant travels beside every sub-event as the envelope's `time`. Under
 additive-only clause 3 omitting it is the reversible direction.
 
+### 6a. The order those keys appear in
+
+Added [#286](https://github.com/LoonSecIO/LoonInspect/issues/286), 2026-09-04. **Every
+delivered event, in every family, on every destination type, is laid out the same way:**
+
+1. `event`, then `jobID` — the head above, minus `deviceMeta`.
+2. The family's own keys, in their existing relative order.
+3. `deviceMeta` last, wherever the family carries it.
+
+This was already the fan-out's layout — *head first, block last* — described one paragraph
+up. #286 lifted it into `wire_vocabulary.ordered_event_keys` and applied it to the three
+families the fan-out does not build (`device.inventory.changed`, the run families,
+`device.change`), which until then had **no designed order at all**: `event_outbox.payload`
+is `jsonb`, Postgres normalises object keys by length then bytewise, and whatever a producer
+wrote was gone before delivery read the row. The delta family was shipping `deviceMeta`
+wedged between `addedApps` and `occurredAt` because that is where key length put it.
+
+**This is a reading rule, not a wire rule, and the distinction is the point.** JSON objects
+are unordered by specification, so no consumer may depend on this and none can — it changes
+no name, no type, no value and no sourcetype. It therefore sits *outside* the additive-only
+clauses of §5 rather than needing one of them, and it is why the order could be imposed
+after the vocabulary froze. What it buys is entirely human: Splunk renders `_raw` in
+document order, `deviceMeta` is the largest block on the event, and a person reading an
+event should not scroll past the biggest thing on it to reach the smallest.
+
+A key added later under clause 1 lands in the middle with no edit to the rule. The
+alternative considered and refused was a per-family table of key orders, which every future
+amendment would have to update and which would be wrong the first time someone forgot.
+
+Pinned in `tests/test_hec_fanout.py` by assertions over `list(body)` — deliberately not
+`set(body)`, which every older assertion in that file uses and which is order-blind, which
+is why the missing order went unnoticed until events were read in Splunk.
+
 ## 7. What is ruled here but not yet built
 
 The vocabulary is frozen; what follows from it and is not yet implemented has its own
