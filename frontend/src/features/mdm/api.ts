@@ -3,6 +3,7 @@ import type {
   Collection,
   CollectionInput,
   CollectionRunResult,
+  CollectionSummary,
   MdmConnection,
   MdmConnectionInput,
   MdmConnectionTestInput,
@@ -12,6 +13,7 @@ import type {
   ProviderInfo,
   Run,
   RunLogResponse,
+  RunSummary,
   SectionInfo
 } from "@/features/mdm/types";
 
@@ -61,6 +63,17 @@ export function listRuns(connectionId?: number, limit = 25): Promise<Run[]> {
   return apiRequest<Run[]>(`/runs?${query.toString()}`);
 }
 
+/** The status strip's run facts, one row per connection (#105): which run the stamp
+ *  names, how many webhook sweeps have landed since it, and what ran most recently.
+ *
+ *  Not derivable from `listRuns` — see `RunSummary` and `docs/runs.md` §8. */
+export function listRunSummaries(connectionId?: number): Promise<RunSummary[]> {
+  const query = new URLSearchParams();
+  if (connectionId !== undefined) query.set("connectionId", String(connectionId));
+  const suffix = query.toString();
+  return apiRequest<RunSummary[]>(`/runs/summary${suffix ? `?${suffix}` : ""}`);
+}
+
 /** Engine lines for one run, incrementally. `after` is the last line id already held,
  *  so a poll transfers only what appeared since rather than the whole log each tick. */
 export function getRunLog(jobId: string, after = 0): Promise<RunLogResponse> {
@@ -75,9 +88,13 @@ export function listCollections(connectionId: number): Promise<Collection[]> {
 
 /** Every collection in the tenant, across connections (#106). For callers asking a
  *  question about the pod rather than about one connection — the alternative was a
- *  request per connection on every poll of the front page. */
-export function listAllCollections(): Promise<Collection[]> {
-  return apiRequest<Collection[]>("/mdm/collections");
+ *  request per connection on every poll of the front page.
+ *
+ *  Answers with `CollectionSummary`, not `Collection`: this is a sixty-second poll on
+ *  the most-open page in the product, and the configuration half of the row — the
+ *  operator's `selector` RSQL above all — is read by nothing here. */
+export function listAllCollections(): Promise<CollectionSummary[]> {
+  return apiRequest<CollectionSummary[]>("/mdm/collections");
 }
 
 export function createCollection(connectionId: number, input: CollectionInput): Promise<Collection> {

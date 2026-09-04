@@ -329,7 +329,11 @@ export const en = {
       kinds: {
         run_failed: "Sync failed",
         destination_failing: "Deliveries are failing",
-        collection_overdue: "Never started",
+        // NOT "Never started", which was the first spelling and reads as a claim about
+        // the collection's whole life — an admin whose nightly sweep has run for a year
+        // and missed tonight's tick goes hunting for a broken schedule. `next_due_at`
+        // advances at claim, so what actually happened is that nothing picked this up.
+        collection_overdue: "Nothing started it",
         inventory_stale: "Inventory is stale",
         update_available: "A newer build is available",
         // #101. "New app" and not "unapproved app": the product knows the Mac did not
@@ -337,6 +341,10 @@ export const en = {
         // approved it. The app name and the Mac are interpolated beside this.
         new_app: "New app installed"
       },
+      // The collapsed overdue row. One dead tick puts every enabled collection past due
+      // inside the same hour, and five rows naming five collections name nothing that
+      // can be fixed — so above one they become this, which names the scheduler.
+      schedulerStalled: (count: number) => `${count} collections came due and nothing started them — check the scheduler`,
       checkNames: {
         run_failed: "recent runs",
         destination_failing: "destinations",
@@ -346,7 +354,46 @@ export const en = {
         new_app: "new applications"
       },
       couldNotCheck: (what: string) => `Could not check ${what}`,
-      andMore: (count: number) => `${count} more ${count === 1 ? "item needs" : "items need"} attention`
+      // The footer under a capped list: N *beyond* the five on screen.
+      andMore: (count: number) => `${count} more ${count === 1 ? "item needs" : "items need"} attention`,
+      // The sidebar badge's label, and deliberately not `andMore`: this count is the
+      // whole list, not the remainder of one, and a badge announcing "3 more items"
+      // when three is everything is simply wrong.
+      badge: (count: number) => `${count} ${count === 1 ? "item needs" : "items need"} attention`
+    },
+
+    // The status strip (#105). One line per connection, states facts only, never turns
+    // red — a threshold breach is a Needs Attention row (#106), not a colour here.
+    // Every relative and plural form is a function rather than a concatenation: German
+    // puts the relation in front ("vor 2 Std."), so a component appending a translated
+    // suffix to a number would render "2 Std. vor".
+    strip: {
+      identity: (name: string, host: string) => `${name} (${host})`,
+      // Grouped in this language's own convention, matching `baselineCounts` above.
+      devices: (n: number) => `${n.toLocaleString("en-US")} device${n === 1 ? "" : "s"}`,
+      // Not "0 devices". A connection with no sync state has not measured zero devices;
+      // it has not measured anything, and the two are different claims.
+      noInventoryYet: "no inventory yet",
+      inventoryAsOf: (utc: string, age: string) => `inventory as of ${utc} (${age})`,
+      agoNow: "just now",
+      agoMinutes: (n: number) => `${n}m ago`,
+      agoHours: (n: number) => `${n}h ago`,
+      agoDays: (n: number) => `${n}d ago`,
+      // The compound stamp, docs/runs.md §8: the id names the last completed FULL sweep,
+      // and the "+N" clause is what admits the numbers beside it may be newer.
+      fullSweep: "full sweep",
+      webhookSweepsSince: (n: number) => `+${n} webhook sweep${n === 1 ? "" : "s"} since`,
+      noFullSweepYet: "no full sweep yet",
+      copied: "job ID copied",
+      nextSweep: (when: string) => `next sweep ${when}`,
+      noScheduledSweep: "no scheduled sweep",
+      sweepsPaused: "sweeps paused",
+      destinationOk: (name: string, utc: string) => `${name} OK ${utc}`,
+      destinationLastDelivered: (name: string, utc: string) => `${name} last delivered ${utc}`,
+      destinationNothingYet: (name: string) => `${name} nothing delivered yet`,
+      // Said rather than left blank. Every fact on this line would be stale, and a line
+      // that disappeared would read as "nothing to report".
+      loadError: "Connection status could not be loaded."
     },
 
     // The changes feed (#107). The anchor is per-browser, but the instant it names is

@@ -4,7 +4,7 @@ import { listAlerts } from "@/features/alerts/api";
 import { useAuthStore } from "@/features/auth/store";
 import { PERMISSIONS, type PermissionName } from "@/features/auth/types";
 import { listDestinations } from "@/features/destinations/api";
-import { listAllCollections, listConnections, listRuns } from "@/features/mdm/api";
+import { listAllCollections, listConnections } from "@/features/mdm/api";
 import { getUpdateStatus } from "@/features/system/api";
 import {
   composeAttention,
@@ -13,11 +13,6 @@ import {
   type AttentionRow,
   type Fetched
 } from "@/features/overview/needsAttention";
-
-/** Enough recent runs to hold the newest one of every connection and lock class on a
- *  pod with a handful of connections, without paging. The page already asks for fifty
- *  for the hero. */
-const RUN_WINDOW = 50;
 
 /** How many open latches to fetch (#101). Twice the cap, and no more: the endpoint
  *  returns them oldest first — the same order the composition ranks by within a level —
@@ -30,12 +25,36 @@ interface AttentionStore {
   rows: AttentionRow[];
   dropped: number;
   degraded: AttentionKind[];
+  /** Everything the panel would render, uncapped — the number on the sidebar badge. */
+  total: number;
   /** Null until the first load finishes. The panel shows nothing rather than an
    *  all-clear line dated to a check that has not run yet. */
   checkedAt: string | null;
   loading: boolean;
   loadAttention: () => Promise<void>;
 }
+
+/** What the store holds before anything has been checked, and what it is put back to
+ *  when the session changes underneath it. Written once so "empty" cannot come to mean
+ *  two different things in two places. */
+const NOTHING_CHECKED = {
+  rows: [] as AttentionRow[],
+  dropped: 0,
+  degraded: [] as AttentionKind[],
+  total: 0,
+  checkedAt: null,
+  loading: false
+};
+
+/**
+ * Which session the current contents belong to.
+ *
+ * Bumped on every reset, and read back by `loadAttention` after its awaits. A load that
+ * started as the admin can finish after the viewer has signed in — four requests take
+ * long enough for that to be ordinary, not exotic — and without this guard it would
+ * write the admin's rows into the viewer's store *after* the reset cleared them.
+ */
+let generation = 0;
 
 /**
  * Wrap a request so a refusal is distinguishable from a failure.
@@ -67,17 +86,17 @@ async function attempt<T>(allowed: boolean, request: () => Promise<T>): Promise<
  *
  * The cost of that choice, stated rather than hidden: the badge is only as fresh as the
  * last `loadAttention()`, so on a cold load of `/devices` it is blank until `/` has been
- * visited once. Mounting the loader app-wide would fix it and would spend six requests
+ * visited once. Mounting the loader app-wide would fix it and would spend five requests
  * on every page in the product to keep a number on a nav item warm.
+ *
+ * The other cost of a module singleton is that it outlives the session, and that one is
+ * not acceptable — see the subscription at the bottom of this file.
  */
 export const useAttentionStore = create<AttentionStore>((set) => ({
-  rows: [],
-  dropped: 0,
-  degraded: [],
-  checkedAt: null,
-  loading: false,
+  ...NOTHING_CHECKED,
 
   async loadAttention() {
+    const mine = generation;
     set({ loading: true });
     // `permissions` arrives from the server as plain strings, so the set is of strings
     // and the constants are what narrow it — the reverse would make an unknown
@@ -85,8 +104,11 @@ export const useAttentionStore = create<AttentionStore>((set) => ({
     const granted = new Set<string>(useAuthStore.getState().user?.permissions ?? []);
     const can = (permission: PermissionName) => granted.has(permission);
 
-    const [runs, collections, connections, destinations, update, alerts] = await Promise.all([
-      attempt(can(PERMISSIONS.CONNECTION_READ), () => listRuns(undefined, RUN_WINDOW)),
+    const [collections, connections, destinations, update, alerts] = await Promise.all([
+      // Three of the six checks read this one list — failed run, overdue, stale — and
+      // it is the tenant-wide summary rather than a page of `/api/runs`, for the reason
+      // written out in `needsAttention.ts`: the webhook path mints a run row per Jamf
+      // event and a 50-row window over that is blind by 03:25.
       attempt(can(PERMISSIONS.CONNECTION_READ), listAllCollections),
       attempt(can(PERMISSIONS.CONNECTION_READ), listConnections),
       attempt(can(PERMISSIONS.DESTINATION_READ), listDestinations),
@@ -97,9 +119,12 @@ export const useAttentionStore = create<AttentionStore>((set) => ({
       attempt(can(PERMISSIONS.DEVICE_READ), () => listAlerts({ open: true, pageSize: ALERT_WINDOW }))
     ]);
 
+    // The session changed while these were in flight. Whatever came back describes
+    // somebody else's pod, or somebody else's permissions, and must not be shown.
+    if (mine !== generation) return;
+
     const result = composeAttention({
       now: new Date(),
-      runs,
       collections,
       connections,
       destinations,
@@ -110,8 +135,34 @@ export const useAttentionStore = create<AttentionStore>((set) => ({
       rows: result.rows,
       dropped: result.dropped,
       degraded: result.degraded,
+      total: result.total,
       checkedAt: result.checkedAt,
       loading: false
     });
   }
 }));
+
+/**
+ * Forget everything the moment the session changes.
+ *
+ * A module singleton survives sign-out, a 401 (`setUnauthorizedHandler` clears the auth
+ * store without unmounting the app), and a same-tab account switch. Without this, an
+ * admin's count stays on the sidebar badge into a viewer's session — on *every* page,
+ * because the badge renders app-wide — and the viewer cannot clear it: `loadAttention`
+ * is only ever called from the panel on `/`, which their role's missing permissions make
+ * an all-`denied` no-op. A stale red number the user has no way to dismiss is worse than
+ * no badge at all.
+ *
+ * Keyed on the user id rather than on `status`, because the case this exists for is two
+ * *authenticated* states in a row. Subscribing here rather than resetting inside
+ * `logout()` keeps the one path that clears this store from depending on which of the
+ * three ways out of a session was taken.
+ */
+let signedInAs: string | null = useAuthStore.getState().user?.id ?? null;
+useAuthStore.subscribe((state) => {
+  const id = state.user?.id ?? null;
+  if (id === signedInAs) return;
+  signedInAs = id;
+  generation += 1;
+  useAttentionStore.setState({ ...NOTHING_CHECKED });
+});

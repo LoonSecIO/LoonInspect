@@ -320,7 +320,10 @@ export const de: Translations = {
       kinds: {
         run_failed: "Synchronisierung fehlgeschlagen",
         destination_failing: "Zustellungen schlagen fehl",
-        collection_overdue: "Nie gestartet",
+        // Nicht „Nie gestartet“: das las sich als Aussage über die gesamte Laufzeit der
+        // Sammlung. `next_due_at` wird beim Anfordern weitergestellt — passiert ist
+        // also, dass niemand sie abgeholt hat.
+        collection_overdue: "Nichts hat sie gestartet",
         inventory_stale: "Inventar ist veraltet",
         update_available: "Ein neuerer Build ist verfügbar",
         // #101. „Neue App“ und nicht „nicht genehmigte App“: bekannt ist nur, dass der
@@ -328,6 +331,11 @@ export const de: Translations = {
         // Produkt nichts. Name der App und Mac stehen daneben.
         new_app: "Neue App installiert"
       },
+      // Der zusammengefasste Eintrag: ein ausgefallener Tick lässt binnen einer Stunde
+      // jede aktivierte Sammlung überfällig werden, und fünf Zeilen mit fünf Namen
+      // benennen nichts, was man reparieren kann.
+      schedulerStalled: (count: number) =>
+        `${count} Sammlungen wurden fällig und nichts hat sie gestartet — bitte die Zeitplanung prüfen`,
       checkNames: {
         run_failed: "letzte Durchläufe",
         destination_failing: "Ziele",
@@ -337,8 +345,44 @@ export const de: Translations = {
         new_app: "neue Anwendungen"
       },
       couldNotCheck: (what: string) => `${what} konnten nicht geprüft werden`,
+      // Die Fußzeile einer gekürzten Liste: N *zusätzlich* zu den fünf angezeigten.
       andMore: (count: number) =>
-        `${count} weitere${count === 1 ? "r Punkt erfordert" : " Punkte erfordern"} Aufmerksamkeit`
+        `${count} weitere${count === 1 ? "r Punkt erfordert" : " Punkte erfordern"} Aufmerksamkeit`,
+      // Die Beschriftung der Kennzahl in der Seitenleiste — bewusst nicht `andMore`:
+      // hier ist die Zahl die ganze Liste, nicht deren Rest.
+      badge: (count: number) =>
+        `${count} ${count === 1 ? "Eintrag erfordert" : "Einträge erfordern"} Aufmerksamkeit`
+    },
+
+    // Die Statuszeile (#105). Eine Zeile pro Verbindung, nennt nur Tatsachen und wird
+    // nie rot — eine überschrittene Schwelle ist ein Eintrag unter „Handlungsbedarf“
+    // (#106), keine Farbe hier. Jede relative und jede Pluralform ist eine Funktion:
+    // Deutsch stellt die Relation voran („vor 2 Std.“), eine im Bauteil angehängte
+    // Endung ergäbe „2 Std. vor“.
+    strip: {
+      identity: (name: string, host: string) => `${name} (${host})`,
+      devices: (n: number) => `${n.toLocaleString("de-DE")} Gerät${n === 1 ? "" : "e"}`,
+      // Nicht „0 Geräte“: eine Verbindung ohne Sync-Status hat nicht null Geräte
+      // gemessen, sondern noch gar nichts.
+      noInventoryYet: "noch kein Inventar",
+      inventoryAsOf: (utc: string, age: string) => `Inventar vom ${utc} (${age})`,
+      agoNow: "gerade eben",
+      agoMinutes: (n: number) => `vor ${n} Min.`,
+      agoHours: (n: number) => `vor ${n} Std.`,
+      agoDays: (n: number) => `vor ${n} ${n === 1 ? "Tag" : "Tagen"}`,
+      fullSweep: "vollständiger Durchlauf",
+      // Der Plural von „Durchlauf“ ist „Durchläufe“, nicht „Durchlaufe“ — eine
+      // angehängte Endung reicht hier nicht, das Wort bekommt einen Umlaut.
+      webhookSweepsSince: (n: number) => `+${n} Webhook-${n === 1 ? "Durchlauf" : "Durchläufe"} seitdem`,
+      noFullSweepYet: "noch kein vollständiger Durchlauf",
+      copied: "Job-ID kopiert",
+      nextSweep: (when: string) => `nächster Durchlauf ${when}`,
+      noScheduledSweep: "kein Durchlauf geplant",
+      sweepsPaused: "Durchläufe pausiert",
+      destinationOk: (name: string, utc: string) => `${name} OK ${utc}`,
+      destinationLastDelivered: (name: string, utc: string) => `${name} zuletzt zugestellt ${utc}`,
+      destinationNothingYet: (name: string) => `${name} noch nichts zugestellt`,
+      loadError: "Der Verbindungsstatus konnte nicht geladen werden."
     },
 
     // Der Änderungs-Feed (#107). Der Bezugspunkt ist browser-lokal, der genannte
