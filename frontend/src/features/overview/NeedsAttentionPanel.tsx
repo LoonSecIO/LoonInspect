@@ -173,11 +173,15 @@ export function NeedsAttentionPanel() {
 
   // Nothing was examined, so nothing is attested.
   //
-  // `Role.viewer` holds inventory read and nothing else, and `/` is not role-gated, so
-  // every check this panel makes came back denied and the composition produced no rows
-  // and no degraded entries. That emptiness used to reach the green line — a dated
-  // all-clear about a fleet on which zero checks had run, handed to the one role least
+  // Every check this session can make came back denied, so the composition produced no
+  // rows and no degraded entries. That emptiness used to reach the green line — a dated
+  // all-clear about a fleet on which zero checks had run, handed to the session least
   // able to notice it was hollow. Failure must never read as emptiness (#150).
+  //
+  // Written for `Role.viewer`, which had all four checks denied. Since #101 a Viewer
+  // holds the alerts check (`device:read` + `app:read`) and so is no longer blind — see
+  // the note in `needsAttention.ts`. The state is still live for a principal denied all
+  // four, and for any future role that is.
   //
   // No timestamp on this state, deliberately. A clock here would date *something*, and
   // the only honest thing to date is a check, of which there were none. It is also not

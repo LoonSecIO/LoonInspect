@@ -46,16 +46,30 @@ import type { UpdateStatusResponse } from "@/features/system/api";
  * two backwards is the single highest-consequence mistake available in this file.
  *
  * That rationale is about a *partial* denial, and it stops being true at the end of its
- * own range. `Role.viewer` holds inventory read and nothing else
- * (`backend/app/core/permissions.py`), so every input this panel checks resolves
- * `denied` — and silence over all of them left `rows` and `degraded` both empty, which
- * is indistinguishable from a clean fleet. `/` is not role-gated, so a viewer opened the
- * front page and was handed *"Nothing needs your attention · checked 08:14 UTC"*: a
- * dated attestation about a fleet on which zero checks had executed. `blind` is the
- * whole-range case, and it is not a fifth `denied` row — it is the panel saying which
- * question it is not in a position to answer. Failure must never read as emptiness
- * (#150), and saying what the product cannot see is the doctrine (#251), not a gap to
- * paper over.
+ * own range. When **every** input resolves `denied`, silence over all of them leaves
+ * `rows` and `degraded` both empty, which is indistinguishable from a clean fleet — and
+ * `/` is not role-gated, so such a session opened the front page and was handed
+ * *"Nothing needs your attention · checked 08:14 UTC"*: a dated attestation about a
+ * fleet on which zero checks had executed. `blind` is that whole-range case, and it is
+ * not a sixth `denied` row — it is the panel saying which question it is not in a
+ * position to answer. Failure must never read as emptiness (#150), and saying what the
+ * product cannot see is the doctrine (#251), not a gap to paper over.
+ *
+ * **What #101 changed about who reaches it, stated because the old note said otherwise.**
+ * `blind` was written for `Role.viewer`, which holds `_INVENTORY_READ` and nothing else
+ * (`backend/app/core/permissions.py`) and therefore had every one of the four checks
+ * denied. The alerts check is gated on `device:read` + `app:read` — which a Viewer
+ * *holds* — so a Viewer now resolves one check of four and is no longer blind. Executed,
+ * not assumed: a Viewer with no open latch composes `blind=false, rows=0, degraded=0`,
+ * and `isAllClear` therefore prints the dated line over three checks that were refused.
+ *
+ * That is the partial-denial branch of the same ruling, applied consistently — a Viewer
+ * genuinely did examine something, and the ruling is explicit that a partial denial is
+ * silent and does not withhold the line. But it means no *role* reaches `blind` today;
+ * it is now reached only by a principal denied all four, such as an API token scoped
+ * away from inventory read. Whether the all-clear should still be printable when the
+ * only check that ran is about apps rather than the pipeline is a question for a ruling,
+ * not for this file to decide on its own.
  *
  * ## Stored latest-fields, and why there is no page of runs here
  *
