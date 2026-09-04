@@ -632,6 +632,87 @@ async def test_a_reclaimed_webhook_run_marks_no_collection(db, connection, sweep
     assert sweep.last_run_status == before
 
 
+async def test_a_mark_that_cannot_be_written_still_frees_the_lock(
+    db, connection, sweep, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The mark may be dropped. It may never take the verdicts — or the mutex — with it.
+
+    The stamp above rides in the verdicts' transaction on purpose, so that a collection's
+    cached outcome and its run's verdict cannot disagree. Bare in that transaction it also
+    inherited the power to abort it: an UPDATE that raised propagated out of
+    `_reclaim_stale` and out of `acquire` with the verdicts uncommitted, so every run the
+    reclaim had just failed stayed `running` and the lock it exists to free stayed held —
+    on every connection in the tenant, since every acquisition runs the reclaim. That is a
+    strictly worse failure than the blind panel the stamp was added to fix: a panel reads
+    one morning wrong, a wedged mutex never syncs again.
+
+    So the mark sits in a savepoint. Here it half-writes and then hits a statement the
+    database rejects — not a bare `raise`, which a plain `try/except` would swallow just
+    as well, but the real thing: an aborted transaction, which nothing short of a
+    savepoint gets back. Three things must survive it, and do: the verdict is committed
+    and durable, the lock is free, and the session the caller is still holding is usable
+    (`acquire` reads `connection.id` on the line after the reclaim returns). What is lost
+    is the stamp itself, half-write included — the collection reads `ok` beside a run
+    reading `failed`, which is exactly the original defect, now narrowed to the case where
+    the UPDATE genuinely cannot be performed. That loss is asserted rather than merely
+    tolerated, so nobody re-fixes it by wedging the lock again.
+    """
+    from sqlalchemy import text
+    from sqlalchemy import update as sa_update
+
+    from app.core import runs as runs_module
+    from app.core.database import session_for_tenant
+    from app.core.runs import LOCK_DEVICE_SWEEP, STATUS_FAILED, STATUS_RUNNING, TRIGGER_SWEEP, acquire
+    from app.core.tenancy import OPERATIONAL_TENANT_ID
+    from app.models.schema import Collection, Run
+
+    sweep.last_run_at = None
+    sweep.last_run_status = "ok"
+    await db.commit()
+
+    dead = await acquire(
+        db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP, collection_id=sweep.id
+    )
+    assert dead.started
+    await _kill_the_process(db, dead.run.id)
+
+    async def _boom(session, rows, *, error: str) -> None:
+        await session.execute(
+            sa_update(Collection).where(Collection.id == sweep.id).values(last_run_status="failed")
+        )
+        await session.execute(text("SELECT 1 / 0"))
+
+    monkeypatch.setattr(runs_module, "_mark_collections_reclaimed", _boom)
+
+    # The lock is free: this acquisition both survives the raise and takes the mutex.
+    revived = await acquire(db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP)
+    assert revived.started and revived.run.id != dead.run.id
+
+    # Committed, not merely pending in the session that did it. A second session is the
+    # only witness that can tell those two apart.
+    async with session_for_tenant(OPERATIONAL_TENANT_ID) as witness:
+        verdict = (await witness.execute(select(Run).where(Run.id == dead.run.id))).scalar_one()
+        assert verdict.status == STATUS_FAILED
+        assert "heartbeat" in (verdict.error or "")
+        assert verdict.finished_at is not None
+        still_held = (
+            await witness.execute(
+                select(Run.id).where(
+                    Run.mdm_connection_id == connection.id,
+                    Run.lock_class == LOCK_DEVICE_SWEEP,
+                    Run.status == STATUS_RUNNING,
+                )
+            )
+        ).scalars().all()
+        assert still_held == [revived.run.id]
+
+    # The disclosed cost of that guarantee, in the same breath as the guarantee — and the
+    # half-written `failed` above went back with the savepoint rather than committing as
+    # a stamp no complete mark ever stood behind.
+    await db.refresh(sweep)
+    assert sweep.last_run_status == "ok"
+
+
 # --- A skip is not a result ------------------------------------------------------------
 
 

@@ -508,7 +508,13 @@ async def _reclaim_stale(db: AsyncSession) -> int:
     UPDATE is the one statement here that must not be hostage to anything else.
 
     **The collection the run served is stamped too, and it rides WITH the verdict** —
-    `_mark_collections_reclaimed`, below, and the one thing here that is not best-effort.
+    `_mark_collections_reclaimed`, below — but in a savepoint, so that riding with the
+    verdict never means outranking it. It went in without one, and the paragraph above
+    stopped being true the moment it did: a mark that raised propagated out of this
+    function and out of `acquire` with the verdicts uncommitted, so the reclaim wedged
+    the very mutex it exists to free, on every connection in the tenant. The savepoint
+    keeps the pairing on the ordinary path — one commit, no window for the two rows to
+    disagree — and drops only a mark that genuinely cannot be written.
     `collections.last_run_status` was written in four places, all of them inside the live
     frame that performs a run; when that frame's process dies there is nobody left to
     write it, so the run row read `failed` while the collection it served went on reading
@@ -544,11 +550,27 @@ async def _reclaim_stale(db: AsyncSession) -> int:
     )
     reclaimed = result.all()
     if reclaimed:
-        # In the same transaction as the verdicts, deliberately — see the function's own
-        # docstring for why this one is not held to `_emit_after_release`'s rule.
-        await _mark_collections_reclaimed(db, reclaimed, error=error)
-        # The verdicts alone. Every lock this reclaim freed is free from here on, whatever
-        # happens to the recording below.
+        try:
+            # In the same transaction as the verdicts, deliberately — see the function's
+            # own docstring for why this one is not held to `_emit_after_release`'s rule
+            # — but inside a savepoint, for the reason `acquire`'s INSERT is: a mark that
+            # cannot be written unwinds alone, and the commit below still happens.
+            async with db.begin_nested():
+                await _mark_collections_reclaimed(db, reclaimed, error=error)
+        except Exception:
+            # The collection keeps whatever it last read, so this is #106's blind panel
+            # again — for these collections only, and only when the UPDATE itself failed.
+            # That is the disclosed cost of never letting this stop the line below.
+            logger.exception(
+                "reclaimed runs but could not stamp the collections they served",
+                extra={
+                    "run_ids": [str(row.id) for row in reclaimed],
+                    "collection_ids": [row.collection_id for row in reclaimed if row.collection_id],
+                },
+            )
+        # The verdicts, and the marks that could be written with them. Every lock this
+        # reclaim freed is free from here on, whatever happens to the recording below —
+        # and whatever happened to the marking above.
         await db.commit()
         logger.warning(
             "reclaimed runs with no heartbeat",
@@ -582,6 +604,24 @@ async def _mark_collections_reclaimed(db: AsyncSession, reclaimed, *, error: str
     full disk, asyncpg's bind-parameter ceiling — poisoning the transaction of every
     acquisition in the tenant. These are UPDATEs of rows that already exist, keyed by
     primary key, one per stale run and so bounded by connections times lock classes.
+
+    **And why the caller wraps it in a savepoint anyway.** All of that argues the pairing
+    is worth having; none of it argues the pairing may outrank the lock, and bare in the
+    verdicts' transaction it did. "Unlikely" is not "impossible": any raise in here — a
+    statement timeout, a deadlock with the in-frame writer this exists to stand in for, a
+    bug in the values above — aborted the transaction the lock-freeing UPDATE was sitting
+    in, so every run the reclaim had just failed stayed `running` and every acquisition
+    on the connection failed from then on. A blind panel is one morning read wrong; a
+    wedged mutex is a fleet that never syncs again until someone edits the database by
+    hand. The savepoint concedes nothing on the ordinary path — mark and verdict still
+    commit together in one transaction, and there is no gap between two commits for a
+    crash to land in, which is what moving this after the commit would have cost. It
+    concedes only the failing case: the mark is dropped, the run reads `failed` beside a
+    collection still reading `ok`, and #106's panel is blind about that collection. That
+    is precisely the defect this function was written to fix, narrowed from *every killed
+    sweep* to *an UPDATE that cannot be performed*, and logged by the caller when it
+    happens instead of passing silently. Pinned by
+    `test_a_mark_that_cannot_be_written_still_frees_the_lock`.
 
     **The freshness guard is what keeps it from lying in the other direction.**
     `collections.last_run_at` is the attempt's start, always later than the start of the
