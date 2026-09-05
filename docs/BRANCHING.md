@@ -279,8 +279,8 @@ and is never reused.
 | BR-03 | Branch is merged within 5 calendar days of its first commit | `ci` | warn | proposed |
 | BR-04 | Head branch is deleted automatically on merge | `repo-setting` | block | active |
 | BR-05 | A branch name that has previously merged is never reused | `ci` | block | proposed |
-| BR-06 | `main` accepts no direct pushes; all changes arrive by pull request | `ruleset` | block | blocked |
-| BR-07 | `main` cannot be force-pushed or deleted | `ruleset` | block | blocked |
+| BR-06 | `main` accepts no direct pushes; all changes arrive by pull request | `ruleset` | block | active |
+| BR-07 | `main` cannot be force-pushed or deleted | `ruleset` | block | active |
 | BR-08 | An `inspect-NNNN/` branch's number is an open GitHub issue, zero-padded to four digits | `ci` | block | proposed |
 
 ### 6.2 Commit and content controls
@@ -289,7 +289,7 @@ and is never reused.
 | --- | --- | --- | --- | --- |
 | CM-01 | Pull request title matches the squash-subject format in §5 | `ci` | block | proposed |
 | CM-02 | No branch contains consecutive commits with identical subjects | `ci` | warn | proposed |
-| CM-03 | No secret material or local state is committed (`.env`, `*.db`, keys, tokens) | `ci` | block | active (detection); prevention `blocked` — see §8.3 |
+| CM-03 | No secret material or local state is committed (`.env`, `*.db`, keys, tokens) | `ci` | block | active — detection (TruffleHog) and prevention (push protection, since 2026-09-05); see §8.3 |
 | CM-04 | Diff excludes editor and OS artefacts (`.idea/`, `.vscode/`, `.DS_Store`) | `ci` | block | proposed |
 | CM-05 | `README.md` makes no claim the codebase does not back | `ci` | block | active — see §7 |
 
@@ -303,7 +303,7 @@ and is never reused.
 | PR-04 | Frontend typechecks and lints clean | `ci` | block | active |
 | PR-05 | Backend test suite passes | `ci` | block | active |
 | PR-06 | Schema changes ship with an Alembic migration | `ci` | warn | proposed |
-| PR-07 | Every required status check passes before merge is available | `ruleset` | block | blocked |
+| PR-07 | Every required status check passes before merge is available | `ruleset` | block | active |
 | PR-08 | Agent-authored changes are read in full by a human before merge | `review` | manual | proposed |
 | PR-09 | An `inspect-NNNN/` pull request body closes its issue with `Closes #NNNN` | `ci` | block | proposed |
 
@@ -316,8 +316,8 @@ becomes enforceable as a required approval once a second maintainer exists.
 | ID | Control | Enforcement | Severity | Status |
 | --- | --- | --- | --- | --- |
 | MG-01 | Squash is the only permitted merge method | `repo-setting` | block | active |
-| MG-02 | `main` maintains linear history | `ruleset` | block | blocked |
-| MG-03 | Branch is up to date with `main` before merge | `ruleset` | block | blocked |
+| MG-02 | `main` maintains linear history | `ruleset` | block | active |
+| MG-03 | Branch is up to date with `main` before merge | `ruleset` | block | active |
 
 ### 6.5 Agent isolation controls
 
@@ -325,7 +325,7 @@ becomes enforceable as a required approval once a second maintainer exists.
 | --- | --- | --- | --- | --- |
 | AG-01 | Concurrent agent sessions use separate worktrees on separate branches | `review` | manual | proposed |
 | AG-02 | Each worktree has its own `.env`, compose project name, and backend port | `review` | manual | proposed |
-| AG-03 | No agent session commits directly to `main` | `ruleset` | block | blocked |
+| AG-03 | No agent session commits directly to `main` | `ruleset` | block | active |
 
 ---
 
@@ -554,27 +554,25 @@ is reviewable and reproducible:
 - `.github/scripts/apply-repo-config.sh` — applies it, plus the plain repository
   settings, idempotently. `--dry-run` shows what would change.
 
-**Rulesets are blocked on the GitHub plan.** `LoonSecIO` is on the free plan and
-this repository is private, a combination for which the rulesets and branch
-protection APIs return `403`. Secret scanning and push protection are gated the
-same way. The definition and the script are complete and correct; nothing in
-them needs revisiting when the constraint lifts, which is why the affected
-controls are `blocked` rather than `proposed`.
+**Unblocked at the flip, 2026-09-05.** While the repository was private on the free
+plan the rulesets and branch-protection APIs returned `403`, and secret scanning and
+push protection were gated the same way; the definition and the script were written
+against that constraint and carried the affected controls as `blocked`. The repository
+went public on 2026-09-05 and `apply-repo-config.sh` was re-run the same day: the `main`
+ruleset was accepted and is `active` (five required checks, strict), secret scanning and
+push protection are enabled, and private vulnerability reporting — SECURITY.md's
+disclosure channel — is on. BR-06, BR-07, MG-02, MG-03, PR-07 and AG-03 moved from
+`blocked` to `active`; CM-03 is active for prevention as well as detection.
 
-**This resolves itself.** The repository goes public during the release
-schedule in §8.2. Every blocked control here becomes available at no cost at the
-flip, because the constraint is the combination of *private* and *free* rather
-than either alone. Paying for GitHub Team to unblock rulesets sooner would buy
-about four weeks and would not cover secret scanning, which needs Advanced
-Security on top; it is not worth it.
+Two settings the script applies that §6 does not name: fork pull-request workflow runs
+need a maintainer's approval for every outside contributor, because a fork's run
+executes the fork's code on this repository's runners; and GitHub's non-provider secret
+patterns are requested alongside provider scanning (the API accepted the request on
+flip day and read the setting back as disabled — unresolved, and TruffleHog covers
+that class in the meantime).
 
-The controls are therefore `blocked` in the same sense SF-01 is: agreed,
-implemented, waiting on something with a known date. Running
-`apply-repo-config.sh` again after the flip is the whole of the remaining work,
-and §8.2 places it in the quiet window rather than at the announcement.
-
-What is enforced today: BR-04 and MG-01 through repository settings, and PR-04
-through the CI workflow. Everything else in step 1 is `blocked`.
+What is enforced today: everything in step 1. What remains `proposed` is the policy
+workflow (step 2) and everything after it.
 
 ### 8.2 The release schedule
 
@@ -674,8 +672,8 @@ opt-in per clone, and per worktree, which matters given §4:
 git config core.hooksPath .githooks
 ```
 
-CM-03 is therefore recorded as `active` for detection with prevention still
-`blocked`, rather than as a single satisfied control.
+CM-03 was recorded as `active` for detection with prevention `blocked` until the
+flip; since 2026-09-05 both halves are active.
 
 The blocking jobs use `--only-verified`, which reports a candidate only once it
 proves live against its provider. This is not noise-aversion for its own sake:
@@ -684,10 +682,9 @@ Sentry token, and a blocking check that fails on every lockfile change is one
 people learn to bypass. The cost is that verification sends candidate secrets to
 third-party APIs, which is a deliberate trade rather than an oversight.
 
-Once the repository is public, GitHub's native scanning and push protection
-become available and should be enabled alongside this rather than instead of it:
-push protection closes the prevention gap, and TruffleHog's verification covers
-detectors GitHub's partner program does not.
+Since the flip (2026-09-05) GitHub's native scanning and push protection run
+alongside this rather than instead of it: push protection closes the prevention gap,
+and TruffleHog's verification covers detectors GitHub's partner program does not.
 
 ## 9. Exceptions
 
@@ -732,8 +729,9 @@ Appended 2026-09-05, immediately before the flip to public:
 
 - The four merged branches surviving on `origin` against BR-04 — `claude/issue-130-d1d249`
   (#169), `claude/jamf-pro-sdk-python-273d02` (#75), `claude/patch-source-metadata-e5e93a`
-  (#312), `inspect-0061-change-log` (#62) — were deleted. Their commits stay reachable
-  through `refs/pull/*`, which publication exposes either way. `INSPECT-0005-AUTHLAYER` and
+  (#312), `inspect-0061-change-log` (#62) — are to be deleted by the maintainer; the flip
+  session's tooling refused the branch delete. Their commits stay reachable through
+  `refs/pull/*`, which publication exposes either way. `INSPECT-0005-AUTHLAYER` and
   `claude/festive-roentgen-d48f0b`, named above as surviving, were already gone.
 
 ## Change log
@@ -751,3 +749,4 @@ Appended 2026-09-05, immediately before the flip to public:
 | v1.8 | 2026-08-29 | Acknowledged `claude/*` agent session branches in §2; appended current deviations to §10 |
 | v1.9 | 2026-08-31 | Added CM-05 (§6.2, §7): the README's claims are checked against the codebase by the `README claims` job, whose context is in the ruleset's required status checks |
 | v1.10 | 2026-09-05 | Pre-flip secret-audit baseline recorded in §8.2 (151 refs, 0 verified); §3.2 says the DAST instance does not exist yet; §10 notes the surviving merged branches deleted under BR-04 |
+| v1.11 | 2026-09-05 | Flip to public: BR-06, BR-07, MG-02, MG-03, PR-07, AG-03 `active`; CM-03 fully active; §8.1 and §8.3 in the past tense; §10 corrected — the branch deletes are still owed |
