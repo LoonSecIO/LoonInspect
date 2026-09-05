@@ -142,7 +142,7 @@ def test_token_lifetime_comes_from_the_response_and_never_from_a_default() -> No
     """The number this module used to assert in a comment ("30 minutes by default")
     is now nobody's business but the tenant's: `expires_in` decides, and the margin is
     the only constant."""
-    # What loonsecio.jamfcloud.com (Jamf Pro 11.31.1) actually returns, less the margin.
+    # What one production tenant (Jamf Pro 11.31.1) actually returned, less the margin.
     assert _token_lifetime({"expires_in": 179}) == 149.0
     assert _token_lifetime({"expires_in": "179"}) == 149.0
     # A lifetime shorter than the margin is halved, never driven negative: a deadline

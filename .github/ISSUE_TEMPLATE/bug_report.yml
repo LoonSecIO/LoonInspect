@@ -1,0 +1,70 @@
+name: Bug report
+description: Something LoonInspect does that it should not, or does not do that it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Two things before you start:
+
+        - **Security findings never go in a public issue.** Report them privately: **Security → Report a vulnerability** on this repository, or see [SECURITY.md](https://github.com/LoonSecIO/LoonInspect/blob/main/SECURITY.md).
+        - **Leave out device names, serial numbers, hostnames and email addresses.** A screenshot of LoonInspect is largely made of those — the Devices table is hostnames and serials, and your own name sits in the top bar — so crop or black them out before attaching one.
+  - type: input
+    id: build
+    attributes:
+      label: Build
+      description: The build string of the instance — **Settings → Support** in the app, or from the host `docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' looninspect-app-1`. It is the first thing anyone reading this has to ask for.
+      placeholder: 2026.09.05+b132925c
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment
+      options:
+        - Docker Compose (the README's Quick Start)
+        - Amazon ECS (ops/aws)
+        - Something else (say what, below)
+    validations:
+      required: true
+  - type: input
+    id: jamf
+    attributes:
+      label: Jamf Pro version
+      description: From Jamf Pro's own About page, if the bug involves a sync, a webhook, or what Jamf returned.
+      placeholder: 11.31.1
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: What you saw. Exact messages help; paste them as text rather than as screenshots where you can.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to get back to it
+      description: The shortest path that reproduces it. If it only happened once, say so — that is useful too.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "`docker compose logs app` around the time, with identifiers removed. Log lines are JSON; the `request_id` field ties a browser error to its server line."
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before filing
+      options:
+        - label: I searched the open issues and this is not already filed.
+          required: true
+        - label: This is not a security finding (those go through private vulnerability reporting, never here).
+          required: true
+        - label: I removed device names, serial numbers, hostnames and email addresses from everything above.
+          required: true

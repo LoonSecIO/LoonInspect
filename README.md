@@ -12,7 +12,7 @@ LoonInspect reads inventory from Jamf Pro, works out what actually changed since
 
 * **Built for Jamf Pro:** Native Pro API integration and webhook ingestion. LoonInspect is Jamf-only by design (#79) — `app/mdm/factory.py` builds a Jamf client directly rather than dispatching through an abstraction. A second MDM would be a sibling vertical in this repo, not a provider this one plugs into.
 * **Delta Streaming Engine:** Diffs inventory against the last observation and streams structured JSON events (`device.inventory.changed`, `device.change`) directly to your SIEM, beside one `device.inventory` snapshot per device per pass so the SIEM always holds the current state. A sweep where nothing changed emits no deltas. The wire vocabulary is frozen and amended only additively — [docs/splunk-wire-vocabulary.md](docs/splunk-wire-vocabulary.md).
-* **Small on the wire, by subscription:** Deltas measure 509 bytes per event plus 311 bytes per changed app — a quiet day is roughly 4 MB. The per-device snapshot measures about 28 KB for a Mac with 83 apps under today's shipped `assessment: off` (see "What it does not do" below) — up to about 113 KB once every app is fully assessed — every pass, so a 40,000-device sweep is roughly 1.1 GB of snapshots today, up to about 4.6 GB at full coverage. Destinations subscribe per event type, so a delta-only feed stays small.
+* **Small on the wire, by subscription:** Deltas measure 509 bytes per event plus roughly 330 bytes per changed app (both from the real payload builder; [docs/splunk-setup.md](docs/splunk-setup.md) has the sizing) — a quiet day is roughly 4 MB. The per-device snapshot measures about 28 KB for a Mac with 83 apps under today's shipped `assessment: off` (see "What it does not do" below) — up to about 113 KB once every app is fully assessed — every pass, so a 40,000-device sweep is roughly 1.1 GB of snapshots today, up to about 4.6 GB at full coverage. Destinations subscribe per event type, so a delta-only feed stays small.
 * **Hybrid Sync Architecture:** Real-time webhooks for active devices and scheduled off-peak sweeps for the rest. Each pull is a *collection* — what to read (Jamf sections, a device filter pushed into Jamf's query, the smart-group catalog) and when (time of day, timezone, cadence) — configured per connection in the app rather than as one global cron.
 * **Tenant isolation in the database:** Row-level security is enforced by Postgres rather than by application filters, and CI asserts that the application role cannot bypass it.
 * **Self-hosted:** One container and a Postgres database. No vendor account required to run it.
@@ -59,9 +59,9 @@ is what stops 40k devices fitting in ten minutes. See [docs/app-catalog.md](docs
 
 LoonInspect is deployed as two containers: the application — one image carrying both the
 React frontend and the FastAPI backend — and a Postgres alongside it. `docker compose up
---build` builds natively for your machine, Apple Silicon included, and the images CI
-publishes are multi-arch (`linux/amd64` + `linux/arm64`), so pulling one directly is native
-too.
+--build` builds natively for your machine, Apple Silicon included. The images CI builds are
+multi-arch (`linux/amd64` + `linux/arm64`) for the hosted pods, but there is no public image
+registry yet — build from source, as below.
 Both are in the bundle; nothing external is required, and the database port is never
 published to the host.
 
@@ -177,7 +177,7 @@ certificate is refused by default. **[docs/splunk-setup.md](docs/splunk-setup.md
 through all of it, including a `props.conf` stanza to hand your Splunk team and what to
 do about that certificate without turning verification off.
 
-### 5. Back it up before you need to
+### 6. Back it up before you need to
 
 **[docs/operations.md](docs/operations.md)** is the operator runbook: what to back up
 (the database *and* `ENCRYPTION_KEY` — a dump without the key restores an instance whose
@@ -316,12 +316,12 @@ determined, and two accepted exposures are worth stating plainly rather than lea
 for a reader to discover (issues #130 and #170):
 
 - **Static assets carry a `Last-Modified` of the image build time**, so the date half
-  is one anonymous request away. Accepted deliberately: removing it correctly means
-  also giving the static path an explicit caching policy it does not have today, and
-  the naive version of the fix is worse than the leak. The mtime is currently what
-  keeps browser heuristic caching honest — freeze it to a constant and browsers will
-  serve a stale app shell for years. If you revisit this, remove the headers; never
-  fake them.
+  is one anonymous request away. Accepted deliberately (#170): `FileResponse` stamps
+  it from the file's mtime, and the caching policy above (#172) leans on revalidation
+  rather than on that header — the shell is `no-cache` and hashed assets `immutable`
+  whatever the mtime says. Freezing the mtime to a constant would be the naive fix, and
+  it is worse than the leak: browsers fall back to heuristic caching and serve a stale
+  app shell for years. If you revisit this, remove the header; never fake it.
 - **The shipped SPA bundle names the frontend commit.** The Vite build is
   bit-reproducible, so `/assets/index-<hash>.js` in the page source is a lookup key
   into public history for anyone willing to rebuild it once. Inherent to serving a
@@ -357,10 +357,12 @@ indistinguishable from being up to date.
 
 ## 🤝 Community data sharing
 
-LoonInspect's patching and vulnerability feeds are built from anonymous community
-inventory, and participating instances are what keep them accurate. Once a day, a
-sharing instance sends per-tenant **content-hash keys** of installed applications with
-aggregated install counts (plus OS and hardware tuples) — never per-device rows, and
+The community patching and vulnerability feeds LoonInspect is building are made from
+anonymous community inventory, and participating instances are what will keep them
+accurate — today the corpus is static and nothing flows back yet (see "What it does not
+do"). Once a day, a sharing instance sends per-tenant **content-hash keys** of installed
+applications with aggregated install counts (plus OS tuples; the hardware tuple is
+reserved and ships empty) — never per-device rows, and
 never device identifiers, serials, hostnames, user names, file paths, or anything from
 the accounts and credential tables. App *names* cross the wire only when the instance
 answers an explicit request for a title already seen at 5+ independent contributors —
@@ -394,9 +396,9 @@ After that, **Settings → Accounts** manages everyone else. Four roles:
 
 | Role | Sees | Can change |
 | --- | --- | --- |
-| **Viewer** | Devices, applications, vulnerabilities | Nothing |
-| **Analyst** | The above, plus connection config and audit history | Can trigger a patch-catalog sync |
-| **Auditor** | The above, plus accounts and roles | Nothing — read-only by design |
+| **Viewer** | Devices and applications, including the not-yet-assessed vulnerability slot | Nothing |
+| **Analyst** | The above, plus connection and destination config, runs, and audit history | Can trigger a device sweep and a patch-catalog sync; can mint API tokens for their own account |
+| **Auditor** | The above, plus accounts and roles | Nothing in the product — read-only by design; can mint API tokens for their own account |
 | **Admin** | Everything, including credential values | Everything |
 
 Auditor is a strict subset of Admin with no write permission and no access to secret
@@ -407,6 +409,30 @@ real account. Disabling revokes that account's sessions and API tokens immediate
 rather than waiting for them to expire. There is no email delivery, so new accounts get
 an initial password set by an administrator, and an administrator can reset a forgotten
 one from the same page.
+
+## 🆘 Support
+
+Two places to ask, and one thing that goes to neither of them.
+
+- **Bugs, questions and feature requests** go to
+  [the issue tracker](https://github.com/LoonSecIO/LoonInspect/issues). Search what is
+  already open first — a documented issue often has the workaround attached — then
+  [open one](https://github.com/LoonSecIO/LoonInspect/issues/new/choose) if yours isn't
+  there. A useful report starts with the build string (**Settings → Support** in the app,
+  or the `docker inspect` line under *Which build am I running?*), then what you expected,
+  what happened instead, and how to get back to it.
+- **Conversation** happens in `#loonsecio` on [MacAdmins Slack](https://macadmins.org/):
+  how other people have set something up, whether a behaviour is expected, the questions
+  that are not a bug report yet. It is a conversation, not a queue — nobody is on call.
+- **Security findings never go in a public issue.** Report privately through GitHub —
+  **Security → Report a vulnerability** on this repository — or email
+  **security@loonsec.io**. [SECURITY.md](SECURITY.md) has the details and the scope.
+
+Leave out device names, serial numbers, hostnames and email addresses. A screenshot of
+LoonInspect is largely made of those — the Devices table is hostnames and serials, and
+your own name sits in the top bar — so crop or black them out before attaching one.
+Nothing in the product files a report for you: LoonInspect is self-hosted and phones
+home to nobody.
 
 ## 📄 License
 

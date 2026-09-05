@@ -180,9 +180,13 @@ jobs:
           docker build -t looninspect-db:ci ops/postgres
           # Ephemeral and never published to the host; generated rather than literal
           # so no credential-shaped string lives in the workflow.
+          su_pw=$(openssl rand -hex 16); app_pw=$(openssl rand -hex 16)
+          # Masked before export: the values are throwaway, but on a public
+          # repository this log is not.
+          echo "::add-mask::$su_pw"; echo "::add-mask::$app_pw"
           {
-            echo "PG_SUPERUSER_PASSWORD=$(openssl rand -hex 16)"
-            echo "PG_APP_PASSWORD=$(openssl rand -hex 16)"
+            echo "PG_SUPERUSER_PASSWORD=$su_pw"
+            echo "PG_APP_PASSWORD=$app_pw"
           } >> "$GITHUB_ENV"
 
       - name: Smoke test the image

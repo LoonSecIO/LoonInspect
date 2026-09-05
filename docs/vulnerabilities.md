@@ -66,7 +66,7 @@ delta.
 | Corpus | A static set of ~100 titles, public sources only, Jamf-catalog apps | The nightly NVD→corpus scan |
 | Join | Local hash-join, in the container | Any call to a vulnerability gateway |
 | Refresh | By hand, stamped in `corpusAsOf` | Automatic, `corpusAsOf` moving on its own |
-| Half | Container↔cloud: the exchange response's `verdicts` slot, reserved in the v1 contract and deliberately left unparsed so this work does not freeze its shape (`backend/app/core/sharing.py:206`) | The scan itself, which lives outside this repo, touches no container and breaks no contract |
+| Half | Container↔cloud: the exchange response's `verdicts` slot, reserved in the v1 contract and deliberately left unparsed so this work does not freeze its shape (`backend/app/core/sharing.py:247`) | The scan itself, which lives outside this repo, touches no container and breaks no contract |
 
 The split is contract versus internal. The container half ships in v0 because it cannot
 be added to containers already in the field; the scan half lands after the flip because
@@ -380,9 +380,9 @@ and `counts` exists on the `covered` member alone — so `vuln.counts.total` doe
 until a value has been narrowed to `covered`. There is no expression in which an
 unassessed app yields a zero.
 `frontend/src/features/vulnerabilities/noCollapse.ts` asserts exactly that, in the one
-checker CI runs for the frontend (`tsc`, since there is no test lane — #138): three
-`@ts-expect-error` directives that fail the build the day the errors they name stop
-happening.
+checker CI runs for the frontend (`tsc`, since there is no test lane — #138): type-level
+assertions on the shape of the `off` member that fail the build the day `counts` becomes
+readable from it (the file itself explains why `@ts-expect-error` was rejected).
 
 **The stamp rides the rows.** `corpusAsOf` is returned on the response that carries the
 apps it describes, never from a separate call, so a header can never date a column the

@@ -9,8 +9,9 @@ class _CamelModel(BaseModel):
 
 
 class ApplicationVersionOut(_CamelModel):
-    """One build of an application. `version_hash` is the key the LoonSec Global API
-    is queried with, so it's surfaced here rather than kept internal."""
+    """One build of an application. `version_hash` is the internal per-build key the
+    inventory deltas and the app catalog join on (`app/core/hashing.py`); surfaced so a
+    client can correlate rows, not because anything outside this instance reads it."""
 
     version_hash: str
     version: str

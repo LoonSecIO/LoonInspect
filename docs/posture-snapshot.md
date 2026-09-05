@@ -71,10 +71,10 @@ key starts with no history behind it and can never be backfilled. The peer aggre
 worse than the local read: a size band derived from a population-less `devices.total`
 files a 3,000-Mac tenant and a 1,500-Mac/1,500-iPad tenant in the same bucket.
 
-`catalog.matched` is the sharpest of the eleven. Jamf Patch carries macOS titles only,
+`catalog.matched` is the sharpest of the catalog keys. Jamf Patch carries macOS titles only,
 so an iOS app can never enter that numerator and lands in `catalog.unmatched`
 permanently — patch coverage collapses on the graph while nothing about the fleet got
-worse. The five `patch.*` keys are safe for that same reason: they count pairs reached
+worse. The `patch.*` keys are safe for that same reason: they count pairs reached
 through a matched title, and there are no mobile titles to reach through.
 
 The rules the column carries:

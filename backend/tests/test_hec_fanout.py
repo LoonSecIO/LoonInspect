@@ -731,8 +731,8 @@ def test_the_designed_order_survives_the_jsonb_scramble() -> None:
     and Postgres hands back its own. Feeding that exact scrambled order in must still
     yield the designed one — otherwise the fix only works on dicts Python happened to
     build in a friendly order, which is every dict in a unit test and no dict in
-    production. A hand-written dict literal at the producer, the technique the SplunkBase
-    predecessor used, is exactly what cannot survive this round trip.
+    production. A hand-written dict literal at the producer, the technique the Jamf Pro
+    Add-on for Splunk (v2) used, is exactly what cannot survive this round trip.
     """
     stored = {key: key for key in _JSONB_SCRAMBLED_DELTA}
     stored["event"] = "device.inventory.changed"

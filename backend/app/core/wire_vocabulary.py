@@ -235,7 +235,7 @@ def ordered_event_keys(body: Mapping[str, object]) -> dict[str, object]:
     first spends the most valuable screen space in Splunk on the least informative bytes
     on the event. You reach for them in SPL — `jobID=$id$`, `event=device.*` — where
     position is irrelevant, and a field's worth to a search does not depend on where it
-    sits in the document. This is the shape Kyle's SplunkBase add-on shipped, where the
+    sits in the document. This is the shape the Jamf Pro Add-on for Splunk (v2) shipped, where the
     section object led every event and the meta block trailed it.
 
     `deviceMeta` trails for the same reason twice over: it is the largest block on the

@@ -371,7 +371,7 @@ where c.entry_digests ? 'v0:06f5843400adb08c…'   -- Slack 4.50.143 (450000143)
   and s.is_current;
 ```
 
-Cost model for the first customer's shape (40k macOS): an unchanged device is one
+Cost model for the design target (40k Macs): an unchanged device is one
 `SELECT` and at most one `UPDATE` per sweep; a changed device additionally writes one
 section row and only the entries that are new to the tenant. Entries — the bulk of the
 bytes — are shared across the fleet.

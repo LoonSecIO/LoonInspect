@@ -33,8 +33,9 @@ what stops those pulls from harming the Jamf tenant they point at. It is a desig
 handoff, not a specification of code — the implementation belongs to #27, and several
 of its guarantees depend on run-object work that belongs to #31.
 
-The reference point throughout is the Splunk Add-on for Jamf Pro that this product
-replaces (`https://github.com/jamf/SplunkBase`, abandoned 2022), for the same reason
+The reference point throughout is the Jamf Pro Add-on for Splunk that this product's
+users migrate from (`https://github.com/jamf/SplunkBase` holds the v2 source; Jamf still
+ships the add-on — 2.12.7 in June 2026), for the same reason
 `splunk-event-shaping.md` uses it: a migrating customer should find the scheduling model
 familiar, and where we deviate we should have decided to.
 

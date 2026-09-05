@@ -63,7 +63,8 @@ want, and X being easy to discover does not weaken it.
 
 ## Supported versions
 
-Pre-1.0, the supported version is the latest published image and the tip of `main`.
+Pre-1.0, the supported version is the tip of `main` — there is no public image registry
+yet, so the image you run is the one you built from it.
 Fixes are not backported.
 
 ## Deployment notes worth reading first

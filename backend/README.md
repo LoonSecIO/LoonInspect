@@ -113,10 +113,10 @@ Then set `DATABASE_URL=postgresql+asyncpg://looninspect_app:devpassword@localhos
 FastAPI standardized its CLI. Instead of calling `uvicorn` directly, use the modern `fastapi dev` command wrapped via `uv run`. Back inside `backend/` (`cd backend` if an earlier step left you at the repo root):
 
 ```bash
-uv run fastapi dev app/main.py
+uv run fastapi dev app/main.py --port 8001
 ```
 
-This starts the server at <http://127.0.0.1:8001> with hot-reloading enabled. On startup it automatically applies any pending Alembic migrations (`app/core/database.py::init_db()`) against the Postgres from step 4 — there's no separate manual migration step for local dev.
+This starts the server at <http://127.0.0.1:8001> with hot-reloading enabled (`fastapi dev` defaults to 8000; the compose file, `app/serve.py` and the Vite proxy all expect 8001). On startup it automatically applies any pending Alembic migrations (`app/core/database.py::init_db()`) against the Postgres from step 4 — there's no separate manual migration step for local dev.
 
 MDM connections are configured through the API/UI (`/api/mdm/connections`) and stored in the database, not via environment variables. Jamf Pro is the only provider today — see "MDM support" below.
 

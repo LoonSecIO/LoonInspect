@@ -1,0 +1,12 @@
+# Routes the two doors a person with a problem has (#301, #26 Phase 3). A security
+# finding is the one thing that must not become a public issue — SECURITY.md rules
+# it, and the support page in the product repeats it — so it gets a contact link
+# here instead of a template.
+blank_issues_enabled: true
+contact_links:
+  - name: Security finding — report it privately
+    url: https://github.com/LoonSecIO/LoonInspect/security/advisories/new
+    about: Never a public issue. GitHub's private vulnerability reporting reaches the maintainer directly; SECURITY.md has the fallback address.
+  - name: Question or conversation — MacAdmins Slack
+    url: https://macadmins.slack.com/channels/loonsecio
+    about: "#loonsecio on MacAdmins Slack, for how other people set something up and whether a behaviour is expected. Separate signup at macadmins.org."

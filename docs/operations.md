@@ -439,7 +439,7 @@ fully not, and stamping tells it a lie about which.
 
 The one caveat this does not cover is a migration that is itself non-transactional —
 `CREATE INDEX CONCURRENTLY`, or anything that commits mid-`upgrade()`. None of the
-21 migrations in `backend/migrations/versions/` does that today. A future one that does
+migrations in `backend/migrations/versions/` does that today. A future one that does
 is a migration that has to say so in its own docstring.
 
 ---
@@ -448,7 +448,7 @@ is a migration that has to say so in its own docstring.
 
 ### Do it before you swap the image back
 
-Every one of the 21 migrations has a real `downgrade()` — this project takes them
+Every migration has a real `downgrade()` — this project takes them
 seriously enough to argue with itself in their comments about what a downgrade can
 honestly restore. What does not exist is anything that *calls* them: `init_db()` only
 ever runs `upgrade head`. So a downgrade is a manual step, and the order matters

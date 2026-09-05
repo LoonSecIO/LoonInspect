@@ -72,7 +72,7 @@ than that it becomes true. Worth naming what enforces it today:
 
 `site`, `building` and `department` already exist — as device columns and as
 caller-supplied query parameters on `/api/devices`
-(`backend/app/api/devices.py:78`). They stay. They are legal precisely because they are
+(`backend/app/api/devices.py:118`). They stay. They are legal precisely because they are
 the operator's own choice, visible in the URL, reproducible by anyone who follows the
 link, and identical for everyone who does.
 
@@ -181,7 +181,7 @@ Two facts that make the confirmation less risky than the dissent priced it:
   not a search history. The typed-search-strings precedent the split was decided on is
   strictly *more* revealing than the thing being decided.
 * **`audit:read` today gates exactly one endpoint** — the share-log download
-  (`backend/app/api/system.py:137`) — and there is no audit read API at all; the JSONL
+  (`backend/app/api/system.py:148`) — and there is no audit read API at all; the JSONL
   file is the interface (`docs/auth-design.md` §6.6). So "enumerable under `audit:read`"
   is not a use of the audit log. It describes a **new API surface** the v1 contract
   invents, and the contract must say so in those words rather than implying an

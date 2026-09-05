@@ -4,7 +4,7 @@ export const en = {
     dismissUpdate: "Dismiss update notice",
     sharing: {
       pageDescription:
-        "LoonInspect's patching and vulnerability feeds are built from anonymous community inventory. What this instance contributes — and whether it contributes at all — is controlled here.",
+        "The community patching and vulnerability feeds LoonInspect is building are made from anonymous community inventory. What this instance contributes — and whether it contributes at all — is controlled here.",
       envLocked:
         "COMMUNITY_SHARING=false is set in the environment. Nothing is shared regardless of the choice below, and these controls are locked until the override is removed.",
       tierHeading: "Participation",
@@ -16,10 +16,10 @@ export const en = {
         "Daily anonymous inventory keys with install counts. Never answers requests for app names — contributes prevalence signal only.",
       tierOff: "Off",
       tierOffHelp:
-        "Nothing is shared, and this instance stops receiving the community-built patching and vulnerability feeds.",
+        "Nothing is shared, and this instance will not receive the community-built patching and vulnerability feeds when they ship.",
       disclosureHeading: "What is shared",
       disclosureShared:
-        "Shared daily, per tenant: content-hash keys of installed applications with install counts, OS version tuples, hardware model tuples, the pseudonymous submission ID below, and this container's build version. Counts are summed across devices before anything leaves — never per-device rows.",
+        "Shared daily, per tenant: content-hash keys of installed applications with install counts, OS version tuples (hardware model tuples are reserved and ship empty), the pseudonymous submission ID below, and this container's build version. Counts are summed across devices before anything leaves — never per-device rows.",
       disclosureNever:
         "Never shared: device identifiers, serial numbers, hostnames, user names, file paths, extension attributes, connection or tenant names, accounts, credentials, or audit history. LoonSec does not store source IP addresses on this path.",
       disclosureReveals:
@@ -201,7 +201,7 @@ export const en = {
   },
   accounts: {
     title: "Accounts",
-    description: "Operators who can sign in to LoonInspect. Not the same as the MDM-synced people on the Users page.",
+    description: "Operators who can sign in to LoonInspect. Not the same as the people who own devices in Jamf.",
     addAccount: "Add account",
     displayName: "Display name",
     email: "Email",
@@ -225,7 +225,7 @@ export const en = {
     confirm: "Confirm",
     you: "you",
     breakGlass: "break-glass",
-    breakGlassHint: "Keeps local password sign-in even when SSO is enforced. Every login by this account is logged at high severity.",
+    breakGlassHint: "Keeps local password sign-in even if an identity provider is ever made mandatory (none is configured today). Every login by this account is logged at high severity.",
     cannotDisableSelf: "You cannot disable your own account.",
     disableHint:
       "Disabling an account immediately revokes its sessions and API tokens. Accounts are never deleted, so past audit records stay attributable.",
@@ -292,7 +292,7 @@ export const en = {
   apiTokens: {
     title: "API Tokens",
     description:
-      "Personal tokens for non-browser clients — the macOS app, CI, and scripts. A token can never do more than your account can.",
+      "Personal tokens for non-browser clients — scripts, CI, and native clients. A token can never do more than your account can.",
     name: "Name",
     namePlaceholder: "macOS client on my laptop",
     expiry: "Expires in (days)",
@@ -677,7 +677,7 @@ export const en = {
       unlistedVersions: (n: number) =>
         `${n} device${n === 1 ? "" : "s"} on a version Jamf has not listed (ahead of the catalog, or a build Jamf never recorded).`,
       tableVulnerabilities: "Vulnerabilities",
-      vulnerabilitiesTooltip: "You must enable the LoonSecIO integration to see vulnerability data.",
+      vulnerabilitiesTooltip: "Not assessed yet — vulnerability data arrives with the community corpus (docs/vulnerabilities.md).",
       vulnCritical: "Critical",
       vulnHigh: "High",
       vulnMedium: "Medium",

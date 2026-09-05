@@ -4,7 +4,7 @@
   "general": {
     "name": "Loon’s Mac mini",
     "lastIpAddress": "203.0.113.26",
-    "lastReportedIpV4": "192.168.1.143",
+    "lastReportedIpV4": "203.0.113.27",
     "lastReportedIpV6": "fe80::1",
     "jamfBinaryVersion": "11.31.1-t1787060595569",
     "platform": "Mac",

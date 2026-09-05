@@ -5,12 +5,15 @@ with two things worth knowing up front.
 
 ## Open an issue first
 
-Scope is deliberately narrow (Jamf-only at launch; see the README's roadmap for what
-that means). An issue conversation before a pull request saves everyone from building
+Scope is deliberately narrow (Jamf-only at launch; the README's *What it does not do*
+section is a list of decisions, not gaps). An issue conversation before a pull request saves everyone from building
 something the project has already ruled out — or already designed differently. Small
 fixes (typos, broken links, obvious bugs) can go straight to a PR.
 
 Security findings go through [SECURITY.md](SECURITY.md), never a public issue.
+
+`INSPECT-NNNN` in code comments, commit subjects and issue titles is issue #NNNN in
+this tracker; the convention is in [docs/BRANCHING.md](docs/BRANCHING.md) §2.
 
 ## What CI expects
 
