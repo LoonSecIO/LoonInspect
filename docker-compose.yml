@@ -82,6 +82,13 @@ services:
       # Alternate provider for the update check; empty uses GitHub. Exists for the
       # future api.loonsec.io endpoint and for testing against a mock.
       UPDATE_CHECK_URL: ${UPDATE_CHECK_URL:-}
+    # The host as seen from inside the container, for the AI test box (#319): Docker
+    # Desktop resolves `host.docker.internal` on its own; Docker Engine on Linux only
+    # does so with this mapping, and there it lands on the bridge address, where the
+    # host's 127.0.0.1-bound services are not reachable. Podman's name is
+    # `host.containers.internal`; type the URL in that case.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # Audit log and TLS material. Application state lives in the database now, not
       # here.

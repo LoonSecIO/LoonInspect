@@ -17,6 +17,7 @@ import { ChangeTrackingPage } from "@/features/changes/ChangeTrackingPage";
 import { ConnectionsPage } from "@/features/mdm/ConnectionsPage";
 import { FeatureFlagsPage } from "@/features/settings/FeatureFlagsPage";
 import { DataSharingPage } from "@/features/system/DataSharingPage";
+import { AISettingsPage } from "@/features/ai/AISettingsPage";
 import { ApiTokensPage } from "@/features/tokens/ApiTokensPage";
 import { DestinationsPage } from "@/features/destinations/DestinationsPage";
 import { JamfPatchPage } from "@/features/jamfPatch/JamfPatchPage";
@@ -60,9 +61,9 @@ export function AppRoutes() {
             that connect anything are Settings › Connections and Destinations. The
             vendor marks under public/logos/ are deliberately left in place: the
             page comes back once its grid is mostly real (#95). */}
-        {/* No /ai: nothing AI lands before the public flip (#28 is v1). The
-            `ai_features` switch under Settings › Feature Flags is where "it's
-            coming" lives now that the page does not (#112, #95). */}
+        {/* Still no top-level /ai (#95). What exists is Settings › AI below: the test
+            box (#319), one prompt to an endpoint the admin names, listed in the
+            sidebar only while the `ai_features` switch is on. */}
         <Route element={<RequirePermission permission={PERMISSIONS.CONNECTION_READ} />}>
           <Route path="settings/connections" element={<ConnectionsPage />} />
           <Route path="settings/change-tracking" element={<ChangeTrackingPage />} />
@@ -74,6 +75,12 @@ export function AppRoutes() {
             page itself hides its write controls without SYSTEM_WRITE. */}
         <Route element={<RequirePermission permission={PERMISSIONS.SYSTEM_READ} />}>
           <Route path="settings/data-sharing" element={<DataSharingPage />} />
+        </Route>
+        {/* SYSTEM_READ like data-sharing: the page reads the switches and the
+            provider table for anyone with it, and hides Send without SYSTEM_WRITE,
+            which is what the backend's POST gate requires. */}
+        <Route element={<RequirePermission permission={PERMISSIONS.SYSTEM_READ} />}>
+          <Route path="settings/ai" element={<AISettingsPage />} />
         </Route>
         <Route element={<RequirePermission permission={PERMISSIONS.TOKEN_CREATE} />}>
           <Route path="settings/api-tokens" element={<ApiTokensPage />} />

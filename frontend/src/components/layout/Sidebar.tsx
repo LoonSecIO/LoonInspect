@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { AppWindow, Database, Flag, Gauge, History, Home, KeyRound, LifeBuoy, ListChecks, Plug, Send, Settings, UserCircle, UserCog, Share2, type LucideIcon } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { AppWindow, Database, Flag, Gauge, History, Home, KeyRound, LifeBuoy, ListChecks, Plug, Send, FlaskConical, Settings, UserCircle, UserCog, Share2, type LucideIcon } from "lucide-react";
 import { NavLink } from "react-router";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/features/auth/store";
@@ -9,6 +9,7 @@ import { PERMISSIONS, type PermissionName } from "@/features/auth/types";
 import { useLocale } from "@/i18n/LocaleContext";
 import type { Translations } from "@/i18n/en";
 import { useSidebarMode } from "@/hooks/SidebarModeContext";
+import { listFeatureFlags } from "@/features/settings/api";
 
 type NavKey = keyof Translations["nav"];
 
@@ -19,6 +20,8 @@ interface NavItem {
   end: boolean;
   /** Omitted where every role can see the page. */
   permission?: PermissionName;
+  /** Listed only while this feature flag is on (Settings › AI, #319). */
+  flag?: string;
   children?: NavItem[];
 }
 
@@ -76,6 +79,16 @@ const navigationItems: NavItem[] = [
         end: false,
         permission: PERMISSIONS.SYSTEM_READ
       },
+      // Flag-gated as well as permission-gated: no top-level /ai exists, and this
+      // entry appears only once the `ai_features` switch is on (#319).
+      {
+        labelKey: "ai",
+        icon: FlaskConical,
+        to: "/settings/ai",
+        end: false,
+        permission: PERMISSIONS.SYSTEM_READ,
+        flag: "ai_features"
+      },
       {
         labelKey: "destinations",
         icon: Send,
@@ -132,9 +145,27 @@ export function Sidebar() {
   // all.
   const attentionCount = useAttentionStore((state) => state.total);
 
+  // Flags are read once per mount; the flags endpoint needs a session but no
+  // permission, and a failure simply hides the flag-gated entries.
+  const [enabledFlags, setEnabledFlags] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    let cancelled = false;
+    listFeatureFlags()
+      .then((flags) => {
+        if (!cancelled) setEnabledFlags(new Set(flags.filter((f) => f.enabled).map((f) => f.key)));
+      })
+      .catch(() => {
+        if (!cancelled) setEnabledFlags(new Set());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const visibleItems = useMemo(() => {
     const granted = new Set(permissions ?? []);
-    const allowed = (item: NavItem) => !item.permission || granted.has(item.permission);
+    const allowed = (item: NavItem) =>
+      (!item.permission || granted.has(item.permission)) && (!item.flag || enabledFlags.has(item.flag));
 
     return navigationItems.filter(allowed).flatMap((item) => {
       if (!item.children) return [item];
@@ -152,7 +183,7 @@ export function Sidebar() {
 
       return [{ ...item, children, to: ownTargetHidden ? children[0].to : item.to }];
     });
-  }, [permissions]);
+  }, [permissions, enabledFlags]);
 
   if (sidebarMode === "hidden") return null;
 

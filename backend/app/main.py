@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.alerts.service import purge_closed_alerts
 from app.api.accounts import router as accounts_router
+from app.api.ai import router as ai_router
 from app.api.alerts import router as alerts_router
 from app.api.applications import router as applications_router
 from app.api.auth import router as auth_router
@@ -432,6 +433,7 @@ app.include_router(changes_router)
 app.include_router(alerts_router)
 app.include_router(destinations_router)
 app.include_router(system_router)
+app.include_router(ai_router)
 app.include_router(devices_router)
 app.include_router(applications_router)
 app.include_router(catalog_router)
