@@ -63,6 +63,9 @@ class AuditAction(StrEnum):
     FEATURE_FLAG_UPDATED = "feature-flag.updated"
 
     SHARING_SETTINGS_UPDATED = "sharing.settings.updated"
+    # The AI test box (#319): who sent a prompt where, and how it went. Never the
+    # prompt, never the key.
+    AI_TEST_SENT = "ai.test.sent"
     SHARING_UUID_RESET = "sharing.uuid.reset"
 
     TOKEN_CREATED = "token.created"

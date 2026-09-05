@@ -36,6 +36,8 @@ export interface DataSharingSettings {
   lastExchangeOutcome: string | null;
   /** The last exchange answered a 413 by dropping its reveals — a degraded "sent". */
   lastExchangeRevealsShed: boolean;
+  /** AI-inference consent (#112): whether any byte may leave the pod for inference. */
+  aiInference: boolean;
 }
 
 export function getDataSharing(): Promise<DataSharingSettings> {
@@ -45,6 +47,7 @@ export function getDataSharing(): Promise<DataSharingSettings> {
 export function updateDataSharing(update: {
   tier?: SharingTier;
   excludeGlobs?: string[];
+  aiInference?: boolean;
 }): Promise<DataSharingSettings> {
   return apiRequest<DataSharingSettings>("/system/data-sharing", {
     method: "PUT",

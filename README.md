@@ -383,6 +383,20 @@ a failed exchange is silent and logged locally only.
 
 ---
 
+## 🧪 AI test box (off by default)
+
+Settings › AI is a test box, not a feature: one prompt to a model endpoint you name, the
+reply shown as it came back. It exists so the first real AI feature arrives into plumbing
+that already refuses correctly. Two switches gate it, both off out of the box: the
+`ai_features` flag (Settings › Feature Flags) and the AI-inference consent (toggled on the
+page itself). Every send writes one share-log row naming the destination and the single
+field that left, the prompt. Three endpoints are offered: Apple Foundation Models through an
+OpenAI-compatible shim on the Mac host (the card is labelled "via Docker Desktop", the one
+runtime this cut implements), any OpenAI-compatible endpoint (Ollama on the host by
+default), and Anthropic's Messages API. Bring your own URL and key; the key is used for that
+one request and never stored. Every model call is made by the backend, never by your
+browser. Design record: `docs/ai-layer.md`; issue #319.
+
 ## 👥 Accounts and roles
 
 The first administrator is created either through the first-run wizard (a claim token

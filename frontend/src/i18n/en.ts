@@ -128,6 +128,7 @@ export const en = {
     connections: "Connections",
     featureFlags: "Feature Flags",
     dataSharing: "Data Sharing",
+    ai: "AI",
     apiTokens: "API Tokens",
     accounts: "Accounts",
     myAccount: "My Account",
@@ -991,6 +992,69 @@ export const en = {
     saving: "Saving…",
     reset: "Reset to defaults",
     overrideCount: (n: number) => `${n} override${n === 1 ? "" : "s"}`
+  },
+  ai: {
+    title: "AI",
+    description:
+      "A test box: one prompt to a model endpoint you name, behind the AI flag and the AI-inference consent. Nothing is stored. Every send writes a share-log row naming the destination and the one field that left, the prompt. The call is made by this server, never by your browser.",
+    on: "On",
+    off: "Off",
+    flagLabel: "AI features flag",
+    flagHelp: "Change it under Feature Flags",
+    consentLabel: "AI-inference consent",
+    consentOn: "Granted",
+    consentOff: "Not granted",
+    consentToggleOn: "Grant consent",
+    consentToggleOff: "Withdraw consent",
+    consentHelp: "Whether any byte may leave this pod for inference. The same consent lane as community data sharing.",
+    detectionHeading: "Where this container runs",
+    detectionDockerDesktopMac: "Docker Desktop on macOS detected. The Apple Foundation Models card is the one for this setup.",
+    detectionDockerDesktop: "Docker Desktop detected; the host OS could not be told from inside the container.",
+    detectionUnknown: "Runtime not recognised from inside the container. Pick a card yourself.",
+    detectionEvidence: "Evidence",
+    providersHeading: "Endpoint",
+    providerLabels: {
+      apple_fm: "Apple Foundation Models via Docker Desktop",
+      openai_compatible: "OpenAI-compatible",
+      anthropic: "Anthropic"
+    },
+    providerHelp: {
+      apple_fm:
+        "Click here if LoonInspect runs under Docker Desktop on this Mac and an OpenAI-compatible shim serves Apple's on-device model.",
+      openai_compatible:
+        "Ollama on this Mac by default. Also OpenAI itself, a gateway, LM Studio or vLLM. Bring your own URL and key.",
+      anthropic: "The Messages API. Bring your own key."
+    },
+    otherRuntimes: "Running under OrbStack, Colima or Podman? Not supported yet. Type the URL instead.",
+    baseUrl: "Base URL",
+    model: "Model",
+    apiKey: "API key",
+    apiKeyOptional: "optional",
+    apiKeyRequired: "required",
+    reasoningEffort: "Reasoning effort",
+    reasoningDefault: "Endpoint default",
+    prompt: "Prompt",
+    promptDefault: "Tell me a joke.",
+    send: "Send",
+    sending: "Sending…",
+    sendBlocked: "Sending needs the flag on, consent granted, system:write, and every field filled.",
+    sendFailed: "The request could not be sent.",
+    resultHeading: "Reply",
+    outcome: {
+      answered: "Answered",
+      empty: "Empty reply",
+      budget_exhausted_thinking: "Budget exhausted while thinking",
+      error: "Failed"
+    },
+    budgetExhaustedHelp:
+      "The model spent its whole token budget thinking and never answered. Set reasoning effort to none, or raise the budget.",
+    reasoning: "Reasoning (collapsed)",
+    destination: "Destination",
+    latency: "Latency",
+    tokens: "Completion tokens",
+    finish: "Finish reason",
+    loadFailed: "Could not load the AI page.",
+    saveFailed: "Could not update the consent."
   },
   featureFlags: {
     title: "Feature Flags",

@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import socket
+from collections.abc import Callable
 from urllib.parse import urlsplit
 
 from app.core.config import settings
@@ -75,8 +76,26 @@ def blocked_address_reason(address: _IpAddress) -> str | None:
     Deliberately does not test `is_private`: 10/8, 172.16/12, 192.168/16 and IPv6
     unique-local are where on-premises Jamf Pro lives (see the module docstring).
     """
+    return _blocked_reason(address, allow_loopback=False)
+
+
+def inference_blocked_reason(address: _IpAddress) -> str | None:
+    """The same rule for an AI endpoint (#319), with loopback allowed.
+
+    A model endpoint lives on the operator's own machine — Ollama on the Mac host, the
+    Apple Foundation Models shim — and the URL that names it from inside a container
+    is `host.docker.internal`, which resolves to whatever the runtime chose (an IPv6
+    unique-local address on Docker Desktop, the bridge on Docker Engine). Loopback
+    literals are allowed because a developer running the backend outside compose types
+    `http://127.0.0.1:11434/v1`, and refusing that helps no one. Link-local stays
+    refused: nothing legitimate serves chat completions at 169.254.169.254.
+    """
+    return _blocked_reason(address, allow_loopback=True)
+
+
+def _blocked_reason(address: _IpAddress, *, allow_loopback: bool) -> str | None:
     ip = _unwrap(address)
-    if ip.is_loopback:
+    if ip.is_loopback and not allow_loopback:
         return "a loopback address"
     if ip.is_link_local:
         return "a link-local address — cloud instance metadata is served at 169.254.169.254"
@@ -158,7 +177,9 @@ def validate_mdm_base_url(value: str) -> str:
     return url
 
 
-async def refuse_blocked_resolution(url: str) -> None:
+async def refuse_blocked_resolution(
+    url: str, *, reason_for: Callable[[_IpAddress], str | None] = blocked_address_reason
+) -> None:
     """Second pass on a hostname: refuse it if it resolves somewhere blocked.
 
     The literal check alone is defeated by naming a host that resolves to
@@ -195,8 +216,82 @@ async def refuse_blocked_resolution(url: str) -> None:
         address = _as_ip(str(info[4][0]))
         if address is None:
             continue
-        reason = blocked_address_reason(address)
+        reason = reason_for(address)
         if reason is not None:
             raise BlockedBaseUrl(
                 f"baseUrl may not point at {host}: it resolves to {address}, which is {reason}"
             )
+
+
+# --- AI endpoints (#319) ----------------------------------------------------------------
+
+# The gate records the destination in ShareLog.endpoint, a String(255): a URL that
+# cannot be recorded cannot be dialled.
+INFERENCE_MAX_BASE_URL_LENGTH = 255
+
+_LOCAL_SUFFIXES = (".internal", ".localhost")
+
+
+def _is_local_host(host: str) -> bool:
+    """A host the plain-http exception below applies to: the machine itself, the
+    container runtime's alias for it, or a private network. `.local` is deliberately
+    not here — mDNS names are the LAN, and the LAN is still the wire."""
+    lowered = host.lower().rstrip(".")
+    if lowered == "localhost" or lowered.endswith(_LOCAL_SUFFIXES):
+        return True
+    ip = _as_ip(host)
+    if ip is None:
+        return False
+    ip = _unwrap(ip)
+    return ip.is_loopback or ip.is_private
+
+
+def validate_inference_base_url(value: str, *, carries_key: bool) -> str:
+    """The base URL of a model endpoint as it may be dialled, or BlockedBaseUrl.
+
+    Looser than `validate_mdm_base_url` in two places, on purpose: plain http is
+    allowed (the endpoints this feature exists for are on the host, over http), and
+    loopback literals are allowed (see `inference_blocked_reason`). Stricter in one: a
+    key over plain http to a host that is not local is refused, because that is a
+    credential on the wire in clear to somewhere the operator does not own.
+    """
+    url = value.strip()
+    if not url:
+        raise BlockedBaseUrl("baseUrl is required")
+    if len(url) > INFERENCE_MAX_BASE_URL_LENGTH:
+        raise BlockedBaseUrl(f"baseUrl must be at most {INFERENCE_MAX_BASE_URL_LENGTH} characters")
+    try:
+        parsed = urlsplit(url)
+        _ = parsed.port
+    except ValueError as exc:
+        raise BlockedBaseUrl(f"baseUrl is not a URL this server can parse: {exc}") from exc
+    if parsed.scheme not in ("http", "https"):
+        raise BlockedBaseUrl(
+            f"baseUrl must be an absolute http:// or https:// URL, not {parsed.scheme or 'a bare hostname'!r}"
+        )
+    if parsed.username or parsed.password:
+        raise BlockedBaseUrl("baseUrl must not carry credentials in the URL (user:password@host)")
+    if parsed.query or parsed.fragment:
+        raise BlockedBaseUrl("baseUrl must be a server URL with no query string or fragment")
+    host = parsed.hostname
+    if not host:
+        raise BlockedBaseUrl("baseUrl names no host")
+    literal = _as_ip(host)
+    if literal is not None:
+        reason = inference_blocked_reason(literal)
+        if reason is not None:
+            raise BlockedBaseUrl(f"baseUrl points at {reason}, which this server will not dial")
+    if carries_key and parsed.scheme == "http" and not _is_local_host(host):
+        raise BlockedBaseUrl(
+            "a key over plain http to a host that is not local would travel in clear; use https "
+            "or a local address"
+        )
+    return url.rstrip("/")
+
+
+def destination_for_log(url: str) -> str:
+    """What the share log records for a dialled endpoint: the origin only. The path
+    is the wire's, and the query string can never exist (refused above)."""
+    parsed = urlsplit(url)
+    port = f":{parsed.port}" if parsed.port else ""
+    return f"{parsed.scheme}://{parsed.hostname}{port}"

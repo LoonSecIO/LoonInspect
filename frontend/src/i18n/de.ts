@@ -121,6 +121,7 @@ export const de: Translations = {
     connections: "Verbindungen",
     featureFlags: "Feature-Flags",
     dataSharing: "Datenfreigabe",
+    ai: "KI",
     apiTokens: "API-Token",
     accounts: "Konten",
     myAccount: "Mein Konto",
@@ -942,6 +943,69 @@ export const de: Translations = {
     saving: "Wird gespeichert…",
     reset: "Auf Standard zurücksetzen",
     overrideCount: (n: number) => `${n} Abweichung${n === 1 ? "" : "en"}`
+  },
+  ai: {
+    title: "KI",
+    description:
+      "Ein Testfeld: ein Prompt an einen Modell-Endpunkt Ihrer Wahl, hinter dem KI-Flag und der Einwilligung zur KI-Inferenz. Nichts wird gespeichert. Jedes Senden schreibt eine Zeile ins Freigabeprotokoll mit dem Ziel und dem einen Feld, das den Pod verlassen hat: dem Prompt. Der Aufruf geht von diesem Server aus, nie von Ihrem Browser.",
+    on: "An",
+    off: "Aus",
+    flagLabel: "KI-Funktionen-Flag",
+    flagHelp: "Unter Feature-Flags ändern",
+    consentLabel: "Einwilligung zur KI-Inferenz",
+    consentOn: "Erteilt",
+    consentOff: "Nicht erteilt",
+    consentToggleOn: "Einwilligung erteilen",
+    consentToggleOff: "Einwilligung widerrufen",
+    consentHelp: "Ob überhaupt ein Byte diesen Pod zur Inferenz verlassen darf. Dieselbe Einwilligungsschiene wie die Community-Datenfreigabe.",
+    detectionHeading: "Wo dieser Container läuft",
+    detectionDockerDesktopMac: "Docker Desktop unter macOS erkannt. Die Karte Apple Foundation Models passt zu dieser Umgebung.",
+    detectionDockerDesktop: "Docker Desktop erkannt; das Host-Betriebssystem ließ sich aus dem Container nicht erkennen.",
+    detectionUnknown: "Laufzeitumgebung aus dem Container nicht erkannt. Wählen Sie selbst eine Karte.",
+    detectionEvidence: "Belege",
+    providersHeading: "Endpunkt",
+    providerLabels: {
+      apple_fm: "Apple Foundation Models über Docker Desktop",
+      openai_compatible: "OpenAI-kompatibel",
+      anthropic: "Anthropic"
+    },
+    providerHelp: {
+      apple_fm:
+        "Hier klicken, wenn LoonInspect unter Docker Desktop auf diesem Mac läuft und ein OpenAI-kompatibler Shim Apples On-Device-Modell bereitstellt.",
+      openai_compatible:
+        "Standardmäßig Ollama auf diesem Mac. Ebenso OpenAI selbst, ein Gateway, LM Studio oder vLLM. Eigene URL und eigener Schlüssel.",
+      anthropic: "Die Messages-API. Eigener Schlüssel."
+    },
+    otherRuntimes: "OrbStack, Colima oder Podman im Einsatz? Noch nicht unterstützt. Geben Sie stattdessen die URL ein.",
+    baseUrl: "Basis-URL",
+    model: "Modell",
+    apiKey: "API-Schlüssel",
+    apiKeyOptional: "optional",
+    apiKeyRequired: "erforderlich",
+    reasoningEffort: "Denkaufwand",
+    reasoningDefault: "Standard des Endpunkts",
+    prompt: "Prompt",
+    promptDefault: "Erzähl mir einen Witz.",
+    send: "Senden",
+    sending: "Sendet…",
+    sendBlocked: "Senden setzt das Flag, die Einwilligung, system:write und ausgefüllte Felder voraus.",
+    sendFailed: "Die Anfrage konnte nicht gesendet werden.",
+    resultHeading: "Antwort",
+    outcome: {
+      answered: "Beantwortet",
+      empty: "Leere Antwort",
+      budget_exhausted_thinking: "Budget beim Nachdenken aufgebraucht",
+      error: "Fehlgeschlagen"
+    },
+    budgetExhaustedHelp:
+      "Das Modell hat sein gesamtes Token-Budget mit Nachdenken verbraucht und nie geantwortet. Denkaufwand auf none setzen oder das Budget erhöhen.",
+    reasoning: "Gedankengang (eingeklappt)",
+    destination: "Ziel",
+    latency: "Latenz",
+    tokens: "Antwort-Token",
+    finish: "Abbruchgrund",
+    loadFailed: "Die KI-Seite konnte nicht geladen werden.",
+    saveFailed: "Die Einwilligung konnte nicht geändert werden."
   },
   featureFlags: {
     title: "Feature-Flags",
