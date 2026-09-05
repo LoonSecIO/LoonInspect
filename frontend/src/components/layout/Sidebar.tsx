@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AppWindow, Database, Flag, Gauge, History, Home, KeyRound, LifeBuoy, ListChecks, Plug, Send, Settings, Sparkles, UserCircle, UserCog, Share2, type LucideIcon } from "lucide-react";
+import { AppWindow, Database, Flag, Gauge, History, Home, KeyRound, LifeBuoy, ListChecks, Plug, Send, FlaskConical, Settings, UserCircle, UserCog, Share2, type LucideIcon } from "lucide-react";
 import { NavLink } from "react-router";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/features/auth/store";
@@ -83,7 +83,7 @@ const navigationItems: NavItem[] = [
       // entry appears only once the `ai_features` switch is on (#319).
       {
         labelKey: "ai",
-        icon: Sparkles,
+        icon: FlaskConical,
         to: "/settings/ai",
         end: false,
         permission: PERMISSIONS.SYSTEM_READ,
