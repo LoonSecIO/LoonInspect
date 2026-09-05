@@ -18,6 +18,8 @@ import {
   type TestResponse
 } from "@/features/ai/api";
 import { ApiError } from "@/config/api";
+import { ExternalLink } from "@/components/ui/external-link";
+import { APPLE_FM_GUIDE_URL } from "@/features/support/links";
 import { useLocale } from "@/i18n/LocaleContext";
 
 const AI_FLAG = "ai_features";
@@ -235,7 +237,10 @@ export function AISettingsPage() {
             </label>
           ))}
         </div>
-        <p className="text-xs text-muted-foreground">{t.ai.otherRuntimes}</p>
+        <p className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
+          <ExternalLink href={APPLE_FM_GUIDE_URL}>{t.ai.appleGuide}</ExternalLink>
+          <span>{t.ai.otherRuntimes}</span>
+        </p>
       </div>
 
       <div className="grid gap-4 rounded-lg border bg-card p-4 md:grid-cols-2">

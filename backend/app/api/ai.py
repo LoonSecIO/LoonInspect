@@ -30,6 +30,7 @@ from app.ai.adapters import MAX_MODEL_ID_CHARS, AdapterError, CompletionRequest,
 from app.ai.host_detect import read_host_detection
 from app.ai.providers import (
     ANTHROPIC_MODELS,
+    APPLE_FM_MODELS,
     DEFAULTS,
     IMPLEMENTED_REACH,
     WIRE_FOR,
@@ -39,6 +40,7 @@ from app.ai.providers import (
     Wire,
     default_base_url,
     hostname_for,
+    presented_host,
 )
 from app.core.ai import AIConsentMissing, AIFeaturesDisabled, require_ai
 from app.core.audit import AuditAction, audit
@@ -85,10 +87,10 @@ def _reach_hostname(reach: HostReach) -> str | None:
 
 async def _judged(
     provider: Provider, host_reach: HostReach | None, base_url: str, api_key: str | None
-) -> tuple[Wire, str, str]:
-    """Steps 1 of the module docstring, shared by both endpoints: the wire, the URL as
-    it may be dialled, and the origin the share log will record. Raises the HTTP
-    refusal itself."""
+) -> tuple[Wire, str, str, str | None]:
+    """Step 1 of the module docstring, shared by both endpoints: the wire, the URL as
+    it may be dialled, the origin the share log will record, and the `Host` the reach
+    presents (``presented_host``). Raises the HTTP refusal itself."""
     defaults = DEFAULTS[provider]
     if defaults.key == "required" and not api_key:
         raise HTTPException(status_code=422, detail=f"{provider.value} needs an API key")
@@ -105,7 +107,7 @@ async def _judged(
         await refuse_blocked_resolution(judged, reason_for=inference_blocked_reason)
     except BlockedBaseUrl as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return WIRE_FOR[provider], judged, destination_for_log(judged)
+    return WIRE_FOR[provider], judged, destination_for_log(judged), presented_host(reach, judged)
 
 
 @router.get(
@@ -126,7 +128,13 @@ async def list_providers() -> ProvidersOut:
                 key=d.key,
                 reasoning_effort=d.reasoning_effort,
                 uses_host_reach=d.uses_host_reach,
-                models=list(ANTHROPIC_MODELS) if d.provider is Provider.anthropic else [d.model],
+                models=(
+                    list(ANTHROPIC_MODELS)
+                    if d.provider is Provider.anthropic
+                    else list(APPLE_FM_MODELS)
+                    if d.provider is Provider.apple_fm
+                    else [d.model]
+                ),
             )
             for d in DEFAULTS.values()
         ],
@@ -165,7 +173,9 @@ async def host() -> HostDetectionOut:
 async def list_endpoint_models(payload: AIModelsIn, db: AsyncSession = Depends(get_db)) -> AIModelsOut:
     """What the endpoint says it serves, to fill the model field's suggestions. A POST
     because the body carries the key; nothing is stored."""
-    wire, base_url, destination = await _judged(payload.provider, payload.host_reach, payload.base_url, payload.api_key)
+    wire, base_url, destination, host_header = await _judged(
+        payload.provider, payload.host_reach, payload.base_url, payload.api_key
+    )
 
     # The gate, declared honestly: nothing of the fleet leaves, and the row says so.
     try:
@@ -175,7 +185,7 @@ async def list_endpoint_models(payload: AIModelsIn, db: AsyncSession = Depends(g
 
     started = time.monotonic()
     try:
-        models = await list_models(wire, base_url, payload.api_key, transport=transport_override)
+        models = await list_models(wire, base_url, payload.api_key, host_header=host_header, transport=transport_override)
     except AdapterError as exc:
         latency_ms = int((time.monotonic() - started) * 1000)
         audit(
@@ -221,7 +231,9 @@ async def list_endpoint_models(payload: AIModelsIn, db: AsyncSession = Depends(g
     dependencies=[Depends(require(Permission.SYSTEM_WRITE))],
 )
 async def test_endpoint(payload: AITestIn, db: AsyncSession = Depends(get_db)) -> AITestOut:
-    wire, base_url, destination = await _judged(payload.provider, payload.host_reach, payload.base_url, payload.api_key)
+    wire, base_url, destination, host_header = await _judged(
+        payload.provider, payload.host_reach, payload.base_url, payload.api_key
+    )
 
     # The gate, before anything is dialled. Refusals are the operator's switches, so
     # they answer 409 with the gate's own sentence rather than a generic error.
@@ -237,6 +249,7 @@ async def test_endpoint(payload: AITestIn, db: AsyncSession = Depends(get_db)) -
         api_key=payload.api_key,
         reasoning_effort=payload.reasoning_effort,
         max_tokens=payload.max_tokens,
+        host_header=host_header,
     )
     started = time.monotonic()
     try:

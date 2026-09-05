@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { Check, Copy, MessagesSquare, ShieldAlert, Bug } from "lucide-react";
+import { Check, Copy, Globe, MessagesSquare, ShieldAlert, Bug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ExternalLink } from "@/components/ui/external-link";
 import { useBuildVersion } from "@/features/system/useBuildVersion";
 import {
+  NOTES_URL,
   SECURITY_EMAIL,
   SLACK_CHANNEL,
   SUPPORT_LINKS,
   SUPPORT_REPO,
+  WEBSITE_URL,
   copyableBuild
 } from "@/features/support/links";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -106,6 +108,20 @@ export function SupportPage() {
         {build === null && (
           <p className="text-xs text-muted-foreground">{t.support.buildUnavailable}</p>
         )}
+      </div>
+
+      {/* The site and its docs: where the how-to pages live, so a question that is
+          "how do I set this up" has somewhere to go before it becomes an issue. */}
+      <div className="space-y-3 rounded-lg border bg-card p-4">
+        <div className="flex items-center gap-2">
+          <Globe aria-hidden="true" className="h-4 w-4 text-muted-foreground" />
+          <h2 className="text-lg font-semibold">{t.support.siteHeading}</h2>
+        </div>
+        <p className="max-w-3xl text-sm text-muted-foreground">{t.support.siteBody}</p>
+        <div className="flex flex-wrap gap-x-6 gap-y-2 pt-1 text-sm">
+          <ExternalLink href={WEBSITE_URL}>{t.support.siteOpen}</ExternalLink>
+          <ExternalLink href={NOTES_URL}>{t.support.docsOpen}</ExternalLink>
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

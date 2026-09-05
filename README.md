@@ -8,6 +8,8 @@ LoonInspect reads inventory from Jamf Pro, works out what actually changed since
 
 ---
 
+Site and Field Notes: [loonsec.io](https://staging.loonsec.io) (staging until launch). The notes hold the setup guides, including [Apple's on-device model with Docker Desktop](https://staging.loonsec.io/notes/apple-foundation-models-with-docker-desktop/).
+
 ## 🚀 Features
 
 * **Built for Jamf Pro:** Native Pro API integration and webhook ingestion. LoonInspect is Jamf-only by design (#79) — `app/mdm/factory.py` builds a Jamf client directly rather than dispatching through an abstraction. A second MDM would be a sibling vertical in this repo, not a provider this one plugs into.
@@ -390,8 +392,8 @@ reply shown as it came back. It exists so the first real AI feature arrives into
 that already refuses correctly. Two switches gate it, both off out of the box: the
 `ai_features` flag (Settings › Feature Flags) and the AI-inference consent (toggled on the
 page itself). Every send writes one share-log row naming the destination and the single
-field that left, the prompt. Three endpoints are offered: Apple Foundation Models through an
-OpenAI-compatible shim on the Mac host (the card is labelled "via Docker Desktop", the one
+field that left, the prompt. Three endpoints are offered: Apple Foundation Models through Apple's own
+`fm serve` on the Mac host (macOS 27; the card is labelled "via Docker Desktop", the one
 runtime this cut implements), any OpenAI-compatible endpoint (Ollama on the host by
 default), and Anthropic's Messages API. Bring your own URL and key; the key is used for that
 one request and never stored. Every model call is made by the backend, never by your

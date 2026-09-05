@@ -35,6 +35,17 @@ What ships, where it lives, and what was proven against it.
   a wall-clock bound on the whole exchange (`asyncio.timeout`; httpx's read timeout is per
   chunk), a 1 MiB reply cap read while streaming, redirects never followed, and at most two
   calls in flight per process. These close findings F1–F5 of `docs/ai-threat-model.md`.
+- **Apple's own server (#324, same day).** macOS 27 ships `/usr/bin/fm`, and `fm serve` is an
+  OpenAI-compatible server on `127.0.0.1:1976` by default: `GET /health`, `GET /v1/models`
+  (ids `system`, the on-device model, and `pcc`, Private Cloud Compute), `POST
+  /v1/chat/completions`. Verified 2026-09-05 from the host and from inside a Docker Desktop
+  container through `host.docker.internal:1976`. The Apple card now defaults to that URL and
+  to `system`; the throwaway shim is retired. Two wire facts learned from it: it streams unless
+  `"stream": false` is sent, so the OpenAI wire now says so explicitly (every other server
+  ignores it), and it refuses `reasoning_effort` on `system` (400, "only supported by the
+  'pcc' model"), so the Apple card sends none. Quota applies to PCC only; PCC is unavailable
+  when `fm serve` was started outside the Terminal app. `fm license` shows and accepts Apple's
+  terms once.
 - **Compose**: `extra_hosts: ["host.docker.internal:host-gateway"]` on `app`.
 - **Tests**: `test_ai_adapters.py` (request shapes, parsing, the four failures, the URL rule,
   the provider table), `test_ai_host_detect.py` (table-driven), `test_ai_test_box_db.py`
@@ -57,7 +68,7 @@ because the attempt is on record either way.
 | --- | --- |
 | `GET /host` | `docker_desktop`, `macos`, Apple Silicon; evidence `6.12.76-linuxkit`, `0x61`, alias resolves |
 | OpenAI-compatible → Ollama `qwen3.5:2b-mlx`, `reasoning_effort: none` | `answered` in 704 ms, 22 tokens, a joke |
-| Apple FM via the shim | `answered` in 1081 ms |
+| Apple FM via the shim (since retired for `fm serve`) | `answered` in 1081 ms |
 | a model that does not exist | `outcome: error`, `HTTP 404: no such route or model at this URL — model 'no-such-model' not found` |
 | `max_tokens: 64` without `reasoning_effort` | `budget_exhausted_thinking`, reasoning attached, `finish_reason: length` |
 | the share log | one row per send: tier `ai`, endpoint origin, `{"feature": "ai_test_box", "fields": ["prompt_text"]}` |
