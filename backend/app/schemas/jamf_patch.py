@@ -21,6 +21,17 @@ class JamfPatchTitleOut(BaseModel):
     # are on the title's current version.
     device_count: int = 0
     devices_on_latest: int = 0
+    # Distinct devices whose match on this title is `behind` (#314). Shipped BESIDE the pair
+    # above rather than left to be derived, because `deviceCount - devicesOnLatest` is the
+    # obvious derivation and it is wrong: a Mac running a build NEWER than Jamf publishes is
+    # not on latest and is not behind either. Chrome on the reference tenant reads
+    # `deviceCount 1, devicesOnLatest 0` — one implied laggard, zero actual ones — and Chrome
+    # and Safari sit in that state on essentially every Mac fleet, because they auto-update
+    # ahead of the catalog. The posture tape had the same bug under the name
+    # `patch.titles_with_laggards` and #314 corrected it; this is the surface that fed it, and
+    # https://github.com/LoonSecIO/LoonInspect/issues/110's tile is specified to rank by the
+    # subtraction, so the honest number has to exist before that tile does.
+    devices_behind: int = 0
 
 
 class JamfPatchTitleListResponse(BaseModel):

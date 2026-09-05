@@ -189,11 +189,22 @@ async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connec
     assert set(wireshark) == {"5F6", "612"} and all(row.basis == "requirements" and row.state == "behind" for row in wireshark.values())
     assert entries[apps["PyCharm.app"].version_hash].id not in by_entry  # attribute-only title: not considered
 
-    # What the Jamf Patch page reads, through the catalog row (tenant-scoped by RLS).
+    # What the Jamf Patch page reads, through the catalog row (tenant-scoped by RLS):
+    # (devices, on latest, genuinely behind).
     counts = await title_device_counts(db, ["0C3", "5F6", "240"])
-    assert counts["0C3"][0] >= 1 and counts["0C3"][1] >= 1
-    assert counts["5F6"][0] >= 1 and counts["5F6"][1] == 0
-    assert counts["240"][1] == 0
+    assert counts["0C3"][0] >= 1 and counts["0C3"][1] >= 1 and counts["0C3"][2] == 0  # Xcode, on latest
+    assert counts["5F6"][0] >= 1 and counts["5F6"][1] == 0 and counts["5F6"][2] >= 1  # Wireshark 4.2, behind
+    # Apple Safari, the case the third number exists for (#314). The fake serves two records
+    # and Safari resolves differently on each — AHEAD of the catalog on the beta, behind on the
+    # other — so no device is on latest while only one is actually behind. `device_count -
+    # devices_on_latest` therefore OVER-COUNTS the laggards, which is exactly the derivation
+    # https://github.com/LoonSecIO/LoonInspect/issues/110's tile is specified to rank by, and
+    # exactly the bug #314 corrected one layer up in `patch.titles_with_laggards`. Chrome and
+    # Safari sit ahead of Jamf's catalog on essentially every Mac fleet, so this is the common
+    # case, not the corner one.
+    devices, on_latest, behind = counts["240"]
+    assert on_latest == 0
+    assert behind < devices - on_latest, "the ahead device must not be counted as behind"
     assert (await title_version_counts(db, "5F6")).get("4.2.0", 0) >= 1
 
     # A second sweep seconds later: nothing is written for the catalog — last_seen is answered

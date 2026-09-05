@@ -48,7 +48,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.changes.policy import NORMAL, levels_at_least
 from app.core.permissions import Role
 from app.core.runs import STATUS_FAILED, STATUS_SUCCEEDED, TRIGGER_SWEEP
-from app.mdm.patch.matching import STATE_AHEAD, STATE_BEHIND, STATE_UNKNOWN
+from app.mdm.patch.matching import STATE_AHEAD, STATE_BEHIND, STATE_LATEST, STATE_UNKNOWN
 from app.models.schema import (
     Account,
     AccountRole,
@@ -206,6 +206,34 @@ def _patch_pairs(*criteria):
     return stmt.distinct().subquery()
 
 
+# The closed set of states `classify()` can assign, named here so a fixture can be held to
+# covering all of it (`tests/test_posture_db.py`) — the cheap defence against the #314 shape,
+# where a state absent from the fixture left two rollups untested and a third defect invisible.
+PATCH_STATES: tuple[str, ...] = (STATE_LATEST, STATE_BEHIND, STATE_AHEAD, STATE_UNKNOWN)
+
+
+def _partitions(values: dict[str, float], total: str, parts: tuple[str, ...], *, what: str) -> None:
+    """Refuse a snapshot whose parts do not add up to their whole.
+
+    The one guard that catches the defect class the 2026-09-04 checking pass kept finding: a
+    value correct on its own and wrong in company. Every assertion in the test suite compares a
+    value to an expectation, and in each of those defects no value was wrong — what was wrong
+    was a relationship between values, which only an identity can express. So the identities get
+    stated, once a night, over integers already in hand.
+
+    Raising loses the snapshot and never the sweep: `runs.finish` wraps the recorder in
+    `except Exception`, rolls back, and logs — "a night can lose its snapshot, it must never
+    lose its sweep". That is the right trade here. A tape row set whose parts do not sum is
+    worse than an absent one, because absence is already a signal this tape defines and a
+    quietly wrong number is not.
+    """
+    summed = sum(values[part] for part in parts)
+    if summed != values[total]:  # pragma: no cover — an identity; the guard is the point
+        raise ValueError(
+            f"{what} does not partition {total}: {' + '.join(parts)} = {summed} != {values[total]}"
+        )
+
+
 def _outbox_pending_where():
     """An event still awaiting delivery: not yet fanned out, or holding at least one
     delivery row that is still pending. A nightly point-sample by construction — the
@@ -261,6 +289,16 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
     values["catalog.unmatched"] = await _count(
         db, select(func.count()).select_from(AppCatalogEntry).where(AppCatalogEntry.jamf_title_ids.is_(None))
     )
+    # `matched` and `unmatched` are complementary predicates on one column, so they partition
+    # `entries` — asserted for the reason the patch states are below (#314): a pair of counts
+    # that must add up is worth one comparison a night, and the alternative is discovering they
+    # do not from a customer's dashboard. NOTE the denominator this makes explicit: both are
+    # over `entries` (every row the fleet has ever shown), never over `installed` (rows on a
+    # device right now), so a "what fraction can Jamf patch" ratio must pick one and say which.
+    _partitions(
+        values, "catalog.entries", ("catalog.matched", "catalog.unmatched"), what="catalog entries by match"
+    )
+
     values["catalog.installed_not_latest"] = await _count(
         db,
         select(func.count())
@@ -327,17 +365,18 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
     # state is latest, and the behind pair is split by a predicate whose two halves cover null —
     # so the sum is an identity, and a drift in any one predicate breaks it here rather than in
     # a customer's dashboard. Cheap: five integers already in hand, once a night.
-    partition = (
-        values["patch.pairs_on_latest"]
-        + values["patch.pairs_behind_under_14d"]
-        + values["patch.pairs_laggard_over_14d"]
-        + values["patch.pairs_unknown_build"]
-        + values["patch.pairs_ahead"]
+    _partitions(
+        values,
+        "patch.pairs_total",
+        (
+            "patch.pairs_on_latest",
+            "patch.pairs_behind_under_14d",
+            "patch.pairs_laggard_over_14d",
+            "patch.pairs_unknown_build",
+            "patch.pairs_ahead",
+        ),
+        what="patch pairs by state",
     )
-    if partition != values["patch.pairs_total"]:  # pragma: no cover — an identity, guarded
-        raise ValueError(
-            f"patch pair states do not partition pairs_total: {partition} != {values['patch.pairs_total']}"
-        )
 
     # patch.titles_with_laggards — titles carrying at least one pair that is genuinely BEHIND.
     # Redefined 2026-09-04 (#314, Kyle) from "any device not on the title's current version",

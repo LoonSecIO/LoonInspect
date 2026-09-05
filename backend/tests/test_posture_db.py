@@ -303,6 +303,38 @@ async def _capture(db, run_id) -> dict[str, float]:
     return {row.metric_key: float(row.value) for row in rows}
 
 
+async def test_the_fixture_exercises_every_patch_state(db, fleet) -> None:
+    """#314's root cause, made unable to recur quietly.
+
+    The seeded fleet had three of the four states — no `ahead` — so two keys that mishandled
+    it had nothing to fail against, and a third defect (the state keys not partitioning
+    `pairs_total`) was invisible because four pairs in three buckets happened to sum. Neither
+    was a coverage gap in the usual sense: every assertion in this file passed, because every
+    assertion compared a value to an expectation and no value was wrong.
+
+    A fixture is written by whoever wrote the feature, out of the same mental model, so it
+    tests what was already believed. The cheap defence is to make the vocabulary itself the
+    expectation: when a closed set has N members, the fixture carries all N, and adding a
+    member to `app.mdm.patch.matching` fails HERE — where the fix is to seed a pair — rather
+    than silently in whichever rollup forgets it.
+    """
+    from app.core.posture import PATCH_STATES
+    from app.models.schema import AppCatalogEntry, AppCatalogTitleMatch
+
+    await _seed_fleet(db, fleet)
+    seeded = (
+        await db.execute(
+            select(AppCatalogTitleMatch.state)
+            .join(AppCatalogEntry, AppCatalogEntry.id == AppCatalogTitleMatch.app_catalog_id)
+            .where(AppCatalogEntry.version_hash.in_(fleet.version_hashes))
+        )
+    ).scalars().all()
+    assert set(seeded) == set(PATCH_STATES), (
+        "the posture fixture must seed a pair in every state the matcher can assign — a state "
+        "with no pair is a state every rollup below is untested against"
+    )
+
+
 async def test_a_closed_full_sweep_captures_every_active_key(db, fleet) -> None:
     """The whole pipeline: finish() on a device-sweep run fires the recorder, and the
     deltas between a capture taken before the fleet existed and one taken after match
