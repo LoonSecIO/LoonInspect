@@ -1,14 +1,21 @@
-"""Two wire adapters, one normalised result, and nothing clever in between (#319).
+"""Two wire adapters, one bounded wire, one normalised result (#319, #322).
 
-``openai_chat`` speaks ``POST {base}/chat/completions`` — Ollama, OpenAI itself, a
-gateway, LM Studio, vLLM, and the Apple Foundation Models shim all answer it.
-``anthropic_messages`` speaks ``POST {base}/v1/messages``. Both take the same
-``CompletionRequest`` and return the same ``CompletionResult`` so the endpoint and the
-page never branch on the wire.
+``openai_chat`` speaks ``POST {base}/chat/completions`` and ``GET {base}/models`` —
+Ollama, OpenAI itself, a gateway, LM Studio, vLLM, and the Apple Foundation Models shim
+all answer them. ``anthropic_messages`` speaks ``POST {base}/v1/messages`` and
+``GET {base}/v1/models``. Both take the same request shapes and return the same result
+shapes so the endpoint and the page never branch on the wire.
 
-Three things this module is strict about, each learned on 2026-09-05 against a real
-endpoint rather than assumed:
+Things this module is strict about, each learned against a real endpoint on 2026-09-05
+or named in the attack-surface review (``docs/ai-threat-model.md``) rather than assumed:
 
+- **The endpoint is hostile on the way back.** Every call goes through one door,
+  ``_request``: a wall-clock bound on the whole exchange (``asyncio.timeout``, because
+  httpx's read timeout is per chunk and a one-byte-per-minute drip would otherwise hold
+  a worker for as long as it liked), a size cap read while streaming (a reply to "tell
+  me a joke" is bytes, and a gigabyte is an attack), redirects never followed (a 302 to
+  ``169.254.169.254`` would turn the URL rule into a bypass), and at most two calls in
+  flight per process (never a fan-out, by mechanism).
 - **Thinking is a separate field, and it can eat the whole budget.** Ollama returns
   ``message.reasoning`` beside ``content`` (other servers say ``reasoning_content``);
   a small thinking model given 1024 tokens spent every one of them thinking and
@@ -21,14 +28,15 @@ endpoint rather than assumed:
 - **What a caller-chosen server says back is bounded**, the way
   ``app.api.connections._upstream_detail`` bounds a Jamf test: a JSON error message
   truncated to ``_DETAIL_MAX_CHARS``; for anything else the status, the content type
-  and the size only. The first 500 characters of an HTML error page are the part with
-  the server banner in them.
+  and the size only.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import weakref
 from dataclasses import dataclass
 from typing import Any
 
@@ -39,8 +47,15 @@ from app.ai.providers import Wire
 logger = logging.getLogger(__name__)
 
 ANTHROPIC_VERSION = "2023-06-01"
+# Wall clock for one whole exchange, including waiting for a slot.
 DEFAULT_TIMEOUT_SECONDS = 120.0
 _CONNECT_TIMEOUT_SECONDS = 10.0
+# Per chunk. The total above is the real bound; this only stops a stalled socket sooner.
+_READ_TIMEOUT_SECONDS = 60.0
+MAX_RESPONSE_BYTES = 1_048_576
+MAX_CONCURRENT_CALLS = 2
+MAX_MODELS_LISTED = 500
+MAX_MODEL_ID_CHARS = 200
 _DETAIL_MAX_CHARS = 300
 
 OUTCOME_ANSWERED = "answered"
@@ -71,11 +86,18 @@ class CompletionResult:
     completion_tokens: int | None
 
 
+@dataclass(frozen=True)
+class ModelInfo:
+    id: str
+    label: str | None
+
+
 class AdapterError(Exception):
     """The call did not produce a usable answer, and which way it failed.
 
-    ``kind`` is one of ``unreachable`` | ``timeout`` | ``http_status`` | ``malformed``;
-    ``status`` is set for ``http_status``. The message is safe to show verbatim.
+    ``kind`` is one of ``unreachable`` | ``timeout`` | ``http_status`` | ``malformed`` |
+    ``too_large``; ``status`` is set for ``http_status``. The message is safe to show
+    verbatim.
     """
 
     def __init__(self, kind: str, message: str, *, status: int | None = None) -> None:
@@ -85,17 +107,29 @@ class AdapterError(Exception):
         self.status = status
 
 
+# --- request shapes ---------------------------------------------------------------------------
+
+
 def _joined_base(base_url: str, path: str) -> str:
     return base_url.rstrip("/") + path
 
 
+def _headers(wire: Wire, api_key: str | None) -> dict[str, str]:
+    headers = {"Accept": "application/json"}
+    if wire is Wire.anthropic_messages:
+        headers["anthropic-version"] = ANTHROPIC_VERSION
+        if api_key:
+            headers["x-api-key"] = api_key
+    elif api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
+
+
 def build_request(wire: Wire, req: CompletionRequest) -> tuple[str, dict[str, str], dict[str, Any]]:
-    """The URL, headers and JSON body that would go on the wire. Pure, and the one
-    place either request shape is written down."""
+    """The URL, headers and JSON body of a completion. Pure, and the one place either
+    request shape is written down."""
+    headers = {"Content-Type": "application/json", **_headers(wire, req.api_key)}
     if wire is Wire.openai_chat:
-        headers = {"Content-Type": "application/json", "Accept": "application/json"}
-        if req.api_key:
-            headers["Authorization"] = f"Bearer {req.api_key}"
         body: dict[str, Any] = {
             "model": req.model,
             "messages": [{"role": "user", "content": req.prompt}],
@@ -107,13 +141,6 @@ def build_request(wire: Wire, req: CompletionRequest) -> tuple[str, dict[str, st
         return _joined_base(req.base_url, "/chat/completions"), headers, body
 
     if wire is Wire.anthropic_messages:
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "anthropic-version": ANTHROPIC_VERSION,
-        }
-        if req.api_key:
-            headers["x-api-key"] = req.api_key
         body = {
             "model": req.model,
             "max_tokens": req.max_tokens,
@@ -123,6 +150,19 @@ def build_request(wire: Wire, req: CompletionRequest) -> tuple[str, dict[str, st
         return _joined_base(req.base_url, "/v1/messages"), headers, body
 
     raise ValueError(f"unknown wire {wire!r}")
+
+
+def build_models_request(wire: Wire, base_url: str, api_key: str | None) -> tuple[str, dict[str, str]]:
+    """The URL and headers of a model listing. OpenAI-style servers list at
+    ``{base}/models``; Anthropic pages at ``{base}/v1/models`` and takes ``limit``."""
+    if wire is Wire.openai_chat:
+        return _joined_base(base_url, "/models"), _headers(wire, api_key)
+    if wire is Wire.anthropic_messages:
+        return _joined_base(base_url, f"/v1/models?limit={MAX_MODELS_LISTED}"), _headers(wire, api_key)
+    raise ValueError(f"unknown wire {wire!r}")
+
+
+# --- reply parsing ----------------------------------------------------------------------------
 
 
 def _text_of(content: Any) -> str:
@@ -208,22 +248,106 @@ def parse_response(wire: Wire, payload: Any) -> CompletionResult:
     raise ValueError(f"unknown wire {wire!r}")
 
 
-def _status_message(response: httpx.Response) -> str:
+def parse_models_response(wire: Wire, payload: Any) -> list[ModelInfo]:
+    """``{"data": [{"id": ...}]}`` on both wires (Anthropic adds ``display_name``) into
+    a bounded, de-duplicated, sorted list. Pure."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
+        raise AdapterError("malformed", "the reply carried no model list")
+    seen: dict[str, ModelInfo] = {}
+    for item in payload["data"]:
+        if not isinstance(item, dict):
+            continue
+        model_id = item.get("id")
+        if not isinstance(model_id, str) or not model_id.strip() or len(model_id) > MAX_MODEL_ID_CHARS:
+            continue
+        label = item.get("display_name") if wire is Wire.anthropic_messages else None
+        seen.setdefault(model_id, ModelInfo(id=model_id, label=label if isinstance(label, str) else None))
+        if len(seen) >= MAX_MODELS_LISTED:
+            break
+    return sorted(seen.values(), key=lambda m: m.id)
+
+
+# --- the wire, one door -----------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _Reply:
+    status: int
+    content_type: str
+    body: bytes
+
+
+# Per event loop rather than per module: a semaphore binds to the loop that first
+# waits on it, and the test lanes run more than one loop per process.
+_slots: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = weakref.WeakKeyDictionary()
+
+
+def _wire_slots() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    slots = _slots.get(loop)
+    if slots is None:
+        slots = _slots[loop] = asyncio.Semaphore(MAX_CONCURRENT_CALLS)
+    return slots
+
+
+async def _request(
+    method: str,
+    url: str,
+    *,
+    headers: dict[str, str],
+    json_body: dict[str, Any] | None = None,
+    transport: httpx.AsyncBaseTransport | None,
+    timeout_seconds: float,
+) -> _Reply:
+    """One exchange with a caller-chosen server, bounded four ways (module docstring)."""
+    limits = httpx.Timeout(_READ_TIMEOUT_SECONDS, connect=_CONNECT_TIMEOUT_SECONDS)
+    try:
+        async with asyncio.timeout(timeout_seconds):
+            async with _wire_slots():
+                async with httpx.AsyncClient(timeout=limits, transport=transport, follow_redirects=False) as client:
+                    async with client.stream(method, url, headers=headers, json=json_body) as response:
+                        chunks: list[bytes] = []
+                        size = 0
+                        async for chunk in response.aiter_bytes():
+                            size += len(chunk)
+                            if size > MAX_RESPONSE_BYTES:
+                                raise AdapterError(
+                                    "too_large",
+                                    f"the reply exceeded {MAX_RESPONSE_BYTES // 1024} KiB and was cut off",
+                                )
+                            chunks.append(chunk)
+                        return _Reply(
+                            status=response.status_code,
+                            content_type=response.headers.get("content-type", ""),
+                            body=b"".join(chunks),
+                        )
+    except TimeoutError as exc:
+        raise AdapterError("timeout", f"no complete reply within {timeout_seconds:g} s") from exc
+    except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout) as exc:
+        raise AdapterError("timeout", f"the endpoint stalled ({type(exc).__name__})") from exc
+    except httpx.HTTPError as exc:
+        # ConnectError, RemoteProtocolError, UnsupportedProtocol… — the endpoint was
+        # never reached or hung up. The exception text names the host, never a header.
+        raise AdapterError("unreachable", f"could not reach the endpoint: {exc}") from exc
+
+
+def _status_message(reply: _Reply) -> str:
     """What of a rejection may be shown: a JSON error message, truncated; otherwise the
     status, the declared type and the size."""
-    content_type = response.headers.get("content-type", "")
-    status_line = f"HTTP {response.status_code}"
+    status_line = f"HTTP {reply.status}"
     hint = {
         401: "the endpoint rejected the key",
         403: "the endpoint refused this key for that model or route",
         404: "no such route or model at this URL",
         429: "the endpoint is rate-limiting this key",
         529: "the endpoint is overloaded",
-    }.get(response.status_code)
+    }.get(reply.status)
+    if hint is None and 300 <= reply.status < 400:
+        hint = "the endpoint redirected, and redirects are not followed"
     prefix = f"{status_line}: {hint}" if hint else status_line
-    if "json" in content_type.split(";")[0].lower():
+    if "json" in reply.content_type.split(";")[0].lower():
         try:
-            body = response.json()
+            body = json.loads(reply.body)
         except ValueError:
             body = None
         message: Any = None
@@ -233,7 +357,20 @@ def _status_message(response: httpx.Response) -> str:
         if isinstance(message, str) and message.strip():
             return f"{prefix} — {message.strip()[:_DETAIL_MAX_CHARS]}"
         return prefix
-    return f"{prefix}. The response was {content_type or 'of no declared type'}, {len(response.content)} bytes; not shown."
+    declared = reply.content_type or "of no declared type"
+    return f"{prefix}. The response was {declared}, {len(reply.body)} bytes; not shown."
+
+
+def _json_or_raise(reply: _Reply) -> Any:
+    if reply.status < 200 or reply.status >= 300:
+        raise AdapterError("http_status", _status_message(reply), status=reply.status)
+    try:
+        return json.loads(reply.body)
+    except ValueError as exc:
+        declared = reply.content_type or "of no declared type"
+        raise AdapterError(
+            "malformed", f"HTTP {reply.status} but the body was not JSON ({declared}, {len(reply.body)} bytes)"
+        ) from exc
 
 
 async def complete(
@@ -243,29 +380,25 @@ async def complete(
     transport: httpx.AsyncBaseTransport | None = None,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> CompletionResult:
-    """One request, one reply, one of four failures. ``transport`` exists so a test can
+    """One prompt, one reply, one of five failures. ``transport`` exists so a test can
     stand in for the server, the way ``app.core.sharing.post_exchange`` allows."""
     url, headers, body = build_request(wire, req)
-    limits = httpx.Timeout(timeout_seconds, connect=_CONNECT_TIMEOUT_SECONDS)
-    try:
-        async with httpx.AsyncClient(timeout=limits, transport=transport) as client:
-            response = await client.post(url, headers=headers, json=body)
-    except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout) as exc:
-        raise AdapterError("timeout", f"no reply within {timeout_seconds:.0f} s ({type(exc).__name__})") from exc
-    except httpx.HTTPError as exc:
-        # ConnectError, RemoteProtocolError, UnsupportedProtocol… — the endpoint was
-        # never reached or hung up. The exception text names the host, never a header.
-        raise AdapterError("unreachable", f"could not reach the endpoint: {exc}") from exc
+    reply = await _request("POST", url, headers=headers, json_body=body, transport=transport, timeout_seconds=timeout_seconds)
+    logger.info("ai wire: %s POST %s -> %s", wire.value, httpx.URL(url).host, reply.status)
+    return parse_response(wire, _json_or_raise(reply))
 
-    logger.info("ai test box: %s %s -> %s", wire.value, httpx.URL(url).host, response.status_code)
-    if response.status_code < 200 or response.status_code >= 300:
-        raise AdapterError("http_status", _status_message(response), status=response.status_code)
-    try:
-        payload = response.json()
-    except (ValueError, json.JSONDecodeError) as exc:
-        content_type = response.headers.get("content-type", "") or "of no declared type"
-        raise AdapterError(
-            "malformed",
-            f"HTTP {response.status_code} but the body was not JSON ({content_type}, {len(response.content)} bytes)",
-        ) from exc
-    return parse_response(wire, payload)
+
+async def list_models(
+    wire: Wire,
+    base_url: str,
+    api_key: str | None,
+    *,
+    transport: httpx.AsyncBaseTransport | None = None,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+) -> list[ModelInfo]:
+    """What the endpoint says it serves. Same door, same bounds, nothing of the fleet on
+    the wire — the key is the only thing sent."""
+    url, headers = build_models_request(wire, base_url, api_key)
+    reply = await _request("GET", url, headers=headers, transport=transport, timeout_seconds=timeout_seconds)
+    logger.info("ai wire: %s GET %s -> %s", wire.value, httpx.URL(url).host, reply.status)
+    return parse_models_response(wire, _json_or_raise(reply))

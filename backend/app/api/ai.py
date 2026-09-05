@@ -1,14 +1,17 @@
-"""Settings > AI: the test box (#319), the first caller of the AI gate.
+"""Settings > AI: the test box (#319) and the model listing (#322), the first callers
+of the AI gate.
 
-One prompt to an endpoint the admin names, the reply shown as it came back. The
-order inside ``test`` is the whole security story and is not to be reshuffled:
+One prompt to an endpoint the admin names, the reply shown as it came back; and one
+question to that endpoint, "what do you serve?", answered as a list. The order inside
+both is the whole security story and is not to be reshuffled:
 
 1. the URL is judged (``validate_inference_base_url`` and a resolution check —
    loopback and private hosts allowed, link-local and the rest refused);
 2. the gate is asked (``require_ai``: the master flag, the AI-inference consent,
-   and one share-log row naming the destination and the single field that leaves,
-   committed *before* the first byte moves);
-3. the adapter dials, bounded by a timeout, and whatever it says is bounded in turn.
+   and one share-log row naming the destination and what leaves — ``prompt_text`` for
+   a send, nothing of the fleet for a listing — committed *before* the first byte);
+3. the adapter dials through its one bounded door, and whatever it says is bounded
+   in turn.
 
 The key travels browser → this process → the endpoint and nowhere else: it is not
 stored, not logged, not audited, not echoed. Every model call in this product is made
@@ -23,7 +26,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.adapters import AdapterError, CompletionRequest, complete
+from app.ai.adapters import MAX_MODEL_ID_CHARS, AdapterError, CompletionRequest, complete, list_models
 from app.ai.host_detect import read_host_detection
 from app.ai.providers import (
     ANTHROPIC_MODELS,
@@ -33,6 +36,7 @@ from app.ai.providers import (
     HostReach,
     Provider,
     ReachNotImplemented,
+    Wire,
     default_base_url,
     hostname_for,
 )
@@ -50,6 +54,9 @@ from app.core.egress import (
 from app.core.permissions import Permission
 from app.schemas.ai import (
     AIErrorOut,
+    AIModelOut,
+    AIModelsIn,
+    AIModelsOut,
     AITestIn,
     AITestOut,
     HostDetectionOut,
@@ -61,6 +68,7 @@ from app.schemas.ai import (
 router = APIRouter(prefix="/api/system/ai", tags=["ai"])
 
 AI_TEST_BOX_FEATURE = "ai_test_box"
+AI_MODEL_LISTING_FEATURE = "ai_model_listing"
 DISCLOSED_FIELDS = ("prompt_text",)
 REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high")
 
@@ -73,6 +81,31 @@ def _reach_hostname(reach: HostReach) -> str | None:
         return hostname_for(reach)
     except (ReachNotImplemented, ValueError):
         return None
+
+
+async def _judged(
+    provider: Provider, host_reach: HostReach | None, base_url: str, api_key: str | None
+) -> tuple[Wire, str, str]:
+    """Steps 1 of the module docstring, shared by both endpoints: the wire, the URL as
+    it may be dialled, and the origin the share log will record. Raises the HTTP
+    refusal itself."""
+    defaults = DEFAULTS[provider]
+    if defaults.key == "required" and not api_key:
+        raise HTTPException(status_code=422, detail=f"{provider.value} needs an API key")
+
+    reach = host_reach or (HostReach.docker_desktop if defaults.uses_host_reach else HostReach.custom)
+    if reach not in IMPLEMENTED_REACH:
+        try:
+            hostname_for(reach)
+        except ReachNotImplemented as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        judged = validate_inference_base_url(base_url, carries_key=bool(api_key))
+        await refuse_blocked_resolution(judged, reason_for=inference_blocked_reason)
+    except BlockedBaseUrl as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return WIRE_FOR[provider], judged, destination_for_log(judged)
 
 
 @router.get(
@@ -125,29 +158,70 @@ async def host() -> HostDetectionOut:
 
 
 @router.post(
+    "/models",
+    response_model=AIModelsOut,
+    dependencies=[Depends(require(Permission.SYSTEM_WRITE))],
+)
+async def list_endpoint_models(payload: AIModelsIn, db: AsyncSession = Depends(get_db)) -> AIModelsOut:
+    """What the endpoint says it serves, to fill the model field's suggestions. A POST
+    because the body carries the key; nothing is stored."""
+    wire, base_url, destination = await _judged(payload.provider, payload.host_reach, payload.base_url, payload.api_key)
+
+    # The gate, declared honestly: nothing of the fleet leaves, and the row says so.
+    try:
+        await require_ai(db, feature=AI_MODEL_LISTING_FEATURE, destination=destination, carries_no_fleet_data=True)
+    except (AIFeaturesDisabled, AIConsentMissing) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    started = time.monotonic()
+    try:
+        models = await list_models(wire, base_url, payload.api_key, transport=transport_override)
+    except AdapterError as exc:
+        latency_ms = int((time.monotonic() - started) * 1000)
+        audit(
+            AuditAction.AI_MODELS_LISTED,
+            target_type="ai_endpoint",
+            target_id=destination,
+            provider=payload.provider.value,
+            outcome="error",
+            error_kind=exc.kind,
+            latency_ms=latency_ms,
+        )
+        return AIModelsOut(
+            provider=payload.provider,
+            wire=wire,
+            destination=destination,
+            models=[],
+            latency_ms=latency_ms,
+            error=AIErrorOut(kind=exc.kind, message=exc.message, status=exc.status),
+        )
+
+    latency_ms = int((time.monotonic() - started) * 1000)
+    audit(
+        AuditAction.AI_MODELS_LISTED,
+        target_type="ai_endpoint",
+        target_id=destination,
+        provider=payload.provider.value,
+        outcome="listed",
+        count=len(models),
+        latency_ms=latency_ms,
+    )
+    return AIModelsOut(
+        provider=payload.provider,
+        wire=wire,
+        destination=destination,
+        models=[AIModelOut(id=m.id, label=m.label) for m in models],
+        latency_ms=latency_ms,
+    )
+
+
+@router.post(
     "/test",
     response_model=AITestOut,
     dependencies=[Depends(require(Permission.SYSTEM_WRITE))],
 )
 async def test_endpoint(payload: AITestIn, db: AsyncSession = Depends(get_db)) -> AITestOut:
-    defaults = DEFAULTS[payload.provider]
-    wire = WIRE_FOR[payload.provider]
-    if defaults.key == "required" and not payload.api_key:
-        raise HTTPException(status_code=422, detail=f"{payload.provider.value} needs an API key")
-
-    reach = payload.host_reach or (HostReach.docker_desktop if defaults.uses_host_reach else HostReach.custom)
-    if reach not in IMPLEMENTED_REACH:
-        try:
-            hostname_for(reach)
-        except ReachNotImplemented as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    try:
-        base_url = validate_inference_base_url(payload.base_url, carries_key=bool(payload.api_key))
-        await refuse_blocked_resolution(base_url, reason_for=inference_blocked_reason)
-    except BlockedBaseUrl as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    destination = destination_for_log(base_url)
+    wire, base_url, destination = await _judged(payload.provider, payload.host_reach, payload.base_url, payload.api_key)
 
     # The gate, before anything is dialled. Refusals are the operator's switches, so
     # they answer 409 with the gate's own sentence rather than a generic error.
@@ -205,7 +279,8 @@ async def test_endpoint(payload: AITestIn, db: AsyncSession = Depends(get_db)) -
         provider=payload.provider,
         wire=wire,
         destination=destination,
-        model=result.model or payload.model,
+        # Bounded: the endpoint chose this string.
+        model=(result.model or payload.model)[:MAX_MODEL_ID_CHARS],
         outcome=result.outcome,
         content=result.content,
         reasoning=result.reasoning,

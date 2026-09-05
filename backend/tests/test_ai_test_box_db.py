@@ -285,3 +285,79 @@ async def test_the_table_and_the_detection_are_served(client):
 
     host = (await client.get("/api/system/ai/host")).json()
     assert set(host) >= {"runtime", "hostOs", "appleSilicon", "aliasResolves", "dockerDesktopOnMacos", "evidence"}
+
+
+# --- the model listing (#322) ---------------------------------------------------------------
+
+
+MODELS_REPLY = {"object": "list", "data": [{"id": "qwen3.5:2b-mlx"}, {"id": "gemma4:26b"}]}
+
+
+async def test_the_gate_takes_a_call_that_carries_nothing_of_the_fleet_only_when_declared(db, clean):
+    from app.core.ai import require_ai
+
+    await _switches(db, flag=True, consent=True)
+    # Naming fields while declaring none is refused as the lie it is.
+    with pytest.raises(ValueError):
+        await require_ai(db, feature="ai_model_listing", destination="http://x", fields=["a"], carries_no_fleet_data=True)
+    # An undeclared off-pod call with no fields is still the programming error it was.
+    with pytest.raises(ValueError):
+        await require_ai(db, feature="ai_model_listing", destination="http://x")
+    await require_ai(db, feature="ai_model_listing", destination="http://x", carries_no_fleet_data=True)
+    rows = await _ai_rows(db)
+    assert len(rows) == 1
+    assert rows[0].payload == {"feature": "ai_model_listing", "fields": []}
+
+
+async def test_the_listing_is_gated_like_a_send(client, db, clean, endpoint):
+    body = {"provider": "openai_compatible", "baseUrl": "http://host.docker.internal:11434/v1"}
+    refused = await client.post("/api/system/ai/models", json=body)
+    assert refused.status_code == 409
+    assert endpoint.requests == []
+
+    await _switches(db, flag=True, consent=False)
+    refused = await client.post("/api/system/ai/models", json=body)
+    assert refused.status_code == 409
+    assert "consent" in refused.json()["detail"]
+    assert endpoint.requests == []
+    assert await _ai_rows(db) == []
+
+
+async def test_a_permitted_listing_writes_an_empty_disclosure_and_returns_the_models(client, db, clean, endpoint):
+    await _switches(db, flag=True, consent=True)
+    endpoint.body = MODELS_REPLY
+    body = {"provider": "openai_compatible", "baseUrl": "http://host.docker.internal:11434/v1", "apiKey": KEY}
+    response = await client.post("/api/system/ai/models", json=body)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [m["id"] for m in body["models"]] == ["gemma4:26b", "qwen3.5:2b-mlx"]
+    assert body["destination"] == "http://host.docker.internal:11434"
+    assert body["error"] is None
+    assert KEY not in response.text
+
+    request = endpoint.requests[0]
+    assert request.method == "GET"
+    assert str(request.url) == "http://host.docker.internal:11434/v1/models"
+    assert request.headers["authorization"] == f"Bearer {KEY}"
+
+    rows = await _ai_rows(db)
+    assert len(rows) == 1
+    assert rows[0].payload == {"feature": "ai_model_listing", "fields": []}
+    assert rows[0].endpoint == "http://host.docker.internal:11434"
+    assert rows[0].occurred_at <= endpoint.called_at
+
+
+async def test_a_listing_failure_is_reported_not_raised(client, db, clean, endpoint):
+    await _switches(db, flag=True, consent=True)
+    endpoint.status = 401
+    endpoint.body = {"error": {"message": "invalid x-api-key", "type": "authentication_error"}}
+    response = await client.post(
+        "/api/system/ai/models", json={"provider": "anthropic", "baseUrl": "https://api.anthropic.com", "apiKey": KEY}
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["models"] == []
+    assert body["error"]["status"] == 401
+    assert "rejected the key" in body["error"]["message"]
+    assert str(endpoint.requests[0].url) == "https://api.anthropic.com/v1/models?limit=500"
+    assert endpoint.requests[0].headers["x-api-key"] == KEY

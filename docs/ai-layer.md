@@ -24,6 +24,17 @@ What ships, where it lives, and what was proven against it.
   `ai_features` is on; three cards from the providers endpoint, the detection banner, the
   consent toggle (its first UI), the form, the reply with reasoning collapsed and error text
   verbatim. English and German.
+- **Model listing (#322, same day).** "Load models" beside the Model field asks the endpoint
+  what it serves — `GET {base}/models` on the OpenAI wire, `GET {base}/v1/models?limit=500` on
+  Anthropic's — through `POST /api/system/ai/models`, and fills the suggestions from the reply.
+  The gate learned one word for it: `require_ai(..., carries_no_fleet_data=True)` declares a
+  control-plane call that leaves the pod carrying nothing of the fleet; the flag, the consent
+  and the share-log row are all still required, and the row records `fields: []`, which is
+  the honest disclosure. Naming fields while declaring none is refused.
+- **One bounded door (#322).** Every call to an endpoint goes through `adapters._request`:
+  a wall-clock bound on the whole exchange (`asyncio.timeout`; httpx's read timeout is per
+  chunk), a 1 MiB reply cap read while streaming, redirects never followed, and at most two
+  calls in flight per process. These close findings F1–F5 of `docs/ai-threat-model.md`.
 - **Compose**: `extra_hosts: ["host.docker.internal:host-gateway"]` on `app`.
 - **Tests**: `test_ai_adapters.py` (request shapes, parsing, the four failures, the URL rule,
   the provider table), `test_ai_host_detect.py` (table-driven), `test_ai_test_box_db.py`

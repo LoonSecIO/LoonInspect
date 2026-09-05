@@ -10,6 +10,7 @@ content. That second case is an outcome of its own, never "the model said nothin
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import logging
 
@@ -17,13 +18,19 @@ import httpx
 import pytest
 
 from app.ai.adapters import (
+    MAX_CONCURRENT_CALLS,
+    MAX_MODELS_LISTED,
+    MAX_RESPONSE_BYTES,
     OUTCOME_ANSWERED,
     OUTCOME_BUDGET_EXHAUSTED_THINKING,
     OUTCOME_EMPTY,
     AdapterError,
     CompletionRequest,
+    build_models_request,
     build_request,
     complete,
+    list_models,
+    parse_models_response,
     parse_response,
 )
 from app.ai.providers import (
@@ -201,7 +208,8 @@ async def test_key_goes_on_the_wire_and_nowhere_else(caplog):
         seen["body"] = request.content.decode()
         return httpx.Response(200, json=OLLAMA_REPLY)
 
-    req = CompletionRequest(base_url="http://127.0.0.1:11434/v1", model="m", prompt="p", api_key=KEY)
+    prompt = "the quick zebra 4242 asks for a joke"
+    req = CompletionRequest(base_url="http://127.0.0.1:11434/v1", model="m", prompt=prompt, api_key=KEY)
     with caplog.at_level(logging.DEBUG):
         result = await complete(Wire.openai_chat, req, transport=_server(handler))
 
@@ -209,17 +217,20 @@ async def test_key_goes_on_the_wire_and_nowhere_else(caplog):
     assert KEY not in seen["body"]
     assert KEY not in caplog.text
     assert KEY not in repr(result)
+    # Nor the prompt, nor what came back: the log names the host and the status only.
+    assert "zebra 4242" not in caplog.text
+    assert "She looked surprised" not in caplog.text
     assert result.outcome == OUTCOME_ANSWERED
 
 
-async def test_timeout_is_its_own_failure():
+async def test_a_stalled_socket_is_a_timeout_too():
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ReadTimeout("slow", request=request)
 
     with pytest.raises(AdapterError) as excinfo:
         await complete(Wire.openai_chat, REQ, transport=_server(handler), timeout_seconds=3)
     assert excinfo.value.kind == "timeout"
-    assert "3 s" in excinfo.value.message
+    assert "stalled" in excinfo.value.message
 
 
 async def test_unreachable_is_its_own_failure():
@@ -362,3 +373,126 @@ def test_reserved_reaches_are_refused_by_name(reach):
 def test_custom_reach_has_no_host_name_to_resolve():
     with pytest.raises(ValueError):
         hostname_for(HostReach.custom)
+
+
+# --- the bounded door ------------------------------------------------------------------------
+
+
+async def test_a_reply_larger_than_the_cap_is_cut_off_not_buffered():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b'{"choices": [' + b"x" * (MAX_RESPONSE_BYTES + 1) + b"]}")
+
+    with pytest.raises(AdapterError) as excinfo:
+        await complete(Wire.openai_chat, REQ, transport=_server(handler))
+    assert excinfo.value.kind == "too_large"
+    assert "KiB" in excinfo.value.message
+
+
+async def test_the_bound_is_wall_clock_not_per_chunk():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(0.5)
+        return httpx.Response(200, json=OLLAMA_REPLY)
+
+    with pytest.raises(AdapterError) as excinfo:
+        await complete(Wire.openai_chat, REQ, transport=_server(handler), timeout_seconds=0.1)
+    assert excinfo.value.kind == "timeout"
+    assert "0.1 s" in excinfo.value.message
+
+
+async def test_a_redirect_is_reported_and_never_followed():
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(302, headers={"location": "http://169.254.169.254/latest/meta-data/"})
+
+    with pytest.raises(AdapterError) as excinfo:
+        await complete(Wire.openai_chat, REQ, transport=_server(handler))
+    assert excinfo.value.kind == "http_status"
+    assert excinfo.value.status == 302
+    assert "not followed" in excinfo.value.message
+    assert seen == ["http://host.docker.internal:11434/v1/chat/completions"]
+
+
+async def test_at_most_two_calls_are_in_flight_per_process():
+    in_flight = 0
+    peak = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal in_flight, peak
+        in_flight += 1
+        peak = max(peak, in_flight)
+        await asyncio.sleep(0.02)
+        in_flight -= 1
+        return httpx.Response(200, json=OLLAMA_REPLY)
+
+    results = await asyncio.gather(*(complete(Wire.openai_chat, REQ, transport=_server(handler)) for _ in range(6)))
+    assert len(results) == 6
+    assert peak == MAX_CONCURRENT_CALLS
+
+
+# --- the model listing ------------------------------------------------------------------------
+
+
+def test_the_listing_requests_are_the_documented_shapes():
+    url, headers = build_models_request(Wire.openai_chat, "http://host.docker.internal:11434/v1/", None)
+    assert url == "http://host.docker.internal:11434/v1/models"
+    assert "Authorization" not in headers
+    url, headers = build_models_request(Wire.anthropic_messages, "https://api.anthropic.com", KEY)
+    assert url == f"https://api.anthropic.com/v1/models?limit={MAX_MODELS_LISTED}"
+    assert headers["x-api-key"] == KEY
+    assert headers["anthropic-version"] == "2023-06-01"
+
+
+def test_the_listing_is_bounded_deduplicated_and_sorted():
+    payload = {
+        "object": "list",
+        "data": [
+            {"id": "qwen3.8:27b-mlx", "object": "model"},
+            {"id": "gemma4:26b"},
+            {"id": "gemma4:26b"},
+            {"id": ""},
+            {"id": "x" * 201},
+            {"id": 42},
+            "not a model",
+        ],
+    }
+    models = parse_models_response(Wire.openai_chat, payload)
+    assert [m.id for m in models] == ["gemma4:26b", "qwen3.8:27b-mlx"]
+    assert all(m.label is None for m in models)
+
+
+def test_anthropic_listing_keeps_the_display_name():
+    payload = {"data": [{"id": "claude-fable-5-1", "display_name": "Claude Fable 5.1", "type": "model"}], "has_more": False}
+    models = parse_models_response(Wire.anthropic_messages, payload)
+    assert models[0].id == "claude-fable-5-1"
+    assert models[0].label == "Claude Fable 5.1"
+
+
+def test_a_listing_longer_than_the_cap_stops_at_the_cap():
+    payload = {"data": [{"id": f"m{i:04d}"} for i in range(MAX_MODELS_LISTED + 50)]}
+    assert len(parse_models_response(Wire.openai_chat, payload)) == MAX_MODELS_LISTED
+
+
+@pytest.mark.parametrize("payload", [{}, {"data": "nope"}, [], "text"])
+def test_a_listing_without_data_is_malformed(payload):
+    with pytest.raises(AdapterError) as excinfo:
+        parse_models_response(Wire.openai_chat, payload)
+    assert excinfo.value.kind == "malformed"
+
+
+async def test_list_models_dials_get_with_the_key_and_nothing_else(caplog):
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["url"] = str(request.url)
+        seen["authorization"] = request.headers.get("authorization", "")
+        return httpx.Response(200, json={"data": [{"id": "b"}, {"id": "a"}]})
+
+    with caplog.at_level(logging.DEBUG):
+        models = await list_models(Wire.openai_chat, "http://127.0.0.1:11434/v1", KEY, transport=_server(handler))
+    assert (seen["method"], seen["url"]) == ("GET", "http://127.0.0.1:11434/v1/models")
+    assert seen["authorization"] == f"Bearer {KEY}"
+    assert KEY not in caplog.text
+    assert [m.id for m in models] == ["a", "b"]

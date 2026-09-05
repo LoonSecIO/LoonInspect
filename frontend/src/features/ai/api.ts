@@ -69,6 +69,33 @@ export interface TestResponse {
   error: TestError | null;
 }
 
+export interface ModelsRequest {
+  provider: Provider;
+  hostReach?: HostReach;
+  baseUrl: string;
+  apiKey?: string;
+}
+
+export interface ModelEntry {
+  id: string;
+  label: string | null;
+}
+
+export interface ModelsResponse {
+  provider: Provider;
+  wire: string;
+  destination: string;
+  models: ModelEntry[];
+  latencyMs: number;
+  error: TestError | null;
+}
+
+/** Ask the endpoint what it serves, through the backend (#322). Nothing of the
+ *  fleet leaves; the gate still applies and the share log still gets its row. */
+export function listModels(body: ModelsRequest): Promise<ModelsResponse> {
+  return apiRequest<ModelsResponse>("/system/ai/models", { method: "POST", json: body });
+}
+
 export function getProviders(): Promise<ProvidersResponse> {
   return apiRequest<ProvidersResponse>("/system/ai/providers");
 }

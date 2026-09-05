@@ -9,8 +9,10 @@ import { getDataSharing, updateDataSharing } from "@/features/system/api";
 import {
   getHostDetection,
   getProviders,
+  listModels,
   sendTest,
   type HostDetection,
+  type ModelsResponse,
   type Provider,
   type ProvidersResponse,
   type TestResponse
@@ -46,6 +48,8 @@ export function AISettingsPage() {
 
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<TestResponse | null>(null);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [loaded, setLoaded] = useState<ModelsResponse | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [consentError, setConsentError] = useState<string | null>(null);
 
@@ -82,6 +86,29 @@ export function AISettingsPage() {
     setReasoningEffort(entry.reasoningEffort ?? "");
     setResult(null);
     setSendError(null);
+    setLoaded(null);
+  }
+
+  async function handleLoadModels() {
+    if (!providers) return;
+    const entry = providers.entries.find((e) => e.provider === provider);
+    setLoadingModels(true);
+    setSendError(null);
+    try {
+      setLoaded(
+        await listModels({
+          provider,
+          hostReach: entry?.usesHostReach ? "docker_desktop" : "custom",
+          baseUrl,
+          apiKey: apiKey.trim() ? apiKey.trim() : undefined
+        })
+      );
+    } catch (error) {
+      setLoaded(null);
+      setSendError(error instanceof ApiError && error.detail ? error.detail : t.ai.sendFailed);
+    } finally {
+      setLoadingModels(false);
+    }
   }
 
   async function toggleConsent() {
@@ -120,7 +147,12 @@ export function AISettingsPage() {
   }
 
   const entry = providers?.entries.find((e) => e.provider === provider);
-  const canSend = canWrite && flagOn === true && consent === true && !sending && baseUrl.trim() !== "" && model.trim() !== "" && prompt.trim() !== "";
+  const switchesOn = canWrite && flagOn === true && consent === true;
+  const canSend = switchesOn && !sending && baseUrl.trim() !== "" && model.trim() !== "" && prompt.trim() !== "";
+  const canLoadModels = switchesOn && !loadingModels && baseUrl.trim() !== "";
+  // What the endpoint said it serves, once asked; the card's own suggestions until then.
+  const suggestions = loaded && !loaded.error ? loaded.models.map((m) => m.id) : (entry?.models ?? []);
+  const modelNotListed = loaded !== null && !loaded.error && model.trim() !== "" && !suggestions.includes(model.trim());
 
   return (
     <section className="space-y-6">
@@ -211,15 +243,32 @@ export function AISettingsPage() {
           <span className="font-medium">{t.ai.baseUrl}</span>
           <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} spellCheck={false} />
         </label>
-        <label className="space-y-1 text-sm">
-          <span className="font-medium">{t.ai.model}</span>
-          <Input value={model} onChange={(e) => setModel(e.target.value)} list="ai-models" spellCheck={false} />
+        <div className="space-y-1 text-sm">
+          <div className="flex items-center justify-between gap-2">
+            <label className="font-medium" htmlFor="ai-model">
+              {t.ai.model}
+            </label>
+            <Button type="button" variant="outline" size="sm" disabled={!canLoadModels} onClick={() => void handleLoadModels()}>
+              {loadingModels ? t.ai.loadingModels : t.ai.loadModels}
+            </Button>
+          </div>
+          <Input id="ai-model" value={model} onChange={(e) => setModel(e.target.value)} list="ai-models" spellCheck={false} />
           <datalist id="ai-models">
-            {entry?.models.map((m) => (
+            {suggestions.map((m) => (
               <option key={m} value={m} />
             ))}
           </datalist>
-        </label>
+          {loaded && loaded.error && (
+            <p className="text-xs text-destructive">
+              {loaded.error.kind}
+              {loaded.error.status ? ` (${loaded.error.status})` : ""}: {loaded.error.message}
+            </p>
+          )}
+          {loaded && !loaded.error && (
+            <p className="text-xs text-muted-foreground">{t.ai.modelsLoaded(loaded.models.length, loaded.latencyMs)}</p>
+          )}
+          {modelNotListed && <p className="text-xs text-muted-foreground">{t.ai.modelNotListed}</p>}
+        </div>
         {entry && entry.key !== "none" && (
           <label className="space-y-1 text-sm">
             <span className="font-medium">
