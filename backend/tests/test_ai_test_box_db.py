@@ -186,6 +186,8 @@ async def test_a_permitted_send_writes_the_row_first_and_returns_the_reply(clien
     request = endpoint.requests[0]
     assert str(request.url) == "http://host.docker.internal:11434/v1/chat/completions"
     assert "authorization" not in request.headers
+    # Dialled through the Docker Desktop reach, so the Mac's loopback name is presented.
+    assert request.headers["host"] == "127.0.0.1:11434"
 
     # One disclosure row, naming the destination and the one field that left, and
     # committed before the endpoint saw the first byte.
@@ -229,6 +231,7 @@ async def test_anthropic_needs_a_key_and_speaks_its_own_wire(client, db, clean, 
     request = endpoint.requests[-1]
     assert str(request.url) == "https://api.anthropic.com/v1/messages"
     assert request.headers["x-api-key"] == KEY
+    assert request.headers["host"] == "api.anthropic.com"  # no reach, no presentation
     assert request.headers["anthropic-version"] == "2023-06-01"
 
 

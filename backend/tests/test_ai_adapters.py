@@ -43,6 +43,7 @@ from app.ai.providers import (
     Wire,
     default_base_url,
     hostname_for,
+    presented_host,
 )
 from app.core.egress import (
     BlockedBaseUrl,
@@ -68,6 +69,8 @@ def test_openai_request_is_the_documented_shape_and_carries_nothing_extra():
         "messages": [{"role": "user", "content": "Tell me a joke."}],
         "temperature": 0.7,
         "max_tokens": 1024,
+        # Apple's `fm serve` streams unless told not to; every other server ignores it.
+        "stream": False,
     }
 
 
@@ -244,7 +247,14 @@ async def test_unreachable_is_its_own_failure():
 
 @pytest.mark.parametrize(
     ("status", "hint"),
-    [(401, "rejected the key"), (404, "no such route or model"), (429, "rate-limiting"), (500, "HTTP 500"), (529, "overloaded")],
+    [
+        (401, "rejected the key"),
+        (403, "the name it arrived under"),
+        (404, "no such route or model"),
+        (429, "rate-limiting"),
+        (500, "HTTP 500"),
+        (529, "overloaded"),
+    ],
 )
 async def test_rejections_carry_the_status_a_hint_and_a_bounded_message(status, hint):
     def handler(request: httpx.Request) -> httpx.Response:
@@ -356,7 +366,7 @@ def test_every_entry_has_a_wire_and_defaults():
 
 
 def test_the_docker_desktop_card_fills_the_alias():
-    assert default_base_url(Provider.apple_fm) == "http://host.docker.internal:11535/v1"
+    assert default_base_url(Provider.apple_fm) == "http://host.docker.internal:1976/v1"
     assert default_base_url(Provider.openai_compatible) == "http://host.docker.internal:11434/v1"
     assert default_base_url(Provider.anthropic) == "https://api.anthropic.com"
 
@@ -496,3 +506,27 @@ async def test_list_models_dials_get_with_the_key_and_nothing_else(caplog):
     assert seen["authorization"] == f"Bearer {KEY}"
     assert KEY not in caplog.text
     assert [m.id for m in models] == ["a", "b"]
+
+
+# --- the reach names the address the connection arrives on ---------------------------------
+
+
+def test_the_docker_desktop_reach_presents_the_loopback_name_only_for_its_own_alias():
+    assert presented_host(HostReach.docker_desktop, "http://host.docker.internal:1976/v1") == "127.0.0.1:1976"
+    assert presented_host(HostReach.docker_desktop, "http://host.docker.internal/v1") == "127.0.0.1"
+    # Retyped to anything else, the URL is sent exactly as written.
+    assert presented_host(HostReach.docker_desktop, "http://mini.local:1976/v1") is None
+    assert presented_host(HostReach.custom, "http://host.docker.internal:1976/v1") is None
+    assert presented_host(HostReach.custom, "https://api.anthropic.com") is None
+
+
+def test_the_presented_host_travels_on_both_calls():
+    req = CompletionRequest(
+        base_url="http://host.docker.internal:1976/v1", model="system", prompt="p", host_header="127.0.0.1:1976"
+    )
+    _, headers, _ = build_request(Wire.openai_chat, req)
+    assert headers["Host"] == "127.0.0.1:1976"
+    _, headers = build_models_request(Wire.openai_chat, "http://host.docker.internal:1976/v1", None, "127.0.0.1:1976")
+    assert headers["Host"] == "127.0.0.1:1976"
+    _, headers = build_models_request(Wire.openai_chat, "http://host.docker.internal:1976/v1", None)
+    assert "Host" not in headers

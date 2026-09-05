@@ -2,8 +2,10 @@
 
 Three entries, two wire adapters, one host-reach seam (Kyle, 2026-09-05):
 
-- ``apple_fm``: Apple Foundation Models, reached through an OpenAI-compatible shim on
-  the Mac host. The framework only executes host-side; the container is a client.
+- ``apple_fm``: Apple Foundation Models, served by Apple's own ``fm serve`` on the Mac
+  host (macOS 27 ships ``/usr/bin/fm``; ``fm serve`` listens on 127.0.0.1:1976 by
+  default and speaks ``/v1/models`` and ``/v1/chat/completions``; verified 2026-09-05).
+  The framework only executes host-side; the container is a client. No shim.
 - ``openai_compatible``: any OpenAI-style ``/chat/completions``. Ollama on the host is
   the documented local default (#28); OpenAI itself, a gateway, LM Studio and vLLM are
   the same entry with a different URL. Ollama is not a provider — it is an endpoint.
@@ -24,6 +26,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from urllib.parse import urlsplit
 
 
 class Provider(StrEnum):
@@ -64,6 +67,14 @@ _REACH_HOSTNAME: dict[HostReach, str] = {
 
 IMPLEMENTED_REACH: frozenset[HostReach] = frozenset({HostReach.docker_desktop, HostReach.custom})
 
+# The address a connection through each reach actually arrives on, which is what the
+# container puts in the `Host` header. Docker Desktop delivers `host.docker.internal`
+# to the Mac's own loopback, and a local server may only answer requests that name
+# the address it is bound to (Apple's `fm serve` answers 403 to any other name, so a
+# local client has to say where the connection lands). Measured 2026-09-05:
+# `127.0.0.1`, `127.0.0.1:1976` and `localhost:1976` are all accepted by `fm serve`.
+_REACH_ARRIVES_ON: dict[HostReach, str] = {HostReach.docker_desktop: "127.0.0.1"}
+
 WIRE_FOR: dict[Provider, Wire] = {
     Provider.apple_fm: Wire.openai_chat,
     Provider.openai_compatible: Wire.openai_chat,
@@ -94,8 +105,10 @@ DEFAULTS: dict[Provider, ProviderDefaults] = {
     Provider.apple_fm: ProviderDefaults(
         provider=Provider.apple_fm,
         wire=Wire.openai_chat,
-        base_url="http://{host}:11535/v1",
-        model="apple-foundation-model",
+        base_url="http://{host}:1976/v1",
+        # `fm serve` names the on-device model "system" and Private Cloud Compute
+        # "pcc". It refuses `reasoning_effort` for "system", so none is sent.
+        model="system",
         key="none",
         reasoning_effort=None,
         uses_host_reach=True,
@@ -119,6 +132,9 @@ DEFAULTS: dict[Provider, ProviderDefaults] = {
         uses_host_reach=False,
     ),
 }
+
+# What `fm serve` lists: the on-device model and Private Cloud Compute.
+APPLE_FM_MODELS: tuple[str, ...] = ("system", "pcc")
 
 # Alternatives the model field's help text may list; the default above is the one
 # the environment names as current and most capable.
@@ -152,3 +168,16 @@ def default_base_url(provider: Provider, reach: HostReach = HostReach.docker_des
     if "{host}" not in template:
         return template
     return template.replace("{host}", hostname_for(reach))
+
+
+def presented_host(reach: HostReach, base_url: str) -> str | None:
+    """The `Host` header for a dial through ``reach``, or None to send the URL's own
+    name. Only while the operator kept the reach's alias: a URL they retyped is
+    ``custom`` in all but name and is sent exactly as written."""
+    arrives_on = _REACH_ARRIVES_ON.get(reach)
+    if arrives_on is None:
+        return None
+    parsed = urlsplit(base_url)
+    if parsed.hostname != _REACH_HOSTNAME.get(reach):
+        return None
+    return f"{arrives_on}:{parsed.port}" if parsed.port else arrives_on

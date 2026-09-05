@@ -259,6 +259,11 @@ export const de: Translations = {
       "Noch nicht gelesen. Bleibt das Feld leer, konnte dieser Browser das Backend nicht erreichen — schreiben Sie das in Ihren Bericht und nennen Sie stattdessen das deployte Image-Tag.",
     copy: "Kopieren",
     copied: "Kopiert",
+    siteHeading: "Website und Dokumentation",
+    siteBody:
+      "Die Produktseite trägt die Anleitungen: LoonInspect betreiben, verbinden und einrichten, womit es spricht. Bei Einrichtungsfragen zuerst dort nachlesen, bevor daraus ein Issue wird.",
+    siteOpen: "loonsec.io öffnen",
+    docsOpen: "Dokumentation öffnen",
     githubHeading: "GitHub",
     githubBody: (repo: string) =>
       `Fehler, Fragen und Feature-Wünsche gehören in den Issue-Tracker unter ${repo}. Sehen Sie zuerst die offenen Issues durch — bei einem dokumentierten Problem steht der Workaround oft daneben — und legen Sie dann eines an, wenn Ihres nicht dabei ist.`,
@@ -971,11 +976,12 @@ export const de: Translations = {
     },
     providerHelp: {
       apple_fm:
-        "Hier klicken, wenn LoonInspect unter Docker Desktop auf diesem Mac läuft und ein OpenAI-kompatibler Shim Apples On-Device-Modell bereitstellt.",
+        "Hier klicken, wenn LoonInspect unter Docker Desktop auf diesem Mac läuft und Apples eigener Server `fm serve` läuft (macOS 27; Port 1976).",
       openai_compatible:
         "Standardmäßig Ollama auf diesem Mac. Ebenso OpenAI selbst, ein Gateway, LM Studio oder vLLM. Eigene URL und eigener Schlüssel.",
       anthropic: "Die Messages-API. Eigener Schlüssel."
     },
+    appleGuide: "So richten Sie Apples On-Device-Modell mit Docker Desktop ein",
     otherRuntimes: "OrbStack, Colima oder Podman im Einsatz? Noch nicht unterstützt. Geben Sie stattdessen die URL ein.",
     baseUrl: "Basis-URL",
     model: "Modell",

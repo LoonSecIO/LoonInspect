@@ -74,6 +74,8 @@ class CompletionRequest:
     reasoning_effort: str | None = None
     max_tokens: int = 1024
     temperature: float = 0.7
+    # The `Host` to present when the reach says so (``app.ai.providers.presented_host``).
+    host_header: str | None = None
 
 
 @dataclass(frozen=True)
@@ -114,8 +116,10 @@ def _joined_base(base_url: str, path: str) -> str:
     return base_url.rstrip("/") + path
 
 
-def _headers(wire: Wire, api_key: str | None) -> dict[str, str]:
+def _headers(wire: Wire, api_key: str | None, host_header: str | None = None) -> dict[str, str]:
     headers = {"Accept": "application/json"}
+    if host_header:
+        headers["Host"] = host_header
     if wire is Wire.anthropic_messages:
         headers["anthropic-version"] = ANTHROPIC_VERSION
         if api_key:
@@ -128,13 +132,16 @@ def _headers(wire: Wire, api_key: str | None) -> dict[str, str]:
 def build_request(wire: Wire, req: CompletionRequest) -> tuple[str, dict[str, str], dict[str, Any]]:
     """The URL, headers and JSON body of a completion. Pure, and the one place either
     request shape is written down."""
-    headers = {"Content-Type": "application/json", **_headers(wire, req.api_key)}
+    headers = {"Content-Type": "application/json", **_headers(wire, req.api_key, req.host_header)}
     if wire is Wire.openai_chat:
         body: dict[str, Any] = {
             "model": req.model,
             "messages": [{"role": "user", "content": req.prompt}],
             "temperature": req.temperature,
             "max_tokens": req.max_tokens,
+            # Said out loud: Apple's `fm serve` streams unless told not to (measured
+            # 2026-09-05), and the OpenAI spec's default is only a default.
+            "stream": False,
         }
         if req.reasoning_effort:
             body["reasoning_effort"] = req.reasoning_effort
@@ -152,13 +159,15 @@ def build_request(wire: Wire, req: CompletionRequest) -> tuple[str, dict[str, st
     raise ValueError(f"unknown wire {wire!r}")
 
 
-def build_models_request(wire: Wire, base_url: str, api_key: str | None) -> tuple[str, dict[str, str]]:
+def build_models_request(
+    wire: Wire, base_url: str, api_key: str | None, host_header: str | None = None
+) -> tuple[str, dict[str, str]]:
     """The URL and headers of a model listing. OpenAI-style servers list at
     ``{base}/models``; Anthropic pages at ``{base}/v1/models`` and takes ``limit``."""
     if wire is Wire.openai_chat:
-        return _joined_base(base_url, "/models"), _headers(wire, api_key)
+        return _joined_base(base_url, "/models"), _headers(wire, api_key, host_header)
     if wire is Wire.anthropic_messages:
-        return _joined_base(base_url, f"/v1/models?limit={MAX_MODELS_LISTED}"), _headers(wire, api_key)
+        return _joined_base(base_url, f"/v1/models?limit={MAX_MODELS_LISTED}"), _headers(wire, api_key, host_header)
     raise ValueError(f"unknown wire {wire!r}")
 
 
@@ -337,7 +346,7 @@ def _status_message(reply: _Reply) -> str:
     status_line = f"HTTP {reply.status}"
     hint = {
         401: "the endpoint rejected the key",
-        403: "the endpoint refused this key for that model or route",
+        403: "the endpoint refused the request: the key, the route, or the name it arrived under",
         404: "no such route or model at this URL",
         429: "the endpoint is rate-limiting this key",
         529: "the endpoint is overloaded",
@@ -393,12 +402,13 @@ async def list_models(
     base_url: str,
     api_key: str | None,
     *,
+    host_header: str | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> list[ModelInfo]:
     """What the endpoint says it serves. Same door, same bounds, nothing of the fleet on
     the wire — the key is the only thing sent."""
-    url, headers = build_models_request(wire, base_url, api_key)
+    url, headers = build_models_request(wire, base_url, api_key, host_header)
     reply = await _request("GET", url, headers=headers, transport=transport, timeout_seconds=timeout_seconds)
     logger.info("ai wire: %s GET %s -> %s", wire.value, httpx.URL(url).host, reply.status)
     return parse_models_response(wire, _json_or_raise(reply))
