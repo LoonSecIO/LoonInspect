@@ -360,27 +360,27 @@ async def test_a_closed_full_sweep_captures_every_active_key(db, fleet) -> None:
     assert delta("patch.pairs_total") == 5
     assert delta("patch.pairs_on_latest") == 2
     assert delta("patch.pairs_laggard_over_14d") == 1
+    assert delta("patch.pairs_behind_under_14d") == 0
     assert delta("patch.pairs_unknown_build") == 1
-    # THE STATE KEYS DO NOT PARTITION `pairs_total`, and nothing said so until now: 2 + 1 + 1
-    # is 4 against a total of 5. The ahead pair is in none of them, and neither is a pair behind
-    # by less than fourteen days. `vuln{}` has the identical property and states it in the
-    # schema and the doc ("Bands do not have to sum to `total`… the obvious `stats sum()`
-    # silently under-reports"); this tape said nothing, and the old fixture's four pairs
-    # happened to sum, so no test could have caught it.
+    assert delta("patch.pairs_ahead") == 1
+    # THE FIVE STATE KEYS PARTITION `pairs_total` (#314). Asserted as an identity rather than
+    # as five numbers that happen to add up, because that is exactly how the gap hid: the old
+    # fixture had four pairs in three buckets and summed by luck, so nothing failed when an
+    # `ahead` pair and a `behind`-inside-the-cut pair belonged to no bucket at all.
     assert (
-        delta("patch.pairs_on_latest") + delta("patch.pairs_laggard_over_14d") + delta("patch.pairs_unknown_build")
-        < delta("patch.pairs_total")
-    )
-    # AN AHEAD DEVICE COUNTS AS A LAGGARD TITLE. T1, T3 and now T4 — the title whose only
-    # non-latest device is running a build NEWER than Jamf publishes. `titles_with_laggards` is
-    # `devices_on_latest < device_count`, which is honest about what it measures and is not what
-    # its name says; `pairs_unknown_build` went to the trouble of taking its own key precisely so
-    # an unplaceable build would not be "silently seated" in a laggard number, and this key seats
-    # one. It matters because ahead is not rare: Chrome and Safari auto-update ahead of Jamf's
-    # catalog on essentially every Mac fleet, so the tenant patching fastest scores worst.
-    # Pinned as current behaviour, awaiting a ruling — the posture tape's definitions are the
-    # contract and changing one mints a new key.
-    assert delta("patch.titles_with_laggards") == 3
+        delta("patch.pairs_on_latest")
+        + delta("patch.pairs_behind_under_14d")
+        + delta("patch.pairs_laggard_over_14d")
+        + delta("patch.pairs_unknown_build")
+        + delta("patch.pairs_ahead")
+    ) == delta("patch.pairs_total")
+    # AN AHEAD DEVICE IS NOT A LAGGARD (#314, Kyle 2026-09-04). T1 alone: T2 is on latest, T3's
+    # build cannot be placed and stays in its own key, and T4 is running something NEWER than
+    # Jamf publishes. Before the correction this read 3 — the key was `devices_on_latest <
+    # device_count`, which seated both T3 and T4 in a number called "laggards". On the reference
+    # tenant it read 11 against 10 laggard pairs and the extra title was Google Chrome; ahead is
+    # not rare, so the tenant patching fastest scored worst.
+    assert delta("patch.titles_with_laggards") == 1
 
     # Changes: high + normal inside 24h; the low row and the 30h-old high row do not count.
     assert delta("changes.notable_24h") == 2

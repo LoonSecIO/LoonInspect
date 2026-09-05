@@ -166,6 +166,31 @@ class ConnectionSyncResult:
     collection_id: int | None = None
 
 
+def sync_result_kwargs(result: ConnectionSyncResult) -> dict[str, object]:
+    """What `finish()` records about a completed sync — the ONE definition of it.
+
+    Two call sites close a run from one of these results: the scheduled collection path
+    (`app.mdm.collections`) and the manual connection sync (`app.api.connections`). Both used
+    to spell the same seven keyword arguments by hand, which is the shape that produced the
+    `refresh_tenant` defect in #311: a count added to this dataclass and threaded through one
+    of them would make a scheduled run's `run.completed` and a manual run's disagree about the
+    same fleet, with nothing failing. Named here so a field added above reaches both paths or
+    neither.
+
+    `ok` and `error` ride along because they come off the same result; `collection_id` does
+    not — `finish` takes the run, and the run already knows which collection acquired it.
+    """
+    return {
+        "ok": result.ok,
+        "device_count": result.device_count,
+        "group_count": result.group_count,
+        "devices_processed": result.devices_processed,
+        "devices_failed": result.devices_failed,
+        "observations": dict(result.observations),
+        "error": result.error,
+    }
+
+
 async def set_sync_status(
     db: AsyncSession, connection: MdmConnection, status: SyncStatus
 ) -> None:

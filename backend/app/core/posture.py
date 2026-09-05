@@ -42,13 +42,13 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import case, distinct, exists, func, or_, select
+from sqlalchemy import distinct, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.changes.policy import NORMAL, levels_at_least
 from app.core.permissions import Role
 from app.core.runs import STATUS_FAILED, STATUS_SUCCEEDED, TRIGGER_SWEEP
-from app.mdm.patch.matching import STATE_BEHIND, STATE_UNKNOWN
+from app.mdm.patch.matching import STATE_AHEAD, STATE_BEHIND, STATE_UNKNOWN
 from app.models.schema import (
     Account,
     AccountRole,
@@ -85,9 +85,20 @@ _LAGGARD_HOURS = 336
 # had moved only one of them.
 NOTABLE_LEVELS: tuple[str, ...] = levels_at_least(NORMAL)
 
-# Definitions v1 — the 27 active keys, in the order their rows are written. The names
+# Definitions v1 — the 29 active keys, in the order their rows are written. The names
 # are the contract: a definition change mints a new key, so a name in this tuple means
 # exactly what docs/posture-snapshot.md says it means, forever.
+#
+# Corrected before launch on 2026-09-04 (#314), while the tape was nine snapshots deep on a
+# dev instance and no customer series existed to orphan. The `patch.pairs_*` keys did not
+# partition `pairs_total` — an `ahead` pair sat in none of them, and so did a `behind` pair
+# inside the fourteen-day cut — and `titles_with_laggards` counted a device running a build
+# NEWER than Jamf publishes as a laggard. Both had the same root: `ahead` had no key of its
+# own, so every rollup either ignored it or absorbed it silently. It is not a rare state —
+# Chrome and Safari auto-update ahead of the catalog on essentially every Mac fleet — so the
+# tenant patching fastest scored worst. `pairs_ahead` and `pairs_behind_under_14d` close the
+# set; `titles_with_laggards` is behind-only; and `_capture_patch` asserts the partition
+# rather than trusting it.
 ACTIVE_KEYS: tuple[str, ...] = (
     "devices.total",
     "devices.stale_checkin_7d",
@@ -102,8 +113,10 @@ ACTIVE_KEYS: tuple[str, ...] = (
     "patch.pairs_total",
     "patch.pairs_on_latest",
     "patch.titles_with_laggards",
+    "patch.pairs_behind_under_14d",
     "patch.pairs_laggard_over_14d",
     "patch.pairs_unknown_build",
+    "patch.pairs_ahead",
     "changes.notable_24h",
     "alerts.open",
     "alerts.opened_24h",
@@ -279,30 +292,66 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
             )
         ),
     )
+    # patch.pairs_behind_under_14d — the rest of `behind`, so the five state keys partition
+    # `pairs_total` exactly (#314). A dateless pair lands HERE, not in the laggard key: the
+    # matcher leaves `first_newer_released_at` null when a title publishes no release date for
+    # anything newer, and `< cutoff` excludes null in SQL, so before this key such a pair was in
+    # no bucket at all — counted in the total and invisible everywhere else. Null goes to the
+    # conservative side, which is the same direction the laggard key's documented under-count
+    # already errs in: it can only make the laggard number smaller, never larger.
+    values["patch.pairs_behind_under_14d"] = await _count(
+        db,
+        select(func.count()).select_from(
+            _patch_pairs(
+                AppCatalogTitleMatch.state == STATE_BEHIND,
+                or_(
+                    AppCatalogTitleMatch.first_newer_released_at >= laggard_cutoff,
+                    AppCatalogTitleMatch.first_newer_released_at.is_(None),
+                ),
+            )
+        ),
+    )
     values["patch.pairs_unknown_build"] = await _count(
         db, select(func.count()).select_from(_patch_pairs(AppCatalogTitleMatch.state == STATE_UNKNOWN))
     )
-    matched = (
-        select(
-            AppCatalogTitleMatch.title_id.label("title_id"),
-            InstalledApp.device_id.label("device_id"),
-            AppCatalogTitleMatch.on_latest.label("on_latest"),
-        )
-        .join_from(
-            AppCatalogTitleMatch, AppCatalogEntry, AppCatalogEntry.id == AppCatalogTitleMatch.app_catalog_id
-        )
-        .join(InstalledApp, InstalledApp.version_hash == AppCatalogEntry.version_hash)
-        .subquery()
+    # patch.pairs_ahead — installed NEWER than anything the title lists. Given a key of its own
+    # for the reason `pairs_unknown_build` has one (#314): before it, `ahead` was counted in
+    # `pairs_total` and in nothing else, which made the state invisible and let two other keys
+    # absorb it. Not rare — Chrome and Safari sit here on essentially every Mac fleet, because
+    # they auto-update faster than Jamf's catalog publishes.
+    values["patch.pairs_ahead"] = await _count(
+        db, select(func.count()).select_from(_patch_pairs(AppCatalogTitleMatch.state == STATE_AHEAD))
     )
-    on_latest_device = case((matched.c.on_latest.is_(True), matched.c.device_id))
-    laggard_titles = (
-        select(matched.c.title_id)
-        .group_by(matched.c.title_id)
-        .having(func.count(distinct(matched.c.device_id)) > 0)
-        .having(func.count(distinct(on_latest_device)) < func.count(distinct(matched.c.device_id)))
-        .subquery()
+    # The five state keys partition `pairs_total`, and this asserts it rather than trusting it.
+    # `classify` assigns exactly one of latest/ahead/behind/unknown, `on_latest` is true iff the
+    # state is latest, and the behind pair is split by a predicate whose two halves cover null —
+    # so the sum is an identity, and a drift in any one predicate breaks it here rather than in
+    # a customer's dashboard. Cheap: five integers already in hand, once a night.
+    partition = (
+        values["patch.pairs_on_latest"]
+        + values["patch.pairs_behind_under_14d"]
+        + values["patch.pairs_laggard_over_14d"]
+        + values["patch.pairs_unknown_build"]
+        + values["patch.pairs_ahead"]
     )
-    values["patch.titles_with_laggards"] = await _count(db, select(func.count()).select_from(laggard_titles))
+    if partition != values["patch.pairs_total"]:  # pragma: no cover — an identity, guarded
+        raise ValueError(
+            f"patch pair states do not partition pairs_total: {partition} != {values['patch.pairs_total']}"
+        )
+
+    # patch.titles_with_laggards — titles carrying at least one pair that is genuinely BEHIND.
+    # Redefined 2026-09-04 (#314, Kyle) from "any device not on the title's current version",
+    # which counted a device running a build NEWER than Jamf publishes as a laggard: on the
+    # reference tenant it read 11 against 10 laggard pairs, and the extra title was Google
+    # Chrome. Ahead and unknown are excluded for the reason `pairs_unknown_build` was split out
+    # in the first place — a build that cannot be placed, or that is out in front, must not take
+    # a silent seat in a laggard number. Both remain visible in their own keys. No 14-day cut
+    # here: this key answers "which titles have someone behind at all", and the dated question
+    # is `pairs_laggard_over_14d` one grain down.
+    behind_pairs = _patch_pairs(AppCatalogTitleMatch.state == STATE_BEHIND)
+    values["patch.titles_with_laggards"] = await _count(
+        db, select(func.count(distinct(behind_pairs.c.title_id))).select_from(behind_pairs)
+    )
 
     # changes.notable_24h — one SQL predicate over the closed LEVELS ordering, on the
     # feed's own time axis (observed_at). No API parameter is involved or added.

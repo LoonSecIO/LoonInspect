@@ -59,7 +59,7 @@ computers only ([mobile-devices.md](mobile-devices.md)) and every device the rec
 counts is a Mac by construction.
 
 The column exists because the guardrails above leave no way to add it later. Thirteen of
-the 27 active keys count a *different population* the first night a sweep observes more
+the 29 active keys count a *different population* the first night a sweep observes more
 than Macs — the four `devices.*`, the five `catalog.*`, `apps.distinct`,
 `changes.notable_24h` and the two `alerts.*` — and at that point both available moves
 destroy something.
@@ -133,7 +133,7 @@ Same semantics as `CatalogSummaryOut` (`/api/catalog`), computed recorder-side.
 | `catalog.installed` | ACTIVE | Entries with at least one install. | `app_catalog` ⋈ `installed_apps` |
 | `catalog.matched` | ACTIVE | Entries with `jamf_title_ids` not null. | `app_catalog` |
 | `catalog.unmatched` | ACTIVE | Entries with `jamf_title_ids` null. | `app_catalog` |
-| `catalog.installed_not_latest` | ACTIVE | Installed entries where `is_latest = false` and `latest_version` is present. Grain frozen: catalog **entries**, not device pairs. | `app_catalog` ⋈ `installed_apps` |
+| `catalog.installed_not_latest` | ACTIVE | Installed entries where `is_latest = false` and `latest_version` is present. Grain frozen: catalog **entries**, not device pairs. **Includes AHEAD entries** — `is_latest` is false for a build newer than the catalog's current one, which is the matcher's own answer — so this is *not* a count of builds needing an update; `patch.pairs_laggard_over_14d` is that. Kept as-is on 2026-09-04 ([#314](https://github.com/LoonSecIO/LoonInspect/issues/314)) because, unlike "laggards", the name claims nothing the data does not support. | `app_catalog` ⋈ `installed_apps` |
 | `apps.distinct` | ACTIVE | Distinct `app_hash` groups in the fleet. | `installed_apps` |
 
 ### Patch posture
@@ -150,9 +150,16 @@ is never what the tape counts.
 | --- | --- | --- | --- |
 | `patch.pairs_total` | ACTIVE | Distinct (device, matched title) install pairs. | title matches ⋈ `app_catalog` ⋈ `installed_apps` |
 | `patch.pairs_on_latest` | ACTIVE | Pairs where the installed version equals the title's latest (`on_latest`). | same join |
-| `patch.titles_with_laggards` | ACTIVE | Matched titles where `devices_on_latest < device_count` and `device_count > 0`. | same join, per title |
+| `patch.titles_with_laggards` | ACTIVE | Matched titles carrying at least one pair with `state = behind`. **Ahead and unknown are excluded**, for the reason `pairs_unknown_build` was split out below: a build that is out in front, or that cannot be placed at all, must not take a silent seat in a laggard number. No 14-day cut — this key answers *which titles have someone behind at all*; the dated question is `pairs_laggard_over_14d` one grain down. Corrected 2026-09-04 ([#314](https://github.com/LoonSecIO/LoonInspect/issues/314)) from "any device not on the title's current version", which counted a Mac running a build **newer** than Jamf publishes as a laggard — not a rare state, since Chrome and Safari auto-update ahead of the catalog on essentially every fleet, so the tenant patching fastest scored worst. | same join, distinct `title_id` |
 | `patch.pairs_laggard_over_14d` | ACTIVE | Pairs with `state = behind` whose `first_newer_released_at` — Jamf's release date of the earliest listed version newer than the installed one, read from the pair's own title row, never folded across titles — is older than 336h at capture. **Every update, not severity-filtered:** a superset of the Cyber Essentials 14-day number, which scopes to high-risk and critical updates; Jamf's catalog carries no severity. **Under-counts where a title's newer patches carry no release date:** the matcher then falls back to the latest version's date, a later one. Unlisted builds are not here — see the next key. #68's clock, ruled 2026-09-02. | same join, `app_catalog_title_matches.first_newer_released_at` |
+| `patch.pairs_behind_under_14d` | ACTIVE | Pairs with `state = behind` that the laggard cut does not reach: `first_newer_released_at` at or after the 336h boundary, **or null**. Null lands here rather than in the laggard key — the matcher leaves the date null when a title publishes none for anything newer, and `< cutoff` excludes null in SQL, so before this key such a pair sat in the total and in no bucket at all. The conservative side, and the same direction the laggard key's documented under-count already errs in. | same join |
 | `patch.pairs_unknown_build` | ACTIVE | Pairs with `state = unknown`: the installed build is one Jamf never listed and is not newer than the title's latest. Kept out of the laggard key by design — a build that cannot be placed cannot honestly be called "14 days behind" a specific update — and given its own key so it is visible in the tape at all. | same join |
+| `patch.pairs_ahead` | ACTIVE | Pairs with `state = ahead`: installed newer than anything the title lists. Given a key for the reason above it has one ([#314](https://github.com/LoonSecIO/LoonInspect/issues/314)) — before it, `ahead` was counted in `pairs_total` and in nothing else, which made the state invisible and let two other keys absorb it. Chrome and Safari live here on most Mac fleets. | same join |
+
+> **The five state keys partition `pairs_total` exactly.**
+> `pairs_on_latest + pairs_behind_under_14d + pairs_laggard_over_14d + pairs_unknown_build + pairs_ahead = pairs_total`, always. `classify()` assigns exactly one of latest / ahead / behind / unknown, `on_latest` is true iff the state is latest, and the behind half is split by a predicate whose two branches cover null. The recorder asserts the identity at capture rather than trusting it, so a drift in any one predicate fails there instead of in a dashboard.
+>
+> It is written down because it was not true until 2026-09-04: an `ahead` pair, and a `behind` pair inside the cut, sat in none of the buckets, and the tape said nothing — the same hazard `VulnEnrichment` states in its own schema for the severity bands, which genuinely do **not** sum. These do.
 
 ### Changes
 
