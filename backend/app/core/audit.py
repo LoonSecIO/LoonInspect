@@ -66,6 +66,7 @@ class AuditAction(StrEnum):
     # The AI test box (#319): who sent a prompt where, and how it went. Never the
     # prompt, never the key.
     AI_TEST_SENT = "ai.test.sent"
+    AI_MODELS_LISTED = "ai.models.listed"
     SHARING_UUID_RESET = "sharing.uuid.reset"
 
     TOKEN_CREATED = "token.created"

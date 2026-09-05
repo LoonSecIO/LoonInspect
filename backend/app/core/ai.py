@@ -86,6 +86,7 @@ async def require_ai(
     feature: str,
     destination: str | None = None,
     fields: Sequence[str] = (),
+    carries_no_fleet_data: bool = False,
 ) -> None:
     """The one call every AI feature makes before doing anything.
 
@@ -96,6 +97,14 @@ async def require_ai(
     programming error, not a consent question), and one share-log row is committed
     — feature, destination, field names — before this returns. Make the network
     call after, never before.
+
+    ``carries_no_fleet_data=True`` declares a control-plane call — a model listing
+    (#322), a reachability probe — that leaves the pod carrying nothing of the fleet:
+    the flag, the consent (any byte leaving is still the operator's decision) and the
+    row are all still required, and the row records ``fields: []``, which is the
+    honest disclosure. What the declaration removes is only the programming-error
+    guard below, and only by name: a caller that names fields *and* declares it
+    carries none is lying to one of them, and is refused.
     """
     if not await ai_features_enabled(db):
         raise AIFeaturesDisabled(f"AI features are off; {feature} may not run")
@@ -103,7 +112,12 @@ async def require_ai(
     if destination is None:
         return
 
-    if not fields:
+    if carries_no_fleet_data:
+        if fields:
+            raise ValueError(
+                f"{feature} declares it carries no fleet data but names fields {sorted(set(fields))}"
+            )
+    elif not fields:
         raise ValueError(
             f"off-pod inference for {feature} must disclose the fields it sends"
         )

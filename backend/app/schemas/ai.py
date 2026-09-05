@@ -51,6 +51,33 @@ class AITestOut(BaseModel):
     error: AIErrorOut | None = None
 
 
+class AIModelsIn(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    provider: Provider
+    host_reach: HostReach | None = None
+    base_url: str = Field(max_length=512)
+    api_key: str | None = Field(default=None, max_length=512)
+
+
+class AIModelOut(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    id: str
+    label: str | None = None
+
+
+class AIModelsOut(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    provider: Provider
+    wire: Wire
+    destination: str
+    models: list[AIModelOut]
+    latency_ms: int
+    error: AIErrorOut | None = None
+
+
 class ProviderEntryOut(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
