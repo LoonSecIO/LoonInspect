@@ -266,11 +266,11 @@ export const en = {
       "Not read yet. If it stays blank, this browser could not reach the backend — say that in your report, and name the image tag you deployed instead.",
     copy: "Copy",
     copied: "Copied",
-    siteHeading: "Website and docs",
+    siteHeading: "Website and Field Notes",
     siteBody:
-      "The product site carries the how-to pages: running LoonInspect, connecting it, and setting up what it talks to. Read there first for anything that is a setup question rather than a bug.",
+      "The product site carries the Field Notes: how to run LoonInspect, connect it, and set up what it talks to. Read there first for anything that is a setup question rather than a bug.",
     siteOpen: "Open loonsec.io",
-    docsOpen: "Open the docs",
+    docsOpen: "Open the Field Notes",
     githubHeading: "GitHub",
     githubBody: (repo: string) =>
       `Bugs, questions and feature requests go to the issue tracker on ${repo}. Search what is already open first — a documented issue often has the workaround attached — then file one if yours isn't there.`,

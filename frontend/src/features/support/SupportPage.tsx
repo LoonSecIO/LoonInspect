@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ExternalLink } from "@/components/ui/external-link";
 import { useBuildVersion } from "@/features/system/useBuildVersion";
 import {
-  DOCS_URL,
+  NOTES_URL,
   SECURITY_EMAIL,
   SLACK_CHANNEL,
   SUPPORT_LINKS,
@@ -120,7 +120,7 @@ export function SupportPage() {
         <p className="max-w-3xl text-sm text-muted-foreground">{t.support.siteBody}</p>
         <div className="flex flex-wrap gap-x-6 gap-y-2 pt-1 text-sm">
           <ExternalLink href={WEBSITE_URL}>{t.support.siteOpen}</ExternalLink>
-          <ExternalLink href={DOCS_URL}>{t.support.docsOpen}</ExternalLink>
+          <ExternalLink href={NOTES_URL}>{t.support.docsOpen}</ExternalLink>
         </div>
       </div>
 

@@ -37,9 +37,10 @@ export const SECURITY_EMAIL = "security@loonsec.io";
 /** The product site and its docs. Staging until launch day (Kyle, 2026-09-05:
  *  "currently held at staging"); the move to https://loonsec.io is this one line. */
 export const WEBSITE_URL = "https://staging.loonsec.io";
-export const DOCS_URL = `${WEBSITE_URL}/docs/`;
-/** The guide for Apple's on-device model under Docker Desktop, on the docs area. */
-export const APPLE_FM_GUIDE_URL = `${DOCS_URL}apple-foundation-models-with-docker-desktop/`;
+/** Field Notes: where the how-to pages live (Kyle, 2026-09-05: "this is where I wanted it"). */
+export const NOTES_URL = `${WEBSITE_URL}/notes/`;
+/** The note for Apple's on-device model under Docker Desktop. */
+export const APPLE_FM_GUIDE_URL = `${NOTES_URL}apple-foundation-models-with-docker-desktop/`;
 
 const GITHUB = `https://github.com/${SUPPORT_REPO}`;
 

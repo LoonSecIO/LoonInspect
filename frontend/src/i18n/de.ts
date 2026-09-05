@@ -259,11 +259,11 @@ export const de: Translations = {
       "Noch nicht gelesen. Bleibt das Feld leer, konnte dieser Browser das Backend nicht erreichen — schreiben Sie das in Ihren Bericht und nennen Sie stattdessen das deployte Image-Tag.",
     copy: "Kopieren",
     copied: "Kopiert",
-    siteHeading: "Website und Dokumentation",
+    siteHeading: "Website und Field Notes",
     siteBody:
-      "Die Produktseite trägt die Anleitungen: LoonInspect betreiben, verbinden und einrichten, womit es spricht. Bei Einrichtungsfragen zuerst dort nachlesen, bevor daraus ein Issue wird.",
+      "Die Produktseite trägt die Field Notes: LoonInspect betreiben, verbinden und einrichten, womit es spricht. Bei Einrichtungsfragen zuerst dort nachlesen, bevor daraus ein Issue wird.",
     siteOpen: "loonsec.io öffnen",
-    docsOpen: "Dokumentation öffnen",
+    docsOpen: "Field Notes öffnen",
     githubHeading: "GitHub",
     githubBody: (repo: string) =>
       `Fehler, Fragen und Feature-Wünsche gehören in den Issue-Tracker unter ${repo}. Sehen Sie zuerst die offenen Issues durch — bei einem dokumentierten Problem steht der Workaround oft daneben — und legen Sie dann eines an, wenn Ihres nicht dabei ist.`,

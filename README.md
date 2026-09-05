@@ -8,7 +8,7 @@ LoonInspect reads inventory from Jamf Pro, works out what actually changed since
 
 ---
 
-Site and docs: [loonsec.io](https://staging.loonsec.io) (staging until launch). The docs area holds the setup guides, including [Apple's on-device model with Docker Desktop](https://staging.loonsec.io/docs/apple-foundation-models-with-docker-desktop/).
+Site and Field Notes: [loonsec.io](https://staging.loonsec.io) (staging until launch). The notes hold the setup guides, including [Apple's on-device model with Docker Desktop](https://staging.loonsec.io/notes/apple-foundation-models-with-docker-desktop/).
 
 ## 🚀 Features
 
