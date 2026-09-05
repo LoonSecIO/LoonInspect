@@ -27,7 +27,7 @@ def compute_app_hash(name: str, bundle_id: str) -> str:
 def compute_version_hash(
     name: str, bundle_id: str, version: str, short_version: str | None = None
 ) -> str:
-    """Identifies a specific *build* of an application — the Global API lookup key.
+    """Identifies a specific *build* of an application — the internal per-build key.
 
     md5("AppName:BundleID:Version:ShortVersion"), with the short version omitted
     entirely when absent rather than joined as an empty segment. Jamf's inventory

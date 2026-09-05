@@ -146,7 +146,7 @@ connections work again
 
 **Footprint to size against.** A fresh install after migrations is **48.6 MB** of data
 directory (17 MB of it pre-allocated WAL); `pg_database_size('looninspect')` is 10.6 MB
-of that. Initdb plus all 21 migrations complete on a 64 MB filesystem with 13.7 MB to
+of that. Initdb plus every migration then on `main` completed on a 64 MB filesystem with 13.7 MB to
 spare — so 64 MB installs and nothing more.
 
 ## 4. Docker never restarts the container for failing its healthcheck

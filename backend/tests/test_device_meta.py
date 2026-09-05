@@ -149,7 +149,7 @@ def _device(**overrides) -> Device:
     shipped eleven rather than whatever survived the null drop."""
     fields = {
         "external_id": "1743",
-        "serial_number": "C02XL0THJGH5",
+        "serial_number": "C02EXAMPLE01",
         "hostname": "kyle-mbp",
         "last_inventory_at": datetime(2026, 8, 31, 21, 44, 3, tzinfo=timezone.utc),
         "managed": True,
@@ -236,7 +236,7 @@ def test_the_values_are_the_ruled_ones(run: RunContext) -> None:
     assert meta["connectionID"] == 1
     assert meta["shortDate"] == "2026-08-31"
     assert meta["eventID"] == str(uuidlib.uuid5(_RUN_ID, "1743"))
-    assert meta["serialNumber"] == "C02XL0THJGH5"
+    assert meta["serialNumber"] == "C02EXAMPLE01"
     assert meta["jamfProID"] == "1743"
     assert meta["hostName"] == "kyle-mbp"
     assert meta["lastReportDate"] == "2026-08-31T21:44:03+00:00"
@@ -268,7 +268,7 @@ def _observation(subject_kind: str = SUBJECT_COMPUTER, **overrides) -> Observati
         "subject_id": "1743",
         "sections": {"general": general},
         "observed_at": datetime(2026, 8, 31, 21, 44, 3, tzinfo=timezone.utc),
-        "serial_number": "C02XL0THJGH5",
+        "serial_number": "C02EXAMPLE01",
         "label": "kyle-mbp",
     }
     return Observation(**(fields | overrides))
@@ -413,8 +413,8 @@ def _change_row(**overrides) -> DeviceChange:
         "subject_kind": SUBJECT_COMPUTER,
         "subject_id": "1743",
         "subject_label": "kyle-mbp",
-        "serial_number": "C02XL0THJGH5",
-        "udid": "87F31C46-E078-5239-A342-48CA4F59DA6B",
+        "serial_number": "C02EXAMPLE01",
+        "udid": "0F0E0D0C-0B0A-4908-8706-050403020100",
         "observed_at": datetime(2026, 8, 31, 21, 44, 3, tzinfo=timezone.utc),
         "collected_at": datetime(2026, 8, 31, 21, 44, 27, tzinfo=timezone.utc),
         "trigger": TRIGGER_SWEEP,
@@ -468,7 +468,7 @@ def test_a_refused_key_cannot_return_one_level_up(run: RunContext) -> None:
     # ride the top level on purpose (`udid`, `occurredAt`) and are refused only from here.
     for key, why in REFUSED.items():
         assert key not in payload["deviceMeta"], f"#189 refused `{key}`: {why}"
-    assert payload["udid"] == "87F31C46-E078-5239-A342-48CA4F59DA6B"
+    assert payload["udid"] == "0F0E0D0C-0B0A-4908-8706-050403020100"
 
 
 def test_the_change_event_names_the_device_in_the_block_and_nowhere_else(run: RunContext) -> None:

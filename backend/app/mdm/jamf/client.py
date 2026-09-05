@@ -141,7 +141,7 @@ def _token_lifetime(body: dict) -> float | None:
     `expires_in`; None when the response doesn't say and only a 401 can find out.
 
     Measured, not assumed. This module used to state that API client tokens last "30
-    minutes by default"; loonsecio.jamfcloud.com on Jamf Pro 11.31.1 answered
+    minutes by default"; one production tenant on Jamf Pro 11.31.1 answered
     expires_in=179 on three consecutive samples (2026-08-31) — seconds, off by an
     order of magnitude from the comment reviewers were trusting. Whether that 179 is a
     Jamf default, a per-API-client setting, or one tenant's own configuration is not

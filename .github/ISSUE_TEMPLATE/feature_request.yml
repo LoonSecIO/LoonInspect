@@ -1,0 +1,38 @@
+name: Feature request
+description: Something LoonInspect should do that it does not.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Scope is deliberately narrow — Jamf Pro only at launch, computers only, and the README's *What it does not do* section is a list of decisions rather than gaps. An issue before a pull request saves building something the project has already ruled out or designed differently ([CONTRIBUTING.md](https://github.com/LoonSecIO/LoonInspect/blob/main/CONTRIBUTING.md)).
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do, and what stops you today. Lead with the situation, not the feature.
+    validations:
+      required: true
+  - type: textarea
+    id: shape
+    attributes:
+      label: The shape you have in mind
+      description: How it would work if it existed — a setting, a page, an event on the wire. A sketch is fine; a decision is better.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do instead today
+      description: Workarounds, or the tool that fills the gap now.
+  - type: input
+    id: posture
+    attributes:
+      label: posture_snapshot
+      description: If this creates or reshapes a data area, the nightly posture keys it would add or retire ([docs/posture-snapshot.md](https://github.com/LoonSecIO/LoonInspect/blob/main/docs/posture-snapshot.md)). `none` is a first-class answer.
+      placeholder: none
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before filing
+      options:
+        - label: I searched the open issues and this is not already filed or ruled out.
+          required: true

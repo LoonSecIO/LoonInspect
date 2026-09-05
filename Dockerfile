@@ -54,6 +54,13 @@ RUN printf '{"version": "%s+%s"}\n' "$(date -u +%Y.%m.%d)" "${GIT_SHA:-unknown}"
 # they are running — that question is about the image, so the image carries it.
 LABEL org.opencontainers.image.revision="${GIT_SHA:-unknown}"
 LABEL org.opencontainers.image.title="LoonInspect"
+# Where to go with a problem, readable the same way — the only support path an
+# operator who cannot reach the UI has (#301, #26 Phase 3). The same doors the
+# README's Support section names.
+LABEL org.opencontainers.image.source="https://github.com/LoonSecIO/LoonInspect"
+LABEL org.opencontainers.image.url="https://github.com/LoonSecIO/LoonInspect"
+LABEL org.opencontainers.image.documentation="https://github.com/LoonSecIO/LoonInspect/blob/main/README.md"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 # Lands inside the `app` package, which uv installed as an editable pointer to /app —
 # so the built SPA is picked up from the source tree with no reinstall. It does change

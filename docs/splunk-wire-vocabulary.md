@@ -329,7 +329,7 @@ over: it is the largest block on the event (§6's thirteen keys, written once pe
 EA, per certificate and per profile) and it is identical across every sub-event of one
 device. What varies, and what the reader opened the event for, is first.
 
-This is the shape LoonInspect's predecessor shipped on SplunkBase, where each event was a
+This is the shape the Jamf Pro Add-on for Splunk (v2) shipped, where each event was a
 hand-written dict literal with the section object at the top. That technique cannot survive
 this product's storage: `event_outbox.payload` is `jsonb`, Postgres normalises object keys
 by length then bytewise, and whatever a producer wrote is gone before delivery reads the

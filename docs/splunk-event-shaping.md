@@ -10,8 +10,8 @@ sub-events, each under its ruled sourcetype, ships since
 document still holds open is the meta-block configuration surface (#189 reserved
 `deviceMeta.custom`, v1) and the aperture gap the fan-out records.
 Continuation of the destinations/outbox work (Phase complete, see below) — this document
-was the handoff for the next conversation to pick up from, written because the prior
-session hit a context limit mid-design.
+was written as a handoff when the design conversation ended mid-design, so it records
+its open questions as open.
 
 ## Goal
 
@@ -22,10 +22,12 @@ type — Splunk HEC — and how Jamf-sourced data should be *shaped* for it spec
 so that a customer migrating off an old Jamf→Splunk integration gets equivalent (or
 better) search ergonomics, not just equivalent data.
 
-The reference point is the author's own prior product: a Splunk Add-on for Jamf Pro
-with ~10k downloads, active 2+ years, since abandoned by Jamf. Its source is public:
-**https://github.com/jamf/SplunkBase** (confirmed via GitHub API: not archived, but
-last pushed 2022-06-14 — matches the "abandoned" framing). This doc assumes the reader
+The reference point is the Jamf Pro Add-on for Splunk, which the maintainer originally
+built while at Jamf (~10k downloads in its first two years). Jamf still ships it — 2.12.7
+on Splunkbase in June 2026, with a v3 line in development — so this is a migration from a
+living product, not a rescue. The v2 source this document reads is public:
+**https://github.com/jamf/SplunkBase** (last pushed 2022-06-14; the current line lives
+elsewhere). This doc assumes the reader
 has NOT read that repo — key facts are extracted below with file references so they
 don't need to be re-derived.
 
@@ -65,7 +67,7 @@ Plus three sections force-added regardless of configuration
 (`bin/input_module_jamfcomputers.py`, `requiredSections`):
 `GENERAL`, `USER_AND_LOCATION`, `HARDWARE`.
 
-**Why sections were force-added, per the author (this session, not in the code):** not
+**Why sections were force-added, per the original author (recalled, not in the code):** not
 because those sections are intrinsically mandatory, but because the `device_meta` block
 needs specific fields *sourced from* them. The floor is "whatever raw data the
 correlation block depends on," not the sections themselves — a useful reframing for
@@ -160,7 +162,7 @@ partial-failure semantics are in [`runs.md`](runs.md) §4.
 A small object attached to every emitted Splunk sub-event, carrying device-identity/
 correlation fields so split-apart events can still be searched and correlated together.
 
-**Confirmed fields and status, from the author's explanation (this session):**
+**Confirmed fields and status, from the original author's explanation:**
 
 | Field | Purpose | Status |
 | --- | --- | --- |
@@ -208,8 +210,7 @@ further before the context limit hit.
 3. **Snapshot vs. retained history for the raw Jamf record.** Does storing "the full
    record" mean one current-state blob per device (overwritten each sync, bounded
    storage) or a row retained per sync (true historical replay, unbounded storage
-   without its own retention policy)? Asked via a structured question; **the user
-   dismissed the question without answering** — still fully open.
+   without its own retention policy)? Raised, and **left unanswered** — still fully open.
 
 4. **Embed vs. namespace LoonInspect's own augmentations** (CVE/EPSS data, group-join
    timestamps) in Splunk output. **RESOLVED 2026-09-01 (#188): namespaced.** LoonInspect's
@@ -226,7 +227,7 @@ further before the context limit hit.
    designed at all yet; this is probably the right starting point for the next session,
    since it was the most recent and most concrete open item.
 
-## What's already built and verified (this session, Docker Compose end-to-end)
+## What's already built and verified (Docker Compose end-to-end)
 
 The outbox/destinations system this work sits on top of is complete and tested — do not
 re-derive or rebuild this, extend it:
@@ -388,10 +389,10 @@ might eventually need to reference. Designed, **not implemented**:
   `schemas/connections.py` refuses the `loonsecio` provider on set) — and nothing in the
   ruled v0 brings it back.
 
-## Suggested entry point for the next conversation
+## Suggested entry point
 
 Start with the most recently raised, most concrete open item: **the configurable-but-
-size-bounded meta block**. That was the last thing discussed before the context limit,
+size-bounded meta block**. That was the last thing discussed,
 it's the most actionable, and answering it (what fields, what cap, per-connection or
 global config) will likely clarify `days_since` semantics and the embed-vs-namespace
 question along the way, since all three touch the same output object.

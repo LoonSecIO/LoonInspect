@@ -160,7 +160,7 @@ was already accurate; these make the product agree with it.
 Everything in §1 is read from this codebase. The mobile-device API shapes in §2 — the section
 vocabulary, and the RSQL field that separates the OSes —
 are from the published Jamf reference and have **not** been read against
-`loonsecio.jamfcloud.com`. The demo unit has no mobile device enrolled, so there is nothing
+the maintainer's own tenant. The demo unit has no mobile device enrolled, so there is nothing
 to read yet; enrolling one and capturing the record is [#238](https://github.com/LoonSecIO/LoonInspect/issues/238). Until that fixture
 exists, every mobile shape in this file is an assumption — which is not the standard the
 computer contract was built to

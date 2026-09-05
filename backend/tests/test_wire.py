@@ -105,7 +105,7 @@ def test_the_envelope_is_lifted_beside_the_body_and_never_into_it() -> None:
     occurred = datetime(2026, 8, 31, 1, 0, tzinfo=timezone.utc)
     payload = {
         "event": "device.inventory.changed",
-        "deviceMeta": {"serialNumber": "C02XL0THJGH5"},
+        "deviceMeta": {"serialNumber": "C02EXAMPLE01"},
         ENVELOPE: envelope(occurred_at=occurred, host="kyle-mbp", source="acme.jamfcloud.com"),
     }
     body = _build_body(SPLUNK, payload)
@@ -269,7 +269,7 @@ def _change_payload(*, subject_kind: str, section: str) -> dict:
         subject_id="12",
         sections={},
         observed_at=observed,
-        serial_number="C02XL0THJGH5",
+        serial_number="C02EXAMPLE01",
         label="mbp-ada",
     )
     row = DeviceChange(

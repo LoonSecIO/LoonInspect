@@ -112,6 +112,40 @@ else
   blocked "  disclosure channel stays closed. Enable it under Settings → Security."
 fi
 
+# --- Fork pull request approval -------------------------------------------
+# A public repository accepts pull requests from forks, and a fork's workflow run
+# executes the fork's code on this repository's runners. GitHub's default only
+# holds first-time contributors for approval; requiring it for every outside
+# contributor's run is the conservative setting for a repository whose CI can
+# publish images. The endpoint returns 422 while the repository is private.
+step "Fork pull request workflow approval"
+
+if $DRY_RUN; then
+  printf '  [dry-run] set fork PR approval_policy=all_external_contributors\n'
+elif gh api -X PUT "repos/$REPO/actions/permissions/fork-pr-contributor-approval" \
+       -f approval_policy=all_external_contributors >/dev/null 2>&1; then
+  ok "fork PR workflow runs need a maintainer's approval for every outside contributor"
+else
+  blocked "fork PR approval policy is a public-repository setting; re-run after the flip"
+fi
+
+# --- Non-provider secret patterns ------------------------------------------
+# Provider scanning only knows tokens a partner can verify. secret-scan.yml names
+# what that misses — a Fernet ENCRYPTION_KEY, a Postgres password, a Splunk HEC
+# token — and GitHub's generic patterns are the nearest native cover for that
+# class. Separate call so a rejection here can never undo the CM-03 enable above.
+step "Secret scanning: non-provider patterns"
+
+if $DRY_RUN; then
+  printf '  [dry-run] enable secret_scanning_non_provider_patterns\n'
+elif gh api -X PATCH "repos/$REPO" \
+       -F 'security_and_analysis[secret_scanning_non_provider_patterns][status]=enabled' \
+       >/dev/null 2>&1; then
+  ok "non-provider secret patterns enabled"
+else
+  blocked "non-provider patterns need a public repo or Advanced Security; re-run after the flip"
+fi
+
 step "Done"
 echo "  Anything marked BLOCKED is a plan constraint, not a failure. See"
 echo "  docs/BRANCHING.md §8 for the current state and how to unblock it."

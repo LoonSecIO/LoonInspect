@@ -168,7 +168,7 @@ claim guard mfa \
 # and enrichment, which needs identifiers, not adjectives.
 claim guard cve \
   '\bCVE\b|\bEPSS\b|\bCVSS\b|vulnerability scan|vulnerability scor|vulnerability engine|CVE intelligence' \
-  "grep -rqiE 'epss|cvss|cve_id|cve_score' backend/app frontend/src"
+  "grep -rqiwE 'epss|cvss|cve_id|cve_score' backend/app frontend/src"
 
 claim guard loonvd \
   '\bLoonVD\b' \

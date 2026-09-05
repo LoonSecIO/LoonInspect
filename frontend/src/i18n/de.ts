@@ -6,7 +6,7 @@ export const de: Translations = {
     dismissUpdate: "Update-Hinweis ausblenden",
     sharing: {
       pageDescription:
-        "Die Patch- und Schwachstellen-Feeds von LoonInspect entstehen aus anonymem Community-Inventar. Was diese Instanz beiträgt — und ob überhaupt — wird hier festgelegt.",
+        "Die Patch- und Schwachstellen-Feeds, die LoonInspect aufbaut, entstehen aus anonymem Community-Inventar. Was diese Instanz beiträgt — und ob überhaupt — wird hier festgelegt.",
       envLocked:
         "COMMUNITY_SHARING=false ist in der Umgebung gesetzt. Unabhängig von der Auswahl unten wird nichts geteilt; diese Einstellungen sind gesperrt, bis die Vorgabe entfernt wird.",
       tierHeading: "Teilnahme",
@@ -18,10 +18,10 @@ export const de: Translations = {
         "Täglich anonyme Inventarschlüssel mit Installationszahlen. Anfragen nach App-Namen werden nie beantwortet — es wird ausschließlich Verbreitungssignal beigetragen.",
       tierOff: "Aus",
       tierOffHelp:
-        "Es wird nichts geteilt, und diese Instanz erhält die aus der Community aufgebauten Patch- und Schwachstellen-Feeds nicht mehr.",
+        "Es wird nichts geteilt, und diese Instanz wird die aus der Community aufgebauten Patch- und Schwachstellen-Feeds nicht erhalten, wenn sie erscheinen.",
       disclosureHeading: "Was geteilt wird",
       disclosureShared:
-        "Täglich pro Tenant geteilt: Content-Hash-Schlüssel installierter Anwendungen mit Installationszahlen, OS-Versions-Tupel, Hardware-Modell-Tupel, die pseudonyme Übermittlungs-ID unten und die Build-Version dieses Containers. Zahlen werden vor dem Versand über Geräte summiert — nie einzelne Gerätezeilen.",
+        "Täglich pro Tenant geteilt: Content-Hash-Schlüssel installierter Anwendungen mit Installationszahlen, OS-Versions-Tupel (Hardware-Modell-Tupel sind reserviert und werden leer gesendet), die pseudonyme Übermittlungs-ID unten und die Build-Version dieses Containers. Zahlen werden vor dem Versand über Geräte summiert — nie einzelne Gerätezeilen.",
       disclosureNever:
         "Nie geteilt: Gerätekennungen, Seriennummern, Hostnamen, Benutzernamen, Dateipfade, Extension Attributes, Verbindungs- oder Tenant-Namen, Konten, Zugangsdaten oder Audit-Historie. LoonSec speichert auf diesem Pfad keine Quell-IP-Adressen.",
       disclosureReveals:
@@ -194,7 +194,7 @@ export const de: Translations = {
   },
   accounts: {
     title: "Konten",
-    description: "Personen, die sich bei LoonInspect anmelden können. Nicht zu verwechseln mit den aus dem MDM synchronisierten Personen auf der Seite „Benutzer“.",
+    description: "Personen, die sich bei LoonInspect anmelden können. Nicht zu verwechseln mit den Personen, denen in Jamf Geräte zugeordnet sind.",
     addAccount: "Konto hinzufügen",
     displayName: "Anzeigename",
     email: "E-Mail",
@@ -218,7 +218,7 @@ export const de: Translations = {
     confirm: "Bestätigen",
     you: "Sie",
     breakGlass: "Notfallzugang",
-    breakGlassHint: "Behält die lokale Anmeldung auch bei erzwungenem SSO. Jede Anmeldung dieses Kontos wird mit hoher Priorität protokolliert.",
+    breakGlassHint: "Behält die lokale Anmeldung auch dann, wenn einmal ein Identitätsanbieter verpflichtend wird (heute ist keiner konfiguriert). Jede Anmeldung dieses Kontos wird mit hoher Priorität protokolliert.",
     cannotDisableSelf: "Sie können Ihr eigenes Konto nicht deaktivieren.",
     disableHint:
       "Beim Deaktivieren werden Sitzungen und API-Token sofort widerrufen. Konten werden nie gelöscht, damit frühere Audit-Einträge zuordenbar bleiben.",
@@ -285,7 +285,7 @@ export const de: Translations = {
   apiTokens: {
     title: "API-Token",
     description:
-      "Persönliche Token für Clients außerhalb des Browsers – die macOS-App, CI und Skripte. Ein Token kann nie mehr als Ihr Konto.",
+      "Persönliche Token für Clients außerhalb des Browsers – Skripte, CI und native Clients. Ein Token kann nie mehr als Ihr Konto.",
     name: "Name",
     namePlaceholder: "macOS-Client auf meinem Laptop",
     expiry: "Läuft ab in (Tagen)",
@@ -637,7 +637,7 @@ export const de: Translations = {
       unlistedVersions: (n: number) =>
         `${n} Gerät${n === 1 ? "" : "e"} auf einer Version, die Jamf nicht führt (dem Katalog voraus oder ein Build, den Jamf nie erfasst hat).`,
       tableVulnerabilities: "Schwachstellen",
-      vulnerabilitiesTooltip: "Sie müssen die LoonSecIO-Integration aktivieren, um Schwachstellendaten zu sehen.",
+      vulnerabilitiesTooltip: "Noch nicht bewertet — Schwachstellendaten kommen mit dem Community-Korpus (docs/vulnerabilities.md).",
       vulnCritical: "Kritisch",
       vulnHigh: "Hoch",
       vulnMedium: "Mittel",

@@ -160,8 +160,9 @@ reference material to read and deliberately re-derive.
 
 ### 3.2 Security findings as an input to branching
 
-Continuous dynamic testing runs against a dev instance that tracks `main`, not
-against branches or pull requests. The scanner is therefore downstream of
+Continuous dynamic testing is designed to run against a dev instance that tracks
+`main`, not against branches or pull requests — no such instance exists yet (SF-01,
+§6.7), so today the circuit below is run by hand. The scanner is therefore downstream of
 everything else in this document: it observes what has already merged, and its
 findings return as new branches. It gates nothing, and no pull request waits on
 it.
@@ -630,6 +631,16 @@ Re-establish the baseline during cleanup rather than inheriting it from this
 document, and **record the ref count and date with it** — a bare "0 secrets" cannot
 be told apart from "0 secrets in the 27% we looked at" a month later.
 
+**Pre-flip re-run, 2026-09-05** (the command below, unchanged, TruffleHog `3.97.0`
+image, without `--only-verified`): **151 refs** (5 `refs/heads`, 146 `refs/pull/*`),
+**359 commits**, 5,982 chunks — **0 verified, 9 unverified**. The nine are the
+`backend/uv.lock:1259` sha256 digest twice (the false positive named above) and seven
+`URI` hits on `user:password@host` placeholders in `backend/tests/test_base_url_egress.py`,
+`backend/tests/test_wire.py` and an earlier revision of `docs/splunk-event-shaping.md` —
+each a test of credential stripping, not a credential. `.env` has never been committed on
+any ref. Three of the nine sit on commits reachable only from `refs/pull/*`, which is what
+proves the sweep covered them. This is the baseline the flip was made against.
+
 ```bash
 git clone --mirror https://github.com/LoonSecIO/LoonInspect.git audit.git
 # trufflehog needs a work tree, so present the mirror as one
@@ -717,6 +728,14 @@ Appended 2026-08-29, from the doc-truth sweep (#128) — recorded, not remediate
 - `inspect-0061-change-log` additionally violates §2's pattern — a hyphen where
   the `inspect-NNNN/` prefix requires a slash.
 
+Appended 2026-09-05, immediately before the flip to public:
+
+- The four merged branches surviving on `origin` against BR-04 — `claude/issue-130-d1d249`
+  (#169), `claude/jamf-pro-sdk-python-273d02` (#75), `claude/patch-source-metadata-e5e93a`
+  (#312), `inspect-0061-change-log` (#62) — were deleted. Their commits stay reachable
+  through `refs/pull/*`, which publication exposes either way. `INSPECT-0005-AUTHLAYER` and
+  `claude/festive-roentgen-d48f0b`, named above as surviving, were already gone.
+
 ## Change log
 
 | Version | Date | Change |
@@ -731,3 +750,4 @@ Appended 2026-08-29, from the doc-truth sweep (#128) — recorded, not remediate
 | v1.7 | 2026-08-29 | TruffleHog's check context added to the ruleset's required status checks (§8.3), so CM-03's detection gates merges once §8.1 unblocks |
 | v1.8 | 2026-08-29 | Acknowledged `claude/*` agent session branches in §2; appended current deviations to §10 |
 | v1.9 | 2026-08-31 | Added CM-05 (§6.2, §7): the README's claims are checked against the codebase by the `README claims` job, whose context is in the ruleset's required status checks |
+| v1.10 | 2026-09-05 | Pre-flip secret-audit baseline recorded in §8.2 (151 refs, 0 verified); §3.2 says the DAST instance does not exist yet; §10 notes the surviving merged branches deleted under BR-04 |
