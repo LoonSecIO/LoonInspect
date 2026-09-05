@@ -139,6 +139,17 @@ Three rules a consumer can rely on:
   `connectionID` are read from `deviceMeta` on **both** device families, so a predicate
   written once works on both. They were root keys on this family alone until #308, which
   made a bare `serialNumber=` match changes and silently return no inventory at all.
+- **`field` is null on an entry change, and the moved fields are in
+  `details.changedFields`.** A section change names one field (`field: "fileVault2Enabled"`,
+  `details` absent); an entry change names the entry and lists what moved inside it
+  (`field` absent, `details.changedFields: ["version", "cfBundleVersion", …]`). So the
+  obvious `field=version` returns **zero rows for every app version bump** — the highest
+  volume change there is — with no error, and `field=*` misses the whole entry family. The
+  working predicate is `details.changedFields{}=version`, or
+  `field=version OR details.changedFields{}=version` to span both. Same trap as the bare
+  `serialNumber=` above, which is why it is written down rather than left to be discovered:
+  SPL fails silently on a field that is null, and a plausible subset is worse than an error.
+
 - **The Jamf Pro instance is the envelope's `source`** (`acme.jamfcloud.com` — scheme
   dropped, non-default port kept), never a body key; `deviceMeta.connectionID` scopes it.
   The connection's friendly name is `connectionName` on `run.completed` / `run.failed`

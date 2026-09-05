@@ -1,6 +1,6 @@
 """The posture-snapshot key registry against its own vocabulary doc.
 
-Definitions v1 is a frozen contract: 27 active keys, each immutable per name, plus the
+Definitions v1 is a frozen contract: 29 active keys, each immutable per name, plus the
 reserved names whose definitions exist before their writers do, and the population
 vocabulary (#230) each captured row is stamped with. The registry
 (app.core.posture) and docs/posture-snapshot.md must tell the same story — a key added
@@ -31,7 +31,7 @@ def _documented(status: str) -> set[str]:
 def test_active_registry_is_definitions_v1() -> None:
     from app.core.posture import ACTIVE_KEYS
 
-    assert len(ACTIVE_KEYS) == 27
+    assert len(ACTIVE_KEYS) == 29
     assert len(set(ACTIVE_KEYS)) == len(ACTIVE_KEYS), "duplicate active key"
     assert all(_KEY_SHAPE.match(key) for key in ACTIVE_KEYS)
 

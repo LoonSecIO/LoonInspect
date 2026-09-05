@@ -32,7 +32,7 @@ from app.core.tenancy import reset_tenant_id, set_tenant_id
 from app.mdm.collections import ensure_default_collections
 from app.mdm.credentials import CREDENTIAL_SCHEMAS, fingerprint_field, secret_fields
 from app.mdm.jamf.client import JamfClient
-from app.mdm.service import set_sync_status, sync_connection
+from app.mdm.service import set_sync_status, sync_connection, sync_result_kwargs
 from app.models.schema import (
     Device,
     DeviceExtensionAttribute,
@@ -626,17 +626,7 @@ async def _run_connection_sync(
                     await db.rollback()
                     await finish(db, run, ok=False, error=str(exc))
                     raise
-                await finish(
-                    db,
-                    run,
-                    ok=result.ok,
-                    device_count=result.device_count,
-                    group_count=result.group_count,
-                    devices_processed=result.devices_processed,
-                    devices_failed=result.devices_failed,
-                    observations=dict(result.observations),
-                    error=result.error,
-                )
+                await finish(db, run, **sync_result_kwargs(result))
     finally:
         reset_tenant_id(tenant_token)
         reset_actor(token)

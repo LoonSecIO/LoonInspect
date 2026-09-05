@@ -42,6 +42,7 @@ from app.mdm.service import (
     run_jamf,
     run_jamf_catalog,
     set_sync_status,
+    sync_result_kwargs,
 )
 from app.models.schema import Collection, MdmConnection, Run
 from app.schemas.payload import MdmProvider, SyncStatus
@@ -302,17 +303,7 @@ async def run_collection(
         await db.commit()
 
         if owned:
-            closed = await finish(
-                db,
-                run,
-                ok=result.ok,
-                device_count=result.device_count,
-                group_count=result.group_count,
-                devices_processed=result.devices_processed,
-                devices_failed=result.devices_failed,
-                observations=dict(result.observations),
-                error=result.error,
-            )
+            closed = await finish(db, run, **sync_result_kwargs(result))
             if not closed:
                 # Reclaimed between the last heartbeat and here: the work completed,
                 # but the run's verdict is the reclaim's, and this row's cached outcome

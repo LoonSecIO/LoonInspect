@@ -25,7 +25,7 @@ pytestmark = [
     pytest.mark.asyncio(loop_scope="session"),
 ]
 
-_TITLE_IDS = ("LOONT1", "LOONT2", "LOONT3")
+_TITLE_IDS = ("LOONT1", "LOONT2", "LOONT3", "LOONT4")
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
@@ -189,9 +189,17 @@ async def _seed_fleet(db, ns) -> None:
     e1 = entry(f"behind-{suffix}", _hash(), title_ids=["LOONT1"], is_latest=False, latest_version="2.0")
     e2 = entry(f"latest-{suffix}", _hash(), title_ids=["LOONT2"], is_latest=True, latest_version="3.0")
     e3 = entry(f"unmatched-{suffix}", _hash(), title_ids=None, is_latest=None, latest_version=None)
-    db.add_all([e1, e2, e3])
+    # AHEAD: installed newer than anything Jamf lists — Chrome and Safari are in this state on
+    # a real fleet more or less permanently, because they auto-update faster than the catalog
+    # publishes. `is_latest` is false (the matcher's own answer: ahead is neither compliant nor
+    # patch-available) and `latest_version` is present, which is what makes it visible to
+    # `catalog.installed_not_latest`. Added 2026-09-04: the fixture covered behind, latest and
+    # unknown, and its four pairs happened to sum to `pairs_total`, so two keys that count an
+    # ahead device as a laggard had nothing to fail against.
+    e4 = entry(f"ahead-{suffix}", _hash(), title_ids=["LOONT4"], is_latest=False, latest_version="0.9")
+    db.add_all([e1, e2, e3, e4])
     await db.commit()
-    ns.version_hashes = [e1.version_hash, e2.version_hash, e3.version_hash]
+    ns.version_hashes = [e1.version_hash, e2.version_hash, e3.version_hash, e4.version_hash]
 
     def install(dev, cat_entry):
         return InstalledApp(
@@ -199,7 +207,7 @@ async def _seed_fleet(db, ns) -> None:
             app_hash=cat_entry.app_hash, version_hash=cat_entry.version_hash, key_title=cat_entry.key_title, key_full=cat_entry.key_full,
         )
 
-    db.add_all([install(d1, e1), install(d1, e2), install(d2, e2)])
+    db.add_all([install(d1, e1), install(d1, e2), install(d2, e2), install(d1, e4)])
 
     for title_id in _TITLE_IDS:
         await db.merge(JamfPatchTitle(id=title_id, name=f"Posture Title {title_id}", current_version="9.9", last_modified="", patches=[], requirements=[]))
@@ -211,6 +219,9 @@ async def _seed_fleet(db, ns) -> None:
         AppCatalogTitleMatch(app_catalog_id=e2.id, title_id="LOONT2", basis="requirements", state="latest", version_known=True, on_latest=True, installed_version="1.0", latest_version="3.0", releases_missed=0),
         # The same 20-day-old date on an unlisted build: counted under its own key, never as a laggard.
         AppCatalogTitleMatch(app_catalog_id=e1.id, title_id="LOONT3", basis="requirements", state="unknown", version_known=False, on_latest=False, installed_version="1.0", latest_version="4.0", first_newer_released_at=now - timedelta(days=20), releases_missed=5),
+        # Ahead of the catalog: not on latest, but nothing is missing. No `first_newer_released_at`
+        # and no releases missed, because there is no newer version to have missed.
+        AppCatalogTitleMatch(app_catalog_id=e4.id, title_id="LOONT4", basis="requirements", state="ahead", version_known=False, on_latest=False, installed_version="1.0", latest_version="0.9", releases_missed=0),
     ])
 
     # Alerts (#101): the derived latch, seeded across every population edge the two keys
@@ -292,6 +303,38 @@ async def _capture(db, run_id) -> dict[str, float]:
     return {row.metric_key: float(row.value) for row in rows}
 
 
+async def test_the_fixture_exercises_every_patch_state(db, fleet) -> None:
+    """#314's root cause, made unable to recur quietly.
+
+    The seeded fleet had three of the four states — no `ahead` — so two keys that mishandled
+    it had nothing to fail against, and a third defect (the state keys not partitioning
+    `pairs_total`) was invisible because four pairs in three buckets happened to sum. Neither
+    was a coverage gap in the usual sense: every assertion in this file passed, because every
+    assertion compared a value to an expectation and no value was wrong.
+
+    A fixture is written by whoever wrote the feature, out of the same mental model, so it
+    tests what was already believed. The cheap defence is to make the vocabulary itself the
+    expectation: when a closed set has N members, the fixture carries all N, and adding a
+    member to `app.mdm.patch.matching` fails HERE — where the fix is to seed a pair — rather
+    than silently in whichever rollup forgets it.
+    """
+    from app.core.posture import PATCH_STATES
+    from app.models.schema import AppCatalogEntry, AppCatalogTitleMatch
+
+    await _seed_fleet(db, fleet)
+    seeded = (
+        await db.execute(
+            select(AppCatalogTitleMatch.state)
+            .join(AppCatalogEntry, AppCatalogEntry.id == AppCatalogTitleMatch.app_catalog_id)
+            .where(AppCatalogEntry.version_hash.in_(fleet.version_hashes))
+        )
+    ).scalars().all()
+    assert set(seeded) == set(PATCH_STATES), (
+        "the posture fixture must seed a pair in every state the matcher can assign — a state "
+        "with no pair is a state every rollup below is untested against"
+    )
+
+
 async def test_a_closed_full_sweep_captures_every_active_key(db, fleet) -> None:
     """The whole pipeline: finish() on a device-sweep run fires the recorder, and the
     deltas between a capture taken before the fleet existed and one taken after match
@@ -331,21 +374,45 @@ async def test_a_closed_full_sweep_captures_every_active_key(db, fleet) -> None:
     assert delta("devices.stale_inventory_7d") == 1  # only the NULL; the others inventoried an hour ago
 
     # Catalog: CatalogSummaryOut's semantics at the entry grain.
-    assert delta("catalog.entries") == 3
-    assert delta("catalog.installed") == 2  # the unmatched entry is on no device
-    assert delta("catalog.matched") == 2
+    assert delta("catalog.entries") == 4
+    assert delta("catalog.installed") == 3  # the unmatched entry is on no device
+    assert delta("catalog.matched") == 3
     assert delta("catalog.unmatched") == 1
-    assert delta("catalog.installed_not_latest") == 1  # entries, not device pairs
-    assert delta("apps.distinct") == 2
+    # NOT-LATEST INCLUDES AHEAD. The behind entry and the ahead one both read `is_latest = false`
+    # with a `latest_version` present, so a build NEWER than anything Jamf lists is counted here
+    # beside one that is genuinely behind. Pinned as the current definition, flagged 2026-09-04:
+    # the key reads as "how many builds need updating" and answers "how many builds are not the
+    # catalog's current one", which are different questions on any fleet running Chrome.
+    assert delta("catalog.installed_not_latest") == 2  # entries, not device pairs
+    assert delta("apps.distinct") == 3
 
     # Patch pairs: (d1,T1) behind by 20 days, (d1,T2) latest, (d2,T2) latest, (d1,T3) an
-    # unlisted build. T1 and T3 are the laggard titles; only the behind pair crosses 14 days —
-    # the unknown pair carries the same date and lands under its own key, never here (#68).
-    assert delta("patch.pairs_total") == 4
+    # unlisted build, (d1,T4) ahead of the catalog. Only the behind pair crosses 14 days — the
+    # unknown pair carries the same date and lands under its own key, never here (#68).
+    assert delta("patch.pairs_total") == 5
     assert delta("patch.pairs_on_latest") == 2
-    assert delta("patch.titles_with_laggards") == 2
     assert delta("patch.pairs_laggard_over_14d") == 1
+    assert delta("patch.pairs_behind_under_14d") == 0
     assert delta("patch.pairs_unknown_build") == 1
+    assert delta("patch.pairs_ahead") == 1
+    # THE FIVE STATE KEYS PARTITION `pairs_total` (#314). Asserted as an identity rather than
+    # as five numbers that happen to add up, because that is exactly how the gap hid: the old
+    # fixture had four pairs in three buckets and summed by luck, so nothing failed when an
+    # `ahead` pair and a `behind`-inside-the-cut pair belonged to no bucket at all.
+    assert (
+        delta("patch.pairs_on_latest")
+        + delta("patch.pairs_behind_under_14d")
+        + delta("patch.pairs_laggard_over_14d")
+        + delta("patch.pairs_unknown_build")
+        + delta("patch.pairs_ahead")
+    ) == delta("patch.pairs_total")
+    # AN AHEAD DEVICE IS NOT A LAGGARD (#314, Kyle 2026-09-04). T1 alone: T2 is on latest, T3's
+    # build cannot be placed and stays in its own key, and T4 is running something NEWER than
+    # Jamf publishes. Before the correction this read 3 — the key was `devices_on_latest <
+    # device_count`, which seated both T3 and T4 in a number called "laggards". On the reference
+    # tenant it read 11 against 10 laggard pairs and the extra title was Google Chrome; ahead is
+    # not rare, so the tenant patching fastest scored worst.
+    assert delta("patch.titles_with_laggards") == 1
 
     # Changes: high + normal inside 24h; the low row and the 30h-old high row do not count.
     assert delta("changes.notable_24h") == 2

@@ -10,6 +10,7 @@ from app.core.auth import require
 from app.core.database import get_db
 from app.core.permissions import Permission
 from app.mdm.patch.jamf_catalog import sync_catalog
+from app.mdm.patch.matching import STATE_BEHIND
 from app.models.schema import AppCatalogEntry, AppCatalogTitleMatch, InstalledApp, JamfPatchTitle
 from app.schemas.jamf_patch import (
     JamfPatchSyncResult,
@@ -28,6 +29,7 @@ def _matched_devices():
         select(
             AppCatalogTitleMatch.title_id,
             AppCatalogTitleMatch.on_latest,
+            AppCatalogTitleMatch.state,
             AppCatalogTitleMatch.installed_version,
             InstalledApp.device_id,
         )
@@ -36,15 +38,27 @@ def _matched_devices():
     )
 
 
-async def title_device_counts(db: AsyncSession, title_ids: list[str]) -> dict[str, tuple[int, int]]:
-    """title id -> (distinct devices with a matched app, distinct devices on the title's latest)."""
+async def title_device_counts(db: AsyncSession, title_ids: list[str]) -> dict[str, tuple[int, int, int]]:
+    """title id -> (distinct devices with a matched app, on the title's latest, genuinely behind).
+
+    The third number is not derivable from the first two, which is the whole reason it is here
+    (#314): `device_count - devices_on_latest` counts a device running a build NEWER than the
+    title lists as behind, and that is the steady state for anything that auto-updates. One more
+    conditional aggregate over a subquery already being scanned — no extra join, no extra pass.
+    """
     if not title_ids:
         return {}
     matched = _matched_devices().where(AppCatalogTitleMatch.title_id.in_(title_ids)).subquery()
     on_latest_device = case((matched.c.on_latest.is_(True), matched.c.device_id))
-    stmt = select(matched.c.title_id, func.count(distinct(matched.c.device_id)), func.count(distinct(on_latest_device)))
+    behind_device = case((matched.c.state == STATE_BEHIND, matched.c.device_id))
+    stmt = select(
+        matched.c.title_id,
+        func.count(distinct(matched.c.device_id)),
+        func.count(distinct(on_latest_device)),
+        func.count(distinct(behind_device)),
+    )
     rows = (await db.execute(stmt.group_by(matched.c.title_id))).all()
-    return {title_id: (int(devices), int(on_latest)) for title_id, devices, on_latest in rows}
+    return {title_id: (int(devices), int(on_latest), int(behind)) for title_id, devices, on_latest, behind in rows}
 
 
 async def title_version_counts(db: AsyncSession, title_id: str) -> dict[str, int]:
@@ -99,7 +113,7 @@ async def list_titles(
     items = []
     for title in titles:
         out = JamfPatchTitleOut.model_validate(title)
-        out.device_count, out.devices_on_latest = counts.get(title.id, (0, 0))
+        out.device_count, out.devices_on_latest, out.devices_behind = counts.get(title.id, (0, 0, 0))
         items.append(out)
     return JamfPatchTitleListResponse(items=items, total=total)
 
@@ -114,6 +128,8 @@ async def get_title(title_id: str, db: AsyncSession = Depends(get_db)) -> JamfPa
     if title is None:
         raise HTTPException(status_code=404, detail="Patch title not found")
     out = JamfPatchTitleDetailOut.model_validate(title)
-    out.device_count, out.devices_on_latest = (await title_device_counts(db, [title.id])).get(title.id, (0, 0))
+    out.device_count, out.devices_on_latest, out.devices_behind = (
+        await title_device_counts(db, [title.id])
+    ).get(title.id, (0, 0, 0))
     out.version_device_counts = await title_version_counts(db, title.id)
     return out
