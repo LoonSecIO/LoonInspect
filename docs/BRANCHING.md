@@ -298,7 +298,7 @@ and is never reused.
 | ID | Control | Enforcement | Severity | Status |
 | --- | --- | --- | --- | --- |
 | PR-01 | Changed lines, excluding lockfiles and generated output, are under 400 | `ci` | warn | proposed |
-| PR-02 | Description states scope and the verification actually performed | `ci` | warn | proposed |
+| PR-02 | Body follows `.github/PULL_REQUEST_TEMPLATE.md`: a filled-in Validation section and the `posture_snapshot:` line are checked; Scope and Risk are read in review | `ci` | block | active — the `PR body` check runs on every pull request; it gates once the ruleset is re-applied with its context (§8.1) |
 | PR-03 | Agent-assisted pull requests carry the `agent-authored` label | `ci` | block | proposed |
 | PR-04 | Frontend typechecks and lints clean | `ci` | block | active |
 | PR-05 | Backend test suite passes | `ci` | block | active |
@@ -310,6 +310,9 @@ and is never reused.
 PR-08 has no automated form and is deliberately listed anyway. Recording it as a
 control means its absence is a known gap rather than an oversight, and it
 becomes enforceable as a required approval once a second maintainer exists.
+Since 2026-09-07 the pull request template's last checkbox is where the read is
+recorded: an agent session leaves it unticked, and the human who reads the diff
+ticks it before merge.
 
 ### 6.4 Merge controls
 
@@ -446,6 +449,17 @@ github.event.pull_request.additions + .deletions, minus paths matching
 package-lock.json, *.lock, migrations/versions/*
 ```
 
+**PR-02** — body carries a filled-in Validation section and the measurement line
+
+```bash
+gh pr view "$PR" --json body --jq .body | .github/scripts/check-pr-body.sh
+```
+
+The `PR body` job in `.github/workflows/pr-body.yml` runs the same script on the body
+from the `pull_request` event — on `edited` as well as `opened` and `synchronize`, so an
+author can fix a description without pushing. It reads nothing else: Scope and Risk stay
+with the reviewer, and the key list stays with `tests/test_posture_registry.py`.
+
 **BR-08** — branch number is a real open issue
 
 ```bash
@@ -538,8 +552,9 @@ that prevent damage over those that enforce tidiness:
    target, expected around October 2026. SF-05 is an environment review and must
    be confirmed before the dev instance is first exposed, ahead of everything
    else in this list.
-6. **The judgement-dependent remainder** — PR-02, PR-03, PR-06, SP-03, SP-05,
-   SF-04, and eventually PR-08 once a second maintainer can approve.
+6. **The judgement-dependent remainder** — PR-03, PR-06, SP-03, SP-05, SF-04, and
+   eventually PR-08 once a second maintainer can approve. *PR-02 landed ahead of its
+   turn on 2026-09-07: the pull request template and the `PR body` check (§7).*
 
 A machine-readable manifest of this register (control ID, severity, enforcement
 point, check definition) should be added as `docs/controls.yml` when step 3
@@ -570,6 +585,10 @@ executes the fork's code on this repository's runners; and GitHub's non-provider
 patterns are requested alongside provider scanning (the API accepted the request on
 flip day and read the setting back as disabled — unresolved, and TruffleHog covers
 that class in the meantime).
+
+The `PR body` context (PR-02) joined `main.json` on 2026-09-07. Like every change to the
+required contexts it takes effect when `apply-repo-config.sh` is next run; until then the
+check reports on every pull request and gates none.
 
 What is enforced today: everything in step 1. What remains `proposed` is the policy
 workflow (step 2) and everything after it.
@@ -750,3 +769,4 @@ Appended 2026-09-05, immediately before the flip to public:
 | v1.9 | 2026-08-31 | Added CM-05 (§6.2, §7): the README's claims are checked against the codebase by the `README claims` job, whose context is in the ruleset's required status checks |
 | v1.10 | 2026-09-05 | Pre-flip secret-audit baseline recorded in §8.2 (151 refs, 0 verified); §3.2 says the DAST instance does not exist yet; §10 notes the surviving merged branches deleted under BR-04 |
 | v1.11 | 2026-09-05 | Flip to public: BR-06, BR-07, MG-02, MG-03, PR-07, AG-03 `active`; CM-03 fully active; §8.1 and §8.3 in the past tense; §10 corrected — the branch deletes are still owed |
+| v1.12 | 2026-09-07 | PR-02 `block` and `active`: the pull request template and the `PR body` check (§6.3, §7); its context added to `main.json`, gating on the next `apply-repo-config.sh` run (§8.1); the template's last checkbox records PR-08's read |

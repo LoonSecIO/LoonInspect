@@ -40,7 +40,8 @@
           { "context": "Frontend (typecheck + lint)" },
           { "context": "Backend (ruff + pytest)" },
           { "context": "Docker image" },
-          { "context": "TruffleHog" }
+          { "context": "TruffleHog" },
+          { "context": "PR body" }
         ]
       }
     }

@@ -270,7 +270,8 @@ starts then. The contract they gate is [`docs/vulnerabilities.md`](vulnerabiliti
 
 ## The process line
 
-Every feature issue or PR that creates or reshapes a data area answers one line:
+Every feature issue that creates or reshapes a data area, and every pull request, answers
+one line:
 
 ```
 posture_snapshot: <keys | none>
@@ -278,6 +279,6 @@ posture_snapshot: <keys | none>
 
 `none` is a first-class answer — it means the question was asked and the change moves
 no fleet-level number worth a nightly row. A missing line means the question was never
-asked. The gate lives in CONTRIBUTING.md; the registry
-(`app.core.posture.ACTIVE_KEYS` / `RESERVED_KEYS`) and this document are kept in step
-by `tests/test_posture_registry.py`.
+asked. The gate lives in CONTRIBUTING.md, and the `PR body` check holds the pull request
+half; the registry (`app.core.posture.ACTIVE_KEYS` / `RESERVED_KEYS`) and this document
+are kept in step by `tests/test_posture_registry.py`.
