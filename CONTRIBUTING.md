@@ -32,8 +32,8 @@ their manifests (`--frozen` / `npm ci` enforce this).
 
 ## Measurement
 
-History not recorded can never be backfilled. Every feature issue or PR that creates
-or reshapes a data area answers one line:
+History not recorded can never be backfilled. Every feature issue that creates or
+reshapes a data area, and every pull request, answers one line:
 
 ```
 posture_snapshot: <keys | none>
@@ -43,6 +43,28 @@ posture_snapshot: <keys | none>
 the change adds, activates, or retires. `none` is a first-class answer: it means the
 question was asked and the change moves no fleet-level number worth a nightly row. A
 missing line means the question was never asked.
+
+## Pull requests
+
+A pull request body follows
+[.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md): Description, Scope,
+Validation, Risk, Measurement, Checklist. GitHub fills the template into the web form
+only — `gh pr create --body` bypasses it, so start from the file and pass it with
+`--body-file`. Two sections are required, not optional, and the `PR body` check
+([.github/workflows/pr-body.yml](.github/workflows/pr-body.yml)) fails a pull request
+without them: **Validation**, with the commands actually run, where, and what was *not*
+run; and **Measurement**, the line above. The checklist holds only what CI cannot see.
+Three of its lines are rules of this project rather than of the template:
+
+- A change to a measured limit updates [KNOWN_ISSUES.md](KNOWN_ISSUES.md). Every number
+  there was measured, and a stale one is worse than none.
+- A change to any event shape updates
+  [docs/splunk-wire-vocabulary.md](docs/splunk-wire-vocabulary.md), additively only —
+  §5 of that document is the clause.
+- The body says whether the change was AI-assisted, and its last box is ticked by the
+  human who has read the full diff — before merge, not necessarily before opening, since
+  most pull requests here are opened by an agent session. That is nothing to hide; an
+  unread diff is.
 
 ## License
 

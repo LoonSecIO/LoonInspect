@@ -1,0 +1,40 @@
+name: PR body
+
+# The body is not a commit: a push does not change it, and an edit does not push.
+# `edited` is what re-runs this after the author fills the sections in, and
+# `synchronize` is what gives every new head commit a result — a required status
+# check needs one per commit, or the ruleset waits on a context that never reports.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  # Its own workflow rather than a job in ci.yml, for the reason ci.yml gives for
+  # the README check: an unfilled description is not a build failure, and this
+  # trigger includes `edited`, which a build has no reason to run on. The job's
+  # display name is the required-status-check context in
+  # .github/rulesets/main.json; the two change together or the ruleset waits
+  # forever.
+  body:
+    name: PR body
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # The cases live in the script, so a change to the check and a change to what
+      # it accepts travel together and are proven here before the body is read.
+      - name: Self-test the check
+        run: .github/scripts/check-pr-body.sh --self-test
+
+      # The body reaches the script through the environment, never through the
+      # script text. A description is contributor-controlled input; interpolating
+      # `${{ github.event.pull_request.body }}` into `run:` would let a pull
+      # request execute whatever it says.
+      - name: Validation section and posture_snapshot line
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s\n' "$PR_BODY" | .github/scripts/check-pr-body.sh
