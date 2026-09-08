@@ -172,6 +172,12 @@ shell as a misleading `200`.
 
 ### 5. Point it at Splunk
 
+Destination URLs must be `https` — every delivery carries the destination's own
+credential. `ALLOW_INSECURE_DESTINATION_URL=true` accepts plain `http` for a lab SIEM
+without TLS; nothing accepts a loopback or link-local address, or a hostname that
+resolves to one, which are refused when saved and again at delivery
+(`docs/splunk-setup.md`).
+
 The onboarding stepper's third step is "Send it to Splunk", and there is more to it than
 a URL: HEC ships disabled, the "Secret" field means the HEC token, the index comes from
 the token rather than from anything LoonInspect sends, and Splunk's stock self-signed
