@@ -59,6 +59,11 @@ class FakeJamf:
             {"id": "9", "name": "Sales"},
         ]
         self.buildings: list[dict] | None = [{"id": "2", "name": "Bletchley Park"}]
+        # The one smart group's criteria, editable so a test can move them between two
+        # sweeps (#136): a criteria edit is the cause `_membership_cause` exists to name.
+        self.smart_group_criteria: list[dict] = [
+            {"name": "Managed", "priority": 0, "andOr": "and", "searchType": "is", "value": "Managed"}
+        ]
 
     @property
     def computers(self) -> list[dict]:
@@ -130,13 +135,7 @@ class FakeJamf:
         if path == "/api/v3/computer-groups/smart-groups/1":
             return httpx.Response(
                 200,
-                json={
-                    "name": "All Managed Clients",
-                    "siteId": "-1",
-                    "criteria": [
-                        {"name": "Managed", "priority": 0, "andOr": "and", "searchType": "is", "value": "Managed"}
-                    ],
-                },
+                json={"name": "All Managed Clients", "siteId": "-1", "criteria": self.smart_group_criteria},
             )
         return httpx.Response(404, json={"httpStatus": 404, "path": path})
 

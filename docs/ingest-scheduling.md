@@ -7,7 +7,7 @@ Target: V0
 > **What landed, and where it deviates.** The ingest profile of §3/§10 shipped under the
 > user-facing name **collection** (`collections` table, `app/mdm/collections.py`,
 > `app/api/collections.py`, Settings → Connections → Collections). Three kinds:
-> `device_sweep` (sections + RSQL selector pushed into Jamf's query; always ends with a
+> `device_sweep` (sections + RSQL selector pushed into Jamf's query; always begins with a
 > catalog refresh, §6.2), `catalog` (smart-group definitions with criteria on their own
 > cadence), `webhook` (event-driven; scopes the fetch-by-jssID). Connection setup creates
 > the three defaults as real rows (§3.2); the old `SYNC_HOUR` / `SYNC_MINUTE` /
@@ -298,9 +298,11 @@ when this doc was written it was exactly one method, `fetch_devices()`. Now:
 `iter_computers()` pages `/api/v4/computers-inventory` with pages in flight,
 `fetch_computer_detail()` pulls one device's inventory by id (the webhook path), and
 `fetch_smart_groups()` fetches smart-group *definitions* from
-`/api/v3/computer-groups/smart-groups` — riding along with the device sweep so the
-catalog is never older than the memberships that reference it, which is §6.2's rule,
-implemented. The aperture reads (`fetch_version()`,
+`/api/v3/computer-groups/smart-groups` — riding along with the device sweep, and
+observed *before* its device loop, so a membership change is judged against this
+sweep's definitions rather than the previous catalog observation's (INSPECT-0136);
+the catalog is then at most one sweep older than the memberships that reference it,
+which is §6.2's rule, implemented. The aperture reads (`fetch_version()`,
 `fetch_inventory_collection_settings()`) and `test_connection()` round it out. Profile
 and extension-attribute *definition* fetching still does not exist. EA values ride
 inside each computer record, which is why `EXTENSION_ATTRIBUTES` sits in `V0_SECTIONS`
