@@ -13,6 +13,7 @@ from app.models.schema import Destination, OutboxDelivery
 from app.schemas.destinations import (
     DestinationCreate,
     DestinationOut,
+    DestinationTestOut,
     DestinationUpdate,
     resolve_auth_type,
 )
@@ -184,9 +185,10 @@ async def update_destination(
 
 @router.post(
     "/{destination_id}/test",
+    response_model=DestinationTestOut,
     dependencies=[Depends(require(Permission.DESTINATION_WRITE))],
 )
-async def test_destination(destination_id: int, db: AsyncSession = Depends(get_db)) -> dict:
+async def test_destination(destination_id: int, db: AsyncSession = Depends(get_db)) -> DestinationTestOut:
     """Send one synthetic event down the real delivery path and report what came back.
 
     Closes the setup loop. Before this the only way to learn whether a destination was
@@ -198,18 +200,24 @@ async def test_destination(destination_id: int, db: AsyncSession = Depends(get_d
     refused delivery is a successful test that reports a refusal.
     """
     destination = await _get_or_404(db, destination_id)
-    ok, error = await send_test_event(destination)
+    outcome = await send_test_event(destination)
 
     audit(
         AuditAction.DESTINATION_UPDATED,
         target_type="destination",
         target_id=destination.id,
         tested=True,
-        delivered=ok,
+        delivered=outcome.ok,
     )
-    if ok:
-        return {"ok": True, "detail": "Delivered. The destination accepted a test event."}
-    return {"ok": False, "detail": error or "Delivery failed with no detail from the destination."}
+    if outcome.ok:
+        return DestinationTestOut(
+            ok=True, detail="Delivered. The destination accepted a test event.", status_code=outcome.status_code
+        )
+    return DestinationTestOut(
+        ok=False,
+        detail=outcome.error or "Delivery failed with no detail from the destination.",
+        status_code=outcome.status_code,
+    )
 
 
 @router.delete(

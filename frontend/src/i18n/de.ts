@@ -183,6 +183,8 @@ export const de: Translations = {
     testing: "Test läuft…",
     testDelivered: "Zugestellt — das Ziel hat ein Testereignis angenommen.",
     testRefused: (detail: string) => `Testzustellung abgelehnt: ${detail}`,
+    testStatus: (code: number) => `HTTP ${code}`,
+    testNoStatus: "Kein HTTP-Status — die Anfrage schlug fehl, bevor das Ziel antwortete.",
     errorTesting: "Test konnte nicht ausgeführt werden. Das Ziel war gar nicht erreichbar.",
     pendingDeliveries: (count: number) => `${count} in Warteschlange`,
     failedDeliveries: (count: number) => `${count} aufgegeben`,

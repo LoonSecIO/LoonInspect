@@ -4,6 +4,7 @@ import json
 import logging
 from collections.abc import Collection, Iterator, Mapping, Sequence
 from datetime import datetime, timedelta, timezone
+from typing import NamedTuple
 
 import httpx
 from sqlalchemy import delete as sa_delete
@@ -643,7 +644,24 @@ async def deliver_pending(db: AsyncSession) -> None:
     await db.commit()
 
 
-async def send_test_event(destination: Destination) -> tuple[bool, str | None]:
+class DeliveryOutcome(NamedTuple):
+    """What the test button learns from one synthetic delivery.
+
+    `ok` and `error` are `_attempt_delivery`'s own verdict, unchanged. `status_code` is
+    the HTTP status the destination answered with, or None when no response came back at
+    all — DNS, connection refused, timeout, TLS — which is a different diagnosis from any
+    status code and must not be dressed up as one. It is its own field because `error` is
+    a human sentence: "HTTP 403: …" is in it today for a refusal, but a caller that parsed
+    the number out would break the day the sentence is reworded, and on success there is
+    no sentence to parse (#305).
+    """
+
+    ok: bool
+    error: str | None
+    status_code: int | None
+
+
+async def send_test_event(destination: Destination) -> DeliveryOutcome:
     """One synthetic event down the real delivery path, synchronously, for the
     `POST /api/destinations/{id}/test` button.
 
@@ -651,6 +669,14 @@ async def send_test_event(destination: Destination) -> tuple[bool, str | None]:
     ping: a test that exercises a different code path can pass while delivery fails,
     which is worse than no test. The event is never added to a session, so nothing is
     persisted and no retry is scheduled — the caller gets the upstream verdict directly.
+
+    The status code is read off the response by a client hook rather than threaded
+    through `_attempt_delivery`'s return value, so the path the scheduler runs is the one
+    this exercises, unchanged — a hook observes and cannot alter the verdict. The last
+    response of the attempt is the one reported: a test is a single request, and for a
+    refusal that is the request that was refused. Elastic's bulk API can answer 200 and
+    still reject the item (`_elastic_bulk_error`); that reads as `ok=False` beside
+    `status_code=200`, which is the truth of it.
     """
     event = EventOutbox(
         event_type=TEST_EVENT_TYPE,
@@ -661,8 +687,14 @@ async def send_test_event(destination: Destination) -> tuple[bool, str | None]:
             "destinationName": destination.name,
         },
     )
-    async with httpx.AsyncClient() as client:
-        return await _attempt_delivery(client, destination, event)
+    statuses: list[int] = []
+
+    async def remember(response: httpx.Response) -> None:
+        statuses.append(response.status_code)
+
+    async with httpx.AsyncClient(event_hooks={"response": [remember]}) as client:
+        ok, error = await _attempt_delivery(client, destination, event)
+    return DeliveryOutcome(ok, error, statuses[-1] if statuses else None)
 
 
 async def purge_delivered_events(db: AsyncSession, retention_days: int) -> int:
