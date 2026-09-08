@@ -6,7 +6,10 @@ export const en = {
       pageDescription:
         "The community patching and vulnerability feeds LoonInspect is building are made from anonymous community inventory. What this instance contributes — and whether it contributes at all — is controlled here.",
       envLocked:
-        "COMMUNITY_SHARING=false is set in the environment. Nothing is shared regardless of the choice below, and these controls are locked until the override is removed.",
+        "COMMUNITY_SHARING=false is set in the environment — the .env file beside docker-compose.yml. Nothing is shared while it is set, whatever is chosen below. A choice made here is recorded and takes effect once that line is removed and the container restarted (docker compose up -d).",
+      readOnlyRole:
+        "These settings are read-only for your role. Changing what this instance shares is a consent decision reserved to administrators; you can still see exactly what would be sent and download the share log.",
+      tierRecordedWhileOverridden: "Recorded, not active: the environment override above wins until it is removed.",
       tierHeading: "Participation",
       tierReveal: "Share, and reveal common titles (recommended)",
       tierRevealHelp:
@@ -39,6 +42,10 @@ export const en = {
         "Glob patterns, one per line. Matching applications never enter a snapshot at all — filtered before aggregation, ahead of any server-side rule.",
       lastExchange: "Last exchange",
       neverExchanged: "never — no exchange has been recorded yet",
+      outcomeSent: "sent",
+      outcomeFailed: "failed",
+      skippedEnv: (when: string) =>
+        `${when} — skipped. COMMUNITY_SHARING=false is set, so the daily exchange ran and sent nothing. This repeats every day until the override is removed.`,
       revealsShed: "reveals shed — the server refused the full submission and took a reveal-less retry",
       logHeading: "Share log",
       logHelp: "Every exchange attempt, with the verbatim payload the run assembled — byte-accurate history of what left this instance. A row marked revealsShed sent everything in its payload except the reveals. Retained for 90 days.",

@@ -88,7 +88,24 @@ export function DataSharingPage() {
     return <p className="text-sm text-muted-foreground">{error ?? t.auth.loading}</p>;
   }
 
-  const locked = settings.envDisabled || !canWrite;
+  // One reason locks these controls, and it is the permission: changing what this
+  // instance shares is a consent decision reserved to administrators
+  // (`permissions.py`, SYSTEM_WRITE). The environment override used to lock them too,
+  // which contradicted the backend, whose PUT is written to persist a choice made
+  // while overridden so it survives the override being lifted (#302). Now the
+  // override is explained above and the choice is recorded beneath it.
+  const locked = !canWrite;
+
+  function outcomeLabel(outcome: string | null): string {
+    switch (outcome) {
+      case "sent":
+        return t.system.sharing.outcomeSent;
+      case "failed":
+        return t.system.sharing.outcomeFailed;
+      default:
+        return outcome ?? "?";
+    }
+  }
   const tierLabels: Record<SharingTier, { label: string; description: string }> = {
     reveal: { label: t.system.sharing.tierReveal, description: t.system.sharing.tierRevealHelp },
     keys: { label: t.system.sharing.tierKeys, description: t.system.sharing.tierKeysHelp },
@@ -108,6 +125,12 @@ export function DataSharingPage() {
         </p>
       )}
 
+      {!canWrite && (
+        <p className="rounded-md border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+          {t.system.sharing.readOnlyRole}
+        </p>
+      )}
+
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}
@@ -116,6 +139,9 @@ export function DataSharingPage() {
 
       <section className="space-y-3 rounded-lg border bg-card p-6">
         <h2 className="font-semibold">{t.system.sharing.tierHeading}</h2>
+        {settings.envDisabled && (
+          <p className="text-xs text-muted-foreground">{t.system.sharing.tierRecordedWhileOverridden}</p>
+        )}
         {TIERS.map((tier) => (
           <label
             key={tier}
@@ -201,11 +227,17 @@ export function DataSharingPage() {
         <h2 className="font-semibold">{t.system.sharing.logHeading}</h2>
         <p className="text-sm text-muted-foreground">
           {t.system.sharing.lastExchange}:{" "}
-          {settings.lastExchangeAt
-            ? `${new Date(settings.lastExchangeAt).toLocaleString()} (${settings.lastExchangeOutcome ?? "?"}${
-                settings.lastExchangeRevealsShed ? `, ${t.system.sharing.revealsShed}` : ""
-              })`
-            : t.system.sharing.neverExchanged}
+          {settings.lastExchangeAt === null
+            ? // "never" keeps meaning "no exchange has been recorded" — an off-tier instance
+              // logs nothing, and that is a different fact from a skipped one.
+              t.system.sharing.neverExchanged
+            : settings.lastExchangeOutcome === "skipped_env"
+              ? // The daily proof the override is biting gets its own sentence, not a code
+                // in parentheses.
+                t.system.sharing.skippedEnv(new Date(settings.lastExchangeAt).toLocaleString())
+              : `${new Date(settings.lastExchangeAt).toLocaleString()} (${outcomeLabel(settings.lastExchangeOutcome)}${
+                  settings.lastExchangeRevealsShed ? `, ${t.system.sharing.revealsShed}` : ""
+                })`}
         </p>
         <p className="text-sm text-muted-foreground">{t.system.sharing.logHelp}</p>
         <Button type="button" variant="outline" onClick={handleDownloadLog}>

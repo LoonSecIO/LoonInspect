@@ -159,7 +159,12 @@ operational tenant renders it as one switch):
   renders the literal next payload from live data. That button is the trust feature;
   everything else is furniture around it.
 - **`COMMUNITY_SHARING=false`** (env) hard-disables regardless of UI state, for fleet
-  and air-gapped deployments; the UI shows the override as the reason.
+  and air-gapped deployments; the UI shows the override as the reason, names the file
+  it lives in, and writes one `skipped_env` row to the share log per day so the page
+  can say the override is biting. An administrator can still record a tier while it is
+  set — the choice takes effect once the override is removed — and a role without
+  `SYSTEM_WRITE` is told why the controls are read-only rather than shown them greyed
+  out with no explanation (INSPECT-0302).
 - Tier changes are audit-logged. An operator exclude list (glob on bundle_id, e.g.
   `com.acme.*`) filters matching apps out of **both** paths — the snapshot's hashed
   tuples and the reveal path's plaintext names — belt and suspenders ahead of the
