@@ -539,7 +539,7 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
                     ? new Date(connection.credentialsRotatedAt).toLocaleString()
                     : t.connectionForm.never}
                   {connection.credentialsFingerprint &&
-                    ` ${t.connectionForm.startsWithFingerprint(connection.credentialsFingerprint)}`}
+                    ` ${t.connectionForm.secretFingerprint(connection.credentialsFingerprint)}`}
                 </p>
               </div>
             )}

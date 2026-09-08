@@ -156,6 +156,8 @@ class MdmConnectionOut(BaseModel):
     capability_jamf_pro: bool
     last_successful_auth_at: datetime | None
     credentials_rotated_at: datetime | None
+    # Rotation metadata for CONNECTION_READ: a truncated hash of the stored secret, so a
+    # reader can tell that it changed without learning anything about it (#316).
     credentials_fingerprint: str | None
     created_at: datetime
     updated_at: datetime

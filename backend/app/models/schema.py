@@ -110,7 +110,10 @@ class MdmConnection(Base):
 
     last_successful_auth_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     credentials_rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    credentials_fingerprint: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    # app.mdm.credentials.credential_fingerprint: twelve hex characters of SHA-256 over
+    # the secret, never the secret's own characters (#316). Null until a secret is saved
+    # under this scheme — the migration cleared the plaintext prefixes it replaced.
+    credentials_fingerprint: Mapped[str | None] = mapped_column(String(12), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
