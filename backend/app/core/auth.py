@@ -13,12 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import AuditAction, audit
 from app.core.config import settings
 from app.core.context import Actor, set_actor
-from app.core.database import get_db, rebind_tenant
+from app.core.database import bound_tenant_id, get_db, rebind_tenant
 from app.core.permissions import Permission, permissions_for
 from app.core.security import generate_token, hash_token, tokens_equal
 from app.core.tenancy import set_tenant_id
 from app.core.tokens import parse_token
-from app.models.schema import Account, ApiToken, UserSession
+from app.models.schema import Account, ApiToken, ApiTokenTenant, SessionTenant, UserSession
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +144,33 @@ async def create_session(
     )
     db.add(session)
     await db.flush()
+    # The one lookup that may cross tenants (#35): which tenant this credential acts
+    # for, written beside the row it points to, in the same transaction, into a table
+    # that holds a hash and a tenant id and nothing else. The cascade from the session
+    # row takes it away again.
+    db.add(SessionTenant(token_hash=session.token_hash, tenant_id=bound_tenant_id(db)))
+    await db.flush()
     return session, raw_token
+
+
+async def act_as_tenant(db: AsyncSession, tenant_id: uuid.UUID) -> None:
+    """Narrow the request from the resolution scope to the tenant a credential names —
+    the context every later session reads from, and the session already open."""
+    set_tenant_id(tenant_id)
+    await rebind_tenant(db, tenant_id)
+
+
+async def tenant_for_session_token(db: AsyncSession, raw_token: str) -> uuid.UUID | None:
+    """The tenant a session cookie acts for, from the unscoped index, or None if the
+    cookie names no live session anywhere. Indistinguishable from a revoked or expired
+    one to the caller: both are a 401 with nothing said."""
+    result = await db.execute(select(SessionTenant.tenant_id).where(SessionTenant.token_hash == hash_token(raw_token)))
+    return result.scalar_one_or_none()
+
+
+async def tenant_for_api_token(db: AsyncSession, secret_hash: str) -> uuid.UUID | None:
+    result = await db.execute(select(ApiTokenTenant.tenant_id).where(ApiTokenTenant.token_hash == secret_hash))
+    return result.scalar_one_or_none()
 
 
 async def revoke_session(db: AsyncSession, session: UserSession) -> None:
@@ -230,6 +256,19 @@ def clear_session_cookies(response: Response) -> None:
 
 
 async def resolve_session(db: AsyncSession, raw_token: str) -> UserSession | None:
+    """The live session a cookie names, in the tenant it acts for.
+
+    Two reads on purpose (#35). The request arrived bound to the identity-resolution
+    scope, which is only wide enough to *find* a credential's tenant; the unscoped index
+    answers that, the session is rebound to the tenant it named, and only then is the
+    tenant-scoped row read. A cookie from a second tenant resolves the same way a first
+    tenant's does, and a cookie nobody issued resolves to nothing at all.
+    """
+    tenant_id = await tenant_for_session_token(db, raw_token)
+    if tenant_id is None:
+        return None
+    await act_as_tenant(db, tenant_id)
+
     result = await db.execute(select(UserSession).where(UserSession.token_hash == hash_token(raw_token)))
     session = result.scalar_one_or_none()
     if session is None or session.revoked_at is not None:
@@ -388,13 +427,22 @@ async def _authenticate_bearer(db: AsyncSession, raw: str) -> Principal | None:
     if parsed is None:
         return None
 
+    # The same two reads as resolve_session (#35): the secret's hash names the tenant
+    # through the unscoped index, the request is rebound to it, and the token row is
+    # read where it lives. A secret paired with the wrong id still fails the compare.
+    secret_hash = hash_token(parsed.secret)
+    tenant_id = await tenant_for_api_token(db, secret_hash)
+    if tenant_id is None:
+        return None
+    await act_as_tenant(db, tenant_id)
+
     token = await db.get(ApiToken, parsed.token_id)
     if token is None or token.revoked_at is not None:
         return None
 
     # Constant-time even though the id lookup already succeeded: without it, the
     # comparison leaks how much of a guessed secret was correct.
-    if not tokens_equal(token.token_hash, hash_token(parsed.secret)):
+    if not tokens_equal(token.token_hash, secret_hash):
         return None
 
     now = datetime.now(timezone.utc)

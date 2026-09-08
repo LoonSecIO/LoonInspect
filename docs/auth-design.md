@@ -322,6 +322,37 @@ The operational cost of that is real and belongs here rather than in a footnote:
 
 ---
 
+### 4.8 Which tenant a credential acts for (INSPECT-0035)
+
+Resolving a session means reading `sessions`, which is tenant-scoped like every other
+table, so every request is bound to `IDENTITY_RESOLUTION_TENANT_ID` before
+authentication runs. With one operational tenant that scope and the acting tenant are
+the same value; with two they are not, and #35 named the fix: resolve identity outside
+tenant scope, through one lookup that takes a token hash and returns a tenant id and
+nothing else.
+
+The lookup exists, built without a row-level-security bypass. Two tables outside the
+policy set, `session_tenants` and `api_token_tenants`, hold a credential's hash and the
+tenant it acts for. They are written beside the session or token in the same
+transaction, cascade away with it, and are read *first*: `resolve_session` and the
+bearer path ask the index for the tenant, rebind the request to it, and only then read
+the tenant-scoped row. A session minted in a second tenant therefore resolves exactly as
+one in the first does, and a cookie nobody issued resolves to nothing — the same 401 as
+a revoked one.
+
+Why not the `SECURITY DEFINER` function the issue specified: it needs a `BYPASSRLS` owner
+role that Alembic cannot create, because the application role is `NOSUPERUSER
+NOBYPASSRLS` by design and the only privileged step in this deployment is the first-boot
+init script every existing install has already run. The index gives the same
+one-lookup surface with no bypass at all: a hash of a 256-bit token unlocks nothing, the
+row it points to stays behind its own policy, and the application role — which already
+reads `tenants` whole — reads these whole too.
+
+What is still pinned to the operational tenant is the pre-authentication surface that
+is inherently about one tenant: login and setup read `accounts` and the lockout counter
+there. Which tenant a login is *for*, once an Nth tenant exists, belongs to the tenant
+management surface (#30) and the switcher (#36).
+
 ## 5. Authorization
 
 ### 5.1 Permissions, not role strings
