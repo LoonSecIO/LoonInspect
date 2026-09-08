@@ -1,0 +1,43 @@
+# Version updates (#20). Security updates are enabled repository-wide already; this is
+# what keeps a SHA-pinned toolchain moving, because a pin that nothing bumps is a freeze.
+#
+# Weekly, with minor and patch releases grouped per ecosystem, so a quiet week is one
+# pull request per ecosystem rather than one per package. Major releases arrive on their
+# own, since they are the ones that need reading.
+#
+# Not covered: the `uv` binary pinned in the Dockerfile and in ci.yml (they move together,
+# by hand — see the comment at each site) and the base images in the Dockerfile.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      actions-minor-and-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore(actions)"
+
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      npm-minor-and-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore(npm)"
+
+  - package-ecosystem: "uv"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      python-minor-and-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore(uv)"
