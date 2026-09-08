@@ -8,7 +8,10 @@ export const de: Translations = {
       pageDescription:
         "Die Patch- und Schwachstellen-Feeds, die LoonInspect aufbaut, entstehen aus anonymem Community-Inventar. Was diese Instanz beiträgt — und ob überhaupt — wird hier festgelegt.",
       envLocked:
-        "COMMUNITY_SHARING=false ist in der Umgebung gesetzt. Unabhängig von der Auswahl unten wird nichts geteilt; diese Einstellungen sind gesperrt, bis die Vorgabe entfernt wird.",
+        "COMMUNITY_SHARING=false ist in der Umgebung gesetzt — in der Datei .env neben docker-compose.yml. Solange es gesetzt ist, wird nichts geteilt, unabhängig von der Auswahl unten. Eine hier getroffene Wahl wird gespeichert und greift, sobald die Zeile entfernt und der Container neu gestartet wurde (docker compose up -d).",
+      readOnlyRole:
+        "Diese Einstellungen sind für Ihre Rolle schreibgeschützt. Was diese Instanz teilt, ist eine Einwilligungsentscheidung, die Administratoren vorbehalten ist; Sie können weiterhin genau sehen, was gesendet würde, und das Freigabeprotokoll herunterladen.",
+      tierRecordedWhileOverridden: "Gespeichert, nicht aktiv: die Umgebungsvorgabe oben hat Vorrang, bis sie entfernt wird.",
       tierHeading: "Teilnahme",
       tierReveal: "Teilen und verbreitete Titel offenlegen (empfohlen)",
       tierRevealHelp:
@@ -41,6 +44,10 @@ export const de: Translations = {
         "Glob-Muster, eines pro Zeile. Passende Anwendungen gelangen nie in einen Snapshot — gefiltert vor der Aggregation, vor jeder serverseitigen Regel.",
       lastExchange: "Letzter Austausch",
       neverExchanged: "nie — bisher wurde kein Austausch aufgezeichnet",
+      outcomeSent: "gesendet",
+      outcomeFailed: "fehlgeschlagen",
+      skippedEnv: (when: string) =>
+        `${when} — übersprungen. COMMUNITY_SHARING=false ist gesetzt, daher lief der tägliche Austausch und sendete nichts. Das wiederholt sich täglich, bis die Vorgabe entfernt wird.`,
       revealsShed: "Reveals verworfen — der Server lehnte die vollständige Übermittlung ab und nahm einen Wiederholungsversuch ohne Reveals an",
       logHeading: "Freigabeprotokoll",
       logHelp: "Jeder Austauschversuch mit der wörtlichen Payload, die der Lauf zusammengestellt hat — byte-genaue Historie dessen, was diese Instanz verlassen hat. Eine mit revealsShed markierte Zeile hat alles aus ihrer Payload gesendet außer den Reveals. 90 Tage aufbewahrt.",
