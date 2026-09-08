@@ -748,8 +748,10 @@ class Destination(Base):
     """Where processed events get delivered — a SIEM, a customer-run webhook receiver,
     or an ingestion endpoint in front of a warehouse like Snowflake. Deliberately one
     flexible type rather than a menu of named vendor integrations: from here it is
-    always an HTTPS POST, and vendor differences live almost entirely in the auth
-    header, which `auth_type` covers. Splunk gets its own `type` because HEC has a
+    always an HTTPS POST — enforced since #131 by app.core.egress at the write and at
+    delivery, with plain http an explicit opt-in for a lab SIEM — and vendor differences
+    live almost entirely in the auth header, which `auth_type` covers. Splunk gets its
+    own `type` because HEC has a
     fixed envelope shape, and Elastic because the bulk API has a fixed body shape
     (NDJSON) and its own failure mode — not because their transport is different.
     "runreveal" is a preset over the generic-webhook delivery path: same bare-JSON

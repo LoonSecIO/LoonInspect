@@ -163,6 +163,12 @@ class Settings(BaseSettings):
     # app.core.egress.
     allow_insecure_mdm_base_url: bool = False
 
+    # The same opt-in for a destination URL (#131): every delivery carries that
+    # destination's own credential, so plain http is refused unless an operator says a
+    # lab SIEM without TLS is what they have (docs/splunk-setup.md). Loopback, link-local
+    # and the rest of app.core.egress's refused space stay refused either way.
+    allow_insecure_destination_url: bool = False
+
     # Marks the session cookie Secure. On by default because the alternative fails
     # silently in the dangerous direction. Browsers refuse Secure cookies over plain
     # HTTP everywhere except localhost, so turn this off *only* for a deliberate

@@ -13,6 +13,7 @@ from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.egress import BlockedDestinationUrl, refuse_blocked_resolution
 from app.core.hec_fanout import fan_out
 from app.core.wire import ENVELOPE, hec_event
 from app.core.wire_vocabulary import (
@@ -384,6 +385,25 @@ async def _attempt_elastic_delivery(
     return True, None
 
 
+async def blocked_delivery_reason(destination: Destination) -> str | None:
+    """Why this destination may not be dialled right now, or None (#131).
+
+    The write-time rule in `app.schemas.destinations` binds new rows; this is the check
+    on the row as it stands at delivery, which is the only place a row stored before the
+    rule — or a hostname whose record has since moved to 169.254.169.254 — can be
+    refused. Literals are judged too, for the same reason. Fails open on a resolver that
+    does not answer, as the write-time pass does: an air-gapped SIEM is a supported
+    destination, and a dead resolver must not turn into a dead outbox.
+    """
+    try:
+        await refuse_blocked_resolution(
+            destination.url, field="url", refusal=BlockedDestinationUrl, judge_literals=True
+        )
+    except BlockedDestinationUrl as exc:
+        return str(exc)[:500]
+    return None
+
+
 def _next_backoff(attempt_count: int) -> datetime:
     exponent = min(attempt_count, _MAX_BACKOFF_EXPONENT)
     delay = min(_BASE_BACKOFF_SECONDS * (2**exponent), _MAX_BACKOFF_SECONDS)
@@ -581,6 +601,15 @@ async def deliver_pending(db: AsyncSession) -> None:
         ).scalars().all()
     }
 
+    # One resolver pass per destination per tick, not per delivery: a sweep of forty
+    # thousand devices is forty thousand deliveries to the same handful of URLs, and the
+    # answer for a destination cannot change between two rows of the same tick.
+    blocked: dict[int, str] = {}
+    for destination in destinations.values():
+        reason = await blocked_delivery_reason(destination)
+        if reason is not None:
+            blocked[destination.id] = reason
+
     async with httpx.AsyncClient() as client:
         for delivery in due:
             destination = destinations.get(delivery.destination_id)
@@ -599,7 +628,13 @@ async def deliver_pending(db: AsyncSession) -> None:
                 # failing something the operator never actually wanted attempted.
                 continue
 
-            ok, error = await _attempt_delivery(client, destination, event)
+            if destination.id in blocked:
+                # Counted as a failed attempt, with the reason on the row the
+                # Destinations page reads, and never dialled: it backs off and
+                # dead-letters like any other refusal, and the fix is the URL.
+                ok, error = False, blocked[destination.id]
+            else:
+                ok, error = await _attempt_delivery(client, destination, event)
             delivery.attempt_count += 1
             delivery.last_attempted_at = now
 
@@ -687,6 +722,10 @@ async def send_test_event(destination: Destination) -> DeliveryOutcome:
             "destinationName": destination.name,
         },
     )
+    reason = await blocked_delivery_reason(destination)
+    if reason is not None:
+        return DeliveryOutcome(False, reason, None)
+
     statuses: list[int] = []
 
     async def remember(response: httpx.Response) -> None:

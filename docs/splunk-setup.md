@@ -66,6 +66,15 @@ does not. `/services/collector/event` is the same endpoint spelled out, and also
 **Splunk Cloud** terminates HEC on its own hostname and on 443, not 8088. Copy the URL
 from your stack.
 
+**It has to be `https`.** Every delivery carries the HEC token, so a plain-`http` URL is
+refused when the destination is saved. A lab Splunk with HEC's TLS off is a real
+configuration, and it is a choice rather than a surprise: set
+`ALLOW_INSECURE_DESTINATION_URL=true` and the `http` URL saves. What no setting allows is
+a loopback or link-local address — `127.0.0.1`, `localhost`, `169.254.169.254` — or a
+hostname that resolves to one; those are refused at save and again at every delivery,
+with the reason on the destination row. Inside the container `localhost` is the
+container anyway, which is why the section above says `host.docker.internal`.
+
 ### When LoonInspect runs in Docker and Splunk does not
 
 Inside the container, `localhost` is the container. A Splunk running on the Docker host
