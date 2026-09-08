@@ -24,7 +24,8 @@ class Permission(StrEnum):
     VULN_READ = "vuln:read"
 
     # Connection configuration and credential *metadata*: rotation dates, last
-    # successful auth, the 3-character fingerprint. Enough to audit credential hygiene.
+    # successful auth, the truncated-hash fingerprint (#316). Enough to audit credential
+    # hygiene, and nothing of the secret itself.
     CONNECTION_READ = "connection:read"
     CONNECTION_WRITE = "connection:write"
     # Deliberately separate from CONNECTION_READ: this covers operations that use or
