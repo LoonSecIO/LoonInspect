@@ -1046,9 +1046,10 @@ class Collection(Base):
     account, N inputs). Three kinds:
 
       device_sweep  computers-inventory with `sections` and an optional RSQL `selector`
-                    pushed into Jamf's query; always ends with a catalog refresh so the
-                    group definitions are never older than the memberships that
-                    reference them
+                    pushed into Jamf's query; always begins with a catalog refresh, so a
+                    membership change is judged against this sweep's group definitions
+                    (#136) and the catalog is at most one sweep older than the
+                    memberships that reference it
       catalog       smart-group definitions (with criteria) on their own cadence, so a
                     criteria edit is timestamped finer than the device sweep
       webhook       event-driven: no schedule; its sections and quarantine govern the

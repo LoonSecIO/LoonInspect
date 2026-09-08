@@ -533,6 +533,22 @@ async def _sync_jamf(
                 buildings=org_units[BUILDING],
             )
 
+        # Group definitions ride along with the device sweep, and they go *first* (#136).
+        # A membership change is judged by `changes.derive._membership_cause` as the
+        # device is observed: it asks whether the group's current definition span opened
+        # after the device was last seen. Observed after the loop — as this was — the
+        # current span during the loop was still the pre-edit one, so every membership
+        # change a criteria edit caused since the last catalog observation (hourly by
+        # default) read as device drift, `criteriaChanged: false`. Observed here, the
+        # definitions the loop judges against are this sweep's. The catalog is therefore
+        # at most one sweep older than the memberships that reference it, which the
+        # hourly catalog collection (docs/ingest-scheduling.md §6.2) closes on its own.
+        if include_catalog:
+            group_count = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes)
+            await db.commit()
+            if run is not None:
+                await run_log(db, run, "info", "group definitions observed", groupCount=group_count)
+
         # Streamed, not collected: a 40,000-device tenant is paged through one record
         # at a time, and each device commits on its own (process_sync), so a failure on
         # device 30,000 leaves 29,999 correctly recorded. The selector is pushed into
@@ -623,11 +639,6 @@ async def _sync_jamf(
                         db, run, "info", "devices processed", deviceCount=device_count, outcomes=dict(outcomes)
                     )
 
-        # Group definitions ride along with the device sweep so the catalog is never
-        # older than the memberships that reference it (docs/ingest-scheduling.md §6.2).
-        if include_catalog:
-            group_count = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes)
-        await db.commit()
         # Throttling is run-row data, not just log lines: the counters ride the same
         # observations JSONB the ledger outcomes do, so the run detail can show them
         # and a dynamic tuner (#74) reads structure instead of parsing text.

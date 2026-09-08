@@ -327,8 +327,8 @@ async def run_connection(
     db: AsyncSession, connection: MdmConnection, *, trigger: str, run: Run | None = None
 ) -> ConnectionSyncResult:
     """The connection-level "run now": every enabled device sweep the connection has,
-    in order. Each sweep ends with a catalog refresh, so catalog collections are not run
-    here — they keep their own cadence between sweeps.
+    in order. Each sweep includes a catalog refresh (before its device loop, #136), so
+    catalog collections are not run here — they keep their own cadence between sweeps.
 
     One run covers all of them when the caller supplies it, which is what run-now does:
     the jobID it handed the browser has to name the whole action, and the panel polling
