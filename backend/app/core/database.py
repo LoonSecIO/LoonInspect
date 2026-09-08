@@ -75,6 +75,16 @@ def session_for_tenant(tenant_id: uuid.UUID) -> AsyncSession:
     return _session_factory(info={"tenant_id": str(tenant_id)})
 
 
+def bound_tenant_id(session: AsyncSession) -> uuid.UUID:
+    """The tenant this session's rows will be stamped with — what a credential written
+    through it acts for (#35). Raises rather than guessing: a session or token created
+    outside any tenant would be one no request could ever resolve."""
+    value = session.info.get("tenant_id")
+    if value is None:
+        raise RuntimeError("no tenant is bound to this session; a credential cannot be created outside one")
+    return uuid.UUID(str(value))
+
+
 async def rebind_tenant(session: AsyncSession, tenant_id: uuid.UUID) -> None:
     """Move an open session onto a different tenant.
 

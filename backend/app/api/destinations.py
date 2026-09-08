@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import AuditAction, audit
 from app.core.auth import require
 from app.core.database import get_db
+from app.core.egress import BlockedDestinationUrl, refuse_blocked_resolution
 from app.core.outbox import send_test_event
 from app.core.permissions import Permission
 from app.models.schema import Destination, OutboxDelivery
@@ -81,6 +82,18 @@ def _to_out(destination: Destination, health: dict | None = None) -> Destination
     )
 
 
+async def _refuse_blocked_destination(url: str) -> None:
+    """The half of the egress rule that needs an event loop (app.core.egress, #131).
+    Scheme, shape and literal addresses are settled in the schema, where they bind the
+    row; what a hostname resolves to is judged here, on the two routes that write the
+    column — and again by the outbox at delivery, which is what covers a row stored
+    before the rule."""
+    try:
+        await refuse_blocked_resolution(url, field="url", refusal=BlockedDestinationUrl)
+    except BlockedDestinationUrl as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
 async def _get_or_404(db: AsyncSession, destination_id: int) -> Destination:
     destination = await db.get(Destination, destination_id)
     if destination is None:
@@ -105,6 +118,7 @@ async def list_destinations(db: AsyncSession = Depends(get_db)) -> list[Destinat
     dependencies=[Depends(require(Permission.DESTINATION_WRITE))],
 )
 async def create_destination(payload: DestinationCreate, db: AsyncSession = Depends(get_db)) -> DestinationOut:
+    await _refuse_blocked_destination(payload.url)
     destination = Destination(
         name=payload.name,
         type=payload.type,
@@ -152,6 +166,9 @@ async def update_destination(
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
             ) from exc
+
+    if "url" in data:
+        await _refuse_blocked_destination(data["url"])
 
     if "name" in data:
         destination.name = data["name"]

@@ -72,6 +72,10 @@ services:
       # exchange carries the client secret in the request body. Only turn this on
       # for a lab Jamf Pro whose traffic you accept in clear.
       ALLOW_INSECURE_MDM_BASE_URL: ${ALLOW_INSECURE_MDM_BASE_URL:-false}
+      # Lets a destination URL be plain http — a lab Splunk with HEC's TLS off, say.
+      # Off by default: every delivery carries the destination's credential. Loopback
+      # and link-local addresses are refused regardless.
+      ALLOW_INSECURE_DESTINATION_URL: ${ALLOW_INSECURE_DESTINATION_URL:-false}
       # Daily check against GitHub for a newer build of main, surfaced as a banner
       # to signed-in operators. Set false to disable the outbound call entirely
       # (air-gapped instances can also just leave it on — failure is silent).
@@ -79,6 +83,10 @@ services:
       # Hard kill switch for community data sharing — false wins over any tier chosen
       # in the UI. See docs/data-sharing.md and the README's "Community data sharing".
       COMMUNITY_SHARING: ${COMMUNITY_SHARING:-true}
+      # Content-Security-Policy (README "Response headers"): empty is the app's own
+      # policy, `off` sends none and keeps the other headers, anything else is sent
+      # verbatim and replaces the policy rather than extending it.
+      CONTENT_SECURITY_POLICY: ${CONTENT_SECURITY_POLICY:-}
       # Alternate provider for the update check; empty uses GitHub. Exists for the
       # future api.loonsec.io endpoint and for testing against a mock.
       UPDATE_CHECK_URL: ${UPDATE_CHECK_URL:-}

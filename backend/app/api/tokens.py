@@ -9,11 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditAction, audit
 from app.core.auth import Principal, current_principal, require
-from app.core.database import get_db
+from app.core.database import bound_tenant_id, get_db
 from app.core.permissions import Permission, permissions_for
 from app.core.security import hash_token
 from app.core.tokens import generate_token
-from app.models.schema import ApiToken
+from app.models.schema import ApiToken, ApiTokenTenant
 from app.schemas.tokens import ApiTokenCreated, ApiTokenCreateRequest, ApiTokenOut
 
 router = APIRouter(
@@ -95,6 +95,9 @@ async def create_token(
         expires_at=now + timedelta(days=payload.expires_in_days) if payload.expires_in_days else None,
     )
     db.add(token)
+    await db.flush()
+    # Which tenant the token acts for, beside the token, same transaction (#35).
+    db.add(ApiTokenTenant(token_hash=token.token_hash, tenant_id=bound_tenant_id(db)))
     await db.commit()
 
     audit(

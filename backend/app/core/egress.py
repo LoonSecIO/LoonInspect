@@ -53,6 +53,13 @@ class BlockedBaseUrl(ValueError):
     """
 
 
+class BlockedDestinationUrl(ValueError):
+    """A destination URL this server refuses to deliver to, and why (#131, the other
+    half). The outbox POSTs every event to `destinations.url` holding that destination's
+    own credential — a HEC token, an Elastic API key, a bearer token — so the column is
+    the same sink `base_url` is, with the scheduler as its driver."""
+
+
 def _unwrap(ip: _IpAddress) -> _IpAddress:
     """The v4 address an IPv6 literal is really carrying, if it is carrying one.
 
@@ -121,6 +128,80 @@ def _allowed_schemes() -> tuple[str, ...]:
     return ("https", "http") if settings.allow_insecure_mdm_base_url else ("https",)
 
 
+# destinations.url is String(1024).
+MAX_DESTINATION_URL_LENGTH = 1024
+
+
+def _destination_schemes() -> tuple[str, ...]:
+    return ("https", "http") if settings.allow_insecure_destination_url else ("https",)
+
+
+def _refuse_blocked_host(host: str, *, field: str, refusal: type[ValueError]) -> None:
+    """The host rules shared by both sinks: a loopback name is as good as the literal,
+    and a literal is judged here, exhaustively, so the resolver is never asked about
+    one."""
+    # RFC 6761 reserves these for the loopback interface, so the name is as good as the
+    # literal and refusing it by name makes the answer deterministic when the container
+    # has no resolver to ask.
+    if host == "localhost" or host.endswith(".localhost"):
+        raise refusal(f"{field} may not point at {host}: that is a loopback name")
+
+    literal = _as_ip(host)
+    if literal is not None:
+        reason = blocked_address_reason(literal)
+        if reason is not None:
+            raise refusal(f"{field} may not point at {host}: that is {reason}")
+
+
+def validate_destination_url(value: str) -> str:
+    """The destination URL as it should be stored, or BlockedDestinationUrl naming what
+    is wrong with it.
+
+    The same rule as `validate_mdm_base_url` with two differences the sink earns. The
+    plaintext opt-in is its own setting, `ALLOW_INSECURE_DESTINATION_URL`: a lab HEC
+    with TLS off is a real configuration (docs/splunk-setup.md), and it must be a choice
+    an operator makes rather than a refusal they discover. And a query string is
+    allowed: webhook receivers routinely carry a token or a source id there, and the
+    outbox POSTs the URL exactly as entered. A fragment is still refused — httpx drops
+    it silently, which would store a URL that is not the one delivered to.
+
+    Syntax and literal addresses only; a hostname is judged by
+    `refuse_blocked_resolution`, which needs an event loop.
+    """
+    url = value.strip()
+    if not url:
+        raise BlockedDestinationUrl("url is required")
+    if len(url) > MAX_DESTINATION_URL_LENGTH:
+        raise BlockedDestinationUrl(f"url must be at most {MAX_DESTINATION_URL_LENGTH} characters")
+
+    try:
+        parsed = urlsplit(url)
+        _ = parsed.port
+    except ValueError as exc:
+        raise BlockedDestinationUrl(f"url is not a URL this server can parse: {exc}") from exc
+
+    if parsed.scheme not in _destination_schemes():
+        if parsed.scheme == "http":
+            raise BlockedDestinationUrl(
+                "url must use https: every delivery carries this destination's credential. Set "
+                "ALLOW_INSECURE_DESTINATION_URL=true to accept plain http for a lab SIEM without TLS."
+            )
+        raise BlockedDestinationUrl(
+            f"url must be an absolute https:// URL, not {parsed.scheme or 'a bare hostname'!r}"
+        )
+
+    if parsed.username or parsed.password:
+        raise BlockedDestinationUrl("url must not carry credentials in the URL (user:password@host)")
+    if parsed.fragment:
+        raise BlockedDestinationUrl("url must not carry a fragment: it would be dropped before delivery")
+
+    host = parsed.hostname
+    if not host:
+        raise BlockedDestinationUrl("url must name a host")
+    _refuse_blocked_host(host, field="url", refusal=BlockedDestinationUrl)
+    return url
+
+
 def validate_mdm_base_url(value: str) -> str:
     """The URL as it should be stored, or BlockedBaseUrl naming what is wrong with it.
 
@@ -161,24 +242,17 @@ def validate_mdm_base_url(value: str) -> str:
     host = parsed.hostname
     if not host:
         raise BlockedBaseUrl("baseUrl must name a host")
-
-    # RFC 6761 reserves these for the loopback interface, so the name is as good as the
-    # literal and refusing it by name makes the answer deterministic when the container
-    # has no resolver to ask.
-    if host == "localhost" or host.endswith(".localhost"):
-        raise BlockedBaseUrl(f"baseUrl may not point at {host}: that is a loopback name")
-
-    literal = _as_ip(host)
-    if literal is not None:
-        reason = blocked_address_reason(literal)
-        if reason is not None:
-            raise BlockedBaseUrl(f"baseUrl may not point at {host}: that is {reason}")
-
+    _refuse_blocked_host(host, field="baseUrl", refusal=BlockedBaseUrl)
     return url
 
 
 async def refuse_blocked_resolution(
-    url: str, *, reason_for: Callable[[_IpAddress], str | None] = blocked_address_reason
+    url: str,
+    *,
+    reason_for: Callable[[_IpAddress], str | None] = blocked_address_reason,
+    field: str = "baseUrl",
+    refusal: type[ValueError] = BlockedBaseUrl,
+    judge_literals: bool = False,
 ) -> None:
     """Second pass on a hostname: refuse it if it resolves somewhere blocked.
 
@@ -197,10 +271,19 @@ async def refuse_blocked_resolution(
     DNS, a VPN that is not up yet, an air-gapped install with no resolver at all — and
     refusing to save a Jamf URL because DNS is down is an outage this product should
     not cause on its own.
+
+    `field` and `refusal` name the sink in the message and the exception (#131 covers
+    two). `judge_literals` is for the outbox: at write time a literal was already judged
+    by the schema, but a destination row stored before the rule existed can still carry
+    one, and delivery is the only place left to refuse it.
     """
     host = urlsplit(url).hostname
-    if host is None or _as_ip(host) is not None:
-        return  # a literal was already judged, exhaustively, by validate_mdm_base_url
+    if host is None:
+        return
+    if _as_ip(host) is not None or host == "localhost" or host.endswith(".localhost"):
+        if judge_literals:
+            _refuse_blocked_host(host, field=field, refusal=refusal)
+        return  # otherwise a literal was already judged, exhaustively, by the schema
 
     loop = asyncio.get_running_loop()
     try:
@@ -218,9 +301,7 @@ async def refuse_blocked_resolution(
             continue
         reason = reason_for(address)
         if reason is not None:
-            raise BlockedBaseUrl(
-                f"baseUrl may not point at {host}: it resolves to {address}, which is {reason}"
-            )
+            raise refusal(f"{field} may not point at {host}: it resolves to {address}, which is {reason}")
 
 
 # --- AI endpoints (#319) ----------------------------------------------------------------

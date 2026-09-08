@@ -163,6 +163,12 @@ class Settings(BaseSettings):
     # app.core.egress.
     allow_insecure_mdm_base_url: bool = False
 
+    # The same opt-in for a destination URL (#131): every delivery carries that
+    # destination's own credential, so plain http is refused unless an operator says a
+    # lab SIEM without TLS is what they have (docs/splunk-setup.md). Loopback, link-local
+    # and the rest of app.core.egress's refused space stay refused either way.
+    allow_insecure_destination_url: bool = False
+
     # Marks the session cookie Secure. On by default because the alternative fails
     # silently in the dangerous direction. Browsers refuse Secure cookies over plain
     # HTTP everywhere except localhost, so turn this off *only* for a deliberate
@@ -175,6 +181,15 @@ class Settings(BaseSettings):
     # Permissions-Policy can break a same-origin SPA with zero embeds, and CSP (the one
     # header here that could) is deliberately not in this cut (see #187).
     security_headers: bool = True
+
+    # Content-Security-Policy (#187): a value, not a second knob. Empty — the default,
+    # and what docker-compose passes when the variable is unset — emits the app's own
+    # two policies (SecurityHeadersMiddleware). `off` emits no CSP and keeps the other
+    # headers, for the operator whose deployment it broke. Anything else is emitted
+    # verbatim on every response: it *replaces* the policy rather than extending it,
+    # which is the escape hatch for the one fact the backend cannot know — a frontend
+    # rebuilt with VITE_API_BASE_URL pointing off-origin needs a wider connect-src.
+    content_security_policy: str = ""
 
     # The HSTS relay's argument, not a second knob (#186, ruling 4 on #133): the app
     # cannot know whether this hostname will still terminate valid HTTPS in six months,
