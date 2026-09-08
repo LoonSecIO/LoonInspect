@@ -176,6 +176,15 @@ class Settings(BaseSettings):
     # header here that could) is deliberately not in this cut (see #187).
     security_headers: bool = True
 
+    # Content-Security-Policy (#187): a value, not a second knob. Empty — the default,
+    # and what docker-compose passes when the variable is unset — emits the app's own
+    # two policies (SecurityHeadersMiddleware). `off` emits no CSP and keeps the other
+    # headers, for the operator whose deployment it broke. Anything else is emitted
+    # verbatim on every response: it *replaces* the policy rather than extending it,
+    # which is the escape hatch for the one fact the backend cannot know — a frontend
+    # rebuilt with VITE_API_BASE_URL pointing off-origin needs a wider connect-src.
+    content_security_policy: str = ""
+
     # The HSTS relay's argument, not a second knob (#186, ruling 4 on #133): the app
     # cannot know whether this hostname will still terminate valid HTTPS in six months,
     # only the operator can, so unlike the other four headers this one is never on by

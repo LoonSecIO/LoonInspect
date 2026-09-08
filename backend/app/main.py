@@ -49,7 +49,7 @@ from app.core.context import SYSTEM, reset_actor, set_actor, system_actor_for
 from app.core.crypto import validate_encryption_key
 from app.core.database import init_db, session_for_tenant, unscoped_session
 from app.core.logging import configure_logging
-from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware
+from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware, content_security_policy_mode
 from app.core.outbox import deliver_pending, fan_out_pending, purge_delivered_events
 from app.core.runs import purge_runs
 from app.core.sharing import exchange_due, run_exchange
@@ -279,6 +279,8 @@ async def lifespan(app: FastAPI):
             "log_format": settings.resolved_log_format,
             "scheduler_enabled": settings.scheduler_enabled,
             "siem_webhook_configured": bool(settings.siem_webhook_url),
+            # "custom" says an override is in force and never what it says (#187).
+            "content_security_policy": content_security_policy_mode(),
         },
     )
 
@@ -446,14 +448,24 @@ async def openapi_schema() -> JSONResponse:
     return JSONResponse(app.openapi())
 
 
+# Both pages take the arguments that keep their third parties to one: the favicon is our
+# own rather than fastapi.tiangolo.com's, and ReDoc's hard-coded Google Fonts link is off,
+# so DOCS_CONTENT_SECURITY_POLICY (app.core.middleware) names jsdelivr and nothing else.
 @app.get("/docs", include_in_schema=False)
 async def swagger_ui() -> HTMLResponse:
-    return get_swagger_ui_html(openapi_url="/openapi.json", title=f"{settings.app_name} API")
+    return get_swagger_ui_html(
+        openapi_url="/openapi.json", title=f"{settings.app_name} API", swagger_favicon_url="/favicon.svg"
+    )
 
 
 @app.get("/redoc", include_in_schema=False)
 async def redoc_ui() -> HTMLResponse:
-    return get_redoc_html(openapi_url="/openapi.json", title=f"{settings.app_name} API")
+    return get_redoc_html(
+        openapi_url="/openapi.json",
+        title=f"{settings.app_name} API",
+        redoc_favicon_url="/favicon.svg",
+        with_google_fonts=False,
+    )
 
 
 static_dir = Path(__file__).parent / "static"

@@ -73,3 +73,13 @@ Some findings are configuration, not vulnerability. Before reporting, see the RE
 sections on TLS modes (`TLS_MODE` defaults to `off` for reverse-proxy deployments —
 terminate TLS in front of it or turn it on), secure cookies, and the non-superuser
 database role that row-level security depends on.
+
+Two things in the Content-Security-Policy are decisions, not oversights. `style-src`
+carries `'unsafe-inline'` because React style attributes compute severity and status
+colours at runtime and there is no injection sink that could supply attacker markup
+for a CSS-based attack to use; and `/docs` and `/redoc` get a weaker policy naming
+`cdn.jsdelivr.net` (and `cdn.redoc.ly` for ReDoc's logo) with inline script, because
+FastAPI's documentation pages are built that way — both sit behind sign-in, so an
+anonymous visitor never receives it. A
+scanner will list both; a report should say what they enable beyond the documented
+reasoning.
