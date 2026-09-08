@@ -10,6 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import ValidationError
 from pydantic.alias_generators import to_camel
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditAction, audit
@@ -228,7 +229,15 @@ async def create_connection(
         connection.credentials_fingerprint = validated_credentials[fp_field][:3]
 
     db.add(connection)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        # Names are unique per tenant (uq_mdm_connection_tenant_name) and nothing checked
+        # before this insert, so even a sequential duplicate was a 500 (#134).
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="A connection with that name already exists"
+        ) from exc
     await db.refresh(connection)
 
     # A connection that observes nothing happen reads as broken: the defaults are real
@@ -546,7 +555,15 @@ async def update_connection(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        # A rename onto a name another connection holds hits the same constraint as a
+        # duplicate create, one route over.
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="A connection with that name already exists"
+        ) from exc
     await db.refresh(connection)
 
     audit(
