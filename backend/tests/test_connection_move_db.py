@@ -363,8 +363,11 @@ async def test_an_admin_moves_a_connection_by_re_entering_the_secret(
     )
     assert patched.status_code == 200, patched.text
     assert patched.json()["baseUrl"] == moved
-    # The rotation metadata moves with it: the fingerprint is the new secret's.
-    assert patched.json()["credentialsFingerprint"] == "ret"
+    # The rotation metadata moves with it: the fingerprint is the new secret's — its
+    # hash, never its characters (#316).
+    from app.mdm.credentials import credential_fingerprint
+
+    assert patched.json()["credentialsFingerprint"] == credential_fingerprint("retyped-by-the-admin")
 
     synced = await admin.post(f"/api/mdm/connections/{connection}/sync")
     assert synced.status_code == 202, synced.text

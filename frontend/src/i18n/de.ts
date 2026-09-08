@@ -1084,7 +1084,7 @@ export const de: Translations = {
     lastSuccessfulAuth: "Letzte erfolgreiche Authentifizierung:",
     never: "Nie",
     credentialsRotated: "Anmeldedaten zuletzt rotiert:",
-    startsWithFingerprint: (fp: string) => `(beginnt mit "${fp}")`,
+    secretFingerprint: (fp: string) => `(Fingerabdruck ${fp})`,
     saveChanges: "Änderungen speichern",
     addConnectionButton: "Verbindung hinzufügen",
     cancel: "Abbrechen",

@@ -1132,7 +1132,7 @@ export const en = {
     lastSuccessfulAuth: "Last successful authentication:",
     never: "Never",
     credentialsRotated: "Credentials last rotated:",
-    startsWithFingerprint: (fp: string) => `(starts with "${fp}")`,
+    secretFingerprint: (fp: string) => `(fingerprint ${fp})`,
     saveChanges: "Save changes",
     addConnectionButton: "Add connection",
     cancel: "Cancel",

@@ -39,6 +39,9 @@ export interface MdmConnection {
   capabilityJamfPro: boolean;
   lastSuccessfulAuthAt: string | null;
   credentialsRotatedAt: string | null;
+  /** A truncated hash of the stored secret — twelve hex characters, nothing of the value
+   *  itself — so a rotation is visible without a credential-tier permission. Null until a
+   *  secret is saved under that scheme. */
   credentialsFingerprint: string | null;
   createdAt: string;
   updatedAt: string;

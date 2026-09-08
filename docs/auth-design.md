@@ -456,7 +456,7 @@ Example line:
 ```json
 {"occurred_at":"2026-08-03T14:22:07Z","action":"connection.credentials.updated","outcome":"success",
  "actor_type":"account","actor_id":"9f2c...","actor_label":"kyle@corp.com","target_type":"mdm_connection",
- "target_id":"3","request_id":"7b1e...","ip":"10.0.0.4","metadata":{"changed":["client_secret"],"fingerprint":"a3f"}}
+ "target_id":"3","request_id":"7b1e...","ip":"10.0.0.4","metadata":{"changed":["client_secret"]}}
 ```
 
 Config added to `core/config.py`:
@@ -474,9 +474,9 @@ A central `redact()` applied to all audit metadata and log payloads, with a deny
 
 Credential *changes* are audited as `changed_fields: ["client_secret"]` — field names only, never values.
 
-> **Correction to the original plan, and an open issue.** This section previously said to record "the existing 3-char fingerprint" alongside the changed fields. That turns out to be wrong: `MdmConnection.credentials_fingerprint` is literally `secret[:3]` — the first three characters of the plaintext secret, not a hash of it. Writing that into a long-lived plaintext file on a shared volume defeats the point of the audit log's redaction, so it is no longer recorded. `changed_fields` already answers "did the secret rotate?", which is all the fingerprint was there for.
+> **Correction to the original plan — and the upstream half, fixed.** This section previously said to record "the existing 3-char fingerprint" alongside the changed fields. That was wrong: until #316, `MdmConnection.credentials_fingerprint` was literally `secret[:3]` — the first three characters of the plaintext secret, not a hash of it — and writing that into a long-lived plaintext file on a shared volume would have defeated the point of the audit log's redaction. It was never recorded; `changed_fields` already answers "did the secret rotate?", which is all the fingerprint was there for.
 >
-> The larger issue is upstream and predates this work: `credentials_fingerprint` is returned by `GET /api/mdm/connections`, so **every role with `CONNECTION_READ` — Analyst and Auditor included — can read the first three characters of every Jamf client secret.** A truncated SHA-256 would serve the same "has this changed?" purpose with no leakage. Changing it touches stored values and the connections UI, so it's flagged rather than silently rewritten.
+> The larger issue was upstream and predated this work: that same value was returned by `GET /api/mdm/connections`, so **every role with `CONNECTION_READ` — Analyst and Auditor included — could read the first three characters of every Jamf client secret.** #316 replaced it with the first twelve hex characters of `SHA-256(secret)` (`app.mdm.credentials.credential_fingerprint`): the same "has this changed?" answer with nothing of the value in it. Fingerprints stored before the change were cleared by the migration rather than re-derived — the plaintext lives only in `credentials_encrypted`, and a migration that decrypts is one that fails at boot whenever the key is absent or rotated — and are re-stamped the next time a secret is saved; `credentials_rotated_at` keeps its answer throughout. The audit log still does not record it: `changed_fields` is the answer, and a second copy of secret-derived material buys nothing.
 
 ### 6.6 Reading and forwarding — out of scope for now
 

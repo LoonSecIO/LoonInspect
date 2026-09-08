@@ -31,7 +31,7 @@ from app.core.runs import (
 )
 from app.core.tenancy import reset_tenant_id, set_tenant_id
 from app.mdm.collections import ensure_default_collections
-from app.mdm.credentials import CREDENTIAL_SCHEMAS, fingerprint_field, secret_fields
+from app.mdm.credentials import CREDENTIAL_SCHEMAS, credential_fingerprint, fingerprint_field, secret_fields
 from app.mdm.jamf.client import JamfClient
 from app.mdm.service import set_sync_status, sync_connection, sync_result_kwargs
 from app.models.schema import (
@@ -226,7 +226,7 @@ async def create_connection(
     fp_field = fingerprint_field(payload.provider)
     if fp_field and validated_credentials.get(fp_field):
         connection.credentials_rotated_at = _utcnow()
-        connection.credentials_fingerprint = validated_credentials[fp_field][:3]
+        connection.credentials_fingerprint = credential_fingerprint(validated_credentials[fp_field])
 
     db.add(connection)
     try:
@@ -255,10 +255,10 @@ async def create_connection(
         # Field *names* only. Deliberately not called `credential_fields_set`: redact()
         # matches on "credential" and would blank out the one detail worth keeping.
         #
-        # credentials_fingerprint is NOT recorded: it's the first three characters of
-        # the plaintext secret, and writing secret-derived material into a long-lived
-        # file on a shared volume is the exact thing this log must not do. The field
-        # names already answer which credentials were set.
+        # credentials_fingerprint is NOT recorded. It is a truncated hash now (#316),
+        # not three characters of the plaintext it used to be, but nothing is gained by
+        # a second copy of secret-derived material in a long-lived file on a shared
+        # volume: the field names already answer which credentials were set.
         fields_set=sorted(validated_credentials.keys()),
     )
     return _to_out(connection)
@@ -542,7 +542,7 @@ async def update_connection(
         fp_field = fingerprint_field(provider)
         if fp_field and validated.get(fp_field) != existing_credentials.get(fp_field):
             connection.credentials_rotated_at = _utcnow()
-            connection.credentials_fingerprint = validated[fp_field][:3]
+            connection.credentials_fingerprint = credential_fingerprint(validated[fp_field])
 
         connection.credentials_encrypted = json.dumps(validated)
 
