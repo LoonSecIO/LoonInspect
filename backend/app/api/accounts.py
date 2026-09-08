@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditAction, audit
@@ -137,16 +138,23 @@ async def create(
 
     roles = _validate_roles(payload.roles) or [Role.viewer.value]
 
-    account, _ = await create_account(
-        db,
-        email=email,
-        display_name=payload.display_name,
-        password=payload.password,
-        roles=roles,
-    )
-    # granted_by isn't set by create_account, which has no notion of a caller.
-    await _replace_manual_roles(db, account, roles, granted_by=principal.account.id)
-    await db.commit()
+    try:
+        account, _ = await create_account(
+            db,
+            email=email,
+            display_name=payload.display_name,
+            password=payload.password,
+            roles=roles,
+        )
+        # granted_by isn't set by create_account, which has no notion of a caller.
+        await _replace_manual_roles(db, account, roles, granted_by=principal.account.id)
+        await db.commit()
+    except IntegrityError as exc:
+        # The check above and the insert are two statements, and a second request for
+        # the same address can land between them (#134). uq_account_tenant_email is the
+        # arbiter; the loser gets the answer the check would have given it.
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account with that email already exists") from exc
     await db.refresh(account, ["roles"])
 
     audit(

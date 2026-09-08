@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditAction, audit
@@ -71,8 +72,23 @@ async def _record_failure(db: AsyncSession, identifier: str, ip: str) -> None:
     attempt = await _get_attempt(db, identifier, ip)
 
     if attempt is None:
-        attempt = LoginAttempt(identifier=identifier, ip=ip, failure_count=0)
-        db.add(attempt)
+        # Two first failures for one (identifier, ip) — the same wrong password from the
+        # same address, twice at once — both find no row above, and the second INSERT
+        # used to raise IntegrityError against uq_login_attempt_identifier_ip: a 500 on
+        # the login path (#134). ON CONFLICT DO NOTHING lets the loser adopt the winner's
+        # row instead of failing on it. A lost increment is acceptable here; a 500 is
+        # not. The tenant is the column's own default, as on every ORM insert.
+        await db.execute(
+            pg_insert(LoginAttempt)
+            .values(identifier=identifier, ip=ip, failure_count=0, last_failure_at=now)
+            .on_conflict_do_nothing(constraint="uq_login_attempt_identifier_ip")
+        )
+        attempt = await _get_attempt(db, identifier, ip)
+        if attempt is None:
+            # The winner's row was cleared by a successful login in between. Nothing
+            # to count against: the address just signed in.
+            await db.commit()
+            return
 
     attempt.failure_count += 1
     attempt.last_failure_at = now
