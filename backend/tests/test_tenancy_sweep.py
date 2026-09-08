@@ -439,11 +439,14 @@ async def test_unbound_session_raises_rather_than_matching_everything(seeded) ->
 # --- 5. The identity-resolution boundary (#35), pinned ----------------------------
 
 
-async def test_second_tenant_cannot_authenticate_yet(seeded) -> None:
-    """Not a bug — the documented v0 boundary: identity resolution is pinned to the
-    operational tenant, so a second tenant's credentials cannot start a session at
-    all. When #35 builds the narrow bypass, this test fails, which is the signal to
-    widen this sweep to two live HTTP sessions."""
+async def test_second_tenant_cannot_log_in_yet(seeded) -> None:
+    """The documented boundary, narrowed by #35 to the login surface: a session or token
+    *minted* in a second tenant now resolves (`tests/test_identity_resolution_db.py`
+    is the two-live-sessions sweep this docstring used to promise), but *login* still
+    reads `accounts` under the operational tenant, so a second tenant's password cannot
+    start a session from the login form. Which tenant a login is for, once an Nth
+    tenant exists, is #30's surface. When that lands, this test fails, which is the
+    signal to widen this sweep to two logins."""
     from app.core.database import session_for_tenant
     from app.core.tenancy import OPERATIONAL_TENANT_ID
     from app.main import app
