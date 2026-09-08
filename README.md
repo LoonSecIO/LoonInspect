@@ -172,6 +172,12 @@ shell as a misleading `200`.
 
 ### 5. Point it at Splunk
 
+Destination URLs must be `https` — every delivery carries the destination's own
+credential. `ALLOW_INSECURE_DESTINATION_URL=true` accepts plain `http` for a lab SIEM
+without TLS; nothing accepts a loopback or link-local address, or a hostname that
+resolves to one, which are refused when saved and again at delivery
+(`docs/splunk-setup.md`).
+
 The onboarding stepper's third step is "Send it to Splunk", and there is more to it than
 a URL: HEC ships disabled, the "Secret" field means the HEC token, the index comes from
 the token rather than from anything LoonInspect sends, and Splunk's stock self-signed
@@ -260,16 +266,32 @@ warn about this. Either terminate TLS in front, use `TLS_MODE=self-signed`, or s
 
 **Response headers.** Every response carries `X-Content-Type-Options: nosniff`,
 `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`, and a `Permissions-Policy` that
-denies what a Jamf console never asks for. `SECURITY_HEADERS=false` turns off all five
-headers described here at once — there is deliberately no way to keep some and drop
+denies what a Jamf console never asks for. `SECURITY_HEADERS=false` turns off every
+header described here at once — there is deliberately no way to keep some and drop
 others. `Strict-Transport-Security` is not one of the four defaults: the app can judge
 its own bundle, but only you know whether this hostname will still terminate valid
 HTTPS in six months, so HSTS is relayed verbatim from `HSTS_MAX_AGE` (seconds; `0`, the
 default, means never send it) and is never `includeSubDomains` or `preload`. Set it only
 once you're sure — a `max-age` a browser has already seen can only be withdrawn over a
 still-validating HTTPS connection on the same hostname, which is unavailable in exactly
-the situation that makes you want to withdraw it. Content-Security-Policy is not in this
-list yet; it enforces nothing today (tracked for a later release).
+the situation that makes you want to withdraw it.
+
+**Content-Security-Policy.** Every response also carries a CSP. The app's pages get a
+strict one — `script-src 'self'` with no inline script, hash or nonce (the pre-paint
+theme script lives in its own file), `connect-src 'self'`, no framing, no objects — with
+one accepted weakness: `style-src 'unsafe-inline'`, because a dozen React style
+attributes compute severity and status colours at runtime. `/docs` and `/redoc` get a
+second, weaker policy that names `cdn.jsdelivr.net`, where Swagger UI and ReDoc load
+from, and `cdn.redoc.ly` for the one image ReDoc fetches on its own, its footer logo;
+both pages sit behind sign-in, so it is never served to an anonymous visitor.
+`CONTENT_SECURITY_POLICY` is a value, not a toggle: leave it unset for the built-in
+policies, set it to `off` to send no CSP while keeping the other headers, or set it to a
+policy string, which is sent verbatim on every response — it **replaces** the built-in
+policy rather than extending it, so start from the one in `backend/app/core/middleware.py`.
+The one case that needs it: a frontend you rebuilt with `VITE_API_BASE_URL` pointing at
+another origin, which the backend cannot know about and whose `connect-src` must then
+name that origin. The startup log says whether a custom policy is in force, never what
+it contains.
 
 Self-signed certificates (`TLS_MODE=self-signed`) now renew themselves: at boot, a
 certificate past the midpoint of its own validity window (capped at 183 days) is

@@ -712,6 +712,39 @@ class UserSession(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class SessionTenant(Base):
+    """Which tenant a browser session acts for — the one lookup that may cross tenants
+    (#35), and deliberately the only thing it can answer.
+
+    Outside row-level security on purpose: resolving a session means reading `sessions`,
+    which is tenant-scoped, so a tenant has to be known before the row can be found. This
+    holds a credential's hash and its tenant and nothing else; the session row itself
+    stays behind its policy. Written beside the session in the same transaction
+    (`app.core.auth.create_session`), removed with it by the cascade.
+    """
+
+    __tablename__ = "session_tenants"
+
+    token_hash: Mapped[str] = mapped_column(
+        String(64), ForeignKey("sessions.token_hash", ondelete="CASCADE"), primary_key=True
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ApiTokenTenant(Base):
+    """`SessionTenant`'s twin for personal API tokens (#35): the secret's hash and the
+    tenant the token acts for, outside row-level security, cascading from the token."""
+
+    __tablename__ = "api_token_tenants"
+
+    token_hash: Mapped[str] = mapped_column(
+        String(64), ForeignKey("api_tokens.token_hash", ondelete="CASCADE"), primary_key=True
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class ApiToken(Base):
     """A personal access token — the non-browser authentication path, for the macOS
     client, CI, and scripts.
@@ -748,8 +781,10 @@ class Destination(Base):
     """Where processed events get delivered — a SIEM, a customer-run webhook receiver,
     or an ingestion endpoint in front of a warehouse like Snowflake. Deliberately one
     flexible type rather than a menu of named vendor integrations: from here it is
-    always an HTTPS POST, and vendor differences live almost entirely in the auth
-    header, which `auth_type` covers. Splunk gets its own `type` because HEC has a
+    always an HTTPS POST — enforced since #131 by app.core.egress at the write and at
+    delivery, with plain http an explicit opt-in for a lab SIEM — and vendor differences
+    live almost entirely in the auth header, which `auth_type` covers. Splunk gets its
+    own `type` because HEC has a
     fixed envelope shape, and Elastic because the bulk API has a fixed body shape
     (NDJSON) and its own failure mode — not because their transport is different.
     "runreveal" is a preset over the generic-webhook delivery path: same bare-JSON

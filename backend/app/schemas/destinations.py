@@ -2,12 +2,20 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
+from app.core.egress import validate_destination_url
 from app.core.outbox import KNOWN_EVENT_TYPES
+
+# Where this server will deliver events holding the destination's credential, checked
+# where the column is *set* rather than in the routes: the outbox reads `url` from the
+# row on every tick without asking a route (#131, app.core.egress). DestinationOut keeps
+# a bare `str` — a row stored before the rule must still be readable, and delivery is
+# where such a row is refused.
+DestinationUrl = Annotated[str, Field(min_length=1, max_length=1024), AfterValidator(validate_destination_url)]
 
 # Literals rather than a runtime membership test, so the four working values reach the
 # OpenAPI schema. A bare `str` published nothing, and an API-driven caller reading the
@@ -118,7 +126,7 @@ class DestinationTestOut(_CamelModel):
 class DestinationCreate(_CamelModel):
     name: str = Field(min_length=1, max_length=255)
     type: DestinationType = "generic_webhook"
-    url: str = Field(min_length=1, max_length=1024)
+    url: DestinationUrl
     # Omit and it is derived from `type`; every type but generic_webhook has exactly
     # one right answer.
     auth_type: AuthType | None = None
@@ -142,7 +150,7 @@ class DestinationCreate(_CamelModel):
 
 class DestinationUpdate(_CamelModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    url: str | None = Field(default=None, min_length=1, max_length=1024)
+    url: DestinationUrl | None = None
     # `type` is immutable after creation, so whether this is legal depends on the
     # stored type — checked in api/destinations.py, which knows it.
     auth_type: AuthType | None = None
