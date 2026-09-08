@@ -173,6 +173,30 @@ async def test_a_cookie_nobody_issued_is_a_401_that_says_nothing(tidy) -> None:
     assert response.json() == {"detail": "Not authenticated"}
 
 
+# --- the index is outside the policy set, on purpose ---------------------------------------
+
+
+async def test_the_index_tables_carry_no_row_level_security_and_nothing_else_does_not(seeded) -> None:
+    """The one deliberate exception to the baseline's rule, pinned from both sides: a
+    policy added to either index table would make it unreadable before a tenant is
+    known (every second-tenant session becomes a 401), and a third unscoped table would
+    be a hole. CI's image job asserts the same list against the built image."""
+    from sqlalchemy import text
+
+    from app.core.database import unscoped_session
+
+    async with unscoped_session() as db:
+        rows = await db.execute(
+            text(
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                "WHERE n.nspname = 'public' AND c.relkind = 'r' "
+                "AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = 'tenant_id' AND a.attnum > 0) "
+                "AND NOT (c.relrowsecurity AND c.relforcerowsecurity) ORDER BY c.relname"
+            )
+        )
+        assert [row[0] for row in rows] == ["api_token_tenants", "session_tenants"]
+
+
 # --- the index is kept exact ---------------------------------------------------------------
 
 
