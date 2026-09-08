@@ -38,7 +38,7 @@ jobs:
     name: Build and push to ECR
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       # Repository *variables*, not secrets: neither value is sensitive, and
       # variables keep the account id out of a repo that goes public. Run logs
@@ -46,13 +46,13 @@ jobs:
       # dozen times per run (role ARN, registry host, image tags). The action
       # does not mask it by default, so ask it to: the mask then covers every
       # later line of the job.
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ vars.AWS_ECR_PUSH_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
           mask-aws-account-id: true
 
-      - uses: aws-actions/amazon-ecr-login@v2
+      - uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
         id: ecr
 
       # Immutable tags make a re-run of an already-published SHA a push error
@@ -72,10 +72,10 @@ jobs:
       # manifest below needs emulation registered first. The image that comes
       # out is still native on either architecture — only its arm64 build is
       # emulated, not anything that runs from it.
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
         if: steps.exists.outputs.published == 'false'
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
         if: steps.exists.outputs.published == 'false'
 
       # Multi-arch manifest under one tag: linux/amd64 is what the pod stack's
@@ -84,7 +84,7 @@ jobs:
       # Silicon gets a native image instead of amd64 under emulation.
       - name: Build and push app image
         if: steps.exists.outputs.published == 'false'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -97,7 +97,7 @@ jobs:
 
       - name: Build and push database sidecar image
         if: steps.exists.outputs.published == 'false'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: ops/postgres
           platforms: linux/amd64,linux/arm64

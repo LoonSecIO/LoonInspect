@@ -30,6 +30,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Pinned rather than :latest so a rebuild resolves the same toolchain.
+# Moves together with `astral-sh/setup-uv`'s `version:` in .github/workflows/ci.yml —
+# Dependabot manages neither pin, so bump both by hand (#20).
 COPY --from=ghcr.io/astral-sh/uv:0.9.30 /uv /uvx /bin/
 
 # Dependencies before application source, for the same caching reason as above.
