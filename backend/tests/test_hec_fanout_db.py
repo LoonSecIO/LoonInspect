@@ -257,7 +257,7 @@ async def test_one_snapshot_delivery_is_one_request_of_n_sub_events_on_the_real_
 
     # And the test button: one identifiable object, unstamped, straight down the same path.
     seen.clear()
-    assert await send_test_event(splunk) == (True, None)
+    assert await send_test_event(splunk) == (True, None, 200)
     (request,) = seen
     body = json.loads(request.content)
     assert set(body) == {"event"} and body["event"]["event"] == TEST_EVENT_TYPE

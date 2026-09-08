@@ -101,6 +101,20 @@ class DestinationOut(_CamelModel):
     updated_at: datetime
 
 
+class DestinationTestOut(_CamelModel):
+    """What `POST /api/destinations/{id}/test` reports. The call itself is always 200 —
+    the upstream verdict is the payload, not the status of this request."""
+
+    ok: bool
+    detail: str
+    # The HTTP status the destination answered with, as its own field rather than a
+    # number the caller would have to parse out of `detail` (#305). Null when no response
+    # came back at all — DNS, connection refused, timeout, TLS — which is a different
+    # diagnosis from any status code. A 200 beside `ok: false` is Elastic's bulk API
+    # accepting the request and rejecting the item.
+    status_code: int | None = None
+
+
 class DestinationCreate(_CamelModel):
     name: str = Field(min_length=1, max_length=255)
     type: DestinationType = "generic_webhook"

@@ -648,7 +648,7 @@ async def test_the_destination_test_event_is_one_unstamped_object(monkeypatch) -
     monkeypatch.setattr(outbox.httpx, "AsyncClient", _Mocked)
     destination = _splunk_destination()
     destination.id = 7
-    assert await send_test_event(destination) == (True, None)
+    assert await send_test_event(destination) == (True, None, 200)
     (request,) = seen
     body = json.loads(request.content)
     assert set(body) == {"event"} and body["event"]["event"] == TEST_EVENT_TYPE

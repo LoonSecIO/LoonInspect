@@ -16,6 +16,11 @@ export function updateDestination(id: number, input: UpdateDestinationInput): Pr
 export interface DestinationTestResult {
   ok: boolean;
   detail: string;
+  /** The HTTP status the destination answered with, as its own field — never parsed out
+   *  of `detail`, which is a sentence and will be reworded. Null when no response came
+   *  back at all (DNS, refused, timeout, TLS), which is a different diagnosis from any
+   *  status code. */
+  statusCode: number | null;
 }
 
 /** Sends one synthetic event down the real delivery path. Always resolves — a refused

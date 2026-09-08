@@ -5,6 +5,7 @@ import { ApiError } from "@/config/api";
 import { useHasPermission } from "@/features/auth/store";
 import { PERMISSIONS } from "@/features/auth/types";
 import { createDestination, deleteDestination, testDestination, listDestinations, updateDestination } from "@/features/destinations/api";
+import type { DestinationTestResult } from "@/features/destinations/api";
 import type { AuthType, Destination, DestinationType } from "@/features/destinations/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
@@ -62,6 +63,34 @@ function formatDate(value: string | null): string {
   return value ? new Date(value).toLocaleString() : "—";
 }
 
+/** `record` without `id`. The only way a test result leaves the map is one at a time —
+ *  when its own destination is tested again or deleted. Never the whole map: one slot
+ *  for the whole page is the defect this replaces (#305). */
+function omit<T>(record: Record<number, T>, id: number): Record<number, T> {
+  return Object.fromEntries(Object.entries(record).filter(([key]) => Number(key) !== id));
+}
+
+/** One destination's test verdict, shown for as long as the reader stays on the page.
+ *
+ *  It lives in component state on purpose — not localStorage, not the server (#305,
+ *  ruled 2026-09-04): a result that dies with the visit cannot become a stale claim
+ *  about the past, so it needs no date and no expiry. The status code rides on hover,
+ *  as the number the API returned rather than one parsed out of the sentence. */
+function TestResultLine({ result }: { result: DestinationTestResult | undefined }) {
+  const { t } = useLocale();
+  if (!result) return null;
+  const status =
+    typeof result.statusCode === "number" ? t.destinations.testStatus(result.statusCode) : t.destinations.testNoStatus;
+  return (
+    <p
+      className={`mt-1 text-[11px] ${result.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}
+      title={status}
+    >
+      {result.ok ? t.destinations.testDelivered : t.destinations.testRefused(result.detail)}
+    </p>
+  );
+}
+
 export function DestinationsPage() {
   const { t } = useLocale();
   const canWrite = useHasPermission(PERMISSIONS.DESTINATION_WRITE);
@@ -88,7 +117,9 @@ export function DestinationsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [testResult, setTestResult] = useState<{ id: number; ok: boolean; detail: string } | null>(null);
+  // Keyed by destination id, so testing one never erases another's answer. Kyle's
+  // reproduction: test A, green line; test B, and A's line vanished.
+  const [testResults, setTestResults] = useState<Record<number, DestinationTestResult>>({});
 
   async function refresh() {
     setLoading(true);
@@ -192,10 +223,11 @@ export function DestinationsPage() {
   async function handleTest(destination: Destination) {
     setBusyId(destination.id);
     setError(null);
-    setTestResult(null);
+    // Only this destination's previous answer goes; the reader pressed its button.
+    setTestResults((current) => omit(current, destination.id));
     try {
       const result = await testDestination(destination.id);
-      setTestResult({ id: destination.id, ...result });
+      setTestResults((current) => ({ ...current, [destination.id]: result }));
       // A refused delivery still updates the stored error, so re-read the row.
       await refresh();
     } catch {
@@ -211,6 +243,7 @@ export function DestinationsPage() {
     try {
       await deleteDestination(id);
       setPendingDeleteId(null);
+      setTestResults((current) => omit(current, id));
       await refresh();
     } catch {
       setError(t.destinations.errorDeleting);
@@ -458,11 +491,7 @@ export function DestinationsPage() {
                         .join(" · ")}
                     </p>
                   )}
-                  {testResult?.id === destination.id && (
-                    <p className={`mt-1 text-[11px] ${testResult.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
-                      {testResult.ok ? t.destinations.testDelivered : t.destinations.testRefused(testResult.detail)}
-                    </p>
-                  )}
+                  <TestResultLine result={testResults[destination.id]} />
                 </td>
                 <td className="px-4 py-3">
                   {canWrite && (

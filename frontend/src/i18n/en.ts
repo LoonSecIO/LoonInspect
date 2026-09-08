@@ -190,6 +190,8 @@ export const en = {
     testing: "Testing…",
     testDelivered: "Delivered — the destination accepted a test event.",
     testRefused: (detail: string) => `Test delivery refused: ${detail}`,
+    testStatus: (code: number) => `HTTP ${code}`,
+    testNoStatus: "No HTTP status — the request failed before the destination answered.",
     errorTesting: "Could not run the test. The app could not reach the destination at all.",
     pendingDeliveries: (count: number) => `${count} queued`,
     failedDeliveries: (count: number) => `${count} gave up`,
