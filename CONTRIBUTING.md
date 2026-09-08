@@ -23,8 +23,8 @@ Every PR must pass the same gates `main` enforces:
   --frozen`). Database-backed tests need a real Postgres and opt in via
   `RUN_DB_TESTS=1`; see `.github/workflows/ci.yml` for the exact role setup — the
   app must not connect as a superuser or the row-level-security tests prove nothing.
-- **Frontend** — `npx tsc -b --noEmit`, `npx eslint .`, `npm run build` (Node 22,
-  `npm ci`).
+- **Frontend** — `npx tsc -b --noEmit`, `npx eslint .`, `npm test` (vitest, node
+  environment, over the pure modules), `npm run build` (Node 22, `npm ci`).
 - **Image** — the multi-stage Docker build must complete.
 
 Lockfiles are part of the contract: `uv.lock` and `package-lock.json` must match

@@ -379,10 +379,11 @@ key set (§4a's absences), the frontend types them as a union discriminated on `
 and `counts` exists on the `covered` member alone — so `vuln.counts.total` does not compile
 until a value has been narrowed to `covered`. There is no expression in which an
 unassessed app yields a zero.
-`frontend/src/features/vulnerabilities/noCollapse.ts` asserts exactly that, in the one
-checker CI runs for the frontend (`tsc`, since there is no test lane — #138): type-level
-assertions on the shape of the `off` member that fail the build the day `counts` becomes
-readable from it (the file itself explains why `@ts-expect-error` was rejected).
+`frontend/src/features/vulnerabilities/noCollapse.ts` asserts exactly that, in `tsc`
+rather than in the frontend's vitest lane (#285) — a guarantee about the shape of a type
+belongs to the type checker: type-level assertions on the shape of the `off` member that
+fail the build the day `counts` becomes readable from it (the file itself explains why
+`@ts-expect-error` was rejected).
 
 **The stamp rides the rows.** `corpusAsOf` is returned on the response that carries the
 apps it describes, never from a separate call, so a header can never date a column the

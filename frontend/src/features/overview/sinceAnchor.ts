@@ -5,9 +5,8 @@ import type { DeviceChange } from "@/features/changes/types";
  *
  * Pure on purpose, and separate from the component for the reason `heroRun.ts` is: every
  * rule here is a decision that can be wrong in a way a screenshot will not reveal, and
- * none of it needs React to be checked. This module has no test today because the
- * frontend has no test runner at all — that is [#285](https://github.com/LoonSecIO/LoonInspect/issues/285),
- * and this file is the first thing it should aim at.
+ * none of it needs React to be checked. It is pinned by `sinceAnchor.test.ts` in the
+ * frontend test lane ([#285](https://github.com/LoonSecIO/LoonInspect/issues/285)).
  */
 
 /** Where the last-visit stamp lives. Per browser, deliberately: "since you last looked"

@@ -10,15 +10,14 @@ import type { UpdateStatusResponse } from "@/features/system/api";
  *
  * Pure on purpose, for the reason `heroRun.ts` and `sinceAnchor.ts` are: every line here
  * is a decision that can be wrong in a way a screenshot will not reveal. Nothing in this
- * module fetches, renders, or translates. It has no test today because the frontend has
- * no test runner at all — that is
- * [#285](https://github.com/LoonSecIO/LoonInspect/issues/285), and **this is the module
- * #285 should aim at first**: it now encodes six predicates, three collapses and six
- * founder rulings, and `composeAttention` and `isAllClear` are both pure functions of
- * plain data — a test runner can drive them the moment one exists, with no DOM, no
- * fetch and no store. Five separate claims about this comparator have been refuted by
- * *executing* it — the fifth was a defect introduced by the fix for the fourth — which
- * is the argument for the runner in one sentence.
+ * module fetches, renders, or translates. It is pinned by `needsAttention.test.ts`, the
+ * first suite the frontend test lane
+ * ([#285](https://github.com/LoonSecIO/LoonInspect/issues/285)) was built for: it
+ * encodes six predicates, three collapses and six founder rulings, and
+ * `composeAttention` and `isAllClear` are both pure functions of plain data — no DOM, no
+ * fetch and no store. Five separate claims about this comparator were refuted by
+ * *executing* it before that lane existed — the fifth was a defect introduced by the fix
+ * for the fourth — which is the argument for the runner in one sentence.
  *
  * ## Two rules this module exists to keep
  *

@@ -53,8 +53,12 @@ jobs:
       - name: Lint
         run: npx eslint .
 
-      - name: Build
-        run: npm run build
+      # The frontend test lane (#285): vitest over the pure modules that encode rulings.
+      # In this job rather than a new one — a new job is a slower CI for no gain — and
+      # the job keeps its name because .github/rulesets/main.json requires the check by
+      # that exact string; renaming both is a ruleset change, which is applied by hand.
+      - name: Test
+        run: npm test
 
   backend:
     # Renamed from "Backend (ruff)" when the test suite landed. The job's display name
