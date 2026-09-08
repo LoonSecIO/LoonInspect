@@ -79,6 +79,10 @@ services:
       # Hard kill switch for community data sharing — false wins over any tier chosen
       # in the UI. See docs/data-sharing.md and the README's "Community data sharing".
       COMMUNITY_SHARING: ${COMMUNITY_SHARING:-true}
+      # Content-Security-Policy (README "Response headers"): empty is the app's own
+      # policy, `off` sends none and keeps the other headers, anything else is sent
+      # verbatim and replaces the policy rather than extending it.
+      CONTENT_SECURITY_POLICY: ${CONTENT_SECURITY_POLICY:-}
       # Alternate provider for the update check; empty uses GitHub. Exists for the
       # future api.loonsec.io endpoint and for testing against a mock.
       UPDATE_CHECK_URL: ${UPDATE_CHECK_URL:-}
