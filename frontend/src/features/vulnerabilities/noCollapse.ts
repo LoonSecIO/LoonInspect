@@ -2,8 +2,9 @@
  * The compile-time guard that "0 findings" and "not assessed" can never share a rendering
  * (#251, `docs/vulnerabilities.md` §4a).
  *
- * There is no frontend test lane in this repo (#138), so the assertion is made in the one
- * checker CI already runs: `tsc -b --noEmit`.
+ * The assertion is made in `tsc -b --noEmit` rather than in the vitest lane (#285): a
+ * guarantee about the shape of a type belongs to the type checker, and a runtime test
+ * could not see an optional property at all.
  *
  * **Why not `@ts-expect-error`.** The first version of this file wrote the illegal reads
  * out and suppressed them. That guard was too loose to be worth having: `@ts-expect-error`

@@ -98,10 +98,16 @@ export function evaluateTest(test: JamfPatchRequirementTest, facts: TestFacts): 
     return outcomeOf(compareOperator(test.operator, facts.extensionAttributeValue, test.value));
   }
 
+  // An empty field is a fact nobody has stated, not a value — the same reading the
+  // version case below has always taken, and the backend's "anything None is unknown, not
+  // empty". Until #285's parity suite ran, an untouched form failed every bundle-ID and
+  // title test and read a title as not matched before the admin had typed a character.
   switch (test.name) {
     case "Application Bundle ID":
+      if (facts.bundleId === "") return "not_applicable";
       return outcomeOf(compareOperator(test.operator, facts.bundleId, test.value));
     case "Application Title":
+      if (facts.appName === "") return "not_applicable";
       return outcomeOf(compareOperator(test.operator, facts.appName, test.value));
     case "Application Version": {
       const results = [facts.shortVersion, facts.bundleVersion]
