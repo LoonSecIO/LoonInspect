@@ -64,6 +64,9 @@ export const de: Translations = {
     sidebarExpanded: "Symbole + Text",
     sidebarCollapsed: "Nur Symbole",
     sidebarHidden: "Ausgeblendet",
+    menu: "Navigation",
+    openMenu: "Navigation öffnen",
+    closeMenu: "Navigation schließen",
     computersOnlyScope: "Nur Computer — mobile Geräte werden nicht erfasst.",
     opensInNewTab: "(wird in einem neuen Tab geöffnet)"
   },

@@ -2,6 +2,7 @@ import { LogOut, Moon, Sun } from "lucide-react";
 import { useNavigate } from "react-router";
 import { FlaskLogo } from "@/components/icons/FlaskLogo";
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher";
+import { MobileNav } from "@/components/layout/MobileNav";
 import { SidebarModeSwitcher } from "@/components/layout/SidebarModeSwitcher";
 import { useAuthStore } from "@/features/auth/store";
 import { useTheme } from "@/hooks/useTheme";
@@ -23,7 +24,12 @@ export function Navbar() {
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
       <div className="flex h-14 items-center justify-between px-6">
         <div className="flex items-center gap-3">
-          <SidebarModeSwitcher />
+          <MobileNav />
+          {/* Below `md` the sidebar is display: none whatever its mode, so a switcher
+              there toggles nothing anyone can see; the drawer takes its place (#141). */}
+          <div className="hidden md:block">
+            <SidebarModeSwitcher />
+          </div>
           <div className="flex items-center gap-2 font-semibold">
             <FlaskLogo className="h-5 w-5 text-primary" />
             <span>LoonInspect</span>
