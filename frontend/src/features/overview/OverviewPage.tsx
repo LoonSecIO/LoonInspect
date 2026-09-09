@@ -9,6 +9,7 @@ import type { Collection, MdmConnection, MdmSyncStatus, Run, RunSummary } from "
 import { ChangesFeed } from "@/features/overview/ChangesFeed";
 import { FirstSyncHero } from "@/features/overview/FirstSyncHero";
 import { NeedsAttentionPanel } from "@/features/overview/NeedsAttentionPanel";
+import { PatchLaggardsTile } from "@/features/overview/PatchLaggardsTile";
 import { SetupStepper } from "@/features/overview/SetupStepper";
 import { StatusStrip } from "@/features/overview/StatusStrip";
 import { buildConnectionStatuses } from "@/features/overview/connectionStatus";
@@ -297,6 +298,10 @@ export function OverviewPage() {
       {/* #101 (alerts) composes in here — its NEW-app latch lands as rows inside the
           Needs Attention panel above rather than as a surface of its own, which is
           #106's one-composition ruling. */}
+      {/* Below the fold (#88's split): the patch laggards (#110), lazy — nothing is
+          requested until it scrolls into view. #109's hygiene tiles and recent-runs
+          table are its neighbours. */}
+      <PatchLaggardsTile />
     </section>
   );
 }
