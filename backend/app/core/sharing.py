@@ -30,20 +30,14 @@ from app.models.schema import DataSharingSettings, Device, InstalledApp, ShareLo
 
 CONTRACT_VERSION = "v1"
 
-# The population every snapshot row came from (#231). v0 reads computers only
-# (docs/mobile-devices.md P-2), so every row this builder emits is `macos` — a fact about
-# what the sweep observed, not a default standing in for an unknown.
-#
-# It is a constant because the fact has no column yet: when `devices.platform` exists
-# (P-3 / #233) the rows read it per device and this constant is deleted rather than edited.
-# Until then it is the single source both row kinds read, so the platform cannot be stated
-# two ways in one submission — which is the whole failure mode a second literal invites.
+# The population every snapshot row came from (#231) is read off `devices.platform` per
+# row since #233 — the constant that stood in while the column did not exist was deleted
+# rather than edited, as its own comment said it would be. Both row kinds group by the
+# column, so one submission states a platform per row and can never state it two ways.
 #
 # Spelling is the content-key OS domain's, not the sourcetype segment's (Kyle, 2026-09-02):
-# `macos` here, `mac` in `app.core.wire_vocabulary`. Both are frozen, they are different
-# namespaces, and neither was renamed to match the other. The siblings are `ios`, `ipados`,
-# `tvos`, `visionos`.
-SNAPSHOT_PLATFORM = "macos"
+# `macos` in the column, `mac` in `app.core.wire_vocabulary`. Both are frozen, they are
+# different namespaces, and neither was renamed to match the other.
 
 
 async def get_or_create_settings(db: AsyncSession) -> DataSharingSettings:
@@ -116,9 +110,12 @@ async def build_exchange_request(db: AsyncSession, settings_row: DataSharingSett
             select(
                 InstalledApp.key_title,
                 InstalledApp.key_full,
+                Device.platform,
                 func.max(InstalledApp.bundle_id).label("bundle_id"),
                 func.count(distinct(InstalledApp.device_id)).label("count"),
-            ).group_by(InstalledApp.key_title, InstalledApp.key_full)
+            )
+            .join(Device, Device.id == InstalledApp.device_id)
+            .group_by(InstalledApp.key_title, InstalledApp.key_full, Device.platform)
         )
     ).all()
 
@@ -127,7 +124,7 @@ async def build_exchange_request(db: AsyncSession, settings_row: DataSharingSett
             "title": row.key_title,
             "full": row.key_full,
             "count": row.count,
-            "platform": SNAPSHOT_PLATFORM,
+            "platform": row.platform,
         }
         for row in app_rows
         if not _excluded(row.bundle_id, globs)
@@ -139,20 +136,20 @@ async def build_exchange_request(db: AsyncSession, settings_row: DataSharingSett
     # until the inventory grows the fields; the contract's shape doesn't change.
     os_rows = (
         await db.execute(
-            select(Device.os_version, func.count(Device.id).label("count"))
+            select(Device.platform, Device.os_version, func.count(Device.id).label("count"))
             .where(Device.os_version.is_not(None))
-            .group_by(Device.os_version)
+            .group_by(Device.platform, Device.os_version)
         )
     ).all()
     # The os key already hashes the platform, and the row states it anyway: the hash is not
     # reversible into a partition name, so a reader routing os rows would otherwise have to
-    # guess-and-check the whole OS vocabulary against every key. Same constant as the app
-    # rows above, so one submission can never claim two platforms.
+    # guess-and-check the whole OS vocabulary against every key. The same column as the app
+    # rows above, so a row's key and its stated platform cannot disagree.
     os_tuples = [
         {
-            "key": os_key(SNAPSHOT_PLATFORM, row.os_version, None),
+            "key": os_key(row.platform, row.os_version, None),
             "count": row.count,
-            "platform": SNAPSHOT_PLATFORM,
+            "platform": row.platform,
         }
         for row in os_rows
     ]

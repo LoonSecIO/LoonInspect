@@ -90,6 +90,9 @@ class DeviceOut(BaseModel):
     mdm_provider: MdmProvider
     mdm_connection_id: int | None
     external_id: str
+    # Which Jamf ID space `external_id` names the device in (#233): `macos` for every
+    # row today, one of the mobile values the day a mobile sweep exists.
+    platform: str
     serial_number: str
     hostname: str
     last_seen_at: datetime | None

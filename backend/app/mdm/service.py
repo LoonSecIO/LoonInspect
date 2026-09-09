@@ -987,6 +987,9 @@ async def process_sync(
         .options(selectinload(Device.apps), selectinload(Device.extension_attributes))
         .where(
             Device.mdm_connection_id == connection.id,
+            # Both, never the id alone: Jamf numbers computers and mobile devices in
+            # separate sequences, so computer 42 and iPad 42 are two rows (#233).
+            Device.platform == device.platform,
             Device.external_id == device.external_id,
         )
     )
@@ -1010,6 +1013,7 @@ async def process_sync(
         existing = Device(
             mdm_connection_id=connection.id,
             mdm_provider=device.mdm_provider.value,
+            platform=device.platform,
             external_id=device.external_id,
             serial_number=device.serial_number,
             hostname=device.hostname,

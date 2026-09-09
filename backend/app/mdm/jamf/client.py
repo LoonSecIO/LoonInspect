@@ -185,6 +185,13 @@ def _retry_delay(response: httpx.Response, attempt: int) -> float:
 # answer enumerates the warranted ones.
 REACTIVE_WEBHOOK_EVENTS = frozenset({"ComputerAdded", "ComputerInventoryCompleted"})
 
+# The platform every record this client reads belongs to (#233): `computers-inventory`
+# is the Mac endpoint, and `devices.platform` is stamped from here rather than defaulted
+# somewhere generic, so the client declares what it read. A mobile client stamps its own
+# value from the device's OS — one of `ios` / `ipados` / `tvos` / `visionos`, the
+# content-key spelling (docs/mobile-devices.md §2) — never this constant.
+COMPUTER_PLATFORM = "macos"
+
 
 @dataclass(frozen=True, slots=True)
 class JamfWebhookEvent:
@@ -730,6 +737,7 @@ def normalize_computer(
     return NormalizedDevice(
         mdm_provider=MdmProvider.jamf,
         external_id=str(computer.get("id") or general.get("id")),
+        platform=COMPUTER_PLATFORM,
         # Verified against a live tenant: the serial is under HARDWARE, not GENERAL,
         # and the OS version is under OPERATING_SYSTEM, not HARDWARE. The webhook
         # fallbacks stay because a HEC payload is shaped differently from an

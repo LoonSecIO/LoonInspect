@@ -125,6 +125,7 @@ async def list_devices(
     department: str | None = Query(default=None),
     managed: bool | None = Query(default=None),
     supervised: bool | None = Query(default=None),
+    platform: str | None = Query(default=None, max_length=16),
     last_check_in_after: datetime | None = Query(default=None, alias="lastCheckInAfter"),
     last_check_in_before: datetime | None = Query(default=None, alias="lastCheckInBefore"),
     last_inventory_after: datetime | None = Query(default=None, alias="lastInventoryAfter"),
@@ -151,6 +152,8 @@ async def list_devices(
         stmt = stmt.where(Device.managed == managed)
     if supervised is not None:
         stmt = stmt.where(Device.supervised == supervised)
+    if platform is not None:
+        stmt = stmt.where(Device.platform == platform)
     if last_check_in_after:
         stmt = stmt.where(Device.last_check_in >= last_check_in_after)
     if last_check_in_before:
