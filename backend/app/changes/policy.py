@@ -98,12 +98,32 @@ FIELD_RULES: tuple[FieldRule, ...] = (
     _f("general", "enrollmentMethod.id", HIGH, "Enrollment method", "How the device was enrolled changes only on re-enrollment."),
     _f("general", "enrollmentMethod.objectType", HIGH, "Enrollment method type", "PreStage vs user-initiated is a posture fact."),
     _f("general", "site.id", NORMAL, "Site", "Moving sites changes who administers the device."),
-    _f("general", "itunesStoreAccountActive", LOW, "App Store account active", "User sign-in state; privacy-adjacent, low value."),
-    _f("general", "enrolledViaAutomatedDeviceEnrollment", HIGH, "Automated Device Enrollment", "ADE status is the strongest enrollment guarantee."),
+    _f(
+        "general", "itunesStoreAccountActive", LOW, "App Store account active", "User sign-in state; privacy-adjacent, low value."
+    ),
+    _f(
+        "general",
+        "enrolledViaAutomatedDeviceEnrollment",
+        HIGH,
+        "Automated Device Enrollment",
+        "ADE status is the strongest enrollment guarantee.",
+    ),
     _f("general", "userApprovedMdm", HIGH, "User-approved MDM", "Without UAMDM, kernel and system extensions cannot be managed."),
-    _f("general", "declarativeDeviceManagementEnabled", HIGH, "Declarative management", "DDM on/off changes how configuration is enforced."),
+    _f(
+        "general",
+        "declarativeDeviceManagementEnabled",
+        HIGH,
+        "Declarative management",
+        "DDM on/off changes how configuration is enforced.",
+    ),
     _f("general", "managementId", HIGH, "Management id", "A new management id is a new enrollment."),
-    _f("general", "jamfBinaryVersion", LOW, "Jamf binary version", "Changes fleet-wide on every Jamf release; better as a fleet finding."),
+    _f(
+        "general",
+        "jamfBinaryVersion",
+        LOW,
+        "Jamf binary version",
+        "Changes fleet-wide on every Jamf release; better as a fleet finding.",
+    ),
     # hardware — identity is high, capacities are normal, static capability flags low
     _f("hardware", "make", HIGH, "Make", "Hardware identity; a change means a different machine."),
     _f("hardware", "model", HIGH, "Model", "Hardware identity."),
@@ -163,7 +183,13 @@ FIELD_RULES: tuple[FieldRule, ...] = (
     # security — posture, all high except the fleet-wide XProtect version
     _f("security", "sipStatus", HIGH, "System Integrity Protection", "Core OS protection."),
     _f("security", "gatekeeperStatus", HIGH, "Gatekeeper", "What may launch."),
-    _f("security", "xprotectVersion", LOW, "XProtect version", "Updates fleet-wide weekly; an out-of-date finding is the useful signal."),
+    _f(
+        "security",
+        "xprotectVersion",
+        LOW,
+        "XProtect version",
+        "Updates fleet-wide weekly; an out-of-date finding is the useful signal.",
+    ),
     _f("security", "autoLoginDisabled", HIGH, "Auto-login disabled", "Auto-login bypasses authentication at boot."),
     _f("security", "remoteDesktopEnabled", HIGH, "Remote Desktop", "Remote access surface."),
     _f("security", "activationLockEnabled", HIGH, "Activation Lock", "Theft protection."),
@@ -175,9 +201,27 @@ FIELD_RULES: tuple[FieldRule, ...] = (
     _f("security", "bootstrapTokenEscrowedStatus", HIGH, "Bootstrap token escrowed", "Secure-token escrow."),
     _f("security", "attestationStatus", HIGH, "Attestation", "A failed attestation is a tamper signal."),
     # disk_encryption — all high
-    _f("disk_encryption", "bootPartitionEncryptionDetails.partitionName", NORMAL, "Boot partition", "Which volume is the boot partition."),
-    _f("disk_encryption", "bootPartitionEncryptionDetails.partitionFileVault2State", HIGH, "Boot partition encryption", "Encryption state of the boot volume."),
-    _f("disk_encryption", "individualRecoveryKeyValidityStatus", HIGH, "Recovery key validity", "Whether the escrowed key still works."),
+    _f(
+        "disk_encryption",
+        "bootPartitionEncryptionDetails.partitionName",
+        NORMAL,
+        "Boot partition",
+        "Which volume is the boot partition.",
+    ),
+    _f(
+        "disk_encryption",
+        "bootPartitionEncryptionDetails.partitionFileVault2State",
+        HIGH,
+        "Boot partition encryption",
+        "Encryption state of the boot volume.",
+    ),
+    _f(
+        "disk_encryption",
+        "individualRecoveryKeyValidityStatus",
+        HIGH,
+        "Recovery key validity",
+        "Whether the escrowed key still works.",
+    ),
     _f("disk_encryption", "institutionalRecoveryKeyPresent", HIGH, "Institutional recovery key", "Escrow posture."),
     _f("disk_encryption", "diskEncryptionConfigurationName", NORMAL, "Disk encryption configuration", "Which policy applies."),
     _f("disk_encryption", "fileVault2Enabled", HIGH, "FileVault enabled", "Disk encryption posture."),
@@ -193,7 +237,10 @@ FIELD_RULES: tuple[FieldRule, ...] = (
 
 ENTRY_RULES: tuple[EntryRule, ...] = (
     EntryRule(
-        kind="application", section="applications", identity=("name", "bundleId", "path"), level=NORMAL,
+        kind="application",
+        section="applications",
+        identity=("name", "bundleId", "path"),
+        level=NORMAL,
         label="Applications",
         why="Installs, removals and version changes are the inventory's core; Apple system apps collapse into the OS update unless logged individually.",
         fields=(
@@ -204,19 +251,28 @@ ENTRY_RULES: tuple[EntryRule, ...] = (
         ),
     ),
     EntryRule(
-        kind="extension_attribute", section="extension_attributes", identity=("definitionId",), level=NORMAL,
+        kind="extension_attribute",
+        section="extension_attributes",
+        identity=("definitionId",),
+        level=NORMAL,
         label="Extension attributes",
         why="Admins wrote these for exactly the facts they care about; the quarantine already removes the churny ones.",
         fields=(EntryFieldRule("values", NORMAL, "Value"),),
     ),
     EntryRule(
-        kind="group_membership", section="group_memberships", identity=("groupId",), level=NORMAL,
+        kind="group_membership",
+        section="group_memberships",
+        identity=("groupId",),
+        level=NORMAL,
         label="Smart group memberships",
         why="Joining and leaving drives policy scoping; each event says whether the criteria moved or the device drifted.",
         fields=(EntryFieldRule("smartGroup", LOW, "Smart flag"),),
     ),
     EntryRule(
-        kind="configuration_profile", section="configuration_profiles", identity=("profileIdentifier",), level=HIGH,
+        kind="configuration_profile",
+        section="configuration_profiles",
+        identity=("profileIdentifier",),
+        level=HIGH,
         label="Configuration profiles",
         why="A removed profile is configuration drift; a new one is new configuration.",
         fields=(
@@ -227,7 +283,10 @@ ENTRY_RULES: tuple[EntryRule, ...] = (
         ),
     ),
     EntryRule(
-        kind="local_user_account", section="local_user_accounts", identity=("uid", "username"), level=HIGH,
+        kind="local_user_account",
+        section="local_user_accounts",
+        identity=("uid", "username"),
+        level=HIGH,
         label="Local accounts",
         why="New or removed accounts, and admin or FileVault flips, are privilege changes.",
         fields=(
@@ -248,7 +307,10 @@ ENTRY_RULES: tuple[EntryRule, ...] = (
         ),
     ),
     EntryRule(
-        kind="certificate", section="certificates", identity=("sha1Fingerprint",), level=NORMAL,
+        kind="certificate",
+        section="certificates",
+        identity=("sha1Fingerprint",),
+        level=NORMAL,
         label="Certificates",
         why="New identities and CAs on a device matter; expiry is a query-time finding, not a change.",
         fields=(
@@ -257,7 +319,10 @@ ENTRY_RULES: tuple[EntryRule, ...] = (
         ),
     ),
     EntryRule(
-        kind="software_update", section="software_updates", identity=("name",), level=LOW,
+        kind="software_update",
+        section="software_updates",
+        identity=("name",),
+        level=LOW,
         label="Pending software updates",
         why="Appears fleet-wide when Apple releases; the OS version change says when it landed.",
         fields=(EntryFieldRule("version", LOW, "Version"), EntryFieldRule("packageName", LOW, "Package")),
@@ -443,9 +508,7 @@ class EffectivePolicy:
                     "identity": list(rule.identity),
                     "added": self.entry_enabled(rule.kind, "added"),
                     "removed": self.entry_enabled(rule.kind, "removed"),
-                    "overridden": any(
-                        key == rule.kind or key.startswith(f"{rule.kind}.") for key in self.overrides.entries
-                    ),
+                    "overridden": any(key == rule.kind or key.startswith(f"{rule.kind}.") for key in self.overrides.entries),
                     "fields": [
                         {
                             "name": f.name,

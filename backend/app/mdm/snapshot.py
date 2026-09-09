@@ -351,9 +351,7 @@ def build_inventory_snapshot(
                     "extension_attributes was read by the ledger but is None on the normalized "
                     "view; the two views of one read must agree on the aperture"
                 )
-            sections[wrapper] = [
-                {wrapper: ea.model_dump(mode="json", by_alias=True)} for ea in extension_attributes
-            ]
+            sections[wrapper] = [{wrapper: ea.model_dump(mode="json", by_alias=True)} for ea in extension_attributes]
         elif name == _APPLICATIONS:
             sections[wrapper] = [
                 _app_item(

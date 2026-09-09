@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import os
 import uuid as uuidlib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -77,7 +77,7 @@ async def connection(db):
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 async def _run_failed_events(db, run_id) -> list:
@@ -86,10 +86,10 @@ async def _run_failed_events(db, run_id) -> list:
     from app.models.schema import EventOutbox
 
     rows = (
-        await db.execute(
-            select(EventOutbox).where(EventOutbox.event_type == "run.failed").order_by(EventOutbox.id)
-        )
-    ).scalars().all()
+        (await db.execute(select(EventOutbox).where(EventOutbox.event_type == "run.failed").order_by(EventOutbox.id)))
+        .scalars()
+        .all()
+    )
     return [row for row in rows if row.payload.get("jobID") == str(run_id)]
 
 
@@ -98,10 +98,10 @@ async def _run_completed_events(db, run_id) -> list:
     from app.models.schema import EventOutbox
 
     rows = (
-        await db.execute(
-            select(EventOutbox).where(EventOutbox.event_type == "run.completed").order_by(EventOutbox.id)
-        )
-    ).scalars().all()
+        (await db.execute(select(EventOutbox).where(EventOutbox.event_type == "run.completed").order_by(EventOutbox.id)))
+        .scalars()
+        .all()
+    )
     # `jobID`, matching its sibling above: #212 renamed the run id on every family and
     # updated the run.failed helper, but nothing on main exercised this one, so its
     # stale `run_id` lookup silently matched zero rows until these tests arrived.
@@ -267,9 +267,7 @@ async def test_a_run_with_no_heartbeat_is_reclaimed(db, connection) -> None:
     # the wire carries one run.failed with the reclaim's own error as the summary.
     from app.models.schema import RunLogLine
 
-    lines = (
-        await db.execute(select(RunLogLine).where(RunLogLine.run_id == dead.run.id).order_by(RunLogLine.id))
-    ).scalars().all()
+    lines = (await db.execute(select(RunLogLine).where(RunLogLine.run_id == dead.run.id).order_by(RunLogLine.id))).scalars().all()
     assert lines[-1].level == "error" and lines[-1].message == "run failed"
     assert "heartbeat" in lines[-1].fields["error"]
 
@@ -373,9 +371,7 @@ async def test_a_reclaimed_run_cannot_be_resurrected_by_its_zombie(db, connectio
 
     # And the run log shows the late finisher was turned away — the evidence trail
     # records that the zombie came back, not just that the run went quiet.
-    messages = (
-        await db.execute(select(RunLogLine.message).where(RunLogLine.run_id == zombie.run.id))
-    ).scalars().all()
+    messages = (await db.execute(select(RunLogLine.message).where(RunLogLine.run_id == zombie.run.id))).scalars().all()
     assert any("finish refused" in message for message in messages)
 
     # (d) A refused finish emits no run.failed either — the reclaim owns this run's
@@ -404,8 +400,14 @@ async def test_a_failed_run_emits_exactly_one_run_failed_with_the_ruled_fields(d
     payload = dict(events[0].payload)
     hints = payload.pop(ENVELOPE)
     assert set(payload) == {
-        "event", "jobID", "connectionID", "connectionName", "trigger",
-        "windowStart", "windowEnd", "error",
+        "event",
+        "jobID",
+        "connectionID",
+        "connectionName",
+        "trigger",
+        "windowStart",
+        "windowEnd",
+        "error",
     }
     assert payload["event"] == "run.failed"
     assert payload["connectionID"] == connection.id
@@ -486,9 +488,7 @@ async def test_the_run_releases_even_when_the_event_emit_fails(db, connection, u
 
     # Selected rather than db.get()'d: the session is expire_on_commit=False and the
     # status was written by a Core UPDATE, so the identity map still says `running`.
-    closed = (
-        await db.execute(select(Run.status, Run.finished_at, Run.error).where(Run.id == acquired.run.id))
-    ).one()
+    closed = (await db.execute(select(Run.status, Run.finished_at, Run.error).where(Run.id == acquired.run.id))).one()
     assert closed.status == STATUS_FAILED
     assert closed.finished_at is not None
     assert closed.error == "Jamf stopped answering"
@@ -504,8 +504,8 @@ async def test_the_run_releases_even_when_the_event_emit_fails(db, connection, u
     # look. Without this the run they open would show a clean close and the only trace
     # would be a container log line they had to already suspect something to find.
     lines = (
-        await db.execute(select(RunLogLine).where(RunLogLine.run_id == acquired.run.id).order_by(RunLogLine.id))
-    ).scalars().all()
+        (await db.execute(select(RunLogLine).where(RunLogLine.run_id == acquired.run.id).order_by(RunLogLine.id))).scalars().all()
+    )
     lost = [line for line in lines if line.message == EVENT_LOST_MESSAGE]
     assert [line.fields["eventType"] for line in lost] == [RUN_COMPLETED_EVENT, RUN_FAILED_EVENT]
     assert all(line.level == "error" for line in lost)
@@ -596,9 +596,7 @@ async def test_the_reclaim_frees_the_lock_even_when_its_event_emit_fails(
     # statement about one run, so a reclaim never announces on the wire what its own log
     # does not say. Either way the log does not simply stop mid-sweep, which is the
     # property #103 added it for.
-    lines = (
-        await db.execute(select(RunLogLine).where(RunLogLine.run_id == dead.run.id).order_by(RunLogLine.id))
-    ).scalars().all()
+    lines = (await db.execute(select(RunLogLine).where(RunLogLine.run_id == dead.run.id).order_by(RunLogLine.id))).scalars().all()
     assert lines[-1].message == EVENT_LOST_MESSAGE
     assert lines[-1].level == "error"
     assert lines[-1].fields["eventType"] == "run.failed"
@@ -617,9 +615,7 @@ async def test_a_scheduled_run_back_dates_events_to_its_window(db, connection) -
     from app.core.runs import LOCK_DEVICE_SWEEP, TRIGGER_SWEEP, acquire, entered, event_time, finish
 
     due_at = _now().replace(hour=1, minute=0, second=0, microsecond=0) - timedelta(days=1)
-    run = await acquire(
-        db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP, due_at=due_at
-    )
+    run = await acquire(db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP, due_at=due_at)
     async with entered(run.run):
         # Every device in the sweep resolves to the same `_time`, whenever it was reached.
         assert event_time() == due_at
@@ -681,23 +677,27 @@ async def test_a_sweep_stamps_its_job_id_on_the_events_it_produces(db, connectio
     assert result.ok and result.device_count > 0
 
     run = (
-        await db.execute(
-            select(Run).where(Run.mdm_connection_id == connection.id).order_by(Run.started_at.desc()).limit(1)
-        )
-    ).scalars().one()
+        (await db.execute(select(Run).where(Run.mdm_connection_id == connection.id).order_by(Run.started_at.desc()).limit(1)))
+        .scalars()
+        .one()
+    )
     assert run.status == "succeeded"
     assert run.comparison == "baseline"  # nothing succeeded on this connection before
     assert run.trigger == TRIGGER_MANUAL
     assert run.device_count == result.device_count
 
     event = (
-        await db.execute(
-            select(EventOutbox)
-            .where(EventOutbox.event_type == "device.inventory.changed")
-            .order_by(EventOutbox.id.desc())
-            .limit(1)
+        (
+            await db.execute(
+                select(EventOutbox)
+                .where(EventOutbox.event_type == "device.inventory.changed")
+                .order_by(EventOutbox.id.desc())
+                .limit(1)
+            )
         )
-    ).scalars().one()
+        .scalars()
+        .one()
+    )
     meta = event.payload["deviceMeta"]
     assert meta["jobID"] == str(run.id)
     assert meta["trigger"] == TRIGGER_MANUAL
@@ -770,10 +770,10 @@ async def test_a_sweep_stamps_its_job_id_on_the_events_it_produces(db, connectio
     second = await run_collection(db, sweep, trigger=TRIGGER_MANUAL)
     assert second.ok
     latest = (
-        await db.execute(
-            select(Run).where(Run.mdm_connection_id == connection.id).order_by(Run.started_at.desc()).limit(1)
-        )
-    ).scalars().one()
+        (await db.execute(select(Run).where(Run.mdm_connection_id == connection.id).order_by(Run.started_at.desc()).limit(1)))
+        .scalars()
+        .one()
+    )
     assert latest.comparison == "delta"
 
 
@@ -791,14 +791,12 @@ async def test_the_run_log_is_scoped_by_job_id_and_paged_by_cursor(db, connectio
     await run_collection(db, sweep, trigger=TRIGGER_MANUAL)
 
     run = (
-        await db.execute(
-            select(Run).where(Run.mdm_connection_id == connection.id).order_by(Run.started_at.desc()).limit(1)
-        )
-    ).scalars().one()
+        (await db.execute(select(Run).where(Run.mdm_connection_id == connection.id).order_by(Run.started_at.desc()).limit(1)))
+        .scalars()
+        .one()
+    )
 
-    lines = (
-        await db.execute(select(RunLogLine).where(RunLogLine.run_id == run.id).order_by(RunLogLine.id))
-    ).scalars().all()
+    lines = (await db.execute(select(RunLogLine).where(RunLogLine.run_id == run.id).order_by(RunLogLine.id))).scalars().all()
     messages = [row.message for row in lines]
     assert "run started" in messages
     assert "aperture captured" in messages
@@ -808,11 +806,7 @@ async def test_the_run_log_is_scoped_by_job_id_and_paged_by_cursor(db, connectio
     # The cursor the panel polls with: `after` the last id it holds returns nothing new
     # once the run is over, rather than re-sending the whole log every two seconds.
     after = lines[-1].id
-    remaining = (
-        await db.execute(
-            select(RunLogLine).where(RunLogLine.run_id == run.id, RunLogLine.id > after)
-        )
-    ).scalars().all()
+    remaining = (await db.execute(select(RunLogLine).where(RunLogLine.run_id == run.id, RunLogLine.id > after))).scalars().all()
     assert remaining == []
 
 
@@ -860,9 +854,7 @@ async def test_purge_drops_finished_runs_and_never_a_live_one(db, connection) ->
 
     old = await acquire(db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP)
     await finish(db, old.run, ok=True)
-    await db.execute(
-        update(Run).where(Run.id == old.run.id).values(finished_at=_now() - timedelta(days=400))
-    )
+    await db.execute(update(Run).where(Run.id == old.run.id).values(finished_at=_now() - timedelta(days=400)))
     await db.commit()
 
     live = await acquire(db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_CATALOG)
@@ -879,9 +871,7 @@ async def test_purge_drops_finished_runs_and_never_a_live_one(db, connection) ->
 
     assert not await _exists(old.run.id)
     # The log goes with it by cascade rather than by a second delete that could drift.
-    orphans = (
-        await db.execute(select(RunLogLine.id).where(RunLogLine.run_id == old.run.id))
-    ).scalars().all()
+    orphans = (await db.execute(select(RunLogLine.id).where(RunLogLine.run_id == old.run.id))).scalars().all()
     assert orphans == []
 
     # A run still holding its lock is never purged, whatever its age says.
@@ -1049,7 +1039,7 @@ async def test_a_webhook_class_run_never_pins_whatever_its_trigger(db, connectio
 
 
 async def test_a_failed_or_running_sweep_does_not_pin_and_the_last_good_one_does(db, connection) -> None:
-    """"Completed" is load-bearing in "last completed full sweep".
+    """ "Completed" is load-bearing in "last completed full sweep".
 
     A sweep that died at device 12,000 measured a twelfth of the fleet, and one still in
     flight has measured an unknown fraction of it. Either naming the device count beside
@@ -1117,10 +1107,8 @@ async def test_a_manual_sweep_pins_exactly_as_a_scheduled_one_does(db, connectio
     assert summary.last_full_sweep is not None and summary.last_full_sweep.id == manual.id
 
 
-async def test_the_since_count_starts_at_the_pin_and_stays_on_its_own_connection(
-    db, connection, sibling_connection
-) -> None:
-    """"+N webhook sweeps since" is a correction to *this* stamp.
+async def test_the_since_count_starts_at_the_pin_and_stays_on_its_own_connection(db, connection, sibling_connection) -> None:
+    """ "+N webhook sweeps since" is a correction to *this* stamp.
 
     Three ways to get it wrong, all pinned here: counting webhooks that landed before the
     pinned sweep (they are already inside it — the sweep re-read every device), counting

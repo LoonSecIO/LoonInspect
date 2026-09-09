@@ -182,9 +182,7 @@ async def test_one_expiry_produces_one_token_request_however_many_race() -> None
     client._token = "revoked"  # every request in flight will 401 at the same moment
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(fake.async_handler)) as http:
-        responses = await asyncio.gather(
-            *(client._get(http, "/api/v1/jamf-pro-version", comment="race") for _ in range(4))
-        )
+        responses = await asyncio.gather(*(client._get(http, "/api/v1/jamf-pro-version", comment="race") for _ in range(4)))
 
     assert [response.status_code for response in responses] == [200, 200, 200, 200]
     assert fake.requests.count("POST /api/oauth/token") == 1

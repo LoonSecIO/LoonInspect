@@ -145,8 +145,8 @@ async def get_title(title_id: str, db: AsyncSession = Depends(get_db)) -> JamfPa
     if title is None:
         raise HTTPException(status_code=404, detail="Patch title not found")
     out = JamfPatchTitleDetailOut.model_validate(title)
-    out.device_count, out.devices_on_latest, out.devices_behind = (
-        await title_device_counts(db, [title.id])
-    ).get(title.id, (0, 0, 0))
+    out.device_count, out.devices_on_latest, out.devices_behind = (await title_device_counts(db, [title.id])).get(
+        title.id, (0, 0, 0)
+    )
     out.version_device_counts = await title_version_counts(db, title.id)
     return out

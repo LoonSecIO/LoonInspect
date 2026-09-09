@@ -11,7 +11,7 @@ customers in New York and Los Angeles can express two 2ams three hours apart.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -114,14 +114,14 @@ def next_due(schedule: Schedule, after: datetime, anchor: datetime | None = None
         candidate = local.replace(minute=minute, second=0, microsecond=0)
         if candidate <= local:
             candidate = (candidate + timedelta(hours=1)).replace(minute=minute)
-        return candidate.astimezone(timezone.utc)
+        return candidate.astimezone(UTC)
 
     candidate = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
     if schedule.frequency == "daily":
         if candidate <= local:
             candidate = _same_wall_time(candidate + timedelta(days=1), hour, minute)
-        return candidate.astimezone(timezone.utc)
+        return candidate.astimezone(UTC)
 
     if schedule.frequency == "weekly":
         weekday = schedule.weekday or 0
@@ -129,7 +129,7 @@ def next_due(schedule: Schedule, after: datetime, anchor: datetime | None = None
         candidate = _same_wall_time(candidate + timedelta(days=ahead), hour, minute)
         if candidate <= local:
             candidate = _same_wall_time(candidate + timedelta(days=7), hour, minute)
-        return candidate.astimezone(timezone.utc)
+        return candidate.astimezone(UTC)
 
     if schedule.frequency == "every_n_days":
         n = schedule.interval_n or 2
@@ -137,7 +137,7 @@ def next_due(schedule: Schedule, after: datetime, anchor: datetime | None = None
         candidate = start
         while candidate <= local:
             candidate = _same_wall_time(candidate + timedelta(days=n), hour, minute)
-        return candidate.astimezone(timezone.utc)
+        return candidate.astimezone(UTC)
 
     raise ScheduleError(f"unknown frequency {schedule.frequency!r}")
 

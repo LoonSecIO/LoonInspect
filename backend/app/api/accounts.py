@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete, select
@@ -93,23 +93,14 @@ async def _assert_not_last_admin(db: AsyncSession, account: Account) -> None:
     if not await _active_admin_ids(db, exclude=account.id):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="This is the only remaining administrator. Grant admin to another "
-            "active account first.",
+            detail="This is the only remaining administrator. Grant admin to another active account first.",
         )
 
 
 async def _replace_manual_roles(db: AsyncSession, account: Account, roles: list[str], granted_by: str) -> None:
-    await db.execute(
-        delete(AccountRole).where(
-            AccountRole.account_id == account.id, AccountRole.source == _MANUAL
-        )
-    )
+    await db.execute(delete(AccountRole).where(AccountRole.account_id == account.id, AccountRole.source == _MANUAL))
     for role in roles:
-        db.add(
-            AccountRole(
-                account_id=account.id, role=role, source=_MANUAL, granted_by=granted_by
-            )
-        )
+        db.add(AccountRole(account_id=account.id, role=role, source=_MANUAL, granted_by=granted_by))
     await db.flush()
 
 
@@ -206,16 +197,13 @@ async def update_account(
             if is_self and Role.admin.value in previous and Role.admin.value not in roles:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="You cannot remove your own administrator role. Ask another "
-                    "administrator to do it.",
+                    detail="You cannot remove your own administrator role. Ask another administrator to do it.",
                 )
             if Role.admin.value in previous and Role.admin.value not in roles:
                 await _assert_not_last_admin(db, account)
 
             await _replace_manual_roles(db, account, roles, granted_by=principal.account.id)
-            events.append(
-                (AuditAction.ACCOUNT_ROLES_CHANGED, {"before": previous, "after": roles})
-            )
+            events.append((AuditAction.ACCOUNT_ROLES_CHANGED, {"before": previous, "after": roles}))
 
     if payload.status is not None and payload.status != account.status:
         if payload.status not in _VALID_STATUSES:
@@ -266,17 +254,13 @@ async def reset_password(
     no mail transport to send a reset link through."""
     account = await _get_or_404(db, account_id)
 
-    result = await db.execute(
-        select(AuthIdentity).where(
-            AuthIdentity.account_id == account.id, AuthIdentity.provider == "local"
-        )
-    )
+    result = await db.execute(select(AuthIdentity).where(AuthIdentity.account_id == account.id, AuthIdentity.provider == "local"))
     identity = result.scalar_one_or_none()
     if identity is None:
         raise HTTPException(status_code=422, detail="That account has no password identity to reset")
 
     identity.secret_hash = hash_password(payload.new_password)
-    identity.password_changed_at = datetime.now(timezone.utc)
+    identity.password_changed_at = datetime.now(UTC)
 
     # Everything that authenticated with the old password dies with it. An attacker
     # who prompted the reset by locking someone out shouldn't keep their foothold.

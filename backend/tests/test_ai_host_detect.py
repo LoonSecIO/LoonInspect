@@ -8,10 +8,7 @@ import pytest
 
 from app.ai.host_detect import detect, read_host_detection
 
-LINUXKIT = (
-    "Linux version 6.12.76-linuxkit (root@buildkitsandbox) "
-    "(gcc (Alpine 15.2.0) 15.2.0, GNU ld (GNU Binutils) 2.45) #1 SMP"
-)
+LINUXKIT = "Linux version 6.12.76-linuxkit (root@buildkitsandbox) (gcc (Alpine 15.2.0) 15.2.0, GNU ld (GNU Binutils) 2.45) #1 SMP"
 WSL2 = "Linux version 5.15.167.4-microsoft-standard-WSL2 (root@f9c826d24240)"
 WSL2 += " (gcc (GCC) 11.2.0) #1 SMP"
 ORBSTACK = "Linux version 6.14.0-orbstack-00299-g1234567 (root@orbstack) (gcc 14) #1 SMP"

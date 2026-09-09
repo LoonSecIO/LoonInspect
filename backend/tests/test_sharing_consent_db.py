@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import os
 import uuid as uuidlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -35,9 +35,7 @@ from sqlalchemy import delete, select, text
 # One event loop for the whole module: the engine's pooled connections belong to
 # whichever loop first used them.
 pytestmark = [
-    pytest.mark.skipif(
-        not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"
-    ),
+    pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
     pytest.mark.asyncio(loop_scope="session"),
 ]
 
@@ -84,11 +82,7 @@ async def tenants_ready() -> None:
 
     async with unscoped_session() as db:
         await bootstrap_tenants(db)
-        existing = set(
-            (await db.execute(select(Tenant.id).where(Tenant.id.in_([t[0] for t in _TENANTS]))))
-            .scalars()
-            .all()
-        )
+        existing = set((await db.execute(select(Tenant.id).where(Tenant.id.in_([t[0] for t in _TENANTS])))).scalars().all())
         for tenant_id, slug in _TENANTS:
             if tenant_id not in existing:
                 db.add(Tenant(id=tenant_id, slug=slug, name=slug, kind="operational"))
@@ -228,9 +222,7 @@ async def _run_wizard(tenant_id: uuidlib.UUID, monkeypatch: pytest.MonkeyPatch, 
         await setup(payload, request, Response(), db)
 
 
-async def test_the_wizard_records_a_yes_rather_than_assuming_one(
-    tenants_ready, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_the_wizard_records_a_yes_rather_than_assuming_one(tenants_ready, monkeypatch: pytest.MonkeyPatch) -> None:
     """The interactive path still consents — and now says so in the row.
 
     This is the test that stops the fix from becoming a different bug. A default of off
@@ -339,7 +331,7 @@ async def test_the_backfill_withdraws_consent_that_was_never_recorded(tenants_re
                 tier="reveal",
                 submission_uuid=uuidlib.uuid4(),
                 exclude_globs=[],
-                updated_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(UTC),
             )
         )
         await db.commit()

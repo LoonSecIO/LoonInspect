@@ -105,8 +105,7 @@ def test_registry_names_and_paths_are_unique() -> None:
     assert len(set(names)) == len(names), "a privilege is listed twice"
     assert len(set(paths)) == len(paths), "a path is claimed by two privileges"
     assert all(name.startswith("Read ") for name in names), (
-        "every privilege this product needs is a read; a write here is a change to what "
-        "the README promises, not a typo"
+        "every privilege this product needs is a read; a write here is a change to what the README promises, not a typo"
     )
 
 

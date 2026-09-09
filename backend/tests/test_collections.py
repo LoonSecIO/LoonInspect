@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import os
 import uuid as uuidlib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -70,7 +70,7 @@ async def connection(db):
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 async def _fresh(db, row):
@@ -91,7 +91,10 @@ async def test_defaults_are_real_rows_and_idempotent(db, connection) -> None:
     sweep, catalog, webhook = rows["device_sweep"], rows["catalog"], rows["webhook"]
     assert sweep.sections == list(V0_SECTIONS) and sweep.selector is None
     assert (sweep.frequency, sweep.at_hour, sweep.at_minute, sweep.timezone) == (
-        "daily", settings.sync_hour, settings.sync_minute, settings.sync_timezone
+        "daily",
+        settings.sync_hour,
+        settings.sync_minute,
+        settings.sync_timezone,
     )
     assert sweep.next_due_at is not None and sweep.next_due_at > _now()
     assert catalog.frequency == "hourly" and catalog.sections == [] and catalog.next_due_at is not None
@@ -157,14 +160,20 @@ async def test_a_narrowed_sweep_reaches_jamf_and_the_aperture(db, connection, ja
     assert aperture.document["quarantinedExtensionAttributes"] == ["9"]
 
     span = (
-        await db.execute(
-            select(ObservationSpan).where(
-                ObservationSpan.mdm_connection_id == connection.id,
-                ObservationSpan.subject_kind == "computer",
-                ObservationSpan.is_current.is_(True),
-            ).limit(1)
+        (
+            await db.execute(
+                select(ObservationSpan)
+                .where(
+                    ObservationSpan.mdm_connection_id == connection.id,
+                    ObservationSpan.subject_kind == "computer",
+                    ObservationSpan.is_current.is_(True),
+                )
+                .limit(1)
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     assert span is not None and set(span.section_digests) == {"general", "applications"}
 
 
@@ -173,8 +182,14 @@ async def test_claim_is_atomic_and_advances_next_due(db, connection) -> None:
     from app.models.schema import Collection
 
     row = Collection(
-        mdm_connection_id=connection.id, name="due now", kind="catalog", enabled=True, sections=[],
-        frequency="hourly", at_minute=0, timezone="UTC",
+        mdm_connection_id=connection.id,
+        name="due now",
+        kind="catalog",
+        enabled=True,
+        sections=[],
+        frequency="hourly",
+        at_minute=0,
+        timezone="UTC",
     )
     apply_schedule(row)
     row.next_due_at = _now() - timedelta(minutes=1)
@@ -211,12 +226,25 @@ async def test_claim_leaves_a_busy_connection_for_the_next_tick(db, connection) 
     from app.models.schema import Collection
 
     sweep = Collection(
-        mdm_connection_id=connection.id, name="sweep due", kind="device_sweep", enabled=True,
-        sections=["general"], frequency="daily", at_hour=1, at_minute=0, timezone="UTC",
+        mdm_connection_id=connection.id,
+        name="sweep due",
+        kind="device_sweep",
+        enabled=True,
+        sections=["general"],
+        frequency="daily",
+        at_hour=1,
+        at_minute=0,
+        timezone="UTC",
     )
     catalog = Collection(
-        mdm_connection_id=connection.id, name="catalog due", kind="catalog", enabled=True, sections=[],
-        frequency="hourly", at_minute=0, timezone="UTC",
+        mdm_connection_id=connection.id,
+        name="catalog due",
+        kind="catalog",
+        enabled=True,
+        sections=[],
+        frequency="hourly",
+        at_minute=0,
+        timezone="UTC",
     )
     for row in (sweep, catalog):
         apply_schedule(row)
@@ -244,8 +272,15 @@ async def test_tick_skips_a_collection_inside_its_rate_floor(db, connection, jam
     from app.models.schema import Collection
 
     row = Collection(
-        mdm_connection_id=connection.id, name="just ran", kind="device_sweep", enabled=True,
-        sections=["general"], frequency="daily", at_hour=1, at_minute=0, timezone="UTC",
+        mdm_connection_id=connection.id,
+        name="just ran",
+        kind="device_sweep",
+        enabled=True,
+        sections=["general"],
+        frequency="daily",
+        at_hour=1,
+        at_minute=0,
+        timezone="UTC",
     )
     apply_schedule(row)
     row.next_due_at = _now() - timedelta(minutes=1)
@@ -307,8 +342,10 @@ async def test_a_sweep_that_asks_for_eas_reads_the_sections_they_are_displayed_u
         )
     ).scalar_one()
     rows = (
-        await db.execute(select(DeviceExtensionAttribute).where(DeviceExtensionAttribute.device_id == synthetic.id))
-    ).scalars().all()
+        (await db.execute(select(DeviceExtensionAttribute).where(DeviceExtensionAttribute.device_id == synthetic.id)))
+        .scalars()
+        .all()
+    )
     assert {(row.definition_id, row.source) for row in rows} == {
         ("5", "extensionAttributes"),
         ("27", "extensionAttributes"),
@@ -499,9 +536,7 @@ async def _kill_the_process(db, run_id) -> None:
     await db.commit()
 
 
-async def test_a_reclaim_marks_the_collection_the_dead_run_was_serving(
-    db, connection, sweep, jamf: FakeJamf
-) -> None:
+async def test_a_reclaim_marks_the_collection_the_dead_run_was_serving(db, connection, sweep, jamf: FakeJamf) -> None:
     """The sweep that was killed at 03:12 does not still read `ok` at 08:00."""
     from app.core.runs import LOCK_DEVICE_SWEEP, TRIGGER_SWEEP, acquire
     from app.mdm.collections import run_collection
@@ -542,9 +577,7 @@ async def test_a_reclaim_marks_the_collection_the_dead_run_was_serving(
     assert sweep.last_success_at == succeeded_at
 
 
-async def test_a_reclaim_leaves_a_collection_that_recorded_its_own_outcome_alone(
-    db, connection, sweep, jamf: FakeJamf
-) -> None:
+async def test_a_reclaim_leaves_a_collection_that_recorded_its_own_outcome_alone(db, connection, sweep, jamf: FakeJamf) -> None:
     """The freshness guard, which is what keeps the fix from lying in the other direction.
 
     Run-now hands ONE run to every enabled sweep on a connection, so a process that dies
@@ -597,9 +630,7 @@ async def test_a_reclaimed_webhook_run_marks_no_collection(db, connection, sweep
     assert sweep.last_run_status == before
 
 
-async def test_a_mark_that_cannot_be_written_still_frees_the_lock(
-    db, connection, sweep, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_a_mark_that_cannot_be_written_still_frees_the_lock(db, connection, sweep, monkeypatch: pytest.MonkeyPatch) -> None:
     """The mark may be dropped. It may never take the verdicts — or the mutex — with it.
 
     The stamp above rides in the verdicts' transaction on purpose, so that a collection's
@@ -644,16 +675,12 @@ async def test_a_mark_that_cannot_be_written_still_frees_the_lock(
     sweep.last_run_status = "ok"
     await db.commit()
 
-    dead = await acquire(
-        db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP, collection_id=sweep.id
-    )
+    dead = await acquire(db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP, collection_id=sweep.id)
     assert dead.started
     await _kill_the_process(db, dead.run.id)
 
     async def _boom(session, rows, *, error: str) -> None:
-        await session.execute(
-            sa_update(Collection).where(Collection.id == sweep.id).values(last_run_status="failed")
-        )
+        await session.execute(sa_update(Collection).where(Collection.id == sweep.id).values(last_run_status="failed"))
         await session.execute(text("SELECT 1 / 0"))
 
     monkeypatch.setattr(runs_module, "_mark_collections_reclaimed", _boom)
@@ -670,14 +697,18 @@ async def test_a_mark_that_cannot_be_written_still_frees_the_lock(
         assert "heartbeat" in (verdict.error or "")
         assert verdict.finished_at is not None
         still_held = (
-            await witness.execute(
-                select(Run.id).where(
-                    Run.mdm_connection_id == connection.id,
-                    Run.lock_class == LOCK_DEVICE_SWEEP,
-                    Run.status == STATUS_RUNNING,
+            (
+                await witness.execute(
+                    select(Run.id).where(
+                        Run.mdm_connection_id == connection.id,
+                        Run.lock_class == LOCK_DEVICE_SWEEP,
+                        Run.status == STATUS_RUNNING,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert still_held == [revived.run.id]
 
     # The disclosed cost of that guarantee, in the same breath as the guarantee — and the
@@ -751,12 +782,8 @@ async def test_a_failed_mark_does_not_orphan_the_lock_it_just_freed(
     await db.commit()
 
     # 03:12. The pod is holding both locks on this connection, and then it is not.
-    dead_sweep = await acquire(
-        db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP, collection_id=sweep.id
-    )
-    dead_catalog = await acquire(
-        db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_CATALOG, collection_id=catalog.id
-    )
+    dead_sweep = await acquire(db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP, collection_id=sweep.id)
+    dead_catalog = await acquire(db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_CATALOG, collection_id=catalog.id)
     assert dead_sweep.started and dead_catalog.started
     await _kill_the_process(db, dead_sweep.run.id)
     await _kill_the_process(db, dead_catalog.run.id)
@@ -812,9 +839,7 @@ async def test_a_failed_mark_does_not_orphan_the_lock_it_just_freed(
     assert sweep.last_run_status == "ok" and sweep.last_run_at is not None
 
 
-async def test_a_reclaimed_collection_that_then_succeeds_reads_ok(
-    db, connection, sweep, jamf: FakeJamf
-) -> None:
+async def test_a_reclaimed_collection_that_then_succeeds_reads_ok(db, connection, sweep, jamf: FakeJamf) -> None:
     """The mark is a stand-in for a run nobody closed. The next real run outranks it.
 
     03:12, the pod dies. 03:15, the tick reaches the same collection: `acquire` reclaims
@@ -846,9 +871,7 @@ async def test_a_reclaimed_collection_that_then_succeeds_reads_ok(
     await db.refresh(sweep)
     assert sweep.last_run_status == "ok"
 
-    dead = await acquire(
-        db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP, collection_id=sweep.id
-    )
+    dead = await acquire(db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP, collection_id=sweep.id)
     assert dead.started
     await _kill_the_process(db, dead.run.id)
 
@@ -880,9 +903,15 @@ async def test_the_rate_floor_does_not_erase_a_failure(db, connection, jamf: Fak
     from app.models.schema import Collection
 
     row = Collection(
-        mdm_connection_id=connection.id, name=f"failed then floored {uuidlib.uuid4().hex[:8]}",
-        kind="device_sweep", enabled=True, sections=["general"],
-        frequency="daily", at_hour=1, at_minute=0, timezone="UTC",
+        mdm_connection_id=connection.id,
+        name=f"failed then floored {uuidlib.uuid4().hex[:8]}",
+        kind="device_sweep",
+        enabled=True,
+        sections=["general"],
+        frequency="daily",
+        at_hour=1,
+        at_minute=0,
+        timezone="UTC",
     )
     apply_schedule(row)
     row.next_due_at = _now() - timedelta(minutes=1)
@@ -947,9 +976,7 @@ async def _signed_in(email: str, password: str) -> httpx.AsyncClient:
     silently and every request after the 200 login comes back 401."""
     from app.main import app
 
-    client = httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="https://collections.example.com"
-    )
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://collections.example.com")
     response = await client.post("/api/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200, f"login failed: {response.status_code} {response.text}"
     client.headers["X-CSRF-Token"] = client.cookies.get("loon_csrf", "")

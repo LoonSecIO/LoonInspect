@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from app.core.config import settings
@@ -51,13 +51,11 @@ _RESERVED_RECORD_ATTRS = frozenset(
 
 
 def _extras(record: logging.LogRecord) -> dict[str, Any]:
-    return {
-        key: value for key, value in record.__dict__.items() if key not in _RESERVED_RECORD_ATTRS
-    }
+    return {key: value for key, value in record.__dict__.items() if key not in _RESERVED_RECORD_ATTRS}
 
 
 def _timestamp(record: logging.LogRecord) -> str:
-    moment = datetime.fromtimestamp(record.created, tz=timezone.utc)
+    moment = datetime.fromtimestamp(record.created, tz=UTC)
     return moment.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
@@ -142,9 +140,7 @@ def configure_logging() -> None:
     """
     handler = logging.StreamHandler(sys.stdout)
     handler.addFilter(ContextFilter())
-    handler.setFormatter(
-        JsonFormatter() if settings.resolved_log_format == "json" else ConsoleFormatter()
-    )
+    handler.setFormatter(JsonFormatter() if settings.resolved_log_format == "json" else ConsoleFormatter())
 
     root = logging.getLogger()
     root.handlers = [handler]

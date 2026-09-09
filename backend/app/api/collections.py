@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
@@ -124,7 +124,7 @@ def _validate_scope(collection: Collection) -> None:
 def _finalize(collection: Collection) -> None:
     _validate_scope(collection)
     try:
-        apply_schedule(collection, datetime.now(timezone.utc))
+        apply_schedule(collection, datetime.now(UTC))
     except ScheduleError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -202,9 +202,7 @@ async def list_connection_collections(connection_id: int, db: AsyncSession = Dep
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require(Permission.CONNECTION_WRITE))],
 )
-async def create_collection(
-    connection_id: int, payload: CollectionCreate, db: AsyncSession = Depends(get_db)
-) -> CollectionOut:
+async def create_collection(connection_id: int, payload: CollectionCreate, db: AsyncSession = Depends(get_db)) -> CollectionOut:
     connection = await _connection_or_404(connection_id, db)
     if connection.provider != MdmProvider.jamf.value:
         raise HTTPException(status_code=422, detail="Collections are available for Jamf Pro connections")
@@ -261,14 +259,24 @@ async def get_collection(collection_id: int, db: AsyncSession = Depends(get_db))
     response_model=CollectionOut,
     dependencies=[Depends(require(Permission.CONNECTION_WRITE))],
 )
-async def update_collection(
-    collection_id: int, payload: CollectionUpdate, db: AsyncSession = Depends(get_db)
-) -> CollectionOut:
+async def update_collection(collection_id: int, payload: CollectionUpdate, db: AsyncSession = Depends(get_db)) -> CollectionOut:
     row = await _collection_or_404(collection_id, db)
     data = payload.model_dump(exclude_unset=True, mode="json")
 
-    for key in ("name", "enabled", "sections", "selector", "page_size", "quarantined_extension_attributes",
-                "frequency", "interval_n", "at_hour", "at_minute", "weekday", "timezone"):
+    for key in (
+        "name",
+        "enabled",
+        "sections",
+        "selector",
+        "page_size",
+        "quarantined_extension_attributes",
+        "frequency",
+        "interval_n",
+        "at_hour",
+        "at_minute",
+        "weekday",
+        "timezone",
+    ):
         if key in data:
             setattr(row, key, data[key])
 

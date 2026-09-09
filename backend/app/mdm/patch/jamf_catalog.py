@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 from sqlalchemy import select
@@ -113,16 +113,14 @@ async def sync_catalog(db: AsyncSession) -> int:
         result = await db.execute(select(JamfPatchTitle))
         existing_rows = {row.id: row for row in result.scalars().all()}
 
-        to_refresh = [
-            summary for summary in summaries if _needs_refresh(existing_rows.get(summary.get("id")), summary)
-        ]
+        to_refresh = [summary for summary in summaries if _needs_refresh(existing_rows.get(summary.get("id")), summary)]
 
         details = await asyncio.gather(
             *(_fetch_title_detail(client, summary["id"]) for summary in to_refresh),
             return_exceptions=True,
         )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     synced = 0
 
     for summary, detail in zip(to_refresh, details, strict=True):

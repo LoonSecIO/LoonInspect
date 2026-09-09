@@ -161,9 +161,15 @@ def _second_inventory(jamf: FakeJamf) -> None:
     jamf.real["security"]["firewallEnabled"] = True
     jamf.real["applications"].append(
         {
-            "name": "Loon Inspector.app", "path": "/Applications/Loon Inspector.app", "version": "0.1",
-            "cfBundleShortVersionString": "0.1", "cfBundleVersion": "7", "macAppStore": False,
-            "bundleId": "io.loonsec.inspector", "updateAvailable": False, "externalVersionId": "0",
+            "name": "Loon Inspector.app",
+            "path": "/Applications/Loon Inspector.app",
+            "version": "0.1",
+            "cfBundleShortVersionString": "0.1",
+            "cfBundleVersion": "7",
+            "macAppStore": False,
+            "bundleId": "io.loonsec.inspector",
+            "updateAvailable": False,
+            "externalVersionId": "0",
         }
     )
 
@@ -211,12 +217,16 @@ async def five_families(db, jamf: FakeJamf, connection):
     await finish(db, failed.run, ok=False, error="Jamf returned 502 at page 41")
 
     rows = (
-        await db.execute(
-            select(EventOutbox)
-            .where(EventOutbox.id > high_water, EventOutbox.event_type.in_(FAMILIES))
-            .order_by(EventOutbox.id)
+        (
+            await db.execute(
+                select(EventOutbox)
+                .where(EventOutbox.id > high_water, EventOutbox.event_type.in_(FAMILIES))
+                .order_by(EventOutbox.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return rows, failed_run_id
 
 
@@ -308,7 +318,10 @@ async def test_the_run_uuid_has_one_name_and_the_documented_join_works(five_fami
     # docs/runs.md claim, now true without a qualification attached.
     joined = [row for row in sweep_events if row.payload.get("jobID") == sweep_id]
     assert {row.event_type for row in joined} == {
-        "device.inventory", "device.inventory.changed", "device.change", "run.completed",
+        "device.inventory",
+        "device.inventory.changed",
+        "device.change",
+        "run.completed",
     }
     assert len(joined) == len(sweep_events), "no event of this sweep is left out of the join"
 
@@ -344,15 +357,9 @@ async def test_the_two_device_families_agree_on_the_device_not_merely_on_casing(
     rows, _ = five_families
     # A computer subject specifically: `derive_and_record` also runs for computer_group
     # subjects, whose jamfProID is a group's id and has no inventory event to agree with.
-    change = next(
-        row for row in rows if row.event_type == "device.change" and row.payload["subjectKind"] == "computer"
-    )
+    change = next(row for row in rows if row.event_type == "device.change" and row.payload["subjectKind"] == "computer")
     inventory = [row for row in rows if row.event_type == "device.inventory.changed"]
-    match = next(
-        row
-        for row in inventory
-        if row.payload["deviceMeta"]["jamfProID"] == change.payload["deviceMeta"]["jamfProID"]
-    )
+    match = next(row for row in inventory if row.payload["deviceMeta"]["jamfProID"] == change.payload["deviceMeta"]["jamfProID"])
     assert match.payload["deviceMeta"]["serialNumber"] == change.payload["deviceMeta"]["serialNumber"]
     # One depth, both families: neither carries a root copy to disagree with.
     for key in ("jamfProID", "serialNumber", "trigger", "connectionID"):
@@ -424,11 +431,7 @@ async def test_the_change_family_carries_the_inventory_familys_own_device_block(
     change = next(row for row in changes if row.payload["subjectKind"] == "computer")
     # Both sides read the id out of the block: since #308 that is the only place either
     # family carries it, which is what makes one predicate work on both.
-    match = next(
-        row
-        for row in inventory
-        if row.payload["deviceMeta"]["jamfProID"] == change.payload["deviceMeta"]["jamfProID"]
-    )
+    match = next(row for row in inventory if row.payload["deviceMeta"]["jamfProID"] == change.payload["deviceMeta"]["jamfProID"])
     change_meta, inventory_meta = change.payload["deviceMeta"], match.payload["deviceMeta"]
 
     # The correlation key #189 named and #243 ruled onto this family: derived, not minted,

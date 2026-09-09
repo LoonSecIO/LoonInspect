@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import os
 import uuid as uuidlib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -108,9 +108,7 @@ async def connection(db):
         # assert on a catalog that has not seen those builds. Leaving them behind makes a
         # later file fail for a reason that has nothing to do with it.
         catalog_hashes = set(
-            (await db.execute(select(InstalledApp.version_hash).where(InstalledApp.device_id.in_(device_ids))))
-            .scalars()
-            .all()
+            (await db.execute(select(InstalledApp.version_hash).where(InstalledApp.device_id.in_(device_ids)))).scalars().all()
         )
         # Explicit rather than left to the cascade, so a failure in this suite cannot
         # leave rows behind for the next run's counts to fold in.
@@ -237,13 +235,17 @@ async def _alerts(db, connection_id: int):
     from app.models.schema import Alert, Device
 
     return (
-        await db.execute(
-            select(Alert)
-            .join(Device, Device.id == Alert.device_id)
-            .where(Device.mdm_connection_id == connection_id)
-            .order_by(Alert.id)
+        (
+            await db.execute(
+                select(Alert)
+                .join(Device, Device.id == Alert.device_id)
+                .where(Device.mdm_connection_id == connection_id)
+                .order_by(Alert.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
 
 async def test_the_latch_opens_stays_open_and_closes_itself(db, connection, jamf: FakeJamf) -> None:
@@ -331,8 +333,10 @@ async def test_a_version_bump_opens_nothing(db, connection, jamf: FakeJamf) -> N
     await _webhook(db, connection, jamf)
 
     installed = (
-        await db.execute(select(InstalledApp.version).where(InstalledApp.bundle_id == "com.tinyspeck.slackmacgap"))
-    ).scalars().all()
+        (await db.execute(select(InstalledApp.version).where(InstalledApp.bundle_id == "com.tinyspeck.slackmacgap")))
+        .scalars()
+        .all()
+    )
     assert "4.51.0" in installed, "the update really landed"
     assert await _alerts(db, connection.id) == [], "a version bump is not a new app"
 
@@ -381,9 +385,7 @@ async def test_an_open_latch_cannot_be_opened_twice(db, connection, jamf: FakeJa
 
     await sync_connection(db, connection)
     device = (
-        await db.execute(
-            select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == jamf.real["id"])
-        )
+        await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == jamf.real["id"]))
     ).scalar_one()
     rows = (await db.execute(select(InstalledApp).where(InstalledApp.device_id == device.id))).scalars().all()
     subject = rows[0]
@@ -443,7 +445,7 @@ async def test_closed_latches_age_out_and_open_ones_never_do(db, connection, jam
     await _webhook(db, connection, jamf)
     (row,) = await _alerts(db, connection.id)
 
-    ancient = datetime.now(timezone.utc) - timedelta(days=400)
+    ancient = datetime.now(UTC) - timedelta(days=400)
     await db.execute(update(Alert).where(Alert.id == row.id).values(opened_at=ancient))
     await db.commit()
     assert await purge_closed_alerts(db, 30) == 0, "an open latch is never purged, however old"

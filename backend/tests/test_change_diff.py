@@ -64,8 +64,11 @@ def test_an_app_version_bump_is_one_update(real: dict) -> None:
     after = c.canonicalize_computer(real)
 
     changes = diff_entries(
-        "applications", "application", ("name", "bundleId", "path"),
-        _entries(before, "applications"), _entries(after, "applications"),
+        "applications",
+        "application",
+        ("name", "bundleId", "path"),
+        _entries(before, "applications"),
+        _entries(after, "applications"),
     )
     assert len(changes) == 1
     change = changes[0]
@@ -80,14 +83,20 @@ def test_added_and_removed_apps(real: dict) -> None:
     real["applications"] = [a for a in real["applications"] if a["bundleId"] != "org.wireshark.Wireshark"]
     real["applications"].append(
         {
-            "name": "Ghostty.app", "path": "/Applications/Ghostty.app", "version": "1.1",
-            "bundleId": "com.mitchellh.ghostty", "macAppStore": False,
+            "name": "Ghostty.app",
+            "path": "/Applications/Ghostty.app",
+            "version": "1.1",
+            "bundleId": "com.mitchellh.ghostty",
+            "macAppStore": False,
         }
     )
     after = c.canonicalize_computer(real)
     changes = diff_entries(
-        "applications", "application", ("name", "bundleId", "path"),
-        _entries(before, "applications"), _entries(after, "applications"),
+        "applications",
+        "application",
+        ("name", "bundleId", "path"),
+        _entries(before, "applications"),
+        _entries(after, "applications"),
     )
     assert [(ch.change, ch.identity["bundleId"]) for ch in changes] == [
         ("removed", "org.wireshark.Wireshark"),
@@ -101,8 +110,11 @@ def test_account_admin_flip_is_an_update_with_the_field_named(real: dict) -> Non
     account["admin"] = False
     after = c.canonicalize_computer(real)
     changes = diff_entries(
-        "local_user_accounts", "local_user_account", ("uid", "username"),
-        _entries(before, "local_user_accounts"), _entries(after, "local_user_accounts"),
+        "local_user_accounts",
+        "local_user_account",
+        ("uid", "username"),
+        _entries(before, "local_user_accounts"),
+        _entries(after, "local_user_accounts"),
     )
     assert len(changes) == 1 and changes[0].change == "updated"
     assert changes[0].changed_fields == ("admin",)
@@ -114,8 +126,11 @@ def test_group_membership_uses_group_id_and_keeps_the_label(real: dict) -> None:
     real["groupMemberships"].append({"groupId": "12", "groupName": "Devices out of Checkin Compliance", "smartGroup": True})
     after = c.canonicalize_computer(real)
     changes = diff_entries(
-        "group_memberships", "group_membership", ("groupId",),
-        _entries(before, "group_memberships"), _entries(after, "group_memberships"),
+        "group_memberships",
+        "group_membership",
+        ("groupId",),
+        _entries(before, "group_memberships"),
+        _entries(after, "group_memberships"),
     )
     assert [(ch.change, ch.identity, ch.label) for ch in changes] == [
         ("added", {"groupId": "12"}, "Devices out of Checkin Compliance")
@@ -128,8 +143,11 @@ def test_extension_attribute_value_change_is_an_update(real: dict) -> None:
     ea["values"] = ["True"]
     after = c.canonicalize_computer(real)
     changes = diff_entries(
-        "extension_attributes", "extension_attribute", ("definitionId",),
-        _entries(before, "extension_attributes"), _entries(after, "extension_attributes"),
+        "extension_attributes",
+        "extension_attribute",
+        ("definitionId",),
+        _entries(before, "extension_attributes"),
+        _entries(after, "extension_attributes"),
     )
     assert len(changes) == 1
     assert changes[0].change == "updated" and changes[0].changed_fields == ("values",)

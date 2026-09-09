@@ -73,9 +73,7 @@ def _spa_app(static_dir) -> FastAPI:
         if full_path.startswith(app_main._ASSETS_PREFIX):
             raise HTTPException(status_code=404, detail="Not Found")
 
-        return app_main._static_response(
-            request, static_dir / "index.html", cache_control=app_main._NO_CACHE_CACHE_CONTROL
-        )
+        return app_main._static_response(request, static_dir / "index.html", cache_control=app_main._NO_CACHE_CACHE_CONTROL)
 
     return api
 
@@ -128,9 +126,7 @@ class TestNotModified:
 
     def test_if_none_match_wins_over_if_modified_since(self) -> None:
         """RFC 9110 §13.1.3: a client sending both means If-None-Match governs."""
-        request = _fake_request(
-            {"if-none-match": '"other"', "if-modified-since": "Wed, 01 Sep 2026 12:00:00 GMT"}
-        )
+        request = _fake_request({"if-none-match": '"other"', "if-modified-since": "Wed, 01 Sep 2026 12:00:00 GMT"})
         assert app_main._not_modified('"abc123"', "Wed, 01 Sep 2026 12:00:00 GMT", request) is False
 
 
@@ -166,9 +162,7 @@ class TestStaticResponse:
 
     def test_cache_control_is_whatever_the_caller_passed(self, static_dir) -> None:
         path = static_dir / "assets" / "app-abc123.js"
-        response = app_main._static_response(
-            _fake_request({}), path, cache_control="public, max-age=31536000, immutable"
-        )
+        response = app_main._static_response(_fake_request({}), path, cache_control="public, max-age=31536000, immutable")
         assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
 
 

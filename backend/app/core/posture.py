@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import distinct, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -155,7 +155,7 @@ RESERVED_KEYS: tuple[str, ...] = (
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _devices_on_active_connections():
@@ -207,9 +207,7 @@ def _patch_pairs(*criteria):
     on the row, and the dates are the row's own, so no fold across titles ever happens here."""
     stmt = (
         select(InstalledApp.device_id, AppCatalogTitleMatch.title_id)
-        .join_from(
-            AppCatalogTitleMatch, AppCatalogEntry, AppCatalogEntry.id == AppCatalogTitleMatch.app_catalog_id
-        )
+        .join_from(AppCatalogTitleMatch, AppCatalogEntry, AppCatalogEntry.id == AppCatalogTitleMatch.app_catalog_id)
         .join(InstalledApp, InstalledApp.version_hash == AppCatalogEntry.version_hash)
     )
     if criteria:
@@ -240,9 +238,7 @@ def _partitions(values: dict[str, float], total: str, parts: tuple[str, ...], *,
     """
     summed = sum(values[part] for part in parts)
     if summed != values[total]:  # pragma: no cover — an identity; the guard is the point
-        raise ValueError(
-            f"{what} does not partition {total}: {' + '.join(parts)} = {summed} != {values[total]}"
-        )
+        raise ValueError(f"{what} does not partition {total}: {' + '.join(parts)} = {summed} != {values[total]}")
 
 
 def _outbox_pending_where():
@@ -250,9 +246,7 @@ def _outbox_pending_where():
     delivery row that is still pending. A nightly point-sample by construction — the
     caveat is frozen into the key's definition."""
     pending_delivery = exists(
-        select(OutboxDelivery.id).where(
-            OutboxDelivery.outbox_event_id == EventOutbox.id, OutboxDelivery.status == "pending"
-        )
+        select(OutboxDelivery.id).where(OutboxDelivery.outbox_event_id == EventOutbox.id, OutboxDelivery.status == "pending")
     )
     return or_(EventOutbox.fanned_out.is_(False), pending_delivery)
 
@@ -273,18 +267,12 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
     values["devices.total"] = await _count(db, _devices_on_active_connections())
     values["devices.stale_checkin_7d"] = await _count(
         db,
-        _devices_on_active_connections().where(
-            or_(Device.last_check_in.is_(None), Device.last_check_in < stale_cutoff)
-        ),
+        _devices_on_active_connections().where(or_(Device.last_check_in.is_(None), Device.last_check_in < stale_cutoff)),
     )
-    values["devices.unmanaged"] = await _count(
-        db, _devices_on_active_connections().where(Device.managed.is_(False))
-    )
+    values["devices.unmanaged"] = await _count(db, _devices_on_active_connections().where(Device.managed.is_(False)))
     values["devices.stale_inventory_7d"] = await _count(
         db,
-        _devices_on_active_connections().where(
-            or_(Device.last_inventory_at.is_(None), Device.last_inventory_at < stale_cutoff)
-        ),
+        _devices_on_active_connections().where(or_(Device.last_inventory_at.is_(None), Device.last_inventory_at < stale_cutoff)),
     )
 
     # catalog.* — CatalogSummaryOut's semantics, computed here rather than through the
@@ -312,9 +300,7 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
     # do not from a customer's dashboard. NOTE the denominator this makes explicit: both are
     # over `entries` (every row the fleet has ever shown), never over `installed` (rows on a
     # device right now), so a "what fraction can Jamf patch" ratio must pick one and say which.
-    _partitions(
-        values, "catalog.entries", ("catalog.matched", "catalog.unmatched"), what="catalog entries by match"
-    )
+    _partitions(values, "catalog.entries", ("catalog.matched", "catalog.unmatched"), what="catalog entries by match")
 
     values["catalog.installed_not_latest"] = await _count(
         db,
@@ -428,9 +414,7 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
     values["alerts.open"] = await _count(db, _alerts_on_active_connections().where(Alert.closed_at.is_(None)))
     values["alerts.opened_24h"] = await _count(
         db,
-        _alerts_on_active_connections().where(
-            Alert.opened_at > window_start, Alert.opened_at <= captured_at
-        ),
+        _alerts_on_active_connections().where(Alert.opened_at > window_start, Alert.opened_at <= captured_at),
     )
 
     # runs.* — 30-day run retention against 12-month audit periods: these rows are the
@@ -452,17 +436,13 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
         .select_from(Run)
         .where(Run.status == STATUS_FAILED, Run.finished_at > window_start, Run.finished_at <= captured_at),
     )
-    stamping = (
-        await db.execute(select(Run.started_at, Run.finished_at).where(Run.id == run_id))
-    ).first()
+    stamping = (await db.execute(select(Run.started_at, Run.finished_at).where(Run.id == run_id))).first()
     if stamping is not None and stamping.started_at is not None and stamping.finished_at is not None:
         values["runs.full_sweep_duration_s"] = (stamping.finished_at - stamping.started_at).total_seconds()
 
     # outbox.* — pending is a nightly point-sample of a queue that drains continuously;
     # the caveat is part of the definition, not a footnote.
-    values["outbox.pending"] = await _count(
-        db, select(func.count()).select_from(EventOutbox).where(_outbox_pending_where())
-    )
+    values["outbox.pending"] = await _count(db, select(func.count()).select_from(EventOutbox).where(_outbox_pending_where()))
     entered_failed_at = func.coalesce(OutboxDelivery.last_attempted_at, OutboxDelivery.created_at)
     values["outbox.failed_24h"] = await _count(
         db,
@@ -484,18 +464,14 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
 
     # accounts.* / tokens.* — the operator surface. accounts.total is the non-revoked
     # set (status "active"); admins mirrors the accounts API's own last-admin count.
-    values["accounts.total"] = await _count(
-        db, select(func.count()).select_from(Account).where(Account.status == "active")
-    )
+    values["accounts.total"] = await _count(db, select(func.count()).select_from(Account).where(Account.status == "active"))
     values["accounts.admins"] = await _count(
         db,
         select(func.count(distinct(AccountRole.account_id)))
         .join_from(AccountRole, Account, Account.id == AccountRole.account_id)
         .where(Account.status == "active", AccountRole.role == Role.admin.value),
     )
-    values["tokens.active"] = await _count(
-        db, select(func.count()).select_from(ApiToken).where(ApiToken.revoked_at.is_(None))
-    )
+    values["tokens.active"] = await _count(db, select(func.count()).select_from(ApiToken).where(ApiToken.revoked_at.is_(None)))
 
     return values
 

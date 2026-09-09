@@ -62,12 +62,16 @@ async def _definition_spans(db, connection_id: int) -> dict[str, list]:
     from app.models.schema import ObservationSpan
 
     rows = (
-        await db.execute(
-            select(ObservationSpan)
-            .where(ObservationSpan.mdm_connection_id == connection_id, ObservationSpan.subject_kind == KIND)
-            .order_by(ObservationSpan.id)
+        (
+            await db.execute(
+                select(ObservationSpan)
+                .where(ObservationSpan.mdm_connection_id == connection_id, ObservationSpan.subject_kind == KIND)
+                .order_by(ObservationSpan.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     by_id: dict[str, list] = {}
     for row in rows:
         by_id.setdefault(row.subject_id, []).append(row)

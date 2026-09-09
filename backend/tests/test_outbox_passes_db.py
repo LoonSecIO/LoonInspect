@@ -52,7 +52,7 @@ from __future__ import annotations
 import json
 import os
 import uuid as uuidlib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -221,7 +221,7 @@ async def test_fan_out_creates_one_pending_delivery_per_subscribed_destination(d
     row = deliveries[0]
     assert row.status == "pending"
     assert row.attempt_count == 0
-    assert row.next_attempt_at <= datetime.now(timezone.utc)
+    assert row.next_attempt_at <= datetime.now(UTC)
     assert row.last_attempted_at is None
     assert row.last_error is None
     assert row.delivered_at is None
@@ -556,9 +556,7 @@ async def test_a_sync_enqueues_one_snapshot_per_device_per_pass_and_a_delta_only
     from app.models.schema import EventOutbox
 
     async def _by_type() -> dict[str, int]:
-        rows = await db.execute(
-            select(EventOutbox.event_type, func.count()).group_by(EventOutbox.event_type)
-        )
+        rows = await db.execute(select(EventOutbox.event_type, func.count()).group_by(EventOutbox.event_type))
         return dict(rows.all())
 
     first = await sync_connection(db, connection)
@@ -576,8 +574,10 @@ async def test_a_sync_enqueues_one_snapshot_per_device_per_pass_and_a_delta_only
     # Exactly one snapshot row per device per pass, on both passes — never two for one
     # device, never none: the grain the fan-out (#242) multiplies.
     snapshots = (
-        await db.execute(select(EventOutbox).where(EventOutbox.event_type == "device.inventory").order_by(EventOutbox.id))
-    ).scalars().all()
+        (await db.execute(select(EventOutbox).where(EventOutbox.event_type == "device.inventory").order_by(EventOutbox.id)))
+        .scalars()
+        .all()
+    )
     per_pass: dict[str, list[str]] = {}
     for row in snapshots:
         per_pass.setdefault(row.payload["jobID"], []).append(row.payload["deviceMeta"]["jamfProID"])
@@ -622,7 +622,7 @@ async def test_a_failed_post_stays_pending_and_waits_out_the_backoff(db, monkeyp
 
     seen = _mock_posts(monkeypatch, _boom)
     destination, _event, delivery = await _one_pending_delivery(db)
-    before = datetime.now(timezone.utc)
+    before = datetime.now(UTC)
 
     await deliver_pending(db)
 
@@ -647,7 +647,7 @@ async def test_a_delivery_scheduled_for_later_is_not_even_read(db, monkeypatch) 
 
     seen = _mock_posts(monkeypatch)
     _destination_row, _event, delivery = await _one_pending_delivery(db)
-    delivery.next_attempt_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    delivery.next_attempt_at = datetime.now(UTC) + timedelta(hours=1)
     await db.commit()
 
     await deliver_pending(db)
@@ -667,7 +667,7 @@ async def test_the_tenth_failure_dead_letters_and_schedules_nothing(db, monkeypa
 
     seen = _mock_posts(monkeypatch, _boom)
     _destination_row, _event, delivery = await _one_pending_delivery(db)
-    stale = datetime.now(timezone.utc) - timedelta(hours=1)
+    stale = datetime.now(UTC) - timedelta(hours=1)
     delivery.attempt_count = _MAX_ATTEMPTS - 1
     delivery.next_attempt_at = stale
     await db.commit()
@@ -707,7 +707,7 @@ async def test_a_destination_disabled_after_fan_out_leaves_its_delivery_pending(
     assert delivery.last_error is None
     assert destination.last_failure_at is None
     # Still due, so every tick re-reads it for as long as it stays disabled.
-    assert delivery.next_attempt_at <= datetime.now(timezone.utc)
+    assert delivery.next_attempt_at <= datetime.now(UTC)
 
     destination.enabled = True
     await db.commit()
@@ -746,7 +746,7 @@ async def test_one_destination_failing_does_not_hold_up_the_other(db, monkeypatc
 
 
 async def _age_event(db, event, days: int) -> None:
-    event.created_at = datetime.now(timezone.utc) - timedelta(days=days)
+    event.created_at = datetime.now(UTC) - timedelta(days=days)
     await db.commit()
 
 
@@ -810,11 +810,7 @@ async def test_one_pending_delivery_keeps_the_event_and_its_delivered_sibling(db
     assert await _counts(db) == (1, 2)
 
     # Once the last pending row reaches a terminal state, the whole event goes.
-    await db.execute(
-        OutboxDelivery.__table__.update()
-        .where(OutboxDelivery.destination_id == broken.id)
-        .values(status="failed")
-    )
+    await db.execute(OutboxDelivery.__table__.update().where(OutboxDelivery.destination_id == broken.id).values(status="failed"))
     await db.commit()
     assert await purge_delivered_events(db, 7) == 1
     assert await _counts(db) == (0, 0)
@@ -848,7 +844,7 @@ async def _dead_letter(db, **destination_overrides):
     delivery.status = "failed"
     delivery.attempt_count = 10
     delivery.last_error = "HTTP 500: destination is having a day"
-    delivery.last_attempted_at = datetime.now(timezone.utc)
+    delivery.last_attempted_at = datetime.now(UTC)
     await db.commit()
     return destination, event, delivery
 
@@ -886,14 +882,14 @@ async def test_a_redrive_returns_the_dead_letter_to_the_queue_and_the_next_tick_
     from app.core.outbox import deliver_pending, redrive_failed
 
     destination, _event, delivery = await _dead_letter(db)
-    before = datetime.now(timezone.utc)
+    before = datetime.now(UTC)
 
     assert await redrive_failed(db, destination.id) == 1
     await db.commit()
     await db.refresh(delivery)
     assert delivery.status == "pending"
     assert delivery.attempt_count == 0
-    assert delivery.next_attempt_at <= datetime.now(timezone.utc)
+    assert delivery.next_attempt_at <= datetime.now(UTC)
     assert delivery.next_attempt_at >= before - timedelta(seconds=1)
     assert delivery.last_error == "HTTP 500: destination is having a day", "kept: the row is pending because of it"
 
@@ -1025,10 +1021,7 @@ async def test_the_ordering_columns_are_both_indexed(db) -> None:
     definitions = dict(
         (
             await db.execute(
-                sa_text(
-                    "SELECT indexname, indexdef FROM pg_indexes "
-                    "WHERE tablename IN ('event_outbox', 'outbox_deliveries')"
-                )
+                sa_text("SELECT indexname, indexdef FROM pg_indexes WHERE tablename IN ('event_outbox', 'outbox_deliveries')")
             )
         ).all()
     )
@@ -1129,7 +1122,7 @@ async def test_the_ceiling_takes_the_most_overdue_delivery_not_the_oldest_row(db
     await fan_out_pending(db)
 
     # Due-time order deliberately the reverse of id order.
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     overdue = [timedelta(seconds=1), timedelta(minutes=5), timedelta(hours=1)]
     for row, overdue_by in zip(await _deliveries(db), overdue, strict=True):
         row.next_attempt_at = now - overdue_by

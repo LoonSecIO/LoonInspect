@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select, update
@@ -61,14 +61,12 @@ def _account_out(account: Account, permissions: Iterable[Permission] | None = No
 
 
 async def _get_attempt(db: AsyncSession, identifier: str, ip: str) -> LoginAttempt | None:
-    result = await db.execute(
-        select(LoginAttempt).where(LoginAttempt.identifier == identifier, LoginAttempt.ip == ip)
-    )
+    result = await db.execute(select(LoginAttempt).where(LoginAttempt.identifier == identifier, LoginAttempt.ip == ip))
     return result.scalar_one_or_none()
 
 
 async def _record_failure(db: AsyncSession, identifier: str, ip: str) -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     attempt = await _get_attempt(db, identifier, ip)
 
     if attempt is None:
@@ -168,7 +166,7 @@ async def setup(
         ip=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
-    account.last_login_at = datetime.now(timezone.utc)
+    account.last_login_at = datetime.now(UTC)
     await db.commit()
 
     # `account` was constructed in Python rather than loaded by a query, so its roles
@@ -211,7 +209,7 @@ async def login(
 ) -> AccountOut:
     email = payload.email.strip().lower()
     ip = _client_ip(request)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     attempt = await _get_attempt(db, email, ip)
     locked_until = as_utc(attempt.locked_until) if attempt is not None else None
@@ -242,13 +240,7 @@ async def login(
     # back to a dummy hash so an unknown address costs the same time as a real one.
     password_ok = verify_password(identity.secret_hash if identity else None, payload.password)
 
-    if (
-        account is None
-        or identity is None
-        or not password_ok
-        or account.status != "active"
-        or account.is_service_account
-    ):
+    if account is None or identity is None or not password_ok or account.status != "active" or account.is_service_account:
         await _record_failure(db, email, ip)
         # One message for every failure mode above. Distinguishing "no such account"
         # from "wrong password" from "disabled" hands an attacker a free account
@@ -352,9 +344,7 @@ async def change_password(
         )
 
     result = await db.execute(
-        select(AuthIdentity).where(
-            AuthIdentity.account_id == principal.account.id, AuthIdentity.provider == "local"
-        )
+        select(AuthIdentity).where(AuthIdentity.account_id == principal.account.id, AuthIdentity.provider == "local")
     )
     identity = result.scalar_one_or_none()
 
@@ -368,7 +358,7 @@ async def change_password(
         )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Current password is incorrect")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     identity.secret_hash = hash_password(payload.new_password)
     identity.password_changed_at = now
 

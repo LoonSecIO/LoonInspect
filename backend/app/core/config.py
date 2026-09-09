@@ -325,8 +325,7 @@ class Settings(BaseSettings):
         if value == 0 or 60 <= value <= _MAX_SESSION_LIFETIME_SECONDS:
             return value
         raise ValueError(
-            "session_lifetime_seconds must be 0 (never idle out) or between 60 and "
-            f"{_MAX_SESSION_LIFETIME_SECONDS} (14 days)"
+            f"session_lifetime_seconds must be 0 (never idle out) or between 60 and {_MAX_SESSION_LIFETIME_SECONDS} (14 days)"
         )
 
     @property

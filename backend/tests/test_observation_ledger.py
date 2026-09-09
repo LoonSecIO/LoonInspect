@@ -15,7 +15,7 @@ import copy
 import json
 import os
 import uuid as uuidlib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -29,7 +29,7 @@ pytestmark = [
 
 FIXTURE = Path(__file__).parent / "fixtures" / "jamf" / "computer_inventory_detail.json"
 TENANT2_ID = uuidlib.UUID("00000000-0000-0000-0000-0000000000a2")
-T0 = datetime(2026, 8, 21, 7, 15, 42, tzinfo=timezone.utc)
+T0 = datetime(2026, 8, 21, 7, 15, 42, tzinfo=UTC)
 
 
 def _raw(*, subject_id: str = "42", report_at: datetime = T0) -> dict:
@@ -175,8 +175,11 @@ async def test_a_changed_section_opens_a_new_span_linked_to_the_old(db, connecti
     later = _raw(subject_id=subject, report_at=T0 + timedelta(days=1))
     later["applications"].append(
         {
-            "name": "Ledger Test.app", "path": "/Applications/Ledger Test.app", "version": "1.0",
-            "bundleId": f"io.loon.{subject}", "macAppStore": False,
+            "name": "Ledger Test.app",
+            "path": "/Applications/Ledger Test.app",
+            "version": "1.0",
+            "bundleId": f"io.loon.{subject}",
+            "macAppStore": False,
         }
     )
     second = await _record(db, connection_id, aperture_digest, later)
@@ -194,9 +197,9 @@ async def test_a_changed_section_opens_a_new_span_linked_to_the_old(db, connecti
 
     current = (
         await db.execute(
-            select(func.count()).select_from(ObservationSpan).where(
-                ObservationSpan.subject_id == subject, ObservationSpan.is_current.is_(True)
-            )
+            select(func.count())
+            .select_from(ObservationSpan)
+            .where(ObservationSpan.subject_id == subject, ObservationSpan.is_current.is_(True))
         )
     ).scalar_one()
     assert current == 1
@@ -338,8 +341,12 @@ async def test_extension_attribute_definitions_are_subjects_too(db, connection_i
 
     definition_id = f"ea{uuidlib.uuid4().hex[:8]}"
     definition = {
-        "id": definition_id, "name": "Ledger Attribute", "dataType": "STRING", "enabled": True,
-        "inventoryDisplayType": "GENERAL", "inputType": {"type": "TEXT"},
+        "id": definition_id,
+        "name": "Ledger Attribute",
+        "dataType": "STRING",
+        "enabled": True,
+        "inventoryDisplayType": "GENERAL",
+        "inputType": {"type": "TEXT"},
     }
     first = await observe(definition)
     assert first.outcome == "new"

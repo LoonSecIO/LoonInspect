@@ -8,7 +8,7 @@ on save, and the rate floor that makes a manual run reset the scheduled one.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -31,7 +31,7 @@ CHICAGO = "America/Chicago"
 
 
 def _utc(*parts: int) -> datetime:
-    return datetime(*parts, tzinfo=timezone.utc)
+    return datetime(*parts, tzinfo=UTC)
 
 
 def _local(zone: str, *parts: int) -> datetime:

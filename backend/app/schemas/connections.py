@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
@@ -19,7 +19,7 @@ from app.schemas.payload import MdmProvider
 BaseUrl = Annotated[str, AfterValidator(validate_mdm_base_url)]
 
 
-class PatchManagementProvider(str, Enum):
+class PatchManagementProvider(StrEnum):
     none = "none"
     jamf = "jamf"
     loonsecio = "loonsecio"
@@ -31,10 +31,7 @@ def validate_patch_provider_available(provider: PatchManagementProvider) -> None
     pattern. Enforced when the field is *set*, not against stored rows, so an old row
     holding the value stays editable until someone touches this field."""
     if provider == PatchManagementProvider.loonsecio:
-        raise ValueError(
-            "LoonSecIO patch management is not yet available; leave "
-            "patch_management_provider at 'none' or 'jamf'"
-        )
+        raise ValueError("LoonSecIO patch management is not yet available; leave patch_management_provider at 'none' or 'jamf'")
 
 
 def validate_jamf_specific_fields(

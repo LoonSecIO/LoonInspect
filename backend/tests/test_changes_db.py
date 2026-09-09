@@ -1,4 +1,3 @@
-# ruff: noqa: E501 — assertion lines read better unwrapped in this end-to-end test.
 """The change log end to end: a sweep, then the device changes, then the rows and events
 the policy keeps — against a real Postgres and the fake Jamf tenant.
 
@@ -14,7 +13,7 @@ from __future__ import annotations
 import json
 import os
 import uuid as uuidlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -84,11 +83,23 @@ def _second_inventory(jamf: FakeJamf) -> dict:
     slack["cfBundleVersion"] = "451000000"
     real["localUserAccounts"].append(
         {
-            "uid": "503", "userGuid": None, "username": "contractor", "fullName": "Contractor", "admin": True,
-            "userAccountType": "LOCAL", "homeDirectory": "/Users/contractor", "homeDirectorySizeMb": -1,
-            "fileVault2Enabled": False, "passwordMinLength": 4, "passwordMaxAge": None,
-            "passwordMinComplexCharacters": None, "passwordRequireAlphanumeric": False, "passwordHistoryDepth": None,
-            "computerAzureActiveDirectoryId": None, "userAzureActiveDirectoryId": None, "azureActiveDirectoryId": None,
+            "uid": "503",
+            "userGuid": None,
+            "username": "contractor",
+            "fullName": "Contractor",
+            "admin": True,
+            "userAccountType": "LOCAL",
+            "homeDirectory": "/Users/contractor",
+            "homeDirectorySizeMb": -1,
+            "fileVault2Enabled": False,
+            "passwordMinLength": 4,
+            "passwordMaxAge": None,
+            "passwordMinComplexCharacters": None,
+            "passwordRequireAlphanumeric": False,
+            "passwordHistoryDepth": None,
+            "computerAzureActiveDirectoryId": None,
+            "userAzureActiveDirectoryId": None,
+            "azureActiveDirectoryId": None,
         }
     )
     real["security"]["firewallEnabled"] = True
@@ -102,12 +113,16 @@ async def _rows(db, connection_id: int, subject_id: str):
     from app.models.schema import DeviceChange
 
     return (
-        await db.execute(
-            select(DeviceChange)
-            .where(DeviceChange.mdm_connection_id == connection_id, DeviceChange.subject_id == subject_id)
-            .order_by(DeviceChange.id)
+        (
+            await db.execute(
+                select(DeviceChange)
+                .where(DeviceChange.mdm_connection_id == connection_id, DeviceChange.subject_id == subject_id)
+                .order_by(DeviceChange.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
 
 async def test_changes_are_derived_under_the_default_policy(db, connection, jamf: FakeJamf) -> None:
@@ -122,8 +137,12 @@ async def test_changes_are_derived_under_the_default_policy(db, connection, jamf
     # Deduplicate the group membership the fixture already has for group 1.
     jamf.real["groupMemberships"] = [g for g in jamf.real["groupMemberships"] if g["groupId"] != "1"]
     _second_inventory(jamf)
-    events_before = (await db.execute(select(func.count()).select_from(EventOutbox).where(EventOutbox.event_type == "device.change"))).scalar_one()
-    result = await ingest_webhook(db, connection, {"webhook": {"webhookEvent": "ComputerInventoryCompleted"}, "event": {"jssID": real_id}})
+    events_before = (
+        await db.execute(select(func.count()).select_from(EventOutbox).where(EventOutbox.event_type == "device.change"))
+    ).scalar_one()
+    result = await ingest_webhook(
+        db, connection, {"webhook": {"webhookEvent": "ComputerInventoryCompleted"}, "event": {"jssID": real_id}}
+    )
     assert result is not None and result.outcome == "changed"
 
     rows = await _rows(db, connection.id, real_id)
@@ -139,18 +158,26 @@ async def test_changes_are_derived_under_the_default_policy(db, connection, jamf
     assert os_build.old_value == {"value": "26A5378n"} and os_build.new_value == {"value": "26A5416b"}
 
     system_updates = [
-        r for r in rows
-        if r.entry_kind == "application" and r.change == "updated"
+        r
+        for r in rows
+        if r.entry_kind == "application"
+        and r.change == "updated"
         and (r.entry_identity or {}).get("path", "").startswith("/System/")
     ]
     assert system_updates == [], "system apps must collapse into the OS update by default"
 
-    slack = next(r for r in rows if r.entry_kind == "application" and (r.entry_identity or {}).get("bundleId") == "com.tinyspeck.slackmacgap")
+    slack = next(
+        r
+        for r in rows
+        if r.entry_kind == "application" and (r.entry_identity or {}).get("bundleId") == "com.tinyspeck.slackmacgap"
+    )
     assert slack.change == "updated" and slack.level == "normal"
     assert slack.old_value["version"] == "4.50.143" and slack.new_value["version"] == "4.51.0"
     assert set(slack.details["changedFields"]) == {"version", "cfBundleShortVersionString", "cfBundleVersion"}
 
-    contractor = next(r for r in rows if r.entry_kind == "local_user_account" and (r.entry_identity or {}).get("username") == "contractor")
+    contractor = next(
+        r for r in rows if r.entry_kind == "local_user_account" and (r.entry_identity or {}).get("username") == "contractor"
+    )
     assert contractor.change == "added" and contractor.level == "high" and contractor.new_value["admin"] is True
 
     firewall = next(r for r in rows if r.section == "security" and r.field == "firewallEnabled")
@@ -162,9 +189,15 @@ async def test_changes_are_derived_under_the_default_policy(db, connection, jamf
 
     assert not any(r.section == "purchasing" for r in rows), "purchasing is low and off by default"
 
-    events_after = (await db.execute(select(func.count()).select_from(EventOutbox).where(EventOutbox.event_type == "device.change"))).scalar_one()
+    events_after = (
+        await db.execute(select(func.count()).select_from(EventOutbox).where(EventOutbox.event_type == "device.change"))
+    ).scalar_one()
     assert events_after - events_before == len(rows)
-    latest = (await db.execute(select(EventOutbox).where(EventOutbox.event_type == "device.change").order_by(EventOutbox.id.desc()).limit(1))).scalar_one()
+    latest = (
+        await db.execute(
+            select(EventOutbox).where(EventOutbox.event_type == "device.change").order_by(EventOutbox.id.desc()).limit(1)
+        )
+    ).scalar_one()
     # camelCase with `ID` uppercased (#188). The device is named in `deviceMeta` and
     # nowhere else since #308: the root copies of `jamfProID` / `serialNumber` came off,
     # because the inventory sub-event has no root identity at all and a customer's bare
@@ -186,7 +219,7 @@ async def test_changes_are_derived_under_the_default_policy(db, connection, jamf
     # inventory event from the same pull sit at one `_time` rather than two.
     row = next(r for r in rows if r.section == "operating_system" and r.field == "version")
     assert hints["time"] == row.observed_at.timestamp()
-    assert hints["time"] == datetime(2026, 8, 23, 9, 0, tzinfo=timezone.utc).timestamp()
+    assert hints["time"] == datetime(2026, 8, 23, 9, 0, tzinfo=UTC).timestamp()
     # `host` is the same string the inventory family ships as deviceMeta.hostName —
     # read off the device row here so the two families cannot drift to two spellings.
     hostname = (
@@ -225,14 +258,18 @@ async def test_everything_preset_logs_low_fields_and_system_apps(db, connection,
     real_id = jamf.real["id"]
     jamf.real["groupMemberships"] = [g for g in jamf.real["groupMemberships"] if g["groupId"] != "1"]
     _second_inventory(jamf)
-    result = await ingest_webhook(db, connection, {"webhook": {"webhookEvent": "ComputerInventoryCompleted"}, "event": {"jssID": real_id}})
+    result = await ingest_webhook(
+        db, connection, {"webhook": {"webhookEvent": "ComputerInventoryCompleted"}, "event": {"jssID": real_id}}
+    )
     assert result is not None and result.outcome == "changed"
 
     rows = await _rows(db, connection.id, real_id)
     assert any(r.section == "purchasing" and r.field == "poNumber" and r.level == "low" for r in rows)
     system_updates = [
-        r for r in rows
-        if r.entry_kind == "application" and r.change == "updated"
+        r
+        for r in rows
+        if r.entry_kind == "application"
+        and r.change == "updated"
         and (r.entry_identity or {}).get("path", "").startswith("/System/")
     ]
     assert len(system_updates) >= 60

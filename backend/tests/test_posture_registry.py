@@ -73,9 +73,7 @@ def test_the_population_rules_are_written_down() -> None:
 
     assert "## Population" in doc
     header = doc.split("## Population")[0]
-    assert "platform, value, captured_at, full_sweep_run_id" in header, (
-        "the row shape at the top of the doc must carry platform"
-    )
+    assert "platform, value, captured_at, full_sweep_run_id" in header, "the row shape at the top of the doc must carry platform"
     for token in ("macos", "ios", "ipados", "tvos", "visionos"):
         assert f"`{token}`" in doc, f"the platform vocabulary must name {token}"
     assert "uq_posture_snapshot_capture" in doc

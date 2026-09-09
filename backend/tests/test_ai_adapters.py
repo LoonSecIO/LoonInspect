@@ -53,9 +53,7 @@ from app.core.egress import (
 )
 
 KEY = "sk-never-to-be-seen-again"
-REQ = CompletionRequest(
-    base_url="http://host.docker.internal:11434/v1", model="qwen3.5:2b-mlx", prompt="Tell me a joke."
-)
+REQ = CompletionRequest(base_url="http://host.docker.internal:11434/v1", model="qwen3.5:2b-mlx", prompt="Tell me a joke.")
 
 # --- request shapes -----------------------------------------------------------------------
 
@@ -75,9 +73,7 @@ def test_openai_request_is_the_documented_shape_and_carries_nothing_extra():
 
 
 def test_openai_request_adds_bearer_and_reasoning_effort_only_when_given():
-    req = CompletionRequest(
-        base_url="https://api.openai.com/v1/", model="m", prompt="p", api_key=KEY, reasoning_effort="none"
-    )
+    req = CompletionRequest(base_url="https://api.openai.com/v1/", model="m", prompt="p", api_key=KEY, reasoning_effort="none")
     url, headers, body = build_request(Wire.openai_chat, req)
     assert url == "https://api.openai.com/v1/chat/completions"
     assert headers["Authorization"] == f"Bearer {KEY}"
@@ -275,9 +271,7 @@ async def test_rejections_carry_the_status_a_hint_and_a_bounded_message(status, 
 
 async def test_a_non_json_rejection_shows_its_size_and_type_but_never_its_body():
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            502, text="<html><title>nginx/1.25 banner</title></html>", headers={"content-type": "text/html"}
-        )
+        return httpx.Response(502, text="<html><title>nginx/1.25 banner</title></html>", headers={"content-type": "text/html"})
 
     with pytest.raises(AdapterError) as excinfo:
         await complete(Wire.openai_chat, REQ, transport=_server(handler))

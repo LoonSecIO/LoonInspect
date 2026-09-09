@@ -1,4 +1,3 @@
-# ruff: noqa: E501 — assertion lines read better unwrapped in this end-to-end test.
 """Jamf Patch matching through the real ingest path, now via the tenant app catalog (#67): the
 catalog slice in `jamf_patch_titles`, a sweep of the fake tenant, then the catalog rows with
 first/last seen, the title matches per row, the copies on `installed_apps`, and the tenant-scoped
@@ -107,7 +106,9 @@ async def _forget_fixture_apps(db, jamf: FakeJamf) -> None:
     await db.commit()
 
 
-async def test_a_second_platform_gets_its_own_rows_and_no_jamf_answer(db, jamf: FakeJamf, connection, catalog_rows, monkeypatch) -> None:
+async def test_a_second_platform_gets_its_own_rows_and_no_jamf_answer(
+    db, jamf: FakeJamf, connection, catalog_rows, monkeypatch
+) -> None:
     """#236: a universal app is one hash and two catalog rows, and the row that is not a Mac
     considers no titles — Jamf Patch is macOS-only — while the Mac's row keeps its answer."""
     from app.mdm.jamf import client as jamf_client
@@ -116,24 +117,50 @@ async def test_a_second_platform_gets_its_own_rows_and_no_jamf_answer(db, jamf: 
 
     await _forget_fixture_apps(db, jamf)
     assert (await sync_connection(db, connection)).ok
-    real = (await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == jamf.real["id"], Device.platform == "macos"))).scalar_one()
-    mac_apps = {row.name: row for row in (await db.execute(select(InstalledApp).where(InstalledApp.device_id == real.id))).scalars().all()}
+    real = (
+        await db.execute(
+            select(Device).where(
+                Device.mdm_connection_id == connection.id, Device.external_id == jamf.real["id"], Device.platform == "macos"
+            )
+        )
+    ).scalar_one()
+    mac_apps = {
+        row.name: row for row in (await db.execute(select(InstalledApp).where(InstalledApp.device_id == real.id))).scalars().all()
+    }
     xcode_hash = mac_apps["Xcode.app"].version_hash
-    mac_row = (await db.execute(select(AppCatalogEntry).where(AppCatalogEntry.platform == "macos", AppCatalogEntry.version_hash == xcode_hash))).scalar_one()
+    mac_row = (
+        await db.execute(
+            select(AppCatalogEntry).where(AppCatalogEntry.platform == "macos", AppCatalogEntry.version_hash == xcode_hash)
+        )
+    ).scalar_one()
     assert mac_row.jamf_title_ids == ["0C3"] and mac_row.patch_state == "latest"
 
     # The same records read by a client that declares another platform.
     monkeypatch.setattr(jamf_client, "COMPUTER_PLATFORM", "ios")
     assert (await sync_connection(db, connection)).ok
-    ios_row = (await db.execute(select(AppCatalogEntry).where(AppCatalogEntry.platform == "ios", AppCatalogEntry.version_hash == xcode_hash))).scalar_one()
+    ios_row = (
+        await db.execute(
+            select(AppCatalogEntry).where(AppCatalogEntry.platform == "ios", AppCatalogEntry.version_hash == xcode_hash)
+        )
+    ).scalar_one()
     assert ios_row.id != mac_row.id
     assert ios_row.jamf_title_ids is None and ios_row.patch_state is None, "no titles considered: not matchable"
     assert ios_row.evaluated_signature, "judged — and the judgement is that nothing applies"
     # The Mac's row and its copies did not move.
     await db.refresh(mac_row)
     assert mac_row.jamf_title_ids == ["0C3"] and mac_row.patch_state == "latest"
-    ios_device = (await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == jamf.real["id"], Device.platform == "ios"))).scalar_one()
-    ios_xcode = (await db.execute(select(InstalledApp).where(InstalledApp.device_id == ios_device.id, InstalledApp.version_hash == xcode_hash))).scalar_one()
+    ios_device = (
+        await db.execute(
+            select(Device).where(
+                Device.mdm_connection_id == connection.id, Device.external_id == jamf.real["id"], Device.platform == "ios"
+            )
+        )
+    ).scalar_one()
+    ios_xcode = (
+        await db.execute(
+            select(InstalledApp).where(InstalledApp.device_id == ios_device.id, InstalledApp.version_hash == xcode_hash)
+        )
+    ).scalar_one()
     assert ios_xcode.jamf_title_ids is None and ios_xcode.last_patch_check_at is not None
     await db.refresh(mac_apps["Xcode.app"])
     assert mac_apps["Xcode.app"].jamf_title_ids == ["0C3"]
@@ -165,12 +192,25 @@ async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connec
     result = await sync_connection(db, connection)
     assert result.ok and result.device_count == 2, result
 
-    real = (await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == jamf.real["id"]))).scalar_one()
-    apps = {row.name: row for row in (await db.execute(select(InstalledApp).where(InstalledApp.device_id == real.id))).scalars().all()}
+    real = (
+        await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == jamf.real["id"]))
+    ).scalar_one()
+    apps = {
+        row.name: row for row in (await db.execute(select(InstalledApp).where(InstalledApp.device_id == real.id))).scalars().all()
+    }
     assert len(apps) == 83
 
     # One catalog row per distinct (name, bundle ID, version) the device showed, first == last seen on a first sweep.
-    entries = {e.version_hash: e for e in (await db.execute(select(AppCatalogEntry).where(AppCatalogEntry.version_hash.in_([a.version_hash for a in apps.values()])))).scalars().all()}
+    entries = {
+        e.version_hash: e
+        for e in (
+            await db.execute(
+                select(AppCatalogEntry).where(AppCatalogEntry.version_hash.in_([a.version_hash for a in apps.values()]))
+            )
+        )
+        .scalars()
+        .all()
+    }
     assert len(entries) == len({a.version_hash for a in apps.values()})
     xcode_entry = entries[apps["Xcode.app"].version_hash]
     assert xcode_entry.first_seen_at == xcode_entry.last_seen_at and xcode_entry.evaluated_signature
@@ -179,9 +219,19 @@ async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connec
 
     # The copies on the device's rows.
     xcode = apps["Xcode.app"]
-    assert xcode.jamf_title_ids == ["0C3"] and xcode.patch_state == "latest" and xcode.is_compliant is True and xcode.patch_available is False
+    assert (
+        xcode.jamf_title_ids == ["0C3"]
+        and xcode.patch_state == "latest"
+        and xcode.is_compliant is True
+        and xcode.patch_available is False
+    )
     safari = apps["Safari.app"]
-    assert safari.patch_state == "ahead" and safari.this_version_seen is False and safari.is_compliant is False and safari.patch_available is False
+    assert (
+        safari.patch_state == "ahead"
+        and safari.this_version_seen is False
+        and safari.is_compliant is False
+        and safari.patch_available is False
+    )
     camtasia = apps["Camtasia 2022.app"]
     assert camtasia.jamf_title_ids == ["608", "514"] and camtasia.patch_state == "latest" and camtasia.is_compliant is True
     slack = apps["Slack.app"]
@@ -191,14 +241,24 @@ async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connec
     assert unmatched.is_compliant is None and unmatched.last_patch_check_at is not None
 
     # The title matches, one per (catalog row, title).
-    match_rows = (await db.execute(select(AppCatalogTitleMatch).where(AppCatalogTitleMatch.app_catalog_id.in_([e.id for e in entries.values()])))).scalars().all()
+    match_rows = (
+        (
+            await db.execute(
+                select(AppCatalogTitleMatch).where(AppCatalogTitleMatch.app_catalog_id.in_([e.id for e in entries.values()]))
+            )
+        )
+        .scalars()
+        .all()
+    )
     by_entry: dict[int, list] = {}
     for row in match_rows:
         by_entry.setdefault(row.app_catalog_id, []).append(row)
     assert len(match_rows) == 13 and len(by_entry) == 11
     assert all(row.releases_missed is not None for row in match_rows)
     wireshark = {row.title_id: row for row in by_entry[entries[apps["Wireshark.app"].version_hash].id]}
-    assert set(wireshark) == {"5F6", "612"} and all(row.basis == "requirements" and row.state == "behind" for row in wireshark.values())
+    assert set(wireshark) == {"5F6", "612"} and all(
+        row.basis == "requirements" and row.state == "behind" for row in wireshark.values()
+    )
     assert entries[apps["PyCharm.app"].version_hash].id not in by_entry  # attribute-only title: not considered
 
     # What the Jamf Patch page reads, through the catalog row (tenant-scoped by RLS):
@@ -229,7 +289,13 @@ async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connec
     await db.refresh(xcode)
     assert xcode_entry.first_seen_at == first_seen and xcode_entry.last_seen_at == last_seen
     assert xcode.last_patch_check_at == checked
-    again = (await db.execute(select(func.count()).select_from(AppCatalogTitleMatch).where(AppCatalogTitleMatch.app_catalog_id.in_([e.id for e in entries.values()])))).scalar_one()
+    again = (
+        await db.execute(
+            select(func.count())
+            .select_from(AppCatalogTitleMatch)
+            .where(AppCatalogTitleMatch.app_catalog_id.in_([e.id for e in entries.values()]))
+        )
+    ).scalar_one()
     assert again == 13
 
     # Once the row is older than the granularity, the next device process moves last_seen.
@@ -267,9 +333,18 @@ async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connec
     # And the list really is every answer column on the row — a new one added to the model
     # without being added to `answer_columns` is caught here rather than in production.
     assert set(answer_columns(xcode_entry)) == {
-        "jamf_title_ids", "patch_state", "is_compliant", "patch_available", "patch_available_since",
-        "releases_missed", "this_version_seen", "latest_version", "latest_released_at", "ea_assumed",
-        "reference_title_id", "sentence_title_id",
+        "jamf_title_ids",
+        "patch_state",
+        "is_compliant",
+        "patch_available",
+        "patch_available_since",
+        "releases_missed",
+        "this_version_seen",
+        "latest_version",
+        "latest_released_at",
+        "ea_assumed",
+        "reference_title_id",
+        "sentence_title_id",
     }
     # Xcode matches one title, so it is its own reference and has no sentence.
     assert xcode.reference_title_id == "0C3" and xcode.sentence_title_id is None

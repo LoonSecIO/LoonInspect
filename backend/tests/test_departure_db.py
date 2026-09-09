@@ -59,12 +59,16 @@ async def _departures(db, connection_id: int, kind: str) -> list:
     from app.models.schema import SubjectDeparture
 
     return (
-        await db.execute(
-            select(SubjectDeparture)
-            .where(SubjectDeparture.mdm_connection_id == connection_id, SubjectDeparture.subject_kind == kind)
-            .order_by(SubjectDeparture.id)
+        (
+            await db.execute(
+                select(SubjectDeparture)
+                .where(SubjectDeparture.mdm_connection_id == connection_id, SubjectDeparture.subject_kind == kind)
+                .order_by(SubjectDeparture.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
 
 def _group(index: int) -> dict:

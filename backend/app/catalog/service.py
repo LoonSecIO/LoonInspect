@@ -42,7 +42,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -193,7 +193,7 @@ async def record_device_apps(db: AsyncSession, device: Device, *, now: datetime 
     rows = (await db.execute(select(InstalledApp).where(InstalledApp.device_id == device.id))).scalars().all()
     if not rows:
         return 0
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     hashes = {row.version_hash for row in rows if row.version_hash}
     # The device's platform scopes the rows (#236): a universal app is one hash and two
     # catalog rows, judged differently, and this device's apps belong to its own.
@@ -205,7 +205,9 @@ async def record_device_apps(db: AsyncSession, device: Device, *, now: datetime 
                     AppCatalogEntry.platform == device.platform, AppCatalogEntry.version_hash.in_(hashes)
                 )
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     }
     for row in rows:
         if not row.version_hash:
@@ -254,7 +256,7 @@ async def record_device_apps(db: AsyncSession, device: Device, *, now: datetime 
 async def refresh_tenant(db: AsyncSession, *, force: bool = False, now: datetime | None = None) -> int:
     """Re-judge the tenant's rows whose answer predates the current catalog (all of them with
     `force`), and refresh the copies on `installed_apps`. Returns the rows judged."""
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     catalog = await load_catalog(db)
     signature = catalog_signature(catalog)
     stmt = select(AppCatalogEntry)

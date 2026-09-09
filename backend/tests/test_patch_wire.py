@@ -26,7 +26,7 @@ arrive intact, not that they are right.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -54,8 +54,8 @@ from app.models.schema import AppCatalogEntry, InstalledApp
 from app.schemas.payload import JamfPatchAnswer, PatchEnrichment
 
 FIXTURES = Path(__file__).parent / "fixtures" / "jamf"
-_NOW = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
-_WINDOW = datetime(2026, 9, 4, 2, 0, tzinfo=timezone.utc)
+_NOW = datetime(2026, 9, 4, 12, 0, tzinfo=UTC)
+_WINDOW = datetime(2026, 9, 4, 2, 0, tzinfo=UTC)
 
 # The block's keys, in the order the model declares them, under their wire spellings. Restated
 # here rather than read off the model: this is the ruled list (#311), and a key added to the
@@ -207,7 +207,7 @@ def test_xcode_on_the_latest_says_so_and_carries_no_sentence(blocks: dict[str, d
 
 
 def test_wireshark_carries_both_halves_of_the_sentence_from_one_title(blocks: dict[str, dict]) -> None:
-    """"Behind since 2024-01-03 · 14 releases missed" — #68's ruled sentence, and both halves
+    """ "Behind since 2024-01-03 · 14 releases missed" — #68's ruled sentence, and both halves
     come from the 4.2 line (whose 4.2.1 is the earliest miss), never from a fold across the two
     matched titles. The rolling title says 25. The wire carries the raw date and the raw
     integer; no day count is minted here, because a day computed at enqueue is wrong the moment
@@ -271,8 +271,13 @@ def test_the_title_arrays_are_index_aligned_everywhere(blocks: dict[str, dict]) 
 
 def _row(**answer) -> InstalledApp:
     return InstalledApp(
-        name="Mixed.app", bundle_id="com.example.mixed", version="14.2",
-        app_hash="a", version_hash="v", key_title="v1:t", key_full="v1:f",
+        name="Mixed.app",
+        bundle_id="com.example.mixed",
+        version="14.2",
+        app_hash="a",
+        version_hash="v",
+        key_title="v1:t",
+        key_full="v1:f",
         **{"jamf_title_ids": ["M1"], "patch_state": STATE_LATEST, **answer},
     )
 
@@ -284,12 +289,20 @@ def test_ea_assumed_folds_onto_the_row_and_reaches_the_wire(catalog: Catalog) ->
     an assumed one, which is the outcome `basis` was minted to prevent. The whole fold runs
     here: matcher -> summarize -> `_apply_summary` -> `copy_answer` -> the block."""
     title = {
-        "id": "M1", "name": "Mixed", "bundleId": "com.example.mixed", "currentVersion": "14.2",
+        "id": "M1",
+        "name": "Mixed",
+        "bundleId": "com.example.mixed",
+        "currentVersion": "14.2",
         "patches": [{"version": "14.2", "releaseDate": "2026-01-01T00:00:00Z"}],
-        "requirements": [{"operator": "and", "tests": [
-            {"name": "Application Bundle ID", "type": "recon", "value": "com.example.mixed", "operator": "is"},
-            {"name": "jamf-patch-mixed", "type": "extensionAttribute", "value": "14.", "operator": "like"},
-        ]}],
+        "requirements": [
+            {
+                "operator": "and",
+                "tests": [
+                    {"name": "Application Bundle ID", "type": "recon", "value": "com.example.mixed", "operator": "is"},
+                    {"name": "jamf-patch-mixed", "type": "extensionAttribute", "value": "14.", "operator": "like"},
+                ],
+            }
+        ],
         "extensionAttributes": [{"key": "jamf-patch-mixed", "displayName": "Mixed Version"}],
     }
     one = Catalog.from_records([title])
@@ -297,8 +310,13 @@ def test_ea_assumed_folds_onto_the_row_and_reaches_the_wire(catalog: Catalog) ->
 
     def block(carried: dict) -> dict:
         row = InstalledApp(
-            name="Mixed.app", bundle_id="com.example.mixed", version="14.2",
-            app_hash="a", version_hash="v", key_title="v1:t", key_full="v1:f",
+            name="Mixed.app",
+            bundle_id="com.example.mixed",
+            version="14.2",
+            app_hash="a",
+            version_hash="v",
+            key_title="v1:t",
+            key_full="v1:f",
         )
         entry = AppCatalogEntry()
         matches = match_app(Facts(**{**facts.__dict__, "extension_attributes": carried}), one)
@@ -321,9 +339,12 @@ def test_ea_assumed_is_absent_rather_than_false_on_a_row_judged_before_311() -> 
     answers = patch_answer([_row(ea_assumed=None)], None)
     answer = answers[("Mixed.app", "com.example.mixed", "14.2")].model_dump(by_alias=True)["jamfPatch"]
     assert "eaAssumed" not in answer
-    assert patch_answer([_row(ea_assumed=False)], None)[
-        ("Mixed.app", "com.example.mixed", "14.2")
-    ].model_dump(by_alias=True)["jamfPatch"]["eaAssumed"] is False
+    assert (
+        patch_answer([_row(ea_assumed=False)], None)[("Mixed.app", "com.example.mixed", "14.2")].model_dump(by_alias=True)[
+            "jamfPatch"
+        ]["eaAssumed"]
+        is False
+    )
 
 
 # --- titleNames, and the paths where there are none -----------------------------------
@@ -386,9 +407,7 @@ def test_an_answer_with_no_title_and_a_misaligned_name_list_are_both_refused() -
     with pytest.raises(ValidationError, match="names no title"):
         JamfPatchAnswer(title_ids=[], state=STATE_LATEST, on_latest=True, version_known=True)
     with pytest.raises(ValidationError, match="index-aligned"):
-        JamfPatchAnswer(
-            title_ids=["M1", "M2"], title_names=["Mixed"], state=STATE_LATEST, on_latest=True, version_known=True
-        )
+        JamfPatchAnswer(title_ids=["M1", "M2"], title_names=["Mixed"], state=STATE_LATEST, on_latest=True, version_known=True)
 
 
 def test_a_row_naming_titles_with_no_state_degrades_rather_than_raising(caplog) -> None:
@@ -432,7 +451,10 @@ def test_the_subject_must_be_a_title_this_answer_matched() -> None:
     reference — refused at enqueue rather than joined against nothing in a dashboard."""
     with pytest.raises(ValidationError, match="did not match"):
         JamfPatchAnswer(
-            title_ids=["M1", "M2"], state=STATE_BEHIND, on_latest=False, version_known=True,
+            title_ids=["M1", "M2"],
+            state=STATE_BEHIND,
+            on_latest=False,
+            version_known=True,
             reference_title_id="ELSEWHERE",
         )
 
@@ -445,9 +467,7 @@ def test_a_multi_title_answer_must_name_its_reference() -> None:
 def test_a_single_title_answer_refuses_them() -> None:
     """Both directions, so the producer's rule and the model's cannot drift apart."""
     with pytest.raises(ValidationError, match="needs no subject keys"):
-        JamfPatchAnswer(
-            title_ids=["M1"], state=STATE_LATEST, on_latest=True, version_known=True, reference_title_id="M1"
-        )
+        JamfPatchAnswer(title_ids=["M1"], state=STATE_LATEST, on_latest=True, version_known=True, reference_title_id="M1")
 
 
 def test_the_sentence_subject_rides_only_with_the_sentence() -> None:
@@ -456,13 +476,21 @@ def test_the_sentence_subject_rides_only_with_the_sentence() -> None:
     exactly the apps where it is ambiguous."""
     with pytest.raises(ValidationError, match="rides only with"):
         JamfPatchAnswer(
-            title_ids=["M1", "M2"], state=STATE_BEHIND, on_latest=False, version_known=True,
-            reference_title_id="M1", sentence_title_id="M2",
+            title_ids=["M1", "M2"],
+            state=STATE_BEHIND,
+            on_latest=False,
+            version_known=True,
+            reference_title_id="M1",
+            sentence_title_id="M2",
         )
     with pytest.raises(ValidationError, match="must name it when several matched"):
         JamfPatchAnswer(
-            title_ids=["M1", "M2"], state=STATE_BEHIND, on_latest=False, version_known=True,
-            reference_title_id="M1", releases_missed=3,
+            title_ids=["M1", "M2"],
+            state=STATE_BEHIND,
+            on_latest=False,
+            version_known=True,
+            reference_title_id="M1",
+            releases_missed=3,
         )
 
 

@@ -22,9 +22,7 @@ import pytest_asyncio
 # One event loop for the whole module — the engine's pooled connections belong to
 # whichever loop first used them.
 pytestmark = [
-    pytest.mark.skipif(
-        not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"
-    ),
+    pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
     pytest.mark.asyncio(loop_scope="session"),
 ]
 
@@ -39,9 +37,7 @@ async def migrated() -> None:
 def _client() -> httpx.AsyncClient:
     from app.main import app
 
-    return httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="https://health.example.com"
-    )
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://health.example.com")
 
 
 async def test_health_is_200_for_an_anonymous_caller_against_a_live_database(

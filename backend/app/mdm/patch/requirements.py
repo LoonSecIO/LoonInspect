@@ -34,16 +34,16 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 
-class Outcome(str, Enum):
+class Outcome(StrEnum):
     PASS = "pass"
     FAIL = "fail"
     NOT_APPLICABLE = "not_applicable"
 
 
-class Verdict(str, Enum):
+class Verdict(StrEnum):
     MATCHED = "matched"
     NOT_MATCHED = "not_matched"
     INCONCLUSIVE = "inconclusive"
@@ -249,9 +249,7 @@ def is_app_level(groups: Sequence[Mapping]) -> bool:
     """Whether the title can identify an installed app: at least one recon test on the bundle
     ID or the application title (Kyle's rule). Device-level titles ("Apple macOS …"),
     attribute-only titles (the `jamf-patch-*` set) and version-only titles are not considered."""
-    return any(
-        test.get("type") != EXTENSION_ATTRIBUTE and test.get("name") in IDENTIFYING_TESTS for test in _tests(groups)
-    )
+    return any(test.get("type") != EXTENSION_ATTRIBUTE and test.get("name") in IDENTIFYING_TESTS for test in _tests(groups))
 
 
 def required_bundle_ids(groups: Sequence[Mapping]) -> frozenset[str] | None:

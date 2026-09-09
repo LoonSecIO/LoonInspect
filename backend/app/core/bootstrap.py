@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import secrets
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,9 +51,7 @@ async def bootstrap_tenants(db: AsyncSession) -> None:
     make this decide the install is unbootstrapped.
     """
     existing = set(
-        (await db.execute(select(Tenant.id).where(Tenant.id.in_([row[0] for row in _BOOTSTRAP_TENANTS]))))
-        .scalars()
-        .all()
+        (await db.execute(select(Tenant.id).where(Tenant.id.in_([row[0] for row in _BOOTSTRAP_TENANTS])))).scalars().all()
     )
 
     created = [row for row in _BOOTSTRAP_TENANTS if row[0] not in existing]
@@ -78,7 +76,7 @@ async def create_account(
     password: str,
     roles: Iterable[str] = ("admin",),
 ) -> tuple[Account, AuthIdentity]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     account = Account(
         email=email.strip().lower(),
         display_name=display_name.strip(),

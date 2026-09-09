@@ -16,7 +16,7 @@ a test behind it.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import httpx
@@ -82,7 +82,7 @@ def test_the_envelope_carries_occurrence_time_not_delivery_time() -> None:
     event delivered at 09:00 for a 01:00 sweep must land at 01:00. Asserted exactly: a
     tolerance wide enough to absorb the difference would also absorb the bug.
     """
-    delivered = datetime.now(timezone.utc)
+    delivered = datetime.now(UTC)
     occurred = delivered - timedelta(days=3)
     hints = envelope(occurred_at=occurred, host="kyle-mbp", source="acme.jamfcloud.com")
 
@@ -96,14 +96,14 @@ def test_an_absent_host_is_dropped_rather_than_sent_empty() -> None:
     """HEC falls back to the input's own default host for a blank one, which collapses
     every affected device onto a single phantom host where `dc(serialNumber)` counts
     them all as one. Absent is recoverable; wrong is not."""
-    hints = envelope(occurred_at=datetime.now(timezone.utc), host="", source=None)
+    hints = envelope(occurred_at=datetime.now(UTC), host="", source=None)
     assert "host" not in hints
     assert "source" not in hints
     assert "time" in hints
 
 
 def test_the_envelope_is_lifted_beside_the_body_and_never_into_it() -> None:
-    occurred = datetime(2026, 8, 31, 1, 0, tzinfo=timezone.utc)
+    occurred = datetime(2026, 8, 31, 1, 0, tzinfo=UTC)
     payload = {
         "event": "device.inventory.changed",
         "deviceMeta": {"serialNumber": "C02EXAMPLE01"},
@@ -131,7 +131,7 @@ def test_no_index_is_sent_so_the_hec_token_alone_decides_where_events_land() -> 
     payload = {
         "event": "device.inventory.changed",
         ENVELOPE: envelope(
-            occurred_at=datetime(2026, 8, 31, tzinfo=timezone.utc),
+            occurred_at=datetime(2026, 8, 31, tzinfo=UTC),
             host="kyle-mbp",
             source="acme.jamfcloud.com",
         ),
@@ -208,7 +208,7 @@ def test_an_absent_host_is_a_ruling_the_run_family_relies_on() -> None:
     customer's SPL cannot join to anything). HEC then applies the input's own default,
     which a Splunk admin can see and override — unlike a value the product asserted.
     """
-    hints = envelope(occurred_at=datetime.now(timezone.utc), host=None, source="acme.jamfcloud.com")
+    hints = envelope(occurred_at=datetime.now(UTC), host=None, source="acme.jamfcloud.com")
     body = _build_body(SPLUNK, {"event": "run.completed", ENVELOPE: hints})
 
     assert "host" not in body
@@ -225,7 +225,7 @@ def test_a_group_change_carries_no_host_because_a_group_is_not_a_mac() -> None:
     "Devices out of Checkin Compliance" and corrupt `dc(host)` across the index. The
     instance is still known, so `source` stays."""
     connection = CONNECTION
-    observed = datetime(2026, 8, 23, 9, 0, tzinfo=timezone.utc)
+    observed = datetime(2026, 8, 23, 9, 0, tzinfo=UTC)
 
     def _row(subject_kind: str, subject_label: str) -> DeviceChange:
         return DeviceChange(
@@ -264,7 +264,7 @@ def _change_payload(*, subject_kind: str, section: str) -> dict:
     the section names the derivation actually writes are the registry's own keys, and a
     literal payload here would assert that against itself.
     """
-    observed = datetime(2026, 8, 23, 9, 0, tzinfo=timezone.utc)
+    observed = datetime(2026, 8, 23, 9, 0, tzinfo=UTC)
     observation = Observation(
         subject_kind=subject_kind,
         subject_id="12",
@@ -352,9 +352,7 @@ def test_which_single_event_families_are_stamped() -> None:
     test_hec_fanout.py."""
     body = _build_body(SPLUNK, {"event": "destination.test", "subjectKind": "computer", "section": "applications"})
     assert "sourcetype" not in body, "destination.test must not be stamped"
-    body = _build_body(
-        SPLUNK, {"event": "device.inventory.changed", "subjectKind": "computer", "section": "applications"}
-    )
+    body = _build_body(SPLUNK, {"event": "device.inventory.changed", "subjectKind": "computer", "section": "applications"})
     assert body["sourcetype"] == "loon:inventory:changed", "the delta family carries the assertion string"
     for event in ("run.completed", "run.failed"):
         body = _build_body(SPLUNK, {"event": event, "subjectKind": "computer", "section": "applications"})
@@ -372,7 +370,7 @@ def test_the_snapshot_is_fanned_out_on_splunk_and_as_records_everywhere_else() -
     the body under its own name; `occurredAt` rides, because no envelope carries the
     instant for them; and `deviceMeta` trails, as it does on HEC. The full goldens are
     tests/test_hec_fanout.py and tests/test_record_fanout.py."""
-    occurred = datetime(2026, 9, 2, 2, 0, tzinfo=timezone.utc)
+    occurred = datetime(2026, 9, 2, 2, 0, tzinfo=UTC)
     payload = {
         "event": "device.inventory",
         "jobID": "0199a5c4-7b2e-7c3a-9f1e-3c2b1a0d9e8f",

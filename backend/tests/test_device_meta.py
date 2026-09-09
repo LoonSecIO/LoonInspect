@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import uuid as uuidlib
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -117,7 +117,7 @@ REFUSED: dict[str, str] = {
 }
 
 _RUN_ID = uuidlib.UUID("6f1b6f7e-6d2b-4d4a-9c6d-0f4c2a7f9c11")
-_WINDOW = datetime(2026, 8, 31, 2, 0, tzinfo=timezone.utc)
+_WINDOW = datetime(2026, 8, 31, 2, 0, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -151,7 +151,7 @@ def _device(**overrides) -> Device:
         "external_id": "1743",
         "serial_number": "C02EXAMPLE01",
         "hostname": "kyle-mbp",
-        "last_inventory_at": datetime(2026, 8, 31, 21, 44, 3, tzinfo=timezone.utc),
+        "last_inventory_at": datetime(2026, 8, 31, 21, 44, 3, tzinfo=UTC),
         "managed": True,
     }
     return Device(**(fields | overrides))
@@ -267,7 +267,7 @@ def _observation(subject_kind: str = SUBJECT_COMPUTER, **overrides) -> Observati
         "subject_kind": subject_kind,
         "subject_id": "1743",
         "sections": {"general": general},
-        "observed_at": datetime(2026, 8, 31, 21, 44, 3, tzinfo=timezone.utc),
+        "observed_at": datetime(2026, 8, 31, 21, 44, 3, tzinfo=UTC),
         "serial_number": "C02EXAMPLE01",
         "label": "kyle-mbp",
     }
@@ -287,8 +287,17 @@ def test_a_change_carries_the_ruled_names_and_no_others(run: RunContext) -> None
     assert set(meta) < set(RULED_TWELVE)
     assert RESERVED not in meta
     assert set(meta) == {
-        "jobID", "trigger", "connectionID", "shortDate", "eventID",
-        "serialNumber", "jamfProID", "hostName", "lastReportDate", "managed", "schemaVersion",
+        "jobID",
+        "trigger",
+        "connectionID",
+        "shortDate",
+        "eventID",
+        "serialNumber",
+        "jamfProID",
+        "hostName",
+        "lastReportDate",
+        "managed",
+        "schemaVersion",
     }
     assert all(value is not None for value in meta.values())
 
@@ -323,7 +332,7 @@ def test_a_change_reads_this_pull_rather_than_the_row_the_last_one_left(run: Run
     the device on exactly the pull the fold exists to correlate. A renamed Mac is the case
     that shows it.
     """
-    stale = _device(hostname="old-name", last_inventory_at=datetime(2026, 8, 30, tzinfo=timezone.utc))
+    stale = _device(hostname="old-name", last_inventory_at=datetime(2026, 8, 30, tzinfo=UTC))
     renamed = _observation(label="kyle-mbp-2")
 
     assert _change_device_meta(renamed)["hostName"] == "kyle-mbp-2" != _device_meta(stale)["hostName"]
@@ -387,9 +396,7 @@ def test_the_docs_name_the_same_keys() -> None:
     invisible for three days."""
     docs = Path(__file__).resolve().parents[2] / "docs" / "runs.md"
     text = docs.read_text()
-    example = text.split(
-        'The `deviceMeta` block on `device.inventory` and `device.inventory.changed`, ruled in #189:', 1
-    )[1]
+    example = text.split("The `deviceMeta` block on `device.inventory` and `device.inventory.changed`, ruled in #189:", 1)[1]
     example = example.split("```", 2)[1]
     assert set(REFUSED) & set(RULED_TWELVE) == set()
     for key in SHIPPED_ELEVEN:
@@ -415,8 +422,8 @@ def _change_row(**overrides) -> DeviceChange:
         "subject_label": "kyle-mbp",
         "serial_number": "C02EXAMPLE01",
         "udid": "0F0E0D0C-0B0A-4908-8706-050403020100",
-        "observed_at": datetime(2026, 8, 31, 21, 44, 3, tzinfo=timezone.utc),
-        "collected_at": datetime(2026, 8, 31, 21, 44, 27, tzinfo=timezone.utc),
+        "observed_at": datetime(2026, 8, 31, 21, 44, 3, tzinfo=UTC),
+        "collected_at": datetime(2026, 8, 31, 21, 44, 27, tzinfo=UTC),
         "trigger": TRIGGER_SWEEP,
         "section": "applications",
         "entry_kind": "application",
@@ -443,7 +450,12 @@ def _change_row(**overrides) -> DeviceChange:
 # it away" — and `device.change` shipped exactly that fact at its root under the spelling
 # `jamfUrl` until #308. Same argument, different spelling, one level up.
 REFUSED_ANYWHERE: tuple[str, ...] = (
-    "comparison", "collectionID", "apertureDigest", "contractVersion", "collectorVersion", "jamfHost",
+    "comparison",
+    "collectionID",
+    "apertureDigest",
+    "contractVersion",
+    "collectorVersion",
+    "jamfHost",
 )
 
 

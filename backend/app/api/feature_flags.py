@@ -35,9 +35,7 @@ async def list_feature_flags(db: AsyncSession = Depends(get_db)) -> list[Feature
     response_model=FeatureFlagOut,
     dependencies=[Depends(require(Permission.FEATURE_FLAG_WRITE))],
 )
-async def update_feature_flag(
-    key: str, payload: FeatureFlagUpdate, db: AsyncSession = Depends(get_db)
-) -> FeatureFlagOut:
+async def update_feature_flag(key: str, payload: FeatureFlagUpdate, db: AsyncSession = Depends(get_db)) -> FeatureFlagOut:
     meta = FEATURE_FLAG_REGISTRY.get(key)
     if meta is None:
         raise HTTPException(status_code=404, detail="Unknown feature flag")

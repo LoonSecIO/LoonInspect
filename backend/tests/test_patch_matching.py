@@ -12,7 +12,7 @@ is attribute-only and is not considered — Kyle's rule).
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -93,7 +93,7 @@ class TestPlatform:
 
 
 def _ts(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
 
 
 class TestCatalogIndex:
@@ -117,8 +117,17 @@ class TestRealDevice:
     def test_eleven_apps_resolve_to_thirteen_rows(self, device_matches) -> None:
         matched = {name: matches for name, matches in device_matches.items() if matches}
         assert sorted(matched) == [
-            "BambuStudio.app", "Camtasia 2022.app", "Codex.app", "Docker.app", "Postman.app",
-            "Safari.app", "Self Service.app", "Slack.app", "Wireshark.app", "Xcode.app", "zoom.us.app",
+            "BambuStudio.app",
+            "Camtasia 2022.app",
+            "Codex.app",
+            "Docker.app",
+            "Postman.app",
+            "Safari.app",
+            "Self Service.app",
+            "Slack.app",
+            "Wireshark.app",
+            "Xcode.app",
+            "zoom.us.app",
         ]
         assert sum(len(matches) for matches in matched.values()) == 13
 
@@ -220,12 +229,20 @@ class TestExtensionAttributes:
     def test_a_mixed_group_assumes_an_absent_attribute_and_reads_a_carried_one(self) -> None:
         """A title with `Bundle ID is X AND attribute like "v14."` — the attribute is scoping."""
         title = {
-            "id": "T1", "name": "Mixed", "bundleId": "com.example.mixed", "currentVersion": "14.2",
+            "id": "T1",
+            "name": "Mixed",
+            "bundleId": "com.example.mixed",
+            "currentVersion": "14.2",
             "patches": [{"version": "14.2", "releaseDate": "2026-01-01T00:00:00Z"}],
-            "requirements": [{"operator": "and", "tests": [
-                {"name": "Application Bundle ID", "type": "recon", "value": "com.example.mixed", "operator": "is"},
-                {"name": "jamf-patch-mixed", "type": "extensionAttribute", "value": "v14.", "operator": "like"},
-            ]}],
+            "requirements": [
+                {
+                    "operator": "and",
+                    "tests": [
+                        {"name": "Application Bundle ID", "type": "recon", "value": "com.example.mixed", "operator": "is"},
+                        {"name": "jamf-patch-mixed", "type": "extensionAttribute", "value": "v14.", "operator": "like"},
+                    ],
+                }
+            ],
             "extensionAttributes": [{"key": "jamf-patch-mixed", "displayName": "Mixed Version"}],
         }
         catalog = Catalog.from_records([title])

@@ -16,7 +16,7 @@ function of an attempt count and the clock.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -33,9 +33,9 @@ def _delay_seconds(attempt_count: int) -> float:
     """`_next_backoff` returns an absolute time, so the delay is read back off the
     clock. Called either side of the function so a slow machine cannot make the
     measured delay look shorter or longer than the constant it came from."""
-    before = datetime.now(timezone.utc)
+    before = datetime.now(UTC)
     when = _next_backoff(attempt_count)
-    after = datetime.now(timezone.utc)
+    after = datetime.now(UTC)
     assert when >= before, "a backoff must never be in the past"
     return (when - after).total_seconds()
 

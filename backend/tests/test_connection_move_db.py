@@ -77,9 +77,7 @@ async def _signed_in(email: str, password: str) -> httpx.AsyncClient:
     """
     from app.main import app
 
-    client = httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="https://connections.example.com"
-    )
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://connections.example.com")
     response = await client.post("/api/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200, f"login failed: {response.status_code} {response.text}"
     client.headers["X-CSRF-Token"] = client.cookies.get("loon_csrf", "")
@@ -236,9 +234,7 @@ def _hosts_that_saw_the_secret(outbound: list[dict[str, str]], secret: str) -> s
 # --- The exploit, closed --------------------------------------------------------------
 
 
-async def test_the_stored_secret_cannot_be_moved_to_an_attacker_host_and_synced_out(
-    mover, connection, outbound
-) -> None:
+async def test_the_stored_secret_cannot_be_moved_to_an_attacker_host_and_synced_out(mover, connection, outbound) -> None:
     """SECURITY: `connection:write` + `device:sync` must not become a read path.
 
     This is #132's still-open half as a pair of requests. Before the fix the PATCH
@@ -262,9 +258,7 @@ async def test_the_stored_secret_cannot_be_moved_to_an_attacker_host_and_synced_
     assert not [call for call in outbound if httpx.URL(call["url"]).host == "listener.attacker.example"]
 
 
-async def test_a_partial_credential_update_does_not_smuggle_the_move_past_the_guard(
-    mover, connection, outbound
-) -> None:
+async def test_a_partial_credential_update_does_not_smuggle_the_move_past_the_guard(mover, connection, outbound) -> None:
     """SECURITY: the credential merge is the obvious way around a naive check.
 
     `update_connection` merges the incoming credentials over the stored ones, so a
@@ -297,11 +291,7 @@ async def test_the_refused_move_is_on_the_audit_record(mover, connection, audit_
     to walk a credential off the instance is a 422 in an access log."""
     await mover.patch(f"/api/mdm/connections/{connection}", json={"baseUrl": ATTACKER_URL})
 
-    refusals = [
-        record
-        for record in audit_records
-        if record["action"] == "connection.updated" and record["outcome"] == "refused"
-    ]
+    refusals = [record for record in audit_records if record["action"] == "connection.updated" and record["outcome"] == "refused"]
     assert len(refusals) == 1, refusals
     assert refusals[0]["metadata"]["base_url"] == ATTACKER_URL
     assert refusals[0]["metadata"]["reason"] == "base_url_moved_without_credential"
@@ -335,9 +325,7 @@ async def test_no_builtin_role_short_of_admin_can_move_a_connection(accounts, co
     for credentials in (ANALYST, AUDITOR):
         client = await _signed_in(*credentials)
         try:
-            refused = await client.patch(
-                f"/api/mdm/connections/{connection}", json={"baseUrl": ATTACKER_URL}
-            )
+            refused = await client.patch(f"/api/mdm/connections/{connection}", json={"baseUrl": ATTACKER_URL})
         finally:
             await client.aclose()
         assert refused.status_code == 403, f"{credentials[0]}: {refused.text}"
@@ -346,9 +334,7 @@ async def test_no_builtin_role_short_of_admin_can_move_a_connection(accounts, co
 # --- The legitimate flows that must survive -------------------------------------------
 
 
-async def test_an_admin_moves_a_connection_by_re_entering_the_secret(
-    admin, db, connection, outbound
-) -> None:
+async def test_an_admin_moves_a_connection_by_re_entering_the_secret(admin, db, connection, outbound) -> None:
     """The Jamf tenant really did move, and the operator really does hold the secret.
 
     End to end: save the new URL with the secret typed in, then sync — and the sweep
@@ -379,9 +365,7 @@ async def test_an_edit_that_leaves_the_url_alone_does_not_demand_the_secret(admi
     """The common edit. ConnectionForm sends `baseUrl` on every save whether or not it
     changed, so a rule keyed on "the field was present" would demand the secret for a
     rename — and teach operators to retype credentials for no reason."""
-    patched = await admin.patch(
-        f"/api/mdm/connections/{connection}", json={"name": "renamed", "baseUrl": STORED_URL}
-    )
+    patched = await admin.patch(f"/api/mdm/connections/{connection}", json={"name": "renamed", "baseUrl": STORED_URL})
     assert patched.status_code == 200, patched.text
     assert patched.json()["name"] == "renamed"
 
@@ -389,9 +373,7 @@ async def test_an_edit_that_leaves_the_url_alone_does_not_demand_the_secret(admi
 async def test_a_trailing_slash_is_not_a_move(admin, connection) -> None:
     """The one spelling difference JamfClient itself erases, matching the rule POST
     /test already uses."""
-    patched = await admin.patch(
-        f"/api/mdm/connections/{connection}", json={"baseUrl": f"{STORED_URL}/"}
-    )
+    patched = await admin.patch(f"/api/mdm/connections/{connection}", json={"baseUrl": f"{STORED_URL}/"})
     assert patched.status_code == 200, patched.text
 
 

@@ -16,7 +16,7 @@ first-failure insert is written.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi import HTTPException, Response
@@ -473,9 +473,9 @@ async def test_the_exponent_is_capped_so_a_long_attack_cannot_ask_for_two_to_the
 
 
 async def test_the_lock_is_measured_from_the_failure_just_recorded() -> None:
-    before = datetime.now(timezone.utc)
+    before = datetime.now(UTC)
     row = await _after_failures(5)
-    assert before <= row.last_failure_at <= datetime.now(timezone.utc)
+    assert before <= row.last_failure_at <= datetime.now(UTC)
     assert row.locked_until == row.last_failure_at + timedelta(seconds=60)
 
 
@@ -483,7 +483,7 @@ async def test_the_lock_is_measured_from_the_failure_just_recorded() -> None:
 
 
 def test_session_expiry_follows_the_configured_lifetime(monkeypatch) -> None:
-    now = datetime(2026, 9, 8, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)
     monkeypatch.setattr(settings, "session_lifetime_seconds", 3600)
     assert session_expiry(now) == now + timedelta(hours=1)
     monkeypatch.setattr(settings, "session_lifetime_seconds", 0)

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import os
 import uuid as uuidlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -37,9 +37,7 @@ from sqlalchemy.exc import DBAPIError
 # them. Function-scoped loops hand the second test a connection from a closed loop,
 # which surfaces as "attached to a different loop" rather than anything about tenancy.
 pytestmark = [
-    pytest.mark.skipif(
-        not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"
-    ),
+    pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
     pytest.mark.asyncio(loop_scope="session"),
 ]
 
@@ -99,13 +97,9 @@ async def seeded():
         ("t2", TENANT2_ID, ADMIN2),
     ):
         async with session_for_tenant(tenant_id) as db:
-            account = (
-                await db.execute(select(Account).where(Account.email == email))
-            ).scalars().first()
+            account = (await db.execute(select(Account).where(Account.email == email))).scalars().first()
             if account is None:
-                account, _ = await create_account(
-                    db, email=email, display_name=label, password=password, roles=("admin",)
-                )
+                account, _ = await create_account(db, email=email, display_name=label, password=password, roles=("admin",))
 
             destination = await one(
                 db,
@@ -131,10 +125,14 @@ async def seeded():
             await ensure_default_collections(db, connection)
             await db.flush()
             collection = (
-                await db.execute(
-                    select(Collection).where(Collection.mdm_connection_id == connection.id).order_by(Collection.id)
+                (
+                    await db.execute(
+                        select(Collection).where(Collection.mdm_connection_id == connection.id).order_by(Collection.id)
+                    )
                 )
-            ).scalars().first()
+                .scalars()
+                .first()
+            )
             # Under the connection, like every device the product writes. Created
             # without one, this row was the "device with no connection" that failed
             # test_connection_delete_db's orphan count whenever this file had run
@@ -176,7 +174,7 @@ async def seeded():
             event = EventOutbox(
                 event_type="device.updated",
                 payload={"tenant_label": label},
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             )
             db.add(event)
             await db.commit()
@@ -205,9 +203,7 @@ async def client(seeded):
     # it looks exactly like a tenancy bug from inside a test.
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="https://sweep.example.com") as c:
-        response = await c.post(
-            "/api/auth/login", json={"email": ADMIN1[0], "password": ADMIN1[1]}
-        )
+        response = await c.post("/api/auth/login", json={"email": ADMIN1[0], "password": ADMIN1[1]})
         assert response.status_code == 200, f"login failed: {response.status_code} {response.text}"
         c.headers["X-CSRF-Token"] = c.cookies.get("loon_csrf", "")
         yield c
@@ -219,9 +215,7 @@ async def client(seeded):
 async def test_foreign_connection_reads_and_writes_404(client, seeded) -> None:
     other = seeded["t2"]["connection_id"]
     assert (await client.get(f"/api/mdm/connections/{other}")).status_code == 404
-    assert (
-        await client.patch(f"/api/mdm/connections/{other}", json={"name": "stolen"})
-    ).status_code == 404
+    assert (await client.patch(f"/api/mdm/connections/{other}", json={"name": "stolen"})).status_code == 404
     assert (await client.delete(f"/api/mdm/connections/{other}")).status_code == 404
     assert (await client.post(f"/api/mdm/connections/{other}/sync")).status_code == 404
 
@@ -231,9 +225,7 @@ async def test_foreign_destination_survives_patch_and_delete(client, seeded) -> 
     from app.models.schema import Destination
 
     other = seeded["t2"]["destination_id"]
-    assert (
-        await client.patch(f"/api/destinations/{other}", json={"name": "stolen", "enabled": False})
-    ).status_code == 404
+    assert (await client.patch(f"/api/destinations/{other}", json={"name": "stolen", "enabled": False})).status_code == 404
     assert (await client.delete(f"/api/destinations/{other}")).status_code == 404
 
     async with session_for_tenant(seeded["t2"]["tenant_id"]) as db:
@@ -254,9 +246,7 @@ async def test_foreign_collection_404_and_untouched(client, seeded) -> None:
     assert (await client.patch(f"/api/mdm/collections/{other}", json={"name": "stolen"})).status_code == 404
     assert (await client.delete(f"/api/mdm/collections/{other}")).status_code == 404
     assert (await client.post(f"/api/mdm/collections/{other}/run")).status_code == 404
-    assert (
-        await client.get(f"/api/mdm/connections/{seeded['t2']['connection_id']}/collections")
-    ).status_code == 404
+    assert (await client.get(f"/api/mdm/connections/{seeded['t2']['connection_id']}/collections")).status_code == 404
     assert (
         await client.post(
             f"/api/mdm/connections/{seeded['t2']['connection_id']}/collections",
@@ -302,11 +292,7 @@ async def test_change_feed_and_policy_are_tenant_scoped(client, seeded) -> None:
 async def test_foreign_device_account_token_404(client, seeded) -> None:
     assert (await client.get(f"/api/devices/{seeded['t2']['device_id']}")).status_code == 404
     assert (await client.get(f"/api/accounts/{seeded['t2']['account_id']}")).status_code == 404
-    assert (
-        await client.patch(
-            f"/api/accounts/{seeded['t2']['account_id']}", json={"displayName": "stolen"}
-        )
-    ).status_code == 404
+    assert (await client.patch(f"/api/accounts/{seeded['t2']['account_id']}", json={"displayName": "stolen"})).status_code == 404
     assert (await client.delete(f"/api/tokens/{seeded['t2']['token_id']}")).status_code == 404
 
 
@@ -389,21 +375,13 @@ async def test_fan_out_never_pairs_across_tenants(seeded) -> None:
     for label, other in (("t1", "t2"), ("t2", "t1")):
         async with session_for_tenant(seeded[label]["tenant_id"]) as db:
             mine = (
-                (
-                    await db.execute(
-                        select(OutboxDelivery).where(
-                            OutboxDelivery.outbox_event_id == seeded[label]["event_id"]
-                        )
-                    )
-                )
+                (await db.execute(select(OutboxDelivery).where(OutboxDelivery.outbox_event_id == seeded[label]["event_id"])))
                 .scalars()
                 .all()
             )
             assert mine, f"{label}'s own event must fan out to its own destination"
 
-            visible_destinations = {
-                d.id for d in (await db.execute(select(Destination))).scalars()
-            }
+            visible_destinations = {d.id for d in (await db.execute(select(Destination))).scalars()}
             for delivery in mine:
                 assert delivery.destination_id in visible_destinations
                 assert delivery.destination_id != seeded[other]["destination_id"]
@@ -411,13 +389,7 @@ async def test_fan_out_never_pairs_across_tenants(seeded) -> None:
             # And the other direction: this tenant's destination must never have been
             # paired with the other tenant's event.
             crossed = (
-                (
-                    await db.execute(
-                        select(OutboxDelivery).where(
-                            OutboxDelivery.outbox_event_id == seeded[other]["event_id"]
-                        )
-                    )
-                )
+                (await db.execute(select(OutboxDelivery).where(OutboxDelivery.outbox_event_id == seeded[other]["event_id"])))
                 .scalars()
                 .all()
             )
@@ -467,7 +439,5 @@ async def test_second_tenant_cannot_log_in_yet(seeded) -> None:
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="https://sweep.example.com") as c:
-        response = await c.post(
-            "/api/auth/login", json={"email": ADMIN2[0], "password": ADMIN2[1]}
-        )
+        response = await c.post("/api/auth/login", json={"email": ADMIN2[0], "password": ADMIN2[1]})
         assert response.status_code == 401

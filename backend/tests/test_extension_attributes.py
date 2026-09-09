@@ -179,8 +179,7 @@ def test_a_quarantined_ea_is_absent_from_every_path(raw: dict) -> None:
 def test_the_contract_and_the_normalizer_agree_on_the_set_of_eas(raw: dict, real: dict) -> None:
     for record in (raw, real):
         ledger = {
-            entry.body["definitionId"]
-            for entry in c.canonicalize_computer(record).sections["extension_attributes"].entries
+            entry.body["definitionId"] for entry in c.canonicalize_computer(record).sections["extension_attributes"].entries
         }
         assert set(_by_id(normalize_computer(record))) == ledger
 
@@ -200,7 +199,11 @@ def test_source_is_carried_by_the_view_and_discarded_by_the_contract(raw: dict) 
 
 def test_the_carriers_are_the_five_display_sections() -> None:
     assert c.EXTENSION_ATTRIBUTE_CARRIERS == (
-        "general", "hardware", "operating_system", "user_and_location", "purchasing",
+        "general",
+        "hardware",
+        "operating_system",
+        "user_and_location",
+        "purchasing",
     )
     assert all(name in c.SECTIONS for name in c.EXTENSION_ATTRIBUTE_CARRIERS)
 

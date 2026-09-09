@@ -31,7 +31,7 @@ the `VulnCorpus` protocol, which is all this suite is entitled to assume.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
@@ -200,9 +200,7 @@ class TestTheThreeStatesAreDistinguishable:
         assert block["vulnIDs"] == ["CVE-2026-0001", "CVE-2026-0002", "LoonVD-2026-000001"]
         assert block["vulnIDsTruncated"] is False
 
-    def test_a_known_title_in_an_unassessed_build_reads_unknown_app_on_the_page_too(
-        self, corpus: StubCorpus
-    ) -> None:
+    def test_a_known_title_in_an_unassessed_build_reads_unknown_app_on_the_page_too(self, corpus: StubCorpus) -> None:
         """§4f, carried through to the surface: `()` means *positively assessed*, so a
         build the corpus never looked at reaches a person as `Outside the corpus`, dated —
         not as a green clean bill. The read path adds nothing here; it must also subtract
@@ -289,7 +287,7 @@ class TestTheLookup:
         """§4d's second clock. The wire pins `as_of` to the event's `occurredAt` because an
         event is a historical record and ten retries must expand to identical bytes; a page
         answers *how old is this now*, so it counts from today."""
-        assert today() == datetime.now(timezone.utc).date()
+        assert today() == datetime.now(UTC).date()
 
     def test_the_two_clocks_diverge_by_the_age_of_the_newest_snapshot(self, corpus: StubCorpus) -> None:
         """The consequence §4d and §4g now state, pinned so it cannot be discovered in the
@@ -305,9 +303,7 @@ class TestTheLookup:
         """
         stale_event_day = AS_OF - timedelta(days=200)
         on_the_page = assess(corpus, AFFECTED_ROW, as_of=AS_OF)
-        in_the_event = vuln_block(
-            corpus, key_title=AFFECTED_ROW.key_title, key_full=AFFECTED_ROW.key_full, as_of=stale_event_day
-        )
+        in_the_event = vuln_block(corpus, key_title=AFFECTED_ROW.key_title, key_full=AFFECTED_ROW.key_full, as_of=stale_event_day)
         assert on_the_page.days_oldest_published.total - in_the_event.days_oldest_published.total == 200
         # Everything else is the same value in both — the clock is the whole difference.
         assert on_the_page.counts == in_the_event.counts
@@ -387,9 +383,7 @@ class TestTheRestSurface:
         assert payload["apps"][0]["vuln"]["counts"]["total"] == 0  # CLEAN_ROW, id 3
         assert payload["apps"][1]["vuln"]["counts"]["total"] == 3  # AFFECTED_ROW, id 4
         # Every app asked exactly once, on its own keys — no row answered twice, none skipped.
-        assert sorted(loaded.calls) == sorted(
-            (row.key_title, row.key_full) for row in (CLEAN_ROW, AFFECTED_ROW, UNKNOWN_ROW)
-        )
+        assert sorted(loaded.calls) == sorted((row.key_title, row.key_full) for row in (CLEAN_ROW, AFFECTED_ROW, UNKNOWN_ROW))
 
     def test_the_device_detail_says_off_with_no_date_when_no_corpus_is_loaded(self) -> None:
         detail = _assessed(
@@ -477,9 +471,7 @@ class TestTheRestSurface:
         assert schema["properties"]["assessment"]["default"] == "off"
         assert schema.get("additionalProperties") is not True
 
-    def test_the_lookup_never_answers_an_assessment_for_a_build_it_was_not_asked_about(
-        self, corpus: StubCorpus
-    ) -> None:
+    def test_the_lookup_never_answers_an_assessment_for_a_build_it_was_not_asked_about(self, corpus: StubCorpus) -> None:
         """`/api/catalog/lookup` answers by `appHash` as well as by build, and under
         `appHash` the row it returns stands in for the newest version the tenant has seen —
         a different build from the caller's. Two builds of one title differ here on
@@ -520,16 +512,14 @@ class TestTheRestSurface:
         vocabulary to live."""
         entry = _assessed_entry_out(_catalog_row(AFFECTED_ROW), 1, {}, corpus=corpus, as_of=AS_OF)
         assert isinstance(entry.vuln, VulnEnrichment)
-        assert entry.vuln.model_dump(mode="json", by_alias=True) == _rest(
-            assess(corpus, AFFECTED_ROW, as_of=AS_OF)
-        )
+        assert entry.vuln.model_dump(mode="json", by_alias=True) == _rest(assess(corpus, AFFECTED_ROW, as_of=AS_OF))
         assert CatalogEntryAssessedOut.model_fields["vuln"].annotation is VulnEnrichment
 
 
 def _catalog_row(row: Row) -> AppCatalogEntry:
     """A transient `app_catalog` row — never added to a session, so this stays in the pure
     lane. `_entry_out` reads it through `model_validate`, exactly as the endpoint does."""
-    seen = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    seen = datetime(2026, 9, 1, tzinfo=UTC)
     return AppCatalogEntry(
         id=row.id,
         name="Wireshark.app",

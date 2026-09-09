@@ -105,8 +105,14 @@ def test_describe_lists_every_rule_with_default_and_override_state() -> None:
     assert document["version"] == p.CHANGE_POLICY_VERSION
     by_key = {f["key"]: f for s in document["sections"] for f in s["fields"]}
     assert by_key["purchasing.poNumber"] == {
-        "key": "purchasing.poNumber", "field": "poNumber", "label": "PO number", "level": "low",
-        "why": "Procurement metadata.", "default": False, "enabled": True, "overridden": True,
+        "key": "purchasing.poNumber",
+        "field": "poNumber",
+        "label": "PO number",
+        "level": "low",
+        "why": "Procurement metadata.",
+        "default": False,
+        "enabled": True,
+        "overridden": True,
     }
     assert by_key["security.firewallEnabled"]["enabled"] is True and by_key["security.firewallEnabled"]["overridden"] is False
     apps = next(e for e in document["entries"] if e["kind"] == "application")
@@ -141,7 +147,7 @@ def test_levels_at_least_widens_downward_and_keeps_levels_order() -> None:
 
 
 def test_notable_is_normal_and_above() -> None:
-    """"Notable" is not its own vocabulary — it is the NORMAL cut of the one ordering,
+    """ "Notable" is not its own vocabulary — it is the NORMAL cut of the one ordering,
     which is why `minLevel=normal` and `changes.notable_24h` count the same rows."""
     from app.core.posture import NOTABLE_LEVELS
 

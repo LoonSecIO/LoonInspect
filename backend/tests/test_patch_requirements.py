@@ -110,7 +110,7 @@ class TestCompare:
         assert compare("is not", "com.apple.safari", "com.apple.safari") is False
 
     def test_like_is_substring_which_the_catalog_relies_on(self) -> None:
-        """"5.4.3" is like "4." — the reason 1Password 4 also says not like "5.4."."""
+        """ "5.4.3" is like "4." — the reason 1Password 4 also says not like "5.4."."""
         assert compare("like", "5.4.3", "4.") is True
         assert compare("not like", "5.4.3", "5.4.") is False
         assert compare("has", "Ableton Live 11 Lite.app", "Ableton Live 11 Lite.app") is True

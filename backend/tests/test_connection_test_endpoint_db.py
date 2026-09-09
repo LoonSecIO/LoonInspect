@@ -76,9 +76,7 @@ async def _signed_in(email: str, password: str) -> httpx.AsyncClient:
 
     # https, not http: the session cookie is Secure, and a client on a plain-http
     # origin discards it silently — login returns 200 and every request after it 401s.
-    client = httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="https://connections.example.com"
-    )
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://connections.example.com")
     response = await client.post("/api/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200, f"login failed: {response.status_code} {response.text}"
     client.headers["X-CSRF-Token"] = client.cookies.get("loon_csrf", "")
@@ -139,9 +137,7 @@ def attempts(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, str]]:
     recorded: list[dict[str, str]] = []
 
     async def _record(self: JamfClient) -> dict:
-        recorded.append(
-            {"base_url": self._base_url, "client_id": self._client_id, "client_secret": self._client_secret}
-        )
+        recorded.append({"base_url": self._base_url, "client_id": self._client_id, "client_secret": self._client_secret})
         return {"expires_in": 1799, "token_type": "Bearer"}
 
     monkeypatch.setattr(JamfClient, "test_connection", _record)
@@ -231,14 +227,10 @@ async def test_stored_secret_is_refused_for_a_lookalike_host(client, connection,
 
 
 async def test_stored_secret_against_the_stored_url_still_works(client, connection, attempts) -> None:
-    response = await client.post(
-        "/api/mdm/connections/test", json=_test_payload(connectionId=connection.id)
-    )
+    response = await client.post("/api/mdm/connections/test", json=_test_payload(connectionId=connection.id))
 
     assert response.json()["success"] is True, response.text
-    assert attempts == [
-        {"base_url": STORED_URL, "client_id": "stored-client-id", "client_secret": STORED_SECRET}
-    ]
+    assert attempts == [{"base_url": STORED_URL, "client_id": "stored-client-id", "client_secret": STORED_SECRET}]
 
 
 async def test_a_trailing_slash_is_not_a_foreign_url(client, connection, attempts) -> None:
@@ -266,17 +258,13 @@ async def test_newly_supplied_credentials_reach_an_arbitrary_url(client, attempt
     assert attempts[0]["client_secret"] == "typed-by-the-admin"
 
 
-async def test_a_retyped_secret_may_be_tested_against_a_new_url_before_saving(
-    client, connection, attempts
-) -> None:
+async def test_a_retyped_secret_may_be_tested_against_a_new_url_before_saving(client, connection, attempts) -> None:
     """The distinction the fix turns on: the edit form sends connectionId alongside a
     changed baseUrl. With a secret typed into the form that is a legitimate test of new
     credentials; only the *stored* secret is pinned to the stored URL."""
     response = await client.post(
         "/api/mdm/connections/test",
-        json=_test_payload(
-            connectionId=connection.id, baseUrl="https://moved.jamfcloud.com", clientSecret="retyped"
-        ),
+        json=_test_payload(connectionId=connection.id, baseUrl="https://moved.jamfcloud.com", clientSecret="retyped"),
     )
 
     assert response.json()["success"] is True, response.text
@@ -285,9 +273,7 @@ async def test_a_retyped_secret_may_be_tested_against_a_new_url_before_saving(
     assert STORED_SECRET not in json.dumps(attempts)
 
 
-async def test_the_edit_flow_moves_a_connection_and_can_still_test_it(
-    client, db, connection, attempts
-) -> None:
+async def test_the_edit_flow_moves_a_connection_and_can_still_test_it(client, db, connection, attempts) -> None:
     """End to end through the normal admin path: save the new URL, then test. The
     stored secret follows the connection because the connection is what moved.
 
@@ -305,14 +291,10 @@ async def test_the_edit_flow_moves_a_connection_and_can_still_test_it(
     assert patched.status_code == 200, patched.text
     assert patched.json()["baseUrl"] == moved
 
-    response = await client.post(
-        "/api/mdm/connections/test", json=_test_payload(connectionId=connection.id, baseUrl=moved)
-    )
+    response = await client.post("/api/mdm/connections/test", json=_test_payload(connectionId=connection.id, baseUrl=moved))
 
     assert response.json()["success"] is True, response.text
-    assert attempts == [
-        {"base_url": moved, "client_id": "stored-client-id", "client_secret": STORED_SECRET}
-    ]
+    assert attempts == [{"base_url": moved, "client_id": "stored-client-id", "client_secret": STORED_SECRET}]
     # And the old URL is now the foreign one — the pin follows the row, not a constant.
     await client.post("/api/mdm/connections/test", json=_test_payload(connectionId=connection.id))
     assert len(attempts) == 1
@@ -327,9 +309,7 @@ async def test_auditor_cannot_exercise_the_stored_secret_at_all(accounts, connec
     auditor = await _signed_in(*AUDITOR)
     try:
         assert (await auditor.get(f"/api/mdm/connections/{connection.id}")).status_code == 200
-        refused = await auditor.post(
-            "/api/mdm/connections/test", json=_test_payload(connectionId=connection.id)
-        )
+        refused = await auditor.post("/api/mdm/connections/test", json=_test_payload(connectionId=connection.id))
     finally:
         await auditor.aclose()
 

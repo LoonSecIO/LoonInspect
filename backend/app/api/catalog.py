@@ -208,7 +208,7 @@ async def _lookup(
                     AppCatalogEntry.version_hash.in_(version_hashes or [""]),
                     AppCatalogEntry.key_full.in_(key_fulls or [""]),
                     AppCatalogEntry.app_hash.in_(app_hashes or [""]),
-                )
+                ),
             )
         )
     ).all()

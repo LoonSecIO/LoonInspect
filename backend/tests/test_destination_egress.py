@@ -137,9 +137,7 @@ async def test_security_a_hostname_that_resolves_to_the_metadata_address_is_refu
 ) -> None:
     monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", _resolves_to("169.254.169.254"))
     with pytest.raises(BlockedDestinationUrl) as refusal:
-        await refuse_blocked_resolution(
-            "https://metadata.attacker.example/hook", field="url", refusal=BlockedDestinationUrl
-        )
+        await refuse_blocked_resolution("https://metadata.attacker.example/hook", field="url", refusal=BlockedDestinationUrl)
     assert str(refusal.value).startswith("url may not point at metadata.attacker.example")
     assert "169.254.169.254" in str(refusal.value) and "link-local" in str(refusal.value)
 

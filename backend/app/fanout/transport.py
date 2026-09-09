@@ -86,9 +86,7 @@ def webhook_request_bodies(records: Sequence[Mapping[str, object]], *, max_bytes
     return [b"[" + b",".join(group) + b"]" for group in _chunk(lines, max_bytes, overhead=_BRACKETS, joiner=b",")]
 
 
-def elastic_bulk_bodies(
-    records: Sequence[Mapping[str, object]], *, max_bytes: int, timestamp: str
-) -> list[bytes]:
+def elastic_bulk_bodies(records: Sequence[Mapping[str, object]], *, max_bytes: int, timestamp: str) -> list[bytes]:
     """The `_bulk` request bodies one snapshot delivery to an `elastic` destination sends.
 
     `@timestamp` is the time axis of every Elastic index, so every source line carries

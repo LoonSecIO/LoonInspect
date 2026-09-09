@@ -186,9 +186,7 @@ def validate_destination_url(value: str) -> str:
                 "url must use https: every delivery carries this destination's credential. Set "
                 "ALLOW_INSECURE_DESTINATION_URL=true to accept plain http for a lab SIEM without TLS."
             )
-        raise BlockedDestinationUrl(
-            f"url must be an absolute https:// URL, not {parsed.scheme or 'a bare hostname'!r}"
-        )
+        raise BlockedDestinationUrl(f"url must be an absolute https:// URL, not {parsed.scheme or 'a bare hostname'!r}")
 
     if parsed.username or parsed.password:
         raise BlockedDestinationUrl("url must not carry credentials in the URL (user:password@host)")
@@ -230,9 +228,7 @@ def validate_mdm_base_url(value: str) -> str:
                 "client secret in its body, and http puts it on the wire in clear. Set "
                 "ALLOW_INSECURE_MDM_BASE_URL=true to accept that for a lab instance."
             )
-        raise BlockedBaseUrl(
-            f"baseUrl must be an absolute https:// URL, not {parsed.scheme or 'a bare hostname'!r}"
-        )
+        raise BlockedBaseUrl(f"baseUrl must be an absolute https:// URL, not {parsed.scheme or 'a bare hostname'!r}")
 
     if parsed.username or parsed.password:
         raise BlockedBaseUrl("baseUrl must not carry credentials in the URL (user:password@host)")
@@ -287,9 +283,7 @@ async def refuse_blocked_resolution(
 
     loop = asyncio.get_running_loop()
     try:
-        infos = await asyncio.wait_for(
-            loop.getaddrinfo(host, None, type=socket.SOCK_STREAM), _RESOLVE_TIMEOUT_SECONDS
-        )
+        infos = await asyncio.wait_for(loop.getaddrinfo(host, None, type=socket.SOCK_STREAM), _RESOLVE_TIMEOUT_SECONDS)
     except (OSError, UnicodeError):
         # gaierror and TimeoutError are both OSError; UnicodeError is what an
         # undecodable IDNA label raises. All of them mean "no answer", not "blocked".
@@ -347,9 +341,7 @@ def validate_inference_base_url(value: str, *, carries_key: bool) -> str:
     except ValueError as exc:
         raise BlockedBaseUrl(f"baseUrl is not a URL this server can parse: {exc}") from exc
     if parsed.scheme not in ("http", "https"):
-        raise BlockedBaseUrl(
-            f"baseUrl must be an absolute http:// or https:// URL, not {parsed.scheme or 'a bare hostname'!r}"
-        )
+        raise BlockedBaseUrl(f"baseUrl must be an absolute http:// or https:// URL, not {parsed.scheme or 'a bare hostname'!r}")
     if parsed.username or parsed.password:
         raise BlockedBaseUrl("baseUrl must not carry credentials in the URL (user:password@host)")
     if parsed.query or parsed.fragment:
@@ -364,8 +356,7 @@ def validate_inference_base_url(value: str, *, carries_key: bool) -> str:
             raise BlockedBaseUrl(f"baseUrl points at {reason}, which this server will not dial")
     if carries_key and parsed.scheme == "http" and not _is_local_host(host):
         raise BlockedBaseUrl(
-            "a key over plain http to a host that is not local would travel in clear; use https "
-            "or a local address"
+            "a key over plain http to a host that is not local would travel in clear; use https or a local address"
         )
     return url.rstrip("/")
 

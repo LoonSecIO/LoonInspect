@@ -245,8 +245,7 @@ def test_the_superseded_change_spellings_are_not_reintroduced() -> None:
 
     strings = {stype for _subject, _wrapper, stype in change_rows()}
     assert not any(stype.startswith(f"{PRODUCER}:{CHANGE_LEAF}") for stype in strings), (
-        "the no-vendor assertion form was refused on #243: a change is about the fleet, "
-        "not about a run"
+        "the no-vendor assertion form was refused on #243: a change is about the fleet, not about a run"
     )
     assert all(stype.startswith(f"{PRODUCER}:jamf:mac:") for stype in strings)
 
@@ -285,17 +284,14 @@ def test_the_event_that_the_fan_out_expands_already_carries_all_three() -> None:
     about what survives a split.
     """
     for model in (InventorySnapshotEvent, InventoryChangedEvent):
-        wire_names = {
-            info.alias or info.serialization_alias or name for name, info in model.model_fields.items()
-        }
+        wire_names = {info.alias or info.serialization_alias or name for name, info in model.model_fields.items()}
         assert set(SUB_EVENT_KEYS) <= wire_names, model.__name__
 
 
 def test_doc_sub_event_table_matches_the_ruling() -> None:
     documented = _doc_rows("| Key | What it carries | Ruled |")
     assert tuple(row[0] for row in documented) == SUB_EVENT_KEYS, (
-        "docs/splunk-wire-vocabulary.md §6 must name exactly the keys in "
-        "app.core.wire_vocabulary.SUB_EVENT_KEYS, in order."
+        "docs/splunk-wire-vocabulary.md §6 must name exactly the keys in app.core.wire_vocabulary.SUB_EVENT_KEYS, in order."
     )
 
 

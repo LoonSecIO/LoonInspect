@@ -160,8 +160,11 @@ async def test_security_delivery_to_a_row_that_resolves_somewhere_blocked_is_ref
 
     async with session_for_tenant(TENANT_ID) as db:
         destination = Destination(
-            name="stored before the rule", type="generic_webhook", url="https://metadata.attacker.example/hook",
-            auth_type="none", enabled=True,
+            name="stored before the rule",
+            type="generic_webhook",
+            url="https://metadata.attacker.example/hook",
+            auth_type="none",
+            enabled=True,
         )
         db.add(destination)
         event = await enqueue_event(db, "device.change", {"event": "device.change", "probe": uuidlib.uuid4().hex})
@@ -172,9 +175,7 @@ async def test_security_delivery_to_a_row_that_resolves_somewhere_blocked_is_ref
             await deliver_pending(db)
             await db.rollback()
 
-            delivery = (
-                await db.execute(select(OutboxDelivery).where(OutboxDelivery.outbox_event_id == event_id))
-            ).scalar_one()
+            delivery = (await db.execute(select(OutboxDelivery).where(OutboxDelivery.outbox_event_id == event_id))).scalar_one()
             assert delivery.status == "pending" and delivery.attempt_count == 1
             assert delivery.last_error is not None and "169.254.169.254" in delivery.last_error
             assert "link-local" in delivery.last_error and delivery.last_error.startswith("url may not point at")

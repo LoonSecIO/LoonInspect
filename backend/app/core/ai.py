@@ -39,7 +39,7 @@ so a feature that never reaches the gate is still bound by them):
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -74,9 +74,7 @@ class AIConsentMissing(AIRefused):
 async def ai_features_enabled(db: AsyncSession) -> bool:
     """The master flag, read the way the flags API reads it: an absent row and
     False are the same state."""
-    flag = (
-        await db.execute(select(FeatureFlag).where(FeatureFlag.key == AI_FEATURES_FLAG))
-    ).scalar_one_or_none()
+    flag = (await db.execute(select(FeatureFlag).where(FeatureFlag.key == AI_FEATURES_FLAG))).scalar_one_or_none()
     return flag is not None and flag.enabled
 
 
@@ -114,21 +112,15 @@ async def require_ai(
 
     if carries_no_fleet_data:
         if fields:
-            raise ValueError(
-                f"{feature} declares it carries no fleet data but names fields {sorted(set(fields))}"
-            )
+            raise ValueError(f"{feature} declares it carries no fleet data but names fields {sorted(set(fields))}")
     elif not fields:
-        raise ValueError(
-            f"off-pod inference for {feature} must disclose the fields it sends"
-        )
+        raise ValueError(f"off-pod inference for {feature} must disclose the fields it sends")
 
     settings_row = await get_or_create_settings(db)
     if not settings_row.ai_inference:
-        raise AIConsentMissing(
-            f"AI-inference consent is off; {feature} may not send bytes to {destination}"
-        )
+        raise AIConsentMissing(f"AI-inference consent is off; {feature} may not send bytes to {destination}")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     db.add(
         ShareLog(
             occurred_at=now,

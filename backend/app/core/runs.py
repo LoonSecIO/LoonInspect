@@ -36,7 +36,7 @@ import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import or_, select, update
@@ -141,6 +141,7 @@ class RunReclaimed(Exception):
     lie about whether the connection double-ran.
     """
 
+
 # How often the heartbeat is actually written. The device loop calls beat() constantly;
 # this throttles it to one small UPDATE per interval rather than one per device.
 _HEARTBEAT_INTERVAL_SECONDS = 15
@@ -181,7 +182,7 @@ def reset_run(token: Token[RunContext | None]) -> None:
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def event_time(device_time: datetime | None = None) -> datetime:
@@ -289,11 +290,7 @@ async def _connection_wire(db: AsyncSession, connection_id: int) -> tuple[str | 
     so HEC applies the input's own default host — an obvious, overridable placeholder
     rather than a fact the product asserted.
     """
-    row = (
-        await db.execute(
-            select(MdmConnection.name, MdmConnection.base_url).where(MdmConnection.id == connection_id)
-        )
-    ).first()
+    row = (await db.execute(select(MdmConnection.name, MdmConnection.base_url).where(MdmConnection.id == connection_id))).first()
     if row is None:
         return None, None
     return row.name, (instance_label(row.base_url) if row.base_url else None)
@@ -411,9 +408,7 @@ async def _enqueue_run_completed(
     )
 
 
-async def _emit_after_release(
-    db: AsyncSession, run_id: uuid.UUID, event_type: str, emit: Callable[[], Awaitable[None]]
-) -> None:
+async def _emit_after_release(db: AsyncSession, run_id: uuid.UUID, event_type: str, emit: Callable[[], Awaitable[None]]) -> None:
     """Enqueue one closing event in its own transaction, AFTER the release has committed.
 
     Both producers used to enqueue in the SAME transaction as the run-status UPDATE that
@@ -526,10 +521,7 @@ async def _reclaim_stale(db: AsyncSession) -> int:
     """
     now = _utcnow()
     cutoff = now - timedelta(seconds=settings.run_stale_after_seconds)
-    error = (
-        "reclaimed: no heartbeat within "
-        f"{settings.run_stale_after_seconds}s — the process running it stopped"
-    )
+    error = f"reclaimed: no heartbeat within {settings.run_stale_after_seconds}s — the process running it stopped"
     result = await db.execute(
         update(Run)
         .where(Run.status == STATUS_RUNNING, Run.heartbeat_at < cutoff)
@@ -752,11 +744,7 @@ async def _resync_marked_collections(db: AsyncSession, collection_ids: list[int]
     if not collection_ids:
         return
     with contextlib.suppress(Exception):
-        await db.execute(
-            select(Collection)
-            .where(Collection.id.in_(collection_ids))
-            .execution_options(populate_existing=True)
-        )
+        await db.execute(select(Collection).where(Collection.id.in_(collection_ids)).execution_options(populate_existing=True))
 
 
 async def _record_reclaim(db: AsyncSession, row, *, at: datetime, error: str) -> None:
@@ -824,9 +812,7 @@ async def active_connection_ids(db: AsyncSession, lock_class: str) -> set[int]:
     acquisition a moment later — claiming advances `next_due_at`, so a lost race would
     push the next sweep a full day out instead of retrying next minute.
     """
-    result = await db.execute(
-        select(Run.mdm_connection_id).where(Run.lock_class == lock_class, Run.status == STATUS_RUNNING)
-    )
+    result = await db.execute(select(Run.mdm_connection_id).where(Run.lock_class == lock_class, Run.status == STATUS_RUNNING))
     return set(result.scalars().all())
 
 
@@ -947,9 +933,7 @@ async def entered(run: Run) -> AsyncIterator[RunContext]:
         reset_run(token)
 
 
-async def log(
-    db: AsyncSession, run: Run, level: str, message: str, **fields: object
-) -> None:
+async def log(db: AsyncSession, run: Run, level: str, message: str, **fields: object) -> None:
     """Append one engine line, and commit it.
 
     Committed on its own rather than riding the caller's transaction: the point of the
@@ -984,10 +968,7 @@ async def beat(db: AsyncSession, run: Run) -> None:
     if run.heartbeat_at and (now - run.heartbeat_at).total_seconds() < _HEARTBEAT_INTERVAL_SECONDS:
         return
     held = await db.execute(
-        update(Run)
-        .where(Run.id == run.id, Run.status == STATUS_RUNNING)
-        .values(heartbeat_at=now)
-        .returning(Run.id)
+        update(Run).where(Run.id == run.id, Run.status == STATUS_RUNNING).values(heartbeat_at=now).returning(Run.id)
     )
     if held.scalar_one_or_none() is None:
         # Read before the rollback: rollback expires ORM state, and touching an
@@ -1159,9 +1140,7 @@ async def finish(
         except Exception:
             with contextlib.suppress(Exception):
                 await db.rollback()
-            logger.exception(
-                "posture snapshot failed; the run's verdict stands", extra={"run_id": str(row.id)}
-            )
+            logger.exception("posture snapshot failed; the run's verdict stands", extra={"run_id": str(row.id)})
     return True
 
 
@@ -1174,8 +1153,6 @@ async def purge_runs(db: AsyncSession, retention_days: int) -> int:
     carries a row per event per destination.
     """
     cutoff = _utcnow() - timedelta(days=retention_days)
-    result = await db.execute(
-        sa_delete(Run).where(Run.status != STATUS_RUNNING, Run.finished_at < cutoff)
-    )
+    result = await db.execute(sa_delete(Run).where(Run.status != STATUS_RUNNING, Run.finished_at < cutoff))
     await db.commit()
     return result.rowcount or 0

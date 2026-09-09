@@ -69,9 +69,7 @@ def test_the_policy_routes_carry_a_schema() -> None:
     spec = _spec()
     for method in ("get", "put"):
         schema = _response_schema(spec, "/api/changes/policy", method)
-        assert {"version", "minimumLevel", "sections", "entries", "knownGroups", "updatedAt"} <= set(
-            schema["properties"]
-        )
+        assert {"version", "minimumLevel", "sections", "entries", "knownGroups", "updatedAt"} <= set(schema["properties"])
 
 
 def test_the_described_policy_round_trips_through_its_model() -> None:
@@ -79,9 +77,7 @@ def test_the_described_policy_round_trips_through_its_model() -> None:
     side moves, this is the test that says so. The dump has to reproduce every key the
     document carried plus the three the route adds, so nothing is quietly dropped."""
     document = EffectivePolicy(Overrides.from_document(None)).describe()
-    out = ChangePolicyOut.model_validate(
-        {**document, "knownGroups": [], "knownExtensionAttributes": [], "updatedAt": None}
-    )
+    out = ChangePolicyOut.model_validate({**document, "knownGroups": [], "knownExtensionAttributes": [], "updatedAt": None})
     dumped = out.model_dump(by_alias=True, mode="json")
     assert set(dumped) == set(document) | {"knownGroups", "knownExtensionAttributes", "updatedAt"}
     assert dumped["sections"] == document["sections"]

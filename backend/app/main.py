@@ -4,7 +4,7 @@ import logging
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from email.utils import parsedate
 from pathlib import Path
 
@@ -78,9 +78,7 @@ async def operational_tenant_ids() -> list[uuid.UUID]:
     quietly crosses a boundary.
     """
     async with unscoped_session() as db:
-        result = await db.execute(
-            select(Tenant.id).where(Tenant.kind == "operational").order_by(Tenant.slug)
-        )
+        result = await db.execute(select(Tenant.id).where(Tenant.kind == "operational").order_by(Tenant.slug))
         return list(result.scalars().all())
 
 
@@ -172,7 +170,7 @@ async def hourly_session_cleanup() -> None:
     this the table grows for the life of the deployment."""
     # A day's grace after expiry, so a session row still exists long enough to be
     # useful when investigating "I was logged out, what happened?".
-    cutoff = datetime.now(timezone.utc) - timedelta(days=1)
+    cutoff = datetime.now(UTC) - timedelta(days=1)
 
     for tenant_id in await operational_tenant_ids():
         async with tenant_job(tenant_id) as db:
@@ -217,9 +215,7 @@ async def outbox_cleanup() -> None:
     than nightly-batched."""
     for tenant_id in await operational_tenant_ids():
         async with tenant_job(tenant_id) as db:
-            purged = await purge_delivered_events(
-                db, settings.event_outbox_retention_days, settings.dead_letter_retention_days
-            )
+            purged = await purge_delivered_events(db, settings.event_outbox_retention_days, settings.dead_letter_retention_days)
         if purged:
             logger.info(
                 "purged old outbox events",
@@ -445,6 +441,7 @@ app.include_router(jamf_patch_router)
 app.include_router(smart_groups_router)
 app.include_router(feature_flags_router)
 
+
 @app.get("/openapi.json", include_in_schema=False)
 async def openapi_schema() -> JSONResponse:
     return JSONResponse(app.openapi())
@@ -455,9 +452,7 @@ async def openapi_schema() -> JSONResponse:
 # so DOCS_CONTENT_SECURITY_POLICY (app.core.middleware) names jsdelivr and nothing else.
 @app.get("/docs", include_in_schema=False)
 async def swagger_ui() -> HTMLResponse:
-    return get_swagger_ui_html(
-        openapi_url="/openapi.json", title=f"{settings.app_name} API", swagger_favicon_url="/favicon.svg"
-    )
+    return get_swagger_ui_html(openapi_url="/openapi.json", title=f"{settings.app_name} API", swagger_favicon_url="/favicon.svg")
 
 
 @app.get("/redoc", include_in_schema=False)

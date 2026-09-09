@@ -27,7 +27,7 @@ import logging
 import unicodedata
 import uuid as uuidlib
 from collections.abc import Iterator
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -78,7 +78,7 @@ MINTED_KEYS = frozenset({"appHash", "versionHash", "keyTitle", "keyFull"})
 SIZE_CEILING = 29_000
 
 _RUN_ID = uuidlib.UUID("0199a5c4-7b2e-7c3a-9f1e-3c2b1a0d9e8f")
-_WINDOW = datetime(2026, 9, 2, 2, 0, tzinfo=timezone.utc)
+_WINDOW = datetime(2026, 9, 2, 2, 0, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -154,7 +154,7 @@ def _device(raw: dict) -> Device:
         external_id=str(raw["id"]),
         serial_number=raw["hardware"]["serialNumber"],
         hostname=raw["general"]["name"],
-        last_inventory_at=datetime(2026, 8, 22, 1, 44, 27, tzinfo=timezone.utc),
+        last_inventory_at=datetime(2026, 8, 22, 1, 44, 27, tzinfo=UTC),
         managed=True,
     )
 
@@ -385,8 +385,15 @@ def test_a_removed_app_is_absent_and_a_rowless_app_is_unsupported_and_logged(run
         "applications": [{"name": "Kept.app", "bundleId": "com.example.kept", "version": "1.0"}],
     }
     removed = InstalledApp(
-        name="Gone.app", bundle_id="com.example.gone", version="9.9", app_hash="x", version_hash="y",
-        key_title="v1:t", key_full="v1:f", jamf_title_ids=["1"], patch_state="behind",
+        name="Gone.app",
+        bundle_id="com.example.gone",
+        version="9.9",
+        app_hash="x",
+        version_hash="y",
+        key_title="v1:t",
+        key_full="v1:f",
+        jamf_title_ids=["1"],
+        patch_state="behind",
     )
     with caplog.at_level(logging.WARNING, logger="app.mdm.snapshot"):
         event = build_inventory_snapshot(

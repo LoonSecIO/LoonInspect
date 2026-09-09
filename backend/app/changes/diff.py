@@ -116,25 +116,39 @@ def diff_entries(
             )
             changes.append(
                 EntryChange(
-                    section=section, kind=kind, change="updated",
+                    section=section,
+                    kind=kind,
+                    change="updated",
                     identity=_identity(partner.body, identity),
-                    old=entry.body, new=partner.body,
-                    label=partner.label or entry.label, changed_fields=changed,
+                    old=entry.body,
+                    new=partner.body,
+                    label=partner.label or entry.label,
+                    changed_fields=changed,
                 )
             )
         else:
             changes.append(
                 EntryChange(
-                    section=section, kind=kind, change="removed",
-                    identity=_identity(entry.body, identity), old=entry.body, new=None, label=entry.label,
+                    section=section,
+                    kind=kind,
+                    change="removed",
+                    identity=_identity(entry.body, identity),
+                    old=entry.body,
+                    new=None,
+                    label=entry.label,
                 )
             )
     for remaining in came_by_identity.values():
         for entry in remaining:
             changes.append(
                 EntryChange(
-                    section=section, kind=kind, change="added",
-                    identity=_identity(entry.body, identity), old=None, new=entry.body, label=entry.label,
+                    section=section,
+                    kind=kind,
+                    change="added",
+                    identity=_identity(entry.body, identity),
+                    old=None,
+                    new=entry.body,
+                    label=entry.label,
                 )
             )
     # Deterministic order: by change kind then identity, so tests and event streams are stable.

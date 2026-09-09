@@ -1,4 +1,3 @@
-# ruff: noqa: E501 — assertion lines read better unwrapped in this end-to-end test.
 """The posture snapshot recorder against a real Postgres: a capture fired by the close of
 a full sweep (success and failure alike), and the writing rules the table's readers rely
 on — every active key lands, the run id is stamped, and an empty queue writes no
@@ -13,7 +12,7 @@ from __future__ import annotations
 
 import os
 import uuid as uuidlib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -29,7 +28,7 @@ _TITLE_IDS = ("LOONT1", "LOONT2", "LOONT3", "LOONT4")
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _hash() -> str:
@@ -65,7 +64,9 @@ async def fleet(db):
 
     suffix = uuidlib.uuid4().hex[:8]
     active = MdmConnection(name=f"posture jamf {suffix}", provider="jamf", base_url="https://posture.invalid", is_active=True)
-    inactive = MdmConnection(name=f"posture inactive {suffix}", provider="jamf", base_url="https://posture-off.invalid", is_active=False)
+    inactive = MdmConnection(
+        name=f"posture inactive {suffix}", provider="jamf", base_url="https://posture-off.invalid", is_active=False
+    )
     db.add_all([active, inactive])
     await db.commit()
 
@@ -148,9 +149,14 @@ async def _seed_fleet(db, ns) -> None:
 
     def device(connection_id, external_id, *, check_in, inventory, managed):
         return Device(
-            mdm_connection_id=connection_id, mdm_provider="jamf", external_id=external_id,
-            serial_number=f"POSTURE{external_id}", hostname=f"posture-{external_id}",
-            last_check_in=check_in, last_inventory_at=inventory, managed=managed,
+            mdm_connection_id=connection_id,
+            mdm_provider="jamf",
+            external_id=external_id,
+            serial_number=f"POSTURE{external_id}",
+            hostname=f"posture-{external_id}",
+            last_check_in=check_in,
+            last_inventory_at=inventory,
+            managed=managed,
         )
 
     d1 = device(active.id, f"{suffix}-1", check_in=now - timedelta(hours=1), inventory=now - timedelta(hours=1), managed=True)
@@ -162,9 +168,18 @@ async def _seed_fleet(db, ns) -> None:
 
     def entry(name, app_hash, *, title_ids, is_latest, latest_version):
         return AppCatalogEntry(
-            name=name, bundle_id=f"io.loonsec.{name}", version="1.0", app_hash=app_hash, version_hash=_hash(),
-            key_title=_key67(), key_full=_key67(), first_seen_at=now, last_seen_at=now,
-            jamf_title_ids=title_ids, is_latest=is_latest, latest_version=latest_version,
+            name=name,
+            bundle_id=f"io.loonsec.{name}",
+            version="1.0",
+            app_hash=app_hash,
+            version_hash=_hash(),
+            key_title=_key67(),
+            key_full=_key67(),
+            first_seen_at=now,
+            last_seen_at=now,
+            jamf_title_ids=title_ids,
+            is_latest=is_latest,
+            latest_version=latest_version,
         )
 
     e1 = entry(f"behind-{suffix}", _hash(), title_ids=["LOONT1"], is_latest=False, latest_version="2.0")
@@ -184,26 +199,85 @@ async def _seed_fleet(db, ns) -> None:
 
     def install(dev, cat_entry):
         return InstalledApp(
-            device_id=dev.id, name=cat_entry.name, bundle_id=cat_entry.bundle_id, version=cat_entry.version,
-            app_hash=cat_entry.app_hash, version_hash=cat_entry.version_hash, key_title=cat_entry.key_title, key_full=cat_entry.key_full,
+            device_id=dev.id,
+            name=cat_entry.name,
+            bundle_id=cat_entry.bundle_id,
+            version=cat_entry.version,
+            app_hash=cat_entry.app_hash,
+            version_hash=cat_entry.version_hash,
+            key_title=cat_entry.key_title,
+            key_full=cat_entry.key_full,
         )
 
     db.add_all([install(d1, e1), install(d1, e2), install(d2, e2), install(d1, e4)])
 
     for title_id in _TITLE_IDS:
-        await db.merge(JamfPatchTitle(id=title_id, name=f"Posture Title {title_id}", current_version="9.9", last_modified="", patches=[], requirements=[]))
+        await db.merge(
+            JamfPatchTitle(
+                id=title_id,
+                name=f"Posture Title {title_id}",
+                current_version="9.9",
+                last_modified="",
+                patches=[],
+                requirements=[],
+            )
+        )
     # Committed before the matches reference them: the titles are global rows outside
     # tenancy, and the FK check needs them on disk first.
     await db.commit()
-    db.add_all([
-        AppCatalogTitleMatch(app_catalog_id=e1.id, title_id="LOONT1", basis="requirements", state="behind", version_known=True, on_latest=False, installed_version="1.0", latest_version="2.0", first_newer_released_at=now - timedelta(days=20), releases_missed=3),
-        AppCatalogTitleMatch(app_catalog_id=e2.id, title_id="LOONT2", basis="requirements", state="latest", version_known=True, on_latest=True, installed_version="1.0", latest_version="3.0", releases_missed=0),
-        # The same 20-day-old date on an unlisted build: counted under its own key, never as a laggard.
-        AppCatalogTitleMatch(app_catalog_id=e1.id, title_id="LOONT3", basis="requirements", state="unknown", version_known=False, on_latest=False, installed_version="1.0", latest_version="4.0", first_newer_released_at=now - timedelta(days=20), releases_missed=5),
-        # Ahead of the catalog: not on latest, but nothing is missing. No `first_newer_released_at`
-        # and no releases missed, because there is no newer version to have missed.
-        AppCatalogTitleMatch(app_catalog_id=e4.id, title_id="LOONT4", basis="requirements", state="ahead", version_known=False, on_latest=False, installed_version="1.0", latest_version="0.9", releases_missed=0),
-    ])
+    db.add_all(
+        [
+            AppCatalogTitleMatch(
+                app_catalog_id=e1.id,
+                title_id="LOONT1",
+                basis="requirements",
+                state="behind",
+                version_known=True,
+                on_latest=False,
+                installed_version="1.0",
+                latest_version="2.0",
+                first_newer_released_at=now - timedelta(days=20),
+                releases_missed=3,
+            ),
+            AppCatalogTitleMatch(
+                app_catalog_id=e2.id,
+                title_id="LOONT2",
+                basis="requirements",
+                state="latest",
+                version_known=True,
+                on_latest=True,
+                installed_version="1.0",
+                latest_version="3.0",
+                releases_missed=0,
+            ),
+            # The same 20-day-old date on an unlisted build: counted under its own key, never as a laggard.
+            AppCatalogTitleMatch(
+                app_catalog_id=e1.id,
+                title_id="LOONT3",
+                basis="requirements",
+                state="unknown",
+                version_known=False,
+                on_latest=False,
+                installed_version="1.0",
+                latest_version="4.0",
+                first_newer_released_at=now - timedelta(days=20),
+                releases_missed=5,
+            ),
+            # Ahead of the catalog: not on latest, but nothing is missing. No `first_newer_released_at`
+            # and no releases missed, because there is no newer version to have missed.
+            AppCatalogTitleMatch(
+                app_catalog_id=e4.id,
+                title_id="LOONT4",
+                basis="requirements",
+                state="ahead",
+                version_known=False,
+                on_latest=False,
+                installed_version="1.0",
+                latest_version="0.9",
+                releases_missed=0,
+            ),
+        ]
+    )
 
     # Alerts (#101): the derived latch, seeded across every population edge the two keys
     # have to respect — an open one, one that opened and closed inside the window (which
@@ -211,58 +285,117 @@ async def _seed_fleet(db, ns) -> None:
     # and one on the inactive connection's device, which counts nowhere.
     def alert(dev, entry, *, opened, closed=None):
         return Alert(
-            kind="new_app", level="high", device_id=dev.id, app_hash=entry.app_hash,
-            app_name=entry.name, bundle_id=entry.bundle_id, opened_at=opened, closed_at=closed,
+            kind="new_app",
+            level="high",
+            device_id=dev.id,
+            app_hash=entry.app_hash,
+            app_name=entry.name,
+            bundle_id=entry.bundle_id,
+            opened_at=opened,
+            closed_at=closed,
         )
 
-    db.add_all([
-        alert(d1, e1, opened=now - timedelta(hours=2)),
-        alert(d2, e2, opened=now - timedelta(hours=3), closed=now - timedelta(hours=1)),
-        alert(d3, e3, opened=now - timedelta(hours=30), closed=now - timedelta(hours=29)),
-        alert(d9, e1, opened=now - timedelta(hours=2)),
-    ])
+    db.add_all(
+        [
+            alert(d1, e1, opened=now - timedelta(hours=2)),
+            alert(d2, e2, opened=now - timedelta(hours=3), closed=now - timedelta(hours=1)),
+            alert(d3, e3, opened=now - timedelta(hours=30), closed=now - timedelta(hours=29)),
+            alert(d9, e1, opened=now - timedelta(hours=2)),
+        ]
+    )
 
     def change(level, observed):
         return DeviceChange(
-            mdm_connection_id=active.id, subject_kind="computer", subject_id=f"{suffix}-1",
-            observed_at=observed, collected_at=observed, trigger="sweep",
-            section="security", field="firewallEnabled", change="changed", level=level, policy_version="v0",
+            mdm_connection_id=active.id,
+            subject_kind="computer",
+            subject_id=f"{suffix}-1",
+            observed_at=observed,
+            collected_at=observed,
+            trigger="sweep",
+            section="security",
+            field="firewallEnabled",
+            change="changed",
+            level=level,
+            policy_version="v0",
         )
 
-    db.add_all([
-        change("high", now - timedelta(hours=1)),
-        change("normal", now - timedelta(hours=2)),
-        change("low", now - timedelta(hours=1)),          # below the notable cut
-        change("high", now - timedelta(hours=30)),        # outside the 24h window
-    ])
+    db.add_all(
+        [
+            change("high", now - timedelta(hours=1)),
+            change("normal", now - timedelta(hours=2)),
+            change("low", now - timedelta(hours=1)),  # below the notable cut
+            change("high", now - timedelta(hours=30)),  # outside the 24h window
+        ]
+    )
 
-    db.add_all([
-        Run(
-            id=uuidlib.uuid4(), mdm_connection_id=active.id, trigger="manual", comparison="delta", lock_class="device_sweep",
-            status="failed", window_start=now - timedelta(minutes=40), started_at=now - timedelta(minutes=40),
-            finished_at=now - timedelta(minutes=30), heartbeat_at=now - timedelta(minutes=30), error="seeded failure",
-        ),
-        Run(
-            id=uuidlib.uuid4(), mdm_connection_id=active.id, trigger="sweep", comparison="delta", lock_class="device_sweep",
-            status="succeeded", window_start=now - timedelta(hours=31), started_at=now - timedelta(hours=31),
-            finished_at=now - timedelta(hours=30), heartbeat_at=now - timedelta(hours=30),
-        ),
-    ])
+    db.add_all(
+        [
+            Run(
+                id=uuidlib.uuid4(),
+                mdm_connection_id=active.id,
+                trigger="manual",
+                comparison="delta",
+                lock_class="device_sweep",
+                status="failed",
+                window_start=now - timedelta(minutes=40),
+                started_at=now - timedelta(minutes=40),
+                finished_at=now - timedelta(minutes=30),
+                heartbeat_at=now - timedelta(minutes=30),
+                error="seeded failure",
+            ),
+            Run(
+                id=uuidlib.uuid4(),
+                mdm_connection_id=active.id,
+                trigger="sweep",
+                comparison="delta",
+                lock_class="device_sweep",
+                status="succeeded",
+                window_start=now - timedelta(hours=31),
+                started_at=now - timedelta(hours=31),
+                finished_at=now - timedelta(hours=30),
+                heartbeat_at=now - timedelta(hours=30),
+            ),
+        ]
+    )
 
-    destination = Destination(name=f"posture sink {suffix}", type="generic_webhook", url="https://posture-sink.invalid", enabled=False)
+    destination = Destination(
+        name=f"posture sink {suffix}", type="generic_webhook", url="https://posture-sink.invalid", enabled=False
+    )
     db.add(destination)
     await db.commit()
     ns.destination_id = destination.id
 
-    ev_pending = EventOutbox(event_type="posture.test", payload={"seed": suffix}, fanned_out=False, created_at=now - timedelta(hours=1))
-    ev_delivered = EventOutbox(event_type="posture.test", payload={"seed": suffix}, fanned_out=True, created_at=now - timedelta(hours=2))
-    ev_dead = EventOutbox(event_type="posture.test", payload={"seed": suffix}, fanned_out=True, created_at=now - timedelta(hours=2))
+    ev_pending = EventOutbox(
+        event_type="posture.test", payload={"seed": suffix}, fanned_out=False, created_at=now - timedelta(hours=1)
+    )
+    ev_delivered = EventOutbox(
+        event_type="posture.test", payload={"seed": suffix}, fanned_out=True, created_at=now - timedelta(hours=2)
+    )
+    ev_dead = EventOutbox(
+        event_type="posture.test", payload={"seed": suffix}, fanned_out=True, created_at=now - timedelta(hours=2)
+    )
     db.add_all([ev_pending, ev_delivered, ev_dead])
     await db.commit()
-    db.add_all([
-        OutboxDelivery(outbox_event_id=ev_delivered.id, destination_id=destination.id, status="delivered", attempt_count=1, last_attempted_at=now - timedelta(hours=1), delivered_at=now - timedelta(hours=1)),
-        OutboxDelivery(outbox_event_id=ev_dead.id, destination_id=destination.id, status="failed", attempt_count=10, last_attempted_at=now - timedelta(hours=1), last_error="seeded dead letter"),
-    ])
+    db.add_all(
+        [
+            OutboxDelivery(
+                outbox_event_id=ev_delivered.id,
+                destination_id=destination.id,
+                status="delivered",
+                attempt_count=1,
+                last_attempted_at=now - timedelta(hours=1),
+                delivered_at=now - timedelta(hours=1),
+            ),
+            OutboxDelivery(
+                outbox_event_id=ev_dead.id,
+                destination_id=destination.id,
+                status="failed",
+                attempt_count=10,
+                last_attempted_at=now - timedelta(hours=1),
+                last_error="seeded dead letter",
+            ),
+        ]
+    )
 
     admin = Account(email=f"posture-admin-{suffix}@example.com", display_name="Posture Admin")
     disabled = Account(email=f"posture-disabled-{suffix}@example.com", display_name="Posture Disabled", status="disabled")
@@ -270,10 +403,23 @@ async def _seed_fleet(db, ns) -> None:
     await db.commit()
     ns.account_ids = [admin.id, disabled.id]
     db.add(AccountRole(account_id=admin.id, role="admin", source="manual"))
-    db.add_all([
-        ApiToken(id=uuidlib.uuid4().hex[:32], account_id=admin.id, name="posture live", token_hash=uuidlib.uuid4().hex + uuidlib.uuid4().hex),
-        ApiToken(id=uuidlib.uuid4().hex[:32], account_id=admin.id, name="posture revoked", token_hash=uuidlib.uuid4().hex + uuidlib.uuid4().hex, revoked_at=now),
-    ])
+    db.add_all(
+        [
+            ApiToken(
+                id=uuidlib.uuid4().hex[:32],
+                account_id=admin.id,
+                name="posture live",
+                token_hash=uuidlib.uuid4().hex + uuidlib.uuid4().hex,
+            ),
+            ApiToken(
+                id=uuidlib.uuid4().hex[:32],
+                account_id=admin.id,
+                name="posture revoked",
+                token_hash=uuidlib.uuid4().hex + uuidlib.uuid4().hex,
+                revoked_at=now,
+            ),
+        ]
+    )
     await db.commit()
 
 
@@ -304,12 +450,16 @@ async def test_the_fixture_exercises_every_patch_state(db, fleet) -> None:
 
     await _seed_fleet(db, fleet)
     seeded = (
-        await db.execute(
-            select(AppCatalogTitleMatch.state)
-            .join(AppCatalogEntry, AppCatalogEntry.id == AppCatalogTitleMatch.app_catalog_id)
-            .where(AppCatalogEntry.version_hash.in_(fleet.version_hashes))
+        (
+            await db.execute(
+                select(AppCatalogTitleMatch.state)
+                .join(AppCatalogEntry, AppCatalogEntry.id == AppCatalogTitleMatch.app_catalog_id)
+                .where(AppCatalogEntry.version_hash.in_(fleet.version_hashes))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert set(seeded) == set(PATCH_STATES), (
         "the posture fixture must seed a pair in every state the matcher can assign — a state "
         "with no pair is a state every rollup below is untested against"
@@ -459,9 +609,16 @@ async def test_an_empty_queue_writes_no_oldest_pending_row(db, fleet) -> None:
 
     now = _now()
     run = Run(
-        id=uuidlib.uuid4(), mdm_connection_id=fleet.connection.id, trigger="sweep", comparison="delta",
-        lock_class="device_sweep", status="succeeded", window_start=now - timedelta(seconds=120),
-        started_at=now - timedelta(seconds=120), finished_at=now, heartbeat_at=now,
+        id=uuidlib.uuid4(),
+        mdm_connection_id=fleet.connection.id,
+        trigger="sweep",
+        comparison="delta",
+        lock_class="device_sweep",
+        status="succeeded",
+        window_start=now - timedelta(seconds=120),
+        started_at=now - timedelta(seconds=120),
+        finished_at=now,
+        heartbeat_at=now,
     )
     db.add(run)
     await db.commit()
@@ -483,9 +640,16 @@ async def test_every_captured_row_names_the_population_it_counted(db, fleet) -> 
 
     now = _now()
     run = Run(
-        id=uuidlib.uuid4(), mdm_connection_id=fleet.connection.id, trigger="sweep", comparison="delta",
-        lock_class="device_sweep", status="succeeded", window_start=now - timedelta(seconds=60),
-        started_at=now - timedelta(seconds=60), finished_at=now, heartbeat_at=now,
+        id=uuidlib.uuid4(),
+        mdm_connection_id=fleet.connection.id,
+        trigger="sweep",
+        comparison="delta",
+        lock_class="device_sweep",
+        status="succeeded",
+        window_start=now - timedelta(seconds=60),
+        started_at=now - timedelta(seconds=60),
+        finished_at=now,
+        heartbeat_at=now,
     )
     db.add(run)
     await db.commit()
@@ -513,32 +677,47 @@ async def test_one_row_per_key_per_capture_per_population(db, fleet) -> None:
 
     now = _now()
     run = Run(
-        id=uuidlib.uuid4(), mdm_connection_id=fleet.connection.id, trigger="sweep", comparison="delta",
-        lock_class="device_sweep", status="succeeded", window_start=now - timedelta(seconds=60),
-        started_at=now - timedelta(seconds=60), finished_at=now, heartbeat_at=now,
+        id=uuidlib.uuid4(),
+        mdm_connection_id=fleet.connection.id,
+        trigger="sweep",
+        comparison="delta",
+        lock_class="device_sweep",
+        status="succeeded",
+        window_start=now - timedelta(seconds=60),
+        started_at=now - timedelta(seconds=60),
+        finished_at=now,
+        heartbeat_at=now,
     )
     db.add(run)
     await db.commit()
 
     await record_full_sweep_snapshot(db, run_id=run.id)
-    row = (
-        await db.execute(select(PostureSnapshot).where(PostureSnapshot.full_sweep_run_id == run.id))
-    ).scalars().first()
+    row = (await db.execute(select(PostureSnapshot).where(PostureSnapshot.full_sweep_run_id == run.id))).scalars().first()
     assert row is not None
     key, value, captured_at = row.metric_key, row.value, row.captured_at
 
     # A different population at the same instant is a different row, and permitted.
-    db.add(PostureSnapshot(
-        metric_key=key, platform=PLATFORM_ROLLUP, value=value,
-        captured_at=captured_at, full_sweep_run_id=run.id,
-    ))
+    db.add(
+        PostureSnapshot(
+            metric_key=key,
+            platform=PLATFORM_ROLLUP,
+            value=value,
+            captured_at=captured_at,
+            full_sweep_run_id=run.id,
+        )
+    )
     await db.commit()
 
     # The same (tenant, key, platform, capture) is not.
-    db.add(PostureSnapshot(
-        metric_key=key, platform=CAPTURE_PLATFORM, value=value,
-        captured_at=captured_at, full_sweep_run_id=run.id,
-    ))
+    db.add(
+        PostureSnapshot(
+            metric_key=key,
+            platform=CAPTURE_PLATFORM,
+            value=value,
+            captured_at=captured_at,
+            full_sweep_run_id=run.id,
+        )
+    )
     with pytest.raises(IntegrityError):
         await db.commit()
     await db.rollback()

@@ -111,10 +111,8 @@ async def _webhook_run(db, connection_id):
     from app.models.schema import Run
 
     run = (
-        await db.execute(
-            select(Run).where(Run.mdm_connection_id == connection_id, Run.lock_class == "webhook")
-        )
-    ).scalars().one()
+        (await db.execute(select(Run).where(Run.mdm_connection_id == connection_id, Run.lock_class == "webhook"))).scalars().one()
+    )
     await db.refresh(run)
     return run
 
@@ -123,10 +121,10 @@ async def _latest_run(db, connection_id):
     from app.models.schema import Run
 
     run = (
-        await db.execute(
-            select(Run).where(Run.mdm_connection_id == connection_id).order_by(Run.started_at.desc()).limit(1)
-        )
-    ).scalars().one()
+        (await db.execute(select(Run).where(Run.mdm_connection_id == connection_id).order_by(Run.started_at.desc()).limit(1)))
+        .scalars()
+        .one()
+    )
     await db.refresh(run)
     return run
 
@@ -137,10 +135,10 @@ async def _events(db, event_type: str, run_id) -> list:
     from app.models.schema import EventOutbox
 
     rows = (
-        await db.execute(
-            select(EventOutbox).where(EventOutbox.event_type == event_type).order_by(EventOutbox.id)
-        )
-    ).scalars().all()
+        (await db.execute(select(EventOutbox).where(EventOutbox.event_type == event_type).order_by(EventOutbox.id)))
+        .scalars()
+        .all()
+    )
     return [row for row in rows if row.payload.get("jobID") == str(run_id)]
 
 
@@ -213,9 +211,7 @@ async def test_webhook_fetch_5xx_fails_the_run_and_answers_502(db, jamf: FakeJam
     assert completed[0].payload["status"] == "failed"
 
 
-async def test_generic_sweep_failure_lands_a_terminal_sync_status(
-    db, jamf: FakeJamf, connection, monkeypatch, caplog
-) -> None:
+async def test_generic_sweep_failure_lands_a_terminal_sync_status(db, jamf: FakeJamf, connection, monkeypatch, caplog) -> None:
     """run_jamf's generic except (#125): a mid-transaction failure outside the
     per-device isolation — forced the way test_sweep_failures forces one, so the
     handler's rollback is load-bearing. The sync status must reach 'failed' rather
@@ -245,9 +241,7 @@ async def test_generic_sweep_failure_lands_a_terminal_sync_status(
     assert result.connection_id == connection_id
     assert result.error and "division by zero" in result.error
 
-    state = (
-        await db.execute(select(MdmSyncState).where(MdmSyncState.mdm_connection_id == connection_id))
-    ).scalar_one()
+    state = (await db.execute(select(MdmSyncState).where(MdmSyncState.mdm_connection_id == connection_id))).scalar_one()
     await db.refresh(state)
     assert state.status == "failed"  # terminal — not the stuck 'syncing' of #125
 

@@ -424,16 +424,14 @@ def change_sourcetype(
 # without it in writing, adding a key later is a breaking change by default.
 ADDITIVE_ONLY_CLAUSES: tuple[str, ...] = (
     "New keys may appear; consumers must ignore unknown keys.",
-    "A key's name, type and meaning never change once shipped. A different meaning is a "
-    "different key.",
+    "A key's name, type and meaning never change once shipped. A different meaning is a different key.",
     "A key that ships is never removed. A key that stops being computed ships its "
     "null-equivalent, or is absent under the null-dropping rule that already governs "
     "deviceMeta.",
     "Absence of a key means the event predates it, never that its value is 'none'. A "
     "vocabulary needing to say 'never' says so with a sentinel, which is why "
     "daysOldestPublished uses -1.",
-    "A sourcetype string, once minted, is permanent. New shapes get new sourcetypes; "
-    "existing ones are not repurposed.",
+    "A sourcetype string, once minted, is permanent. New shapes get new sourcetypes; existing ones are not repurposed.",
     "schemaVersion rides the deviceMeta block and never the sourcetype. A version in the "
     "sourcetype breaks every dashboard on every bump, so it never gets bumped, so it is "
     "a lie.",

@@ -82,17 +82,9 @@ async def list_runs(
     if status is not None:
         conditions.append(Run.status == status)
     total = (await db.execute(select(func.count()).select_from(Run).where(*conditions))).scalar_one()
-    query = (
-        select(Run)
-        .where(*conditions)
-        .order_by(Run.started_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    )
+    query = select(Run).where(*conditions).order_by(Run.started_at.desc()).offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(query)
-    return RunListResponse(
-        items=[_to_out(row) for row in result.scalars().all()], total=total, page=page, page_size=page_size
-    )
+    return RunListResponse(items=[_to_out(row) for row in result.scalars().all()], total=total, page=page, page_size=page_size)
 
 
 # DECLARED ABOVE `/{job_id}` ON PURPOSE, AND THE ORDER IS LOAD-BEARING. FastAPI matches
@@ -147,18 +139,22 @@ async def run_summary(
     summaries: list[RunSummaryOut] = []
     for cid in connection_ids:
         pinned = (
-            await db.execute(
-                select(Run)
-                .where(
-                    Run.mdm_connection_id == cid,
-                    Run.lock_class == LOCK_DEVICE_SWEEP,
-                    Run.trigger != TRIGGER_WEBHOOK,
-                    Run.status == STATUS_SUCCEEDED,
+            (
+                await db.execute(
+                    select(Run)
+                    .where(
+                        Run.mdm_connection_id == cid,
+                        Run.lock_class == LOCK_DEVICE_SWEEP,
+                        Run.trigger != TRIGGER_WEBHOOK,
+                        Run.status == STATUS_SUCCEEDED,
+                    )
+                    .order_by(Run.started_at.desc())
+                    .limit(1)
                 )
-                .order_by(Run.started_at.desc())
-                .limit(1)
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
 
         since = 0
         if pinned is not None:
@@ -181,10 +177,10 @@ async def run_summary(
             ).scalar_one()
 
         latest = (
-            await db.execute(
-                select(Run).where(Run.mdm_connection_id == cid).order_by(Run.started_at.desc()).limit(1)
-            )
-        ).scalars().first()
+            (await db.execute(select(Run).where(Run.mdm_connection_id == cid).order_by(Run.started_at.desc()).limit(1)))
+            .scalars()
+            .first()
+        )
 
         summaries.append(
             RunSummaryOut(
@@ -224,10 +220,7 @@ async def get_run_log(
     """
     run = await _get_or_404(job_id, db)
     result = await db.execute(
-        select(RunLogLine)
-        .where(RunLogLine.run_id == job_id, RunLogLine.id > after)
-        .order_by(RunLogLine.id)
-        .limit(_MAX_LINES)
+        select(RunLogLine).where(RunLogLine.run_id == job_id, RunLogLine.id > after).order_by(RunLogLine.id).limit(_MAX_LINES)
     )
     lines = [
         RunLogLineOut(id=row.id, ts=row.ts, level=row.level, message=row.message, fields=row.fields)

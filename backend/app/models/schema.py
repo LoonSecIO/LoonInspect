@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, Uuid, text
@@ -15,7 +15,7 @@ from app.core.uuid7 import uuid7
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _uuid() -> str:
@@ -134,9 +134,7 @@ class Device(Base):
     # Jamf Pro numbers computers and mobile devices in separate sequences that both start
     # at 1, so the external id names a device only together with its platform (#233).
     __table_args__ = (
-        UniqueConstraint(
-            "mdm_connection_id", "platform", "external_id", name="uq_device_connection_platform_external_id"
-        ),
+        UniqueConstraint("mdm_connection_id", "platform", "external_id", name="uq_device_connection_platform_external_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -169,9 +167,7 @@ class Device(Base):
     department_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     connection: Mapped[MdmConnection | None] = relationship(back_populates="devices")
-    apps: Mapped[list[InstalledApp]] = relationship(
-        back_populates="device", cascade="all, delete-orphan"
-    )
+    apps: Mapped[list[InstalledApp]] = relationship(back_populates="device", cascade="all, delete-orphan")
     extension_attributes: Mapped[list[DeviceExtensionAttribute]] = relationship(
         back_populates="device", cascade="all, delete-orphan"
     )
@@ -320,9 +316,7 @@ class JamfOrgUnit(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
-    mdm_connection_id: Mapped[int] = mapped_column(
-        ForeignKey("mdm_connections.id", ondelete="CASCADE"), index=True
-    )
+    mdm_connection_id: Mapped[int] = mapped_column(ForeignKey("mdm_connections.id", ondelete="CASCADE"), index=True)
     kind: Mapped[str] = mapped_column(String(16))  # department | building
     external_id: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(255))
@@ -593,9 +587,7 @@ class Account(Base):
     __table_args__ = (
         UniqueConstraint("tenant_id", "email", name="uq_account_tenant_email"),
         UniqueConstraint("tenant_id", "username", name="uq_account_tenant_username"),
-        UniqueConstraint(
-            "tenant_id", "external_source", "external_id", name="uq_account_external_identity"
-        ),
+        UniqueConstraint("tenant_id", "external_source", "external_id", name="uq_account_external_identity"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -627,12 +619,8 @@ class Account(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    identities: Mapped[list[AuthIdentity]] = relationship(
-        back_populates="account", cascade="all, delete-orphan", lazy="selectin"
-    )
-    roles: Mapped[list[AccountRole]] = relationship(
-        back_populates="account", cascade="all, delete-orphan", lazy="selectin"
-    )
+    identities: Mapped[list[AuthIdentity]] = relationship(back_populates="account", cascade="all, delete-orphan", lazy="selectin")
+    roles: Mapped[list[AccountRole]] = relationship(back_populates="account", cascade="all, delete-orphan", lazy="selectin")
 
 
 class AuthIdentity(Base):
@@ -644,11 +632,7 @@ class AuthIdentity(Base):
     """
 
     __tablename__ = "auth_identities"
-    __table_args__ = (
-        UniqueConstraint(
-            "tenant_id", "provider", "subject", name="uq_auth_identity_provider_subject"
-        ),
-    )
+    __table_args__ = (UniqueConstraint("tenant_id", "provider", "subject", name="uq_auth_identity_provider_subject"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
@@ -744,9 +728,7 @@ class SessionTenant(Base):
 
     __tablename__ = "session_tenants"
 
-    token_hash: Mapped[str] = mapped_column(
-        String(64), ForeignKey("sessions.token_hash", ondelete="CASCADE"), primary_key=True
-    )
+    token_hash: Mapped[str] = mapped_column(String(64), ForeignKey("sessions.token_hash", ondelete="CASCADE"), primary_key=True)
     tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
@@ -757,9 +739,7 @@ class ApiTokenTenant(Base):
 
     __tablename__ = "api_token_tenants"
 
-    token_hash: Mapped[str] = mapped_column(
-        String(64), ForeignKey("api_tokens.token_hash", ondelete="CASCADE"), primary_key=True
-    )
+    token_hash: Mapped[str] = mapped_column(String(64), ForeignKey("api_tokens.token_hash", ondelete="CASCADE"), primary_key=True)
     tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
@@ -900,9 +880,7 @@ class OutboxDelivery(Base):
     """
 
     __tablename__ = "outbox_deliveries"
-    __table_args__ = (
-        UniqueConstraint("outbox_event_id", "destination_id", name="uq_outbox_delivery_event_destination"),
-    )
+    __table_args__ = (UniqueConstraint("outbox_event_id", "destination_id", name="uq_outbox_delivery_event_destination"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
@@ -928,9 +906,7 @@ class LoginAttempt(Base):
     """
 
     __tablename__ = "login_attempts"
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "identifier", "ip", name="uq_login_attempt_identifier_ip"),
-    )
+    __table_args__ = (UniqueConstraint("tenant_id", "identifier", "ip", name="uq_login_attempt_identifier_ip"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
@@ -989,9 +965,7 @@ class SubjectDeparture(Base):
     subject_id: Mapped[str] = mapped_column(String(255))
     departed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     returned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    census_run_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("runs.id", ondelete="SET NULL"), nullable=True
-    )
+    census_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
@@ -1020,13 +994,18 @@ class ObservationSpan(Base):
     __table_args__ = (
         Index(
             "ix_observation_spans_subject",
-            "tenant_id", "mdm_connection_id", "subject_kind", "subject_id",
+            "tenant_id",
+            "mdm_connection_id",
+            "subject_kind",
+            "subject_id",
         ),
         # The "current" pointer, enforced: at most one open span per subject. Acquisition
         # is the insert, so two writers racing on one subject cannot both win.
         Index(
             "uq_observation_spans_current_subject",
-            "mdm_connection_id", "subject_kind", "subject_id",
+            "mdm_connection_id",
+            "subject_kind",
+            "subject_id",
             unique=True,
             postgresql_where=text("is_current"),
         ),
@@ -1038,9 +1017,7 @@ class ObservationSpan(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
-    mdm_connection_id: Mapped[int] = mapped_column(
-        ForeignKey("mdm_connections.id", ondelete="CASCADE"), index=True
-    )
+    mdm_connection_id: Mapped[int] = mapped_column(ForeignKey("mdm_connections.id", ondelete="CASCADE"), index=True)
     subject_kind: Mapped[str] = mapped_column(String(32))
     subject_id: Mapped[str] = mapped_column(String(255))
     label: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -1063,9 +1040,7 @@ class ObservationSpan(Base):
     observation_count: Mapped[int] = mapped_column(Integer, default=1)
     last_trigger: Mapped[str] = mapped_column(String(16))
 
-    previous_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("observation_spans.id", ondelete="SET NULL"), nullable=True
-    )
+    previous_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("observation_spans.id", ondelete="SET NULL"), nullable=True)
     is_current: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
@@ -1118,9 +1093,7 @@ class ObservationAperture(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
-    mdm_connection_id: Mapped[int] = mapped_column(
-        ForeignKey("mdm_connections.id", ondelete="CASCADE"), index=True
-    )
+    mdm_connection_id: Mapped[int] = mapped_column(ForeignKey("mdm_connections.id", ondelete="CASCADE"), index=True)
     digest: Mapped[str] = mapped_column(String(67), index=True)
     contract_version: Mapped[str] = mapped_column(String(8))
     document: Mapped[dict] = mapped_column(JSONB)
@@ -1160,9 +1133,7 @@ class Collection(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
-    mdm_connection_id: Mapped[int] = mapped_column(
-        ForeignKey("mdm_connections.id", ondelete="CASCADE"), index=True
-    )
+    mdm_connection_id: Mapped[int] = mapped_column(ForeignKey("mdm_connections.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(255))
     kind: Mapped[str] = mapped_column(String(16), index=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -1275,9 +1246,7 @@ class Run(Base):
     # default is the same generator kept in sync, not a second call site to drift from it.
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
-    mdm_connection_id: Mapped[int] = mapped_column(
-        ForeignKey("mdm_connections.id", ondelete="CASCADE"), index=True
-    )
+    mdm_connection_id: Mapped[int] = mapped_column(ForeignKey("mdm_connections.id", ondelete="CASCADE"), index=True)
     # Which collection this run served, when it served one. Null for the generic
     # (non-Jamf) provider path, which has no collections.
     collection_id: Mapped[int | None] = mapped_column(
@@ -1398,9 +1367,7 @@ class DeviceChange(Base):
     serial_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
     udid: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    span_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("observation_spans.id", ondelete="SET NULL"), nullable=True
-    )
+    span_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("observation_spans.id", ondelete="SET NULL"), nullable=True)
     previous_span_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("observation_spans.id", ondelete="SET NULL"), nullable=True
     )
@@ -1502,12 +1469,8 @@ class Alert(Base):
 
     opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    opened_run_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("runs.id", ondelete="SET NULL"), nullable=True
-    )
-    closed_run_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("runs.id", ondelete="SET NULL"), nullable=True
-    )
+    opened_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
+    closed_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
 
 
 # --- The posture snapshot -------------------------------------------------------------
@@ -1543,9 +1506,7 @@ class PostureSnapshot(Base):
         # One row per key per capture per population. Its backing index carries the
         # series read shape as well — one key's history for one tenant for one
         # population, in time order — so there is no separate index beside it.
-        UniqueConstraint(
-            "tenant_id", "metric_key", "platform", "captured_at", name="uq_posture_snapshot_capture"
-        ),
+        UniqueConstraint("tenant_id", "metric_key", "platform", "captured_at", name="uq_posture_snapshot_capture"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

@@ -114,12 +114,16 @@ async def _ea_rows(db, connection_id: int) -> dict[tuple[int, str], tuple[int, s
     from app.models.schema import Device, DeviceExtensionAttribute
 
     rows = (
-        await db.execute(
-            select(DeviceExtensionAttribute)
-            .join(Device, Device.id == DeviceExtensionAttribute.device_id)
-            .where(Device.mdm_connection_id == connection_id)
+        (
+            await db.execute(
+                select(DeviceExtensionAttribute)
+                .join(Device, Device.id == DeviceExtensionAttribute.device_id)
+                .where(Device.mdm_connection_id == connection_id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return {(r.device_id, r.definition_id): (r.id, r.name, list(r.values), r.source, r.enabled) for r in rows}
 
 
@@ -143,12 +147,16 @@ async def test_the_catalog_is_probed_once_per_sweep_not_once_per_device(db, jamf
 
     # Cheaper, not skipped: every app row still carries a judged answer.
     unjudged = (
-        await db.execute(
-            select(InstalledApp)
-            .join(Device, Device.id == InstalledApp.device_id)
-            .where(Device.mdm_connection_id == connection.id, InstalledApp.last_patch_check_at.is_(None))
+        (
+            await db.execute(
+                select(InstalledApp)
+                .join(Device, Device.id == InstalledApp.device_id)
+                .where(Device.mdm_connection_id == connection.id, InstalledApp.last_patch_check_at.is_(None))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert unjudged == []
 
 

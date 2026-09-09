@@ -13,7 +13,7 @@ Gated on RUN_DB_TESTS like the other database-backed suites.
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -85,15 +85,22 @@ async def test_exclude_globs_cover_the_reveal_path(db, clean) -> None:
 
     def app(name, bundle_id, key):
         return InstalledApp(
-            device_id=device.id, name=name, bundle_id=bundle_id, version="1.0",
-            app_hash=uuidlib.uuid4().hex, version_hash=uuidlib.uuid4().hex,
-            key_title=key, key_full=key,
+            device_id=device.id,
+            name=name,
+            bundle_id=bundle_id,
+            version="1.0",
+            app_hash=uuidlib.uuid4().hex,
+            version_hash=uuidlib.uuid4().hex,
+            key_title=key,
+            key_full=key,
         )
 
-    db.add_all([
-        app(f"Acme Payroll {suffix}", "com.acme.payroll", secret_key),
-        app(f"Google Chrome {suffix}", "com.google.Chrome", public_key),
-    ])
+    db.add_all(
+        [
+            app(f"Acme Payroll {suffix}", "com.acme.payroll", secret_key),
+            app(f"Google Chrome {suffix}", "com.google.Chrome", public_key),
+        ]
+    )
     await db.commit()
 
     row = (await db.execute(select(DataSharingSettings))).scalar_one()
@@ -144,7 +151,7 @@ async def test_a_200_that_is_not_json_is_logged_and_consumes_the_day(db, clean, 
 
     # Midnight as the jittered slot, so "due" is decided by the log alone and not by
     # where in the day the suite happens to run.
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     assert await _last_attempt_at(db) is None
     assert _due(now, None, minute_of_day=0) is True
 
@@ -157,7 +164,7 @@ async def test_a_200_that_is_not_json_is_logged_and_consumes_the_day(db, clean, 
 
     last = await _last_attempt_at(db)
     assert last is not None
-    assert _due(datetime.now(timezone.utc), last, minute_of_day=0) is False
+    assert _due(datetime.now(UTC), last, minute_of_day=0) is False
     # Nothing was shed on this run, and a failed row never claims one was.
     assert row.reveals_shed is False
 

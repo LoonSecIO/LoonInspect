@@ -182,9 +182,7 @@ def _text_of(content: Any) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        return "".join(
-            part.get("text", "") for part in content if isinstance(part, dict) and part.get("type") == "text"
-        )
+        return "".join(part.get("text", "") for part in content if isinstance(part, dict) and part.get("type") == "text")
     raise AdapterError("malformed", "the reply's content was neither text nor a list of parts")
 
 
@@ -230,12 +228,8 @@ def parse_response(wire: Wire, payload: Any) -> CompletionResult:
         blocks = payload.get("content")
         if not isinstance(blocks, list):
             raise AdapterError("malformed", "the reply carried no content blocks")
-        content = "".join(
-            b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text"
-        )
-        thinking = "\n".join(
-            b.get("thinking", "") for b in blocks if isinstance(b, dict) and b.get("type") == "thinking"
-        )
+        content = "".join(b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text")
+        thinking = "\n".join(b.get("thinking", "") for b in blocks if isinstance(b, dict) and b.get("type") == "thinking")
         stop_reason = payload.get("stop_reason")
         # Anthropic's vocabulary into OpenAI's, so the outcome rule above is the same
         # rule for both wires.

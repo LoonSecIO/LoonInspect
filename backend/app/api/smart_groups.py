@@ -76,12 +76,16 @@ async def smart_group_cost(db: AsyncSession = Depends(get_db)) -> SmartGroupCost
     ).all()
 
     ea_names = (
-        await db.execute(
-            select(distinct(ObservationEntry.label)).where(
-                ObservationEntry.kind == "extension_attribute", ObservationEntry.label.is_not(None)
+        (
+            await db.execute(
+                select(distinct(ObservationEntry.label)).where(
+                    ObservationEntry.kind == "extension_attribute", ObservationEntry.label.is_not(None)
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     departed = await open_departures(db, subject_kind=SUBJECT_COMPUTER_GROUP)
     items: list[tuple[tuple, SmartGroupCostOut]] = []

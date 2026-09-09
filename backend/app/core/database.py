@@ -178,9 +178,7 @@ async def _wait_for_database() -> None:
             return
         except (OSError, SQLAlchemyError) as exc:
             if time.monotonic() >= deadline:
-                raise RuntimeError(
-                    f"database did not accept connections within {_DB_WAIT_TIMEOUT_SECONDS:.0f}s: {exc}"
-                ) from exc
+                raise RuntimeError(f"database did not accept connections within {_DB_WAIT_TIMEOUT_SECONDS:.0f}s: {exc}") from exc
             if attempt == 1:
                 logger.info("waiting for the database")
             await asyncio.sleep(_DB_WAIT_INTERVAL_SECONDS)
