@@ -238,7 +238,11 @@ metadata, so they cost no licence volume.
 
 **`sourcetype` is set on four families, on Splunk HEC deliveries only**, decided by
 `app/core/wire_vocabulary.py` and stamped in `app/core/outbox.py`; every other destination
-type gets the canonical event with no sourcetype at all. The strings are ruled in
+type gets the canonical event with no sourcetype at all. The one exception is the fanned-out
+snapshot, where since [#306](https://github.com/LoonSecIO/LoonInspect/issues/306) the string
+rides the record's own body on the other three types — because there it is the only thing
+that tells 107 records apart, all of which carry `event=device.inventory` (see "the record
+fan-out" below). The strings are ruled in
 [`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md) §2 and the stanzas they imply are
 in [`splunk-setup.md`](splunk-setup.md) §6.
 
@@ -518,6 +522,76 @@ built, tested and posted this way in #242; Kyle confirms or overrules.)
 older worker — is delivered unstamped rather than dropped or raised, the same degrade the
 change family uses: `InventorySnapshotEvent` refuses unknown wrappers at enqueue, so this
 is version skew, never a producer bug.
+
+#### The record fan-out: what the other three destination types receive (#306)
+
+Until [#306](https://github.com/LoonSecIO/LoonInspect/issues/306) the section above said
+"and only there", and it was true: `runreveal`, `generic_webhook` and `elastic` each
+received the snapshot whole — one ~28 KB nested document where Splunk received 107 events.
+Nothing was failing. The test button went green on all four, and the transport was fine.
+What differed was the *shape*, by two orders of magnitude in record count, and every
+argument that justified the split for Splunk applies to any consumer that indexes records:
+a security data platform cannot answer "which Macs have Wireshark" from a document it has
+to unnest first. A picker offering four types and delivering a usable shape to one is the
+same defect class as the Webhook card (#95) and the Splunk card (#88).
+
+All four types now fan out, and **the destination type decides the shape**, exactly as it
+always did for Splunk — there is no per-destination flag and nothing to turn on (Kyle,
+2026-09-09). `app/fanout/` holds it: `expand` walks the sections, `records` shapes one
+record, `transport` builds the request. `app/core/hec_fanout.py` is untouched, and `expand`
+is a deliberate **copy** of its traversal rather than a shared helper — the Splunk wire is
+frozen (§[`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md)) and pinned item-for-item
+against a captured Jamf Pro 11.31 record, so a fix for RunReveal must not be able to move a
+byte on the one wire that already has a customer. `tests/test_record_fanout.py` pins the two
+walks against each other over that fixture, which is what keeps the copy from becoming a
+fork.
+
+**A record is the HEC sub-event with the envelope folded into the body.** Same items, same
+order, same `deviceMeta`, same untouched Jamf objects. Three differences, each of them a
+decision the HEC module made in the other direction and each of them ruled by its own
+premise being false here:
+
+| | HEC sub-event | Record |
+| --- | --- | --- |
+| `sourcetype` | envelope field, free of licence volume | body key, same name |
+| `occurredAt` | dropped — the envelope's `time` carries the instant | rides, verbatim from the snapshot head |
+| `daysOldestPublished` null | `-1` ([vulnerabilities.md](vulnerabilities.md) §4c) | `null`, rendered natively as SQL `NULL` |
+| `time` / `host` / `source` | envelope fields | not carried — `host` is already `deviceMeta.hostName`, and `source` is the instance the receiver's own destination points at |
+
+`sourcetype` has to ride because it is the only thing that tells the 107 apart: `event` is
+`device.inventory` on every one of them, and nothing mints `device.inventory.app` (D1).
+Carried under the same name rather than a second spelling, so one vocabulary covers both
+wires and a saved search moving from a webhook to Splunk keeps its predicate. `occurredAt`
+mints nothing — it is the snapshot's own head key, copied verbatim — and without it a
+record would reach a receiver with no time at all, because the outbox pops `_envelope` for
+every destination type.
+
+The `general` anchor as a webhook receives it:
+
+```json
+{"general": {"…Jamf's object…": true},
+ "event": "device.inventory", "jobID": "0199a5c4-…", "occurredAt": "2026-09-02T02:00:00Z",
+ "sourcetype": "loon:jamf:mac:general", "deviceMeta": {"…#189's block…": true}}
+```
+
+**One delivery, one request, N records** — the same rule HEC follows, and for a sharper
+reason: 107 records at 3,000 devices is 321,000 POSTs a sweep if each record is its own
+request, and 3,000 if a device's records travel together. A webhook-shaped destination gets
+a JSON **array**; Elastic gets 107 `create`/source pairs in one `_bulk` request. Measured on
+the real fixture: **78,787 bytes** for the array (2.74x the 28,789-byte snapshot) and
+**90,111 bytes** for the bulk body — the array is *smaller* than HEC's 84,135 because HEC
+repeats `time`, `host` and `source` on every event where a record repeats only `occurredAt`
+and `sourcetype`. A device whose expansion exceeds `RECORD_FANOUT_MAX_REQUEST_BYTES`
+(default **900,000**, its own knob so an operator tuning a RunReveal limit need not set one
+named for Splunk) is sent as consecutive requests, whole records only, in order. Failure and
+retry are per-request and per-delivery exactly as above.
+
+**What a receiver has to change.** A snapshot delivery that used to parse as one object now
+parses as an array. Every other family — `device.change`, `device.inventory.changed`,
+`run.completed`, `run.failed` — is untouched and still one object, and still carries no
+`sourcetype` outside Splunk, because each of those is already self-describing at the grain
+it ships. The way to decline the snapshot is the subscription, `subscribedEvents`, which is
+where it always was.
 
 **The run id is UUIDv7, not `uuid4`, since
 [#225](https://github.com/LoonSecIO/LoonInspect/issues/225).** `jobID` being a
