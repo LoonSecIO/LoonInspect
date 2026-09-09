@@ -19,8 +19,8 @@ this tracker; the convention is in [docs/BRANCHING.md](docs/BRANCHING.md) §2.
 
 Every PR must pass the same gates `main` enforces:
 
-- **Backend** — `uv run ruff check .` and `uv run pytest` (Python 3.12, `uv sync
-  --frozen`). Database-backed tests need a real Postgres and opt in via
+- **Backend** — `uv run ruff check .`, `uv run ruff format --check .` and `uv run pytest`
+  (Python 3.12, `uv sync --frozen`). Database-backed tests need a real Postgres and opt in via
   `RUN_DB_TESTS=1`; the three-step local recipe (a throwaway Postgres, CI's role, the
   environment variables) is in the docstring of `backend/tests/conftest.py`, and
   `.github/workflows/ci.yml` is what it mirrors — the app must not connect as a
