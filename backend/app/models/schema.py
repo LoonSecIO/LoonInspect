@@ -131,13 +131,25 @@ class MdmConnection(Base):
 
 class Device(Base):
     __tablename__ = "devices"
-    __table_args__ = (UniqueConstraint("mdm_connection_id", "external_id", name="uq_device_connection_external_id"),)
+    # Jamf Pro numbers computers and mobile devices in separate sequences that both start
+    # at 1, so the external id names a device only together with its platform (#233).
+    __table_args__ = (
+        UniqueConstraint(
+            "mdm_connection_id", "platform", "external_id", name="uq_device_connection_platform_external_id"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     mdm_connection_id: Mapped[int | None] = mapped_column(ForeignKey("mdm_connections.id"), index=True)
     mdm_provider: Mapped[str] = mapped_column(String(32), index=True)
     external_id: Mapped[str] = mapped_column(String(255), index=True)
+    # The content-key OS spelling — `macos`, `ios`, `ipados`, `tvos`, `visionos`
+    # (docs/mobile-devices.md §2) — never the sourcetype segment's `mac`. Stamped by the
+    # client that read the device (`JamfClient` declares `macos`), defaulted here only so
+    # a row constructed without one, in a test, is the Mac it always was. Migration
+    # b3c9e7d1a5f2.
+    platform: Mapped[str] = mapped_column(String(16), default="macos", server_default="macos", index=True)
     serial_number: Mapped[str] = mapped_column(String(64))
     hostname: Mapped[str] = mapped_column(String(255))
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

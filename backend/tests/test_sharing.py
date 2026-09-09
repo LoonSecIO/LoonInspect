@@ -273,7 +273,8 @@ class _StubSession:
 
 
 def _app_row(title: str, full: str, bundle_id: str, count: int) -> SimpleNamespace:
-    return SimpleNamespace(key_title=title, key_full=full, bundle_id=bundle_id, count=count)
+    # `platform` is what the join on `devices.platform` hands the builder per row (#233).
+    return SimpleNamespace(key_title=title, key_full=full, bundle_id=bundle_id, count=count, platform="macos")
 
 
 async def _snapshot(*, exclude_globs: list[str] | None = None) -> dict:
@@ -285,7 +286,10 @@ async def _snapshot(*, exclude_globs: list[str] | None = None) -> dict:
             _app_row("v1:title-tool", "v1:full-tool", "com.vendor.tool", 31),
             _app_row("v1:title-acme", "v1:full-acme", "com.acme.payroll", 7),
         ],
-        [SimpleNamespace(os_version="14.6.1", count=380), SimpleNamespace(os_version="15.0", count=12)],
+        [
+            SimpleNamespace(platform="macos", os_version="14.6.1", count=380),
+            SimpleNamespace(platform="macos", os_version="15.0", count=12),
+        ],
     )
     return await sharing.build_exchange_request(db, row)
 
@@ -338,14 +342,14 @@ async def test_the_platform_rides_the_rows_and_not_the_envelope() -> None:
 
 
 def test_replacing_the_os_literal_did_not_move_a_hash() -> None:
-    """#231 changes what the submission *says*, never what it hashes. `SNAPSHOT_PLATFORM`
-    replaced a hard-coded "macos" inside `os_key`, so the constant is asserted against the
-    published vector from docs/data-sharing.md — not against the literal it replaced, which
-    would only prove the two agree with each other."""
+    """#231 changes what the submission *says*, never what it hashes. The platform the os
+    key hashes is read off `devices.platform` per row since #233 — the constant that stood
+    in until then was deleted, as its comment promised — so the value every existing row
+    carries is asserted against the published vector from docs/data-sharing.md, not
+    against a literal that would only prove the two agree with each other."""
     from app.core.content_keys import os_key
+    from app.models.schema import Device
 
-    assert sharing.SNAPSHOT_PLATFORM == "macos"
-    assert (
-        os_key(sharing.SNAPSHOT_PLATFORM, "14.6.1", "23G93")
-        == "v1:f74565fbdda8b8036799e1e3a67b22ee909acac8840f2a6ae040b3d5a4e18867"
-    )
+    assert not hasattr(sharing, "SNAPSHOT_PLATFORM"), "deleted with #233, not renamed"
+    assert Device.__table__.c.platform.server_default.arg == "macos"
+    assert os_key("macos", "14.6.1", "23G93") == "v1:f74565fbdda8b8036799e1e3a67b22ee909acac8840f2a6ae040b3d5a4e18867"

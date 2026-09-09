@@ -342,6 +342,7 @@ class TestTheRestSurface:
         detail = DeviceDetailOut(
             id=7,
             mdm_provider="jamf",
+            platform="macos",
             mdm_connection_id=1,
             external_id="7",
             serial_number="C02XX",
@@ -393,6 +394,7 @@ class TestTheRestSurface:
             DeviceDetailOut(
                 id=7,
                 mdm_provider="jamf",
+                platform="macos",
                 mdm_connection_id=1,
                 external_id="7",
                 serial_number="C02XX",

@@ -97,6 +97,11 @@ class NormalizedExtensionAttribute(BaseModel):
 class NormalizedDevice(BaseModel):
     mdm_provider: MdmProvider
     external_id: str
+    # Which Jamf ID space `external_id` belongs to (#233): the content-key OS spelling,
+    # stamped by the client that produced this view — `normalize_computer` says `macos`
+    # because it read the computers endpoint, not because a default said so. The default
+    # here serves an aperture-less constructor (tests, fixtures) only.
+    platform: str = "macos"
     serial_number: str
     hostname: str
     managed: bool | None = None

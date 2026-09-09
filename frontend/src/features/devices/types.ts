@@ -3,6 +3,8 @@ export interface Device {
   mdmProvider: string;
   mdmConnectionId: number | null;
   externalId: string;
+  /** Which Jamf ID space `externalId` names the device in (#233): `macos` today. */
+  platform: string;
   serialNumber: string;
   hostname: string;
   lastSeenAt: string | null;
