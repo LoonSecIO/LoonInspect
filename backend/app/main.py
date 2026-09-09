@@ -217,7 +217,9 @@ async def outbox_cleanup() -> None:
     than nightly-batched."""
     for tenant_id in await operational_tenant_ids():
         async with tenant_job(tenant_id) as db:
-            purged = await purge_delivered_events(db, settings.event_outbox_retention_days)
+            purged = await purge_delivered_events(
+                db, settings.event_outbox_retention_days, settings.dead_letter_retention_days
+            )
         if purged:
             logger.info(
                 "purged old outbox events",

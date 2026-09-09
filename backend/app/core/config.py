@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     siem_webhook_url: str | None = None
 
     event_outbox_retention_days: int = 7
+    # How long a dead-lettered delivery keeps its event after the ordinary window above
+    # (#91). A delivery that spent its ten attempts is evidence of a gap in the trail,
+    # and it is what a redrive re-sends; purged with its event at seven days, the gap was
+    # permanent and invisible. Thirty days is the audit and run-log precedent.
+    dead_letter_retention_days: int = 30
 
     # The ceiling on one Splunk HEC request body, in bytes. A `device.inventory` snapshot
     # is expanded at delivery into one HEC event per section item (app.core.hec_fanout)
@@ -257,6 +262,13 @@ class Settings(BaseSettings):
         if 1 <= value <= 3650:
             return value
         raise ValueError("event_outbox_retention_days must be between 1 and 3650")
+
+    @field_validator("dead_letter_retention_days")
+    @classmethod
+    def _validate_dead_letter_retention(cls, value: int) -> int:
+        if 1 <= value <= 3650:
+            return value
+        raise ValueError("dead_letter_retention_days must be between 1 and 3650")
 
     @field_validator("run_retention_days")
     @classmethod

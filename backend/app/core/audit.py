@@ -83,6 +83,9 @@ class AuditAction(StrEnum):
     DESTINATION_CREATED = "destination.created"
     DESTINATION_UPDATED = "destination.updated"
     DESTINATION_DELETED = "destination.deleted"
+    # An operator returned a destination's dead letters to the queue (#91): a write
+    # whose effect is egress of tenant data, so it is on the trail beside the delete.
+    DESTINATION_REDRIVEN = "destination.redriven"
     DELIVERY_DEAD_LETTERED = "destination.delivery.dead_lettered"
 
 

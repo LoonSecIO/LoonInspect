@@ -842,6 +842,123 @@ async def test_a_held_event_ages_out_on_the_ordinary_retention_window(db) -> Non
     assert await _counts(db) == (0, 0)
 
 
+async def _dead_letter(db, **destination_overrides):
+    """One delivery that spent its budget: the row a redrive exists for."""
+    destination, event, delivery = await _one_pending_delivery(db, **destination_overrides)
+    delivery.status = "failed"
+    delivery.attempt_count = 10
+    delivery.last_error = "HTTP 500: destination is having a day"
+    delivery.last_attempted_at = datetime.now(timezone.utc)
+    await db.commit()
+    return destination, event, delivery
+
+
+async def test_a_dead_letter_keeps_its_event_for_its_own_window_not_the_ordinary_one(db) -> None:
+    """#91's first item: the evidence has to outlive the seven-day purge, or there is
+    nothing for a redrive to re-send. Its own window rather than none, so a destination
+    nobody fixes cannot pin its events for ever."""
+    from app.core.outbox import purge_delivered_events
+
+    _destination_row, event, _delivery = await _dead_letter(db)
+    await _age_event(db, event, days=10)
+
+    # Past the ordinary window, inside the dead-letter window: kept, with the event.
+    assert await purge_delivered_events(db, 7, dead_letter_retention_days=30) == 0
+    assert await _counts(db) == (1, 1)
+    # Without a dead-letter window the old behaviour stands — the purge takes it.
+    assert await purge_delivered_events(db, 7) == 1
+    assert await _counts(db) == (0, 0)
+
+
+async def test_a_dead_letter_past_its_own_window_goes_with_its_event(db) -> None:
+    from app.core.outbox import purge_delivered_events
+
+    _destination_row, event, _delivery = await _dead_letter(db)
+    await _age_event(db, event, days=40)
+
+    assert await purge_delivered_events(db, 7, dead_letter_retention_days=30) == 1
+    assert await _counts(db) == (0, 0)
+
+
+async def test_a_redrive_returns_the_dead_letter_to_the_queue_and_the_next_tick_delivers_it(db, monkeypatch) -> None:
+    """What a redrive resets, and what it keeps (#91 item 2): status, attempt budget and
+    due time move; the diagnosis stays until a delivery clears it."""
+    from app.core.outbox import deliver_pending, redrive_failed
+
+    destination, _event, delivery = await _dead_letter(db)
+    before = datetime.now(timezone.utc)
+
+    assert await redrive_failed(db, destination.id) == 1
+    await db.commit()
+    await db.refresh(delivery)
+    assert delivery.status == "pending"
+    assert delivery.attempt_count == 0
+    assert delivery.next_attempt_at <= datetime.now(timezone.utc)
+    assert delivery.next_attempt_at >= before - timedelta(seconds=1)
+    assert delivery.last_error == "HTTP 500: destination is having a day", "kept: the row is pending because of it"
+
+    # Nothing else's dead letters move, and a second redrive finds nothing waiting.
+    assert await redrive_failed(db, destination.id) == 0
+
+    seen = _mock_posts(monkeypatch)
+    await deliver_pending(db)
+    await db.refresh(delivery)
+    assert len(seen) == 1
+    assert delivery.status == "delivered"
+    assert delivery.attempt_count == 1
+    assert delivery.last_error is None, "a delivered row carries no diagnosis"
+
+
+async def test_a_redrive_is_per_destination(db) -> None:
+    from app.core.outbox import enqueue_event, fan_out_pending, redrive_failed
+    from app.models.schema import OutboxDelivery
+
+    healthy = _destination("healthy")
+    broken = _destination("broken")
+    db.add_all([healthy, broken])
+    await enqueue_event(db, EVENT_TYPE, {"event": EVENT_TYPE})
+    await db.commit()
+    await fan_out_pending(db)
+    await db.execute(OutboxDelivery.__table__.update().values(status="failed", attempt_count=10))
+    await db.commit()
+
+    assert await redrive_failed(db, broken.id) == 1
+    await db.commit()
+    rows = {row.destination_id: row for row in await _deliveries(db)}
+    assert rows[broken.id].status == "pending"
+    assert rows[healthy.id].status == "failed", "the other destination's dead letter is untouched"
+
+
+async def test_the_tick_commits_each_delivery_as_it_goes(db, monkeypatch) -> None:
+    """The duplicate window is one delivery, not one tick (#91): a worker that dies after
+    the Nth accepted POST re-sends one row when it returns, not N."""
+    from sqlalchemy import event as sa_event
+
+    from app.core.outbox import deliver_pending, enqueue_event, fan_out_pending
+
+    _mock_posts(monkeypatch)
+    db.add(_destination("siem"))
+    for _ in range(3):
+        await enqueue_event(db, EVENT_TYPE, {"event": EVENT_TYPE})
+    await db.commit()
+    await fan_out_pending(db)
+    assert len(await _deliveries(db)) == 3
+
+    commits = 0
+
+    def _count(session) -> None:
+        nonlocal commits
+        commits += 1
+
+    sa_event.listen(db.sync_session, "after_commit", _count)
+    try:
+        await deliver_pending(db)
+    finally:
+        sa_event.remove(db.sync_session, "after_commit", _count)
+    assert commits >= 3, commits
+    assert all(row.status == "delivered" for row in await _deliveries(db))
+
+
 async def test_a_disabled_destination_makes_its_events_immortal(db, monkeypatch) -> None:
     """The composition behind #81's open storage question, as one test.
 

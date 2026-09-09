@@ -8,12 +8,13 @@ from app.core.audit import AuditAction, audit
 from app.core.auth import require
 from app.core.database import get_db
 from app.core.egress import BlockedDestinationUrl, refuse_blocked_resolution
-from app.core.outbox import send_test_event
+from app.core.outbox import redrive_failed, send_test_event
 from app.core.permissions import Permission
 from app.models.schema import Destination, OutboxDelivery
 from app.schemas.destinations import (
     DestinationCreate,
     DestinationOut,
+    DestinationRedriveOut,
     DestinationTestOut,
     DestinationUpdate,
     resolve_auth_type,
@@ -235,6 +236,39 @@ async def test_destination(destination_id: int, db: AsyncSession = Depends(get_d
         detail=outcome.error or "Delivery failed with no detail from the destination.",
         status_code=outcome.status_code,
     )
+
+
+@router.post(
+    "/{destination_id}/redrive",
+    response_model=DestinationRedriveOut,
+    dependencies=[Depends(require(Permission.DESTINATION_WRITE))],
+)
+async def redrive_destination(destination_id: int, db: AsyncSession = Depends(get_db)) -> DestinationRedriveOut:
+    """Return this destination's dead letters to the queue (#91).
+
+    A delivery that spent its ten attempts stays `failed` until an operator says
+    otherwise; this is the saying. Every failed delivery for the destination becomes
+    pending, due now, with a fresh attempt budget, and the next delivery ticks drain it
+    behind whatever is already due. Delivery is at-least-once, so events the destination
+    did receive before its outage arrive again: on Splunk, `deviceMeta.eventID` is stable
+    across a re-send and is the dedup key (docs/splunk-setup.md §7).
+
+    What it cannot do: re-send an event the purge has already taken. Dead letters are
+    kept for `dead_letter_retention_days` (30 by default); an outage left unattended
+    longer than that is a gap only a re-emit of current state can close.
+    """
+    destination = await _get_or_404(db, destination_id)
+    redriven = await redrive_failed(db, destination.id)
+    await db.commit()
+
+    audit(
+        AuditAction.DESTINATION_REDRIVEN,
+        target_type="destination",
+        target_id=destination.id,
+        name=destination.name,
+        redriven=redriven,
+    )
+    return DestinationRedriveOut(redriven=redriven)
 
 
 @router.delete(

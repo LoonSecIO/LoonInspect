@@ -722,6 +722,7 @@ async def deliver_pending(db: AsyncSession) -> None:
                 # is otherwise stuck forever if it happens).
                 delivery.status = "failed"
                 delivery.last_error = "destination or event no longer exists"
+                await db.commit()
                 continue
 
             if not destination.enabled:
@@ -743,6 +744,10 @@ async def deliver_pending(db: AsyncSession) -> None:
             if ok:
                 delivery.status = "delivered"
                 delivery.delivered_at = now
+                # A delivered row carries no diagnosis. The Destinations page reads the
+                # newest attempted row's error as the destination's; after a redrive
+                # succeeds (#91), that row is this one, and it must say nothing.
+                delivery.last_error = None
                 destination.last_success_at = now
             else:
                 delivery.last_error = error
@@ -777,8 +782,37 @@ async def deliver_pending(db: AsyncSession) -> None:
                     )
                 else:
                     delivery.next_attempt_at = _next_backoff(delivery.attempt_count)
+            # Committed per delivery, not once per tick (#91). Delivery is at-least-once
+            # either way — a POST that landed just before a crash is re-sent when the
+            # worker returns — but a tick-wide commit made the duplicate window the whole
+            # tick: a crash after 999 accepted POSTs re-sent all 999. Now it is one. The
+            # session does not expire on commit, so the rows in hand stay usable.
+            await db.commit()
 
     await db.commit()
+
+
+async def redrive_failed(db: AsyncSession, destination_id: int) -> int:
+    """Return a destination's dead letters to the queue (#91). Returns how many.
+
+    Flipping `status` alone would be a no-op with extra steps: `attempt_count` is at the
+    ceiling, so the next tick would dead-letter the row again after one attempt. So the
+    count is zeroed and the row is due now; `deliver_pending`'s ordering then paces the
+    drain behind whatever is already due. `last_error` is kept on purpose — the row is
+    pending again *because* of that error, and the diagnosis stays on the Destinations
+    page until the next attempt overwrites it or a delivery clears it.
+
+    What it re-sends is what still exists: a delivery whose event the purge has already
+    taken is not here to redrive (`purge_delivered_events`, `dead_letter_retention_days`).
+    Restoring *that* half of an outage needs a re-emit of current state, which is a
+    different thing from this and its own issue. The caller commits.
+    """
+    result = await db.execute(
+        sa_update(OutboxDelivery)
+        .where(OutboxDelivery.destination_id == destination_id, OutboxDelivery.status == "failed")
+        .values(status="pending", attempt_count=0, next_attempt_at=datetime.now(timezone.utc))
+    )
+    return int(result.rowcount or 0)
 
 
 class DeliveryOutcome(NamedTuple):
@@ -838,10 +872,20 @@ async def send_test_event(destination: Destination) -> DeliveryOutcome:
     return DeliveryOutcome(ok, error, statuses[-1] if statuses else None)
 
 
-async def purge_delivered_events(db: AsyncSession, retention_days: int) -> int:
+async def purge_delivered_events(
+    db: AsyncSession, retention_days: int, dead_letter_retention_days: int | None = None
+) -> int:
     """Deletes outbox events old enough and holding no delivery still mid-retry. Without
     this the table grows without bound now that events are continuous (webhooks)
     rather than nightly-batched.
+
+    A dead-lettered delivery keeps its event for `dead_letter_retention_days` rather than
+    `retention_days` (#91): a delivery that spent its ten attempts is the evidence of a
+    gap in the trail and the thing a redrive re-sends, and purging it with everything
+    else at seven days made every destination outage longer than an afternoon a
+    permanent, invisible gap. Its own window rather than none, because a destination
+    nobody fixes would otherwise pin its events for ever. `None` means the ordinary
+    window, which is what a caller that has not thought about dead letters gets.
 
     Age, not fan-out state, is the candidate test. An event held by `fan_out_pending`
     because no destination was enabled yet has no delivery rows at all, so the
@@ -851,7 +895,9 @@ async def purge_delivered_events(db: AsyncSession, retention_days: int) -> int:
     `event_outbox_retention_days` window as delivered ones: seven days to configure a
     destination and collect the baseline, then the queue stops being a queue.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=retention_days)
+    dead_letter_cutoff = now - timedelta(days=dead_letter_retention_days or retention_days)
 
     result = await db.execute(select(EventOutbox.id).where(EventOutbox.created_at < cutoff))
     candidate_ids = set(result.scalars().all())
@@ -859,8 +905,9 @@ async def purge_delivered_events(db: AsyncSession, retention_days: int) -> int:
         return 0
 
     # Never purge an event with a delivery still mid-retry, however old it is —
-    # correctness here matters more than tidiness.
-    still_pending: set = set()
+    # correctness here matters more than tidiness. Nor one a dead letter still holds
+    # inside its own window.
+    protected: set = set()
     for batch in _in_batches(candidate_ids):
         result = await db.execute(
             select(OutboxDelivery.outbox_event_id).where(
@@ -868,8 +915,18 @@ async def purge_delivered_events(db: AsyncSession, retention_days: int) -> int:
                 OutboxDelivery.status == "pending",
             )
         )
-        still_pending.update(result.scalars().all())
-    purge_ids = candidate_ids - still_pending
+        protected.update(result.scalars().all())
+        result = await db.execute(
+            select(OutboxDelivery.outbox_event_id)
+            .join(EventOutbox, EventOutbox.id == OutboxDelivery.outbox_event_id)
+            .where(
+                OutboxDelivery.outbox_event_id.in_(batch),
+                OutboxDelivery.status == "failed",
+                EventOutbox.created_at >= dead_letter_cutoff,
+            )
+        )
+        protected.update(result.scalars().all())
+    purge_ids = candidate_ids - protected
     if not purge_ids:
         return 0
 
