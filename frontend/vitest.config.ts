@@ -1,5 +1,8 @@
 import { defineConfig, mergeConfig } from "vitest/config";
-import viteConfig from "./vite.config";
+// With its extension, for the same native loader (#21): Node resolves a relative
+// import literally, and `allowImportingTsExtensions` in tsconfig.json lets TypeScript
+// accept the `.ts` here.
+import viteConfig from "./vite.config.ts";
 
 // The frontend test lane (#285, #138): node environment only, deliberately. The suite
 // covers pure modules — the ones that encode rulings — and a DOM would invite render

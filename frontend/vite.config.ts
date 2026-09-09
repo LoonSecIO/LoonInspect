@@ -7,7 +7,10 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src")
+      // `import.meta.dirname`, not `__dirname`: this file is an ES module, and
+      // `__dirname` only works while Vite loads it through a bundling step — the
+      // native config loader Vite is moving to has no such step (#21). Node 20.11+.
+      "@": path.resolve(import.meta.dirname, "./src")
     }
   },
   server: {
