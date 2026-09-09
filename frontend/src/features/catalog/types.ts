@@ -14,6 +14,9 @@ export interface CatalogEntry {
   shortVersion: string | null;
   appHash: string;
   versionHash: string;
+  /** The platform the row was seen on and judged as (#236); a row that is not `macos`
+   *  carries no Jamf answer by construction — not matchable, not merely unmatched. */
+  platform: string;
   keyTitle: string;
   keyFull: string;
   firstSeenAt: string;

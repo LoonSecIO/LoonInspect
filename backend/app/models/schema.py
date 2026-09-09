@@ -371,7 +371,10 @@ class AppCatalogEntry(Base):
 
     __tablename__ = "app_catalog"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "version_hash", name="uq_app_catalog_version"),
+        # Beside the hash, not inside it: a universal app has the same name, bundle id and
+        # version on a Mac and an iPad, and the two are judged differently — Jamf Patch is
+        # macOS-only (#236).
+        UniqueConstraint("tenant_id", "platform", "version_hash", name="uq_app_catalog_platform_version"),
         Index("ix_app_catalog_app", "tenant_id", "app_hash"),
         Index("ix_app_catalog_last_seen", "tenant_id", "last_seen_at"),
     )
@@ -384,6 +387,9 @@ class AppCatalogEntry(Base):
     short_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     app_hash: Mapped[str] = mapped_column(String(32))
     version_hash: Mapped[str] = mapped_column(String(32))
+    # The platform of the devices that showed this row — `devices.platform`'s spelling —
+    # and what the row is judged as (#236). Migration c7d2f9a4b6e1.
+    platform: Mapped[str] = mapped_column(String(16), default="macos", server_default="macos")
     key_title: Mapped[str] = mapped_column(String(67))
     key_full: Mapped[str] = mapped_column(String(67), index=True)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

@@ -97,7 +97,7 @@ but each one silently wrong the first time a mobile record reaches it.
 | **P‑3** | ~~`devices` is unique on `(mdm_connection_id, external_id)` — one Jamf ID space~~ | `schema.py:130` | **LANDED 2026-09-09** — [#233](https://github.com/LoonSecIO/LoonInspect/issues/233): `devices.platform`, the key widened, the computer client stamps `macos`, the sharing rows read it |
 | **P‑4** | `deviceMeta.eventID` is `uuid5(run.id, external_id)` — no platform in the name | `service.py:871` | 1st mobile sweep — [#234](https://github.com/LoonSecIO/LoonInspect/issues/234) |
 | **P‑5** | ~~`registry_rows()` iterates the computer section table whatever platform it is passed~~ | `wire_vocabulary.py:92` | **LANDED 2026-09-09** — [#235](https://github.com/LoonSecIO/LoonInspect/issues/235) |
-| **P‑6** | `Facts.platform` defaults to the string `"Mac"`, so every catalog row is judged as a Mac | `requirements.py:79` | with catalog rows — [#236](https://github.com/LoonSecIO/LoonInspect/issues/236) |
+| **P‑6** | ~~`Facts.platform` defaults to the string `"Mac"`, so every catalog row is judged as a Mac~~ | `requirements.py:79` | **LANDED 2026-09-09** — [#236](https://github.com/LoonSecIO/LoonInspect/issues/236): the row carries its platform, the default is unknown, a non-Mac row considers no titles |
 | **P‑7** | ~~The `application` entry hashes `path` and `macAppStore`; entries de-duplicate tenant-wide~~ | `contract.py:322` | **LANDED 2026-09-09** — [#237](https://github.com/LoonSecIO/LoonInspect/issues/237): the contract says it is the computer contract, and a second one namespaces its entry kinds |
 
 ### P‑1 and P‑2 are the v0 half

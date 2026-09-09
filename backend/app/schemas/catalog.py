@@ -28,6 +28,10 @@ class CatalogEntryOut(_CamelModel):
     short_version: str | None
     app_hash: str
     version_hash: str
+    # The platform the row was seen on and judged as (#236). A row whose platform is not
+    # `macos` carries no Jamf answer by construction — not matchable, which is a different
+    # fact from not matched.
+    platform: str
     key_title: str
     key_full: str
     first_seen_at: datetime
@@ -111,6 +115,9 @@ class CatalogVersionOut(_CamelModel):
 
 class CatalogLookupRequest(_CamelModel):
     version_hashes: list[str] = Field(default_factory=list, max_length=500)
+    # The platform the keys belong to (#236); the tenant catalog holds one row per platform
+    # for a hash a universal app shares.
+    platform: str = "macos"
     key_fulls: list[str] = Field(default_factory=list, max_length=500)
     app_hashes: list[str] = Field(default_factory=list, max_length=500)
 

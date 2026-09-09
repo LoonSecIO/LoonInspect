@@ -49,7 +49,10 @@ catalog, so device pages and the Applications overview need no join.
   `patch_available`, `patch_available_since`, `releases_missed`, `this_version_seen`, `latest_version`,
   `latest_released_at`, `released_at` (Jamf's date for the installed version itself),
   `evaluated_at`, `evaluated_signature` (which catalog it was judged against: the title count and
-  newest `synced_at`). Unique per tenant on `version_hash`.
+  newest `synced_at`), and `platform` — the platform of the devices that showed the row, which is
+  what it is judged as (#236): Jamf Patch is macOS-only, so a row that is not `macos` considers no
+  titles and carries no answer, and the column is the record of why. Unique per tenant on
+  (`platform`, `version_hash`): a universal app is one hash and two rows.
 - **`app_catalog_title_matches`** (RLS): one row per (catalog row, Jamf title) — `basis`
   (`requirements` | `ea_assumed`), `state`, `version_known`, `on_latest`, `installed_version`,
   `installed_released_at`, `latest_version`, `latest_released_at`, `first_newer_released_at`,

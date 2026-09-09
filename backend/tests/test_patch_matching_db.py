@@ -107,6 +107,38 @@ async def _forget_fixture_apps(db, jamf: FakeJamf) -> None:
     await db.commit()
 
 
+async def test_a_second_platform_gets_its_own_rows_and_no_jamf_answer(db, jamf: FakeJamf, connection, catalog_rows, monkeypatch) -> None:
+    """#236: a universal app is one hash and two catalog rows, and the row that is not a Mac
+    considers no titles — Jamf Patch is macOS-only — while the Mac's row keeps its answer."""
+    from app.mdm.jamf import client as jamf_client
+    from app.mdm.service import sync_connection
+    from app.models.schema import AppCatalogEntry, Device, InstalledApp
+
+    await _forget_fixture_apps(db, jamf)
+    assert (await sync_connection(db, connection)).ok
+    real = (await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == jamf.real["id"], Device.platform == "macos"))).scalar_one()
+    mac_apps = {row.name: row for row in (await db.execute(select(InstalledApp).where(InstalledApp.device_id == real.id))).scalars().all()}
+    xcode_hash = mac_apps["Xcode.app"].version_hash
+    mac_row = (await db.execute(select(AppCatalogEntry).where(AppCatalogEntry.platform == "macos", AppCatalogEntry.version_hash == xcode_hash))).scalar_one()
+    assert mac_row.jamf_title_ids == ["0C3"] and mac_row.patch_state == "latest"
+
+    # The same records read by a client that declares another platform.
+    monkeypatch.setattr(jamf_client, "COMPUTER_PLATFORM", "ios")
+    assert (await sync_connection(db, connection)).ok
+    ios_row = (await db.execute(select(AppCatalogEntry).where(AppCatalogEntry.platform == "ios", AppCatalogEntry.version_hash == xcode_hash))).scalar_one()
+    assert ios_row.id != mac_row.id
+    assert ios_row.jamf_title_ids is None and ios_row.patch_state is None, "no titles considered: not matchable"
+    assert ios_row.evaluated_signature, "judged — and the judgement is that nothing applies"
+    # The Mac's row and its copies did not move.
+    await db.refresh(mac_row)
+    assert mac_row.jamf_title_ids == ["0C3"] and mac_row.patch_state == "latest"
+    ios_device = (await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == jamf.real["id"], Device.platform == "ios"))).scalar_one()
+    ios_xcode = (await db.execute(select(InstalledApp).where(InstalledApp.device_id == ios_device.id, InstalledApp.version_hash == xcode_hash))).scalar_one()
+    assert ios_xcode.jamf_title_ids is None and ios_xcode.last_patch_check_at is not None
+    await db.refresh(mac_apps["Xcode.app"])
+    assert mac_apps["Xcode.app"].jamf_title_ids == ["0C3"]
+
+
 async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connection, catalog_rows) -> None:
     from app.api.jamf_patch import title_device_counts, title_version_counts
     from app.catalog.service import refresh_tenant

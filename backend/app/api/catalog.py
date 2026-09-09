@@ -184,7 +184,12 @@ def _answer(key: str, tenant: CatalogEntryOut | None, versions: list[AppCatalogV
 
 
 async def _lookup(
-    db: AsyncSession, *, version_hashes: list[str], key_fulls: list[str], app_hashes: list[str]
+    db: AsyncSession,
+    *,
+    version_hashes: list[str],
+    key_fulls: list[str],
+    app_hashes: list[str],
+    platform: str = "macos",
 ) -> list[CatalogLookupOut]:
     keys = [*version_hashes, *key_fulls, *app_hashes]
     if not keys:
@@ -196,6 +201,9 @@ async def _lookup(
             select(AppCatalogEntry, devices)
             .outerjoin(counts, counts.c.version_hash == AppCatalogEntry.version_hash)
             .where(
+                # One platform's rows (#236): a hash a universal app shares is two rows with
+                # two answers, and first-wins would have handed back whichever sorted first.
+                AppCatalogEntry.platform == platform,
                 or_(
                     AppCatalogEntry.version_hash.in_(version_hashes or [""]),
                     AppCatalogEntry.key_full.in_(key_fulls or [""]),
@@ -232,13 +240,20 @@ async def lookup_get(
     version_hash: list[str] = Query(default=[], alias="versionHash", max_length=500),
     key_full: list[str] = Query(default=[], alias="keyFull", max_length=500),
     app_hash: list[str] = Query(default=[], alias="appHash", max_length=500),
+    platform: str = Query(default="macos", max_length=16),
 ) -> list[CatalogLookupOut]:
-    return await _lookup(db, version_hashes=version_hash, key_fulls=key_full, app_hashes=app_hash)
+    return await _lookup(db, version_hashes=version_hash, key_fulls=key_full, app_hashes=app_hash, platform=platform)
 
 
 @router.post("/lookup", response_model=list[CatalogLookupOut], dependencies=[Depends(require(Permission.APP_READ))])
 async def lookup_post(payload: CatalogLookupRequest, db: AsyncSession = Depends(get_db)) -> list[CatalogLookupOut]:
-    return await _lookup(db, version_hashes=payload.version_hashes, key_fulls=payload.key_fulls, app_hashes=payload.app_hashes)
+    return await _lookup(
+        db,
+        version_hashes=payload.version_hashes,
+        key_fulls=payload.key_fulls,
+        app_hashes=payload.app_hashes,
+        platform=payload.platform,
+    )
 
 
 @router.post("/refresh", response_model=CatalogRefreshResult, dependencies=[Depends(require(Permission.PATCH_CATALOG_SYNC))])

@@ -279,15 +279,21 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
     # catalog.* — CatalogSummaryOut's semantics, computed here rather than through the
     # API. installed_not_latest is at the catalog-entry grain, deliberately not device
     # pairs: "how many distinct behind versions exist", not "how many installs are behind".
-    values["catalog.entries"] = await _count(db, select(func.count()).select_from(AppCatalogEntry))
+    # Rows of the population this capture counts (#236): a catalog row carries the platform
+    # of the devices that showed it, and a mobile row — unmatchable by construction, Jamf
+    # Patch being macOS-only — must not read as the Mac fleet's coverage collapsing.
+    of_platform = AppCatalogEntry.platform == CAPTURE_PLATFORM
+    values["catalog.entries"] = await _count(db, select(func.count()).select_from(AppCatalogEntry).where(of_platform))
     values["catalog.installed"] = await _count(
-        db, select(func.count()).select_from(AppCatalogEntry).where(_installed())
+        db, select(func.count()).select_from(AppCatalogEntry).where(of_platform, _installed())
     )
     values["catalog.matched"] = await _count(
-        db, select(func.count()).select_from(AppCatalogEntry).where(AppCatalogEntry.jamf_title_ids.is_not(None))
+        db,
+        select(func.count()).select_from(AppCatalogEntry).where(of_platform, AppCatalogEntry.jamf_title_ids.is_not(None)),
     )
     values["catalog.unmatched"] = await _count(
-        db, select(func.count()).select_from(AppCatalogEntry).where(AppCatalogEntry.jamf_title_ids.is_(None))
+        db,
+        select(func.count()).select_from(AppCatalogEntry).where(of_platform, AppCatalogEntry.jamf_title_ids.is_(None)),
     )
     # `matched` and `unmatched` are complementary predicates on one column, so they partition
     # `entries` — asserted for the reason the patch states are below (#314): a pair of counts
@@ -303,7 +309,7 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
         db,
         select(func.count())
         .select_from(AppCatalogEntry)
-        .where(_installed(), AppCatalogEntry.is_latest.is_(False), AppCatalogEntry.latest_version.is_not(None)),
+        .where(of_platform, _installed(), AppCatalogEntry.is_latest.is_(False), AppCatalogEntry.latest_version.is_not(None)),
     )
 
     values["apps.distinct"] = await _count(db, select(func.count(distinct(InstalledApp.app_hash))))
