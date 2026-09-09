@@ -25,6 +25,7 @@ from app.core.permissions import Permission
 from app.mdm.jamf.contract import GROUP_DEFINITION_SECTION, SUBJECT_COMPUTER_GROUP
 from app.mdm.jamf.group_cost import RANKING_VERSION, assess_criteria, rank_key
 from app.models.schema import ObservationEntry, ObservationSection, ObservationSpan
+from app.observations.departure import open_departures
 from app.schemas.smart_groups import SmartGroupCostOut, SmartGroupCostResponse, SmartGroupCriterionOut
 
 router = APIRouter(prefix="/api/smart-groups", tags=["smart-groups"])
@@ -82,6 +83,7 @@ async def smart_group_cost(db: AsyncSession = Depends(get_db)) -> SmartGroupCost
         )
     ).scalars().all()
 
+    departed = await open_departures(db, subject_kind=SUBJECT_COMPUTER_GROUP)
     items: list[tuple[tuple, SmartGroupCostOut]] = []
     for span, body in rows:
         cost = assess_criteria((body or {}).get("criteria"), extension_attributes=ea_names)
@@ -100,6 +102,7 @@ async def smart_group_cost(db: AsyncSession = Depends(get_db)) -> SmartGroupCost
             criteria=[SmartGroupCriterionOut(**asdict(criterion)) for criterion in cost.criteria],
             first_observed_at=span.first_observed_at,
             last_observed_at=span.last_observed_at,
+            departed_at=departed.get((span.mdm_connection_id, span.subject_id)),
         )
         # The stable tail the ranking deliberately leaves to the caller, so two groups
         # that cost the same come back in the same order on every request.

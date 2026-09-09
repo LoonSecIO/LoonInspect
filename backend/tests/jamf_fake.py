@@ -64,6 +64,10 @@ class FakeJamf:
         self.smart_group_criteria: list[dict] = [
             {"name": "Managed", "priority": 0, "andOr": "and", "searchType": "is", "value": "Managed"}
         ]
+        # The smart groups the tenant holds (#181), editable so a test can delete one
+        # between two passes; group "1" reads its criteria from `smart_group_criteria`
+        # above so #136's edit-between-sweeps test keeps its handle.
+        self.smart_groups: list[dict] = [{"id": "1", "name": "All Managed Clients", "siteId": "-1"}]
         # The extension-attribute definitions (#178), the three the fixture records
         # report values for, editable so a test can move one between two passes. None
         # stands for an API client without "Read Computer Extension Attributes" — the
@@ -159,12 +163,19 @@ class FakeJamf:
                 200, json={"totalCount": len(definitions), "results": definitions[page * size : (page + 1) * size]}
             )
         if path == "/api/v3/computer-groups/smart-groups":
-            return httpx.Response(200, json={"totalCount": 1, "results": [{"id": "1", "name": "All Managed Clients"}]})
-        if path == "/api/v3/computer-groups/smart-groups/1":
-            return httpx.Response(
-                200,
-                json={"name": "All Managed Clients", "siteId": "-1", "criteria": self.smart_group_criteria},
-            )
+            page = int(request.url.params.get("page", "0"))
+            size = int(request.url.params.get("page-size", "100"))
+            listed = [{"id": group["id"], "name": group["name"]} for group in self.smart_groups]
+            return httpx.Response(200, json={"totalCount": len(listed), "results": listed[page * size : (page + 1) * size]})
+        if path.startswith("/api/v3/computer-groups/smart-groups/"):
+            wanted = path.rsplit("/", 1)[1]
+            for group in self.smart_groups:
+                if group["id"] == wanted:
+                    criteria = self.smart_group_criteria if wanted == "1" else group.get("criteria", [])
+                    return httpx.Response(
+                        200, json={"name": group["name"], "siteId": group.get("siteId", "-1"), "criteria": criteria}
+                    )
+            return httpx.Response(404, json={"httpStatus": 404})
         return httpx.Response(404, json={"httpStatus": 404, "path": path})
 
     async def async_handler(self, request: httpx.Request) -> httpx.Response:

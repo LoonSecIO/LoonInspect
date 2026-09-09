@@ -156,6 +156,11 @@ export function SmartGroupCostPage() {
                       >
                         {group.name ?? t.smartGroupCost.unnamed}
                       </button>
+                      {group.departedAt && (
+                        <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                          {t.smartGroupCost.departed(new Date(group.departedAt).toLocaleDateString())}
+                        </span>
+                      )}
                       {group.criteria.some((criterion) => criterion.operatorClass === "unknown") && (
                         <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                           {t.smartGroupCost.unknownOperatorBadge}

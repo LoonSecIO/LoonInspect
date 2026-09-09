@@ -767,6 +767,8 @@ export const en = {
     tableDepth: "Nesting",
     tableObserved: "Last observed",
     unnamed: "Unnamed group",
+    // Absent from the last clean census (#181): deleted in Jamf, definition kept here.
+    departed: (date: string) => `gone since ${date}`,
     unknownOperatorBadge: "unrecognised operator",
     extensionAttributeBadge: "extension attribute",
     criterionOrder: "Order",

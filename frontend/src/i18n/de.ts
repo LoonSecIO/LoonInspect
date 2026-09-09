@@ -725,6 +725,7 @@ export const de: Translations = {
     tableDepth: "Verschachtelung",
     tableObserved: "Zuletzt beobachtet",
     unnamed: "Unbenannte Gruppe",
+    departed: (date: string) => `weg seit ${date}`,
     unknownOperatorBadge: "unbekannter Operator",
     extensionAttributeBadge: "Erweiterungsattribut",
     criterionOrder: "Reihenfolge",

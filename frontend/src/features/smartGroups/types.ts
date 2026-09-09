@@ -29,6 +29,9 @@ export interface SmartGroupCost {
   criteria: SmartGroupCriterion[];
   firstObservedAt: string;
   lastObservedAt: string;
+  /** Set when the group was absent from the last clean census (#181): gone from Jamf,
+   *  while its definition stays the ledger's current record. */
+  departedAt: string | null;
 }
 
 export interface SmartGroupCostResponse {
