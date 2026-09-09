@@ -44,6 +44,9 @@ class SmartGroupCostOut(_Base):
     # cadence, which is finer than the device sweep's (docs/ingest-scheduling.md §3).
     first_observed_at: datetime
     last_observed_at: datetime
+    # Set when the group was absent from the last clean census (#181): its definition is
+    # still the ledger's current span — absence opens no span — but it is gone from Jamf.
+    departed_at: datetime | None = None
 
 
 class SmartGroupCostResponse(_Base):

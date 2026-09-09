@@ -358,6 +358,17 @@ what that emission reads. A tenant whose client cannot read the endpoint yields 
 rather than an empty one, because an empty census would say every definition departed at
 once; the run log records the skip.
 
+**Departure** (#181, from the same ruling): a group or a definition whose current span the
+census did not name is gone. It is derived state, not an observation — absence opens and
+closes no span (rider 4) — written to `subject_departures` as a timestamped row that names
+the census run that found it, closed with `returned_at` when a census names the subject
+again, and re-derivable from the spans and the run history. The circuit breaker is
+mandatory: an empty census departs nobody, and a census naming fewer than half of a
+population of ten or more departs nobody either (`app.observations.departure`); both are
+logged at warning on the run, because "every group departed at once" must be unreachable
+from a lost privilege or a short page. Returns are honoured on a collapsed census — a
+subject the census *did* name is present. What a SIEM receives about a departure is #179's.
+
 ---
 
 ## 9. Storage

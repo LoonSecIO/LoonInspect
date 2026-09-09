@@ -959,6 +959,42 @@ class LoginAttempt(Base):
 # still names. Everything is tenant-scoped and under RLS like the rest of the schema.
 
 
+class SubjectDeparture(Base):
+    """An object absent from a clean census is gone (#181): derived state on the object,
+    timestamped, re-derivable from the census history, and never an observation — absence
+    opens and closes no span (#135 rider 4), so the ledger stays clean and this row is where
+    the derivation lands. One open row per subject (`uq_subject_departures_open`); a return
+    closes it with `returned_at`, and a second departure is a second row. Migration
+    d9e4b7c2a8f3.
+    """
+
+    __tablename__ = "subject_departures"
+    __table_args__ = (
+        Index("ix_subject_departures_subject", "tenant_id", "mdm_connection_id", "subject_kind", "subject_id"),
+        Index(
+            "uq_subject_departures_open",
+            "tenant_id",
+            "mdm_connection_id",
+            "subject_kind",
+            "subject_id",
+            unique=True,
+            postgresql_where=text("returned_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    mdm_connection_id: Mapped[int] = mapped_column(ForeignKey("mdm_connections.id", ondelete="CASCADE"))
+    subject_kind: Mapped[str] = mapped_column(String(32))
+    subject_id: Mapped[str] = mapped_column(String(255))
+    departed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    returned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    census_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("runs.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class ObservationSpan(Base):
     """A run of consecutive observations of one subject with identical content.
 

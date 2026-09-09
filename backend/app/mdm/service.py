@@ -47,6 +47,8 @@ from app.mdm.jamf.client import (
     parse_webhook_event,
 )
 from app.mdm.jamf.contract import (
+    SUBJECT_COMPUTER_GROUP,
+    SUBJECT_EXTENSION_ATTRIBUTE_DEFINITION,
     V0_SECTIONS,
     Aperture,
     Observation,
@@ -68,6 +70,7 @@ from app.models.schema import (
     MdmSyncState,
     Run,
 )
+from app.observations.departure import reconcile_census
 from app.observations.ledger import (
     RecordResult,
     current_span,
@@ -390,10 +393,12 @@ async def run_jamf_catalog(
             aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)
             connection.last_successful_auth_at = datetime.now(timezone.utc)
             await db.commit()
-            group_count = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes)
+            groups = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes)
+            group_count = len(groups)
             definitions = await _observe_extension_attribute_definitions(
                 db, connection, client, http, aperture_digest, trigger, outcomes
             )
+            await _reconcile_departures(db, connection, run, groups=groups, definitions=definitions)
             # The catalog class is where the label catalogs belong too: a department
             # renamed between sweeps is visible at the catalog's cadence, without a
             # device read.
@@ -447,8 +452,12 @@ async def _observe_groups(
     aperture_digest: str,
     trigger: str,
     outcomes: Counter[str],
-) -> int:
-    group_count = 0
+) -> list[str]:
+    """Observe every smart-group definition; returns the ids the census named (#181).
+    `fetch_smart_groups` answers an empty list for a refused read as well as for a tenant
+    with no groups — the breaker in `reconcile_census` is what keeps that from reading as
+    every group departing at once."""
+    observed: list[str] = []
     for raw_group in await client.fetch_smart_groups(http):
         observation = canonicalize_smart_group(raw_group)
         result = await record_observation(
@@ -461,8 +470,34 @@ async def _observe_groups(
         if result.outcome == "changed":
             await derive_and_record(db, connection=connection, observation=observation, result=result, trigger=trigger)
         outcomes[f"group_{result.outcome}"] += 1
-        group_count += 1
-    return group_count
+        observed.append(observation.subject_id)
+    return observed
+
+
+async def _reconcile_departures(
+    db: AsyncSession,
+    connection: MdmConnection,
+    run: Run | None,
+    *,
+    groups: Iterable[str] | None,
+    definitions: Iterable[str] | None,
+) -> None:
+    """The departure derivation for both object kinds the catalog pass took a census of
+    (#181), logged on the run. Commits, so a departure lands with the census that found it."""
+    at = datetime.now(timezone.utc)
+    for subject_kind, observed in ((SUBJECT_COMPUTER_GROUP, groups), (SUBJECT_EXTENSION_ATTRIBUTE_DEFINITION, definitions)):
+        verdict = await reconcile_census(
+            db,
+            connection_id=connection.id,
+            subject_kind=subject_kind,
+            observed_ids=observed,
+            at=at,
+            census_run_id=run.id if run is not None else None,
+        )
+        if run is not None:
+            level = "warning" if verdict.skipped else "info"
+            await run_log(db, run, level, "departures reconciled", **verdict.as_log())
+    await db.commit()
 
 
 async def _observe_extension_attribute_definitions(
@@ -473,7 +508,7 @@ async def _observe_extension_attribute_definitions(
     aperture_digest: str,
     trigger: str,
     outcomes: Counter[str],
-) -> int | None:
+) -> list[str] | None:
     """The extension-attribute census (#178), the mirror of `_observe_groups`: every
     definition Jamf holds, recorded as its own subject in the ledger, so a definition's
     departure has something to be absent from (#181). Recorded in the catalog pass for
@@ -489,7 +524,7 @@ async def _observe_extension_attribute_definitions(
     definitions = await client.fetch_computer_extension_attributes(http)
     if definitions is None:
         return None
-    count = 0
+    observed: list[str] = []
     for raw_definition in definitions:
         observation = canonicalize_extension_attribute_definition(raw_definition)
         result = await record_observation(
@@ -500,15 +535,15 @@ async def _observe_extension_attribute_definitions(
             trigger=trigger,
         )
         outcomes[f"ea_definition_{result.outcome}"] += 1
-        count += 1
-    return count
+        observed.append(observation.subject_id)
+    return observed
 
 
-async def _log_definition_census(db: AsyncSession, run: Run, count: int | None) -> None:
-    if count is None:
+async def _log_definition_census(db: AsyncSession, run: Run, observed: list[str] | None) -> None:
+    if observed is None:
         await run_log(db, run, "warning", "extension attribute definitions not readable; census skipped")
     else:
-        await run_log(db, run, "info", "extension attribute definitions observed", definitionCount=count)
+        await run_log(db, run, "info", "extension attribute definitions observed", definitionCount=len(observed))
 
 
 async def _refresh_org_units(
@@ -595,7 +630,8 @@ async def _sync_jamf(
         # at most one sweep older than the memberships that reference it, which the
         # hourly catalog collection (docs/ingest-scheduling.md §6.2) closes on its own.
         if include_catalog:
-            group_count = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes)
+            groups = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes)
+            group_count = len(groups)
             await db.commit()
             if run is not None:
                 await run_log(db, run, "info", "group definitions observed", groupCount=group_count)
@@ -608,6 +644,8 @@ async def _sync_jamf(
             await db.commit()
             if run is not None:
                 await _log_definition_census(db, run, definitions)
+            # And what the two censuses did not name (#181).
+            await _reconcile_departures(db, connection, run, groups=groups, definitions=definitions)
 
         # Streamed, not collected: a 40,000-device tenant is paged through one record
         # at a time, and each device commits on its own (process_sync), so a failure on
