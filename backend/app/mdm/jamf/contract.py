@@ -319,6 +319,13 @@ _DISK_ENCRYPTION: Allow = {
     "fileVault2EligibilityMessage": True,
 }
 
+# The COMPUTER application allowlist, not the universal one (#237). `path` and
+# `macAppStore` are macOS-only: a Jamf mobile application object carries neither, and
+# carries fields this list does not model (`identifier`, `shortVersion`,
+# `managementStatus`, `validationStatus`). Applying this list to a mobile record would
+# hash a mostly-absent document — and absence is absence (rule 3), so it would hash
+# *differently but plausibly*, which is worse than failing. The mobile allowlist is its
+# own table, written from a captured record (#238), never an extension of this one.
 _APPLICATION: Allow = {
     "name": True,
     "path": True,
@@ -396,6 +403,20 @@ _SOFTWARE_UPDATE: Allow = {
     "packageName": True,
 }
 
+# The COMPUTER section registry — `computers-inventory`'s section vocabulary verbatim —
+# and not the universal one (#237): seven of these fourteen have no mobile counterpart,
+# and Jamf's mobile detail carries sections this table does not model. It is reached by
+# name as `COMPUTER_SECTIONS` and by object through `SECTION_REGISTRIES` below (#235).
+#
+# The entry kinds here are this contract's own, and that is load-bearing.
+# `observation_entries` de-duplicates tenant-wide on `(tenant_id, digest)`, and a digest
+# is `_DOMAIN ␟ version ␟ kind ␟ canonical` — so two contracts that spelled the same
+# kind for the same bytes would share one content-addressed row, silently. The decision,
+# taken in writing rather than left to be discovered (#237): a second object's contract
+# namespaces its entry kinds (`mobile_application`, never `application`), which separates
+# its digests through the recipe as it stands, with no change to `_DOMAIN` and no
+# migration. `tests/test_jamf_observation_contract.py` pins the kinds this table owns
+# and the separation the recipe gives a differently named one.
 SECTIONS: dict[str, SectionSpec] = {
     spec.name: spec
     for spec in (

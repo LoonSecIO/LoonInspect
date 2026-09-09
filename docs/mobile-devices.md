@@ -36,7 +36,11 @@ The fourteen contract sections (`app.mdm.jamf.contract.SECTIONS`) are the
 (`disk_encryption`, `local_user_accounts`, `software_updates`, `group_memberships` among
 them), and Jamf's mobile detail carries sections this contract does not model. A mobile
 aperture is therefore a **second section registry**, not a subset of this one — the single
-most important sizing fact for the eventual work.
+most important sizing fact for the eventual work. The contract says so in code since #237:
+`SECTIONS` and `_APPLICATION` are commented as the computer registry and the computer
+allowlist, and the entry kinds a mobile contract mints are namespaced (`mobile_application`),
+because `observation_entries` de-duplicates tenant-wide on the digest and the digest recipe
+already keeps differently named kinds apart.
 
 ## 2. The platform vocabulary (Kyle, 2026-09-01)
 
@@ -94,7 +98,7 @@ but each one silently wrong the first time a mobile record reaches it.
 | **P‑4** | `deviceMeta.eventID` is `uuid5(run.id, external_id)` — no platform in the name | `service.py:871` | 1st mobile sweep — [#234](https://github.com/LoonSecIO/LoonInspect/issues/234) |
 | **P‑5** | ~~`registry_rows()` iterates the computer section table whatever platform it is passed~~ | `wire_vocabulary.py:92` | **LANDED 2026-09-09** — [#235](https://github.com/LoonSecIO/LoonInspect/issues/235) |
 | **P‑6** | `Facts.platform` defaults to the string `"Mac"`, so every catalog row is judged as a Mac | `requirements.py:79` | with catalog rows — [#236](https://github.com/LoonSecIO/LoonInspect/issues/236) |
-| **P‑7** | The `application` entry hashes `path` and `macAppStore`; entries de-duplicate tenant-wide | `contract.py:322` | with the registry — [#237](https://github.com/LoonSecIO/LoonInspect/issues/237) |
+| **P‑7** | ~~The `application` entry hashes `path` and `macAppStore`; entries de-duplicate tenant-wide~~ | `contract.py:322` | **LANDED 2026-09-09** — [#237](https://github.com/LoonSecIO/LoonInspect/issues/237): the contract says it is the computer contract, and a second one namespaces its entry kinds |
 
 ### P‑1 and P‑2 are the v0 half
 

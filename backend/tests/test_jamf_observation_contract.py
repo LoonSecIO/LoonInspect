@@ -260,6 +260,33 @@ def test_unknown_fields_are_ignored(raw: dict) -> None:
     assert _digests(raw) == before
 
 
+COMPUTER_ENTRY_KINDS = {
+    "application",
+    "extension_attribute",
+    "group_membership",
+    "configuration_profile",
+    "local_user_account",
+    "certificate",
+    "software_update",
+}
+
+
+def test_the_computer_contract_says_so_and_its_entry_kinds_are_its_own() -> None:
+    """#237: the contract is the computer contract and is reachable as one — by name and
+    by object — rather than as the module's only table. Its seven entry kinds are the
+    ones `observation_entries` de-duplicates on tenant-wide, and the recipe already keeps
+    a differently named kind apart: a second contract that namespaces its kinds shares no
+    content-addressed row with this one, with no change to the domain."""
+    assert c.COMPUTER_SECTIONS is c.SECTIONS
+    assert c.SECTION_REGISTRIES == {c.SUBJECT_COMPUTER: c.SECTIONS}
+    assert {spec.entry_kind for spec in c.SECTIONS.values() if spec.entry_kind} == COMPUTER_ENTRY_KINDS
+    same_bytes = '{"name":"Safari","version":"18.0"}'
+    assert c.digest("application", same_bytes) != c.digest("mobile_application", same_bytes)
+    # The computer allowlist hashes the two macOS-only fields the mobile object lacks;
+    # that is the fact that makes it the computer allowlist and not a universal one.
+    assert {"path", "macAppStore"} <= set(c.SECTIONS["applications"].entry_fields)
+
+
 def test_sections_outside_the_contract_raise() -> None:
     with pytest.raises(ValueError):
         c.canonicalize_computer({"id": "1"}, ("general", "fonts"))
