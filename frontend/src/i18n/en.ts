@@ -356,6 +356,41 @@ export const en = {
 
     // Patch laggards, below the fold (#110). Words for every empty state, never a bare
     // numeral, and "no catalog" kept apart from "nobody behind" — different facts.
+    // The hygiene tiles (#109): fixed thresholds, each tile a saved search, and words for
+    // every zero — "No unmanaged devices", never a bare numeral.
+    hygiene: {
+      staleTitle: (days: number) => `No check-in for ${days} days or more`,
+      staleCount: (n: number) => `${n} ${n === 1 ? "device" : "devices"}`,
+      staleNone: (days: number) => `Every device has checked in within ${days} days`,
+      unmanagedTitle: "Unmanaged",
+      unmanagedCount: (n: number) => `${n} unmanaged ${n === 1 ? "device" : "devices"}`,
+      unmanagedNone: "No unmanaged devices",
+      coverageTitle: "Jamf Patch coverage",
+      coverageCount: (onLatest: number, total: number, percent: number) =>
+        `${onLatest} of ${total} matched installs on latest (${percent}%)`,
+      coverageNone: "No install is matched to a Jamf Patch title yet",
+      failed: "Could not load"
+    },
+    // The recent-runs table (#109), fed by the page of runs the hero already fetched.
+    recentRuns: {
+      title: "Recent runs",
+      empty: "No runs yet.",
+      webhooksToday: (n: number) => `Webhook sweeps today: ${n}`,
+      // A floor, not a count: the rows in hand never reached back past midnight.
+      webhooksTodayAtLeast: (n: number, of: number) => `Webhook sweeps today: at least ${n} (of the last ${of} runs)`,
+      colTrigger: "Trigger",
+      colStatus: "Status",
+      colWindow: "Window (UTC)",
+      colDevices: "Devices",
+      colDuration: "Duration",
+      colActor: "Actor",
+      triggerSweep: "Sweep",
+      triggerManual: "Manual",
+      triggerWebhook: "Webhook",
+      statusRunning: "Running",
+      statusSucceeded: "Finished",
+      statusFailed: "Failed"
+    },
     laggards: {
       title: "Patch laggards",
       help: "Jamf Patch titles with the most devices behind their current version.",
@@ -552,6 +587,10 @@ export const en = {
     eyebrow: "Inventory",
     title: "Devices",
     searchPlaceholder: "Search hostname or serial number...",
+    // The Overview's stale tile lands here as a saved search (#109); the bar has no
+    // control for it, so it is a chip the reader can remove.
+    staleChip: (since: string) => `No check-in since ${since}`,
+    clearFilter: "Clear this filter",
     osVersionPrefix: "OS version",
     osVersionOperators: {
       eq: "is",

@@ -23,6 +23,12 @@ export interface JamfPatchTitleListResponse {
   pageSize: number;
 }
 
+/** `GET /api/jamf-patch/coverage` (#109): the posture recorder's own pair counts, live. */
+export interface JamfPatchCoverage {
+  pairsTotal: number;
+  pairsOnLatest: number;
+}
+
 export interface JamfPatchSyncResult {
   synced: number;
 }

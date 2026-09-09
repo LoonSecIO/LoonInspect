@@ -342,6 +342,37 @@ export const de: Translations = {
     eyebrow: "LoonInspect",
     title: "Übersicht",
 
+    hygiene: {
+      staleTitle: (days: number) => `Kein Check-in seit ${days} Tagen oder länger`,
+      staleCount: (n: number) => `${n} ${n === 1 ? "Gerät" : "Geräte"}`,
+      staleNone: (days: number) => `Jedes Gerät hat sich innerhalb von ${days} Tagen gemeldet`,
+      unmanagedTitle: "Nicht verwaltet",
+      unmanagedCount: (n: number) => `${n} nicht ${n === 1 ? "verwaltetes Gerät" : "verwaltete Geräte"}`,
+      unmanagedNone: "Keine nicht verwalteten Geräte",
+      coverageTitle: "Jamf-Patch-Abdeckung",
+      coverageCount: (onLatest: number, total: number, percent: number) =>
+        `${onLatest} von ${total} zugeordneten Installationen aktuell (${percent}%)`,
+      coverageNone: "Noch keine Installation ist einem Jamf-Patch-Titel zugeordnet",
+      failed: "Konnte nicht geladen werden"
+    },
+    recentRuns: {
+      title: "Letzte Läufe",
+      empty: "Noch keine Läufe.",
+      webhooksToday: (n: number) => `Webhook-Läufe heute: ${n}`,
+      webhooksTodayAtLeast: (n: number, of: number) => `Webhook-Läufe heute: mindestens ${n} (von den letzten ${of} Läufen)`,
+      colTrigger: "Auslöser",
+      colStatus: "Status",
+      colWindow: "Fenster (UTC)",
+      colDevices: "Geräte",
+      colDuration: "Dauer",
+      colActor: "Akteur",
+      triggerSweep: "Sweep",
+      triggerManual: "Manuell",
+      triggerWebhook: "Webhook",
+      statusRunning: "Läuft",
+      statusSucceeded: "Beendet",
+      statusFailed: "Fehlgeschlagen"
+    },
     laggards: {
       title: "Patch-Nachzügler",
       help: "Jamf-Patch-Titel mit den meisten Geräten hinter der aktuellen Version.",
@@ -510,6 +541,8 @@ export const de: Translations = {
     eyebrow: "Inventar",
     title: "Geräte",
     searchPlaceholder: "Hostname oder Seriennummer suchen...",
+    staleChip: (since: string) => `Kein Check-in seit ${since}`,
+    clearFilter: "Diesen Filter entfernen",
     osVersionPrefix: "Betriebssystemversion",
     osVersionOperators: {
       eq: "ist",

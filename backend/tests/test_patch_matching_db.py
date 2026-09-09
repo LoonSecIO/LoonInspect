@@ -139,6 +139,22 @@ async def test_a_second_platform_gets_its_own_rows_and_no_jamf_answer(db, jamf: 
     assert mac_apps["Xcode.app"].jamf_title_ids == ["0C3"]
 
 
+async def test_the_coverage_endpoint_reads_the_recorders_own_definition(db, jamf: FakeJamf, connection, catalog_rows) -> None:
+    """#109: the tile's two inputs come from `patch_pair_counts`, the function the nightly
+    recorder writes `patch.pairs_total` / `patch.pairs_on_latest` from, so live and recorded
+    cannot drift."""
+    from app.api.jamf_patch import coverage
+    from app.core.posture import patch_pair_counts
+    from app.mdm.service import sync_connection
+
+    await _forget_fixture_apps(db, jamf)
+    assert (await sync_connection(db, connection)).ok
+    served = await coverage(db=db)
+    total, on_latest = await patch_pair_counts(db)
+    assert (served.pairs_total, served.pairs_on_latest) == (total, on_latest)
+    assert served.pairs_total > 0 and 0 <= served.pairs_on_latest <= served.pairs_total
+
+
 async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connection, catalog_rows) -> None:
     from app.api.jamf_patch import title_device_counts, title_version_counts
     from app.catalog.service import refresh_tenant

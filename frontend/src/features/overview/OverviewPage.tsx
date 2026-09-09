@@ -9,7 +9,9 @@ import type { Collection, MdmConnection, MdmSyncStatus, Run, RunSummary } from "
 import { ChangesFeed } from "@/features/overview/ChangesFeed";
 import { FirstSyncHero } from "@/features/overview/FirstSyncHero";
 import { NeedsAttentionPanel } from "@/features/overview/NeedsAttentionPanel";
+import { HygieneTiles } from "@/features/overview/HygieneTiles";
 import { PatchLaggardsTile } from "@/features/overview/PatchLaggardsTile";
+import { RecentRunsTable } from "@/features/overview/RecentRunsTable";
 import { SetupStepper } from "@/features/overview/SetupStepper";
 import { StatusStrip } from "@/features/overview/StatusStrip";
 import { buildConnectionStatuses } from "@/features/overview/connectionStatus";
@@ -302,6 +304,10 @@ export function OverviewPage() {
           requested until it scrolls into view. #109's hygiene tiles and recent-runs
           table are its neighbours. */}
       <PatchLaggardsTile />
+      {/* #109: the hygiene tiles (lazy, three saved searches) and the recent-runs table,
+          which reads the page of runs the hero and baseline already fetched. */}
+      <HygieneTiles />
+      <RecentRunsTable runs={runs} />
     </section>
   );
 }

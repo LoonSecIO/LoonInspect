@@ -36,6 +36,10 @@ export interface DeviceFilters {
   department?: string;
   managed?: boolean;
   supervised?: boolean;
+  /** ISO instants; the API's `lastCheckInBefore` / `lastCheckInAfter`. The Overview's
+   *  stale-check-in tile is a saved search on the first (#109). */
+  lastCheckInBefore?: string;
+  lastCheckInAfter?: string;
   page?: number;
   pageSize?: number;
 }

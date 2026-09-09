@@ -19,6 +19,8 @@ function filtersFromSearchParams(params: URLSearchParams): DeviceFilters {
     department: params.get("department") ?? undefined,
     managed: managed === null ? undefined : managed === "true",
     supervised: supervised === null ? undefined : supervised === "true",
+    lastCheckInBefore: params.get("lastCheckInBefore") ?? undefined,
+    lastCheckInAfter: params.get("lastCheckInAfter") ?? undefined,
     page: params.get("page") ? Number(params.get("page")) : 1
   };
 }
@@ -35,6 +37,9 @@ function searchParamsFromFilters(filters: DeviceFilters): URLSearchParams {
   if (filters.department) params.set("department", filters.department);
   if (filters.managed !== undefined) params.set("managed", String(filters.managed));
   if (filters.supervised !== undefined) params.set("supervised", String(filters.supervised));
+  // Carried through paging too, or page 2 of a saved search would silently be the fleet.
+  if (filters.lastCheckInBefore) params.set("lastCheckInBefore", filters.lastCheckInBefore);
+  if (filters.lastCheckInAfter) params.set("lastCheckInAfter", filters.lastCheckInAfter);
   if (filters.page && filters.page !== 1) params.set("page", String(filters.page));
   return params;
 }
@@ -95,6 +100,23 @@ export function DevicesPage() {
         filters={filters}
         onChange={(next) => setSearchParams(searchParamsFromFilters(next), { replace: true })}
       />
+      {/* A saved search the filter bar has no control for (#109's stale tile) shows as a
+          removable chip, so a filter the page applies is never one the page hides. */}
+      {filters.lastCheckInBefore && (
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 rounded-full border bg-muted px-3 py-1 text-xs"
+          onClick={() =>
+            setSearchParams(searchParamsFromFilters({ ...filters, lastCheckInBefore: undefined, page: 1 }), {
+              replace: true
+            })
+          }
+        >
+          {t.devices.staleChip(new Date(filters.lastCheckInBefore).toLocaleString())}
+          <span aria-hidden="true">×</span>
+          <span className="sr-only">{t.devices.clearFilter}</span>
+        </button>
+      )}
 
       <div className="overflow-x-auto rounded-lg border bg-card">
         <table className="w-full text-sm">

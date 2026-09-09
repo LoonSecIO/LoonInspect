@@ -1,5 +1,10 @@
 import { apiRequest } from "@/config/api";
-import type { JamfPatchSyncResult, JamfPatchTitleDetail, JamfPatchTitleListResponse } from "@/features/jamfPatch/types";
+import type {
+  JamfPatchCoverage,
+  JamfPatchSyncResult,
+  JamfPatchTitleDetail,
+  JamfPatchTitleListResponse
+} from "@/features/jamfPatch/types";
 
 // Search/sort/filter happen client-side over the full catalog (a few thousand
 // rows at most), so this always pulls everything in one request rather than
@@ -9,6 +14,10 @@ const ALL_TITLES_PAGE_SIZE = 5000;
 export function listJamfPatchTitles(): Promise<JamfPatchTitleListResponse> {
   const params = new URLSearchParams({ pageSize: String(ALL_TITLES_PAGE_SIZE) });
   return apiRequest<JamfPatchTitleListResponse>(`/jamf-patch/titles?${params.toString()}`);
+}
+
+export function getJamfPatchCoverage(): Promise<JamfPatchCoverage> {
+  return apiRequest<JamfPatchCoverage>("/jamf-patch/coverage");
 }
 
 export function getJamfPatchTitle(titleId: string): Promise<JamfPatchTitleDetail> {
