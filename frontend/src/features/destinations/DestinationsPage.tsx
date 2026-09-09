@@ -4,7 +4,14 @@ import { Input } from "@/components/ui/input";
 import { ApiError } from "@/config/api";
 import { useHasPermission } from "@/features/auth/store";
 import { PERMISSIONS } from "@/features/auth/types";
-import { createDestination, deleteDestination, testDestination, listDestinations, updateDestination } from "@/features/destinations/api";
+import {
+  createDestination,
+  deleteDestination,
+  listDestinations,
+  redriveDestination,
+  testDestination,
+  updateDestination
+} from "@/features/destinations/api";
 import type { DestinationTestResult } from "@/features/destinations/api";
 import type { AuthType, Destination, DestinationType } from "@/features/destinations/types";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -116,6 +123,11 @@ export function DestinationsPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+  // The redrive asks first, like the delete: it re-sends tenant data to a destination,
+  // and a destination that already received some of it will receive it again (#91).
+  const [pendingRedriveId, setPendingRedriveId] = useState<number | null>(null);
+  // Keyed by destination id for the same reason the test results are.
+  const [redriven, setRedriven] = useState<Record<number, number>>({});
   const [busyId, setBusyId] = useState<number | null>(null);
   // Keyed by destination id, so testing one never erases another's answer. Kyle's
   // reproduction: test A, green line; test B, and A's line vanished.
@@ -232,6 +244,22 @@ export function DestinationsPage() {
       await refresh();
     } catch {
       setError(t.destinations.errorTesting);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleRedrive(destination: Destination) {
+    setBusyId(destination.id);
+    setError(null);
+    try {
+      const result = await redriveDestination(destination.id);
+      setRedriven((current) => ({ ...current, [destination.id]: result.redriven }));
+      setPendingRedriveId(null);
+      // The counts moved: what gave up is queued again.
+      await refresh();
+    } catch {
+      setError(t.destinations.errorRedriving);
     } finally {
       setBusyId(null);
     }
@@ -496,7 +524,28 @@ export function DestinationsPage() {
                 <td className="px-4 py-3">
                   {canWrite && (
                     <div className="flex flex-col items-end gap-2">
-                      {pendingDeleteId === destination.id ? (
+                      {redriven[destination.id] !== undefined && (
+                        <span className="text-xs text-muted-foreground">
+                          {t.destinations.redriveQueued(redriven[destination.id])}
+                        </span>
+                      )}
+                      {pendingRedriveId === destination.id ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">
+                            {t.destinations.redriveConfirm(destination.failedCount)}
+                          </span>
+                          <Button
+                            size="sm"
+                            disabled={busyId === destination.id}
+                            onClick={() => handleRedrive(destination)}
+                          >
+                            {t.destinations.confirm}
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => setPendingRedriveId(null)}>
+                            {t.destinations.cancel}
+                          </Button>
+                        </div>
+                      ) : pendingDeleteId === destination.id ? (
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-muted-foreground">{t.destinations.deleteConfirm}</span>
                           <Button
@@ -513,6 +562,16 @@ export function DestinationsPage() {
                         </div>
                       ) : (
                         <div className="flex gap-2">
+                          {destination.failedCount > 0 && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={busyId === destination.id}
+                              onClick={() => setPendingRedriveId(destination.id)}
+                            >
+                              {t.destinations.redrive(destination.failedCount)}
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"

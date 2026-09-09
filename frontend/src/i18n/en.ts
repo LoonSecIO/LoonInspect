@@ -207,6 +207,14 @@ export const en = {
     errorTesting: "Could not run the test. The app could not reach the destination at all.",
     pendingDeliveries: (count: number) => `${count} queued`,
     failedDeliveries: (count: number) => `${count} gave up`,
+    // The redrive (#91): a dead letter is a delivery that spent its ten attempts, and it
+    // waits for an operator rather than for the next sweep. Re-sending is at-least-once,
+    // and the confirm says so.
+    redrive: (count: number) => `Redrive ${count}`,
+    redriveConfirm: (count: number) =>
+      `Re-send ${count} failed ${count === 1 ? "delivery" : "deliveries"}? Events the destination already received will arrive again.`,
+    redriveQueued: (count: number) => `${count} queued again for delivery`,
+    errorRedriving: "Could not queue the redrive.",
     loading: "Loading destinations…",
     empty: "No destinations configured yet.",
     errorLoading: "Could not load destinations.",

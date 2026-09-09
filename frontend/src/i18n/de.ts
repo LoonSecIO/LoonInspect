@@ -198,6 +198,11 @@ export const de: Translations = {
     errorTesting: "Test konnte nicht ausgeführt werden. Das Ziel war gar nicht erreichbar.",
     pendingDeliveries: (count: number) => `${count} in Warteschlange`,
     failedDeliveries: (count: number) => `${count} aufgegeben`,
+    redrive: (count: number) => `${count} erneut senden`,
+    redriveConfirm: (count: number) =>
+      `${count} fehlgeschlagene ${count === 1 ? "Zustellung" : "Zustellungen"} erneut senden? Ereignisse, die das Ziel bereits erhalten hat, kommen erneut an.`,
+    redriveQueued: (count: number) => `${count} erneut zur Zustellung eingereiht`,
+    errorRedriving: "Das erneute Senden konnte nicht eingereiht werden.",
     loading: "Ziele werden geladen…",
     empty: "Noch keine Ziele konfiguriert.",
     errorLoading: "Ziele konnten nicht geladen werden.",

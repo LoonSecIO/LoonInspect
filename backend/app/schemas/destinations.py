@@ -109,6 +109,13 @@ class DestinationOut(_CamelModel):
     updated_at: datetime
 
 
+class DestinationRedriveOut(_CamelModel):
+    """What `POST /api/destinations/{id}/redrive` reports: how many dead letters went
+    back to the queue. Zero is an answer, not an error — nothing was waiting."""
+
+    redriven: int
+
+
 class DestinationTestOut(_CamelModel):
     """What `POST /api/destinations/{id}/test` reports. The call itself is always 200 —
     the upstream verdict is the payload, not the status of this request."""

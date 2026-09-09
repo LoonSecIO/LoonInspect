@@ -11,7 +11,9 @@ families that carry one (§6). A `device.inventory` snapshot is the one delivery
 many events: it is split at delivery into one HEC event per section item and posted as
 one request of all of them (§7). Deliveries are attempted on a 30-second tick, retried
 with exponential backoff (30s doubling to a 1-hour cap) and dead-lettered after 10
-attempts.
+attempts — about four hours. A dead letter waits for you rather than for the next sweep:
+it is kept for `DEAD_LETTER_RETENTION_DAYS` (30) and re-sent by **Redrive** on the
+Destinations page, or `POST /api/destinations/{id}/redrive` (§9).
 
 ## 1. Turn HEC on — it ships disabled
 
@@ -450,7 +452,7 @@ success/failure times. Every failed attempt is also logged, not just the tenth.
 | `HTTP 413` | One request exceeded the receiver's body limit. Lower `SPLUNK_HEC_MAX_REQUEST_BYTES` (§6) below the HEC input's `max_content_length`, or `RECORD_FANOUT_MAX_REQUEST_BYTES` for the other three types; the snapshot is then sent as more, smaller requests. |
 | Connection refused / timeout | Reachability. From inside the container, not from your laptop — see §3. |
 | No error, and no `device.inventory.changed` | Nothing changed. A sweep where no app changed on any device emits no delta, by design — one `device.inventory` snapshot per device and the sweep's own `run.completed` event still arrive. No snapshot either means the destination is subscribed to other event types only. |
-| Events stop after a while | Ten failed attempts dead-letter a delivery; fix the cause and the *next* events flow, but the dead-lettered ones are not retried. |
+| Events stop after a while | Ten failed attempts dead-letter a delivery; fix the cause and the *next* events flow on their own. The dead-lettered ones wait: the Destinations page shows how many gave up, and **Redrive** returns them to the queue (`POST /api/destinations/{id}/redrive`). Delivery is at-least-once, so events Splunk already indexed before the outage arrive again — dedup as above, on `deviceMeta.eventID` plus the item's identity. Dead letters are kept for `DEAD_LETTER_RETENTION_DAYS` (30); an outage left longer than that has lost the events the purge took, and only a fresh sweep re-emits the devices that changed since. |
 
 Two timing facts worth knowing before you go looking for a bug:
 

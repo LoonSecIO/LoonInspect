@@ -29,6 +29,18 @@ export function testDestination(id: number): Promise<DestinationTestResult> {
   return apiRequest<DestinationTestResult>(`/destinations/${id}/test`, { method: "POST" });
 }
 
+export interface DestinationRedriveResult {
+  /** How many dead letters went back to the queue. Zero is an answer: nothing was waiting. */
+  redriven: number;
+}
+
+/** Returns a destination's dead-lettered deliveries to the queue (#91). Events the
+ *  destination already received arrive again — delivery is at-least-once, and
+ *  `deviceMeta.eventID` is the dedup key on the Splunk side. */
+export function redriveDestination(id: number): Promise<DestinationRedriveResult> {
+  return apiRequest<DestinationRedriveResult>(`/destinations/${id}/redrive`, { method: "POST" });
+}
+
 export function deleteDestination(id: number): Promise<void> {
   return apiRequest<void>(`/destinations/${id}`, { method: "DELETE" });
 }
