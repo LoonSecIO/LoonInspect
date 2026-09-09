@@ -21,8 +21,12 @@ hand-written payload:
 * the request: one body of N concatenated JSON objects, byte-identical to httpx's own
   `json=` encoding for the single-event families, the measured size pinned as a ceiling,
   and the chunk boundary when the ceiling is lowered;
-* every other family and every other destination type keep today's body, except the run
-  families, which gain `loon:run`.
+* every other family keeps today's body, except the run families, which gain `loon:run`.
+
+The other three destination types no longer keep today's body for a SNAPSHOT — #306 gave
+them the same expansion under a record shape — and their golden is
+tests/test_record_fanout.py, which also pins the two walks against each other so this
+suite's fixture stays the single source of the count.
 
 The database lane — the real fixture through `sync_connection`, both worker passes and a
 mocked HEC — is `tests/test_hec_fanout_db.py`.
@@ -50,7 +54,6 @@ from app.core.outbox import (
     _attempt_delivery,
     _build_body,
     _chunk,
-    _elastic_bulk_body,
     _encode_hec_event,
     hec_events,
     hec_request_bodies,
@@ -514,20 +517,22 @@ def test_the_run_family_carries_loon_run_the_delta_carries_its_own_and_the_test_
     assert _build_body(WEBHOOK, {"event": "run.completed", "jobID": "x"}) == {"event": "run.completed", "jobID": "x"}
 
 
-def test_the_snapshot_has_no_one_document_hec_body_but_every_other_destination_gets_it_whole(payload: dict) -> None:
-    """`_build_body` is the one-document view, and on Splunk the snapshot is not one
-    document: asking is a programming error, refused loudly rather than answered with
-    the whole nested snapshot #241 shipped between the two issues. Every non-Splunk
-    destination keeps the canonical snapshot, unstamped, exactly as before."""
-    with pytest.raises(ValueError, match="fanned out"):
-        _build_body(SPLUNK, payload)
+def test_the_snapshot_has_no_one_document_body_on_any_destination_type(payload: dict) -> None:
+    """`_build_body` is the one-document view, and since #306 the snapshot is not one
+    document on ANY type: asking is a programming error on all four, refused loudly rather
+    than answered with the whole nested snapshot #241 shipped between the two issues.
+
+    This is the assertion that changed shape at #306. It used to read "every non-Splunk
+    destination keeps the canonical snapshot, unstamped, exactly as before" — which was
+    the defect: 107 events to Splunk and one ~28 KB nested document to a security data
+    platform that indexes records. The canonical snapshot is still what the ROW holds; it
+    is simply no longer what any destination receives. tests/test_record_fanout.py is the
+    golden for what they receive instead."""
+    for destination in (SPLUNK, WEBHOOK, ELASTIC):
+        with pytest.raises(ValueError, match="fanned out"):
+            _build_body(destination, payload)
     canonical = {key: value for key, value in payload.items() if key != ENVELOPE}
-    assert _build_body(WEBHOOK, payload) == canonical
-    assert _build_body(ELASTIC, payload) == canonical
     assert set(canonical) - set(SNAPSHOT_HEAD_KEYS) == set(SECTION_WRAPPERS.values())
-    document = json.loads(_elastic_bulk_body(EventOutbox(event_type=INVENTORY_EVENT_TYPE, payload=payload)).splitlines()[1])
-    assert "sourcetype" not in document and ENVELOPE not in document
-    assert len(document["app"]) == FIXTURE_ITEMS["app"]
 
 
 # --- delivery ------------------------------------------------------------------------
@@ -584,7 +589,13 @@ async def test_a_splunk_delivery_posts_one_request_of_n_objects_and_a_webhook_ge
 
     *requests, verdict = await _deliver(_webhook_destination(), payload, _accepted)
     assert verdict.verdict == (True, None) and len(requests) == 1
-    assert json.loads(requests[0].content) == {key: value for key, value in payload.items() if key != ENVELOPE}
+    # Since #306 the webhook half is a fan-out too — one request, a JSON array of the same
+    # N items, not one nested document. The array's own golden is
+    # tests/test_record_fanout.py; what this asserts is that both types settled on ONE
+    # request per device, which is the property that keeps a 3,000-Mac sweep from becoming
+    # 321,000 POSTs.
+    records = json.loads(requests[0].content)
+    assert isinstance(records, list) and len(records) == FIXTURE_SUB_EVENTS
 
 
 async def test_a_lowered_ceiling_splits_the_delivery_into_consecutive_requests(payload: dict, monkeypatch) -> None:

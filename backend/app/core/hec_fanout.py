@@ -3,8 +3,8 @@ under its ruled sourcetype (#242, absorbing #222).
 
 The snapshot (#241) is one outbox row per device per pass: the head — `event`, `jobID`,
 `occurredAt`, `deviceMeta` — and one key per section inside the read's aperture, spelled
-by `SECTION_WRAPPERS`. On every destination but Splunk it travels whole. On a `splunk_hec`
-destination it is expanded HERE, at delivery, into one HEC event object per section item:
+by `SECTION_WRAPPERS`. On a `splunk_hec` destination it is expanded HERE, at delivery,
+into one HEC event object per section item:
 
 * the seven one-per-device sections — `general`, `hardware`, `operatingSystem`,
   `userAndLocation`, `purchasing`, `security`, `diskEncryption` — are one sub-event each,
@@ -71,6 +71,12 @@ here (docs/splunk-setup.md §7). A SCALAR section read and genuinely empty is no
 still emits its anchor, as `{}` (`userAndLocation` on the real fixture), so for the seven
 anchors absent means unread and `{}` means read-and-empty, and a full read always
 produces all seven. Built this way and ruled by default — Kyle confirms or overrules.
+
+The other three destination types no longer take the snapshot whole: #306 gave them the
+same expansion under a record shape, in `app.fanout`. That package holds a deliberate COPY
+of the walk below rather than calling into it, so a change made for `runreveal` cannot move
+a byte on this wire; tests/test_record_fanout.py pins the two together against the real
+fixture, and names which one moved on the day they diverge.
 
 Pure: the stored payload dict and the envelope hints in, HEC event objects out. No
 session, no clock, no I/O, and the input is never mutated — delivery is retried against

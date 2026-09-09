@@ -52,6 +52,7 @@ from app.core.vuln import (
 )
 from app.core.wire import ENVELOPE, envelope
 from app.core.wire_vocabulary import enrichment_rows, registry_rows, sourcetype
+from app.fanout import record_events
 from app.schemas.payload import (
     VULN_ASSESSMENT_COVERED,
     VULN_ASSESSMENT_OFF,
@@ -495,17 +496,20 @@ def test_a_clean_bill_is_minus_one_everywhere_on_the_wire(raw: dict, run) -> Non
 
 
 def test_only_splunk_sees_the_sentinel(raw: dict, run) -> None:  # noqa: F811
-    """A generic webhook and an Elastic document get the canonical event whole, `null`
-    included — which is what makes a warehouse destination able to render SQL `NULL`."""
-    from types import SimpleNamespace
+    """A generic webhook, a RunReveal destination and an Elastic document all keep `null`
+    — which is what makes a warehouse destination able to render SQL `NULL`.
 
-    from app.core.outbox import _build_body
-
+    Read off the RECORD since #306, not off the whole snapshot: those three types receive
+    the same 107 items Splunk does, and the point of §4c survives the change of shape
+    intact. The sentinel is minted in the HEC seam and nowhere else, so the same app on
+    the same pull is `-1` on Splunk and `null` everywhere else."""
     payload = _stored(_snapshot(raw, corpus=_covered_corpus(_snapshot(raw), [_finding("CVE-2026-1300", days_old=9)])))
-    body = _build_body(SimpleNamespace(type="webhook"), dict(payload))
-    (item,) = [item for item in body["app"] if item["app"].get("bundleId") == KNOWN_BUNDLE_ID]
-    assert item["vuln"]["daysOldestPublished"]["severity"]["low"] is None
-    assert item["vuln"]["daysOldestPublished"]["total"] == 9
+    (record,) = [r for r in record_events(payload) if r.get("app", {}).get("bundleId") == KNOWN_BUNDLE_ID]
+    assert record["vuln"]["daysOldestPublished"]["severity"]["low"] is None
+    assert record["vuln"]["daysOldestPublished"]["total"] == 9
+
+    (event,) = [e for e in hec_events(payload) if e["event"].get("app", {}).get("bundleId") == KNOWN_BUNDLE_ID]
+    assert event["event"]["vuln"]["daysOldestPublished"]["severity"]["low"] == NEVER
 
 
 # --- the sourcetype the summary decides -------------------------------------------------

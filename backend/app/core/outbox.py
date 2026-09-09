@@ -23,6 +23,7 @@ from app.core.wire_vocabulary import (
     change_sourcetype,
     ordered_event_keys,
 )
+from app.fanout import elastic_bulk_bodies, record_events, webhook_request_bodies
 from app.models.schema import Destination, EventOutbox, OutboxDelivery
 from app.schemas.payload import INVENTORY_EVENT_TYPE
 
@@ -39,6 +40,12 @@ logger = logging.getLogger(__name__)
 # because a destination that curated its list never asked for a state stream and the
 # reason a failure must be loud has no analogue for a per-device snapshot. Opting out is
 # `subscribed_events` on the API (docs/splunk-setup.md §7).
+#
+# That per-device cost is now the fanned-out one on every destination type, not just
+# Splunk (#306): ~84 KB of records for the reference device against the ~28 KB the nested
+# snapshot weighed, in one request rather than one document. The trade is the issue's
+# own — 3x the bytes for a shape the receiver can actually query — and it is why the
+# subscription, not a shape flag, is the place a destination declines the snapshot.
 KNOWN_EVENT_TYPES = frozenset(
     {"device.inventory", "device.inventory.changed", "device.change", "run.completed", "run.failed"}
 )
@@ -200,23 +207,25 @@ def _build_body(destination: Destination, payload: dict) -> dict:
     destination gets the one HEC event object of a single-event family — the wrapped
     body, the ruled sourcetype where the family has one, the envelope hints beside it.
 
-    `device.inventory` on Splunk has no one-document form: it is fanned out into N HEC
-    events (`hec_events`) and sent by `_attempt_hec_delivery` through
-    `hec_request_bodies`, which never calls this. Asking this function for it is a
-    programming error and raises — deliberately not a silent whole-snapshot body, which
-    is what this function returned between #241 and #242 and what a caller that bypassed
-    the fan-out would otherwise send, unstamped. Unreachable from the delivery path, so it
-    spends no retry budget.
+    `device.inventory` has no one-document form on ANY destination type, which is what
+    #306 changed: on Splunk it is N HEC events (`hec_events`, sent through
+    `hec_request_bodies`), and on the other three it is N records (`record_events`, sent
+    through `record_request_bodies` or `_elastic_bulk_requests`). None of those call this.
+    Asking this function for a snapshot is a programming error and raises — deliberately
+    not a silent whole-snapshot body, which is what this function returned to Splunk
+    between #241 and #242, and to the other three types until #306. Unreachable from the
+    delivery path, so it spends no retry budget.
 
     The envelope hints are popped for EVERY destination type, not just Splunk, so the
     key never reaches a customer's index or a generic webhook receiver.
     """
+    if payload.get("event") == INVENTORY_EVENT_TYPE:
+        raise ValueError(
+            f"{INVENTORY_EVENT_TYPE} has no one-document body on any destination type: it is fanned "
+            "out into one event per section item (app.core.outbox.hec_request_bodies for splunk_hec, "
+            "record_request_bodies for every other type)"
+        )
     if destination.type == "splunk_hec":
-        if payload.get("event") == INVENTORY_EVENT_TYPE:
-            raise ValueError(
-                f"{INVENTORY_EVENT_TYPE} has no one-document HEC body: it is fanned out into one "
-                "HEC event per section item (app.core.outbox.hec_request_bodies)"
-            )
         (event,) = hec_events(payload)
         return event
     body = dict(payload)
@@ -269,6 +278,21 @@ def hec_request_bodies(payload: Mapping[str, object], *, max_bytes: int) -> list
     read was empty, which only a scoped read can produce — sends no request at all.
     """
     return _chunk([_encode_hec_event(event) for event in hec_events(payload)], max_bytes)
+
+
+def record_request_bodies(payload: Mapping[str, object], *, max_bytes: int) -> list[bytes]:
+    """The request bodies one delivery to a `runreveal` or `generic_webhook` destination
+    sends, in order — the record fan-out's half of `hec_request_bodies` (#306).
+
+    One request carrying a JSON array of the device's records, split into consecutive
+    requests only when the encoding exceeds `max_bytes`
+    (`settings.record_fanout_max_request_bytes`). A snapshot that expands to nothing sends
+    no request at all, which is the same answer HEC gives and for the same reason.
+
+    Only `device.inventory` reaches this: every other family is one document and goes
+    through `_build_body` exactly as it did before, unchanged and unfanned.
+    """
+    return webhook_request_bodies(record_events(payload), max_bytes=max_bytes)
 
 
 def _elastic_bulk_url(destination: Destination) -> str:
@@ -335,6 +359,34 @@ def _elastic_bulk_body(event: EventOutbox) -> str:
     return json.dumps({"create": {}}) + "\n" + json.dumps(document, default=str) + "\n"
 
 
+def _elastic_bulk_requests(event: EventOutbox) -> list[bytes]:
+    """The `_bulk` request bodies one Elastic delivery sends, in order.
+
+    A snapshot is fanned out (#306): one `create`/source pair per record, chunked on whole
+    records at `settings.record_fanout_max_request_bytes`. Elastic was the least visible
+    of the three types the fan-out reached — a nested snapshot indexes without complaint —
+    and the most costly, because a `logs-*` data stream's dynamic mapping grows a field
+    for every path in the document it is handed.
+
+    Every other family keeps exactly the body it had: one action line, one source line,
+    built by `_elastic_bulk_body` and untouched by this change.
+
+    The `@timestamp` fallback is resolved HERE rather than inside the fan-out, so both
+    paths answer the question the same way — the event's own occurrence, then the
+    envelope's `time` converted out of epoch seconds, then enqueue time — and the pure
+    half stays free of the clock.
+    """
+    payload = event.payload or {}
+    if payload.get("event") != INVENTORY_EVENT_TYPE:
+        return [_elastic_bulk_body(event).encode("utf-8")]
+    hints = payload.get(ENVELOPE) or {}
+    created_at = event.created_at or datetime.now(timezone.utc)
+    timestamp = _envelope_timestamp(hints if isinstance(hints, Mapping) else {}) or created_at.isoformat()
+    return elastic_bulk_bodies(
+        record_events(payload), max_bytes=settings.record_fanout_max_request_bytes, timestamp=timestamp
+    )
+
+
 def _elastic_bulk_error(response: httpx.Response) -> str | None:
     """The bulk API's trap: HTTP 200 with per-item failures buried in the body.
     `errors: true` must surface as a delivery failure — swallow it and an Elastic
@@ -363,25 +415,37 @@ def _elastic_bulk_error(response: httpx.Response) -> str | None:
 async def _attempt_elastic_delivery(
     client: httpx.AsyncClient, destination: Destination, event: EventOutbox
 ) -> tuple[bool, str | None]:
+    """One POST per bulk body, in order, stopping at the first failure.
+
+    A single-event family is one body and this is the request it always was. A snapshot is
+    N records and may be more than one request (#306), and then the same at-least-once
+    story HEC has applies: any non-2xx, transport error or `errors=true` fails the whole
+    delivery, which backs off and retries EVERY body rebuilt from the same row, leaving an
+    earlier request's documents already indexed. `create` is what makes that survivable —
+    a data stream rejects a duplicate `_id` where `index` would overwrite — and the dedup
+    key on a fanned-out record is the pull plus the item, never `deviceMeta.eventID`
+    alone.
+    """
     headers = _build_headers(destination)
     # The bulk endpoint requires NDJSON and rejects application/json outright.
     headers["Content-Type"] = "application/x-ndjson"
-    try:
-        response = await client.post(
-            _elastic_bulk_url(destination),
-            content=_elastic_bulk_body(event).encode("utf-8"),
-            headers=headers,
-            timeout=10,
-        )
-        response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        return False, f"HTTP {exc.response.status_code}: {exc.response.text[:500]}"
-    except httpx.HTTPError as exc:
-        return False, str(exc)[:500]
+    for body in _elastic_bulk_requests(event):
+        try:
+            response = await client.post(
+                _elastic_bulk_url(destination),
+                content=body,
+                headers=headers,
+                timeout=10,
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            return False, f"HTTP {exc.response.status_code}: {exc.response.text[:500]}"
+        except httpx.HTTPError as exc:
+            return False, str(exc)[:500]
 
-    error = _elastic_bulk_error(response)
-    if error is not None:
-        return False, error[:500]
+        error = _elastic_bulk_error(response)
+        if error is not None:
+            return False, error[:500]
     return True, None
 
 
@@ -526,6 +590,36 @@ async def _attempt_hec_delivery(
     return True, None
 
 
+async def _attempt_record_delivery(
+    client: httpx.AsyncClient, destination: Destination, event: EventOutbox
+) -> tuple[bool, str | None]:
+    """A snapshot delivery to a `runreveal` or `generic_webhook` destination: one POST per
+    request body, in order, stopping at the first failure (#306).
+
+    The same shape as `_attempt_hec_delivery` and for the same reasons — one request of N
+    records lands or fails as one, a failure retries the WHOLE delivery from the same row,
+    and a device's records duplicate together on a partial success. It is a separate
+    function rather than a flag on that one because the body differs: a JSON array under
+    `application/json`, against HEC's concatenated objects.
+
+    `content=` rather than `json=` because the body is already encoded — the fan-out
+    produced the bytes, and re-encoding a parsed array here would make the delivered bytes
+    depend on a round trip through Python. The Content-Type header `_build_headers` sets
+    is unchanged, so the receiver sees the same content type it always did.
+    """
+    headers = _build_headers(destination)
+    bodies = record_request_bodies(event.payload, max_bytes=settings.record_fanout_max_request_bytes)
+    for body in bodies:
+        try:
+            response = await client.post(destination.url, content=body, headers=headers, timeout=10)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            return False, f"HTTP {exc.response.status_code}: {exc.response.text[:500]}"
+        except httpx.HTTPError as exc:
+            return False, str(exc)[:500]
+    return True, None
+
+
 async def _attempt_delivery(
     client: httpx.AsyncClient, destination: Destination, event: EventOutbox
 ) -> tuple[bool, str | None]:
@@ -538,6 +632,14 @@ async def _attempt_delivery(
         # document — N concatenated HEC events for a snapshot (#242) — and a delivery may
         # be more than one request.
         return await _attempt_hec_delivery(client, destination, event)
+    if (event.payload or {}).get("event") == INVENTORY_EVENT_TYPE:
+        # `runreveal` and `generic_webhook`: the snapshot fans out here too (#306), so its
+        # body is a JSON array of records rather than the one nested document every other
+        # family still sends below. Keyed on the event type rather than the destination
+        # type, because these two types differ only in the UI — `runreveal` is a preset
+        # over this delivery path (prefilled ingest URL, bearer auth locked in), and a
+        # second branch here would be the place the two silently drifted apart.
+        return await _attempt_record_delivery(client, destination, event)
     try:
         response = await client.post(
             destination.url,

@@ -277,6 +277,13 @@ every request does. Raise it on Enterprise if you like; lower it if your HEC inp
 `max_content_length` is smaller. It bounds requests, not events — a single event larger
 than the ceiling is still sent, alone.
 
+The other three destination types have their own knob, `RECORD_FANOUT_MAX_REQUEST_BYTES`
+(same default, **900000**, and the same behaviour on whole records), because an operator
+sizing a RunReveal or Elastic request should not have to set a setting named for a product
+they do not run. Their measured bodies for the same Mac are 78,787 bytes as a webhook
+array and 90,111 bytes as an Elastic `_bulk` body
+([#306](https://github.com/LoonSecIO/LoonInspect/issues/306)).
+
 ## 7. What arrives, and where `_time` comes from
 
 `_time` is the event's own occurrence time, not the time Splunk received it: `time` in the
@@ -343,9 +350,27 @@ one per device per pass, ~28 KB for a Mac with 83 apps under today's shipped
   once a vulnerability corpus is loaded), so `app.name=X app.version=Y` is one app, as it
   should be — the multivalue-pairing hazard [splunk-event-shaping.md](splunk-event-shaping.md)
   describes is why the split exists.
-- A generic webhook, and the `runreveal` preset, get the bare document, whole.
-- An Elastic destination gets one `create` document per snapshot with `@timestamp` from
-  `occurredAt`, nested `app[]` and all. Per-app expansion for Elastic is not v0.
+- A generic webhook, and the `runreveal` preset, get the **same split** since
+  [#306](https://github.com/LoonSecIO/LoonInspect/issues/306): the same 107 items, in the
+  same order, as a JSON **array** in one POST (78,787 bytes for that Mac). A record is the
+  HEC sub-event with the two envelope facts folded into the body — `sourcetype` under its
+  own key, because a webhook has no envelope and the string is the only thing that says an
+  event is an app rather than a certificate; and `occurredAt`, because no envelope carries
+  the instant. `time`, `host` and `source` do not ride: `host` is already
+  `deviceMeta.hostName` and `source` is the instance, which a receiver of your own
+  destination already knows.
+- An Elastic destination gets the same 107 as 107 `create` documents in one `_bulk`
+  request (90,111 bytes), each with `@timestamp` from `occurredAt`. Per-app expansion for
+  Elastic **is** v0 as of #306; before it, a snapshot was one nested document and a
+  `logs-*` data stream grew a mapping field for every path inside it.
+
+  Two consequences worth planning for. Your delivery is still **one request per device**,
+  so a sweep's request count is unchanged — it is the bodies that grew, by 2.74x for a
+  webhook and 3.13x for Elastic against the nested snapshot. And a receiver that parsed a
+  snapshot delivery as one JSON object now receives an array; every other event type
+  (`device.change`, `device.inventory.changed`, `run.completed`, `run.failed`) is
+  untouched and still one object. If you only want deltas, subscribe to them —
+  `subscribedEvents` on the destination is where a snapshot is declined (§7).
 
 **Selecting one device's pass, and deduplicating a retry.** `deviceMeta.eventID` is one
 id per device per pull, on every sub-event of that pull; a retry after a lost response
@@ -422,7 +447,7 @@ success/failure times. Every failed attempt is also logged, not just the tenth.
 | `[SSL: CERTIFICATE_VERIFY_FAILED] …` | §5. The certificate, not the token. |
 | `HTTP 401` / `HTTP 403` | The token — wrong value, disabled token, or the global *All Tokens* switch still off. |
 | `HTTP 400` naming the index | The token is not allowed to write the index it was asked for. |
-| `HTTP 413` | One request exceeded the HEC input's `max_content_length`. Lower `SPLUNK_HEC_MAX_REQUEST_BYTES` (§6) below that limit; the snapshot is then sent as more, smaller requests. |
+| `HTTP 413` | One request exceeded the receiver's body limit. Lower `SPLUNK_HEC_MAX_REQUEST_BYTES` (§6) below the HEC input's `max_content_length`, or `RECORD_FANOUT_MAX_REQUEST_BYTES` for the other three types; the snapshot is then sent as more, smaller requests. |
 | Connection refused / timeout | Reachability. From inside the container, not from your laptop — see §3. |
 | No error, and no `device.inventory.changed` | Nothing changed. A sweep where no app changed on any device emits no delta, by design — one `device.inventory` snapshot per device and the sweep's own `run.completed` event still arrive. No snapshot either means the destination is subscribed to other event types only. |
 | Events stop after a while | Ten failed attempts dead-letter a delivery; fix the cause and the *next* events flow, but the dead-lettered ones are not retried. |

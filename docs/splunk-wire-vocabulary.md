@@ -6,7 +6,8 @@ Status: **frozen** · Ruled in [#188](https://github.com/LoonSecIO/LoonInspect/i
 [#220](https://github.com/LoonSecIO/LoonInspect/issues/220) and
 [#113](https://github.com/LoonSecIO/LoonInspect/issues/113), 2026-09-02,
 [#243](https://github.com/LoonSecIO/LoonInspect/issues/243), 2026-09-03 and
-[#311](https://github.com/LoonSecIO/LoonInspect/issues/311), 2026-09-04 · Stamped on the
+[#311](https://github.com/LoonSecIO/LoonInspect/issues/311), 2026-09-04 and
+[#306](https://github.com/LoonSecIO/LoonInspect/issues/306), 2026-09-09 · Stamped on the
 wire by [#223](https://github.com/LoonSecIO/LoonInspect/issues/223) (the `:change`
 family), [#242](https://github.com/LoonSecIO/LoonInspect/issues/242) (the section tree
 and `loon:run`) and [#277](https://github.com/LoonSecIO/LoonInspect/issues/277) (the
@@ -308,6 +309,32 @@ is the item, then `event` and `jobID`, then `deviceMeta` (§6a) — under `sourc
 head key, `occurredAt`, does **not** ride the sub-event: these three are the complete list,
 and the same instant travels beside every sub-event as the envelope's `time`. Under
 additive-only clause 3 omitting it is the reversible direction.
+
+### 6b. The two keys a record carries and a HEC sub-event does not (#306)
+
+Amended additively, 2026-09-09. The snapshot fans out on **every** destination type now,
+not only `splunk_hec` ([`runs.md`](runs.md) §4), and the three types that are not Splunk
+have no envelope to keep transport in. Two facts HEC puts beside the body therefore ride
+*in* the body on that wire, and only there:
+
+| Key | Why it cannot stay in the envelope |
+| --- | --- |
+| `sourcetype` | It is the only thing that tells the 107 records of one device apart — `event` is `device.inventory` on all of them, by the rule above. Same name as the envelope field, so §1's tree is one vocabulary across both wires rather than two. |
+| `occurredAt` | The paragraph above omits it *because* "the same instant travels beside every sub-event as the envelope's `time`". On a record destination it does not travel: the outbox pops the envelope for every type. The premise is false there, so the conclusion does not hold. |
+
+This is clause 1, not an exception to clause 2: two keys **appear** on a wire, nothing is
+renamed, nothing changes meaning, and `occurredAt` is the snapshot head's key copied
+verbatim rather than a new spelling of one. Clause 5 is untouched — no string is minted or
+repurposed, the same `sourcetype(wrapper)` values ride a different slot.
+
+`time`, `host` and `source` do **not** follow them into the body. `host` is already
+`deviceMeta.hostName` (#189's ruled duplicate), and `source` is the Jamf instance, which
+the operator who created the destination already knows — carrying either would spend the
+most-multiplied bytes on the wire to say something the record already says.
+
+The single-event families keep no `sourcetype` outside Splunk. Each is self-describing at
+the grain it ships — a `device.change` carries `subjectKind` and `section`, a run event's
+`event` is its own discriminator — so none of them has the problem this solves.
 
 ### 6a. The order those keys appear in
 
