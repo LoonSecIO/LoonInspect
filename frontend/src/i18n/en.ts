@@ -354,6 +354,19 @@ export const en = {
     eyebrow: "LoonInspect",
     title: "Overview",
 
+    // Patch laggards, below the fold (#110). Words for every empty state, never a bare
+    // numeral, and "no catalog" kept apart from "nobody behind" — different facts.
+    laggards: {
+      title: "Patch laggards",
+      help: "Jamf Patch titles with the most devices behind their current version.",
+      all: "All titles",
+      row: (behind: number, devices: number, onLatest: number, latest: string) =>
+        `${behind} behind · ${devices} ${devices === 1 ? "device" : "devices"}, ${onLatest} on latest ${latest}`,
+      nobodyBehind: "Every device with a matched title is on its current version.",
+      noCatalog: "No Jamf Patch catalog yet — it arrives with the first catalog sync.",
+      failed: "Could not load the patch catalog."
+    },
+
     // The setup stepper (#104): the state every new pod opens in, checked off from
     // real endpoint state rather than from anything remembered in the browser.
     setupEyebrow: "Getting started",

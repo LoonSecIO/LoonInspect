@@ -240,6 +240,26 @@ container's own restart completes it. Transcript in docs/operations.md §4.*
 
 ---
 
+## 7. The Overview's patch-laggards tile scans the whole title list on every view
+
+**The limit.** The tile (#110) ranks the top five Jamf Patch titles by devices behind. It
+does so from one `GET /api/jamf-patch/titles?pageSize=5000` call, and each title's device
+counts on that endpoint are read-time joins through `app_catalog_title_matches` and
+`installed_apps` — the cache-don't-calculate rule, broken on purpose in one scoped place.
+Founder-ruled as a blessed exception, on three conditions the tile keeps: it is below the
+fold, it is lazy (nothing is requested until it scrolls into view, so first paint owes it
+nothing), and its expiry is named here.
+
+**Where it bites.** Not at launch scale: a tenant with tens of matched titles and hundreds
+of devices answers in well under a second. It is wrong at the 40,000-device design target,
+where the joins behind the counts grow with the fleet and every Overview visit that scrolls
+would run them.
+
+**The replacement.** A stored per-title rollup — devices matched, on latest, behind — written
+once per sweep and read by the endpoint, replacing the scan. It is what the tile is designed
+to read when any tenant approaches the design target; the rows it would need already exist
+per app on `installed_apps`, so it is a materialisation, not a redesign.
+
 ## Checked, and not an issue
 
 Recorded because "we looked" is worth more on an inspection day than silence, and

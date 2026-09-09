@@ -342,6 +342,17 @@ export const de: Translations = {
     eyebrow: "LoonInspect",
     title: "Übersicht",
 
+    laggards: {
+      title: "Patch-Nachzügler",
+      help: "Jamf-Patch-Titel mit den meisten Geräten hinter der aktuellen Version.",
+      all: "Alle Titel",
+      row: (behind: number, devices: number, onLatest: number, latest: string) =>
+        `${behind} zurück · ${devices} ${devices === 1 ? "Gerät" : "Geräte"}, ${onLatest} auf aktuell ${latest}`,
+      nobodyBehind: "Jedes Gerät mit einem zugeordneten Titel ist auf der aktuellen Version.",
+      noCatalog: "Noch kein Jamf-Patch-Katalog — er kommt mit der ersten Katalog-Synchronisation.",
+      failed: "Der Patch-Katalog konnte nicht geladen werden."
+    },
+
     setupEyebrow: "Erste Schritte",
     setupTitle: "Bringen Sie Ihre Flotte nach Splunk",
     promise: "Ihr Flotteninventar: 40.000 Geräte in etwa 10 Minuten.",

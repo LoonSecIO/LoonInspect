@@ -10,6 +10,9 @@ export interface JamfPatchTitle {
   /** Tenant-scoped: distinct devices with an app matched to this title, and how many are on currentVersion. */
   deviceCount: number;
   devicesOnLatest: number;
+  /** Devices whose matched app is behind this title's current version — the honest
+   *  laggard count since #314, which excludes devices *ahead* of the catalog. */
+  devicesBehind: number;
 }
 
 export interface JamfPatchTitleListResponse {
