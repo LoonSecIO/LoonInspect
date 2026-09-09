@@ -17,7 +17,6 @@ from __future__ import annotations
 import json
 import os
 import uuid as uuidlib
-from contextlib import asynccontextmanager
 
 import httpx
 import pytest
@@ -77,21 +76,6 @@ async def db(tenant_ready):
             yield session
         finally:
             await _clear(session)
-
-
-@pytest.fixture
-def jamf(monkeypatch: pytest.MonkeyPatch) -> FakeJamf:
-    from app.mdm.jamf.client import JamfClient
-
-    fake = FakeJamf()
-
-    @asynccontextmanager
-    async def _mock_http(self):
-        async with httpx.AsyncClient(transport=httpx.MockTransport(fake.handler)) as client:
-            yield client
-
-    monkeypatch.setattr(JamfClient, "http", _mock_http)
-    return fake
 
 
 @pytest_asyncio.fixture(loop_scope="session")

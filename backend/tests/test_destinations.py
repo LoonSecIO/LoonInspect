@@ -14,7 +14,6 @@ import uuid as uuidlib
 from datetime import datetime, timezone
 
 import pytest
-import pytest_asyncio
 from pydantic import ValidationError
 
 
@@ -73,25 +72,6 @@ def test_unknown_event_type_is_rejected() -> None:
 
     with pytest.raises(ValidationError, match=r"Unknown event type\(s\): device\.changed"):
         DestinationCreate(name="siem", url="https://siem.example/hook", subscribed_events=["device.changed"])
-
-
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
-async def tenant_ready() -> None:
-    from app.core.bootstrap import bootstrap_tenants
-    from app.core.database import init_db, unscoped_session
-
-    await init_db()
-    async with unscoped_session() as db:
-        await bootstrap_tenants(db)
-
-
-@pytest_asyncio.fixture(loop_scope="session")
-async def db(tenant_ready):
-    from app.core.database import session_for_tenant
-    from app.core.tenancy import OPERATIONAL_TENANT_ID
-
-    async with session_for_tenant(OPERATIONAL_TENANT_ID) as session:
-        yield session
 
 
 @pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1")

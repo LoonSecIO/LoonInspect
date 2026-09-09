@@ -4,13 +4,11 @@ touches (outbox fan-out, and a session bound to no tenant).
 
 Needs a real Postgres: row-level security is the mechanism under test, and SQLite has
 no opinion about it. Gated on RUN_DB_TESTS so the pure suite stays runnable with no
-database present; CI provides one (see .github/workflows/ci.yml), and locally:
-
-    docker compose exec -T db psql -U looninspect -c \
-      "CREATE ROLE tenancy_test LOGIN PASSWORD 'tenancy_test'" -c \
-      "CREATE DATABASE looninspect_test OWNER tenancy_test"
-    RUN_DB_TESTS=1 DATABASE_URL=postgresql+asyncpg://tenancy_test:tenancy_test@db:5432/looninspect_test \
-      uv run pytest tests/test_tenancy_sweep.py
+database present; CI provides one (see .github/workflows/ci.yml). The local recipe —
+a throwaway Postgres, CI's non-superuser role, and the three environment variables — is
+in tests/conftest.py, where the lane's shared fixtures live (#140); the one this
+docstring used to carry named a host the compose network alone resolves and a role
+nothing creates, and could not be run from a host shell.
 
 Why 404 and never 403: a 403 confirms the row exists, which is the same enumeration
 leak in a different status code. Every cross-tenant assertion below therefore checks
@@ -137,10 +135,15 @@ async def seeded():
                     select(Collection).where(Collection.mdm_connection_id == connection.id).order_by(Collection.id)
                 )
             ).scalars().first()
+            # Under the connection, like every device the product writes. Created
+            # without one, this row was the "device with no connection" that failed
+            # test_connection_delete_db's orphan count whenever this file had run
+            # first against the same database (#140).
             device = await one(
                 db,
                 Device,
                 Device.external_id == f"{label}-device-1",
+                mdm_connection_id=connection.id,
                 mdm_provider="jamf",
                 external_id=f"{label}-device-1",
                 serial_number=f"{label}SERIAL",

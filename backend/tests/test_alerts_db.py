@@ -18,7 +18,6 @@ from __future__ import annotations
 import json
 import os
 import uuid as uuidlib
-from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -59,15 +58,14 @@ NMAP = {
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
-async def tenant_ready() -> None:
-    from app.core.bootstrap import bootstrap_tenants, create_account
-    from app.core.database import init_db, session_for_tenant, unscoped_session
+async def accounts(tenant_ready) -> None:
+    """The viewer and the admin this suite signs in as, get-or-create, on top of the
+    shared `tenant_ready` (conftest) rather than a copy of it."""
+    from app.core.bootstrap import create_account
+    from app.core.database import session_for_tenant
     from app.core.tenancy import OPERATIONAL_TENANT_ID
     from app.models.schema import Account
 
-    await init_db()
-    async with unscoped_session() as db:
-        await bootstrap_tenants(db)
     async with session_for_tenant(OPERATIONAL_TENANT_ID) as db:
         if (await db.execute(select(Account).where(Account.email == VIEWER[0]))).scalars().first() is None:
             await create_account(db, email=VIEWER[0], display_name="alerts viewer", password=VIEWER[1], roles=("viewer",))
@@ -75,30 +73,6 @@ async def tenant_ready() -> None:
         if (await db.execute(select(Account).where(Account.email == ADMIN[0]))).scalars().first() is None:
             await create_account(db, email=ADMIN[0], display_name="alerts admin", password=ADMIN[1], roles=("admin",))
             await db.commit()
-
-
-@pytest_asyncio.fixture(loop_scope="session")
-async def db(tenant_ready):
-    from app.core.database import session_for_tenant
-    from app.core.tenancy import OPERATIONAL_TENANT_ID
-
-    async with session_for_tenant(OPERATIONAL_TENANT_ID) as session:
-        yield session
-
-
-@pytest.fixture
-def jamf(monkeypatch: pytest.MonkeyPatch) -> FakeJamf:
-    from app.mdm.jamf.client import JamfClient
-
-    fake = FakeJamf()
-
-    @asynccontextmanager
-    async def _mock_http(self):
-        async with httpx.AsyncClient(transport=httpx.MockTransport(fake.handler)) as client:
-            yield client
-
-    monkeypatch.setattr(JamfClient, "http", _mock_http)
-    return fake
 
 
 @pytest_asyncio.fixture(loop_scope="session")
@@ -152,7 +126,7 @@ async def connection(db):
 
 
 @pytest_asyncio.fixture(loop_scope="session")
-async def viewer(tenant_ready):
+async def viewer(accounts):
     """Signed in as the least-privileged role. https, because the session cookie is
     Secure and a plain-http client silently discards it."""
     from app.main import app
@@ -166,7 +140,7 @@ async def viewer(tenant_ready):
 
 
 @pytest_asyncio.fixture(loop_scope="session")
-async def admin(tenant_ready):
+async def admin(accounts):
     """Signed in as admin, and used for one thing only: minting the scoped tokens below
     through the product's own endpoint, so the principals under test are configurations an
     operator can actually reach rather than rows constructed to make a point."""
