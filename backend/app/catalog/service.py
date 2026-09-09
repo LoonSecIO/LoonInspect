@@ -30,7 +30,9 @@ inserts for triples the fleet has never shown, a `last_seen_at` write at most on
 `LAST_SEEN_GRANULARITY` per distinct app (not once per device carrying it), an in-memory rule
 pass only for rows the current catalog has not judged, and copies onto app rows only when a row
 is new or its answer moved. Nothing per device reads the catalog tables themselves; the title
-index lives in process memory and is rebuilt only when the catalog changes.
+index lives in process memory, is asked whether it is current at most once per
+`CATALOG_PROBE_INTERVAL` rather than once per device (#142), and is rebuilt only when the
+catalog changes.
 
 Follow-ups: a per-device override that reads a carried extension attribute, and rows for apps
 that arrive through other paths than an MDM inventory (HEC).
@@ -45,7 +47,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.mdm.patch.matching import Catalog, TitleMatch, load_catalog, match_app, summarize
+from app.mdm.patch.matching import CATALOG_PROBE_INTERVAL, Catalog, TitleMatch, load_catalog, match_app, summarize
 from app.mdm.patch.requirements import Facts
 from app.models.schema import AppCatalogEntry, AppCatalogTitleMatch, Device, InstalledApp
 
@@ -217,7 +219,10 @@ async def record_device_apps(db: AsyncSession, device: Device, *, now: datetime 
             entry.last_seen_at = now
     await db.flush()
 
-    catalog = await load_catalog(db)
+    # The process cache, trusted for the interval: asking the table whether the catalog moved
+    # cost one query per device — forty thousand a sweep — for an answer that changes hourly
+    # at most (#142). The refresh paths still ask every time; see `load_catalog`.
+    catalog = await load_catalog(db, max_age=CATALOG_PROBE_INTERVAL)
     signature = catalog_signature(catalog)
     stale = [entry for entry in existing.values() if entry.evaluated_signature != signature]
     judged = await evaluate_entries(db, stale, catalog, now=now)

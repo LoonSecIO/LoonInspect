@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.user_agent import build_user_agent
+from app.mdm.patch.matching import reset_catalog_cache
 from app.models.schema import JamfPatchTitle
 
 JAMF_PATCH_BASE_URL = "https://jamf-patch.jamfcloud.com/v1"
@@ -147,4 +148,9 @@ async def sync_catalog(db: AsyncSession) -> int:
         synced += 1
 
     await db.commit()
+    if synced:
+        # The per-device path trusts the in-process index for `CATALOG_PROBE_INTERVAL`
+        # (#142); the writer forgetting it here is what makes a sync in this process
+        # visible to the very next device rather than at the next probe.
+        reset_catalog_cache()
     return synced
