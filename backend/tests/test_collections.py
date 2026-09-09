@@ -106,7 +106,7 @@ async def test_run_connection_runs_the_sweeps_and_records_outcomes(db, connectio
 
     result = await sync_connection(db, connection)
     assert result.ok and result.device_count == 2
-    assert result.observations == {"new": 2, "group_new": 1}
+    assert result.observations == {"new": 2, "group_new": 1, "ea_definition_new": 3}
 
     rows = {row.kind: await _fresh(db, row) for row in await list_collections(db, connection.id)}
     sweep, catalog = rows["device_sweep"], rows["catalog"]

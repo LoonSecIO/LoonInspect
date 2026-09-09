@@ -309,8 +309,10 @@ under it — the section picker was a hidden EA picker. Ruled: a collection that
 applied at save, at the top of every sweep and on the webhook path, so a row saved before
 the rule behaves like one saved after it, the editor shows the set actually fetched, and
 the aperture records it. Forced rather than warned about: the five are the cheapest
-sections in the contract, and naming the EAs about to be lost would need the
-EA-definition fetch that does not exist yet (`ingest-scheduling.md` §6.2). The same
+sections in the contract, and naming the EAs about to be lost would have needed the
+EA-definition fetch, which did not exist when this was ruled (it does since #178:
+`fetch_computer_extension_attributes`, §8 — the closure stays, because it is cheaper than
+a warning). The same
 dependency reaches #189: an EA pinned into `deviceMeta` can only be as present as its
 display section is readable, and the closure is what keeps that true.
 
@@ -342,6 +344,19 @@ That is the two-cause disambiguation: when a device's membership changes between
 observations t₁ and t₂, a derived layer checks whether the group's definition span changed
 in (t₁, t₂] — *criteria moved* — or not — *device drifted*. Jamf keeps only the current
 definition; the ledger keeps both histories.
+
+**Extension-attribute definitions are subjects on the same footing** (#178, from the #135
+ruling): an EA is how an org injects its own grouping values into smart groups, and it is
+deleted on the same cadence and for the same reasons, so a departure needs a census to be
+absent from. `extension_attribute_definition`, observed once per catalog pass from
+`/v1/computer-extension-attributes`, with a single `definition` section over what decides
+what a value *means* — `dataType`, `enabled`, `inventoryDisplayType`, the input type and its
+popup choices. The definition id is the subject id — the identity the device-side entries
+(§7) hash on — and the name is a label, so a rename moves nothing. Spans only: what a SIEM
+receives when a definition moves or departs is a separate ruling (#179), and the census is
+what that emission reads. A tenant whose client cannot read the endpoint yields *no* census
+rather than an empty one, because an empty census would say every definition departed at
+once; the run log records the skip.
 
 ---
 
@@ -387,6 +402,9 @@ bytes — are shared across the fleet.
   boundary, and `v0` rows are never rewritten. Both versions coexist in the tables;
   consumers compare digests within a version only.
 - Labels, `observation_count`, `last_*` columns, and anything in §12 may change freely.
+- A new **subject kind** is additive, not a version event: the kind is hashed into every
+  digest (§2.1), so a new kind is only ever new digests and moves none that exist. The
+  group subject was added this way, and the extension-attribute definition (#178) after it.
 
 ---
 
@@ -419,10 +437,11 @@ a privilege was revoked leaves the last known names standing. Nothing here is an
 observation: no span, no digest, no change row.
 
 Jamf privileges the API client needs: Read Computers (inventory), Read Smart Computer
-Groups (definitions; absent → groups are not observed, logged), Read Computer Inventory
-Collection Settings (aperture; absent → `available: false`), Read Departments and Read
-Buildings (names; absent → the ids are still stored and still filterable, but they
-resolve to no name, logged). `/v1/jamf-pro-version` needs authentication and no
+Groups (definitions; absent → groups are not observed, logged), Read Computer Extension
+Attributes (definitions; absent → the census is skipped and logged — skipped, never read
+as empty), Read Computer Inventory Collection Settings (aperture; absent →
+`available: false`), Read Departments and Read Buildings (names; absent → the ids are
+still stored and still filterable, but they resolve to no name, logged). `/v1/jamf-pro-version` needs authentication and no
 privilege at all, so a missing version is never a privilege problem.
 
 This list is no longer only here: it is a registry in `app.mdm.jamf.privileges`, a table

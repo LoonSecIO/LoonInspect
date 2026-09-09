@@ -64,6 +64,25 @@ class FakeJamf:
         self.smart_group_criteria: list[dict] = [
             {"name": "Managed", "priority": 0, "andOr": "and", "searchType": "is", "value": "Managed"}
         ]
+        # The extension-attribute definitions (#178), the three the fixture records
+        # report values for, editable so a test can move one between two passes. None
+        # stands for an API client without "Read Computer Extension Attributes" — the
+        # endpoint answers 403, and the census is skipped rather than read as empty.
+        self.extension_attribute_definitions: list[dict] | None = [
+            {
+                "id": "5", "name": "Battery Cycle Count", "description": "", "dataType": "INTEGER",
+                "enabled": True, "inventoryDisplayType": "GENERAL", "inputType": {"type": "SCRIPT", "script": "#!/bin/sh"},
+            },
+            {
+                "id": "12", "name": "Crowdstrike Sensor Version", "description": "Falcon sensor version from falconctl",
+                "dataType": "STRING", "enabled": True, "inventoryDisplayType": "GENERAL",
+                "inputType": {"type": "SCRIPT", "script": "#!/bin/sh"},
+            },
+            {
+                "id": "27", "name": "Departments Served", "description": "LDAP multi-value", "dataType": "STRING",
+                "enabled": True, "inventoryDisplayType": "USER_AND_LOCATION", "inputType": {"type": "LDAP"},
+            },
+        ]
 
     @property
     def computers(self) -> list[dict]:
@@ -129,6 +148,15 @@ class FakeJamf:
             size = int(request.url.params.get("page-size", "100"))
             return httpx.Response(
                 200, json={"totalCount": len(catalog), "results": catalog[page * size : (page + 1) * size]}
+            )
+        if path == "/api/v1/computer-extension-attributes":
+            if self.extension_attribute_definitions is None:
+                return httpx.Response(403, json={"httpStatus": 403, "errors": []})
+            page = int(request.url.params.get("page", "0"))
+            size = int(request.url.params.get("page-size", "100"))
+            definitions = self.extension_attribute_definitions
+            return httpx.Response(
+                200, json={"totalCount": len(definitions), "results": definitions[page * size : (page + 1) * size]}
             )
         if path == "/api/v3/computer-groups/smart-groups":
             return httpx.Response(200, json={"totalCount": 1, "results": [{"id": "1", "name": "All Managed Clients"}]})

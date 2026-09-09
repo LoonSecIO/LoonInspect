@@ -49,6 +49,13 @@ REQUIRED_PRIVILEGES: tuple[JamfPrivilege, ...] = (
         name="Read Smart Computer Groups",
         paths=("/api/v3/computer-groups/smart-groups", "/api/v3/computer-groups/smart-groups/"),
     ),
+    # Absent → the definition census is skipped (None, not an empty list — the
+    # difference is what a departure is detected against) and the run log says so;
+    # devices still sweep, and their EA values are still read (#178).
+    JamfPrivilege(
+        name="Read Computer Extension Attributes",
+        paths=("/api/v1/computer-extension-attributes",),
+    ),
     # Absent → the aperture records `available: false`, which is an honest answer
     # rather than an error: the aperture's job is to say what a reading meant.
     JamfPrivilege(

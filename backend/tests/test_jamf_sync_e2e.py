@@ -136,7 +136,7 @@ async def test_sweep_then_repeat_then_webhook(db, jamf: FakeJamf, connection) ->
     # 1. First sweep: every device is new, the group definition is observed, state tables filled.
     first = await sync_connection(db, connection)
     assert first.ok and first.device_count == 2, first
-    assert first.observations == {"new": 2, "group_new": 1}
+    assert first.observations == {"new": 2, "group_new": 1, "ea_definition_new": 3}
     assert first.group_count == 1
     assert "GET /api/v1/jamf-pro-version" in jamf.requests
     assert "GET /api/v2/computer-inventory-collection-settings" in jamf.requests
@@ -162,6 +162,10 @@ async def test_sweep_then_repeat_then_webhook(db, jamf: FakeJamf, connection) ->
         ("computer", real_id),
         ("computer", synthetic_id),
         ("computer_group", "1"),
+        # The extension-attribute census (#178): one subject per definition the tenant holds.
+        ("extension_attribute_definition", "5"),
+        ("extension_attribute_definition", "12"),
+        ("extension_attribute_definition", "27"),
     }
     real_span = next(s for s in spans if s.subject_id == real_id)
     assert real_span.last_trigger == "sweep" and real_span.contract_version == "v0"
@@ -174,11 +178,12 @@ async def test_sweep_then_repeat_then_webhook(db, jamf: FakeJamf, connection) ->
     #    unchanged, count +1.
     events_before = await _count(db, changed_events)
     second = await sync_connection(db, connection)
-    assert second.observations == {"repeat": 2, "group_unchanged": 1}
+    assert second.observations == {"repeat": 2, "group_unchanged": 1, "ea_definition_unchanged": 3}
     assert await _count(db, changed_events) == events_before
     assert await _count(db, snapshot_events) == snapshots_before + 4
     all_spans = select(func.count()).select_from(ObservationSpan).where(ObservationSpan.mdm_connection_id == connection.id)
-    assert await _count(db, all_spans) == 3
+    # Two devices, one group, and the three extension-attribute definitions (#178).
+    assert await _count(db, all_spans) == 6
 
     # 3. A webhook: the device installed one app and submitted inventory. The payload
     #    names the computer; the record is fetched by id; exactly one app is added.

@@ -319,6 +319,42 @@ async def test_smart_group_definitions_are_subjects_too(db, connection_id, apert
     assert span.subject_kind == "computer_group" and span.label == "Ledger Group" and span.previous_id == first.span_id
 
 
+async def test_extension_attribute_definitions_are_subjects_too(db, connection_id, aperture_digest) -> None:
+    """#178: the mirror of the group test — a definition opens a span, a change to what its
+    value means opens the next, and a rename opens none."""
+    from app.mdm.jamf.contract import canonicalize_extension_attribute_definition
+    from app.observations.ledger import record_observation
+
+    async def observe(definition: dict):
+        result = await record_observation(
+            db,
+            connection_id=connection_id,
+            observation=canonicalize_extension_attribute_definition(definition),
+            aperture_digest=aperture_digest,
+            trigger="sweep",
+        )
+        await db.commit()
+        return result
+
+    definition_id = f"ea{uuidlib.uuid4().hex[:8]}"
+    definition = {
+        "id": definition_id, "name": "Ledger Attribute", "dataType": "STRING", "enabled": True,
+        "inventoryDisplayType": "GENERAL", "inputType": {"type": "TEXT"},
+    }
+    first = await observe(definition)
+    assert first.outcome == "new"
+
+    renamed = await observe({**definition, "name": "Ledger Attribute (renamed)"})
+    assert renamed.outcome in ("repeat", "unchanged"), renamed.outcome
+    assert renamed.span_id == first.span_id, "a rename is a label, not a span"
+
+    disabled = await observe({**definition, "name": "Ledger Attribute (renamed)", "enabled": False})
+    assert disabled.outcome == "changed" and disabled.changed_sections == ("definition",)
+    span = await _span(db, disabled.span_id)
+    assert span.subject_kind == "extension_attribute_definition"
+    assert span.label == "Ledger Attribute (renamed)" and span.previous_id == first.span_id
+
+
 async def test_ledger_rows_are_tenant_scoped(db, connection_id, aperture_digest) -> None:
     from app.core.database import session_for_tenant
     from app.models.schema import ObservationEntry, ObservationSection, ObservationSpan
