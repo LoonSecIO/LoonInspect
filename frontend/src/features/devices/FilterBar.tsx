@@ -38,7 +38,10 @@ export function FilterBar({ filters, onChange }: FilterBarProps) {
       </div>
 
       <div className="flex flex-wrap gap-3">
-        <div className="flex items-center gap-2">
+        {/* The operator and its value stay a pair, but the pair wraps too: on a phone
+            the two together are wider than the screen, and an unwrappable row is the
+            one thing left that can push the page past the viewport (#349). */}
+        <div className="flex flex-wrap items-center gap-2">
           <select
             className={inputClasses}
             value={filters.osVersionOperator ?? "eq"}
