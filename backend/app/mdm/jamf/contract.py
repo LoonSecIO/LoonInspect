@@ -487,7 +487,16 @@ EXTENSION_ATTRIBUTE_CARRIERS: tuple[str, ...] = (
 # and are observed as their own subject kind.
 SUBJECT_COMPUTER = "computer"
 SUBJECT_COMPUTER_GROUP = "computer_group"
+# The extension-attribute *definition* (#178): the object an admin creates once, as
+# opposed to the value a device reports for it (the `extension_attributes` section). Its
+# own subject for the same reason a group's definition is — it is deleted on the same
+# cadence and for the same reasons, and a departure needs a census to be absent from.
+# Adding a subject kind moves no existing digest (the kind is hashed into the recipe, so
+# a new kind is only ever new digests), which is why it is not a contract-version event.
+SUBJECT_EXTENSION_ATTRIBUTE_DEFINITION = "extension_attribute_definition"
 GROUP_DEFINITION_SECTION = "definition"
+# One `definition` section per definition subject, group or extension attribute.
+DEFINITION_SECTION = GROUP_DEFINITION_SECTION
 
 # The section registries, keyed by the Jamf OBJECT they describe (#235). `SECTIONS`
 # above is the computer object's table and has been the only one; Jamf's mobile-device
@@ -848,6 +857,46 @@ def canonicalize_smart_group(raw: Mapping) -> Observation:
         subject_kind=SUBJECT_COMPUTER_GROUP,
         subject_id=str(group_id),
         sections={GROUP_DEFINITION_SECTION: content},
+        label=_optional_string(raw.get("name")),
+    )
+
+
+# --- extension-attribute definitions ------------------------------------------------
+
+# What decides what a value *means* (#178): the type the value is read as, the input that
+# produces it, the section it is displayed under, and whether the definition is live. The
+# name is a label — names of Jamf objects are labels, not content (§2.2) — so a rename is
+# one label change on this subject and never a digest move. `description` is
+# documentation, and a script's text is how a value is computed rather than what it
+# means; both stay out. Popup choices are the value's vocabulary, and are content.
+_EXTENSION_ATTRIBUTE_DEFINITION: Allow = {
+    "dataType": True,
+    "enabled": True,
+    "inventoryDisplayType": True,
+    "inputType": {"type": True, "popupChoices": SORTED},
+}
+
+
+def canonicalize_extension_attribute_definition(raw: Mapping) -> Observation:
+    """One /v1/computer-extension-attributes object → an Observation with a single
+    `definition` section, the mirror of `canonicalize_smart_group` (#178). The
+    definition id is the subject id — the same identity the device-side entries hash on
+    and the current-state rows key by — so a device's `{definitionId: 5}` and this
+    subject are one object seen from two sides."""
+    definition_id = raw.get("id")
+    if definition_id is None:
+        raise ValueError("extension attribute definition has no id")
+
+    body = canonical_document(raw, _EXTENSION_ATTRIBUTE_DEFINITION)
+    content = SectionContent(
+        name=DEFINITION_SECTION,
+        digest=digest(f"section:{DEFINITION_SECTION}", canonical_json(body)),
+        body=body,
+    )
+    return Observation(
+        subject_kind=SUBJECT_EXTENSION_ATTRIBUTE_DEFINITION,
+        subject_id=str(definition_id),
+        sections={DEFINITION_SECTION: content},
         label=_optional_string(raw.get("name")),
     )
 

@@ -341,6 +341,67 @@ def test_site_and_prestage_names_are_not_content(raw: dict) -> None:
     assert _digests(raw)["general"] != before
 
 
+EA_DEFINITION = {
+    "id": 27,
+    "name": "Departments Served",
+    "description": "LDAP multi-value",
+    "dataType": "STRING",
+    "enabled": True,
+    "inventoryDisplayType": "USER_AND_LOCATION",
+    "inputType": {"type": "POPUP", "popupChoices": ["Research", "Engineering"]},
+}
+
+
+def test_extension_attribute_definition_recipe_vector() -> None:
+    """#178: the definition is a subject with one `definition` section over what decides
+    what a value means, computed here from the documented recipe alone."""
+    observation = c.canonicalize_extension_attribute_definition(EA_DEFINITION)
+    assert observation.subject_kind == "extension_attribute_definition"
+    assert observation.subject_id == "27" and observation.label == "Departments Served"
+    (section,) = observation.sections.values()
+    assert section.name == "definition"
+    assert section.body == {
+        "dataType": "STRING",
+        "enabled": True,
+        "inventoryDisplayType": "USER_AND_LOCATION",
+        "inputType": {"type": "POPUP", "popupChoices": ["Engineering", "Research"]},
+    }
+    assert section.digest == _recipe("section:definition", section.body)
+
+
+def test_extension_attribute_definition_name_is_a_label_and_meaning_is_content() -> None:
+    """A rename moves no digest — the name is a label — while a change to what a value
+    means (its type, its choices, whether it is live) is a definition change, and so is
+    the script's absence or presence not: how a value is computed is not what it means."""
+    base = c.canonicalize_extension_attribute_definition(EA_DEFINITION)
+    renamed = c.canonicalize_extension_attribute_definition({**EA_DEFINITION, "name": "Departments"})
+    described = c.canonicalize_extension_attribute_definition({**EA_DEFINITION, "description": "new words"})
+    assert renamed.section_digests == base.section_digests == described.section_digests
+    assert renamed.label == "Departments"
+
+    disabled = c.canonicalize_extension_attribute_definition({**EA_DEFINITION, "enabled": False})
+    retyped = c.canonicalize_extension_attribute_definition({**EA_DEFINITION, "dataType": "INTEGER"})
+    rechoiced = c.canonicalize_extension_attribute_definition(
+        {**EA_DEFINITION, "inputType": {"type": "POPUP", "popupChoices": ["Research"]}}
+    )
+    digests = {
+        observation.section_digests["definition"] for observation in (base, disabled, retyped, rechoiced)
+    }
+    assert len(digests) == 4
+
+    scripted = c.canonicalize_extension_attribute_definition(
+        {**EA_DEFINITION, "inputType": {"type": "SCRIPT", "script": "#!/bin/sh\necho 1"}}
+    )
+    rescripted = c.canonicalize_extension_attribute_definition(
+        {**EA_DEFINITION, "inputType": {"type": "SCRIPT", "script": "#!/bin/sh\necho 2"}}
+    )
+    assert scripted.section_digests == rescripted.section_digests
+    assert scripted.section_digests != base.section_digests, "the input type itself is content"
+
+    with pytest.raises(ValueError):
+        c.canonicalize_extension_attribute_definition({"name": "no id"})
+
+
 def test_group_rename_is_a_definition_change() -> None:
     """The other half of rule 2: the name lives on the group's own subject, where a
     rename is one explicit event instead of one per member."""

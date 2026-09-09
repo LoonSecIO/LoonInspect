@@ -568,6 +568,46 @@ class JamfClient:
 
     # --- smart groups ----------------------------------------------------------------
 
+    async def fetch_computer_extension_attributes(
+        self, client: httpx.AsyncClient, *, page_size: int = _PAGE_SIZE
+    ) -> list[dict] | None:
+        """Every computer extension-attribute definition, or None when they cannot be read.
+
+        The v1 list carries the whole definition, so this is a paged read and nothing per
+        item — tens of rows, a catalog read that rides beside the smart-group census
+        (#178). Needs "Read Computer Extension Attributes"; a tenant without the
+        privilege (or an older Jamf Pro without the endpoint) yields **None** and a log
+        line rather than failing the sweep it rides along with.
+
+        None, never an empty list, for "not allowed to look": a census that is absent
+        from is how a departure is detected (#181), and an empty list is exactly what must
+        not stand in for a refusal — it would read as "every definition departed at once".
+        """
+        definitions: list[dict] = []
+        page = 0
+        while True:
+            response = await self._get(
+                client,
+                "/api/v1/computer-extension-attributes",
+                comment="extension attribute definitions",
+                params={"page": page, "page-size": page_size, "sort": "id:asc"},
+            )
+            if response.status_code in (401, 403, 404):
+                logger.info(
+                    "computer extension attributes not readable; definitions not observed",
+                    extra={"status": response.status_code},
+                )
+                return None
+            response.raise_for_status()
+            results = response.json().get("results", [])
+            definitions.extend(
+                {**item, "id": str(item["id"])} for item in results if isinstance(item, dict) and item.get("id") is not None
+            )
+            if len(results) < page_size:
+                break
+            page += 1
+        return definitions
+
     async def fetch_smart_groups(self, client: httpx.AsyncClient, *, page_size: int = _PAGE_SIZE) -> list[dict]:
         """Every smart computer group with its criteria.
 

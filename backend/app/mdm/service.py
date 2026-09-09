@@ -52,6 +52,7 @@ from app.mdm.jamf.contract import (
     Observation,
     build_aperture,
     canonicalize_computer,
+    canonicalize_extension_attribute_definition,
     canonicalize_smart_group,
     with_extension_attribute_carriers,
 )
@@ -390,6 +391,9 @@ async def run_jamf_catalog(
             connection.last_successful_auth_at = datetime.now(timezone.utc)
             await db.commit()
             group_count = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes)
+            definitions = await _observe_extension_attribute_definitions(
+                db, connection, client, http, aperture_digest, trigger, outcomes
+            )
             # The catalog class is where the label catalogs belong too: a department
             # renamed between sweeps is visible at the catalog's cadence, without a
             # device read.
@@ -403,6 +407,7 @@ async def run_jamf_catalog(
                 if throttle:
                     await run_log(db, run, "warning", "throttled by Jamf; backed off and continued", **throttle)
                 await run_log(db, run, "info", "group definitions observed", groupCount=group_count)
+                await _log_definition_census(db, run, definitions)
                 await run_log(
                     db,
                     run,
@@ -458,6 +463,52 @@ async def _observe_groups(
         outcomes[f"group_{result.outcome}"] += 1
         group_count += 1
     return group_count
+
+
+async def _observe_extension_attribute_definitions(
+    db: AsyncSession,
+    connection: MdmConnection,
+    client: JamfClient,
+    http: httpx.AsyncClient,
+    aperture_digest: str,
+    trigger: str,
+    outcomes: Counter[str],
+) -> int | None:
+    """The extension-attribute census (#178), the mirror of `_observe_groups`: every
+    definition Jamf holds, recorded as its own subject in the ledger, so a definition's
+    departure has something to be absent from (#181). Recorded in the catalog pass for
+    the reason group definitions are — definitions are then never older than the values
+    that reference them.
+
+    Spans only, no derived change rows: what a SIEM receives about a definition that
+    moved or departed is #179's shape, and the ledger is what that seam reads.
+
+    None when the definitions could not be read at all — a missing privilege, an older
+    Jamf Pro — which the caller logs as a skipped census. It is deliberately not zero.
+    """
+    definitions = await client.fetch_computer_extension_attributes(http)
+    if definitions is None:
+        return None
+    count = 0
+    for raw_definition in definitions:
+        observation = canonicalize_extension_attribute_definition(raw_definition)
+        result = await record_observation(
+            db,
+            connection_id=connection.id,
+            observation=observation,
+            aperture_digest=aperture_digest,
+            trigger=trigger,
+        )
+        outcomes[f"ea_definition_{result.outcome}"] += 1
+        count += 1
+    return count
+
+
+async def _log_definition_census(db: AsyncSession, run: Run, count: int | None) -> None:
+    if count is None:
+        await run_log(db, run, "warning", "extension attribute definitions not readable; census skipped")
+    else:
+        await run_log(db, run, "info", "extension attribute definitions observed", definitionCount=count)
 
 
 async def _refresh_org_units(
@@ -548,6 +599,15 @@ async def _sync_jamf(
             await db.commit()
             if run is not None:
                 await run_log(db, run, "info", "group definitions observed", groupCount=group_count)
+            # The extension-attribute census rides the same pass, for the same reason
+            # (#178): the definitions a device's values reference are never older than
+            # the values.
+            definitions = await _observe_extension_attribute_definitions(
+                db, connection, client, http, aperture_digest, trigger, outcomes
+            )
+            await db.commit()
+            if run is not None:
+                await _log_definition_census(db, run, definitions)
 
         # Streamed, not collected: a 40,000-device tenant is paged through one record
         # at a time, and each device commits on its own (process_sync), so a failure on

@@ -127,6 +127,7 @@ below writes anything, and none is a CRUD privilege.
 | --- | --- | --- |
 | `Read Computers` | Computer inventory, and the per-device fetch a webhook triggers | **Nothing works.** Every sweep and every webhook fetch fails |
 | `Read Smart Computer Groups` | Smart-group definitions and their criteria | Devices still sync; group definitions are not observed, and the run log says so |
+| `Read Computer Extension Attributes` | Extension-attribute definitions — the census a deleted attribute is absent from | Devices still sync and their attribute values are still read; the definitions are not observed, and the run log says so |
 | `Read Computer Inventory Collection Settings` | What Jamf was configured to collect — the "aperture" recorded beside every reading | Readings are kept with `available: false`, so a later collection change can't be told apart from a real device change |
 | `Read Departments` | Department names | `departmentId` is stored and filterable, but shows as a bare number |
 | `Read Buildings` | Building names | `buildingId` is stored and filterable, but shows as a bare number |
