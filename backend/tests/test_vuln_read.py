@@ -446,7 +446,11 @@ class TestTheRestSurface:
 
     def test_the_catalog_list_carries_the_header_stamp_and_defaults_to_none(self) -> None:
         response = CatalogListResponse(
-            items=[], total=0, summary=CatalogSummaryOut(entries=0, installed=0, matched=0, unmatched=0)
+            items=[],
+            total=0,
+            page=1,
+            page_size=100,
+            summary=CatalogSummaryOut(entries=0, installed=0, matched=0, unmatched=0),
         )
         payload = response.model_dump(mode="json", by_alias=True)
         assert payload["corpusAsOf"] is None

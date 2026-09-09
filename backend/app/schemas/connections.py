@@ -86,10 +86,27 @@ class MdmConnectionUpdate(BaseModel):
     provider: MdmProvider | None = None
     base_url: BaseUrl | None = None
     is_active: bool | None = None
-    credentials: dict[str, str] | None = None
-    webhook_secret: str | None = None
+    # The asymmetry, stated rather than left to be discovered (#137): credentials can be
+    # rotated field by field and never cleared — they are the connection's identity to
+    # its MDM, and a connection without them is a row with no purpose; delete the
+    # connection to remove them. The two optional secrets below clear on an explicit null.
+    # `str | None` per field so a null reaches the route's refusal and is answered in
+    # words, rather than as a bare "Input should be a valid string" from validation.
+    credentials: dict[str, str | None] | None = Field(
+        default=None,
+        description=(
+            "Merged field by field: a field sent replaces the stored value, a field absent is "
+            "kept. Cannot be cleared — an explicit null, or an empty value for any field, is "
+            "refused with 422; delete the connection to remove its credentials."
+        ),
+    )
+    webhook_secret: str | None = Field(
+        default=None, description="Optional. Absent leaves it as it is; an explicit null clears it."
+    )
     patch_management_provider: PatchManagementProvider | None = None
-    loonsecio_license_key: str | None = None
+    loonsecio_license_key: str | None = Field(
+        default=None, description="Optional. Absent leaves it as it is; an explicit null clears it."
+    )
     loonsecio_data_sharing_enabled: bool | None = None
     user_agent_override: str | None = None
     sweep_page_size: int | None = Field(default=None, ge=100, le=1000)

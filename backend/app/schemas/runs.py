@@ -36,6 +36,19 @@ class RunOut(BaseModel):
     actor_label: str | None
 
 
+class RunListResponse(BaseModel):
+    """Recent runs, newest first, in the list envelope every paged endpoint shares (#137).
+    The list used to be a bare array under a `limit`; a client that pages devices and
+    changes one way should not have to page runs another."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    items: list[RunOut]
+    total: int
+    page: int
+    page_size: int
+
+
 class RunSummaryOut(BaseModel):
     """The three run facts the status strip states about one connection (#105).
 

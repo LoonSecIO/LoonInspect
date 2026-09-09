@@ -20,20 +20,27 @@ export interface Application {
   versions: ApplicationVersion[];
 }
 
+/** The list envelope every paged endpoint shares (#137): the page's rows, the count
+ *  across every page, and the page and page size that produced them, echoed. */
 export interface ApplicationListResponse {
   items: Application[];
   total: number;
+  page: number;
+  pageSize: number;
 }
 
+/** `q`, `page` and `pageSize`, like every other list — the endpoint used to take
+ *  `search`, `limit` and `offset`, and refuses those names now rather than ignoring
+ *  them (#137). `pageSize` is capped at 500 server-side. */
 export function listApplications(params: {
-  search?: string;
-  limit?: number;
-  offset?: number;
+  q?: string;
+  page?: number;
+  pageSize?: number;
 } = {}): Promise<ApplicationListResponse> {
   const query = new URLSearchParams();
-  if (params.search) query.set("search", params.search);
-  if (params.limit !== undefined) query.set("limit", String(params.limit));
-  if (params.offset !== undefined) query.set("offset", String(params.offset));
+  if (params.q) query.set("q", params.q);
+  if (params.page !== undefined) query.set("page", String(params.page));
+  if (params.pageSize !== undefined) query.set("pageSize", String(params.pageSize));
 
   const suffix = query.toString();
   return apiRequest<ApplicationListResponse>(`/applications${suffix ? `?${suffix}` : ""}`);

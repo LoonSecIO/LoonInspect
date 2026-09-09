@@ -478,6 +478,21 @@ def _require_credential_re_entry_to_move(connection: MdmConnection, data: dict) 
     )
 
 
+def _refuse_cleared_credentials(credentials: dict[str, str] | None) -> None:
+    """PATCH rotates credentials and never clears them (#137). Before this the difference
+    was silent: `webhookSecret: null` cleared the secret while `credentials: null` — or a
+    field sent as "" — was dropped on the floor and the response said nothing. Now the
+    one thing PATCH will not do is refused in words."""
+    if credentials is None or any(not value for value in credentials.values()):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Credentials cannot be cleared: send a new value to rotate a field, or delete "
+                "the connection. Only webhookSecret and loonsecioLicenseKey clear on null."
+            ),
+        )
+
+
 @router.patch(
     "/{connection_id}",
     response_model=MdmConnectionOut,
@@ -486,9 +501,20 @@ def _require_credential_re_entry_to_move(connection: MdmConnection, data: dict) 
 async def update_connection(
     connection_id: int, payload: MdmConnectionUpdate, db: AsyncSession = Depends(get_db)
 ) -> MdmConnectionOut:
+    """Partial update: a field absent is left as it is.
+
+    `credentials` are merged field by field and can be rotated but never cleared — an
+    explicit null, or an empty value for any field, is refused (422); delete the
+    connection to remove them. `webhookSecret` and `loonsecioLicenseKey` are the optional
+    secrets: an explicit null clears either. Moving `baseUrl` requires re-entering the
+    secret credential fields, because a stored credential is only ever sent to the URL it
+    was saved against.
+    """
     connection = await _get_or_404(connection_id, db)
     data = payload.model_dump(exclude_unset=True, mode="json")
 
+    if "credentials" in data:
+        _refuse_cleared_credentials(data["credentials"])
     _require_credential_re_entry_to_move(connection, data)
     if "base_url" in data:
         await _refuse_blocked_destination(data["base_url"])

@@ -47,6 +47,9 @@ export interface CatalogSummary {
 export interface CatalogListResponse {
   items: CatalogEntry[];
   total: number;
+  /** The page and page size echoed, as every paged list does (#137). */
+  page: number;
+  pageSize: number;
   summary: CatalogSummary;
   /** The corpus generation every `vuln` block on `items` came from. `null` means no corpus
    *  is loaded, which is why every row reads `off` — the page says that in words (#251). */

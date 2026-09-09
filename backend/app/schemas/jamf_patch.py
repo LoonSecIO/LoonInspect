@@ -39,6 +39,9 @@ class JamfPatchTitleListResponse(BaseModel):
 
     items: list[JamfPatchTitleOut]
     total: int
+    # The page and page size echoed, as every paged list does (#137).
+    page: int
+    page_size: int
 
 
 class JamfPatchTitleDetailOut(JamfPatchTitleOut):

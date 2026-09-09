@@ -115,7 +115,7 @@ async def list_titles(
         out = JamfPatchTitleOut.model_validate(title)
         out.device_count, out.devices_on_latest, out.devices_behind = counts.get(title.id, (0, 0, 0))
         items.append(out)
-    return JamfPatchTitleListResponse(items=items, total=total)
+    return JamfPatchTitleListResponse(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.get(

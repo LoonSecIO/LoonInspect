@@ -63,3 +63,63 @@ class KnownGroup(_Base):
 class KnownExtensionAttribute(_Base):
     definition_id: str
     name: str | None
+
+
+# The policy document `EffectivePolicy.describe()` hands the API, typed (#137). These
+# mirror that method field for field — `tests/test_api_contract.py` round-trips the
+# described document through `ChangePolicyOut` so the two cannot drift silently — and
+# they are what the OpenAPI document shows a client where it used to show `{}`.
+
+
+class PolicyFieldOut(_Base):
+    key: str
+    field: str
+    label: str
+    level: str
+    why: str
+    default: bool
+    enabled: bool
+    overridden: bool
+
+
+class PolicySectionOut(_Base):
+    section: str
+    fields: list[PolicyFieldOut]
+
+
+class PolicyEntryFieldOut(_Base):
+    name: str
+    label: str
+    level: str
+    why: str
+    enabled: bool
+    overridden: bool
+
+
+class PolicyEntryOut(_Base):
+    kind: str
+    section: str
+    label: str
+    level: str
+    why: str
+    identity: list[str]
+    added: bool
+    removed: bool
+    overridden: bool
+    fields: list[PolicyEntryFieldOut]
+
+
+class ChangePolicyOut(_Base):
+    """Defaults with their reasons, the tenant's overrides, and the effective result —
+    plus the catalog the mute lists pick from and when the overrides last changed."""
+
+    version: str
+    minimum_level: str
+    system_apps_individually: bool
+    muted_groups: list[str]
+    muted_extension_attributes: list[str]
+    sections: list[PolicySectionOut]
+    entries: list[PolicyEntryOut]
+    known_groups: list[KnownGroup]
+    known_extension_attributes: list[KnownExtensionAttribute]
+    updated_at: datetime | None

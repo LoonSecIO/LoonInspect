@@ -81,6 +81,9 @@ class CatalogSummaryOut(_CamelModel):
 class CatalogListResponse(_CamelModel):
     items: list[CatalogEntryAssessedOut]
     total: int
+    # The page and page size echoed, as every paged list does (#137).
+    page: int
+    page_size: int
     summary: CatalogSummaryOut
     # #251: the corpus generation the blocks on `items` came from — the page's header
     # stamp, read off the same corpus object in the same request as the rows, so the two

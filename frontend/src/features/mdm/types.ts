@@ -130,6 +130,14 @@ export interface Run {
   actorLabel: string | null;
 }
 
+/** `/api/runs` in the list envelope every paged endpoint shares (#137). */
+export interface RunListResponse {
+  items: Run[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 /** What the status strip's run segment is built from, one row per connection (#105) —
  *  mirrors the backend's `RunSummaryOut`.
  *
