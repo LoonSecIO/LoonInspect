@@ -34,6 +34,7 @@ from app.core.wire_vocabulary import (
     change_sourcetype,
     sourcetype,
 )
+from app.fanout import record_events
 from app.mdm.jamf.contract import GROUP_DEFINITION_SECTION, SUBJECT_COMPUTER, SUBJECT_COMPUTER_GROUP, Observation
 from app.models.schema import Destination, DeviceChange, EventOutbox
 
@@ -360,12 +361,17 @@ def test_which_single_event_families_are_stamped() -> None:
         assert body["sourcetype"] == "loon:run", f"{event} carries the assertion string"
 
 
-def test_the_snapshot_is_fanned_out_on_splunk_and_travels_whole_everywhere_else() -> None:
+def test_the_snapshot_is_fanned_out_on_splunk_and_as_records_everywhere_else() -> None:
     """Since #242 a `splunk_hec` destination never receives the snapshot as one nested HEC
     event: `_build_body` — the one-document view — refuses it, and `hec_events` expands
     it into one HEC event per section item under the registry's strings, the envelope
-    hints on each. Every other destination type still gets the whole snapshot, wrappers
-    intact, unstamped. The full golden is tests/test_hec_fanout.py."""
+    hints on each.
+
+    Since #306 no destination type receives it whole. The other three get the same items
+    as records: the routing string moved out of the envelope, which they do not have, into
+    the body under its own name; `occurredAt` rides, because no envelope carries the
+    instant for them; and `deviceMeta` trails, as it does on HEC. The full goldens are
+    tests/test_hec_fanout.py and tests/test_record_fanout.py."""
     occurred = datetime(2026, 9, 2, 2, 0, tzinfo=timezone.utc)
     payload = {
         "event": "device.inventory",
@@ -388,9 +394,18 @@ def test_the_snapshot_is_fanned_out_on_splunk_and_travels_whole_everywhere_else(
     assert anchor["time"] == app["time"] == occurred.timestamp()
     assert ENVELOPE not in anchor["event"] and "occurredAt" not in app["event"]
 
-    canonical = {key: value for key, value in payload.items() if key != ENVELOPE}
-    assert _build_body(WEBHOOK, payload) == canonical
-    assert _build_body(ELASTIC, payload) == canonical
+    for destination in (WEBHOOK, ELASTIC):
+        with pytest.raises(ValueError, match="fanned out"):
+            _build_body(destination, payload)
+
+    record_anchor, record_app = record_events(payload)
+    assert record_anchor["sourcetype"] == sourcetype("general")
+    assert record_app["sourcetype"] == sourcetype("app")
+    # The same body HEC wraps, with the two envelope facts a record has nowhere else to
+    # put: the routing string and the instant. Nothing else is added and nothing is lost.
+    assert record_anchor == {**anchor["event"], "occurredAt": occurred.isoformat(), "sourcetype": sourcetype("general")}
+    assert record_app == {**app["event"], "occurredAt": occurred.isoformat(), "sourcetype": sourcetype("app")}
+    assert ENVELOPE not in record_anchor and ENVELOPE not in record_app
 
 
 def test_an_unknown_section_costs_one_unstamped_event_not_a_dead_letter() -> None:

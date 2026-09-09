@@ -27,6 +27,7 @@ from sqlalchemy import delete, select
 from app.core.outbox import TEST_EVENT_TYPE, deliver_pending, fan_out_pending, hec_events, send_test_event
 from app.core.wire import ENVELOPE
 from app.core.wire_vocabulary import ASSERTION_SOURCETYPE, DELTA_SOURCETYPE, SUB_EVENT_KEYS, registry_rows
+from app.fanout import record_events
 from tests.jamf_fake import HOST, FakeJamf
 
 pytestmark = [
@@ -177,8 +178,9 @@ async def test_one_snapshot_delivery_is_one_request_of_n_sub_events_on_the_real_
     passes. The Splunk destination receives five requests — one per event row: the two
     snapshots fanned out (107 objects for the real fixture, each under a registry string,
     every one carrying the run's `eventID`), the two deltas as one unstamped object each,
-    and `run.completed` under `loon:run`. The webhook receives the same five rows whole.
-    Every delivery row is `delivered` after one attempt."""
+    and `run.completed` under `loon:run`. The webhook receives the same five rows in five
+    requests — since #306 the two snapshots as arrays of the same fanned-out items, the
+    other three whole. Every delivery row is `delivered` after one attempt."""
     from app.mdm.service import sync_connection
     from app.models.schema import EventOutbox, OutboxDelivery
 
@@ -247,13 +249,38 @@ async def test_one_snapshot_delivery_is_one_request_of_n_sub_events_on_the_real_
     assert completed["sourcetype"] == ASSERTION_SOURCETYPE == "loon:run"
     assert "host" not in completed
 
-    # The generic webhook: the canonical row, whole, envelope removed, no sourcetype.
-    canonical = {row.id: {key: value for key, value in row.payload.items() if key != ENVELOPE} for row in rows}
+    # The generic webhook, since #306: still one request per row — never one POST per
+    # record — but a SNAPSHOT row now arrives as a JSON array of the same items Splunk
+    # got, each carrying its registry string in the body, and every other family still
+    # arrives as the canonical document whole. This is the whole of what #306 changed,
+    # asserted on the real path rather than in the pure suite.
     received = [json.loads(request.content) for request in webhook_requests]
-    assert sorted(received, key=lambda body: (body["event"], json.dumps(body, sort_keys=True))) == sorted(
-        canonical.values(), key=lambda body: (body["event"], json.dumps(body, sort_keys=True))
+    fanned = [body for body in received if isinstance(body, list)]
+    whole = [body for body in received if not isinstance(body, list)]
+    assert len(fanned) == 2 and len(whole) == 3
+
+    snapshot_records = {
+        row.payload["deviceMeta"]["jamfProID"]: record_events(row.payload) for row in by_type["device.inventory"]
+    }
+    for body in fanned:
+        assert body == snapshot_records[body[0]["deviceMeta"]["jamfProID"]]
+        assert {record["sourcetype"] for record in body} <= registry
+        assert all(record["event"] == "device.inventory" for record in body)
+    # The real fixture's device is one of the two, at its pinned count; the fake tenant's
+    # other device is smaller but never empty.
+    assert REAL_FIXTURE_SUB_EVENTS in {len(body) for body in fanned}
+    assert all(body for body in fanned)
+
+    canonical = [
+        {key: value for key, value in row.payload.items() if key != ENVELOPE}
+        for row in rows
+        if row.event_type != "device.inventory"
+    ]
+    assert sorted(whole, key=lambda body: json.dumps(body, sort_keys=True)) == sorted(
+        canonical, key=lambda body: json.dumps(body, sort_keys=True)
     )
-    assert all("sourcetype" not in body and ENVELOPE not in body for body in received)
+    assert all("sourcetype" not in body and ENVELOPE not in body for body in whole)
+    assert all(ENVELOPE not in record for body in fanned for record in body)
 
     # And the test button: one identifiable object, unstamped, straight down the same path.
     seen.clear()

@@ -62,6 +62,15 @@ class Settings(BaseSettings):
     # raise it; nothing else about delivery changes.
     splunk_hec_max_request_bytes: int = 900_000
 
+    # The same ceiling for the record fan-out (#306), on `runreveal`, `generic_webhook`
+    # and `elastic`. A separate knob rather than a reuse of the Splunk one: an operator
+    # tuning a RunReveal ingest limit should not have to set a setting named for a
+    # product they do not run, and the two receivers' limits are genuinely unrelated —
+    # HEC's is Splunk's `max_content_length`, a webhook's is whatever the receiver or the
+    # proxy in front of it enforces. Same default, because 900 KB is a conservative body
+    # size anywhere, and the same whole-records-only splitting either side of it.
+    record_fanout_max_request_bytes: int = 900_000
+
     # How long a run may go without a heartbeat before the next acquirer reclaims it as
     # dead. The floor is a device that takes longer than this to process: the sweep beats
     # every 15s between devices, so five minutes is twenty missed beats, not a slow one.
@@ -265,6 +274,16 @@ class Settings(BaseSettings):
         if 4_096 <= value <= 838_860_800:
             return value
         raise ValueError("splunk_hec_max_request_bytes must be between 4096 and 838860800")
+
+    @field_validator("record_fanout_max_request_bytes")
+    @classmethod
+    def _validate_record_fanout_max_request_bytes(cls, value: int) -> int:
+        # Same bounds and the same reasoning as the HEC ceiling above: the floor is one
+        # record with room to spare, and a single record larger than the ceiling is still
+        # sent, alone — the setting bounds requests, not records.
+        if 4_096 <= value <= 838_860_800:
+            return value
+        raise ValueError("record_fanout_max_request_bytes must be between 4096 and 838860800")
 
     @field_validator("run_stale_after_seconds")
     @classmethod
