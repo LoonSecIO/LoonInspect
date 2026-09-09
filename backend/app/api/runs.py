@@ -24,7 +24,7 @@ from app.core.runs import (
     TRIGGER_WEBHOOK,
 )
 from app.models.schema import MdmConnection, Run, RunLogLine
-from app.schemas.runs import RunLogLineOut, RunLogResponse, RunOut, RunSummaryOut
+from app.schemas.runs import RunListResponse, RunLogLineOut, RunLogResponse, RunOut, RunSummaryOut
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 
@@ -64,20 +64,35 @@ async def _get_or_404(job_id: uuid.UUID, db: AsyncSession) -> Run:
     return run
 
 
-@router.get("", response_model=list[RunOut], dependencies=[Depends(require(Permission.CONNECTION_READ))])
+@router.get("", response_model=RunListResponse, dependencies=[Depends(require(Permission.CONNECTION_READ))])
 async def list_runs(
     connection_id: int | None = Query(default=None, alias="connectionId"),
     status: str | None = Query(default=None),
-    limit: int = Query(default=25, ge=1, le=200),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=200, alias="pageSize"),
     db: AsyncSession = Depends(get_db),
-) -> list[RunOut]:
-    query = select(Run).order_by(Run.started_at.desc()).limit(limit)
+) -> RunListResponse:
+    """Recent runs, newest first, paged by `page` and `pageSize` (at most 200) in the
+    envelope every list shares (#137). For the last *full* sweep per connection ask
+    `/api/runs/summary` instead: a webhook mints a run row per Jamf event, and on a busy
+    pod that run is past any page a client would ask for."""
+    conditions = []
     if connection_id is not None:
-        query = query.where(Run.mdm_connection_id == connection_id)
+        conditions.append(Run.mdm_connection_id == connection_id)
     if status is not None:
-        query = query.where(Run.status == status)
+        conditions.append(Run.status == status)
+    total = (await db.execute(select(func.count()).select_from(Run).where(*conditions))).scalar_one()
+    query = (
+        select(Run)
+        .where(*conditions)
+        .order_by(Run.started_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
     result = await db.execute(query)
-    return [_to_out(row) for row in result.scalars().all()]
+    return RunListResponse(
+        items=[_to_out(row) for row in result.scalars().all()], total=total, page=page, page_size=page_size
+    )
 
 
 # DECLARED ABOVE `/{job_id}` ON PURPOSE, AND THE ORDER IS LOAD-BEARING. FastAPI matches

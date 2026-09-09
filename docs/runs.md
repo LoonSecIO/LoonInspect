@@ -614,7 +614,9 @@ changing `jobID`'s generator changes every derived event id too.
 device — a 40,000-device sweep writes milestones plus a progress line every 500 devices,
 about 80 rows. The ledger is already the per-device record.
 
-- `GET /api/runs?connectionId=&status=&limit=` — recent runs
+- `GET /api/runs?connectionId=&status=&page=&pageSize=` — recent runs, newest first, in
+  the list envelope every paged endpoint shares (`items`, `total`, `page`, `pageSize`;
+  #137)
 - `GET /api/runs/{jobId}` — one run
 - `GET /api/runs/{jobId}/log?after=<id>` — lines after a cursor, plus the run and a
   `complete` flag

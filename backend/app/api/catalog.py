@@ -147,7 +147,12 @@ async def list_catalog(
         entries=int(summary_row[0]), installed=int(summary_row[1]), matched=int(summary_row[2]), unmatched=int(summary_row[3])
     )
     return CatalogListResponse(
-        items=items, total=int(total), summary=summary, corpus_as_of=corpus_as_of(corpus)
+        items=items,
+        total=int(total),
+        page=page,
+        page_size=page_size,
+        summary=summary,
+        corpus_as_of=corpus_as_of(corpus),
     )
 
 

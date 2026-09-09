@@ -32,5 +32,11 @@ class ApplicationOut(_CamelModel):
 
 
 class ApplicationListResponse(_CamelModel):
+    """The list envelope every paged endpoint shares (#137): the page's rows, the count
+    across every page, and the page and page size that produced them, echoed so a client
+    never has to remember what it asked for."""
+
     items: list[ApplicationOut]
     total: int
+    page: int
+    page_size: int

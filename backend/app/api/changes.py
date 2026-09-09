@@ -13,6 +13,7 @@ from app.core.database import get_db
 from app.core.permissions import Permission
 from app.models.schema import ChangePolicy, DeviceChange, ObservationEntry, ObservationSpan
 from app.schemas.changes import (
+    ChangePolicyOut,
     ChangePolicyUpdate,
     DeviceChangeListResponse,
     DeviceChangeOut,
@@ -168,7 +169,7 @@ async def _policy_row(db: AsyncSession) -> ChangePolicy | None:
     return (await db.execute(select(ChangePolicy))).scalars().first()
 
 
-async def _describe(db: AsyncSession, row: ChangePolicy | None) -> dict:
+async def _describe(db: AsyncSession, row: ChangePolicy | None) -> ChangePolicyOut:
     policy = EffectivePolicy(Overrides.from_document(row.overrides if row else None))
     document = policy.describe()
     # The catalog the mute lists pick from: every smart group and EA the ledger has seen.
@@ -179,7 +180,7 @@ async def _describe(db: AsyncSession, row: ChangePolicy | None) -> dict:
             .order_by(ObservationSpan.label)
         )
     ).all()
-    document["knownGroups"] = [KnownGroup(id=g[0], name=g[1]).model_dump(by_alias=True) for g in groups]
+    document["knownGroups"] = [KnownGroup(id=g[0], name=g[1]) for g in groups]
     # Grouped by the output alias: asyncpg binds the JSON path as a parameter, and two
     # renderings of the same expression are two different placeholders to Postgres.
     definition_id = ObservationEntry.body["definitionId"].astext.label("definition_id")
@@ -191,26 +192,35 @@ async def _describe(db: AsyncSession, row: ChangePolicy | None) -> dict:
         )
     ).all()
     document["knownExtensionAttributes"] = [
-        KnownExtensionAttribute(definition_id=e[0], name=e[1]).model_dump(by_alias=True)
-        for e in eas
-        if e[0] is not None
+        KnownExtensionAttribute(definition_id=e[0], name=e[1]) for e in eas if e[0] is not None
     ]
-    document["updatedAt"] = row.updated_at.isoformat() if row else None
-    return document
+    document["updatedAt"] = row.updated_at if row else None
+    # Typed on the way out (#137): the document is built by `describe()` as plain dicts,
+    # and validating it here is what puts a real schema in the OpenAPI document and
+    # turns a field `describe()` renames into a failure in the test lane instead of a
+    # client quietly reading `undefined`.
+    return ChangePolicyOut.model_validate(document)
 
 
-@router.get("/policy", dependencies=[Depends(require(Permission.DEVICE_READ))])
-async def get_policy(db: AsyncSession = Depends(get_db)) -> dict:
+@router.get("/policy", response_model=ChangePolicyOut, dependencies=[Depends(require(Permission.DEVICE_READ))])
+async def get_policy(db: AsyncSession = Depends(get_db)) -> ChangePolicyOut:
     """Defaults with their reasons, the tenant's overrides, and the effective result."""
     return await _describe(db, await _policy_row(db))
 
 
-@router.put("/policy", dependencies=[Depends(require(Permission.CONNECTION_WRITE))])
+@router.put("/policy", response_model=ChangePolicyOut, dependencies=[Depends(require(Permission.CONNECTION_WRITE))])
 async def put_policy(
     payload: ChangePolicyUpdate,
     principal: Principal = Depends(current_principal),
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> ChangePolicyOut:
+    """Replace the override document and return the effective policy.
+
+    Writes ride `connection:write` — the interim home for admin-shaped writes until
+    custom roles bring a verb of their own (#137, decided in session: the permission
+    vocabulary is additive, so a later `policy:write` costs nothing now and this does
+    not pre-empt it).
+    """
     if payload.minimum_level not in LEVELS:
         raise HTTPException(status_code=422, detail=f"minimumLevel must be one of {', '.join(LEVELS)}")
     overrides = Overrides(

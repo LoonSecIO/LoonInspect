@@ -15,6 +15,9 @@ export interface JamfPatchTitle {
 export interface JamfPatchTitleListResponse {
   items: JamfPatchTitle[];
   total: number;
+  /** The page and page size echoed, as every paged list does (#137). */
+  page: number;
+  pageSize: number;
 }
 
 export interface JamfPatchSyncResult {

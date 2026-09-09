@@ -832,8 +832,9 @@ async def test_the_api_serializes_the_keys_the_panel_reads(db, connection) -> No
     )
     await finish(db, acquired.run, ok=True, device_count=3, group_count=2)
 
-    listed = await list_runs(connection_id=connection.id, status=None, limit=5, db=db)
-    assert str(listed[0].id) == str(acquired.run.id)
+    listed = await list_runs(connection_id=connection.id, status=None, page=1, page_size=5, db=db)
+    assert str(listed.items[0].id) == str(acquired.run.id)
+    assert (listed.page, listed.page_size) == (1, 5) and listed.total >= 1
 
     page = await get_run_log(job_id=acquired.run.id, after=0, db=db)
     body = page.model_dump(by_alias=True)

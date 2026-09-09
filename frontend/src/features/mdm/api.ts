@@ -12,6 +12,7 @@ import type {
   MdmSyncTriggerResult,
   ProviderInfo,
   Run,
+  RunListResponse,
   RunLogResponse,
   RunSummary,
   SectionInfo
@@ -57,10 +58,13 @@ export function syncConnection(id: number): Promise<MdmSyncTriggerResult> {
 
 // --- Runs (#31) ----------------------------------------------------------------------
 
-export function listRuns(connectionId?: number, limit = 25): Promise<Run[]> {
-  const query = new URLSearchParams({ limit: String(limit) });
+/** The first page of recent runs, newest first. The endpoint answers in the shared list
+ *  envelope (#137); this returns its `items`, because every caller wants the rows and
+ *  none of them pages. `pageSize` is capped at 200 server-side. */
+export function listRuns(connectionId?: number, pageSize = 25): Promise<Run[]> {
+  const query = new URLSearchParams({ pageSize: String(pageSize) });
   if (connectionId !== undefined) query.set("connectionId", String(connectionId));
-  return apiRequest<Run[]>(`/runs?${query.toString()}`);
+  return apiRequest<RunListResponse>(`/runs?${query.toString()}`).then((response) => response.items);
 }
 
 /** The status strip's run facts, one row per connection (#105): which run the stamp

@@ -20,7 +20,7 @@ export function ApplicationsOverviewPage() {
 
     // Debounced so typing in the filter doesn't fire a query per keystroke.
     const handle = setTimeout(() => {
-      listApplications({ search: search || undefined, limit: 200 })
+      listApplications({ q: search || undefined, pageSize: 200 })
         .then((response) => {
           if (cancelled) return;
           setApplications(response.items);
