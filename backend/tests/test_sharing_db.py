@@ -26,25 +26,6 @@ pytestmark = [
 ]
 
 
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
-async def tenant_ready() -> None:
-    from app.core.bootstrap import bootstrap_tenants
-    from app.core.database import init_db, unscoped_session
-
-    await init_db()
-    async with unscoped_session() as db:
-        await bootstrap_tenants(db)
-
-
-@pytest_asyncio.fixture(loop_scope="session")
-async def db(tenant_ready):
-    from app.core.database import session_for_tenant
-    from app.core.tenancy import OPERATIONAL_TENANT_ID
-
-    async with session_for_tenant(OPERATIONAL_TENANT_ID) as session:
-        yield session
-
-
 async def _reset(db) -> None:
     """Clear this suite's exchange rows and put the tier back to "reveal".
 

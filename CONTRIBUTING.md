@@ -21,8 +21,10 @@ Every PR must pass the same gates `main` enforces:
 
 - **Backend** — `uv run ruff check .` and `uv run pytest` (Python 3.12, `uv sync
   --frozen`). Database-backed tests need a real Postgres and opt in via
-  `RUN_DB_TESTS=1`; see `.github/workflows/ci.yml` for the exact role setup — the
-  app must not connect as a superuser or the row-level-security tests prove nothing.
+  `RUN_DB_TESTS=1`; the three-step local recipe (a throwaway Postgres, CI's role, the
+  environment variables) is in the docstring of `backend/tests/conftest.py`, and
+  `.github/workflows/ci.yml` is what it mirrors — the app must not connect as a
+  superuser or the row-level-security tests prove nothing.
 - **Frontend** — `npx tsc -b --noEmit`, `npx eslint .`, `npm test` (vitest, node
   environment, over the pure modules), `npm run build` (Node 22, `npm ci`).
 - **Image** — the multi-stage Docker build must complete.

@@ -52,7 +52,6 @@ from __future__ import annotations
 import json
 import os
 import uuid as uuidlib
-from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -504,21 +503,6 @@ async def test_the_delivery_pass_reads_a_bounded_due_set_oldest_first(db) -> Non
 
 
 # --- 3. Producer volume: what one connection sync enqueues today -------------------
-
-
-@pytest.fixture
-def jamf(monkeypatch: pytest.MonkeyPatch) -> FakeJamf:
-    from app.mdm.jamf.client import JamfClient
-
-    fake = FakeJamf()
-
-    @asynccontextmanager
-    async def _mock_http(self):
-        async with httpx.AsyncClient(transport=httpx.MockTransport(fake.handler)) as client:
-            yield client
-
-    monkeypatch.setattr(JamfClient, "http", _mock_http)
-    return fake
 
 
 @pytest_asyncio.fixture(loop_scope="session")

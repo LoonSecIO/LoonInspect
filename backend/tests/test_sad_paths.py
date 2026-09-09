@@ -32,7 +32,6 @@ import json
 import logging
 import os
 import uuid as uuidlib
-from contextlib import asynccontextmanager
 
 import httpx
 import pytest
@@ -47,40 +46,6 @@ pytestmark = [
 ]
 
 _SECRET = "sad-path-webhook-secret"
-
-
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
-async def tenant_ready() -> None:
-    from app.core.bootstrap import bootstrap_tenants
-    from app.core.database import init_db, unscoped_session
-
-    await init_db()
-    async with unscoped_session() as db:
-        await bootstrap_tenants(db)
-
-
-@pytest_asyncio.fixture(loop_scope="session")
-async def db(tenant_ready):
-    from app.core.database import session_for_tenant
-    from app.core.tenancy import OPERATIONAL_TENANT_ID
-
-    async with session_for_tenant(OPERATIONAL_TENANT_ID) as session:
-        yield session
-
-
-@pytest.fixture
-def jamf(monkeypatch: pytest.MonkeyPatch) -> FakeJamf:
-    from app.mdm.jamf.client import JamfClient
-
-    fake = FakeJamf()
-
-    @asynccontextmanager
-    async def _mock_http(self):
-        async with httpx.AsyncClient(transport=httpx.MockTransport(fake.handler)) as client:
-            yield client
-
-    monkeypatch.setattr(JamfClient, "http", _mock_http)
-    return fake
 
 
 @pytest_asyncio.fixture(loop_scope="session")
