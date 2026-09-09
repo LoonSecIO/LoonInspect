@@ -11,6 +11,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 from app.core.wire_vocabulary import (
     ADDITIVE_ONLY_CLAUSES,
     ASSERTION_EVENT_TYPES,
@@ -18,18 +20,22 @@ from app.core.wire_vocabulary import (
     CHANGE_LEAF,
     DELTA_SOURCETYPE,
     ENRICHMENTS,
+    PLATFORM_SUBJECTS,
     PRODUCER,
     RUN_COMPLETED_EVENT_TYPE,
     RUN_FAILED_EVENT_TYPE,
     SECTION_WRAPPERS,
     SUB_EVENT_KEYS,
     SUBJECT_WRAPPERS,
+    WRAPPER_REGISTRIES,
     change_rows,
+    change_sourcetype,
     enrichment_rows,
+    registry_for,
     registry_rows,
     sourcetype,
 )
-from app.mdm.jamf.contract import SECTIONS
+from app.mdm.jamf.contract import SECTION_REGISTRIES, SECTIONS, SUBJECT_COMPUTER, sections_for
 from app.schemas.payload import InventoryChangedEvent, InventorySnapshotEvent
 
 DOC = Path(__file__).resolve().parents[2] / "docs" / "splunk-wire-vocabulary.md"
@@ -58,13 +64,48 @@ def _doc_rows(header: str) -> list[tuple[str, ...]]:
 
 
 def test_every_collected_section_has_a_wire_name() -> None:
-    """A section cannot reach the read aperture without a name to travel under."""
-    assert set(SECTION_WRAPPERS) == set(SECTIONS), (
-        "app.core.wire_vocabulary.SECTION_WRAPPERS and app.mdm.jamf.contract.SECTIONS "
-        "must name exactly the same sections — a section collected with no wrapper key "
-        "has nowhere to land on the wire, and a wrapper key with no section is a "
-        "sourcetype nothing will ever write to."
-    )
+    """A section cannot reach the read aperture without a name to travel under — per
+    Jamf object, now that the registry is a mapping (#235): every object with a section
+    table has a wrapper table, and the two name exactly the same sections."""
+    assert set(WRAPPER_REGISTRIES) == set(SECTION_REGISTRIES) == {SUBJECT_COMPUTER}
+    for subject, sections in SECTION_REGISTRIES.items():
+        assert set(WRAPPER_REGISTRIES[subject]) == set(sections), (
+            f"the {subject!r} wrapper table and section table must name exactly the same "
+            "sections — a section collected with no wrapper key has nowhere to land on the "
+            "wire, and a wrapper key with no section is a sourcetype nothing will ever write to."
+        )
+    # The computer tables are the ones the rest of the module reads by their old names.
+    assert SECTION_REGISTRIES[SUBJECT_COMPUTER] is SECTIONS
+    assert WRAPPER_REGISTRIES[SUBJECT_COMPUTER] is SECTION_WRAPPERS
+
+
+def test_mac_reads_the_computer_registry_and_nothing_else_is_registered_yet() -> None:
+    """The two axes (docs/mobile-devices.md §2): the wire branches by OS, the read by Jamf
+    object. `mac` is the only OS value with a registry until the mobile table is written
+    from a captured record; the four mobile values are deliberately absent, not defaulted."""
+    assert PLATFORM_SUBJECTS == {"mac": SUBJECT_COMPUTER}
+    assert registry_for("mac") == (SECTIONS, SECTION_WRAPPERS)
+    assert registry_rows() == registry_rows(platform="mac")
+    assert change_rows() == change_rows(platform="mac")
+    assert enrichment_rows() == enrichment_rows(platform="mac")
+
+
+@pytest.mark.parametrize("platform", ["ios", "ipados", "tvos", "visionos", "mobile", ""])
+def test_an_unregistered_platform_raises_rather_than_minting_the_computer_sections(platform: str) -> None:
+    """`registry_rows(platform="ios")` used to emit `loon:jamf:ios:diskEncryption` — a
+    stanza for a section iOS has no concept of — and a sourcetype string, once minted, is
+    permanent (clause 5). A silent fall-through to the computer table is the one thing
+    this seam exists to make impossible."""
+    for generate in (registry_rows, enrichment_rows, change_rows):
+        with pytest.raises(ValueError, match=repr(platform)):
+            generate(platform=platform)
+    with pytest.raises(ValueError, match=repr(platform)):
+        registry_for(platform)
+    with pytest.raises(ValueError, match="'mobile_device'"):
+        sections_for("mobile_device")
+    # In the delivery path a platform with no table costs one unstamped event, never a
+    # delivery that fails for ever.
+    assert change_sourcetype("device.change", subject_kind=None, section="applications", platform=platform) is None
 
 
 def test_wrapper_keys_are_unique_and_obey_the_casing_law() -> None:

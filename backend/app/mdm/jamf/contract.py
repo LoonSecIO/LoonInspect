@@ -468,6 +468,33 @@ SUBJECT_COMPUTER = "computer"
 SUBJECT_COMPUTER_GROUP = "computer_group"
 GROUP_DEFINITION_SECTION = "definition"
 
+# The section registries, keyed by the Jamf OBJECT they describe (#235). `SECTIONS`
+# above is the computer object's table and has been the only one; Jamf's mobile-device
+# object is a second endpoint with a second aperture and — seven of these fourteen
+# sections have no mobile counterpart — a second table, not a subset of this one. That
+# table needs a record captured from the demo unit before it can be written (#238), so
+# it is absent here rather than guessed: a reader of this mapping asks for an object and
+# either gets its table or is told there is none, which is what `sections_for` is for.
+#
+# Two axes, and this is the object one. The wire's platform segment branches by the
+# device's OS — `mac`, and `ios` / `ipados` / `tvos` / `visionos` share one mobile object
+# — so `app.core.wire_vocabulary.PLATFORM_SUBJECTS` is where an OS value is mapped to the
+# object whose registry it reads (docs/mobile-devices.md §2).
+COMPUTER_SECTIONS = SECTIONS
+SECTION_REGISTRIES: dict[str, dict[str, SectionSpec]] = {SUBJECT_COMPUTER: COMPUTER_SECTIONS}
+
+
+def sections_for(subject_kind: str) -> dict[str, SectionSpec]:
+    """The section table for one Jamf object, or a ValueError naming the object that has
+    none — never a silent fall-through to the computer table."""
+    try:
+        return SECTION_REGISTRIES[subject_kind]
+    except KeyError:
+        raise ValueError(
+            f"no section registry for the {subject_kind!r} object; the contract knows "
+            f"{sorted(SECTION_REGISTRIES)} (docs/mobile-devices.md §3, P-7)"
+        ) from None
+
 
 def jamf_section_param(sections: Iterable[str]) -> str:
     """The `section` query parameter for computers-inventory, in registry order."""
