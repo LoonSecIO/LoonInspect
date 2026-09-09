@@ -979,7 +979,7 @@ async def process_sync(
 
     result = await db.execute(
         # Both collections are eagerly loaded because the code below reads `apps` to
-        # compute the delta and replaces `extension_attributes` wholesale. Under
+        # compute the delta and diffs `extension_attributes` against its rows. Under
         # asyncio a lazy load raises MissingGreenlet rather than quietly issuing a
         # query — and it only triggers on the *second* sync of a device, since the
         # first takes the `existing is None` path and never touches either.
@@ -1041,24 +1041,39 @@ async def process_sync(
         existing.building_id = device.building_id
         existing.department_id = device.department_id
     if device.extension_attributes is not None:
-        # Replaced rather than merged, but the delete has to be flushed first. Assigning a
-        # fresh list in one go lets the unit of work order the INSERTs before the DELETEs,
-        # which trips uq_device_extension_attribute_key on any device that already has
-        # attributes — i.e. every device after its first sync.
-        if existing.extension_attributes:
-            existing.extension_attributes.clear()
-            await db.flush()
-
-        existing.extension_attributes = [
-            DeviceExtensionAttribute(
-                definition_id=ea.definition_id,
-                name=ea.name,
-                values=list(ea.values),
-                source=ea.source,
-                enabled=ea.enabled,
-            )
-            for ea in device.extension_attributes
-        ]
+        # Diffed against the rows already loaded, not replaced (#142). The replace —
+        # clear, flush, re-insert — cost a DELETE and an INSERT per device per sweep for
+        # a section that rarely moves, forty thousand times over for a fleet that
+        # reported the same values as yesterday. Keyed on the definition id, the row's
+        # identity (#197): a value that moved is an UPDATE of the row that holds it, a
+        # definition the device no longer reports is an orphan (the relationship's
+        # delete-orphan cascade issues the DELETE), a definition it reports for the
+        # first time is an INSERT, and a row that matches is not written at all. No
+        # flush is needed between: a DELETE and an INSERT can only share a key when the
+        # same definition is both removed and re-added, which a diff never does.
+        current = {row.definition_id: row for row in existing.extension_attributes}
+        incoming = {ea.definition_id: ea for ea in device.extension_attributes}
+        for definition_id, row in current.items():
+            if definition_id not in incoming:
+                existing.extension_attributes.remove(row)
+        for definition_id, ea in incoming.items():
+            values = list(ea.values)
+            row = current.get(definition_id)
+            if row is None:
+                existing.extension_attributes.append(
+                    DeviceExtensionAttribute(
+                        definition_id=definition_id,
+                        name=ea.name,
+                        values=values,
+                        source=ea.source,
+                        enabled=ea.enabled,
+                    )
+                )
+            elif (row.name, list(row.values), row.source, row.enabled) != (ea.name, values, ea.source, ea.enabled):
+                row.name = ea.name
+                row.values = values
+                row.source = ea.source
+                row.enabled = ea.enabled
 
     added: list[NormalizedApp] = []
     removed_rows: list[InstalledApp] = []

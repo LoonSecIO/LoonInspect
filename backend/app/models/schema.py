@@ -166,8 +166,9 @@ class Device(Base):
 
 
 class DeviceExtensionAttribute(Base):
-    """An extension attribute as the device last reported it — current state, replaced
-    wholesale on every read that covers the EA section (process_sync).
+    """An extension attribute as the device last reported it — current state, brought up
+    to date by diff on every read that covers the EA section (process_sync, #142): a row
+    is written only when its definition's value, name, source or enabled flag moved.
 
     Keyed by Jamf's definition id with the name as a label (#197), so a rename in Jamf
     replaces the label and never the row's identity — the same identity the observation

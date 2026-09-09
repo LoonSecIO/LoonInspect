@@ -89,8 +89,13 @@ apps would otherwise be ~3M row updates for one timestamp); an in-memory rule pa
 the current catalog has not judged (new triples, or a catalog that moved since); and a copy onto
 an app row only when that row is new or its catalog row was just judged. A device whose apps the
 fleet has already shown, processed after the first device of the sweep, writes nothing for the
-catalog. Nothing on this path reads `jamf_patch_titles` or `app_catalog_versions`; the catalog
-signature check is one `count / max(synced_at)` query against the in-process index.
+catalog. Nothing on this path reads `jamf_patch_titles` or `app_catalog_versions` per device:
+the catalog signature check — one `count / max(synced_at)` query that tells the in-process
+index whether the catalog moved — runs at most once per `CATALOG_PROBE_INTERVAL` (a minute),
+not once per device (#142). Every in-process writer of the catalog resets the index as it
+commits, so a sync in this process is seen by the very next device; a sync in another
+process is seen within the interval, and `refresh_tenant` re-judges whatever a device was
+judged against in between.
 
 Judging at catalog level means no device facts: extension attributes resolve TRUE (Kyle's
 practice for them — they are Jamf's scoping device, not a fact about the app) and OS-version

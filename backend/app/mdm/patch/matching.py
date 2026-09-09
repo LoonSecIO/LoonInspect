@@ -34,9 +34,10 @@ OR [Bundle ID is com.jetbrains.pycharm.ce]` — the second group decides).
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -441,13 +442,40 @@ def summarize(matches: Sequence[TitleMatch]) -> AppPatchSummary | None:
 
 
 _cache: Catalog | None = None
+# When the process last asked the table whether the catalog moved (`time.monotonic()`), so a
+# caller that passes `max_age` can trust the cache between probes.
+_verified_at: float | None = None
+
+# How long the per-device path trusts the in-process catalog before asking the table again
+# (#142). `record_device_apps` used to ask on every device — one `SELECT count(*),
+# max(synced_at)` per device with apps, forty thousand a sweep — to re-check an object the
+# hourly sync changes at most once an hour. Every in-process writer resets the cache as it
+# commits (`sync_catalog`, the test fixtures), so a sync in this process is seen by the very
+# next device regardless of the interval; the interval only bounds how long a sync committed
+# by *another* process goes unseen here, and `refresh_tenant` re-judges whatever was judged
+# against the older catalog in between. Cache, don't calculate.
+CATALOG_PROBE_INTERVAL = timedelta(seconds=60)
 
 
-async def load_catalog(db: AsyncSession) -> Catalog:
+async def load_catalog(db: AsyncSession, *, max_age: timedelta | None = None) -> Catalog:
     """The catalog, built once per process and rebuilt when the table's row count or newest
-    `synced_at` moves — the two things the hourly sync changes."""
-    global _cache
+    `synced_at` moves — the two things the hourly sync changes.
+
+    With `max_age`, the table is not asked at all while the cache was last verified within
+    that long; without it, the signature is always checked. The refresh paths (`refresh_tenant`,
+    `rebuild_index`) always check, because they run right after a sync and exist to see it;
+    the per-device path passes `CATALOG_PROBE_INTERVAL`.
+    """
+    global _cache, _verified_at
+    if (
+        max_age is not None
+        and _cache is not None
+        and _verified_at is not None
+        and time.monotonic() - _verified_at < max_age.total_seconds()
+    ):
+        return _cache
     count, newest = (await db.execute(select(func.count(), func.max(JamfPatchTitle.synced_at)).select_from(JamfPatchTitle))).one()
+    _verified_at = time.monotonic()
     signature = (count, newest)
     if _cache is not None and _cache.signature == signature:
         return _cache
@@ -459,8 +487,11 @@ async def load_catalog(db: AsyncSession) -> Catalog:
 
 
 def reset_catalog_cache() -> None:
-    global _cache
+    """Forget the catalog: the next `load_catalog`, with or without `max_age`, asks the table.
+    Called by everything that writes `jamf_patch_titles` in this process."""
+    global _cache, _verified_at
     _cache = None
+    _verified_at = None
 
 
 def cached_title_names() -> dict[str, str] | None:
@@ -469,8 +500,8 @@ def cached_title_names() -> dict[str, str] | None:
     **No query, and deliberately no `db`.** `record_device_apps` calls `load_catalog` a few
     statements before the snapshot is built (`app.catalog.service`, `app.mdm.service.process_sync`),
     so by the time the producer asks, this global holds the very catalog the app rows were judged
-    against. Re-loading it here would be one `SELECT count(*), max(synced_at)` per device — forty
-    thousand of them per sweep to re-fetch an object that has not moved. Cache, don't calculate.
+    against. Re-loading it here would be a second `load_catalog` per device to re-fetch an
+    object that has not moved. Cache, don't calculate.
 
     `None` when no catalog has ever been loaded in this process, which is also the honest answer
     on the scoped-read path: `record_device_apps` is skipped there (`process_sync`), so the rows
