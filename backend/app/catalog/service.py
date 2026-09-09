@@ -48,7 +48,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mdm.patch.matching import CATALOG_PROBE_INTERVAL, Catalog, TitleMatch, load_catalog, match_app, summarize
-from app.mdm.patch.requirements import Facts
+from app.mdm.patch.requirements import Facts, jamf_platform_name
 from app.models.schema import AppCatalogEntry, AppCatalogTitleMatch, Device, InstalledApp
 
 logger = logging.getLogger(__name__)
@@ -119,6 +119,9 @@ async def evaluate_entries(db: AsyncSession, entries: Sequence[AppCatalogEntry],
             app_name=entry.name,
             bundle_id=entry.bundle_id,
             versions=tuple(version for version in (entry.version, entry.short_version) if version),
+            # From the row, never a default (#236): a non-macOS row considers no titles,
+            # and the row's `platform` is the record of why it carries no answer.
+            platform=jamf_platform_name(entry.platform),
         )
         matches = match_app(facts, catalog)
         _apply_summary(entry, matches, now=now, signature=signature)
@@ -192,9 +195,17 @@ async def record_device_apps(db: AsyncSession, device: Device, *, now: datetime 
         return 0
     now = now or datetime.now(timezone.utc)
     hashes = {row.version_hash for row in rows if row.version_hash}
+    # The device's platform scopes the rows (#236): a universal app is one hash and two
+    # catalog rows, judged differently, and this device's apps belong to its own.
     existing = {
         entry.version_hash: entry
-        for entry in (await db.execute(select(AppCatalogEntry).where(AppCatalogEntry.version_hash.in_(hashes)))).scalars().all()
+        for entry in (
+            await db.execute(
+                select(AppCatalogEntry).where(
+                    AppCatalogEntry.platform == device.platform, AppCatalogEntry.version_hash.in_(hashes)
+                )
+            )
+        ).scalars().all()
     }
     for row in rows:
         if not row.version_hash:
@@ -208,6 +219,7 @@ async def record_device_apps(db: AsyncSession, device: Device, *, now: datetime 
                 short_version=row.short_version,
                 app_hash=row.app_hash,
                 version_hash=row.version_hash,
+                platform=device.platform,
                 key_title=row.key_title,
                 key_full=row.key_full,
                 first_seen_at=now,
@@ -253,7 +265,12 @@ async def refresh_tenant(db: AsyncSession, *, force: bool = False, now: datetime
     for entry in entries:
         await db.execute(
             update(InstalledApp)
-            .where(InstalledApp.version_hash == entry.version_hash)
+            # This platform's rows only (#236): the same hash on the other platform is a
+            # different catalog row with a different answer.
+            .where(
+                InstalledApp.version_hash == entry.version_hash,
+                InstalledApp.device_id.in_(select(Device.id).where(Device.platform == entry.platform)),
+            )
             # The same column list `copy_answer` uses, from the same function — see
             # `answer_columns`. Spelling it here a second time is what left `ea_assumed`
             # permanently null on the path that maintains a stable fleet.

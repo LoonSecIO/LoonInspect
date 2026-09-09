@@ -29,7 +29,7 @@ from app.mdm.patch.matching import (
     match_app,
     summarize,
 )
-from app.mdm.patch.requirements import Facts
+from app.mdm.patch.requirements import PLATFORM_MAC, Facts, jamf_platform_name
 
 FIXTURES = Path(__file__).parent / "fixtures" / "jamf"
 
@@ -56,11 +56,40 @@ def device_matches(catalog: Catalog) -> dict[str, list[TitleMatch]]:
             bundle_id=app.bundle_id,
             versions=tuple(v for v in (app.version, app.short_version) if v),
             os_version=device.os_version,
+            # Said, not defaulted (#236): the device is a Mac because the computer client
+            # read it, and the evaluator no longer assumes so.
+            platform=jamf_platform_name(device.platform),
             extension_attributes=extension_attributes,
         )
         result[app.name] = match_app(facts, catalog)
     assert len(result) == 83
     return result
+
+
+class TestPlatform:
+    """#236: the platform is a fact the caller states, and a known non-Mac one is unmatchable."""
+
+    def test_the_default_is_unknown_and_the_computer_client_is_a_mac(self) -> None:
+        assert Facts().platform is None
+        assert jamf_platform_name("macos") == PLATFORM_MAC == "Mac"
+        assert jamf_platform_name("ios") == "iOS" and jamf_platform_name(None) is None
+        assert jamf_platform_name("android") is None, "an unknown spelling is unknown, not a Mac"
+
+    def test_a_known_non_mac_platform_considers_no_titles(self, catalog: Catalog, device_matches) -> None:
+        # Xcode matches title 0C3 on a Mac; the same name, bundle id and version on an iPad
+        # matches nothing, because Jamf Patch has no iPad titles to consider.
+        assert device_matches["Xcode.app"], "the Mac's own answer, unchanged"
+        mac = Facts(app_name="Xcode.app", bundle_id="com.apple.dt.Xcode", versions=("16.4",), platform=PLATFORM_MAC)
+        ipad = Facts(app_name="Xcode.app", bundle_id="com.apple.dt.Xcode", versions=("16.4",), platform="iPadOS")
+        assert match_app(mac, catalog)
+        assert match_app(ipad, catalog) == []
+
+    def test_an_unknown_platform_is_still_judged(self, catalog: Catalog) -> None:
+        # Unknown is not "not Mac": titles without a Platform criterion may still match, and
+        # one with it reads NOT_APPLICABLE rather than passing on an assumption.
+        unknown = Facts(app_name="Xcode.app", bundle_id="com.apple.dt.Xcode", versions=("16.4",))
+        assert unknown.platform is None
+        assert isinstance(match_app(unknown, catalog), list)
 
 
 def _ts(value: str) -> datetime:

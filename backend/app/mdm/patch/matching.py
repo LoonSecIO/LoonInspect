@@ -44,6 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mdm.patch.requirements import (
     EXTENSION_ATTRIBUTE,
+    PLATFORM_MAC,
     Facts,
     Verdict,
     compare_versions,
@@ -344,7 +345,17 @@ def _decide(title: CatalogTitle, facts: Facts) -> str | None:
 
 def match_app(facts: Facts, catalog: Catalog) -> list[TitleMatch]:
     """Every title this app belongs to, with the version answers. Deterministic order:
-    fully-evaluated matches first, then by title name."""
+    fully-evaluated matches first, then by title name.
+
+    A known platform that is not the Mac considers no titles at all (#236): Jamf Patch
+    Management carries macOS titles only, so for an iOS build the only correct answer is
+    "not matchable" — running the rule pass would at best find nothing and at worst match
+    a universal app's bundle id to a macOS title. The row's own `platform` column is the
+    record of why it carries no answer. An *unknown* platform (None) is still judged: a
+    `Platform` criterion is then NOT_APPLICABLE, and titles without one may match.
+    """
+    if facts.platform is not None and facts.platform != PLATFORM_MAC:
+        return []
     matches: list[TitleMatch] = []
     for title in catalog.candidates(facts.bundle_id):
         basis = _decide(title, facts)

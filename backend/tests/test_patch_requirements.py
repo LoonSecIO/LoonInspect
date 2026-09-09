@@ -165,7 +165,11 @@ class TestEvaluateTest:
         assert evaluate_test(lt, Facts(os_version="27.0")) is Outcome.FAIL
         assert evaluate_test(ge, Facts(os_version=None)) is Outcome.NOT_APPLICABLE
         platform = {"name": "Platform", "type": "recon", "value": "Mac", "operator": "is"}
-        assert evaluate_test(platform, Facts()) is Outcome.PASS
+        # The platform is a fact the caller states (#236): a Mac passes, an iPad fails, and
+        # the default — unknown — is NOT_APPLICABLE rather than a Mac by assumption.
+        assert evaluate_test(platform, Facts(platform="Mac")) is Outcome.PASS
+        assert evaluate_test(platform, Facts(platform="iPadOS")) is Outcome.FAIL
+        assert evaluate_test(platform, Facts()) is Outcome.NOT_APPLICABLE
         assert evaluate_test(platform, Facts(platform=None)) is Outcome.NOT_APPLICABLE
 
     def test_unknown_test_or_operator_is_not_applicable(self) -> None:

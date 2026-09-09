@@ -65,6 +65,29 @@ APP_TESTS = frozenset({BUNDLE_ID, APPLICATION_TITLE, APPLICATION_VERSION})
 IDENTIFYING_TESTS = frozenset({BUNDLE_ID, APPLICATION_TITLE})
 
 
+# Jamf's platform names, keyed by the content-key spelling `devices.platform` and
+# `app_catalog.platform` carry (docs/mobile-devices.md §2). "Mac" is the one value a Jamf
+# Patch `Platform` criterion has ever named — the catalog is macOS-only — so the other four
+# exist to be *not* Mac: a known platform the requirement cannot pass, which is a different
+# fact from an unknown one.
+PLATFORM_MAC = "Mac"
+JAMF_PLATFORM_NAMES: dict[str, str] = {
+    "macos": PLATFORM_MAC,
+    "ios": "iOS",
+    "ipados": "iPadOS",
+    "tvos": "tvOS",
+    "visionos": "visionOS",
+}
+
+
+def jamf_platform_name(platform: str | None) -> str | None:
+    """The `Facts.platform` value for a row's content-key platform; None for an unknown
+    spelling, which the evaluator treats as unknown rather than as a Mac."""
+    if platform is None:
+        return None
+    return JAMF_PLATFORM_NAMES.get(platform)
+
+
 @dataclass(frozen=True)
 class Facts:
     """What is known about one app on one device. Anything None is unknown, not empty."""
@@ -76,7 +99,12 @@ class Facts:
     # the evaluator is indifferent to which slot a connector put which string in.
     versions: tuple[str, ...] = ()
     os_version: str | None = None
-    platform: str | None = "Mac"
+    # Jamf's own spelling for the `Platform` test — "Mac" — as `jamf_platform_name` maps it
+    # from the content-key spelling the rows carry. `None` is unknown, and unknown makes a
+    # Platform criterion NOT_APPLICABLE rather than passed: the old default of "Mac" looked
+    # like a fallback and was a scope claim, one that would have judged a mobile row as a
+    # Mac the first time one entered the catalog (#236). Callers say what they know.
+    platform: str | None = None
     # Extension-attribute name -> value, as the device reports them. Looked up case-insensitively.
     extension_attributes: Mapping[str, str | None] = field(default_factory=dict)
     # Jamf uses an extension attribute where inventory cannot tell titles apart — PyCharm
