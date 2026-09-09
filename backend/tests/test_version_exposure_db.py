@@ -29,9 +29,7 @@ from sqlalchemy import delete, select, update
 # One event loop for the whole module — the engine's pooled connections belong to
 # whichever loop first used them.
 pytestmark = [
-    pytest.mark.skipif(
-        not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"
-    ),
+    pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
     pytest.mark.asyncio(loop_scope="session"),
 ]
 
@@ -61,13 +59,9 @@ async def seeded() -> uuidlib.UUID:
             (ADMIN, "admin", "version admin"),
             (VIEWER, "viewer", "version viewer"),
         ):
-            existing = (
-                (await db.execute(select(Account).where(Account.email == email))).scalars().first()
-            )
+            existing = (await db.execute(select(Account).where(Account.email == email))).scalars().first()
             if existing is None:
-                await create_account(
-                    db, email=email, display_name=name, password=password, roles=(role,)
-                )
+                await create_account(db, email=email, display_name=name, password=password, roles=(role,))
             # A previous crashed run's failed logins would trip the lockout and turn
             # this suite red about rate limiting instead of about the version.
             await db.execute(delete(LoginAttempt).where(LoginAttempt.identifier == email))
@@ -124,11 +118,7 @@ async def test_a_disabled_account_is_not_signed_in(seeded: uuidlib.UUID) -> None
         assert (await c.get("/api/auth/status")).json()["authenticated"] is True
 
         async with session_for_tenant(seeded) as db:
-            account = (
-                (await db.execute(select(Account).where(Account.email == VIEWER[0])))
-                .scalars()
-                .one()
-            )
+            account = (await db.execute(select(Account).where(Account.email == VIEWER[0]))).scalars().one()
             account.status = "disabled"
             await db.commit()
 
@@ -138,9 +128,7 @@ async def test_a_disabled_account_is_not_signed_in(seeded: uuidlib.UUID) -> None
             real_route = await c.get("/api/system/version")
         finally:
             async with session_for_tenant(seeded) as db:
-                await db.execute(
-                    update(Account).where(Account.email == VIEWER[0]).values(status="active")
-                )
+                await db.execute(update(Account).where(Account.email == VIEWER[0]).values(status="active"))
                 await db.commit()
 
     assert status_body["authenticated"] is False

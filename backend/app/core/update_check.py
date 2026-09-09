@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
@@ -100,7 +100,7 @@ async def get_update_status() -> UpdateStatus:
         )
 
     async with _lock:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if _cache is not None:
             ttl = _SUCCESS_TTL if _cache.latest_sha else _FAILURE_TTL
             if now - _cache.checked_at < ttl:

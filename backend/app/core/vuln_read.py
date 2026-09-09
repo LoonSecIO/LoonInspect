@@ -51,7 +51,7 @@ of derived, and the REST shape does not move.
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Protocol
 
 from app.core.vuln import VulnCorpus, vuln_block
@@ -72,7 +72,7 @@ def today() -> date:
     """The read path's `as_of` — the second of §4d's two clocks. UTC, and a function so a
     test can pin it without freezing the process clock: the wire's determinism argument
     does not apply to a page, but a test asserting a day count still needs a fixed today."""
-    return datetime.now(timezone.utc).date()
+    return datetime.now(UTC).date()
 
 
 def corpus_as_of(corpus: VulnCorpus) -> date | None:

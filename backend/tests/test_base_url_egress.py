@@ -127,9 +127,10 @@ def test_security_the_connection_schemas_refuse_an_unvalidated_base_url() -> Non
             MdmConnectionUpdate(base_url=blocked)
 
     # And the legitimate ones still construct, or the rule has broken the product.
-    assert MdmConnectionCreate(
-        name="on-prem", provider="jamf", base_url="https://jamf.corp.internal:8443"
-    ).base_url == "https://jamf.corp.internal:8443"
+    assert (
+        MdmConnectionCreate(name="on-prem", provider="jamf", base_url="https://jamf.corp.internal:8443").base_url
+        == "https://jamf.corp.internal:8443"
+    )
 
 
 # --- the resolver pass ----------------------------------------------------------------
@@ -165,9 +166,7 @@ async def test_a_name_that_also_resolves_somewhere_legitimate_is_still_refused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """One blocked answer is enough: which address httpx picks is not ours to assume."""
-    monkeypatch.setattr(
-        asyncio.get_running_loop(), "getaddrinfo", _resolves_to("203.0.113.10", "127.0.0.1")
-    )
+    monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", _resolves_to("203.0.113.10", "127.0.0.1"))
     with pytest.raises(BlockedBaseUrl, match="loopback"):
         await refuse_blocked_resolution("https://split.example.com")
 
@@ -280,9 +279,7 @@ async def test_security_a_token_response_gives_back_only_known_non_secret_fields
         )
 
     monkeypatch.setattr(jamf_client, "httpx", _MockHttpx(_handler))
-    client = jamf_client.JamfClient(
-        base_url="https://acme.jamfcloud.com", client_id="id", client_secret="secret"
-    )
+    client = jamf_client.JamfClient(base_url="https://acme.jamfcloud.com", client_id="id", client_secret="secret")
 
     assert await client.test_connection() == {"token_type": "Bearer", "expires_in": 1799}
 
@@ -299,9 +296,7 @@ async def test_a_200_that_is_not_a_token_response_raises_rather_than_returning_i
         "httpx",
         _MockHttpx(lambda request: httpx.Response(200, json=["CANARY-LIST"])),
     )
-    client = jamf_client.JamfClient(
-        base_url="https://acme.jamfcloud.com", client_id="id", client_secret="secret"
-    )
+    client = jamf_client.JamfClient(base_url="https://acme.jamfcloud.com", client_id="id", client_secret="secret")
 
     with pytest.raises(ValueError, match="JSON object"):
         await client.test_connection()

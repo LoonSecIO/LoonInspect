@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,7 +55,7 @@ DEFAULT_WEBHOOK_NAME = "Webhook"
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def schedule_of(collection: Collection) -> Schedule:
@@ -125,9 +125,7 @@ def default_collections(connection: MdmConnection, now: datetime | None = None) 
 
 
 async def list_collections(db: AsyncSession, connection_id: int) -> list[Collection]:
-    result = await db.execute(
-        select(Collection).where(Collection.mdm_connection_id == connection_id).order_by(Collection.id)
-    )
+    result = await db.execute(select(Collection).where(Collection.mdm_connection_id == connection_id).order_by(Collection.id))
     return list(result.scalars().all())
 
 
@@ -244,9 +242,7 @@ async def run_collection(
                     run=run,
                 )
             else:
-                result = await run_jamf_catalog(
-                    db, connection, trigger=trigger, collection_id=collection.id, run=run
-                )
+                result = await run_jamf_catalog(db, connection, trigger=trigger, collection_id=collection.id, run=run)
         except RunReclaimed as exc:
             # The reclaim closed this run and freed the lock mid-flight; a fresh
             # acquisition may already be sweeping this connection. The collection's
@@ -270,9 +266,7 @@ async def run_collection(
             )
             if not owned:
                 raise
-            return ConnectionSyncResult(
-                connection_id=connection_id, ok=False, error=str(exc), collection_id=collection_id
-            )
+            return ConnectionSyncResult(connection_id=connection_id, ok=False, error=str(exc), collection_id=collection_id)
 
         if not result.ok:
             # A failure result means the handler inside run_jamf / run_jamf_catalog
@@ -335,9 +329,7 @@ async def run_connection(
     that id has to keep showing progress across the second sweep."""
     await ensure_default_collections(db, connection)
     await db.commit()
-    sweeps = [
-        row for row in await list_collections(db, connection.id) if row.kind == KIND_DEVICE_SWEEP and row.enabled
-    ]
+    sweeps = [row for row in await list_collections(db, connection.id) if row.kind == KIND_DEVICE_SWEEP and row.enabled]
     if not sweeps:
         logger.info("connection has no enabled device sweep", extra={"connection_id": connection.id})
         return ConnectionSyncResult(connection_id=connection.id, skipped=True)
@@ -376,15 +368,19 @@ async def claim_due(db: AsyncSession, now: datetime | None = None) -> list[tuple
     """
     now = now or _utcnow()
     candidates = (
-        await db.execute(
-            select(Collection).where(
-                Collection.enabled.is_(True),
-                Collection.kind.in_(RUNNABLE_KINDS),
-                Collection.next_due_at.isnot(None),
-                Collection.next_due_at <= now,
+        (
+            await db.execute(
+                select(Collection).where(
+                    Collection.enabled.is_(True),
+                    Collection.kind.in_(RUNNABLE_KINDS),
+                    Collection.next_due_at.isnot(None),
+                    Collection.next_due_at <= now,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     if not candidates:
         return []
 

@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
@@ -229,9 +229,7 @@ def audit(
     tenant_key = str(resolved.tenant_id) if resolved.tenant_id is not None else SYSTEM_AUDIT_KEY
 
     payload = {
-        "occurred_at": datetime.now(timezone.utc)
-        .isoformat(timespec="milliseconds")
-        .replace("+00:00", "Z"),
+        "occurred_at": datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
         "action": str(action),
         "outcome": outcome,
         # Written into the record as well as deciding the file. The file answers

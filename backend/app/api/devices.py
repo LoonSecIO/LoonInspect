@@ -49,9 +49,7 @@ def _parse_ea_filters(ea: list[str] | None) -> list[ExtensionAttributeFilter]:
     return filters
 
 
-async def _org_unit_where(
-    db: AsyncSession, kind: str, column: ColumnElement[str | None], value: str
-) -> ColumnElement[bool]:
+async def _org_unit_where(db: AsyncSession, kind: str, column: ColumnElement[str | None], value: str) -> ColumnElement[bool]:
     """The department / building filter: a name in, the device rows out.
 
     Devices carry Jamf's ids, so the typed name is resolved to `(connection, id)` pairs
@@ -78,9 +76,7 @@ def _with_names(out: _DeviceOutT, device: Device, names: OrgUnitNames) -> _Devic
     return out.model_copy(
         update={
             "building": name_for(names, connection_id=connection_id, kind=BUILDING, external_id=device.building_id),
-            "department": name_for(
-                names, connection_id=connection_id, kind=DEPARTMENT, external_id=device.department_id
-            ),
+            "department": name_for(names, connection_id=connection_id, kind=DEPARTMENT, external_id=device.department_id),
         }
     )
 
@@ -193,9 +189,7 @@ async def list_devices(
     if needs_python_version_filter:
         result = await db.execute(stmt.order_by(Device.hostname))
         matching = [
-            device
-            for device in result.scalars().all()
-            if _version_matches(device.os_version, os_version_operator, os_version)
+            device for device in result.scalars().all() if _version_matches(device.os_version, os_version_operator, os_version)
         ]
         total = len(matching)
         start = (page - 1) * page_size
@@ -246,9 +240,7 @@ def _assessed(out: DeviceDetailOut, rows: Sequence[InstalledApp]) -> DeviceDetai
 @router.get("/{device_id}", response_model=DeviceDetailOut)
 async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> DeviceDetailOut:
     result = await db.execute(
-        select(Device)
-        .where(Device.id == device_id)
-        .options(selectinload(Device.apps), selectinload(Device.extension_attributes))
+        select(Device).where(Device.id == device_id).options(selectinload(Device.apps), selectinload(Device.extension_attributes))
     )
     device = result.scalar_one_or_none()
     if device is None:

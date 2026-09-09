@@ -8,7 +8,7 @@ here (#231) against a stub session."""
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import httpx
@@ -224,7 +224,7 @@ async def test_a_200_that_is_not_json_is_a_failed_attempt_not_an_escape() -> Non
 
 
 def _at(hour: int, minute: int) -> datetime:
-    return datetime(2026, 8, 20, hour, minute, tzinfo=timezone.utc)
+    return datetime(2026, 8, 20, hour, minute, tzinfo=UTC)
 
 
 def test_not_due_before_the_jittered_minute() -> None:
@@ -241,7 +241,7 @@ def test_one_attempt_per_day_regardless_of_outcome() -> None:
 
 
 def test_yesterdays_attempt_does_not_satisfy_today() -> None:
-    yesterday = datetime(2026, 8, 19, 10, 5, tzinfo=timezone.utc)
+    yesterday = datetime(2026, 8, 19, 10, 5, tzinfo=UTC)
     assert _due(_at(10, 30), yesterday, minute_of_day=10 * 60) is True
 
 

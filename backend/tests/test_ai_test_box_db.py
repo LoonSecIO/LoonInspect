@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -129,7 +129,7 @@ class Recorder:
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
-        self.called_at = datetime.now(timezone.utc)
+        self.called_at = datetime.now(UTC)
         return httpx.Response(self.status, json=self.body)
 
 

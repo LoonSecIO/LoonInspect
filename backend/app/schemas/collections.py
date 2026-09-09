@@ -1,19 +1,19 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 
-class CollectionKind(str, Enum):
+class CollectionKind(StrEnum):
     device_sweep = "device_sweep"
     catalog = "catalog"
     webhook = "webhook"
 
 
-class Frequency(str, Enum):
+class Frequency(StrEnum):
     hourly = "hourly"
     daily = "daily"
     weekly = "weekly"

@@ -59,9 +59,7 @@ async def client(accounts):
 
     # https, not http: the session cookie is Secure, and a client on a plain-http
     # origin discards it silently.
-    signed_in = httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="https://egress.example.com"
-    )
+    signed_in = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://egress.example.com")
     email, password = ADMIN
     response = await signed_in.post("/api/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200, f"login failed: {response.status_code} {response.text}"
@@ -169,15 +167,11 @@ async def test_security_a_connection_cannot_be_created_at_the_metadata_address(c
 
     assert response.status_code == 422, response.text
     assert "link-local" in response.text
-    stored = (
-        await db.execute(select(MdmConnection).where(MdmConnection.base_url == METADATA_URL))
-    ).scalars().all()
+    stored = (await db.execute(select(MdmConnection).where(MdmConnection.base_url == METADATA_URL))).scalars().all()
     assert stored == []
 
 
-async def test_security_a_hostname_that_resolves_to_link_local_is_refused_at_create(
-    client, resolver
-) -> None:
+async def test_security_a_hostname_that_resolves_to_link_local_is_refused_at_create(client, resolver) -> None:
     """SECURITY: proves the route runs the resolver pass, not just the literal check.
 
     The literal rule lives in the schema and is pinned in tests/test_base_url_egress.py;
@@ -186,9 +180,7 @@ async def test_security_a_hostname_that_resolves_to_link_local_is_refused_at_cre
     """
     resolver["metadata.attacker.example"] = "169.254.169.254"
 
-    response = await client.post(
-        "/api/mdm/connections", json=_create_payload(baseUrl="https://metadata.attacker.example")
-    )
+    response = await client.post("/api/mdm/connections", json=_create_payload(baseUrl="https://metadata.attacker.example"))
 
     assert response.status_code == 422, response.text
     assert "169.254.169.254" in response.text
@@ -216,9 +208,7 @@ async def test_a_legitimate_jamf_pro_is_still_accepted(client, base_url: str) ->
 # --- moving one -----------------------------------------------------------------------
 
 
-async def test_security_a_saved_connection_cannot_be_moved_to_a_blocked_address(
-    client, connection, db
-) -> None:
+async def test_security_a_saved_connection_cannot_be_moved_to_a_blocked_address(client, connection, db) -> None:
     """SECURITY: the same rule on PATCH, with #208's guard satisfied.
 
     The client secret is re-entered so the refusal under test is this one and not
@@ -241,9 +231,7 @@ async def test_security_a_saved_connection_cannot_be_moved_to_a_blocked_address(
 # --- dialling one ---------------------------------------------------------------------
 
 
-async def test_security_the_test_endpoint_refuses_a_blocked_destination_without_dialling_it(
-    client, attempts
-) -> None:
+async def test_security_the_test_endpoint_refuses_a_blocked_destination_without_dialling_it(client, attempts) -> None:
     """SECURITY: refused *before* the outbound request, not after reading the answer.
 
     `attempts` records the destination of every token exchange the endpoint was about to
@@ -284,17 +272,13 @@ def _raise_upstream(monkeypatch: pytest.MonkeyPatch, body: str, content_type: st
 
     async def _rejected(self: JamfClient) -> dict:
         request = httpx.Request("POST", f"{self._base_url}/api/oauth/token")
-        response = httpx.Response(
-            401, content=body.encode(), headers={"content-type": content_type}, request=request
-        )
+        response = httpx.Response(401, content=body.encode(), headers={"content-type": content_type}, request=request)
         raise httpx.HTTPStatusError("rejected", request=request, response=response)
 
     monkeypatch.setattr(JamfClient, "test_connection", _rejected)
 
 
-async def test_security_an_upstream_body_reaches_the_caller_only_bounded(
-    client, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_security_an_upstream_body_reaches_the_caller_only_bounded(client, monkeypatch: pytest.MonkeyPatch) -> None:
     """SECURITY: `detail` is diagnostics, not a window.
 
     Whatever answers `{base_url}/api/oauth/token` is a server the caller named, so its
@@ -304,9 +288,7 @@ async def test_security_an_upstream_body_reaches_the_caller_only_bounded(
     """
     from app.api.connections import _DETAIL_MAX_CHARS
 
-    _raise_upstream(
-        monkeypatch, json.dumps({"errors": ["x" * 4000], "tail": "CANARY-JSON"}), "application/json"
-    )
+    _raise_upstream(monkeypatch, json.dumps({"errors": ["x" * 4000], "tail": "CANARY-JSON"}), "application/json")
     detail = (
         await client.post(
             "/api/mdm/connections/test",

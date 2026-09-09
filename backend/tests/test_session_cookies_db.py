@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import os
 import uuid as uuidlib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -27,9 +27,7 @@ from sqlalchemy import delete, select, update
 # One event loop for the whole module — see test_tenancy_sweep.py for why: the
 # engine's pooled connections belong to whichever loop first used them.
 pytestmark = [
-    pytest.mark.skipif(
-        not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"
-    ),
+    pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
     pytest.mark.asyncio(loop_scope="session"),
 ]
 
@@ -54,13 +52,9 @@ async def seeded() -> uuidlib.UUID:
         await bootstrap_tenants(db)
 
     async with session_for_tenant(OPERATIONAL_TENANT_ID) as db:
-        account = (
-            (await db.execute(select(Account).where(Account.email == ADMIN[0]))).scalars().first()
-        )
+        account = (await db.execute(select(Account).where(Account.email == ADMIN[0]))).scalars().first()
         if account is None:
-            await create_account(
-                db, email=ADMIN[0], display_name="cookie admin", password=ADMIN[1], roles=("admin",)
-            )
+            await create_account(db, email=ADMIN[0], display_name="cookie admin", password=ADMIN[1], roles=("admin",))
         # A previous crashed run's failed logins would trip the lockout and turn this
         # suite red about rate limiting instead of cookies.
         await db.execute(delete(LoginAttempt).where(LoginAttempt.identifier == ADMIN[0]))
@@ -98,13 +92,9 @@ async def _rewind(raw_token: str, tenant_id: uuidlib.UUID, seconds: int) -> None
     from app.core.security import hash_token
     from app.models.schema import UserSession
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     last_seen = now - timedelta(seconds=seconds)
-    expires = (
-        last_seen + timedelta(seconds=settings.session_lifetime_seconds)
-        if settings.session_lifetime_seconds
-        else None
-    )
+    expires = last_seen + timedelta(seconds=settings.session_lifetime_seconds) if settings.session_lifetime_seconds else None
     async with session_for_tenant(tenant_id) as db:
         await db.execute(
             update(UserSession)
@@ -121,15 +111,7 @@ async def _session_row(raw_token: str, tenant_id: uuidlib.UUID) -> tuple[datetim
     from app.models.schema import UserSession
 
     async with session_for_tenant(tenant_id) as db:
-        row = (
-            (
-                await db.execute(
-                    select(UserSession).where(UserSession.token_hash == hash_token(raw_token))
-                )
-            )
-            .scalars()
-            .one()
-        )
+        row = (await db.execute(select(UserSession).where(UserSession.token_hash == hash_token(raw_token)))).scalars().one()
         return as_utc(row.last_seen_at), as_utc(row.expires_at)
 
 
@@ -169,9 +151,7 @@ async def test_activity_past_touch_interval_reissues_both_cookies(seeded, monkey
         _, expires_after = await _session_row(raw, seeded)
         assert expires_after is not None and expires_before is not None
         assert expires_after > expires_before
-        assert abs(
-            (expires_after - datetime.now(timezone.utc)).total_seconds() - 3600
-        ) < 30
+        assert abs((expires_after - datetime.now(UTC)).total_seconds() - 3600) < 30
 
 
 async def test_no_reissue_before_touch_interval(seeded, monkeypatch) -> None:
@@ -209,7 +189,7 @@ async def test_unlimited_lifetime_stays_untouched(seeded, monkeypatch) -> None:
 
         last_seen, expires = await _session_row(raw, seeded)
         assert expires is None
-        assert datetime.now(timezone.utc) - last_seen < timedelta(seconds=30)
+        assert datetime.now(UTC) - last_seen < timedelta(seconds=30)
 
 
 async def test_logout_still_clears_both_cookies(seeded) -> None:

@@ -96,9 +96,7 @@ async def _rows(db, connection_id: int, external_id: str) -> dict[str, int]:
 
     rows = (
         await db.execute(
-            select(Device.platform, Device.id).where(
-                Device.mdm_connection_id == connection_id, Device.external_id == external_id
-            )
+            select(Device.platform, Device.id).where(Device.mdm_connection_id == connection_id, Device.external_id == external_id)
         )
     ).all()
     return dict(rows)

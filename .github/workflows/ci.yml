@@ -122,8 +122,10 @@ jobs:
       - name: Lint
         run: uv run --frozen ruff check --output-format=github .
 
-      # `ruff format --check` is deliberately absent: adopting it today would
-      # reformat 20 files across feature modules. Tracked in #16.
+      # The tree was brought under `ruff format` in one mechanical commit (#16); this
+      # step keeps it there. Its output names the file and the lines it would change.
+      - name: Format
+        run: uv run --frozen ruff format --check --diff .
 
       # The suite's standing promise (conftest's docstring) is that it runs on a
       # laptop with no Postgres: engine creation is lazy, and every DB-backed test

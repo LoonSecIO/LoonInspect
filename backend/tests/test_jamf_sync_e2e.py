@@ -127,9 +127,7 @@ async def test_sweep_then_repeat_then_webhook(db, jamf: FakeJamf, connection) ->
     from app.models.schema import Device, EventOutbox, InstalledApp, ObservationSpan
 
     real_id, synthetic_id = jamf.real["id"], jamf.synthetic["id"]
-    changed_events = (
-        select(func.count()).select_from(EventOutbox).where(EventOutbox.event_type == "device.inventory.changed")
-    )
+    changed_events = select(func.count()).select_from(EventOutbox).where(EventOutbox.event_type == "device.inventory.changed")
     snapshot_events = select(func.count()).select_from(EventOutbox).where(EventOutbox.event_type == "device.inventory")
     snapshots_before = await _count(db, snapshot_events)
 
@@ -152,12 +150,16 @@ async def test_sweep_then_repeat_then_webhook(db, jamf: FakeJamf, connection) ->
     assert await _count(db, real_apps) == 83
 
     spans = (
-        await db.execute(
-            select(ObservationSpan).where(
-                ObservationSpan.mdm_connection_id == connection.id, ObservationSpan.is_current.is_(True)
+        (
+            await db.execute(
+                select(ObservationSpan).where(
+                    ObservationSpan.mdm_connection_id == connection.id, ObservationSpan.is_current.is_(True)
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert {(s.subject_kind, s.subject_id) for s in spans} == {
         ("computer", real_id),
         ("computer", synthetic_id),
@@ -190,9 +192,15 @@ async def test_sweep_then_repeat_then_webhook(db, jamf: FakeJamf, connection) ->
     jamf.real["general"]["reportDate"] = "2026-08-22T09:00:00.000Z"
     jamf.real["applications"].append(
         {
-            "name": "Loon Inspector.app", "path": "/Applications/Loon Inspector.app", "version": "0.1",
-            "cfBundleShortVersionString": "0.1", "cfBundleVersion": "7", "macAppStore": False,
-            "bundleId": "io.loonsec.inspector", "updateAvailable": False, "externalVersionId": "0",
+            "name": "Loon Inspector.app",
+            "path": "/Applications/Loon Inspector.app",
+            "version": "0.1",
+            "cfBundleShortVersionString": "0.1",
+            "cfBundleVersion": "7",
+            "macAppStore": False,
+            "bundleId": "io.loonsec.inspector",
+            "updateAvailable": False,
+            "externalVersionId": "0",
         }
     )
     payload = {
@@ -306,9 +314,7 @@ async def test_narrow_webhook_scope_never_wipes_apps(db, jamf: FakeJamf, connect
     from app.models.schema import Device, DeviceChange, EventOutbox, InstalledApp
 
     real_id = jamf.real["id"]
-    changed_events = (
-        select(func.count()).select_from(EventOutbox).where(EventOutbox.event_type == "device.inventory.changed")
-    )
+    changed_events = select(func.count()).select_from(EventOutbox).where(EventOutbox.event_type == "device.inventory.changed")
 
     first = await sync_connection(db, connection)
     assert first.ok and first.device_count == 2
@@ -345,17 +351,16 @@ async def test_narrow_webhook_scope_never_wipes_apps(db, jamf: FakeJamf, connect
     async def _latest_snapshot():
         return (
             await db.execute(
-                select(EventOutbox)
-                .where(EventOutbox.event_type == "device.inventory")
-                .order_by(EventOutbox.id.desc())
-                .limit(1)
+                select(EventOutbox).where(EventOutbox.event_type == "device.inventory").order_by(EventOutbox.id.desc()).limit(1)
             )
         ).scalar_one()
 
     scoped = await _latest_snapshot()
     assert scoped.payload["deviceMeta"]["jamfProID"] == real_id and scoped.payload["deviceMeta"]["trigger"] == "webhook"
     assert set(scoped.payload) - {"_envelope", "event", "jobID", "occurredAt", "deviceMeta"} == {
-        "general", "hardware", "operatingSystem",
+        "general",
+        "hardware",
+        "operatingSystem",
     }
     assert "app" not in scoped.payload
     assert scoped.payload["hardware"]["serialNumber"] == "LOONMINI0M4"
@@ -507,9 +512,7 @@ async def test_a_full_scope_read_of_genuinely_empty_values_still_writes(db, jamf
     ).scalar_one()
     assert real_device.supervised is True
     ea_count = (
-        select(func.count())
-        .select_from(DeviceExtensionAttribute)
-        .where(DeviceExtensionAttribute.device_id == real_device.id)
+        select(func.count()).select_from(DeviceExtensionAttribute).where(DeviceExtensionAttribute.device_id == real_device.id)
     )
     assert await _count(db, ea_count) == 3
 
@@ -559,25 +562,24 @@ async def test_page_size_flows_and_throttling_lands_on_the_run(db, jamf: FakeJam
     assert second.observations.get("throttled_429") == 1
 
     run = (
-        await db.execute(
-            select(Run)
-            .where(Run.mdm_connection_id == connection.id)
-            .order_by(Run.started_at.desc())
-            .limit(1)
-        )
-    ).scalars().first()
+        (await db.execute(select(Run).where(Run.mdm_connection_id == connection.id).order_by(Run.started_at.desc()).limit(1)))
+        .scalars()
+        .first()
+    )
     assert run is not None and run.observations.get("throttled_429") == 1
 
     # The collection's own override wins over the connection's setting (#73).
     from app.models.schema import Collection
 
     sweep_row = (
-        await db.execute(
-            select(Collection).where(
-                Collection.mdm_connection_id == connection.id, Collection.kind == "device_sweep"
+        (
+            await db.execute(
+                select(Collection).where(Collection.mdm_connection_id == connection.id, Collection.kind == "device_sweep")
             )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     assert sweep_row is not None
     sweep_row.page_size = 250
     await db.commit()
@@ -631,9 +633,7 @@ async def test_department_and_building_ids_resolve_to_names_and_filter(db, jamf:
     # The real 11.31 record's ids are null — an unassigned Mac, not a failed read.
     assert (unassigned.department_id, unassigned.building_id) == (None, None)
 
-    units = (
-        await db.execute(select(JamfOrgUnit).where(JamfOrgUnit.mdm_connection_id == connection.id))
-    ).scalars().all()
+    units = (await db.execute(select(JamfOrgUnit).where(JamfOrgUnit.mdm_connection_id == connection.id))).scalars().all()
     assert {(u.kind, u.external_id, u.name) for u in units} == {
         (DEPARTMENT, "7", "Engineering"),
         (DEPARTMENT, "9", "Sales"),
@@ -678,8 +678,6 @@ async def test_department_and_building_ids_resolve_to_names_and_filter(db, jamf:
     # database nothing else had ever written to. The assertion is that a rename updates
     # the row in place rather than inserting a second one, and that is per connection.
     renamed_count = await db.execute(
-        select(func.count())
-        .select_from(JamfOrgUnit)
-        .where(JamfOrgUnit.mdm_connection_id == connection.id)
+        select(func.count()).select_from(JamfOrgUnit).where(JamfOrgUnit.mdm_connection_id == connection.id)
     )
     assert renamed_count.scalar_one() == len(units)

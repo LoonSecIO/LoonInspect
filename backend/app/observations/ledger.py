@@ -25,7 +25,7 @@ import logging
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 
 from sqlalchemy import select, update
@@ -66,7 +66,7 @@ class RecordResult:
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 async def ensure_aperture(db: AsyncSession, *, connection_id: int, aperture: Aperture) -> str:
@@ -92,9 +92,7 @@ async def ensure_aperture(db: AsyncSession, *, connection_id: int, aperture: Ape
     return aperture.digest
 
 
-async def current_span(
-    db: AsyncSession, *, connection_id: int, subject_kind: str, subject_id: str
-) -> ObservationSpan | None:
+async def current_span(db: AsyncSession, *, connection_id: int, subject_kind: str, subject_id: str) -> ObservationSpan | None:
     result = await db.execute(
         select(ObservationSpan).where(
             ObservationSpan.mdm_connection_id == connection_id,
@@ -141,9 +139,7 @@ async def _write_sections(db: AsyncSession, sections: Iterable[SectionContent]) 
 
     if section_rows:
         await db.execute(
-            pg_insert(ObservationSection)
-            .values(section_rows)
-            .on_conflict_do_nothing(constraint="uq_observation_section_digest")
+            pg_insert(ObservationSection).values(section_rows).on_conflict_do_nothing(constraint="uq_observation_section_digest")
         )
 
     rows = list(entry_rows.values())
@@ -155,10 +151,7 @@ async def _write_sections(db: AsyncSession, sections: Iterable[SectionContent]) 
             statement.on_conflict_do_update(
                 constraint="uq_observation_entry_digest",
                 set_={"label": statement.excluded.label},
-                where=(
-                    statement.excluded.label.isnot(None)
-                    & ObservationEntry.label.is_distinct_from(statement.excluded.label)
-                ),
+                where=(statement.excluded.label.isnot(None) & ObservationEntry.label.is_distinct_from(statement.excluded.label)),
             )
         )
 
@@ -213,16 +206,12 @@ async def record_observation(
             return RecordResult(outcome="unchanged", head_digest=head_digest, span_id=current.id)
 
         previous_digests = current.section_digests or {}
-        changed = tuple(
-            name for name, content in observation.sections.items() if previous_digests.get(name) != content.digest
-        )
+        changed = tuple(name for name, content in observation.sections.items() if previous_digests.get(name) != content.digest)
         await _write_sections(db, (observation.sections[name] for name in changed))
 
         # Close the old span before the new insert so the partial unique index sees
         # one current row at a time. Explicit rather than left to flush ordering.
-        await db.execute(
-            update(ObservationSpan).where(ObservationSpan.id == current.id).values(is_current=False)
-        )
+        await db.execute(update(ObservationSpan).where(ObservationSpan.id == current.id).values(is_current=False))
         current.is_current = False
         previous_id: uuid.UUID | None = current.id
         outcome: Outcome = "changed"

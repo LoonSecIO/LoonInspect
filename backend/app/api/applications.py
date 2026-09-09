@@ -70,10 +70,7 @@ async def list_applications(
 
     if q:
         pattern = f"%{q}%"
-        grouped = grouped.having(
-            func.min(InstalledApp.name).ilike(pattern)
-            | func.min(InstalledApp.bundle_id).ilike(pattern)
-        )
+        grouped = grouped.having(func.min(InstalledApp.name).ilike(pattern) | func.min(InstalledApp.bundle_id).ilike(pattern))
 
     total = await db.scalar(select(func.count()).select_from(grouped.subquery()))
 

@@ -240,9 +240,7 @@ def test_the_anchor_is_one_sub_event_per_scalar_section_carrying_jamfs_object_wh
     each `{event, jobID, <wrapper>: Jamf's object, deviceMeta}` under its own string. A
     section read and genuinely empty (`userAndLocation` is `{}` on the real record, every
     user field null) is still one sub-event, so a full read always produces its seven."""
-    anchors = {
-        _wrapper_of(event["event"]): event for event in events if _wrapper_of(event["event"]) in ANCHORS
-    }
+    anchors = {_wrapper_of(event["event"]): event for event in events if _wrapper_of(event["event"]) in ANCHORS}
     assert set(anchors) == set(ANCHORS)
     for wrapper, event in anchors.items():
         body = event["event"]
@@ -379,7 +377,9 @@ def test_a_scoped_read_fans_out_only_the_wrappers_it_read(raw: dict, run: RunCon
     no app sub-event — never an empty one."""
     events = hec_events(_stored(raw, ("general", "hardware", "operating_system")))
     assert [event["sourcetype"] for event in events] == [
-        sourcetype("general"), sourcetype("hardware"), sourcetype("operatingSystem"),
+        sourcetype("general"),
+        sourcetype("hardware"),
+        sourcetype("operatingSystem"),
     ]
     assert all(set(event["event"]) == {*SUB_EVENT_KEYS, _wrapper_of(event["event"])} for event in events)
 
@@ -420,7 +420,9 @@ def test_a_wrapper_the_registry_does_not_name_is_delivered_unstamped_not_dropped
     assert len(events) == FIXTURE_SUB_EVENTS + 3
     unstamped = [event for event in events if "sourcetype" not in event]
     assert [event["event"].get("fonts") or event["event"].get("storage") for event in unstamped] == [
-        {"name": "Menlo"}, {"name": "Monaco"}, {"disks": []},
+        {"name": "Menlo"},
+        {"name": "Monaco"},
+        {"disks": []},
     ]
     for event in unstamped:
         assert set(SUB_EVENT_KEYS) <= set(event["event"])
@@ -486,12 +488,25 @@ def test_a_single_event_family_is_byte_identical_to_the_json_encoding_httpx_used
     against httpx's own rather than assumed: compact separators, `ensure_ascii=False`."""
     occurred = _WINDOW
     payloads = [
-        {"event": "device.inventory.changed", "deviceMeta": {"hostName": "Loon’s Mac mini"}, "addedApps": [],
-         ENVELOPE: envelope(occurred_at=occurred, host="Loon’s Mac mini", source=SOURCE)},
-        {"event": "run.completed", "jobID": str(_RUN_ID), "devicesTotal": 2,
-         ENVELOPE: envelope(occurred_at=occurred, host=None, source=SOURCE)},
-        {"event": "device.change", "subjectKind": "computer", "section": "security", "change": "changed",
-         ENVELOPE: envelope(occurred_at=occurred, host="mbp-ada", source=SOURCE)},
+        {
+            "event": "device.inventory.changed",
+            "deviceMeta": {"hostName": "Loon’s Mac mini"},
+            "addedApps": [],
+            ENVELOPE: envelope(occurred_at=occurred, host="Loon’s Mac mini", source=SOURCE),
+        },
+        {
+            "event": "run.completed",
+            "jobID": str(_RUN_ID),
+            "devicesTotal": 2,
+            ENVELOPE: envelope(occurred_at=occurred, host=None, source=SOURCE),
+        },
+        {
+            "event": "device.change",
+            "subjectKind": "computer",
+            "section": "security",
+            "change": "changed",
+            ENVELOPE: envelope(occurred_at=occurred, host="mbp-ada", source=SOURCE),
+        },
         {"event": TEST_EVENT_TYPE, "message": "LoonInspect destination test. Ünïcode survives."},
     ]
     for payload in payloads:
@@ -697,8 +712,14 @@ def test_the_request_ceiling_is_a_validated_setting_with_the_documented_default(
 # bytewise. `deviceMeta` sits mid-content, between `addedApps` and `occurredAt`, which is
 # the defect #286 was filed for.
 _JSONB_SCRAMBLED_DELTA = (
-    "event", "jobID", "provider", "addedApps", "deviceMeta",
-    "occurredAt", "removedApps", "deviceExternalID",
+    "event",
+    "jobID",
+    "provider",
+    "addedApps",
+    "deviceMeta",
+    "occurredAt",
+    "removedApps",
+    "deviceExternalID",
 )
 
 
@@ -727,7 +748,11 @@ def test_the_content_leads_the_head_follows_and_device_meta_trails_every_family(
         "event": "run.completed",
     }
     assert list(_build_body(SPLUNK, run)["event"]) == [
-        "status", "devicesTotal", "connectionID", "event", "jobID",
+        "status",
+        "devicesTotal",
+        "connectionID",
+        "event",
+        "jobID",
     ]
 
     # A family carrying no `deviceMeta` simply has no trailer; the head still comes last.

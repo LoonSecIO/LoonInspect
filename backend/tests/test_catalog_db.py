@@ -1,4 +1,3 @@
-# ruff: noqa: E501 — assertion lines read better unwrapped in this end-to-end test.
 """The app catalog's lookup and list against a real Postgres: the index rebuilt from the catalog
 slice, the local lookup by the hashes an installed app carries, and the tenant list with the
 fleet on it after a sweep of the fake tenant. Gated on RUN_DB_TESTS."""
@@ -34,9 +33,16 @@ async def indexed(db):
     for record in records:
         await db.merge(
             JamfPatchTitle(
-                id=record["id"], name=record["name"], publisher=record.get("publisher"), app_name=record.get("appName"),
-                bundle_id=record.get("bundleId"), current_version=record["currentVersion"], last_modified=record.get("lastModified") or "",
-                patches=record["patches"], requirements=record["requirements"], extension_attributes=record.get("extensionAttributes") or [],
+                id=record["id"],
+                name=record["name"],
+                publisher=record.get("publisher"),
+                app_name=record.get("appName"),
+                bundle_id=record.get("bundleId"),
+                current_version=record["currentVersion"],
+                last_modified=record.get("lastModified") or "",
+                patches=record["patches"],
+                requirements=record["requirements"],
+                extension_attributes=record.get("extensionAttributes") or [],
             )
         )
     await db.commit()
@@ -51,8 +57,11 @@ async def connection(db):
     from app.models.schema import AppCatalogEntry, Device, DeviceExtensionAttribute, InstalledApp, MdmConnection, MdmSyncState
 
     row = MdmConnection(
-        name=f"catalog jamf {uuidlib.uuid4().hex[:8]}", provider="jamf", base_url=HOST,
-        credentials_encrypted=json.dumps({"clientId": "client", "clientSecret": "secret"}), capability_webhooks=True,
+        name=f"catalog jamf {uuidlib.uuid4().hex[:8]}",
+        provider="jamf",
+        base_url=HOST,
+        credentials_encrypted=json.dumps({"clientId": "client", "clientSecret": "secret"}),
+        capability_webhooks=True,
     )
     db.add(row)
     await db.commit()
@@ -89,7 +98,12 @@ async def test_index_and_lookup(db, indexed) -> None:
 
     # The API's answer for a key the fleet has not shown: Jamf's side only.
     (answer,) = await _lookup(db, version_hashes=[xcode_hash], key_fulls=[], app_hashes=[])
-    assert answer.tenant is None and answer.jamf_title_ids == ["0C3"] and answer.is_latest is True and answer.this_version_seen is True
+    assert (
+        answer.tenant is None
+        and answer.jamf_title_ids == ["0C3"]
+        and answer.is_latest is True
+        and answer.this_version_seen is True
+    )
     (miss,) = await _lookup(db, version_hashes=["0" * 32], key_fulls=[], app_hashes=[])
     assert miss.tenant is None and miss.jamf == [] and miss.this_version_seen is False
 
@@ -117,8 +131,12 @@ async def test_list_and_lookup_after_a_sweep(db, jamf: FakeJamf, connection, ind
     await _forget_fixture_apps(db, jamf)
     result = await sync_connection(db, connection)
     assert result.ok
-    real = (await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == jamf.real["id"]))).scalar_one()
-    xcode = (await db.execute(select(InstalledApp).where(InstalledApp.device_id == real.id, InstalledApp.name == "Xcode.app"))).scalar_one()
+    real = (
+        await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == jamf.real["id"]))
+    ).scalar_one()
+    xcode = (
+        await db.execute(select(InstalledApp).where(InstalledApp.device_id == real.id, InstalledApp.name == "Xcode.app"))
+    ).scalar_one()
 
     listing = await list_catalog(db=db, q="Xcode", jamf="all", installed_only=True, page=1, page_size=50)
     (entry,) = [item for item in listing.items if item.version_hash == xcode.version_hash]

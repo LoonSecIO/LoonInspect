@@ -70,12 +70,10 @@ def cert_paths(tmp_path, monkeypatch: pytest.MonkeyPatch):
 
 
 class TestSelfSignedRenewal:
-    def test_fresh_pair_is_reused_not_regenerated(
-        self, cert_paths, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_fresh_pair_is_reused_not_regenerated(self, cert_paths, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(settings, "tls_mode", "self-signed")
         cert_path, key_path = cert_paths
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         original = _write_cert(
             cert_path,
             key_path,
@@ -95,7 +93,7 @@ class TestSelfSignedRenewal:
         expired — the case ruling 5 exists for."""
         monkeypatch.setattr(settings, "tls_mode", "self-signed")
         cert_path, key_path = cert_paths
-        not_before = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=400)
+        not_before = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=400)
         original = _write_cert(
             cert_path, key_path, not_valid_before=not_before, not_valid_after=not_before + datetime.timedelta(days=825)
         )
@@ -108,14 +106,12 @@ class TestSelfSignedRenewal:
         assert renewed.not_valid_before_utc > original.not_valid_before_utc
         assert any("renewed" in record.getMessage() for record in caplog.records)
 
-    def test_short_lived_cert_renews_at_half_life_not_183_days(
-        self, cert_paths, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_short_lived_cert_renews_at_half_life_not_183_days(self, cert_paths, monkeypatch: pytest.MonkeyPatch) -> None:
         """min(span/2, 183): a 90-day certificate is due at 45 days, not 183 — the
         reading under which the "or six months" clause is not dead weight."""
         monkeypatch.setattr(settings, "tls_mode", "self-signed")
         cert_path, key_path = cert_paths
-        not_before = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=50)
+        not_before = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=50)
         original = _write_cert(
             cert_path, key_path, not_valid_before=not_before, not_valid_after=not_before + datetime.timedelta(days=90)
         )
@@ -125,9 +121,7 @@ class TestSelfSignedRenewal:
         renewed = x509.load_pem_x509_certificate(cert_path.read_bytes())
         assert renewed.serial_number != original.serial_number
 
-    def test_new_cert_still_generated_when_none_exists(
-        self, cert_paths, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_new_cert_still_generated_when_none_exists(self, cert_paths, monkeypatch: pytest.MonkeyPatch) -> None:
         """The pre-existing first-boot path, unchanged by renewal landing beside it."""
         monkeypatch.setattr(settings, "tls_mode", "self-signed")
         cert_path, key_path = cert_paths
@@ -144,10 +138,8 @@ class TestProvidedCertIsNeverTouched:
     ) -> None:
         monkeypatch.setattr(settings, "tls_mode", "provided")
         cert_path, key_path = cert_paths
-        not_before = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=400)
-        _write_cert(
-            cert_path, key_path, not_valid_before=not_before, not_valid_after=not_before + datetime.timedelta(days=825)
-        )
+        not_before = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=400)
+        _write_cert(cert_path, key_path, not_valid_before=not_before, not_valid_after=not_before + datetime.timedelta(days=825))
         original_cert_bytes = cert_path.read_bytes()
         original_key_bytes = key_path.read_bytes()
 
@@ -158,35 +150,29 @@ class TestProvidedCertIsNeverTouched:
         assert result_key == key_path
         assert cert_path.read_bytes() == original_cert_bytes, "a provided cert must never be overwritten"
         assert key_path.read_bytes() == original_key_bytes, "a provided key must never be overwritten"
-        assert any(
-            record.levelname == "WARNING" and "renewal" in record.getMessage() for record in caplog.records
-        )
+        assert any(record.levelname == "WARNING" and "renewal" in record.getMessage() for record in caplog.records)
 
     def test_expired_logs_loudly_and_is_left_alone(
         self, cert_paths, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
     ) -> None:
         monkeypatch.setattr(settings, "tls_mode", "provided")
         cert_path, key_path = cert_paths
-        not_before = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=900)
-        _write_cert(
-            cert_path, key_path, not_valid_before=not_before, not_valid_after=not_before + datetime.timedelta(days=825)
-        )
+        not_before = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=900)
+        _write_cert(cert_path, key_path, not_valid_before=not_before, not_valid_after=not_before + datetime.timedelta(days=825))
         original_cert_bytes = cert_path.read_bytes()
 
         with caplog.at_level("WARNING", logger="app.core.tls"):
             tls.ensure_certificate()
 
         assert cert_path.read_bytes() == original_cert_bytes, "an expired provided cert must never be overwritten"
-        assert any(
-            record.levelname == "ERROR" and "EXPIRED" in record.getMessage() for record in caplog.records
-        )
+        assert any(record.levelname == "ERROR" and "EXPIRED" in record.getMessage() for record in caplog.records)
 
     def test_fresh_provided_cert_is_silent(
         self, cert_paths, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
     ) -> None:
         monkeypatch.setattr(settings, "tls_mode", "provided")
         cert_path, key_path = cert_paths
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         _write_cert(cert_path, key_path, not_valid_before=now, not_valid_after=now + datetime.timedelta(days=825))
 
         with caplog.at_level("WARNING", logger="app.core.tls"):

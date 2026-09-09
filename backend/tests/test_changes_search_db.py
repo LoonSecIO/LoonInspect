@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import os
 import uuid as uuidlib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -39,7 +39,7 @@ NEIGHBOUR_TENANT_ID = uuidlib.UUID("00000000-0000-0000-0000-0000000000a7")
 
 ADMIN = ("admin@artifact-search.example.com", "artifact-search-password")
 
-BASE = datetime(2026, 8, 30, 12, 0, tzinfo=timezone.utc)
+BASE = datetime(2026, 8, 30, 12, 0, tzinfo=UTC)
 
 
 def _change(connection_id: int, **kwargs):
@@ -96,33 +96,82 @@ async def seeded():
         db.add_all(
             [
                 # The needle, on two different Macs an hour apart.
-                _change(mine.id, subject_id="101", subject_label="design-mbp", serial_number="ARTSER101",
-                        section="applications", entry_kind="application",
-                        entry_identity=_app("Wireshark", "org.wireshark.Wireshark")),
-                _change(mine.id, subject_id="102", subject_label="finance-mini", serial_number="ARTSER102",
-                        section="applications", entry_kind="application", observed_at=BASE + timedelta(hours=1),
-                        collected_at=BASE + timedelta(hours=1),
-                        entry_identity=_app("Wireshark", "org.wireshark.Wireshark")),
+                _change(
+                    mine.id,
+                    subject_id="101",
+                    subject_label="design-mbp",
+                    serial_number="ARTSER101",
+                    section="applications",
+                    entry_kind="application",
+                    entry_identity=_app("Wireshark", "org.wireshark.Wireshark"),
+                ),
+                _change(
+                    mine.id,
+                    subject_id="102",
+                    subject_label="finance-mini",
+                    serial_number="ARTSER102",
+                    section="applications",
+                    entry_kind="application",
+                    observed_at=BASE + timedelta(hours=1),
+                    collected_at=BASE + timedelta(hours=1),
+                    entry_identity=_app("Wireshark", "org.wireshark.Wireshark"),
+                ),
                 # A high-level Wireshark-adjacent row, for the level composition check.
-                _change(mine.id, subject_id="103", subject_label="lab-mbp", serial_number="ARTSER103",
-                        section="applications", entry_kind="application", level="high",
-                        entry_identity=_app("WiresharkChmodBPF", "org.wireshark.ChmodBPF")),
+                _change(
+                    mine.id,
+                    subject_id="103",
+                    subject_label="lab-mbp",
+                    serial_number="ARTSER103",
+                    section="applications",
+                    entry_kind="application",
+                    level="high",
+                    entry_identity=_app("WiresharkChmodBPF", "org.wireshark.ChmodBPF"),
+                ),
                 # Devices that did NOT install it.
-                _change(mine.id, subject_id="104", subject_label="design-mbp-two", serial_number="ARTSER104",
-                        section="applications", entry_kind="application",
-                        entry_identity=_app("Slack", "com.tinyspeck.slackmacgap")),
+                _change(
+                    mine.id,
+                    subject_id="104",
+                    subject_label="design-mbp-two",
+                    serial_number="ARTSER104",
+                    section="applications",
+                    entry_kind="application",
+                    entry_identity=_app("Slack", "com.tinyspeck.slackmacgap"),
+                ),
                 # An entry kind whose name lives in entry_label, not in the identity.
-                _change(mine.id, subject_id="105", subject_label="hr-mba", serial_number="ARTSER105",
-                        section="group_memberships", entry_kind="group_membership",
-                        entry_identity={"groupId": "12"}, entry_label="Packet Capture Operators"),
+                _change(
+                    mine.id,
+                    subject_id="105",
+                    subject_label="hr-mba",
+                    serial_number="ARTSER105",
+                    section="group_memberships",
+                    entry_kind="group_membership",
+                    entry_identity={"groupId": "12"},
+                    entry_label="Packet Capture Operators",
+                ),
                 # A local account, named only in the identity.
-                _change(mine.id, subject_id="106", subject_label="ops-mini", serial_number="ARTSER106",
-                        section="local_user_accounts", entry_kind="local_user_account", level="high",
-                        entry_identity={"uid": "503", "username": "pcap_service"}),
+                _change(
+                    mine.id,
+                    subject_id="106",
+                    subject_label="ops-mini",
+                    serial_number="ARTSER106",
+                    section="local_user_accounts",
+                    entry_kind="local_user_account",
+                    level="high",
+                    entry_identity={"uid": "503", "username": "pcap_service"},
+                ),
                 # A field change: no entry at all, so `artifact` must never surface it.
-                _change(mine.id, subject_id="107", subject_label="wireshark-lab-mac", serial_number="ARTSER107",
-                        section="security", field="firewallEnabled", change="changed", level="high",
-                        old_value={"value": True}, new_value={"value": False}),
+                _change(
+                    mine.id,
+                    subject_id="107",
+                    subject_label="wireshark-lab-mac",
+                    serial_number="ARTSER107",
+                    section="security",
+                    field="firewallEnabled",
+                    change="changed",
+                    level="high",
+                    old_value={"value": True},
+                    new_value={"value": False},
+                ),
             ]
         )
         await db.commit()
@@ -138,12 +187,24 @@ async def seeded():
         ids["theirs"] = theirs.id
         db.add_all(
             [
-                _change(theirs.id, subject_id="901", subject_label="neighbour-mbp", serial_number="NBRSER901",
-                        section="applications", entry_kind="application",
-                        entry_identity=_app("Wireshark", "org.wireshark.Wireshark")),
-                _change(theirs.id, subject_id="902", subject_label="neighbour-mini", serial_number="NBRSER902",
-                        section="local_user_accounts", entry_kind="local_user_account",
-                        entry_identity={"uid": "504", "username": "pcap_service"}),
+                _change(
+                    theirs.id,
+                    subject_id="901",
+                    subject_label="neighbour-mbp",
+                    serial_number="NBRSER901",
+                    section="applications",
+                    entry_kind="application",
+                    entry_identity=_app("Wireshark", "org.wireshark.Wireshark"),
+                ),
+                _change(
+                    theirs.id,
+                    subject_id="902",
+                    subject_label="neighbour-mini",
+                    serial_number="NBRSER902",
+                    section="local_user_accounts",
+                    entry_kind="local_user_account",
+                    entry_identity={"uid": "504", "username": "pcap_service"},
+                ),
             ]
         )
         await db.commit()

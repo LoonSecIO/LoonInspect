@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import os
 import uuid as uuidlib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -80,7 +80,7 @@ async def connection(db):
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 async def _sweep_collection(db, connection):
@@ -95,10 +95,10 @@ async def _latest_run(db, connection_id):
     from app.models.schema import Run
 
     run = (
-        await db.execute(
-            select(Run).where(Run.mdm_connection_id == connection_id).order_by(Run.started_at.desc()).limit(1)
-        )
-    ).scalars().one()
+        (await db.execute(select(Run).where(Run.mdm_connection_id == connection_id).order_by(Run.started_at.desc()).limit(1)))
+        .scalars()
+        .one()
+    )
     await db.refresh(run)
     return run
 
@@ -109,10 +109,10 @@ async def _run_completed_events(db, run_id) -> list:
     from app.models.schema import EventOutbox
 
     rows = (
-        await db.execute(
-            select(EventOutbox).where(EventOutbox.event_type == "run.completed").order_by(EventOutbox.id)
-        )
-    ).scalars().all()
+        (await db.execute(select(EventOutbox).where(EventOutbox.event_type == "run.completed").order_by(EventOutbox.id)))
+        .scalars()
+        .all()
+    )
     return [row for row in rows if row.payload.get("jobID") == str(run_id)]
 
 
@@ -121,10 +121,10 @@ async def _run_failed_events(db, run_id) -> list:
     from app.models.schema import EventOutbox
 
     rows = (
-        await db.execute(
-            select(EventOutbox).where(EventOutbox.event_type == "run.failed").order_by(EventOutbox.id)
-        )
-    ).scalars().all()
+        (await db.execute(select(EventOutbox).where(EventOutbox.event_type == "run.failed").order_by(EventOutbox.id)))
+        .scalars()
+        .all()
+    )
     return [row for row in rows if row.payload.get("jobID") == str(run_id)]
 
 
@@ -160,9 +160,7 @@ async def test_one_dead_device_does_not_kill_the_sweep(db, jamf: FakeJamf, conne
     assert result.devices_failed == 1
     assert seen["calls"] == 5  # every device was attempted
 
-    devices = (
-        await db.execute(select(Device.external_id).where(Device.mdm_connection_id == connection.id))
-    ).scalars().all()
+    devices = (await db.execute(select(Device.external_id).where(Device.mdm_connection_id == connection.id))).scalars().all()
     assert len(devices) == 4 and seen["victim"] not in devices
 
     run = await _latest_run(db, connection.id)
@@ -172,9 +170,7 @@ async def test_one_dead_device_does_not_kill_the_sweep(db, jamf: FakeJamf, conne
     assert run.devices_failed == 1
 
     # The failure is in the run log with the device's identity and the error class.
-    lines = (
-        await db.execute(select(RunLogLine).where(RunLogLine.run_id == run.id).order_by(RunLogLine.id))
-    ).scalars().all()
+    lines = (await db.execute(select(RunLogLine).where(RunLogLine.run_id == run.id).order_by(RunLogLine.id))).scalars().all()
     failure_lines = [line for line in lines if line.message == "device failed; sweep continues"]
     assert len(failure_lines) == 1
     assert failure_lines[0].level == "warning"
@@ -192,8 +188,17 @@ async def test_one_dead_device_does_not_kill_the_sweep(db, jamf: FakeJamf, conne
     payload = dict(events[0].payload)
     payload.pop(ENVELOPE)
     assert set(payload) == {
-        "event", "jobID", "connectionID", "connectionName", "trigger", "comparison",
-        "occurredAt", "devicesTotal", "devicesProcessed", "devicesFailed", "status",
+        "event",
+        "jobID",
+        "connectionID",
+        "connectionName",
+        "trigger",
+        "comparison",
+        "occurredAt",
+        "devicesTotal",
+        "devicesProcessed",
+        "devicesFailed",
+        "status",
     }
     assert payload["status"] == "succeeded"
     assert payload["devicesTotal"] == 5
@@ -225,9 +230,7 @@ async def test_one_dead_device_does_not_kill_the_sweep(db, jamf: FakeJamf, conne
     assert ENVELOPE not in body["event"]
 
 
-async def test_failures_past_the_threshold_fail_the_run_and_stop_it(
-    db, jamf: FakeJamf, connection, monkeypatch
-) -> None:
+async def test_failures_past_the_threshold_fail_the_run_and_stop_it(db, jamf: FakeJamf, connection, monkeypatch) -> None:
     """A fleet-wide outage: every device fails. The run must stop just past the
     tolerance — not iterate the remaining fleet — and be failed with the count in its
     error, with the same accounting on the wire."""
@@ -298,9 +301,7 @@ async def test_failures_past_the_threshold_fail_the_run_and_stop_it(
     assert body["time"] == hints["time"]
 
 
-async def test_a_reclaim_still_aborts_the_run_and_is_not_a_device_failure(
-    db, jamf: FakeJamf, connection, monkeypatch
-) -> None:
+async def test_a_reclaim_still_aborts_the_run_and_is_not_a_device_failure(db, jamf: FakeJamf, connection, monkeypatch) -> None:
     """The #94 fence through the #92 catch: mid-sweep, the run is reclaimed out from
     under the process (the exact transition _reclaim_stale performs) and its in-memory
     heartbeat aged past the throttle, so the loop's next beat raises RunReclaimed. The
@@ -372,10 +373,8 @@ async def test_a_webhook_ingest_emits_run_completed(db, jamf: FakeJamf, connecti
     assert result is not None
 
     run = (
-        await db.execute(
-            select(Run).where(Run.mdm_connection_id == connection.id, Run.lock_class == "webhook")
-        )
-    ).scalars().one()
+        (await db.execute(select(Run).where(Run.mdm_connection_id == connection.id, Run.lock_class == "webhook"))).scalars().one()
+    )
     # finish() writes the row with a bulk UPDATE; the identity-mapped instance from
     # acquire is stale without a refresh.
     await db.refresh(run)
@@ -390,8 +389,17 @@ async def test_a_webhook_ingest_emits_run_completed(db, jamf: FakeJamf, connecti
     emitted = dict(events[0].payload)
     emitted.pop(ENVELOPE)
     assert set(emitted) == {
-        "event", "jobID", "connectionID", "connectionName", "trigger", "comparison",
-        "occurredAt", "devicesTotal", "devicesProcessed", "devicesFailed", "status",
+        "event",
+        "jobID",
+        "connectionID",
+        "connectionName",
+        "trigger",
+        "comparison",
+        "occurredAt",
+        "devicesTotal",
+        "devicesProcessed",
+        "devicesFailed",
+        "status",
     }
     assert emitted["status"] == "succeeded"
     assert emitted["trigger"] == "webhook"

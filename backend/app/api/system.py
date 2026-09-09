@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
@@ -53,12 +53,7 @@ async def _sharing_out(db: AsyncSession, row) -> DataSharingOut:
     # AI-inference rows share the log but are not exchanges; "last exchange" must
     # not start reporting an inference call as one.
     last = (
-        await db.execute(
-            select(ShareLog)
-            .where(ShareLog.tier != AI_SHARE_TIER)
-            .order_by(desc(ShareLog.occurred_at))
-            .limit(1)
-        )
+        await db.execute(select(ShareLog).where(ShareLog.tier != AI_SHARE_TIER).order_by(desc(ShareLog.occurred_at)).limit(1))
     ).scalar_one_or_none()
     return DataSharingOut(
         tier=row.tier,
@@ -86,9 +81,7 @@ async def get_data_sharing(db: AsyncSession = Depends(get_db)) -> DataSharingOut
     response_model=DataSharingOut,
     dependencies=[Depends(require(Permission.SYSTEM_WRITE))],
 )
-async def update_data_sharing(
-    payload: DataSharingUpdate, db: AsyncSession = Depends(get_db)
-) -> DataSharingOut:
+async def update_data_sharing(payload: DataSharingUpdate, db: AsyncSession = Depends(get_db)) -> DataSharingOut:
     """Persisted even while COMMUNITY_SHARING=false: the env override wins at
     exchange time, but an operator's recorded choice should survive the override
     being lifted rather than silently resetting."""
@@ -99,7 +92,7 @@ async def update_data_sharing(
         row.exclude_globs = [g.strip() for g in payload.exclude_globs if g.strip()]
     if payload.ai_inference is not None:
         row.ai_inference = payload.ai_inference
-    row.updated_at = datetime.now(timezone.utc)
+    row.updated_at = datetime.now(UTC)
     await db.commit()
 
     audit(
@@ -122,7 +115,7 @@ async def reset_submission_uuid(db: AsyncSession = Depends(get_db)) -> DataShari
     that promise. The old UUID's snapshots age out server-side on their own."""
     row = await get_or_create_settings(db)
     row.submission_uuid = uuid.uuid4()
-    row.updated_at = datetime.now(timezone.utc)
+    row.updated_at = datetime.now(UTC)
     await db.commit()
 
     audit(AuditAction.SHARING_UUID_RESET, target_type="data_sharing")
@@ -154,15 +147,9 @@ async def download_share_log(
     this thing does", and nothing in here is secret (it already left)."""
     import json
 
-    since = datetime.now(timezone.utc) - timedelta(days=days)
+    since = datetime.now(UTC) - timedelta(days=days)
     rows = (
-        (
-            await db.execute(
-                select(ShareLog).where(ShareLog.occurred_at >= since).order_by(ShareLog.occurred_at)
-            )
-        )
-        .scalars()
-        .all()
+        (await db.execute(select(ShareLog).where(ShareLog.occurred_at >= since).order_by(ShareLog.occurred_at))).scalars().all()
     )
     lines = [
         json.dumps(

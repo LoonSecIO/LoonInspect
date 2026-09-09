@@ -4,7 +4,7 @@ import logging
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy import select, update
@@ -70,7 +70,7 @@ def as_utc(value: datetime | None) -> datetime | None:
     """
     if value is None:
         return None
-    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 def is_public_path(path: str) -> bool:
@@ -127,7 +127,7 @@ async def create_session(
 ) -> tuple[UserSession, str]:
     """Returns the persisted session and the raw cookie value, which is the only time
     the raw token exists — only its hash is stored."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     raw_token = generate_token()
 
     session = UserSession(
@@ -174,7 +174,7 @@ async def tenant_for_api_token(db: AsyncSession, secret_hash: str) -> uuid.UUID 
 
 
 async def revoke_session(db: AsyncSession, session: UserSession) -> None:
-    session.revoked_at = datetime.now(timezone.utc)
+    session.revoked_at = datetime.now(UTC)
 
 
 def scoped_permissions(account: Account, scopes: list[str] | None) -> frozenset[Permission]:
@@ -207,7 +207,7 @@ async def revoke_all_tokens(db: AsyncSession, account_id: str) -> None:
     await db.execute(
         update(ApiToken)
         .where(ApiToken.account_id == account_id, ApiToken.revoked_at.is_(None))
-        .values(revoked_at=datetime.now(timezone.utc))
+        .values(revoked_at=datetime.now(UTC))
     )
 
 
@@ -221,7 +221,7 @@ async def revoke_all_sessions(db: AsyncSession, account_id: str) -> None:
     await db.execute(
         update(UserSession)
         .where(UserSession.account_id == account_id, UserSession.revoked_at.is_(None))
-        .values(revoked_at=datetime.now(timezone.utc))
+        .values(revoked_at=datetime.now(UTC))
     )
 
 
@@ -275,7 +275,7 @@ async def resolve_session(db: AsyncSession, raw_token: str) -> UserSession | Non
         return None
 
     expires_at = as_utc(session.expires_at)
-    if expires_at is not None and expires_at <= datetime.now(timezone.utc):
+    if expires_at is not None and expires_at <= datetime.now(UTC):
         return None
 
     return session
@@ -374,9 +374,7 @@ async def authenticate(request: Request, response: Response, db: AsyncSession = 
         )
 
 
-async def _authenticate_session(
-    db: AsyncSession, request: Request, response: Response
-) -> Principal | None:
+async def _authenticate_session(db: AsyncSession, request: Request, response: Response) -> Principal | None:
     raw_token = request.cookies.get(SESSION_COOKIE)
     if not raw_token:
         return None
@@ -393,7 +391,7 @@ async def _authenticate_session(
         await db.commit()
         return None
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if now - as_utc(session.last_seen_at) > _SESSION_TOUCH_INTERVAL:
         session.last_seen_at = now
         session.expires_at = session_expiry(now)
@@ -445,7 +443,7 @@ async def _authenticate_bearer(db: AsyncSession, raw: str) -> Principal | None:
     if not tokens_equal(token.token_hash, secret_hash):
         return None
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires_at = as_utc(token.expires_at)
     if expires_at is not None and expires_at <= now:
         return None
@@ -510,9 +508,7 @@ def require(*permissions: Permission) -> Callable[[Request], Principal]:
                 method=request.method,
                 missing_permissions=missing,
             )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
-            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
         return principal
 

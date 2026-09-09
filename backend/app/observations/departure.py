@@ -94,7 +94,9 @@ async def reconcile_census(
                     ObservationSpan.is_current.is_(True),
                 )
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     open_rows = {
         row.subject_id: row
@@ -106,7 +108,9 @@ async def reconcile_census(
                     SubjectDeparture.returned_at.is_(None),
                 )
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     }
     # The present population: what the ledger holds minus what has already departed. A
     # fleet that legitimately shrank over months must not keep tripping the breaker.
@@ -160,10 +164,14 @@ async def open_departures(db: AsyncSession, *, subject_kind: str) -> dict[tuple[
     """`(connection id, subject id) -> departed_at` for every subject of the kind that is
     currently gone — what a surface listing current spans consults to say so."""
     rows = (
-        await db.execute(
-            select(SubjectDeparture).where(
-                SubjectDeparture.subject_kind == subject_kind, SubjectDeparture.returned_at.is_(None)
+        (
+            await db.execute(
+                select(SubjectDeparture).where(
+                    SubjectDeparture.subject_kind == subject_kind, SubjectDeparture.returned_at.is_(None)
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return {(row.mdm_connection_id, row.subject_id): row.departed_at for row in rows}

@@ -96,9 +96,7 @@ def envelope(*, occurred_at, host: str | None, source: str | None) -> dict[str, 
     return {key: value for key, value in hints.items() if value is not None}
 
 
-def hec_event(
-    body: Mapping[str, object], hints: Mapping[str, object], *, sourcetype: str | None
-) -> dict[str, object]:
+def hec_event(body: Mapping[str, object], hints: Mapping[str, object], *, sourcetype: str | None) -> dict[str, object]:
     """One HEC event object: `{"event": body, ["sourcetype": …], time, host, source}`.
 
     HEC's JSON collector endpoint expects the event wrapped, not posted bare — without the

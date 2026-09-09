@@ -21,6 +21,7 @@ from app.core.content_keys import app_full_key, app_title_key, hw_key, os_key
 
 # The vector table from docs/data-sharing.md, verbatim.
 
+
 def test_app_title_vector() -> None:
     assert (
         app_title_key("Google Chrome", "com.google.Chrome")
@@ -43,17 +44,11 @@ def test_null_short_version_vector() -> None:
 
 
 def test_os_vector() -> None:
-    assert (
-        os_key("macos", "14.6.1", "23G93")
-        == "v1:f74565fbdda8b8036799e1e3a67b22ee909acac8840f2a6ae040b3d5a4e18867"
-    )
+    assert os_key("macos", "14.6.1", "23G93") == "v1:f74565fbdda8b8036799e1e3a67b22ee909acac8840f2a6ae040b3d5a4e18867"
 
 
 def test_hw_vector() -> None:
-    assert (
-        hw_key("Mac15,7", "arm64")
-        == "v1:efaeacc74866d7664560069b9b8f5b63f3cbd30f2d410cad4358ded71d3a2840"
-    )
+    assert hw_key("Mac15,7", "arm64") == "v1:efaeacc74866d7664560069b9b8f5b63f3cbd30f2d410cad4358ded71d3a2840"
 
 
 # Semantic rules the vectors alone cannot pin down.
@@ -79,9 +74,7 @@ def test_null_and_empty_short_version_are_one_key() -> None:
 
 
 def test_whitespace_is_stripped_before_hashing() -> None:
-    assert app_title_key("  Google Chrome  ", "com.google.Chrome") == app_title_key(
-        "Google Chrome", "com.google.Chrome"
-    )
+    assert app_title_key("  Google Chrome  ", "com.google.Chrome") == app_title_key("Google Chrome", "com.google.Chrome")
 
 
 def test_separator_in_input_cannot_forge_a_boundary() -> None:

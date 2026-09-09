@@ -297,10 +297,14 @@ def test_days_oldest_published_counts_from_publication_not_from_when_we_learned_
     stale_corpus = _covered_corpus(_snapshot(raw), [old], as_of=date(2026, 1, 1))
     fresh = _block(_snapshot(raw, corpus=fresh_corpus))
     stale = _block(_snapshot(raw, corpus=stale_corpus))
-    assert fresh["daysOldestPublished"] == stale["daysOldestPublished"] == {
-        "total": 2000,
-        "severity": {"critical": None, "high": 2000, "medium": None, "low": None},
-    }
+    assert (
+        fresh["daysOldestPublished"]
+        == stale["daysOldestPublished"]
+        == {
+            "total": 2000,
+            "severity": {"critical": None, "high": 2000, "medium": None, "low": None},
+        }
+    )
     assert fresh["corpusAsOf"] != stale["corpusAsOf"], "only the generation stamp moved"
 
     recent = _block(_snapshot(raw, corpus=_covered_corpus(_snapshot(raw), [_finding("CVE-2026-3000", days_old=7)])))

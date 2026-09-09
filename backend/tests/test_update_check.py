@@ -96,9 +96,7 @@ def _stamp(monkeypatch, version: str) -> None:
         ("2026.08.20+" + "d" * 40, True, "full stamp, older commit"),
     ],
 )
-async def test_behindness_is_decided_correctly_for_both_stamp_widths(
-    monkeypatch, stamp, expected_available, case
-) -> None:
+async def test_behindness_is_decided_correctly_for_both_stamp_widths(monkeypatch, stamp, expected_available, case) -> None:
     from app.core.update_check import get_update_status
 
     _stamp(monkeypatch, stamp)

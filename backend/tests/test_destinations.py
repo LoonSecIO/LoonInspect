@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 import uuid as uuidlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -84,9 +84,7 @@ async def test_subscribed_destination_receives_device_change(db) -> None:
     from app.models.schema import Destination, EventOutbox, OutboxDelivery
 
     tag = uuidlib.uuid4().hex[:8]
-    subscriber = Destination(
-        name=f"changes siem {tag}", url="https://siem.example/hook", subscribed_events=[EVENT_TYPE]
-    )
+    subscriber = Destination(name=f"changes siem {tag}", url="https://siem.example/hook", subscribed_events=[EVENT_TYPE])
     bystander = Destination(
         name=f"inventory only {tag}", url="https://other.example/hook", subscribed_events=["device.inventory.changed"]
     )
@@ -100,9 +98,7 @@ async def test_subscribed_destination_receives_device_change(db) -> None:
     try:
         await fan_out_pending(db)
 
-        deliveries = (
-            await db.execute(select(OutboxDelivery).where(OutboxDelivery.outbox_event_id == event_id))
-        ).scalars().all()
+        deliveries = (await db.execute(select(OutboxDelivery).where(OutboxDelivery.outbox_event_id == event_id))).scalars().all()
         destination_ids = {d.destination_id for d in deliveries}
         assert subscriber_id in destination_ids
         assert bystander_id not in destination_ids
@@ -110,8 +106,7 @@ async def test_subscribed_destination_receives_device_change(db) -> None:
         await db.rollback()
         await db.execute(
             delete(OutboxDelivery).where(
-                OutboxDelivery.destination_id.in_([subscriber_id, bystander_id])
-                | (OutboxDelivery.outbox_event_id == event_id)
+                OutboxDelivery.destination_id.in_([subscriber_id, bystander_id]) | (OutboxDelivery.outbox_event_id == event_id)
             )
         )
         await db.execute(delete(EventOutbox).where(EventOutbox.id == event_id))
@@ -137,21 +132,15 @@ async def test_migration_appends_run_failed_to_explicit_subscription_lists(db) -
 
     from app.models.schema import Destination
 
-    path = os.path.join(
-        os.path.dirname(__file__), "..", "migrations", "versions", "a9d4c7e1f3b8_run_failed_default_on.py"
-    )
+    path = os.path.join(os.path.dirname(__file__), "..", "migrations", "versions", "a9d4c7e1f3b8_run_failed_default_on.py")
     spec = importlib.util.spec_from_file_location("migration_a9d4c7e1f3b8", path)
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
 
     tag = uuidlib.uuid4().hex[:8]
-    explicit = Destination(
-        name=f"pre-ruling siem {tag}", url="https://siem.example/hook", subscribed_events=["device.change"]
-    )
+    explicit = Destination(name=f"pre-ruling siem {tag}", url="https://siem.example/hook", subscribed_events=["device.change"])
     unfiltered = Destination(name=f"everything {tag}", url="https://all.example/hook", subscribed_events=None)
-    already = Destination(
-        name=f"hand-subscribed {tag}", url="https://pager.example/hook", subscribed_events=["run.failed"]
-    )
+    already = Destination(name=f"hand-subscribed {tag}", url="https://pager.example/hook", subscribed_events=["run.failed"])
     db.add_all([explicit, unfiltered, already])
     await db.commit()
     ids = {"explicit": explicit.id, "unfiltered": unfiltered.id, "already": already.id}
@@ -165,9 +154,7 @@ async def test_migration_appends_run_failed_to_explicit_subscription_lists(db) -
         subs = dict(
             (
                 await db.execute(
-                    select(Destination.id, Destination.subscribed_events).where(
-                        Destination.id.in_(list(ids.values()))
-                    )
+                    select(Destination.id, Destination.subscribed_events).where(Destination.id.in_(list(ids.values())))
                 )
             ).all()
         )
@@ -178,9 +165,7 @@ async def test_migration_appends_run_failed_to_explicit_subscription_lists(db) -
         # And the downgrade takes it back out without disturbing the rest of the list.
         await db.execute(text(migration.REMOVE_RUN_FAILED))
         await db.commit()
-        removed = (
-            await db.execute(select(Destination.subscribed_events).where(Destination.id == ids["explicit"]))
-        ).scalar_one()
+        removed = (await db.execute(select(Destination.subscribed_events).where(Destination.id == ids["explicit"]))).scalar_one()
         assert removed == ["device.change"]
     finally:
         await db.rollback()
@@ -199,7 +184,9 @@ def test_splunk_hec_derives_its_auth_type_when_the_caller_omits_it() -> None:
     from app.schemas.destinations import DestinationCreate
 
     created = DestinationCreate(
-        name="splunk", type="splunk_hec", url="https://splunk.example:8088/services/collector",
+        name="splunk",
+        type="splunk_hec",
+        url="https://splunk.example:8088/services/collector",
         auth_secret="token",
     )
     assert created.auth_type == "splunk_hec"
@@ -210,8 +197,10 @@ def test_every_fixed_type_derives_its_own_auth_type() -> None:
 
     for destination_type, expected in (("elastic", "elastic_api_key"), ("runreveal", "bearer")):
         created = DestinationCreate(
-            name=destination_type, type=destination_type,
-            url="https://example.test/ingest", auth_secret="s",
+            name=destination_type,
+            type=destination_type,
+            url="https://example.test/ingest",
+            auth_secret="s",
         )
         assert created.auth_type == expected
 
@@ -221,8 +210,11 @@ def test_generic_webhook_still_defaults_to_none_and_lets_the_operator_choose() -
 
     assert DestinationCreate(name="hook", url="https://example.test/hook").auth_type == "none"
     chosen = DestinationCreate(
-        name="hook", type="generic_webhook", url="https://example.test/hook",
-        auth_type="bearer", auth_secret="s",
+        name="hook",
+        type="generic_webhook",
+        url="https://example.test/hook",
+        auth_type="bearer",
+        auth_secret="s",
     )
     assert chosen.auth_type == "bearer"
 
@@ -232,9 +224,11 @@ def test_contradicting_a_fixed_auth_type_is_refused_and_names_the_right_one() ->
 
     with pytest.raises(ValidationError) as exc:
         DestinationCreate(
-            name="splunk", type="splunk_hec",
+            name="splunk",
+            type="splunk_hec",
             url="https://splunk.example:8088/services/collector",
-            auth_type="none", auth_secret="token",
+            auth_type="none",
+            auth_secret="token",
         )
     assert "splunk_hec" in str(exc.value)
 
@@ -246,7 +240,8 @@ def test_a_splunk_destination_without_a_secret_is_refused() -> None:
 
     with pytest.raises(ValidationError):
         DestinationCreate(
-            name="splunk", type="splunk_hec",
+            name="splunk",
+            type="splunk_hec",
             url="https://splunk.example:8088/services/collector",
         )
 
@@ -267,6 +262,8 @@ def test_the_openapi_schema_publishes_the_four_working_types() -> None:
     published = schema["properties"]["type"]
     values = published.get("enum") or schema["$defs"][published["allOf"][0]["$ref"].rsplit("/", 1)[-1]]["enum"]
     assert set(values) == {"generic_webhook", "splunk_hec", "elastic", "runreveal"}
+
+
 # --- delivery diagnosability --------------------------------------------------------
 
 
@@ -287,16 +284,26 @@ def test_the_test_event_type_is_not_subscribable() -> None:
 def test_destination_out_defaults_its_health_fields() -> None:
     """A destination with no deliveries yet reports a clean bill rather than nulls the
     UI has to special-case."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from app.schemas.destinations import DestinationOut
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     out = DestinationOut(
-        id=1, name="siem", type="generic_webhook", url="https://siem.example/hook",
-        auth_type="none", auth_header_name=None, elastic_index=None, has_secret=False,
-        enabled=True, subscribed_events=None, last_success_at=None, last_failure_at=None,
-        created_at=now, updated_at=now,
+        id=1,
+        name="siem",
+        type="generic_webhook",
+        url="https://siem.example/hook",
+        auth_type="none",
+        auth_header_name=None,
+        elastic_index=None,
+        has_secret=False,
+        enabled=True,
+        subscribed_events=None,
+        last_success_at=None,
+        last_failure_at=None,
+        created_at=now,
+        updated_at=now,
     )
     assert out.last_error is None and out.pending_count == 0 and out.failed_count == 0
 
@@ -320,13 +327,18 @@ async def test_health_reports_the_last_error_and_the_queue_depth(db) -> None:
     await db.commit()
     destination_id, event_id = destination.id, event.id
 
-    db.add_all([
-        OutboxDelivery(
-            outbox_event_id=event_id, destination_id=destination_id, status="pending",
-            attempt_count=1, last_error='HTTP 403: {"text":"Invalid token","code":4}',
-            last_attempted_at=datetime.now(timezone.utc),
-        ),
-    ])
+    db.add_all(
+        [
+            OutboxDelivery(
+                outbox_event_id=event_id,
+                destination_id=destination_id,
+                status="pending",
+                attempt_count=1,
+                last_error='HTTP 403: {"text":"Invalid token","code":4}',
+                last_attempted_at=datetime.now(UTC),
+            ),
+        ]
+    )
     await db.commit()
 
     try:

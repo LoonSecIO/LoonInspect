@@ -22,7 +22,7 @@ nothing to do with department 7 in another, so every key here is
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -38,9 +38,7 @@ KINDS = (DEPARTMENT, BUILDING)
 OrgUnitNames = dict[tuple[int, str, str], str]
 
 
-async def record_org_units(
-    db: AsyncSession, *, connection_id: int, kind: str, units: list[dict]
-) -> int:
+async def record_org_units(db: AsyncSession, *, connection_id: int, kind: str, units: list[dict]) -> int:
     """Cache one catalog. Returns how many objects it held.
 
     Upsert, never replace: a rename lands on the existing row, and a catalog read that
@@ -52,7 +50,7 @@ async def record_org_units(
     if not units:
         return 0
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     statement = pg_insert(JamfOrgUnit).values(
         [
             {
@@ -77,9 +75,7 @@ async def record_org_units(
 
 async def load_names(db: AsyncSession) -> OrgUnitNames:
     """The tenant's whole lookup, one query. Tens of rows per connection."""
-    rows = await db.execute(
-        select(JamfOrgUnit.mdm_connection_id, JamfOrgUnit.kind, JamfOrgUnit.external_id, JamfOrgUnit.name)
-    )
+    rows = await db.execute(select(JamfOrgUnit.mdm_connection_id, JamfOrgUnit.kind, JamfOrgUnit.external_id, JamfOrgUnit.name))
     return {(connection_id, kind, external_id): name for connection_id, kind, external_id, name in rows}
 
 

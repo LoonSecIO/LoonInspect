@@ -64,9 +64,7 @@ async def _ai_rows(db) -> list:
     from app.core.ai import AI_SHARE_TIER
     from app.models.schema import ShareLog
 
-    return (
-        (await db.execute(select(ShareLog).where(ShareLog.tier == AI_SHARE_TIER))).scalars().all()
-    )
+    return (await db.execute(select(ShareLog).where(ShareLog.tier == AI_SHARE_TIER))).scalars().all()
 
 
 async def test_flag_defaults_off_and_the_gate_refuses(db, clean) -> None:

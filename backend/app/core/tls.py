@@ -65,7 +65,7 @@ def _renewal_due(cert_path: Path) -> bool:
     cert = x509.load_pem_x509_certificate(cert_path.read_bytes())
     span = cert.not_valid_after_utc - cert.not_valid_before_utc
     renew_at = cert.not_valid_before_utc + min(span / 2, _RENEWAL_WINDOW)
-    return datetime.datetime.now(datetime.timezone.utc) >= renew_at
+    return datetime.datetime.now(datetime.UTC) >= renew_at
 
 
 def _warn_if_provided_cert_aging(cert_path: Path) -> None:
@@ -75,7 +75,7 @@ def _warn_if_provided_cert_aging(cert_path: Path) -> None:
     since a browser or API client validating the chain will now refuse it outright.
     """
     cert = x509.load_pem_x509_certificate(cert_path.read_bytes())
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     not_after = cert.not_valid_after_utc
 
     if now >= not_after:
@@ -99,7 +99,7 @@ def _warn_if_provided_cert_aging(cert_path: Path) -> None:
 def generate_self_signed(cert_path: Path, key_path: Path, hostname: str) -> None:
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, hostname)])
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
 
     alt_names: list[x509.GeneralName] = [x509.DNSName(hostname)]
     if hostname != "localhost":

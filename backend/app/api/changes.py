@@ -154,14 +154,18 @@ async def list_changes(
 
     total = (await db.execute(select(func.count()).select_from(DeviceChange).where(*conditions))).scalar_one()
     rows = (
-        await db.execute(
-            select(DeviceChange)
-            .where(*conditions)
-            .order_by(DeviceChange.observed_at.desc(), DeviceChange.id.desc())
-            .offset((page - 1) * page_size)
-            .limit(page_size)
+        (
+            await db.execute(
+                select(DeviceChange)
+                .where(*conditions)
+                .order_by(DeviceChange.observed_at.desc(), DeviceChange.id.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return DeviceChangeListResponse(items=[_to_out(r) for r in rows], total=total, page=page, page_size=page_size)
 
 

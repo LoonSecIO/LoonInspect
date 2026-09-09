@@ -338,9 +338,7 @@ class JamfClient:
             self._token = token
             return token
 
-    async def _get(
-        self, client: httpx.AsyncClient, path: str, *, comment: str, params: dict | None = None
-    ) -> httpx.Response:
+    async def _get(self, client: httpx.AsyncClient, path: str, *, comment: str, params: dict | None = None) -> httpx.Response:
         """Authenticated GET with one retry on 401 and a bounded retry on transients.
 
         Two failure modes, two answers. An API client token is short-lived — see
@@ -674,9 +672,7 @@ class JamfClient:
         """Every building, as `{"id", "name"}`. Needs "Read Buildings"."""
         return await self._fetch_named_objects(client, "/api/v1/buildings", "buildings", page_size)
 
-    async def _fetch_named_objects(
-        self, client: httpx.AsyncClient, path: str, kind: str, page_size: int
-    ) -> list[dict]:
+    async def _fetch_named_objects(self, client: httpx.AsyncClient, path: str, kind: str, page_size: int) -> list[dict]:
         """One of Jamf's small id-and-name catalogs, paged.
 
         Departments and buildings are the two objects a computer record names by id and
@@ -782,11 +778,7 @@ def normalize_computer(
         # and the OS version is under OPERATING_SYSTEM, not HARDWARE. The webhook
         # fallbacks stay because a HEC payload is shaped differently from an
         # inventory record.
-        serial_number=(
-            hardware.get("serialNumber")
-            or general.get("serialNumber")
-            or computer.get("serialNumber", "")
-        ),
+        serial_number=(hardware.get("serialNumber") or general.get("serialNumber") or computer.get("serialNumber", "")),
         hostname=general.get("name") or computer.get("name", ""),
         managed=remote_management.get("managed"),
         supervised=general.get("supervised"),
@@ -805,9 +797,7 @@ def normalize_computer(
         # Jamf Pro 11.31 renamed the field: `lastContact` (MDM) and `lastCheckIn`
         # (binary) replace the documented `lastContactTime`. All three are read so an
         # older server and a current one both populate the column.
-        last_check_in=_parse_datetime(
-            general.get("lastContactTime") or general.get("lastContact") or general.get("lastCheckIn")
-        ),
+        last_check_in=_parse_datetime(general.get("lastContactTime") or general.get("lastContact") or general.get("lastCheckIn")),
         last_inventory_at=_parse_datetime(general.get("reportDate")),
         apps=None
         if applications is None

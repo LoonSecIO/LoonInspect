@@ -5,6 +5,7 @@ ones every installed app carries (`app.core.hashing`, `app.core.content_keys`)."
 from __future__ import annotations
 
 import json
+from datetime import UTC
 from pathlib import Path
 
 import pytest
@@ -78,8 +79,8 @@ class TestRows:
 
 class TestSignature:
     def test_signature_names_count_and_newest_sync(self) -> None:
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         assert catalog_signature(Catalog([], signature=(0, None))) == "0:"
-        stamp = datetime(2026, 8, 22, 17, 0, tzinfo=timezone.utc)
+        stamp = datetime(2026, 8, 22, 17, 0, tzinfo=UTC)
         assert catalog_signature(Catalog([], signature=(1549, stamp))) == "1549:2026-08-22T17:00:00+00:00"

@@ -37,7 +37,7 @@ import logging
 import time
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,7 +78,7 @@ def parse_release_date(value: str | None) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
     return parsed
 
 
@@ -432,7 +432,7 @@ def summarize(matches: Sequence[TitleMatch]) -> AppPatchSummary | None:
     sentence: TitleMatch | None = None
     if patch_available:
         sentence = (
-            min(dated, key=lambda match: match.first_newer_released_at or datetime.max.replace(tzinfo=timezone.utc))
+            min(dated, key=lambda match: match.first_newer_released_at or datetime.max.replace(tzinfo=UTC))
             if dated
             else max(behind, key=lambda match: match.releases_missed or 0)
         )

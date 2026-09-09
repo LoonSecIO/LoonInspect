@@ -22,7 +22,7 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid as uuidlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -157,7 +157,10 @@ async def test_an_account_that_loses_the_race_after_the_check_is_a_409(client, d
     async def other_request_wins_then_ours_inserts(session, **kwargs):
         async with session_for_tenant(OPERATIONAL_TENANT_ID) as other:
             await real_create_account(
-                other, email=kwargs["email"], display_name="the other request", password=kwargs["password"],
+                other,
+                email=kwargs["email"],
+                display_name="the other request",
+                password=kwargs["password"],
                 roles=("viewer",),
             )
             await other.commit()
@@ -197,7 +200,7 @@ async def test_a_first_failure_that_loses_the_insert_race_adopts_the_winners_row
 
     identifier = f"races-{uuidlib.uuid4().hex[:8]}@example.com"
     ip = "203.0.113.7"
-    db.add(LoginAttempt(identifier=identifier, ip=ip, failure_count=1, last_failure_at=datetime.now(timezone.utc)))
+    db.add(LoginAttempt(identifier=identifier, ip=ip, failure_count=1, last_failure_at=datetime.now(UTC)))
     await db.commit()
 
     real_get_attempt = auth_module._get_attempt

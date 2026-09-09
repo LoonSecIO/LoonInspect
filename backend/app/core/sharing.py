@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from fnmatch import fnmatch
 
 import httpx
@@ -78,7 +78,7 @@ async def record_setup_choice(db: AsyncSession, *, share: bool) -> None:
     """
     row = await get_or_create_settings(db)
     row.tier = "reveal" if share else "off"
-    row.updated_at = datetime.now(timezone.utc)
+    row.updated_at = datetime.now(UTC)
     await db.commit()
 
 
@@ -219,9 +219,7 @@ async def build_reveals(db: AsyncSession, settings_row: DataSharingSettings) -> 
             row.key_title,
             {"title": row.key_title, "app_name": row.name, "bundle_id": row.bundle_id, "versions": []},
         )
-        entry["versions"].append(
-            {"version": row.version, "short_version": row.short_version, "count": row.count}
-        )
+        entry["versions"].append({"version": row.version, "short_version": row.short_version, "count": row.count})
     return list(by_title.values())
 
 
@@ -259,9 +257,7 @@ class ExchangeResult:
     reveals_shed: bool = False
 
 
-async def post_exchange(
-    request_body: dict, *, transport: httpx.AsyncBaseTransport | None = None
-) -> ExchangeResult:
+async def post_exchange(request_body: dict, *, transport: httpx.AsyncBaseTransport | None = None) -> ExchangeResult:
     """POST with in-run backoff. A 413 sheds the reveals and resends on the next
     attempt in the same schedule, per the contract; anything else exhausts the delays
     and raises to the caller, whose job is to log a failed attempt and wait for
@@ -310,9 +306,7 @@ async def _last_attempt_at(db: AsyncSession) -> datetime | None:
     # point) but are not exchange attempts: without this filter, one permitted
     # inference call after the day's slot would suppress the community exchange.
     # The literal rather than ai.AI_SHARE_TIER because ai imports this module.
-    row = (
-        await db.execute(select(func.max(ShareLog.occurred_at)).where(ShareLog.tier != "ai"))
-    ).scalar_one_or_none()
+    row = (await db.execute(select(func.max(ShareLog.occurred_at)).where(ShareLog.tier != "ai"))).scalar_one_or_none()
     return row
 
 
@@ -333,7 +327,7 @@ async def run_exchange(db: AsyncSession, *, transport: httpx.AsyncBaseTransport 
     if settings_row.tier == "off":
         return
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if not app_settings.community_sharing:
         # The env override wins, visibly: one skipped row per day keeps the share
@@ -394,7 +388,7 @@ async def exchange_due(db: AsyncSession) -> bool:
     if settings_row.tier == "off":
         return False
     return _due(
-        datetime.now(timezone.utc),
+        datetime.now(UTC),
         await _last_attempt_at(db),
         _jitter_minute_of_day(settings_row),
     )

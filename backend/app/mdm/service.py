@@ -6,7 +6,7 @@ import uuid
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 from sqlalchemy import func, select
@@ -141,9 +141,7 @@ def apply_hashes(app: NormalizedApp) -> NormalizedApp:
     the three paths would drift.
     """
     app.app_hash = compute_app_hash(app.name, app.bundle_id)
-    app.version_hash = compute_version_hash(
-        app.name, app.bundle_id, app.version, app.short_version
-    )
+    app.version_hash = compute_version_hash(app.name, app.bundle_id, app.version, app.short_version)
     app.key_title = app_title_key(app.name, app.bundle_id)
     app.key_full = app_full_key(app.name, app.bundle_id, app.version, app.short_version)
     return app
@@ -195,17 +193,13 @@ def sync_result_kwargs(result: ConnectionSyncResult) -> dict[str, object]:
     }
 
 
-async def set_sync_status(
-    db: AsyncSession, connection: MdmConnection, status: SyncStatus
-) -> None:
+async def set_sync_status(db: AsyncSession, connection: MdmConnection, status: SyncStatus) -> None:
     """Upsert just the status field, leaving counts alone.
 
     Used to publish 'syncing' before a long pull starts and 'failed' after one dies, so
     the UI can show something other than a stale 'idle'.
     """
-    result = await db.execute(
-        select(MdmSyncState).where(MdmSyncState.mdm_connection_id == connection.id)
-    )
+    result = await db.execute(select(MdmSyncState).where(MdmSyncState.mdm_connection_id == connection.id))
     state = result.scalar_one_or_none()
 
     if state is None:
@@ -391,7 +385,7 @@ async def run_jamf_catalog(
         async with client.http() as http:
             aperture = await capture_aperture(client, http)
             aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)
-            connection.last_successful_auth_at = datetime.now(timezone.utc)
+            connection.last_successful_auth_at = datetime.now(UTC)
             await db.commit()
             groups = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes)
             group_count = len(groups)
@@ -484,7 +478,7 @@ async def _reconcile_departures(
 ) -> None:
     """The departure derivation for both object kinds the catalog pass took a census of
     (#181), logged on the run. Commits, so a departure lands with the census that found it."""
-    at = datetime.now(timezone.utc)
+    at = datetime.now(UTC)
     for subject_kind, observed in ((SUBJECT_COMPUTER_GROUP, groups), (SUBJECT_EXTENSION_ATTRIBUTE_DEFINITION, definitions)):
         verdict = await reconcile_census(
             db,
@@ -584,11 +578,9 @@ async def _sync_jamf(
     group_count = 0
 
     async with client.http() as http:
-        aperture = await capture_aperture(
-            client, http, sections=sections, quarantined_extension_attributes=quarantine
-        )
+        aperture = await capture_aperture(client, http, sections=sections, quarantined_extension_attributes=quarantine)
         aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)
-        connection.last_successful_auth_at = datetime.now(timezone.utc)
+        connection.last_successful_auth_at = datetime.now(UTC)
         await db.commit()
         if run is not None:
             await run_log(
@@ -733,9 +725,7 @@ async def _sync_jamf(
                 # reclaim would otherwise mistake for a dead process.
                 await beat(db, run)
                 if device_count % _PROGRESS_EVERY == 0:
-                    await run_log(
-                        db, run, "info", "devices processed", deviceCount=device_count, outcomes=dict(outcomes)
-                    )
+                    await run_log(db, run, "info", "devices processed", deviceCount=device_count, outcomes=dict(outcomes))
 
         # Throttling is run-row data, not just log lines: the counters ride the same
         # observations JSONB the ledger outcomes do, so the run detail can show them
@@ -788,16 +778,14 @@ async def ingest_computer(
     is older than what the ledger already holds for the device, neither layer is
     written. Otherwise the ledger write and process_sync's updates commit together.
     """
-    observation = canonicalize_computer(
-        raw, sections, quarantined_extension_attributes=quarantined_extension_attributes
-    )
+    observation = canonicalize_computer(raw, sections, quarantined_extension_attributes=quarantined_extension_attributes)
     current = await current_span(
         db,
         connection_id=connection.id,
         subject_kind=observation.subject_kind,
         subject_id=observation.subject_id,
     )
-    collected_at = datetime.now(timezone.utc)
+    collected_at = datetime.now(UTC)
     if is_stale(current, observation.observed_at or collected_at):
         logger.info(
             "stale observation ignored",
@@ -879,16 +867,12 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
     # correlatable and the log so it is accountable. It does *not* take the lock: the
     # index predicate excludes the webhook class, so a burst of them from a busy tenant
     # runs concurrently and never queues behind a forty-minute sweep (§4.4).
-    acquisition = await acquire(
-        db, connection, trigger=TRIGGER_WEBHOOK, lock_class=LOCK_WEBHOOK, actor_label=event.event_name
-    )
+    acquisition = await acquire(db, connection, trigger=TRIGGER_WEBHOOK, lock_class=LOCK_WEBHOOK, actor_label=event.event_name)
     run = acquisition.run
     async with entered(run):
         try:
             async with client.http() as http:
-                aperture = await capture_aperture(
-                    client, http, sections=sections, quarantined_extension_attributes=quarantine
-                )
+                aperture = await capture_aperture(client, http, sections=sections, quarantined_extension_attributes=quarantine)
                 aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)
                 raw = await client.fetch_computer_detail(http, event.jamf_id)
 
@@ -945,22 +929,18 @@ async def sync_state(db: AsyncSession, connection: MdmConnection) -> None:
     """Stamp the run's end on the connection's sync state. Once per run, not per device:
     the previous per-device call recounted every device row each time, which made a
     sweep quadratic in fleet size."""
-    result = await db.execute(
-        select(MdmSyncState).where(MdmSyncState.mdm_connection_id == connection.id)
-    )
+    result = await db.execute(select(MdmSyncState).where(MdmSyncState.mdm_connection_id == connection.id))
     state = result.scalar_one_or_none()
 
     device_count = (
-        await db.execute(
-            select(func.count()).select_from(Device).where(Device.mdm_connection_id == connection.id)
-        )
+        await db.execute(select(func.count()).select_from(Device).where(Device.mdm_connection_id == connection.id))
     ).scalar_one()
 
     if state is None:
         state = MdmSyncState(mdm_connection_id=connection.id, provider=connection.provider)
         db.add(state)
 
-    state.last_sync_at = datetime.now(timezone.utc)
+    state.last_sync_at = datetime.now(UTC)
     state.status = SyncStatus.idle.value
     state.device_count = device_count
 
@@ -1023,9 +1003,7 @@ def _device_meta(existing: Device) -> dict[str, object]:
         # Whether the app list is current or six weeks stale. A vulnerability finding on
         # a device that has not reported since July is a different fact from one that
         # reported this morning, and nothing else on the event carries it.
-        "lastReportDate": (
-            existing.last_inventory_at.isoformat() if existing.last_inventory_at else None
-        ),
+        "lastReportDate": (existing.last_inventory_at.isoformat() if existing.last_inventory_at else None),
         # The compliance filter: two values fleet-wide, and the cheapest key in the
         # block. A bool rather than a `managementStatus` string — an enum with one value
         # invites a second, and additive-only leaves room for a richer field if a third
@@ -1127,7 +1105,7 @@ async def process_sync(
     # owning section was inside the read's aperture (#98). The creation path above
     # already stamped hostname and serial (NOT NULL) with whatever the read carried;
     # for an existing row a narrow read leaves the last real observation standing.
-    existing.last_seen_at = datetime.now(timezone.utc)
+    existing.last_seen_at = datetime.now(UTC)
     if device.observed("general"):
         existing.hostname = device.hostname
         existing.managed = device.managed
@@ -1189,9 +1167,7 @@ async def process_sync(
         incoming_hashes = {app.version_hash: app for app in device.apps if app.version_hash}
 
         added = [app for version_hash, app in incoming_hashes.items() if version_hash not in previous_hashes]
-        removed_rows = [
-            row for version_hash, row in previous_hashes.items() if version_hash not in incoming_hashes
-        ]
+        removed_rows = [row for version_hash, row in previous_hashes.items() if version_hash not in incoming_hashes]
         current_rows = [row for version_hash, row in previous_hashes.items() if version_hash in incoming_hashes]
 
         for row in removed_rows:

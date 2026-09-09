@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
-from enum import Enum
+from datetime import UTC, date, datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 from pydantic.alias_generators import to_camel
@@ -9,7 +9,7 @@ from pydantic.alias_generators import to_camel
 from app.schemas.payload import MdmProvider, VulnEnrichment
 
 
-class VersionOperator(str, Enum):
+class VersionOperator(StrEnum):
     eq = "eq"
     lt = "lt"
     lte = "lte"
@@ -80,7 +80,7 @@ class InstalledAppOut(BaseModel):
     def days_since_patch_available(self) -> int | None:
         if self.patch_available_since is None:
             return None
-        return (datetime.now(timezone.utc) - self.patch_available_since).days
+        return (datetime.now(UTC) - self.patch_available_since).days
 
 
 class DeviceOut(BaseModel):

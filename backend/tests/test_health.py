@@ -110,9 +110,7 @@ class TestHealthTracksTheDatabase:
         assert response.status_code == 503
         assert response.json() == {"status": "unavailable", "reason": "database"}
 
-    def test_an_unexpected_error_is_not_dressed_up_as_an_outage(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_an_unexpected_error_is_not_dressed_up_as_an_outage(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """503 means "the database is down", and has to keep meaning that. A bug in
         this process is a 500 — which fails the probe just as loudly, without telling
         the operator to go and look at Postgres."""
@@ -140,9 +138,7 @@ class TestHealthLeaksNothing:
             ),
         ],
     )
-    def test_the_failure_body_names_only_the_failure_class(
-        self, monkeypatch: pytest.MonkeyPatch, failure: Exception
-    ) -> None:
+    def test_the_failure_body_names_only_the_failure_class(self, monkeypatch: pytest.MonkeyPatch, failure: Exception) -> None:
         async def fails() -> None:
             raise failure
 
@@ -166,9 +162,7 @@ class TestHealthLeaksNothing:
 
         from app.core import database
 
-        dead = create_async_engine(
-            f"postgresql+asyncpg://looninspect_app:{_PASSWORD}@127.0.0.1:1/looninspect"
-        )
+        dead = create_async_engine(f"postgresql+asyncpg://looninspect_app:{_PASSWORD}@127.0.0.1:1/looninspect")
         monkeypatch.setattr(database, "engine", dead)
 
         api = FastAPI()

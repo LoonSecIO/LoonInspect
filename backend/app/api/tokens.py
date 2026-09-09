@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -77,12 +77,10 @@ async def create_token(
         if permission not in account_permissions:
             # Rejected rather than silently dropped: a token quietly weaker than asked
             # for produces a confusing 403 later, far from the cause.
-            raise HTTPException(
-                status_code=422, detail=f"Your account does not hold the scope: {value}"
-            )
+            raise HTTPException(status_code=422, detail=f"Your account does not hold the scope: {value}")
         requested.append(permission.value)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     minted = generate_token()
 
     token = ApiToken(
@@ -128,7 +126,7 @@ async def revoke_token(
     if token is None or token.account_id != principal.account.id or token.revoked_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Token not found")
 
-    token.revoked_at = datetime.now(timezone.utc)
+    token.revoked_at = datetime.now(UTC)
     await db.commit()
 
     audit(

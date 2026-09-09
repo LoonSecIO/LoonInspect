@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
@@ -61,7 +61,7 @@ router = APIRouter(prefix="/api/mdm/connections", tags=["connections"])
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _credentials_dict(conn: MdmConnection) -> dict[str, str]:
@@ -199,9 +199,7 @@ async def _get_or_404(connection_id: int, db: AsyncSession) -> MdmConnection:
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require(Permission.CONNECTION_WRITE))],
 )
-async def create_connection(
-    payload: MdmConnectionCreate, db: AsyncSession = Depends(get_db)
-) -> MdmConnectionOut:
+async def create_connection(payload: MdmConnectionCreate, db: AsyncSession = Depends(get_db)) -> MdmConnectionOut:
     await _refuse_blocked_destination(payload.base_url)
     validated_credentials = _validate_credentials(payload.provider, payload.credentials)
 
@@ -235,9 +233,7 @@ async def create_connection(
         # Names are unique per tenant (uq_mdm_connection_tenant_name) and nothing checked
         # before this insert, so even a sequential duplicate was a 500 (#134).
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="A connection with that name already exists"
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A connection with that name already exists") from exc
     await db.refresh(connection)
 
     # A connection that observes nothing happen reads as broken: the defaults are real
@@ -274,9 +270,7 @@ async def create_connection(
     response_model=MdmConnectionTestResult,
     dependencies=[Depends(require(Permission.CONNECTION_CREDENTIAL_READ))],
 )
-async def test_connection(
-    payload: MdmConnectionTestRequest, db: AsyncSession = Depends(get_db)
-) -> MdmConnectionTestResult:
+async def test_connection(payload: MdmConnectionTestRequest, db: AsyncSession = Depends(get_db)) -> MdmConnectionTestResult:
     existing: MdmConnection | None = None
     if payload.connection_id is not None:
         existing = await db.get(MdmConnection, payload.connection_id)
@@ -367,9 +361,7 @@ async def test_connection(
         )
     except httpx.RequestError as exc:
         _audit_test("failure", reason="unreachable")
-        return MdmConnectionTestResult(
-            success=False, message=f"Could not reach {base_url}.", detail=str(exc)[:_DETAIL_MAX_CHARS]
-        )
+        return MdmConnectionTestResult(success=False, message=f"Could not reach {base_url}.", detail=str(exc)[:_DETAIL_MAX_CHARS])
     except ValueError:
         # A 200 whose body is not a JSON object — i.e. something that is not Jamf's
         # token endpoint. Before this it left the route as an unhandled JSONDecodeError
@@ -449,9 +441,7 @@ def _require_credential_re_entry_to_move(connection: MdmConnection, data: dict) 
         provider, {key: value for key, value in (data.get("credentials") or {}).items() if value}
     )
 
-    unproven = sorted(
-        field for field in secret_fields(provider) if stored.get(field) and not supplied.get(field)
-    )
+    unproven = sorted(field for field in secret_fields(provider) if stored.get(field) and not supplied.get(field))
     if not unproven:
         return
 
@@ -561,9 +551,7 @@ async def update_connection(
         merged = {**existing_credentials, **incoming}
         validated = _validate_credentials(provider, merged)
 
-        credential_fields_changed = sorted(
-            key for key, value in incoming.items() if existing_credentials.get(key) != value
-        )
+        credential_fields_changed = sorted(key for key, value in incoming.items() if existing_credentials.get(key) != value)
 
         fp_field = fingerprint_field(provider)
         if fp_field and validated.get(fp_field) != existing_credentials.get(fp_field):
@@ -587,9 +575,7 @@ async def update_connection(
         # A rename onto a name another connection holds hits the same constraint as a
         # duplicate create, one route over.
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="A connection with that name already exists"
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A connection with that name already exists") from exc
     await db.refresh(connection)
 
     audit(
@@ -615,9 +601,7 @@ async def update_connection(
     return _to_out(connection)
 
 
-async def _run_connection_sync(
-    connection_id: int, actor: Actor, tenant_id: uuid.UUID, job_id: uuid.UUID
-) -> None:
+async def _run_connection_sync(connection_id: int, actor: Actor, tenant_id: uuid.UUID, job_id: uuid.UUID) -> None:
     """Background worker for a manually triggered sync.
 
     Runs outside the request, so it opens its own session — the request's is closed by
@@ -808,16 +792,20 @@ async def delete_connection(connection_id: int, db: AsyncSession = Depends(get_d
     # After the stale window the connection becomes deletable on its own.
     cutoff = _utcnow() - timedelta(seconds=settings.run_stale_after_seconds)
     live_run = (
-        await db.execute(
-            select(Run.id)
-            .where(
-                Run.mdm_connection_id == connection_id,
-                Run.status == STATUS_RUNNING,
-                Run.heartbeat_at >= cutoff,
+        (
+            await db.execute(
+                select(Run.id)
+                .where(
+                    Run.mdm_connection_id == connection_id,
+                    Run.status == STATUS_RUNNING,
+                    Run.heartbeat_at >= cutoff,
+                )
+                .limit(1)
             )
-            .limit(1)
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if live_run is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -832,12 +820,8 @@ async def delete_connection(connection_id: int, db: AsyncSession = Depends(get_d
 
     device_ids = select(Device.id).where(Device.mdm_connection_id == connection_id)
     await db.execute(delete(InstalledApp).where(InstalledApp.device_id.in_(device_ids)))
-    await db.execute(
-        delete(DeviceExtensionAttribute).where(DeviceExtensionAttribute.device_id.in_(device_ids))
-    )
-    devices_removed = (
-        await db.execute(delete(Device).where(Device.mdm_connection_id == connection_id))
-    ).rowcount
+    await db.execute(delete(DeviceExtensionAttribute).where(DeviceExtensionAttribute.device_id.in_(device_ids)))
+    devices_removed = (await db.execute(delete(Device).where(Device.mdm_connection_id == connection_id))).rowcount
     await db.execute(delete(MdmSyncState).where(MdmSyncState.mdm_connection_id == connection_id))
     await db.delete(connection)
     await db.commit()

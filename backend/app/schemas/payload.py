@@ -1,21 +1,21 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 from pydantic.alias_generators import to_camel
 
 
-class MdmProvider(str, Enum):
+class MdmProvider(StrEnum):
     # Jamf only, deliberately (#79). The enum, the `provider` column, and the
     # credential-schema registry are the seam a second provider plugs into; the seam
     # stays, the stub implementations behind it did not survive to launch.
     jamf = "jamf"
 
 
-class SyncStatus(str, Enum):
+class SyncStatus(StrEnum):
     idle = "idle"
     syncing = "syncing"
     failed = "failed"
@@ -512,9 +512,7 @@ class VulnEnrichment(BaseModel):
     corpus_as_of: date | None = Field(default=None, serialization_alias="corpusAsOf")
     # The four below ride `covered` only.
     counts: VulnCounts | None = None
-    days_oldest_published: VulnDaysOldestPublished | None = Field(
-        default=None, serialization_alias="daysOldestPublished"
-    )
+    days_oldest_published: VulnDaysOldestPublished | None = Field(default=None, serialization_alias="daysOldestPublished")
     vuln_ids: list[str] | None = Field(default=None, serialization_alias="vulnIDs")
     vuln_ids_truncated: bool | None = Field(default=None, serialization_alias="vulnIDsTruncated")
 

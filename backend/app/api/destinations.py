@@ -102,9 +102,7 @@ async def _get_or_404(db: AsyncSession, destination_id: int) -> Destination:
     return destination
 
 
-@router.get(
-    "", response_model=list[DestinationOut], dependencies=[Depends(require(Permission.DESTINATION_READ))]
-)
+@router.get("", response_model=list[DestinationOut], dependencies=[Depends(require(Permission.DESTINATION_READ))])
 async def list_destinations(db: AsyncSession = Depends(get_db)) -> list[DestinationOut]:
     result = await db.execute(select(Destination).order_by(Destination.id))
     destinations = list(result.scalars().all())
@@ -164,9 +162,7 @@ async def update_destination(
         try:
             data["auth_type"] = resolve_auth_type(destination.type, data["auth_type"])
         except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
-            ) from exc
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
     if "url" in data:
         await _refuse_blocked_destination(data["url"])

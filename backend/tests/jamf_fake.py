@@ -74,17 +74,31 @@ class FakeJamf:
         # endpoint answers 403, and the census is skipped rather than read as empty.
         self.extension_attribute_definitions: list[dict] | None = [
             {
-                "id": "5", "name": "Battery Cycle Count", "description": "", "dataType": "INTEGER",
-                "enabled": True, "inventoryDisplayType": "GENERAL", "inputType": {"type": "SCRIPT", "script": "#!/bin/sh"},
-            },
-            {
-                "id": "12", "name": "Crowdstrike Sensor Version", "description": "Falcon sensor version from falconctl",
-                "dataType": "STRING", "enabled": True, "inventoryDisplayType": "GENERAL",
+                "id": "5",
+                "name": "Battery Cycle Count",
+                "description": "",
+                "dataType": "INTEGER",
+                "enabled": True,
+                "inventoryDisplayType": "GENERAL",
                 "inputType": {"type": "SCRIPT", "script": "#!/bin/sh"},
             },
             {
-                "id": "27", "name": "Departments Served", "description": "LDAP multi-value", "dataType": "STRING",
-                "enabled": True, "inventoryDisplayType": "USER_AND_LOCATION", "inputType": {"type": "LDAP"},
+                "id": "12",
+                "name": "Crowdstrike Sensor Version",
+                "description": "Falcon sensor version from falconctl",
+                "dataType": "STRING",
+                "enabled": True,
+                "inventoryDisplayType": "GENERAL",
+                "inputType": {"type": "SCRIPT", "script": "#!/bin/sh"},
+            },
+            {
+                "id": "27",
+                "name": "Departments Served",
+                "description": "LDAP multi-value",
+                "dataType": "STRING",
+                "enabled": True,
+                "inventoryDisplayType": "USER_AND_LOCATION",
+                "inputType": {"type": "LDAP"},
             },
         ]
 
@@ -150,9 +164,7 @@ class FakeJamf:
                 return httpx.Response(403, json={"httpStatus": 403, "errors": []})
             page = int(request.url.params.get("page", "0"))
             size = int(request.url.params.get("page-size", "100"))
-            return httpx.Response(
-                200, json={"totalCount": len(catalog), "results": catalog[page * size : (page + 1) * size]}
-            )
+            return httpx.Response(200, json={"totalCount": len(catalog), "results": catalog[page * size : (page + 1) * size]})
         if path == "/api/v1/computer-extension-attributes":
             if self.extension_attribute_definitions is None:
                 return httpx.Response(403, json={"httpStatus": 403, "errors": []})

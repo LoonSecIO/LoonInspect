@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Collection, Iterator, Mapping, Sequence
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import NamedTuple
 
 import httpx
@@ -46,9 +46,7 @@ logger = logging.getLogger(__name__)
 # snapshot weighed, in one request rather than one document. The trade is the issue's
 # own — 3x the bytes for a shape the receiver can actually query — and it is why the
 # subscription, not a shape flag, is the place a destination declines the snapshot.
-KNOWN_EVENT_TYPES = frozenset(
-    {"device.inventory", "device.inventory.changed", "device.change", "run.completed", "run.failed"}
-)
+KNOWN_EVENT_TYPES = frozenset({"device.inventory", "device.inventory.changed", "device.change", "run.completed", "run.failed"})
 
 # Not in KNOWN_EVENT_TYPES: nothing produces it and nothing can subscribe to it. It
 # exists only so the destination test button sends something identifiable rather than a
@@ -102,9 +100,7 @@ _MAX_BACKOFF_EXPONENT = 10  # guards against an unbounded 2**n
 ELASTIC_DEFAULT_INDEX = "logs-looninspect.events-default"
 
 
-async def enqueue_event(
-    db: AsyncSession, event_type: str, payload: dict, *, request_id: str | None = None
-) -> EventOutbox:
+async def enqueue_event(db: AsyncSession, event_type: str, payload: dict, *, request_id: str | None = None) -> EventOutbox:
     """Record that an event happened. Call sites add this to the session and let the
     caller commit — it must land in the same transaction as whatever state change
     produced it, so the two can never drift apart from a partial failure.
@@ -318,7 +314,7 @@ def _envelope_timestamp(hints: Mapping[str, object]) -> str | None:
     moment = hints.get("time")
     if not isinstance(moment, (int, float)) or isinstance(moment, bool):
         return None
-    return datetime.fromtimestamp(moment, timezone.utc).isoformat()
+    return datetime.fromtimestamp(moment, UTC).isoformat()
 
 
 def _elastic_bulk_body(event: EventOutbox) -> str:
@@ -354,7 +350,7 @@ def _elastic_bulk_body(event: EventOutbox) -> str:
     # not blocked on #188 naming one.
     if "@timestamp" not in document:
         occurred_at = document.get("occurredAt") or document.get("occurred_at") or _envelope_timestamp(hints)
-        created_at = event.created_at or datetime.now(timezone.utc)
+        created_at = event.created_at or datetime.now(UTC)
         document["@timestamp"] = occurred_at or created_at.isoformat()
     return json.dumps({"create": {}}) + "\n" + json.dumps(document, default=str) + "\n"
 
@@ -380,11 +376,9 @@ def _elastic_bulk_requests(event: EventOutbox) -> list[bytes]:
     if payload.get("event") != INVENTORY_EVENT_TYPE:
         return [_elastic_bulk_body(event).encode("utf-8")]
     hints = payload.get(ENVELOPE) or {}
-    created_at = event.created_at or datetime.now(timezone.utc)
+    created_at = event.created_at or datetime.now(UTC)
     timestamp = _envelope_timestamp(hints if isinstance(hints, Mapping) else {}) or created_at.isoformat()
-    return elastic_bulk_bodies(
-        record_events(payload), max_bytes=settings.record_fanout_max_request_bytes, timestamp=timestamp
-    )
+    return elastic_bulk_bodies(record_events(payload), max_bytes=settings.record_fanout_max_request_bytes, timestamp=timestamp)
 
 
 def _elastic_bulk_error(response: httpx.Response) -> str | None:
@@ -460,9 +454,7 @@ async def blocked_delivery_reason(destination: Destination) -> str | None:
     destination, and a dead resolver must not turn into a dead outbox.
     """
     try:
-        await refuse_blocked_resolution(
-            destination.url, field="url", refusal=BlockedDestinationUrl, judge_literals=True
-        )
+        await refuse_blocked_resolution(destination.url, field="url", refusal=BlockedDestinationUrl, judge_literals=True)
     except BlockedDestinationUrl as exc:
         return str(exc)[:500]
     return None
@@ -471,7 +463,7 @@ async def blocked_delivery_reason(destination: Destination) -> str | None:
 def _next_backoff(attempt_count: int) -> datetime:
     exponent = min(attempt_count, _MAX_BACKOFF_EXPONENT)
     delay = min(_BASE_BACKOFF_SECONDS * (2**exponent), _MAX_BACKOFF_SECONDS)
-    return datetime.now(timezone.utc) + timedelta(seconds=delay)
+    return datetime.now(UTC) + timedelta(seconds=delay)
 
 
 async def fan_out_pending(db: AsyncSession) -> int:
@@ -620,9 +612,7 @@ async def _attempt_record_delivery(
     return True, None
 
 
-async def _attempt_delivery(
-    client: httpx.AsyncClient, destination: Destination, event: EventOutbox
-) -> tuple[bool, str | None]:
+async def _attempt_delivery(client: httpx.AsyncClient, destination: Destination, event: EventOutbox) -> tuple[bool, str | None]:
     if destination.type == "elastic":
         # Different enough to branch whole: NDJSON body, the index in the URL, and a
         # success status that still has to be read for per-item failures.
@@ -660,7 +650,7 @@ async def deliver_pending(db: AsyncSession) -> None:
     Runs on its own scheduler tick, decoupled from whatever produced the event — a
     down destination here can never slow down a device sync or an inbound webhook's
     ACK."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     # Most-overdue first, ordered by `next_attempt_at` rather than `id` on purpose.
     # By id a row that has already failed twice sorts ahead of every event produced
     # since, so under a ceiling a backlog of retries would starve new events for as
@@ -697,10 +687,7 @@ async def deliver_pending(db: AsyncSession) -> None:
         events.update({e.id: e for e in result.scalars().all()})
     destination_ids = {row.destination_id for row in due}
     destinations = {
-        d.id: d
-        for d in (
-            await db.execute(select(Destination).where(Destination.id.in_(destination_ids)))
-        ).scalars().all()
+        d.id: d for d in (await db.execute(select(Destination).where(Destination.id.in_(destination_ids)))).scalars().all()
     }
 
     # One resolver pass per destination per tick, not per delivery: a sweep of forty
@@ -810,7 +797,7 @@ async def redrive_failed(db: AsyncSession, destination_id: int) -> int:
     result = await db.execute(
         sa_update(OutboxDelivery)
         .where(OutboxDelivery.destination_id == destination_id, OutboxDelivery.status == "failed")
-        .values(status="pending", attempt_count=0, next_attempt_at=datetime.now(timezone.utc))
+        .values(status="pending", attempt_count=0, next_attempt_at=datetime.now(UTC))
     )
     return int(result.rowcount or 0)
 
@@ -872,9 +859,7 @@ async def send_test_event(destination: Destination) -> DeliveryOutcome:
     return DeliveryOutcome(ok, error, statuses[-1] if statuses else None)
 
 
-async def purge_delivered_events(
-    db: AsyncSession, retention_days: int, dead_letter_retention_days: int | None = None
-) -> int:
+async def purge_delivered_events(db: AsyncSession, retention_days: int, dead_letter_retention_days: int | None = None) -> int:
     """Deletes outbox events old enough and holding no delivery still mid-retry. Without
     this the table grows without bound now that events are continuous (webhooks)
     rather than nightly-batched.
@@ -895,7 +880,7 @@ async def purge_delivered_events(
     `event_outbox_retention_days` window as delivered ones: seven days to configure a
     destination and collect the baseline, then the queue stops being a queue.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cutoff = now - timedelta(days=retention_days)
     dead_letter_cutoff = now - timedelta(days=dead_letter_retention_days or retention_days)
 

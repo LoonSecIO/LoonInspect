@@ -31,9 +31,7 @@ from sqlalchemy import delete, select
 # One event loop for the whole module — the engine's pooled connections belong to
 # whichever loop first used them.
 pytestmark = [
-    pytest.mark.skipif(
-        not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"
-    ),
+    pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
     pytest.mark.asyncio(loop_scope="session"),
 ]
 
@@ -64,13 +62,9 @@ async def seeded() -> uuidlib.UUID:
         await bootstrap_tenants(db)
 
     async with session_for_tenant(OPERATIONAL_TENANT_ID) as db:
-        existing = (
-            (await db.execute(select(Account).where(Account.email == ADMIN[0]))).scalars().first()
-        )
+        existing = (await db.execute(select(Account).where(Account.email == ADMIN[0]))).scalars().first()
         if existing is None:
-            await create_account(
-                db, email=ADMIN[0], display_name="webhook admin", password=ADMIN[1], roles=("admin",)
-            )
+            await create_account(db, email=ADMIN[0], display_name="webhook admin", password=ADMIN[1], roles=("admin",))
         # A previous crashed run's failed logins would trip the lockout and turn this
         # suite red about rate limiting instead of about the secret.
         await db.execute(delete(LoginAttempt).where(LoginAttempt.identifier == ADMIN[0]))
@@ -149,15 +143,11 @@ async def test_the_secret_set_over_http_authenticates_a_real_callback(client, ja
     created = (await _create(client, "arms the endpoint", webhookSecret=SECRET)).json()
     assert created["hasWebhookSecret"] is True
 
-    accepted = await jamf.post(
-        f"/webhooks/jamf/{created['id']}", json=CALLBACK, headers={"X-API-Key": SECRET}
-    )
+    accepted = await jamf.post(f"/webhooks/jamf/{created['id']}", json=CALLBACK, headers={"X-API-Key": SECRET})
     assert accepted.status_code == 200, accepted.text
     assert accepted.json() == {"status": "ignored"}
 
-    refused = await jamf.post(
-        f"/webhooks/jamf/{created['id']}", json=CALLBACK, headers={"X-API-Key": SECRET + "x"}
-    )
+    refused = await jamf.post(f"/webhooks/jamf/{created['id']}", json=CALLBACK, headers={"X-API-Key": SECRET + "x"})
     assert refused.status_code == 401
 
 
@@ -209,21 +199,15 @@ async def test_rotation_takes_effect_and_retires_the_old_value(client, jamf) -> 
     """
     created = (await _create(client, "rotates", webhookSecret=SECRET)).json()
 
-    patched = await client.patch(
-        f"/api/mdm/connections/{created['id']}", json={"webhookSecret": ROTATED}
-    )
+    patched = await client.patch(f"/api/mdm/connections/{created['id']}", json={"webhookSecret": ROTATED})
     assert patched.status_code == 200
     assert patched.json()["hasWebhookSecret"] is True
     assert ROTATED not in patched.text
 
-    old = await jamf.post(
-        f"/webhooks/jamf/{created['id']}", json=CALLBACK, headers={"X-API-Key": SECRET}
-    )
+    old = await jamf.post(f"/webhooks/jamf/{created['id']}", json=CALLBACK, headers={"X-API-Key": SECRET})
     assert old.status_code == 401, "the retired secret still opens the endpoint"
 
-    new = await jamf.post(
-        f"/webhooks/jamf/{created['id']}", json=CALLBACK, headers={"X-API-Key": ROTATED}
-    )
+    new = await jamf.post(f"/webhooks/jamf/{created['id']}", json=CALLBACK, headers={"X-API-Key": ROTATED})
     assert new.status_code == 200, new.text
 
 
@@ -244,9 +228,7 @@ async def test_an_edit_that_omits_the_secret_keeps_it(client, jamf) -> None:
     assert renamed.status_code == 200
     assert renamed.json()["hasWebhookSecret"] is True
 
-    still_works = await jamf.post(
-        f"/webhooks/jamf/{created['id']}", json=CALLBACK, headers={"X-API-Key": SECRET}
-    )
+    still_works = await jamf.post(f"/webhooks/jamf/{created['id']}", json=CALLBACK, headers={"X-API-Key": SECRET})
     assert still_works.status_code == 200, still_works.text
 
 

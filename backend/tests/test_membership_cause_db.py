@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import os
 import uuid as uuidlib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -83,12 +83,16 @@ async def _membership_rows(db, connection_id: int, subject_id: str) -> list:
     from app.models.schema import DeviceChange
 
     rows = (
-        await db.execute(
-            select(DeviceChange)
-            .where(DeviceChange.mdm_connection_id == connection_id, DeviceChange.subject_id == subject_id)
-            .order_by(DeviceChange.id)
+        (
+            await db.execute(
+                select(DeviceChange)
+                .where(DeviceChange.mdm_connection_id == connection_id, DeviceChange.subject_id == subject_id)
+                .order_by(DeviceChange.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [r for r in rows if r.entry_kind == "group_membership" and (r.entry_identity or {}).get("groupId") == GROUP]
 
 
@@ -99,7 +103,7 @@ async def test_a_membership_moved_by_a_criteria_edit_says_so_and_drift_does_not(
     # Baseline: the Mac is not in the group. Jamf's reportDate a minute ago — before the
     # group definition this sweep will observe.
     jamf.real["groupMemberships"] = [g for g in jamf.real["groupMemberships"] if g["groupId"] != GROUP]
-    _report(jamf, datetime.now(timezone.utc) - timedelta(minutes=1))
+    _report(jamf, datetime.now(UTC) - timedelta(minutes=1))
     first = await sync_connection(db, connection)
     assert first.ok and first.group_count == 1
     assert await _membership_rows(db, connection.id, real_id) == []
@@ -112,7 +116,7 @@ async def test_a_membership_moved_by_a_criteria_edit_says_so_and_drift_does_not(
         {"name": "Operating System Version", "priority": 1, "andOr": "and", "searchType": "like", "value": "27."},
     ]
     jamf.real["groupMemberships"].append({"groupId": GROUP, "groupName": "All Managed Clients", "smartGroup": True})
-    _report(jamf, datetime.now(timezone.utc) + timedelta(seconds=10))
+    _report(jamf, datetime.now(UTC) + timedelta(seconds=10))
     second = await sync_connection(db, connection)
     assert second.ok and second.observations.get("group_changed") == 1
 
@@ -123,7 +127,7 @@ async def test_a_membership_moved_by_a_criteria_edit_says_so_and_drift_does_not(
 
     # Nothing moves but the Mac: it leaves the group under the same definition.
     jamf.real["groupMemberships"] = [g for g in jamf.real["groupMemberships"] if g["groupId"] != GROUP]
-    _report(jamf, datetime.now(timezone.utc) + timedelta(seconds=20))
+    _report(jamf, datetime.now(UTC) + timedelta(seconds=20))
     third = await sync_connection(db, connection)
     assert third.ok and third.observations.get("group_changed") is None
 
@@ -139,7 +143,7 @@ async def test_the_sweep_observes_the_definitions_before_the_first_device(db, co
     the loop would pass the test above only by luck of the fixture's clocks."""
     from app.mdm.service import sync_connection
 
-    _report(jamf, datetime.now(timezone.utc) - timedelta(minutes=1))
+    _report(jamf, datetime.now(UTC) - timedelta(minutes=1))
     assert (await sync_connection(db, connection)).ok
     paths = list(jamf.requests)
     first_group_read = next(i for i, path in enumerate(paths) if "smart-groups" in path)

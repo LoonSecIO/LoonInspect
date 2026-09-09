@@ -46,7 +46,7 @@ import re
 import unicodedata
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 CONTRACT_VERSION = "v0"
@@ -93,8 +93,8 @@ def canonical_timestamp(value: str) -> str:
     except ValueError:
         return text
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def parse_jamf_datetime(value: str | None) -> datetime | None:
@@ -107,8 +107,8 @@ def parse_jamf_datetime(value: str | None) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _prune(value: Any) -> Any:
@@ -428,32 +428,56 @@ SECTIONS: dict[str, SectionSpec] = {
         SectionSpec("security", "SECURITY", "security", fields=_SECURITY),
         SectionSpec("disk_encryption", "DISK_ENCRYPTION", "diskEncryption", fields=_DISK_ENCRYPTION),
         SectionSpec(
-            "applications", "APPLICATIONS", "applications",
-            entry_kind="application", entry_fields=_APPLICATION,
+            "applications",
+            "APPLICATIONS",
+            "applications",
+            entry_kind="application",
+            entry_fields=_APPLICATION,
         ),
         SectionSpec(
-            "extension_attributes", "EXTENSION_ATTRIBUTES", "extensionAttributes",
-            entry_kind="extension_attribute", entry_fields=_EXTENSION_ATTRIBUTE, entry_label="name",
+            "extension_attributes",
+            "EXTENSION_ATTRIBUTES",
+            "extensionAttributes",
+            entry_kind="extension_attribute",
+            entry_fields=_EXTENSION_ATTRIBUTE,
+            entry_label="name",
         ),
         SectionSpec(
-            "group_memberships", "GROUP_MEMBERSHIPS", "groupMemberships",
-            entry_kind="group_membership", entry_fields=_GROUP_MEMBERSHIP, entry_label="groupName",
+            "group_memberships",
+            "GROUP_MEMBERSHIPS",
+            "groupMemberships",
+            entry_kind="group_membership",
+            entry_fields=_GROUP_MEMBERSHIP,
+            entry_label="groupName",
         ),
         SectionSpec(
-            "configuration_profiles", "CONFIGURATION_PROFILES", "configurationProfiles",
-            entry_kind="configuration_profile", entry_fields=_CONFIGURATION_PROFILE, entry_label="displayName",
+            "configuration_profiles",
+            "CONFIGURATION_PROFILES",
+            "configurationProfiles",
+            entry_kind="configuration_profile",
+            entry_fields=_CONFIGURATION_PROFILE,
+            entry_label="displayName",
         ),
         SectionSpec(
-            "local_user_accounts", "LOCAL_USER_ACCOUNTS", "localUserAccounts",
-            entry_kind="local_user_account", entry_fields=_LOCAL_USER_ACCOUNT,
+            "local_user_accounts",
+            "LOCAL_USER_ACCOUNTS",
+            "localUserAccounts",
+            entry_kind="local_user_account",
+            entry_fields=_LOCAL_USER_ACCOUNT,
         ),
         SectionSpec(
-            "certificates", "CERTIFICATES", "certificates",
-            entry_kind="certificate", entry_fields=_CERTIFICATE,
+            "certificates",
+            "CERTIFICATES",
+            "certificates",
+            entry_kind="certificate",
+            entry_fields=_CERTIFICATE,
         ),
         SectionSpec(
-            "software_updates", "SOFTWARE_UPDATES", "softwareUpdates",
-            entry_kind="software_update", entry_fields=_SOFTWARE_UPDATE,
+            "software_updates",
+            "SOFTWARE_UPDATES",
+            "softwareUpdates",
+            entry_kind="software_update",
+            entry_fields=_SOFTWARE_UPDATE,
         ),
     )
 }
@@ -845,7 +869,7 @@ def canonicalize_smart_group(raw: Mapping) -> Observation:
             if isinstance(selected.get("andOr"), str):
                 selected["andOr"] = selected["andOr"].lower()
             criteria.append(selected)
-        criteria.sort(key=lambda c: (c.get("priority") if isinstance(c.get("priority"), int) else 0))
+        criteria.sort(key=lambda c: c.get("priority") if isinstance(c.get("priority"), int) else 0)
 
     body = canonical_document({**raw, "criteria": criteria}, _GROUP_DEFINITION)
     content = SectionContent(
@@ -904,9 +928,7 @@ def canonicalize_extension_attribute_definition(raw: Mapping) -> Observation:
 # --- head and aperture --------------------------------------------------------------
 
 
-def compute_head_digest(
-    subject_kind: str, subject_id: str, aperture_digest: str, section_digests: Mapping[str, str]
-) -> str:
+def compute_head_digest(subject_kind: str, subject_id: str, aperture_digest: str, section_digests: Mapping[str, str]) -> str:
     """The span boundary. Includes the subject so a head names *whose* state it is, and
     the aperture so a change in what was asked of Jamf starts a new span explicitly
     instead of leaking in as per-section noise."""

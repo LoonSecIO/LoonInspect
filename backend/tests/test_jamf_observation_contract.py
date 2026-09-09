@@ -25,7 +25,7 @@ import copy
 import hashlib
 import json
 import unicodedata
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -159,17 +159,14 @@ def test_fixture_identity(raw: dict) -> None:
     assert observation.serial_number == "C02ZL0ONSEC1"
     assert observation.management_id == "5f6a0c1e-9d2b-4c3a-8e7f-1a2b3c4d5e6f"
     assert observation.label == "mbp-ada"
-    assert observation.observed_at == datetime(2026, 8, 21, 7, 15, 42, tzinfo=timezone.utc)
+    assert observation.observed_at == datetime(2026, 8, 21, 7, 15, 42, tzinfo=UTC)
 
 
 def test_fixture_aperture_and_head_vectors(raw: dict) -> None:
     aperture = _fixture_aperture()
     assert aperture.digest == FIXTURE_APERTURE_DIGEST
     observation = c.canonicalize_computer(raw)
-    assert (
-        c.compute_head_digest("computer", "42", aperture.digest, observation.section_digests)
-        == FIXTURE_HEAD_DIGEST
-    )
+    assert c.compute_head_digest("computer", "42", aperture.digest, observation.section_digests) == FIXTURE_HEAD_DIGEST
 
 
 def test_fixture_group_vector() -> None:
@@ -180,11 +177,19 @@ def test_fixture_group_vector() -> None:
             "siteId": "-1",
             "criteria": [
                 {
-                    "name": "Application Title", "priority": 1, "andOr": "AND", "searchType": "is",
-                    "value": "Falcon.app", "openingParen": False, "closingParen": False,
+                    "name": "Application Title",
+                    "priority": 1,
+                    "andOr": "AND",
+                    "searchType": "is",
+                    "value": "Falcon.app",
+                    "openingParen": False,
+                    "closingParen": False,
                 },
                 {
-                    "name": "Computer Group", "priority": 0, "andOr": "and", "searchType": "member of",
+                    "name": "Computer Group",
+                    "priority": 0,
+                    "andOr": "and",
+                    "searchType": "member of",
                     "value": "All Managed Clients",
                 },
             ],
@@ -384,9 +389,7 @@ def test_extension_attribute_definition_name_is_a_label_and_meaning_is_content()
     rechoiced = c.canonicalize_extension_attribute_definition(
         {**EA_DEFINITION, "inputType": {"type": "POPUP", "popupChoices": ["Research"]}}
     )
-    digests = {
-        observation.section_digests["definition"] for observation in (base, disabled, retyped, rechoiced)
-    }
+    digests = {observation.section_digests["definition"] for observation in (base, disabled, retyped, rechoiced)}
     assert len(digests) == 4
 
     scripted = c.canonicalize_extension_attribute_definition(
@@ -458,7 +461,7 @@ def test_canonical_timestamp_rules() -> None:
     assert c.canonical_timestamp("2025-11-03T18:20:07+02:00") == "2025-11-03T16:20:07Z"
     assert c.canonical_timestamp("2025-11-03") == "2025-11-03"  # date-only passes through
     assert c.canonical_timestamp("not a date") == "not a date"
-    assert c.parse_jamf_datetime("2025-11-03T16:20:07.391Z") == datetime(2025, 11, 3, 16, 20, 7, tzinfo=timezone.utc)
+    assert c.parse_jamf_datetime("2025-11-03T16:20:07.391Z") == datetime(2025, 11, 3, 16, 20, 7, tzinfo=UTC)
     assert c.parse_jamf_datetime("2025-11-03") is None
     assert c.parse_jamf_datetime(None) is None
 
@@ -510,16 +513,10 @@ def test_extension_attributes_in_an_unrequested_section_are_not_merged(raw: dict
     purchasing EA is absent when purchasing is not requested, whether or not the raw
     record happens to carry it."""
     without_purchasing = tuple(s for s in c.V0_SECTIONS if s != "purchasing")
-    labels = {
-        e.label
-        for e in c.canonicalize_computer(raw, without_purchasing).sections["extension_attributes"].entries
-    }
+    labels = {e.label for e in c.canonicalize_computer(raw, without_purchasing).sections["extension_attributes"].entries}
     assert "Cost Center" not in labels
     del raw["purchasing"]
-    labels_trimmed = {
-        e.label
-        for e in c.canonicalize_computer(raw, without_purchasing).sections["extension_attributes"].entries
-    }
+    labels_trimmed = {e.label for e in c.canonicalize_computer(raw, without_purchasing).sections["extension_attributes"].entries}
     assert labels == labels_trimmed
 
 
@@ -624,7 +621,7 @@ def test_real_record_identity_and_head(real: dict) -> None:
     assert observation.serial_number == "LOONMINI0M4"
     assert observation.management_id == "11111111-2222-4333-8444-555555555555"
     assert observation.label == "Loon\u2019s Mac mini"  # the curly apostrophe survives NFC intact
-    assert observation.observed_at == datetime(2026, 8, 21, 21, 44, 27, tzinfo=timezone.utc)
+    assert observation.observed_at == datetime(2026, 8, 21, 21, 44, 27, tzinfo=UTC)
     aperture = c.build_aperture(
         host="loon.jamfcloud.com", jamf_version="11.31.1", sections=c.V0_SECTIONS, inventory_collection=None
     )
@@ -671,8 +668,8 @@ def test_real_record_current_state_normalizer(real: dict) -> None:
     assert device.external_id == "3" and device.serial_number == "LOONMINI0M4"
     assert device.os_version == "27.0" and len(device.apps) == 83
     # lastContact (11.31) rather than the documented lastContactTime.
-    assert device.last_check_in == datetime(2026, 8, 22, 13, 47, 30, tzinfo=timezone.utc)
-    assert device.last_inventory_at == datetime(2026, 8, 21, 21, 44, 27, tzinfo=timezone.utc)
+    assert device.last_check_in == datetime(2026, 8, 22, 13, 47, 30, tzinfo=UTC)
+    assert device.last_inventory_at == datetime(2026, 8, 21, 21, 44, 27, tzinfo=UTC)
 
 
 def test_department_and_building_are_read_as_ids(raw: dict, real: dict) -> None:

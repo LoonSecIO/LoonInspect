@@ -17,7 +17,7 @@ httpx.MockTransport, so nothing here needs a database.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -67,9 +67,7 @@ def _event(payload: dict | None = None) -> EventOutbox:
 
 
 def test_bulk_url_uses_data_stream_default() -> None:
-    assert _elastic_bulk_url(_elastic_destination()) == (
-        f"https://cluster.es.example:9243/{ELASTIC_DEFAULT_INDEX}/_bulk"
-    )
+    assert _elastic_bulk_url(_elastic_destination()) == (f"https://cluster.es.example:9243/{ELASTIC_DEFAULT_INDEX}/_bulk")
     # And the default itself stays data-stream shaped (logs-<dataset>-<namespace>),
     # so a fresh cluster's built-in logs-*-* template accepts the first POST.
     assert ELASTIC_DEFAULT_INDEX == "logs-looninspect.events-default"
@@ -113,7 +111,7 @@ def test_bulk_body_survives_a_payload_with_no_occurrence_anywhere() -> None:
     (#218). Now the fixture genuinely lacks an occurrence and the assertion is exact.
     """
     event = EventOutbox(event_type="run.failed", payload={"event": "run.failed"})
-    event.created_at = datetime(2026, 9, 4, 9, 0, tzinfo=timezone.utc)
+    event.created_at = datetime(2026, 9, 4, 9, 0, tzinfo=UTC)
     document = json.loads(_elastic_bulk_body(event).strip().split("\n")[1])
     assert document["@timestamp"] == "2026-09-04T09:00:00+00:00"
 
@@ -124,8 +122,8 @@ def test_bulk_body_survives_a_payload_with_no_occurrence_anywhere() -> None:
 # gap is the whole bug: a sweep that dies at 01:00 and is delivered at 09:00 must index
 # at 01:00, or an alert with a one-hour window never sees the alarm that #103 made
 # default-on for every destination.
-_OCCURRED = datetime(2026, 9, 4, 1, 0, tzinfo=timezone.utc)
-_DRAINED = datetime(2026, 9, 4, 9, 0, tzinfo=timezone.utc)
+_OCCURRED = datetime(2026, 9, 4, 1, 0, tzinfo=UTC)
+_DRAINED = datetime(2026, 9, 4, 9, 0, tzinfo=UTC)
 
 
 def _event_at(event_type: str, payload: dict) -> EventOutbox:

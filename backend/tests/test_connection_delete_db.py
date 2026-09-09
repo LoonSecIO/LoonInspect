@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import os
 import uuid as uuidlib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -36,9 +36,7 @@ import pytest_asyncio
 from sqlalchemy import delete, func, select
 
 pytestmark = [
-    pytest.mark.skipif(
-        not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"
-    ),
+    pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
     # One loop for the module, for the same reason test_tenancy_sweep gives: the engine's
     # pooled connections belong to whichever loop first used them.
     pytest.mark.asyncio(loop_scope="session"),
@@ -92,19 +90,13 @@ async def seeded():
     async with unscoped_session() as db:
         await bootstrap_tenants(db)
         if await db.get(Tenant, TENANT2_ID) is None:
-            db.add(
-                Tenant(id=TENANT2_ID, slug="delete-second", name="Delete Second", kind="operational")
-            )
+            db.add(Tenant(id=TENANT2_ID, slug="delete-second", name="Delete Second", kind="operational"))
             await db.commit()
 
     async with session_for_tenant(OPERATIONAL_TENANT_ID) as db:
-        account = (
-            await db.execute(select(Account).where(Account.email == ADMIN[0]))
-        ).scalars().first()
+        account = (await db.execute(select(Account).where(Account.email == ADMIN[0]))).scalars().first()
         if account is None:
-            await create_account(
-                db, email=ADMIN[0], display_name="delete admin", password=ADMIN[1], roles=("admin",)
-            )
+            await create_account(db, email=ADMIN[0], display_name="delete admin", password=ADMIN[1], roles=("admin",))
             await db.commit()
     return {"tenant_id": OPERATIONAL_TENANT_ID}
 
@@ -161,9 +153,7 @@ async def connection(db):
         await db.rollback()
         device_ids = select(Device.id).where(Device.mdm_connection_id == connection_id)
         await db.execute(delete(InstalledApp).where(InstalledApp.device_id.in_(device_ids)))
-        await db.execute(
-            delete(DeviceExtensionAttribute).where(DeviceExtensionAttribute.device_id.in_(device_ids))
-        )
+        await db.execute(delete(DeviceExtensionAttribute).where(DeviceExtensionAttribute.device_id.in_(device_ids)))
         await db.execute(delete(Device).where(Device.mdm_connection_id == connection_id))
         await db.execute(delete(MdmSyncState).where(MdmSyncState.mdm_connection_id == connection_id))
         await db.execute(delete(MdmConnection).where(MdmConnection.id == connection_id))
@@ -184,7 +174,7 @@ async def _sync_once(db, connection) -> None:
         Run,
     )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     db.add(MdmSyncState(mdm_connection_id=connection.id, provider="jamf", status="idle"))
     await ensure_default_collections(db, connection)
 
@@ -313,10 +303,7 @@ async def test_delete_of_a_synced_connection_takes_its_fleet(client, db, connect
     # nullify this replaces would have left every one of these reachable and correct
     # while the fleet itself belonged to nothing.
     assert await _count(db, InstalledApp, InstalledApp.device_id.in_(device_ids)) == 0
-    assert (
-        await _count(db, DeviceExtensionAttribute, DeviceExtensionAttribute.device_id.in_(device_ids))
-        == 0
-    )
+    assert await _count(db, DeviceExtensionAttribute, DeviceExtensionAttribute.device_id.in_(device_ids)) == 0
 
     assert await _count(db, EventOutbox, EventOutbox.id > 0) == outbox_before
 
@@ -341,9 +328,7 @@ async def test_no_device_survives_the_delete_without_a_connection(client, db, co
 # --- Information disclosure ------------------------------------------------------------
 
 
-async def test_delete_never_puts_database_internals_in_the_response_body(
-    client, db, connection
-) -> None:
+async def test_delete_never_puts_database_internals_in_the_response_body(client, db, connection) -> None:
     """SECURITY. A raw database error reaching the client is a free schema disclosure —
     table names, constraint names, and the shape of the SQL that failed.
 
@@ -434,7 +419,7 @@ async def test_a_dead_run_does_not_make_a_connection_undeletable(client, db, con
     run_id = acquisition.run.id
     await db.commit()
 
-    dead = datetime.now(timezone.utc) - timedelta(seconds=settings.run_stale_after_seconds + 60)
+    dead = datetime.now(UTC) - timedelta(seconds=settings.run_stale_after_seconds + 60)
     run = await db.get(Run, run_id)
     run.heartbeat_at = dead
     await db.commit()

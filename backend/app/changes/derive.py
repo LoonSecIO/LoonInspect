@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -79,9 +79,7 @@ async def _load_section(db: AsyncSession, digest: str | None) -> tuple[dict | No
     digests = list(row.entry_digests)
     if not digests:
         return None, []
-    entries = (
-        await db.execute(select(ObservationEntry).where(ObservationEntry.digest.in_(digests)))
-    ).scalars().all()
+    entries = (await db.execute(select(ObservationEntry).where(ObservationEntry.digest.in_(digests)))).scalars().all()
     return None, [Entry(digest=e.digest, body=e.body, label=e.label) for e in entries]
 
 
@@ -107,7 +105,7 @@ async def derive_and_record(
     if previous is None:
         return []
     policy = await load_policy(db)
-    collected_at = collected_at or datetime.now(timezone.utc)
+    collected_at = collected_at or datetime.now(UTC)
     observed_at = observation.observed_at or collected_at
 
     field_changes: list[FieldChange] = []
@@ -174,9 +172,7 @@ async def derive_and_record(
     for change in entry_changes:
         if change.kind == "group_membership" and policy.group_muted(str(change.identity.get("groupId"))):
             continue
-        if change.kind == "extension_attribute" and policy.extension_attribute_muted(
-            str(change.identity.get("definitionId"))
-        ):
+        if change.kind == "extension_attribute" and policy.extension_attribute_muted(str(change.identity.get("definitionId"))):
             continue
         if change.change == "updated":
             enabled_fields = [f for f in change.changed_fields if policy.entry_enabled(change.kind, "updated", f)]
@@ -249,23 +245,25 @@ async def derive_and_record(
     return rows
 
 
-async def _membership_cause(
-    db: AsyncSession, connection: MdmConnection, change: EntryChange, previous: ObservationSpan
-) -> dict:
+async def _membership_cause(db: AsyncSession, connection: MdmConnection, change: EntryChange, previous: ObservationSpan) -> dict:
     """Did the group's criteria move since this device was last observed? If the group's
     current definition span opened after the device's previous span was last observed,
     the criteria changed in between; otherwise the device drifted."""
     group_id = str(change.identity.get("groupId"))
     definition = (
-        await db.execute(
-            select(ObservationSpan).where(
-                ObservationSpan.mdm_connection_id == connection.id,
-                ObservationSpan.subject_kind == "computer_group",
-                ObservationSpan.subject_id == group_id,
-                ObservationSpan.is_current.is_(True),
+        (
+            await db.execute(
+                select(ObservationSpan).where(
+                    ObservationSpan.mdm_connection_id == connection.id,
+                    ObservationSpan.subject_kind == "computer_group",
+                    ObservationSpan.subject_id == group_id,
+                    ObservationSpan.is_current.is_(True),
+                )
             )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if definition is None:
         return {"criteriaChanged": None}
     moved = definition.previous_id is not None and definition.first_observed_at > previous.last_observed_at

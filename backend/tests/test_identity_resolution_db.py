@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import os
 import uuid as uuidlib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -229,7 +229,7 @@ async def test_the_hourly_purge_takes_the_index_row_with_the_session(tidy) -> No
         await db.execute(
             update(UserSession)
             .where(UserSession.token_hash == token_hash)
-            .values(expires_at=datetime.now(timezone.utc) - timedelta(days=3))
+            .values(expires_at=datetime.now(UTC) - timedelta(days=3))
         )
         await db.commit()
 

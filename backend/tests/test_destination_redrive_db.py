@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import uuid as uuidlib
+from datetime import UTC
 
 import httpx
 import pytest
@@ -76,7 +77,7 @@ async def dead_letters(db, admin):
     takes every held event in the tenant with it — hundreds, after the suites that run
     before this one — and this destination would inherit all of them.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from app.core.outbox import enqueue_event
     from app.models.schema import Destination, EventOutbox, OutboxDelivery
@@ -94,7 +95,7 @@ async def dead_letters(db, admin):
     assert created.status_code == 201, created.text
     destination_id = created.json()["id"]
     event_ids = []
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for _ in range(2):
         event = await enqueue_event(db, "device.change", {"event": "device.change"})
         event.fanned_out = True

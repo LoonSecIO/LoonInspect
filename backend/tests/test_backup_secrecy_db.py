@@ -33,9 +33,7 @@ from sqlalchemy import delete, text
 # One event loop for the whole module — the engine's pooled connections belong to
 # whichever loop first used them.
 pytestmark = [
-    pytest.mark.skipif(
-        not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"
-    ),
+    pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
     pytest.mark.asyncio(loop_scope="session"),
 ]
 
@@ -71,9 +69,7 @@ async def stored() -> None:
                 name="vvq connection",
                 provider="jamf",
                 base_url="https://jamf.vvq.example.com",
-                credentials_encrypted=json.dumps(
-                    {"clientId": "vvq-client-id", "clientSecret": CLIENT_SECRET}
-                ),
+                credentials_encrypted=json.dumps({"clientId": "vvq-client-id", "clientSecret": CLIENT_SECRET}),
                 webhook_secret_encrypted=WEBHOOK_SECRET,
                 loonsecio_license_key_encrypted=LICENSE_KEY,
             )
@@ -141,9 +137,7 @@ async def test_the_stored_bytes_are_fernet_tokens_this_key_can_read(stored: None
     token = row["credentials_encrypted"]
 
     assert token.startswith("gAAAAA"), "not a Fernet token: the column is storing something else"
-    assert json.loads(Fernet(get_encryption_key()).decrypt(token.encode()))["clientSecret"] == (
-        CLIENT_SECRET
-    )
+    assert json.loads(Fernet(get_encryption_key()).decrypt(token.encode()))["clientSecret"] == (CLIENT_SECRET)
 
     with pytest.raises(InvalidToken):
         Fernet(Fernet.generate_key()).decrypt(token.encode())

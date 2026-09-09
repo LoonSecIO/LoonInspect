@@ -45,10 +45,9 @@ def resolve_auth_type(destination_type: str, auth_type: str | None) -> str:
     if auth_type is None:
         return required or "none"
     if required is not None and auth_type != required:
-        raise ValueError(
-            f"a {destination_type} destination must use authType '{required}', not '{auth_type}'"
-        )
+        raise ValueError(f"a {destination_type} destination must use authType '{required}', not '{auth_type}'")
     return auth_type
+
 
 # Elasticsearch's own index/data-stream naming rules, checked here so a bad name is a
 # 422 at configuration time instead of a per-item bulk rejection discovered in the

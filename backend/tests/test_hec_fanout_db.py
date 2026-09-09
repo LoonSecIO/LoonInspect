@@ -185,7 +185,9 @@ async def test_one_snapshot_delivery_is_one_request_of_n_sub_events_on_the_real_
     for row in rows:
         by_type.setdefault(row.event_type, []).append(row)
     assert {kind: len(items) for kind, items in by_type.items()} == {
-        "device.inventory": 2, "device.inventory.changed": 2, "run.completed": 1,
+        "device.inventory": 2,
+        "device.inventory.changed": 2,
+        "run.completed": 1,
     }
     deliveries = (await db.execute(select(OutboxDelivery))).scalars().all()
     assert len(deliveries) == 10 and {row.status for row in deliveries} == {"delivered"}
@@ -204,7 +206,9 @@ async def test_one_snapshot_delivery_is_one_request_of_n_sub_events_on_the_real_
         objects = [json.loads(line) for line in request.content.split(b"\n")]
         requests_by_family.setdefault(objects[0]["event"]["event"], []).append(objects)
     assert {family: len(items) for family, items in requests_by_family.items()} == {
-        "device.inventory": 2, "device.inventory.changed": 2, "run.completed": 1,
+        "device.inventory": 2,
+        "device.inventory.changed": 2,
+        "run.completed": 1,
     }
 
     registry = {stype for _section, _key, _wrapper, stype in registry_rows()}
@@ -243,9 +247,7 @@ async def test_one_snapshot_delivery_is_one_request_of_n_sub_events_on_the_real_
     whole = [body for body in received if not isinstance(body, list)]
     assert len(fanned) == 2 and len(whole) == 3
 
-    snapshot_records = {
-        row.payload["deviceMeta"]["jamfProID"]: record_events(row.payload) for row in by_type["device.inventory"]
-    }
+    snapshot_records = {row.payload["deviceMeta"]["jamfProID"]: record_events(row.payload) for row in by_type["device.inventory"]}
     for body in fanned:
         assert body == snapshot_records[body[0]["deviceMeta"]["jamfProID"]]
         assert {record["sourcetype"] for record in body} <= registry

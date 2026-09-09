@@ -55,11 +55,6 @@ select = [
     "RUF",    # ruff-specific
 ]
 ignore = [
-    # UP017/UP042 are cosmetic modernisations (datetime.UTC, enum.StrEnum) that
-    # touch ~36 sites across feature modules. Deferred to a dedicated change so
-    # this one stays reviewable; see #16.
-    "UP017",
-    "UP042",
     # Flags typographic characters in user-facing copy (e.g. "Devices > Applications"
     # rendered with a real angle quote). Intentional in this codebase.
     "RUF001",
