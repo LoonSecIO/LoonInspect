@@ -14,6 +14,8 @@ export function listDevices(filters: DeviceFilters): Promise<DeviceListResponse>
   if (filters.department) params.set("department", filters.department);
   if (filters.managed !== undefined) params.set("managed", String(filters.managed));
   if (filters.supervised !== undefined) params.set("supervised", String(filters.supervised));
+  if (filters.lastCheckInBefore) params.set("lastCheckInBefore", filters.lastCheckInBefore);
+  if (filters.lastCheckInAfter) params.set("lastCheckInAfter", filters.lastCheckInAfter);
   params.set("page", String(filters.page ?? 1));
   params.set("pageSize", String(filters.pageSize ?? 50));
 

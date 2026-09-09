@@ -188,6 +188,17 @@ def _installed():
     return exists(select(InstalledApp.id).where(InstalledApp.version_hash == AppCatalogEntry.version_hash))
 
 
+async def patch_pair_counts(db: AsyncSession) -> tuple[int, int]:
+    """`(pairs_total, pairs_on_latest)` — the two inputs the coverage ratio derives from,
+    at the pair grain the recorder writes them at. The one implementation of that
+    definition (#109): the recorder calls this for the nightly row, and
+    `GET /api/jamf-patch/coverage` calls it for the live tile, so the tile and the tape
+    can never disagree about what "on latest" means."""
+    total = await _count(db, select(func.count()).select_from(_patch_pairs()))
+    on_latest = await _count(db, select(func.count()).select_from(_patch_pairs(AppCatalogTitleMatch.on_latest.is_(True))))
+    return total, on_latest
+
+
 def _patch_pairs(*criteria):
     """Distinct (device, matched Jamf Patch title) install pairs — the
     AppCatalogTitleMatch → catalog row → InstalledApp join /api/jamf-patch counts devices
@@ -316,10 +327,7 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
 
     # patch.* — the pair grain, and the per-title laggard cut /api/jamf-patch renders as
     # devices_on_latest < device_count. Coverage % derives at render; both inputs land.
-    values["patch.pairs_total"] = await _count(db, select(func.count()).select_from(_patch_pairs()))
-    values["patch.pairs_on_latest"] = await _count(
-        db, select(func.count()).select_from(_patch_pairs(AppCatalogTitleMatch.on_latest.is_(True)))
-    )
+    values["patch.pairs_total"], values["patch.pairs_on_latest"] = await patch_pair_counts(db)
     # patch.pairs_laggard_over_14d — #68's clock, ruled 2026-09-02: Jamf's release date of the
     # earliest listed version newer than the installed one, read from the pair's own title row.
     # Behind only: an unlisted build cannot be placed against a specific missed update, so it

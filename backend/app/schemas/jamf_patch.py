@@ -52,6 +52,17 @@ class JamfPatchTitleDetailOut(JamfPatchTitleOut):
     version_device_counts: dict[str, int] = {}
 
 
+class JamfPatchCoverageOut(BaseModel):
+    """The two inputs the Overview's coverage tile derives its ratio from (#109), at the
+    pair grain the posture recorder writes `patch.pairs_total` / `patch.pairs_on_latest`
+    at, from the same function — one definition, live and recorded."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    pairs_total: int
+    pairs_on_latest: int
+
+
 class JamfPatchSyncResult(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 

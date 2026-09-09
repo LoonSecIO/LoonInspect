@@ -9,10 +9,12 @@ from app.catalog.service import refresh_tenant
 from app.core.auth import require
 from app.core.database import get_db
 from app.core.permissions import Permission
+from app.core.posture import patch_pair_counts
 from app.mdm.patch.jamf_catalog import sync_catalog
 from app.mdm.patch.matching import STATE_BEHIND
 from app.models.schema import AppCatalogEntry, AppCatalogTitleMatch, InstalledApp, JamfPatchTitle
 from app.schemas.jamf_patch import (
+    JamfPatchCoverageOut,
     JamfPatchSyncResult,
     JamfPatchTitleDetailOut,
     JamfPatchTitleListResponse,
@@ -84,6 +86,21 @@ async def sync_titles(db: AsyncSession = Depends(get_db)) -> JamfPatchSyncResult
     await refresh_tenant(db)
     await db.commit()
     return JamfPatchSyncResult(synced=synced)
+
+
+@router.get(
+    "/coverage",
+    response_model=JamfPatchCoverageOut,
+    dependencies=[Depends(require(Permission.APP_READ))],
+)
+async def coverage(db: AsyncSession = Depends(get_db)) -> JamfPatchCoverageOut:
+    """Distinct (device, matched title) pairs, and how many are on the title's current
+    version — the live reading of the posture recorder's `patch.pairs_*` definition, from
+    the recorder's own function, so the Overview tile and the nightly tape agree (#109).
+    The ratio derives at render; both inputs are served so it stays auditable.
+    """
+    total, on_latest = await patch_pair_counts(db)
+    return JamfPatchCoverageOut(pairs_total=total, pairs_on_latest=on_latest)
 
 
 @router.get(
