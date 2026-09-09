@@ -62,6 +62,11 @@ export const en = {
     sidebarExpanded: "Icons + text",
     sidebarCollapsed: "Icons only",
     sidebarHidden: "Hidden",
+    // The drawer that stands in for the sidebar below the `md` breakpoint (#141):
+    // the button that opens it, the dialog's own name, and the button that closes it.
+    menu: "Navigation",
+    openMenu: "Open navigation",
+    closeMenu: "Close navigation",
     // The scope note repeated in three places an admin forms an expectation (#232):
     // the connection form, the run summary, and the devices count. v0 reads
     // computers only, and this says so rather than leaving a short count to imply it.
