@@ -36,7 +36,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from app.mdm.jamf.contract import SECTIONS
+from app.mdm.jamf.contract import SUBJECT_COMPUTER, SectionSpec, sections_for
 
 # The producer token leads because `loon:*` is then the one search that finds everything
 # this product wrote, in an index it shares with EDR, DHCP and identity logs. The vendor
@@ -83,10 +83,11 @@ DELTA_SOURCETYPE = f"{PRODUCER}:inventory:changed"
 # because `userAndLocation` and `localUserAccounts` become indistinguishable, the same
 # failure the contract's "readable English, no abbreviations" rule exists to prevent.
 #
-# Keyed by the contract's section name. Every entry in SECTIONS must appear here and
-# nothing else may: tests/test_wire_vocabulary.py refuses the drift in both directions,
-# so a section cannot be added to the read aperture without being given a name on the
-# wire, and a name cannot outlive the section it travels for.
+# Keyed by the contract's section name. Every entry in SECTIONS — the COMPUTER object's
+# table (#235; `WRAPPER_REGISTRIES` below is where a second object's table would hang)
+# — must appear here and nothing else may: tests/test_wire_vocabulary.py refuses the
+# drift in both directions, so a section cannot be added to the read aperture without
+# being given a name on the wire, and a name cannot outlive the section it travels for.
 SECTION_WRAPPERS: dict[str, str] = {
     # one per device — long
     "general": "general",
@@ -105,6 +106,40 @@ SECTION_WRAPPERS: dict[str, str] = {
     "certificates": "cert",
     "software_updates": "update",
 }
+
+# The platform segment, mapped to the Jamf object whose registry it reads (#235). The
+# read branches by object — computers-inventory and mobile-devices are two endpoints and
+# two section tables — while the wire branches by OS: `mac` reads the computer table, and
+# `ios`, `ipados`, `tvos` and `visionos` will all read the one mobile table
+# (docs/mobile-devices.md §2). Those four are deliberately absent until that table exists:
+# `registry_rows(platform="ios")` used to iterate the computer sections whatever it was
+# handed and emit `loon:jamf:ios:diskEncryption` — a stanza for a section iOS has no
+# concept of — and a sourcetype string, once minted, is permanent (clause 5). So an
+# unregistered platform raises, and the four strings are never minted by accident.
+PLATFORM_SUBJECTS: dict[str, str] = {
+    "mac": SUBJECT_COMPUTER,
+}
+
+# The wrapper tables, keyed like `contract.SECTION_REGISTRIES`: one per Jamf object, each
+# in lock-step with its section table (tests/test_wire_vocabulary.py refuses drift in
+# both directions, per object). The fourteen computer strings are ruled (#188) and none
+# of them changes.
+WRAPPER_REGISTRIES: dict[str, dict[str, str]] = {
+    SUBJECT_COMPUTER: SECTION_WRAPPERS,
+}
+
+
+def registry_for(platform: str) -> tuple[dict[str, SectionSpec], dict[str, str]]:
+    """`(sections, wrappers)` for one platform, or a ValueError naming the platform that
+    has no registry yet — never the computer table by default."""
+    subject = PLATFORM_SUBJECTS.get(platform)
+    if subject is None:
+        raise ValueError(
+            f"no section registry for platform {platform!r}; the wire knows "
+            f"{sorted(PLATFORM_SUBJECTS)} (docs/mobile-devices.md §2, #235)"
+        )
+    return sections_for(subject), WRAPPER_REGISTRIES[subject]
+
 
 # Subjects that are not device sections. The ledger observes a smart group's definition as
 # its own subject (`contract.SUBJECT_COMPUTER_GROUP`), canonicalized into a single
@@ -287,21 +322,30 @@ def sourcetype(wrapper: str, *, vendor: str = "jamf", platform: str = "mac", lea
 def registry_rows(*, vendor: str = "jamf", platform: str = "mac") -> list[tuple[str, str, str, str]]:
     """The registry, generated from the read aperture: one row per collected section.
 
-    `(section, jamf response key, wrapper key, sourcetype)`, ordered as SECTIONS is —
-    which is the order the contract itself declares them, not alphabetical, so the doc
-    reads in the same order as the code.
+    `(section, jamf response key, wrapper key, sourcetype)`, ordered as the platform's
+    section table is — which is the order the contract itself declares them, not
+    alphabetical, so the doc reads in the same order as the code. The table is the
+    platform's own (`registry_for`): a platform with none raises here rather than
+    minting the computer sections under its name (#235).
     """
+    sections, wrappers = registry_for(platform)
     rows: list[tuple[str, str, str, str]] = []
-    for name, spec in SECTIONS.items():
-        wrapper = SECTION_WRAPPERS[name]
+    for name, spec in sections.items():
+        wrapper = wrappers[name]
         rows.append((name, spec.response_key, wrapper, sourcetype(wrapper, vendor=vendor, platform=platform)))
     return rows
 
 
 def enrichment_rows(*, vendor: str = "jamf", platform: str = "mac") -> list[tuple[str, str, str]]:
-    """`(carrier wrapper, enrichment wrapper, sourcetype)` for every enrichment section."""
+    """`(carrier wrapper, enrichment wrapper, sourcetype)` for every enrichment section
+    whose carrier the platform's registry has — an enrichment rides an object's own
+    sub-event, so a platform with no such object carries none of it."""
+    _sections, wrappers = registry_for(platform)
+    carried = set(wrappers.values())
     rows: list[tuple[str, str, str]] = []
     for carrier, leaves in ENRICHMENTS.items():
+        if carrier not in carried:
+            continue
         for leaf in leaves:
             rows.append((carrier, leaf, sourcetype(carrier, vendor=vendor, platform=platform, leaf=leaf)))
     return rows
@@ -315,9 +359,10 @@ def change_rows(*, vendor: str = "jamf", platform: str = "mac") -> list[tuple[st
     a sourcetype stanza takes no wildcards. That count is the argument for a LoonInspect TA,
     recorded on #243 and not built here.
     """
+    sections, wrappers = registry_for(platform)
     rows: list[tuple[str, str, str]] = []
-    for name in SECTIONS:
-        wrapper = SECTION_WRAPPERS[name]
+    for name in sections:
+        wrapper = wrappers[name]
         rows.append((name, wrapper, sourcetype(wrapper, vendor=vendor, platform=platform, leaf=CHANGE_LEAF)))
     for subject, wrapper in SUBJECT_WRAPPERS.items():
         rows.append((subject, wrapper, sourcetype(wrapper, vendor=vendor, platform=platform, leaf=CHANGE_LEAF)))
@@ -363,7 +408,12 @@ def change_sourcetype(
     """
     if event != CHANGE_EVENT_TYPE:
         return None
-    wrapper = SUBJECT_WRAPPERS.get(subject_kind or "") or SECTION_WRAPPERS.get(section or "")
+    # The platform's own wrapper table, and None — unstamped, per the paragraph above —
+    # for a platform that has none yet, rather than the raise `registry_rows` gives a
+    # caller outside the delivery path (#235).
+    subject = PLATFORM_SUBJECTS.get(platform)
+    section_wrappers = WRAPPER_REGISTRIES.get(subject or "", {})
+    wrapper = SUBJECT_WRAPPERS.get(subject_kind or "") or section_wrappers.get(section or "")
     if wrapper is None:
         return None
     return sourcetype(wrapper, vendor=vendor, platform=platform, leaf=CHANGE_LEAF)
