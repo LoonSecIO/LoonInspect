@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { listJamfPatchTitles, syncJamfPatchTitles } from "@/features/jamfPatch/api";
+import { PatchingPolicyStatement } from "@/features/jamfPatch/PatchingPolicyStatement";
 import type { JamfPatchTitle } from "@/features/jamfPatch/types";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -180,6 +181,9 @@ export function JamfPatchPage() {
       </div>
 
       {syncError && <p className="text-sm text-destructive">{syncError}</p>}
+
+      {/* The org's stated policy, beside the evidence it is read against (#116). */}
+      <PatchingPolicyStatement />
 
       <div className="flex flex-wrap gap-3">
         <input

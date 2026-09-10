@@ -284,7 +284,27 @@ statements earlier (`matching.cached_title_names`). Measured on the real record:
 device per sync, 9.0% of what `deviceMeta` alone already costs**, pinned in
 `tests/test_patch_wire.py`.
 
-## 8. Not here (follow-ups)
+## 8. The org states its patching policy (#116)
+
+Ruled 2026-09-10. An organization has a place to state its own patching policy as typed
+text — *"we require every update to the latest version within two weeks, or the latest the
+hardware supports if it cannot reach a supported version"* — and it is read where the
+evidence is: the header of Devices › Applications › Jamf Patch, above the title list and
+the coverage numbers, so an auditor reads the stated policy beside the measured numbers.
+
+- One row per tenant (`patching_policies`), created on first write; `GET /api/settings/patching-policy`
+  needs `app:read` like the page and answers an empty statement when nothing has been
+  stated; `PUT` needs `system:write`, strips the text, records who and when, and is audited
+  as `patching-policy.updated`. Clearing is an empty statement, never a deleted row.
+- **Display and evidence context, never a threshold.** Nothing on the page is judged
+  against the statement and no number turns red because of it; the page says so beside
+  the text. Fixed-target comparisons still require a ruled policy
+  ([`v-never.md`](v-never.md): no invented compliance regimes; thresholds are code
+  constants). An org-stated policy is how an org-backed target could someday be
+  legitimized — that legitimization is a separate, future ruling, not this feature.
+- Served by the API rather than baked into the page, per the macOS-client rule.
+
+## 9. Not here (follow-ups)
 
 Re-evaluating matches when the hourly catalog sync changes a title — since shipped:
 `hourly_jamf_patch_sync` re-judges every tenant's catalog after each sync

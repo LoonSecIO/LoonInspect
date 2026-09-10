@@ -803,6 +803,22 @@ export const de: Translations = {
     total: (n: number) => `${n} Titel insgesamt`,
     filteredTotal: (shown: number, total: number) =>
       shown === total ? `${total} Titel insgesamt` : `${shown} von ${total} Titeln`,
+    policy: {
+      heading: "Erklärte Patch-Richtlinie",
+      loading: "Erklärte Richtlinie wird geladen…",
+      errorLoading: "Die erklärte Richtlinie konnte nicht geladen werden.",
+      none: "Für diese Organisation wurde keine Patch-Richtlinie erklärt.",
+      state: "Richtlinie erklären",
+      edit: "Bearbeiten",
+      save: "Speichern",
+      cancel: "Abbrechen",
+      saveError: "Die Richtlinie konnte nicht gespeichert werden.",
+      placeholder: "z. B. Wir verlangen jedes Update auf die neueste Version innerhalb von zwei Wochen, oder die neueste, die die Hardware unterstützt, wenn sie keine unterstützte Version erreicht.",
+      statedBy: (by: string, when: string) => `Erklärt von ${by}, ${when}`,
+      unknownAuthor: "einem Administrator",
+      boundary:
+        "Für die Lesenden neben der Evidenz erklärt. Sie setzt keinen Schwellenwert: nichts auf dieser Seite wird daran gemessen, und keine Zahl hier wird deswegen rot."
+    },
     detail: {
       back: "← Zurück zu Jamf Patch",
       loading: "Lädt...",

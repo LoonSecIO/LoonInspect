@@ -867,6 +867,24 @@ export const en = {
     total: (n: number) => `${n} title${n === 1 ? "" : "s"} total`,
     filteredTotal: (shown: number, total: number) =>
       shown === total ? `${total} title${total === 1 ? "" : "s"} total` : `${shown} of ${total} titles`,
+    // The org's stated patching policy (#116): typed text beside the evidence, and the
+    // boundary said on the page — it is context for the reader, never a threshold.
+    policy: {
+      heading: "Stated patching policy",
+      loading: "Loading the stated policy…",
+      errorLoading: "Could not load the stated policy.",
+      none: "No patching policy has been stated for this organization.",
+      state: "State the policy",
+      edit: "Edit",
+      save: "Save",
+      cancel: "Cancel",
+      saveError: "Could not save the policy.",
+      placeholder: "e.g. We require every update to the latest version within two weeks, or the latest the hardware supports if it cannot reach a supported version.",
+      statedBy: (by: string, when: string) => `Stated by ${by}, ${when}`,
+      unknownAuthor: "an administrator",
+      boundary:
+        "Stated for the reader beside the evidence. It sets no threshold: nothing on this page is judged against it, and no number here turns red because of it."
+    },
     detail: {
       back: "← Back to Jamf Patch",
       loading: "Loading...",

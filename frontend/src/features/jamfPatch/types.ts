@@ -63,3 +63,11 @@ export interface JamfPatchTitleDetail extends JamfPatchTitle {
   /** Installed version → distinct devices, for the apps matched to this title. */
   versionDeviceCounts: Record<string, number>;
 }
+
+/** The org's stated patching policy (#116): typed text read beside the evidence, never a
+ *  threshold. `statement` is "" when nothing has been stated. */
+export interface PatchingPolicy {
+  statement: string;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
