@@ -180,3 +180,52 @@ async def test_a_credential_rotates_and_the_optional_secrets_clear_on_null(clien
     assert cleared.json()["hasWebhookSecret"] is False
     # Clearing the optional secret left the credentials exactly where rotation put them.
     assert set(cleared.json()["credentialFieldsSet"]) >= {"clientId", "clientSecret"}
+
+
+async def test_devices_narrow_to_the_carriers_of_one_app_and_one_build(client, db) -> None:
+    """#299: `appHash` and `versionHash` on `GET /api/devices` are the record page's
+    "→ Devices" links; together they name one build of one app."""
+    from app.core.content_keys import app_full_key, app_title_key
+    from app.models.schema import Device, InstalledApp
+
+    suffix = uuidlib.uuid4().hex[:8]
+    name, bundle = f"Carrier {suffix}", f"io.loonsec.carrier.{suffix}"
+    app_hash, old_build, new_build = f"a{suffix}".ljust(32, "0"), f"b{suffix}".ljust(32, "0"), f"c{suffix}".ljust(32, "0")
+    devices = [
+        Device(
+            mdm_provider="jamf",
+            external_id=f"carrier-{suffix}-{i}",
+            serial_number=f"CARRIER{suffix}{i}",
+            hostname=f"carrier-{suffix}-{i}",
+        )
+        for i in range(2)
+    ]
+    db.add_all(devices)
+    await db.flush()
+    for device, version, version_hash in ((devices[0], "1.0", old_build), (devices[1], "2.0", new_build)):
+        db.add(
+            InstalledApp(
+                device_id=device.id,
+                name=name,
+                bundle_id=bundle,
+                version=version,
+                short_version=None,
+                app_hash=app_hash,
+                version_hash=version_hash,
+                key_title=app_title_key(name, bundle),
+                key_full=app_full_key(name, bundle, version, None),
+            )
+        )
+    await db.commit()
+    ids = {device.id for device in devices}
+    try:
+        both = await client.get(f"/api/devices?appHash={app_hash}&pageSize=10")
+        assert both.status_code == 200 and {item["id"] for item in both.json()["items"]} == ids
+        one = await client.get(f"/api/devices?appHash={app_hash}&versionHash={new_build}&pageSize=10")
+        assert [item["id"] for item in one.json()["items"]] == [devices[1].id]
+        none = await client.get(f"/api/devices?versionHash={'d' + suffix:0<32}&pageSize=10")
+        assert none.json()["total"] == 0
+    finally:
+        await db.execute(delete(InstalledApp).where(InstalledApp.device_id.in_(ids)))
+        await db.execute(delete(Device).where(Device.id.in_(ids)))
+        await db.commit()

@@ -127,6 +127,8 @@ async def list_devices(
     last_inventory_after: datetime | None = Query(default=None, alias="lastInventoryAfter"),
     last_inventory_before: datetime | None = Query(default=None, alias="lastInventoryBefore"),
     mdm_connection_id: int | None = Query(default=None, alias="mdmConnectionId"),
+    app_hash: str | None = Query(default=None, alias="appHash", max_length=32),
+    version_hash: str | None = Query(default=None, alias="versionHash", max_length=32),
     ea: list[str] | None = Query(default=None, description="Repeated key:value extension-attribute filters"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200, alias="pageSize"),
@@ -160,6 +162,17 @@ async def list_devices(
         stmt = stmt.where(Device.last_inventory_at <= last_inventory_before)
     if mdm_connection_id is not None:
         stmt = stmt.where(Device.mdm_connection_id == mdm_connection_id)
+    if app_hash or version_hash:
+        # The carriers of one application or of one build (#299), in the idiom the EA
+        # filter below uses, served by the indexes on installed_apps.app_hash and
+        # version_hash. Both together narrow to one build of one app; the application
+        # record page links here per row.
+        carrying = select(InstalledApp.device_id)
+        if app_hash:
+            carrying = carrying.where(InstalledApp.app_hash == app_hash)
+        if version_hash:
+            carrying = carrying.where(InstalledApp.version_hash == version_hash)
+        stmt = stmt.where(Device.id.in_(carrying))
 
     for ea_filter in _parse_ea_filters(ea):
         # By definition id or by name (#197): the id is the identity a script can rely

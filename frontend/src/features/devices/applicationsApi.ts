@@ -1,23 +1,13 @@
 import { apiRequest } from "@/config/api";
 
-export interface ApplicationVersion {
-  /** md5(name:bundleId:version[:shortVersion]) — the LoonSec Global API lookup key. */
-  versionHash: string;
-  version: string;
-  shortVersion: string | null;
-  deviceCount: number;
-  patchAvailable: boolean | null;
-  isCompliant: boolean | null;
-}
-
 export interface Application {
-  /** md5(name:bundleId) — the application regardless of version. */
+  /** md5(name:bundleId) — the application regardless of version, and the address of its
+   *  record at `/devices/applications/:appHash` (#299). */
   appHash: string;
   name: string;
   bundleId: string;
   deviceCount: number;
   versionCount: number;
-  versions: ApplicationVersion[];
 }
 
 /** The list envelope every paged endpoint shares (#137): the page's rows, the count

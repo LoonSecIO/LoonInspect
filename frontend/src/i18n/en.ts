@@ -591,6 +591,9 @@ export const en = {
     // control for it, so it is a chip the reader can remove.
     staleChip: (since: string) => `No check-in since ${since}`,
     clearFilter: "Clear this filter",
+    // The application record page's carrier links (#299), named by the catalog lookup.
+    carrierChip: (app: string) => `Running ${app}`,
+    carrierChipUnnamed: "Running one application",
     // The device page (#300). Every absence is a sentence about whose clock or whose
     // catalog is silent, never a dash: "Reported with no value" ≠ "no EAs" ≠ "not read".
     detail: {
@@ -707,19 +710,57 @@ export const en = {
     tabInstalled: "Installed Apps",
     tableName: "Name",
     tableBundleId: "Bundle ID",
-    tableVersion: "Version",
-    tableInstalls: "Installs",
-    tableCompliant: "Compliant",
-    tablePatchAvailable: "Patch available",
     tableDevices: "Devices",
     tableVersions: "Versions",
-    tableShortVersion: "Short version",
-    tableVersionHash: "Version hash",
     searchPlaceholder: "Filter by name or bundle ID…",
     loading: "Loading applications…",
     errorLoading: "Could not load applications.",
     empty: "No applications detected yet.",
-    total: (n: number) => `${n} application${n === 1 ? "" : "s"} total`
+    // Four empty states, resolved from the sync status only on the empty path (#299): an
+    // empty table that cannot say why reads as "nothing installed".
+    emptyStates: {
+      noConnection: "No MDM connection yet. Add one under Settings › Connections and run a sync.",
+      noSync: "No sync has finished yet. Applications appear after the first sweep.",
+      synced: "The last sync reported no applications on any device.",
+      noMatch: "No application matches this search."
+    } as Record<string, string>,
+    total: (n: number) => `${n} application${n === 1 ? "" : "s"} total`,
+    // The application record page (#299), keyed by app_hash.
+    record: {
+      back: "All applications",
+      loading: "Loading application…",
+      notFound: "No application has this key.",
+      errorLoading: "Could not load this application.",
+      copy: "Copy",
+      copied: "Copied",
+      lookupKey: "Lookup key",
+      lookupKeyHint: "md5 of name and bundle ID: the record's address, not an identity Jamf knows.",
+      answer: (builds: number, installs: number, patchable: number, lastReported: string) =>
+        `${builds} build${builds === 1 ? "" : "s"} · ${installs} install${installs === 1 ? "" : "s"} · ${patchable} with a patch available · last reported ${lastReported}`,
+      answerNone: "No device currently reports this app.",
+      allCarriers: "every device running it",
+      spreadHeading: "Version spread",
+      colVersion: "Version",
+      colDevices: "Devices",
+      colPatch: "Jamf Patch",
+      colLatest: "Latest",
+      colVuln: "Vulnerabilities",
+      colFirstSeen: "First seen",
+      colLastSeen: "Last seen",
+      colJudged: "Judged",
+      colCarriers: "Carriers",
+      colTitle: "Jamf title",
+      colReleased: "Released",
+      carriers: "→ Devices",
+      notJudged: "Not judged yet",
+      rememberedHeading: "Your catalog remembers this app; no device currently reports it",
+      rememberedRow: (version: string, lastSeen: string) => `${version} · last seen ${lastSeen}`,
+      unlistedHeading: "Jamf lists these, nobody here runs them",
+      unlistedNone: "No Jamf Patch title matches this app, so there is no Jamf list to compare against.",
+      unlistedTitleLoading: "Reading Jamf's list…",
+      unlistedAllCarried: (titles: number) =>
+        `Every version Jamf lists for ${titles === 1 ? "this title" : `these ${titles} titles`} is running somewhere in the fleet.`
+    }
   },
   catalog: {
     tabLabel: "Catalog",

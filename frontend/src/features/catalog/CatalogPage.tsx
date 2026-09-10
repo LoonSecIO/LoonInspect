@@ -80,7 +80,7 @@ export function CatalogPage() {
         .then((response) => {
           if (cancelled) return;
           setEntries(response.items);
-          setSummary(response.summary);
+          if (response.summary) setSummary(response.summary);
           setCorpusAsOf(response.corpusAsOf);
         })
         .catch(() => {

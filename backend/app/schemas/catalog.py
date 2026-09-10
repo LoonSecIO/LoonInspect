@@ -49,6 +49,9 @@ class CatalogEntryOut(_CamelModel):
     latest_released_at: datetime | None = None
     released_at: datetime | None = None
     evaluated_at: datetime | None = None
+    # What the judgement was made against (the catalog signature at `evaluated_at`), so a
+    # record page can say which Jamf catalog a row's answer belongs to (#299).
+    evaluated_signature: str | None = None
 
 
 class CatalogEntryAssessedOut(CatalogEntryOut):
@@ -88,7 +91,10 @@ class CatalogListResponse(_CamelModel):
     # The page and page size echoed, as every paged list does (#137).
     page: int
     page_size: int
-    summary: CatalogSummaryOut
+    # `null` when the list was scoped to one application (`appHash`, #299): the four
+    # tiles count the whole tenant against the device-count join, and a scoped join would
+    # make them wrong rather than partial.
+    summary: CatalogSummaryOut | None
     # #251: the corpus generation the blocks on `items` came from — the page's header
     # stamp, read off the same corpus object in the same request as the rows, so the two
     # can never disagree. `null` is the honest answer while no corpus is loaded, and the
