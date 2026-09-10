@@ -470,6 +470,27 @@ classic API's `department` / `building` and writing NULL.
 
 ---
 
+## 11a. Reading one device's observation (#368)
+
+`GET /api/devices/{id}/observation` answers what the ledger currently holds for one Mac,
+by wire section, in registry order, with **the four-state absence vocabulary explicit**:
+
+| `state` | Meaning |
+| --- | --- |
+| `present` | the current span digests the section and it holds something — the scalar `body`, or the list `entries` |
+| `empty` | the current span digests the section and the Mac reported nothing; read-and-empty still digests (#93) |
+| `not_observed` | the connection's device sweep reads the section now, but this Mac's current observation does not carry it — no span yet, or a span taken under an older aperture |
+| `outside_aperture` | the sweep never reads it: no digest, and the endpoint says why rather than returning null |
+
+`state` is always present, so an absent body beside it is a statement, never an
+omission — the refusal `vuln.assessment` makes for the corpus, applied a layer down.
+Groups ride beside the sections off the `group_memberships` entries, named from each
+group's own current span where one exists and marked `departedAt` rather than dropped
+when the group has departed (#181). The read is the two-hop one the smart-group cost page
+already proves and RLS-tests — spans to sections to entries, with no tenant predicate
+written by hand — and it is its own endpoint rather than a bigger device payload, so the
+device page's first paint stays two cheap reads and this one loads lazily below them.
+
 ## 12. Decisions deferred, and one to raise
 
 - **Identity / lineage** (§3): decided — the triple (collector, UDID, serial), with the

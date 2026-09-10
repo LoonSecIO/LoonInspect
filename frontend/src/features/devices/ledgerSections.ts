@@ -27,9 +27,10 @@ export const LEDGER_SECTIONS = [
 
 export type LedgerSection = (typeof LEDGER_SECTIONS)[number];
 
-/** The sections the device page renders in full, entry by entry. Everything else the
- *  ledger holds for a Mac rides `device.inventory` to the SIEM and has no read endpoint. */
-export const SECTIONS_ON_DEVICE_PAGE: readonly LedgerSection[] = ["applications", "extension_attributes"];
+/** The sections the device page renders. Every one, since #368's observation block reads
+ *  the ledger section by section; the list stays a mirror of the registry so a fifteenth
+ *  wire section has to be named here before it counts as shown. */
+export const SECTIONS_ON_DEVICE_PAGE: readonly LedgerSection[] = LEDGER_SECTIONS;
 
 /** What the footer lists: collected, not on this page yet, in registry order. */
 export function collectedNotOnPage(): LedgerSection[] {

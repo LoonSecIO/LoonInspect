@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 from pydantic.alias_generators import to_camel
@@ -133,3 +134,57 @@ class DeviceListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# --- the observation read (#368) -----------------------------------------------------------
+
+SectionState = Literal["present", "empty", "not_observed", "outside_aperture"]
+
+
+class ObservedEntryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True, alias_generator=to_camel, populate_by_name=True)
+
+    kind: str
+    label: str | None
+    body: dict
+
+
+class SectionObservationOut(BaseModel):
+    """One wire section as the ledger holds it for this Mac. `state` is always present
+    and always says which of the four absences or presences this is — an absent body
+    beside it is a statement, never an omission (docs/vulnerabilities.md §4a, applied a
+    layer down)."""
+
+    model_config = ConfigDict(from_attributes=True, alias_generator=to_camel, populate_by_name=True)
+
+    name: str
+    wrapper: str
+    state: SectionState
+    body: dict | None = None
+    entries: list[ObservedEntryOut] = []
+    entry_count: int = 0
+
+
+class GroupMembershipOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True, alias_generator=to_camel, populate_by_name=True)
+
+    group_id: str
+    name: str | None
+    smart: bool | None
+    # Marked rather than dropped when the group has departed (#181).
+    departed_at: datetime | None
+
+
+class DeviceObservationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True, alias_generator=to_camel, populate_by_name=True)
+
+    device_id: int
+    subject_id: str
+    # False when the ledger has never recorded this Mac; every section then reads
+    # `not_observed` or `outside_aperture`, never empty.
+    observed: bool
+    observed_at: datetime | None
+    collected_at: datetime | None
+    aperture_digest: str | None
+    sections: list[SectionObservationOut]
+    groups: list[GroupMembershipOut]

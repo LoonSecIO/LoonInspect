@@ -672,6 +672,26 @@ export const en = {
       collected: {
         heading: "Collected, not on this page yet",
         body: "These sections ride device.inventory to your SIEM today and have no read endpoint here yet."
+      },
+      // The observation block (#368): four states, four sentences, never alike.
+      observation: {
+        heading: "What the ledger holds",
+        loading: "Reading the ledger…",
+        errorLoading: "Could not read the ledger for this Mac.",
+        observedAt: (when: string) => `The current observation, taken ${when}, section by section as the ledger holds it.`,
+        neverObserved: "The ledger has never recorded an observation of this Mac; every section below says so.",
+        present: "Read",
+        entries: (n: number) => `${n} ${n === 1 ? "entry" : "entries"}`,
+        empty: "Read, and the Mac reported none",
+        notObserved: "In the sweep, not yet observed on this Mac",
+        outsideAperture: "Not read by this connection's sweep",
+        groupsHeading: "Smart groups",
+        groupsNone: "No group membership is recorded for this Mac.",
+        smart: "smart",
+        static: "static",
+        gone: (since: string) => `gone since ${since}`,
+        showAll: (n: number) => `Show all ${n}`,
+        showFewer: "Show fewer"
       }
     },
     osVersionPrefix: "OS version",
