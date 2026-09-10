@@ -18,8 +18,11 @@ TENANT_GUC = "looninspect.tenant_id"
 #                administering tenants is itself a tenant-scoped action rather than a
 #                privileged side channel, once the management surface lands.
 #   operational  the tenant every device, connection, account, and event belongs to
-#                in a single-tenant deployment. The switcher exists in code and is
-#                hidden while there is only one of these.
+#                in a single-tenant deployment. The switcher exists in code (#36:
+#                `account_tenants`, `POST /api/auth/switch-tenant`, the Navbar's
+#                select) and is hidden while an account holds one membership, which
+#                is every account on every pod until the tenant management surface
+#                (#30) can create a second tenant and grant one.
 #
 # Fixed rather than generated. Tenant ids are internal — never a URL parameter, never
 # supplied by a caller, and never compared across installations — so there is nothing

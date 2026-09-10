@@ -4,6 +4,7 @@ import { FlaskLogo } from "@/components/icons/FlaskLogo";
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { SidebarModeSwitcher } from "@/components/layout/SidebarModeSwitcher";
+import { TenantSwitcher } from "@/components/layout/TenantSwitcher";
 import { useAuthStore } from "@/features/auth/store";
 import { useTheme } from "@/hooks/useTheme";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -37,6 +38,8 @@ export function Navbar() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Nothing on a single-tenant pod; a select past one membership (#36). */}
+          <TenantSwitcher />
           <LanguageSwitcher />
           <button
             type="button"

@@ -58,6 +58,9 @@ export const en = {
     }
   },
   common: {
+    // The tenant switcher (#36): hidden with one membership, a select past one.
+    actingTenant: "Acting for tenant",
+    switchTenantFailed: "Could not switch tenant. This account may no longer hold a membership there.",
     darkMode: "Dark mode",
     lightMode: "Light mode",
     language: "Language",

@@ -245,13 +245,15 @@ jobs:
       # A superuser bypasses row-level security without erroring, so "the policies
       # exist" is not the same claim as "the policies apply". This asserts both: that
       # the role the app connects as cannot bypass them, and that every tenant-scoped
-      # table carries an enabled, forced policy — with exactly two named exceptions.
+      # table carries an enabled, forced policy — with exactly three named exceptions.
       # session_tenants and api_token_tenants (#35, docs/auth-design.md §4.8) map a
-      # credential's hash to the tenant it acts for and are read *before* a tenant is
-      # known, which is the one job a policy would make impossible; they hold nothing
-      # else. The list is asserted exactly, so a third unscoped table cannot shelter
-      # behind the exception, and a policy added to either of these by mistake fails
-      # here rather than signing every second-tenant session out in production.
+      # credential's hash to the tenant it acts for, and account_tenants (#36, §4.9)
+      # maps an account to the tenants it may act for; all three are read *before* a
+      # tenant is known, which is the one job a policy would make impossible, and they
+      # hold ids and role names and nothing else. The list is asserted exactly, so a
+      # fourth unscoped table cannot shelter behind the exception, and a policy added
+      # to any of these by mistake fails here rather than signing every second-tenant
+      # session out in production.
       - name: Assert tenant isolation is enforceable
         run: |
           docker exec smoke-db psql -U looninspect -d looninspect -tAc \
@@ -267,5 +269,5 @@ jobs:
                 AND EXISTS (SELECT 1 FROM pg_attribute a
                              WHERE a.attrelid = c.oid AND a.attname = 'tenant_id' AND a.attnum > 0)
                 AND NOT (c.relrowsecurity AND c.relforcerowsecurity)")
-          [ "$unforced" = "api_token_tenants,session_tenants" ] || {
-            echo "::error::tables with tenant_id and no forced row-level security: '$unforced' — expected exactly the two identity-resolution index tables"; exit 1; }
+          [ "$unforced" = "account_tenants,api_token_tenants,session_tenants" ] || {
+            echo "::error::tables with tenant_id and no forced row-level security: '$unforced' — expected exactly the three identity-resolution index tables"; exit 1; }
