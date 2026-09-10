@@ -68,6 +68,12 @@ Three of its lines are rules of this project rather than of the template:
   most pull requests here are opened by an agent session. That is nothing to hide; an
   unread diff is.
 
+One more rule of this project, for changes that add a way for something to go wrong: the
+failure path ships with its words and its step-through in the same pull request —
+[docs/diagnosability.md](docs/diagnosability.md) is the language, and
+[docs/troubleshooting.md](docs/troubleshooting.md) is where the path lands. A diagnostic
+that would need the reader to open source code is a defect to file, not a line to write.
+
 ## License
 
 Apache-2.0. By contributing you agree your contributions are licensed under the same
