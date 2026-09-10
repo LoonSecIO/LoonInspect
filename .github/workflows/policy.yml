@@ -1,0 +1,54 @@
+name: Policy
+
+# docs/BRANCHING.md §8 step 3 (#19): the branch and pull request controls the register
+# marks `check: policy-workflow` in docs/controls.yml, run against the pull request.
+# `edited` is what re-runs this after a title is fixed (CM-01 reads the title), and
+# `synchronize` gives every new head commit a result, as pr-body.yml explains.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  # Its own workflow rather than a job in ci.yml, for the reason pr-body.yml gives: a
+  # misnamed branch is not a build failure, and this trigger includes `edited`. The job's
+  # display name is the required-status-check context in .github/rulesets/main.json; the
+  # two change together or the ruleset waits forever.
+  policy:
+    name: Policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          # BR-03 dates the branch's first commit and CM-02 reads its subjects; both
+          # need the history between the base and the head, and PR-01 diffs against
+          # the base. The head, not the merge ref, so the branch is judged as pushed.
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      # The runner image ships PyYAML; if a future image does not, say so rather than
+      # install something unpinned into a job that gates merges.
+      - name: PyYAML is present
+        run: python3 -c "import yaml; print('pyyaml', yaml.__version__)"
+
+      # The manifest and the script are checked against each other before either judges
+      # a pull request: a control named with no implementation, or the reverse, fails here.
+      - name: Self-test the checks against docs/controls.yml
+        run: .github/scripts/check_policy.py --self-test
+
+      # Inputs reach the script through the environment, never through the script text:
+      # a title is contributor-controlled, and interpolating it into `run:` would let a
+      # pull request execute whatever it is called.
+      - name: The controls the register marks policy-workflow
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch --no-tags origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+          .github/scripts/check_policy.py

@@ -41,7 +41,8 @@
           { "context": "Backend (ruff + pytest)" },
           { "context": "Docker image" },
           { "context": "TruffleHog" },
-          { "context": "PR body" }
+          { "context": "PR body" },
+          { "context": "Policy" }
         ]
       }
     }
