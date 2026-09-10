@@ -188,7 +188,7 @@ do about that certificate without turning verification off.
 
 ### 6. Back it up before you need to
 
-**[docs/operations.md](docs/operations.md)** is the operator runbook: what to back up
+**[docs/troubleshooting.md](docs/troubleshooting.md)** is where to start when something is not working: four ordered paths — a green test and an empty sweep, a run with zero devices, events not reaching Splunk, a stack that will not start — each ending in a fix or a named state to report. **[docs/operations.md](docs/operations.md)** is the operator runbook: what to back up
 (the database *and* `ENCRYPTION_KEY` — a dump without the key restores an instance whose
 every MDM connection is permanently unreadable), the `pg_dump` and `psql` commands to do
 it, what a restore does to in-flight outbox rows and the run mutex, how upgrades and
