@@ -34,13 +34,20 @@ from app.schemas.catalog import (
 router = APIRouter(prefix="/api/catalog", tags=["catalog"])
 
 
-def _device_counts():
-    """version_hash -> distinct devices carrying it now (tenant-scoped by RLS on installed_apps)."""
-    return (
-        select(InstalledApp.version_hash, func.count(distinct(InstalledApp.device_id)).label("devices"))
-        .group_by(InstalledApp.version_hash)
-        .subquery()
-    )
+def _device_counts(app_hash: str | None = None):
+    """version_hash -> distinct devices carrying it now (tenant-scoped by RLS on installed_apps).
+
+    `app_hash` is pushed inside the subquery on purpose (#299). The list joins this on the
+    nullable side of an outer join, where Postgres cannot push the caller's predicate in,
+    and evaluates it once per use — three times a request. Filtering only the outer
+    `AppCatalogEntry` would leave the record page walking every install in the tenant to
+    answer for one app; scoped here, its cost grows with one app's popularity and not
+    with the fleet's app count.
+    """
+    stmt = select(InstalledApp.version_hash, func.count(distinct(InstalledApp.device_id)).label("devices"))
+    if app_hash is not None:
+        stmt = stmt.where(InstalledApp.app_hash == app_hash)
+    return stmt.group_by(InstalledApp.version_hash).subquery()
 
 
 async def _title_refs(db: AsyncSession, entries: list[AppCatalogEntry]) -> dict[str, CatalogTitleRef]:
@@ -96,14 +103,20 @@ async def list_catalog(
     q: str | None = Query(default=None, max_length=255),
     jamf: Literal["all", "matched", "unmatched"] = Query(default="all"),
     installed_only: bool = Query(default=True, alias="installedOnly"),
+    # One application's rows (#299): `app_hash = md5(name:bundle_id)`, so two apps sharing
+    # a bundle ID under different names are two records and stay two. Served by
+    # `ix_app_catalog_app`, and pushed inside the device counts too (see `_device_counts`).
+    app_hash: str | None = Query(default=None, alias="appHash", max_length=32),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=100, ge=1, le=5000, alias="pageSize"),
 ) -> CatalogListResponse:
-    counts = _device_counts()
+    counts = _device_counts(app_hash)
     devices = func.coalesce(counts.c.devices, 0)
     stmt = select(AppCatalogEntry, devices.label("devices")).outerjoin(
         counts, counts.c.version_hash == AppCatalogEntry.version_hash
     )
+    if app_hash is not None:
+        stmt = stmt.where(AppCatalogEntry.app_hash == app_hash)
     if installed_only:
         stmt = stmt.where(devices > 0)
     if jamf == "matched":
@@ -131,21 +144,27 @@ async def list_catalog(
         for entry, row in zip(entries, page_rows, strict=True)
     ]
 
-    summary_row = (
-        await db.execute(
-            select(
-                func.count(),
-                func.count().filter(devices > 0),
-                func.count().filter(AppCatalogEntry.jamf_title_ids.is_not(None)),
-                func.count().filter(AppCatalogEntry.jamf_title_ids.is_(None)),
+    # The summary counts every row the tenant has against the device-count join. Once
+    # that join holds one app's version hashes (`appHash`), `installed` would count
+    # near-zero for the whole tenant and render as a plausible, wrong number — so a scoped
+    # request carries no summary at all rather than a corrupt one (#299).
+    summary: CatalogSummaryOut | None = None
+    if app_hash is None:
+        summary_row = (
+            await db.execute(
+                select(
+                    func.count(),
+                    func.count().filter(devices > 0),
+                    func.count().filter(AppCatalogEntry.jamf_title_ids.is_not(None)),
+                    func.count().filter(AppCatalogEntry.jamf_title_ids.is_(None)),
+                )
+                .select_from(AppCatalogEntry)
+                .outerjoin(counts, counts.c.version_hash == AppCatalogEntry.version_hash)
             )
-            .select_from(AppCatalogEntry)
-            .outerjoin(counts, counts.c.version_hash == AppCatalogEntry.version_hash)
+        ).one()
+        summary = CatalogSummaryOut(
+            entries=int(summary_row[0]), installed=int(summary_row[1]), matched=int(summary_row[2]), unmatched=int(summary_row[3])
         )
-    ).one()
-    summary = CatalogSummaryOut(
-        entries=int(summary_row[0]), installed=int(summary_row[1]), matched=int(summary_row[2]), unmatched=int(summary_row[3])
-    )
     return CatalogListResponse(
         items=items,
         total=int(total),

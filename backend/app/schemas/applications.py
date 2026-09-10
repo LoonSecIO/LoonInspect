@@ -8,27 +8,18 @@ class _CamelModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 
-class ApplicationVersionOut(_CamelModel):
-    """One build of an application. `version_hash` is the internal per-build key the
-    inventory deltas and the app catalog join on (`app/core/hashing.py`); surfaced so a
-    client can correlate rows, not because anything outside this instance reads it."""
-
-    version_hash: str
-    version: str
-    short_version: str | None
-    device_count: int
-    patch_available: bool | None
-    is_compliant: bool | None
-
-
 class ApplicationOut(_CamelModel):
+    """One application across the fleet, keyed by `app_hash = md5(name:bundle_id)` — the
+    key the record page at `/devices/applications/:appHash` is addressed by (#299). The
+    per-version breakdown this row used to carry was deleted with the expansion it fed;
+    the spread is the catalog's answer, read by `appHash`."""
+
     app_hash: str
     name: str
     bundle_id: str
     # Distinct devices with any version installed — the sort key for the page.
     device_count: int
     version_count: int
-    versions: list[ApplicationVersionOut]
 
 
 class ApplicationListResponse(_CamelModel):

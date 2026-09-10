@@ -12,6 +12,7 @@ import { DevicesPage } from "@/features/devices/DevicesPage";
 import { DevicePage } from "@/features/devices/DevicePage";
 import { ApplicationsPage } from "@/features/devices/ApplicationsPage";
 import { ApplicationsOverviewPage } from "@/features/devices/ApplicationsOverviewPage";
+import { ApplicationRecordPage } from "@/features/devices/ApplicationRecordPage";
 import { SmartGroupCostPage } from "@/features/smartGroups/SmartGroupCostPage";
 import { ChangesPage } from "@/features/changes/ChangesPage";
 import { ChangeTrackingPage } from "@/features/changes/ChangeTrackingPage";
@@ -45,6 +46,11 @@ export function AppRoutes() {
           <Route path="catalog" element={<CatalogPage />} />
           <Route path="jamf-patch" element={<JamfPatchPage />} />
           <Route path="jamf-patch/:titleId" element={<JamfPatchDetailPage />} />
+          {/* After the three static children on purpose, so static-over-dynamic ranking
+              is visible to a reader and not merely true to the router (#299). The key
+              is app_hash, never bundleId: two apps sharing a bundle ID under different
+              names are two records. */}
+          <Route path=":appHash" element={<ApplicationRecordPage />} />
         </Route>
         {/* No /devices/groups and no /devices/compliance: both rendered rows a
             developer typed (#95). What each promised already exists under a truer

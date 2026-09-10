@@ -1,68 +1,79 @@
-import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { Input } from "@/components/ui/input";
 import { listApplications, type Application } from "@/features/devices/applicationsApi";
+import { listSyncStatus } from "@/features/mdm/api";
+import type { MdmSyncStatus } from "@/features/mdm/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
+/** Why the table is empty, resolved only on the empty path (#299 §8). */
+type EmptyReason = "noConnection" | "noSync" | "synced" | "noMatch";
+
+function emptyReason(q: string, statuses: MdmSyncStatus[]): EmptyReason {
+  if (q) return "noMatch";
+  if (statuses.length === 0) return "noConnection";
+  if (statuses.every((status) => status.lastSyncAt === null)) return "noSync";
+  return "synced";
+}
+
+/**
+ * The applications table, trimmed (#299): a list with a record behind every row. The
+ * expansion that lived inside a row is gone with the per-version query that fed it; a
+ * row click goes to `/devices/applications/:appHash`, which has an address, so it can be
+ * pasted into a ticket and reached for an app the list never fetched.
+ *
+ * Search lives in the URL (`q`), as the Devices page's does, so a filtered list is a link.
+ */
 export function ApplicationsOverviewPage() {
   const { t } = useLocale();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const q = useMemo(() => searchParams.get("q") ?? "", [searchParams]);
 
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [total, setTotal] = useState(0);
-  const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState<{ q: string; items: Application[]; total: number; statuses: MdmSyncStatus[] | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [draft, setDraft] = useState(q);
+
+  // The box is a draft, applied on a debounce; it follows the URL when the back button
+  // moves it. Adjusted during render rather than from an effect.
+  const [lastApplied, setLastApplied] = useState(q);
+  if (lastApplied !== q) {
+    setLastApplied(q);
+    setDraft(q);
+  }
+
+  useEffect(() => {
+    const trimmed = draft.trim();
+    if (trimmed === q) return;
+    const handle = setTimeout(() => setSearchParams(trimmed ? { q: trimmed } : {}, { replace: true }), 250);
+    return () => clearTimeout(handle);
+  }, [draft, q, setSearchParams]);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-
-    // Debounced so typing in the filter doesn't fire a query per keystroke.
-    const handle = setTimeout(() => {
-      listApplications({ q: search || undefined, pageSize: 200 })
-        .then((response) => {
-          if (cancelled) return;
-          setApplications(response.items);
-          setTotal(response.total);
-          setError(null);
-        })
-        .catch(() => {
-          if (!cancelled) setError(t.applications.errorLoading);
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-    }, 250);
-
+    listApplications({ q: q || undefined, pageSize: 200 })
+      .then(async (response) => {
+        if (cancelled) return;
+        // The four empty states need the sync status, and only the empty path reads it.
+        const statuses = response.items.length === 0 && !q ? await listSyncStatus().catch(() => null) : null;
+        if (cancelled) return;
+        setLoaded({ q, items: response.items, total: response.total, statuses });
+        setError(null);
+      })
+      .catch(() => {
+        if (!cancelled) setError(t.applications.errorLoading);
+      });
     return () => {
       cancelled = true;
-      clearTimeout(handle);
     };
-  }, [search, t]);
+  }, [q, t]);
 
-  function toggle(appHash: string) {
-    setExpanded((current) => {
-      const next = new Set(current);
-      if (next.has(appHash)) next.delete(appHash);
-      else next.add(appHash);
-      return next;
-    });
-  }
-
-  function triStateLabel(value: boolean | null): string {
-    if (value === null) return "—";
-    return value ? t.devices.yes : t.devices.no;
-  }
+  const current = loaded && loaded.q === q ? loaded : null;
+  const loading = current === null && error === null;
 
   return (
     <section className="space-y-4">
-      <Input
-        placeholder={t.applications.searchPlaceholder}
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-        className="max-w-sm"
-      />
+      <Input placeholder={t.applications.searchPlaceholder} value={draft} onChange={(event) => setDraft(event.target.value)} className="max-w-sm" />
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
@@ -84,86 +95,36 @@ export function ApplicationsOverviewPage() {
                 </td>
               </tr>
             )}
-            {!loading && applications.length === 0 && (
+            {current && current.items.length === 0 && (
               <tr>
                 <td className="px-4 py-4 text-muted-foreground" colSpan={4}>
-                  {t.applications.empty}
+                  {current.statuses === null && !q
+                    ? t.applications.empty
+                    : t.applications.emptyStates[emptyReason(q, current.statuses ?? [])]}
                 </td>
               </tr>
             )}
-            {applications.map((app) => {
-              const isOpen = expanded.has(app.appHash);
-              return [
-                <tr
-                  key={app.appHash}
-                  className="cursor-pointer border-b last:border-0 hover:bg-accent/40"
-                  onClick={() => toggle(app.appHash)}
-                >
-                  <td className="px-4 py-2 font-medium">
-                    <span className="inline-flex items-center gap-1">
-                      {isOpen ? (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      )}
-                      {app.name}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2 font-mono text-xs text-muted-foreground">
-                    {app.bundleId}
-                  </td>
-                  <td className="px-4 py-2">{app.versionCount}</td>
-                  <td className="px-4 py-2 text-right font-medium tabular-nums">
-                    {app.deviceCount}
-                  </td>
-                </tr>,
-
-                isOpen && (
-                  <tr key={`${app.appHash}-versions`} className="border-b last:border-0 bg-muted/20">
-                    <td colSpan={4} className="px-4 py-3">
-                      <table className="w-full text-xs">
-                        <thead className="text-left text-muted-foreground">
-                          <tr>
-                            <th className="py-1 font-medium">{t.applications.tableVersion}</th>
-                            <th className="py-1 font-medium">{t.applications.tableShortVersion}</th>
-                            <th className="py-1 font-medium">{t.applications.tableCompliant}</th>
-                            <th className="py-1 font-medium">{t.applications.tablePatchAvailable}</th>
-                            <th className="py-1 font-medium">{t.applications.tableVersionHash}</th>
-                            <th className="py-1 text-right font-medium">
-                              {t.applications.tableDevices}
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {app.versions.map((version) => (
-                            <tr key={version.versionHash}>
-                              <td className="py-1">{version.version || "—"}</td>
-                              <td className="py-1">{version.shortVersion ?? "—"}</td>
-                              <td className="py-1">{triStateLabel(version.isCompliant)}</td>
-                              <td className="py-1">{triStateLabel(version.patchAvailable)}</td>
-                              <td
-                                className="py-1 font-mono text-muted-foreground"
-                                title={version.versionHash}
-                              >
-                                {version.versionHash.slice(0, 12)}…
-                              </td>
-                              <td className="py-1 text-right tabular-nums">
-                                {version.deviceCount}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </td>
-                  </tr>
-                )
-              ];
-            })}
+            {current?.items.map((app) => (
+              <tr
+                key={app.appHash}
+                className="cursor-pointer border-b last:border-0 hover:bg-accent/40"
+                onClick={() => navigate(`/devices/applications/${app.appHash}`)}
+              >
+                <td className="px-4 py-2 font-medium">
+                  <Link to={`/devices/applications/${app.appHash}`} className="hover:underline" onClick={(event) => event.stopPropagation()}>
+                    {app.name}
+                  </Link>
+                </td>
+                <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{app.bundleId}</td>
+                <td className="px-4 py-2 tabular-nums">{app.versionCount}</td>
+                <td className="px-4 py-2 text-right font-medium tabular-nums">{app.deviceCount}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
 
-      <p className="text-sm text-muted-foreground">{t.applications.total(total)}</p>
+      {current && <p className="text-sm text-muted-foreground">{t.applications.total(current.total)}</p>}
     </section>
   );
 }

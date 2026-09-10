@@ -84,3 +84,12 @@ def test_the_described_policy_round_trips_through_its_model() -> None:
     assert dumped["entries"] == document["entries"]
     assert dumped["minimumLevel"] == "normal"
     assert any(field["default"] for section in dumped["sections"] for field in section["fields"])
+
+
+def test_the_applications_row_carries_no_per_version_breakdown() -> None:
+    """#299: the expansion the breakdown fed is gone, and so is the ~4 s per-version
+    aggregate; the spread is the catalog's answer by `appHash`."""
+    from app.schemas.applications import ApplicationOut
+
+    assert "versions" not in ApplicationOut.model_fields
+    assert {"app_hash", "name", "bundle_id", "device_count", "version_count"} <= set(ApplicationOut.model_fields)

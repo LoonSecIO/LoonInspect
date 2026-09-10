@@ -297,17 +297,18 @@ async def test_foreign_device_account_token_404(client, seeded) -> None:
 
 
 async def test_applications_list_aggregates_on_postgres(client, seeded) -> None:
-    """Regression for #63. The per-version query aggregated two boolean columns with
-    max()/min(), which SQLite tolerated and Postgres rejects — and it only runs once
-    `installed_apps` has rows, so an empty stack never saw it. The seeded tenant has one
-    app, which is enough to exercise it through the authenticated client."""
+    """Once the regression for #63: the per-version query aggregated two boolean columns
+    with max()/min(), which SQLite tolerated and Postgres rejects. That query was deleted
+    with the expansion it fed (#299); what remains to guard is that the grouped list
+    itself runs on Postgres once `installed_apps` has rows — an empty stack never sees
+    it — and that it counts one tenant's installs only."""
     response = await client.get("/api/applications")
     assert response.status_code == 200, response.text
     body = response.json()
     mine = [row for row in body["items"] if row["bundleId"] == "com.t1.app"]
     assert mine, "the seeded app must be listed"
-    assert mine[0]["versions"][0]["patchAvailable"] is None  # nothing checked yet stays null
-    assert mine[0]["versions"][0]["isCompliant"] is None
+    assert mine[0]["deviceCount"] == 1 and mine[0]["versionCount"] == 1
+    assert "versions" not in mine[0], "the per-version breakdown left with the expansion (#299)"
     assert not any(row["bundleId"] == "com.t2.app" for row in body["items"])
 
 

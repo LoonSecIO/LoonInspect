@@ -35,6 +35,8 @@ export interface CatalogEntry {
   latestReleasedAt: string | null;
   releasedAt: string | null;
   evaluatedAt: string | null;
+  /** What the judgement was made against, for a title attribute (#299). */
+  evaluatedSignature: string | null;
   /** LoonInspect's own answer about this exact build — `covered`, `unknown_app` or `off`
    *  (#251). Always present; the shape is what says which of the three it is. */
   vuln: AppVulnerability;
@@ -53,10 +55,20 @@ export interface CatalogListResponse {
   /** The page and page size echoed, as every paged list does (#137). */
   page: number;
   pageSize: number;
-  summary: CatalogSummary;
+  /** `null` when the list was scoped to one application (`appHash`, #299): a scoped join
+   *  would make the four tenant-wide tiles wrong rather than partial. */
+  summary: CatalogSummary | null;
   /** The corpus generation every `vuln` block on `items` came from. `null` means no corpus
    *  is loaded, which is why every row reads `off` — the page says that in words (#251). */
   corpusAsOf: string | null;
 }
 
 export type CatalogJamfFilter = "all" | "matched" | "unmatched";
+
+/** `GET /api/catalog/lookup` for one key: the tenant's row if the fleet has shown the app.
+ *  Under `appHash` the row stands in for the newest version seen, which is why it carries
+ *  no `vuln` (#251); the Devices page reads only the name and version off it (#299). */
+export interface CatalogLookup {
+  key: string;
+  tenant: { name: string; bundleId: string; version: string } | null;
+}

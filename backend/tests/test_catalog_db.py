@@ -138,13 +138,22 @@ async def test_list_and_lookup_after_a_sweep(db, jamf: FakeJamf, connection, ind
         await db.execute(select(InstalledApp).where(InstalledApp.device_id == real.id, InstalledApp.name == "Xcode.app"))
     ).scalar_one()
 
-    listing = await list_catalog(db=db, q="Xcode", jamf="all", installed_only=True, page=1, page_size=50)
+    listing = await list_catalog(db=db, q="Xcode", jamf="all", installed_only=True, app_hash=None, page=1, page_size=50)
     (entry,) = [item for item in listing.items if item.version_hash == xcode.version_hash]
     assert entry.device_count >= 1 and entry.jamf_titles[0].name == "Apple Xcode" and entry.patch_state == "latest"
     assert entry.first_seen_at == entry.last_seen_at
     assert listing.summary.installed >= 1 and listing.summary.matched >= 1
 
-    unmatched = await list_catalog(db=db, q=None, jamf="unmatched", installed_only=True, page=1, page_size=5000)
+    # #299: one application's record, the counts scoped inside the join, and no summary
+    # rather than a wrong one.
+    record = await list_catalog(db=db, q=None, jamf="all", installed_only=False, page=1, page_size=500, app_hash=xcode.app_hash)
+    assert record.items and all(item.app_hash == xcode.app_hash for item in record.items)
+    (scoped,) = [item for item in record.items if item.version_hash == xcode.version_hash]
+    assert scoped.device_count == entry.device_count, "a scoped device count must equal the unscoped one for the same build"
+    assert record.summary is None
+    assert listing.summary is not None
+
+    unmatched = await list_catalog(db=db, q=None, jamf="unmatched", installed_only=True, app_hash=None, page=1, page_size=5000)
     assert unmatched.total >= 60  # the /System apps and the rest Jamf does not track
     assert all(item.jamf_title_ids is None for item in unmatched.items)
 

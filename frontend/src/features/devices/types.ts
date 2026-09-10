@@ -90,6 +90,10 @@ export interface DeviceFilters {
    *  stale-check-in tile is a saved search on the first (#109). */
   lastCheckInBefore?: string;
   lastCheckInAfter?: string;
+  /** The carriers of one app, or of one build of it — the application record page's
+   *  "→ Devices" links (#299). Carried through paging like every other filter. */
+  appHash?: string;
+  versionHash?: string;
   page?: number;
   pageSize?: number;
 }

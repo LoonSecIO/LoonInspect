@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { FilterBar } from "@/features/devices/FilterBar";
+import { lookupCatalog } from "@/features/catalog/api";
 import { listDevices } from "@/features/devices/api";
 import type { Device, DeviceFilters, VersionOperator } from "@/features/devices/types";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -21,6 +22,8 @@ function filtersFromSearchParams(params: URLSearchParams): DeviceFilters {
     supervised: supervised === null ? undefined : supervised === "true",
     lastCheckInBefore: params.get("lastCheckInBefore") ?? undefined,
     lastCheckInAfter: params.get("lastCheckInAfter") ?? undefined,
+    appHash: params.get("appHash") ?? undefined,
+    versionHash: params.get("versionHash") ?? undefined,
     page: params.get("page") ? Number(params.get("page")) : 1
   };
 }
@@ -40,6 +43,10 @@ function searchParamsFromFilters(filters: DeviceFilters): URLSearchParams {
   // Carried through paging too, or page 2 of a saved search would silently be the fleet.
   if (filters.lastCheckInBefore) params.set("lastCheckInBefore", filters.lastCheckInBefore);
   if (filters.lastCheckInAfter) params.set("lastCheckInAfter", filters.lastCheckInAfter);
+  // The application record page's carrier links (#299). Omitted here, page 2 of "who
+  // runs this build" would silently be the whole fleet — #107's shape again.
+  if (filters.appHash) params.set("appHash", filters.appHash);
+  if (filters.versionHash) params.set("versionHash", filters.versionHash);
   if (filters.page && filters.page !== 1) params.set("page", String(filters.page));
   return params;
 }
@@ -116,6 +123,17 @@ export function DevicesPage() {
           <span aria-hidden="true">×</span>
           <span className="sr-only">{t.devices.clearFilter}</span>
         </button>
+      )}
+      {filters.appHash && (
+        <CarrierChip
+          appHash={filters.appHash}
+          versionHash={filters.versionHash}
+          onClear={() =>
+            setSearchParams(searchParamsFromFilters({ ...filters, appHash: undefined, versionHash: undefined, page: 1 }), {
+              replace: true
+            })
+          }
+        />
       )}
 
       <div className="overflow-x-auto rounded-lg border bg-card">
@@ -200,5 +218,43 @@ export function DevicesPage() {
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * "Running {app}" — the application record page's carrier link, echoed as a removable chip
+ * (#299). The hash in the URL is the record's address, not a name a person can read, so the
+ * chip asks the catalog lookup for the name behind it: by build when `versionHash` is set,
+ * else the app's newest version seen. Until it answers, or if it cannot, the chip still
+ * says a filter is on.
+ */
+function CarrierChip({ appHash, versionHash, onClear }: { appHash: string; versionHash?: string; onClear: () => void }) {
+  const { t } = useLocale();
+  const key = `${appHash}:${versionHash ?? ""}`;
+  const [named, setNamed] = useState<{ key: string; label: string | null } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    lookupCatalog({ appHash, versionHash })
+      .then((answers) => {
+        if (cancelled) return;
+        const tenant = answers[0]?.tenant ?? null;
+        setNamed({ key, label: tenant ? (versionHash ? `${tenant.name} ${tenant.version}` : tenant.name) : null });
+      })
+      .catch(() => {
+        if (!cancelled) setNamed({ key, label: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [appHash, versionHash, key]);
+
+  const label = named && named.key === key ? named.label : null;
+  return (
+    <button type="button" className="inline-flex items-center gap-2 rounded-full border bg-muted px-3 py-1 text-xs" onClick={onClear}>
+      {label ? t.devices.carrierChip(label) : t.devices.carrierChipUnnamed}
+      <span aria-hidden="true">×</span>
+      <span className="sr-only">{t.devices.clearFilter}</span>
+    </button>
   );
 }
