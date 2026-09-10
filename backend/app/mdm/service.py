@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import uuid
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -33,6 +32,7 @@ from app.core.runs import (
     event_time,
     finish,
     get_run,
+    pull_event_id,
     run_meta,
 )
 from app.core.runs import log as run_log
@@ -983,7 +983,9 @@ def _device_meta(existing: Device) -> dict[str, object]:
         # jobID is shared by every device in the fleet (#189).
         #
         # Derived rather than minted, so it needs no storage and no threading: uuid5 over
-        # (run, device) means a retry recomputes the same id rather than looking one up.
+        # (run, platform, device) means a retry recomputes the same id rather than looking
+        # one up — and the platform is in the name because Jamf's two ID spaces can share
+        # a number (#234, `app.core.runs.pull_event_id`).
         #
         # It is derivable ON PURPOSE, so that any other producer of this pull can arrive
         # at the same value without either side passing it along. Nothing else does yet:
@@ -991,7 +993,7 @@ def _device_meta(existing: Device) -> dict[str, object]:
         # the join across families works, but it still mints no eventID of its own — a
         # device.change is joined to its pull through jobID + jamfProID rather than
         # through the single key the inventory family has.
-        "eventID": str(uuid.uuid5(run.id, existing.external_id)) if run else None,
+        "eventID": pull_event_id(run.id, existing.platform, existing.external_id) if run else None,
         "serialNumber": existing.serial_number or None,
         # Jamf's own primary key, and the half of a deep link that cannot be
         # reconstructed. Emitted as the stored string, not coerced to an int: Splunk

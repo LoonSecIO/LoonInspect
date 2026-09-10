@@ -18,7 +18,6 @@ Two derived judgements live here because they need more than one section:
 from __future__ import annotations
 
 import logging
-import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -34,9 +33,10 @@ from app.changes.policy import (
 )
 from app.core.context import get_request_id
 from app.core.outbox import enqueue_event
-from app.core.runs import event_time, get_run, run_meta
+from app.core.runs import event_time, get_run, pull_event_id, run_meta
 from app.core.wire import ENVELOPE, envelope, instance_label
 from app.core.wire_vocabulary import CHANGE_EVENT_TYPE
+from app.mdm.jamf.client import COMPUTER_PLATFORM
 from app.mdm.jamf.contract import SECTIONS, SUBJECT_COMPUTER, Observation, SectionContent
 from app.models.schema import (
     ChangePolicy,
@@ -60,6 +60,11 @@ _OS_VERSION_FIELDS = ("version", "build", "supplementalBuildVersion", "rapidSecu
 # GENERAL's canonical body, where the current-state normalizer also reads it. The block's
 # other device-half keys come off the observation itself (`_change_device_meta`).
 _GENERAL_SECTION = "general"
+# The Jamf ID space a subject's id lives in, for `eventID`'s name (#234). A computer's is
+# the platform the computer client stamps on the row; a mobile subject maps to its own
+# the day one exists, and an unknown subject kind derives no eventID at all rather than a
+# colliding one.
+_ID_SPACES: dict[str, str] = {SUBJECT_COMPUTER: COMPUTER_PLATFORM}
 
 
 async def load_policy(db: AsyncSession) -> EffectivePolicy:
@@ -301,9 +306,9 @@ def _change_device_meta(observation: Observation) -> dict[str, object]:
 
     A `computer_group` subject keeps the run half and `jamfProID`, and nothing else:
 
-    * **no `eventID`.** It is `uuid5(run, jamfProID)`, and a group id is a different id
-      space from a computer id (#234) — deriving one from the same formula would mint a
-      correlation key that collides with a computer's by construction. #243's rider.
+    * **no `eventID`.** It is `uuid5(run, platform ␟ jamfProID)`, and a group has no
+      place in `_ID_SPACES` (#234) — deriving one from the same formula would mint a
+      correlation key for an object that is not a device. #243's rider.
     * **no `hostName`, no `serialNumber`.** A smart group is not a Mac; its label is a
       group name. The same ruling that keeps `host` off the envelope for this subject
       (`_event_payload` below) keeps the hostname out of the body, for the same reason —
@@ -323,14 +328,18 @@ def _change_device_meta(observation: Observation) -> dict[str, object]:
         # #189's refusals are enforced in, so `comparison` and `collectionID` cannot arrive
         # here by a route the inventory family closed.
         **run_meta(),
-        # Derived, not minted: `uuid5(run.id, jamfProID)` is the same formula
-        # `mdm.service._device_meta` uses, over the same id, so a change and the inventory
-        # event from the same pull name that pull with one value without either side
-        # passing it along. The ids agree on both call paths today but not by construction
-        # — the inventory side falls back on a falsy id (`computer.id or general.id`) and
-        # the ledger side on a null one — so the agreement is pinned in
-        # `tests/test_device_meta.py` rather than inherited (PR #255's note to this issue).
-        "eventID": str(uuid.uuid5(run.id, observation.subject_id)) if run and is_computer else None,
+        # Derived, not minted: `pull_event_id` is the one formula `mdm.service._device_meta`
+        # uses, over the same platform and id, so a change and the inventory event from the
+        # same pull name that pull with one value without either side passing it along. The
+        # ids agree on both call paths today but not by construction — the inventory side
+        # falls back on a falsy id (`computer.id or general.id`) and the ledger side on a
+        # null one — so the agreement is pinned in `tests/test_device_meta.py` rather than
+        # inherited (PR #255's note to this issue).
+        "eventID": (
+            pull_event_id(run.id, _ID_SPACES[observation.subject_kind], observation.subject_id)
+            if run and observation.subject_kind in _ID_SPACES
+            else None
+        ),
         "serialNumber": observation.serial_number if is_computer else None,
         "jamfProID": observation.subject_id,
         # The observation's label IS the hostname for a computer: both are Jamf's

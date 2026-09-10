@@ -34,7 +34,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.content_keys import app_full_key, app_title_key
-from app.core.runs import LOCK_DEVICE_SWEEP, TRIGGER_SWEEP, RunContext, reset_run
+from app.core.runs import LOCK_DEVICE_SWEEP, TRIGGER_SWEEP, RunContext, pull_event_id, reset_run
 from app.core.runs import set_run as _set_run
 from app.core.vuln import NO_CORPUS, VulnCorpus
 from app.core.wire_vocabulary import ENRICHMENTS, SECTION_WRAPPERS, SUB_EVENT_KEYS
@@ -152,6 +152,8 @@ def _rows(
 def _device(raw: dict) -> Device:
     return Device(
         external_id=str(raw["id"]),
+        # The ID space the id lives in (#233): part of `eventID`'s name since #234.
+        platform="macos",
         serial_number=raw["hardware"]["serialNumber"],
         hostname=raw["general"]["name"],
         last_inventory_at=datetime(2026, 8, 22, 1, 44, 27, tzinfo=UTC),
@@ -471,12 +473,12 @@ def test_every_list_item_is_wrapped_under_its_own_section_key(payload: dict) -> 
 def test_device_meta_is_the_ruled_eleven_copied_verbatim(payload: dict, raw: dict, run: RunContext) -> None:
     """#189's block, whole and untouched: the same set `tests/test_device_meta.py` holds the
     inventory family to, with nothing added and nothing dropped, and `eventID` on the same
-    grain the delta uses — one per device per sync, `uuid5(jobID, jamfProID)`."""
+    grain the delta uses — one per device per sync, `uuid5(jobID, platform ␟ jamfProID)`."""
     meta = payload["deviceMeta"]
     assert set(meta) == set(SHIPPED_ELEVEN)
     assert RESERVED not in meta
     assert meta == _device_meta(_device(raw))
-    assert meta["eventID"] == str(uuidlib.uuid5(run.id, str(raw["id"])))
+    assert meta["eventID"] == pull_event_id(run.id, "macos", str(raw["id"]))
     assert meta["jamfProID"] == str(raw["id"])
     assert all(value is not None for value in meta.values())
 

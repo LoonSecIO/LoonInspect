@@ -44,6 +44,7 @@ from app.core.runs import (
     LOCK_DEVICE_SWEEP,
     TRIGGER_SWEEP,
     RunContext,
+    pull_event_id,
     reset_run,
     run_meta,
 )
@@ -149,6 +150,9 @@ def _device(**overrides) -> Device:
     shipped eleven rather than whatever survived the null drop."""
     fields = {
         "external_id": "1743",
+        # The ID space the id lives in (#233); a row always carries one, and a Python-side
+        # `Device()` gets the column default only at INSERT, so it is set here.
+        "platform": "macos",
         "serial_number": "C02EXAMPLE01",
         "hostname": "kyle-mbp",
         "last_inventory_at": datetime(2026, 8, 31, 21, 44, 3, tzinfo=UTC),
@@ -235,7 +239,7 @@ def test_the_values_are_the_ruled_ones(run: RunContext) -> None:
     assert meta["trigger"] == TRIGGER_SWEEP
     assert meta["connectionID"] == 1
     assert meta["shortDate"] == "2026-08-31"
-    assert meta["eventID"] == str(uuidlib.uuid5(_RUN_ID, "1743"))
+    assert meta["eventID"] == pull_event_id(_RUN_ID, "macos", "1743")
     assert meta["serialNumber"] == "C02EXAMPLE01"
     assert meta["jamfProID"] == "1743"
     assert meta["hostName"] == "kyle-mbp"
@@ -318,7 +322,9 @@ def test_the_two_device_families_derive_one_event_id_from_one_formula(run: RunCo
     device_meta = _device_meta(_device())
     change_meta = _change_device_meta(_observation())
 
-    assert change_meta["eventID"] == device_meta["eventID"] == str(uuidlib.uuid5(_RUN_ID, "1743"))
+    # The name is the platform and the id, joined by a byte neither can contain (#234).
+    assert change_meta["eventID"] == device_meta["eventID"] == str(uuidlib.uuid5(_RUN_ID, "macos\x1f1743"))
+    assert device_meta["eventID"] == pull_event_id(_RUN_ID, "macos", "1743")
     # And the whole block agrees, key for key, on the pull both families are describing.
     assert {key: change_meta[key] for key in change_meta} == {key: device_meta[key] for key in change_meta}
 
@@ -353,13 +359,13 @@ def test_a_narrow_aperture_drops_keys_rather_than_inventing_them(run: RunContext
     assert set(meta) == {"jobID", "trigger", "connectionID", "shortDate", "eventID", "jamfProID", "schemaVersion"}
     assert set(meta) < set(SHIPPED_ELEVEN)
     # The pull's own identity survives any aperture: this is still the join key.
-    assert meta["eventID"] == str(uuidlib.uuid5(_RUN_ID, "1743"))
+    assert meta["eventID"] == pull_event_id(_RUN_ID, "macos", "1743")
 
 
 def test_a_group_subject_gets_the_run_half_and_its_own_id_only(run: RunContext) -> None:
     """A smart group's definition is a subject, not a Mac.
 
-    No `eventID`, because it is `uuid5(run, jamfProID)` over an id from a different id
+    No `eventID`, because it is `uuid5(run, platform ␟ jamfProID)` over an id from a different id
     space (#234) — deriving one from the same formula would mint a correlation key that
     collides with a computer's by construction. No `hostName` and no `serialNumber`, for
     the reason the envelope's `host` is also left absent: an absent identity is
@@ -574,3 +580,20 @@ def test_the_event_drops_its_nulls_at_both_depths(run: RunContext) -> None:
         assert key not in group, f"a group change still ships a structural null `{key}` (#308)"
     assert group["field"] == "criteria"
     assert all(value is not None for key, value in group.items() if key != ENVELOPE)
+
+
+def test_two_id_spaces_sharing_a_jamf_id_derive_two_event_ids(run: RunContext) -> None:
+    """#234: a computer and a mobile device can share `1743` in Jamf's two ID spaces, and
+    `eventID` is the selector analysts use across sourcetypes — so the platform is in the
+    name, read off the row, and the two devices' pulls are two keys."""
+    mac = _device_meta(_device(platform="macos"))
+    ipad = _device_meta(_device(platform="ios"))
+    assert mac["eventID"] != ipad["eventID"]
+    # `jamfProID` stays the bare id on both, by decision: the sourcetype says which object.
+    assert mac["jamfProID"] == ipad["jamfProID"] == "1743"
+
+
+def test_one_device_derives_one_event_id_across_calls_in_one_run(run: RunContext) -> None:
+    """Derived, not minted: a retry within the run recomputes the same id."""
+    assert _device_meta(_device())["eventID"] == _device_meta(_device())["eventID"]
+    assert _device_meta(_device())["eventID"] == pull_event_id(_RUN_ID, "macos", "1743")

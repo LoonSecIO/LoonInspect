@@ -25,6 +25,7 @@ import pytest_asyncio
 from sqlalchemy import delete, select, text
 
 from app.core.outbox import _build_body
+from app.core.runs import pull_event_id
 from app.core.wire import ENVELOPE, instance_label
 from app.schemas.payload import WIRE_SCHEMA_VERSION
 from tests.jamf_fake import HOST, FakeJamf
@@ -726,7 +727,7 @@ async def test_a_sweep_stamps_its_job_id_on_the_events_it_produces(db, connectio
     assert meta["jamfProID"]
     assert meta["hostName"]
     assert meta["schemaVersion"] == WIRE_SCHEMA_VERSION
-    assert meta["eventID"] == str(uuidlib.uuid5(run.id, meta["jamfProID"]))
+    assert meta["eventID"] == pull_event_id(run.id, "macos", meta["jamfProID"])
     # Capped at thirteen, and `custom` is a reserved name that ships no bytes in v0.
     assert len(meta) <= 13
     assert "custom" not in meta

@@ -95,7 +95,7 @@ but each one silently wrong the first time a mobile record reaches it.
 | **P‑1** | ~~`posture_snapshot` has no population column; 11 of the 25 keys change meaning~~ | `schema.py:1293` | **LANDED 2026-09-02** — [#230](https://github.com/LoonSecIO/LoonInspect/issues/230) |
 | **P‑2** | ~~The data-sharing submission carries no platform; `snapshot.apps` rows are `{title, full, count}`~~ | `sharing.py:98–116` | **LANDED 2026-09-03** — [#231](https://github.com/LoonSecIO/LoonInspect/issues/231) |
 | **P‑3** | ~~`devices` is unique on `(mdm_connection_id, external_id)` — one Jamf ID space~~ | `schema.py:130` | **LANDED 2026-09-09** — [#233](https://github.com/LoonSecIO/LoonInspect/issues/233): `devices.platform`, the key widened, the computer client stamps `macos`, the sharing rows read it |
-| **P‑4** | `deviceMeta.eventID` is `uuid5(run.id, external_id)` — no platform in the name | `service.py:871` | 1st mobile sweep — [#234](https://github.com/LoonSecIO/LoonInspect/issues/234) |
+| **P‑4** | ~~`deviceMeta.eventID` is `uuid5(run.id, external_id)` — no platform in the name~~ | `service.py:871` | **LANDED 2026-09-10** — [#234](https://github.com/LoonSecIO/LoonInspect/issues/234): the name is `platform ␟ id`, read off the device row, in one formula both device families derive from (`app.core.runs.pull_event_id`); `jamfProID` stays the bare id by decision |
 | **P‑5** | ~~`registry_rows()` iterates the computer section table whatever platform it is passed~~ | `wire_vocabulary.py:92` | **LANDED 2026-09-09** — [#235](https://github.com/LoonSecIO/LoonInspect/issues/235) |
 | **P‑6** | ~~`Facts.platform` defaults to the string `"Mac"`, so every catalog row is judged as a Mac~~ | `requirements.py:79` | **LANDED 2026-09-09** — [#236](https://github.com/LoonSecIO/LoonInspect/issues/236): the row carries its platform, the default is unknown, a non-Mac row considers no titles |
 | **P‑7** | ~~The `application` entry hashes `path` and `macAppStore`; entries de-duplicate tenant-wide~~ | `contract.py:322` | **LANDED 2026-09-09** — [#237](https://github.com/LoonSecIO/LoonInspect/issues/237): the contract says it is the computer contract, and a second one namespaces its entry kinds |
@@ -143,6 +143,16 @@ sourcetype disambiguates *between* sourcetypes, and `eventID` is the fan-out sel
 `loon:jamf:*:app` is the documented idiom, and a Mac and an iPad sharing a Jamf id would
 derive the same UUID and merge. The fix is internal and needs no new key: fold the platform
 into the UUID5 name at the same commit that adds the second ID space.
+
+**Landed 2026-09-10 (#234), ahead of that commit.** The name is `platform ␟ external_id` —
+the row's own `devices.platform` (P‑3) and the id, joined by the byte `content_keys` uses
+because it can occur in neither — in one formula, `app.core.runs.pull_event_id`, that both
+device families derive from; the change family maps a subject kind to its ID space and
+derives nothing for a kind it does not know. Every new pull's `eventID` changed value that
+day; stored events did not, so redrive dedup is untouched, and per-pull ids were never
+identities a saved search could depend on. `jamfProID` keeps carrying the bare id by
+decision: the sourcetype says which object it names, and re-spelling a shipped key is
+forbidden (#189).
 
 ## 4. Supervision — the open revisit (Kyle, R3)
 
