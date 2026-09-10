@@ -599,6 +599,9 @@ class Account(Base):
     # is the correct shape anyway while roles are granted per tenant.
     __table_args__ = (
         UniqueConstraint("tenant_id", "email", name="uq_account_tenant_email"),
+        # One person is one account, in one home tenant, with memberships elsewhere
+        # (`AccountTenant`, #36) — never one account per tenant sharing an address.
+        UniqueConstraint("email", name="uq_account_email"),
         UniqueConstraint("tenant_id", "username", name="uq_account_tenant_username"),
         UniqueConstraint("tenant_id", "external_source", "external_id", name="uq_account_external_identity"),
     )
@@ -743,6 +746,27 @@ class SessionTenant(Base):
 
     token_hash: Mapped[str] = mapped_column(String(64), ForeignKey("sessions.token_hash", ondelete="CASCADE"), primary_key=True)
     tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)
+    # The tenant the session's own row and its account live in when the session acts
+    # for another one (#36); NULL means the acting tenant is home, which is every
+    # ordinary login. Authentication rebinds to this to read the row, then to
+    # `tenant_id` to serve the request.
+    home_tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AccountTenant(Base):
+    """Which tenants an account may act for besides its home, and with which roles
+    (#36, ruled 2026-09-10). Outside row-level security on purpose, like the credential
+    indexes: this is the lookup that answers before an acting tenant is known, and it
+    holds ids and role names — no PII, no secrets. The home tenant's membership is the
+    account row itself (`Account.tenant_id`, `Account.roles`); a row here for the home
+    tenant is neither needed nor read."""
+
+    __tablename__ = "account_tenants"
+
+    account_id: Mapped[str] = mapped_column(String(36), ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), primary_key=True)
+    roles: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 

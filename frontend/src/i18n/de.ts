@@ -57,6 +57,8 @@ export const de: Translations = {
     }
   },
   common: {
+    actingTenant: "Handelt für Mandant",
+    switchTenantFailed: "Mandant konnte nicht gewechselt werden. Dieses Konto hat dort womöglich keine Mitgliedschaft mehr.",
     darkMode: "Dunkelmodus",
     lightMode: "Hellmodus",
     language: "Sprache",

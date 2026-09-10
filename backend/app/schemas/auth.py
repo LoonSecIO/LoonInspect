@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from pydantic.alias_generators import to_camel
 
@@ -36,16 +38,41 @@ class AuthStatusOut(_CamelModel):
     version: str | None
 
 
+class TenantRef(_CamelModel):
+    id: uuid.UUID
+    slug: str
+    name: str
+
+
+class MembershipOut(TenantRef):
+    """One tenant the account may act for (#36): its home, plus every `account_tenants`
+    row. `current` marks the one this credential acts for; the switcher renders only
+    when there is more than one entry, so a single-tenant pod shows nothing."""
+
+    roles: list[str]
+    current: bool
+
+
 class AccountOut(_CamelModel):
     id: str
     email: str
     display_name: str
+    # The roles the credential acts with: the home roles, or the membership's when the
+    # session was switched (#36).
     roles: list[str]
     # Effective permissions, resolved server-side from the roles above. Sent so the UI
     # can hide what the caller can't use — the server enforces independently, this is
     # only to avoid showing people buttons that will 403.
     permissions: list[str]
     is_break_glass: bool
+    # The tenant this credential acts for, and every tenant the account may act for.
+    # Absent on the pre-authentication answers (setup); present on login and /me.
+    tenant: TenantRef | None = None
+    tenants: list[MembershipOut] = []
+
+
+class SwitchTenantRequest(_CamelModel):
+    tenant_id: uuid.UUID
 
 
 class LoginRequest(_CamelModel):

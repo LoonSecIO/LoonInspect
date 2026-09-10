@@ -41,6 +41,8 @@ class AuditAction(StrEnum):
     LOGIN_FAILED = "auth.login.failed"
     LOGIN_BLOCKED = "auth.login.blocked"
     LOGOUT = "auth.logout"
+    # A switch lands in two trails, the tenant left and the tenant entered (#36).
+    TENANT_SWITCHED = "auth.tenant.switched"
     SETUP_COMPLETED = "auth.setup.completed"
     SETUP_REJECTED = "auth.setup.rejected"
 

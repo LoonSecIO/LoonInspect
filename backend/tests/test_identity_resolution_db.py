@@ -177,10 +177,12 @@ async def test_a_cookie_nobody_issued_is_a_401_that_says_nothing(tidy) -> None:
 
 
 async def test_the_index_tables_carry_no_row_level_security_and_nothing_else_does_not(seeded) -> None:
-    """The one deliberate exception to the baseline's rule, pinned from both sides: a
-    policy added to either index table would make it unreadable before a tenant is
-    known (every second-tenant session becomes a 401), and a third unscoped table would
-    be a hole. CI's image job asserts the same list against the built image."""
+    """The deliberate exceptions to the baseline's rule, pinned from both sides: a
+    policy added to an index table would make it unreadable before a tenant is known
+    (every second-tenant session becomes a 401), and a fourth unscoped table would be a
+    hole. Three since #36: `account_tenants` answers "which tenants may this account
+    act for" before an acting tenant is known, and holds ids and role names only. CI's
+    image job asserts the same list against the built image."""
     from sqlalchemy import text
 
     from app.core.database import unscoped_session
@@ -194,7 +196,7 @@ async def test_the_index_tables_carry_no_row_level_security_and_nothing_else_doe
                 "AND NOT (c.relrowsecurity AND c.relforcerowsecurity) ORDER BY c.relname"
             )
         )
-        assert [row[0] for row in rows] == ["api_token_tenants", "session_tenants"]
+        assert [row[0] for row in rows] == ["account_tenants", "api_token_tenants", "session_tenants"]
 
 
 # --- the index is kept exact ---------------------------------------------------------------

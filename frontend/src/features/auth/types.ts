@@ -11,6 +11,21 @@ export interface AuthUser {
    *  to render — the API enforces the same rules independently. */
   permissions: string[];
   isBreakGlass: boolean;
+  /** The tenant this session acts for, and every tenant the account may act for (#36).
+   *  One entry on every pod today; the switcher renders only past one. */
+  tenant: TenantRef | null;
+  tenants: Membership[];
+}
+
+export interface TenantRef {
+  id: string;
+  slug: string;
+  name: string;
+}
+
+export interface Membership extends TenantRef {
+  roles: string[];
+  current: boolean;
 }
 
 /** Mirrors app/core/permissions.py. Hand-maintained: these strings must match the

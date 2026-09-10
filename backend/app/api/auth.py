@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 
@@ -14,10 +15,13 @@ from app.core.auth import (
     SESSION_COOKIE,
     Principal,
     account_for_session,
+    act_as_tenant,
     as_utc,
     clear_session_cookies,
     create_session,
     current_principal,
+    membership_roles,
+    memberships_for,
     resolve_session,
     revoke_session,
     set_session_cookies,
@@ -29,9 +33,18 @@ from app.core.permissions import Permission, permissions_for
 from app.core.security import hash_password, tokens_equal, verify_password
 from app.core.sharing import record_setup_choice
 from app.core.version import get_app_version
-from app.models.schema import Account, AuthIdentity, LoginAttempt, UserSession
+from app.models.schema import Account, AuthIdentity, LoginAttempt, Tenant, UserSession
 from app.schemas.accounts import PasswordChangeRequest
-from app.schemas.auth import AccountOut, AuthStatusOut, LoginRequest, Role, SetupRequest
+from app.schemas.auth import (
+    AccountOut,
+    AuthStatusOut,
+    LoginRequest,
+    MembershipOut,
+    Role,
+    SetupRequest,
+    SwitchTenantRequest,
+    TenantRef,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -47,9 +60,22 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def _account_out(account: Account, permissions: Iterable[Permission] | None = None) -> AccountOut:
-    roles = sorted({row.role for row in account.roles})
+def _account_out(
+    account: Account,
+    permissions: Iterable[Permission] | None = None,
+    *,
+    roles: list[str] | None = None,
+    acting: uuid.UUID | None = None,
+    memberships: list[tuple[Tenant, list[str]]] | None = None,
+) -> AccountOut:
+    roles = roles if roles is not None else sorted({row.role for row in account.roles})
     effective = permissions if permissions is not None else permissions_for(roles)
+    acting = acting or account.tenant_id
+    tenants = [
+        MembershipOut(id=tenant.id, slug=tenant.slug, name=tenant.name, roles=tenant_roles, current=tenant.id == acting)
+        for tenant, tenant_roles in (memberships or [])
+    ]
+    current = next((TenantRef(id=t.id, slug=t.slug, name=t.name) for t in tenants if t.current), None)
     return AccountOut(
         id=account.id,
         email=account.email,
@@ -57,6 +83,8 @@ def _account_out(account: Account, permissions: Iterable[Permission] | None = No
         roles=roles,
         permissions=sorted(permission.value for permission in effective),
         is_break_glass=account.is_break_glass,
+        tenant=current,
+        tenants=tenants,
     )
 
 
@@ -290,7 +318,7 @@ async def login(
         break_glass=account.is_break_glass,
         roles=sorted({row.role for row in account.roles}),
     )
-    return _account_out(account)
+    return _account_out(account, memberships=await memberships_for(db, account))
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -387,8 +415,69 @@ async def change_password(
 
 
 @router.get("/me", response_model=AccountOut)
-async def me(principal: Principal = Depends(current_principal)) -> AccountOut:
-    # Reports the principal's *effective* permissions, not the account's. A scoped
-    # token must see the narrowed set here, or a client would build its UI around
-    # capabilities its own credential doesn't carry.
-    return _account_out(principal.account, principal.permissions)
+async def me(principal: Principal = Depends(current_principal), db: AsyncSession = Depends(get_db)) -> AccountOut:
+    """The caller, the tenant they act for, and every tenant they may act for (#36)."""
+    return _account_out(
+        principal.account,
+        principal.permissions,
+        roles=sorted(await membership_roles(db, principal.account, principal.tenant_id) or []),
+        acting=principal.tenant_id,
+        memberships=await memberships_for(db, principal.account),
+    )
+
+
+@router.post("/switch-tenant", response_model=AccountOut)
+async def switch_tenant(
+    payload: SwitchTenantRequest,
+    request: Request,
+    response: Response,
+    principal: Principal = Depends(current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> AccountOut:
+    """Act for another tenant the account holds a membership in (#36, ruled 2026-09-10).
+
+    An explicit act that produces a new session state, never a mutation of the current
+    one: the session that made this request is revoked and a new one is minted for the
+    target — the credential is what names the acting tenant (#35), so switching reissues
+    it. A session credential only; a token acts for the tenant it was issued under for
+    its whole life. Audited in both trails: the tenant left and the tenant entered.
+    """
+    if principal.session is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only a signed-in session can switch tenants")
+    account = principal.account
+    target = payload.tenant_id
+    roles = await membership_roles(db, account, target)
+    if roles is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account holds no membership in that tenant")
+    left = principal.tenant_id
+
+    # The session row and the account live at home; the new row goes there too, and
+    # the index says which tenant it acts for.
+    await act_as_tenant(db, account.tenant_id)
+    await revoke_session(db, principal.session)
+    session, raw_token = await create_session(
+        db,
+        account,
+        identity_id=principal.session.identity_id,
+        auth_method=principal.session.auth_method,
+        ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        acting_tenant_id=target,
+    )
+    await db.commit()
+    set_session_cookies(response, raw_token, session.csrf_token)
+
+    for trail in (left, target):
+        audit(
+            AuditAction.TENANT_SWITCHED,
+            actor=Actor(type="account", id=account.id, label=account.email, tenant_id=trail),
+            target_type="tenant",
+            target_id=str(target),
+            from_tenant=str(left),
+            to_tenant=str(target),
+            roles=roles,
+        )
+    logger.info("tenant switched", extra={"account_id": account.id, "from_tenant": str(left), "to_tenant": str(target)})
+    return _account_out(
+        account, permissions_for(roles), roles=roles, acting=target, memberships=await memberships_for(db, account)
+    )

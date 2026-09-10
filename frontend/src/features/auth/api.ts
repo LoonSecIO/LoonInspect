@@ -26,3 +26,9 @@ export function completeSetup(input: SetupInput): Promise<AuthUser> {
 export function logout(): Promise<void> {
   return apiRequest<void>("/auth/logout", { method: "POST" });
 }
+
+/** Act for another tenant the account holds a membership in (#36). The server revokes
+ *  this session and issues a new one for the target; the caller reloads. */
+export function switchTenant(tenantId: string): Promise<AuthUser> {
+  return apiRequest<AuthUser>("/auth/switch-tenant", { method: "POST", json: { tenantId } });
+}

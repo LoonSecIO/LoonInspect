@@ -18,7 +18,7 @@ from app.core.permissions import Permission, permissions_for
 from app.core.security import generate_token, hash_token, tokens_equal
 from app.core.tenancy import set_tenant_id
 from app.core.tokens import parse_token
-from app.models.schema import Account, ApiToken, ApiTokenTenant, SessionTenant, UserSession
+from app.models.schema import Account, AccountTenant, ApiToken, ApiTokenTenant, SessionTenant, Tenant, UserSession
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +94,10 @@ class Principal:
     auth_method: str  # "session" | "api_token"
     session: UserSession | None = None
     token: ApiToken | None = None
+    # A session switched to another tenant (#36) acts for that tenant while its row and
+    # its account stay home; the index said which, and it is carried here so the
+    # property below answers the acting tenant rather than the row's.
+    acting_tenant_id: uuid.UUID | None = None
 
     @property
     def tenant_id(self) -> uuid.UUID:
@@ -102,10 +106,19 @@ class Principal:
         Taken from the credential rather than the account, because the credential is
         what the request actually presented — a session or token that outlives a move
         between tenants must keep acting for the one it was issued under until it is
-        replaced, not silently follow the account.
+        replaced, not silently follow the account. A switched session (#36) is a new
+        credential issued for the target tenant, which is why switching reissues rather
+        than mutates.
         """
+        if self.acting_tenant_id is not None:
+            return self.acting_tenant_id
         credential = self.session or self.token
         return credential.tenant_id if credential is not None else self.account.tenant_id
+
+    @property
+    def home_tenant_id(self) -> uuid.UUID:
+        """The tenant the account row lives in."""
+        return self.account.tenant_id
 
 
 def session_expiry(now: datetime) -> datetime | None:
@@ -124,9 +137,14 @@ async def create_session(
     auth_method: str = "password",
     ip: str | None = None,
     user_agent: str | None = None,
+    acting_tenant_id: uuid.UUID | None = None,
 ) -> tuple[UserSession, str]:
     """Returns the persisted session and the raw cookie value, which is the only time
-    the raw token exists — only its hash is stored."""
+    the raw token exists — only its hash is stored.
+
+    `acting_tenant_id` (#36) mints a session that acts for another tenant while its row
+    lives in the bound one — the switch; the index records both halves. The caller has
+    checked the membership."""
     now = datetime.now(UTC)
     raw_token = generate_token()
 
@@ -148,7 +166,9 @@ async def create_session(
     # for, written beside the row it points to, in the same transaction, into a table
     # that holds a hash and a tenant id and nothing else. The cascade from the session
     # row takes it away again.
-    db.add(SessionTenant(token_hash=session.token_hash, tenant_id=bound_tenant_id(db)))
+    home = bound_tenant_id(db)
+    acting = acting_tenant_id or home
+    db.add(SessionTenant(token_hash=session.token_hash, tenant_id=acting, home_tenant_id=home if acting != home else None))
     await db.flush()
     return session, raw_token
 
@@ -158,6 +178,53 @@ async def act_as_tenant(db: AsyncSession, tenant_id: uuid.UUID) -> None:
     the context every later session reads from, and the session already open."""
     set_tenant_id(tenant_id)
     await rebind_tenant(db, tenant_id)
+
+
+async def tenants_for_session_token(db: AsyncSession, raw_token: str) -> tuple[uuid.UUID, uuid.UUID] | None:
+    """(acting, home) for a session cookie, from the unscoped index (#36), or None if the
+    cookie names nothing. Home is where the session row and the account live; acting is
+    the tenant the request is served in. Equal for every ordinary login."""
+    result = await db.execute(
+        select(SessionTenant.tenant_id, SessionTenant.home_tenant_id).where(SessionTenant.token_hash == hash_token(raw_token))
+    )
+    row = result.first()
+    if row is None:
+        return None
+    acting, home = row
+    return acting, home or acting
+
+
+async def memberships_for(db: AsyncSession, account: Account) -> list[tuple[Tenant, list[str]]]:
+    """The tenants an account may act for, home first, each with the roles it holds
+    there (#36). `tenants` and `account_tenants` are outside row-level security, so this
+    answers under any scope."""
+    home = await db.get(Tenant, account.tenant_id)
+    out: list[tuple[Tenant, list[str]]] = []
+    if home is not None:
+        out.append((home, sorted({row.role for row in account.roles})))
+    rows = (
+        await db.execute(
+            select(Tenant, AccountTenant.roles)
+            .join(AccountTenant, AccountTenant.tenant_id == Tenant.id)
+            .where(AccountTenant.account_id == account.id, AccountTenant.tenant_id != account.tenant_id)
+            .order_by(Tenant.slug)
+        )
+    ).all()
+    out.extend((tenant, sorted(roles or [])) for tenant, roles in rows)
+    return out
+
+
+async def membership_roles(db: AsyncSession, account: Account, tenant_id: uuid.UUID) -> list[str] | None:
+    """The roles an account holds in `tenant_id`, or None when it holds no membership
+    there. The home tenant's roles are the account's own."""
+    if tenant_id == account.tenant_id:
+        return sorted({row.role for row in account.roles})
+    row = (
+        await db.execute(
+            select(AccountTenant.roles).where(AccountTenant.account_id == account.id, AccountTenant.tenant_id == tenant_id)
+        )
+    ).scalar_one_or_none()
+    return None if row is None else sorted(row or [])
 
 
 async def tenant_for_session_token(db: AsyncSession, raw_token: str) -> uuid.UUID | None:
@@ -256,6 +323,13 @@ def clear_session_cookies(response: Response) -> None:
 
 
 async def resolve_session(db: AsyncSession, raw_token: str) -> UserSession | None:
+    """The live session a cookie names, bound to the tenant its row lives in — see
+    `resolve_acting_session` for the acting tenant a switched session serves (#36)."""
+    resolved = await resolve_acting_session(db, raw_token)
+    return resolved[0] if resolved is not None else None
+
+
+async def resolve_acting_session(db: AsyncSession, raw_token: str) -> tuple[UserSession, uuid.UUID] | None:
     """The live session a cookie names, in the tenant it acts for.
 
     Two reads on purpose (#35). The request arrived bound to the identity-resolution
@@ -264,10 +338,13 @@ async def resolve_session(db: AsyncSession, raw_token: str) -> UserSession | Non
     tenant-scoped row read. A cookie from a second tenant resolves the same way a first
     tenant's does, and a cookie nobody issued resolves to nothing at all.
     """
-    tenant_id = await tenant_for_session_token(db, raw_token)
-    if tenant_id is None:
+    tenants = await tenants_for_session_token(db, raw_token)
+    if tenants is None:
         return None
-    await act_as_tenant(db, tenant_id)
+    acting, home = tenants
+    # The row lives at home (#36); the request is rebound to the acting tenant by
+    # `authenticate` once the principal is built.
+    await act_as_tenant(db, home)
 
     result = await db.execute(select(UserSession).where(UserSession.token_hash == hash_token(raw_token)))
     session = result.scalar_one_or_none()
@@ -278,7 +355,7 @@ async def resolve_session(db: AsyncSession, raw_token: str) -> UserSession | Non
     if expires_at is not None and expires_at <= datetime.now(UTC):
         return None
 
-    return session
+    return session, acting
 
 
 async def account_for_session(db: AsyncSession, session: UserSession) -> Account | None:
@@ -379,14 +456,25 @@ async def _authenticate_session(db: AsyncSession, request: Request, response: Re
     if not raw_token:
         return None
 
-    session = await resolve_session(db, raw_token)
-    if session is None:
+    resolved = await resolve_acting_session(db, raw_token)
+    if resolved is None:
         return None
+    session, acting = resolved
 
     account = await account_for_session(db, session)
     if account is None:
         # The session outlived the account's ability to use it. Revoke rather than
         # merely rejecting, so a re-enabled account doesn't resurrect old cookies.
+        await revoke_session(db, session)
+        await db.commit()
+        return None
+
+    # A switched session's permissions are the membership's, read now rather than at
+    # the switch (#36): a membership removed after the switch ends the session on the
+    # next request, the same way a disabled account does — fail closed, revoke, never
+    # fall back to the home roles.
+    roles = await membership_roles(db, account, acting)
+    if roles is None:
         await revoke_session(db, session)
         await db.commit()
         return None
@@ -414,9 +502,10 @@ async def _authenticate_session(db: AsyncSession, request: Request, response: Re
 
     return Principal(
         account=account,
-        permissions=permissions_for(row.role for row in account.roles),
+        permissions=permissions_for(roles),
         auth_method="session",
         session=session,
+        acting_tenant_id=acting if acting != session.tenant_id else None,
     )
 
 

@@ -353,6 +353,37 @@ is inherently about one tenant: login and setup read `accounts` and the lockout 
 there. Which tenant a login is *for*, once an Nth tenant exists, belongs to the tenant
 management surface (#30) and the switcher (#36).
 
+### 4.9 Acting for another tenant: membership and the switch (INSPECT-0036)
+
+Ruled 2026-09-10. **Membership.** An account lives in one home tenant — its row, its
+password, its home roles — and may act for others through `account_tenants`
+(`account_id`, `tenant_id`, `roles`), a table outside row-level security for the same
+reason the credential indexes are (§4.8): it has to answer "which tenants may this
+account act for" before an acting tenant is known, and it holds ids and role names only.
+`accounts.email` is unique across the deployment (#30's open question, answered): one
+person is one account with memberships, never one account per tenant sharing an address.
+
+**The switch reissues.** `POST /api/auth/switch-tenant {tenantId}` checks the membership,
+revokes the session that made the request, mints a new one whose row lives at home and
+whose index row (`session_tenants.tenant_id`, plus the new `home_tenant_id`) names the
+target, and sets the new cookies. The credential is what names the acting tenant (§4.8),
+so a switch is a new credential, never a mutation of the current one; the old cookie is
+`401` from that moment. Authentication reads the index for both halves, rebinds to home
+to read the session and the account, takes the roles from the membership — re-read on
+every request, so a membership removed after the switch ends the session on its next
+request, failing closed rather than falling back to the home roles — and rebinds to the
+acting tenant to serve the request. A token acts for the tenant it was issued under for
+its whole life; only a session switches.
+
+**Audit.** The switch lands in two trails, the tenant left and the tenant entered, as
+`auth.tenant.switched` with `from_tenant`, `to_tenant` and the roles taken.
+
+**UI.** `GET /api/auth/me` and the login answer carry `tenant` (acting) and `tenants`
+(every membership, `current` marked). The Navbar's switcher renders only past one
+membership, so a single-tenant pod — every pod today — shows nothing. Granting a
+membership has no surface yet: that belongs to the tenant management work (#30), and the
+switch is exercised in the database lane with a second tenant seeded there.
+
 ## 5. Authorization
 
 ### 5.1 Permissions, not role strings
