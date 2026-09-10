@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { listCatalog } from "@/features/catalog/api";
+import { PATCH_STATE_COLORS } from "@/features/catalog/patchState";
 import type { CatalogEntry, CatalogJamfFilter } from "@/features/catalog/types";
 import { AssessmentCell, CorpusBanner } from "@/features/vulnerabilities/AppAssessment";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -19,13 +20,6 @@ type SortDir = "asc" | "desc";
 const inputClasses =
   "rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
-// Status colors are fixed (never themed) per the dataviz palette: good / warning / critical / neutral.
-const STATE_COLORS: Record<string, string> = {
-  latest: "#0ca30c",
-  behind: "#d03b3b",
-  ahead: "#fab219",
-  unknown: "#fab219"
-};
 
 function sortValue(entry: CatalogEntry, key: SortKey): string | number {
   switch (key) {
@@ -256,7 +250,7 @@ export function CatalogPage() {
                     {entry.patchState ? (
                       <>
                         <span className="inline-flex items-center gap-1.5">
-                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: STATE_COLORS[entry.patchState] }} />
+                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: PATCH_STATE_COLORS[entry.patchState] }} />
                           {stateLabels[entry.patchState] ?? entry.patchState}
                         </span>
                         {/* #68: a date and a count, never a day count — a date does not inflate. */}

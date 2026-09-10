@@ -2,15 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { getChangePolicy, listChanges } from "@/features/changes/api";
-import {
-  artifactValueOf,
-  diffLines,
-  labelsFromPolicy,
-  SECTION_ORDER,
-  whatOf,
-  type DiffLine,
-  type LabelMap
-} from "@/features/changes/render";
+import { DiffCell } from "@/features/changes/DiffCell";
+import { artifactValueOf, detailText, diffLines, labelsFromPolicy, SECTION_ORDER, whatOf, type LabelMap } from "@/features/changes/render";
 import type { ChangeFilters, ChangeLevel, DeviceChange } from "@/features/changes/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
@@ -31,6 +24,12 @@ function filtersFromParams(params: URLSearchParams): ChangeFilters {
     minLevel: asLevel(params.get("minLevel")),
     since: params.get("since") ?? undefined,
     section: params.get("section") ?? undefined,
+    // #300: the device page links here with all three subject keys. Before this read
+    // them, that link landed on the unfiltered fleet feed — the same silent drop #107
+    // fixed for `since`, one filter over.
+    connectionId: params.get("connectionId") ? Number(params.get("connectionId")) : undefined,
+    subjectId: params.get("subjectId") ?? undefined,
+    subjectKind: params.get("subjectKind") ?? undefined,
     page: params.get("page") ? Number(params.get("page")) : 1
   };
 }
@@ -43,41 +42,11 @@ function paramsFromFilters(filters: ChangeFilters): URLSearchParams {
   if (filters.minLevel) params.set("minLevel", filters.minLevel);
   if (filters.since) params.set("since", filters.since);
   if (filters.section) params.set("section", filters.section);
+  if (filters.connectionId !== undefined) params.set("connectionId", String(filters.connectionId));
+  if (filters.subjectId) params.set("subjectId", filters.subjectId);
+  if (filters.subjectKind) params.set("subjectKind", filters.subjectKind);
   if (filters.page && filters.page !== 1) params.set("page", String(filters.page));
   return params;
-}
-
-/**
- * What moved, field by field.
- *
- * Values wrap rather than truncate. The column exists because truncation put an app's new
- * version off the right-hand edge while the two cells beside it stayed identical for their
- * whole visible width — so a cell that runs long here takes a second line instead.
- */
-function DiffCell({ lines }: { lines: DiffLine[] }) {
-  // Nothing to pair: the collapsed-system-apps row carries a count and no entry, and its
-  // sentence is already printed under What.
-  if (lines.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
-  return (
-    <div className="max-w-sm space-y-0.5 break-words">
-      {lines.map((line) => (
-        <div key={line.key} className="flex flex-wrap items-baseline gap-x-2">
-          {line.label && <span className="text-xs text-muted-foreground">{line.label}</span>}
-          <span className="font-mono text-xs">
-            {line.pair ? (
-              <>
-                <span className="text-muted-foreground">{line.from ?? "—"}</span>
-                <span className="px-1.5 text-muted-foreground">→</span>
-                <span className="font-medium text-foreground">{line.to ?? "—"}</span>
-              </>
-            ) : (
-              (line.from ?? line.to)
-            )}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
 }
 
 export function ChangesPage() {
@@ -164,18 +133,6 @@ export function ChangesPage() {
     [tc]
   );
 
-  function detailText(row: DeviceChange): string | null {
-    const details = row.details ?? {};
-    const parts: string[] = [];
-    if (typeof details.systemAppsUpdated === "number") parts.push(tc.systemAppsUpdated(details.systemAppsUpdated));
-    if (typeof details.collapsedSystemApps === "number") parts.push(tc.systemAppsUpdated(details.collapsedSystemApps));
-    if (details.criteriaChanged === true) parts.push(tc.criteriaMoved);
-    if (details.criteriaChanged === false) parts.push(tc.deviceDrifted);
-    // `changedFields` is no longer named here: the What-changed column prints those fields
-    // with both of their values, which is what naming them was standing in for.
-    return parts.length ? parts.join(" · ") : null;
-  }
-
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = filters.page ?? 1;
 
@@ -261,6 +218,21 @@ export function ChangesPage() {
         </Button>
       </form>
 
+      {/* A subject the form has no control for (the device page's "all changes on this
+          Mac" link, #300) shows as a removable chip, so a filter the page applies is never
+          one the page hides. Named by the rows' own label when there is one. */}
+      {filters.subjectId && (
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 rounded-full border bg-muted px-3 py-1 text-xs"
+          onClick={() => update({ subjectId: undefined, subjectKind: undefined, connectionId: undefined })}
+        >
+          {tc.subjectChip(rows[0]?.subjectLabel ?? filters.subjectId)}
+          <span aria-hidden="true">×</span>
+          <span className="sr-only">{tc.clearFilter}</span>
+        </button>
+      )}
+
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="overflow-x-auto rounded-lg border bg-card">
@@ -287,7 +259,7 @@ export function ChangesPage() {
               </tr>
             )}
             {rows.map((row) => {
-              const detail = detailText(row);
+              const detail = detailText(row, tc);
               const what = whatOf(row, labels, sectionLabels);
               // Offered only where the filter would actually find the row again — see
               // `artifactValueOf`. A certificate and a field change get plain text.

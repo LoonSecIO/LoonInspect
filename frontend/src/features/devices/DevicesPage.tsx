@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { FilterBar } from "@/features/devices/FilterBar";
 import { listDevices } from "@/features/devices/api";
@@ -156,7 +156,11 @@ export function DevicesPage() {
             )}
             {devices.map((device) => (
               <tr key={device.id} className="border-b last:border-0">
-                <td className="px-4 py-2">{device.hostname}</td>
+                <td className="px-4 py-2">
+                  <Link to={`/devices/${device.id}`} className="font-medium hover:underline">
+                    {device.hostname}
+                  </Link>
+                </td>
                 <td className="px-4 py-2">{device.serialNumber}</td>
                 <td className="px-4 py-2">{device.osVersion ?? "—"}</td>
                 <td className="px-4 py-2">{device.site ?? "—"}</td>

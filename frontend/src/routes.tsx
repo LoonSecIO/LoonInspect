@@ -9,6 +9,7 @@ import { SetupPage } from "@/features/auth/SetupPage";
 import { PERMISSIONS } from "@/features/auth/types";
 import { OverviewPage } from "@/features/overview/OverviewPage";
 import { DevicesPage } from "@/features/devices/DevicesPage";
+import { DevicePage } from "@/features/devices/DevicePage";
 import { ApplicationsPage } from "@/features/devices/ApplicationsPage";
 import { ApplicationsOverviewPage } from "@/features/devices/ApplicationsOverviewPage";
 import { SmartGroupCostPage } from "@/features/smartGroups/SmartGroupCostPage";
@@ -53,6 +54,10 @@ export function AppRoutes() {
             those two cannot. */}
         <Route path="devices/groups/cost" element={<SmartGroupCostPage />} />
         <Route path="devices/changes" element={<ChangesPage />} />
+        {/* Declared after the static /devices children on purpose: react-router ranks a
+            static segment above a dynamic one, so /devices/applications and
+            /devices/changes still win, and a reader sees why without knowing that (#300). */}
+        <Route path="devices/:deviceId" element={<DevicePage />} />
         {/* No /users route: nothing on the backend serves MDM-synced people, and a
             route rendering an empty table of eight columns Jamf's users would fill
             is a promise, not a page. It comes back with the endpoint (#95). */}

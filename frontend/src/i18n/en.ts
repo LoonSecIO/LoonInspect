@@ -591,6 +591,80 @@ export const en = {
     // control for it, so it is a chip the reader can remove.
     staleChip: (since: string) => `No check-in since ${since}`,
     clearFilter: "Clear this filter",
+    // The device page (#300). Every absence is a sentence about whose clock or whose
+    // catalog is silent, never a dash: "Reported with no value" ≠ "no EAs" ≠ "not read".
+    detail: {
+      back: "All devices",
+      subtitle: (serial: string, externalId: string) => `${serial} · Jamf computer ${externalId}`,
+      loading: "Loading device…",
+      notFound: "No device has this id.",
+      errorLoading: "Could not load this device.",
+      clocks: {
+        inventory: "Inventory reported by Jamf",
+        inventoryNone: "Jamf has not reported an inventory for this Mac",
+        checkIn: "Jamf last heard from the Mac",
+        checkInNone: "Jamf has not heard from this Mac",
+        seen: "LoonInspect last read it",
+        seenNone: "LoonInspect has not read this Mac yet"
+      },
+      lastRecordedChange: (when: string, level: string) => `Last recorded change: ${when} (${level})`,
+      noRecordedChange: "No change has been recorded for this Mac yet",
+      recordedNote:
+        "Recorded, not changed: the change-tracking policy filters at write time, so something can move on the Mac with no row behind it.",
+      placement: {
+        heading: "Placement",
+        managed: "Managed",
+        supervised: "Supervised",
+        osVersion: "OS version",
+        site: "Site",
+        building: "Building",
+        department: "Department",
+        notSet: "Not set in Jamf",
+        notRead: "Not read",
+        nameNotRead: (id: string) => `${id} (name not read yet)`
+      },
+      apps: {
+        heading: "Applications",
+        count: (n: number) => `${n} installed`,
+        colName: "Name",
+        colVersion: "Version",
+        colJamfPatch: "Jamf Patch",
+        colLoonInspect: "LoonInspect",
+        colBundleId: "Bundle ID",
+        orderByPatch: "Order by Jamf's patch state",
+        empty: "No applications reported for this Mac",
+        noTitle: "No Jamf Patch title matches this app",
+        latest: (version: string) => `latest ${version}`,
+        titleLink: "Jamf Patch title"
+      },
+      eas: {
+        heading: "Extension attributes",
+        count: (n: number) => `${n} reported`,
+        colDefinition: "Definition",
+        colValues: "Values",
+        colSource: "Source",
+        colEnabled: "Enabled in Jamf",
+        noValue: "Reported with no value",
+        noName: "name not read yet",
+        enabled: "Enabled",
+        disabled: "Disabled in Jamf",
+        unknownEnabled: "Not read",
+        empty: "No extension attributes reported for this Mac"
+      },
+      changes: {
+        heading: "Recent changes",
+        caption: "Every recorded change, including levels muted on the fleet feed.",
+        all: "All changes on this Mac",
+        loading: "Loading changes…",
+        errorLoading: "Could not load the changes for this Mac.",
+        empty: "No change has been recorded for this Mac yet.",
+        noConnection: "This device has no connection, so its changes cannot be scoped."
+      },
+      collected: {
+        heading: "Collected, not on this page yet",
+        body: "These sections ride device.inventory to your SIEM today and have no read endpoint here yet."
+      }
+    },
     osVersionPrefix: "OS version",
     osVersionOperators: {
       eq: "is",
@@ -983,6 +1057,7 @@ export const en = {
     artifactHint: "App, account, group or profile — not paths, and not the values themselves.",
     filterTo: (name: string) => `Filter to ${name}`,
     clearFilter: "Clear this filter",
+    subjectChip: (label: string) => `Changes on ${label}`,
     level: "Level",
     anyLevel: "Any level",
     section: "Section",
