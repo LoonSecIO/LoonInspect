@@ -169,11 +169,12 @@ the run `jobID`, the token's index settings, and the search you ran.
      ([`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) §6); reportable **F**.
 3. **Healthy, signed in, and Settings › Connections says it could not load.**
    `curl $BASE/api/health` is `{"status":"ok"}`, sign-in works, and
-   `GET /api/mdm/connections` answers **500**, and `docker compose logs app` shows a
-   traceback whose last line is `Failed to decrypt stored value — ENCRYPTION_KEY may have
-   changed` (the lines above it name `cryptography.fernet.InvalidToken` in `crypto.py`;
-   that is the same failure, seen from underneath). The key in `.env` is not the one this
-   database's credentials were written under — the shape of every restore that brought
+   `GET /api/mdm/connections` answers **503** with the sentence *Stored credentials cannot
+   be read: the ENCRYPTION_KEY in the environment is not the one this database was written
+   under…*, the Connections and Destinations pages show that sentence, and
+   `docker compose logs app` carries it once, with no traceback (#374; a build before it
+   showed a `500` and a traceback ending in `ENCRYPTION_KEY may have changed`). The key in
+   `.env` is not the one this database's credentials were written under — the shape of every restore that brought
    the dump and not the key ([`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) §5). **This is the
    fix:** put the original key back from your secret store ([`operations.md`](operations.md)
    §1 has the one-liner that verifies a dump-and-key pair), then `docker compose up -d`.
@@ -206,5 +207,6 @@ following it from a broken stack to a working one; what it cannot resolve is eit
 missing path or a defect, and both are the point. First run, 2026-09-10: a stack restored
 beside the wrong `ENCRYPTION_KEY`, a Haiku session with only this document, the API and
 `docker compose logs`, five commands, the fix named in about two minutes. Its one finding
-became a filed defect: the failure reaches the operator as a raw traceback and a bare
-`500`, not as a sentence ([`diagnosability.md`](diagnosability.md) rule 3).
+became a filed defect — the failure reached the operator as a raw traceback and a bare
+`500`, not as a sentence ([`diagnosability.md`](diagnosability.md) rule 3) — and #374
+closed it the same day: a `503` whose `detail` is the sentence, shown on the page.

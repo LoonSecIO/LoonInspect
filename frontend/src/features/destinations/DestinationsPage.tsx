@@ -137,8 +137,9 @@ export function DestinationsPage() {
     setLoading(true);
     try {
       setDestinations(await listDestinations());
-    } catch {
-      setError(t.destinations.errorLoading);
+    } catch (caught) {
+      // A 503 carries a sentence worth showing: the stored secrets cannot be read (#374).
+      setError(caught instanceof ApiError && caught.status === 503 && caught.detail ? caught.detail : t.destinations.errorLoading);
     } finally {
       setLoading(false);
     }

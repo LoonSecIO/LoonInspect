@@ -47,7 +47,7 @@ from app.core.auth import authenticate
 from app.core.bootstrap import bootstrap_accounts, bootstrap_tenants, migrate_legacy_siem_webhook
 from app.core.config import settings
 from app.core.context import SYSTEM, reset_actor, set_actor, system_actor_for
-from app.core.crypto import validate_encryption_key
+from app.core.crypto import STORED_VALUE_UNREADABLE, StoredValueUnreadable, validate_encryption_key
 from app.core.database import init_db, session_for_tenant, unscoped_session
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware, content_security_policy_mode
@@ -392,6 +392,26 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None,
 )
+
+
+# A wrong ENCRYPTION_KEY (#374): the one failure every restore can produce, answered as a
+# sentence rather than a traceback. The seam raises `StoredValueUnreadable` wherever a
+# credential is read; this turns it into a 503 whose `detail` says what failed, why and
+# what to check, and logs that sentence once per process with no traceback — so
+# `docker compose logs app` reads it at the top instead of after a stack trace per
+# request. 503, not 500: the service is up and every other request works; what is
+# unavailable is the stored credential, until the key is restored.
+_unreadable_reported = False
+
+
+@app.exception_handler(StoredValueUnreadable)
+async def _stored_value_unreadable(request: Request, exc: StoredValueUnreadable) -> JSONResponse:
+    global _unreadable_reported
+    if not _unreadable_reported:
+        _unreadable_reported = True
+        logger.error(STORED_VALUE_UNREADABLE, extra={"path": request.url.path})
+    return JSONResponse(status_code=503, content={"detail": STORED_VALUE_UNREADABLE})
+
 
 # Registered first so it ends up innermost, closest to the router — it only needs to
 # compress what a route actually produced. #172: 964 KB of static payload (a ~500 KB JS
