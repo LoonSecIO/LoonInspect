@@ -6,7 +6,7 @@ export const de: Translations = {
     dismissUpdate: "Update-Hinweis ausblenden",
     sharing: {
       pageDescription:
-        "Die Patch- und Schwachstellen-Feeds, die LoonInspect aufbaut, entstehen aus anonymem Community-Inventar. Was diese Instanz beiträgt — und ob überhaupt — wird hier festgelegt.",
+        "Die Patch- und Schwachstellen-Feeds, die LoonInspect aufbaut, würden aus anonymem Community-Inventar entstehen. Noch erscheint keiner, und in diesem Build fließt nichts an diese Instanz zurück. Was diese Instanz beiträgt — und ob überhaupt — wird hier festgelegt.",
       envLocked:
         "COMMUNITY_SHARING=false ist in der Umgebung gesetzt — in der Datei .env neben docker-compose.yml. Solange es gesetzt ist, wird nichts geteilt, unabhängig von der Auswahl unten. Eine hier getroffene Wahl wird gespeichert und greift, sobald die Zeile entfernt und der Container neu gestartet wurde (docker compose up -d).",
       readOnlyRole:
@@ -766,7 +766,15 @@ export const de: Translations = {
     kev: (count: number) => `${count} auf der CISA-KEV-Liste`,
     oldestPublished: (days: number) => `ältester Fund vor ${days} Tag${days === 1 ? "" : "en"} veröffentlicht`,
     moreIds: (count: number) => `+${count} weitere`,
-    idsCapped: "Liste gekürzt"
+    idsCapped: "Liste gekürzt",
+    whySummary: "Warum dieser Container nichts sagt",
+    whyNoCorpus:
+      "Mit LoonInspect wird in diesem Build kein Schwachstellen-Korpus ausgeliefert. Die Abfrage läuft lokal gegen einen in diesen Container geladenen Korpus, und dieser Container hat keinen — also hat sich niemand diese Versionen angesehen, und nichts hier wurde gegen irgendetwas geprüft.",
+    whyNoSwitch:
+      "Die Datenfreigabe einzuschalten ändert daran in diesem Build nichts: der tägliche Austausch trägt Inventar bei und erhält weder Urteile noch Feeds zurück. Ein Lizenzschlüssel ebenso wenig; nichts in diesem Build liest einen für Schwachstellendaten.",
+    whyWhenItShips:
+      "Sobald ein Korpus erscheint, bekommt jede Zeile eine datierte Antwort — geprüft oder außerhalb des Korpus — und die Abwesenheit ist nicht mehr die ganze Geschichte. Bis dahin wird sie benannt statt versteckt.",
+    whyLink: "Wie der Korpus und seine Stufen gedacht sind (docs/vulnerabilities.md §8)"
   },
   jamfPatch: {
     tabLabel: "Jamf Patch",
@@ -812,13 +820,6 @@ export const de: Translations = {
           : `${devices} Gerät${devices === 1 ? "" : "e"} mit diesem Titel · ${onLatest} auf der aktuellen Version`,
       unlistedVersions: (n: number) =>
         `${n} Gerät${n === 1 ? "" : "e"} auf einer Version, die Jamf nicht führt (dem Katalog voraus oder ein Build, den Jamf nie erfasst hat).`,
-      tableVulnerabilities: "Schwachstellen",
-      vulnerabilitiesTooltip: "Noch nicht bewertet — Schwachstellendaten kommen mit dem Community-Korpus (docs/vulnerabilities.md).",
-      vulnCritical: "Kritisch",
-      vulnHigh: "Hoch",
-      vulnMedium: "Mittel",
-      vulnLow: "Niedrig",
-      vulnTotal: "Gesamt",
       calendarTitle: "Release-Rhythmus",
       calendarDescription:
         "Jedes Quadrat ist ein Tag, an dem eine Version dieses Titels veröffentlicht wurde — dunkler bedeutet mehr Releases an diesem Tag.",

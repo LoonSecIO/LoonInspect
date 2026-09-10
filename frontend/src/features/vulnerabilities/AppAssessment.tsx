@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ExternalLink } from "@/components/ui/external-link";
 import type { Translations } from "@/i18n/en";
 import { assertExhaustive, formatCorpusDate, type AppVulnerability } from "@/features/vulnerabilities/types";
 
@@ -127,6 +128,30 @@ export function CorpusBanner({ corpusAsOf, t }: { corpusAsOf: string | null; t: 
       <p className="mt-1 text-sm text-muted-foreground">{dated === null ? copy.corpusBodyNone : copy.corpusBody(dated)}</p>
       {/* The differentiator, said plainly: what the product does not know, dated. */}
       <p className="mt-1 text-sm text-muted-foreground">{dated === null ? copy.edgeNone : copy.edge(dated)}</p>
+      {/* Where "not assessed" goes (#298): one link, here, governing the whole table. Its
+          job is to say WHY this container says nothing — in the present tense, with no
+          date to borrow — not to promise that a switch would make it say something. It is
+          not "turn on data sharing" or "get a licence": neither changes what loaded_corpus()
+          answers in this build, and a link that said so would be the Webhook card (#95)
+          and the Splunk card (#88) a third time, on the surface that is the differentiator. */}
+      {dated === null && (
+        <details className="mt-2 text-sm">
+          <summary className="cursor-pointer font-medium">{copy.whySummary}</summary>
+          <div className="mt-2 space-y-2 text-muted-foreground">
+            <p>{copy.whyNoCorpus}</p>
+            <p>{copy.whyNoSwitch}</p>
+            <p>{copy.whyWhenItShips}</p>
+            <p>
+              <ExternalLink href={VULNERABILITIES_DOC_TIERS}>{copy.whyLink}</ExternalLink>
+            </p>
+          </div>
+        </details>
+      )}
     </div>
   );
 }
+
+/** The design contract's section on tiers — what each tier gets, and that "off" is what
+ *  ships. Named by section (#298 trap 4): pointing at a 530-line document without one is
+ *  handing the reader homework. The repository is public, so the link survives the flip. */
+const VULNERABILITIES_DOC_TIERS = "https://github.com/LoonSecIO/LoonInspect/blob/main/docs/vulnerabilities.md#8-tiers";

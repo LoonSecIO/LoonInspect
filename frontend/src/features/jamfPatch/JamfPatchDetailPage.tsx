@@ -1,59 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
-import { ChevronDown, ChevronRight, Info } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { getJamfPatchTitle } from "@/features/jamfPatch/api";
 import type { JamfPatchTitleDetail } from "@/features/jamfPatch/types";
 import { ReleaseCalendar } from "@/features/jamfPatch/ReleaseCalendar";
 import { RequirementsSection } from "@/features/jamfPatch/RequirementsSection";
 import { RequirementsTestPanel } from "@/features/jamfPatch/RequirementsTestPanel";
 import { useLocale } from "@/i18n/LocaleContext";
-import type { Translations } from "@/i18n/en";
-
-// Status colors are fixed (never themed) per the dataviz palette: critical/serious/warning/good.
-const SEVERITY_COLORS = {
-  critical: "#d03b3b",
-  high: "#ec835a",
-  medium: "#fab219",
-  low: "#0ca30c"
-} as const;
-
-function VulnerabilityHeader({ t }: { t: Translations }) {
-  return (
-    <span className="group relative inline-flex items-center gap-1">
-      {t.jamfPatch.detail.tableVulnerabilities}
-      <Info tabIndex={0} className="h-3.5 w-3.5 cursor-help outline-none" />
-      <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-max max-w-[240px] -translate-x-1/2 whitespace-normal rounded-md border bg-popover px-2 py-1 text-xs font-normal normal-case text-popover-foreground shadow-md group-hover:block group-focus-within:block">
-        {t.jamfPatch.detail.vulnerabilitiesTooltip}
-      </span>
-    </span>
-  );
-}
-
-function VulnerabilityStubCell({ t }: { t: Translations }) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-      <span className="inline-flex items-center gap-1" title={t.jamfPatch.detail.vulnCritical}>
-        <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: SEVERITY_COLORS.critical }} />
-        <span className="text-muted-foreground">C —</span>
-      </span>
-      <span className="inline-flex items-center gap-1" title={t.jamfPatch.detail.vulnHigh}>
-        <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: SEVERITY_COLORS.high }} />
-        <span className="text-muted-foreground">H —</span>
-      </span>
-      <span className="inline-flex items-center gap-1" title={t.jamfPatch.detail.vulnMedium}>
-        <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: SEVERITY_COLORS.medium }} />
-        <span className="text-muted-foreground">M —</span>
-      </span>
-      <span className="inline-flex items-center gap-1" title={t.jamfPatch.detail.vulnLow}>
-        <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: SEVERITY_COLORS.low }} />
-        <span className="text-muted-foreground">L —</span>
-      </span>
-      <span className="font-medium text-muted-foreground" title={t.jamfPatch.detail.vulnTotal}>
-        Σ —
-      </span>
-    </div>
-  );
-}
 
 /** Devices matched to the title whose installed version Jamf has not listed — ahead of the
  *  catalog (a beta) or a build Jamf never recorded. */
@@ -166,15 +119,21 @@ export function JamfPatchDetailPage() {
                         <th className="px-4 py-2 font-medium">{t.jamfPatch.detail.tableVersion}</th>
                         <th className="px-4 py-2 font-medium">{t.jamfPatch.detail.tableReleaseDate}</th>
                         <th className="px-4 py-2 font-medium">{t.jamfPatch.detail.tableDeviceCount}</th>
-                        <th className="px-4 py-2 font-medium">
-                          <VulnerabilityHeader t={t} />
-                        </th>
+                        {/* No vulnerability column (#298). The one that stood here rendered
+                            C — H — M — L — Σ beside four coloured dots, a green one on Low,
+                            under a tooltip naming an integration nobody can enable — a fourth
+                            rendering of "not assessed" that noCollapse.ts could not see, and
+                            pre-contract sediment from before docs/vulnerabilities.md. A real
+                            column cannot be built at this grain either: the corpus is keyed
+                            on the installed app's name (key_full), which a Jamf title's
+                            version row does not carry. The assessment lives on the Catalog
+                            tab and the device page, at the grain it is an answer about. */}
                       </tr>
                     </thead>
                     <tbody>
                       {title.patches.length === 0 && (
                         <tr>
-                          <td className="px-4 py-4 text-muted-foreground" colSpan={4}>
+                          <td className="px-4 py-4 text-muted-foreground" colSpan={3}>
                             {t.jamfPatch.detail.empty}
                           </td>
                         </tr>
@@ -187,10 +146,6 @@ export function JamfPatchDetailPage() {
                           </td>
                           <td className="px-4 py-2 tabular-nums">
                             {title.versionDeviceCounts[patch.version] ?? 0}
-                          </td>
-                          {/* Stub — requires the LoonSecIO integration to be enabled. */}
-                          <td className="px-4 py-2">
-                            <VulnerabilityStubCell t={t} />
                           </td>
                         </tr>
                       ))}

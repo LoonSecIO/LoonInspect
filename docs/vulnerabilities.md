@@ -347,6 +347,17 @@ checking in. Every other key is the same value in both.
 | `GET /api/catalog` | `items[].vuln` — the block per distinct build; `corpusAsOf` on the list response |
 | `GET\|POST /api/catalog/lookup` | **Nothing.** See below |
 | Devices › Applications › **Catalog** | A **Vulnerabilities** column, and the corpus banner above it |
+| Devices › *hostname* (the device page, #300) | A **LoonInspect** column per installed app, and the same banner above it |
+| Devices › Applications › *appHash* (the application record, #299) | A **Vulnerabilities** column per carried build — legal there because each row is one build at `key_full` grain — and the banner |
+| Devices › Applications › Jamf Patch › *title* | **Nothing** (#298). A title's version row carries no `key_full`, so there is no grain to answer at; the stub column that stood there (`C — H — M — L — Σ` beside coloured dots, under a tooltip naming an integration nobody can enable) was deleted rather than rewritten, per the #95 precedent |
+
+**Where `off` goes (#298).** A terminal sentence is a dead end, and the obvious link — *turn on
+data sharing* — is a lie: `loaded_corpus()` takes no argument and answers `NO_CORPUS` in every
+v0 build, the daily exchange receives no verdicts, and no code reads a licence key for
+vulnerability data. So the banner carries the one link, and it explains rather than promises:
+an in-product *why this container says nothing*, in the present tense, dated with nothing,
+with §8 below linked by section. The per-row cell stays a terminal sentence; two thousand
+identical links in cells would be noise.
 
 **Why the lookup answers no assessment.** It is keyed by hash and accepts `appHash` as
 well as `versionHash` / `keyFull`; under `appHash` the row it returns is deliberately a
