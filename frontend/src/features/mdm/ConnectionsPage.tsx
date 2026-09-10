@@ -52,10 +52,11 @@ export function ConnectionsPage() {
       const [rows, statuses] = await Promise.all([listConnections(), listSyncStatus()]);
       setConnections(rows);
       setSyncStatuses(Object.fromEntries(statuses.map((s) => [s.mdmConnectionId, s])));
-    } catch {
+    } catch (caught) {
       // Without this, a failed load leaves connections empty and the table says
-      // "no connections yet" — failure must not read as emptiness.
-      setLoadError(t.settings.errorLoading);
+      // "no connections yet" — failure must not read as emptiness. A 503 carries a
+      // sentence worth showing: the stored credentials cannot be read (#374).
+      setLoadError(caught instanceof ApiError && caught.status === 503 && caught.detail ? caught.detail : t.settings.errorLoading);
     } finally {
       setLoading(false);
     }

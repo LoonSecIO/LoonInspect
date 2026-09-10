@@ -67,8 +67,13 @@ def test_decrypt_under_a_different_key_raises_runtime_error(encryption_key: str,
 
     monkeypatch.setattr(settings, "encryption_key", Fernet.generate_key().decode())
 
-    with pytest.raises(RuntimeError, match="ENCRYPTION_KEY may have changed"):
+    with pytest.raises(RuntimeError, match="not the one this database was written under") as caught:
         column.process_result_value(stored, None)
+    # Its own type (#374), so the API can answer it with a sentence and a 503; still a
+    # RuntimeError, so nothing that handled the bare one is broken.
+    from app.core.crypto import STORED_VALUE_UNREADABLE, StoredValueUnreadable
+
+    assert isinstance(caught.value, StoredValueUnreadable) and str(caught.value) == STORED_VALUE_UNREADABLE
 
 
 def test_get_encryption_key_without_a_key_raises(no_encryption_key: None) -> None:

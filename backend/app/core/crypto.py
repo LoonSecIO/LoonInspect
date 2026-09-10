@@ -9,6 +9,25 @@ from app.core.config import settings
 # Single static key from ENCRYPTION_KEY for now. Rotating or versioning this key
 # (e.g. re-encrypting existing rows under a new key) is a deliberate future TODO.
 
+# What failed, why, and what to check, in the operator's vocabulary (#374,
+# docs/diagnosability.md rule 3). It is the request's `detail`, the one log line, and
+# the sentence docs/troubleshooting.md §4 quotes — so it lives here, once.
+STORED_VALUE_UNREADABLE = (
+    "Stored credentials cannot be read: the ENCRYPTION_KEY in the environment is not the one "
+    "this database was written under. Restore the original key (docs/operations.md §1), or "
+    "re-enter each connection's and destination's secret (KNOWN_ISSUES.md §5)."
+)
+
+
+class StoredValueUnreadable(RuntimeError):
+    """A Fernet token the configured key cannot open — the shape of every restore that
+    brought the dump and not the key (KNOWN_ISSUES.md §5). A RuntimeError still, so a
+    caller that handled the old bare one keeps working; a type of its own so the API can
+    answer it with a sentence and a 503 rather than a traceback and a bare 500 (#374)."""
+
+    def __init__(self) -> None:
+        super().__init__(STORED_VALUE_UNREADABLE)
+
 
 def get_encryption_key() -> bytes:
     if not settings.encryption_key:
@@ -57,4 +76,4 @@ class EncryptedString(TypeDecorator):
         try:
             return Fernet(get_encryption_key()).decrypt(value.encode()).decode()
         except InvalidToken as exc:
-            raise RuntimeError("Failed to decrypt stored value — ENCRYPTION_KEY may have changed") from exc
+            raise StoredValueUnreadable() from exc

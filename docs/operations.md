@@ -90,10 +90,14 @@ loonrb2-app-1 :: Up 6 seconds (healthy)
 login HTTP 200
 
 ### but every connection is unreadable
-Internal Server Error  <- HTTP 500
+HTTP 503  {"detail": "Stored credentials cannot be read: the ENCRYPTION_KEY in the
+environment is not the one this database was written under. Restore the original key
+(docs/operations.md §1), or re-enter each connection's and destination's secret
+(KNOWN_ISSUES.md §5)."}
 
-### what the log says
-Failed to decrypt stored value — ENCRYPTION_KEY may have changed
+### what the log says (once, with no traceback — #374)
+Stored credentials cannot be read: the ENCRYPTION_KEY in the environment is not the one
+this database was written under. …
 ```
 
 **Check that the key in `.env` opens this database before you need it**, not after — a

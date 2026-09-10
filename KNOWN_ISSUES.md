@@ -189,13 +189,20 @@ does not — and cannot cheaply — check that it is *this database's* key.
 loonrb2-app-1 :: Up 6 seconds (healthy)
 {"status":"ok"}  <- HTTP 200
 login HTTP 200
-GET /api/mdm/connections -> Internal Server Error   HTTP 500
-log: Failed to decrypt stored value — ENCRYPTION_KEY may have changed
+GET /api/mdm/connections -> HTTP 503
+  {"detail": "Stored credentials cannot be read: the ENCRYPTION_KEY in the environment
+   is not the one this database was written under. Restore the original key
+   (docs/operations.md §1), or re-enter each connection's and destination's secret
+   (KNOWN_ISSUES.md §5)."}
+log: the same sentence, once per process, no traceback
 ```
 
 Healthy, signed in, and every MDM connection and destination permanently unreadable —
 because account passwords are Argon2id hashes, which survive a lost key, while
-credentials are Fernet ciphertext, which does not.
+credentials are Fernet ciphertext, which does not. Until 2026-09-10 (#374) this reached
+the operator as a bare `500` and a traceback per request; it is a sentence now — the
+Connections and Destinations pages show it — but it is still not detected until
+something reads a credential, which is the limit this entry records.
 
 **Where it bites.** Every restore, at every fleet size. It is the single most likely way
 to lose a LoonInspect instance: back up the database, not the key.
