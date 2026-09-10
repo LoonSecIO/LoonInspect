@@ -128,6 +128,15 @@ class MdmConnectionTestRequest(BaseModel):
     user_agent_override: str | None = None
 
 
+class MdmReEmitRequest(BaseModel):
+    """`POST /{id}/re-emit` (#356): optionally one destination — the one that was down —
+    so the re-send does not land on the destinations that were not."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    destination_id: int | None = None
+
+
 class MdmSyncTriggerResult(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 

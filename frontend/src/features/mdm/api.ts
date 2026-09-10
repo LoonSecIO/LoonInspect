@@ -52,6 +52,16 @@ export function listSyncStatus(): Promise<MdmSyncStatus[]> {
 /** Returns as soon as the pull is queued, not when it finishes. The result carries the
  *  jobID to poll with getRunLog — and `started: false` when it joined a run that was
  *  already in flight. */
+/** The re-emit (#356): every device's current snapshot, regardless of delta, optionally
+ *  for one destination — the one that was down. 202 with the run's jobID, or the run
+ *  already in flight (`started: false`). Gated on destination:write. */
+export function reEmitConnection(id: number, destinationId?: number): Promise<MdmSyncTriggerResult> {
+  return apiRequest<MdmSyncTriggerResult>(`/mdm/connections/${id}/re-emit`, {
+    method: "POST",
+    json: destinationId === undefined ? {} : { destinationId }
+  });
+}
+
 export function syncConnection(id: number): Promise<MdmSyncTriggerResult> {
   return apiRequest<MdmSyncTriggerResult>(`/mdm/connections/${id}/sync`, { method: "POST" });
 }

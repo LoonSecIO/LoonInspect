@@ -869,6 +869,13 @@ class EventOutbox(Base):
     # false and waits for one to be added (see fan_out_pending). Lets the worker find
     # only new events instead of re-scanning ones it has already fanned out.
     fanned_out: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    # A re-emit scoped to one destination (#356): when set, fan-out creates a delivery
+    # for this destination alone, so a re-send for the destination that was down does
+    # not re-send to the ones that were not. A plain integer, no foreign key, on
+    # purpose: if the destination is gone by the time fan-out runs, the event is
+    # considered against nothing and marked fanned out with no delivery — the correct
+    # outcome — where SET NULL would have quietly widened it to every destination.
+    only_destination_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class OutboxDelivery(Base):

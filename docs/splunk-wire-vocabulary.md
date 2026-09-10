@@ -7,7 +7,8 @@ Status: **frozen** · Ruled in [#188](https://github.com/LoonSecIO/LoonInspect/i
 [#113](https://github.com/LoonSecIO/LoonInspect/issues/113), 2026-09-02,
 [#243](https://github.com/LoonSecIO/LoonInspect/issues/243), 2026-09-03 and
 [#311](https://github.com/LoonSecIO/LoonInspect/issues/311), 2026-09-04 and
-[#306](https://github.com/LoonSecIO/LoonInspect/issues/306), 2026-09-09 · Stamped on the
+[#306](https://github.com/LoonSecIO/LoonInspect/issues/306), 2026-09-09 and
+[#356](https://github.com/LoonSecIO/LoonInspect/issues/356), 2026-09-10 · Stamped on the
 wire by [#223](https://github.com/LoonSecIO/LoonInspect/issues/223) (the `:change`
 family), [#242](https://github.com/LoonSecIO/LoonInspect/issues/242) (the section tree
 and `loon:run`) and [#277](https://github.com/LoonSecIO/LoonInspect/issues/277) (the
@@ -335,6 +336,22 @@ most-multiplied bytes on the wire to say something the record already says.
 The single-event families keep no `sourcetype` outside Splunk. Each is self-describing at
 the grain it ships — a `device.change` carries `subjectKind` and `section`, a run event's
 `event` is its own discriminator — so none of them has the problem this solves.
+
+### 6c. `comparison: "re-emit"` on `run.completed` (#356)
+
+Amended additively, 2026-09-10. `run.completed` has carried `comparison` since #92 with two
+values, `baseline` and `delta` ([`runs.md`](runs.md) §4). A third rides now: **`re-emit`**,
+the run that emits every device's current snapshot regardless of delta, for the half of an
+outage the redrive (#91) cannot reach. Clause 1, not clause 2: no key appears, none is
+renamed, and the two existing values keep their meaning. Ruled its own word rather than
+`baseline` on 2026-09-10 because a search that counts baselines is counting first sweeps,
+and a re-emit is not one.
+
+What a consumer sees: the re-emitted `device.inventory` events carry the re-emit run's own
+`jobID` and a fresh `deviceMeta.eventID`, and `deviceMeta.trigger` is `manual`. They are
+**not** duplicates of the events that were lost — they are a newer observation of the same
+devices — so the dedup story is the redrive's ([`splunk-setup.md`](splunk-setup.md) §7):
+latest `eventID` per device wins, and a lost event's absence is filled rather than doubled.
 
 ### 6a. The order those keys appear in
 

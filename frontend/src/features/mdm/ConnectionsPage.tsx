@@ -7,7 +7,9 @@ import { RefreshCw } from "lucide-react";
 import { ApiError } from "@/config/api";
 import { useHasPermission } from "@/features/auth/store";
 import { PERMISSIONS } from "@/features/auth/types";
-import { deleteConnection, listConnections, listSyncStatus, syncConnection } from "@/features/mdm/api";
+import { listDestinations } from "@/features/destinations/api";
+import type { Destination } from "@/features/destinations/types";
+import { deleteConnection, listConnections, listSyncStatus, reEmitConnection, syncConnection } from "@/features/mdm/api";
 import type { MdmConnection, MdmSyncStatus } from "@/features/mdm/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
@@ -19,6 +21,8 @@ export function ConnectionsPage() {
   // regardless; hiding the controls keeps them from discovering that via a 403.
   const canWrite = useHasPermission(PERMISSIONS.CONNECTION_WRITE);
   const canSync = useHasPermission(PERMISSIONS.DEVICE_SYNC);
+  // The re-emit re-sends tenant data to a destination, so it is gated like the redrive.
+  const canReEmit = useHasPermission(PERMISSIONS.DESTINATION_WRITE);
   const [connections, setConnections] = useState<MdmConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -32,6 +36,14 @@ export function ConnectionsPage() {
   // The run each connection's row is currently showing. Set by clicking Sync now, and
   // kept after the run ends so the outcome stays readable instead of vanishing.
   const [runs, setRuns] = useState<Record<number, { jobId: string; joined: boolean }>>({});
+  // The re-emit asks first (#356): it re-sends the whole fleet's inventory, and the
+  // panel says how much before the click that does it. Destinations are read when the
+  // panel opens, never before.
+  const [pendingReEmitId, setPendingReEmitId] = useState<number | null>(null);
+  const [reEmitDestinations, setReEmitDestinations] = useState<Destination[] | null>(null);
+  const [reEmitDestinationId, setReEmitDestinationId] = useState<number | "">("");
+  const [reEmitting, setReEmitting] = useState(false);
+  const [reEmitError, setReEmitError] = useState<string | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -85,6 +97,29 @@ export function ConnectionsPage() {
       );
     } finally {
       setSyncingId(null);
+    }
+  }
+
+  function openReEmit(id: number) {
+    setPendingReEmitId(id);
+    setReEmitDestinationId("");
+    setReEmitError(null);
+    listDestinations()
+      .then((rows) => setReEmitDestinations(rows.filter((row) => row.enabled)))
+      .catch(() => setReEmitDestinations([]));
+  }
+
+  async function handleReEmit(id: number) {
+    setReEmitting(true);
+    setReEmitError(null);
+    try {
+      const triggered = await reEmitConnection(id, reEmitDestinationId === "" ? undefined : reEmitDestinationId);
+      setRuns((held) => ({ ...held, [id]: { jobId: triggered.jobId, joined: !triggered.started } }));
+      setPendingReEmitId(null);
+    } catch (caught) {
+      setReEmitError(caught instanceof ApiError && caught.detail ? caught.detail : t.settings.reEmitError);
+    } finally {
+      setReEmitting(false);
     }
   }
 
@@ -245,6 +280,16 @@ export function ConnectionsPage() {
                           {t.settings.syncNow}
                         </Button>
                       )}
+                      {canReEmit && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={pendingReEmitId === connection.id}
+                          onClick={() => openReEmit(connection.id)}
+                        >
+                          {t.settings.reEmit}
+                        </Button>
+                      )}
                       {canWrite && (
                         <>
                           <Button variant="outline" size="sm" onClick={() => setFormMode(connection.id)}>
@@ -260,6 +305,47 @@ export function ConnectionsPage() {
                 </td>
               </tr>
             ))}
+            {/* The re-emit's confirm (#356), under its row like the run panel: what it
+                will send, to where, and how much, before the click that sends it. */}
+            {connections.flatMap((connection) => {
+              if (pendingReEmitId !== connection.id) return [];
+              const devices = syncStatuses[connection.id]?.deviceCount ?? 0;
+              const megabytes = Math.round((devices * 30) / 1024);
+              return [
+                <tr key={`re-emit-${connection.id}`} className="border-b last:border-0">
+                  <td className="px-4 pb-3" colSpan={7}>
+                    <div className="space-y-2 rounded-lg border bg-muted/20 p-3 text-sm">
+                      <p className="font-medium">{t.settings.reEmitTitle}</p>
+                      <p className="text-muted-foreground">{t.settings.reEmitHelp(devices, megabytes)}</p>
+                      <label className="flex flex-wrap items-center gap-2">
+                        <span>{t.settings.reEmitDestination}</span>
+                        <select
+                          className="rounded-md border border-input bg-background px-2 py-1 text-sm"
+                          value={reEmitDestinationId}
+                          onChange={(event) => setReEmitDestinationId(event.target.value === "" ? "" : Number(event.target.value))}
+                        >
+                          <option value="">{t.settings.reEmitEveryDestination}</option>
+                          {(reEmitDestinations ?? []).map((destination) => (
+                            <option key={destination.id} value={destination.id}>
+                              {destination.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {reEmitError && <p className="text-destructive">{reEmitError}</p>}
+                      <div className="flex gap-2">
+                        <Button size="sm" disabled={reEmitting} onClick={() => handleReEmit(connection.id)}>
+                          {t.settings.reEmitConfirm}
+                        </Button>
+                        <Button variant="outline" size="sm" disabled={reEmitting} onClick={() => setPendingReEmitId(null)}>
+                          {t.settings.cancel}
+                        </Button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>,
+              ];
+            })}
             {/* The run-now panel sits under its connection's row rather than inside a
                 cell: the log is wide, and a nested scroll region inside a table cell
                 collapses the column widths for every other row. */}

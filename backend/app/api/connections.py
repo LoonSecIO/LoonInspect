@@ -22,6 +22,7 @@ from app.core.egress import BlockedBaseUrl, refuse_blocked_resolution, validate_
 from app.core.permissions import Permission
 from app.core.runs import (
     LOCK_DEVICE_SWEEP,
+    LOCK_RE_EMIT,
     STATUS_RUNNING,
     TRIGGER_MANUAL,
     RunReclaimed,
@@ -33,8 +34,10 @@ from app.core.tenancy import reset_tenant_id, set_tenant_id
 from app.mdm.collections import ensure_default_collections
 from app.mdm.credentials import CREDENTIAL_SCHEMAS, credential_fingerprint, fingerprint_field, secret_fields
 from app.mdm.jamf.client import JamfClient
+from app.mdm.reemit import re_emit_connection
 from app.mdm.service import set_sync_status, sync_connection, sync_result_kwargs
 from app.models.schema import (
+    Destination,
     Device,
     DeviceExtensionAttribute,
     InstalledApp,
@@ -48,6 +51,7 @@ from app.schemas.connections import (
     MdmConnectionTestRequest,
     MdmConnectionTestResult,
     MdmConnectionUpdate,
+    MdmReEmitRequest,
     MdmSyncTriggerResult,
     PatchManagementProvider,
     validate_jamf_specific_fields,
@@ -835,4 +839,118 @@ async def delete_connection(connection_id: int, db: AsyncSession = Depends(get_d
         # A 204 carries no body, so the size of what went with it is recorded here or
         # nowhere.
         devices_deleted=devices_removed,
+    )
+
+
+async def _run_connection_re_emit(
+    connection_id: int, destination_id: int | None, actor: Actor, tenant_id: uuid.UUID, job_id: uuid.UUID
+) -> None:
+    """Background worker for a re-emit (#356) — the shape of `_run_connection_sync`, for
+    the same reasons: the request's session and context are gone, the run was acquired
+    in the request so the 202 could carry its jobID, and the tenant rides as an argument."""
+    token = set_actor(actor)
+    tenant_token = set_tenant_id(tenant_id)
+    try:
+        async with session_for_tenant(tenant_id) as db:
+            connection = await db.get(MdmConnection, connection_id)
+            run = await db.get(Run, job_id)
+            if connection is None or run is None:
+                return
+            async with entered(run):
+                try:
+                    result = await re_emit_connection(db, connection, run=run, destination_id=destination_id)
+                except RunReclaimed:
+                    await db.rollback()
+                    logger.warning(
+                        "re-emit aborted: its run was reclaimed mid-flight",
+                        extra={"connection_id": connection_id, "job_id": str(job_id)},
+                    )
+                    return
+                except Exception as exc:
+                    await db.rollback()
+                    await finish(db, run, ok=False, error=str(exc))
+                    raise
+                await finish(
+                    db,
+                    run,
+                    ok=result.devices_failed == 0,
+                    device_count=result.device_count,
+                    devices_processed=result.devices_processed,
+                    devices_failed=result.devices_failed,
+                    observations={"reEmitted": result.devices_processed, "skipped": result.devices_skipped},
+                    error=None if result.devices_failed == 0 else f"{result.devices_failed} device(s) could not be re-emitted",
+                )
+    finally:
+        reset_tenant_id(tenant_token)
+        reset_actor(token)
+
+
+@router.post(
+    "/{connection_id}/re-emit",
+    response_model=MdmSyncTriggerResult,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require(Permission.DESTINATION_WRITE))],
+)
+async def trigger_re_emit(
+    connection_id: int,
+    background_tasks: BackgroundTasks,
+    payload: MdmReEmitRequest | None = None,
+    principal: Principal = Depends(current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> MdmSyncTriggerResult:
+    """Emit the current inventory snapshot of every device on this connection, regardless
+    of delta (#356) — the half of an outage a redrive cannot reach.
+
+    Gated on `destination:write` like the redrive: it re-sends tenant data to a
+    destination, and the operator who may return dead letters to the queue is the one
+    who may resend the fleet. No redrive is required first — after a purge there may be
+    nothing left to redrive. Optionally scoped to one destination, which must exist and
+    be enabled: a scoped re-emit for a disabled destination would enqueue a fleet of
+    snapshots that fan-out never delivers.
+
+    Returns 202 with the run's jobID, like `POST /{id}/sync`; a second click while one is
+    in flight joins it (`started: false`). A running sweep does not block it: the re-emit
+    holds its own lock class, reads the ledger, and never touches Jamf.
+    """
+    connection = await _get_or_404(connection_id, db)
+    destination_id = payload.destination_id if payload else None
+    if destination_id is not None:
+        destination = await db.get(Destination, destination_id)
+        if destination is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Destination not found")
+        if not destination.enabled:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Destination is disabled")
+
+    acquisition = await acquire(
+        db,
+        connection,
+        trigger=TRIGGER_MANUAL,
+        lock_class=LOCK_RE_EMIT,
+        actor_label=principal.account.email,
+    )
+    if not acquisition.started:
+        return MdmSyncTriggerResult(
+            connection_id=connection.id, job_id=acquisition.run.id, status=SyncStatus.syncing.value, started=False
+        )
+
+    audit(
+        AuditAction.CONNECTION_RE_EMIT_TRIGGERED,
+        target_type="mdm_connection",
+        target_id=connection.id,
+        name=connection.name,
+        provider=connection.provider,
+        destination_id=destination_id,
+        job_id=str(acquisition.run.id),
+    )
+
+    background_tasks.add_task(
+        _run_connection_re_emit,
+        connection.id,
+        destination_id,
+        Actor(type="account", id=principal.account.id, label=principal.account.email, tenant_id=principal.tenant_id),
+        principal.tenant_id,
+        acquisition.run.id,
+    )
+    return MdmSyncTriggerResult(
+        connection_id=connection.id, job_id=acquisition.run.id, status=SyncStatus.syncing.value, started=True
     )
