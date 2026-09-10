@@ -96,8 +96,20 @@ comparison this is). That sits badly against the contract's own rule two lines b
 type the wrong one and get zero results with no error.
 
 Emitted as **`trigger`** (`sweep` | `manual` | `webhook`) and **`comparison`**
-(`baseline` | `delta`). Renamed while renaming was still free; customer SPL written
-against these names makes them permanent.
+(`baseline` | `delta` | `re-emit`). Renamed while renaming was still free; customer SPL
+written against these names makes them permanent.
+
+**`re-emit`** joined the vocabulary on 2026-09-10 (#356), additively: a run that emits the
+current `device.inventory` snapshot of every device on a connection regardless of delta —
+the baseline's emission with the ledger's current state, and no Jamf pull — for the half
+of an outage a redrive cannot reach (an event that dead-lettered, aged past
+`DEAD_LETTER_RETENTION_DAYS`, and whose device has not changed since). It is neither a
+baseline (nothing is recorded) nor a delta (nothing is compared), so it carries its own
+word rather than borrowing one that a dashboard counting baselines would miscount. Its
+own lock class (`re_emit`), so it runs beside a sweep rather than holding sweeps off for
+the hours a 40,000-device re-send takes; trigger `manual`, always; optionally scoped to
+one destination. `POST /api/mdm/connections/{id}/re-emit`, gated on `destination:write`
+like the redrive, audited as `connection.re-emit.triggered`.
 
 `trigger` reuses the vocabulary the observation ledger already stamps on every span as
 `last_trigger`, rather than the contract's `scheduled`: one word per concept across the
@@ -712,7 +724,7 @@ just the inventory one:
 | `connectionID` | Which connection swept |
 | `connectionName` | The same connection, readable without a join — added [#287](https://github.com/LoonSecIO/LoonInspect/issues/287), 2026-09-04, additively, to match `run.failed` |
 | `trigger` | `sweep` \| `manual` \| `webhook` |
-| `comparison` | `baseline` \| `delta` |
+| `comparison` | `baseline` \| `delta` \| `re-emit` (#356) |
 | `occurredAt` | The run's window end — the instant the row's `window_end` was stamped |
 | `devicesTotal` | Devices attempted (`processed + failed`) — `1` for a webhook run |
 | `devicesProcessed` | Devices ingested |

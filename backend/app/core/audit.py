@@ -52,6 +52,7 @@ class AuditAction(StrEnum):
     CONNECTION_CREDENTIALS_UPDATED = "connection.credentials.updated"
     CONNECTION_TESTED = "connection.tested"
     CONNECTION_SYNC_TRIGGERED = "connection.sync.triggered"
+    CONNECTION_RE_EMIT_TRIGGERED = "connection.re-emit.triggered"
 
     COLLECTION_CREATED = "collection.created"
     COLLECTION_UPDATED = "collection.updated"

@@ -64,6 +64,10 @@ TRIGGER_WEBHOOK = "webhook"
 # is new by construction. Delta: everything after that.
 COMPARISON_BASELINE = "baseline"
 COMPARISON_DELTA = "delta"
+# A re-emit (#356): the current snapshot of every device on a connection, regardless of
+# delta, from the ledger's current state. Neither a baseline (nothing is being recorded)
+# nor a delta (nothing is compared); its own word, ruled additive on 2026-09-10.
+COMPARISON_RE_EMIT = "re-emit"
 
 # The mutex dimension. A catalog refresh reads hundreds of small rows and a device sweep
 # paginates thousands of devices; making the cheap one wait behind the expensive one
@@ -73,6 +77,11 @@ LOCK_CATALOG = "catalog"
 # Lock-exempt by the index predicate, not by a branch here: a webhook gets a run for the
 # jobID and the log but never waits for one (§4.4).
 LOCK_WEBHOOK = "webhook"
+# Its own class (#356, ruled 2026-09-10): a re-emit reads committed ledger state and
+# never touches Jamf, so it runs beside a sweep rather than holding every sweep off for
+# the hours a 40,000-device re-send takes to enqueue. Two re-emits of one connection do
+# serialize — the second joins the first, as run-now joins a sweep.
+LOCK_RE_EMIT = "re_emit"
 
 STATUS_RUNNING = "running"
 STATUS_SUCCEEDED = "succeeded"
@@ -102,7 +111,7 @@ RUN_COMPLETED_EVENT = RUN_COMPLETED_EVENT_TYPE
 
 # Lock classes whose closed run also gets a run.completed. LOCK_CATALOG is the one
 # exclusion left standing after #224 — see RUN_COMPLETED_EVENT above.
-RUN_COMPLETED_LOCK_CLASSES = frozenset({LOCK_DEVICE_SWEEP, LOCK_WEBHOOK})
+RUN_COMPLETED_LOCK_CLASSES = frozenset({LOCK_DEVICE_SWEEP, LOCK_WEBHOOK, LOCK_RE_EMIT})
 
 # Emitted the moment any run reaches `failed` — every trigger and every lock class,
 # wider than run.completed's scope (#103): run.completed excludes LOCK_CATALOG even
@@ -781,6 +790,10 @@ async def _record_reclaim(db: AsyncSession, row, *, at: datetime, error: str) ->
 
 
 async def _comparison_for(db: AsyncSession, connection_id: int, lock_class: str) -> str:
+    if lock_class == LOCK_RE_EMIT:
+        # Never baseline, never delta: history has no bearing on a run that compares
+        # nothing (#356). Said here so `acquire` stays the one place a Run is built.
+        return COMPARISON_RE_EMIT
     """Baseline until this connection and lock class have completed one run."""
     seen = await db.execute(
         select(Run.id)

@@ -100,7 +100,14 @@ _MAX_BACKOFF_EXPONENT = 10  # guards against an unbounded 2**n
 ELASTIC_DEFAULT_INDEX = "logs-looninspect.events-default"
 
 
-async def enqueue_event(db: AsyncSession, event_type: str, payload: dict, *, request_id: str | None = None) -> EventOutbox:
+async def enqueue_event(
+    db: AsyncSession,
+    event_type: str,
+    payload: dict,
+    *,
+    request_id: str | None = None,
+    only_destination_id: int | None = None,
+) -> EventOutbox:
     """Record that an event happened. Call sites add this to the session and let the
     caller commit — it must land in the same transaction as whatever state change
     produced it, so the two can never drift apart from a partial failure.
@@ -111,7 +118,7 @@ async def enqueue_event(db: AsyncSession, event_type: str, payload: dict, *, req
     sender fast, and synchronous delivery in the request path would put a flaky SIEM
     between it and that ACK.
     """
-    event = EventOutbox(event_type=event_type, payload=payload, request_id=request_id)
+    event = EventOutbox(event_type=event_type, payload=payload, request_id=request_id, only_destination_id=only_destination_id)
     db.add(event)
     await db.flush()
     return event
@@ -517,7 +524,7 @@ async def fan_out_pending(db: AsyncSession) -> int:
     # events: the numbers are in the #244 PR. `deliver_pending` keeps the full row — it
     # has to POST the payload.
     result = await db.execute(
-        select(EventOutbox.id, EventOutbox.event_type)
+        select(EventOutbox.id, EventOutbox.event_type, EventOutbox.only_destination_id)
         .where(EventOutbox.fanned_out.is_(False))
         .order_by(EventOutbox.id)
         .limit(_TICK_LIMIT)
@@ -527,8 +534,12 @@ async def fan_out_pending(db: AsyncSession) -> int:
         return 0
 
     created = 0
-    for event_id, event_type in pending_events:
+    for event_id, event_type, only_destination_id in pending_events:
         for destination in destinations:
+            # A scoped re-emit (#356) is for one destination and no other; a destination
+            # that is gone leaves the event considered, fanned out, and undelivered.
+            if only_destination_id is not None and destination.id != only_destination_id:
+                continue
             subscribed = destination.subscribed_events
             if subscribed and event_type not in subscribed:
                 continue
@@ -540,7 +551,7 @@ async def fan_out_pending(db: AsyncSession) -> int:
     # reasons, and raising the tick ceiling must not quietly reintroduce asyncpg's
     # bind-parameter crash. The same transaction as the delivery rows, so "considered"
     # and "has a delivery row" commit together or not at all.
-    for batch in _in_batches([event_id for event_id, _event_type in pending_events]):
+    for batch in _in_batches([event_id for event_id, _event_type, _only in pending_events]):
         await db.execute(sa_update(EventOutbox).where(EventOutbox.id.in_(batch)).values(fanned_out=True))
 
     await db.commit()

@@ -972,6 +972,16 @@ export const en = {
     syncNever: "Never synced",
     syncDeviceCount: (n: number) => `${n} device${n === 1 ? "" : "s"}`,
     syncError: "Could not start the sync.",
+    // The re-emit (#356): the half of an outage a redrive cannot reach. The help names
+    // the volume before the click, because the button's cost is the fleet's inventory.
+    reEmit: "Re-emit inventory",
+    reEmitTitle: "Re-emit every device's current inventory?",
+    reEmitHelp: (devices: number, megabytes: number) =>
+      `Sends the current inventory snapshot of every device on this connection regardless of change — ${devices} device${devices === 1 ? "" : "s"}, about ${megabytes} MB, paced by the outbox. For the events an outage lost after the dead letters were purged; a redrive covers the rest. Nothing is read from Jamf.`,
+    reEmitDestination: "Send to",
+    reEmitEveryDestination: "Every enabled destination",
+    reEmitConfirm: "Re-emit",
+    reEmitError: "Could not start the re-emit.",
     runProcessing: "Processing…",
     runJoined: "Already syncing — showing the run in progress.",
     runMoreDetails: "More details",
