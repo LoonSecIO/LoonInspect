@@ -1,5 +1,5 @@
 import { apiRequest } from "@/config/api";
-import type { DeviceDetail, DeviceFilters, DeviceListResponse } from "@/features/devices/types";
+import type { DeviceDetail, DeviceFilters, DeviceListResponse, DeviceObservation } from "@/features/devices/types";
 
 export function listDevices(filters: DeviceFilters): Promise<DeviceListResponse> {
   const params = new URLSearchParams();
@@ -28,4 +28,10 @@ export function listDevices(filters: DeviceFilters): Promise<DeviceListResponse>
  *  columns and `vuln` block, every extension attribute, and `corpusAsOf`. */
 export function getDevice(id: number): Promise<DeviceDetail> {
   return apiRequest<DeviceDetail>(`/devices/${id}`);
+}
+
+/** What the ledger holds for one Mac, by section, with the four-state vocabulary (#368).
+ *  Lazy on the page: requested when its block scrolls into view. */
+export function getDeviceObservation(id: number): Promise<DeviceObservation> {
+  return apiRequest<DeviceObservation>(`/devices/${id}/observation`);
 }

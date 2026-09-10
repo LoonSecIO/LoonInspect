@@ -17,9 +17,11 @@ from app.core.vuln import loaded_corpus
 from app.core.vuln_read import assess, corpus_as_of, today
 from app.mdm.org_units import BUILDING, DEPARTMENT, OrgUnitNames, ids_for_name, load_names, name_for
 from app.models.schema import Device, DeviceExtensionAttribute, InstalledApp
+from app.observations.read import device_observation
 from app.schemas.devices import (
     DeviceDetailOut,
     DeviceListResponse,
+    DeviceObservationOut,
     DeviceOut,
     ExtensionAttributeFilter,
     VersionOperator,
@@ -248,6 +250,20 @@ def _assessed(out: DeviceDetailOut, rows: Sequence[InstalledApp]) -> DeviceDetai
             "apps": [app.model_copy(update={"vuln": assess(corpus, by_id[app.id], as_of=as_of)}) for app in out.apps],
         }
     )
+
+
+@router.get("/{device_id}/observation", response_model=DeviceObservationOut)
+async def get_device_observation(device_id: int, db: AsyncSession = Depends(get_db)) -> DeviceObservationOut:
+    """What the ledger currently holds for one Mac, by section, with the four-state
+    absence vocabulary explicit (#368): present, empty, not observed, outside the
+    aperture. Groups ride beside the sections, named from their own spans and marked when
+    departed. Its own endpoint rather than a bigger device payload: the detail read stays
+    two cheap selects and flat in fleet size, and this read — up to fourteen digest
+    lookups and their bodies — is lazy on the page. Gated like the device."""
+    device = await db.get(Device, device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    return DeviceObservationOut.model_validate(await device_observation(db, device))
 
 
 @router.get("/{device_id}", response_model=DeviceDetailOut)

@@ -617,6 +617,25 @@ export const de: Translations = {
       collected: {
         heading: "Erfasst, aber noch nicht auf dieser Seite",
         body: "Diese Abschnitte gehen heute mit device.inventory an Ihr SIEM und haben hier noch keinen Lese-Endpunkt."
+      },
+      observation: {
+        heading: "Was das Ledger hält",
+        loading: "Ledger wird gelesen…",
+        errorLoading: "Das Ledger konnte für diesen Mac nicht gelesen werden.",
+        observedAt: (when: string) => `Die aktuelle Beobachtung vom ${when}, Abschnitt für Abschnitt, wie das Ledger sie hält.`,
+        neverObserved: "Das Ledger hat für diesen Mac noch keine Beobachtung aufgezeichnet; jeder Abschnitt unten sagt das.",
+        present: "Gelesen",
+        entries: (n: number) => `${n} ${n === 1 ? "Eintrag" : "Einträge"}`,
+        empty: "Gelesen, und der Mac hat keinen gemeldet",
+        notObserved: "Im Sweep, auf diesem Mac noch nicht beobachtet",
+        outsideAperture: "Vom Sweep dieser Verbindung nicht gelesen",
+        groupsHeading: "Smart Groups",
+        groupsNone: "Für diesen Mac ist keine Gruppenmitgliedschaft aufgezeichnet.",
+        smart: "smart",
+        static: "statisch",
+        gone: (since: string) => `weg seit ${since}`,
+        showAll: (n: number) => `Alle ${n} anzeigen`,
+        showFewer: "Weniger anzeigen"
       }
     },
     osVersionPrefix: "Betriebssystemversion",

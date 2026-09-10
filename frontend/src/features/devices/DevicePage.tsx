@@ -8,6 +8,7 @@ import { detailText, diffLines, labelsFromPolicy, whatOf, type LabelMap } from "
 import type { DeviceChange } from "@/features/changes/types";
 import { getDevice } from "@/features/devices/api";
 import { collectedNotOnPage } from "@/features/devices/ledgerSections";
+import { ObservationBlock } from "@/features/devices/ObservationBlock";
 import type { DeviceDetail, ExtensionAttribute, InstalledApp } from "@/features/devices/types";
 import { AssessmentCell, CorpusBanner } from "@/features/vulnerabilities/AppAssessment";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -352,13 +353,20 @@ export function DevicePage() {
         )}
       </section>
 
+      {/* What the ledger holds, section by section, lazily (#368). */}
+      <ObservationBlock deviceId={device.id} />
+
       {/* Named from the wire's own registry (`ledgerSections.ts` mirrors `SECTION_WRAPPERS`,
-          pinned by a backend test), so this list and the Splunk event enumerate identically. */}
-      <footer className="rounded-lg border bg-card p-4 text-sm">
-        <p className="font-medium">{td.collected.heading}</p>
-        <p className="mt-1 text-muted-foreground">{collectedNotOnPage().map((section) => tc.sections[section] ?? section).join(" · ")}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{td.collected.body}</p>
-      </footer>
+          pinned by a backend test), so this list and the Splunk event enumerate identically.
+          Empty since #368 renders every section above, and hidden then; a fifteenth wire
+          section reappears here until its block exists. */}
+      {collectedNotOnPage().length > 0 && (
+        <footer className="rounded-lg border bg-card p-4 text-sm">
+          <p className="font-medium">{td.collected.heading}</p>
+          <p className="mt-1 text-muted-foreground">{collectedNotOnPage().map((section) => tc.sections[section] ?? section).join(" · ")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{td.collected.body}</p>
+        </footer>
+      )}
     </section>
   );
 }

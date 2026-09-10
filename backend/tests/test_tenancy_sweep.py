@@ -291,6 +291,7 @@ async def test_change_feed_and_policy_are_tenant_scoped(client, seeded) -> None:
 
 async def test_foreign_device_account_token_404(client, seeded) -> None:
     assert (await client.get(f"/api/devices/{seeded['t2']['device_id']}")).status_code == 404
+    assert (await client.get(f"/api/devices/{seeded['t2']['device_id']}/observation")).status_code == 404
     assert (await client.get(f"/api/accounts/{seeded['t2']['account_id']}")).status_code == 404
     assert (await client.patch(f"/api/accounts/{seeded['t2']['account_id']}", json={"displayName": "stolen"})).status_code == 404
     assert (await client.delete(f"/api/tokens/{seeded['t2']['token_id']}")).status_code == 404
@@ -316,6 +317,7 @@ async def test_own_rows_still_resolve(client, seeded) -> None:
     """The sweep is meaningless if 404 is just the route's answer to everything."""
     assert (await client.get(f"/api/mdm/connections/{seeded['t1']['connection_id']}")).status_code == 200
     assert (await client.get(f"/api/devices/{seeded['t1']['device_id']}")).status_code == 200
+    assert (await client.get(f"/api/devices/{seeded['t1']['device_id']}/observation")).status_code == 200
     assert (await client.get(f"/api/accounts/{seeded['t1']['account_id']}")).status_code == 200
 
 
