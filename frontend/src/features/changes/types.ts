@@ -48,6 +48,9 @@ export interface ChangeFilters {
   since?: string;
   connectionId?: number;
   subjectId?: string;
+  /** `computer` | `computer_group` | …: without it `subjectId=42` merges computer 42 with
+   *  smart group 42, which is why the device page sends all three keys (#300). */
+  subjectKind?: string;
   page?: number;
   pageSize?: number;
 }

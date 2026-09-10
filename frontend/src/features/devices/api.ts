@@ -1,5 +1,5 @@
 import { apiRequest } from "@/config/api";
-import type { DeviceFilters, DeviceListResponse } from "@/features/devices/types";
+import type { DeviceDetail, DeviceFilters, DeviceListResponse } from "@/features/devices/types";
 
 export function listDevices(filters: DeviceFilters): Promise<DeviceListResponse> {
   const params = new URLSearchParams();
@@ -20,4 +20,10 @@ export function listDevices(filters: DeviceFilters): Promise<DeviceListResponse>
   params.set("pageSize", String(filters.pageSize ?? 50));
 
   return apiRequest<DeviceListResponse>(`/devices?${params.toString()}`);
+}
+
+/** The device page's one read (#300): the row, every installed app with its Jamf Patch
+ *  columns and `vuln` block, every extension attribute, and `corpusAsOf`. */
+export function getDevice(id: number): Promise<DeviceDetail> {
+  return apiRequest<DeviceDetail>(`/devices/${id}`);
 }

@@ -231,3 +231,25 @@ export function whatOf(
     identity: row.entryLabel ?? identityOf(row.entryIdentity)
   };
 }
+
+/**
+ * The sentence under What for rows whose detail is a count or a verdict rather than an
+ * entry: the collapsed system-apps row, and a group-membership row saying whether the
+ * criteria moved or the device drifted. Moved out of ChangesPage for the device page
+ * (#300); the locale block is a parameter because the original closed over it, and the
+ * body is unchanged.
+ */
+export function detailText(
+  row: DeviceChange,
+  tc: { systemAppsUpdated: (n: number) => string; criteriaMoved: string; deviceDrifted: string }
+): string | null {
+  const details = row.details ?? {};
+  const parts: string[] = [];
+  if (typeof details.systemAppsUpdated === "number") parts.push(tc.systemAppsUpdated(details.systemAppsUpdated));
+  if (typeof details.collapsedSystemApps === "number") parts.push(tc.systemAppsUpdated(details.collapsedSystemApps));
+  if (details.criteriaChanged === true) parts.push(tc.criteriaMoved);
+  if (details.criteriaChanged === false) parts.push(tc.deviceDrifted);
+  // `changedFields` is no longer named here: the What-changed column prints those fields
+  // with both of their values, which is what naming them was standing in for.
+  return parts.length ? parts.join(" · ") : null;
+}

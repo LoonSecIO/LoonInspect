@@ -543,6 +543,78 @@ export const de: Translations = {
     searchPlaceholder: "Hostname oder Seriennummer suchen...",
     staleChip: (since: string) => `Kein Check-in seit ${since}`,
     clearFilter: "Diesen Filter entfernen",
+    detail: {
+      back: "Alle Geräte",
+      subtitle: (serial: string, externalId: string) => `${serial} · Jamf-Computer ${externalId}`,
+      loading: "Gerät wird geladen…",
+      notFound: "Kein Gerät hat diese ID.",
+      errorLoading: "Dieses Gerät konnte nicht geladen werden.",
+      clocks: {
+        inventory: "Inventar von Jamf gemeldet",
+        inventoryNone: "Jamf hat für diesen Mac kein Inventar gemeldet",
+        checkIn: "Jamf hat den Mac zuletzt gehört",
+        checkInNone: "Jamf hat von diesem Mac noch nichts gehört",
+        seen: "LoonInspect hat ihn zuletzt gelesen",
+        seenNone: "LoonInspect hat diesen Mac noch nicht gelesen"
+      },
+      lastRecordedChange: (when: string, level: string) => `Letzte aufgezeichnete Änderung: ${when} (${level})`,
+      noRecordedChange: "Für diesen Mac wurde noch keine Änderung aufgezeichnet",
+      recordedNote:
+        "Aufgezeichnet, nicht geändert: die Änderungsverfolgung filtert beim Schreiben, also kann sich auf dem Mac etwas bewegen, ohne dass eine Zeile dahintersteht.",
+      placement: {
+        heading: "Zuordnung",
+        managed: "Verwaltet",
+        supervised: "Beaufsichtigt",
+        osVersion: "OS-Version",
+        site: "Standort",
+        building: "Gebäude",
+        department: "Abteilung",
+        notSet: "In Jamf nicht gesetzt",
+        notRead: "Nicht gelesen",
+        nameNotRead: (id: string) => `${id} (Name noch nicht gelesen)`
+      },
+      apps: {
+        heading: "Anwendungen",
+        count: (n: number) => `${n} installiert`,
+        colName: "Name",
+        colVersion: "Version",
+        colJamfPatch: "Jamf Patch",
+        colLoonInspect: "LoonInspect",
+        colBundleId: "Bundle-ID",
+        orderByPatch: "Nach Jamfs Patch-Status ordnen",
+        empty: "Für diesen Mac wurden keine Anwendungen gemeldet",
+        noTitle: "Kein Jamf-Patch-Titel passt zu dieser App",
+        latest: (version: string) => `aktuell ${version}`,
+        titleLink: "Jamf-Patch-Titel"
+      },
+      eas: {
+        heading: "Erweiterungsattribute",
+        count: (n: number) => `${n} gemeldet`,
+        colDefinition: "Definition",
+        colValues: "Werte",
+        colSource: "Quelle",
+        colEnabled: "In Jamf aktiviert",
+        noValue: "Ohne Wert gemeldet",
+        noName: "Name noch nicht gelesen",
+        enabled: "Aktiviert",
+        disabled: "In Jamf deaktiviert",
+        unknownEnabled: "Nicht gelesen",
+        empty: "Für diesen Mac wurden keine Erweiterungsattribute gemeldet"
+      },
+      changes: {
+        heading: "Letzte Änderungen",
+        caption: "Jede aufgezeichnete Änderung, auch die im Flotten-Feed stummgeschalteten Stufen.",
+        all: "Alle Änderungen auf diesem Mac",
+        loading: "Änderungen werden geladen…",
+        errorLoading: "Die Änderungen dieses Macs konnten nicht geladen werden.",
+        empty: "Für diesen Mac wurde noch keine Änderung aufgezeichnet.",
+        noConnection: "Dieses Gerät hat keine Verbindung, daher lassen sich seine Änderungen nicht eingrenzen."
+      },
+      collected: {
+        heading: "Erfasst, aber noch nicht auf dieser Seite",
+        body: "Diese Abschnitte gehen heute mit device.inventory an Ihr SIEM und haben hier noch keinen Lese-Endpunkt."
+      }
+    },
     osVersionPrefix: "Betriebssystemversion",
     osVersionOperators: {
       eq: "ist",
@@ -968,6 +1040,7 @@ export const de: Translations = {
     systemAppsUpdated: (n: number) => `${n} Apple-System-App${n === 1 ? "" : "s"} mit dem OS aktualisiert`,
     criteriaMoved: "Kriterien geändert",
     deviceDrifted: "Gerät hat sich verändert",
+    subjectChip: (label: string) => `Änderungen auf ${label}`,
     count: (n: number) => `${n} Änderung${n === 1 ? "" : "en"}`,
     pageOf: (page: number, pages: number) => `Seite ${page} von ${pages}`,
     previous: "Zurück",

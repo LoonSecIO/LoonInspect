@@ -16,6 +16,7 @@ export function listChanges(filters: ChangeFilters): Promise<DeviceChangeListRes
   if (filters.since) params.set("since", filters.since);
   if (filters.connectionId !== undefined) params.set("connectionId", String(filters.connectionId));
   if (filters.subjectId) params.set("subjectId", filters.subjectId);
+  if (filters.subjectKind) params.set("subjectKind", filters.subjectKind);
   params.set("page", String(filters.page ?? 1));
   params.set("pageSize", String(filters.pageSize ?? 50));
   return apiRequest<DeviceChangeListResponse>(`/changes?${params.toString()}`);
