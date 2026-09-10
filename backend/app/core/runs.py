@@ -224,6 +224,33 @@ def event_time(device_time: datetime | None = None) -> datetime:
     return _utcnow()
 
 
+# The name half of `deviceMeta.eventID`: the platform and the object's own id, joined by
+# a byte that can occur in neither. `app.core.content_keys` uses the same byte for the same
+# reason — a delimiter that can occur in data is two keys for one thing.
+_EVENT_ID_SEPARATOR = "\x1f"
+
+
+def pull_event_id(run_id: uuid.UUID, platform: str, external_id: str) -> str:
+    """One device's one pull, as a UUID any producer of that pull can derive without being
+    told — `uuid5(run, platform ␟ id)`.
+
+    The name is a tuple, not the Jamf id alone (#234). Jamf numbers computers and mobile
+    devices in two ID spaces, so a Mac and an iPad can share `1743`; the sourcetype tells
+    them apart *between* sourcetypes, but `eventID` is the selector this codebase teaches
+    analysts to use *across* them (`stats … by deviceMeta.eventID` over `loon:jamf:*:app`),
+    and a name of the id alone would merge the two devices' pulls into one key. The
+    platform is the row's own (`devices.platform`, #233), never a constant, so the second
+    ID space is a different name the day it exists. `jamfProID` keeps carrying the bare id
+    by decision: the sourcetype says which object it names, and re-spelling a shipped key
+    is forbidden (#189).
+
+    Every producer of a pull's events derives the value from here — `mdm.service._device_meta`
+    and `changes.derive._change_device_meta` — which is what makes "same formula, same
+    value" a fact rather than a coincidence of two call paths (`tests/test_device_meta.py`).
+    """
+    return str(uuid.uuid5(run_id, f"{platform}{_EVENT_ID_SEPARATOR}{external_id}"))
+
+
 def run_meta() -> dict[str, object]:
     """The run's contribution to an event's meta block — four keys, and two refusals.
 

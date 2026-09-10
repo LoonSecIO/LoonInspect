@@ -21,6 +21,7 @@ import pytest_asyncio
 from sqlalchemy import delete, func, select
 
 from app.core.outbox import _build_body
+from app.core.runs import pull_event_id
 from app.core.wire import ENVELOPE, instance_label
 from app.core.wire_vocabulary import SECTION_WRAPPERS
 from tests.jamf_fake import HOST, FakeJamf
@@ -241,7 +242,7 @@ async def test_changes_are_derived_under_the_default_policy(db, connection, jamf
     # rather than on jobID + jamfProID (#243, question 4).
     meta = latest.payload["deviceMeta"]
     assert meta["jamfProID"] == real_id and meta["serialNumber"] == "LOONMINI0M4" and meta["hostName"] == hostname
-    assert meta["eventID"] == str(uuidlib.uuid5(uuidlib.UUID(latest.payload["jobID"]), real_id))
+    assert meta["eventID"] == pull_event_id(uuidlib.UUID(latest.payload["jobID"]), "macos", real_id)
     assert meta["trigger"] == "webhook"
     assert all(r.span_id is not None and r.previous_span_id is not None for r in rows)
     assert by_key  # sanity

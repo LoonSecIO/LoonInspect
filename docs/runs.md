@@ -153,7 +153,7 @@ Two rules a consumer can rely on:
 - **Null values are dropped, not sent.** `lastReportDate` is absent on a device Jamf has
   never completed inventory on, rather than present and null.
   `NOT deviceMeta.lastReportDate=*` finds those events.
-- **`eventID` is one id per device per pull** — `uuid5(jobID, jamfProID)`, so a retry
+- **`eventID` is one id per device per pull** — `uuid5(jobID, platform ␟ jamfProID)`, so a retry
   recomputes the same value. It is the only key that selects a single device's complete
   inventory pass: two sweeps in a day share a `shortDate`, and one sweep's `jobID` is
   shared by every device in the fleet.
@@ -187,7 +187,7 @@ the block exists to correlate. Two consequences a consumer sees:
 - A `computer_group` subject — a smart group's definition, which is a subject and not a
   Mac — carries the run's half and `jamfProID` and nothing else. No `hostName` or
   `serialNumber`, for the same reason the envelope gives it no `host`; and **no
-  `eventID`**, because that id is `uuid5(jobID, jamfProID)` over an id from a different id
+  `eventID`**, because that id is `uuid5(jobID, platform ␟ jamfProID)` over an id from a different id
   space, and deriving one would mint a correlation key that collides with a computer's by
   construction.
 
@@ -617,7 +617,7 @@ by nothing. Minted locally (`app/core/uuid7.py`) rather than the standard librar
 `uuid.uuid7()`, which is Python 3.14; this repo runs 3.12. ULID was considered and
 rejected on the same #188 ruling that named UUIDv7: a second, differently-shaped id
 format on the wire beside `eventID` for no gain UUIDv7 doesn't already give. Free before
-the flip and a breaking change after it: `eventID` is `uuid5(jobID, jamfProID)`, so
+the flip and a breaking change after it: `eventID` is `uuid5(jobID, platform ␟ jamfProID)`, so
 changing `jobID`'s generator changes every derived event id too.
 
 ## 5. The log, and run-now

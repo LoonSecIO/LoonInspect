@@ -20,7 +20,7 @@ already give. UUIDv7 keeps the exact 36-character hyphenated shape and 16-byte w
 a run id as a UUID changes format — only its ordering property is new.
 
 **This is free today and a breaking change after the flip.** `eventID` is
-`uuid5(jobID, jamfProID)` (docs/runs.md), so changing `jobID`'s generator changes every
+`uuid5(jobID, platform ␟ jamfProID)` (docs/runs.md), so changing `jobID`'s generator changes every
 derived event id too. Landing this before the flip, while the wire has no customers
 depending on an `eventID`'s specific value, is what makes it free.
 """
