@@ -521,6 +521,19 @@ class DataSharingSettings(Base):
     ai_inference: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class PatchingPolicy(Base):
+    """One row per tenant: the org's stated patching policy, as typed text (#116). Read
+    beside the patch evidence on the Jamf Patch page; created on first write, so an
+    unstated policy is an absent row rather than an empty one. Never a threshold."""
+
+    __tablename__ = "patching_policies"
+
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(primary_key=True)
+    statement: Mapped[str] = mapped_column(Text, default="", server_default="")
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
 class ShareLog(Base):
     """One row per exchange attempt: exactly what left the box, verbatim
     (docs/data-sharing.md). Plain JSONB and not EncryptedString on purpose — the

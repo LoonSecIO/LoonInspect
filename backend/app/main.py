@@ -35,6 +35,7 @@ from app.api.feature_flags import router as feature_flags_router
 from app.api.jamf_patch import router as jamf_patch_router
 from app.api.routes import router as api_router
 from app.api.runs import router as runs_router
+from app.api.settings import router as settings_router
 from app.api.smart_groups import router as smart_groups_router
 from app.api.system import router as system_router
 from app.api.tokens import router as tokens_router
@@ -433,6 +434,7 @@ app.include_router(changes_router)
 app.include_router(alerts_router)
 app.include_router(destinations_router)
 app.include_router(system_router)
+app.include_router(settings_router)
 app.include_router(ai_router)
 app.include_router(devices_router)
 app.include_router(applications_router)

@@ -60,6 +60,7 @@ class AuditAction(StrEnum):
     COLLECTION_RUN_TRIGGERED = "collection.run.triggered"
 
     CHANGE_POLICY_UPDATED = "change-policy.updated"
+    PATCHING_POLICY_UPDATED = "patching-policy.updated"
 
     FEATURE_FLAG_UPDATED = "feature-flag.updated"
 
