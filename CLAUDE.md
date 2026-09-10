@@ -11,3 +11,10 @@ every section, and pass it with `--body-file`. The `PR body` check fails a body 
 filled-in `## Validation` section or without the `posture_snapshot: <keys | none>` line,
 and it re-runs when the body is edited. Answer the checklist's last line with
 `AI-assisted: yes` and leave its box unticked; the human who reads the diff ticks it.
+
+**A new failure path ships with its words.** [docs/diagnosability.md](docs/diagnosability.md)
+is the design language: a terminal state names its reason, a surprising log line names
+the next check, an error says what failed, why, and what to check in the operator's
+vocabulary, and the step-through lands in [docs/troubleshooting.md](docs/troubleshooting.md)
+in the same pull request. A diagnostic that would need source code is a defect to file,
+not a line to write. Read it before adding a way for something to go wrong.
