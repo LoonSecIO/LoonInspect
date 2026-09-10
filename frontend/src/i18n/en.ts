@@ -3,8 +3,11 @@ export const en = {
     updateAvailable: "A newer build of LoonInspect is available",
     dismissUpdate: "Dismiss update notice",
     sharing: {
+      // Present tense for what is true now (#298): nothing flows back to this instance in
+      // this build, so the feeds are described as what they would be made from, not as
+      // something this page's switches receive.
       pageDescription:
-        "The community patching and vulnerability feeds LoonInspect is building are made from anonymous community inventory. What this instance contributes — and whether it contributes at all — is controlled here.",
+        "The patching and vulnerability feeds LoonInspect is building would be made from anonymous community inventory. None ships yet, and nothing flows back to this instance in this build. What this instance contributes — and whether it contributes at all — is controlled here.",
       envLocked:
         "COMMUNITY_SHARING=false is set in the environment — the .env file beside docker-compose.yml. Nothing is shared while it is set, whatever is chosen below. A choice made here is recorded and takes effect once that line is removed and the container restarted (docker compose up -d).",
       readOnlyRole:
@@ -825,7 +828,17 @@ export const en = {
     kev: (count: number) => `${count} on CISA KEV`,
     oldestPublished: (days: number) => `oldest published ${days} day${days === 1 ? "" : "s"} ago`,
     moreIds: (count: number) => `+${count} more`,
-    idsCapped: "list capped"
+    idsCapped: "list capped",
+    // #298: where "not assessed" goes. Present tense for the absence, future tense at most
+    // for the corpus, and no date, no "last checked", no "today" — `off` carries none.
+    whySummary: "Why this container says nothing",
+    whyNoCorpus:
+      "No vulnerability corpus ships with LoonInspect in this build. The lookup runs locally, against a corpus loaded into this container, and this container has none — so nobody has looked at these versions, and nothing here has been checked against anything.",
+    whyNoSwitch:
+      "Turning on data sharing does not change that in this build: the daily exchange contributes inventory and receives no verdicts and no feeds back. Neither does a licence key; nothing in this build reads one for vulnerability data.",
+    whyWhenItShips:
+      "When a corpus ships, every row moves to a dated answer — checked, or outside the corpus — and the absence stops being the whole story. Until then it is named rather than hidden.",
+    whyLink: "How the corpus and its tiers are designed (docs/vulnerabilities.md §8)"
   },
   jamfPatch: {
     tabLabel: "Jamf Patch",
@@ -871,13 +884,6 @@ export const en = {
           : `${devices} device${devices === 1 ? "" : "s"} with this title · ${onLatest} on the current version`,
       unlistedVersions: (n: number) =>
         `${n} device${n === 1 ? "" : "s"} on a version Jamf has not listed (ahead of the catalog, or a build Jamf never recorded).`,
-      tableVulnerabilities: "Vulnerabilities",
-      vulnerabilitiesTooltip: "Not assessed yet — vulnerability data arrives with the community corpus (docs/vulnerabilities.md).",
-      vulnCritical: "Critical",
-      vulnHigh: "High",
-      vulnMedium: "Medium",
-      vulnLow: "Low",
-      vulnTotal: "Total",
       calendarTitle: "Release cadence",
       calendarDescription: "Each square is a day this title shipped a version — darker means more releases that day.",
       calendarMon: "Mon",
