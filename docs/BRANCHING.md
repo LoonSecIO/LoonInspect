@@ -274,11 +274,11 @@ and is never reused.
 
 | ID | Control | Enforcement | Severity | Status |
 | --- | --- | --- | --- | --- |
-| BR-01 | Branch name matches the canonical pattern in §2 | `ci` | block | proposed |
-| BR-02 | Pull request base is `main` | `ci` | block | proposed |
-| BR-03 | Branch is merged within 5 calendar days of its first commit | `ci` | warn | proposed |
+| BR-01 | Branch name matches the canonical pattern in §2 | `ci` | block | active — the `Policy` check (§7); `dependabot/` branches exempt, ruled 2026-09-10 |
+| BR-02 | Pull request base is `main` | `ci` | block | active — the `Policy` check |
+| BR-03 | Branch is merged within 5 calendar days of its first commit | `ci` | warn | active — the `Policy` check annotates |
 | BR-04 | Head branch is deleted automatically on merge | `repo-setting` | block | active |
-| BR-05 | A branch name that has previously merged is never reused | `ci` | block | proposed |
+| BR-05 | A branch name that has previously merged is never reused | `ci` | block | active — the `Policy` check |
 | BR-06 | `main` accepts no direct pushes; all changes arrive by pull request | `ruleset` | block | active |
 | BR-07 | `main` cannot be force-pushed or deleted | `ruleset` | block | active |
 | BR-08 | An `inspect-NNNN/` branch's number is an open GitHub issue, zero-padded to four digits | `ci` | block | proposed |
@@ -287,17 +287,17 @@ and is never reused.
 
 | ID | Control | Enforcement | Severity | Status |
 | --- | --- | --- | --- | --- |
-| CM-01 | Pull request title matches the squash-subject format in §5 | `ci` | block | proposed |
-| CM-02 | No branch contains consecutive commits with identical subjects | `ci` | warn | proposed |
-| CM-03 | No secret material or local state is committed (`.env`, `*.db`, keys, tokens) | `ci` | block | active — detection (TruffleHog) and prevention (push protection, since 2026-09-05); see §8.3 |
-| CM-04 | Diff excludes editor and OS artefacts (`.idea/`, `.vscode/`, `.DS_Store`) | `ci` | block | proposed |
+| CM-01 | Pull request title matches the squash-subject format in §5 | `ci` | block | active — the `Policy` check; `dependabot/` branches exempt, ruled 2026-09-10 |
+| CM-02 | No branch contains consecutive commits with identical subjects | `ci` | warn | active — the `Policy` check annotates |
+| CM-03 | No secret material or local state is committed (`.env`, `*.db`, keys, tokens) | `ci` | block | active — content: detection (TruffleHog) and prevention (push protection, since 2026-09-05), see §8.3; paths: the `Policy` check |
+| CM-04 | Diff excludes editor and OS artefacts (`.idea/`, `.vscode/`, `.DS_Store`) | `ci` | block | active — the `Policy` check |
 | CM-05 | `README.md` makes no claim the codebase does not back | `ci` | block | active — see §7 |
 
 ### 6.3 Pull request controls
 
 | ID | Control | Enforcement | Severity | Status |
 | --- | --- | --- | --- | --- |
-| PR-01 | Changed lines, excluding lockfiles and generated output, are under 400 | `ci` | warn | proposed |
+| PR-01 | Changed lines, excluding lockfiles and generated output, are under 400 | `ci` | warn | active — the `Policy` check annotates; `package-lock.json`, `*.lock` and `backend/migrations/versions/*` excluded |
 | PR-02 | Body follows `.github/PULL_REQUEST_TEMPLATE.md`: a filled-in Validation section and the `posture_snapshot:` line are checked; Scope and Risk are read in review | `ci` | block | active — the `PR body` check runs on every pull request; it gates once the ruleset is re-applied with its context (§8.1) |
 | PR-03 | Agent-assisted pull requests carry the `agent-authored` label | `ci` | block | proposed |
 | PR-04 | Frontend typechecks and lints clean | `ci` | block | active |
@@ -387,6 +387,19 @@ unrelated data. That trade-off is the question the spike should answer.
 Concrete checks for the automatable controls, expressed against the GitHub
 Actions `pull_request` context. These are the definitions to implement; they are
 kept separate from the register above so the register stays readable.
+
+**The policy workflow reads these from the register, not from this prose.** Since
+2026-09-10 (#19) the machine-readable register is [`controls.yml`](controls.yml) — every
+control's id, severity, enforcement point and status, and for the nine the `Policy` job
+runs (BR-01, BR-02, BR-03, BR-05, CM-01, CM-02, CM-03's path half, CM-04, PR-01) the
+pattern, limit or path list it runs from. `.github/scripts/check_policy.py` is the hands:
+it carries no definition of its own, and its self-test fails when a `policy-workflow`
+control in the manifest has no implementation or an implementation has no entry — so the
+workflow and the document cannot drift, which is what §8 asked for. `block` controls fail
+the job; `warn` controls annotate. One exemption, ruled 2026-09-10: `dependabot/` branches
+skip BR-01 and CM-01 — the bot names its branches and titles, and nothing else is ours to
+waive. The `Policy` context is in `main.json` and gates once `apply-repo-config.sh` is next
+run (§8.1).
 
 **BR-01** — branch name
 
@@ -544,7 +557,8 @@ that prevent damage over those that enforce tidiness:
 2. **A build-and-test workflow** — PR-04, PR-05, wired as required checks to
    activate PR-07. *PR-04 and PR-05 done; see #11 for what the suite covers.*
 3. **A policy workflow** — BR-01, BR-02, BR-05, CM-01, CM-03, CM-04 as blocking;
-   BR-03, CM-02, PR-01 as annotations.
+   BR-03, CM-02, PR-01 as annotations. *Done 2026-09-10 (#19): the `Policy` job in
+   `.github/workflows/policy.yml`, reading [`controls.yml`](controls.yml); see §7.*
 4. **Spike enforcement** — SP-01 and SP-04 join the policy workflow; SP-02 needs
    a scheduled workflow, the first control here with no pull request to hang on.
 5. **Security feedback loop** — SF-02 and SF-06 in the policy workflow; the
@@ -557,8 +571,9 @@ that prevent damage over those that enforce tidiness:
    turn on 2026-09-07: the pull request template and the `PR body` check (§7).*
 
 A machine-readable manifest of this register (control ID, severity, enforcement
-point, check definition) should be added as `docs/controls.yml` when step 3
-begins, so the workflow and this document cannot drift.
+point, check definition) is [`controls.yml`](controls.yml), added with step 3, so the
+workflow and this document cannot drift: the workflow reads it, and its self-test refuses
+a control named without an implementation or the reverse.
 
 ### 8.1 Repository configuration
 
@@ -586,12 +601,13 @@ patterns are requested alongside provider scanning (the API accepted the request
 flip day and read the setting back as disabled — unresolved, and TruffleHog covers
 that class in the meantime).
 
-The `PR body` context (PR-02) joined `main.json` on 2026-09-07. Like every change to the
-required contexts it takes effect when `apply-repo-config.sh` is next run; until then the
-check reports on every pull request and gates none.
+The `PR body` context (PR-02) joined `main.json` on 2026-09-07, and the `Policy` context
+(step 3) on 2026-09-10. Like every change to the required contexts each takes effect when
+`apply-repo-config.sh` is next run; until then the check reports on every pull request and
+gates none.
 
-What is enforced today: everything in step 1. What remains `proposed` is the policy
-workflow (step 2) and everything after it.
+What is enforced today: everything in steps 1 to 3, the policy workflow gating on the
+next re-run. What remains `proposed` is step 4 onward.
 
 ### 8.2 The release schedule
 
@@ -770,3 +786,4 @@ Appended 2026-09-05, immediately before the flip to public:
 | v1.10 | 2026-09-05 | Pre-flip secret-audit baseline recorded in §8.2 (151 refs, 0 verified); §3.2 says the DAST instance does not exist yet; §10 notes the surviving merged branches deleted under BR-04 |
 | v1.11 | 2026-09-05 | Flip to public: BR-06, BR-07, MG-02, MG-03, PR-07, AG-03 `active`; CM-03 fully active; §8.1 and §8.3 in the past tense; §10 corrected — the branch deletes are still owed |
 | v1.12 | 2026-09-07 | PR-02 `block` and `active`: the pull request template and the `PR body` check (§6.3, §7); its context added to `main.json`, gating on the next `apply-repo-config.sh` run (§8.1); the template's last checkbox records PR-08's read |
+| v1.13 | 2026-09-10 | Step 3 done (#19): BR-01, BR-02, BR-05, CM-01, CM-04 and CM-03's path half `block` and `active`, BR-03, CM-02, PR-01 `warn` and `active`, all in the `Policy` check reading the new `controls.yml` register (§7, §8); `dependabot/` exempt from BR-01 and CM-01 by ruling; the `Policy` context added to `main.json` |

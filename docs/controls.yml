@@ -1,0 +1,186 @@
+# The control register of docs/BRANCHING.md §6, machine-readable (§8: "so the workflow and
+# this document cannot drift"). One entry per control: id, title, severity, enforcement
+# point, status — and, for the controls the policy workflow runs, the definition it runs
+# from (#19). `.github/scripts/check_policy.py` reads this file; it does not carry a
+# pattern, a limit or a path list of its own, and it fails when a `policy-workflow`
+# control here has no implementation or an implementation has no entry here.
+#
+# Severity: block (fails the check) | warn (annotates) | manual (a person).
+# Enforcement: ci | ruleset | repo-setting | review | scheduled.
+# Status: active | proposed | blocked — as §6 records it.
+
+version: 1
+
+exemptions:
+  # Dependabot's branches are named by the bot (`dependabot/npm_and_yarn/...`) and its
+  # titles are `chore(npm): bump ...`; neither is ours to rename. Ruled 2026-09-10: the
+  # two naming controls, and nothing else — the diff-content controls apply to a bot's
+  # pull request exactly as to a person's.
+  - branch_prefixes: ["dependabot/"]
+    controls: [BR-01, CM-01]
+    why: bot-named branches and titles
+
+controls:
+  # ---- 6.1 branch controls -----------------------------------------------------------
+  - id: BR-01
+    title: Branch name matches the canonical pattern in §2
+    severity: block
+    enforcement: ci
+    status: active
+    check: policy-workflow
+    pattern: '^(inspect-[0-9]{4}|fix|chore|docs|spike)/[a-z0-9]+(-[a-z0-9]+)*$'
+  - id: BR-02
+    title: Pull request base is `main`
+    severity: block
+    enforcement: ci
+    status: active
+    check: policy-workflow
+    base: main
+  - id: BR-03
+    title: Branch is merged within 5 calendar days of its first commit
+    severity: warn
+    enforcement: ci
+    status: active
+    check: policy-workflow
+    days: 5
+  - id: BR-04
+    title: Head branch is deleted automatically on merge
+    severity: block
+    enforcement: repo-setting
+    status: active
+  - id: BR-05
+    title: A branch name that has previously merged is never reused
+    severity: block
+    enforcement: ci
+    status: active
+    check: policy-workflow
+  - id: BR-06
+    title: "`main` accepts no direct pushes; all changes arrive by pull request"
+    severity: block
+    enforcement: ruleset
+    status: active
+  - id: BR-07
+    title: "`main` cannot be force-pushed or deleted"
+    severity: block
+    enforcement: ruleset
+    status: active
+  - id: BR-08
+    title: An `inspect-NNNN/` branch's number is an open GitHub issue, zero-padded to four digits
+    severity: block
+    enforcement: ci
+    status: proposed
+
+  # ---- 6.2 commit and content controls -----------------------------------------------
+  - id: CM-01
+    title: Pull request title matches the squash-subject format in §5
+    severity: block
+    enforcement: ci
+    status: active
+    check: policy-workflow
+    pattern: '^(INSPECT-[0-9]{4}|fix|chore|docs): .{10,60}$'
+  - id: CM-02
+    title: No branch contains consecutive commits with identical subjects
+    severity: warn
+    enforcement: ci
+    status: active
+    check: policy-workflow
+  - id: CM-03
+    title: No secret material or local state is committed (`.env`, `*.db`, keys, tokens)
+    severity: block
+    enforcement: ci
+    status: active
+    check: policy-workflow
+    # The path half. Content — keys and tokens — is TruffleHog's (secret-scan.yml, §8.3)
+    # and push protection's; a path check alone does not satisfy CM-03 and does not claim to.
+    paths: '(^|/)\.env$|\.db$'
+  - id: CM-04
+    title: Diff excludes editor and OS artefacts (`.idea/`, `.vscode/`, `.DS_Store`)
+    severity: block
+    enforcement: ci
+    status: active
+    check: policy-workflow
+    paths: '(^|/)\.idea/|(^|/)\.vscode/|\.DS_Store$'
+  - id: CM-05
+    title: "`README.md` makes no claim the codebase does not back"
+    severity: block
+    enforcement: ci
+    status: active
+    check: readme-claims
+
+  # ---- 6.3 pull request controls -----------------------------------------------------
+  - id: PR-01
+    title: Changed lines, excluding lockfiles and generated output, are under 400
+    severity: warn
+    enforcement: ci
+    status: active
+    check: policy-workflow
+    limit: 400
+    exclude: ["package-lock.json", "*.lock", "backend/migrations/versions/*"]
+  - id: PR-02
+    title: Body follows the pull request template — a filled-in Validation section and the `posture_snapshot:` line
+    severity: block
+    enforcement: ci
+    status: active
+    check: pr-body
+  - id: PR-03
+    title: Agent-assisted pull requests carry the `agent-authored` label
+    severity: block
+    enforcement: ci
+    status: proposed
+  - id: PR-04
+    title: Frontend typechecks and lints clean
+    severity: block
+    enforcement: ci
+    status: active
+    check: ci-frontend
+  - id: PR-05
+    title: Backend test suite passes
+    severity: block
+    enforcement: ci
+    status: active
+    check: ci-backend
+  - id: PR-06
+    title: Schema changes ship with an Alembic migration
+    severity: warn
+    enforcement: ci
+    status: proposed
+  - id: PR-07
+    title: Every required status check passes before merge is available
+    severity: block
+    enforcement: ruleset
+    status: active
+  - id: PR-08
+    title: Agent-authored changes are read in full by a human before merge
+    severity: manual
+    enforcement: review
+    status: proposed
+  - id: PR-09
+    title: An `inspect-NNNN/` pull request body closes its issue with `Closes #NNNN`
+    severity: block
+    enforcement: ci
+    status: proposed
+
+  # ---- 6.4 merge controls ------------------------------------------------------------
+  - { id: MG-01, title: Squash is the only permitted merge method, severity: block, enforcement: repo-setting, status: active }
+  - { id: MG-02, title: "`main` maintains linear history", severity: block, enforcement: ruleset, status: active }
+  - { id: MG-03, title: "Branch is up to date with `main` before merge", severity: block, enforcement: ruleset, status: active }
+
+  # ---- 6.5 agent isolation controls --------------------------------------------------
+  - { id: AG-01, title: Concurrent agent sessions use separate worktrees on separate branches, severity: manual, enforcement: review, status: proposed }
+  - { id: AG-02, title: "Each worktree has its own `.env`, compose project name, and backend port", severity: manual, enforcement: review, status: proposed }
+  - { id: AG-03, title: "No agent session commits directly to `main`", severity: block, enforcement: ruleset, status: active }
+
+  # ---- 6.6 spike controls ------------------------------------------------------------
+  - { id: SP-01, title: "A `spike/` branch's first commit creates `docs/spikes/<slug>.md` with question, owner, and review date", severity: block, enforcement: ci, status: proposed }
+  - { id: SP-02, title: "A `spike/` branch past its review date is renewed or terminated", severity: warn, enforcement: scheduled, status: proposed }
+  - { id: SP-03, title: "A spike terminates only after its findings document merges to `main`", severity: manual, enforcement: review, status: proposed }
+  - { id: SP-04, title: "No branch of any other type is cut from a `spike/` branch", severity: block, enforcement: ci, status: proposed }
+  - { id: SP-05, title: Renewal is recorded in the findings document with a date and what was learned, severity: manual, enforcement: review, status: proposed }
+
+  # ---- 6.7 security feedback controls ------------------------------------------------
+  - { id: SF-01, title: "A merge to `main` deploys to the dev instance with no manual step", severity: block, enforcement: ci, status: proposed }
+  - { id: SF-02, title: A branch remediating a finding closes the issue that records it, severity: block, enforcement: ci, status: proposed }
+  - { id: SF-03, title: "Reported findings are filed as `security`-labelled issues and triaged within 5 days", severity: warn, enforcement: scheduled, status: proposed }
+  - { id: SF-04, title: A finding is closed only after a rescan of the redeployed dev instance, severity: manual, enforcement: review, status: proposed }
+  - { id: SF-05, title: "The dev instance holds no production data, live MDM credentials, or real encryption key", severity: manual, enforcement: review, status: proposed }
+  - { id: SF-06, title: "Security-domain changes carry the `security` label regardless of branch prefix", severity: warn, enforcement: ci, status: proposed }
