@@ -195,26 +195,37 @@ The Vulnerabilities column on Devices › Applications › **Catalog**, and the 
 it, answer this before any command does. There are three states and they mean different
 things ([`vulnerabilities.md`](vulnerabilities.md) §4g): **no findings** (green — this
 exact build was checked), **outside the corpus** (amber — this build was not checked), and
-**not assessed · no corpus loaded** (grey — this container holds no vulnerability library
-at all). The banner carries the date the library was generated; grey has no date, because
-there is nothing to date.
+**not assessed** (grey — nothing is answering for your organization). The banner carries
+the date the library was generated; grey has no date, because there is nothing to date.
 
-1. **Grey, on every app.** Data sharing is what earns the library, in both directions: it
-   arrives on the daily exchange, and it answers only for a tenant whose own sharing is on
-   ([`vulnerabilities.md`](vulnerabilities.md) §8). Settings › Data Sharing: if the tier is
-   **off**, that is the answer — turn it on, and the library arrives at the next day's
-   exchange (the schedule is jittered per tenant, so it is not immediate). If this instance
-   has more than one tenant, check the tier for **the tenant you are looking at**: the
-   library is one artifact for the whole container, and a tenant with sharing off reads
-   grey while another tenant on the same container reads dates and answers. Turning sharing
-   back on restores the answers immediately, with no new download. If
+**Grey has two causes, and the page cannot tell you which.** Either this container holds
+no vulnerability library at all, or it holds one and your organization's data sharing is
+**off** — the library is one artifact for the whole container and consent is per
+organization, so a container can hold a library that does not answer for you
+([`vulnerabilities.md`](vulnerabilities.md) §8). That is not a multi-tenant curiosity: it
+is what a single-organization instance reads the moment sharing is turned off after a
+library has arrived. The two checks are *what is this organization's tier* (step 1, a
+page) and *is a library installed* (step 2, a log line), in that order — the tier is the
+cheaper question and the more common answer.
+
+1. **Grey, on every app — check the tier first.** Data sharing is what earns the library,
+   in both directions: it arrives on the daily exchange, and it answers only for an
+   organization whose own sharing is on ([`vulnerabilities.md`](vulnerabilities.md) §8).
+   Settings › Data Sharing: if the tier is **off**, that is the answer. Turn it on. If a
+   library is already installed, the answers come back immediately with no new download;
+   if none is, one arrives at the next day's exchange (the schedule is jittered per
+   tenant, so it is not immediate). If this instance has more than one tenant, check the
+   tier for **the tenant you are looking at** — one tenant with sharing off reads grey
+   while another on the same container reads dates and answers. If
    `COMMUNITY_SHARING=false` is set, the page says so and names the file; the override
    wins until it is removed.
-2. **Sharing is on and it is still grey.** Read the app's log for the one line the loader
-   writes: `docker compose logs app --since 48h | grep -i "vulnerability library"`.
-   - `vulnerability library updated: epoch 0002, generated …` → a library *is* loaded, and
-     grey on a page is then stale browser state; reload. If the page still says no corpus
-     is loaded, that is reportable state **H**.
+2. **The tier is on and it is still grey — is a library installed?** Read the app's log
+   for the one line the loader writes:
+   `docker compose logs app --since 48h | grep -i "vulnerability library"`.
+   - `vulnerability library updated: epoch 0002, generated …` → a library *is* loaded, so
+     with the tier on in step 1 this page should be answering; grey is then stale browser
+     state, so reload. If the page still says nothing is answering, that is reportable
+     state **H**.
    - `vulnerability library not updated: the corpus download did not complete …` → this
      container could not reach the published corpus. The line names the host it dialled.
      Check outbound access to that host from the container itself
@@ -258,9 +269,11 @@ there is nothing to date.
    succeeding, step 2's log lines say why; if they say `updated` with an unmoved date, the
    published corpus itself has not moved, which is reportable state **I**.
 
-**H.** The library log line says a corpus is loaded and the pages still say none is.
-Report the log line, the build (Settings › Support), and `GET /api/catalog` — the
-response carries `corpusAsOf` beside the rows it describes.
+**H.** The library log line says a corpus is loaded, this organization's tier is not
+`off`, and the pages still say nothing is answering. Report the log line, the tier shown
+on Settings › Data Sharing, the build (Settings › Support), and `GET /api/catalog` — the
+response carries `corpusAsOf` beside the rows it describes, and a `null` there with the
+tier on is the defect. A `null` with the tier **off** is step 1, not a defect.
 **I.** The published corpus is refused, unreachable, or unchanging. Report the exact log
 line (it names the epoch and the state), the build, and roughly when it started.
 

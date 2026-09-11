@@ -431,14 +431,31 @@ thousand identical links in cells would be noise.
 #248, consent *is* what earns a corpus — the epoch rides the exchange, and a tenant at
 tier `off` is exactly the one that reads `off` (§8). #298's *ruling* is untouched: still no
 fourth state, still nothing rendered on `off` beyond the banner, still one link and not two
-thousand. What changed is that three of its sentences had become false, and the pull
-request that falsified them is the one that fixed them. The five strings, in both locales:
+thousand. What changed is that the sentences had become false, and the pull request that
+falsified them is the one that fixed them.
+
+**`off` now has two causes, and every string has to be true under both.** The gate is an
+epoch **and** a tier (§8), so `corpusAsOf === null` means *no epoch is loaded here* **or**
+*an epoch is loaded and this organization's sharing is off* — the second reachable on a
+single-organization pod the moment sharing is turned off after an import, which is what
+`backend/tests/test_vuln_library_db.py` pins. Nothing on the response separates them, by
+design: the `off` block is byte-identical either way (§4a). So the strings argue from
+*nothing is answering for you* rather than from *this container holds none*, and the two
+causes are named — in one sentence on the banner, and separately in the *why* block, which
+is where detail belongs. This is still not a fourth state: the same three values, the same
+one link, one more clause in the sentence that explains them.
+
+Seven keys, in each of two locales:
 
 | String | Was | Is |
 | --- | --- | --- |
-| `en.ts` `system.sharing.pageDescription` / `de.ts` `pageDescription` | *"None ships yet, and nothing flows back to this instance in this build."* | The corpus is named as the one thing that does flow back, and only to an instance that shares |
-| `en.ts:whyNoSwitch` / `de.ts:whyNoSwitch` (`vulnerabilities.*`) | *"Turning on data sharing does not change that in this build: the daily exchange contributes inventory and receives no verdicts and no feeds back."* | Data sharing is what earns the corpus; an instance with sharing off reads *not assessed*. The licence-key clause is unchanged and still true |
-| `en.ts:whyNoCorpus` / `de.ts:whyNoCorpus` | *"No vulnerability corpus ships with LoonInspect in this build …"* | Argues from **none loaded** rather than from *in this build* — the premise that moved. Still rendered only under `corpusAsOf === null` |
+| `system.sharing.pageDescription` | *"None ships yet, and nothing flows back to this instance in this build."* | The corpus is named as the one thing that does come back, by where it is read (so it is visibly not the "feeds" of the previous sentence), and only for an **organization** that shares |
+| `whyNoSwitch` (`vulnerabilities.*`, and every key below) | *"Turning on data sharing does not change that in this build: the daily exchange contributes inventory and receives no verdicts and no feeds back."* | Data sharing is what earns the corpus; an **organization** with sharing off reads *not assessed* even where the container holds a corpus. The licence-key clause is unchanged and still true |
+| `whyNoCorpus` | *"No vulnerability corpus ships with LoonInspect in this build …"*, then *"none is loaded in this container"* | Names the two conditions and says one of them is missing — no epoch loaded, or sharing off for this organization |
+| `whyWhenItShips` | *"When a corpus ships …"* | *"Once a corpus is loaded and this organization's data sharing is on …"* — both conditions, because a corpus that has shipped is no longer the whole of what is missing |
+| `corpusBodyNone` | *"No vulnerability corpus is loaded in this container …"* | *"Nothing here has been checked against a vulnerability corpus: either this container holds none, or data sharing is off for this organization …"* |
+| `edgeNone` | *"… with no corpus loaded …"* | *"… with no corpus answering here …"* |
+| `stateOffReason` (the cell's sub-label) | *"no corpus loaded"* | *"no corpus answering here"* — the one surface with no room for two causes, so it states the consequence both share and leaves the causes to the banner |
 
 The banner still explains rather than promises, and it still carries no date: `off` has
 none to carry.

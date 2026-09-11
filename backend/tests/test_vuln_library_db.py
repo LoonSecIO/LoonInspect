@@ -9,7 +9,9 @@ response body to `loaded_corpus()` — is what puts an answer behind the seam.
 
 It also pins the **gate**: a loaded library answers for a tenant whose data-sharing tier
 earns it and for no other (docs/vulnerabilities.md §8, ruled 2026-09-11), the rows survive
-a tenant turning sharing off, and the tier costs one query per unit of work rather than one
+a tenant turning sharing off, nothing is answered outside a tenant context at all, the
+tier the gate reads is the *acting* tenant's even when the session's row-level-security
+scope names a different one, and the tier costs one query per unit of work rather than one
 per app.
 
 **Every test here restores the process to "no library loaded" afterwards.** The corpus and
@@ -20,9 +22,11 @@ same process.
 
 from __future__ import annotations
 
+import contextvars
 import gzip
 import json
 import os
+import uuid as uuidlib
 from contextlib import contextmanager
 from datetime import UTC, date, datetime
 
@@ -31,17 +35,18 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import delete, select
 
-from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
-from app.core.vuln import NO_CORPUS, forget_tenant_tiers, loaded_corpus, vuln_block
+from app.core.tenancy import OPERATIONAL_TENANT_ID, get_tenant_id, reset_tenant_id, set_tenant_id
+from app.core.vuln import NO_CORPUS, TIER_OFF, forget_tenant_tiers, loaded_corpus, vuln_block
 from app.core.vuln_library import (
     ROWS_NAME,
     CorpusPointer,
     earned_corpus,
     load_epoch_if_new,
+    read_tenant_tier,
     refresh_from_db,
     stored_signature,
 )
-from app.models.schema import DataSharingSettings, VulnLibraryEpoch, VulnLibraryRow, VulnLibraryTitle
+from app.models.schema import DataSharingSettings, Tenant, VulnLibraryEpoch, VulnLibraryRow, VulnLibraryTitle
 from tests.test_vuln_library import (
     BUNDLE,
     CORPUS_URL,
@@ -118,6 +123,40 @@ async def acting_tenant(db):
         yield OPERATIONAL_TENANT_ID
     finally:
         reset_tenant_id(token)
+
+
+# A second tenant of this suite's own, for the one question a single tenant cannot ask:
+# whose consent row did the gate read. Fixed id in the style of test_tenancy_sweep's.
+FOREIGN_TENANT_ID = uuidlib.UUID("00000000-0000-0000-0000-0000000000d1")
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def foreign_tenant(db):
+    """A second tenant that shares, and a session scoped to it.
+
+    Yields the *session*, not the id: what the test needs is a database session whose
+    row-level-security scope is somebody else's while the tenancy contextvar stays ours.
+    Its consent row is `reveal` — deliberately not `off`, so reading the wrong row is a
+    visible wrong answer rather than an accidentally right one.
+    """
+    from app.core.database import session_for_tenant, unscoped_session
+
+    async with unscoped_session() as unscoped:
+        if (await unscoped.execute(select(Tenant).where(Tenant.id == FOREIGN_TENANT_ID))).scalars().first() is None:
+            slug = "vuln-library-foreign"
+            unscoped.add(Tenant(id=FOREIGN_TENANT_ID, slug=slug, name=slug, kind="operational"))
+            await unscoped.commit()
+
+    async with session_for_tenant(FOREIGN_TENANT_ID) as session:
+        await session.execute(delete(DataSharingSettings))
+        session.add(DataSharingSettings(tier="reveal"))
+        await session.commit()
+        try:
+            yield session
+        finally:
+            await session.rollback()
+            await session.execute(delete(DataSharingSettings))
+            await session.commit()
 
 
 @pytest_asyncio.fixture(loop_scope="session")
@@ -346,6 +385,45 @@ async def test_a_tenant_with_no_settings_row_at_all_reads_off(db, empty) -> None
 
     assert await earned_corpus(db) is NO_CORPUS
     assert (await db.execute(select(DataSharingSettings))).scalar_one_or_none() is None, "a read must not write consent"
+
+
+async def test_nothing_is_answered_outside_any_tenant_context(db, empty) -> None:
+    """The branch of the gate that has no tenant at all (`app.core.vuln.loaded_corpus`).
+
+    Outside a tenant there is nobody to have consented — a scheduler job that forgot to
+    bind one, a startup path, a process doing work for the whole pod — so the answer is
+    `NO_CORPUS` however loaded the library is. A fresh `contextvars.Context` is exactly
+    that condition and nothing else: the var is unset in it, so it reads its default.
+    """
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    assert loaded_corpus() is not NO_CORPUS, "a consenting tenant is answered"
+
+    assert contextvars.Context().run(loaded_corpus) is NO_CORPUS
+
+
+async def test_a_session_scoped_to_another_tenant_cannot_answer_for_this_one(db, empty, foreign_tenant) -> None:
+    """Which tenant did the gate actually read — the session's, or the context's?
+
+    `read_tenant_tier` keys its cache on the tenancy contextvar and, before this test,
+    sourced the row from whatever the session's RLS scope could see. On every path the
+    application has, the two move together (`app.main.tenant_job`,
+    `app.core.database.get_db`, `app.core.auth.authenticate`) and nothing asserted it —
+    so the question could not be asked with one tenant. Held apart on purpose here: the
+    session is the other tenant's, at tier `reveal`; the contextvar is ours.
+
+    A consent gate must answer for the tenant it is keying the answer under. Reading the
+    session's row would install `reveal` under *our* id and hand this tenant a summary
+    another tenant paid for — the one direction this gate is not fail-closed in.
+    """
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    assert get_tenant_id() == OPERATIONAL_TENANT_ID
+    assert (await foreign_tenant.execute(select(DataSharingSettings.tier))).scalar_one() == "reveal"
+
+    tier = await read_tenant_tier(foreign_tenant)
+
+    assert tier != "reveal", "the other tenant's consent must never answer for this one"
+    assert tier == TIER_OFF, "a row this query cannot reach is a tenant that has not consented"
+    assert loaded_corpus() is NO_CORPUS, "and the fail-closed answer is what the gate then gives"
 
 
 async def test_the_tier_is_read_once_for_a_unit_of_work_and_never_per_app(db, empty) -> None:

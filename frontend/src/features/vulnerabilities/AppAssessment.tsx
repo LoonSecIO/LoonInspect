@@ -44,7 +44,9 @@ export function AssessmentCell({ vuln, t }: { vuln: AppVulnerability; t: Transla
 
   switch (vuln.assessment) {
     case "off":
-      // No corpus, no answer, and no date to pretend with.
+      // No answer, and no date to pretend with. The cell does not say which of the two
+      // causes it is — a corpus nobody loaded, or one this organization's sharing does
+      // not earn — because it cannot tell from the block, and the banner above says both.
       return (
         <div className="space-y-0.5">
           <Label color={null}>
@@ -117,6 +119,14 @@ export function AssessmentCell({ vuln, t }: { vuln: AppVulnerability; t: Transla
  * and must not read as one: it is the honest state of every container shipping today, and
  * the copy says what is not known rather than leaving a green-looking table to imply a
  * clean fleet.
+ *
+ * **It has two causes, and the copy is true under both.** Since the per-tenant gate
+ * (#248, `docs/vulnerabilities.md` §8) `corpusAsOf === null` means *either* no epoch is
+ * loaded here *or* an epoch is loaded and this organization's data sharing is off — the
+ * second reachable on a single-tenant pod the moment sharing is turned off after an
+ * import. Nothing on the response tells the two apart, deliberately (the `off` block is
+ * byte-identical either way, §4a), so every string below argues from "nothing is
+ * answering for you" and names both causes rather than asserting one.
  */
 export function CorpusBanner({ corpusAsOf, t }: { corpusAsOf: string | null; t: Translations }) {
   const copy = t.vulnerabilities;

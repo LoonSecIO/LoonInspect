@@ -272,11 +272,6 @@ async def run_jamf(
     many collections in turn and one expired credential must not abort the rest.
     """
     quarantine = tuple(quarantined_extension_attributes)
-    # This tenant's data-sharing tier, once for the whole sweep (#248, docs/vulnerabilities.md
-    # §8). It decides whether `loaded_corpus()` answers for this tenant at all, and it is a
-    # per-tenant row, so it is read here rather than per device — the same reason the title
-    # names below ride a process cache.
-    await read_tenant_tier(db)
     # Asking for EAs means reading the sections they are displayed under (#197). Closed
     # here, at the top of every sweep, so the aperture, the fetch and the merge agree —
     # for a collection row saved before the rule existed as much as for one saved after.
@@ -287,6 +282,18 @@ async def run_jamf(
     # MissingGreenlet instead of lazily refreshing (#125).
     connection_id = connection.id
     try:
+        # This tenant's data-sharing tier, once for the whole sweep (#248,
+        # docs/vulnerabilities.md §8). It decides whether `loaded_corpus()` answers for
+        # this tenant at all, and it is a per-tenant row, so it is read here rather than
+        # per device — the same reason the title names below ride a process cache.
+        #
+        # **Inside the guard, because it is a database read.** It is this function's first
+        # I/O, and the docstring above is a contract: a failure here has to come back as a
+        # failed sweep on this connection, not as an exception unwinding through
+        # `run_connection` (which catches only `RunReclaimed`) into `collections_tick`'s
+        # blanket handler, abandoning the rest of that tenant's due collections and leaving
+        # the claimed run row to the reclaim.
+        await read_tenant_tier(db)
         client = get_mdm_client(connection)
         result = await _sync_jamf(
             db,
@@ -850,9 +857,6 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
     of `last_seen_at` and nothing more.
     """
     client = get_mdm_client(connection)
-    # One read of the tier per webhook, for the same reason the sweep reads it once per
-    # run: one event is one device, and `loaded_corpus()` must not go asking per app.
-    await read_tenant_tier(db)
     event = parse_webhook_event(payload)
     if event.event_name not in REACTIVE_WEBHOOK_EVENTS:
         # Dropped by name, not by accident: a ComputerCheckIn is a heartbeat times
@@ -869,6 +873,15 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
             extra={"connection_id": connection.id, "event": event.event_name},
         )
         return None
+
+    # One read of the tier per webhook, for the same reason the sweep reads it once per
+    # run: one event is one device, and `loaded_corpus()` must not go asking per app.
+    #
+    # **Below both guards, not above them.** The dropped paths above never reach
+    # `process_sync`, so nothing there ever reads the tier — and a ComputerCheckIn is a
+    # heartbeat times the whole fleet, so a read above the guards would put a query on the
+    # one path whose entire purpose is to cost nothing (#76).
+    await read_tenant_tier(db)
 
     sections, quarantine = await webhook_scope(db, connection)
 

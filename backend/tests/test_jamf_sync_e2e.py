@@ -38,6 +38,7 @@ from __future__ import annotations
 import json
 import os
 import uuid as uuidlib
+from contextlib import contextmanager
 
 import httpx
 import pytest
@@ -588,9 +589,59 @@ async def test_page_size_flows_and_throttling_lands_on_the_run(db, jamf: FakeJam
     assert 250 in jamf.page_sizes
 
 
-async def test_checkin_is_dropped_before_any_fetch(db, jamf: FakeJamf, connection) -> None:
+@pytest.fixture
+def acting_tenant():
+    """The tenancy contextvar the request middleware and the scheduler's `tenant_job`
+    bind on every path that reaches the corpus gate.
+
+    The `db` fixture binds the tenant on the *session* (the Postgres GUC that RLS reads)
+    and not in context, because no route does that by hand. `read_tenant_tier` returns
+    `off` without touching the database when there is no acting tenant — so a statement
+    count taken without this would be counting zero for the wrong reason.
+    """
+    from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
+
+    token = set_tenant_id(OPERATIONAL_TENANT_ID)
+    try:
+        yield OPERATIONAL_TENANT_ID
+    finally:
+        reset_tenant_id(token)
+
+
+@contextmanager
+def _statements():
+    """Every SQL statement the engine sends while the block runs.
+
+    A local copy of the counter `test_sweep_costs_db` uses, for the same reason that one
+    exists: a statement count is the same on a laptop and in CI, and "no query at all" is
+    a fact a stopwatch cannot state.
+    """
+    from sqlalchemy import event
+
+    from app.core.database import engine
+
+    seen: list[str] = []
+
+    def record(conn, cursor, statement, parameters, context, executemany) -> None:
+        seen.append(statement)
+
+    event.listen(engine.sync_engine, "before_cursor_execute", record)
+    try:
+        yield seen
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", record)
+
+
+async def test_checkin_is_dropped_before_any_fetch(db, jamf: FakeJamf, connection, acting_tenant) -> None:
     """Kyle's ruling (#76): a check-in is a heartbeat times the whole fleet and does
-    not warrant the reaction — no run row, not one API call."""
+    not warrant the reaction — no run row, not one API call, and not one query.
+
+    The third count is the newest (#248). The corpus gate needs this tenant's
+    data-sharing tier once per webhook that actually ingests, and the first version of
+    that read sat above these guards — putting a `data_sharing_settings` SELECT on the
+    one path whose entire purpose is to cost nothing, for a tier no `process_sync` on
+    this path would ever read. Zero is the expectation, and this is where it is pinned.
+    """
     from app.mdm.service import ingest_webhook
     from app.models.schema import Run
 
@@ -602,10 +653,30 @@ async def test_checkin_is_dropped_before_any_fetch(db, jamf: FakeJamf, connectio
     runs = select(func.count()).select_from(Run).where(Run.mdm_connection_id == connection.id)
     runs_before = await _count(db, runs)
 
-    assert await ingest_webhook(db, connection, payload) is None
+    with _statements() as seen:
+        assert await ingest_webhook(db, connection, payload) is None
 
     assert len(jamf.requests) == requests_before
     assert await _count(db, runs) == runs_before
+    assert [s for s in seen if "data_sharing_settings" in s] == [], "a dropped heartbeat must not read the tier"
+
+
+async def test_an_ingesting_webhook_reads_the_tier_exactly_once(db, jamf: FakeJamf, connection, acting_tenant) -> None:
+    """The other half of the same rule: an event that *does* ingest pays for the tier,
+    once (#248, docs/vulnerabilities.md §8). One event is one device, and `loaded_corpus()`
+    reads the answer from a dictionary for every app on it — so moving the read below the
+    guards must not have moved it onto the per-app path, or off the path altogether."""
+    from app.mdm.service import ingest_webhook
+
+    payload = {
+        "webhook": {"webhookEvent": "ComputerInventoryCompleted"},
+        "event": {"jssID": jamf.real["id"], "serialNumber": "LOONMINI0M4"},
+    }
+
+    with _statements() as seen:
+        assert await ingest_webhook(db, connection, payload) is not None
+
+    assert len([s for s in seen if "data_sharing_settings" in s]) == 1
 
 
 async def test_department_and_building_ids_resolve_to_names_and_filter(db, jamf: FakeJamf, connection, admin) -> None:

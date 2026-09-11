@@ -881,11 +881,23 @@ async def read_tenant_tier(db: AsyncSession) -> str:
     install nobody has answered for has not consented (`get_or_create_settings`' own
     argument, one layer out), and this deliberately does **not** create the row: a read
     path must not manufacture a consent record as a side effect of rendering a page.
+
+    **One source of truth for "which tenant".** The `where` is not redundant with
+    row-level security. Without it the row comes from the session's Postgres GUC
+    (`session.info["tenant_id"]`) while the cache key comes from the tenancy contextvar,
+    and a consent gate with two answers to "which tenant" is one mismatch away from
+    installing one tenant's tier under another's key — the single direction this gate is
+    not fail-closed in. The two move together on every path today (`app.main.tenant_job`,
+    `app.core.database.get_db`, `app.core.auth.authenticate`) and nothing asserted it.
+    `DataSharingSettings.tenant_id` is the primary key, so this also makes
+    `scalar_one_or_none()` provably single-row rather than single-row by RLS.
     """
     tenant_id = get_tenant_id()
     if tenant_id is None:
         return TIER_OFF
-    tier = (await db.execute(select(DataSharingSettings.tier))).scalar_one_or_none() or TIER_OFF
+    tier = (
+        await db.execute(select(DataSharingSettings.tier).where(DataSharingSettings.tenant_id == tenant_id))
+    ).scalar_one_or_none() or TIER_OFF
     install_tenant_tier(tenant_id, tier)
     return tier
 

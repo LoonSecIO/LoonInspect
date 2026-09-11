@@ -416,3 +416,47 @@ async def test_a_webhook_ingest_emits_run_completed(db, jamf: FakeJamf, connecti
     body = _build_body(SimpleNamespace(type="splunk_hec"), events[0].payload)
     assert body["source"] == "e2e.jamfcloud.com"
     assert "host" not in body
+
+
+async def test_a_failing_tier_read_is_reported_as_a_failed_sweep(db, jamf: FakeJamf, connection, monkeypatch) -> None:
+    """`run_jamf`'s first I/O is inside the guard that makes its docstring true (#248).
+
+    The corpus gate's tier read (`app.core.vuln_library.read_tenant_tier`) is a database
+    read, and it runs before anything else in the sweep. Outside the `try` it was the one
+    way this function could raise: `run_connection` catches only `RunReclaimed`, so the
+    exception would reach `collections_tick`'s blanket handler, abandon every other
+    collection due for this tenant on that tick, and leave the claimed run row to the
+    reclaim — the exact outcome "reports a failure rather than raising" exists to prevent.
+
+    The failure here is a genuine aborted Postgres transaction, so this also proves the
+    handler's rollback-and-reload path survives a session poisoned before the first
+    device: without it, `set_sync_status` dies of MissingGreenlet and the connection is
+    left reading `syncing` for ever (#125).
+    """
+    from app.core.runs import TRIGGER_MANUAL
+    from app.mdm import service
+    from app.mdm.collections import run_collection
+    from app.models.schema import MdmSyncState
+
+    async def tier_read_dies(db_) -> str:
+        await db_.execute(text("SELECT 1/0"))
+        raise AssertionError("unreachable")  # pragma: no cover
+
+    monkeypatch.setattr(service, "read_tenant_tier", tier_read_dies)
+    sweep = await _sweep_collection(db, connection)
+
+    result = await run_collection(db, sweep, trigger=TRIGGER_MANUAL)
+
+    assert result.ok is False
+    assert result.error and "division by zero" in result.error
+    assert not jamf.requests, "the sweep failed before it dialled Jamf"
+
+    run = await _latest_run(db, connection.id)
+    assert run.status == "failed"
+    assert run.error
+
+    # And the connection is left in a terminal state rather than stuck mid-sync.
+    state = (
+        (await db.execute(select(MdmSyncState).where(MdmSyncState.mdm_connection_id == connection.id))).scalars().one_or_none()
+    )
+    assert state is not None and state.status == "failed"
