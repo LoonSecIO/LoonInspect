@@ -199,6 +199,19 @@ claim guard datadog \
   '\bDatadog\b' \
   "grep -qi 'datadog' backend/app/schemas/destinations.py"
 
+# The newest claim in the README, and the one with the shortest history of being
+# false: that this product answers, per installed build, whether the build carries
+# known vulnerabilities — and names the three states a person sees. It was false
+# until the loader and the per-build join landed on 2026-09-11, which puts it in
+# exactly the class this table exists for. The proofs are the two seams the claim
+# is made of: the exchange's corpus channel, and the stored per-build answer the
+# pages and the wire read back. Prose about either would have passed while both
+# were open, so neither proof is prose.
+claim guard vuln-corpus \
+  'Outside the corpus|published corpus|vulnerability corpus' \
+  "grep -q 'def load_epoch_if_new' backend/app/core/vuln_library.py \
+   && grep -q 'def stored_corpus' backend/app/core/vuln_answer.py"
+
 claim guard multiarch \
   'arm64|aarch64|multi-arch|multi-architecture' \
   "grep -rq 'linux/arm64' .github/workflows Dockerfile"

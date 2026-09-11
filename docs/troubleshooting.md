@@ -205,8 +205,10 @@ organization, so a container can hold a library that does not answer for you
 ([`vulnerabilities.md`](vulnerabilities.md) §8). That is not a multi-tenant curiosity: it
 is what a single-organization instance reads the moment sharing is turned off after a
 library has arrived. The two checks are *what is this organization's tier* (step 1, a
-page) and *is a library installed* (step 2, a log line), in that order — the tier is the
-cheaper question and the more common answer.
+page) and *is a library installed* (step 2, a banner and then a log line), in that order —
+the tier is the cheaper question and the more common answer. A library that has never
+arrived at all is the ordinary reading before the production cutover rather than a fault,
+and step 2 ends with how to tell that apart from a broken exchange.
 
 1. **Grey, on every app — check the tier first.** Data sharing is what earns the library,
    in both directions: it arrives on the daily exchange, and it answers only for an
@@ -219,8 +221,11 @@ cheaper question and the more common answer.
    while another on the same container reads dates and answers. If
    `COMMUNITY_SHARING=false` is set, the page says so and names the file; the override
    wins until it is removed.
-2. **The tier is on and it is still grey — is a library installed?** Read the app's log
-   for the one line the loader writes:
+2. **The tier is on and it is still grey — is a library installed?** The page answers
+   that before any log does: with the tier on, the banner above the Vulnerabilities
+   column carries the corpus date when a library is installed and says it has none when
+   there is none, and `GET /api/catalog` carries the same fact as `corpusAsOf` beside the
+   rows it describes. The log says *why*. Read the one line the loader writes:
    `docker compose logs app --since 48h | grep -i "vulnerability library"`.
    - `vulnerability library updated: epoch 0002, generated …` → a library *is* loaded, so
      with the tier on in step 1 this page should be answering; grey is then stale browser
@@ -257,9 +262,33 @@ cheaper question and the more common answer.
    - `the corpus is published as format 'epoch/2' and this container reads 'epoch/1';
      update the container` → exactly what it says: the published format moved ahead of
      this build. Settings › Support shows the build; upgrade the image.
-   - **no line at all** → no exchange has completed since the container started. Settings
-     › Data Sharing shows the last exchange and its outcome; a run of `failed` rows there
-     is an exchange problem rather than a corpus one, and its own error is on the row.
+   - `the stored vulnerability library could not be read (epoch 0002): …` → this
+     container holds an epoch it can no longer read. The line is written where the
+     container reads the stored epoch into memory, which is at startup, and it means the
+     stored rows moved after they were imported and verified: a database restored from a
+     different build, or a row edited by hand. Every app reads *not assessed* until an
+     epoch with a different signature is published and imported, which is the next day
+     the published corpus moves; restoring a matching backup is the fix if you have one.
+     If the line survives a day of succeeding exchanges, that is reportable state **H**,
+     and include it — it names the epoch.
+   - **no line at all** → three different silences, and the banner in this step's first
+     sentence tells them apart. A library *is* installed and this is the ordinary day: an
+     exchange whose signature has not moved downloads nothing and says nothing at the
+     default log level, and a restart that restores the epoch already stored is silent
+     too. Or no library is installed, and then either no exchange has completed since the
+     container started — Settings › Data Sharing shows the last exchange and its outcome,
+     and a run of `failed` rows there is an exchange problem rather than a corpus one,
+     with its own error on the row — or the exchanges are succeeding and naming no corpus
+     at all, which is the paragraph below.
+
+   **Succeeding exchanges, no library, and nothing wrong.** An exchange that answers
+   without naming a corpus is silent by design, so this state is grey with no log line to
+   explain it. There is nothing to fix in the container. The published corpus reaches
+   staging first, and **a customer's first epoch arrives with the production cutover**;
+   until then an instance pointed at production reads *not assessed* for every app with
+   the tier on, and that is the expected reading rather than reportable state **H**.
+   Settings › Data Sharing is what separates this from a broken exchange: rows saying the
+   exchange succeeded, day after day, with no library line beside them.
 3. **A date is on the banner, and every app under it says *outside the corpus*.** Not the
    same fault as grey, and usually not a fault at all. The container stores each build's
    answer beside the build and re-judges when a new corpus arrives, so in the minutes after
@@ -299,9 +328,10 @@ cheaper question and the more common answer.
    succeeding, step 2's log lines say why; if they say `updated` with an unmoved date, the
    published corpus itself has not moved, which is reportable state **I**.
 
-**H.** A corpus is loaded, this organization's tier is not `off`, and the pages still do
-not answer from it — either they say nothing is answering (grey), or a *Refresh* leaves
-builds the corpus should know reading **outside the corpus** (amber). Report the library
+**H.** A corpus has arrived on this container, this organization's tier is not `off`, and
+the pages still do not answer from it — either they say nothing is answering (grey,
+including an epoch the container holds and cannot read), or a *Refresh* leaves builds the
+corpus should know reading **outside the corpus** (amber). Report the library
 log line, any `vulnerability answers refreshed` or `stored vulnerability answer … could
 not be read` lines, the tier shown on Settings › Data Sharing, the build (Settings ›
 Support), and `GET /api/catalog` — the response carries `corpusAsOf` beside the rows it
