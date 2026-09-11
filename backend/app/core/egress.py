@@ -60,6 +60,18 @@ class BlockedDestinationUrl(ValueError):
     the same sink `base_url` is, with the scheduler as its driver."""
 
 
+class BlockedCorpusUrl(ValueError):
+    """A corpus link this server refuses to fetch, and why (#248).
+
+    The third sink, and the one nobody in this deployment typed: the daily exchange's
+    response names where the vulnerability library is, and the container dials it. No
+    credential of ours travels with the request, so this is narrower than the two above —
+    but a URL chosen by a remote party and fetched by a server inside the customer's
+    network is the definition of the sink, and the metadata endpoints refused below are
+    exactly what it would be pointed at.
+    """
+
+
 def _unwrap(ip: _IpAddress) -> _IpAddress:
     """The v4 address an IPv6 literal is really carrying, if it is carrying one.
 
@@ -367,3 +379,52 @@ def destination_for_log(url: str) -> str:
     parsed = urlsplit(url)
     port = f":{parsed.port}" if parsed.port else ""
     return f"{parsed.scheme}://{parsed.hostname}{port}"
+
+
+# A signed link is longer than an operator-typed URL — a query string carrying an
+# expiry and a signature — so the ceiling is the destination's, doubled, rather than
+# the same number for a different shape of URL.
+MAX_CORPUS_URL_LENGTH = 2048
+
+
+def validate_corpus_url(value: str) -> str:
+    """The corpus link as it may be dialled, or `BlockedCorpusUrl` naming what is wrong.
+
+    `https` only, with **no plaintext opt-in**: unlike a lab SIEM, the far end of this one
+    is our own published store, so there is no legitimate configuration in which it is
+    plain http, and an epoch fetched in clear is one a network can substitute. A query
+    string is expected — the link is signed — and only a fragment is refused, because
+    `httpx` drops it and the URL dialled would not be the URL named.
+
+    Syntax and literal addresses only, like its two siblings: a hostname is judged when it
+    resolves. The refusals it shares with them are the point — loopback would name this
+    container's own network namespace, and link-local is the cloud metadata endpoint.
+    """
+    url = value.strip()
+    if not url:
+        raise BlockedCorpusUrl("the corpus link is empty")
+    if len(url) > MAX_CORPUS_URL_LENGTH:
+        raise BlockedCorpusUrl(f"the corpus link is longer than {MAX_CORPUS_URL_LENGTH} characters")
+    try:
+        parsed = urlsplit(url)
+        _ = parsed.port
+    except ValueError as exc:
+        raise BlockedCorpusUrl(f"the corpus link is not a URL this server can parse: {exc}") from exc
+    if parsed.scheme != "https":
+        raise BlockedCorpusUrl(f"the corpus link must be an absolute https:// URL, not {parsed.scheme or 'a bare hostname'!r}")
+    if parsed.username or parsed.password:
+        raise BlockedCorpusUrl("the corpus link must not carry credentials in the URL (user:password@host)")
+    if parsed.fragment:
+        raise BlockedCorpusUrl("the corpus link must not carry a fragment: it would be dropped before the request")
+    host = parsed.hostname
+    if not host:
+        raise BlockedCorpusUrl("the corpus link must name a host")
+    _refuse_blocked_host(host, field="the corpus link", refusal=BlockedCorpusUrl)
+    return url
+
+
+def corpus_url_for_log(url: str) -> str:
+    """The origin only, for the one line an operator reads. **The query string is the
+    credential** — a signed link is a capability — so it never reaches a log, a share-log
+    payload, or the database; nothing stores the link at all."""
+    return destination_for_log(url)

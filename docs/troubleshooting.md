@@ -7,7 +7,7 @@ Every step below uses only what a fresh operator has: the app, its API,
 it was filed.
 
 Each path is ordered — *check this; if X, then that* — and ends in a fix or in a **named,
-reportable state**. When you reach a reportable state, §5 says what to include.
+reportable state**. When you reach a reportable state, §6 says what to include.
 
 ## 0. The four things you can read
 
@@ -189,7 +189,64 @@ build (Settings › Support shows it).
 **G.** Report the request that fails, its status, and the matching lines from
 `docker compose logs app`.
 
-## 5. When a path ends in "report"
+## 5. "Applications say *not assessed*, or the vulnerability date is old"
+
+The Vulnerabilities column on Devices › Applications › **Catalog**, and the banner above
+it, answer this before any command does. There are three states and they mean different
+things ([`vulnerabilities.md`](vulnerabilities.md) §4g): **no findings** (green — this
+exact build was checked), **outside the corpus** (amber — this build was not checked), and
+**not assessed · no corpus loaded** (grey — this container holds no vulnerability library
+at all). The banner carries the date the library was generated; grey has no date, because
+there is nothing to date.
+
+1. **Grey, on every app.** The library arrives on the daily data-sharing exchange, so a
+   container that is not sharing never receives one. Settings › Data Sharing: if the tier
+   is **off**, that is the answer — turn it on, and the library arrives at the next day's
+   exchange (the schedule is jittered per tenant, so it is not immediate). If
+   `COMMUNITY_SHARING=false` is set, the page says so and names the file; the override
+   wins until it is removed.
+2. **Sharing is on and it is still grey.** Read the app's log for the one line the loader
+   writes: `docker compose logs app --since 48h | grep -i "vulnerability library"`.
+   - `vulnerability library updated: epoch 0002, generated …` → a library *is* loaded, and
+     grey on a page is then stale browser state; reload. If the page still says no corpus
+     is loaded, that is reportable state **H**.
+   - `vulnerability library not updated: the corpus download did not complete …` → this
+     container could not reach the published corpus. The line names the host it dialled.
+     Check outbound access to that host from the container itself
+     (`docker compose exec app curl -sSI https://<host>/`); a proxy, an egress firewall or
+     a TLS interception middlebox is the usual cause. Nothing is broken in the meantime —
+     the previous library keeps answering and the next exchange tries again.
+   - `vulnerability library not updated: … does not match the digest its manifest states`
+     or `… is not the one the exchange pointed at` → the download did not survive the trip
+     or the published epoch is corrupt. **This is refused on purpose:** nothing was
+     imported, the library still answers from the epoch it had, and a wrong answer is
+     never preferred to a stale one. If the same line repeats for more than a day, that is
+     reportable state **I** — the corrupt epoch is ours to fix, not yours.
+   - `vulnerability library not updated: the exchange named a corpus link this container
+     refuses …` → the link was not `https`, or named a host this container will not dial
+     (loopback, link-local). Reportable state **I**.
+   - `the corpus is published as format 'epoch/2' and this container reads 'epoch/1';
+     update the container` → exactly what it says: the published format moved ahead of
+     this build. Settings › Support shows the build; upgrade the image.
+   - **no line at all** → no exchange has completed since the container started. Settings
+     › Data Sharing shows the last exchange and its outcome; a run of `failed` rows there
+     is an exchange problem rather than a corpus one, and its own error is on the row.
+3. **The date on the banner is old.** The container **reports** the corpus generation
+   date; it does not judge it. There is no staleness threshold to fail — the published
+   format does not set a cadence, so any number this container invented would be a
+   guess — and the date is shown precisely so the decision is the operator's. What it
+   means: everything green was checked *as of that date*, and a finding published since is
+   not in the answer yet. If the date has not moved for several days while the exchange is
+   succeeding, step 2's log lines say why; if they say `updated` with an unmoved date, the
+   published corpus itself has not moved, which is reportable state **I**.
+
+**H.** The library log line says a corpus is loaded and the pages still say none is.
+Report the log line, the build (Settings › Support), and `GET /api/catalog` — the
+response carries `corpusAsOf` beside the rows it describes.
+**I.** The published corpus is refused, unreachable, or unchanging. Report the exact log
+line (it names the epoch and the state), the build, and roughly when it started.
+
+## 6. When a path ends in "report"
 
 Include: which path and which step you reached; the run's `jobID` and the panel's lines
 (or `GET /api/runs/{jobId}/log`); `docker compose logs app --since 30m`; the build,
@@ -197,7 +254,7 @@ from Settings › Support; and, for a delivery problem, the destination's `id`, 
 and counts. An issue with those four things is answerable; one without them starts with a
 request for them.
 
-## 6. What this document deliberately does not contain
+## 7. What this document deliberately does not contain
 
 A step that would need the source code. Where a symptom could not be walked to a fix with
 the surfaces above, the missing surface is filed as an issue against the product

@@ -133,8 +133,14 @@ operational tenant renders it as one switch):
 | tier | uploads | answers reveals | receives verdicts/feeds |
 | --- | --- | --- | --- |
 | `off` *(an install nobody has answered for)* | — | — | — |
-| `keys` | keys + counts | never | yes |
-| `reveal` *(the wizard's pre-checked answer)* | keys + counts | common titles only, per the k-rule | yes |
+| `keys` | keys + counts | never | yes — the [vulnerability corpus](#the-corpus-channel) link, and `verdicts` when they exist |
+| `reveal` *(the wizard's pre-checked answer)* | keys + counts | common titles only, per the k-rule | the same |
+
+The "receives" column stopped being a promise on 2026-09-10: the response now carries a
+`corpus` pointer at the Jamf-derived vulnerability library, which the container downloads
+and joins locally ([`vulnerabilities.md`](vulnerabilities.md), and the section below).
+`verdicts` — the per-key community half — stays reserved and unparsed; the two are
+**separate channels** on one exchange, and adding the second is additive to the first.
 
 - **An install that was never asked does not share.** Consent is a row somebody's
   answer wrote, not the absence of one: the stored default is `off`, and the tier only
@@ -231,10 +237,40 @@ thing that distinguishes an exchange from an update check.
 {
   "contract": "v1",
   "reveal_requests": [ "v1:…", … ],       // title keys; answered in TOMORROW's request
+  "corpus": {                              // the vulnerability library: where it is,
+    "signature": "6054bbb4…",              //   and whether it moved (sha256 of the
+    "asof": "2026-09-10T20:00:00Z",        //   epoch's manifest — EQUALITY only)
+    "url": "https://…/epoch-0001.tar.gz?…" // a signed link; never stored, never logged
+  },
   "verdicts": [ … ],                       // post-V0; schema settles with the feed work
   "revoke": false                          // true = server-side kill switch: stop
 }                                          //   sharing until an admin re-consents
 ```
+
+### The corpus channel
+
+Added 2026-09-10 ([#248](https://github.com/LoonSecIO/LoonInspect/issues/248)), additively:
+a server that omits `corpus` is a valid peer and a container that does not understand it
+ignores it, which is the same clause every other field of this response lives under.
+
+- **The signature decides, and equality is its only operation.** The container stores the
+  signature of the epoch it holds and downloads nothing while the two match — one exchange
+  a day costs one string comparison on an unchanged corpus. It is never ordered and never
+  compared for distance: a rollback moves the published epoch *backwards* and must still
+  be imported.
+- **The link is a capability.** It is fetched over the exchange's own transport, and it is
+  never written to the share log, never stored in a column, and never logged — only its
+  origin reaches a log line. The URL is refused outright unless it is `https` and names a
+  host this container is willing to dial (`app.core.egress`, the same loopback and
+  link-local rules a destination URL lives under).
+- **Verified whole, or refused whole.** The bundle's manifest must be the one the
+  signature names; every object must match its digest, its byte count and its row count;
+  every row must be one the wire model would accept. A refusal imports nothing, leaves the
+  previous epoch answering, and says so in a line an operator can read
+  ([`troubleshooting.md`](troubleshooting.md) §5).
+- **Nothing about a fleet leaves in this half.** The corpus is published complete and the
+  join is local, so no app, hash, or count is sent in order to receive it — the request
+  body above is the whole of what goes up, unchanged.
 
 Semantics the server may rely on:
 
@@ -318,7 +354,9 @@ the full v1 parser (verdict/reveal handling shipped but dormant) · share log + 
 
 **Post-V0, with triggers:** reveal activation (trigger: enough UUIDs that k ≥ 5 has
 teeth; plant canary titles *before* this, not before launch) · verdict/feed responses
-and the hot-partition file (trigger: first CVE/patch rules keyed to the corpus) ·
+and the hot-partition file (trigger: first CVE/patch rules keyed to the corpus — the
+**corpus channel** above landed ahead of them, 2026-09-10, because a complete published
+epoch needs no per-key protocol at all) ·
 rate budgets and mirror detection (trigger: feeds carrying licensed value) · the
 api.loonsec.io consolidation of the update check (#43's seam) · EU-region ingest
 (trigger: a customer asks; per-tenant UUIDs make it clean).

@@ -8,6 +8,12 @@ The exchange job itself (scheduling, transport, the share log) landed as
 INSPECT-0048 and lives in the second half of this file — main.py's
 sharing_exchange_tick drives it, so the module now has two callers: the preview
 endpoint and the scheduler.
+
+The conversation carries a second half now (#248): the response may point at the
+published vulnerability corpus, and `run_exchange` hands that pointer to
+`app.core.vuln_library`, which downloads and verifies an epoch only when its signature
+has moved. That is where the reciprocity in the paragraph above stops being a claim —
+the feed and the sharing are literally one request.
 """
 
 from __future__ import annotations
@@ -26,6 +32,7 @@ from app.core.config import settings as app_settings
 from app.core.content_keys import os_key
 from app.core.user_agent import build_user_agent
 from app.core.version import get_app_version
+from app.core.vuln_library import CorpusPointer, corpus_pointer, load_epoch_if_new
 from app.models.schema import DataSharingSettings, Device, InstalledApp, ShareLog
 
 CONTRACT_VERSION = "v1"
@@ -223,14 +230,23 @@ async def build_reveals(db: AsyncSession, settings_row: DataSharingSettings) -> 
     return list(by_title.values())
 
 
-def apply_response(settings_row: DataSharingSettings, response: dict) -> None:
+def apply_response(settings_row: DataSharingSettings, response: dict) -> CorpusPointer | None:
     """Response semantics, tolerant by contract: every field optional, unknown fields
-    ignored, absent capabilities mean "nothing today" — never an error."""
+    ignored, absent capabilities mean "nothing today" — never an error.
+
+    Returns the response's **corpus pointer** (#248) — `{signature, asof, url}`, where the
+    vulnerability library is and whether it moved — or `None` for a response that names
+    none, which is every response a V0 collector sends. Returned rather than acted on:
+    this function is pure and synchronous, and importing an epoch is a download and a
+    transaction. `run_exchange` does that below, once the day's share-log row is durable.
+    """
     if response.get("revoke") is True:
-        # Server-side kill switch: stop sharing until an admin re-consents.
+        # Server-side kill switch: stop sharing until an admin re-consents. No corpus is
+        # imported on a revoke day — a container told to stop sharing does not then help
+        # itself to the half of the exchange that sharing pays for.
         settings_row.tier = "off"
         settings_row.pending_reveal_keys = []
-        return
+        return None
 
     requests = response.get("reveal_requests")
     if settings_row.tier == "reveal" and isinstance(requests, list):
@@ -241,7 +257,10 @@ def apply_response(settings_row: DataSharingSettings, response: dict) -> None:
 
     # response["verdicts"] is deliberately untouched: reserved in the v1 contract,
     # schema unsettled, activated server-side post-V0. Parsing it here would freeze
-    # a shape the design doc explicitly leaves open.
+    # a shape the design doc explicitly leaves open. The Jamf-derived corpus below is a
+    # SEPARATE channel and does not touch that reservation (Kyle, 2026-09-10): it ships
+    # complete, keyed by content key, while `verdicts` stays the per-key community half.
+    return corpus_pointer(response.get("corpus"))
 
 
 @dataclass(frozen=True)
@@ -346,6 +365,7 @@ async def run_exchange(db: AsyncSession, *, transport: httpx.AsyncBaseTransport 
     request_body = await build_exchange_request(db, settings_row)
     request_body["reveals"] = await build_reveals(db, settings_row)
 
+    pointer: CorpusPointer | None = None
     log = ShareLog(
         occurred_at=now,
         tier=settings_row.tier,
@@ -376,11 +396,20 @@ async def run_exchange(db: AsyncSession, *, transport: httpx.AsyncBaseTransport 
         # sent nothing the server kept, so "failed" is the whole story of that row.
         log.reveals_shed = result.reveals_shed
         log.reveal_requests = response.get("reveal_requests") if isinstance(response, dict) else None
-        apply_response(settings_row, response if isinstance(response, dict) else {})
+        pointer = apply_response(settings_row, response if isinstance(response, dict) else {})
 
     db.add(log)
     await db.execute(delete(ShareLog).where(ShareLog.occurred_at < now - _LOG_RETENTION))
     await db.commit()
+
+    # The corpus channel, after the day's row is durable and in its own transaction
+    # (#248). Deliberately last and deliberately separate: a download and a whole-library
+    # replacement must not be able to roll back the record of what left the box, and a
+    # refused epoch is a logged sentence rather than an exception — the previous epoch
+    # keeps answering and tomorrow's exchange tries again. An unmoved signature does not
+    # download at all, which is what makes this affordable daily.
+    if pointer is not None:
+        await load_epoch_if_new(db, pointer, transport=transport)
 
 
 async def exchange_due(db: AsyncSession) -> bool:

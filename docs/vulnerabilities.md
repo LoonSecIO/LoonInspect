@@ -1,27 +1,37 @@
 # The vulnerability contract
 
-Status: **ruled; the wire block is built, the corpus is not** · Ruled on
-[#113](https://github.com/LoonSecIO/LoonInspect/issues/113): the corpus cut and
-`assessment` on 2026-09-01, the four naming and lifecycle items on 2026-09-02 · Wire
-keys obey the frozen vocabulary in
+Status: **ruled; the wire block is built and the corpus now arrives by the exchange** ·
+Ruled on [#113](https://github.com/LoonSecIO/LoonInspect/issues/113): the corpus cut and
+`assessment` on 2026-09-01, the four naming and lifecycle items on 2026-09-02; the
+delivery of the corpus re-ruled 2026-09-10 (§2) · Wire keys obey the frozen vocabulary in
 [`docs/splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md)
 
 This document exists because the vulnerability design lived in a session record and two
 issue comments, and a contract that lives only in a session record is one that gets
 re-argued by whoever builds it. Everything below is a decision with an argument.
 
-**What is built, as of 2026-09-03** ([#249](https://github.com/LoonSecIO/LoonInspect/issues/249),
-[#251](https://github.com/LoonSecIO/LoonInspect/issues/251)): the summary block of §4 in
+**What is built, as of 2026-09-10** ([#249](https://github.com/LoonSecIO/LoonInspect/issues/249),
+[#251](https://github.com/LoonSecIO/LoonInspect/issues/251),
+[#248](https://github.com/LoonSecIO/LoonInspect/issues/248)): the summary block of §4 in
 full — every key, the presence rules, the cap, the clock and the sentinel — plus the
-lookup seam it reads (`VulnCorpus` in `app/core/vuln.py`), **and the UI half**: the same
-block on the REST responses that carry installed apps, and the three states rendered
-distinctly with `corpusAsOf` beside them (§4g). What is not built is the corpus behind
-that seam ([#248](https://github.com/LoonSecIO/LoonInspect/issues/248)), so the container
-ships `NO_CORPUS` and every app on every device still reads `assessment: off` — on the
-wire and on the page, which now says so in words rather than showing an empty column. The
-day #248 loads a corpus, both halves start answering with no wire change and no UI change
-at all — which is the whole reason the vocabulary was frozen before the data existed. §10
-tracks the rest.
+lookup seam it reads (`VulnCorpus` in `app/core/vuln.py`), **the UI half** (the same block
+on the REST responses that carry installed apps, and the three states rendered distinctly
+with `corpusAsOf` beside them, §4g), and **the library behind the seam**: #248 loads a
+published corpus epoch from the data-sharing exchange into a global table pair and answers
+from stored rows (`app/core/vuln_library.py`).
+
+A container with no epoch imported is still exactly what it was: `loaded_corpus()` answers
+`NO_CORPUS`, every app on every device reads `assessment: off`, and the snapshot is
+byte-identical to the one #241 and #242 shipped — asserted, not claimed
+(`backend/tests/test_vuln_block.py`). That is #281's Option A falling out of the shape
+rather than being enforced by a second switch: the library arrives on the exchange, and a
+pod that has not consented never exchanges.
+
+What is **not** built is the per-build join at judge time — the stored answer on
+`app_catalog` and `installed_apps`, and the assessed-titles branch that turns a rowless
+build under an unmoved Jamf stamp into a positive clean bill
+([#381](https://github.com/LoonSecIO/LoonInspect/issues/381)) — and the four posture keys
+([#250](https://github.com/LoonSecIO/LoonInspect/issues/250)). §10 tracks the rest.
 
 The block it rules is `vuln{}` — LoonInspect's own answer about an app Jamf reported,
 riding that app's sub-event beside `patch{}`. It is the highest fan-out object the
@@ -63,19 +73,30 @@ delta.
 
 | | v0 | Not v0 |
 | --- | --- | --- |
-| Corpus | A static set of ~100 titles, public sources only, Jamf-catalog apps | The nightly NVD→corpus scan |
+| Corpus | **Arrives by the exchange** — a Jamf-derived epoch, compiled elsewhere, published complete once a day (ruled 2026-09-10; #248 loads it) | The nightly NVD→corpus scan itself |
 | Join | Local hash-join, in the container | Any call to a vulnerability gateway |
-| Refresh | By hand, stamped in `corpusAsOf` | Automatic, `corpusAsOf` moving on its own |
-| Half | Container↔cloud: the exchange response's `verdicts` slot, reserved in the v1 contract and deliberately left unparsed so this work does not freeze its shape (`backend/app/core/sharing.py:247`) | The scan itself, which lives outside this repo, touches no container and breaks no contract |
+| Refresh | Daily, when the published signature moves; stamped in `corpusAsOf` | — |
+| Half | Container↔cloud: the exchange response's `corpus` pointer, and the `verdicts` slot beside it — still reserved, still unparsed, and a **separate channel** from the corpus (`backend/app/core/sharing.py`) | The compiler, which lives outside this repo, touches no container and breaks no contract |
+
+**Amended 2026-09-10.** The v0 cut named a static set of ~100 titles, hand-refreshed in
+the image. The corpus went back to v1 on 2026-09-03 with the container half already built
+and inert, and it returns in the shape ruled on 2026-09-10: **complete, once a day, as its
+own consent-gated channel on the data-sharing exchange, downloaded only when its signature
+moves, joined locally.** Two things that ruling changes and nothing else: the corpus is no
+longer hand-refreshed, so `corpusAsOf` moves on its own; and the container reads a
+published format rather than one this repository defines
+(LoonVD-Internal's `sharedAssets/contract/epoch.md`, `epoch/1`). Wireshark is still in it —
+it is the standing fixture, and it is the one row of the committed test epoch that is real.
 
 The split is contract versus internal. The container half ships in v0 because it cannot
 be added to containers already in the field; the scan half lands after the flip because
 it can.
 
-**Wireshark must be in the hundred.** It is the standing vulnerability fixture and also
-a Jamf Patch title, which makes it the one app that exercises `patch{}` and `vuln{}` in
-the same event. Select the rest by install prevalence in the Jamf catalog, not by name
-recognition.
+**Wireshark must be in it.** It is the standing vulnerability fixture and also a Jamf
+Patch title, which makes it the one app that exercises `patch{}` and `vuln{}` in the same
+event. Which titles the compiler covers beyond it is the compiler's business — install
+prevalence in the Jamf catalog, not name recognition — and the container's job is to say
+honestly where the coverage ends, which is what `unknown_app` and `corpusAsOf` are for.
 
 ## 3. Which sourcetype an enriched app carries
 
@@ -321,6 +342,41 @@ build from a positively clean one; both arrive as `()`. So `findings()` must not
 to `()` (a `dict.get(key_full, ())` reads exactly like a positive clean bill) — it must
 answer `None` unless it can name the assessment that produced the empty result.
 
+**The published corpus expresses that with a row, not with an absence** (#248): an
+assessed-and-clean build ships as a *row* carrying an empty id list and zero counts, and a
+build nobody assessed has no row at all. So the loaded library answers `None` for a
+missing row, always — and `()` never arises from a lookup that missed.
+
+**A fourth answer, added 2026-09-10 and additive to the three above: an `AssessedBuild`**
+— one stored row's precomputed aggregates. The `VulnCorpus` protocol's member set does not
+widen (still `as_of` and `findings`, so every corpus written against the two-member
+interface is unchanged); only the return type does. It exists because the corpus ships a
+**capped** id list beside **uncapped** counts: `counts.total` and the oldest publication
+date in a band whose id the cap dropped are not recoverable from the list, so recounting
+the list would under-report — §4a's failure wearing a plausible number. `vuln_block`
+reports what the corpus counted, and keeps exactly two things for itself, because both
+depend on something a stored row cannot know: the day arithmetic (the event's own clock,
+§4d — a row carries absolute dates and never an age) and the cap (`VULN_IDS_CAP`, this
+container's knob, §4e — a longer published list is trimmed here and says so).
+
+**The join key, on both sides.** The corpus key is `app.full(name, bundleId,
+shortVersion, None)` — the fourth slot is `None`, and the short version goes in the
+*version* slot, because Jamf's patch catalog and NVD both speak the short version and
+neither speaks a bundle version. The container pins that: `normalize_computer` sets
+`short_version=None` on every app it builds from Jamf's inventory
+([`backend/app/mdm/jamf/client.py:813`](../backend/app/mdm/jamf/client.py#L813)), the
+catalog index hashes the same tuple
+([`backend/app/catalog/index.py:75`](../backend/app/catalog/index.py#L75)), and
+[`backend/app/mdm/snapshot.py:233`](../backend/app/mdm/snapshot.py#L233) already warns
+that the two sides diverge silently if that pin ever moves. **A source that carries a
+bundle version hashes it into the prevalence key only** — never into the key the corpus is
+joined on — because a corpus keyed on a field its own sources cannot see would answer
+`unknown_app` for every app on every device and nothing would say why. That is the whole
+failure mode of a drifting key: it is not a counting bug, it is a silent false negative in
+vulnerability matching (`docs/data-sharing.md`, "The key scheme"), and it is why
+`backend/tests/test_vuln_library.py` asserts the fixture epoch's keys against this
+repository's own `content_keys` rather than trusting them.
+
 ### 4g. The same three words in front of a person
 
 Built 2026-09-03 (#251). `assessment` was ruled visible **on the wire and in the UI**, and
@@ -352,12 +408,19 @@ checking in. Every other key is the same value in both.
 | Devices › Applications › Jamf Patch › *title* | **Nothing** (#298). A title's version row carries no `key_full`, so there is no grain to answer at; the stub column that stood there (`C — H — M — L — Σ` beside coloured dots, under a tooltip naming an integration nobody can enable) was deleted rather than rewritten, per the #95 precedent |
 
 **Where `off` goes (#298).** A terminal sentence is a dead end, and the obvious link — *turn on
-data sharing* — is a lie: `loaded_corpus()` takes no argument and answers `NO_CORPUS` in every
-v0 build, the daily exchange receives no verdicts, and no code reads a licence key for
-vulnerability data. So the banner carries the one link, and it explains rather than promises:
-an in-product *why this container says nothing*, in the present tense, dated with nothing,
-with §8 below linked by section. The per-row cell stays a terminal sentence; two thousand
-identical links in cells would be noise.
+data sharing* — was a lie when it was ruled: `loaded_corpus()` took no argument and answered
+`NO_CORPUS` in every v0 build, the daily exchange received nothing, and no code read a licence
+key for vulnerability data. So the banner carries the one link, and it explains rather than
+promises: an in-product *why this container says nothing*, in the present tense, dated with
+nothing, with §8 below linked by section. The per-row cell stays a terminal sentence; two
+thousand identical links in cells would be noise.
+
+**That premise moved on 2026-09-10 and the copy has not.** With #248, consent *is* what
+earns a corpus — the epoch rides the exchange — so the link the ruling rejected has become
+true. The banner is left exactly as #298 ruled it, because #248 is the loader and changing
+in-product copy is not its scope; whether the `off` banner should now point at Settings →
+Data Sharing is a UI question for whoever picks it up, and it is a question worth asking
+only once a published corpus is actually being served.
 
 **Why the lookup answers no assessment.** It is keyed by hash and accepts `appHash` as
 well as `versionHash` / `keyFull`; under `appHash` the row it returns is deliberately a
@@ -520,6 +583,22 @@ fleet-coverage statistic (*"% of observed apps identified"*) is gated on licence
 data-sharing consent, structurally as well as commercially: identification requires
 sending hashes.
 
+**How the gate is built (#281, Option A; #248).** Inside `loaded_corpus()`, and it needs
+no argument, because the shape enforces it: the corpus link rides the daily exchange, a
+pod at tier `off` never exchanges, so it is never handed a link, never imports an epoch,
+and `loaded_corpus()` answers `NO_CORPUS`. A revoke — the server's kill switch — sets the
+tier to `off` and imports nothing that day, for the same reason. There is no second switch
+to forget and no per-call tier check to get wrong.
+
+**The consequence that is not yet ruled**, recorded here rather than guessed at: a pod
+that consented, imported an epoch, and *later* turned sharing off keeps answering from the
+epoch it holds. Nothing new arrives — the exchange stops — so the answer decays visibly,
+which is exactly what `corpusAsOf` was ruled for, and the page dates every row it shows.
+Dropping the library on tier-off was considered and not built, because the library is
+global and the tier is per tenant: on a multi-tenant pod, one tenant's switch would delete
+an artifact every other tenant is entitled to. Whether tier-off should purge, and at what
+grain, is a ruling for whoever needs it.
+
 ## 9. What this ruling amends
 
 The additive-only clause 4 in [`wire_vocabulary.py`](../backend/app/core/wire_vocabulary.py)
@@ -535,7 +614,8 @@ block each other.
 
 | Consequence | Issue | State |
 | --- | --- | --- |
-| The v0 corpus and the local hash-join — ~100 titles, public sources, `corpusAsOf`, Wireshark included, and the publication date §4d requires of the format | [#248](https://github.com/LoonSecIO/LoonInspect/issues/248) | Open. It plugs into `app.core.vuln.VulnCorpus` and swaps `loaded_corpus()`; the rest of the wire is built and waiting |
+| The corpus behind the seam: the library loader — the exchange's `corpus` pointer, the verified epoch, the global row/title tables, `corpusAsOf`, and `loaded_corpus()` answering from stored rows | [#248](https://github.com/LoonSecIO/LoonInspect/issues/248) | **Built 2026-09-10.** `app/core/vuln_library.py`, the three `vuln_library_*` tables (migration `d1f8b6a34e07`), the `AssessedBuild` widening in `app/core/vuln.py`; pinned in `backend/tests/test_vuln_library.py` and `…_db.py` against the committed fixture epoch |
+| The per-build join at judge time, stored on `app_catalog` and copied onto `installed_apps`, including the assessed-titles stamp branch | [#381](https://github.com/LoonSecIO/LoonInspect/issues/381) | Open. Until it lands, a rowless build of a title the epoch compiled reads `unknown_app` — the conservative direction (§4f) |
 | `vuln{}` populated on the app sub-event; `assessment` stops being a constant `off`. Also needs the fan-out ([#242](https://github.com/LoonSecIO/LoonInspect/issues/242)) | [#249](https://github.com/LoonSecIO/LoonInspect/issues/249) | **Built 2026-09-03.** `app/core/vuln.py`, `VulnEnrichment` in `app/schemas/payload.py`, the sentinel in `app/core/hec_fanout.py`, pinned in `backend/tests/test_vuln_block.py` |
 | The four `vuln.*` posture keys go ACTIVE, under §7's no-zero rule | [#250](https://github.com/LoonSecIO/LoonInspect/issues/250) | Open. Still RESERVED, deliberately: the join has stored nothing to count |
 | The corpus's edge made visible in the UI — `assessment`, `corpusAsOf`, three empty states | [#251](https://github.com/LoonSecIO/LoonInspect/issues/251) | **Built 2026-09-03.** §4g. `app/core/vuln_read.py` over the same seam, `vuln` + `corpusAsOf` on the device and catalog responses, the Catalog tab's column and banner; pinned in `backend/tests/test_vuln_read.py` and `frontend/src/features/vulnerabilities/noCollapse.ts` |
