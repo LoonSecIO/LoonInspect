@@ -22,10 +22,11 @@ Site and Field Notes: [loonsec.io](https://staging.loonsec.io) (staging until la
 ### Vulnerabilities
 
 Each installed app is answered at the build that is actually on the Mac, in one of three
-words. **No findings** — this exact build was checked and nothing stands against it.
-**Outside the corpus** — this build was not checked. **Not assessed** — nothing is
-answering for your organization at all. The first two carry the date the corpus was
-generated. The third carries no date, because it has none.
+states. A build that was checked reads **No findings**, or the findings themselves — a
+count, what is on CISA's KEV list, and the ids. A build that was not checked reads
+**Outside the corpus**. **Not assessed** means nothing is answering for your organization
+at all. A checked build and one outside the corpus both carry the date the corpus was
+generated. *Not assessed* carries no date, because it has none.
 
 The three never collapse into each other. *Outside the corpus* is amber rather than
 green, because "we did not look at this" is a different fact from "we looked and found
@@ -46,10 +47,11 @@ whose edge is countable is one whose coverage you can check.
 consenting instances only. The response names the published corpus and its signature.
 The container downloads it only when that signature moves, verifies the bundle whole or
 refuses it whole, and joins it locally against the content keys the app catalog already
-carries. Nothing about your fleet is sent in order to receive it, and no lookup leaves
-the container when a page or an event is answered. Consent earns it in both directions:
-an organization with data sharing off reads *Not assessed* even where the container
-holds a corpus ([docs/vulnerabilities.md](docs/vulnerabilities.md) §8).
+carries. Receiving it adds nothing to what leaves: the corpus rides the response to the
+exchange the instance already makes, and the request body is unchanged by it. No lookup
+leaves the container when a page or an event is answered. Consent earns it in both
+directions — an organization with data sharing off reads *Not assessed* even where the
+container holds a corpus ([docs/vulnerabilities.md](docs/vulnerabilities.md) §8).
 
 **A customer's first epoch arrives with the production cutover.** Until then the
 published corpus is delivered on staging only, so an instance pointed at production
@@ -434,9 +436,10 @@ The community patching and vulnerability feeds LoonInspect is building are made 
 anonymous community inventory, and participating instances are what will keep them
 accurate. One half of that now runs in both directions: the daily exchange's response
 names the published vulnerability corpus, which a sharing instance downloads, verifies
-and joins locally (see "Vulnerabilities" above). The community half — per-key verdicts
-made from what other instances have seen — is reserved on that response and not yet
-parsed, and the patching feed is not built. The two are separate channels on one
+and joins locally — on staging today, and for a customer with the production cutover (see
+"Vulnerabilities" above). The community half — per-key verdicts made from what other
+instances have seen — is reserved on that response and not yet parsed, and the patching
+feed is not built. The two are separate channels on one
 exchange. Once a day, a sharing instance sends per-tenant **content-hash keys** of installed
 applications with aggregated install counts (plus OS tuples; the hardware tuple is
 reserved and ships empty) — never per-device rows, and

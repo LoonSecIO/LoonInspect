@@ -206,11 +206,14 @@ claim guard datadog \
 # exactly the class this table exists for. The proofs are the two seams the claim
 # is made of: the exchange's corpus channel, and the stored per-build answer the
 # pages and the wire read back. Prose about either would have passed while both
-# were open, so neither proof is prose.
+# were open, so neither proof is prose. The third proof is the word itself: the
+# README quotes what a person sees, so a rename in the locale file has to fail here
+# rather than in a screenshot.
 claim guard vuln-corpus \
   'Outside the corpus|published corpus|vulnerability corpus' \
   "grep -q 'def load_epoch_if_new' backend/app/core/vuln_library.py \
-   && grep -q 'def stored_corpus' backend/app/core/vuln_answer.py"
+   && grep -q 'def stored_corpus' backend/app/core/vuln_answer.py \
+   && grep -q 'stateUnknownApp: \"Outside the corpus\"' frontend/src/i18n/en.ts"
 
 claim guard multiarch \
   'arm64|aarch64|multi-arch|multi-architecture' \

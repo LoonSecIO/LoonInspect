@@ -225,8 +225,10 @@ and step 2 ends with how to tell that apart from a broken exchange.
    that before any log does: with the tier on, the banner above the Vulnerabilities
    column carries the corpus date when a library is installed and says it has none when
    there is none, and `GET /api/catalog` carries the same fact as `corpusAsOf` beside the
-   rows it describes. The log says *why*. Read the one line the loader writes:
-   `docker compose logs app --since 48h | grep -i "vulnerability library"`.
+   rows it describes. The log says *why*. Read the lines the loader and startup write:
+   `docker compose logs app --since 48h | grep -i "vulnerability library"`. Two of them
+   are written at startup and nowhere else, so drop `--since 48h` if the container has
+   been up longer than that.
    - `vulnerability library updated: epoch 0002, generated …` → a library *is* loaded, so
      with the tier on in step 1 this page should be answering; grey is then stale browser
      state, so reload. If the page still says nothing is answering, that is reportable
@@ -263,19 +265,27 @@ and step 2 ends with how to tell that apart from a broken exchange.
      update the container` → exactly what it says: the published format moved ahead of
      this build. Settings › Support shows the build; upgrade the image.
    - `the stored vulnerability library could not be read (epoch 0002): …` → this
-     container holds an epoch it can no longer read. The line is written where the
-     container reads the stored epoch into memory, which is at startup, and it means the
-     stored rows moved after they were imported and verified: a database restored from a
-     different build, or a row edited by hand. Every app reads *not assessed* until an
-     epoch with a different signature is published and imported, which is the next day
-     the published corpus moves; restoring a matching backup is the fix if you have one.
-     If the line survives a day of succeeding exchanges, that is reportable state **H**,
-     and include it — it names the epoch.
+     container holds an epoch it can no longer read. **It is written once, at startup, and
+     never again** — `--since 48h` will not find it on a container that has been up
+     longer, so search the whole log
+     (`docker compose logs app | grep -i "stored vulnerability library"`) before
+     concluding there is no line. It means the stored rows moved after they were imported
+     and verified: a database restored from a different build, or a row edited by hand.
+     Every app reads *not assessed* until an epoch with a different signature is published
+     and imported, which is the next day the published corpus moves; restoring a matching
+     backup is the fix if you have one. If a restart writes it again after a day of
+     succeeding exchanges, that is reportable state **H**, and include it — it names the
+     epoch.
+   - `vulnerability library loaded {"epoch_id": "0002", "corpus_as_of": "2026-09-11", …}`
+     → the line startup writes when this container read back the epoch it already held.
+     Not an exchange and not an import: it names which epoch is answering and how old it
+     is, and on a container that downloads nothing it is the only library line there is.
+     With the tier on in step 1, this page should be answering.
    - **no line at all** → three different silences, and the banner in this step's first
      sentence tells them apart. A library *is* installed and this is the ordinary day: an
      exchange whose signature has not moved downloads nothing and says nothing at the
-     default log level, and a restart that restores the epoch already stored is silent
-     too. Or no library is installed, and then either no exchange has completed since the
+     default log level; a restart is the exception, and writes the `loaded` line above.
+     Or no library is installed, and then either no exchange has completed since the
      container started — Settings › Data Sharing shows the last exchange and its outcome,
      and a run of `failed` rows there is an exchange problem rather than a corpus one,
      with its own error on the row — or the exchanges are succeeding and naming no corpus
@@ -283,12 +293,15 @@ and step 2 ends with how to tell that apart from a broken exchange.
 
    **Succeeding exchanges, no library, and nothing wrong.** An exchange that answers
    without naming a corpus is silent by design, so this state is grey with no log line to
-   explain it. There is nothing to fix in the container. The published corpus reaches
-   staging first, and **a customer's first epoch arrives with the production cutover**;
-   until then an instance pointed at production reads *not assessed* for every app with
-   the tier on, and that is the expected reading rather than reportable state **H**.
-   Settings › Data Sharing is what separates this from a broken exchange: rows saying the
-   exchange succeeded, day after day, with no library line beside them.
+   explain it. There is nothing to fix in the container. One state looks exactly like this
+   and is not it — an epoch this container holds and cannot read — so search the whole log
+   for `the stored vulnerability library could not be read` before you read this paragraph
+   as your answer. The published corpus reaches staging first, and **a customer's first
+   epoch arrives with the production cutover**; until then an instance pointed at
+   production reads *not assessed* for every app with the tier on, and that is the expected
+   reading rather than reportable state **H**. Settings › Data Sharing is what separates
+   this from a broken exchange: rows reading `sent`, day after day, with no library line
+   beside them.
 3. **A date is on the banner, and every app under it says *outside the corpus*.** Not the
    same fault as grey, and usually not a fault at all. The container stores each build's
    answer beside the build and re-judges when a new corpus arrives, so in the minutes after

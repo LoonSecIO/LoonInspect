@@ -112,7 +112,7 @@ keys ([#390](https://github.com/LoonSecIO/LoonInspect/pull/390)), the one source
 patch catalog is read through ([#388](https://github.com/LoonSecIO/LoonInspect/pull/388)),
 and §1's resolution with the NVD notice it carries
 ([#387](https://github.com/LoonSecIO/LoonInspect/pull/387)). §10 holds the per-issue
-record, file by file. The scan half has landed too: outside this repository, the compiler
+record, file by file. The scan half has run: outside this repository, the compiler
 produced its first epoch on 2026-09-11, and its Wireshark 4.2.0 row carries the same 17
 ids the committed fixture epoch was derived by hand to hold — which is what the fixture
 was for.
