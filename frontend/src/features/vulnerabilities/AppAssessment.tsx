@@ -130,10 +130,12 @@ export function CorpusBanner({ corpusAsOf, t }: { corpusAsOf: string | null; t: 
       <p className="mt-1 text-sm text-muted-foreground">{dated === null ? copy.edgeNone : copy.edge(dated)}</p>
       {/* Where "not assessed" goes (#298): one link, here, governing the whole table. Its
           job is to say WHY this container says nothing — in the present tense, with no
-          date to borrow — not to promise that a switch would make it say something. It is
-          not "turn on data sharing" or "get a licence": neither changes what loaded_corpus()
-          answers in this build, and a link that said so would be the Webhook card (#95)
-          and the Splunk card (#88) a third time, on the surface that is the differentiator. */}
+          date to borrow. #298 ruled this on the premise that "turn on data sharing" was a
+          lie, and #248 moved that premise: data sharing IS what earns the corpus now, and
+          a tenant with sharing off is exactly the one reading this. So the copy says so,
+          in the same voice, and the ruling itself is untouched — still no fourth state,
+          still nothing rendered on `off` beyond this block, still one link and not two
+          thousand (docs/vulnerabilities.md §4g, §8). */}
       {dated === null && (
         <details className="mt-2 text-sm">
           <summary className="cursor-pointer font-medium">{copy.whySummary}</summary>

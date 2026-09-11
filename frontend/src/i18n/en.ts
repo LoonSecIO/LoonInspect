@@ -3,11 +3,12 @@ export const en = {
     updateAvailable: "A newer build of LoonInspect is available",
     dismissUpdate: "Dismiss update notice",
     sharing: {
-      // Present tense for what is true now (#298): nothing flows back to this instance in
-      // this build, so the feeds are described as what they would be made from, not as
-      // something this page's switches receive.
+      // Present tense for what is true now. Amended 2026-09-11 (#248): one thing does now
+      // flow back — the vulnerability corpus, on this same daily exchange and only to an
+      // instance that shares — so the old "nothing flows back in this build" is gone. The
+      // feeds themselves are still described as what they would be made from.
       pageDescription:
-        "The patching and vulnerability feeds LoonInspect is building would be made from anonymous community inventory. None ships yet, and nothing flows back to this instance in this build. What this instance contributes — and whether it contributes at all — is controlled here.",
+        "The patching and vulnerability feeds LoonInspect is building would be made from anonymous community inventory. None ships yet. One thing flows back on the same daily exchange — the vulnerability corpus, and only to an instance that shares — and nothing else returns to this instance. What this instance contributes, and whether it contributes at all, is controlled here.",
       envLocked:
         "COMMUNITY_SHARING=false is set in the environment — the .env file beside docker-compose.yml. Nothing is shared while it is set, whatever is chosen below. A choice made here is recorded and takes effect once that line is removed and the container restarted (docker compose up -d).",
       readOnlyRole:
@@ -852,13 +853,15 @@ export const en = {
     oldestPublished: (days: number) => `oldest published ${days} day${days === 1 ? "" : "s"} ago`,
     moreIds: (count: number) => `+${count} more`,
     idsCapped: "list capped",
-    // #298: where "not assessed" goes. Present tense for the absence, future tense at most
-    // for the corpus, and no date, no "last checked", no "today" — `off` carries none.
+    // #298: where "not assessed" goes. Present tense for the absence, and no date, no
+    // "last checked", no "today" — `off` carries none. Amended 2026-09-11 (#248): the
+    // premise moved, so `whyNoCorpus` argues from "none loaded" rather than from "in this
+    // build", and `whyNoSwitch` says what data sharing now actually does.
     whySummary: "Why this container says nothing",
     whyNoCorpus:
-      "No vulnerability corpus ships with LoonInspect in this build. The lookup runs locally, against a corpus loaded into this container, and this container has none — so nobody has looked at these versions, and nothing here has been checked against anything.",
+      "No vulnerability corpus is loaded in this container. The lookup runs locally, against a corpus this container holds, and it holds none — so nobody has looked at these versions, and nothing here has been checked against anything.",
     whyNoSwitch:
-      "Turning on data sharing does not change that in this build: the daily exchange contributes inventory and receives no verdicts and no feeds back. Neither does a licence key; nothing in this build reads one for vulnerability data.",
+      "Data sharing is what earns one: an instance that shares receives the Jamf-derived corpus daily on the same exchange and answers from it, and an instance with sharing off reads not assessed. A licence key does not; nothing in this build reads one for vulnerability data.",
     whyWhenItShips:
       "When a corpus ships, every row moves to a dated answer — checked, or outside the corpus — and the absence stops being the whole story. Until then it is named rather than hidden.",
     whyLink: "How the corpus and its tiers are designed (docs/vulnerabilities.md §8)"

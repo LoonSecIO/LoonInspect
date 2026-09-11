@@ -529,22 +529,28 @@ class VulnLibraryRow(Base):
 
 
 class VulnLibraryTitle(Base):
-    """The assessed-titles manifest of the loaded epoch: one row per Jamf title compiled.
+    """The loaded epoch's **coverage metadata**: one row per Jamf title it compiled.
 
-    Stored by #248 and read by [#381](https://github.com/LoonSecIO/LoonInspect/issues/381),
-    which owns the branch it exists for — a build with no row, whose title is here and
-    whose `catalog_last_modified` equals the stamp the pod's **own** Jamf catalog carries,
-    was positively assessed and is clean. Without this table that build is
-    indistinguishable from one nobody looked at, and the only honest answer for both is
-    `unknown_app`.
+    Stored by #248 and read by [#381](https://github.com/LoonSecIO/LoonInspect/issues/381)
+    for coverage statistics — how much of a tenant's catalog an epoch actually looked at.
+    **Never a verdict input** (ruling R-D, 2026-09-11): a verdict comes from a row in
+    `vuln_library_rows` and from nothing else, so a build with no row reads `unknown_app`
+    whatever this table says about its title.
 
-    The stamp is kept as the string Jamf wrote. The test is equality in either direction,
-    never ordering and never a tolerance.
+    Keyed on Jamf's own `title_id`, which is what the published object is unique on.
+    `key_title` — the container's `app.title` key over `(appName, bundleId)` — is an
+    **index and not a key**: sixteen Wireshark titles in Jamf's catalog share one, so
+    keying on it would have collapsed fifteen of them and left one arbitrary stamp
+    answering for all sixteen.
+
+    The stamp is kept as the string Jamf wrote, compared for equality in either direction,
+    never ordered and never given a tolerance.
     """
 
     __tablename__ = "vuln_library_titles"
 
-    key_title: Mapped[str] = mapped_column(String(67), primary_key=True)
+    title_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    key_title: Mapped[str] = mapped_column(String(67), index=True)
     catalog_last_modified: Mapped[str] = mapped_column(String(64))
     versions_compiled: Mapped[int] = mapped_column(Integer, default=0)
 

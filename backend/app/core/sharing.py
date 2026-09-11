@@ -30,8 +30,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings as app_settings
 from app.core.content_keys import os_key
+from app.core.tenancy import get_tenant_id
 from app.core.user_agent import build_user_agent
 from app.core.version import get_app_version
+from app.core.vuln import install_tenant_tier
 from app.core.vuln_library import CorpusPointer, corpus_pointer, load_epoch_if_new
 from app.models.schema import DataSharingSettings, Device, InstalledApp, ShareLog
 
@@ -65,7 +67,21 @@ async def get_or_create_settings(db: AsyncSession) -> DataSharingSettings:
         db.add(row)
         await db.commit()
         await db.refresh(row)
+    remember_tier(row)
     return row
+
+
+def remember_tier(row: DataSharingSettings) -> None:
+    """Tell the corpus gate what this tenant's consent row now says (#248, §8).
+
+    Called wherever the row is read and again wherever it is written, so a tier changed in
+    this process takes effect on the next page rather than at the next exchange. The gate
+    itself is `app.core.vuln.loaded_corpus`, and it is fail-closed: forgetting this call
+    costs a tenant its summary until the next read, never the other way round.
+    """
+    tenant_id = get_tenant_id()
+    if tenant_id is not None:
+        install_tenant_tier(tenant_id, row.tier)
 
 
 async def record_setup_choice(db: AsyncSession, *, share: bool) -> None:
@@ -87,6 +103,7 @@ async def record_setup_choice(db: AsyncSession, *, share: bool) -> None:
     row.tier = "reveal" if share else "off"
     row.updated_at = datetime.now(UTC)
     await db.commit()
+    remember_tier(row)
 
 
 def _excluded(bundle_id: str, globs: list[str]) -> bool:
@@ -246,6 +263,10 @@ def apply_response(settings_row: DataSharingSettings, response: dict) -> CorpusP
         # itself to the half of the exchange that sharing pays for.
         settings_row.tier = "off"
         settings_row.pending_reveal_keys = []
+        # And the corpus this tenant already holds stops answering for it from here (§8).
+        # The rows stay — they are a global artifact other tenants are entitled to — but a
+        # tenant that has been told to stop sharing reads `assessment: off` again.
+        remember_tier(settings_row)
         return None
 
     requests = response.get("reveal_requests")

@@ -23,13 +23,12 @@ from stored rows (`app/core/vuln_library.py`).
 A container with no epoch imported is still exactly what it was: `loaded_corpus()` answers
 `NO_CORPUS`, every app on every device reads `assessment: off`, and the snapshot is
 byte-identical to the one #241 and #242 shipped — asserted, not claimed
-(`backend/tests/test_vuln_block.py`). That is #281's Option A falling out of the shape
-rather than being enforced by a second switch: the library arrives on the exchange, and a
-pod that has not consented never exchanges.
+(`backend/tests/test_vuln_block.py`). So does a **tenant** whose data-sharing tier is
+`off`, even where the pod holds an epoch: that is #281's Option A, read at the grain a
+multi-tenant pod actually has (§8, ruled 2026-09-11).
 
 What is **not** built is the per-build join at judge time — the stored answer on
-`app_catalog` and `installed_apps`, and the assessed-titles branch that turns a rowless
-build under an unmoved Jamf stamp into a positive clean bill
+`app_catalog` and `installed_apps`
 ([#381](https://github.com/LoonSecIO/LoonInspect/issues/381)) — and the four posture keys
 ([#250](https://github.com/LoonSecIO/LoonInspect/issues/250)). §10 tracks the rest.
 
@@ -347,6 +346,19 @@ assessed-and-clean build ships as a *row* carrying an empty id list and zero cou
 build nobody assessed has no row at all. So the loaded library answers `None` for a
 missing row, always — and `()` never arises from a lookup that missed.
 
+**And nothing beside a row may upgrade a missing one** — ruling R-D, 2026-09-11, which
+withdrew a branch this document previously expected #381 to build. The published format
+carried an assessed-titles object whose stamp, compared against the pod's own Jamf catalog,
+would have turned a rowless build of a compiled title into a positive clean bill. Two
+measurements from the Jamf enumeration killed it, and either is sufficient: Jamf publishes
+one patch title per *version line*, so one `key_title` is shared by **sixteen** of the
+catalog's seventeen Wireshark titles and there is no single stamp to compare against; and
+the container's own `app_catalog_versions` (72,879 rows) and the compiler's enumeration of
+the same catalog (78,109) are not the same set, so a pod can hold a build the compiler
+never saw — and under the withdrawn rule that build would have read **clean**, silently.
+The titles object is now coverage metadata, keyed on Jamf's `title_id` with `key_title` as
+a non-unique index (`vuln_library_titles`), and the read path does not consult it at all.
+
 **A fourth answer, added 2026-09-10 and additive to the three above: an `AssessedBuild`**
 — one stored row's precomputed aggregates. The `VulnCorpus` protocol's member set does not
 widen (still `as_of` and `findings`, so every corpus written against the two-member
@@ -415,12 +427,21 @@ promises: an in-product *why this container says nothing*, in the present tense,
 nothing, with §8 below linked by section. The per-row cell stays a terminal sentence; two
 thousand identical links in cells would be noise.
 
-**That premise moved on 2026-09-10 and the copy has not.** With #248, consent *is* what
-earns a corpus — the epoch rides the exchange — so the link the ruling rejected has become
-true. The banner is left exactly as #298 ruled it, because #248 is the loader and changing
-in-product copy is not its scope; whether the `off` banner should now point at Settings →
-Data Sharing is a UI question for whoever picks it up, and it is a question worth asking
-only once a published corpus is actually being served.
+**That premise moved on 2026-09-10, and the strings moved with it on 2026-09-11.** With
+#248, consent *is* what earns a corpus — the epoch rides the exchange, and a tenant at
+tier `off` is exactly the one that reads `off` (§8). #298's *ruling* is untouched: still no
+fourth state, still nothing rendered on `off` beyond the banner, still one link and not two
+thousand. What changed is that three of its sentences had become false, and the pull
+request that falsified them is the one that fixed them. The five strings, in both locales:
+
+| String | Was | Is |
+| --- | --- | --- |
+| `en.ts` `system.sharing.pageDescription` / `de.ts` `pageDescription` | *"None ships yet, and nothing flows back to this instance in this build."* | The corpus is named as the one thing that does flow back, and only to an instance that shares |
+| `en.ts:whyNoSwitch` / `de.ts:whyNoSwitch` (`vulnerabilities.*`) | *"Turning on data sharing does not change that in this build: the daily exchange contributes inventory and receives no verdicts and no feeds back."* | Data sharing is what earns the corpus; an instance with sharing off reads *not assessed*. The licence-key clause is unchanged and still true |
+| `en.ts:whyNoCorpus` / `de.ts:whyNoCorpus` | *"No vulnerability corpus ships with LoonInspect in this build …"* | Argues from **none loaded** rather than from *in this build* — the premise that moved. Still rendered only under `corpusAsOf === null` |
+
+The banner still explains rather than promises, and it still carries no date: `off` has
+none to carry.
 
 **Why the lookup answers no assessment.** It is keyed by hash and accepts `appHash` as
 well as `versionHash` / `keyFull`; under `appHash` the row it returns is deliberately a
@@ -583,21 +604,46 @@ fleet-coverage statistic (*"% of observed apps identified"*) is gated on licence
 data-sharing consent, structurally as well as commercially: identification requires
 sending hashes.
 
-**How the gate is built (#281, Option A; #248).** Inside `loaded_corpus()`, and it needs
-no argument, because the shape enforces it: the corpus link rides the daily exchange, a
-pod at tier `off` never exchanges, so it is never handed a link, never imports an epoch,
-and `loaded_corpus()` answers `NO_CORPUS`. A revoke — the server's kill switch — sets the
-tier to `off` and imports nothing that day, for the same reason. There is no second switch
-to forget and no per-call tier check to get wrong.
+**How the gate is built (#281, Option A; #248).** Inside `loaded_corpus()`, which is where
+Option A put it. Two conditions, and both must hold: an epoch is loaded, **and** the acting
+tenant's data-sharing tier is not `off`. The first is the shape — the corpus link rides the
+daily exchange, a pod at tier `off` never exchanges, so it is never handed a link and never
+imports an epoch. The second is the correction of 2026-09-11 below.
 
-**The consequence that is not yet ruled**, recorded here rather than guessed at: a pod
-that consented, imported an epoch, and *later* turned sharing off keeps answering from the
-epoch it holds. Nothing new arrives — the exchange stops — so the answer decays visibly,
-which is exactly what `corpusAsOf` was ruled for, and the page dates every row it shows.
-Dropping the library on tier-off was considered and not built, because the library is
-global and the tier is per tenant: on a multi-tenant pod, one tenant's switch would delete
-an artifact every other tenant is entitled to. Whether tier-off should purge, and at what
-grain, is a ruling for whoever needs it.
+**Ruled 2026-09-11: the tenant is the unit that earns the summary, and the rows are
+kept.** The library is one *global* artifact — three non-tenant tables and one process
+cache, for the same reason `jamf_patch_titles` is global — and the tier is a *per tenant*
+column. On a pod with one tenant those two facts coincide and the shape alone gates
+everything; on a pod with two they do not, and the shape alone would let one consenting
+tenant's import answer `covered` for a tenant that never exchanged, never consented and
+was never handed a link. Option A's own words are *"a pod that has not earned the
+summary"*. So:
+
+* `loaded_corpus()` answers `NO_CORPUS` while the acting tenant's tier is `off`, or while
+  that tenant has no settings row at all, or outside any tenant context — an install
+  nobody has answered for has not consented, and outside a tenant there is nobody to have
+  consented. Every app then reads `assessment: off`, byte-identical to a container with no
+  epoch.
+* **The rows are kept.** Tier-off does not purge: one tenant's switch must not delete a
+  global artifact every other tenant on the pod is entitled to. Turning sharing back on
+  answers again immediately, with no download — and a tenant that stays off sees an epoch
+  age in the database and nothing else.
+* The tier is read **once per unit of work** — one sweep run, one webhook, one re-emit, one
+  API response, one exchange — and cached per tenant
+  (`app.core.vuln_library.read_tenant_tier`, `earned_corpus`). Never per device and never
+  per app: that is the same "cache, don't calculate" rule the rest of the read path is
+  built on, and a 40,000-device run must not pay 40,000 queries for one row that cannot
+  change mid-run. The cache is fail-closed — a tenant nothing has read the tier for reads
+  `off` — so a path that forgets costs a tenant its summary and never the reverse.
+
+*The alternative, stated so the ruling is legible as a choice:* **the held epoch keeps
+answering.** Read "pod" in Option A literally — the container earned the epoch when it was
+consenting, the epoch is already on disk, `corpusAsOf` makes it decay visibly, and turning
+sharing off stops the contribution rather than the answer. That is what the code did
+before this ruling, by accident rather than by argument. It was rejected because the
+answer is a *tier benefit* and not a possession: the summary is what data sharing buys
+(the table above), and a tenant that has stopped paying in hashes should stop being paid
+in verdicts. It is a one-word ruling to reverse.
 
 ## 9. What this ruling amends
 
@@ -615,7 +661,7 @@ block each other.
 | Consequence | Issue | State |
 | --- | --- | --- |
 | The corpus behind the seam: the library loader — the exchange's `corpus` pointer, the verified epoch, the global row/title tables, `corpusAsOf`, and `loaded_corpus()` answering from stored rows | [#248](https://github.com/LoonSecIO/LoonInspect/issues/248) | **Built 2026-09-10.** `app/core/vuln_library.py`, the three `vuln_library_*` tables (migration `d1f8b6a34e07`), the `AssessedBuild` widening in `app/core/vuln.py`; pinned in `backend/tests/test_vuln_library.py` and `…_db.py` against the committed fixture epoch |
-| The per-build join at judge time, stored on `app_catalog` and copied onto `installed_apps`, including the assessed-titles stamp branch | [#381](https://github.com/LoonSecIO/LoonInspect/issues/381) | Open. Until it lands, a rowless build of a title the epoch compiled reads `unknown_app` — the conservative direction (§4f) |
+| The per-build join at judge time, stored on `app_catalog` and copied onto `installed_apps` | [#381](https://github.com/LoonSecIO/LoonInspect/issues/381) | Open. The assessed-titles stamp branch it was also going to carry is **withdrawn** (ruling R-D, 2026-09-11): a verdict comes from a row and from nothing else, so a rowless build reads `unknown_app` permanently rather than provisionally (§4f) |
 | `vuln{}` populated on the app sub-event; `assessment` stops being a constant `off`. Also needs the fan-out ([#242](https://github.com/LoonSecIO/LoonInspect/issues/242)) | [#249](https://github.com/LoonSecIO/LoonInspect/issues/249) | **Built 2026-09-03.** `app/core/vuln.py`, `VulnEnrichment` in `app/schemas/payload.py`, the sentinel in `app/core/hec_fanout.py`, pinned in `backend/tests/test_vuln_block.py` |
 | The four `vuln.*` posture keys go ACTIVE, under §7's no-zero rule | [#250](https://github.com/LoonSecIO/LoonInspect/issues/250) | Open. Still RESERVED, deliberately: the join has stored nothing to count |
 | The corpus's edge made visible in the UI — `assessment`, `corpusAsOf`, three empty states | [#251](https://github.com/LoonSecIO/LoonInspect/issues/251) | **Built 2026-09-03.** §4g. `app/core/vuln_read.py` over the same seam, `vuln` + `corpusAsOf` on the device and catalog responses, the Catalog tab's column and banner; pinned in `backend/tests/test_vuln_read.py` and `frontend/src/features/vulnerabilities/noCollapse.ts` |

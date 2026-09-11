@@ -199,10 +199,15 @@ exact build was checked), **outside the corpus** (amber — this build was not c
 at all). The banner carries the date the library was generated; grey has no date, because
 there is nothing to date.
 
-1. **Grey, on every app.** The library arrives on the daily data-sharing exchange, so a
-   container that is not sharing never receives one. Settings › Data Sharing: if the tier
-   is **off**, that is the answer — turn it on, and the library arrives at the next day's
-   exchange (the schedule is jittered per tenant, so it is not immediate). If
+1. **Grey, on every app.** Data sharing is what earns the library, in both directions: it
+   arrives on the daily exchange, and it answers only for a tenant whose own sharing is on
+   ([`vulnerabilities.md`](vulnerabilities.md) §8). Settings › Data Sharing: if the tier is
+   **off**, that is the answer — turn it on, and the library arrives at the next day's
+   exchange (the schedule is jittered per tenant, so it is not immediate). If this instance
+   has more than one tenant, check the tier for **the tenant you are looking at**: the
+   library is one artifact for the whole container, and a tenant with sharing off reads
+   grey while another tenant on the same container reads dates and answers. Turning sharing
+   back on restores the answers immediately, with no new download. If
    `COMMUNITY_SHARING=false` is set, the page says so and names the file; the override
    wins until it is removed.
 2. **Sharing is on and it is still grey.** Read the app's log for the one line the loader
@@ -225,6 +230,19 @@ there is nothing to date.
    - `vulnerability library not updated: the exchange named a corpus link this container
      refuses …` → the link was not `https`, or named a host this container will not dial
      (loopback, link-local). Reportable state **I**.
+   - `vulnerability library not updated: the exchange named a corpus with no signature`
+     (or `… no link to download it from`, `… whose signature is not a sha256 digest`, or
+     `… is a str and the format states an object`) → the exchange answered with a corpus
+     pointer this container could not use, so nothing was downloaded. Nothing is broken
+     here either; it is reportable state **I**, and the line names which half was missing.
+   - `… matches the digest its manifest states but is not UTF-8 text` → the published
+     object arrived intact and is not the text the format states. Refused for the same
+     reason a digest mismatch is: reportable state **I**.
+   - `vulnerability library updated: … ; 1 object(s) this container does not read were
+     passed over (verdicts.jsonl.gz) …` → **not a fault.** The published corpus grew an
+     object this build is too old to read, and the rest of the epoch imported normally.
+     The format grows additively by design; upgrading the image is what starts reading it,
+     and nothing is wrong until you want what that object carries.
    - `the corpus is published as format 'epoch/2' and this container reads 'epoch/1';
      update the container` → exactly what it says: the published format moved ahead of
      this build. Settings › Support shows the build; upgrade the image.

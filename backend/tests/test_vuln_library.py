@@ -3,16 +3,17 @@
 The library arrives as one published epoch — a signed link on the daily exchange, a
 bundle, a manifest that digests every object in it. This suite drives the committed
 fixture epoch (`tests/fixtures/epochs/0001/`, copied from LoonVD-Internal PR #12) through
-the loader and asserts the three things the ruling is made of:
+the loader and asserts the four things the ruling is made of:
 
 * **it is verified whole, or it is refused whole.** A tampered object, a manifest that is
   not the one the pointer signed, a member outside the epoch's directory, a row carrying
   an id in a namespace nothing mints — each is a named refusal, and each leaves the
   previous epoch answering;
-* **a row is the only thing that means "clean".** A build with no row reads `None` —
-  `unknown_app`, dated, never zero — even when the epoch knows the title, because the
-  branch that turns that into a positive clean bill needs the pod's own Jamf stamp and is
-  #381's;
+* **the verdict comes from rows alone** (ruling R-D). A build with no row reads `None` —
+  `unknown_app`, dated, never zero — even when the epoch compiled its title, because
+  `titles.jsonl` is coverage metadata and one `key_title` is shared by many Jamf titles;
+* **what it does not read, it does not refuse.** An epoch that grew a fourth object
+  imports, and the object is counted and named rather than passed over in silence;
 * **the aggregates are the corpus's, not this container's.** The row carries a capped id
   list beside uncapped counts, so `vuln_block` reports what was counted rather than
   recounting a list the cap already bit — and the block it produces is byte-identical to
@@ -32,6 +33,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from app.core import vuln_library
 from app.core.content_keys import app_full_key, app_title_key
 from app.core.egress import BlockedCorpusUrl, validate_corpus_url
 from app.core.vuln import NO_CORPUS, AssessedBuild, VulnCorpus, VulnFinding, loaded_corpus, vuln_block
@@ -59,6 +61,7 @@ SIGNATURE = POINTER["signature"]
 WIRESHARK_TITLE = app_title_key("Wireshark.app", "org.wireshark.Wireshark")
 WIRESHARK_BUILD = app_full_key("Wireshark.app", "org.wireshark.Wireshark", "4.2.0", None)
 CLEAN_BUILD = app_full_key("LoonVD Fixture Clean.app", "io.loonsec.fixture.clean", "2.6.0", None)
+CLEAN_TITLE = app_title_key("LoonVD Fixture Clean.app", "io.loonsec.fixture.clean")
 STALE_TITLE = app_title_key("LoonVD Fixture Stale.app", "io.loonsec.fixture.stale")
 STALE_UNASSESSED_BUILD = app_full_key("LoonVD Fixture Stale.app", "io.loonsec.fixture.stale", "3.2.0", None)
 UNKNOWN_TITLE = app_title_key("LoonVD Fixture Unknown.app", "io.loonsec.fixture.unknown")
@@ -92,21 +95,41 @@ def _raw_bundle(paths: dict[str, bytes]) -> bytes:
     return buffer.getvalue()
 
 
-def _rewritten(*, rows: list[dict] | None = None, manifest: dict | None = None) -> tuple[bytes, str]:
-    """A well-formed bundle with these rows, its manifest digests and counts corrected,
+def _rewritten(
+    *,
+    rows: list[dict] | None = None,
+    titles: list[dict] | None = None,
+    manifest: dict | None = None,
+    raw_objects: dict[str, bytes] | None = None,
+    extra: dict[str, bytes] | None = None,
+    objects_extra: dict[str, dict] | None = None,
+) -> tuple[bytes, str]:
+    """A well-formed bundle with these objects, its manifest digests and counts corrected,
     and the signature a pointer would carry for it. The way an epoch that is *valid* but
-    says something this container refuses gets built."""
+    says something this container refuses gets built.
+
+    `raw_objects` replaces a known object's stored bytes without re-encoding them (the way
+    to hand the loader an object that is not text at all); `extra` adds members the format
+    does not name today, described in the manifest as a publisher would describe them;
+    `objects_extra` describes one in the manifest without shipping it."""
     members = _members()
     if rows is not None:
         members[ROWS_NAME] = gzip.compress(b"".join(json.dumps(row).encode() + b"\n" for row in rows), mtime=0)
+    if titles is not None:
+        members[TITLES_NAME] = gzip.compress(b"".join(json.dumps(title).encode() + b"\n" for title in titles), mtime=0)
+    members.update(raw_objects or {})
+    members.update(extra or {})
     described = json.loads(members[MANIFEST_NAME])
-    for name in (ROWS_NAME, TITLES_NAME):
+    for name in (ROWS_NAME, TITLES_NAME, *(extra or {})):
         payload = members[name]
         described["objects"][name] = {
             "sha256": hashlib.sha256(payload).hexdigest(),
             "bytes": len(payload),
-            "rows": len(gzip.decompress(payload).decode().splitlines()),
+            # Counted on bytes, not on text: an object under test may deliberately not be
+            # UTF-8, and the manifest still has to describe it correctly.
+            "rows": len(gzip.decompress(payload).split(b"\n")) - 1,
         }
+    described["objects"].update(objects_extra or {})
     described.update(manifest or {})
     members[MANIFEST_NAME] = json.dumps(described, indent=2).encode()
     return _bundle(members), hashlib.sha256(members[MANIFEST_NAME]).hexdigest()
@@ -156,7 +179,15 @@ def test_the_published_epoch_loads_and_is_what_it_says_it_is() -> None:
     assert epoch.asof == datetime(2026, 9, 10, 20, 0, 0, tzinfo=UTC)
     assert epoch.asof.date() == date(2026, 9, 10)
     assert len(epoch.rows) == 3
-    assert len(epoch.titles) == 3
+    # Four title lines for three applications: Jamf publishes one patch title per version
+    # line, so `5F6` ("Wireshark 4.2") and `612` ("Wireshark") both name Wireshark.app and
+    # both carry one `key_title`. Keyed on `title_id`, which is what they differ in.
+    assert len(epoch.titles) == 4
+    assert {coverage.key_title for coverage in epoch.titles.values()} == {
+        WIRESHARK_TITLE,
+        STALE_TITLE,
+        CLEAN_TITLE,
+    }
     # The manifest in the bundle is byte-identical to the published loose one — the
     # property that makes the bundle a transport rather than a second source of truth.
     assert _members()[MANIFEST_NAME] == (EPOCH / MANIFEST_NAME).read_bytes()
@@ -180,7 +211,7 @@ def test_the_wireshark_row_is_keyed_the_way_this_container_keys_an_installed_bui
     assert row.truncated is False
     assert len(row.ids) == 17
     assert row.ids[0] == "CVE-2025-1492"
-    assert epoch.titles[WIRESHARK_TITLE].catalog_last_modified == "2026-09-09T04:11:00Z"
+    assert epoch.titles["5F6"].catalog_last_modified == "2025-10-09T08:24:33Z"
 
 
 def test_assessed_and_clean_is_a_row_and_never_an_absent_one() -> None:
@@ -227,7 +258,6 @@ def test_a_manifest_that_is_not_the_one_the_pointer_signed_is_refused() -> None:
         "../escape.json",
         "0001/../../escape.json",
         "/etc/passwd",
-        "0001/extra.txt",  # a fourth member the format does not list
         "manifest.json",  # no top-level directory at all
         "0002/manifest.json",  # a second top-level directory
     ],
@@ -242,6 +272,30 @@ def test_a_member_the_format_does_not_license_is_refused_before_it_is_read(path:
     with pytest.raises(CorpusRefused) as refused:
         read_bundle(_raw_bundle(paths), signature=SIGNATURE)
     assert refused.value.state == "bundle_malformed"
+
+
+def test_an_epoch_that_grew_a_fourth_object_imports_and_the_extra_one_is_named() -> None:
+    """The additive-only clause, where it bites first. The community `verdicts` object this
+    channel is promised is exactly a fourth entry, and a reader that refused it would freeze
+    every deployed container at its last three-object epoch the day it shipped — containers
+    in the field cannot be updated in lockstep, which is the contract's own opening.
+
+    So an unknown member is read past and an unknown manifest entry is passed over — and
+    **counted and named**, because a corpus that quietly grew an object nobody reads is a
+    fact an operator should be able to see."""
+    bundle, signature = _rewritten(extra={"verdicts.jsonl.gz": gzip.compress(b'{"key_full":"v1:00"}\n', mtime=0)})
+    epoch = read_bundle(bundle, signature=signature)
+
+    assert len(epoch.rows) == 3, "the objects this container reads are unaffected"
+    assert len(epoch.titles) == 4
+    assert epoch.ignored == ("verdicts.jsonl.gz",)
+
+
+def test_an_unknown_object_in_the_manifest_alone_is_also_named() -> None:
+    """The manifest is where a grown object is announced; the bundle is where it arrives.
+    Either half on its own is still something this container passed over."""
+    bundle, signature = _rewritten(objects_extra={"verdicts.jsonl.gz": {"sha256": "0" * 64, "bytes": 1, "rows": 1}})
+    assert read_bundle(bundle, signature=signature).ignored == ("verdicts.jsonl.gz",)
 
 
 def test_a_bundle_missing_an_object_is_refused() -> None:
@@ -289,6 +343,41 @@ def test_a_row_the_wire_would_refuse_at_enqueue_is_refused_at_import(overrides: 
     assert "rows line 1" in str(refused.value)
 
 
+def test_an_object_that_matches_its_digest_and_is_not_text_is_a_named_refusal() -> None:
+    """A digest is a claim about bytes and not about text. An object that hashes exactly as
+    its manifest states and is nevertheless not UTF-8 used to leave a `UnicodeDecodeError`
+    travelling out of the import, past `except CorpusRefused`, into the exchange tick's
+    blanket handler — where the operator got `sharing exchange tick failed` and a stack
+    trace instead of the named state §5 promises."""
+    bundle, signature = _rewritten(raw_objects={TITLES_NAME: gzip.compress(b"\xff\xfe not text at all\n", mtime=0)})
+    with pytest.raises(CorpusRefused) as refused:
+        read_bundle(bundle, signature=signature)
+    assert refused.value.state == "object_not_utf8"
+    assert TITLES_NAME in str(refused.value)
+    assert "still answers from the epoch it had" in str(refused.value)
+
+
+def test_titles_are_keyed_on_the_jamf_title_id_and_one_key_title_may_repeat() -> None:
+    """Ruling R-D. Jamf publishes one patch title per version line, so sixteen of the
+    catalog's seventeen Wireshark titles hash to one `key_title`; keyed on that, fifteen of
+    them would vanish and one arbitrary stamp would answer for all sixteen. The fixture
+    carries the repeat (`5F6` and `612`) rather than describing it."""
+    epoch = read_bundle(BUNDLE, signature=SIGNATURE)
+    wireshark = [coverage for coverage in epoch.titles.values() if coverage.key_title == WIRESHARK_TITLE]
+    assert {coverage.title_id for coverage in wireshark} == {"5F6", "612"}
+    assert len({coverage.catalog_last_modified for coverage in wireshark}) == 2, "two titles, two stamps, one key"
+
+
+def test_a_titles_line_with_no_title_id_is_refused_because_nothing_could_key_it() -> None:
+    bundle, signature = _rewritten(
+        titles=[{"key_title": WIRESHARK_TITLE, "catalog_last_modified": "2026-09-09T04:11:00Z", "versions_compiled": 1}]
+    )
+    with pytest.raises(CorpusRefused) as refused:
+        read_bundle(bundle, signature=signature)
+    assert refused.value.state == "epoch_malformed"
+    assert "title_id" in str(refused.value)
+
+
 def test_a_row_count_the_manifest_disagrees_with_is_refused() -> None:
     """The manifest counts lines after decompression, so a file that unpacks to fewer rows
     than it claims is a truncation the digest alone would not name."""
@@ -313,7 +402,43 @@ def test_the_pointer_is_read_tolerantly_and_a_missing_one_is_not_an_error() -> N
     assert corpus_pointer({"signature": SIGNATURE}) is None
     assert corpus_pointer({"signature": SIGNATURE, "asof": "2026-09-10T20:00:00Z", "url": CORPUS_URL}) is not None
     assert corpus_pointer({"signature": "not-a-digest", "asof": "2026-09-10T20:00:00Z", "url": CORPUS_URL}) is None
-    assert corpus_pointer({"signature": SIGNATURE, "asof": "the tenth", "url": CORPUS_URL}) is None
+
+
+def test_a_pointer_without_asof_still_loads_because_the_manifest_dates_the_epoch() -> None:
+    """`asof` rides on the pointer as a convenience for a server answering a link from one
+    object read; the manifest is the authority and is what `read_bundle` dates the epoch
+    from. It was added to the pointer after the first pointers were written, so refusing
+    an epoch over a field this container never consults would buy a silent `off` for
+    nothing."""
+    pointer = corpus_pointer({"signature": SIGNATURE, "url": CORPUS_URL})
+    assert pointer is not None and pointer.asof is None
+    unparseable = corpus_pointer({"signature": SIGNATURE, "asof": "the tenth", "url": CORPUS_URL})
+    assert unparseable is not None and unparseable.asof is None
+    assert read_bundle(BUNDLE, signature=pointer.signature).asof == datetime(2026, 9, 10, 20, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("corpus", "names"),
+    [
+        ("not-a-mapping", "an object"),
+        ({"url": CORPUS_URL}, "no signature"),
+        ({"signature": "not-a-digest", "url": CORPUS_URL}, "not a sha256"),
+        ({"signature": SIGNATURE}, "no link"),
+    ],
+)
+def test_a_pointer_that_cannot_be_used_says_why_rather_than_going_quiet(corpus: object, names: str, caplog) -> None:
+    """A `corpus` key the server sent and this container could not use is a fourth way to
+    reach a silent `off`, and silence there looks exactly like an epoch that never moved.
+    Every drop names its reason (docs/diagnosability.md rule 3); an ABSENT key stays silent,
+    because "nothing today" is the ordinary answer and not a fault."""
+    with caplog.at_level("WARNING"):
+        assert corpus_pointer(corpus) is None
+    assert names in caplog.text
+    assert "assessment: off" in caplog.text
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        assert corpus_pointer(None) is None
+    assert caplog.text == ""
 
 
 def test_a_corpus_link_this_container_will_not_dial_is_not_a_pointer(caplog) -> None:
@@ -378,6 +503,29 @@ async def test_a_redirect_is_followed_only_somewhere_this_container_would_have_d
 
 
 @pytest.mark.asyncio
+async def test_the_ceiling_stops_the_download_rather_than_measuring_it_afterwards(monkeypatch) -> None:
+    """A cap applied to `response.content` bounds what is *kept*, not what is *read*: a
+    publisher answering with ten gigabytes would be refused only once ten gigabytes were in
+    this container's memory. The body is therefore read in chunks and abandoned at the first
+    one that crosses the line — which is what this asserts, by counting the chunks the
+    transport actually got asked for."""
+    monkeypatch.setattr(vuln_library, "_MAX_BUNDLE_BYTES", 32)
+    served: list[int] = []
+
+    async def endless():
+        for index in range(64):
+            served.append(index)
+            yield b"x" * 8
+
+    with pytest.raises(CorpusRefused) as refused:
+        await download_bundle(CORPUS_URL, transport=httpx.MockTransport(lambda _: httpx.Response(200, content=endless())))
+
+    assert refused.value.state == "download_failed"
+    assert "ceiling" in str(refused.value)
+    assert len(served) < 64, "the stream was abandoned, not drained"
+
+
+@pytest.mark.asyncio
 async def test_a_redirect_loop_ends_rather_than_spins() -> None:
     circular = httpx.MockTransport(lambda r: httpx.Response(302, headers={"Location": str(r.url)}))
     with pytest.raises(CorpusRefused) as refused:
@@ -405,12 +553,12 @@ def test_the_library_corpus_satisfies_the_protocol_and_dates_itself() -> None:
 
 
 def test_a_rowless_build_of_a_known_title_is_unknown_app_and_never_a_clean_bill() -> None:
-    """The trap §4f exists to name. The epoch knows this title and the pod may well be
-    entitled to a clean answer for this build — but only after comparing the pod's own
-    Jamf catalog stamp to the epoch's, which is a database read at judge time and #381's.
-    Until then the answer is `unknown_app`: dated, never zero, and never `()`."""
+    """The trap §4f exists to name, and since ruling R-D there is no branch that escapes
+    it: the epoch compiled this title, and that licenses nothing. A verdict comes from a
+    row, so a build with no row reads `unknown_app` — dated, never zero, never `()` — and
+    the coverage metadata beside it answers a different question entirely."""
     corpus = LibraryCorpus(_library())
-    assert corpus.library.title_stamp(STALE_TITLE).catalog_last_modified == "2025-03-04T11:20:00Z"
+    assert corpus.library.compiled_title("A17").key_title == STALE_TITLE
     assert corpus.findings(key_title=STALE_TITLE, key_full=STALE_UNASSESSED_BUILD) is None
     assert corpus.findings(key_title=UNKNOWN_TITLE, key_full=UNKNOWN_BUILD) is None
     block = vuln_block(corpus, key_title=STALE_TITLE, key_full=STALE_UNASSESSED_BUILD, as_of=AS_OF)

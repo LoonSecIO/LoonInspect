@@ -2,7 +2,7 @@
   "format": "epoch/1",
   "epoch_id": "0001",
   "asof": "2026-09-10T20:00:00Z",
-  "catalog_snapshot_id": "jamf-catalog-20260909T041100Z",
+  "catalog_snapshot_id": "96bc0122fc8e2d0fef2b2a7553dd713e989727c2462248a989125a75aa61d321",
   "nvd_high_water": "2026-09-10T21:00:00Z",
   "id_namespaces": [
     "CVE"
@@ -14,9 +14,9 @@
       "rows": 3
     },
     "titles.jsonl.gz": {
-      "sha256": "1a1efec25e9f9e7ecf741ddf85da2e1307578fae279a812578b995ee5192f9bb",
-      "bytes": 248,
-      "rows": 3
+      "sha256": "165eca05ac589d9c45080db464e05cf3f8af2defff279174d2d36a042c2931df",
+      "bytes": 311,
+      "rows": 4
     }
   },
   "catalog": null

@@ -21,17 +21,24 @@ aggregates or with `None`, and never with `()` derived from a missing row — th
 trap §4f names. An assessed-and-clean build ships as a row with no ids; a build nobody
 assessed has no row and reads `unknown_app`.
 
-*The tier gate is the shape.* #281's Option A: a pod that has not consented never
-exchanges, so it is never handed a link, so it loads nothing and `loaded_corpus()`
-answers `NO_CORPUS` — byte-identical to every v0 build. There is no second switch to
-forget.
+*The tier gate is the tenant.* #281's Option A, as §8 reads it since 2026-09-11: a pod
+that has not consented never exchanges, so it is never handed a link and loads nothing —
+and because the library is one global artifact on a pod whose tiers are per tenant,
+`loaded_corpus()` also answers `NO_CORPUS` to a tenant whose own tier is `off`, even
+while the pod holds an epoch. `read_tenant_tier` below is what fills that in, once per
+unit of work; `earned_corpus` is the one call every consumer makes.
 
-**What is deliberately not here.** The per-build join at judge time, the stored answer on
-`app_catalog` and `installed_apps`, and the assessed-titles branch that turns a rowless
-build under an unmoved Jamf stamp into a positive clean bill — all #381, which owns them
-because they need the tenant's own catalog. This module stores that manifest and exposes
-it (`title_stamp`) for #381 to read; it does not consult it, so a title with no row for
-the installed build reads `unknown_app` here, which is the conservative direction.
+**What is deliberately not here.** The per-build join at judge time and the stored answer
+on `app_catalog` and `installed_apps` — #381, which owns them because they need the
+tenant's own rows. What is not *anywhere* any more is the branch that would have turned a
+rowless build into a clean bill because its title was compiled under an unmoved Jamf
+stamp: **withdrawn by ruling R-D, 2026-09-11**, on two measurements from the Jamf
+enumeration — one `key_title` is shared by sixteen Wireshark titles, so there is no single
+stamp to compare against, and the two enumerations of the same catalog differ by ~5,000
+versions, so a pod can hold a build the compiler never saw and that build would have read
+clean. This module stores the titles object as **coverage metadata** and exposes it
+(`compiled_title`) for #381's statistics; it is not a verdict input here and must not
+become one there. A build with no row reads `unknown_app`.
 """
 
 from __future__ import annotations
@@ -51,9 +58,19 @@ from sqlalchemy import delete, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.egress import BlockedCorpusUrl, corpus_url_for_log, validate_corpus_url
+from app.core.tenancy import get_tenant_id
 from app.core.user_agent import build_user_agent
-from app.core.vuln import SEVERITY_BANDS, AssessedBuild, VulnFinding, install_corpus
-from app.models.schema import VulnLibraryEpoch, VulnLibraryRow, VulnLibraryTitle
+from app.core.vuln import (
+    SEVERITY_BANDS,
+    TIER_OFF,
+    AssessedBuild,
+    VulnCorpus,
+    VulnFinding,
+    install_corpus,
+    install_tenant_tier,
+    loaded_corpus,
+)
+from app.models.schema import DataSharingSettings, VulnLibraryEpoch, VulnLibraryRow, VulnLibraryTitle
 
 logger = logging.getLogger(__name__)
 
@@ -62,9 +79,21 @@ logger = logging.getLogger(__name__)
 # `epoch/2` a new format rather than a silent misread of the old one.
 EPOCH_FORMAT = "epoch/1"
 
-# The three members a bundle may carry, under one top-level directory named by the epoch
-# id. Anything else — an absolute path, a `..`, a symlink, a fourth file — is refused
-# before a byte is read: this arrives over a link, and `tarfile` writes outside its
+# The three objects this container reads. An epoch may carry more — the format's
+# additive-only clause promises exactly that, and the community `verdicts` object this
+# channel is next in line for is precisely a fourth entry. So an unknown member under the
+# epoch-id directory, and an unknown entry in the manifest's `objects`, are **passed
+# over** rather than refused: a reader that refused them would freeze every deployed
+# container at its last three-object epoch the day the fourth shipped, and containers in
+# the field cannot be updated in lockstep.
+#
+# Passing over is not silence. `read_bundle` counts and names what it ignored and the
+# import line says so, because a corpus that quietly grew an object nobody reads is a fact
+# an operator should be able to see (the epoch contract, §3).
+#
+# The path rules are still enforced whatever the member is called — one top-level
+# directory named by the epoch id, no absolute path, no `..`, regular files only, the
+# per-member size cap — because this arrives over a link and `tarfile` writes outside its
 # destination happily if asked.
 MANIFEST_NAME = "manifest.json"
 ROWS_NAME = "rows.jsonl.gz"
@@ -92,7 +121,8 @@ class CorpusRefused(Exception):
     """An epoch this container will not import, and the state it is refused under.
 
     `state` is one of the words `docs/troubleshooting.md` §5 walks — `download_failed`,
-    `bundle_malformed`, `signature_mismatch`, `digest_mismatch`, `epoch_malformed` — and
+    `bundle_malformed`, `signature_mismatch`, `digest_mismatch`, `object_not_utf8`,
+    `epoch_malformed`, and `pointer_unusable` for a link that never became a download — and
     the message is the operator's sentence: what failed, why, and what to check
     (docs/diagnosability.md rule 3). Raised, logged once at the import site, and never
     re-raised at a device sync: a refused epoch changes nothing, so the previous one keeps
@@ -113,22 +143,40 @@ class CorpusPointer:
     parsed. A rollback moves the pointer to a lower epoch id and must still be imported,
     which is exactly what a signature comparison gets right and a version comparison gets
     wrong.
+
+    **`asof` is optional, and nothing here reads it.** The format's own words: *"the
+    manifest is the authority; the pointer is a copy"* — `read_bundle` dates the epoch
+    from `manifest.asof` and this field is a convenience for a server answering a link
+    from one object read. It was added to the pointer after the first pointers were
+    written, so a pointer without it is an older pointer and not a broken one; refusing
+    the epoch over a field this container never consults would be a silent `off` bought
+    for nothing.
     """
 
     signature: str
-    asof: datetime
+    asof: datetime | None
     url: str
 
 
 @dataclass(frozen=True, slots=True)
-class TitleStamp:
-    """One line of `titles.jsonl` — a Jamf title this epoch compiled.
+class TitleCoverage:
+    """One line of `titles.jsonl` — **coverage metadata about a Jamf title**, and never a
+    verdict input (ruling R-D, 2026-09-11: verdicts come from rows alone).
+
+    `title_id` is Jamf's own title id and is what the object is unique on. `key_title` is
+    the container's `app.title` key over `(appName, bundleId)` and **repeats** — sixteen
+    Wireshark titles in Jamf's catalog share one — so it is an index and never a key. That
+    is the whole reason the id arrived: keying this object on `key_title` would have
+    silently collapsed fifteen of those sixteen and left one arbitrary stamp answering for
+    all of them.
 
     `catalog_last_modified` is kept as **the string Jamf wrote**, never parsed into a
-    datetime: the epoch's rule is stamp *equality* against the pod's own catalog, in
-    either direction, and parsing invites a tolerance nobody ruled.
+    datetime: the comparison #381 makes with it is string *equality* against the pod's own
+    catalog, in either direction, and parsing invites a tolerance nobody ruled.
     """
 
+    title_id: str
+    key_title: str
     catalog_last_modified: str
     versions_compiled: int
 
@@ -151,27 +199,39 @@ class VulnLibrary:
     asof_at: datetime
     loaded_at: datetime
     rows: Mapping[str, AssessedBuild]
-    titles: Mapping[str, TitleStamp]
+    # Keyed by `title_id`, which is what the object is unique on. `key_title` repeats, so
+    # there is deliberately no by-key map here: #381 reads the table, which carries the
+    # index on `key_title` that a one-to-many lookup actually needs.
+    titles: Mapping[str, TitleCoverage]
+    # The object names this container passed over — additive entries a newer container
+    # reads. Named on the import line, empty on every epoch published so far.
+    ignored: tuple[str, ...] = ()
 
     def row_for(self, key_full: str) -> AssessedBuild | None:
         """The assessed build, or `None` for *this epoch did not assess this build*."""
         return self.rows.get(key_full)
 
-    def title_stamp(self, key_title: str) -> TitleStamp | None:
-        """What the epoch compiled for this title, for #381's stamp comparison. `None`
-        means the epoch has never heard of the title at all."""
-        return self.titles.get(key_title)
+    def compiled_title(self, title_id: str) -> TitleCoverage | None:
+        """**Coverage metadata** for one Jamf title id: what the epoch compiled, and when
+        the catalog it compiled against was last modified. `None` means this epoch did not
+        compile that title.
+
+        Not a verdict, and not an input to one (R-D). Nothing in the read path calls it;
+        it exists so #381 can report how much of a tenant's catalog an epoch covered.
+        """
+        return self.titles.get(title_id)
 
 
 class LibraryCorpus:
     """`VulnCorpus` over a loaded epoch — the seam `vuln_block` and the page both read.
 
     `findings()` answers with the row's `AssessedBuild` or with `None`, and with nothing
-    else. It deliberately does **not** consult `key_title`: the epoch's clean-because-the-
-    title-was-compiled branch needs the pod's own Jamf catalog stamp, which is a database
-    read at judge time and belongs to #381. Until then a rowless build of a known title
-    reads `unknown_app` — dated, never zero, and never a clean bill for a build this
-    container cannot prove was assessed (§4f).
+    else. It deliberately does **not** consult `key_title`, and since ruling R-D
+    (2026-09-11) nothing ever will: the verdict comes from `rows.jsonl` alone, so a rowless
+    build reads `unknown_app` — dated, never zero, and never a clean bill for a build this
+    container cannot prove was assessed (§4f). `key_title` stays on the signature because
+    the protocol is #249's and the wire's question is still "does the corpus know this app
+    at all"; the library's answer to it is simply that a row is the only evidence.
     """
 
     __slots__ = ("library",)
@@ -193,29 +253,49 @@ class LibraryCorpus:
 def corpus_pointer(value: object) -> CorpusPointer | None:
     """`response["corpus"]`, or `None` for "nothing today".
 
-    Tolerant by contract, like every other field of that response: a missing key, a wrong
-    type, a malformed timestamp and a URL this container will not dial are all "no
-    pointer", never an error — a collector that answers `{}` is a valid peer, and the
-    exchange must not fail on a field the server has not implemented yet.
+    Tolerant by contract, like every other field of that response: a wrong type, a missing
+    signature, a missing URL and a URL this container will not dial are all "no pointer",
+    never an error — a collector that answers `{}` is a valid peer, and the exchange must
+    not fail on a field the server has not implemented yet.
 
-    A refused **URL** is the one case that says so out loud, at warning: the server named
-    a destination and this container declined it, which is a fact an operator should be
-    able to find rather than a silence that looks like an epoch that never moved.
+    **An absent `corpus` key is silent; a present one that cannot be used is not.** No
+    pointer at all is the ordinary case and says nothing. But a server that named a corpus
+    and got nowhere is a fact an operator has to be able to find: every drop below logs
+    the reason it dropped, at warning, because the alternative is a silent `off` that
+    looks exactly like an epoch that never moved (docs/troubleshooting.md §5).
+
+    `asof` is read when it parses and left `None` when it does not — it is a copy of the
+    manifest's own field, the manifest is the authority, and nothing here consults it.
     """
+    if value is None:
+        return None
     if not isinstance(value, Mapping):
-        return None
+        return _no_pointer(f"the exchange's `corpus` field is a {type(value).__name__} and the format states an object")
     signature, url = value.get("signature"), value.get("url")
-    asof = _parse_timestamp(value.get("asof"))
-    if not isinstance(signature, str) or not isinstance(url, str) or asof is None:
-        return None
+    if not isinstance(signature, str):
+        return _no_pointer("the exchange named a corpus with no signature, so nothing could say whether it moved")
     if len(signature) != 64 or not all(c in "0123456789abcdef" for c in signature):
-        return None
+        return _no_pointer("the exchange named a corpus whose signature is not a sha256 digest")
+    if not isinstance(url, str):
+        return _no_pointer("the exchange named a corpus with no link to download it from")
     try:
         url = validate_corpus_url(url)
     except BlockedCorpusUrl as exc:
-        logger.warning("vulnerability library not updated: the exchange named a corpus link this container refuses (%s)", exc)
-        return None
-    return CorpusPointer(signature=signature, asof=asof, url=url)
+        return _no_pointer(f"the exchange named a corpus link this container refuses ({exc})")
+    return CorpusPointer(signature=signature, asof=_parse_timestamp(value.get("asof")), url=url)
+
+
+def _no_pointer(because: str) -> None:
+    """One dropped pointer, with the reason named. Warning rather than debug: the day this
+    fires, `assessment` reads `off` for every app and this line is the only thing that
+    says why."""
+    logger.warning(
+        "vulnerability library not updated: %s. Every app reads assessment: off until a usable link arrives "
+        "(docs/troubleshooting.md §5)",
+        because,
+        extra={"state": "pointer_unusable"},
+    )
+    return None
 
 
 def _parse_timestamp(value: object) -> datetime | None:
@@ -238,6 +318,12 @@ async def download_bundle(url: str, *, transport: httpx.AsyncBaseTransport | Non
     The transport is a parameter for the reason `post_exchange` has one: a test drives the
     whole loader against the committed fixture epoch with no network at all, which is also
     the only way to assert what happens to a truncated or tampered download.
+
+    **The ceiling is enforced while the body streams, not after it lands.** Reading the
+    whole response first and measuring it afterwards bounds what is *kept* and not what is
+    *read*: a publisher answering with ten gigabytes would be refused only once ten
+    gigabytes were in this container's memory, which is the failure the cap exists to
+    prevent rather than a cap on it.
     """
     headers = {"User-Agent": build_user_agent("corpus")}
     try:
@@ -247,12 +333,12 @@ async def download_bundle(url: str, *, transport: httpx.AsyncBaseTransport | Non
             # link passes, and a `302` then points the request at 169.254.169.254 with
             # nothing checking. Three hops is more than a signed object store needs.
             for _ in range(_MAX_REDIRECTS + 1):
-                response = await client.get(url, headers=headers)
-                if response.is_redirect and response.has_redirect_location:
-                    url = validate_corpus_url(str(response.next_request.url))
-                    continue
-                response.raise_for_status()
-                data = response.content
+                async with client.stream("GET", url, headers=headers) as response:
+                    if response.is_redirect and response.has_redirect_location:
+                        url = validate_corpus_url(str(response.next_request.url))
+                        continue
+                    response.raise_for_status()
+                    data = await _read_capped(response)
                 break
             else:
                 raise CorpusRefused("download_failed", f"the corpus link redirected more than {_MAX_REDIRECTS} times")
@@ -260,12 +346,30 @@ async def download_bundle(url: str, *, transport: httpx.AsyncBaseTransport | Non
         raise CorpusRefused("download_failed", f"the corpus link redirected somewhere this container refuses: {exc}") from exc
     except (httpx.HTTPError, ValueError) as exc:
         raise CorpusRefused("download_failed", f"the corpus download did not complete: {exc}") from exc
-    if len(data) > _MAX_BUNDLE_BYTES:
-        raise CorpusRefused(
-            "download_failed",
-            f"the corpus download is {len(data)} bytes, past the {_MAX_BUNDLE_BYTES}-byte ceiling this container accepts",
-        )
     return data
+
+
+async def _read_capped(response: httpx.Response) -> bytes:
+    """The response body, or a refusal at the first chunk that crosses the ceiling.
+
+    Raised from inside the stream so the connection is dropped where it is: `CorpusRefused`
+    is neither an `httpx.HTTPError` nor a `ValueError`, so it passes the caller's handlers
+    untouched and arrives as the named state rather than as "the download did not
+    complete", which would be the wrong sentence for a publisher that answered perfectly
+    well with far too much.
+    """
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in response.aiter_bytes():
+        size += len(chunk)
+        if size > _MAX_BUNDLE_BYTES:
+            raise CorpusRefused(
+                "download_failed",
+                f"the corpus download passed the {_MAX_BUNDLE_BYTES}-byte ceiling this container accepts and was stopped "
+                "there; nothing was imported",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,18 +381,23 @@ class Epoch:
     asof: datetime
     manifest: Mapping[str, object]
     rows: Mapping[str, AssessedBuild]
-    titles: Mapping[str, TitleStamp]
+    titles: Mapping[str, TitleCoverage]
+    # Objects this epoch carries and this container does not read — the additive-only
+    # clause in effect. Counted and named rather than silently dropped.
+    ignored: tuple[str, ...] = ()
 
 
 def read_bundle(data: bytes, *, signature: str) -> Epoch:
     """Verify a downloaded bundle whole, and answer with what it contains.
 
-    In order, because each step is what makes the next one meaningful: the members are
-    what the format licenses and nothing else; the manifest inside the bundle is the one
-    the pointer signed; the manifest is a format this container knows; every object it
-    names is present, is the length it claims and hashes to the digest it claims; every
-    object holds the number of lines it claims; and every line is a row this container can
+    In order, because each step is what makes the next one meaningful: the member paths
+    are ones the format licenses; the manifest inside the bundle is the one the pointer
+    signed; the manifest is a format this container knows; **the objects this container
+    reads** are present, are the length they claim and hash to the digest they claim;
+    each holds the number of lines it claims; and every line is a row this container can
     store. Only then does the caller touch the database.
+
+    An object neither in that list is passed over and named, not refused (see `_MEMBERS`).
     """
     top, members = _bundle_members(data)
     manifest_bytes = members[MANIFEST_NAME]
@@ -320,30 +429,40 @@ def read_bundle(data: bytes, *, signature: str) -> Epoch:
             raise CorpusRefused("epoch_malformed", f"epoch {epoch_id}'s manifest does not describe {name}")
         payloads[name] = _verified_lines(epoch_id, name, members[name], described)
 
+    # Everything else the epoch carries, whether the manifest listed it, the bundle held
+    # it, or both. Sorted so the log line reads the same on every container.
+    ignored = tuple(sorted((set(objects) | set(members)) - set(_MEMBERS)))
+
     rows: dict[str, AssessedBuild] = {}
     for index, line in enumerate(payloads[ROWS_NAME], start=1):
         key_full, row = _row(epoch_id, index, line)
         rows[key_full] = row
-    titles: dict[str, TitleStamp] = {}
+    titles: dict[str, TitleCoverage] = {}
     for index, line in enumerate(payloads[TITLES_NAME], start=1):
-        key_title, stamp = _title(epoch_id, index, line)
-        titles[key_title] = stamp
+        coverage = _title(epoch_id, index, line)
+        titles[coverage.title_id] = coverage
 
     asof = _parse_timestamp(manifest.get("asof"))
     if asof is None:
         raise CorpusRefused("epoch_malformed", f"epoch {epoch_id}'s manifest carries no usable `asof`, so nothing could date it")
-    return Epoch(epoch_id=epoch_id, signature=signature, asof=asof, manifest=manifest, rows=rows, titles=titles)
+    return Epoch(epoch_id=epoch_id, signature=signature, asof=asof, manifest=manifest, rows=rows, titles=titles, ignored=ignored)
 
 
 def _bundle_members(data: bytes) -> tuple[str, dict[str, bytes]]:
-    """The top-level directory and the three members by bare name, or a refusal naming
-    what the bundle carried instead.
+    """The top-level directory and every member by bare name, or a refusal naming what the
+    bundle carried instead.
 
     Read into memory rather than extracted: a `tarfile` asked to write a member called
     `../etc/x` will do it, and the surest way not to be traversed is never to write. The
-    contract's own rule is enforced anyway — one top-level directory named by the epoch
-    id, no absolute path, no `..`, regular files only — because a bundle that breaks it is
-    not one this container should be reading at all.
+    contract's own path rules are enforced anyway — one top-level directory named by the
+    epoch id, no absolute path, no `..`, regular files only — because a bundle that breaks
+    them is not one this container should be reading at all.
+
+    **What is not enforced is the member list.** A member this container does not know is
+    carried back like any other and passed over by `read_bundle`; only the three it reads
+    are required. The rule the refusals here defend is *where* a member may live, which is
+    a safety property of unpacking something that arrived over a link; *what* an epoch may
+    contain is the format's additive-only clause and grows without this container.
     """
     try:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as bundle:
@@ -356,8 +475,12 @@ def _bundle_members(data: bytes) -> tuple[str, dict[str, bytes]]:
                 if name.startswith("/") or ".." in name.split("/"):
                     raise CorpusRefused("bundle_malformed", f"the corpus bundle carries {name!r}, a path outside the epoch")
                 parts = name.split("/")
-                if len(parts) != 2 or parts[1] not in _MEMBERS:
-                    raise CorpusRefused("bundle_malformed", f"the corpus bundle carries {name!r}, which the format does not list")
+                if len(parts) != 2 or not parts[1]:
+                    raise CorpusRefused(
+                        "bundle_malformed",
+                        f"the corpus bundle carries {name!r}, and the format puts every member directly under one directory "
+                        "named by the epoch id",
+                    )
                 if top is not None and parts[0] != top:
                     raise CorpusRefused("bundle_malformed", "the corpus bundle carries more than one top-level directory")
                 top = parts[0]
@@ -437,7 +560,21 @@ def _json_lines(epoch_id: str, name: str, raw: bytes) -> Iterator[Mapping[str, o
             "epoch_malformed",
             f"epoch {epoch_id}'s {name} decompresses to {len(decompressed)} bytes, past the ceiling this container accepts",
         )
-    for index, line in enumerate(decompressed.decode("utf-8").splitlines(), start=1):
+    try:
+        # Inside the guard, not outside it. An object can pass its digest and still not be
+        # text — a publisher that wrote a binary object under a `.jsonl.gz` name digests
+        # perfectly well — and an unguarded `.decode` makes that a `UnicodeDecodeError`
+        # travelling out of the import, past `load_epoch_if_new`'s `except CorpusRefused`,
+        # into the exchange tick's blanket handler, where the operator gets a traceback
+        # under "sharing exchange tick failed" instead of the named state §5 promises.
+        text = decompressed.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise CorpusRefused(
+            "object_not_utf8",
+            f"epoch {epoch_id}'s {name} matches the digest its manifest states but is not UTF-8 text ({exc}); the format "
+            "states gzip over UTF-8 JSON Lines, so nothing was imported and the library still answers from the epoch it had",
+        ) from exc
+    for index, line in enumerate(text.splitlines(), start=1):
         if not line.strip():
             continue
         try:
@@ -489,15 +626,27 @@ def _published(value: object) -> date | None:
     return parsed.date()
 
 
-def _title(epoch_id: str, index: int, line: Mapping[str, object]) -> tuple[str, TitleStamp]:
+def _title(epoch_id: str, index: int, line: Mapping[str, object]) -> TitleCoverage:
+    """One `titles.jsonl` line as coverage metadata, or a refusal naming the line.
+
+    `title_id` is required, because it is what the object is unique on and what the table
+    is keyed by (R-D). A line without one cannot be stored — and, worse, could not be told
+    apart from the fifteen other titles that share its `key_title`.
+    """
+    title_id = line.get("title_id")
     key_title = line.get("key_title")
     stamp = line.get("catalog_last_modified")
     compiled = line.get("versions_compiled")
+    if not isinstance(title_id, str) or not title_id:
+        raise CorpusRefused(
+            "epoch_malformed",
+            f"epoch {epoch_id}'s titles line {index} carries no `title_id`, which is what the object is unique on",
+        )
     if not isinstance(key_title, str) or not key_title.startswith("v1:"):
         raise CorpusRefused("epoch_malformed", f"epoch {epoch_id}'s titles line {index} carries no v1 content key")
     if not isinstance(stamp, str) or not isinstance(compiled, int):
         raise CorpusRefused("epoch_malformed", f"epoch {epoch_id}'s titles line {index} is not the shape the format states")
-    return key_title, TitleStamp(catalog_last_modified=stamp, versions_compiled=compiled)
+    return TitleCoverage(title_id=title_id, key_title=key_title, catalog_last_modified=stamp, versions_compiled=compiled)
 
 
 # --- storage: one epoch at a time, replaced whole --------------------------------------
@@ -537,11 +686,12 @@ async def store_epoch(db: AsyncSession, epoch: Epoch) -> VulnLibrary:
         await db.execute(insert(VulnLibraryRow), rows[start : start + _CHUNK])
     titles = [
         {
-            "key_title": key_title,
-            "catalog_last_modified": stamp.catalog_last_modified,
-            "versions_compiled": stamp.versions_compiled,
+            "title_id": coverage.title_id,
+            "key_title": coverage.key_title,
+            "catalog_last_modified": coverage.catalog_last_modified,
+            "versions_compiled": coverage.versions_compiled,
         }
-        for key_title, stamp in epoch.titles.items()
+        for coverage in epoch.titles.values()
     ]
     for start in range(0, len(titles), _CHUNK):
         await db.execute(insert(VulnLibraryTitle), titles[start : start + _CHUNK])
@@ -567,6 +717,7 @@ async def store_epoch(db: AsyncSession, epoch: Epoch) -> VulnLibrary:
         loaded_at=loaded_at,
         rows=dict(epoch.rows),
         titles=dict(epoch.titles),
+        ignored=epoch.ignored,
     )
 
 
@@ -624,7 +775,12 @@ async def _library_from_rows(db: AsyncSession, epoch_row: VulnLibraryEpoch) -> V
         for row in (await db.execute(select(VulnLibraryRow))).scalars()
     }
     titles = {
-        row.key_title: TitleStamp(catalog_last_modified=row.catalog_last_modified, versions_compiled=row.versions_compiled)
+        row.title_id: TitleCoverage(
+            title_id=row.title_id,
+            key_title=row.key_title,
+            catalog_last_modified=row.catalog_last_modified,
+            versions_compiled=row.versions_compiled,
+        )
         for row in (await db.execute(select(VulnLibraryTitle))).scalars()
     }
     return VulnLibrary(
@@ -675,11 +831,72 @@ async def load_epoch_if_new(
         return None
     install_corpus(LibraryCorpus(library))
     logger.info(
-        "vulnerability library updated: epoch %s, generated %s, %d assessed builds and %d titles",
+        "vulnerability library updated: epoch %s, generated %s, %d assessed builds and %d titles%s",
         library.epoch_id,
         library.as_of.isoformat(),
         len(library.rows),
         len(library.titles),
-        extra={"epoch_id": library.epoch_id, "corpus_as_of": library.as_of.isoformat()},
+        _ignored_clause(library.ignored),
+        extra={
+            "epoch_id": library.epoch_id,
+            "corpus_as_of": library.as_of.isoformat(),
+            # Counted and named, in the structured fields as well as the sentence: an
+            # epoch that grew an object nobody reads is a fact an operator should be able
+            # to search for, and `ignored_objects: 0` is how they know nothing was hidden.
+            "ignored_objects": len(library.ignored),
+            "ignored_object_names": list(library.ignored),
+        },
     )
     return library
+
+
+def _ignored_clause(ignored: Sequence[str]) -> str:
+    """The sentence's tail when an epoch carried objects this container does not read.
+
+    Empty when it did not, so the ordinary line reads exactly as it did before there was
+    anything to say — and names the next check when there is, because "why is my new
+    object doing nothing" is answered by the container's version and not by this epoch.
+    """
+    if not ignored:
+        return ""
+    return (
+        f"; {len(ignored)} object(s) this container does not read were passed over ({', '.join(ignored)}) — "
+        "the format grows additively, so a newer container reads them"
+    )
+
+
+# --- who may read it: the per-tenant tier gate (#281 Option A, §8) ----------------------
+
+
+async def read_tenant_tier(db: AsyncSession) -> str:
+    """Read the acting tenant's data-sharing tier and put it behind `loaded_corpus()`.
+
+    **Once per unit of work, and never per device or per app.** One sweep run, one
+    re-emit, one API response, one exchange: the tier is a per-tenant row, the answer is
+    the same for every device in that run, and `loaded_corpus()` then reads it from a
+    dictionary however many times it is asked ("cache, don't calculate"). `earned_corpus`
+    below is the pairing every consumer actually calls.
+
+    Answers `off` outside a tenant context and for a tenant with no settings row — an
+    install nobody has answered for has not consented (`get_or_create_settings`' own
+    argument, one layer out), and this deliberately does **not** create the row: a read
+    path must not manufacture a consent record as a side effect of rendering a page.
+    """
+    tenant_id = get_tenant_id()
+    if tenant_id is None:
+        return TIER_OFF
+    tier = (await db.execute(select(DataSharingSettings.tier))).scalar_one_or_none() or TIER_OFF
+    install_tenant_tier(tenant_id, tier)
+    return tier
+
+
+async def earned_corpus(db: AsyncSession) -> VulnCorpus:
+    """The corpus this tenant has earned — read the tier once, then answer from memory.
+
+    The one call a consumer makes. `loaded_corpus()` on its own is fail-closed by design
+    (`app.core.vuln`), so a path that reaches it without having read the tier answers
+    `off` rather than answering for a tenant that never consented; this is what turns that
+    conservative default into the real answer, at the top of the unit of work.
+    """
+    await read_tenant_tier(db)
+    return loaded_corpus()

@@ -128,17 +128,16 @@ def corpus() -> StubCorpus:
 
 @pytest.fixture
 def loaded(corpus: StubCorpus, monkeypatch: pytest.MonkeyPatch) -> StubCorpus:
-    """Make `loaded_corpus()` return the stub, for the endpoints that read it themselves.
+    """The corpus the endpoint would have been handed, with the clock pinned beside it.
 
-    `_assessed` deliberately takes no corpus argument — it reads the one function that
-    decides what this container has loaded, so #248 changes `loaded_corpus()` and the
-    endpoint does not move. Testing it therefore means patching that function rather than
-    reimplementing the two lines beside it: a test that calls its own copy of the code
-    under test cannot catch the copy drifting.
+    `_assessed` takes the corpus as an argument since #248's tier gate: deciding what this
+    container has loaded now costs one query — the acting tenant's data-sharing tier — and
+    that question is asked once per response by `get_device`, not once per app. So the
+    endpoint resolves it and `_assessed` renders with it, and the fixture hands the same
+    object in.
 
     `today` is pinned at the same time so the day arithmetic is deterministic.
     """
-    monkeypatch.setattr(devices_api, "loaded_corpus", lambda: corpus)
     monkeypatch.setattr(devices_api, "today", lambda: AS_OF)
     return corpus
 
@@ -376,7 +375,7 @@ class TestTheRestSurface:
         # The real `_assessed`, under a corpus that can tell the rows apart — the rows
         # handed in are in a THIRD order, so a positional pairing would mis-assign every
         # block and the assertions below would catch it.
-        payload = _assessed(detail, [AFFECTED_ROW, UNKNOWN_ROW, CLEAN_ROW]).model_dump(mode="json", by_alias=True)
+        payload = _assessed(detail, [AFFECTED_ROW, UNKNOWN_ROW, CLEAN_ROW], corpus=loaded).model_dump(mode="json", by_alias=True)
         assert payload["corpusAsOf"] == "2026-09-01"
         assert [app["id"] for app in payload["apps"]] == [CLEAN_ROW.id, AFFECTED_ROW.id, UNKNOWN_ROW.id]
         assert [app["vuln"]["assessment"] for app in payload["apps"]] == ["covered", "covered", "unknown_app"]
@@ -385,7 +384,8 @@ class TestTheRestSurface:
         # Every app asked exactly once, on its own keys — no row answered twice, none skipped.
         assert sorted(loaded.calls) == sorted((row.key_title, row.key_full) for row in (CLEAN_ROW, AFFECTED_ROW, UNKNOWN_ROW))
 
-    def test_the_device_detail_says_off_with_no_date_when_no_corpus_is_loaded(self) -> None:
+    def test_the_device_detail_says_off_with_no_date_when_no_corpus_is_loaded(self, monkeypatch) -> None:
+        monkeypatch.setattr(devices_api, "today", lambda: AS_OF)
         detail = _assessed(
             DeviceDetailOut(
                 id=7,
@@ -422,6 +422,9 @@ class TestTheRestSurface:
                 ],
             ),
             [AFFECTED_ROW],
+            # What every container ships with, and what a tenant that has not consented
+            # reads even on a pod that holds an epoch (#248, docs/vulnerabilities.md §8).
+            corpus=NO_CORPUS,
         )
         payload = detail.model_dump(mode="json", by_alias=True)
         # The state every container ships with, and it is honest rather than broken: the

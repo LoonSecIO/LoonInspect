@@ -14,7 +14,7 @@ from app.core.auth import require
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.permissions import Permission
-from app.core.sharing import build_exchange_request, get_or_create_settings
+from app.core.sharing import build_exchange_request, get_or_create_settings, remember_tier
 from app.core.update_check import get_update_status
 from app.core.version import get_app_version
 from app.models.schema import ShareLog
@@ -94,6 +94,10 @@ async def update_data_sharing(payload: DataSharingUpdate, db: AsyncSession = Dep
         row.ai_inference = payload.ai_inference
     row.updated_at = datetime.now(UTC)
     await db.commit()
+    # A tier changed here takes effect on the next page, not at tomorrow's exchange: the
+    # corpus gate reads a per-tenant cache and this is one of the two places it moves
+    # (#248, docs/vulnerabilities.md §8).
+    remember_tier(row)
 
     audit(
         AuditAction.SHARING_SETTINGS_UPDATED,

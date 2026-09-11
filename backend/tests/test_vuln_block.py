@@ -171,10 +171,12 @@ def test_with_no_corpus_every_app_reads_off_and_nothing_else(raw: dict, run) -> 
     answer for all 83 apps or for none of them.
 
     This is also the guarantee #248 has to keep on the day it ships a real corpus, and it
-    is kept by construction rather than by care: the library arrives on the data-sharing
-    exchange, so a pod that has not consented is never handed a link, never imports an
-    epoch, and `loaded_corpus()` answers `NO_CORPUS` — #281's Option A, asserted here on
-    the line below rather than claimed in a document."""
+    is kept by two conditions rather than by care: the library arrives on the data-sharing
+    exchange, so a pod that has not consented is never handed a link and never imports an
+    epoch — and `loaded_corpus()` answers `NO_CORPUS` to a *tenant* whose own tier is `off`
+    even where the pod holds one (#281's Option A at the grain a multi-tenant pod has,
+    docs/vulnerabilities.md §8). Asserted here on the line below rather than claimed in a
+    document: nothing in this process installs a library or a tier."""
     payload = _snapshot(raw)
     assert loaded_corpus() is NO_CORPUS
     assert NO_CORPUS.as_of is None

@@ -6,7 +6,7 @@ export const de: Translations = {
     dismissUpdate: "Update-Hinweis ausblenden",
     sharing: {
       pageDescription:
-        "Die Patch- und Schwachstellen-Feeds, die LoonInspect aufbaut, würden aus anonymem Community-Inventar entstehen. Noch erscheint keiner, und in diesem Build fließt nichts an diese Instanz zurück. Was diese Instanz beiträgt — und ob überhaupt — wird hier festgelegt.",
+        "Die Patch- und Schwachstellen-Feeds, die LoonInspect aufbaut, würden aus anonymem Community-Inventar entstehen. Noch erscheint keiner. Eines fließt über denselben täglichen Austausch zurück — der Schwachstellen-Korpus, und nur an eine Instanz, die teilt; sonst kommt nichts an diese Instanz zurück. Was diese Instanz beiträgt und ob überhaupt, wird hier festgelegt.",
       envLocked:
         "COMMUNITY_SHARING=false ist in der Umgebung gesetzt — in der Datei .env neben docker-compose.yml. Solange es gesetzt ist, wird nichts geteilt, unabhängig von der Auswahl unten. Eine hier getroffene Wahl wird gespeichert und greift, sobald die Zeile entfernt und der Container neu gestartet wurde (docker compose up -d).",
       readOnlyRole:
@@ -790,9 +790,9 @@ export const de: Translations = {
     idsCapped: "Liste gekürzt",
     whySummary: "Warum dieser Container nichts sagt",
     whyNoCorpus:
-      "Mit LoonInspect wird in diesem Build kein Schwachstellen-Korpus ausgeliefert. Die Abfrage läuft lokal gegen einen in diesen Container geladenen Korpus, und dieser Container hat keinen — also hat sich niemand diese Versionen angesehen, und nichts hier wurde gegen irgendetwas geprüft.",
+      "In diesem Container ist kein Schwachstellen-Korpus geladen. Die Abfrage läuft lokal gegen einen Korpus, den dieser Container vorhält, und er hält keinen — also hat sich niemand diese Versionen angesehen, und nichts hier wurde gegen irgendetwas geprüft.",
     whyNoSwitch:
-      "Die Datenfreigabe einzuschalten ändert daran in diesem Build nichts: der tägliche Austausch trägt Inventar bei und erhält weder Urteile noch Feeds zurück. Ein Lizenzschlüssel ebenso wenig; nichts in diesem Build liest einen für Schwachstellendaten.",
+      "Die Datenfreigabe ist es, die einen Korpus verdient: Eine Instanz, die teilt, erhält den aus Jamf abgeleiteten Korpus täglich über denselben Austausch und beantwortet damit ihre Fragen; eine Instanz mit ausgeschalteter Freigabe liest nicht geprüft. Ein Lizenzschlüssel leistet das nicht; nichts in diesem Build liest einen für Schwachstellendaten.",
     whyWhenItShips:
       "Sobald ein Korpus erscheint, bekommt jede Zeile eine datierte Antwort — geprüft oder außerhalb des Korpus — und die Abwesenheit ist nicht mehr die ganze Geschichte. Bis dahin wird sie benannt statt versteckt.",
     whyLink: "Wie der Korpus und seine Stufen gedacht sind (docs/vulnerabilities.md §8)"

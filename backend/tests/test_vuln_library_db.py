@@ -7,9 +7,15 @@ predecessor atomically, that a refused epoch leaves the predecessor answering, t
 unmoved signature downloads nothing, and that the exchange — the whole path, from a
 response body to `loaded_corpus()` — is what puts an answer behind the seam.
 
-**Every test here restores the process to "no library loaded" afterwards.** The corpus is
-a process-level fact by design (`app.core.vuln.install_corpus`), and the suite that pins
-`assessment: off` byte-for-byte runs in the same process.
+It also pins the **gate**: a loaded library answers for a tenant whose data-sharing tier
+earns it and for no other (docs/vulnerabilities.md §8, ruled 2026-09-11), the rows survive
+a tenant turning sharing off, and the tier costs one query per unit of work rather than one
+per app.
+
+**Every test here restores the process to "no library loaded" afterwards.** The corpus and
+the per-tenant tier are both process-level facts by design (`app.core.vuln.install_corpus`,
+`install_tenant_tier`), and the suite that pins `assessment: off` byte-for-byte runs in the
+same process.
 """
 
 from __future__ import annotations
@@ -17,6 +23,7 @@ from __future__ import annotations
 import gzip
 import json
 import os
+from contextlib import contextmanager
 from datetime import UTC, date, datetime
 
 import httpx
@@ -24,9 +31,17 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import delete, select
 
-from app.core.vuln import NO_CORPUS, loaded_corpus, vuln_block
-from app.core.vuln_library import ROWS_NAME, CorpusPointer, load_epoch_if_new, refresh_from_db, stored_signature
-from app.models.schema import VulnLibraryEpoch, VulnLibraryRow, VulnLibraryTitle
+from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
+from app.core.vuln import NO_CORPUS, forget_tenant_tiers, loaded_corpus, vuln_block
+from app.core.vuln_library import (
+    ROWS_NAME,
+    CorpusPointer,
+    earned_corpus,
+    load_epoch_if_new,
+    refresh_from_db,
+    stored_signature,
+)
+from app.models.schema import DataSharingSettings, VulnLibraryEpoch, VulnLibraryRow, VulnLibraryTitle
 from tests.test_vuln_library import (
     BUNDLE,
     CORPUS_URL,
@@ -77,13 +92,44 @@ async def _clear(db) -> None:
     await refresh_from_db(db)
 
 
+async def _set_tier(db, tier: str) -> None:
+    """This tenant's data-sharing tier, written and told to the gate — the shape the API
+    and the exchange both use (`app.core.sharing.remember_tier`)."""
+    from app.core.sharing import get_or_create_settings, remember_tier
+
+    row = await get_or_create_settings(db)
+    row.tier = tier
+    await db.commit()
+    remember_tier(row)
+
+
 @pytest_asyncio.fixture(loop_scope="session")
-async def empty(db):
-    """No library, before and after — the state every other suite in this process
-    assumes."""
+async def acting_tenant(db):
+    """The tenancy contextvar the request middleware and the scheduler's `tenant_job` bind
+    on every path that reaches `loaded_corpus()`.
+
+    The `db` fixture binds the tenant on the *session* (the Postgres GUC that RLS reads)
+    and not in context, because no route does that by hand. The corpus gate reads the
+    acting tenant from context — there is nobody to have consented outside one — so a suite
+    that exercises it has to stand where a request stands.
+    """
+    token = set_tenant_id(OPERATIONAL_TENANT_ID)
+    try:
+        yield OPERATIONAL_TENANT_ID
+    finally:
+        reset_tenant_id(token)
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def empty(db, acting_tenant):
+    """No library and a consenting tenant, before and after — the state every other suite
+    in this process assumes, plus the consent the gate now requires."""
     await _clear(db)
+    await _set_tier(db, "keys")
     yield
     await _clear(db)
+    await _set_tier(db, "off")
+    forget_tenant_tiers()
     assert loaded_corpus() is NO_CORPUS
 
 
@@ -99,7 +145,7 @@ async def test_an_epoch_is_downloaded_verified_and_answers_from_stored_rows(db, 
     assert library.epoch_id == "0001"
     assert await stored_signature(db) == SIGNATURE
     assert await _count(db, VulnLibraryRow) == 3
-    assert await _count(db, VulnLibraryTitle) == 3
+    assert await _count(db, VulnLibraryTitle) == 4
 
     corpus = loaded_corpus()
     assert corpus is not NO_CORPUS
@@ -244,3 +290,123 @@ async def test_a_response_with_no_corpus_changes_nothing(db, empty, monkeypatch)
         row.tier = "off"
         await db.execute(delete(ShareLog).where(ShareLog.tier != "ai"))
         await db.commit()
+
+
+# --- the gate: which tenant the loaded library answers for ------------------------------
+
+
+async def test_a_tenant_whose_sharing_is_off_reads_off_while_the_pod_holds_an_epoch(db, empty) -> None:
+    """#281's Option A, on a pod with more than one tenant (docs/vulnerabilities.md §8).
+
+    The library is one **global** artifact — three non-tenant tables and one process cache
+    — and the tier is a **per tenant** column, so the shape alone gates nothing: one
+    consenting tenant's import would otherwise answer `covered` for a tenant that never
+    exchanged, never consented and was never handed a link. Option A's own words are "a pod
+    that has not earned the summary"; the unit that earns it is the tenant.
+    """
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    assert vuln_block(loaded_corpus(), key_title=WIRESHARK_TITLE, key_full=WIRESHARK_BUILD, as_of=TODAY).assessment == "covered"
+
+    await _set_tier(db, "off")
+
+    assert await earned_corpus(db) is NO_CORPUS
+    block = vuln_block(loaded_corpus(), key_title=WIRESHARK_TITLE, key_full=WIRESHARK_BUILD, as_of=TODAY)
+    assert block.assessment == "off"
+    assert block.corpus_as_of is None
+    assert block.counts is None
+
+
+async def test_the_rows_are_kept_when_a_tenant_turns_sharing_off_and_answer_again_when_it_returns(db, empty) -> None:
+    """Kept, deliberately. Purging on tier-off would delete a global artifact every other
+    tenant on the pod is entitled to, so one tenant's switch changes one tenant's answer and
+    nothing else — and turning sharing back on answers again with no download at all."""
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+
+    await _set_tier(db, "off")
+    assert await earned_corpus(db) is NO_CORPUS
+    assert await _count(db, VulnLibraryRow) == 3, "one tenant's switch must not delete a global artifact"
+    assert await stored_signature(db) == SIGNATURE
+
+    await _set_tier(db, "keys")
+    assert await earned_corpus(db) is not NO_CORPUS
+    assert vuln_block(loaded_corpus(), key_title=WIRESHARK_TITLE, key_full=WIRESHARK_BUILD, as_of=TODAY).assessment == "covered"
+    # And nothing was downloaded to get the answer back.
+    assert await load_epoch_if_new(db, _pointer(), transport=httpx.MockTransport(_never_dials)) is None
+
+
+async def test_a_tenant_with_no_settings_row_at_all_reads_off(db, empty) -> None:
+    """An install nobody has answered for has not consented — `get_or_create_settings`'
+    own argument, one layer out. The read path deliberately does not create the row
+    either: manufacturing a consent record as a side effect of rendering a page is the
+    failure that default used to have."""
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    await db.execute(delete(DataSharingSettings))
+    await db.commit()
+    forget_tenant_tiers()
+
+    assert await earned_corpus(db) is NO_CORPUS
+    assert (await db.execute(select(DataSharingSettings))).scalar_one_or_none() is None, "a read must not write consent"
+
+
+async def test_the_tier_is_read_once_for_a_unit_of_work_and_never_per_app(db, empty) -> None:
+    """ "Cache, don't calculate", asserted rather than argued. The gate is consulted once
+    per device on a sweep and once per row on a page; if it cost a query, a 40,000-device
+    run would pay 40,000 of them for a fact that is one row and does not change mid-run."""
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+
+    with _counting() as statements:
+        corpus = await earned_corpus(db)
+        for _ in range(200):
+            assert loaded_corpus() is corpus
+
+    assert sum("data_sharing_settings" in statement for statement in statements) == 1
+
+
+@contextmanager
+def _counting():
+    """Every statement the engine sends while the block runs."""
+    from sqlalchemy import event
+
+    from app.core.database import engine
+
+    statements: list[str] = []
+
+    def before(conn, cursor, statement, parameters, context, executemany) -> None:
+        statements.append(statement)
+
+    event.listen(engine.sync_engine, "before_cursor_execute", before)
+    try:
+        yield statements
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", before)
+
+
+# --- what the stored epoch is keyed by ---------------------------------------------------
+
+
+async def test_the_titles_table_is_keyed_on_title_id_and_carries_the_repeated_key(db, empty) -> None:
+    """Ruling R-D in the schema: `title_id` is the primary key and `key_title` is an index.
+    The fixture's two Wireshark titles (`5F6`, `612`) share one `key_title`, so a table
+    keyed the other way would have stored one of them and silently lost the other."""
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+
+    rows = (await db.execute(select(VulnLibraryTitle).order_by(VulnLibraryTitle.title_id))).scalars().all()
+    assert [row.title_id for row in rows] == ["5F6", "612", "A17", "LoonVDFixtureClean"]
+    wireshark = [row for row in rows if row.key_title == WIRESHARK_TITLE]
+    assert len(wireshark) == 2, "one key_title, two Jamf titles, two rows"
+    assert {row.catalog_last_modified for row in wireshark} == {"2025-10-09T08:24:33Z", "2026-08-13T09:34:31Z"}
+
+
+async def test_an_epoch_carrying_an_object_this_container_does_not_read_imports_and_names_it(db, empty, caplog) -> None:
+    """The additive-only clause end to end: the epoch lands, its rows answer, and the
+    import line counts and names what was passed over — so an operator can see that the
+    corpus grew an object this container is too old to read."""
+    bundle, signature = _rewritten(extra={"verdicts.jsonl.gz": gzip.compress(b'{"key_full":"v1:00"}\n', mtime=0)})
+
+    with caplog.at_level("INFO"):
+        library = await load_epoch_if_new(db, _pointer(signature), transport=_serving(bundle))
+
+    assert library is not None and library.ignored == ("verdicts.jsonl.gz",)
+    assert await _count(db, VulnLibraryRow) == 3
+    assert "verdicts.jsonl.gz" in caplog.text
+    assert "a newer container reads them" in caplog.text

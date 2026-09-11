@@ -5,8 +5,9 @@ Three things live here and nothing else:
 
 * **the seam** — `VulnCorpus`, the protocol `app.core.vuln_library` implements over the
   epoch it loaded (#248), and `NO_CORPUS`, the answer until one has been. Nothing in this
-  module loads data, reads a file, or touches a session: `install_corpus` is a setter the
-  library calls, and `loaded_corpus()` reads what it set;
+  module loads data, reads a file, or touches a session: `install_corpus` and
+  `install_tenant_tier` are setters the library calls, and `loaded_corpus()` reads what
+  they set;
 * **the block** — `vuln_block()`, which turns a corpus answer about one installed build
   into the ruled summary, in canonical form (`None`, never `-1`);
 * **the sentinel** — `mint_hec_sentinels()`, the HEC-shaping seam's `None` → `-1`
@@ -38,11 +39,13 @@ at enqueue, in both directions, rather than trusting this module to be careful.
 from __future__ import annotations
 
 import re
+import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Protocol, runtime_checkable
 
+from app.core.tenancy import get_tenant_id
 from app.schemas.payload import (
     VULN_ASSESSMENT_COVERED,
     VULN_ASSESSMENT_UNKNOWN_APP,
@@ -270,6 +273,35 @@ NO_CORPUS: VulnCorpus = _NoCorpus()
 # a file, a session or a socket.
 _INSTALLED: VulnCorpus | None = None
 
+# The sharing tier each tenant was last read at — the per-tenant half of the gate below.
+# Written by `app.core.vuln_library.read_tenant_tier` once per sync run, per re-emit and
+# per response that renders an assessment, and by the exchange from the settings row it
+# already holds; read here, for free, however many times one unit of work asks. That is
+# "cache, don't calculate" in its usual shape: the tier is a per-tenant row and the answer
+# must not cost a query per device or per app.
+#
+# **A tenant absent from this map reads `off`.** Fail-closed is the whole point: the gate
+# is a consent decision, and a path that forgot to read the tier must not be the path that
+# hands out an answer nobody consented to. The cost of the conservative direction is an
+# `assessment: off` an operator can see and ask about; the cost of the other direction is
+# a summary served to a tenant that never earned it.
+_TENANT_TIERS: dict[uuid.UUID, str] = {}
+
+# The one tier that earns nothing. `app.schemas.system.SharingTier` is the vocabulary;
+# `keys` and `reveal` both exchange, so both receive.
+TIER_OFF = "off"
+
+
+def install_tenant_tier(tenant_id: uuid.UUID, tier: str) -> None:
+    """Record what a tenant's data-sharing tier says, for `loaded_corpus()` to read."""
+    _TENANT_TIERS[tenant_id] = tier
+
+
+def forget_tenant_tiers() -> None:
+    """Drop every cached tier. For tests, and for a process that wants the next unit of
+    work to read the rows again rather than trust what it remembers."""
+    _TENANT_TIERS.clear()
+
 
 def install_corpus(corpus: VulnCorpus | None) -> None:
     """Put the loaded library behind `loaded_corpus()`, or take it away (`None`).
@@ -287,19 +319,43 @@ def install_corpus(corpus: VulnCorpus | None) -> None:
 
 
 def loaded_corpus() -> VulnCorpus:
-    """The corpus this container has loaded — the single place that decides.
+    """The corpus the **acting tenant** has earned — the single place that decides.
 
-    `NO_CORPUS` until an epoch has been imported, which is the whole of #281's Option A
-    and the reason it needs no argument: the library arrives on the data-sharing exchange,
-    a pod that has not consented never exchanges, so it is never handed a link and never
-    loads anything (docs/data-sharing.md, docs/vulnerabilities.md §8). Nothing else in the
-    codebase changes when an epoch lands — the snapshot builder takes a `VulnCorpus` and
-    `app.mdm.service.process_sync` passes whatever this returns.
+    #281's Option A, ruled 2026-09-03, put the tier gate here, and 2026-09-11 says what
+    "here" has to mean on a pod with more than one tenant (docs/vulnerabilities.md §8).
+    Two conditions, and both must hold:
+
+    * **an epoch is loaded.** `NO_CORPUS` until an exchange has imported one, which is
+      every v0 container and the reason `assessment: off` is byte-identical to the day
+      #241 emitted it;
+    * **this tenant's data-sharing tier is not `off`.** The library is one *global*
+      artifact — three non-tenant tables, one process cache — and the tier is a *per
+      tenant* column, so the shape alone does not gate it: one consenting tenant's import
+      would otherwise answer `covered` for every tenant co-resident on the pod, including
+      one that never exchanged, never consented, and was never handed a link. Option A's
+      own words are "a pod that has not earned the summary", and on a multi-tenant pod the
+      unit that earns it is the tenant.
+
+    The rows are **kept** either way. A tier flipped to `off` stops this tenant being
+    answered; it does not delete an artifact every other tenant on the pod is entitled to,
+    and flipping back answers again with no download (§8).
+
+    The tier is read from `_TENANT_TIERS`, which `app.core.vuln_library.read_tenant_tier`
+    fills once per unit of work — never per device and never per app — and a tenant that
+    is not in it reads `off`. The acting tenant comes from the tenancy contextvar, which
+    is bound on both paths that reach this: the request middleware (`app.core.middleware`,
+    `app.core.auth.authenticate`) and the scheduler's `tenant_job` (`app.main`). Outside
+    any tenant there is nobody to have consented, so that is `NO_CORPUS` too.
 
     A function rather than a module constant so the swap is one assignment and so a test
     can pass its own corpus without reaching for a global.
     """
-    return _INSTALLED if _INSTALLED is not None else NO_CORPUS
+    if _INSTALLED is None:
+        return NO_CORPUS
+    tenant_id = get_tenant_id()
+    if tenant_id is None or _TENANT_TIERS.get(tenant_id, TIER_OFF) == TIER_OFF:
+        return NO_CORPUS
+    return _INSTALLED
 
 
 def _band_index(finding: VulnFinding) -> int:

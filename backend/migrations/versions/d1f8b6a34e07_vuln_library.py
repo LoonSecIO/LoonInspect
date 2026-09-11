@@ -58,13 +58,21 @@ def upgrade() -> None:
     )
     op.create_table(
         "vuln_library_titles",
-        sa.Column("key_title", sa.String(67), primary_key=True),
+        # Jamf's own title id, and what the published object is unique on (ruling R-D,
+        # 2026-09-11). `key_title` is NOT unique — sixteen Wireshark titles in Jamf's
+        # catalog hash to one `app.title` key — so it is an index here and never the key:
+        # a primary key on it would have silently kept one of the sixteen and let its
+        # catalog stamp answer for all of them.
+        sa.Column("title_id", sa.String(64), primary_key=True),
+        sa.Column("key_title", sa.String(67), nullable=False),
         sa.Column("catalog_last_modified", sa.String(64), nullable=False),
         sa.Column("versions_compiled", sa.Integer(), nullable=False, server_default="0"),
     )
+    op.create_index("ix_vuln_library_titles_key_title", "vuln_library_titles", ["key_title"])
 
 
 def downgrade() -> None:
+    op.drop_index("ix_vuln_library_titles_key_title", table_name="vuln_library_titles")
     op.drop_table("vuln_library_titles")
     op.drop_table("vuln_library_rows")
     op.drop_table("vuln_library_epoch")

@@ -37,6 +37,7 @@ from app.core.runs import (
 )
 from app.core.runs import log as run_log
 from app.core.vuln import loaded_corpus
+from app.core.vuln_library import read_tenant_tier
 from app.core.wire import ENVELOPE, envelope, instance_label
 from app.mdm.factory import get_mdm_client
 from app.mdm.jamf.client import (
@@ -271,6 +272,11 @@ async def run_jamf(
     many collections in turn and one expired credential must not abort the rest.
     """
     quarantine = tuple(quarantined_extension_attributes)
+    # This tenant's data-sharing tier, once for the whole sweep (#248, docs/vulnerabilities.md
+    # §8). It decides whether `loaded_corpus()` answers for this tenant at all, and it is a
+    # per-tenant row, so it is read here rather than per device — the same reason the title
+    # names below ride a process cache.
+    await read_tenant_tier(db)
     # Asking for EAs means reading the sections they are displayed under (#197). Closed
     # here, at the top of every sweep, so the aperture, the fetch and the merge agree —
     # for a collection row saved before the rule existed as much as for one saved after.
@@ -844,6 +850,9 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
     of `last_seen_at` and nothing more.
     """
     client = get_mdm_client(connection)
+    # One read of the tier per webhook, for the same reason the sweep reads it once per
+    # run: one event is one device, and `loaded_corpus()` must not go asking per app.
+    await read_tenant_tier(db)
     event = parse_webhook_event(payload)
     if event.event_name not in REACTIVE_WEBHOOK_EVENTS:
         # Dropped by name, not by accident: a ComputerCheckIn is a heartbeat times
@@ -1248,8 +1257,10 @@ async def process_sync(
         # visible at the one call site where the ordering is guaranteed.
         title_names=cached_title_names() if device.apps is not None else None,
         # The one place the container's corpus reaches the wire (#249). `NO_CORPUS` until
-        # #248 loads one, which is what makes every `vuln{}` read `assessment: off`;
-        # #248 changes `loaded_corpus()` and nothing here.
+        # an epoch is loaded AND this tenant's tier earns it — both decided inside
+        # `loaded_corpus()` and neither costing a query here: the tier was read once at the
+        # top of this sweep (`run_jamf`) or of this webhook (`ingest_webhook`), which is why
+        # this stays a dictionary lookup on a path that runs once per device.
         corpus=loaded_corpus(),
     )
     payload = snapshot.to_payload()

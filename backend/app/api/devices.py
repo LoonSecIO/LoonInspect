@@ -13,7 +13,8 @@ from sqlalchemy.orm import selectinload
 from app.core.auth import require
 from app.core.database import get_db
 from app.core.permissions import Permission
-from app.core.vuln import loaded_corpus
+from app.core.vuln import VulnCorpus
+from app.core.vuln_library import earned_corpus
 from app.core.vuln_read import assess, corpus_as_of, today
 from app.mdm.org_units import BUILDING, DEPARTMENT, OrgUnitNames, ids_for_name, load_names, name_for
 from app.models.schema import Device, DeviceExtensionAttribute, InstalledApp
@@ -226,7 +227,7 @@ async def list_devices(
     )
 
 
-def _assessed(out: DeviceDetailOut, rows: Sequence[InstalledApp]) -> DeviceDetailOut:
+def _assessed(out: DeviceDetailOut, rows: Sequence[InstalledApp], *, corpus: VulnCorpus) -> DeviceDetailOut:
     """LoonInspect's own answer for each of this device's apps, and the stamp it came from
     (#251, `docs/vulnerabilities.md` §4a).
 
@@ -237,11 +238,14 @@ def _assessed(out: DeviceDetailOut, rows: Sequence[InstalledApp]) -> DeviceDetai
     the corpus every container ships today (`NO_CORPUS`) it is one `is None` and no
     per-row work at all.
 
+    The corpus is a parameter rather than a call here because reading it now costs one
+    query — this tenant's data-sharing tier (#248, §8) — and that question is asked once
+    per response, above, not once per app.
+
     Rows are paired by id rather than by position: `model_validate` does preserve list
     order, but `selectinload` does not promise one, and pairing a `vuln` block with the
     wrong app is the kind of wrong that looks right.
     """
-    corpus = loaded_corpus()
     as_of = today()
     by_id = {row.id: row for row in rows}
     return out.model_copy(
@@ -275,4 +279,7 @@ async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> Devi
     if device is None:
         raise HTTPException(status_code=404, detail="Device not found")
     detail = _with_names(DeviceDetailOut.model_validate(device), device, await load_names(db))
-    return _assessed(detail, device.apps)
+    # One read of this tenant's data-sharing tier for the whole response, not one per app:
+    # the corpus a tenant has earned is a per-tenant fact and the gate reads it here
+    # (#248, docs/vulnerabilities.md §8).
+    return _assessed(detail, device.apps, corpus=await earned_corpus(db))

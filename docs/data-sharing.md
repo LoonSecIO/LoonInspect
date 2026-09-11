@@ -271,6 +271,13 @@ ignores it, which is the same clause every other field of this response lives un
 - **Nothing about a fleet leaves in this half.** The corpus is published complete and the
   join is local, so no app, hash, or count is sent in order to receive it — the request
   body above is the whole of what goes up, unchanged.
+- **What it earns, it earns per tenant.** The imported epoch is a global artifact on this
+  container, and the consent that pays for it is a per-tenant row, so the answer is gated
+  per tenant too: a tenant whose tier is `off` reads `assessment: off` for every app even
+  where the container holds an epoch, and the rows stay for the tenants entitled to them
+  (ruled 2026-09-11, [`vulnerabilities.md`](vulnerabilities.md) §8). A revoke — the
+  server's kill switch — stops both halves in one act: it writes the tier `off`, imports
+  nothing that day, and stops that tenant being answered from the epoch it already had.
 
 Semantics the server may rely on:
 

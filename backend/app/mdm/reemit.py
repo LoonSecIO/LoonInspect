@@ -43,7 +43,7 @@ from app.core.context import get_request_id
 from app.core.outbox import enqueue_event
 from app.core.runs import RunReclaimed, beat, event_time
 from app.core.runs import log as run_log
-from app.core.vuln import loaded_corpus
+from app.core.vuln_library import earned_corpus
 from app.core.wire import ENVELOPE, envelope, instance_label
 from app.mdm.jamf.contract import SECTIONS, SUBJECT_COMPUTER, Entry, Observation, SectionContent
 from app.mdm.patch.matching import cached_title_names
@@ -161,7 +161,7 @@ async def re_emit_connection(
     await run_log(
         db, run, "info", "re-emit started", devices=len(device_ids), destinationID=destination_id, comparison=run.comparison
     )
-    corpus = loaded_corpus()
+    corpus = await earned_corpus(db)
     title_names = cached_title_names()
     source = instance_label(connection.base_url)
     processed = skipped = failed = 0
