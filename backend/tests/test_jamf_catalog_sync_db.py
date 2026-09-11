@@ -37,6 +37,15 @@ pytestmark = [
 
 FIXTURES = Path(__file__).parent / "fixtures" / "jamf"
 
+
+def _configured_path() -> str:
+    """The path half of whatever address the source is pointed at, trailing slash trimmed
+    the way `JamfApiCatalogSource` trims it."""
+    from app.core.config import settings
+
+    return httpx.URL(settings.jamf_patch_base_url.rstrip("/")).path
+
+
 _BULKY = {
     "standalone": True,
     "minimumOperatingSystem": "12.0",
@@ -187,7 +196,11 @@ class TestColdSync:
     async def test_one_summary_read_and_one_definition_per_title(self, db, server, records) -> None:
         await server.sync(db)
 
-        assert server.requested[0] == "/v1/software"
+        # Derived, not spelled: the transport answers whatever host it is given, so this
+        # file's recorded paths follow `settings.jamf_patch_base_url`. A lane with
+        # JAMF_PATCH_BASE_URL exported would otherwise fail here for a reason that has
+        # nothing to do with the sync.
+        assert server.requested[0] == f"{_configured_path()}/software"
         assert sorted(server.details_requested()) == sorted(record["id"] for record in records)
 
     async def test_at_most_eight_definition_requests_are_in_flight(self, db, server) -> None:
@@ -209,7 +222,7 @@ class TestSecondSync:
         server.requested.clear()
 
         assert await server.sync(db) == 0
-        assert server.requested == ["/v1/software"]
+        assert server.requested == [f"{_configured_path()}/software"]
 
     async def test_one_moved_title_is_the_only_one_refetched(self, db, server, records) -> None:
         await server.sync(db)
@@ -244,3 +257,60 @@ class TestBadTitle:
         rows = await _rows(db, [record["id"] for record in records])
         assert broken not in rows
         assert len(rows) == len(records) - 1
+
+
+class TestAnUnusableAddress:
+    """What the hourly job does when `JAMF_PATCH_BASE_URL` holds something that is not an
+    address — the one failure this change introduced, on the only surface the job has."""
+
+    async def test_the_job_logs_the_sentence_once_with_no_traceback(self, db, monkeypatch) -> None:
+        """`docker compose logs app` is where this job speaks: there is no run row and no
+        page. One ERROR line that names the setting, no stack, and the job returns rather
+        than letting APScheduler print a traceback that names httpx instead
+        (`docs/diagnosability.md` rule 3; `docs/troubleshooting.md` section 6)."""
+        import logging
+
+        from app.core.config import settings
+        from app.main import hourly_jamf_patch_sync
+
+        # A handler of our own rather than `caplog`: importing `app.main` runs
+        # `configure_logging`, which replaces the root handlers — so whether caplog's
+        # survives depends on whether some earlier test imported the module first. This
+        # attaches after that import and asserts the same three things.
+        said: list[logging.LogRecord] = []
+
+        class _Collect(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                said.append(record)
+
+        monkeypatch.setattr(settings, "jamf_patch_base_url", "jamf-patch.jamfcloud.com/v1")
+        collector = _Collect(level=logging.ERROR)
+        logging.getLogger("app.main").addHandler(collector)
+        try:
+            await hourly_jamf_patch_sync()
+        finally:
+            logging.getLogger("app.main").removeHandler(collector)
+
+        named = [record for record in said if "JAMF_PATCH_BASE_URL" in record.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.ERROR
+        assert named[0].exc_info is None
+        assert "jamf-patch.jamfcloud.com/v1" in named[0].getMessage()
+        assert "docs/troubleshooting.md" in named[0].getMessage()
+
+    async def test_nothing_is_written_when_the_address_is_refused(self, db, server, records, monkeypatch) -> None:
+        """The rows the container already had keep answering: the refusal happens at
+        source construction, before a request or a write."""
+        from app.core.config import settings
+        from app.mdm.patch.jamf_catalog import JamfPatchCatalogUnconfigured, sync_catalog
+
+        await server.sync(db)
+        before = {row_id: row.synced_at for row_id, row in (await _rows(db, [r["id"] for r in records])).items()}
+
+        monkeypatch.setattr(settings, "jamf_patch_base_url", "")
+        with pytest.raises(JamfPatchCatalogUnconfigured):
+            await sync_catalog(db)
+
+        after = {row_id: row.synced_at for row_id, row in (await _rows(db, [r["id"] for r in records])).items()}
+        assert after == before
+        assert len(after) == len(records)

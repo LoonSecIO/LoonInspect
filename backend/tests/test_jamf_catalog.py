@@ -15,22 +15,31 @@ fixture in, rows out — is `test_jamf_catalog_sync_db.py`.
 from __future__ import annotations
 
 import asyncio
+import re
+from pathlib import Path
 
 import httpx
 import pytest
 
-from app.core.config import settings
+from app.core import config as config_module
+from app.core.config import Settings, settings
+from app.mdm.patch import jamf_catalog
 from app.mdm.patch.jamf_catalog import (
     DETAIL_CONCURRENCY,
+    JAMF_PATCH_BASE_URL_UNUSABLE,
     JamfApiCatalogSource,
+    JamfPatchCatalogUnconfigured,
     _convert_requirements,
     _extension_attributes,
     _fetch_details,
     _needs_refresh,
     _remove_embedded_cert,
     _strip_patch_entry,
+    jamf_api_source,
 )
 from app.models.schema import JamfPatchTitle
+
+DOCS = Path(__file__).resolve().parents[2] / "docs"
 
 
 def _requirement(name: str, *, and_linked: bool | None = True) -> dict:
@@ -266,7 +275,11 @@ class TestJamfApiCatalogSource:
         return httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
     def test_the_default_is_jamfs_public_patch_server(self) -> None:
-        assert settings.jamf_patch_base_url == "https://jamf-patch.jamfcloud.com/v1"
+        """The field's default, not the live object. `settings` reads the environment, so
+        a developer or a CI lane with `JAMF_PATCH_BASE_URL` exported would turn this red
+        for a reason that has nothing to do with the code under test — and the claim being
+        made here is about the default the image ships with."""
+        assert Settings.model_fields["jamf_patch_base_url"].default == "https://jamf-patch.jamfcloud.com/v1"
 
     async def test_both_reads_use_the_configured_base_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(settings, "jamf_patch_base_url", "https://patch.example.test/v1")
@@ -306,3 +319,110 @@ class TestJamfApiCatalogSource:
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             with pytest.raises(httpx.HTTPStatusError):
                 await JamfApiCatalogSource(client).summaries()
+
+
+def _fan_out_comment() -> str:
+    """The comment block immediately above `DETAIL_CONCURRENCY`, as text."""
+    lines = Path(jamf_catalog.__file__).read_text().splitlines()
+    index = next(number for number, line in enumerate(lines) if line.startswith("DETAIL_CONCURRENCY"))
+    block: list[str] = []
+    while index > 0 and lines[index - 1].lstrip().startswith("#"):
+        index -= 1
+        block.insert(0, lines[index])
+    return "\n".join(block)
+
+
+class TestTheFanOutCommentArguesFromTheRealClient:
+    """The paragraph beside `DETAIL_CONCURRENCY` argues from two numbers it does not own:
+    the connection cap httpx gives a client built with no `limits=`, and the *pool*
+    component of `Timeout(30)`. Its first draft argued instead from a number that was
+    never real — a socket per title, and a file-descriptor bill to go with it — which the
+    pool had already made impossible. These pin the argument to the client this module
+    actually builds, so the next person to widen the bound reads a true reason for it.
+    """
+
+    async def test_the_client_admits_a_hundred_and_queues_the_rest_for_thirty_seconds(self) -> None:
+        async with jamf_api_source() as source:
+            # httpx exposes no public accessor for a client's limits, and the comment
+            # makes a claim about them; reading the pool is the only way to check it.
+            client = source._client
+            pool = client._transport._pool
+
+            assert pool._max_connections == 100
+            assert client.timeout.pool == 30
+
+            comment = _fan_out_comment()
+            assert str(pool._max_connections) in comment
+            assert f"{int(client.timeout.pool)} s" in comment
+
+    def test_the_comment_names_what_the_queue_did_to_a_waiting_request(self) -> None:
+        """The hazard the bound removes is a request that ages out of the pool queue and
+        is swallowed by `return_exceptions=True` — a title silently missing, not a socket."""
+        comment = _fan_out_comment()
+
+        assert "PoolTimeout" in comment
+        assert "return_exceptions" in comment
+
+
+class TestAnAddressThatIsNotAnAddress:
+    """`JAMF_PATCH_BASE_URL` became a way for this to be wrong the moment the constant
+    became a setting (#382). Unchecked, the value reaches httpx as `UnsupportedProtocol`
+    from inside an hourly job: a traceback that never names the variable that caused it
+    (`docs/diagnosability.md` rule 3)."""
+
+    @pytest.mark.parametrize(
+        "value",
+        ["", "   ", "jamf-patch.jamfcloud.com/v1", "ftp://patch.example.test/v1", "/v1"],
+    )
+    async def test_it_is_refused_with_a_sentence_that_names_the_setting(
+        self, monkeypatch: pytest.MonkeyPatch, value: str
+    ) -> None:
+        monkeypatch.setattr(settings, "jamf_patch_base_url", value)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(200))) as client:
+            with pytest.raises(JamfPatchCatalogUnconfigured) as raised:
+                JamfApiCatalogSource(client)
+
+        message = str(raised.value)
+        assert "JAMF_PATCH_BASE_URL" in message  # what to change
+        assert repr(value) in message  # what it holds now
+        assert "https://" in message  # what it must look like
+        assert "https://jamf-patch.jamfcloud.com/v1" in message  # what removing it restores
+        assert "docs/troubleshooting.md" in message  # where the step-through is
+
+    async def test_a_usable_address_is_still_built_without_complaint(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The check refuses a shape, not a host: anything dialable still passes, including
+        the plain-`http` mirror an air-gapped stack would point at."""
+        for value in ("https://patch.example.test/v1", "http://patch.example.test/v1/"):
+            monkeypatch.setattr(settings, "jamf_patch_base_url", value)
+            async with httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(200))) as client:
+                assert JamfApiCatalogSource(client)._base_url == value.rstrip("/")
+
+    def test_the_sentence_points_at_a_step_through_that_exists(self) -> None:
+        """`docs/diagnosability.md` rule 4: the failure path and its step-through ship
+        together. The sentence names a section of `troubleshooting.md`, so this reads the
+        number back out of the sentence and checks that section is the one about this."""
+        section = re.search(r"docs/troubleshooting\.md section (\d+)", JAMF_PATCH_BASE_URL_UNUSABLE)
+        assert section is not None
+        heading = f"## {section.group(1)}. "
+
+        document = (DOCS / "troubleshooting.md").read_text()
+        assert heading in document
+        body = document.split(heading, 1)[1].split("\n## ", 1)[0]
+        assert "JAMF_PATCH_BASE_URL" in body
+        assert "docker compose" in body
+
+
+def test_the_reserved_catalog_section_is_cited_where_it_is_written() -> None:
+    """The module docstring and the setting both explain themselves by pointing at the
+    reserved `catalog` section of the vulnerability epoch format. That reservation lives in
+    LoonVD-Internal's contract; `docs/vulnerabilities.md` points at that contract rather
+    than defining it, and never uses the word in this sense — so a citation of
+    `docs/vulnerabilities.md` alone sends the reader to a document that cannot confirm the
+    claim."""
+    contract = "sharedAssets/contract/epoch.md"
+
+    assert contract in Path(jamf_catalog.__file__).read_text()
+    assert contract in Path(config_module.__file__).read_text()
+    # And the chain resolves: the public document names the contract it defers to.
+    assert contract in (DOCS / "vulnerabilities.md").read_text()

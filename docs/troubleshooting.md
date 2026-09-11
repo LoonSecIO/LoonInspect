@@ -7,7 +7,7 @@ Every step below uses only what a fresh operator has: the app, its API,
 it was filed.
 
 Each path is ordered — *check this; if X, then that* — and ends in a fix or in a **named,
-reportable state**. When you reach a reportable state, §6 says what to include.
+reportable state**. When you reach a reportable state, §7 says what to include.
 
 ## 0. The four things you can read
 
@@ -277,7 +277,48 @@ tier on is the defect. A `null` with the tier **off** is step 1, not a defect.
 **I.** The published corpus is refused, unreachable, or unchanging. Report the exact log
 line (it names the epoch and the state), the build, and roughly when it started.
 
-## 6. When a path ends in "report"
+## 6. "The Jamf Patch table is empty, or it stopped refreshing"
+
+The patch catalog is the list of titles every Applications surface is matched against. It
+is one list for the whole container — not per connection and not per organization — and
+it refreshes hourly on its own. **Devices › Applications › Jamf Patch** shows it, with a
+**Sync now** button that performs the same refresh immediately. The refresh dials a public
+Jamf server; no credential of yours is involved, so nothing here is a permissions problem.
+
+1. **Press Sync now and watch the table's *Synced* column.** If the row dates move, the
+   refresh works and the catalog is current; a table that is still empty after a refresh
+   that reported no error is reportable state **J**. The first press on a freshly started
+   container is the slow one — the whole catalog is fetched title by title and takes
+   minutes, not seconds, and nothing on the page cancels it. Let it finish.
+2. **The button says "Sync failed. Try again."** The page does not carry the reason; the
+   container log does. `docker compose logs app --since 1h | grep -i "Jamf patch catalog"`:
+   - `The Jamf patch catalog cannot be refreshed: JAMF_PATCH_BASE_URL is set to …` → this
+     container was started with that variable holding something that is not an address.
+     It is **not** part of the shipped `docker-compose.yml`, so it is set only where
+     somebody set it: check the environment the container is started with. Remove it to
+     use the default (`https://jamf-patch.jamfcloud.com/v1`) or correct it, then
+     `docker compose up -d`. Nothing was written in the meantime — whatever catalog the
+     container already had still answers.
+   - a line about the request timing out or being refused → this container could not reach
+     the patch server. Check outbound access from the container itself:
+     `docker compose exec app curl -sSI https://jamf-patch.jamfcloud.com/v1/software`. A
+     proxy, an egress firewall or TLS interception is the usual cause; the hourly tick
+     keeps trying and the existing rows keep answering.
+   - `jamf patch catalog synced` and nothing else → the hourly refresh is completing. If
+     the page still shows nothing, that is reportable state **J**.
+   - nothing at all → no hourly refresh has completed since this container started. The
+     job runs at the top of each hour and not at startup, so this is expected for up to an
+     hour after a restart; step 1's button is the faster answer.
+3. **The table has rows and one title you expect is missing.** A title whose definition
+   the server refused is skipped for that refresh and fetched again at the next one, so a
+   gap that closes by itself is working as designed. A title that is published by Jamf and
+   still missing a day later is reportable state **J**.
+
+**J.** A refresh that reports no error leaves the table empty, or a title Jamf publishes
+stays missing for more than a day. Report what the *Synced* column shows, the output of
+`docker compose logs app --since 1h`, and the build from Settings › Support.
+
+## 7. When a path ends in "report"
 
 Include: which path and which step you reached; the run's `jobID` and the panel's lines
 (or `GET /api/runs/{jobId}/log`); `docker compose logs app --since 30m`; the build,
@@ -285,7 +326,7 @@ from Settings › Support; and, for a delivery problem, the destination's `id`, 
 and counts. An issue with those four things is answerable; one without them starts with a
 request for them.
 
-## 7. What this document deliberately does not contain
+## 8. What this document deliberately does not contain
 
 A step that would need the source code. Where a symptom could not be walked to a fix with
 the surfaces above, the missing surface is filed as an issue against the product

@@ -110,10 +110,13 @@ class Settings(BaseSettings):
     # replaced (#382). A setting rather than a constant for the same reason
     # sharing_endpoint is one: the address of something this container dials is
     # configuration, and the catalog may one day arrive by the vulnerability epoch's
-    # reserved `catalog` section instead of being pulled at all
-    # (docs/vulnerabilities.md). Deliberately not plumbed through docker-compose.yml:
-    # nothing about the shipped stack wants it moved, and a second source will be
-    # chosen by which CatalogSource is in use, not by editing this URL.
+    # reserved `catalog` section instead of being pulled at all (LoonVD-Internal's
+    # sharedAssets/contract/epoch.md, the published format docs/vulnerabilities.md
+    # points at). Deliberately not plumbed through docker-compose.yml: nothing about
+    # the shipped stack wants it moved, and a second source will be chosen by which
+    # CatalogSource is in use, not by editing this URL. A value that is not an address
+    # is refused with a sentence that names this variable, not a traceback
+    # (app/mdm/patch/jamf_catalog.py, docs/troubleshooting.md section 6).
     jamf_patch_base_url: str = "https://jamf-patch.jamfcloud.com/v1"
 
     # Hard kill switch for community data sharing (docs/data-sharing.md), for fleet

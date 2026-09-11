@@ -4,8 +4,10 @@
 full definition — and it reads them through `CatalogSource` rather than from `httpx`
 directly (#382). `JamfApiCatalogSource` is the only implementation, and every deployment
 uses it; the seam exists because the vulnerability epoch format reserves a `catalog`
-section (`docs/vulnerabilities.md`), so a container may one day read the catalog out of
-an artifact it already downloaded instead of pulling 1,554 titles from a public server.
+section (LoonVD-Internal's `sharedAssets/contract/epoch.md`, the published format
+`docs/vulnerabilities.md` points at rather than defines), so a container may one day read
+the catalog out of an artifact it already downloaded instead of pulling 1,554 titles from
+a public server.
 That is a second implementation of two methods when it comes, not a rewrite of the sync.
 
 Nothing downstream knows about any of this: `rebuild_index`, the matcher and the Jamf
@@ -35,13 +37,43 @@ _STRIP_PATCH_KEYS = ("standalone", "minimumOperatingSystem", "reboot", "killApps
 
 # How many title definitions may be in flight at once. A fresh container has no rows, so
 # every title in the catalog is "changed" — 1,554 of them on 2026-09-10 — and the bare
-# `asyncio.gather` this replaced opened all of them at once: 1,554 sockets from one
-# process against a public server that owes us nothing, and the pod's own file-descriptor
-# and memory budget spent on a job with no deadline. Eight turns that cold start into
-# ~195 waves of a job that runs hourly and has no deadline, and after the first sync a
-# day's changes are a handful of titles, where the bound never binds. Not a setting:
-# nothing an operator knows would tell them what to set it to.
+# `asyncio.gather` this replaced handed all 1,554 to the client in one breath. It never
+# opened 1,554 sockets: `jamf_api_source` builds its client with no `limits=`, so httpx's
+# default pool admitted 100 connections and queued the other ~1,454 behind them — against
+# `Timeout(30)`, whose *pool* component is 30 s as well. A cold start slow enough to hold
+# a request in that queue past 30 s aged it out as `PoolTimeout`, and
+# `return_exceptions=True` below turns that into a title silently skipped until some later
+# hourly tick notices it is missing. So the old hazard was a queue we did not write and
+# could not see, not a file-descriptor bill. Eight is a bound we state instead: ~195 waves
+# on a job that runs hourly and has no deadline, and after the first sync a day's changes
+# are a handful of titles, where the bound never binds. Not a setting: nothing an operator
+# knows would tell them what to set it to. `tests/test_jamf_catalog.py` pins the 100 and
+# the 30 s against the client this module actually builds, so the paragraph cannot drift
+# away from the code the way its first draft did.
 DETAIL_CONCURRENCY = 8
+
+
+# What an operator reads when `JAMF_PATCH_BASE_URL` names something that is not an
+# address. What failed, why, and what to check, in the words they typed
+# (`docs/diagnosability.md` rule 3): the variable's name, the value it holds, the shape it
+# must have, and the fact that removing it is a fix. Without it the value reaches httpx as
+# `UnsupportedProtocol` from inside a scheduled job — a traceback that never names the
+# setting that caused it.
+JAMF_PATCH_BASE_URL_UNUSABLE = (
+    "The Jamf patch catalog cannot be refreshed: JAMF_PATCH_BASE_URL is set to {value!r}, "
+    "which is not an address this container can dial — it must begin with https:// (or http://). "
+    "Correct it, or remove it from the environment to use the default "
+    "https://jamf-patch.jamfcloud.com/v1, and restart the app "
+    "(docs/troubleshooting.md section 6)."
+)
+
+
+class JamfPatchCatalogUnconfigured(RuntimeError):
+    """`JAMF_PATCH_BASE_URL` holds something that is not an address.
+
+    A type of its own so the hourly job can answer it with one sentence instead of a
+    traceback; still a `RuntimeError`, so anything that caught the bare one is unbroken.
+    """
 
 
 class CatalogSource(Protocol):
@@ -69,10 +101,17 @@ class JamfApiCatalogSource:
 
     def __init__(self, client: httpx.AsyncClient, base_url: str | None = None) -> None:
         self._client = client
-        # Read at construction, not at import, so a test (and an operator's environment)
-        # can move it; the trailing slash is trimmed because a URL that ends in one is
-        # the same address and would otherwise build `…/v1//software`.
-        self._base_url = (base_url or settings.jamf_patch_base_url).rstrip("/")
+        # Read at construction, not at import, so a test and an operator's environment can
+        # both move it — and checked here for the same reason: an address an environment
+        # can move is an address an environment can break, and that is a failure path this
+        # module owns (`docs/troubleshooting.md` section 6). The trailing slash is trimmed
+        # because a URL that ends in one is the same address and would otherwise build
+        # `…/v1//software`.
+        configured = base_url or settings.jamf_patch_base_url
+        address = configured.rstrip("/")
+        if not address.startswith(("https://", "http://")):
+            raise JamfPatchCatalogUnconfigured(JAMF_PATCH_BASE_URL_UNUSABLE.format(value=configured))
+        self._base_url = address
 
     async def summaries(self) -> list[dict]:
         response = await self._client.get(f"{self._base_url}/software")
@@ -196,6 +235,14 @@ async def sync_catalog(db: AsyncSession, source: CatalogSource | None = None) ->
 
         summaries = await source.summaries()
 
+        # This `select` opens the session's transaction and the `commit()` below closes
+        # it, so the session sits idle-in-transaction for the whole fan-out — a shape that
+        # predates the bound and that the bound makes roughly twelve times longer on a
+        # cold sync. Left alone deliberately: nothing sets `idle_in_transaction_session_
+        # timeout` (Postgres leaves it off), and the only cost is that autovacuum cannot
+        # collect dead tuples in `jamf_patch_titles` until the sync finishes — a table of
+        # about 1,554 rows, rewritten at most hourly. Worth knowing before someone
+        # rediscovers it in a lock view; not worth two transactions to avoid.
         result = await db.execute(select(JamfPatchTitle))
         existing_rows = {row.id: row for row in result.scalars().all()}
 
