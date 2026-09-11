@@ -1665,7 +1665,7 @@ class PostureSnapshot(Base):
     apply that night (e.g. `outbox.oldest_pending_age_s` with an empty queue), never
     that it was zero — zero is written as 0.
 
-    `platform` names the population the number counted (#230). Eleven of the active
+    `platform` names the population the number counted (#230). Seventeen of the active
     keys mean something different once a sweep observes more than Macs, and a key
     cannot be redefined after the fact, so the population is recorded in the row
     rather than inferred from the era it was written in. `app.core.posture` stamps it;

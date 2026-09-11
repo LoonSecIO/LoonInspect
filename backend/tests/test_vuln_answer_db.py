@@ -15,7 +15,10 @@ about, and the half that has a cost model:
   either way and only the cost tells them apart;
 * **the gate is the tenant, and `off` is byte-identical.** A tenant whose data-sharing tier
   is `off` stores no corpus-derived answer at all and its snapshot matches, byte for byte,
-  the one a container with no library emits.
+  the one a container with no library emits;
+* **what the night's tape makes of it** (#250). The last two tests read the same stored
+  answers through the posture recorder: the fixture epoch's numbers on a judged tenant, and
+  no `vuln.*` rows at all on a pod that was never assessed.
 
 Gated on RUN_DB_TESTS like the other database-backed suites, and every test restores the
 process to "no library loaded, tier off" afterwards — the corpus and the per-tenant tier are
@@ -703,3 +706,99 @@ async def test_the_title_metadata_is_never_a_verdict_input(db, fleet) -> None:
     # is about the rule and not about an empty table.
     compiled = {row.key_title for row in (await db.execute(select(VulnLibraryTitle))).scalars()}
     assert WIRESHARK_TITLE in compiled and STALE_TITLE in compiled and UNKNOWN_TITLE not in compiled
+
+
+# --- the posture tape: what the stored answers become, once a night ----------------------
+
+
+async def _snapshot(db, connection) -> dict[str, float]:
+    """One posture capture against this fleet, as the recorder writes it.
+
+    #250's four keys count the columns judged above — this is the one place in the suite
+    where the join's output is read by something other than the wire, and the fixture epoch
+    is what makes the numbers checkable rather than plausible.
+    """
+    from app.core.posture import record_full_sweep_snapshot
+    from app.models.schema import PostureSnapshot, Run
+
+    now = datetime.now(UTC)
+    run = Run(
+        id=uuidlib.uuid4(),
+        mdm_connection_id=connection.id,
+        trigger="sweep",
+        comparison="delta",
+        lock_class="device_sweep",
+        status="succeeded",
+        window_start=now,
+        started_at=now,
+        finished_at=now,
+        heartbeat_at=now,
+    )
+    db.add(run)
+    await db.commit()
+    await record_full_sweep_snapshot(db, run_id=run.id)
+    rows = (await db.execute(select(PostureSnapshot).where(PostureSnapshot.full_sweep_run_id == run.id))).scalars().all()
+    captured = {row.metric_key: float(row.value) for row in rows}
+    await db.execute(delete(PostureSnapshot).where(PostureSnapshot.full_sweep_run_id == run.id))
+    await db.commit()
+    return captured
+
+
+async def test_the_posture_keys_count_the_fixture_epochs_answers(db, fleet) -> None:
+    """#250, end to end: load the epoch, judge the builds, and the night's tape carries the
+    four `vuln.*` keys with the epoch's own numbers.
+
+    One Mac, four builds: Wireshark 4.2.0 has a row with 17 findings and no KEV listing, the
+    clean fixture build has a row with none, and the other two have no row at all. So one
+    affected build, no KEV, two unassessed, one affected device. The unassessed count is a
+    floor rather than an equality — a lived-in local database carries other suites' builds,
+    and every installed build nothing has answered for is legitimately `unknown_app` — so
+    the exact arithmetic is pinned by the delta below, which a leftover row cannot move.
+    """
+    from app.core.posture import VULN_KEYS
+
+    connection, device = fleet
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    await _judge(db, device)
+
+    captured = await _snapshot(db, connection)
+
+    assert set(VULN_KEYS) <= set(captured), "a judged tenant records all four keys"
+    assert captured["vuln.apps_affected"] == 1  # Wireshark 4.2.0; the clean build is covered and counts here nowhere
+    assert captured["vuln.apps_kev_affected"] == 0  # assessed, and none of the 17 is KEV-listed: a real zero
+    assert captured["vuln.devices_affected"] == 1
+    assert captured["vuln.apps_unknown"] >= 2  # the rowless build of a compiled title, and the build in no object
+
+    # A new build arrives that the epoch never assessed: exactly one more `unknown_app`, and
+    # nothing moves in the other three.
+    later = await _device(db, connection, "C02VULN0002", (("LoonVD Fixture Later.app", "io.loonsec.fixture.later", "9.9.9"),))
+    await _judge(db, later)
+
+    after = await _snapshot(db, connection)
+    assert after["vuln.apps_unknown"] - captured["vuln.apps_unknown"] == 1
+    assert after["vuln.apps_affected"] == captured["vuln.apps_affected"]
+    assert after["vuln.apps_kev_affected"] == captured["vuln.apps_kev_affected"]
+    assert after["vuln.devices_affected"] == captured["vuln.devices_affected"]
+
+
+async def test_a_pod_that_was_never_assessed_writes_no_vuln_rows(db, fleet) -> None:
+    """The rule, on the state every container starts in and most containers stay in: no
+    library loaded, so nothing has judged this tenant and the four keys record **nothing**.
+
+    Not zeros. A `vuln.apps_affected` of 0 from this pod would be a clean bill of health for
+    a fleet nobody looked at — `assessment: off` (docs/vulnerabilities.md §4a) broken one
+    layer down, in a tape nobody can re-date afterwards. `tests/test_posture_db.py` holds
+    the same rule against the recorder's own fixtures; this one holds it against the real
+    gate, with the fleet's apps present and genuinely unanswered.
+    """
+    from app.core.posture import ACTIVE_KEYS, VULN_KEYS
+
+    connection, device = fleet
+    await _judge(db, device)
+    assert (await _block(db, device, WIRESHARK_BUILD)).assessment == "off"
+
+    captured = await _snapshot(db, connection)
+
+    assert not set(VULN_KEYS) & set(captured)
+    assert set(captured) <= set(ACTIVE_KEYS) - set(VULN_KEYS)
+    assert "devices.total" in captured, "the rest of the vocabulary is unaffected; only this family is gated"
