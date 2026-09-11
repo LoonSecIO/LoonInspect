@@ -291,7 +291,20 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
    container is the slow one — the whole catalog is fetched title by title and takes
    minutes, not seconds, and nothing on the page cancels it. Let it finish.
 2. **The button says "Sync failed. Try again."** The page does not carry the reason; the
-   container log does. `docker compose logs app --since 1h | grep -i "Jamf patch catalog"`:
+   container log does. Three different things in that log can carry it — the sentence the
+   refresh writes about itself, the hourly job's name (`hourly_jamf_patch_sync`) and the
+   button's own path (`/api/jamf-patch/sync`) — and they spell the catalog three ways, so
+   match all three rather than the sentence alone:
+
+   ```bash
+   docker compose logs app --since 1h | grep -iE 'jamf[ _-]patch'
+   ```
+
+   In the shipped stack each log line is one JSON record with its traceback, when there is
+   one, inside it, so a matching line carries its own reason rather than pointing at
+   something above it. Most of what comes back is `"message": "request"` for
+   `/api/jamf-patch/titles` — the page reading the table. These are the lines that answer
+   this step:
    - `The Jamf patch catalog cannot be refreshed: JAMF_PATCH_BASE_URL is set to …` → this
      container was started with that variable holding something that is not an address.
      It is **not** part of the shipped `docker-compose.yml`, so it is set only where
@@ -299,24 +312,39 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
      use the default (`https://jamf-patch.jamfcloud.com/v1`) or correct it, then
      `docker compose up -d`. Nothing was written in the meantime — whatever catalog the
      container already had still answers.
-   - a line about the request timing out or being refused → this container could not reach
-     the patch server. Check outbound access from the container itself:
+   - `"message": "request failed"` with `"path": "/api/jamf-patch/sync"` (the press you
+     just made), or `Job "hourly_jamf_patch_sync (trigger: cron…)" raised an exception`
+     (the hourly tick), either of them ending in a traceback whose last line names a
+     connection problem — `ConnectError`, `ConnectTimeout`, `ReadTimeout`, `ProxyError`,
+     a certificate failure → this container could not reach the patch server. Check
+     outbound access from the container itself:
      `docker compose exec app curl -sSI https://jamf-patch.jamfcloud.com/v1/software`. A
      proxy, an egress firewall or TLS interception is the usual cause; the hourly tick
-     keeps trying and the existing rows keep answering.
+     keeps trying and the existing rows keep answering. That this failure reaches you as a
+     traceback rather than a sentence is a gap on our side, not a second fault on yours.
+   - `"message": "request"` with `"path": "/api/jamf-patch/sync"`, `"status_code": 200`
+     and a `duration_ms` in the minutes → the refresh **finished here**; whatever gave up
+     was between the button and this container. The button sends no timeout of its own and
+     the shipped stack has no reverse proxy, so this is something you put in front of it.
+     Reload the page — the *Synced* column will have moved.
    - `jamf patch catalog synced` and nothing else → the hourly refresh is completing. If
      the page still shows nothing, that is reportable state **J**.
-   - nothing at all → no hourly refresh has completed since this container started. The
-     job runs at the top of each hour and not at startup, so this is expected for up to an
-     hour after a restart; step 1's button is the faster answer.
+   - nothing for `/api/jamf-patch/sync` at all — only the page's own `titles` reads, or no
+     output whatever → the press never reached this container, and no hourly refresh has
+     completed since it started either. The job runs at the top of each hour and not at
+     startup, so an empty table is expected for up to an hour after a restart — but a
+     press that leaves no line is not. Check that the app is reachable from the browser's
+     own machine (`curl -si $BASE/api/health`) and what sits in between; a press that
+     still writes nothing while health answers is reportable state **J**.
 3. **The table has rows and one title you expect is missing.** A title whose definition
    the server refused is skipped for that refresh and fetched again at the next one, so a
    gap that closes by itself is working as designed. A title that is published by Jamf and
    still missing a day later is reportable state **J**.
 
-**J.** A refresh that reports no error leaves the table empty, or a title Jamf publishes
-stays missing for more than a day. Report what the *Synced* column shows, the output of
-`docker compose logs app --since 1h`, and the build from Settings › Support.
+**J.** A refresh that reports no error leaves the table empty, a title Jamf publishes
+stays missing for more than a day, or a press of **Sync now** writes nothing to the
+container log while `/api/health` answers. Report what the *Synced* column shows, the
+output of `docker compose logs app --since 1h`, and the build from Settings › Support.
 
 ## 7. When a path ends in "report"
 
