@@ -401,6 +401,28 @@ vulnerability matching (`docs/data-sharing.md`, "The key scheme"), and it is why
 `backend/tests/test_vuln_library.py` asserts the fixture epoch's keys against this
 repository's own `content_keys` rather than trusting them.
 
+**Where the answer lives, and when it is judged** (#381, built 2026-09-11). The join runs
+**once per distinct build** and the answer is a column, not a lookup: `app_catalog` carries
+`vuln_assessment` and the four aggregates, and every `installed_apps` row carrying that
+build carries a copy — written by the same `copy_answer` that already copies the Jamf Patch
+answer. The judge-time statement is one `UPDATE … FROM` per epoch per tenant, outer-joining
+the tenant's catalog rows to `vuln_library_rows` on `key_full`, so a fleet of forty thousand
+Macs costs a pass over its few thousand *builds* and a device page with 250 apps issues no
+per-app lookup at all. `assessment: off` is the one state that is never stored: it is the
+gate's answer at read time (§8), so a tier flipped either way changes what is *served*
+without rewriting anything, and a tenant whose tier is `off` carries no corpus-derived
+column at all.
+
+**Two clocks, two signatures.** `evaluated_signature` names the Jamf catalog a row was
+judged against and `vuln_signature` names the corpus epoch; a row is re-judged when either
+moves, and each pass re-runs only its own half — a new epoch does not re-run title matching,
+and a catalog sync does not re-run the join for rows whose epoch is unchanged. An answer
+whose `vuln_signature` is not the epoch now answering is **not served under that epoch's
+`corpusAsOf`**: it reads `unknown_app` until the next pass rewrites it, because counts from
+one epoch under another's date is precisely the silent staleness the stamp exists to
+prevent. The window is bounded by the hourly catalog refresh and by the next sync of any
+device carrying the build; `docs/troubleshooting.md` §5 walks it.
+
 ### 4g. The same three words in front of a person
 
 Built 2026-09-03 (#251). `assessment` was ruled visible **on the wire and in the UI**, and

@@ -274,6 +274,26 @@ class InstalledApp(Base):
     # a fully-evaluated match from an assumed one — the outcome `basis` exists to prevent.
     ea_assumed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
+    # The vulnerability answer for this build, copied from `app_catalog` by the same
+    # `copy_answer` that copies the Jamf Patch answer (#381). A copy, never a derivation:
+    # the join runs once per DISTINCT build at judge time, and a device page rendering 250
+    # apps reads columns rather than asking a corpus 250 questions.
+    # `vuln_assessment` is `covered` or NULL, and NULL is `unknown_app` — the epoch this
+    # answer came from held no row for this build, which §4f says is never a clean bill.
+    # The four aggregate columns are present exactly when it is `covered`, in the shape
+    # `vuln_library_rows` publishes them.
+    vuln_assessment: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    vuln_counts: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    vuln_oldest_published: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    vuln_ids: Mapped[list | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    vuln_ids_truncated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # WHICH epoch answered. Compared for equality against the epoch this process has
+    # loaded, and never ordered: an answer from an epoch that is no longer the one
+    # answering reads `unknown_app` until the next judge pass rewrites it, because
+    # `corpusAsOf` names the loaded epoch and a count from a different one under that
+    # stamp is the silent staleness §4 exists to prevent.
+    vuln_signature: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     device: Mapped[Device] = relationship(back_populates="apps")
 
 
@@ -410,6 +430,27 @@ class AppCatalogEntry(Base):
     released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     evaluated_signature: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # --- the vulnerability answer, judged here and copied onto installed_apps (#381) ---
+    #
+    # The local join, stored: one pass over DISTINCT builds joins `key_full` to the loaded
+    # epoch's `vuln_library_rows`, and every device carrying the build reads the copy. A
+    # row in the library is the ONLY thing that means "assessed", so a build with no row
+    # leaves `vuln_assessment` NULL and reads `unknown_app` — never `covered` with zeroes
+    # (docs/vulnerabilities.md §4a, §4f).
+    #
+    # `vuln_signature` is the second half of "what was this row judged against":
+    # `evaluated_signature` names the Jamf catalog, this names the corpus epoch, and the
+    # row is re-judged when EITHER moves. It is a companion column rather than a longer
+    # `evaluated_signature` because it has to travel with the answer onto `installed_apps`,
+    # where there is no `evaluated_signature` to carry it.
+    vuln_assessment: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    vuln_counts: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    vuln_oldest_published: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    vuln_ids: Mapped[list | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    vuln_ids_truncated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    vuln_signature: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    vuln_evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class AppCatalogTitleMatch(Base):

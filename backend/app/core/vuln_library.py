@@ -29,8 +29,11 @@ while the pod holds an epoch. `read_tenant_tier` below is what fills that in, on
 unit of work; `earned_corpus` is the one call every consumer makes.
 
 **What is deliberately not here.** The per-build join at judge time and the stored answer
-on `app_catalog` and `installed_apps` — #381, which owns them because they need the
-tenant's own rows. What is not *anywhere* any more is the branch that would have turned a
+on `app_catalog` and `installed_apps` — #381, built 2026-09-11 in `app.catalog.service` and
+`app.core.vuln_answer`, because they need the tenant's own rows. The one thing this module
+lends that half is `loaded_epoch_signature()`: which epoch is answering, so a stored answer
+can be checked against it without widening the `VulnCorpus` protocol and without a query.
+What is not *anywhere* any more is the branch that would have turned a
 rowless build into a clean bill because its title was compiled under an unmoved Jamf
 stamp: **withdrawn by ruling R-D, 2026-09-11**, on two measurements from the Jamf
 enumeration — one `key_title` is shared by sixteen Wireshark titles, so there is no single
@@ -188,9 +191,13 @@ class VulnLibrary:
     Held in memory because `loaded_corpus()` is synchronous and carries no session — a
     page renders ~100 apps and must not issue ~100 queries ("cache, don't calculate").
     The rows are the epoch's, so the size is the compiler's business rather than the
-    fleet's: it does not grow with devices. #381 moves the per-build answer onto
-    `app_catalog` columns, at which point this becomes the loader's own view of what it
-    imported rather than the read path's lookup.
+    fleet's: it does not grow with devices.
+
+    Since #381 this is the **loader's own view of what it imported**, not the read path's
+    lookup: the per-build answer is a column on `app_catalog`, joined once per distinct
+    build in SQL against `vuln_library_rows`, and a page or an event reads that. What is
+    still read from here is `as_of` — the `corpusAsOf` stamp — and `signature`, which is how
+    a stored answer says which epoch produced it.
     """
 
     epoch_id: str
@@ -223,7 +230,13 @@ class VulnLibrary:
 
 
 class LibraryCorpus:
-    """`VulnCorpus` over a loaded epoch — the seam `vuln_block` and the page both read.
+    """`VulnCorpus` over a loaded epoch — what the gate hands back, and what dates an answer.
+
+    Since #381 the wire and the page do not ask it per app: they ask
+    `app.core.vuln_answer.StoredAnswers`, over the answer this epoch's rows were joined into
+    at judge time. This stays the loaded epoch itself, so `as_of` is the one `corpusAsOf`
+    every surface stamps, `loaded_epoch_signature()` can say which epoch that is, and a
+    caller that does hold the library — the importer, a test — still gets a straight answer.
 
     `findings()` answers with the row's `AssessedBuild` or with `None`, and with nothing
     else. It deliberately does **not** consult `key_title`, and since ruling R-D
@@ -900,6 +913,29 @@ async def read_tenant_tier(db: AsyncSession) -> str:
     ).scalar_one_or_none() or TIER_OFF
     install_tenant_tier(tenant_id, tier)
     return tier
+
+
+def loaded_epoch_signature() -> str | None:
+    """Which epoch is answering for the acting tenant right now, or `None` for none.
+
+    The one fact #381 needs that the `VulnCorpus` protocol deliberately does not carry.
+    The protocol's member set does not widen for it (§4f's own clause: every corpus written
+    against `as_of` + `findings` stays a `VulnCorpus`), so this reads the signature off the
+    loaded library through the same gate `loaded_corpus()` applies — no epoch, or a tenant
+    whose tier is `off`, is `None`, and a stored answer therefore stops being trusted at
+    exactly the moment the corpus stops answering.
+
+    **No query, on purpose.** It is called at judge time, once per catalog pass and once
+    per device that has an unjudged build, and at read time once per response; a database
+    read here would put a statement on the sweep's per-device path for a fact that changes
+    once a day.
+
+    Equality is the only operation, as it is everywhere else the signature appears: an
+    answer judged against a signature that is no longer this one is stale, whether the
+    epoch moved forward or was rolled back.
+    """
+    corpus = loaded_corpus()
+    return corpus.library.signature if isinstance(corpus, LibraryCorpus) else None
 
 
 async def earned_corpus(db: AsyncSession) -> VulnCorpus:

@@ -37,6 +37,7 @@ from app.core.runs import (
 )
 from app.core.runs import log as run_log
 from app.core.vuln import loaded_corpus
+from app.core.vuln_answer import stored_corpus
 from app.core.vuln_library import read_tenant_tier
 from app.core.wire import ENVELOPE, envelope, instance_label
 from app.mdm.factory import get_mdm_client
@@ -1274,7 +1275,13 @@ async def process_sync(
         # `loaded_corpus()` and neither costing a query here: the tier was read once at the
         # top of this sweep (`run_jamf`) or of this webhook (`ingest_webhook`), which is why
         # this stays a dictionary lookup on a path that runs once per device.
-        corpus=loaded_corpus(),
+        #
+        # And the answers themselves come off `current_rows` (#381), which `copy_answer`
+        # stamped a few statements above from a join that ran once per DISTINCT build. The
+        # fan-out therefore derives nothing per device: `stored_corpus` is a dictionary
+        # built from rows already in this transaction, and it hands back `NO_CORPUS`
+        # untouched when nothing is answering, so `assessment: off` stays byte-identical.
+        corpus=stored_corpus(loaded_corpus(), current_rows),
     )
     payload = snapshot.to_payload()
     payload[ENVELOPE] = dict(hints)

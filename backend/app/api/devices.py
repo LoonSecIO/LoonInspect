@@ -14,6 +14,7 @@ from app.core.auth import require
 from app.core.database import get_db
 from app.core.permissions import Permission
 from app.core.vuln import VulnCorpus
+from app.core.vuln_answer import stored_corpus
 from app.core.vuln_library import earned_corpus
 from app.core.vuln_read import assess, corpus_as_of, today
 from app.mdm.org_units import BUILDING, DEPARTMENT, OrgUnitNames, ids_for_name, load_names, name_for
@@ -231,12 +232,13 @@ def _assessed(out: DeviceDetailOut, rows: Sequence[InstalledApp], *, corpus: Vul
     """LoonInspect's own answer for each of this device's apps, and the stamp it came from
     (#251, `docs/vulnerabilities.md` §4a).
 
-    The corpus is asked once per app, keyed on the content keys the row already carries —
-    the same local hash-join the wire runs, through the same seam (`app.core.vuln_read`),
-    so a person reading this response and a person reading the Splunk event see the same
-    three words. One device's apps is ~100 rows and the lookup touches no database; under
-    the corpus every container ships today (`NO_CORPUS`) it is one `is None` and no
-    per-row work at all.
+    The answer is **read off the rows**, never derived here (#381): the local join ran once
+    per distinct build at judge time, so a device page with 250 apps issues no per-app
+    lookup of any kind. `stored_corpus` turns the rows this response already loaded into
+    the same two-member seam `vuln_block` has always been asked, so a person reading this
+    response and a person reading the Splunk event still see the same three words. Under
+    the corpus every container ships today (`NO_CORPUS`) it is one `is None` and no per-row
+    work at all.
 
     The corpus is a parameter rather than a call here because reading it now costs one
     query — this tenant's data-sharing tier (#248, §8) — and that question is asked once
@@ -248,10 +250,14 @@ def _assessed(out: DeviceDetailOut, rows: Sequence[InstalledApp], *, corpus: Vul
     """
     as_of = today()
     by_id = {row.id: row for row in rows}
+    stored = stored_corpus(corpus, rows)
     return out.model_copy(
         update={
+            # The stamp stays the corpus's own, not the stored answer's: `corpusAsOf` names
+            # the epoch answering now, which is exactly why an answer judged against a
+            # different one is not served under it.
             "corpus_as_of": corpus_as_of(corpus),
-            "apps": [app.model_copy(update={"vuln": assess(corpus, by_id[app.id], as_of=as_of)}) for app in out.apps],
+            "apps": [app.model_copy(update={"vuln": assess(stored, by_id[app.id], as_of=as_of)}) for app in out.apps],
         }
     )
 
