@@ -79,7 +79,9 @@ catalog, so device pages and the Applications overview need no join.
    `last_seen_at` always); rows whose `evaluated_signature` is not the current catalog's are
    judged (`match_app` + `summarize` from #65 on the row's own facts); rows whose
    `vuln_signature` is not the loaded corpus epoch's are joined to `vuln_library_rows` in one
-   set-based statement; each app row gets its copy.
+   set-based statement; each app row gets its copy — when it is new, when its catalog row was
+   just judged, or when the corpus epoch on its copy is not the one its catalog row now
+   carries, which is the build some *other* Mac's sweep judged.
    A (name, bundle ID, version) the fleet has not shown before is therefore answered the moment
    it appears, not at the next schedule.
 2. **After every Jamf catalog sync** — `hourly_jamf_patch_sync` and `POST /api/jamf-patch/sync`
@@ -89,7 +91,9 @@ catalog, so device pages and the Applications overview need no join.
    the signature alone and costs nothing. `POST /api/catalog/refresh` forces a full re-judge.
    The same pass is where a moved **corpus epoch** is caught: rows whose only stale half is
    `vuln_signature` are re-joined by one `UPDATE … FROM` and their copies by one more, without
-   re-running a title match whose answer did not change (#381).
+   re-running a title match whose answer did not change (#381). That copy statement runs on
+   every pass, re-join or not: it is the only writer that reaches a Mac nobody has swept since
+   the build it carries was judged, and it writes nothing when the copies already agree.
 3. Rows outlive devices by design — an app nobody carries any more keeps its first/last seen —
    and `last_seen_at` only moves when a device reports the app again.
 
