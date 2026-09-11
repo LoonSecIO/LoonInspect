@@ -51,12 +51,24 @@ a dataset that may not be available.
 > Until then no shipped artifact reads it, and nothing in this contract assumes it
 > exists, when it arrives, or in what form.
 
-**Nothing in this document depends on that answer**, because v0 does not use the
-dataset. The v0 corpus is static, hand-refreshed, and built from public sources only
-(§2). If the sourcing question later resolves in favour of the dataset, it enters as a
-*bigger corpus and a `corpusAsOf` that starts moving on its own* — an additive change to
-the data, never a change to the wire. If it resolves against, nothing written here has
-to be unsaid, because nothing written here claims a detection.
+> **Resolved 2026-09-11.** The corpus a shipped container reads is derived only from
+> public sources: NVD's CVE and CPE data and CISA's Known Exploited Vulnerabilities
+> catalog — both works of the United States government — and the identifiers in Jamf's
+> public patch catalog, which enter the corpus only as SHA-256 content keys (`key_title`,
+> `key_full`, `app/core/content_keys.py`); no Jamf name, version, or release date is
+> redistributed. The legacy NVD dataset and its gateway named above are not used.
+> Delivery is a LoonSec-hosted signed link handed to consenting instances on the daily
+> data-sharing exchange. NVD's API terms ask that products display the notice *"This
+> product uses the NVD API but is not endorsed or certified by the NVD."*; it is shown
+> wherever NVD-derived data is shown, and the README carries it.
+
+**Nothing in this document depends on that answer**, because the corpus this contract
+describes has never been the dataset the condition names. Resolved above: it now arrives
+by the daily data-sharing exchange, compiled from public sources and delivered to
+consenting instances (§2, §8). If the legacy dataset's own sourcing question later
+resolves in its favour, it would enter as a *bigger corpus* — an additive change to the
+data, never a change to the wire. If it resolves against, nothing written here has to be
+unsaid, because nothing written here claims a detection.
 
 What the condition does gate is scale, not shape. That is the whole reason these
 namings were worth taking inside the freeze window: **the vocabulary is the part that
@@ -72,7 +84,7 @@ delta.
 
 | | v0 | Not v0 |
 | --- | --- | --- |
-| Corpus | **Arrives by the exchange** — a Jamf-derived epoch, compiled elsewhere, published complete once a day (ruled 2026-09-10; #248 loads it) | The nightly NVD→corpus scan itself |
+| Corpus | **Arrives by the exchange** — a Jamf-derived epoch compiled by LoonSec from public sources (§1), published complete once a day as a signed link (ruled 2026-09-10; #248 loads it) | The nightly NVD→corpus scan itself |
 | Join | Local hash-join, in the container | Any call to a vulnerability gateway |
 | Refresh | Daily, when the published signature moves; stamped in `corpusAsOf` | — |
 | Half | Container↔cloud: the exchange response's `corpus` pointer, and the `verdicts` slot beside it — still reserved, still unparsed, and a **separate channel** from the corpus (`backend/app/core/sharing.py`) | The compiler, which lives outside this repo, touches no container and breaks no contract |
