@@ -77,10 +77,10 @@ freezes, and it freezes independently of the data.**
 ## 2. What v0 is
 
 Ruled 2026-09-01, against AI-over-inventory for the last v0 feature slot. CVE won on one
-argument: **CVE has a clock and AI does not.** The four reserved `vuln.*` posture keys
-(§7) start a tape that cannot be backfilled; an AI summary is worth the same whenever it
-ships, and is *better* after CVE, since the version-diff narration's payload is the CVE
-delta.
+argument: **CVE has a clock and AI does not.** The four `vuln.*` posture keys (§7) —
+reserved when this was ruled, active since 2026-09-11 — start a tape that cannot be
+backfilled; an AI summary is worth the same whenever it ships, and is *better* after CVE,
+since the version-diff narration's payload is the CVE delta.
 
 | | v0 | Not v0 |
 | --- | --- | --- |
@@ -651,12 +651,26 @@ that was never assessed, which is §4a's failure one more layer down. The keys s
 writing the night the join first judges that tenant, and their tape starts *then*.
 
 Built as two database facts and no process state: the container holds an epoch, and at
-least one of the tenant's catalog rows was judged against **that** epoch. A tier flipped
-to `off` therefore stops the tape rather than flatlining it at zero, because the judge
-pass clears the stored answers (§8) and the gate closes behind them.
+least one of the tenant's catalog rows carries a stored answer — **ever judged**, never
+*judged against tonight's epoch*. A tier flipped to `off` therefore stops the tape rather
+than flatlining it at zero, because the judge pass clears the stored answers (§8) and the
+gate closes behind them.
 
-That is what the reservation bought, and the only thing it bought: the definitions were
-fixed at leisure, rather than under time pressure with a customer's SPL already written.
+**The gate asks "ever", corrected 2026-09-11 before a row was ever written.** An equality
+gate spells "this tenant's answers are one epoch behind" exactly the way it spells "nothing
+here was ever assessed", and the first is reachable with nothing broken: a new epoch lands,
+the next sweep fails before it touches a device, the hourly re-judge has not run yet. A
+tenant that is merely behind therefore writes its night, and writes what the wire said that
+night — every build `unknown_app` under an epoch that is no longer answering (§4f), so
+`vuln.apps_unknown` carries the whole installed population and the other three are zeros.
+Absence stays one sentence, which is the only way absence can be a ruling.
+
+That is what the reservation bought, and the only thing it bought: the four **names**, this
+rule, and the time to argue about both. The **grain** was not reserved — #102's gloss said
+"apps" and the keys count installed builds — so it was set at activation on 2026-09-11,
+which a reserved key with no rows behind it is allowed exactly once
+([`posture-snapshot.md`](posture-snapshot.md), *Vulnerabilities*). From that date the
+standing rule holds: a definition change mints a new key and retires the old.
 
 ## 8. Tiers
 

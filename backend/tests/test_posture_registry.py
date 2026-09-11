@@ -111,6 +111,12 @@ def test_the_no_rows_rule_is_written_down_beside_the_four_keys() -> None:
     able to learn, from the tape's own document, that the gap is a statement — "nothing was
     assessed here" — and not four lost keys. The rule living only in a docstring inside the
     recorder would fail exactly the reader it is written for.
+
+    Asserted **inside each of the four rows**, not once across the document: a reader of a
+    key meets its own cell, and a version of this test that searched the whole file passed
+    while `vuln.devices_affected`'s cell said nothing about its absence — and kept passing
+    when the sentence was deleted from a second cell as well. One row carrying the rule for
+    four is the drift this file exists to catch.
     """
     from app.core.posture import VULN_KEYS
 
@@ -120,8 +126,10 @@ def test_the_no_rows_rule_is_written_down_beside_the_four_keys() -> None:
 
     assert "no rows, not zeros" in prose, "the activation rule must be stated in the doc, in the contract's own words"
     for key in VULN_KEYS:
-        assert f"| `{key}` | ACTIVE |" in doc, f"{key} must carry an ACTIVE row of its own"
-    assert "never been judged" in prose, "each key's cell must say what its absence means"
+        rows = [line for line in doc.splitlines() if line.startswith(f"| `{key}` | ACTIVE |")]
+        assert len(rows) == 1, f"{key} must carry exactly one ACTIVE row of its own"
+        cell = " ".join(rows[0].replace("*", "").split())
+        assert "never been judged" in cell, f"{key}'s own cell must say what its absence means — a neighbour's does not"
 
 
 def test_notable_is_the_closed_levels_ordering_at_normal_or_above() -> None:

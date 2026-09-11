@@ -308,19 +308,41 @@ async def _vuln_values(db: AsyncSession) -> dict[str, float]:
     their tape starts then.
 
     **Two database facts open the gate, and nothing else.** The container holds an epoch
-    (`vuln_library_epoch`), and at least one of this tenant's catalog rows was judged
-    against *that* epoch. Both are reads, in keeping with "the recorder reads the DB never
-    the API": the answers are the columns #381 stores, and nothing here re-derives a
-    verdict, consults the library rows, or asks the corpus a question. It deliberately does
-    not read `loaded_epoch_signature()` either — that is fail-closed process state behind a
+    (`vuln_library_epoch`), and at least one of this tenant's catalog rows carries a stored
+    answer (`vuln_signature` not null) — *ever judged*, never *judged against tonight's
+    epoch*. Both are reads, in keeping with "the recorder reads the DB never the API": the
+    answers are the columns #381 stores, and nothing here re-derives a verdict, consults the
+    library rows, or asks the corpus a question. It deliberately does not read
+    `loaded_epoch_signature()` either — that is fail-closed process state behind a
     per-tenant tier the capture path never installs, so a recorder that trusted it would
     write an empty night indistinguishable from a tenant that was never assessed.
 
+    **Why the second fact is "ever", corrected 2026-09-11 before the first row was ever
+    written.** The gate first asked for equality with the answering epoch, and that made two
+    different statements wear one shape. Reachable with nothing broken: a new epoch lands, a
+    sweep then fails before it processes a single device — this recorder fires on failed
+    sweeps by design — and the hourly re-judge (`refresh_tenant`) has not run yet. Every
+    stored signature is one epoch behind, an equality gate finds nothing, and the night
+    writes no rows at all: this family's one reserved sentence, *nothing has ever been
+    assessed here*, said about a fleet assessed for months, in a tape nobody can re-date. So
+    the gate asks the question it means. A tenant whose answers are merely behind writes its
+    night, and the counts say what the wire said: `apps_unknown` carries the whole installed
+    population (an answer from an epoch that no longer answers reads `unknown_app`, §4f)
+    while the other three are honest zeros. `apps_unknown == catalog.installed` is that
+    night's legible shape, and docs/posture-snapshot.md names it so a reader does not have
+    to rediscover it.
+
+    **What the row cannot say: which epoch answered.** `posture_snapshot` carries no epoch
+    column — one row is one metric, one capture, one population, never a wide row (#102) —
+    and `vuln_library_epoch` keeps a single row with no history, so a count is not
+    re-datable to the corpus that produced it years later. The shape above is the substitute,
+    and it is written down rather than left implicit.
+
     The gate closes again on its own, which is the behaviour a tier flip needs: a tenant
     turned back to `off` has its stored answers cleared by the next judge pass
-    (`app.catalog.service.judge_vuln` with no epoch), so the signature match finds nothing
-    and the tape stops rather than flatlining at zero under a fleet nobody is assessing
-    any more.
+    (`app.catalog.service.judge_vuln` with no epoch nulls `vuln_signature` with the rest of
+    the answer), so the gate finds nothing and the tape stops rather than flatlining at zero
+    under a fleet nobody is assessing any more.
 
     The population for the three app keys is `catalog.installed`'s exactly — distinct
     builds of this capture's platform that at least one device carries — so a reader has a
@@ -328,17 +350,25 @@ async def _vuln_values(db: AsyncSession) -> dict[str, float]:
     the rest assessed clean. `vuln.devices_affected` folds the same affected builds onto
     the device population every `devices.*` key counts, through the catalog row rather than
     through the copy on `installed_apps`: the build is what was judged, and the copy is
-    allowed to lag a device's own sync by design (§4f), so counting copies would let the
-    two keys contradict each other on a night the tape cannot re-run.
+    allowed to lag a device's own sync by design (§4f), so counting copies would let the two
+    keys disagree about one build on a night the tape cannot re-run. That is the copy-lag
+    axis only. On the population axis the two halves draw different lines on purpose —
+    `catalog.installed` counts a build any device row carries, `devices_affected` counts
+    devices on active connections — so a build only a deactivated connection's Mac carries
+    is counted in the three app keys and in no device here. Documented in the key rows
+    rather than folded away, because making them agree would give the app keys a denominator
+    `catalog.installed` no longer matches.
     """
     epoch = (await db.execute(select(VulnLibraryEpoch.signature).limit(1))).scalars().first()
     if epoch is None:
         return {}
-    # Has the join run for THIS tenant, under the epoch now answering? One row is the whole
-    # question, so it is asked with a LIMIT rather than a count. The catalog rows are
-    # tenant-scoped by row-level security, so this sees the acting tenant's rows only — one
-    # pod's judged tenant does not open the gate for its unjudged neighbour.
-    judged = (await db.execute(select(AppCatalogEntry.id).where(AppCatalogEntry.vuln_signature == epoch).limit(1))).first()
+    # Has the join ever run for THIS tenant? One row is the whole question, so it is asked
+    # with a LIMIT rather than a count. Deliberately NOT `== epoch`: see the docstring — an
+    # equality gate spells "one epoch behind" the same way it spells "never assessed", and
+    # absence in this family is a reserved sentence that must keep saying one thing. The
+    # catalog rows are tenant-scoped by row-level security, so this sees the acting tenant's
+    # rows only — one pod's judged tenant does not open the gate for its unjudged neighbour.
+    judged = (await db.execute(select(AppCatalogEntry.id).where(AppCatalogEntry.vuln_signature.is_not(None)).limit(1))).first()
     if judged is None:
         return {}
 
@@ -654,7 +684,10 @@ async def record_full_sweep_snapshot(db: AsyncSession, *, run_id: uuid.UUID) -> 
             # be inferred from a key count (docs/diagnosability.md rule 2): `unassessed` is
             # four keys deliberately absent, not four keys lost. It is the ordinary state on
             # a pod with no vulnerability library or with data sharing off, and the next
-            # check for either is docs/troubleshooting.md §5.
+            # check for either is docs/troubleshooting.md §5. `counted` says the four rows
+            # were written, not that anything was answered tonight: a tenant whose answers
+            # are an epoch behind writes its night as `apps_unknown == catalog.installed`,
+            # which the rows say and this field deliberately does not restate.
             "vuln": "counted" if any(key in values for key in VULN_KEYS) else "unassessed",
         },
     )
