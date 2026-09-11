@@ -1,18 +1,31 @@
-"""Pure helpers behind the Jamf patch catalog sync.
+"""The Jamf patch catalog sync, without a session.
 
-`sync_catalog` itself needs a session and the network and is not covered here. Its
-three pure helpers are, because each one fails quietly rather than loudly: a title that
-does not parse is skipped with `continue`, a requirement group collapsed wrongly still
+Its pure helpers, because each one fails quietly rather than loudly: a title that does
+not parse is skipped with `continue`, a requirement group collapsed wrongly still
 produces well-formed JSON, and `_needs_refresh` returning the wrong answer either
 re-fetches the entire catalog every hour or never refreshes it again. None of the three
 raises.
+
+And the two halves of the source seam (#382) that need no database: the fan-out bound,
+which is a promise to a public server and is invisible in the rows it produces, and the
+Jamf source's addresses, which now come from a setting. `sync_catalog` end to end —
+fixture in, rows out — is `test_jamf_catalog_sync_db.py`.
 """
 
 from __future__ import annotations
 
+import asyncio
+
+import httpx
+import pytest
+
+from app.core.config import settings
 from app.mdm.patch.jamf_catalog import (
+    DETAIL_CONCURRENCY,
+    JamfApiCatalogSource,
     _convert_requirements,
     _extension_attributes,
+    _fetch_details,
     _needs_refresh,
     _remove_embedded_cert,
     _strip_patch_entry,
@@ -162,3 +175,134 @@ class TestExtensionAttributes:
     def test_missing_or_malformed_is_empty(self) -> None:
         assert _extension_attributes({}) == []
         assert _extension_attributes({"extensionAttributes": [{"displayName": "no key"}, "x"]}) == []
+
+
+class _CountingSource:
+    """A `CatalogSource` that remembers how many detail reads overlapped at its busiest
+    moment — the only way to see a fan-out bound, which leaves no trace in the rows."""
+
+    def __init__(self, *, failing: set[str] | None = None) -> None:
+        self.in_flight = 0
+        self.peak = 0
+        self.asked: list[str] = []
+        self._failing = failing or set()
+
+    async def summaries(self) -> list[dict]:
+        return []
+
+    async def detail(self, title_id: str) -> dict:
+        self.in_flight += 1
+        self.peak = max(self.peak, self.in_flight)
+        self.asked.append(title_id)
+        try:
+            # Two trips through the event loop, so everything the semaphore admitted is
+            # counted together. Without an await here each read would finish before the
+            # next began and the peak would be 1 whatever the bound was — the test would
+            # pass with the semaphore deleted.
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            if title_id in self._failing:
+                request = httpx.Request("GET", f"https://patch.example.test/v1/patch/{title_id}")
+                raise httpx.HTTPStatusError("404", request=request, response=httpx.Response(404, request=request))
+            return {"id": title_id}
+        finally:
+            self.in_flight -= 1
+
+
+class TestFetchDetails:
+    """The bound the cold start needed (#382): a container with no rows treats all ~1,554
+    titles as changed, and the bare `asyncio.gather` this replaced dialled every one of
+    them at once."""
+
+    async def test_at_most_eight_reads_are_in_flight(self) -> None:
+        source = _CountingSource()
+
+        await _fetch_details(source, [str(n) for n in range(40)])
+
+        assert source.peak == DETAIL_CONCURRENCY == 8
+
+    async def test_every_title_is_fetched_in_the_order_asked_for(self) -> None:
+        """The bound must not cost a title or reorder the answers: the caller zips these
+        back against `to_refresh` with `strict=True`, so a short or shuffled list would
+        write the wrong definition onto the wrong row."""
+        source = _CountingSource()
+        title_ids = [str(n) for n in range(40)]
+
+        details = await _fetch_details(source, title_ids)
+
+        assert [detail["id"] for detail in details] == title_ids
+        assert sorted(source.asked) == sorted(title_ids)
+
+    async def test_one_failing_title_is_returned_not_raised(self) -> None:
+        """`return_exceptions=True`, kept through the change: one 404 in the fan-out is a
+        title skipped, never the fifteen hundred others abandoned."""
+        source = _CountingSource(failing={"7"})
+
+        details = await _fetch_details(source, [str(n) for n in range(10)])
+
+        assert isinstance(details[7], httpx.HTTPStatusError)
+        kept = [detail["id"] for detail in details if not isinstance(detail, BaseException)]
+        assert kept == ["0", "1", "2", "3", "4", "5", "6", "8", "9"]
+
+    async def test_nothing_to_refresh_asks_for_nothing(self) -> None:
+        source = _CountingSource()
+
+        assert await _fetch_details(source, []) == []
+        assert source.asked == []
+
+
+class TestJamfApiCatalogSource:
+    """The Jamf half of the seam. Both addresses come from `settings.jamf_patch_base_url`
+    now, and its default is the server the module constant named."""
+
+    @staticmethod
+    def _client(seen: list[str]) -> httpx.AsyncClient:
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(str(request.url))
+            if request.url.path.endswith("/software"):
+                return httpx.Response(200, json=[{"id": "575", "lastModified": "1", "currentVersion": "8.12.33"}])
+            return httpx.Response(200, text='\x30\x82CERT{"id":"575","name":"1Password"}\x00]}')
+
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    def test_the_default_is_jamfs_public_patch_server(self) -> None:
+        assert settings.jamf_patch_base_url == "https://jamf-patch.jamfcloud.com/v1"
+
+    async def test_both_reads_use_the_configured_base_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(settings, "jamf_patch_base_url", "https://patch.example.test/v1")
+        seen: list[str] = []
+
+        async with self._client(seen) as client:
+            source = JamfApiCatalogSource(client)
+            summaries = await source.summaries()
+            detail = await source.detail("575")
+
+        assert seen == ["https://patch.example.test/v1/software", "https://patch.example.test/v1/patch/575"]
+        assert summaries == [{"id": "575", "lastModified": "1", "currentVersion": "8.12.33"}]
+        # The envelope is stripped on the way through, as it was when the fetch was a
+        # module-level function.
+        assert detail == {"id": "575", "name": "1Password"}
+
+    async def test_a_trailing_slash_does_not_double(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`https://…/v1/` is the same address a person would paste; `…/v1//software` is
+        not the same request."""
+        monkeypatch.setattr(settings, "jamf_patch_base_url", "https://patch.example.test/v1/")
+        seen: list[str] = []
+
+        async with self._client(seen) as client:
+            await JamfApiCatalogSource(client).summaries()
+
+        assert seen == ["https://patch.example.test/v1/software"]
+
+    async def test_an_unlistable_catalog_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The summaries read has no `return_exceptions` behind it, deliberately: a
+        catalog that cannot be listed fails the sync rather than reading as a catalog
+        with nothing in it."""
+        monkeypatch.setattr(settings, "jamf_patch_base_url", "https://patch.example.test/v1")
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(503)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            with pytest.raises(httpx.HTTPStatusError):
+                await JamfApiCatalogSource(client).summaries()
