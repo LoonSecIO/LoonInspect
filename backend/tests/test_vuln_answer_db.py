@@ -238,6 +238,25 @@ async def _installed(db, device, key_full: str) -> InstalledApp:
     )
 
 
+async def _stored(db, device, key_full: str) -> tuple[str | None, str | None]:
+    """One device row's stored answer **as the database holds it**, deliberately not as an
+    ORM entity.
+
+    The sessions here are `expire_on_commit=False` and every set-based copy runs
+    `synchronize_session=False`, so re-`select`ing the entity hands back the identity map's
+    cached instance with its *old* attribute values. A missing copy therefore hides from any
+    assertion that reads objects — it reads whatever the last in-memory write left — and
+    shows up only against the columns. Selecting columns bypasses the identity map.
+    """
+    return (
+        await db.execute(
+            select(InstalledApp.vuln_assessment, InstalledApp.vuln_signature).where(
+                InstalledApp.device_id == device.id, InstalledApp.key_full == key_full
+            )
+        )
+    ).one()
+
+
 async def _block(db, device, key_full: str):
     """One installed app's `vuln{}` as the read path produces it — the stored answer through
     the same seam the wire uses."""
@@ -350,6 +369,12 @@ async def test_a_device_page_with_250_apps_issues_no_per_app_lookup(db, fleet) -
     rendered twice — with the epoch loaded and without. Both cost the same handful of
     statements, and neither grows with the app count: the answers are columns the response
     already selected, so there is nothing left to look up.
+
+    `len(issued) < 10` is the load-bearing assertion here; keep it. The `vuln_library_rows`
+    one below it is a guard rail, not a property — the in-memory lookup this replaced never
+    named that table either, so it would have passed before #381 as well. The assertion that
+    actually pins "the corpus is never asked on the read path" lives in `test_vuln_read.py`
+    (`assert loaded.calls == []`).
     """
     from app.api.devices import get_device
 
@@ -455,6 +480,135 @@ async def test_a_second_sweep_under_an_unmoved_epoch_re_judges_nothing(db, fleet
     with _statements() as issued:
         await _judge(db, device)
     assert not any("vuln_library_rows" in statement for statement in issued), issued
+
+
+# --- the copy reaches every device, not only the one that judged -------------------------
+
+
+async def test_the_hourly_pass_copies_an_answer_another_macs_sweep_judged(db, fleet) -> None:
+    """The pass that reaches a Mac nobody has swept since its builds were judged.
+
+    Two Macs carry the same builds. The quiet one syncs before any epoch exists; then an
+    epoch lands and the *other* Mac's check-in judges the catalog rows. From that instant the
+    quiet Mac's rows are the only thing left holding no answer, and neither copier reaches
+    them: `record_device_apps` copies onto the device whose own pass judged, and the quiet
+    Mac is not syncing. So the hourly refresh has to copy whether or not it re-judged
+    anything — and it re-judges nothing here, because the catalog rows already name the
+    current epoch.
+
+    Gating the copy on the re-judge count left the quiet Mac reading `unknown_app` on its
+    device page and in `loon:jamf:mac:app` **permanently**: the next epoch reruns the same
+    race, and nothing else in the system writes that copy. Read against the columns, not the
+    entities — see `_stored`.
+    """
+    from app.catalog.service import refresh_tenant
+
+    connection, quiet = fleet
+    await _judge(db, quiet)  # synced before the corpus existed: no answer to carry
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    await _judge(db, await _device(db, connection, "C02VULN0011", APPS))  # the other Mac judges
+
+    assert (await _entry(db, WIRESHARK_BUILD)).vuln_assessment == "covered"
+    assert await _stored(db, quiet, WIRESHARK_BUILD) == (None, None)
+
+    await refresh_tenant(db)
+    await db.commit()
+
+    assert await _stored(db, quiet, WIRESHARK_BUILD) == ("covered", SIGNATURE)
+    assert (await _block(db, quiet, WIRESHARK_BUILD)).assessment == "covered"
+
+
+async def test_a_mac_that_syncs_after_another_judged_its_builds_gets_the_copy(db, fleet) -> None:
+    """The other half of the same race, closed at the sync rather than at the hour.
+
+    The quiet Mac from the test above does check in — and on the old copy condition that
+    changed nothing: its rows are not new (`last_patch_check_at` is set from its first sync)
+    and nothing this pass judged put its builds in `moved`, because the other Mac's sweep had
+    already made the catalog rows current. The device's own sync has to notice that the epoch
+    on its stored copy is not the epoch its catalog row now carries.
+    """
+    connection, quiet = fleet
+    await _judge(db, quiet)
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    await _judge(db, await _device(db, connection, "C02VULN0012", APPS))
+    assert await _stored(db, quiet, WIRESHARK_BUILD) == (None, None)
+
+    await _judge(db, quiet)  # this Mac checks in; nothing about the catalog moved
+
+    assert await _stored(db, quiet, WIRESHARK_BUILD) == ("covered", SIGNATURE)
+    assert (await _block(db, quiet, WIRESHARK_BUILD)).assessment == "covered"
+
+
+async def test_a_quiet_tenant_pays_no_copy_it_does_not_need(db, fleet) -> None:
+    """The cost of making the copy unconditional, stated: one no-op UPDATE an hour.
+
+    Two refreshes back to back under an unmoved epoch. The second issues its join and its
+    copy — they are unconditional now — and both match nothing, so no `installed_apps` row is
+    written and the pass stays silent. `copy_vuln_answers`'s `is_distinct_from` predicate is
+    what makes that true; without it an hourly pass would rewrite every app row of every
+    tenant forever.
+    """
+    from app.catalog.service import copy_vuln_answers, refresh_tenant
+
+    _, device = fleet
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    await _judge(db, device)
+    await refresh_tenant(db)
+    await db.commit()
+
+    assert await copy_vuln_answers(db) == 0
+    with _statements() as issued:
+        await refresh_tenant(db)
+    copies = [statement for statement in issued if statement.lstrip().startswith("UPDATE installed_apps")]
+    assert len(copies) == 1, copies
+
+
+async def test_refresh_repairs_a_stored_answer_that_will_not_parse(db, fleet, caplog) -> None:
+    """The remedy `docs/troubleshooting.md` §5 step 4 promises, held to its word.
+
+    A stored answer is corrupted the way that step describes — a row that moved underneath
+    the container. The read path declines to trust it, names it (`answer_unreadable`) and the
+    app reads `unknown_app` rather than raising. *Refresh* — `refresh_tenant(force=True)`,
+    what the Catalog tab's button calls — must rewrite it, and that is why a scope handed to
+    `judge_vuln` is re-judged whatever its signature says: the corrupted row's signature still
+    names the epoch that is answering, so a signature filter there would make this button
+    powerless and step 4 a lie.
+    """
+    import logging
+
+    from app.catalog.service import refresh_tenant
+    from app.core.vuln import vuln_block
+    from app.core.vuln_answer import stored_corpus
+
+    _, device = fleet
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    await _judge(db, device)
+
+    async def _read():
+        row = await _installed(db, device, WIRESHARK_BUILD)
+        await db.refresh(row)
+        corpus = stored_corpus(loaded_corpus(), [row])
+        return vuln_block(corpus, key_title=row.key_title, key_full=row.key_full, as_of=TODAY)
+
+    assert (await _read()).counts.total == 17
+
+    # Corrupted on the entities as well as in the table, which is what a restored backup or a
+    # hand-edited row looks like to a fresh process. An UPDATE alone would leave this
+    # session's cached catalog entry holding the good answer, and the copy would then repair
+    # the device row out of memory without the judge pass having done anything at all.
+    broken = {"total": "seventeen", "kev": 1}
+    (await _entry(db, WIRESHARK_BUILD)).vuln_counts = broken
+    (await _installed(db, device, WIRESHARK_BUILD)).vuln_counts = broken
+    await db.commit()
+
+    with caplog.at_level(logging.WARNING):
+        assert (await _read()).assessment == "unknown_app"
+    assert [record.state for record in caplog.records if hasattr(record, "state")] == ["answer_unreadable"]
+
+    await refresh_tenant(db, force=True)
+    await db.commit()
+
+    assert (await _read()).counts.total == 17
 
 
 # --- the gate: the tenant, and `off` byte for byte --------------------------------------

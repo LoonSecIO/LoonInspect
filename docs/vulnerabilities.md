@@ -27,9 +27,9 @@ byte-identical to the one #241 and #242 shipped — asserted, not claimed
 `off`, even where the pod holds an epoch: that is #281's Option A, read at the grain a
 multi-tenant pod actually has (§8, ruled 2026-09-11).
 
-What is **not** built is the per-build join at judge time — the stored answer on
-`app_catalog` and `installed_apps`
-([#381](https://github.com/LoonSecIO/LoonInspect/issues/381)) — and the four posture keys
+The per-build join at judge time — the stored answer on `app_catalog` and
+`installed_apps` ([#381](https://github.com/LoonSecIO/LoonInspect/issues/381)) — is built
+as of 2026-09-11 (§4f). What is **not** built is the four posture keys
 ([#250](https://github.com/LoonSecIO/LoonInspect/issues/250)). §10 tracks the rest.
 
 The block it rules is `vuln{}` — LoonInspect's own answer about an app Jamf reported,
@@ -415,13 +415,27 @@ column at all.
 
 **Two clocks, two signatures.** `evaluated_signature` names the Jamf catalog a row was
 judged against and `vuln_signature` names the corpus epoch; a row is re-judged when either
-moves, and each pass re-runs only its own half — a new epoch does not re-run title matching,
-and a catalog sync does not re-run the join for rows whose epoch is unchanged. An answer
-whose `vuln_signature` is not the epoch now answering is **not served under that epoch's
-`corpusAsOf`**: it reads `unknown_app` until the next pass rewrites it, because counts from
-one epoch under another's date is precisely the silent staleness the stamp exists to
-prevent. The window is bounded by the hourly catalog refresh and by the next sync of any
-device carrying the build; `docs/troubleshooting.md` §5 walks it.
+moves, and the expensive pass — the one whose cost grows with the tenant — re-runs only its
+own half: a new epoch does not re-run title matching. (A catalog sync re-writes the join's
+six columns for the rows it re-matched, whatever their epoch. That is one statement over
+rows already in hand, and it is deliberate: a scope handed to the judge is re-judged
+unconditionally, which is what makes *Refresh* the repair for a stored answer that will not
+parse.) An answer whose `vuln_signature` is not the epoch now answering is **not served
+under that epoch's `corpusAsOf`**: it reads `unknown_app` until the next pass rewrites it,
+because counts from one epoch under another's date is precisely the silent staleness the
+stamp exists to prevent.
+
+**The copy reaches every device, not just the one that judged.** The build is judged once;
+the copy onto `installed_apps` is what a page and an event actually read, and it has two
+writers. A device's own sync copies onto its rows — including a build another Mac's sweep
+judged, which this device's pass did not move. The hourly refresh copies for the whole
+tenant **every pass, whether or not it re-judged anything**, because the Mac that needs
+repairing is precisely the one that has not synced since the build it carries was judged,
+and by then the catalog row names the current epoch and no per-device pass will write.
+Restricted to rows whose copy differs, so a quiet tenant pays one no-op statement an hour.
+Those two are the bounds: the window closes at the hourly refresh, or at the next sync of
+the device in question — not of *any* device carrying the build, which is the bound that
+would have left every other Mac stale forever. `docs/troubleshooting.md` §5 walks it.
 
 ### 4g. The same three words in front of a person
 
@@ -712,8 +726,8 @@ block each other.
 | Consequence | Issue | State |
 | --- | --- | --- |
 | The corpus behind the seam: the library loader — the exchange's `corpus` pointer, the verified epoch, the global row/title tables, `corpusAsOf`, and `loaded_corpus()` answering from stored rows | [#248](https://github.com/LoonSecIO/LoonInspect/issues/248) | **Built 2026-09-10.** `app/core/vuln_library.py`, the three `vuln_library_*` tables (migration `d1f8b6a34e07`), the `AssessedBuild` widening in `app/core/vuln.py`; pinned in `backend/tests/test_vuln_library.py` and `…_db.py` against the committed fixture epoch |
-| The per-build join at judge time, stored on `app_catalog` and copied onto `installed_apps` | [#381](https://github.com/LoonSecIO/LoonInspect/issues/381) | Open. The assessed-titles stamp branch it was also going to carry is **withdrawn** (ruling R-D, 2026-09-11): a verdict comes from a row and from nothing else, so a rowless build reads `unknown_app` permanently rather than provisionally (§4f) |
+| The per-build join at judge time, stored on `app_catalog` and copied onto `installed_apps` | [#381](https://github.com/LoonSecIO/LoonInspect/issues/381) | **Built 2026-09-11.** §4f. `app/catalog/service.py` (`judge_vuln`, `copy_vuln_answers`), the read seam in `app/core/vuln_answer.py`, the seven columns on both tables (migration `b3e7c1d5f9a2`); pinned in `backend/tests/test_vuln_answer_db.py`. The assessed-titles stamp branch it was also going to carry is **withdrawn** (ruling R-D, 2026-09-11): a verdict comes from a row and from nothing else, so a rowless build reads `unknown_app` permanently rather than provisionally |
 | `vuln{}` populated on the app sub-event; `assessment` stops being a constant `off`. Also needs the fan-out ([#242](https://github.com/LoonSecIO/LoonInspect/issues/242)) | [#249](https://github.com/LoonSecIO/LoonInspect/issues/249) | **Built 2026-09-03.** `app/core/vuln.py`, `VulnEnrichment` in `app/schemas/payload.py`, the sentinel in `app/core/hec_fanout.py`, pinned in `backend/tests/test_vuln_block.py` |
-| The four `vuln.*` posture keys go ACTIVE, under §7's no-zero rule | [#250](https://github.com/LoonSecIO/LoonInspect/issues/250) | Open. Still RESERVED, deliberately: the join has stored nothing to count |
+| The four `vuln.*` posture keys go ACTIVE, under §7's no-zero rule | [#250](https://github.com/LoonSecIO/LoonInspect/issues/250) | Open. Still RESERVED, deliberately: #381 is what gave the keys something to count, and counting it is its own session |
 | The corpus's edge made visible in the UI — `assessment`, `corpusAsOf`, three empty states | [#251](https://github.com/LoonSecIO/LoonInspect/issues/251) | **Built 2026-09-03.** §4g. `app/core/vuln_read.py` over the same seam, `vuln` + `corpusAsOf` on the device and catalog responses, the Catalog tab's column and banner; pinned in `backend/tests/test_vuln_read.py` and `frontend/src/features/vulnerabilities/noCollapse.ts` |
 | The lifecycle fan-out under `loon:jamf:mac:app:vuln`, and `LOCAL-` ids behind their reservation | post-v0 (§5, §6) | Named, not built. The string stays minted with no writer |

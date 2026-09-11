@@ -267,12 +267,18 @@ cheaper question and the more common answer.
    keeping yesterday's numbers under today's date. That is deliberate: a count from one
    corpus shown under another's date is a wrong answer that looks right, and this one
    corrects itself. It clears on its own within the hour (the patch-catalog job re-judges
-   every organization hourly), and sooner for any Mac that checks in. Two ways to stop
-   waiting:
+   every organization hourly), and sooner for a Mac that checks in — that Mac. A build one
+   Mac's check-in judged does not answer on the others until the hourly pass copies it
+   across, which that pass does every run. Two ways to stop waiting:
    - `docker compose logs app --since 2h | grep "vulnerability answers refreshed"` — the
-     line the pass writes, with how many builds it re-judged and how many app rows it
-     updated. A line since the corpus line in step 2 means the pass has already run, and
-     amber on a build is then that build's real answer: the corpus did not assess it;
+     line the pass writes, carrying `builds` (how many it re-judged) and `apps` (how many
+     app rows it copied onto). A line since the corpus line in step 2 means both halves have
+     run, and amber on a build is then that build's real answer: the corpus did not assess
+     it. `builds=0` with a non-zero `apps` is the normal repair line — a check-in judged the
+     builds first and this pass carried the answer to the rest of the fleet. **No line at
+     all** is not proof the pass did not run — it writes nothing when nothing moved, which
+     is the ordinary hour. Do not wait on it: use *Refresh* below, which runs the same pass
+     now, and judge by what the page says afterwards;
    - Devices › Applications › **Catalog** › *Refresh* re-judges this organization now.
    If an hour has passed, the log shows the pass running, and the same builds still read
    amber, that is reportable state **H**.

@@ -136,6 +136,15 @@ async def judge_vuln(db: AsyncSession, entries: Sequence[AppCatalogEntry] | None
     The outer join is what makes it one statement rather than two: the same pass that writes
     an answer onto the rows the epoch assessed clears it off the rows it did not.
 
+    **A named scope is re-written even when its signature already names this epoch**, and
+    that is deliberate rather than an oversight in the two-clocks story: a caller that hands
+    over rows is asking for them to be judged now, and it is what makes *Refresh* the repair
+    `docs/troubleshooting.md` §5 step 4 promises for a stored answer that will not parse. A
+    signature filter here would cost a catalog sync one rewrite less and would leave a
+    corrupted row unrepairable by the only button the operator has. The `entries is None`
+    scope — the epoch's own pass — does filter on the signature, which is where the cost
+    that grows with the fleet actually lives.
+
     **Which epoch, and the gate.** `loaded_epoch_signature()` costs no query and already
     applies #281 Option A's per-tenant gate, so a tenant whose data-sharing tier is `off`
     judges to `None` and carries no corpus-derived columns at all — the library's rows are
@@ -216,9 +225,12 @@ async def copy_vuln_answers(db: AsyncSession) -> int:
     """Every catalog row's vulnerability answer onto the device rows carrying that build —
     one `UPDATE … FROM` for the whole tenant.
 
-    The bulk half of `copy_answer`, and it exists for the case `copy_answer` cannot reach: an
-    epoch moved, so thousands of catalog rows were re-judged by one statement and the copies
-    have to follow without a loop per row or a pass per device.
+    The bulk half of `copy_answer`, and it exists for the two cases `copy_answer` cannot
+    reach. One: an epoch moved, so thousands of catalog rows were re-judged by one statement
+    and the copies have to follow without a loop per row or a pass per device. Two, and the
+    reason `refresh_tenant` runs this whether or not it re-judged anything: a build judged by
+    one Mac's sweep leaves every other Mac carrying it with a stale copy that no per-device
+    pass will write, because the catalog row is already current when those Macs sync.
 
     Platform-scoped like every other copy here (#236): the same `version_hash` on two
     platforms is two catalog rows. Restricted to rows whose copy actually differs, so a
@@ -333,8 +345,9 @@ def copy_answer(entry: AppCatalogEntry, app: InstalledApp, *, now: datetime) -> 
 async def record_device_apps(db: AsyncSession, device: Device, *, now: datetime | None = None) -> int:
     """`process_sync`'s hook, after the device's app rows are flushed: every app the device
     reports is seen now (first_seen_at on creation; last_seen_at moved when older than the
-    granularity), rows the current catalog has not judged are judged, and app rows that are new
-    or whose row's answer moved get their copy. Returns the rows judged."""
+    granularity), rows the current catalog has not judged are judged, and app rows that are new,
+    whose row's answer moved, or whose stored corpus epoch is not the one their catalog row
+    now carries get their copy. Returns the rows judged."""
     rows = (await db.execute(select(InstalledApp).where(InstalledApp.device_id == device.id))).scalars().all()
     if not rows:
         return 0
@@ -401,10 +414,13 @@ async def record_device_apps(db: AsyncSession, device: Device, *, now: datetime 
         entry = existing.get(row.version_hash)
         if entry is None:
             continue
-        # A copy costs an UPDATE per app row; only when the row is new (no answer yet) or the
-        # catalog row it points at was just judged. Refreshes after a catalog sync update the
-        # copies in bulk (refresh_tenant).
-        if row.last_patch_check_at is None or row.version_hash in moved:
+        # A copy costs an UPDATE per app row; only when the row is new (no answer yet), when
+        # the catalog row it points at was just judged, or when this row's stored epoch is
+        # not the one its catalog row now carries. That last clause is the build ANOTHER
+        # Mac's sweep judged: nothing this device did put it in `moved`, and without it this
+        # device would keep reading `unknown_app` for an assessed build until the hourly
+        # pass. Refreshes after a catalog sync update the copies in bulk (refresh_tenant).
+        if row.last_patch_check_at is None or row.version_hash in moved or row.vuln_signature != entry.vuln_signature:
             copy_answer(entry, row, now=now)
     return judged
 
@@ -416,6 +432,9 @@ async def refresh_tenant(db: AsyncSession, *, force: bool = False, now: datetime
     Also the hourly pass that catches a corpus epoch that moved (#381): the Jamf catalog and
     the corpus move on different clocks, so a row whose only stale half is the epoch is
     re-judged by one `UPDATE … FROM` rather than by a full title re-match it does not need.
+    And it is the tenant-wide **copy** repair — the one pass that reaches a device nobody
+    has swept since the build it carries was judged. That copy runs every pass, not only
+    when this one re-judged something; see below.
     """
     now = now or datetime.now(UTC)
     # This tenant's data-sharing tier, once for the whole pass (#248, §8). It is what
@@ -447,8 +466,18 @@ async def refresh_tenant(db: AsyncSession, *, force: bool = False, now: datetime
     # above are current already, having just been judged. Two statements for the whole
     # tenant, and both are no-ops when the epoch has not moved.
     rejudged = await judge_vuln(db, None, now=now)
-    if rejudged:
-        copied = await copy_vuln_answers(db)
+    # Unconditional, and NOT `if rejudged`: the copy is not this statement's follow-up, it is
+    # the only pass that reaches every device. A sweep that judges a build before this pass
+    # does leaves every OTHER Mac carrying that build with no copy — `record_device_apps`
+    # copies onto the device whose own pass judged, and by the time the next Mac syncs the
+    # catalog row already names the current epoch, so neither copier writes. Gating this on
+    # `rejudged` made that a permanent false negative: the device page and the
+    # `loon:jamf:mac:app` event read `unknown_app` for a build the corpus assessed, on every
+    # Mac but the first, until somebody pressed *Refresh*. `copy_vuln_answers`'s own
+    # `is_distinct_from` predicate writes nothing when the copies already agree, so a quiet
+    # tenant pays one no-op UPDATE an hour for the bounds §4f states.
+    copied = await copy_vuln_answers(db)
+    if rejudged or copied:
         logger.info("vulnerability answers refreshed", extra={"builds": rejudged, "apps": copied})
     if judged:
         logger.info("app catalog refreshed", extra={"rows": judged, "signature": signature})

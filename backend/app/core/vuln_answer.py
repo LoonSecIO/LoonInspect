@@ -25,7 +25,10 @@ loaded and never ordered. An answer from an epoch that is no longer answering re
 names the *loaded* epoch — counts from one epoch under another's date is the silent
 staleness §4 exists to prevent, and "dated, never zero" is the conservative direction the
 contract rules in every other place the question comes up. The window is bounded by the
-hourly catalog refresh and by the next sync of any device carrying the build.
+hourly catalog refresh — which copies for the whole tenant on **every** pass, not only when
+it re-judged something — and by that device's own next sync. Not by the next sync of *any*
+device carrying the build: the Mac that judges is the one whose rows get the copy, so the
+tenant-wide pass is the only thing that reaches the rest of them.
 
 **`off` is decided here and now, never stored.** A tenant whose data-sharing tier is `off`
 and a container with no epoch both read `off` through `loaded_corpus()`'s own gate, which
