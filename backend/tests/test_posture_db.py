@@ -6,6 +6,13 @@ on — every active key lands, the run id is stamped, and an empty queue writes 
 Assertions on countable keys are deltas between a baseline capture and one taken after
 seeding a known fleet, so the suite is honest against a lived-in local database as well as
 CI's fresh one — it counts what it created, not what it found. Gated on RUN_DB_TESTS.
+
+The four `vuln.*` keys (#250) are the exception to "every active key lands": they write no
+rows at all until the corpus join has judged this tenant, so every capture in this file
+except the three at the bottom is four keys short, deliberately. `_unassessed_keys()` is
+that vocabulary, and the three tests at the bottom are the other half — the night the tape
+starts, what it counts once it has, and the night a moved epoch leaves every answer behind
+without the tape claiming nobody ever looked.
 """
 
 from __future__ import annotations
@@ -17,7 +24,7 @@ from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 pytestmark = [
     pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
@@ -37,6 +44,18 @@ def _hash() -> str:
 
 def _key67() -> str:
     return "v1:" + uuidlib.uuid4().hex + uuidlib.uuid4().hex
+
+
+def _unassessed_keys() -> set[str]:
+    """Every active key a capture writes for a tenant the corpus has never judged.
+
+    Which is every key but the four `vuln.*` ones (#250). Absence there is the ruled
+    statement — "nothing has been assessed here" — and it is a different statement from
+    four zeros, so a capture on an unassessed fleet is 29 rows and not 33.
+    """
+    from app.core.posture import ACTIVE_KEYS, VULN_KEYS
+
+    return set(ACTIVE_KEYS) - set(VULN_KEYS)
 
 
 @pytest_asyncio.fixture(loop_scope="session")
@@ -60,6 +79,7 @@ async def fleet(db):
         OutboxDelivery,
         PostureSnapshot,
         Run,
+        VulnLibraryEpoch,
     )
 
     suffix = uuidlib.uuid4().hex[:8]
@@ -73,7 +93,9 @@ async def fleet(db):
     # Captured before yield: the rollback in cleanup expires ORM state, and touching an
     # expired attribute under asyncio raises instead of lazily refreshing.
     connection_ids = [active.id, inactive.id]
-    ns = SimpleNamespace(connection=active, suffix=suffix, version_hashes=[], destination_id=None, account_ids=[])
+    ns = SimpleNamespace(
+        connection=active, suffix=suffix, version_hashes=[], destination_id=None, account_ids=[], epoch_signatures=[]
+    )
     try:
         yield ns
     finally:
@@ -97,6 +119,9 @@ async def fleet(db):
         await db.execute(delete(AccountRole).where(AccountRole.account_id.in_(ns.account_ids)))
         await db.execute(delete(Account).where(Account.id.in_(ns.account_ids)))
         await db.execute(delete(AppCatalogEntry).where(AppCatalogEntry.version_hash.in_(ns.version_hashes)))  # matches cascade
+        # The corpus epoch is a global singleton row, so only the ones this suite wrote
+        # are removed — another suite's loaded library is not this fixture's to delete.
+        await db.execute(delete(VulnLibraryEpoch).where(VulnLibraryEpoch.signature.in_(ns.epoch_signatures)))
         await db.execute(delete(JamfPatchTitle).where(JamfPatchTitle.id.in_(_TITLE_IDS)))
         device_ids = select(Device.id).where(Device.mdm_connection_id.in_(connection_ids))
         await db.execute(delete(InstalledApp).where(InstalledApp.device_id.in_(device_ids)))
@@ -471,7 +496,6 @@ async def test_a_closed_full_sweep_captures_every_active_key(db, fleet) -> None:
     deltas between a capture taken before the fleet existed and one taken after match
     Definitions v1 exactly — including the populations each key must ignore (inactive
     connections, the low level, the 24h window, disabled accounts, revoked tokens)."""
-    from app.core.posture import ACTIVE_KEYS
     from app.core.runs import LOCK_DEVICE_SWEEP, TRIGGER_SWEEP, acquire, finish
     from app.models.schema import PostureSnapshot
 
@@ -480,8 +504,9 @@ async def test_a_closed_full_sweep_captures_every_active_key(db, fleet) -> None:
     assert await finish(db, baseline_acq.run, ok=True)
     baseline = await _capture(db, baseline_acq.run.id)
     # This run's own run.completed event is pending at capture time, so the oldest-age
-    # key is present and the baseline always carries the full vocabulary.
-    assert set(baseline) == set(ACTIVE_KEYS)
+    # key is present and the baseline carries the whole vocabulary an unassessed tenant
+    # has — everything but the four `vuln.*` keys, which this fleet has never earned.
+    assert set(baseline) == _unassessed_keys()
 
     await _seed_fleet(db, fleet)
 
@@ -490,9 +515,9 @@ async def test_a_closed_full_sweep_captures_every_active_key(db, fleet) -> None:
     assert await finish(db, acq.run, ok=True, device_count=3, devices_processed=3)
     captured = await _capture(db, acq.run.id)
 
-    assert set(captured) == set(ACTIVE_KEYS)
+    assert set(captured) == _unassessed_keys()
     rows = (await db.execute(select(PostureSnapshot).where(PostureSnapshot.full_sweep_run_id == acq.run.id))).scalars().all()
-    assert len(rows) == len(ACTIVE_KEYS)  # one row per metric per capture
+    assert len(rows) == len(_unassessed_keys())  # one row per metric per capture
     assert all(row.captured_at is not None and row.captured_at.tzinfo is not None for row in rows)
 
     def delta(key: str) -> float:
@@ -577,7 +602,6 @@ async def test_a_closed_full_sweep_captures_every_active_key(db, fleet) -> None:
 async def test_a_failed_night_still_writes_the_stamped_rows(db, fleet) -> None:
     """Founder-ruled: a failed sweep's database state is real, so the capture happens
     anyway — and the failed run id on every row is what makes the staleness visible."""
-    from app.core.posture import ACTIVE_KEYS
     from app.core.runs import LOCK_DEVICE_SWEEP, TRIGGER_SWEEP, acquire, finish
     from app.models.schema import PostureSnapshot, Run
 
@@ -589,7 +613,7 @@ async def test_a_failed_night_still_writes_the_stamped_rows(db, fleet) -> None:
     assert run.status == "failed"
 
     captured = await _capture(db, acq.run.id)
-    assert set(captured) == set(ACTIVE_KEYS)
+    assert set(captured) == _unassessed_keys()
     assert captured["runs.full_sweep_duration_s"] >= 0
     rows = (await db.execute(select(PostureSnapshot).where(PostureSnapshot.full_sweep_run_id == acq.run.id))).scalars().all()
     assert all(row.full_sweep_run_id == acq.run.id for row in rows)
@@ -600,7 +624,7 @@ async def test_an_empty_queue_writes_no_oldest_pending_row(db, fleet) -> None:
     outbox to prove it (destructive to a lived-in local queue, by design), then records
     directly against a run row with a known 120s duration — which also pins
     runs.full_sweep_duration_s to the definition's exact arithmetic."""
-    from app.core.posture import ACTIVE_KEYS, record_full_sweep_snapshot
+    from app.core.posture import record_full_sweep_snapshot
     from app.models.schema import EventOutbox, OutboxDelivery, Run
 
     await db.execute(delete(OutboxDelivery))
@@ -628,7 +652,7 @@ async def test_an_empty_queue_writes_no_oldest_pending_row(db, fleet) -> None:
 
     assert "outbox.oldest_pending_age_s" not in captured
     assert captured["outbox.pending"] == 0  # zero is written as 0; only "did not apply" is absent
-    assert written == len(ACTIVE_KEYS) - 1 == len(captured)
+    assert written == len(_unassessed_keys()) - 1 == len(captured)
     assert captured["runs.full_sweep_duration_s"] == 120.0
 
 
@@ -721,3 +745,295 @@ async def test_one_row_per_key_per_capture_per_population(db, fleet) -> None:
     with pytest.raises(IntegrityError):
         await db.commit()
     await db.rollback()
+
+
+# --- the four vuln.* keys (#250) --------------------------------------------------------
+
+
+async def _run(db, fleet, *, seconds: int = 60):
+    """A closed sweep row to record a capture against, without going through `finish()`.
+
+    The capture is what these tests are about, not the run's own lifecycle, and `finish()`
+    would enqueue an event into the outbox the neighbouring tests measure.
+    """
+    from app.models.schema import Run
+
+    now = _now()
+    run = Run(
+        id=uuidlib.uuid4(),
+        mdm_connection_id=fleet.connection.id,
+        trigger="sweep",
+        comparison="delta",
+        lock_class="device_sweep",
+        status="succeeded",
+        window_start=now - timedelta(seconds=seconds),
+        started_at=now - timedelta(seconds=seconds),
+        finished_at=now,
+        heartbeat_at=now,
+    )
+    db.add(run)
+    await db.commit()
+    return run
+
+
+async def _epoch(db, fleet) -> str:
+    """The corpus epoch this container holds — one global row, as the loader writes it.
+
+    Seeded rather than imported: this file is the recorder's suite, and the recorder reads
+    stored columns and never the library. `tests/test_vuln_answer_db.py` runs the same four
+    keys against a real epoch loaded through `load_epoch_if_new`, which is where the join
+    itself is under test.
+    """
+    from app.models.schema import VulnLibraryEpoch
+
+    signature = uuidlib.uuid4().hex + uuidlib.uuid4().hex
+    db.add(
+        VulnLibraryEpoch(
+            id=1,
+            epoch_id=f"posture-{fleet.suffix}"[:32],
+            signature=signature,
+            asof=_now(),
+            row_count=0,
+            title_count=0,
+        )
+    )
+    await db.commit()
+    fleet.epoch_signatures.append(signature)
+    return signature
+
+
+async def _move_epoch(db, fleet) -> str:
+    """A new corpus lands: the single epoch row gets a new signature, and every stored
+    answer in the database is now one epoch behind.
+
+    `load_epoch_if_new` replaces the row (`DELETE` then `INSERT`, one row by constraint);
+    updating it in place is the same fact from the recorder's side, which reads only the
+    signature it finds.
+    """
+    from app.models.schema import VulnLibraryEpoch
+
+    signature = uuidlib.uuid4().hex + uuidlib.uuid4().hex
+    await db.execute(
+        update(VulnLibraryEpoch).values(signature=signature, asof=_now()).execution_options(synchronize_session=False)
+    )
+    await db.commit()
+    fleet.epoch_signatures.append(signature)
+    return signature
+
+
+def _counts(total: int, kev: int) -> dict[str, int]:
+    """A stored answer's counts, in the shape the epoch publishes them."""
+    return {"total": total, "kev": kev, "critical": 0, "high": total, "medium": 0, "low": 0}
+
+
+async def _build(db, fleet, name: str, *, answer: str | None, counts: dict | None, signature: str | None, devices=()):
+    """One distinct build in the catalog, its stored vulnerability answer, and the Macs
+    carrying it — the columns `app.catalog.service.judge_vuln` writes, written directly."""
+    from app.models.schema import AppCatalogEntry, InstalledApp
+
+    entry = AppCatalogEntry(
+        name=f"{name}-{fleet.suffix}",
+        bundle_id=f"io.loonsec.{name}",
+        version="1.0",
+        app_hash=_hash(),
+        version_hash=_hash(),
+        key_title=_key67(),
+        key_full=_key67(),
+        first_seen_at=_now(),
+        last_seen_at=_now(),
+        vuln_assessment=answer,
+        vuln_counts=counts,
+        vuln_signature=signature,
+        vuln_evaluated_at=_now(),
+    )
+    db.add(entry)
+    await db.commit()
+    fleet.version_hashes.append(entry.version_hash)
+    for device in devices:
+        db.add(
+            InstalledApp(
+                device_id=device.id,
+                name=entry.name,
+                bundle_id=entry.bundle_id,
+                version=entry.version,
+                app_hash=entry.app_hash,
+                version_hash=entry.version_hash,
+                key_title=entry.key_title,
+                key_full=entry.key_full,
+                vuln_assessment=answer,
+                vuln_counts=counts,
+                vuln_signature=signature,
+            )
+        )
+    await db.commit()
+    return entry
+
+
+async def _macs(db, fleet):
+    """Two Macs on the active connection and one on the inactive one."""
+    from app.models.schema import Device, MdmConnection
+
+    inactive_id = (
+        await db.execute(select(MdmConnection.id).where(MdmConnection.name == f"posture inactive {fleet.suffix}"))
+    ).scalar_one()
+
+    def mac(connection_id, tag):
+        return Device(
+            mdm_connection_id=connection_id,
+            mdm_provider="jamf",
+            external_id=f"{fleet.suffix}-{tag}",
+            serial_number=f"POSTUREVULN{tag}",
+            hostname=f"posture-vuln-{tag}",
+            platform="macos",
+            last_check_in=_now(),
+            last_inventory_at=_now(),
+            managed=True,
+        )
+
+    macs = [mac(fleet.connection.id, "a"), mac(fleet.connection.id, "b"), mac(inactive_id, "z")]
+    db.add_all(macs)
+    await db.commit()
+    return macs
+
+
+async def test_a_never_assessed_tenant_writes_no_vuln_rows(db, fleet) -> None:
+    """THE RULE (#250, docs/vulnerabilities.md §7). A tenant the corpus join has never
+    judged gets **no rows** for the four `vuln.*` keys — not zeros.
+
+    A zero here does not say "no vulnerabilities", it says "never assessed", and a row
+    saying zero is a clean bill of health for a fleet nobody looked at, committed to a tape
+    that is read years later by someone who cannot ask what this pod's consent tier was
+    that night. That is `assessment: off` broken one layer down.
+
+    The second half is the other property the rule buys: the tape **starts** when the join
+    does. The first capture here is short four keys forever — nothing backfills it — and
+    the capture after the gate opens carries them.
+    """
+    from app.core.posture import VULN_KEYS, record_full_sweep_snapshot
+
+    await _seed_fleet(db, fleet)
+    unassessed_run = await _run(db, fleet)
+    written = await record_full_sweep_snapshot(db, run_id=unassessed_run.id)
+    unassessed = await _capture(db, unassessed_run.id)
+
+    assert not set(VULN_KEYS) & set(unassessed), "a fleet nobody assessed must record nothing about vulnerabilities"
+    assert set(unassessed) == _unassessed_keys()
+    assert written == len(unassessed) == len(_unassessed_keys())
+
+    # The night the join first runs. One judged build is the whole difference: the
+    # container holds an epoch, and a row of this tenant was judged against it.
+    signature = await _epoch(db, fleet)
+    macs = await _macs(db, fleet)
+    await _build(db, fleet, "gate", answer="covered", counts=_counts(0, 0), signature=signature, devices=[macs[0]])
+
+    assessed_run = await _run(db, fleet)
+    await record_full_sweep_snapshot(db, run_id=assessed_run.id)
+    assessed = await _capture(db, assessed_run.id)
+
+    assert set(VULN_KEYS) <= set(assessed), "the keys activate the night the join first judges this tenant"
+    assert assessed["vuln.apps_affected"] == 0  # assessed and clean IS a zero, and is written as one
+    # And the earlier capture stays as it was: history not recorded is never backfilled.
+    assert not set(VULN_KEYS) & set(await _capture(db, unassessed_run.id))
+
+
+async def test_the_vuln_keys_count_the_stored_answers(db, fleet) -> None:
+    """The four definitions, against builds whose stored answers cover every state the
+    judge pass can leave behind: affected, affected-and-KEV, assessed-clean, judged with no
+    row in the epoch, judged by an epoch that is no longer answering, and not installed at
+    all.
+
+    Deltas from a baseline taken with the gate already open, for the reason the rest of
+    this file takes deltas: a lived-in database carries other suites' builds, and
+    `vuln.apps_unknown` counts every installed build that is not answered — including
+    theirs.
+    """
+    from app.core.posture import record_full_sweep_snapshot
+
+    signature = await _epoch(db, fleet)
+    mac_a, mac_b, mac_z = await _macs(db, fleet)
+
+    # The gate-opener, and an assessed-clean build in its own right: `covered` with no
+    # findings is a real answer and counts in neither `apps_affected` nor `apps_unknown`.
+    await _build(db, fleet, "clean", answer="covered", counts=_counts(0, 0), signature=signature, devices=[mac_b])
+    baseline_run = await _run(db, fleet)
+    await record_full_sweep_snapshot(db, run_id=baseline_run.id)
+    baseline = await _capture(db, baseline_run.id)
+    assert baseline["vuln.apps_affected"] == 0
+
+    await _build(db, fleet, "kev", answer="covered", counts=_counts(3, 1), signature=signature, devices=[mac_a, mac_b])
+    await _build(db, fleet, "affected", answer="covered", counts=_counts(2, 0), signature=signature, devices=[mac_a])
+    # Judged against the answering epoch, which held no row for it: `unknown_app`, never a
+    # clean bill (docs/vulnerabilities.md §4f).
+    await _build(db, fleet, "norow", answer=None, counts=None, signature=signature, devices=[mac_a])
+    # Judged, but by an epoch that is no longer the one answering. The wire reads this
+    # `unknown_app` until the next pass rewrites it, and the tape says what the wire said:
+    # nine findings under a stale signature are counted nowhere but `apps_unknown`.
+    await _build(db, fleet, "stale", answer="covered", counts=_counts(9, 9), signature="stale" + _hash(), devices=[mac_b])
+    # Affected and on nobody's Mac: the population is `catalog.installed`'s, so a build the
+    # fleet no longer carries is not the fleet's exposure.
+    await _build(db, fleet, "gone", answer="covered", counts=_counts(7, 7), signature=signature, devices=[])
+    # Affected, and carried only by a device on a DEACTIVATED connection. The app keys use
+    # `catalog.installed`'s cut, which counts any device row; `devices_affected` uses the
+    # active-connection population every `devices.*` key counts. Pinned because that is the
+    # one place the two halves of this family draw different lines.
+    await _build(db, fleet, "offline", answer="covered", counts=_counts(4, 0), signature=signature, devices=[mac_z])
+
+    run = await _run(db, fleet)
+    await record_full_sweep_snapshot(db, run_id=run.id)
+    captured = await _capture(db, run.id)
+
+    def delta(key: str) -> float:
+        return captured[key] - baseline[key]
+
+    assert delta("vuln.apps_affected") == 3  # kev, affected, offline — never the clean one, never `gone`
+    assert delta("vuln.apps_kev_affected") == 1  # a subset of affected, and the stale epoch's 9 KEV are not in it
+    assert delta("vuln.apps_unknown") == 2  # no row in the epoch, and the stale signature
+    assert delta("vuln.devices_affected") == 2  # mac_a and mac_b; mac_z's connection is inactive
+
+
+async def test_a_tenant_one_epoch_behind_is_not_a_tenant_nobody_assessed(db, fleet) -> None:
+    """The gate asks whether this tenant has EVER been judged, never whether it was judged
+    against tonight's epoch (#250, corrected 2026-09-11 before a row existed).
+
+    The state is reachable with nothing broken: a new epoch lands, the next sweep fails
+    before it processes a single device — this recorder fires on failed sweeps by design —
+    and the hourly re-judge has not run yet, so every stored signature is one epoch behind.
+    An equality gate writes no rows that night, and no rows is this family's one reserved
+    sentence: *nothing has ever been assessed here*. Said about a fleet assessed for months,
+    in a tape nobody can re-date afterwards, that is the failure the family exists to refuse
+    — one layer further in than the zero it already refuses.
+
+    What the night writes instead is what the wire said that night: an answer from an epoch
+    that is no longer answering reads `unknown_app` (docs/vulnerabilities.md §4f), so every
+    installed build lands in `apps_unknown` and the other three keys are honest zeros.
+    `apps_unknown == catalog.installed` is that shape, and docs/posture-snapshot.md names it
+    so a reader can tell "nothing answered tonight" from "nothing was ever answered".
+    """
+    from app.core.posture import VULN_KEYS, record_full_sweep_snapshot
+
+    first = await _epoch(db, fleet)
+    mac_a, _mac_b, _mac_z = await _macs(db, fleet)
+    await _build(db, fleet, "judged", answer="covered", counts=_counts(5, 2), signature=first, devices=[mac_a])
+
+    judged_run = await _run(db, fleet)
+    await record_full_sweep_snapshot(db, run_id=judged_run.id)
+    judged = await _capture(db, judged_run.id)
+    # Exact, not a delta: no other suite's row carries this signature, so these three count
+    # this test's one build and nothing else.
+    assert judged["vuln.apps_affected"] == 1
+    assert judged["vuln.apps_kev_affected"] == 1
+    assert judged["vuln.devices_affected"] == 1
+
+    await _move_epoch(db, fleet)
+
+    behind_run = await _run(db, fleet)
+    await record_full_sweep_snapshot(db, run_id=behind_run.id)
+    behind = await _capture(db, behind_run.id)
+
+    assert set(VULN_KEYS) <= set(behind), "a fleet judged for months is not a fleet nobody ever assessed"
+    assert behind["vuln.apps_affected"] == 0  # an answer under an epoch that no longer answers is not an answer
+    assert behind["vuln.apps_kev_affected"] == 0
+    assert behind["vuln.devices_affected"] == 0
+    # The whole installed population, unanswered — the documented shape of "nothing answered
+    # tonight", and the reason `apps_unknown` is the key that carries such a night.
+    assert behind["vuln.apps_unknown"] == behind["catalog.installed"] > 0

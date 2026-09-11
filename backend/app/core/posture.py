@@ -15,20 +15,24 @@ the route.
 The vocabulary is Definitions v1 — `ACTIVE_KEYS` below, one frozen definition per key
 in docs/posture-snapshot.md. Definitions are immutable per key: a change mints a new
 key and retires the old, so a chart never silently changes meaning under its own
-history. Reserved keys (`RESERVED_KEYS`) have frozen definitions and no writer yet;
-no key records before its feature's table exists — a run of primed zeros is a lie
-about when measurement began.
+history. `RESERVED_KEYS` holds the names whose definitions are ruled before their
+writers exist; no key records before its feature's table exists — a run of primed zeros
+is a lie about when measurement began.
 
-Three writing rules the reader of the table must be able to rely on:
+Four writing rules the reader of the table must be able to rely on:
 
 * **Absent means "did not apply", never zero.** `outbox.oldest_pending_age_s` writes
   no row when zero rows were pending — coercing that to 0 would make "empty queue"
   indistinguishable from "a delivery is due right now".
+* **The four `vuln.*` keys write nothing until something has been assessed.** The same
+  rule with a whole key family behind it (#250, docs/vulnerabilities.md §7): a tenant
+  the corpus join has never judged gets no rows, because `0 apps affected` would read as
+  a clean bill of health for a fleet nobody looked at. `_vuln_values` is the gate.
 * **Ratios are never stored.** Numerator and denominator land as separate keys and
   the percentage derives at render, so the inputs stay auditable forever.
 * **Every row names the population it counted.** `platform` is stamped from
   `CAPTURE_PLATFORM`, so a number is never read against a fleet it did not measure.
-  Thirteen active keys change meaning the night a sweep observes more than Macs, and
+  Seventeen active keys change meaning the night a sweep observes more than Macs, and
   immutable definitions leave no way to say so afterwards (#230).
 
 Recorder failure never fails the run: the caller (runs.finish) catches everything,
@@ -42,7 +46,7 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import distinct, exists, func, or_, select
+from sqlalchemy import Integer, and_, distinct, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.changes.policy import NORMAL, levels_at_least
@@ -64,7 +68,9 @@ from app.models.schema import (
     OutboxDelivery,
     PostureSnapshot,
     Run,
+    VulnLibraryEpoch,
 )
+from app.schemas.payload import VULN_ASSESSMENT_COVERED
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +91,25 @@ _LAGGARD_HOURS = 336
 # had moved only one of them.
 NOTABLE_LEVELS: tuple[str, ...] = levels_at_least(NORMAL)
 
-# Definitions v1 — the 29 active keys, in the order their rows are written. The names
+# The four vulnerability keys, activated 2026-09-11 (#250, docs/vulnerabilities.md §7) on
+# the per-build answers #381 stores. Named as their own tuple because they are the one
+# group in ACTIVE_KEYS with a gate in front of it: `_vuln_values` writes **no rows at all**
+# — not zeros — until the corpus join has judged this tenant. Every other active key
+# answers its question on every pod, every night, from the first night.
+#
+# A zero here would be a different sentence than the one the fleet can support. `0 apps
+# affected` from a tenant nobody assessed is a clean bill of health for a fleet nobody
+# looked at, which is `assessment: off` (docs/vulnerabilities.md §4a) broken one layer
+# down, in a tape that is read years later by a reader who cannot ask what the pod's
+# consent tier was that night. The tape starts the night the join first runs.
+VULN_KEYS: tuple[str, ...] = (
+    "vuln.apps_affected",
+    "vuln.apps_kev_affected",
+    "vuln.apps_unknown",
+    "vuln.devices_affected",
+)
+
+# Definitions v1 — the 33 active keys, in the order their rows are written. The names
 # are the contract: a definition change mints a new key, so a name in this tuple means
 # exactly what docs/posture-snapshot.md says it means, forever.
 #
@@ -129,6 +153,8 @@ ACTIVE_KEYS: tuple[str, ...] = (
     "accounts.total",
     "accounts.admins",
     "tokens.active",
+    # Last, and conditional: these four are absent on a tenant the corpus has never judged.
+    *VULN_KEYS,
 )
 
 # The population a capture counted (#230). v0 reads computers only
@@ -146,12 +172,13 @@ PLATFORM_ROLLUP = "all"
 
 # Frozen definitions, no writer yet — each activates with its feature's table, never
 # before (docs/posture-snapshot.md carries the definitions and the gates).
-RESERVED_KEYS: tuple[str, ...] = (
-    "vuln.apps_affected",
-    "vuln.apps_kev_affected",
-    "vuln.apps_unknown",
-    "vuln.devices_affected",
-)
+#
+# Empty since 2026-09-11: the four `vuln.*` names reserved here since #102 moved into
+# `VULN_KEYS` above the day #381 gave them a table to count. The tuple stays, and stays
+# named, because the reservation is a mechanism rather than a list — the next key whose
+# definition is ruled before its writer exists is declared here and is kept out of
+# `ACTIVE_KEYS` by `tests/test_posture_registry.py` until its rows are real.
+RESERVED_KEYS: tuple[str, ...] = ()
 
 
 def _utcnow() -> datetime:
@@ -255,9 +282,152 @@ async def _count(db: AsyncSession, stmt) -> int:
     return int((await db.execute(stmt)).scalar_one())
 
 
+def _findings(band: str):
+    """One band of a stored answer's counts, as an integer to compare against.
+
+    The aggregates are the epoch's own, stored as JSONB by the judge pass — read, never
+    recomputed. Counting `vuln_ids` instead would under-report by exactly the number of
+    ids the published cap dropped (docs/vulnerabilities.md §4a, §4e), which is the shape
+    of wrong number this tape has no way to notice a year later.
+    """
+    return AppCatalogEntry.vuln_counts[band].astext.cast(Integer)
+
+
+async def _vuln_values(db: AsyncSession) -> dict[str, float]:
+    """The four `vuln.*` keys — or an empty dict, which writes no rows at all (#250).
+
+    **The rule, and the whole reason this function is not four lines inside `_compute`:**
+    while nothing has assessed this tenant, these keys record *nothing*. Not zero. A zero
+    in this family does not say "no vulnerabilities", it says "never assessed", and a row
+    saying zero is a clean bill of health for a fleet nobody looked at — the failure
+    `assessment: off` exists to prevent on the wire (docs/vulnerabilities.md §4a),
+    committed to a tape that outlives every operator who could explain it. It is also the
+    standing no-zero-priming guardrail applied to the one case a naive recorder gets
+    wrong, which is why it is ruled in the contract (§7) rather than left to be
+    rediscovered. The keys activate the night the join first runs for this tenant, and
+    their tape starts then.
+
+    **Two database facts open the gate, and nothing else.** The container holds an epoch
+    (`vuln_library_epoch`), and at least one of this tenant's catalog rows carries a stored
+    answer (`vuln_signature` not null) — *ever judged*, never *judged against tonight's
+    epoch*. Both are reads, in keeping with "the recorder reads the DB never the API": the
+    answers are the columns #381 stores, and nothing here re-derives a verdict, consults the
+    library rows, or asks the corpus a question. It deliberately does not read
+    `loaded_epoch_signature()` either — that is fail-closed process state behind a
+    per-tenant tier the capture path never installs, so a recorder that trusted it would
+    write an empty night indistinguishable from a tenant that was never assessed.
+
+    **Why the second fact is "ever", corrected 2026-09-11 before the first row was ever
+    written.** The gate first asked for equality with the answering epoch, and that made two
+    different statements wear one shape. Reachable with nothing broken: a new epoch lands, a
+    sweep then fails before it processes a single device — this recorder fires on failed
+    sweeps by design — and the hourly re-judge (`refresh_tenant`) has not run yet. Every
+    stored signature is one epoch behind, an equality gate finds nothing, and the night
+    writes no rows at all: this family's one reserved sentence, *nothing has ever been
+    assessed here*, said about a fleet assessed for months, in a tape nobody can re-date. So
+    the gate asks the question it means. A tenant whose answers are merely behind writes its
+    night, and the counts say what the wire said: `apps_unknown` carries the whole installed
+    population (an answer from an epoch that no longer answers reads `unknown_app`, §4f)
+    while the other three are honest zeros. `apps_unknown == catalog.installed` is that
+    night's legible shape, and docs/posture-snapshot.md names it so a reader does not have
+    to rediscover it.
+
+    **What the row cannot say: which epoch answered.** `posture_snapshot` carries no epoch
+    column — one row is one metric, one capture, one population, never a wide row (#102) —
+    and `vuln_library_epoch` keeps a single row with no history, so a count is not
+    re-datable to the corpus that produced it years later. The shape above is the substitute,
+    and it is written down rather than left implicit.
+
+    The gate closes again on its own, which is the behaviour a tier flip needs: a tenant
+    turned back to `off` has its stored answers cleared by the next judge pass
+    (`app.catalog.service.judge_vuln` with no epoch nulls `vuln_signature` with the rest of
+    the answer), so the gate finds nothing and the tape stops rather than flatlining at zero
+    under a fleet nobody is assessing any more.
+
+    The population for the three app keys is `catalog.installed`'s exactly — distinct
+    builds of this capture's platform that at least one device carries — so a reader has a
+    denominator that means something: of N installed builds, A affected, U unassessed, and
+    the rest assessed clean. `vuln.devices_affected` folds the same affected builds onto
+    the device population every `devices.*` key counts, through the catalog row rather than
+    through the copy on `installed_apps`: the build is what was judged, and the copy is
+    allowed to lag a device's own sync by design (§4f), so counting copies would let the two
+    keys disagree about one build on a night the tape cannot re-run. That is the copy-lag
+    axis only. On the population axis the two halves draw different lines on purpose —
+    `catalog.installed` counts a build any device row carries, `devices_affected` counts
+    devices on active connections — so a build only a deactivated connection's Mac carries
+    is counted in the three app keys and in no device here. Documented in the key rows
+    rather than folded away, because making them agree would give the app keys a denominator
+    `catalog.installed` no longer matches.
+    """
+    epoch = (await db.execute(select(VulnLibraryEpoch.signature).limit(1))).scalars().first()
+    if epoch is None:
+        return {}
+    # Has the join ever run for THIS tenant? One row is the whole question, so it is asked
+    # with a LIMIT rather than a count. Deliberately NOT `== epoch`: see the docstring — an
+    # equality gate spells "one epoch behind" the same way it spells "never assessed", and
+    # absence in this family is a reserved sentence that must keep saying one thing. The
+    # catalog rows are tenant-scoped by row-level security, so this sees the acting tenant's
+    # rows only — one pod's judged tenant does not open the gate for its unjudged neighbour.
+    judged = (await db.execute(select(AppCatalogEntry.id).where(AppCatalogEntry.vuln_signature.is_not(None)).limit(1))).first()
+    if judged is None:
+        return {}
+
+    of_platform = AppCatalogEntry.platform == CAPTURE_PLATFORM
+    # `covered`, judged against the epoch that is answering. The signature is compared for
+    # equality and never ordered, the way it is everywhere else it appears: an answer from
+    # an epoch that no longer answers is not stale-but-usable, it is `unknown_app` until the
+    # next judge pass rewrites it, and the tape says what the wire said.
+    answered = and_(AppCatalogEntry.vuln_assessment == VULN_ASSESSMENT_COVERED, AppCatalogEntry.vuln_signature == epoch)
+    values: dict[str, float] = {}
+    values["vuln.apps_affected"] = await _count(
+        db,
+        select(func.count()).select_from(AppCatalogEntry).where(of_platform, _installed(), answered, _findings("total") > 0),
+    )
+    # KEV is a subset of affected, never its own population: a KEV-listed finding is one of
+    # the findings `total` already counted, and the two keys land separately because ratios
+    # are never stored.
+    values["vuln.apps_kev_affected"] = await _count(
+        db,
+        select(func.count()).select_from(AppCatalogEntry).where(of_platform, _installed(), answered, _findings("kev") > 0),
+    )
+    # Everything in the same population that is NOT answered: no row in the epoch, or an
+    # answer from an epoch that is no longer the one answering. `is_distinct_from` because
+    # both columns are nullable and a NULL is precisely the unassessed case — `!=` would
+    # drop exactly the rows this key exists to count.
+    values["vuln.apps_unknown"] = await _count(
+        db,
+        select(func.count())
+        .select_from(AppCatalogEntry)
+        .where(
+            of_platform,
+            _installed(),
+            or_(
+                AppCatalogEntry.vuln_assessment.is_distinct_from(VULN_ASSESSMENT_COVERED),
+                AppCatalogEntry.vuln_signature.is_distinct_from(epoch),
+            ),
+        ),
+    )
+    values["vuln.devices_affected"] = await _count(
+        db,
+        select(func.count(distinct(InstalledApp.device_id)))
+        .select_from(InstalledApp)
+        .join(Device, Device.id == InstalledApp.device_id)
+        .join(MdmConnection, MdmConnection.id == Device.mdm_connection_id)
+        # The same platform pin `copy_vuln_answers` joins on: one `version_hash` on two
+        # platforms is two catalog rows, and a Mac must read the Mac one.
+        .join(
+            AppCatalogEntry,
+            and_(AppCatalogEntry.version_hash == InstalledApp.version_hash, AppCatalogEntry.platform == Device.platform),
+        )
+        .where(MdmConnection.is_active.is_(True), of_platform, answered, _findings("total") > 0),
+    )
+    return values
+
+
 async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -> dict[str, float]:
     """Every active key's value, one bounded query each. A key absent from the result
-    writes no row — currently only outbox.oldest_pending_age_s exercises that."""
+    writes no row — `outbox.oldest_pending_age_s` on an empty queue, and the four `vuln.*`
+    keys on a tenant the corpus join has never judged."""
     stale_cutoff = captured_at - timedelta(hours=_STALE_HOURS)
     window_start = captured_at - timedelta(hours=_WINDOW_HOURS)
     values: dict[str, float] = {}
@@ -473,6 +643,11 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
     )
     values["tokens.active"] = await _count(db, select(func.count()).select_from(ApiToken).where(ApiToken.revoked_at.is_(None)))
 
+    # vuln.* — the stored per-build answers (#381), counted; or nothing at all on a tenant
+    # the corpus join has never judged, which is the one place this recorder writes no rows
+    # rather than zeros for a whole family of keys.
+    values.update(await _vuln_values(db))
+
     return values
 
 
@@ -501,6 +676,19 @@ async def record_full_sweep_snapshot(db: AsyncSession, *, run_id: uuid.UUID) -> 
     written = sum(1 for key in ACTIVE_KEYS if key in values)
     logger.info(
         "posture snapshot captured",
-        extra={"run_id": str(run_id), "keys": written, "captured_at": captured_at.isoformat()},
+        extra={
+            "run_id": str(run_id),
+            "keys": written,
+            "captured_at": captured_at.isoformat(),
+            # Which of the two legible shapes this capture has, named rather than left to
+            # be inferred from a key count (docs/diagnosability.md rule 2): `unassessed` is
+            # four keys deliberately absent, not four keys lost. It is the ordinary state on
+            # a pod with no vulnerability library or with data sharing off, and the next
+            # check for either is docs/troubleshooting.md §5. `counted` says the four rows
+            # were written, not that anything was answered tonight: a tenant whose answers
+            # are an epoch behind writes its night as `apps_unknown == catalog.installed`,
+            # which the rows say and this field deliberately does not restate.
+            "vuln": "counted" if any(key in values for key in VULN_KEYS) else "unassessed",
+        },
     )
     return written

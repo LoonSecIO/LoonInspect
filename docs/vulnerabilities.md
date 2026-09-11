@@ -29,8 +29,8 @@ multi-tenant pod actually has (§8, ruled 2026-09-11).
 
 The per-build join at judge time — the stored answer on `app_catalog` and
 `installed_apps` ([#381](https://github.com/LoonSecIO/LoonInspect/issues/381)) — is built
-as of 2026-09-11 (§4f). What is **not** built is the four posture keys
-([#250](https://github.com/LoonSecIO/LoonInspect/issues/250)). §10 tracks the rest.
+as of 2026-09-11 (§4f), and so are the four posture keys that count it
+([#250](https://github.com/LoonSecIO/LoonInspect/issues/250), §7). §10 tracks the rest.
 
 The block it rules is `vuln{}` — LoonInspect's own answer about an app Jamf reported,
 riding that app's sub-event beside `patch{}`. It is the highest fan-out object the
@@ -77,10 +77,10 @@ freezes, and it freezes independently of the data.**
 ## 2. What v0 is
 
 Ruled 2026-09-01, against AI-over-inventory for the last v0 feature slot. CVE won on one
-argument: **CVE has a clock and AI does not.** The four reserved `vuln.*` posture keys
-(§7) start a tape that cannot be backfilled; an AI summary is worth the same whenever it
-ships, and is *better* after CVE, since the version-diff narration's payload is the CVE
-delta.
+argument: **CVE has a clock and AI does not.** The four `vuln.*` posture keys (§7) —
+reserved when this was ruled, active since 2026-09-11 — start a tape that cannot be
+backfilled; an AI summary is worth the same whenever it ships, and is *better* after CVE,
+since the version-diff narration's payload is the CVE delta.
 
 | | v0 | Not v0 |
 | --- | --- | --- |
@@ -553,7 +553,8 @@ that in a sentence and dates it with nothing.
 **What is deliberately not counted.** No fleet-wide "*n* covered / *m* unknown" tile. The
 per-request lookup is bounded by the rows in one response — one device's apps, or one page
 of distinct builds — and counting the three states across the whole tenant is a scan per
-request. Those counts are #250's, off the join #248 stores.
+request. Those counts are #250's, taken once a night off the stored join (§7), not once a
+request.
 
 ## 5. Three id namespaces, one shape
 
@@ -635,21 +636,41 @@ if it is ever demanded.
 
 ## 7. The posture tape
 
-Four keys, reserved with frozen definitions and no writer
-([`posture-snapshot.md`](posture-snapshot.md), `app.core.posture.RESERVED_KEYS`):
+Four keys, **active since 2026-09-11** (#250) on the answers §4f's join stores
+([`posture-snapshot.md`](posture-snapshot.md), `app.core.posture.VULN_KEYS`):
 `vuln.apps_affected`, `vuln.apps_kev_affected`, `vuln.apps_unknown`,
-`vuln.devices_affected`.
+`vuln.devices_affected`. They count stored columns — the recorder reads the database and
+derives no verdict of its own.
 
 **The activation rule, ruled here because it is a correctness bug waiting to happen:**
 while a tenant has never run the corpus join — every app reading `assessment: off` —
 those four keys write **no rows, not zeros**. The guardrail already says why: a key that
 records before its feature's table exists writes a run of zeros that lies about when
 measurement began. A naive recorder would manufacture a clean bill of health for a fleet
-that was never assessed, which is §4a's failure one more layer down. The keys activate
-the night the join first runs for that tenant, and their tape starts *then*.
+that was never assessed, which is §4a's failure one more layer down. The keys start
+writing the night the join first judges that tenant, and their tape starts *then*.
 
-That is what the reservation buys and the only thing it buys: the definitions are fixed
-now, at leisure, rather than under time pressure with a customer's SPL already written.
+Built as two database facts and no process state: the container holds an epoch, and at
+least one of the tenant's catalog rows carries a stored answer — **ever judged**, never
+*judged against tonight's epoch*. A tier flipped to `off` therefore stops the tape rather
+than flatlining it at zero, because the judge pass clears the stored answers (§8) and the
+gate closes behind them.
+
+**The gate asks "ever", corrected 2026-09-11 before a row was ever written.** An equality
+gate spells "this tenant's answers are one epoch behind" exactly the way it spells "nothing
+here was ever assessed", and the first is reachable with nothing broken: a new epoch lands,
+the next sweep fails before it touches a device, the hourly re-judge has not run yet. A
+tenant that is merely behind therefore writes its night, and writes what the wire said that
+night — every build `unknown_app` under an epoch that is no longer answering (§4f), so
+`vuln.apps_unknown` carries the whole installed population and the other three are zeros.
+Absence stays one sentence, which is the only way absence can be a ruling.
+
+That is what the reservation bought, and the only thing it bought: the four **names**, this
+rule, and the time to argue about both. The **grain** was not reserved — #102's gloss said
+"apps" and the keys count installed builds — so it was set at activation on 2026-09-11,
+which a reserved key with no rows behind it is allowed exactly once
+([`posture-snapshot.md`](posture-snapshot.md), *Vulnerabilities*). From that date the
+standing rule holds: a definition change mints a new key and retires the old.
 
 ## 8. Tiers
 
@@ -728,6 +749,6 @@ block each other.
 | The corpus behind the seam: the library loader — the exchange's `corpus` pointer, the verified epoch, the global row/title tables, `corpusAsOf`, and `loaded_corpus()` answering from stored rows | [#248](https://github.com/LoonSecIO/LoonInspect/issues/248) | **Built 2026-09-10.** `app/core/vuln_library.py`, the three `vuln_library_*` tables (migration `d1f8b6a34e07`), the `AssessedBuild` widening in `app/core/vuln.py`; pinned in `backend/tests/test_vuln_library.py` and `…_db.py` against the committed fixture epoch |
 | The per-build join at judge time, stored on `app_catalog` and copied onto `installed_apps` | [#381](https://github.com/LoonSecIO/LoonInspect/issues/381) | **Built 2026-09-11.** §4f. `app/catalog/service.py` (`judge_vuln`, `copy_vuln_answers`), the read seam in `app/core/vuln_answer.py`, the seven columns on both tables (migration `b3e7c1d5f9a2`); pinned in `backend/tests/test_vuln_answer_db.py`. The assessed-titles stamp branch it was also going to carry is **withdrawn** (ruling R-D, 2026-09-11): a verdict comes from a row and from nothing else, so a rowless build reads `unknown_app` permanently rather than provisionally |
 | `vuln{}` populated on the app sub-event; `assessment` stops being a constant `off`. Also needs the fan-out ([#242](https://github.com/LoonSecIO/LoonInspect/issues/242)) | [#249](https://github.com/LoonSecIO/LoonInspect/issues/249) | **Built 2026-09-03.** `app/core/vuln.py`, `VulnEnrichment` in `app/schemas/payload.py`, the sentinel in `app/core/hec_fanout.py`, pinned in `backend/tests/test_vuln_block.py` |
-| The four `vuln.*` posture keys go ACTIVE, under §7's no-zero rule | [#250](https://github.com/LoonSecIO/LoonInspect/issues/250) | Open. Still RESERVED, deliberately: #381 is what gave the keys something to count, and counting it is its own session |
+| The four `vuln.*` posture keys go ACTIVE, under §7's no-zero rule | [#250](https://github.com/LoonSecIO/LoonInspect/issues/250) | **Built 2026-09-11.** §7. Four bounded queries over the stored answers in `app/core/posture.py` (`_vuln_values`, `VULN_KEYS`), `RESERVED_KEYS` now empty; the no-rows rule pinned in `backend/tests/test_posture_db.py` and against the fixture epoch in `backend/tests/test_vuln_answer_db.py` |
 | The corpus's edge made visible in the UI — `assessment`, `corpusAsOf`, three empty states | [#251](https://github.com/LoonSecIO/LoonInspect/issues/251) | **Built 2026-09-03.** §4g. `app/core/vuln_read.py` over the same seam, `vuln` + `corpusAsOf` on the device and catalog responses, the Catalog tab's column and banner; pinned in `backend/tests/test_vuln_read.py` and `frontend/src/features/vulnerabilities/noCollapse.ts` |
 | The lifecycle fan-out under `loon:jamf:mac:app:vuln`, and `LOCAL-` ids behind their reservation | post-v0 (§5, §6) | Named, not built. The string stays minted with no writer |

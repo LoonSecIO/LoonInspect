@@ -17,7 +17,7 @@ the wire or the tape — none governed what the product tells the *person debugg
 | Rule | Where it is ruled | What it says |
 | --- | --- | --- |
 | `assessment: off` | [`vulnerabilities.md`](vulnerabilities.md) §4a, the whole `vuln` vocabulary | *"Nobody looked"* is a first-class value; the counts are absent, never zero, so a careless `stats sum(vuln.counts.total)` cannot hand a fleet nobody assessed a clean bill. |
-| No zero-priming | [`posture-snapshot.md`](posture-snapshot.md), `posture.RESERVED_KEYS` | No key records before the thing it measures exists; a run of primed zeros is a lie about when measurement began. *"Absent means 'did not apply', never zero."* |
+| No zero-priming | [`posture-snapshot.md`](posture-snapshot.md), `posture.RESERVED_KEYS` and `posture.VULN_KEYS` | No key records before the thing it measures exists; a run of primed zeros is a lie about when measurement began. *"Absent means 'did not apply', never zero."* Since #250 the four `vuln.*` keys carry it per tenant: no rows at all until something has been assessed. |
 | Failure ≠ emptiness | #150, quoted in `frontend/src/features/overview/OverviewPage.tsx` | A pod whose endpoints are down has not "not started" setup; a strip that quietly vanished would read as "nothing to report". |
 | Absence is the ruling | [`vulnerabilities.md`](vulnerabilities.md) §4a, additive-only clause 4 | An absent key is a statement, and `assessment` is always present to say which statement. |
 

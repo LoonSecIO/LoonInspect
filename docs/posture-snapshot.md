@@ -1,6 +1,7 @@
 # The posture snapshot
 
-Status: **implemented (#102, 2026-08-29)** · Target: V0
+Status: **implemented (#102, 2026-08-29)** · 33 keys, last activated 2026-09-11 (the four
+`vuln.*`, #250) · Target: V0
 
 The nightly tape of fleet posture. One table, `posture_snapshot(tenant_id, metric_key,
 platform, value, captured_at, full_sweep_run_id)` — one row per metric per capture per
@@ -44,11 +45,14 @@ Written here so a future key argues against a rule rather than against silence:
 * no zero-priming
 * no operator-behavior keys ever
 
-"No zero-priming" is why the reserved keys below have no writer: a key that records
-before its feature's table exists writes a run of zeros that lies about when
-measurement began. "No operator-behavior keys ever" means the tape measures the fleet
-and the pipeline, never the humans operating them — page views, click paths, and login
-cadences are not posture and will not become keys.
+"No zero-priming" is why a ruled key waits in `RESERVED_KEYS` for its writer: a key that
+records before its feature's table exists writes a run of zeros that lies about when
+measurement began. It is also why the four `vuln.*` keys, active since 2026-09-11, still
+write **no rows at all** on a tenant nothing has assessed — the same rule one layer in,
+applied per tenant rather than per release ([Vulnerabilities](#vulnerabilities) below).
+"No operator-behavior keys ever" means the tape measures the fleet and the pipeline,
+never the humans operating them — page views, click paths, and login cadences are not
+posture and will not become keys.
 
 ## Population
 
@@ -58,11 +62,11 @@ wrote them observed, and the row says so.** `platform` is stamped by
 computers only ([mobile-devices.md](mobile-devices.md)) and every device the recorder
 counts is a Mac by construction.
 
-The column exists because the guardrails above leave no way to add it later. Thirteen of
-the 29 active keys count a *different population* the first night a sweep observes more
+The column exists because the guardrails above leave no way to add it later. Seventeen of
+the 33 active keys count a *different population* the first night a sweep observes more
 than Macs — the four `devices.*`, the five `catalog.*`, `apps.distinct`,
-`changes.notable_24h` and the two `alerts.*` — and at that point both available moves
-destroy something.
+`changes.notable_24h`, the two `alerts.*` and the four `vuln.*` — and at that point both
+available moves destroy something.
 Redefining `devices.total` in place to mean "Macs and iPads" is forbidden by
 *definitions immutable per key*, and silent besides: no error, no migration, just a
 series that stops meaning what its own history means. Minting `devices.macos.total` and
@@ -98,9 +102,11 @@ The rules the column carries:
   metric_key, platform, captured_at)`, its backing index is also the series read shape,
   which is why `ix_posture_snapshot_series` was dropped into it rather than widened
   beside it — that would have been the same four columns twice.
-* **Reserved keys are stamped by the run that activates them**, on the same rule: the
-  four names below carry no population today because they carry no rows, and each starts
-  its tape under the platform its first capture observed.
+* **A key that starts writing later is stamped by the run that activates it**, on the
+  same rule: it has no population until it has rows, and its tape starts under the
+  platform its first capture observed. The four `vuln.*` keys are the live case — their
+  first row for a tenant is written the night the corpus join first judges it, under that
+  night's platform.
 
 ## Definitions v1
 
@@ -245,28 +251,86 @@ that cell is written for the destination-configured case.
 | `accounts.admins` | ACTIVE | Active accounts holding the admin role — the same cut the accounts API's last-admin guard counts. | `accounts` ⋈ `account_roles` |
 | `tokens.active` | ACTIVE | API tokens with `revoked_at` null. | `api_tokens` |
 
-### Reserved: vulnerabilities
+### Vulnerabilities
 
-Frozen definitions, no writer yet. Each activates with its feature's table — no
-zero-priming: no key records before the thing it measures exists. Their population is
-whatever the run that activates them observed, stamped on the row like every other key
-([Population](#population)); until then they have no population because they have no
-rows.
+Activated 2026-09-11 (#250) on the per-build answers the local join stores (#381,
+[`vulnerabilities.md`](vulnerabilities.md) §4f).
 
-**The `vuln.*` activation rule, ruled on #113 (2026-09-02).** While a tenant has never
-run the corpus join — every app reading `assessment: off` on the wire — the four
-`vuln.*` keys write **no rows, not zeros**. This is the guardrail above applied to a
-case a naive recorder gets wrong: a zero here is not "no vulnerabilities", it is "never
-assessed", and writing it manufactures a clean bill of health for a fleet nobody looked
-at. The keys activate the night the join first runs for that tenant, and their tape
-starts then. The contract they gate is [`docs/vulnerabilities.md`](vulnerabilities.md).
+**The grain was set on 2026-09-11, at activation, and is immutable from that date like
+every other definition here.** What #102 reserved was the four *names*, the activation
+rule below, and a one-line gloss written before there was a table to count — "distinct
+**apps** with at least one LoonVD-known vulnerability". The rows below are narrower than
+that gloss on purpose: the unit is the **installed build** — one `app_catalog` row, one
+`version_hash` — which is `catalog.installed`'s unit, so the three app keys have a
+denominator on the same tape and at the same grain. Setting a definition at activation is
+allowed exactly once and only here, because RESERVED means no row was ever written: there
+is no series to orphan and no history that changes meaning under itself. From 2026-09-11
+the standing rule applies — a change to any of these four mints a new key and retires the
+old.
+
+**"Apps" in these four names is not `apps.distinct`'s grain.** That key counts `app_hash`
+groups: one per app across every version of it the fleet carries. These count builds. Two
+versions of Wireshark are one `apps.distinct` and two `vuln.apps_affected`, so
+`vuln.apps_affected / apps.distinct` is a ratio of two different units and reads high; the
+denominator that belongs under these three is `catalog.installed`.
+
+**The activation rule, ruled on #113 (2026-09-02) and enforced by
+`app.core.posture._vuln_values`.** While a tenant has never run the corpus join — every
+app reading `assessment: off` on the wire — these four keys write **no rows, not
+zeros**. This is the guardrail above applied to a case a naive recorder gets wrong: a
+zero here is not "no vulnerabilities", it is "never assessed", and writing it
+manufactures a clean bill of health for a fleet nobody looked at. The keys start writing
+the night the join first judges that tenant, and their tape starts then.
+
+Two database facts open the gate, both read and neither derived: the container holds a
+corpus epoch (`vuln_library_epoch`), and at least one of this tenant's `app_catalog` rows
+carries a stored answer (`vuln_signature` not null) — **ever judged**, never *judged
+against tonight's epoch*. So a pod with no library writes nothing, and a tenant whose
+data-sharing tier is `off` writes nothing, because the judge pass clears its stored
+answers and the gate closes behind them. **A gap in this family is a statement** —
+"nothing has ever been assessed here" — and it is a different statement from four zeros.
+
+**A tenant whose answers are merely behind still writes its night.** Corrected 2026-09-11
+before the first row existed: the gate first asked for equality with the answering epoch,
+which spelled "one epoch behind" exactly the way it spells "never assessed". That state is
+reachable with nothing broken — a new epoch lands, the next sweep fails before it processes
+a device (the recorder fires on failed sweeps by design), and the hourly re-judge has not
+run yet — so the absence would have been a lie about a fleet assessed for months, in a tape
+nobody can re-date. Such a night writes what the wire said that night: every build reads
+`unknown_app` under an epoch that is no longer answering, so `apps_unknown` carries the
+whole installed population and the other three keys are honest zeros. **`apps_unknown ==
+catalog.installed`, with the other three at zero, is what "nothing was answered tonight"
+looks like** — distinct from a gap, which means nothing was ever answered.
+
+**What a row cannot say: which epoch answered it.** `posture_snapshot` has no epoch column
+— one row is one metric, one capture, one population, never a wide row — and
+`vuln_library_epoch` keeps a single row with no history, so a count cannot be traced to the
+corpus that produced it years later. The shape above is the substitute, and it is written
+here rather than left for a reader to work out.
+
+The population for the three app keys is `catalog.installed`'s exactly: distinct builds
+of the capture's platform that at least one device carries. That is the denominator a
+reader needs — of N installed builds, A affected, U unassessed, and the rest assessed
+clean. `apps_kev_affected` is a subset of `apps_affected` and never its own population;
+the two land as separate keys because ratios are never stored. An answer is counted only
+under the epoch that produced it (equality on the stored signature, never ordering), so
+the tape says what the wire said that night rather than restating one epoch's counts
+under another's date.
+
+**The two halves count two populations, on purpose.** The three app keys draw
+`catalog.installed`'s cut, which counts a build any device row carries; `devices_affected`
+draws the active-connection device population every `devices.*` key counts. So a build
+carried only by a Mac on a deactivated connection adds one to the app keys and no device to
+`devices_affected`, and the two halves of this family can differ by that much without
+either being wrong. They are not aligned because aligning them would give the three app
+keys a denominator `catalog.installed` no longer matches.
 
 | Key | Status | Definition | Source |
 | --- | --- | --- | --- |
-| `vuln.apps_affected` | RESERVED | Distinct apps with at least one LoonVD-known vulnerability. Gated on the LoonVD wire. | — |
-| `vuln.apps_kev_affected` | RESERVED | Distinct apps carrying a KEV-listed vulnerability. Gated on the LoonVD wire. | — |
-| `vuln.apps_unknown` | RESERVED | Apps LoonVD cannot assess (`unknown_app` — a ruled wire value, deliberately snake_case). Gated on the LoonVD wire. | — |
-| `vuln.devices_affected` | RESERVED | Distinct devices carrying at least one affected app. Gated on the LoonVD wire. | — |
+| `vuln.apps_affected` | ACTIVE | Installed builds whose stored answer is `covered` under the answering epoch with `counts.total > 0` — at least one vulnerability the corpus knows. Grain: one `app_catalog` build, `catalog.installed`'s unit, which counts a build any device row carries — including a Mac on a deactivated connection, which `devices_affected` does not count. **No row while the tenant has never been judged.** | `app_catalog` ⋈ `installed_apps` |
+| `vuln.apps_kev_affected` | ACTIVE | The same population with `counts.kev > 0` — carrying a KEV-listed vulnerability. A subset of `apps_affected`. Same build grain and same `catalog.installed` cut, so a build only a deactivated connection's Mac carries is counted here and in no device under `devices_affected`. **No row while the tenant has never been judged.** | `app_catalog` ⋈ `installed_apps` |
+| `vuln.apps_unknown` | ACTIVE | Installed builds the corpus cannot assess (`unknown_app` — a ruled wire value, deliberately snake_case): no row in the epoch, or an answer from an epoch that is no longer answering. Same build grain and same `catalog.installed` cut, deactivated connections included. Equals `catalog.installed` on a night when nothing answered. **No row while the tenant has never been judged.** | `app_catalog` ⋈ `installed_apps` |
+| `vuln.devices_affected` | ACTIVE | Distinct devices on active connections carrying at least one build `apps_affected` counted. Folded through the catalog row, not the device's copy, so a copy lagging its device's sync cannot make the two disagree about a build — the copy-lag axis only. On the population axis they differ by design: this is the active-connection device cut every `devices.*` key draws, while the app keys are `catalog.installed`'s any-device-row cut, so a build only a deactivated connection's Mac carries is counted there and nowhere here. **No row while the tenant has never been judged.** | `installed_apps` ⋈ `app_catalog` ⋈ `devices` |
 
 ## The process line
 

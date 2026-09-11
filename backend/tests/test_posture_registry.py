@@ -1,6 +1,6 @@
 """The posture-snapshot key registry against its own vocabulary doc.
 
-Definitions v1 is a frozen contract: 29 active keys, each immutable per name, plus the
+Definitions v1 is a frozen contract: 33 active keys, each immutable per name, plus the
 reserved names whose definitions exist before their writers do, and the population
 vocabulary (#230) each captured row is stamped with. The registry
 (app.core.posture) and docs/posture-snapshot.md must tell the same story — a key added
@@ -31,12 +31,37 @@ def _documented(status: str) -> set[str]:
 def test_active_registry_is_definitions_v1() -> None:
     from app.core.posture import ACTIVE_KEYS
 
-    assert len(ACTIVE_KEYS) == 29
+    assert len(ACTIVE_KEYS) == 33
     assert len(set(ACTIVE_KEYS)) == len(ACTIVE_KEYS), "duplicate active key"
     assert all(_KEY_SHAPE.match(key) for key in ACTIVE_KEYS)
 
 
+def test_the_vuln_keys_are_active_and_named_as_their_own_family() -> None:
+    """#250: the four keys are in the vocabulary AND reachable as a group.
+
+    They are the one family with a gate in front of it — a tenant nothing has assessed
+    gets no rows rather than zeros — so both the recorder and every test that asserts
+    "these keys are absent" need the group by name. Four literals copied into each of
+    those places is how one of them silently stops matching.
+    """
+    from app.core.posture import ACTIVE_KEYS, VULN_KEYS
+
+    assert set(VULN_KEYS) == {
+        "vuln.apps_affected",
+        "vuln.apps_kev_affected",
+        "vuln.apps_unknown",
+        "vuln.devices_affected",
+    }
+    assert set(VULN_KEYS) <= set(ACTIVE_KEYS)
+
+
 def test_reserved_keys_are_named_and_disjoint() -> None:
+    """Empty since #250 activated the last four, and still enforced.
+
+    The reservation is a mechanism, not a list: the next key ruled before its writer
+    exists is declared in `RESERVED_KEYS`, and these assertions are what keep it out of
+    `ACTIVE_KEYS` until it has rows to write.
+    """
     from app.core.posture import ACTIVE_KEYS, RESERVED_KEYS
 
     assert len(set(RESERVED_KEYS)) == len(RESERVED_KEYS), "duplicate reserved key"
@@ -77,6 +102,34 @@ def test_the_population_rules_are_written_down() -> None:
     for token in ("macos", "ios", "ipados", "tvos", "visionos"):
         assert f"`{token}`" in doc, f"the platform vocabulary must name {token}"
     assert "uq_posture_snapshot_capture" in doc
+
+
+def test_the_no_rows_rule_is_written_down_beside_the_four_keys() -> None:
+    """#250: the one rule that makes a gap in this family legible.
+
+    A reader who finds a tenant with no `vuln.*` rows for a stretch of nights has to be
+    able to learn, from the tape's own document, that the gap is a statement — "nothing was
+    assessed here" — and not four lost keys. The rule living only in a docstring inside the
+    recorder would fail exactly the reader it is written for.
+
+    Asserted **inside each of the four rows**, not once across the document: a reader of a
+    key meets its own cell, and a version of this test that searched the whole file passed
+    while `vuln.devices_affected`'s cell said nothing about its absence — and kept passing
+    when the sentence was deleted from a second cell as well. One row carrying the rule for
+    four is the drift this file exists to catch.
+    """
+    from app.core.posture import VULN_KEYS
+
+    doc = DOC.read_text()
+    # Wrapped lines and bold markers are the doc's business, not the rule's.
+    prose = " ".join(doc.replace("*", "").split())
+
+    assert "no rows, not zeros" in prose, "the activation rule must be stated in the doc, in the contract's own words"
+    for key in VULN_KEYS:
+        rows = [line for line in doc.splitlines() if line.startswith(f"| `{key}` | ACTIVE |")]
+        assert len(rows) == 1, f"{key} must carry exactly one ACTIVE row of its own"
+        cell = " ".join(rows[0].replace("*", "").split())
+        assert "never been judged" in cell, f"{key}'s own cell must say what its absence means — a neighbour's does not"
 
 
 def test_notable_is_the_closed_levels_ordering_at_normal_or_above() -> None:
