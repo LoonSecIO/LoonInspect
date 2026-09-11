@@ -3,11 +3,16 @@ export const en = {
     updateAvailable: "A newer build of LoonInspect is available",
     dismissUpdate: "Dismiss update notice",
     sharing: {
-      // Present tense for what is true now (#298): nothing flows back to this instance in
-      // this build, so the feeds are described as what they would be made from, not as
-      // something this page's switches receive.
+      // Present tense for what is true now. Amended 2026-09-11 (#248): one thing does now
+      // flow back — the vulnerability corpus, on this same daily exchange and only to an
+      // organization that shares — so the old "nothing flows back in this build" is gone.
+      // The feeds themselves are still described as what they would be made from, and the
+      // corpus is named by where it is read so the two are visibly different nouns rather
+      // than the same one contradicting itself two sentences apart. The gate is per
+      // organization, not per instance: a container may hold a corpus that does not
+      // answer here (docs/vulnerabilities.md §8).
       pageDescription:
-        "The patching and vulnerability feeds LoonInspect is building would be made from anonymous community inventory. None ships yet, and nothing flows back to this instance in this build. What this instance contributes — and whether it contributes at all — is controlled here.",
+        "The patching and vulnerability feeds LoonInspect is building would be made from anonymous community inventory. No feed ships yet. What does come back on the same daily exchange is the vulnerability corpus — the lookup table behind Devices › Applications › Catalog, and only for an organization that shares — and nothing else returns to this instance. What this instance contributes, and whether it contributes at all, is controlled here.",
       envLocked:
         "COMMUNITY_SHARING=false is set in the environment — the .env file beside docker-compose.yml. Nothing is shared while it is set, whatever is chosen below. A choice made here is recorded and takes effect once that line is removed and the container restarted (docker compose up -d).",
       readOnlyRole:
@@ -836,15 +841,15 @@ export const en = {
     corpusBody: (date: string) =>
       `These apps were checked against a corpus generated on ${date}. Anything published since then has not been looked at, and this date only moves when the corpus is refreshed.`,
     corpusBodyNone:
-      "No vulnerability corpus is loaded in this container, so LoonInspect has looked at none of these apps. Every row reads not assessed, and carries no date — because there is no corpus date to give.",
+      "Nothing here has been checked against a vulnerability corpus: either this container holds none, or data sharing is off for this organization — a corpus answers only for an organization that shares. Every row reads not assessed, and carries no date — because there is no corpus date to give.",
     edge: (date: string) =>
       `What this corpus does not cover is named rather than hidden: an app it does not know reads outside the corpus, dated ${date} — never as zero vulnerabilities.`,
     edgeNone:
-      "What this container has not looked at is named rather than hidden: with no corpus loaded, every app reads not assessed and is dated with nothing — never as zero vulnerabilities.",
+      "What has not been looked at is named rather than hidden: with no corpus answering here, every app reads not assessed and is dated with nothing — never as zero vulnerabilities.",
     stateCoveredClean: "No findings",
     stateUnknownApp: "Outside the corpus",
     stateOff: "Not assessed",
-    stateOffReason: "no corpus loaded",
+    stateOffReason: "no corpus answering here",
     checkedAgainstCorpusOf: (date: string) => `checked against the corpus of ${date}`,
     notInCorpusOf: (date: string) => `not in the corpus of ${date}`,
     findings: (count: number) => `${count} finding${count === 1 ? "" : "s"}`,
@@ -852,15 +857,22 @@ export const en = {
     oldestPublished: (days: number) => `oldest published ${days} day${days === 1 ? "" : "s"} ago`,
     moreIds: (count: number) => `+${count} more`,
     idsCapped: "list capped",
-    // #298: where "not assessed" goes. Present tense for the absence, future tense at most
-    // for the corpus, and no date, no "last checked", no "today" — `off` carries none.
+    // #298: where "not assessed" goes. Present tense for the absence, and no date, no
+    // "last checked", no "today" — `off` carries none. Amended 2026-09-11 (#248): the
+    // premise moved, so `whyNoCorpus` argues from "none loaded" rather than from "in this
+    // build", and `whyNoSwitch` says what data sharing now actually does. Amended again
+    // the same day, on the re-verify: `off` has **two** causes since the tier gate landed
+    // — no epoch imported, and an epoch held while this organization's data sharing is
+    // off — and every string here has to be true under both. No fourth state and no
+    // second link (#298 stands); the banner just says why in one sentence that covers
+    // both, and the *why* block names them separately because that is where detail goes.
     whySummary: "Why this container says nothing",
     whyNoCorpus:
-      "No vulnerability corpus ships with LoonInspect in this build. The lookup runs locally, against a corpus loaded into this container, and this container has none — so nobody has looked at these versions, and nothing here has been checked against anything.",
+      "The lookup runs locally, against a corpus this container holds and answers from for an organization that has earned it. One of those two is missing: either no vulnerability corpus is loaded here, or data sharing is off for this organization — so nobody has looked at these versions, and nothing here has been checked against anything.",
     whyNoSwitch:
-      "Turning on data sharing does not change that in this build: the daily exchange contributes inventory and receives no verdicts and no feeds back. Neither does a licence key; nothing in this build reads one for vulnerability data.",
+      "Data sharing is what earns one: an organization that shares receives the Jamf-derived corpus daily on the same exchange and answers from it, and an organization with sharing off reads not assessed even where the container holds a corpus. A licence key does not; nothing in this build reads one for vulnerability data.",
     whyWhenItShips:
-      "When a corpus ships, every row moves to a dated answer — checked, or outside the corpus — and the absence stops being the whole story. Until then it is named rather than hidden.",
+      "Once a corpus is loaded and this organization's data sharing is on, every row moves to a dated answer — checked, or outside the corpus — and the absence stops being the whole story. Until then it is named rather than hidden.",
     whyLink: "How the corpus and its tiers are designed (docs/vulnerabilities.md §8)"
   },
   jamfPatch: {

@@ -55,6 +55,7 @@ from app.core.outbox import deliver_pending, fan_out_pending, purge_delivered_ev
 from app.core.runs import purge_runs
 from app.core.sharing import exchange_due, run_exchange
 from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
+from app.core.vuln_library import refresh_from_db
 from app.mdm.collections import tick_tenant
 from app.mdm.patch.jamf_catalog import sync_catalog
 from app.models.schema import Tenant, UserSession
@@ -292,6 +293,23 @@ async def lifespan(app: FastAPI):
     # exist.
     async with unscoped_session() as db:
         await bootstrap_tenants(db)
+        # The vulnerability library this container holds, into this process (#248). One
+        # of the handful of global tables an unscoped session may touch, like the Jamf
+        # patch corpus, and the whole of the refresh rule beside the importer itself:
+        # `loaded_corpus()` answers from what this reads until an exchange replaces it.
+        # A container with no epoch imported logs nothing here and every app reads
+        # `assessment: off`, which is every v0 build.
+        library = await refresh_from_db(db)
+        if library is not None:
+            logger.info(
+                "vulnerability library loaded",
+                extra={
+                    "epoch_id": library.epoch_id,
+                    "corpus_as_of": library.as_of.isoformat(),
+                    "rows": len(library.rows),
+                    "titles": len(library.titles),
+                },
+            )
 
     # First-run setup is a property of the deployment rather than of a tenant — there
     # is one claim token and one first administrator — so it runs against the single

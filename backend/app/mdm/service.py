@@ -37,6 +37,7 @@ from app.core.runs import (
 )
 from app.core.runs import log as run_log
 from app.core.vuln import loaded_corpus
+from app.core.vuln_library import read_tenant_tier
 from app.core.wire import ENVELOPE, envelope, instance_label
 from app.mdm.factory import get_mdm_client
 from app.mdm.jamf.client import (
@@ -281,6 +282,18 @@ async def run_jamf(
     # MissingGreenlet instead of lazily refreshing (#125).
     connection_id = connection.id
     try:
+        # This tenant's data-sharing tier, once for the whole sweep (#248,
+        # docs/vulnerabilities.md §8). It decides whether `loaded_corpus()` answers for
+        # this tenant at all, and it is a per-tenant row, so it is read here rather than
+        # per device — the same reason the title names below ride a process cache.
+        #
+        # **Inside the guard, because it is a database read.** It is this function's first
+        # I/O, and the docstring above is a contract: a failure here has to come back as a
+        # failed sweep on this connection, not as an exception unwinding through
+        # `run_connection` (which catches only `RunReclaimed`) into `collections_tick`'s
+        # blanket handler, abandoning the rest of that tenant's due collections and leaving
+        # the claimed run row to the reclaim.
+        await read_tenant_tier(db)
         client = get_mdm_client(connection)
         result = await _sync_jamf(
             db,
@@ -861,6 +874,15 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
         )
         return None
 
+    # One read of the tier per webhook, for the same reason the sweep reads it once per
+    # run: one event is one device, and `loaded_corpus()` must not go asking per app.
+    #
+    # **Below both guards, not above them.** The dropped paths above never reach
+    # `process_sync`, so nothing there ever reads the tier — and a ComputerCheckIn is a
+    # heartbeat times the whole fleet, so a read above the guards would put a query on the
+    # one path whose entire purpose is to cost nothing (#76).
+    await read_tenant_tier(db)
+
     sections, quarantine = await webhook_scope(db, connection)
 
     # A webhook is a run with one device in it — it needs the jobID so its event is
@@ -1248,8 +1270,10 @@ async def process_sync(
         # visible at the one call site where the ordering is guaranteed.
         title_names=cached_title_names() if device.apps is not None else None,
         # The one place the container's corpus reaches the wire (#249). `NO_CORPUS` until
-        # #248 loads one, which is what makes every `vuln{}` read `assessment: off`;
-        # #248 changes `loaded_corpus()` and nothing here.
+        # an epoch is loaded AND this tenant's tier earns it — both decided inside
+        # `loaded_corpus()` and neither costing a query here: the tier was read once at the
+        # top of this sweep (`run_jamf`) or of this webhook (`ingest_webhook`), which is why
+        # this stays a dictionary lookup on a path that runs once per device.
         corpus=loaded_corpus(),
     )
     payload = snapshot.to_payload()

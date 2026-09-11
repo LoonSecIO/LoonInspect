@@ -469,6 +469,92 @@ class AppCatalogVersion(Base):
     key_full: Mapped[str | None] = mapped_column(String(67), nullable=True, index=True)
 
 
+class VulnLibraryEpoch(Base):
+    """Which corpus epoch this container holds — one row, or none (#248).
+
+    Global, like `jamf_patch_titles` and `app_catalog_versions`: the corpus is published
+    to every consenting container, carries no customer data, and is joined to the fleet
+    only by a content key the fleet already computes. Outside row-level security for the
+    same reason those two are.
+
+    The row is written **last** when an epoch is imported, and the whole import is one
+    transaction, so this row and the rows below can never describe different epochs. It is
+    what `corpusAsOf` is read from, and what tells the next exchange whether the published
+    signature has moved.
+    """
+
+    __tablename__ = "vuln_library_epoch"
+
+    # One row, enforced by the database rather than by convention (a `id = 1` check): two
+    # epochs loaded at once is the state where "which one answered?" has no answer.
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False, default=1)
+    epoch_id: Mapped[str] = mapped_column(String(32))
+    # sha256 of the epoch's manifest.json. Compared for equality and nothing else — a
+    # rollback moves the pointer to a LOWER epoch id and must still be imported.
+    signature: Mapped[str] = mapped_column(String(64))
+    # The epoch's own claim date, whose date part is the wire's `corpusAsOf`.
+    asof: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    loaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    title_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class VulnLibraryRow(Base):
+    """One assessed build of the loaded epoch, keyed by the content key both sides hash.
+
+    `key_full` is `app.full(name, bundleId, shortVersion, None)` — the same key
+    `installed_apps` and `app_catalog` carry (docs/vulnerabilities.md §4f), which is what
+    makes the join a local lookup rather than a question for a server.
+
+    **A row is the only thing that means "assessed".** A build with no active findings is
+    a row with an empty `ids` and zero counts; a build nobody assessed has no row at all.
+    The aggregates are stored as the epoch computed them — `counts` uncapped, `ids` capped
+    — because recounting a capped list under-reports (docs/vulnerabilities.md §4a, §4e).
+    """
+
+    __tablename__ = "vuln_library_rows"
+
+    key_full: Mapped[str] = mapped_column(String(67), primary_key=True)
+    # The capped, priority-ordered id list, exactly as published: the row does not carry
+    # the per-id evidence the order was computed from, so it cannot be re-derived here.
+    ids: Mapped[list] = mapped_column(JSONB, default=list)
+    truncated: Mapped[bool] = mapped_column(Boolean, default=False)
+    # {"total", "kev", "critical", "high", "medium", "low"} — JSONB rather than six
+    # columns so #381 can copy the answer onto a catalog row in one `UPDATE … FROM`, and
+    # so a band added additively is not a migration on a table with a row per build.
+    counts: Mapped[dict] = mapped_column(JSONB, default=dict)
+    # The same key set minus `kev`, holding absolute publication timestamps or null. Never
+    # an age: `daysOldestPublished` is derived at the event's own clock (§4d).
+    oldest_published: Mapped[dict] = mapped_column(JSONB, default=dict)
+
+
+class VulnLibraryTitle(Base):
+    """The loaded epoch's **coverage metadata**: one row per Jamf title it compiled.
+
+    Stored by #248 and read by [#381](https://github.com/LoonSecIO/LoonInspect/issues/381)
+    for coverage statistics — how much of a tenant's catalog an epoch actually looked at.
+    **Never a verdict input** (ruling R-D, 2026-09-11): a verdict comes from a row in
+    `vuln_library_rows` and from nothing else, so a build with no row reads `unknown_app`
+    whatever this table says about its title.
+
+    Keyed on Jamf's own `title_id`, which is what the published object is unique on.
+    `key_title` — the container's `app.title` key over `(appName, bundleId)` — is an
+    **index and not a key**: sixteen Wireshark titles in Jamf's catalog share one, so
+    keying on it would have collapsed fifteen of them and left one arbitrary stamp
+    answering for all sixteen.
+
+    The stamp is kept as the string Jamf wrote, compared for equality in either direction,
+    never ordered and never given a tolerance.
+    """
+
+    __tablename__ = "vuln_library_titles"
+
+    title_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    key_title: Mapped[str] = mapped_column(String(67), index=True)
+    catalog_last_modified: Mapped[str] = mapped_column(String(64))
+    versions_compiled: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class DataSharingSettings(Base):
     """One row per tenant: the community data-sharing consent state
     (docs/data-sharing.md). Created lazily on first access; an absent row means an

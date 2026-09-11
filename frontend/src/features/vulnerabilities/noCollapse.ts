@@ -42,8 +42,8 @@ type Covered = Extract<AppVulnerability, { assessment: "covered" }>;
 // not via `?? 0`, not via `?.total`, because the property does not exist to be optional.
 export type OffCarriesNoCounts = Assert<NoKey<Off, "counts">>;
 export type OffCarriesNoIDs = Assert<NoKey<Off, "vulnIDs">>;
-// And no date: there is no corpus, so there is nothing to stamp a row with. A surface says
-// so in words rather than borrowing today's.
+// And no date: nothing is answering for this organization, so there is nothing to stamp a
+// row with. A surface says so in words rather than borrowing today's.
 export type OffCarriesNoDate = Assert<NoKey<Off, "corpusAsOf">>;
 
 // An app outside the corpus is dated and uncounted. Zero here would hand a reader a clean

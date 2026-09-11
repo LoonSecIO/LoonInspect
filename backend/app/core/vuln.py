@@ -3,9 +3,11 @@
 
 Three things live here and nothing else:
 
-* **the seam** — `VulnCorpus`, the protocol #248 implements, and `NO_CORPUS`, the one
-  implementation that ships today. Nothing in this module loads data, reads a file, or
-  touches a session;
+* **the seam** — `VulnCorpus`, the protocol `app.core.vuln_library` implements over the
+  epoch it loaded (#248), and `NO_CORPUS`, the answer until one has been. Nothing in this
+  module loads data, reads a file, or touches a session: `install_corpus` and
+  `install_tenant_tier` are setters the library calls, and `loaded_corpus()` reads what
+  they set;
 * **the block** — `vuln_block()`, which turns a corpus answer about one installed build
   into the ruled summary, in canonical form (`None`, never `-1`);
 * **the sentinel** — `mint_hec_sentinels()`, the HEC-shaping seam's `None` → `-1`
@@ -37,11 +39,13 @@ at enqueue, in both directions, rather than trusting this module to be careful.
 from __future__ import annotations
 
 import re
+import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Protocol, runtime_checkable
 
+from app.core.tenancy import get_tenant_id
 from app.schemas.payload import (
     VULN_ASSESSMENT_COVERED,
     VULN_ASSESSMENT_UNKNOWN_APP,
@@ -85,6 +89,28 @@ _ALLOWED_ID = re.compile(r"^(CVE-\d{4}-\d{4,}|LoonVD-\d{4}-\d{6})$")
 NEVER = -1
 
 
+def validate_finding_id(value: str) -> str:
+    """The one validator §5 asks for, in the one place it lives.
+
+    Called where a finding is constructed (`VulnFinding`) **and** where the library
+    imports a stored row's id list (`app.core.vuln_library`), so an epoch carrying a
+    `LOCAL-` id or a fourth namespace fails the epoch import loudly rather than failing
+    every device sync on a per-lookup raise (docs/vulnerabilities.md §5).
+    """
+    if not value:
+        raise ValueError("a finding needs an id")
+    if value.upper().startswith(LOCAL_PREFIX):
+        raise ValueError(
+            f"{value!r} uses the reserved LOCAL- namespace, which nothing LoonInspect ships mints (docs/vulnerabilities.md §5)"
+        )
+    if not _ALLOWED_ID.match(value):
+        raise ValueError(
+            f"{value!r} is not one of the namespaces §5 licenses for a constructed finding — "
+            "CVE-YYYY-NNNN… or LoonVD-YYYY-NNNNNN (docs/vulnerabilities.md §5)"
+        )
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class VulnFinding:
     """One active finding against one installed build, as the corpus reports it.
@@ -113,20 +139,63 @@ class VulnFinding:
     kev: bool = False
 
     def __post_init__(self) -> None:
-        if not self.id:
-            raise ValueError("a finding needs an id")
-        if self.id.upper().startswith(LOCAL_PREFIX):
-            raise ValueError(
-                f"{self.id!r} uses the reserved LOCAL- namespace, which nothing LoonInspect ships mints "
-                "(docs/vulnerabilities.md §5)"
-            )
-        if not _ALLOWED_ID.match(self.id):
-            raise ValueError(
-                f"{self.id!r} is not one of the namespaces §5 licenses for a constructed finding — "
-                "CVE-YYYY-NNNN… or LoonVD-YYYY-NNNNNN (docs/vulnerabilities.md §5)"
-            )
+        validate_finding_id(self.id)
         if self.severity is not None and self.severity not in SEVERITY_BANDS:
             raise ValueError(f"{self.severity!r} is not one of {SEVERITY_BANDS} — use None for an unscored finding")
+
+
+@dataclass(frozen=True, slots=True)
+class AssessedBuild:
+    """One assessed build as a **stored** corpus row already holds it: the aggregates,
+    not the findings they were computed from (#248, and the epoch format's `rows.jsonl`).
+
+    The second thing `findings()` may answer with, and the reason it exists: the corpus
+    that arrives by the exchange carries a **capped** id list beside precomputed counts
+    and publication dates, so the uncapped truth — `counts.total`, and the oldest date in
+    a band whose id the cap dropped — is not recoverable from the list. Recounting a
+    capped list under-reports, which is §4a's failure with a plausible-looking number in
+    front of it. So the row is passed through rather than reduced to `VulnFinding`s, and
+    `vuln_block` reports what the corpus counted.
+
+    Every id is validated here, at load, for the reason §5 gives: a bad record must fail
+    the epoch import rather than every device sync that touches that app. The two
+    invariants the wire model would otherwise refuse at enqueue are checked here too, so
+    a malformed epoch is refused whole instead of poisoning one device's snapshot:
+
+        oldest_published.<band> is not None  <=>  severity[<band>] > 0
+        truncated                            <=>  total > len(ids)
+
+    Dates, not day counts: `daysOldestPublished` is derived at the event's own clock
+    (§4c and §4d), which is why a stored row can never carry an age.
+    """
+
+    total: int
+    kev: int
+    severity: Mapping[str, int]
+    oldest_published: date | None
+    oldest_published_severity: Mapping[str, date | None]
+    ids: tuple[str, ...] = ()
+    truncated: bool = False
+
+    def __post_init__(self) -> None:
+        for name, mapping in (("severity", self.severity), ("oldest_published_severity", self.oldest_published_severity)):
+            if tuple(mapping) != SEVERITY_BANDS:
+                raise ValueError(f"{name} must carry exactly {SEVERITY_BANDS}, worst first, and carries {tuple(mapping)!r}")
+        for value in (self.total, self.kev, *self.severity.values()):
+            if value < 0:
+                raise ValueError("a count cannot be negative")
+        for finding_id in self.ids:
+            validate_finding_id(finding_id)
+        pairs = [(self.total, self.oldest_published, "total")]
+        pairs += [(self.severity[band], self.oldest_published_severity[band], band) for band in SEVERITY_BANDS]
+        for count, oldest, band in pairs:
+            if (oldest is not None) != (count > 0):
+                raise ValueError(f"oldest_published.{band} and the count for {band} disagree about whether a finding exists")
+        if self.truncated != (self.total > len(self.ids)):
+            raise ValueError(
+                f"truncated is {self.truncated} with {len(self.ids)} ids and a total of {self.total}; it is true if and "
+                "only if the cap dropped one"
+            )
 
 
 @runtime_checkable
@@ -164,12 +233,20 @@ class VulnCorpus(Protocol):
     Order is not the corpus's problem: `vuln_block` sorts by the ruled priority before it
     caps. Nor is the day arithmetic, which depends on the event's own occurrence time and
     so cannot be stored per app.
+
+    **The fourth answer, added by #248 and additive to the three above:** an
+    `AssessedBuild` — one stored row's precomputed aggregates. It says exactly what a
+    non-empty sequence says (`covered`, with counts, days and ids) for a corpus that
+    counted the findings when the epoch was compiled and ships a capped id list. The
+    protocol's member set does **not** widen: still `as_of` and `findings`, so every
+    corpus written against the two-member interface — `NO_CORPUS`, a test's stub — is
+    unchanged and stays a `VulnCorpus`. Only the return type does.
     """
 
     @property
     def as_of(self) -> date | None: ...
 
-    def findings(self, *, key_title: str, key_full: str) -> Sequence[VulnFinding] | None: ...
+    def findings(self, *, key_title: str, key_full: str) -> AssessedBuild | Sequence[VulnFinding] | None: ...
 
 
 class _NoCorpus:
@@ -188,17 +265,97 @@ class _NoCorpus:
 
 NO_CORPUS: VulnCorpus = _NoCorpus()
 
+# The corpus this process has loaded, or None for "none". Written by exactly one module —
+# `app.core.vuln_library`, when it imports an epoch and when it reads the epoch row at
+# startup — and read by `loaded_corpus()` below. A module-level variable rather than an
+# import of the library here, because the library imports this module for `AssessedBuild`;
+# the setter keeps the dependency one-way and keeps this file free of anything that reads
+# a file, a session or a socket.
+_INSTALLED: VulnCorpus | None = None
+
+# The sharing tier each tenant was last read at — the per-tenant half of the gate below.
+# Written by `app.core.vuln_library.read_tenant_tier` once per sync run, per re-emit and
+# per response that renders an assessment, and by the exchange from the settings row it
+# already holds; read here, for free, however many times one unit of work asks. That is
+# "cache, don't calculate" in its usual shape: the tier is a per-tenant row and the answer
+# must not cost a query per device or per app.
+#
+# **A tenant absent from this map reads `off`.** Fail-closed is the whole point: the gate
+# is a consent decision, and a path that forgot to read the tier must not be the path that
+# hands out an answer nobody consented to. The cost of the conservative direction is an
+# `assessment: off` an operator can see and ask about; the cost of the other direction is
+# a summary served to a tenant that never earned it.
+_TENANT_TIERS: dict[uuid.UUID, str] = {}
+
+# The one tier that earns nothing. `app.schemas.system.SharingTier` is the vocabulary;
+# `keys` and `reveal` both exchange, so both receive.
+TIER_OFF = "off"
+
+
+def install_tenant_tier(tenant_id: uuid.UUID, tier: str) -> None:
+    """Record what a tenant's data-sharing tier says, for `loaded_corpus()` to read."""
+    _TENANT_TIERS[tenant_id] = tier
+
+
+def forget_tenant_tiers() -> None:
+    """Drop every cached tier. For tests, and for a process that wants the next unit of
+    work to read the rows again rather than trust what it remembers."""
+    _TENANT_TIERS.clear()
+
+
+def install_corpus(corpus: VulnCorpus | None) -> None:
+    """Put the loaded library behind `loaded_corpus()`, or take it away (`None`).
+
+    **The refresh rule, stated once:** the process-level answer changes when the epoch row
+    changes and at no other time — `app.core.vuln_library.refresh_from_db` at startup, and
+    the importer itself after it has replaced the epoch. Nothing polls, and nothing reads
+    the database on the page path (that is the whole of "cache, don't calculate"). A second
+    process that did not run the import picks the new epoch up at its next start; the row
+    in the database is the truth, and #381's set-based join reads it there rather than
+    here.
+    """
+    global _INSTALLED
+    _INSTALLED = corpus
+
 
 def loaded_corpus() -> VulnCorpus:
-    """The corpus this container has loaded — the single place that decides.
+    """The corpus the **acting tenant** has earned — the single place that decides.
 
-    `NO_CORPUS` today. #248 replaces this function's body with the static, hand-refreshed,
-    public-sources corpus it ships (§2), and nothing else in the codebase changes: the
-    snapshot builder takes a `VulnCorpus` and `app.mdm.service.process_sync` passes
-    whatever this returns. A function rather than a module constant so the swap is one
-    edit and so a test can pass its own corpus without reaching for a global.
+    #281's Option A, ruled 2026-09-03, put the tier gate here, and 2026-09-11 says what
+    "here" has to mean on a pod with more than one tenant (docs/vulnerabilities.md §8).
+    Two conditions, and both must hold:
+
+    * **an epoch is loaded.** `NO_CORPUS` until an exchange has imported one, which is
+      every v0 container and the reason `assessment: off` is byte-identical to the day
+      #241 emitted it;
+    * **this tenant's data-sharing tier is not `off`.** The library is one *global*
+      artifact — three non-tenant tables, one process cache — and the tier is a *per
+      tenant* column, so the shape alone does not gate it: one consenting tenant's import
+      would otherwise answer `covered` for every tenant co-resident on the pod, including
+      one that never exchanged, never consented, and was never handed a link. Option A's
+      own words are "a pod that has not earned the summary", and on a multi-tenant pod the
+      unit that earns it is the tenant.
+
+    The rows are **kept** either way. A tier flipped to `off` stops this tenant being
+    answered; it does not delete an artifact every other tenant on the pod is entitled to,
+    and flipping back answers again with no download (§8).
+
+    The tier is read from `_TENANT_TIERS`, which `app.core.vuln_library.read_tenant_tier`
+    fills once per unit of work — never per device and never per app — and a tenant that
+    is not in it reads `off`. The acting tenant comes from the tenancy contextvar, which
+    is bound on both paths that reach this: the request middleware (`app.core.middleware`,
+    `app.core.auth.authenticate`) and the scheduler's `tenant_job` (`app.main`). Outside
+    any tenant there is nobody to have consented, so that is `NO_CORPUS` too.
+
+    A function rather than a module constant so the swap is one assignment and so a test
+    can pass its own corpus without reaching for a global.
     """
-    return NO_CORPUS
+    if _INSTALLED is None:
+        return NO_CORPUS
+    tenant_id = get_tenant_id()
+    if tenant_id is None or _TENANT_TIERS.get(tenant_id, TIER_OFF) == TIER_OFF:
+        return NO_CORPUS
+    return _INSTALLED
 
 
 def _band_index(finding: VulnFinding) -> int:
@@ -235,6 +392,39 @@ def _days_since(published: date, as_of: date) -> int:
     return max((as_of - published).days, 0)
 
 
+def _from_assessed(row: AssessedBuild, *, corpus_as_of: date, as_of: date) -> VulnEnrichment:
+    """The same block, from a row that was counted when the epoch was compiled.
+
+    Two things are still this module's and are still done here, because both depend on
+    something the corpus cannot know. **The day arithmetic** — the row carries absolute
+    publication dates and the event carries its own clock (§4d), and an age stored in a
+    row would be stale the moment it was written. And **the cap** — `VULN_IDS_CAP` is this
+    container's server-side knob (§4e); an epoch that shipped a longer list than this
+    build's cap is trimmed here and says so, so moving the number stays free in both
+    directions. `counts.total` is untouched by either: it is the uncapped truth the row
+    states, which is exactly why a stored row is passed through rather than recounted.
+    """
+
+    def days(published: date | None) -> int | None:
+        return None if published is None else _days_since(published, as_of)
+
+    return VulnEnrichment(
+        assessment=VULN_ASSESSMENT_COVERED,
+        corpus_as_of=corpus_as_of,
+        counts=VulnCounts(
+            total=row.total,
+            kev=row.kev,
+            severity=VulnSeverityCounts(**{band: row.severity[band] for band in SEVERITY_BANDS}),
+        ),
+        days_oldest_published=VulnDaysOldestPublished(
+            total=days(row.oldest_published),
+            severity=VulnSeverityDays(**{band: days(row.oldest_published_severity[band]) for band in SEVERITY_BANDS}),
+        ),
+        vuln_ids=list(row.ids[:VULN_IDS_CAP]),
+        vuln_ids_truncated=row.truncated or len(row.ids) > VULN_IDS_CAP,
+    )
+
+
 def vuln_block(corpus: VulnCorpus, *, key_title: str, key_full: str, as_of: date) -> VulnEnrichment:
     """The `vuln{}` summary for one installed app on one device.
 
@@ -252,6 +442,8 @@ def vuln_block(corpus: VulnCorpus, *, key_title: str, key_full: str, as_of: date
     findings = corpus.findings(key_title=key_title, key_full=key_full)
     if findings is None:
         return VulnEnrichment(assessment=VULN_ASSESSMENT_UNKNOWN_APP, corpus_as_of=corpus.as_of)
+    if isinstance(findings, AssessedBuild):
+        return _from_assessed(findings, corpus_as_of=corpus.as_of, as_of=as_of)
 
     ordered = sorted(findings, key=_priority)
     by_band = {band: [f for f in ordered if f.severity == band] for band in SEVERITY_BANDS}

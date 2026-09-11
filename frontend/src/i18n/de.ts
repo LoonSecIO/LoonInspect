@@ -6,7 +6,7 @@ export const de: Translations = {
     dismissUpdate: "Update-Hinweis ausblenden",
     sharing: {
       pageDescription:
-        "Die Patch- und Schwachstellen-Feeds, die LoonInspect aufbaut, würden aus anonymem Community-Inventar entstehen. Noch erscheint keiner, und in diesem Build fließt nichts an diese Instanz zurück. Was diese Instanz beiträgt — und ob überhaupt — wird hier festgelegt.",
+        "Die Patch- und Schwachstellen-Feeds, die LoonInspect aufbaut, würden aus anonymem Community-Inventar entstehen. Noch erscheint keiner. Was über denselben täglichen Austausch zurückkommt, ist der Schwachstellen-Korpus — die Nachschlagetabelle hinter Geräte › Anwendungen › Katalog, und nur für eine Organisation, die teilt; sonst kommt nichts an diese Instanz zurück. Was diese Instanz beiträgt und ob überhaupt, wird hier festgelegt.",
       envLocked:
         "COMMUNITY_SHARING=false ist in der Umgebung gesetzt — in der Datei .env neben docker-compose.yml. Solange es gesetzt ist, wird nichts geteilt, unabhängig von der Auswahl unten. Eine hier getroffene Wahl wird gespeichert und greift, sobald die Zeile entfernt und der Container neu gestartet wurde (docker compose up -d).",
       readOnlyRole:
@@ -772,15 +772,15 @@ export const de: Translations = {
     corpusBody: (date: string) =>
       `Diese Apps wurden gegen einen Korpus vom ${date} geprüft. Alles, was seither veröffentlicht wurde, wurde nicht betrachtet; dieses Datum bewegt sich nur, wenn der Korpus aktualisiert wird.`,
     corpusBodyNone:
-      "In diesem Container ist kein Schwachstellen-Korpus geladen; LoonInspect hat daher keine dieser Apps geprüft. Jede Zeile steht auf nicht geprüft und trägt kein Datum – weil es kein Korpus-Datum gibt.",
+      "Hier wurde nichts gegen einen Schwachstellen-Korpus geprüft: Entweder hält dieser Container keinen, oder die Datenfreigabe ist für diese Organisation ausgeschaltet – ein Korpus antwortet nur für eine Organisation, die teilt. Jede Zeile steht auf nicht geprüft und trägt kein Datum – weil es kein Korpus-Datum gibt.",
     edge: (date: string) =>
       `Was dieser Korpus nicht abdeckt, wird benannt statt verschwiegen: Eine App, die er nicht kennt, steht auf außerhalb des Korpus, datiert auf den ${date} – nie auf null Schwachstellen.`,
     edgeNone:
-      "Was dieser Container nicht geprüft hat, wird benannt statt verschwiegen: Ohne geladenen Korpus steht jede App auf nicht geprüft und trägt kein Datum – nie null Schwachstellen.",
+      "Was nicht betrachtet wurde, wird benannt statt verschwiegen: Da hier kein Korpus antwortet, steht jede App auf nicht geprüft und trägt kein Datum – nie null Schwachstellen.",
     stateCoveredClean: "Keine Funde",
     stateUnknownApp: "Außerhalb des Korpus",
     stateOff: "Nicht geprüft",
-    stateOffReason: "kein Korpus geladen",
+    stateOffReason: "hier antwortet kein Korpus",
     checkedAgainstCorpusOf: (date: string) => `geprüft gegen den Korpus vom ${date}`,
     notInCorpusOf: (date: string) => `nicht im Korpus vom ${date}`,
     findings: (count: number) => `${count} Fund${count === 1 ? "" : "e"}`,
@@ -790,11 +790,11 @@ export const de: Translations = {
     idsCapped: "Liste gekürzt",
     whySummary: "Warum dieser Container nichts sagt",
     whyNoCorpus:
-      "Mit LoonInspect wird in diesem Build kein Schwachstellen-Korpus ausgeliefert. Die Abfrage läuft lokal gegen einen in diesen Container geladenen Korpus, und dieser Container hat keinen — also hat sich niemand diese Versionen angesehen, und nichts hier wurde gegen irgendetwas geprüft.",
+      "Die Abfrage läuft lokal gegen einen Korpus, den dieser Container vorhält und mit dem er für eine Organisation antwortet, die ihn sich verdient hat. Eines von beidem fehlt: Entweder ist hier kein Schwachstellen-Korpus geladen, oder die Datenfreigabe ist für diese Organisation ausgeschaltet — also hat sich niemand diese Versionen angesehen, und nichts hier wurde gegen irgendetwas geprüft.",
     whyNoSwitch:
-      "Die Datenfreigabe einzuschalten ändert daran in diesem Build nichts: der tägliche Austausch trägt Inventar bei und erhält weder Urteile noch Feeds zurück. Ein Lizenzschlüssel ebenso wenig; nichts in diesem Build liest einen für Schwachstellendaten.",
+      "Die Datenfreigabe ist es, die einen Korpus verdient: Eine Organisation, die teilt, erhält den aus Jamf abgeleiteten Korpus täglich über denselben Austausch und beantwortet damit ihre Fragen; bei einer Organisation mit ausgeschalteter Freigabe steht alles auf nicht geprüft, auch wenn der Container einen Korpus vorhält. Ein Lizenzschlüssel leistet das nicht; nichts in diesem Build liest einen für Schwachstellendaten.",
     whyWhenItShips:
-      "Sobald ein Korpus erscheint, bekommt jede Zeile eine datierte Antwort — geprüft oder außerhalb des Korpus — und die Abwesenheit ist nicht mehr die ganze Geschichte. Bis dahin wird sie benannt statt versteckt.",
+      "Sobald ein Korpus geladen ist und die Datenfreigabe dieser Organisation eingeschaltet ist, bekommt jede Zeile eine datierte Antwort — geprüft oder außerhalb des Korpus — und die Abwesenheit ist nicht mehr die ganze Geschichte. Bis dahin wird sie benannt statt versteckt.",
     whyLink: "Wie der Korpus und seine Stufen gedacht sind (docs/vulnerabilities.md §8)"
   },
   jamfPatch: {

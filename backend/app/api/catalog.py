@@ -15,7 +15,8 @@ from app.catalog.service import refresh_tenant
 from app.core.auth import require
 from app.core.database import get_db
 from app.core.permissions import Permission
-from app.core.vuln import VulnCorpus, loaded_corpus
+from app.core.vuln import VulnCorpus
+from app.core.vuln_library import earned_corpus
 from app.core.vuln_read import assess, corpus_as_of, today
 from app.mdm.patch.requirements import version_tuple
 from app.models.schema import AppCatalogEntry, AppCatalogVersion, InstalledApp, JamfPatchTitle
@@ -138,7 +139,7 @@ async def list_catalog(
     # header stamp below are the same fact rather than two reads of a moving one. The
     # lookup is per row of THIS page — distinct builds, not installs, so it does not grow
     # with the fleet — and reads no database; under `NO_CORPUS` it does no per-row work.
-    corpus, as_of = loaded_corpus(), today()
+    corpus, as_of = await earned_corpus(db), today()
     items = [
         _assessed_entry_out(entry, row[1], refs, corpus=corpus, as_of=as_of)
         for entry, row in zip(entries, page_rows, strict=True)

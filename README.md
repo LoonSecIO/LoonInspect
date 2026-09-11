@@ -21,7 +21,7 @@ Site and Field Notes: [loonsec.io](https://staging.loonsec.io) (staging until la
 
 ### What it does not do
 
-No CVE or EPSS enrichment. No vulnerability scoring. No SCIM, no MFA. Jamf Patch title compliance is implemented; nothing else vulnerability-shaped is. The wire already carries a `vuln` slot for the rest — every app on every `device.inventory` snapshot ships `assessment: off` until the community corpus and its matching land ([docs/vulnerabilities.md](docs/vulnerabilities.md), tracked in [#248](https://github.com/LoonSecIO/LoonInspect/issues/248)/[#249](https://github.com/LoonSecIO/LoonInspect/issues/249)). If you need vulnerability scoring today, this is not that tool yet.
+No CVE or EPSS enrichment. No vulnerability scoring. No SCIM, no MFA. Jamf Patch title compliance is implemented; nothing else vulnerability-shaped is. The wire already carries a `vuln` slot for the rest, and the container can now *load* a published vulnerability corpus over the data-sharing exchange and answer from it ([#248](https://github.com/LoonSecIO/LoonInspect/issues/248), [docs/vulnerabilities.md](docs/vulnerabilities.md)) — but no corpus is being published yet, so in practice every app on every `device.inventory` snapshot still ships `assessment: off`, and the per-build join that stores the answer is open ([#381](https://github.com/LoonSecIO/LoonInspect/issues/381)). If you need vulnerability scoring today, this is not that tool yet.
 
 ---
 
@@ -188,7 +188,7 @@ do about that certificate without turning verification off.
 
 ### 6. Back it up before you need to
 
-**[docs/troubleshooting.md](docs/troubleshooting.md)** is where to start when something is not working: four ordered paths — a green test and an empty sweep, a run with zero devices, events not reaching Splunk, a stack that will not start — each ending in a fix or a named state to report. **[docs/operations.md](docs/operations.md)** is the operator runbook: what to back up
+**[docs/troubleshooting.md](docs/troubleshooting.md)** is where to start when something is not working: five ordered paths — a green test and an empty sweep, a run with zero devices, events not reaching Splunk, a stack that will not start, applications reading *not assessed* — each ending in a fix or a named state to report. **[docs/operations.md](docs/operations.md)** is the operator runbook: what to back up
 (the database *and* `ENCRYPTION_KEY` — a dump without the key restores an instance whose
 every MDM connection is permanently unreadable), the `pg_dump` and `psql` commands to do
 it, what a restore does to in-flight outbox rows and the run mutex, how upgrades and

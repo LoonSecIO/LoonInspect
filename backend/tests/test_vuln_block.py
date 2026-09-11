@@ -44,6 +44,7 @@ from app.core.vuln import (
     NO_CORPUS,
     SEVERITY_BANDS,
     VULN_IDS_CAP,
+    AssessedBuild,
     VulnCorpus,
     VulnFinding,
     loaded_corpus,
@@ -112,14 +113,14 @@ class StubCorpus:
         *,
         as_of: date | None = CORPUS_AS_OF,
         titles: Sequence[str] = (),
-        builds: dict[str, Sequence[VulnFinding]] | None = None,
+        builds: dict[str, AssessedBuild | Sequence[VulnFinding]] | None = None,
     ) -> None:
         self.as_of = as_of
         self._titles = set(titles)
         self._builds = builds or {}
         self.calls: list[tuple[str, str]] = []
 
-    def findings(self, *, key_title: str, key_full: str) -> Sequence[VulnFinding] | None:
+    def findings(self, *, key_title: str, key_full: str) -> AssessedBuild | Sequence[VulnFinding] | None:
         self.calls.append((key_title, key_full))
         if key_title not in self._titles:
             return None
@@ -167,7 +168,15 @@ def test_with_no_corpus_every_app_reads_off_and_nothing_else(raw: dict, run) -> 
     were told to emit — `{"assessment": "off"}` and nothing beside it — and the whole
     snapshot is byte-identical to the one built before this issue existed. `off` is a
     property of the pod (unlicensed, unconsented, no corpus loaded), so it is the same
-    answer for all 83 apps or for none of them."""
+    answer for all 83 apps or for none of them.
+
+    This is also the guarantee #248 has to keep on the day it ships a real corpus, and it
+    is kept by two conditions rather than by care: the library arrives on the data-sharing
+    exchange, so a pod that has not consented is never handed a link and never imports an
+    epoch — and `loaded_corpus()` answers `NO_CORPUS` to a *tenant* whose own tier is `off`
+    even where the pod holds one (#281's Option A at the grain a multi-tenant pod has,
+    docs/vulnerabilities.md §8). Asserted here on the line below rather than claimed in a
+    document: nothing in this process installs a library or a tier."""
     payload = _snapshot(raw)
     assert loaded_corpus() is NO_CORPUS
     assert NO_CORPUS.as_of is None
@@ -643,7 +652,12 @@ def test_the_protocol_is_the_whole_interface_248_must_implement() -> None:
     returning `None` for an app the corpus does not know, `()` for one it knows with no
     active findings, and a sequence otherwise. `NO_CORPUS` satisfies it, and so does the
     stub — which is the point: this issue consumes an interface, it does not preview a
-    corpus."""
+    corpus.
+
+    #248 widened the RETURN of `findings`, never the member set: a corpus may also answer
+    with an `AssessedBuild` — one stored row's precomputed aggregates. The two assertions
+    below are what says so: a two-member stub written before that existed is still a
+    `VulnCorpus`, and still means exactly what it meant."""
     assert isinstance(NO_CORPUS, VulnCorpus)
     assert isinstance(StubCorpus(), VulnCorpus)
     assert vuln_block(NO_CORPUS, key_title="v1:t", key_full="v1:f", as_of=date(2026, 9, 2)).assessment == "off"
@@ -652,6 +666,42 @@ def test_the_protocol_is_the_whole_interface_248_must_implement() -> None:
     assert vuln_block(corpus, key_title="v1:other", key_full="v1:f", as_of=_WINDOW.date()).assessment == "unknown_app"
     assert vuln_block(corpus, key_title="v1:t", key_full="v1:none", as_of=_WINDOW.date()).counts.total == 0
     assert vuln_block(corpus, key_title="v1:t", key_full="v1:f", as_of=_WINDOW.date()).counts.total == 1
+
+
+def test_a_stored_row_answers_the_same_block_the_findings_would(raw: dict, run) -> None:  # noqa: F811
+    """The widening, through the whole builder rather than through `vuln_block` alone
+    (`tests/test_vuln_library.py` pins the pure equality): the same app on the same device
+    produces the same sub-event whether the corpus counted the findings when its epoch was
+    compiled or hands them over one by one. The wire does not move; only where the
+    counting happened does.
+
+    The precomputed path is the one that ships, and it exists because the uncapped
+    `counts.total` cannot be recovered from a capped id list — recounting it would
+    under-report, which is §4a's failure wearing a plausible number."""
+    findings = [
+        _finding("CVE-2026-2400", days_old=400, severity="critical", kev=True),
+        _finding("CVE-2026-2401", days_old=30, severity="medium"),
+        _finding("CVE-2026-2402", days_old=10, severity=None),
+    ]
+    key_title, key_full = _keys(_snapshot(raw), KNOWN_BUNDLE_ID)
+    row = AssessedBuild(
+        total=3,
+        kev=1,
+        severity={"critical": 1, "high": 0, "medium": 1, "low": 0},
+        oldest_published=(_WINDOW.date() - timedelta(days=400)),
+        oldest_published_severity={
+            "critical": _WINDOW.date() - timedelta(days=400),
+            "high": None,
+            "medium": _WINDOW.date() - timedelta(days=30),
+            "low": None,
+        },
+        ids=("CVE-2026-2400", "CVE-2026-2401", "CVE-2026-2402"),
+    )
+
+    derived = _block(_snapshot(raw, corpus=_covered_corpus(_snapshot(raw), findings)))
+    stored = _block(_snapshot(raw, corpus=StubCorpus(titles=[key_title], builds={key_full: row})))
+    assert stored == derived
+    assert stored["counts"]["total"] == 3
 
 
 def test_the_empty_tuple_means_positively_assessed_never_an_unassessed_build(raw: dict, run) -> None:  # noqa: F811

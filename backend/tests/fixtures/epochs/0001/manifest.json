@@ -1,0 +1,23 @@
+{
+  "format": "epoch/1",
+  "epoch_id": "0001",
+  "asof": "2026-09-10T20:00:00Z",
+  "catalog_snapshot_id": "96bc0122fc8e2d0fef2b2a7553dd713e989727c2462248a989125a75aa61d321",
+  "nvd_high_water": "2026-09-10T21:00:00Z",
+  "id_namespaces": [
+    "CVE"
+  ],
+  "objects": {
+    "rows.jsonl.gz": {
+      "sha256": "f0ae4d53e6c676750945f9dcfd2fa399cd5bbf4b224d1082982405c66da20080",
+      "bytes": 416,
+      "rows": 3
+    },
+    "titles.jsonl.gz": {
+      "sha256": "165eca05ac589d9c45080db464e05cf3f8af2defff279174d2d36a042c2931df",
+      "bytes": 311,
+      "rows": 4
+    }
+  },
+  "catalog": null
+}
