@@ -57,7 +57,7 @@ from app.core.sharing import exchange_due, run_exchange
 from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
 from app.core.vuln_library import refresh_from_db
 from app.mdm.collections import tick_tenant
-from app.mdm.patch.jamf_catalog import sync_catalog
+from app.mdm.patch.jamf_catalog import JamfPatchCatalogUnconfigured, sync_catalog
 from app.models.schema import Tenant, UserSession
 
 # Before anything else in the process emits a line, so migration output and startup
@@ -147,6 +147,13 @@ async def hourly_jamf_patch_sync() -> None:
                 await db.commit()
             if judged:
                 logger.info("app catalog refreshed", extra={"tenant_id": str(tenant_id), "rows": judged})
+    except JamfPatchCatalogUnconfigured as exc:
+        # The one way this job can be misconfigured rather than merely unlucky, and the
+        # container log is the only surface it has. One sentence at ERROR with no
+        # traceback, so `docker compose logs app` reads the line that names the setting
+        # instead of a stack that does not (docs/diagnosability.md rule 3). Nothing was
+        # written: the catalog the container already had still answers.
+        logger.error(str(exc))
     finally:
         reset_actor(actor_token)
 

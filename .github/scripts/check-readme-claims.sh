@@ -120,6 +120,24 @@ claim() {
   fi
 }
 
+# A counting claim, which is the one shape a grep cannot prove: the README says how many
+# ordered paths docs/troubleshooting.md holds, and adding a path to that document touches
+# neither the README nor any code, so the number goes stale silently. It did — #388 added
+# section 6 and left "five ordered paths" standing. The proof is the document counting
+# itself: a path is a numbered section whose heading is the operator's own words in
+# quotes (`## 6. "The Jamf Patch table is empty…"`), which is what separates the paths
+# from section 0's inventory of readable surfaces and the two closing sections.
+PATH_COUNT_MARKER='\b(one|two|three|four|five|six|seven|eight|nine|ten) (ordered )?paths\b'
+
+readme_path_count_matches_troubleshooting() {
+  local doc=docs/troubleshooting.md counted written
+  local words=(zero one two three four five six seven eight nine ten)
+  [[ -f $doc ]] || return 1
+  counted=$(grep -cE '^## [0-9]+\. "' "$doc")
+  written=$(grep -oiE "$PATH_COUNT_MARKER" "$README" | head -1 | tr '[:upper:]' '[:lower:]' | cut -d' ' -f1)
+  [[ -n $written && ${words[counted]:-out-of-range} == "$written" ]]
+}
+
 # ---------------------------------------------------------------------------
 # The table. One row per claim. Add a claim to the README, add its row here.
 # ---------------------------------------------------------------------------
@@ -188,6 +206,12 @@ claim guard multiarch \
 claim guard hardened-base \
   'hardened base|hardened image|distroless|chainguard' \
   "grep -rqiE 'distroless|chainguard' Dockerfile"
+
+# A guard, not an anchor, because the mistake it catches only exists while the sentence
+# does: a README that stops counting the paths has no count left to be wrong about.
+claim guard path-count \
+  "$PATH_COUNT_MARKER" \
+  "readme_path_count_matches_troubleshooting"
 
 # ---------------------------------------------------------------------------
 

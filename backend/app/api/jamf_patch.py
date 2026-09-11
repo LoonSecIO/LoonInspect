@@ -80,6 +80,25 @@ async def title_version_counts(db: AsyncSession, title_id: str) -> dict[str, int
     dependencies=[Depends(require(Permission.PATCH_CATALOG_SYNC))],
 )
 async def sync_titles(db: AsyncSession = Depends(get_db)) -> JamfPatchSyncResult:
+    """Refresh the catalog now: the same work as the hourly job, with a person waiting.
+
+    **Cold, this is the long one, and cold is not rare.** The hourly job fires on
+    `CronTrigger(minute=0)` and not at startup, so a container started at ten past the
+    hour holds an empty catalog for fifty minutes — which is exactly when someone who has
+    just finished setup presses this button. Cold means every title in the catalog is a
+    definition to fetch, `DETAIL_CONCURRENCY` at a time, so the request is held open for
+    minutes rather than seconds.
+
+    **Nothing cancels it.** The page sends no `AbortSignal` (`frontend/src/config/api.ts`)
+    and the shipped compose stack has no reverse proxy to cut a long request off, so a
+    press the operator walks away from still runs to completion on the server; only the
+    button stops waiting. Nothing serialises two presses either — this route takes no
+    run lock — which is the reason the fan-out's bound is chosen against this caller and
+    not only against the hourly job (`jamf_catalog.py`).
+
+    Warm — which is every press after the first — it is one summary read and a handful of
+    definitions, and returns in about as long as one HTTP round trip.
+    """
     synced = await sync_catalog(db)
     # The catalog moved: rebuild the lookup index and re-judge this tenant's rows against it.
     await rebuild_index(db)
