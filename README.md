@@ -14,14 +14,62 @@ Site and Field Notes: [loonsec.io](https://staging.loonsec.io) (staging until la
 
 * **Built for Jamf Pro:** Native Pro API integration and webhook ingestion. LoonInspect is Jamf-only by design (#79) — `app/mdm/factory.py` builds a Jamf client directly rather than dispatching through an abstraction. A second MDM would be a sibling vertical in this repo, not a provider this one plugs into.
 * **Delta Streaming Engine:** Diffs inventory against the last observation and streams structured JSON events (`device.inventory.changed`, `device.change`) directly to your SIEM, beside one `device.inventory` snapshot per device per pass so the SIEM always holds the current state. A sweep where nothing changed emits no deltas. The wire vocabulary is frozen and amended only additively — [docs/splunk-wire-vocabulary.md](docs/splunk-wire-vocabulary.md).
-* **Small on the wire, by subscription:** Deltas measure 509 bytes per event plus roughly 330 bytes per changed app (both from the real payload builder; [docs/splunk-setup.md](docs/splunk-setup.md) has the sizing) — a quiet day is roughly 4 MB. The per-device snapshot is the expensive one. It is *stored* as about 28 KB for a Mac with 83 apps under today's shipped `assessment: off` (see "What it does not do" below), and *delivered* fanned out into 107 records — one per app, extension attribute, certificate, profile, group, local account, plus seven per-device anchors — which measures about 79 KB to a webhook or RunReveal, 84 KB to Splunk HEC, and 90 KB as an Elastic `_bulk` body. That is one request per device per pass either way, so a 40,000-device sweep is roughly 3.2–3.6 GB today (up to about 6.8 GB once every app is fully assessed). The split is what makes `app.name=X app.version=Y` mean one app rather than two independent multivalue fields; [docs/runs.md](docs/runs.md) §4 has both fan-outs. Destinations subscribe per event type, so a delta-only feed stays small.
+* **Small on the wire, by subscription:** Deltas measure 509 bytes per event plus roughly 330 bytes per changed app (both from the real payload builder; [docs/splunk-setup.md](docs/splunk-setup.md) has the sizing) — a quiet day is roughly 4 MB. The per-device snapshot is the expensive one. It is *stored* as about 28 KB for a Mac with 83 apps where every app reads `assessment: off` (see "Vulnerabilities" below), and *delivered* fanned out into 107 records — one per app, extension attribute, certificate, profile, group, local account, plus seven per-device anchors — which measures about 79 KB to a webhook or RunReveal, 84 KB to Splunk HEC, and 90 KB as an Elastic `_bulk` body. That is one request per device per pass either way, so a 40,000-device sweep is roughly 3.2–3.6 GB today (up to about 6.8 GB once every app is fully assessed). The split is what makes `app.name=X app.version=Y` mean one app rather than two independent multivalue fields; [docs/runs.md](docs/runs.md) §4 has both fan-outs. Destinations subscribe per event type, so a delta-only feed stays small.
 * **Hybrid Sync Architecture:** Real-time webhooks for active devices and scheduled off-peak sweeps for the rest. Each pull is a *collection* — what to read (Jamf sections, a device filter pushed into Jamf's query, the smart-group catalog) and when (time of day, timezone, cadence) — configured per connection in the app rather than as one global cron.
 * **Tenant isolation in the database:** Row-level security is enforced by Postgres rather than by application filters, and CI asserts that the application role cannot bypass it.
 * **Self-hosted:** One container and a Postgres database. No vendor account required to run it.
 
+### Vulnerabilities
+
+Each installed app is answered at the build that is actually on the Mac, in one of three
+words. **No findings** — this exact build was checked and nothing stands against it.
+**Outside the corpus** — this build was not checked. **Not assessed** — nothing is
+answering for your organization at all. The first two carry the date the corpus was
+generated. The third carries no date, because it has none.
+
+The three never collapse into each other. *Outside the corpus* is amber rather than
+green, because "we did not look at this" is a different fact from "we looked and found
+nothing", and a gap coloured green is a wrong answer that looks right. Nothing
+unassessed is ever rendered as a zero, on the page or on the wire
+([docs/vulnerabilities.md](docs/vulnerabilities.md) §4a, §4g).
+
+**What the corpus does not know is part of the answer.** It is compiled from public
+sources against the list of software titles Jamf publishes in Jamf Pro's Patch
+Management catalog, and Jamf's identifiers enter it only as content hashes. It covers
+what it covers: the first epoch compiled, on 2026-09-11, answered for 28,872 distinct
+builds across 623 of the 1,553 titles that catalog held that day. An app outside that
+map reads `unknown_app`, *Outside the corpus* on the page, dated, and it keeps reading
+that until a corpus knows it. That is the design and not an embarrassment. A corpus
+whose edge is countable is one whose coverage you can check.
+
+**How it arrives.** Once a day, over the data-sharing exchange described below, to
+consenting instances only. The response names the published corpus and its signature.
+The container downloads it only when that signature moves, verifies the bundle whole or
+refuses it whole, and joins it locally against the content keys the app catalog already
+carries. Nothing about your fleet is sent in order to receive it, and no lookup leaves
+the container when a page or an event is answered. Consent earns it in both directions:
+an organization with data sharing off reads *Not assessed* even where the container
+holds a corpus ([docs/vulnerabilities.md](docs/vulnerabilities.md) §8).
+
+**A customer's first epoch arrives with the production cutover.** Until then the
+published corpus is delivered on staging only, so an instance pointed at production
+reads *Not assessed* for every app. When a page says that and you expected otherwise,
+[docs/troubleshooting.md](docs/troubleshooting.md) §5 is the step-through.
+
+*This product uses the NVD API but is not endorsed or certified by the NVD.*
+
 ### What it does not do
 
-No CVE or EPSS enrichment. No vulnerability scoring. No SCIM, no MFA. Jamf Patch title compliance is implemented; nothing else vulnerability-shaped is. The wire already carries a `vuln` slot for the rest, and the container can now *load* a published vulnerability corpus over the data-sharing exchange and answer from it ([#248](https://github.com/LoonSecIO/LoonInspect/issues/248), [docs/vulnerabilities.md](docs/vulnerabilities.md)) — but no corpus is being published yet, so in practice every app on every `device.inventory` snapshot still ships `assessment: off`, and the per-build join that stores the answer is open ([#381](https://github.com/LoonSecIO/LoonInspect/issues/381)). If you need vulnerability scoring today, this is not that tool yet. The data-sourcing question that gated this corpus is resolved in writing ([docs/vulnerabilities.md](docs/vulnerabilities.md) §1): the corpus arrives by the data-sharing exchange, for consenting instances only, once production answers. *This product uses the NVD API but is not endorsed or certified by the NVD.*
+No EPSS, no CVSS, and no scanner. Nothing is installed on a Mac, and LoonInspect scores
+nothing of its own: it reports what the published corpus carries for the build Jamf
+reported. No SCIM, no MFA. The vulnerability answer is the summary block described above
+and nothing else — no per-finding lifecycle events, no fleet-wide coverage tile, and
+nothing at all against a Jamf Patch title's version row, which carries no build to answer
+at. The corpus is compiled outside this repository and delivered over the data-sharing
+exchange, to consenting instances only ([docs/vulnerabilities.md](docs/vulnerabilities.md)
+§1, §2); an instance pointed at production reads `assessment: off` for every app until the
+production cutover, and a customer's first epoch arrives with that cutover. If what you
+need is a scanner and a CVE score, this is not that tool.
 
 ---
 
@@ -384,8 +432,12 @@ indistinguishable from being up to date.
 
 The community patching and vulnerability feeds LoonInspect is building are made from
 anonymous community inventory, and participating instances are what will keep them
-accurate — today the corpus is static and nothing flows back yet (see "What it does not
-do"). Once a day, a sharing instance sends per-tenant **content-hash keys** of installed
+accurate. One half of that now runs in both directions: the daily exchange's response
+names the published vulnerability corpus, which a sharing instance downloads, verifies
+and joins locally (see "Vulnerabilities" above). The community half — per-key verdicts
+made from what other instances have seen — is reserved on that response and not yet
+parsed, and the patching feed is not built. The two are separate channels on one
+exchange. Once a day, a sharing instance sends per-tenant **content-hash keys** of installed
 applications with aggregated install counts (plus OS tuples; the hardware tuple is
 reserved and ships empty) — never per-device rows, and
 never device identifiers, serials, hostnames, user names, file paths, or anything from
@@ -435,7 +487,7 @@ After that, **Settings → Accounts** manages everyone else. Four roles:
 
 | Role | Sees | Can change |
 | --- | --- | --- |
-| **Viewer** | Devices and applications, including the not-yet-assessed vulnerability slot | Nothing |
+| **Viewer** | Devices and applications, including each build's vulnerability answer | Nothing |
 | **Analyst** | The above, plus connection and destination config, runs, and audit history | Can trigger a device sweep and a patch-catalog sync; can mint API tokens for their own account |
 | **Auditor** | The above, plus accounts and roles | Nothing in the product — read-only by design; can mint API tokens for their own account |
 | **Admin** | Everything, including credential values | Everything |

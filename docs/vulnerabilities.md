@@ -103,6 +103,25 @@ The split is contract versus internal. The container half ships in v0 because it
 be added to containers already in the field; the scan half lands after the flip because
 it can.
 
+**Built, as of 2026-09-11.** Every row of the v0 column above is on `main`, and nothing
+ruled above has been re-argued to get there. The loader behind the seam and its
+per-tenant fail-closed gate ([#384](https://github.com/LoonSecIO/LoonInspect/pull/384)),
+the local join that judges a build once and copies the answer onto its devices
+([#389](https://github.com/LoonSecIO/LoonInspect/pull/389)), the four `vuln.*` posture
+keys ([#390](https://github.com/LoonSecIO/LoonInspect/pull/390)), the one source seam the
+patch catalog is read through ([#388](https://github.com/LoonSecIO/LoonInspect/pull/388)),
+and §1's resolution with the NVD notice it carries
+([#387](https://github.com/LoonSecIO/LoonInspect/pull/387)). §10 holds the per-issue
+record, file by file. The scan half has landed too: outside this repository, the compiler
+produced its first epoch on 2026-09-11, and its Wireshark 4.2.0 row carries the same 17
+ids the committed fixture epoch was derived by hand to hold — which is what the fixture
+was for.
+
+What is not yet true is delivery to a customer. The published corpus is handed out on
+staging first, so **a customer's first epoch arrives with the production cutover**, and
+until then a production instance reads `assessment: off` for every app — the same block,
+byte for byte, that a container with no epoch has always emitted (§4a).
+
 **Wireshark must be in it.** It is the standing vulnerability fixture and also a Jamf
 Patch title, which makes it the one app that exercises `patch{}` and `vuln{}` in the same
 event. Which titles the compiler covers beyond it is the compiler's business — install
