@@ -38,14 +38,21 @@ snapshot's clock here was the alternative and it loses on §4d's own argument �
 date the page to the last sync, so a fleet would appear to age more slowly the worse its
 check-ins are, and the number would measure our collection rather than their exposure.
 
-**What this costs, and what #248 changes.** One dictionary-shaped question per row, over
-the rows one response already carries: one device's ~100 apps, or the tenant's distinct
-app versions on the catalog page (a few thousand at most — distinct builds, never
-installs, so the number does not grow with the fleet). Under `NO_CORPUS` it is one
-`is None` per response and no per-row work at all. That is inside "cache, don't
-calculate" — nothing here reads the database, and nothing here walks devices. When #248
-stores the join per (device, app), this module is where the stored answer is read instead
-of derived, and the REST shape does not move.
+**What this costs, and where the answer now comes from.** One dictionary-shaped question
+per row, over the rows one response already carries: one device's ~100 apps, or the
+tenant's distinct app versions on the catalog page (a few thousand at most — distinct
+builds, never installs, so the number does not grow with the fleet). Under `NO_CORPUS` it
+is one `is None` per response and no per-row work at all. That is inside "cache, don't
+calculate" — nothing here reads the database, and nothing here walks devices.
+
+#381 (built 2026-09-11) is what fills it. The join is stored **per distinct build** on
+`app_catalog` — never per device, which is the grain ruling R-D forbids and the reason a
+40k-device fleet costs a pass over its few thousand builds — and copied onto every
+`installed_apps` row carrying that build. So the corpus this module is handed is
+`app.core.vuln_answer.stored_corpus`: a `VulnCorpus` over the answers already on the rows
+the caller loaded, read rather than derived. The seam did not move and the REST shape did
+not move; only where the answer comes from did. Do not reach for a per-device lookup here
+— there is no per-device answer to look up.
 """
 
 from __future__ import annotations

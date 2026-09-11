@@ -260,7 +260,37 @@ cheaper question and the more common answer.
    - **no line at all** → no exchange has completed since the container started. Settings
      › Data Sharing shows the last exchange and its outcome; a run of `failed` rows there
      is an exchange problem rather than a corpus one, and its own error is on the row.
-3. **The date on the banner is old.** The container **reports** the corpus generation
+3. **A date is on the banner, and every app under it says *outside the corpus*.** Not the
+   same fault as grey, and usually not a fault at all. The container stores each build's
+   answer beside the build and re-judges when a new corpus arrives, so in the minutes after
+   a new corpus lands — before that pass runs — apps read **outside the corpus** rather than
+   keeping yesterday's numbers under today's date. That is deliberate: a count from one
+   corpus shown under another's date is a wrong answer that looks right, and this one
+   corrects itself. It clears on its own within the hour (the patch-catalog job re-judges
+   every organization hourly), and sooner for a Mac that checks in — that Mac. A build one
+   Mac's check-in judged does not answer on the others until the hourly pass copies it
+   across, which that pass does every run. Two ways to stop waiting:
+   - `docker compose logs app --since 2h | grep "vulnerability answers refreshed"` — the
+     line the pass writes, carrying `builds` (how many it re-judged) and `apps` (how many
+     app rows it copied onto). A line since the corpus line in step 2 means both halves have
+     run, and amber on a build is then that build's real answer: the corpus did not assess
+     it. `builds=0` with a non-zero `apps` is the normal repair line — a check-in judged the
+     builds first and this pass carried the answer to the rest of the fleet. **No line at
+     all** is not proof the pass did not run — it writes nothing when nothing moved, which
+     is the ordinary hour. Do not wait on it: use *Refresh* below, which runs the same pass
+     now, and judge by what the page says afterwards;
+   - Devices › Applications › **Catalog** › *Refresh* re-judges this organization now.
+   If an hour has passed, the log shows the pass running, and the same builds still read
+   amber, that is reportable state **H**.
+4. **One app, and only that one, says *outside the corpus* after every refresh.** Look for
+   `the stored vulnerability answer for v1:… could not be read` in the app's log. That line
+   means this container declined to trust a stored answer it could not parse — the row was
+   written by a copy out of a corpus the container had already verified, so seeing it means
+   the stored row changed underneath the container (a restored backup from a different
+   build, a hand-edited row). The app reads **outside the corpus** until the next judge pass
+   rewrites it, which the *Refresh* button above does immediately. If it comes back after a
+   refresh, that is reportable state **H**, and include the line — it names the build key.
+5. **The date on the banner is old.** The container **reports** the corpus generation
    date; it does not judge it. There is no staleness threshold to fail — the published
    format does not set a cadence, so any number this container invented would be a
    guess — and the date is shown precisely so the decision is the operator's. What it
@@ -269,11 +299,14 @@ cheaper question and the more common answer.
    succeeding, step 2's log lines say why; if they say `updated` with an unmoved date, the
    published corpus itself has not moved, which is reportable state **I**.
 
-**H.** The library log line says a corpus is loaded, this organization's tier is not
-`off`, and the pages still say nothing is answering. Report the log line, the tier shown
-on Settings › Data Sharing, the build (Settings › Support), and `GET /api/catalog` — the
-response carries `corpusAsOf` beside the rows it describes, and a `null` there with the
-tier on is the defect. A `null` with the tier **off** is step 1, not a defect.
+**H.** A corpus is loaded, this organization's tier is not `off`, and the pages still do
+not answer from it — either they say nothing is answering (grey), or a *Refresh* leaves
+builds the corpus should know reading **outside the corpus** (amber). Report the library
+log line, any `vulnerability answers refreshed` or `stored vulnerability answer … could
+not be read` lines, the tier shown on Settings › Data Sharing, the build (Settings ›
+Support), and `GET /api/catalog` — the response carries `corpusAsOf` beside the rows it
+describes, and a `null` there with the tier on is the defect. A `null` with the tier
+**off** is step 1, not a defect.
 **I.** The published corpus is refused, unreachable, or unchanging. Report the exact log
 line (it names the epoch and the state), the build, and roughly when it started.
 

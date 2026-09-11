@@ -53,6 +53,12 @@ catalog, so device pages and the Applications overview need no join.
   what it is judged as (#236): Jamf Patch is macOS-only, so a row that is not `macos` considers no
   titles and carries no answer, and the column is the record of why. Unique per tenant on
   (`platform`, `version_hash`): a universal app is one hash and two rows.
+  Since #381 it also carries the **vulnerability** answer for the build — `vuln_assessment`
+  (`covered`, or NULL for `unknown_app`), `vuln_counts`, `vuln_oldest_published`, `vuln_ids`,
+  `vuln_ids_truncated`, `vuln_evaluated_at`, and `vuln_signature`, which is the corpus epoch
+  it was judged against the way `evaluated_signature` is the Jamf catalog. The two move on
+  different clocks and are re-judged independently; `docs/vulnerabilities.md` §4f is the
+  contract, and `off` is never stored because it is the consent gate's answer at read time.
 - **`app_catalog_title_matches`** (RLS): one row per (catalog row, Jamf title) — `basis`
   (`requirements` | `ea_assumed`), `state`, `version_known`, `on_latest`, `installed_version`,
   `installed_released_at`, `latest_version`, `latest_released_at`, `first_newer_released_at`,
@@ -71,7 +77,11 @@ catalog, so device pages and the Applications overview need no join.
 1. **At device process** — `record_device_apps` runs inside `process_sync` after the app rows
    are flushed: every app the device reports is *seen now* (`first_seen_at` on creation,
    `last_seen_at` always); rows whose `evaluated_signature` is not the current catalog's are
-   judged (`match_app` + `summarize` from #65 on the row's own facts); each app row gets its copy.
+   judged (`match_app` + `summarize` from #65 on the row's own facts); rows whose
+   `vuln_signature` is not the loaded corpus epoch's are joined to `vuln_library_rows` in one
+   set-based statement; each app row gets its copy — when it is new, when its catalog row was
+   just judged, or when the corpus epoch on its copy is not the one its catalog row now
+   carries, which is the build some *other* Mac's sweep judged.
    A (name, bundle ID, version) the fleet has not shown before is therefore answered the moment
    it appears, not at the next schedule.
 2. **After every Jamf catalog sync** — `hourly_jamf_patch_sync` and `POST /api/jamf-patch/sync`
@@ -79,6 +89,11 @@ catalog, so device pages and the Applications overview need no join.
    hourly job, the caller's tenant for the endpoint): rows judged against an older catalog are
    re-judged and their copies on `installed_apps` refreshed. A sync that changed no title leaves
    the signature alone and costs nothing. `POST /api/catalog/refresh` forces a full re-judge.
+   The same pass is where a moved **corpus epoch** is caught: rows whose only stale half is
+   `vuln_signature` are re-joined by one `UPDATE … FROM` and their copies by one more, without
+   re-running a title match whose answer did not change (#381). That copy statement runs on
+   every pass, re-join or not: it is the only writer that reaches a Mac nobody has swept since
+   the build it carries was judged, and it writes nothing when the copies already agree.
 3. Rows outlive devices by design — an app nobody carries any more keeps its first/last seen —
    and `last_seen_at` only moves when a device reports the app again.
 

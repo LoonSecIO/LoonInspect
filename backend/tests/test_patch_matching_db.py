@@ -345,6 +345,15 @@ async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connec
         "ea_assumed",
         "reference_title_id",
         "sentence_title_id",
+        # The vulnerability answer joins the same list (#381): judged once per distinct
+        # build, copied by the same two paths, and a third — `copy_vuln_answers`, the
+        # set-based pass a new epoch triggers — reads the names from the same place.
+        "vuln_assessment",
+        "vuln_counts",
+        "vuln_oldest_published",
+        "vuln_ids",
+        "vuln_ids_truncated",
+        "vuln_signature",
     }
     # Xcode matches one title, so it is its own reference and has no sentence.
     assert xcode.reference_title_id == "0C3" and xcode.sentence_title_id is None

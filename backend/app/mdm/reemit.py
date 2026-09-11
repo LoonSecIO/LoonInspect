@@ -43,6 +43,7 @@ from app.core.context import get_request_id
 from app.core.outbox import enqueue_event
 from app.core.runs import RunReclaimed, beat, event_time
 from app.core.runs import log as run_log
+from app.core.vuln_answer import stored_corpus
 from app.core.vuln_library import earned_corpus
 from app.core.wire import ENVELOPE, envelope, instance_label
 from app.mdm.jamf.contract import SECTIONS, SUBJECT_COMPUTER, Entry, Observation, SectionContent
@@ -194,7 +195,11 @@ async def re_emit_connection(
                 apps=apps,
                 occurred_at=occurred_at,
                 device_meta=_device_meta(device),
-                corpus=corpus,
+                # The answers stored on this device's own rows (#381). The gate above is
+                # read once for the whole run; this is a dictionary over the rows just
+                # loaded, so a re-emit of forty thousand devices still derives nothing per
+                # device and asks the corpus nothing per app.
+                corpus=stored_corpus(corpus, apps),
                 title_names=title_names,
             )
             payload = snapshot.to_payload()

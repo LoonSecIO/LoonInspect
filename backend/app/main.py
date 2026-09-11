@@ -141,8 +141,17 @@ async def hourly_jamf_patch_sync() -> None:
         logger.info("jamf patch catalog synced")
         # Then every tenant's app catalog against the catalog that just moved — rows judged
         # against an older catalog are re-judged; a sync that changed nothing costs nothing.
+        #
+        # `tenant_job` rather than a bare `session_for_tenant` (#381). This half is a
+        # per-tenant job and now reads a per-tenant *consent* row — the data-sharing tier
+        # that decides whether the corpus answers for this tenant at all — and that gate
+        # reads the acting tenant from context, not from the session's RLS scope. Without
+        # the binding it would answer `off` for everyone and the hourly pass would erase
+        # vulnerability answers the sweep had just written. It also closes the attribution
+        # drift `app.core.context.system_actor_for` names: the refresh's audit label now
+        # says whose data it touched.
         for tenant_id in await operational_tenant_ids():
-            async with session_for_tenant(tenant_id) as db:
+            async with tenant_job(tenant_id) as db:
                 judged = await refresh_tenant(db)
                 await db.commit()
             if judged:

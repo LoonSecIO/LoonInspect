@@ -22,7 +22,10 @@ Four things are held here:
   and a person reading the page use the same words;
 * **the closed set**, refused rather than documented: `assessment` is a `Literal`, and an
   invented fourth state fails at construction;
-* **the lookup is per row, on the row's own content keys**, once each, database untouched.
+* **the answer is per row, on the row's own content keys**, database untouched — and since
+  #381 the device page does not *look it up* at all: the join ran once per distinct build at
+  judge time and the page reads the stored columns, which is asserted here by the corpus
+  never being asked.
 
 `StubCorpus` here is not a preview of #248's corpus; it is the smallest thing satisfying
 the `VulnCorpus` protocol, which is all this suite is entitled to assume.
@@ -39,6 +42,7 @@ from pydantic import ValidationError
 from app.api import devices as devices_api
 from app.api.catalog import _answer, _assessed_entry_out, _entry_out
 from app.api.devices import _assessed
+from app.core import vuln_answer
 from app.core.vuln import NO_CORPUS, VulnCorpus, VulnFinding, vuln_block
 from app.core.vuln_read import assess, assess_all, corpus_as_of, today
 from app.models.schema import AppCatalogEntry
@@ -62,6 +66,7 @@ KNOWN_TITLE = "v1:title-known"
 UNKNOWN_TITLE = "v1:title-unknown"
 AFFECTED_BUILD = "v1:build-affected"
 CLEAN_BUILD = "v1:build-clean"
+UNKNOWN_BUILD = "v1:build-unknown"
 
 # The keys a populated block carries and no others (docs/vulnerabilities.md §4), written
 # out longhand here as they are in `test_vuln_block.py` — so the REST surface cannot grow a
@@ -103,19 +108,73 @@ class StubCorpus:
 
 
 class Row:
-    """The only thing the read path asks of a row: the content keys every stored app
-    already carries (`InstalledApp` and `AppCatalogEntry` both materialize them)."""
+    """What the read path asks of a row: the content keys every stored app already carries
+    (`InstalledApp` and `AppCatalogEntry` both materialize them), and — since #381 — the
+    stored answer columns beside them, which is where a device page's answer now comes from.
 
-    def __init__(self, key_title: str, key_full: str, *, id: int = 1) -> None:
+    The answer defaults to absent, which reads `unknown_app`: a row nobody judged is exactly
+    what a build the corpus never assessed looks like, and it is the honest default here for
+    the same reason it is the honest default in the database.
+    """
+
+    def __init__(
+        self,
+        key_title: str,
+        key_full: str,
+        *,
+        id: int = 1,
+        answer: dict | None = None,
+        signature: str | None = None,
+    ) -> None:
         self.id = id
         self.key_title = key_title
         self.key_full = key_full
+        self.vuln_assessment = VULN_ASSESSMENT_COVERED if answer is not None else None
+        self.vuln_counts = (answer or {}).get("counts")
+        self.vuln_oldest_published = (answer or {}).get("oldest_published")
+        self.vuln_ids = (answer or {}).get("ids")
+        self.vuln_ids_truncated = (answer or {}).get("truncated")
+        self.vuln_signature = signature
+
+
+# The signature of "the epoch that judged these rows", for the tests that read a stored
+# answer. Equality against the loaded epoch is the whole freshness rule (#381), so a suite
+# that reads a stored answer has to say which epoch wrote it.
+STORED_SIGNATURE = "e" * 64
+
+# The same three findings above, as the epoch would have STORED them: uncapped counts, the
+# capped priority-ordered id list, absolute publication dates and never an age.
+STORED_AFFECTED = {
+    "counts": {"total": 3, "kev": 1, "critical": 1, "high": 0, "medium": 0, "low": 1},
+    "oldest_published": {
+        "total": "2025-08-01T00:00:00Z",
+        "critical": "2025-08-01T00:00:00Z",
+        "high": None,
+        "medium": None,
+        "low": "2026-08-20T00:00:00Z",
+    },
+    "ids": ["CVE-2026-0001", "LoonVD-2026-000001", "CVE-2026-0002"],
+    "truncated": False,
+}
+# Assessed and clean is a ROW with no ids — never an absent row (§4f).
+STORED_CLEAN = {
+    "counts": {"total": 0, "kev": 0, "critical": 0, "high": 0, "medium": 0, "low": 0},
+    "oldest_published": {"total": None, "critical": None, "high": None, "medium": None, "low": None},
+    "ids": [],
+    "truncated": False,
+}
 
 
 OFF_ROW = Row(KNOWN_TITLE, AFFECTED_BUILD)
-UNKNOWN_ROW = Row(UNKNOWN_TITLE, CLEAN_BUILD, id=2)
-CLEAN_ROW = Row(KNOWN_TITLE, CLEAN_BUILD, id=3)
-AFFECTED_ROW = Row(KNOWN_TITLE, AFFECTED_BUILD, id=4)
+# Its own build key, not `CLEAN_BUILD`. Two rows of different applications cannot share a
+# `key_full` in the world — `key_full` hashes `(name, bundleId, version)` and `key_title`
+# hashes the first two of those, so one determines the other — and the stored answer is
+# keyed on `key_full` alone (ruling R-D: the verdict comes from the build's row and never
+# from its title). A fixture that shared the key would be asserting against a state the
+# hashes make impossible.
+UNKNOWN_ROW = Row(UNKNOWN_TITLE, UNKNOWN_BUILD, id=2)
+CLEAN_ROW = Row(KNOWN_TITLE, CLEAN_BUILD, id=3, answer=STORED_CLEAN, signature=STORED_SIGNATURE)
+AFFECTED_ROW = Row(KNOWN_TITLE, AFFECTED_BUILD, id=4, answer=STORED_AFFECTED, signature=STORED_SIGNATURE)
 # A title the corpus knows, in a build it never assessed — §4f's common case, and the one
 # a careless corpus turns into a clean bill.
 UNASSESSED_BUILD_ROW = Row(KNOWN_TITLE, "v1:build-never-assessed", id=5)
@@ -334,7 +393,7 @@ class TestTheRestSurface:
         # from an unassessed app, and the default is the honest answer either way.
         assert payload["vuln"] == {"assessment": "off"}
 
-    def test_the_device_detail_stamps_every_app_and_the_header(self, loaded: StubCorpus) -> None:
+    def test_the_device_detail_stamps_every_app_and_the_header(self, loaded: StubCorpus, monkeypatch) -> None:
         detail = DeviceDetailOut(
             id=7,
             mdm_provider="jamf",
@@ -372,17 +431,24 @@ class TestTheRestSurface:
                 for row in (CLEAN_ROW, AFFECTED_ROW, UNKNOWN_ROW)
             ],
         )
-        # The real `_assessed`, under a corpus that can tell the rows apart — the rows
-        # handed in are in a THIRD order, so a positional pairing would mis-assign every
-        # block and the assertions below would catch it.
+        # The real `_assessed`, over rows that carry the answers the judge pass stored —
+        # the rows handed in are in a THIRD order, so a positional pairing would mis-assign
+        # every block and the assertions below would catch it.
+        monkeypatch.setattr(vuln_answer, "loaded_epoch_signature", lambda: STORED_SIGNATURE)
         payload = _assessed(detail, [AFFECTED_ROW, UNKNOWN_ROW, CLEAN_ROW], corpus=loaded).model_dump(mode="json", by_alias=True)
         assert payload["corpusAsOf"] == "2026-09-01"
         assert [app["id"] for app in payload["apps"]] == [CLEAN_ROW.id, AFFECTED_ROW.id, UNKNOWN_ROW.id]
         assert [app["vuln"]["assessment"] for app in payload["apps"]] == ["covered", "covered", "unknown_app"]
         assert payload["apps"][0]["vuln"]["counts"]["total"] == 0  # CLEAN_ROW, id 3
         assert payload["apps"][1]["vuln"]["counts"]["total"] == 3  # AFFECTED_ROW, id 4
-        # Every app asked exactly once, on its own keys — no row answered twice, none skipped.
-        assert sorted(loaded.calls) == sorted((row.key_title, row.key_full) for row in (CLEAN_ROW, AFFECTED_ROW, UNKNOWN_ROW))
+        # And the aggregates are the stored ones, passed through rather than recounted: the
+        # day count is arithmetic on the row's absolute date against the page's clock (§4d).
+        assert payload["apps"][1]["vuln"]["daysOldestPublished"]["total"] == (AS_OF - date(2025, 8, 1)).days
+        assert payload["apps"][1]["vuln"]["vulnIDs"] == STORED_AFFECTED["ids"]
+        # **The corpus was never asked** (#381). The join ran once per distinct build at
+        # judge time, so a page renders its apps off columns — this is the property that
+        # holds at 250 apps as well as at three, and the one a per-app lookup would break.
+        assert loaded.calls == []
 
     def test_the_device_detail_says_off_with_no_date_when_no_corpus_is_loaded(self, monkeypatch) -> None:
         monkeypatch.setattr(devices_api, "today", lambda: AS_OF)

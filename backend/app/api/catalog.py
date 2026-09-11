@@ -16,6 +16,7 @@ from app.core.auth import require
 from app.core.database import get_db
 from app.core.permissions import Permission
 from app.core.vuln import VulnCorpus
+from app.core.vuln_answer import stored_corpus
 from app.core.vuln_library import earned_corpus
 from app.core.vuln_read import assess, corpus_as_of, today
 from app.mdm.patch.requirements import version_tuple
@@ -87,10 +88,11 @@ def _assessed_entry_out(
 ) -> CatalogEntryAssessedOut:
     """The same row, plus the corpus's answer for **this exact build** (#251).
 
-    Keyed on the content keys the row already carries — the same local hash-join the wire
-    runs, through the same seam. The corpus is a required argument rather than a default so
-    a row built anywhere carries a real answer; one that quietly defaulted to `off` while a
-    corpus was loaded would be a lie in the one column that exists to prevent them.
+    Keyed on the content keys the row already carries — the same seam the wire reads, over
+    the answer stored on the row itself (#381). The corpus is a required argument rather
+    than a default so a row built anywhere carries a real answer; one that quietly defaulted
+    to `off` while a corpus was loaded would be a lie in the one column that exists to
+    prevent them.
     """
     out = CatalogEntryAssessedOut.model_validate(entry)
     _stamp(out, devices, refs, entry)
@@ -137,11 +139,13 @@ async def list_catalog(
     refs = await _title_refs(db, entries)
     # One corpus object for the whole response, so every row's `corpusAsOf` and the
     # header stamp below are the same fact rather than two reads of a moving one. The
-    # lookup is per row of THIS page — distinct builds, not installs, so it does not grow
-    # with the fleet — and reads no database; under `NO_CORPUS` it does no per-row work.
+    # answers themselves are the ones stored on these very rows (#381) — the join ran once
+    # per distinct build at judge time — so this reads no database and does no lookup;
+    # under `NO_CORPUS` it does no per-row work at all.
     corpus, as_of = await earned_corpus(db), today()
+    stored = stored_corpus(corpus, entries)
     items = [
-        _assessed_entry_out(entry, row[1], refs, corpus=corpus, as_of=as_of)
+        _assessed_entry_out(entry, row[1], refs, corpus=stored, as_of=as_of)
         for entry, row in zip(entries, page_rows, strict=True)
     ]
 
