@@ -245,6 +245,149 @@ def test_yesterdays_attempt_does_not_satisfy_today() -> None:
     assert _due(_at(10, 30), yesterday, minute_of_day=10 * 60) is True
 
 
+def test_a_send_now_before_the_slot_leaves_the_slot_owed() -> None:
+    """Send now (#408) does not move the schedule. Its row counts like any attempt, so one
+    sent at 09:00 for a 10:00 slot does not stand in for the scheduled exchange."""
+    assert _due(_at(10, 5), _at(9, 0), minute_of_day=10 * 60) is True
+
+
+def test_a_send_now_after_the_slot_is_that_days_exchange() -> None:
+    assert _due(_at(14, 0), _at(11, 30), minute_of_day=10 * 60) is False
+
+
+# --- the failure sentence (#408) --------------------------------------------------
+#
+# Send now puts a failed row's `error` on the page, so it is written for an operator, not
+# as httpx's own text. Each shape below is produced the way the exchange produces it —
+# post_exchange against a mock endpoint, every retry spent — rather than constructed by
+# hand, so a change in what httpx raises shows up here first.
+
+ENDPOINT = "https://collector.example.test/v1/exchange"
+
+
+@pytest.fixture
+def endpoint(monkeypatch: pytest.MonkeyPatch) -> str:
+    from app.core.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "sharing_endpoint", ENDPOINT)
+    return ENDPOINT
+
+
+async def _sentence_for(handler) -> str:
+    with pytest.raises((httpx.HTTPError, ValueError)) as caught:
+        await post_exchange({"contract": "v1"}, transport=httpx.MockTransport(handler))
+    return sharing._failure_sentence(caught.value)
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_names_the_host_the_status_and_the_collectors_reason(endpoint) -> None:
+    """The shape a default endpoint with no collector behind it answers today: API
+    Gateway's 403 for a route that does not exist."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        # The bytes API Gateway sends, verbatim, rather than json= and whatever
+        # separators this httpx happens to encode with.
+        return httpx.Response(
+            403,
+            content=b'{"message":"Missing Authentication Token"}',
+            headers={"Content-Type": "application/json"},
+        )
+
+    assert await _sentence_for(handler) == (
+        'The collector at collector.example.test answered 403 Forbidden: {"message":"Missing Authentication Token"}. '
+        "Tried 4 times."
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_long_html_error_page_is_one_bounded_line(endpoint) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(502, text="<html>\n  <body>\n" + "Bad gateway. " * 400 + "</body></html>")
+
+    sentence = await _sentence_for(handler)
+    assert sentence.startswith("The collector at collector.example.test answered 502 Bad Gateway: <html> <body> Bad")
+    assert "\n" not in sentence
+    assert len(sentence) < 300
+
+
+@pytest.mark.asyncio
+async def test_a_redirect_names_where_to_by_host_and_nothing_else(endpoint) -> None:
+    """A captive portal's redirect: the host says who is answering; its query string may
+    carry a session and has no business in the share log."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(302, headers={"Location": "https://portal.example.net/login?session=s3cr3t"})
+
+    sentence = await _sentence_for(handler)
+    assert sentence == (
+        "The collector at collector.example.test answered 302 Found, redirecting to portal.example.net. Tried 4 times."
+    )
+    assert "s3cr3t" not in sentence
+
+
+@pytest.mark.asyncio
+async def test_no_answer_says_how_long_it_waited(endpoint) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    assert await _sentence_for(handler) == "No answer from collector.example.test within 10 seconds. Tried 4 times."
+
+
+@pytest.mark.asyncio
+async def test_an_unreachable_host_keeps_the_reason_httpx_gave(endpoint) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("[Errno -2] Name or service not known", request=request)
+
+    assert await _sentence_for(handler) == (
+        "Could not connect to collector.example.test: [Errno -2] Name or service not known. Tried 4 times."
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_200_that_is_not_json_says_something_else_answered(endpoint) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html>Sign in to the guest network</html>")
+
+    sentence = await _sentence_for(handler)
+    assert sentence.startswith("collector.example.test answered 200 with a body that is not JSON")
+    assert "captive portal" in sentence
+
+
+def test_every_failure_shape_has_its_line_in_the_step_through(endpoint) -> None:
+    """`docs/diagnosability.md` rule 4: the words ship with their step-through. Each shape
+    the sentence can take is looked for, by its opening words, in troubleshooting.md §5
+    step 6 — so rewording the code without the document fails here, and so does the
+    reverse."""
+    from pathlib import Path
+
+    document = (Path(__file__).resolve().parents[2] / "docs" / "troubleshooting.md").read_text()
+    marker = "6. **Settings › Data Sharing says the last exchange *failed*.**"
+    assert marker in document
+    step = document.split(marker, 1)[1].split("\n**H.**", 1)[0]
+
+    request = httpx.Request("POST", ENDPOINT)
+    for exc, words in (
+        (httpx.HTTPStatusError("refused", request=request, response=httpx.Response(403, request=request)), "The collector at"),
+        (httpx.ReadTimeout("timed out", request=request), "No answer from"),
+        (httpx.ConnectError("[Errno -2] Name or service not known", request=request), "Could not connect to"),
+        (ValueError("Expecting value"), "answered 200 with a body that is not JSON"),
+    ):
+        sentence = sharing._failure_sentence(exc)
+        assert words in sentence, f"the sentence no longer says {words!r}: {sentence}"
+        assert words in step, f"troubleshooting.md §5 step 6 has no line for: {sentence}"
+
+
+# --- the exchange lock (#408) -----------------------------------------------------
+
+
+def test_one_lock_per_tenant_shared_by_every_caller() -> None:
+    """The tick and Send now must reach the same lock for a tenant, and different
+    tenants must never share one — one tenant's slow collector would stall the rest."""
+    first, second = uuid.uuid4(), uuid.uuid4()
+    assert sharing.exchange_lock(first) is sharing.exchange_lock(uuid.UUID(str(first)))
+    assert sharing.exchange_lock(first) is not sharing.exchange_lock(second)
+
+
 # --- the snapshot names its platform (#231) ---------------------------------------
 #
 # Assembly is SQL, but the property under test is not: it is what the builder puts in the

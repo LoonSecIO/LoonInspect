@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Download, RefreshCw } from "lucide-react";
+import { Download, RefreshCw, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PERMISSIONS } from "@/features/auth/types";
 import { useHasPermission } from "@/features/auth/store";
@@ -7,10 +7,14 @@ import {
   getDataSharing,
   previewExchange,
   resetSubmissionUuid,
+  sendExchangeNow,
   updateDataSharing,
   type DataSharingSettings,
+  type ShareLogEntry,
   type SharingTier
 } from "@/features/system/api";
+import { endpointHost, sendNowAvailability } from "@/features/system/sendNow";
+import { ApiError } from "@/config/api";
 import { env } from "@/config/env";
 import { useLocale } from "@/i18n/LocaleContext";
 
@@ -24,6 +28,11 @@ export function DataSharingPage() {
   const [globsDraft, setGlobsDraft] = useState("");
   const [preview, setPreview] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  // Send now (#408): the row the last send wrote, which replaces the preview in the box,
+  // and the server's refusal when a click meets one the page could not foresee.
+  const [sent, setSent] = useState<ShareLogEntry | null>(null);
+  const [sending, setSending] = useState(false);
+  const [sendRefusal, setSendRefusal] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -77,10 +86,34 @@ export function DataSharingPage() {
     try {
       setError(null);
       setPreview(JSON.stringify(await previewExchange(), null, 2));
+      setSent(null);
+      setSendRefusal(null);
     } catch {
       setError(t.system.sharing.loadFailed);
     } finally {
       setPreviewLoading(false);
+    }
+  }
+
+  async function handleSend() {
+    setSending(true);
+    setSendRefusal(null);
+    try {
+      setError(null);
+      const result = await sendExchangeNow();
+      setSent(result.exchange);
+      setPreview(null);
+      setSettings(result.settings);
+    } catch (caught) {
+      // A 409 is a refusal before anything was attempted, and its detail is the
+      // sentence; anything else never reached the exchange at all.
+      setSendRefusal(
+        caught instanceof ApiError && caught.status === 409 && caught.detail
+          ? caught.detail
+          : t.system.sharing.sendRequestFailed
+      );
+    } finally {
+      setSending(false);
     }
   }
 
@@ -95,6 +128,7 @@ export function DataSharingPage() {
   // while overridden so it survives the override being lifted (#302). Now the
   // override is explained above and the choice is recorded beneath it.
   const locked = !canWrite;
+  const sendAvailability = sendNowAvailability(settings, canWrite);
 
   function outcomeLabel(outcome: string | null): string {
     switch (outcome) {
@@ -178,13 +212,59 @@ export function DataSharingPage() {
       <section className="space-y-3 rounded-lg border bg-card p-6">
         <h2 className="font-semibold">{t.system.sharing.previewHeading}</h2>
         <p className="text-sm text-muted-foreground">{t.system.sharing.previewHelp}</p>
-        <Button type="button" variant="outline" onClick={handlePreview} disabled={previewLoading}>
-          {previewLoading ? t.auth.loading : t.system.sharing.previewButton}
-        </Button>
-        {preview !== null && (
-          <pre className="max-h-96 overflow-auto rounded-md border bg-muted/40 p-3 text-xs">
-            {preview}
-          </pre>
+        {sendAvailability !== "hidden" && (
+          <p className="text-sm text-muted-foreground">{t.system.sharing.sendHelp}</p>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" onClick={handlePreview} disabled={previewLoading || sending}>
+            {previewLoading ? t.auth.loading : t.system.sharing.previewButton}
+          </Button>
+          {sendAvailability !== "hidden" && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleSend}
+              disabled={sendAvailability !== "ready" || sending}
+            >
+              <Send aria-hidden="true" className="mr-1.5 h-4 w-4" />
+              {sending ? t.system.sharing.sending : t.system.sharing.sendButton}
+            </Button>
+          )}
+        </div>
+        {sendAvailability === "blockedEnv" && (
+          <p className="text-xs text-muted-foreground">{t.system.sharing.sendBlockedEnv}</p>
+        )}
+        {sendAvailability === "blockedOff" && (
+          <p className="text-xs text-muted-foreground">{t.system.sharing.sendBlockedOff}</p>
+        )}
+        {sending && <p className="text-xs text-muted-foreground">{t.system.sharing.sendingHelp}</p>}
+        {sendRefusal && (
+          <p role="alert" className="text-sm text-destructive">
+            {sendRefusal}
+          </p>
+        )}
+        {sent !== null ? (
+          // The past, where the future was: the row the send wrote, never the corpus link
+          // the answer may have carried — that is a capability and is never shown.
+          <div className="space-y-2">
+            <p className="text-sm">
+              {(sent.outcome === "sent" ? t.system.sharing.resultSent : t.system.sharing.resultFailed)(
+                new Date(sent.occurredAt).toLocaleString(),
+                endpointHost(sent.endpoint)
+              )}
+            </p>
+            {sent.error && <p className="text-sm text-destructive">{sent.error}</p>}
+            {sent.revealsShed && <p className="text-xs text-muted-foreground">{t.system.sharing.revealsShed}</p>}
+            <pre className="max-h-96 overflow-auto rounded-md border bg-muted/40 p-3 text-xs">
+              {JSON.stringify(sent.payload, null, 2)}
+            </pre>
+          </div>
+        ) : (
+          preview !== null && (
+            <pre className="max-h-96 overflow-auto rounded-md border bg-muted/40 p-3 text-xs">
+              {preview}
+            </pre>
+          )
         )}
       </section>
 
@@ -239,6 +319,11 @@ export function DataSharingPage() {
                   settings.lastExchangeRevealsShed ? `, ${t.system.sharing.revealsShed}` : ""
                 })`}
         </p>
+        {settings.lastExchangeOutcome === "failed" && settings.lastExchangeError && (
+          // The row's own sentence (#408): before, "(failed)" was all the page said, and
+          // the reason lived only in the download below.
+          <p className="text-sm text-destructive">{settings.lastExchangeError}</p>
+        )}
         <p className="text-sm text-muted-foreground">{t.system.sharing.logHelp}</p>
         <Button type="button" variant="outline" onClick={handleDownloadLog}>
           <Download aria-hidden="true" className="mr-1.5 h-4 w-4" />

@@ -50,6 +50,36 @@ class DataSharingOut(BaseModel):
     # page says so beside the outcome: "sent" alone would report a degraded day as a
     # whole one, and the share log is the only other place the difference shows.
     last_exchange_reveals_shed: bool = False
+    # Why that last exchange failed, in the sentence the share-log row carries (#408).
+    # Before, the page said "(failed)" and the reason lived only in the NDJSON download.
+    last_exchange_error: str | None = None
+
+
+class ShareLogEntryOut(BaseModel):
+    """One share-log row, in the NDJSON download's field names — Send now answers with the
+    row its exchange wrote, and the download and the answer are the same record."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, from_attributes=True)
+
+    occurred_at: datetime
+    tier: str
+    trigger: str | None
+    endpoint: str
+    outcome: str
+    payload: dict | None
+    reveals_shed: bool
+    reveal_requests: list | None
+    error: str | None
+
+
+class SendExchangeOut(BaseModel):
+    """Send now's answer: the row it wrote, and the settings as they now read, so the
+    page's *Last exchange* line and the row cannot disagree."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    exchange: ShareLogEntryOut
+    settings: DataSharingOut
 
 
 class DataSharingUpdate(BaseModel):
