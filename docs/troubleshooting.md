@@ -528,6 +528,12 @@ docker compose logs app --since 30m | grep -E 'webhooks/jamf|jamf webhook'
    The webhook run is recorded as failed with the same error, so
    `GET /api/runs?trigger=webhook&pageSize=5` shows it too.
 
+   A `could not renew the Jamf Pro sign-in` line (only under **Sign-in reuse: Perpetual
+   cache**, on the connection's form) says the same thing before any webhook meets it:
+   Jamf Pro refused the sign-in, or could not be reached. Nothing waits on the renewal —
+   it backs off, doubling up to ten minutes, and each read signs in as it needs to — so
+   the fix is the same as for anything on `/api/oauth/token` above: **Test connection**.
+
 **L.** Callbacks that Jamf Pro sends never produce a request line while the address, the
 network and the webhook's event are right; or a refusal's `reason` names a state the
 connection is not in. Report the `rejected jamf webhook` or `request` lines (they carry no

@@ -295,7 +295,9 @@ two halves.
 **At rest.** MDM credentials, webhook secrets, and license keys are encrypted with
 Fernet (AES-128-CBC + HMAC) using the `ENCRYPTION_KEY` you generate at install. The
 database itself is an unencrypted Postgres on its own volume — encrypt the volume if
-your threat model needs that.
+your threat model needs that. The short-lived Jamf Pro access token a connection signs in
+for is never stored at all: under its **Sign-in reuse** setting it is kept in the running
+process's memory, is never logged, and is gone when the container stops.
 
 **In transit.** Configurable, because deployments differ:
 

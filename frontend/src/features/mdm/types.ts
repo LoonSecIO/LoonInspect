@@ -5,6 +5,10 @@ export type MdmProviderType = "jamf";
 // was closed off; it can be displayed but no longer selected (see ConnectionForm).
 export type PatchManagementProvider = "none" | "jamf" | "loonsecio";
 
+/** What a connection keeps of its Jamf Pro sign-in between runs (#412). The three, and
+ *  what each costs Jamf, are in backend/app/mdm/jamf/sign_in.py and signInReuse.ts. */
+export type TokenCacheMode = "no_cache" | "cache_and_hold" | "perpetual";
+
 export interface ProviderCredentialField {
   key: string;
   label: string;
@@ -33,6 +37,7 @@ export interface MdmConnection {
   hasLoonsecioLicenseKey: boolean;
   userAgentOverride: string | null;
   sweepPageSize: number | null;
+  tokenCacheMode: TokenCacheMode;
   capabilityDevices: boolean;
   capabilityUsers: boolean;
   capabilityWebhooks: boolean;
@@ -57,6 +62,7 @@ export interface MdmConnectionInput {
   patchManagementProvider?: PatchManagementProvider;
   userAgentOverride?: string;
   sweepPageSize?: number | null;
+  tokenCacheMode?: TokenCacheMode;
   capabilityDevices?: boolean;
   capabilityUsers?: boolean;
   capabilityWebhooks?: boolean;

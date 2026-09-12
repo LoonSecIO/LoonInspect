@@ -1331,6 +1331,27 @@ export const de: Translations = {
       "Genau so eingeben, wie hier geschrieben — das sind Jamfs eigene Bezeichnungen, und der Editor für API-Rollen sucht danach.",
     testProvesOnlyAuth:
       "„Verbindung testen“ tauscht diese Zugangsdaten nur gegen ein Token — der einzige Jamf-Pro-Aufruf, der keine Berechtigung braucht. Die API-Rolle wird dabei nicht geprüft: Eine Rolle ohne jede Berechtigung besteht den Test und synchronisiert danach kein einziges Gerät.",
+    signInReuse: {
+      label: "Wiederverwendung der Anmeldung",
+      intro:
+        "Was diese Verbindung zwischen den Läufen von ihrer Jamf-Pro-Anmeldung behält. Die Anmeldung bei Jamf Pro ist kurzlebig (drei Minuten bei den gemessenen Instanzen), und jeder Durchlauf und jeder Webhook braucht eine.",
+      modes: {
+        no_cache: {
+          label: "No cache",
+          description: "Jeder Lauf und jeder Webhook meldet sich neu an: je eine Token-Anfrage an Jamf Pro."
+        },
+        cache_and_hold: {
+          label: "Cache and hold",
+          description:
+            "Behält die Anmeldung und die offene Verbindung, solange die Anmeldung gilt, sodass ein Webhook, der einem anderen folgt, sich nicht neu anmelden muss. Etwa eine Token-Anfrage alle zweieinhalb Minuten, solange etwas passiert; keine, solange die Flotte ruhig ist. Die Voreinstellung."
+        },
+        perpetual: {
+          label: "Perpetual cache",
+          description:
+            "Wie Cache and hold, erneuert die Anmeldung aber, bevor sie abläuft, sodass auch der erste Webhook nach einer ruhigen Phase eine vorfindet. Eine Token-Anfrage alle zweieinhalb Minuten, immer: etwa 580 am Tag."
+        }
+      } as Record<string, { label: string; description: string }>
+    },
     testConnection: "Verbindung testen",
     testing: "Wird getestet...",
     testRequestFailed: "Testanfrage fehlgeschlagen.",
