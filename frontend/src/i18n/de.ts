@@ -1030,6 +1030,69 @@ export const de: Translations = {
     edit: "Bearbeiten",
     delete: "Löschen",
     deleteConfirm: (name: string) => `Sammlung „${name}“ löschen?`,
+    setUp: "Einrichten",
+    closeSetUp: "Schließen",
+    webhookOffWhat: "Aus: Webhooks kommen weiter an und rufen jede Sektion ab",
+    webhookSetup: {
+      title: "Webhook-Einrichtung · Jamf Pro",
+      intro:
+        "Alles, was das Webhook-Formular von Jamf Pro verlangt: die Adresse, an die gesendet wird, den Header, der mitgeht, und welche Ereignisse. Jamf Pro ruft diese Adresse auf; für die Einrichtung ruft von hier aus nichts Jamf auf.",
+      status: {
+        inactive: "Diese Verbindung ist inaktiv, deshalb wird jeder Webhook abgewiesen.",
+        off: "Der Empfang ist aus. Jeder Webhook wird abgewiesen, bis er eingeschaltet ist.",
+        noSecret: "Der Empfang ist an, aber es ist kein Geheimnis gesetzt, deshalb wird jeder Webhook abgewiesen.",
+        receiving: "Webhooks werden empfangen."
+      } as Record<string, string>,
+      turnOn: "Einschalten",
+      turnOff: "Ausschalten",
+      turnOnMakesSecret: "Beim Einschalten entsteht auch ein Geheimnis, und sein Header wird einmal angezeigt.",
+      lastRun: (when: string, outcome: string) => `Letzter Webhook-Lauf: ${when}, ${outcome}.`,
+      runOutcomes: { running: "läuft", succeeded: "erfolgreich", failed: "fehlgeschlagen" } as Record<string, string>,
+      noRun: "Kein Webhook-Lauf in den letzten 30 Tagen. Ein abgewiesener Webhook hinterlässt keinen: sein Grund steht im Container-Log.",
+      lastRunUnreadable: "Der letzte Webhook-Lauf konnte nicht gelesen werden.",
+      addressLabel: "1. Die Adresse, an die Jamf Pro sendet",
+      addressHint:
+        "Jamf Pro muss diese Adresse über HTTPS erreichen. Eine Jamf-Cloud-Instanz erreicht keinen privaten Namen und keinen Laptop.",
+      originWarning: {
+        localhost:
+          "Das ist eine localhost-Adresse: Nur dieser Rechner erreicht sie, Jamf Pro nie. LoonInspect unter dem Namen öffnen, den Jamf Pro verwenden wird – diese Adresse folgt dann.",
+        private:
+          "Das ist eine private Adresse. Nur ein Jamf Pro im selben Netz erreicht sie; eine Jamf-Cloud-Instanz nicht.",
+        http: "Diese Adresse ist reines http. Der Header ist die gesamte Authentifizierung, und über http kann ihn jeder auf dem Weg mitlesen. LoonInspect über HTTPS bereitstellen, bevor Jamf Pro darauf zeigt."
+      } as Record<string, string>,
+      headerLabel: "2. Der Header, den Jamf Pro sendet",
+      headerHint:
+        "Die Header Authentication von Jamf Pro erwartet ein JSON-Objekt aus Header-Namen und Werten. Das hier ist dieses Objekt.",
+      headerOnce: "LoonInspect kann das nicht noch einmal anzeigen. Jetzt kopieren; geht es verloren, Rotieren.",
+      headerDone: "Fertig",
+      secretSet:
+        "Ein Geheimnis ist gesetzt. LoonInspect kann es nicht noch einmal anzeigen; Rotieren erzeugt ein neues und zeigt seinen Header einmal an.",
+      noSecret: "Noch ist kein Geheimnis gesetzt, deshalb wird jeder Webhook abgewiesen.",
+      generate: "Geheimnis erzeugen",
+      rotate: "Rotieren",
+      rotateConfirmTitle: "Das Webhook-Geheimnis rotieren?",
+      rotateConfirm:
+        "Das aktuelle Geheimnis hört in dem Moment auf zu funktionieren, in dem gespeichert wird. Die Webhooks von Jamf Pro werden abgewiesen, bis der neue Header in jeden von ihnen eingefügt ist.",
+      rotateNow: "Jetzt rotieren",
+      ownSecret: "Ein eigenes Geheimnis verwenden",
+      ownSecretHide: "Abbrechen",
+      ownSecretLabel: "Eigenes Geheimnis",
+      ownSecretHint: "Alles, was Jamf Pro in einem Header senden kann. Ein erzeugtes Geheimnis ist stärker als ein getipptes.",
+      ownSecretSave: "Geheimnis speichern",
+      copy: "Kopieren",
+      copied: "Kopiert",
+      jamfTitle: "3. In Jamf Pro",
+      jamfSteps: [
+        "Settings › Global › Webhooks › New.",
+        "Webhook URL: die Adresse oben.",
+        "Authentication Type: Header Authentication. Den Header oben einfügen, genau wie angezeigt.",
+        "Content Type: JSON.",
+        "Webhook Event: ComputerInventoryCompleted. Speichern, dann einen zweiten Webhook anlegen, gleich bis auf ComputerAdded."
+      ],
+      guide: "Die Jamf-Pro-Seite, Schritt für Schritt",
+      readOnly: "Änderungen hier erfordern die Berechtigung, Verbindungen zu bearbeiten.",
+      error: "Konnte nicht speichern. Nichts wurde geändert."
+    },
     form: {
       createTitle: "Neue Sammlung",
       editTitle: "Sammlung bearbeiten",
@@ -1037,6 +1100,8 @@ export const de: Translations = {
       kind: "Art",
       kindHelp: "Ein Geräte-Durchlauf liest das Inventar und endet mit einer Gruppenaktualisierung; ein Katalog liest nur Smart-Group-Definitionen; eine Webhook-Sammlung hat keinen Zeitplan und bestimmt den Umfang des Abrufs, den ein Jamf-Webhook auslöst.",
       enabled: "Aktiviert",
+      enabledWebhookHelp:
+        "Eine Webhook-Sammlung legt nur fest, was jeder Webhook abruft. Ausschalten stoppt keine Webhooks: Sie kommen weiter an und rufen stattdessen jede Sektion ab. Der Empfang wird unter Einrichten in der Webhook-Zeile geschaltet.",
       sections: "Abschnitte",
       sectionsHelp: "Nur diese Abschnitte werden von Jamf angefordert und gehasht. Eine Einschränkung wird als Aperturwechsel festgehalten, nicht als Verschwinden der ausgelassenen Abschnitte. Extension Attributes werden innerhalb des Abschnitts gemeldet, unter dem ein Admin sie anzeigt; wer sie anfordert, liest daher auch General, Hardware, Operating System, User and Location und Purchasing.",
       carriesExtensionAttributes: "trägt Extension Attributes",
@@ -1286,15 +1351,11 @@ export const de: Translations = {
     whatUsedFor: "Wofür diese Verbindung verwendet wird",
     capabilityDevices: "Geräte",
     capabilityUsers: "Benutzer",
-    capabilityWebhooks: "Callback-Webhooks",
     capabilityJamfPro: "Jamf Pro",
     crud: "(CRUD)",
     readOnly: "(lesend)",
-    webhookSecret: "Webhook-Geheimnis",
-    webhookSecretHint:
-      "Wird mit Jamf Pro geteilt: denselben Wert dort am Webhook hinterlegen, als Wert der Header-Authentifizierung (Header-Name X-API-Key) oder als Passwort der Basic-Authentifizierung. Wird verschlüsselt gespeichert und nie wieder angezeigt — zum Ändern hier einen neuen Wert eingeben und Jamf Pro entsprechend anpassen.",
-    webhookSecretRequired:
-      "Callback-Webhooks benötigen ein Geheimnis. Ohne dieses weist der Webhook-Endpunkt jede Anfrage von Jamf Pro zurück.",
+    webhooksMoved:
+      "Jamf-Pro-Webhooks werden unter Einrichten in der Webhook-Sammlung dieser Verbindung eingerichtet – bei den Sammlungen unter der Verbindungstabelle.",
     baseUrlChangeNeedsSecret: (fields: string) =>
       `Beim Ändern der URL müssen ${fields} erneut eingegeben werden. Die gespeicherten Anmeldedaten werden nur an die URL gesendet, unter der sie gespeichert wurden.`,
     lastSuccessfulAuth: "Letzte erfolgreiche Authentifizierung:",

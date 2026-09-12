@@ -15,7 +15,7 @@ Site and Field Notes: [loonsec.io](https://staging.loonsec.io) (staging until la
 * **Built for Jamf Pro:** Native Pro API integration and webhook ingestion. LoonInspect is Jamf-only by design (#79) — `app/mdm/factory.py` builds a Jamf client directly rather than dispatching through an abstraction. A second MDM would be a sibling vertical in this repo, not a provider this one plugs into.
 * **Delta Streaming Engine:** Diffs inventory against the last observation and streams structured JSON events (`device.inventory.changed`, `device.change`) directly to your SIEM, beside one `device.inventory` snapshot per device per pass so the SIEM always holds the current state. A sweep where nothing changed emits no deltas. The wire vocabulary is frozen and amended only additively — [docs/splunk-wire-vocabulary.md](docs/splunk-wire-vocabulary.md).
 * **Small on the wire, by subscription:** Deltas measure 509 bytes per event plus roughly 330 bytes per changed app (both from the real payload builder; [docs/splunk-setup.md](docs/splunk-setup.md) has the sizing) — a quiet day is roughly 4 MB. The per-device snapshot is the expensive one. It is *stored* as about 28 KB for a Mac with 83 apps where every app reads `assessment: off` (see "Vulnerabilities" below), and *delivered* fanned out into 107 records — one per app, extension attribute, certificate, profile, group, local account, plus seven per-device anchors — which measures about 79 KB to a webhook or RunReveal, 84 KB to Splunk HEC, and 90 KB as an Elastic `_bulk` body. That is one request per device per pass either way, so a 40,000-device sweep is roughly 3.2–3.6 GB today (up to about 6.8 GB once every app is fully assessed). The split is what makes `app.name=X app.version=Y` mean one app rather than two independent multivalue fields; [docs/runs.md](docs/runs.md) §4 has both fan-outs. Destinations subscribe per event type, so a delta-only feed stays small.
-* **Hybrid Sync Architecture:** Real-time webhooks for active devices and scheduled off-peak sweeps for the rest. Each pull is a *collection* — what to read (Jamf sections, a device filter pushed into Jamf's query, the smart-group catalog) and when (time of day, timezone, cadence) — configured per connection in the app rather than as one global cron.
+* **Hybrid Sync Architecture:** Real-time webhooks for active devices ([docs/jamf-webhooks.md](docs/jamf-webhooks.md) sets them up in Jamf Pro) and scheduled off-peak sweeps for the rest. Each pull is a *collection* — what to read (Jamf sections, a device filter pushed into Jamf's query, the smart-group catalog) and when (time of day, timezone, cadence) — configured per connection in the app rather than as one global cron.
 * **Tenant isolation in the database:** Row-level security is enforced by Postgres rather than by application filters, and CI asserts that the application role cannot bypass it.
 * **Self-hosted:** One container and a Postgres database. No vendor account required to run it.
 
@@ -236,9 +236,20 @@ certificate is refused by default. **[docs/splunk-setup.md](docs/splunk-setup.md
 through all of it, including a `props.conf` stanza to hand your Splunk team and what to
 do about that certificate without turning verification off.
 
-### 6. Back it up before you need to
+### 6. Point Jamf Pro's webhooks at it (optional)
 
-**[docs/troubleshooting.md](docs/troubleshooting.md)** is where to start when something is not working: six ordered paths — a green test and an empty sweep, a run with zero devices, events not reaching Splunk, a stack that will not start, applications reading *not assessed*, a Jamf Patch table that is empty or has stopped refreshing — each ending in a fix or a named state to report. **[docs/operations.md](docs/operations.md)** is the operator runbook: what to back up
+The sweep reads every Mac on its schedule; a webhook reads one Mac the moment Jamf Pro
+says it changed. There are two halves. In LoonInspect, **Set up** on the connection's
+**Webhook** collection (Settings › Connections) turns receiving on and gives you the
+address to post to and a header, `{"X-API-Key":"…"}`, shown once. In Jamf Pro, two
+webhooks — `ComputerInventoryCompleted` and `ComputerAdded` — post JSON to that address
+with that header as their Header Authentication. Jamf Pro has to be able to reach
+LoonInspect over HTTPS, which a laptop is not. **[docs/jamf-webhooks.md](docs/jamf-webhooks.md)**
+walks through both halves, the timeouts, rotating the secret, and how to see it work.
+
+### 7. Back it up before you need to
+
+**[docs/troubleshooting.md](docs/troubleshooting.md)** is where to start when something is not working: seven ordered paths — a green test and an empty sweep, a run with zero devices, events not reaching Splunk, a stack that will not start, applications reading *not assessed*, a Jamf Patch table that is empty or has stopped refreshing, Jamf Pro webhooks that never arrive — each ending in a fix or a named state to report. **[docs/operations.md](docs/operations.md)** is the operator runbook: what to back up
 (the database *and* `ENCRYPTION_KEY` — a dump without the key restores an instance whose
 every MDM connection is permanently unreadable), the `pg_dump` and `psql` commands to do
 it, what a restore does to in-flight outbox rows and the run mutex, how upgrades and

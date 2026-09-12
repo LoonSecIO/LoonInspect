@@ -56,12 +56,11 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
   const [sweepPageSize, setSweepPageSize] = useState<number>(connection?.sweepPageSize ?? 400);
   const [capabilityDevices, setCapabilityDevices] = useState(connection?.capabilityDevices ?? true);
   const [capabilityUsers, setCapabilityUsers] = useState(connection?.capabilityUsers ?? false);
-  const [capabilityWebhooks, setCapabilityWebhooks] = useState(connection?.capabilityWebhooks ?? false);
   const [capabilityJamfPro, setCapabilityJamfPro] = useState(connection?.capabilityJamfPro ?? false);
-  // Never seeded from `connection`: the server sends `hasWebhookSecret`, never the
-  // value. Blank on an edit means "keep what is stored", the same contract the
-  // credential fields above and the destination form's secret both use.
-  const [webhookSecret, setWebhookSecret] = useState("");
+  // Webhooks are not set here any more (#406): receiving and the secret live under Set
+  // up on the connection's Webhook collection, beside the address and the header Jamf
+  // Pro needs. This form neither shows nor sends either, so saving it cannot undo a
+  // change made there from a copy of the connection read before it.
 
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [credentialsJsonMode, setCredentialsJsonMode] = useState(false);
@@ -150,18 +149,6 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
     event.preventDefault();
     setError(null);
 
-    // Webhook auth fails closed (api/webhooks.py): a connection with the capability on
-    // and no secret answers every Jamf callback with 401, which reads as Jamf being
-    // broken rather than as a half-filled form. The input's `required` attribute cannot
-    // carry this alone — the capability checkboxes live inside the collapsible advanced
-    // panel, so ticking the box, collapsing the panel and submitting leaves no such
-    // input in the DOM for the browser to validate.
-    if (capabilityWebhooks && !webhookSecret && !connection?.hasWebhookSecret) {
-      setShowAdvanced(true);
-      setError(t.connectionForm.webhookSecretRequired);
-      return;
-    }
-
     // The server refuses a URL change that would reuse the stored secret
     // (api/connections.py): moving a connection retargets a credential nothing can read
     // back, so whoever moves it has to prove they hold it. Repeated here because the
@@ -192,14 +179,9 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
       patchManagementProvider,
       capabilityDevices,
       capabilityUsers,
-      capabilityWebhooks,
       capabilityJamfPro
     };
     if (Object.keys(filledCredentials).length > 0) input.credentials = filledCredentials;
-    // Omitted rather than sent blank: the backend applies `webhook_secret` whenever the
-    // key is present, so sending "" on an edit would clear the stored secret and shut
-    // the endpoint down without saying so.
-    if (webhookSecret) input.webhookSecret = webhookSecret;
     if (userAgentOverride) input.userAgentOverride = userAgentOverride;
     // 400 is the default: stored as null so a connection that never deviated (or slid
     // back) keeps following the instance default if it ever moves.
@@ -487,15 +469,6 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
-                    checked={capabilityWebhooks}
-                    onChange={(e) => setCapabilityWebhooks(e.target.checked)}
-                  />
-                  {t.connectionForm.capabilityWebhooks}{" "}
-                  <span className="text-xs text-muted-foreground">{t.connectionForm.readOnly}</span>
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
                     checked={capabilityJamfPro}
                     onChange={(e) => setCapabilityJamfPro(e.target.checked)}
                   />
@@ -504,25 +477,7 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
                 </label>
               </div>
 
-              {capabilityWebhooks && (
-                <label className="space-y-1 text-sm">
-                  <span className="font-medium">
-                    {t.connectionForm.webhookSecret}
-                    {connection?.hasWebhookSecret && (
-                      <span className="ml-1 text-xs text-muted-foreground">{t.connectionForm.setLeaveBlank}</span>
-                    )}
-                  </span>
-                  <input
-                    type="password"
-                    autoComplete="off"
-                    className={inputClasses}
-                    required={!connection?.hasWebhookSecret}
-                    value={webhookSecret}
-                    onChange={(e) => setWebhookSecret(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">{t.connectionForm.webhookSecretHint}</p>
-                </label>
-              )}
+              <p className="text-xs text-muted-foreground">{t.connectionForm.webhooksMoved}</p>
             </div>
 
             {connection && (

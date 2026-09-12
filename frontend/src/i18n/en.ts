@@ -1112,6 +1112,70 @@ export const en = {
     edit: "Edit",
     delete: "Delete",
     deleteConfirm: (name: string) => `Delete collection "${name}"?`,
+    setUp: "Set up",
+    closeSetUp: "Close",
+    webhookOffWhat: "Off: webhooks still arrive, and fetch every section",
+    // The webhook setup panel under the Webhook row (#406). Jamf Pro's own labels are
+    // quoted as Jamf spells them and are not translated: they are what the admin looks
+    // for on Jamf's form.
+    webhookSetup: {
+      title: "Webhook setup · Jamf Pro",
+      intro:
+        "Everything Jamf Pro's webhook form asks for: the address to post to, the header to send, and which events. Jamf Pro calls this address; nothing here calls Jamf to set it up.",
+      status: {
+        inactive: "This connection is inactive, so every webhook is refused.",
+        off: "Receiving is off. Every webhook is refused until it is turned on.",
+        noSecret: "Receiving is on, but no secret is set, so every webhook is refused.",
+        receiving: "Receiving webhooks."
+      } as Record<string, string>,
+      turnOn: "Turn on",
+      turnOff: "Turn off",
+      turnOnMakesSecret: "Turning it on makes a secret too, and shows its header once.",
+      lastRun: (when: string, outcome: string) => `Last webhook run: ${when}, ${outcome}.`,
+      runOutcomes: { running: "running", succeeded: "succeeded", failed: "failed" } as Record<string, string>,
+      noRun: "No webhook run in the last 30 days. A refused webhook leaves none: its reason is in the container log.",
+      lastRunUnreadable: "The last webhook run could not be read.",
+      addressLabel: "1. The address Jamf Pro posts to",
+      addressHint:
+        "Jamf Pro must reach this address over HTTPS. A Jamf Cloud instance cannot reach a private name or a laptop.",
+      originWarning: {
+        localhost:
+          "This is a localhost address: only this machine can reach it, and Jamf Pro never can. Open LoonInspect by the name Jamf Pro will use, and this address follows.",
+        private:
+          "This is a private address. Only a Jamf Pro on the same network can reach it; a Jamf Cloud instance cannot.",
+        http: "This address is plain http. The header is the whole authentication, and over http anyone on the path can read it. Serve LoonInspect over HTTPS before pointing Jamf Pro at it."
+      } as Record<string, string>,
+      headerLabel: "2. The header Jamf Pro sends",
+      headerHint: "Jamf Pro's Header Authentication takes a JSON object of header names and values. This is that object.",
+      headerOnce: "LoonInspect cannot show this again. Copy it now; if you lose it, Rotate.",
+      headerDone: "Done",
+      secretSet: "A secret is set. LoonInspect cannot show it again; Rotate makes a new one and shows its header once.",
+      noSecret: "No secret is set yet, so every webhook is refused.",
+      generate: "Generate secret",
+      rotate: "Rotate",
+      rotateConfirmTitle: "Rotate the webhook secret?",
+      rotateConfirm:
+        "The current secret stops working the moment you save. Jamf Pro's webhooks are refused until you paste the new header into each of them.",
+      rotateNow: "Rotate now",
+      ownSecret: "Use a secret of my own",
+      ownSecretHide: "Cancel",
+      ownSecretLabel: "Your secret",
+      ownSecretHint: "Anything Jamf Pro can send in a header. A generated secret is stronger than a typed one.",
+      ownSecretSave: "Save secret",
+      copy: "Copy",
+      copied: "Copied",
+      jamfTitle: "3. In Jamf Pro",
+      jamfSteps: [
+        "Settings › Global › Webhooks › New.",
+        "Webhook URL: the address above.",
+        "Authentication Type: Header Authentication. Paste the header above, exactly as it is shown.",
+        "Content Type: JSON.",
+        "Webhook Event: ComputerInventoryCompleted. Save, then add a second webhook, the same except for ComputerAdded."
+      ],
+      guide: "The Jamf Pro side, step by step",
+      readOnly: "Changing any of this needs permission to edit connections.",
+      error: "Could not save. Nothing changed."
+    },
     form: {
       createTitle: "New collection",
       editTitle: "Edit collection",
@@ -1119,6 +1183,8 @@ export const en = {
       kind: "Kind",
       kindHelp: "A device sweep reads inventory and ends with a group refresh; a catalog reads only smart-group definitions; a webhook collection has no schedule and scopes the fetch a Jamf webhook triggers.",
       enabled: "Enabled",
+      enabledWebhookHelp:
+        "A webhook collection sets only what each webhook fetches. Turning it off does not stop webhooks: they keep arriving and fetch every section instead. Receiving is switched under Set up on the Webhook row.",
       sections: "Sections",
       sectionsHelp: "Only these sections are requested from Jamf and hashed. Narrowing a collection is recorded as an aperture change, not as the omitted sections disappearing. Extension attributes are reported inside the section an admin displays them under, so asking for them also reads General, Hardware, Operating System, User and Location and Purchasing.",
       carriesExtensionAttributes: "carries extension attributes",
@@ -1377,15 +1443,11 @@ export const en = {
     whatUsedFor: "What this connection is used for",
     capabilityDevices: "Devices",
     capabilityUsers: "Users",
-    capabilityWebhooks: "Callback webhooks",
     capabilityJamfPro: "Jamf Pro",
     crud: "(CRUD)",
     readOnly: "(read)",
-    webhookSecret: "Webhook secret",
-    webhookSecretHint:
-      "Shared with Jamf Pro: set the same value on the webhook there, as its Header Authentication value (header name X-API-Key) or as its Basic authentication password. Stored encrypted and never shown again — to change it, enter a new value here and update Jamf Pro to match.",
-    webhookSecretRequired:
-      "Callback webhooks need a secret. Without one, the webhook endpoint rejects every request Jamf Pro sends it.",
+    webhooksMoved:
+      "Jamf Pro webhooks are set up under Set up on this connection's Webhook collection, in Collections below the connections table.",
     baseUrlChangeNeedsSecret: (fields: string) =>
       `Changing the URL means re-entering the ${fields}. The stored credential is only ever sent to the URL it was saved against.`,
     lastSuccessfulAuth: "Last successful authentication:",

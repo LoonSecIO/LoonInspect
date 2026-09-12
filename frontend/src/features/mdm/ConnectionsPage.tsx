@@ -380,7 +380,13 @@ export function ConnectionsPage() {
       {connections
         .filter((connection) => connection.provider === "jamf")
         .map((connection) => (
-          <CollectionsPanel key={connection.id} connection={connection} />
+          <CollectionsPanel
+            key={connection.id}
+            connection={connection}
+            onConnectionChanged={(updated) =>
+              setConnections((current) => current.map((row) => (row.id === updated.id ? updated : row)))
+            }
+          />
         ))}
     </section>
   );
