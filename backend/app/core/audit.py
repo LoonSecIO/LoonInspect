@@ -72,6 +72,9 @@ class AuditAction(StrEnum):
     AI_TEST_SENT = "ai.test.sent"
     AI_MODELS_LISTED = "ai.models.listed"
     SHARING_UUID_RESET = "sharing.uuid.reset"
+    # An administrator's Send now (#408): data left the box because a person asked, not
+    # because the schedule came round, so it is on the trail beside the tier it sent under.
+    SHARING_EXCHANGE_SENT = "sharing.exchange.sent"
 
     TOKEN_CREATED = "token.created"
     TOKEN_REVOKED = "token.revoked"

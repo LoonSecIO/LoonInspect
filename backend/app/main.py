@@ -53,7 +53,7 @@ from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware, content_security_policy_mode
 from app.core.outbox import deliver_pending, fan_out_pending, purge_delivered_events
 from app.core.runs import purge_runs
-from app.core.sharing import exchange_due, run_exchange
+from app.core.sharing import exchange_due, exchange_lock, run_exchange
 from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
 from app.core.vuln_library import refresh_from_db
 from app.mdm.collections import tick_tenant
@@ -171,9 +171,16 @@ async def sharing_exchange_tick() -> None:
     """Community data-sharing exchange (docs/data-sharing.md). Runs every five
     minutes but sends at most once per tenant per day, at a minute-of-day derived
     from the tenant's submission UUID — herd prevention without operator-facing
-    scheduling. A tick that isn't due touches one settings row and stops."""
+    scheduling. A tick that isn't due touches one settings row and stops.
+
+    It shares a per-tenant lock with Send now (#408) and never waits on it: a tenant whose
+    lock is held is skipped, because the send in flight writes the row that decides
+    whether today's slot is still owed, and the next tick reads it."""
     for tenant_id in await operational_tenant_ids():
-        async with tenant_job(tenant_id) as db:
+        lock = exchange_lock(tenant_id)
+        if lock.locked():
+            continue
+        async with lock, tenant_job(tenant_id) as db:
             try:
                 if await exchange_due(db):
                     await run_exchange(db)

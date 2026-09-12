@@ -673,6 +673,11 @@ class ShareLog(Base):
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     tier: Mapped[str] = mapped_column(String(16))
+    # What started an exchange: scheduled | manual (#408, Send now). Without it an auditor
+    # reads two rows on one day beside a document that says one conversation per tenant
+    # per day. NULL on the AI rows that share this log — they are not exchanges — and every
+    # exchange row from before the column existed says `scheduled`, which it was.
+    trigger: Mapped[str | None] = mapped_column(String(16), nullable=True)
     endpoint: Mapped[str] = mapped_column(String(255))
     # sent | failed | skipped_env
     outcome: Mapped[str] = mapped_column(String(16))
