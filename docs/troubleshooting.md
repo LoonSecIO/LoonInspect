@@ -518,10 +518,15 @@ docker compose logs app --since 30m | grep -E 'webhooks/jamf|jamf webhook'
      `jobId` leads to its log (§0).
 5. **`"status_code": 502`**, beside `jamf webhook accepted, but reading that computer from
    Jamf Pro failed` → the webhook was right; the read that follows it was not. The
-   traceback's last line names why: `403` is the connection's API Role, which needs
-   `Read Computers` ([README §3](../README.md)); `404` is a computer deleted since the event;
-   a timeout or connection error is Jamf Pro unreachable from this container. The webhook
-   run is recorded as failed with the same error.
+   traceback's last line names the status and the address:
+   - anything on `/api/oauth/token` → the connection's credentials or base URL; **Test
+     connection** on the connection checks both;
+   - `403` → the connection's API Role, which needs `Read Computers` ([README §3](../README.md));
+   - `404` on the computer's own inventory → a computer deleted since the event;
+   - a timeout or connection error → Jamf Pro unreachable from this container.
+
+   The webhook run is recorded as failed with the same error, so
+   `GET /api/runs?trigger=webhook&pageSize=5` shows it too.
 
 **L.** Callbacks that Jamf Pro sends never produce a request line while the address, the
 network and the webhook's event are right; or a refusal's `reason` names a state the

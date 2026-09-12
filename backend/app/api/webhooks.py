@@ -235,9 +235,10 @@ async def jamf_webhook(
     except httpx.HTTPError:
         logger.warning(
             "jamf webhook accepted, but reading that computer from Jamf Pro failed. The "
-            'traceback\'s last line names why: 403 is the API Role, which needs "Read Computers" '
-            "(README §3); 404 is a computer deleted since the event; a timeout or connection error "
-            "is Jamf Pro unreachable from this container",
+            "traceback's last line names the status and the address: on /api/oauth/token it is the "
+            "connection's credentials or base URL (Test connection checks both); 403 is the API "
+            'Role, which needs "Read Computers" (README §3); 404 on the computer is one deleted '
+            "since the event; a timeout or connection error is Jamf Pro unreachable from this container",
             extra={"connection_id": connection_id},
             exc_info=True,
         )
