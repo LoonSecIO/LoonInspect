@@ -64,6 +64,10 @@ services:
       # when nothing but the proxy can reach this port) so the audit log records real
       # client IPs instead of the proxy's.
       FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
+      # Seconds an idle connection stays open. Behind a reverse proxy or load balancer,
+      # set it above the proxy's idle timeout (an AWS ALB's is 60 by default), or the
+      # proxy answers an occasional blank 502. See README "Is everything encrypted?".
+      KEEP_ALIVE_TIMEOUT_SECONDS: ${KEEP_ALIVE_TIMEOUT_SECONDS:-5}
       # Leave on unless you are deliberately serving plain HTTP on a non-localhost
       # hostname — Secure cookies are dropped by browsers over HTTP, which breaks
       # sign-in silently.

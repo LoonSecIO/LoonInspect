@@ -65,6 +65,7 @@ def main() -> int:
             "port": settings.port,
             "tls_mode": settings.tls_mode,
             "forwarded_allow_ips": settings.forwarded_allow_ips,
+            "keep_alive_timeout_seconds": settings.keep_alive_timeout_seconds,
         },
     )
 
@@ -76,6 +77,9 @@ def main() -> int:
         # front. forwarded_allow_ips decides whose forwarded headers are believed.
         proxy_headers=True,
         forwarded_allow_ips=settings.forwarded_allow_ips,
+        # Must outlast a proxy's idle timeout, or the proxy reuses a connection this
+        # process already closed and answers 502 (see the setting's comment).
+        timeout_keep_alive=settings.keep_alive_timeout_seconds,
         # Keeps uvicorn from replacing the handlers configured above.
         log_config=None,
         access_log=False,

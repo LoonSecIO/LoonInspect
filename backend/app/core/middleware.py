@@ -109,9 +109,9 @@ class RequestContextMiddleware:
                     "path": path,
                     "status_code": status_code,
                     "duration_ms": round((time.perf_counter() - started) * 1000, 2),
-                    # scope["client"] is the proxy's address behind a reverse proxy.
-                    # Trusting X-Forwarded-For requires knowing which hops are ours,
-                    # so that's deferred rather than guessed at.
+                    # Already the X-Forwarded-For client when the peer is in
+                    # FORWARDED_ALLOW_IPS (uvicorn's ProxyHeadersMiddleware, app.serve);
+                    # otherwise the direct peer, which behind a proxy is the proxy.
                     "client_ip": client[0] if client else None,
                 }
             }

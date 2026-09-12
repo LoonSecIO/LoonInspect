@@ -183,6 +183,15 @@ class Settings(BaseSettings):
     # Behind a reverse proxy, set this to the proxy's address.
     forwarded_allow_ips: str = "127.0.0.1"
 
+    # How long an idle connection is held open for the client's next request, in seconds
+    # (uvicorn's `timeout_keep_alive`; the default is uvicorn's own). Behind a reverse
+    # proxy or load balancer, set it above the proxy's idle timeout (#399): the proxy
+    # holds its connections to the app open that long and reuses them, and a request it
+    # sends down one the app has already closed never arrives — the client gets a blank
+    # 502 from a healthy app, with no line in the app's log. An AWS ALB idles 60 s by
+    # default; pods-ingress runs 130 s (#401), so a pod sets 135.
+    keep_alive_timeout_seconds: int = 5
+
     # Lets an MDM connection's base_url be plain http. Off by default: the Jamf
     # client-credentials POST carries the client secret in its body, so http hands it
     # to anyone on the path. On rather than absent because a lab Jamf Pro on an
@@ -340,6 +349,18 @@ class Settings(BaseSettings):
             return value
         raise ValueError(
             f"session_lifetime_seconds must be 0 (never idle out) or between 60 and {_MAX_SESSION_LIFETIME_SECONDS} (14 days)"
+        )
+
+    @field_validator("keep_alive_timeout_seconds")
+    @classmethod
+    def _validate_keep_alive_timeout(cls, value: int) -> int:
+        if 1 <= value <= 600:
+            return value
+        raise ValueError(
+            "KEEP_ALIVE_TIMEOUT_SECONDS must be between 1 and 600 seconds. Behind a reverse proxy "
+            "or load balancer, set it above the proxy's idle timeout — a proxy's idle timeout "
+            "must be shorter than the app's keep-alive, or the proxy reuses a connection the "
+            "app already closed and answers 502."
         )
 
     @property

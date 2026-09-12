@@ -40,6 +40,30 @@ database). This is where the app speaks before there is a run to write to.
 backed off and continued` or `extension attribute definitions not readable; census
 skipped`. It is the panel under the connection's row, or `GET /api/runs/{jobId}/log`.
 
+### A proxy in front answers for itself
+
+With a reverse proxy or load balancer in front, not every error the browser shows is the
+app's. The app writes a `request` line in the container log for each request it answers
+(a healthy `/api/health` aside); a blank `502` that left no such line never reached it.
+
+1. **Is the app well?** `curl -s $BASE/api/health` is `{"status":"ok"}` and the request
+   that failed works when you try it again → step 2. Health failing too is not this
+   occasional case; start at §4.
+2. **Compare two timeouts.** The app's keep-alive is on the line it writes as it starts:
+   `docker compose logs app | grep binding` → `keep_alive_timeout_seconds` (5 unless
+   `KEEP_ALIVE_TIMEOUT_SECONDS` is set). The proxy's idle timeout is in its own
+   settings: an AWS ALB's is 60 seconds unless changed. The app's must be the larger:
+   the proxy reuses a connection to the app for up to its idle timeout, and a request it
+   sends down one the app already closed comes back as a `502`. Set
+   `KEEP_ALIVE_TIMEOUT_SECONDS` above the proxy's (a 130-second ALB takes 135),
+   `docker compose up -d`, and the `binding` line shows the new value.
+3. The keep-alive is above the proxy's idle timeout and the `502`s go on → reportable **K**.
+
+**K.** Occasional `502`s from the proxy in front while the app is healthy and its
+keep-alive is above the proxy's idle timeout. Report the `binding` line, the proxy's
+idle timeout, the times and requests that failed, and the proxy's own count of the `502`s
+it generated in that window (an ALB's `HTTPCode_ELB_502_Count`).
+
 ## 1. "Test connection is green, and the first run swept zero devices"
 
 The top failure, and by design: **Test connection performs only the OAuth sign-in**, which
@@ -165,6 +189,11 @@ the run `jobID`, the token's index settings, and the search you ran.
      first. Put the original back ([`operations.md`](operations.md) §3 shows the role the
      database created, and its password is the one that value held then).
    - waiting for the database, repeatedly → `db` is not answering; step 1.
+   - `1 validation error for Settings` (or `2 validation errors`, and so on) → a variable
+     in the environment was refused. The next line names it in lower case
+     (`keep_alive_timeout_seconds` is `KEEP_ALIVE_TIMEOUT_SECONDS`) and the one after says
+     what it accepts and why. Correct it where it is set — for the shipped stack, the
+     `.env` beside `docker-compose.yml` — then `docker compose up -d`.
    - an Alembic error → the migration on startup failed. Do not downgrade by hand
      ([`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) §6); reportable **F**.
 3. **Healthy, signed in, and Settings › Connections says it could not load.**
