@@ -13,7 +13,7 @@ import {
 
 describe("webhookUrl", () => {
   it("is the origin, the route and the connection id", () => {
-    expect(webhookUrl("https://54.152.54.150:8001", 3)).toBe("https://54.152.54.150:8001/webhooks/jamf/3");
+    expect(webhookUrl("https://203.0.113.10:8001", 3)).toBe("https://203.0.113.10:8001/webhooks/jamf/3");
   });
 
   it("does not double a trailing slash", () => {
@@ -48,12 +48,12 @@ describe("originWarning", () => {
     ["https://inspect", "private"],
     ["https://[fd12:3456::1]", "private"],
     ["http://inspect.example.com", "http"],
-    ["http://54.152.54.150:8001", "http"]
+    ["http://203.0.113.10:8001", "http"]
   ])("%s is %s", (origin, expected) => {
     expect(originWarning(origin)).toBe(expected);
   });
 
-  it.each(["https://54.152.54.150:8001", "https://inspect.example.com", "https://172.32.0.1", "https://[2001:db8::1]"])(
+  it.each(["https://203.0.113.10:8001", "https://inspect.example.com", "https://172.32.0.1", "https://[2001:db8::1]"])(
     "%s needs no warning",
     (origin) => {
       expect(originWarning(origin)).toBeNull();
