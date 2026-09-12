@@ -155,6 +155,6 @@ is its own decision; none is needed to prove runnability.
 
 The first of those now exists as a template: `pods-ingress.template.yml` is the
 shared per-region front door — the ALB, the `*.pods.next.loonsec.io` wildcard
-certificate and alias record, and the `pods` cluster — and it is deployed by
-the pod deploy workflow (a later pull request), never from this page. Nothing
+certificate and alias record, and the `pods` cluster — and it will be deployed
+by the pod deploy workflow (a later pull request), never from this page. Nothing
 above uses it; the rest of the list is still absent.

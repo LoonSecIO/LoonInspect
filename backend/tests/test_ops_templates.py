@@ -17,6 +17,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from app.ai.adapters import DEFAULT_TIMEOUT_SECONDS
+
 REPO = Path(__file__).resolve().parents[2]
 OPS_AWS = REPO / "ops" / "aws"
 INGRESS = OPS_AWS / "pods-ingress.template.yml"
@@ -112,7 +114,8 @@ def test_exactly_one_record_and_it_is_the_wildcard_alias(ingress):
 def test_idle_timeout_floor_covers_the_ai_endpoints(ingress):
     parameter = ingress["Parameters"]["IdleTimeoutSeconds"]
     assert parameter["Type"] == "Number"
-    assert parameter["Default"] >= 120 and parameter["MinValue"] >= 120
+    # The AI endpoints' own wall clock, read rather than restated, so raising it fails here.
+    assert parameter["Default"] >= DEFAULT_TIMEOUT_SECONDS and parameter["MinValue"] >= DEFAULT_TIMEOUT_SECONDS
     attributes = {a["Key"]: a["Value"] for a in ingress["Resources"]["LoadBalancer"]["Properties"]["LoadBalancerAttributes"]}
     assert attributes["idle_timeout.timeout_seconds"] == {"Ref": "IdleTimeoutSeconds"}
     assert attributes["routing.http.drop_invalid_header_fields.enabled"] == "true"
