@@ -394,7 +394,7 @@ and step 2 ends with how to tell that apart from a broken exchange.
      LoonSec's production cutover this is what every instance on the default endpoint
      reads, and it is expected: nothing is lost, because each day's snapshot replaces the
      last in full, and the first exchange after the cutover reads `sent`. After the
-     cutover the same line is reportable state **L**. From any other host, a `403` or
+     cutover the same line is reportable state **M**. From any other host, a `403` or
      `404` means there is no collector at that path: check the pod's `SHARING_ENDPOINT`.
    - `Could not connect to <host>: …` → the container could not reach the host at all,
      and the text after the colon says how. `Name or service not known` is DNS — `docker
@@ -410,11 +410,11 @@ and step 2 ends with how to tell that apart from a broken exchange.
      redirecting to <another host>` → something other than the collector answered: a
      proxy or a captive portal. The probe above shows who.
    - `answered 400 Bad Request: …` or `answered 413 …` → the collector refused this
-     container's body, and the text after the colon is its reason. Reportable state **L**:
+     container's body, and the text after the colon is its reason. Reportable state **M**:
      the container built something the collector will not take, which is ours to fix.
    - `answered 429 …` or `answered 5…` → the collector is throttling or unwell. Nothing
      to fix on this side; the next exchange tries again. The same line for more than a
-     day is reportable state **L**.
+     day is reportable state **M**.
 
 **H.** A corpus has arrived on this container, this organization's tier is not `off`, and
 the pages still do not answer from it — either they say nothing is answering (grey,
@@ -427,7 +427,7 @@ describes, and a `null` there with the tier on is the defect. A `null` with the 
 **off** is step 1, not a defect.
 **I.** The published corpus is refused, unreachable, or unchanging. Report the exact log
 line (it names the epoch and the state), the build, and roughly when it started.
-**L.** The exchange reads `failed` for a reason on the collector's side: a `400` or `413`,
+**M.** The exchange reads `failed` for a reason on the collector's side: a `400` or `413`,
 a `429` or `5xx` for more than a day, or a `403`/`404` from `api.loonsec.io` after the
 production cutover. Report the reason printed under *Last exchange* (the same sentence is
 the `error` field of that row in the share-log download), when it started, the probe's
