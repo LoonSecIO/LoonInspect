@@ -13,7 +13,7 @@ connection that exists before this migration comes up in `cache_and_hold`, the w
 three words the code knows, rather than trusting every writer to.
 
 Revision ID: e6b2d9f4a8c1
-Revises: b3e7c1d5f9a2
+Revises: f4c8a2d6e1b3
 Create Date: 2026-09-12
 """
 
@@ -25,7 +25,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "e6b2d9f4a8c1"
-down_revision: Union[str, Sequence[str], None] = "b3e7c1d5f9a2"
+down_revision: Union[str, Sequence[str], None] = "f4c8a2d6e1b3"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
