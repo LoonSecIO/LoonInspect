@@ -99,6 +99,13 @@ aws cloudformation deploy \
     AdminEmail=you@loonsec.io
 ```
 
+To prove the corpus path against staging rather than production, add
+`SharingEndpoint=https://api.staging.next.loonsec.io/v1/exchange` to the
+`--parameter-overrides`; the default is the production exchange, and the container
+downloads the corpus from whichever address that exchange hands it. Re-running the
+deploy with only the parameters that change keeps the rest (an update keeps a
+stack's previous values).
+
 ## 5. Verify
 
 The public IP hangs off the task's network interface:
