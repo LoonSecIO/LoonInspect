@@ -87,6 +87,7 @@ export function DataSharingPage() {
       setError(null);
       setPreview(JSON.stringify(await previewExchange(), null, 2));
       setSent(null);
+      setSendRefusal(null);
     } catch {
       setError(t.system.sharing.loadFailed);
     } finally {
@@ -247,9 +248,10 @@ export function DataSharingPage() {
           // the answer may have carried — that is a capability and is never shown.
           <div className="space-y-2">
             <p className="text-sm">
-              {sent.outcome === "sent"
-                ? t.system.sharing.resultSent(new Date(sent.occurredAt).toLocaleString(), endpointHost(sent.endpoint))
-                : t.system.sharing.resultFailed(new Date(sent.occurredAt).toLocaleString(), endpointHost(sent.endpoint))}
+              {(sent.outcome === "sent" ? t.system.sharing.resultSent : t.system.sharing.resultFailed)(
+                new Date(sent.occurredAt).toLocaleString(),
+                endpointHost(sent.endpoint)
+              )}
             </p>
             {sent.error && <p className="text-sm text-destructive">{sent.error}</p>}
             {sent.revealsShed && <p className="text-xs text-muted-foreground">{t.system.sharing.revealsShed}</p>}
