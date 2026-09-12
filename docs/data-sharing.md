@@ -160,10 +160,12 @@ and joins locally ([`vulnerabilities.md`](vulnerabilities.md), and the section b
   that path, because an operator who never saw the wizard should not have to read this
   document to find out which way the switch is set.
 - **Settings → Data Sharing**: the tier control, the disclosure content (this
-  document's "what is shared" section, rendered), last-exchange status, the submission
-  UUID with a reset button, and a **"Show exactly what would be sent now"** button that
-  renders the literal next payload from live data. That button is the trust feature;
-  everything else is furniture around it.
+  document's "what is shared" section, rendered), last-exchange status with the failed
+  row's reason, the submission UUID with a reset button, and a **"Show exactly what
+  would be sent now"** button that renders the literal next payload from live data. That
+  button is the trust feature; everything else is furniture around it. Beside it,
+  **Send now** runs the exchange immediately and shows the row it wrote in the preview's
+  place ([below](#send-now)).
 - **`COMMUNITY_SHARING=false`** (env) hard-disables regardless of UI state, for fleet
   and air-gapped deployments; the UI shows the override as the reason, names the file
   it lives in, and writes one `skipped_env` row to the share log per day so the page
@@ -191,7 +193,8 @@ fleet-identifying payloads BYO-key or on-device only, no silent egress), live in
 
 ## The exchange (outbound contract, v1)
 
-One conversation per tenant per day. The upload is simultaneously the feed query; the
+One scheduled conversation per tenant per day, plus any an administrator sends with
+[Send now](#send-now). The upload is simultaneously the feed query; the
 response carries whatever the server currently implements — a V0 collector answering
 with empty arrays is a valid peer, and the container treats absent capabilities as
 "nothing today," never as an error.
@@ -301,11 +304,13 @@ Semantics the server may rely on:
 - **Idempotent replacement.** A request fully supersedes the previous snapshot for its
   `submission`. Aggregation is sum-over-latest; UUIDs unseen for N days age out (the
   ingest store's TTL is the natural mechanism).
-- **Reveals lag by one exchange.** Requested today, answered tomorrow. No extra round
+- **Reveals lag by one exchange.** Requested in one exchange, answered in the next —
+  ordinarily tomorrow's, sooner if an administrator sends one in between. No extra round
   trip, no server-side session state.
 - **Scheduling is jittered.** Each container derives a stable minute-of-day offset from
   its submission UUID; operators choose coarse windows only. Peak converges to average
-  by construction.
+  by construction. A Send now is the one unjittered request, and it is a person's click,
+  not a fleet's schedule.
 - **Failure is silent and logged locally.** Timeout/5xx → exponential backoff within
   the run (3 attempts), then wait for tomorrow. No user-visible error, no repeating log
   noise — an air-gapped instance with sharing left on is a supported configuration.
@@ -320,12 +325,42 @@ Semantics the server may rely on:
 - Unknown request fields must be ignored by the server; unknown response fields are
   ignored by the container. Contract changes bump the version string.
 
+### Send now
+
+Added 2026-09-12 ([#408](https://github.com/LoonSecIO/LoonInspect/issues/408)) for the
+operator who needs to know *now* whether an exchange works — a new pod, a changed
+endpoint, a corpus that should have arrived — rather than at the tenant's slot, which can
+be a day away. The request body and the contract are unchanged; what the button adds is
+around them.
+
+- **The same code path.** Send now runs the exchange the scheduler runs: the same
+  builder, the same 413 handling, the same share-log row, and the corpus import after it.
+  A second builder would break the preview's promise that it cannot drift from the wire.
+- **An administrator's act.** `SYSTEM_WRITE`, like the tier and the UUID reset, and
+  audit-logged as `sharing.exchange.sent`; seeing what would be sent stays `SYSTEM_READ`.
+- **It refuses in words and writes nothing** when nothing can be attempted:
+  `COMMUNITY_SHARING=false` (the day's `skipped_env` row stays the only record of the
+  override), an `off` tier, or an exchange already running for the tenant.
+- **One at a time.** The scheduler and the button share a lock per tenant and neither
+  waits on it: the scheduler skips a tenant whose send is in flight, and the button
+  answers busy. Both would otherwise post, and both could reach the corpus import, which
+  replaces the library wholesale.
+- **The schedule does not move.** A sent row counts as an attempt like any other, so one
+  sent after the tenant's slot is that day's exchange and one sent before it leaves the
+  slot owed. For the server, a second exchange in a day is the idempotent replacement
+  above: the same submission overwritten, nothing double-counted.
+- **The box shows the past.** After a send, the preview gives way to the row the send
+  wrote — outcome, the failed row's reason, `revealsShed`, and the payload that left —
+  never the corpus link, which is a capability and is shown nowhere.
+
 ## The share log
 
 Every exchange writes one tenant-scoped row recording **exactly what left the box**:
-timestamp, tier, endpoint, outcome (sent / failed / skipped-by-env), the request payload
+timestamp, tier, what started it (`scheduled`, or `manual` for a [Send now](#send-now)),
+endpoint, outcome (sent / failed / skipped-by-env), the request payload
 the run assembled (verbatim JSON — this is the point; reveals especially), the
-`revealsShed` marker below, and the response's request list. Rows older than 90 days are
+`revealsShed` marker below, the response's request list, and on a failure the reason,
+as a sentence naming the host and what it answered. Rows older than 90 days are
 pruned on write.
 
 - Read + download: `AUDIT_READ` (the auditor role exists precisely for "prove to me
@@ -347,7 +382,7 @@ Permitted off-pod AI inference calls write to the **same log** (one log is the
 point): tier `ai`, the destination as the endpoint, and a payload naming the feature
 and the field-level disclosure of what left — field names only, never contents.
 These rows are not exchange attempts; the exchange's scheduling and the
-"last exchange" status ignore them.
+"last exchange" status ignore them, and their `trigger` is empty.
 
 The share log and the "show what would be sent" button are the same honesty told two
 ways: the button shows the future, the log proves the past.

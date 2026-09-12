@@ -3,7 +3,8 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Query
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,13 +15,29 @@ from app.core.auth import require
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.permissions import Permission
-from app.core.sharing import build_exchange_request, get_or_create_settings, remember_tier
+from app.core.sharing import (
+    ExchangeRefused,
+    build_exchange_request,
+    get_or_create_settings,
+    remember_tier,
+    send_exchange_now,
+)
 from app.core.update_check import get_update_status
 from app.core.version import get_app_version
 from app.models.schema import ShareLog
-from app.schemas.system import DataSharingOut, DataSharingUpdate, UpdateStatusOut, VersionOut
+from app.schemas.system import (
+    DataSharingOut,
+    DataSharingUpdate,
+    SendExchangeOut,
+    ShareLogEntryOut,
+    UpdateStatusOut,
+    VersionOut,
+)
 
 router = APIRouter(prefix="/api/system", tags=["system"])
+
+# A test stands in for the collector by setting this; production leaves it None.
+transport_override: httpx.AsyncBaseTransport | None = None
 
 
 @router.get("/version", response_model=VersionOut)
@@ -64,6 +81,7 @@ async def _sharing_out(db: AsyncSession, row) -> DataSharingOut:
         last_exchange_at=last.occurred_at if last else None,
         last_exchange_outcome=last.outcome if last else None,
         last_exchange_reveals_shed=bool(last.reveals_shed) if last else False,
+        last_exchange_error=last.error if last else None,
     )
 
 
@@ -137,6 +155,41 @@ async def preview_exchange(db: AsyncSession = Depends(get_db)) -> dict:
     return await build_exchange_request(db, row)
 
 
+@router.post(
+    "/data-sharing/send",
+    response_model=SendExchangeOut,
+    dependencies=[Depends(require(Permission.SYSTEM_WRITE))],
+)
+async def send_exchange(db: AsyncSession = Depends(get_db)) -> SendExchangeOut:
+    """Send now (#408): this organization's exchange, immediately, through the code path
+    the daily one uses, answered with the share-log row it wrote — the preview shows the
+    future, this shows what just left.
+
+    SYSTEM_WRITE, like the tier and the UUID reset: sending off the box is an
+    administrator's decision, while seeing what would go stays SYSTEM_READ. A failed
+    exchange is still a 200 — the row is the answer and its `error` says what went wrong.
+    A 409 is a refusal before anything was attempted (the environment override, an off
+    tier, an exchange already running), with the sentence as its `detail`.
+    """
+    try:
+        row = await send_exchange_now(db, transport=transport_override)
+    except ExchangeRefused as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    audit(
+        AuditAction.SHARING_EXCHANGE_SENT,
+        outcome="success" if row.outcome == "sent" else "failure",
+        target_type="data_sharing",
+        tier=row.tier,
+        endpoint=row.endpoint,
+        exchange_outcome=row.outcome,
+    )
+    return SendExchangeOut(
+        exchange=ShareLogEntryOut.model_validate(row),
+        settings=await _sharing_out(db, await get_or_create_settings(db)),
+    )
+
+
 @router.get(
     "/share-log",
     response_class=PlainTextResponse,
@@ -160,6 +213,9 @@ async def download_share_log(
             {
                 "occurredAt": row.occurred_at.isoformat(),
                 "tier": row.tier,
+                # scheduled | manual on exchange rows (#408); null on AI rows, which are
+                # not exchanges. Two rows on one day are how a Send now reads here.
+                "trigger": row.trigger,
                 "endpoint": row.endpoint,
                 "outcome": row.outcome,
                 "payload": row.payload,

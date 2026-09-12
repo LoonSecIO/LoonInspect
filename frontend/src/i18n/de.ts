@@ -35,6 +35,21 @@ export const de: Translations = {
       previewHelp:
         "Zeigt die wörtliche nächste Übertragung aus den Live-Daten dieser Instanz — über denselben Codepfad wie der tägliche Austausch.",
       previewButton: "Payload anzeigen",
+      sendButton: "Jetzt senden",
+      sendHelp:
+        "„Jetzt senden“ führt den Austausch dieser Organisation sofort aus — über denselben Codepfad wie der tägliche — und zeigt statt der Vorschau die Zeile, die er ins Freigabeprotokoll geschrieben hat. Der tägliche Austausch behält seinen eigenen Zeitplan.",
+      sending: "Wird gesendet…",
+      sendingHelp:
+        "Antwortet der Collector nicht, wiederholt der Austausch etwa 80 Sekunden lang, bevor er einen Fehlschlag verbucht.",
+      sendBlockedEnv:
+        "Solange COMMUNITY_SHARING=false gesetzt ist, kann nichts gesendet werden — der Hinweis oben auf dieser Seite nennt die Stelle.",
+      sendBlockedOff: "Die Freigabe ist aus, daher gibt es nichts zu senden. Wählen Sie zuerst unter „Teilnahme“ eine Stufe.",
+      sendRequestFailed:
+        "Der Austausch konnte nicht gestartet werden. Laden Sie die Seite neu und versuchen Sie es erneut; schlägt es weiter fehl, nennt docker compose logs app den Grund.",
+      resultSent: (when: string, host: string) =>
+        `Um ${when} an ${host} gesendet. Das ist die Zeile, die der Austausch ins Freigabeprotokoll geschrieben hat: Die Payload unten hat diese Instanz verlassen — keine Vorschau.`,
+      resultFailed: (when: string, host: string) =>
+        `Um ${when} fehlgeschlagen — ${host} hat nichts angenommen. Das ist die Zeile, die der Austausch ins Freigabeprotokoll geschrieben hat; die Payload unten ist das, was er zu senden versuchte.`,
       identityHeading: "Übermittlungsidentität",
       identityHelp:
         "Die Zufalls-ID, mit der LoonSec den vorherigen Snapshot dieses Tenants ersetzt, statt ihn doppelt zu zählen. Ein Zurücksetzen trennt die Verbindung zu allem zuvor Gesendeten.",
