@@ -13,8 +13,10 @@ reportable state**. When you reach a reportable state, §7 says what to include.
 
 **The app.** Settings › Connections shows every connection with its last sync; **Sync
 now** opens a panel under the row with the run's log. Settings › Destinations shows every
-destination with what is queued, what gave up, and the last error. The Overview's status
-strip is the first line to read: it says which of those is unwell.
+destination with what is queued, what gave up, and the last error. Settings › Data
+Sharing shows the last community exchange, why it failed if it did, and **Send now**,
+which runs one immediately. The Overview's status strip is the first line to read: it
+says which of those is unwell.
 
 **The API**, when the page is not enough or you want to paste an answer into a ticket.
 Sign in once and keep the cookies; every mutation needs the CSRF header:
@@ -244,8 +246,9 @@ and step 2 ends with how to tell that apart from a broken exchange.
    organization whose own sharing is on ([`vulnerabilities.md`](vulnerabilities.md) §8).
    Settings › Data Sharing: if the tier is **off**, that is the answer. Turn it on. If a
    library is already installed, the answers come back immediately with no new download;
-   if none is, one arrives at the next day's exchange (the schedule is jittered per
-   tenant, so it is not immediate). If this instance has more than one tenant, check the
+   if none is, one arrives with the next exchange — the daily one is jittered per tenant,
+   so it is not immediate, and an administrator can press **Send now** under *Exactly what
+   would be sent* to run it at once. If this instance has more than one tenant, check the
    tier for **the tenant you are looking at** — one tenant with sharing off reads grey
    while another on the same container reads dates and answers. If
    `COMMUNITY_SHARING=false` is set, the page says so and names the file; the override
@@ -316,8 +319,8 @@ and step 2 ends with how to tell that apart from a broken exchange.
      default log level; a restart is the exception, and writes the `loaded` line above.
      Or no library is installed, and then either no exchange has completed since the
      container started — Settings › Data Sharing shows the last exchange and its outcome,
-     and a run of `failed` rows there is an exchange problem rather than a corpus one,
-     with its own error on the row — or the exchanges are succeeding and naming no corpus
+     and `failed` there is an exchange problem rather than a corpus one, with its reason
+     printed beneath it (step 6) — or the exchanges are succeeding and naming no corpus
      at all, which is the paragraph below.
 
    **Succeeding exchanges, no library, and nothing wrong.** An exchange that answers
@@ -328,9 +331,10 @@ and step 2 ends with how to tell that apart from a broken exchange.
    as your answer. The published corpus reaches staging first, and **a customer's first
    epoch arrives with the production cutover**; until then an instance pointed at
    production reads *not assessed* for every app with the tier on, and that is the expected
-   reading rather than reportable state **H**. Settings › Data Sharing is what separates
-   this from a broken exchange: rows reading `sent`, day after day, with no library line
-   beside them.
+   reading rather than reportable state **H** — its exchanges read `failed` with a `403`
+   until the cutover, which is step 6's first row. Settings › Data Sharing is what
+   separates this from a broken exchange: rows reading `sent`, day after day, with no
+   library line beside them.
 3. **A date is on the banner, and every app under it says *outside the corpus*.** Not the
    same fault as grey, and usually not a fault at all. The container stores each build's
    answer beside the build and re-judges when a new corpus arrives, so in the minutes after
@@ -369,6 +373,48 @@ and step 2 ends with how to tell that apart from a broken exchange.
    not in the answer yet. If the date has not moved for several days while the exchange is
    succeeding, step 2's log lines say why; if they say `updated` with an unmoved date, the
    published corpus itself has not moved, which is reportable state **I**.
+6. **Settings › Data Sharing says the last exchange *failed*.** The reason is printed
+   beneath *Last exchange*. It names the host the container dialled — `api.loonsec.io`
+   unless a hosted pod's template set `SHARING_ENDPOINT` — and ends with how many times
+   the run tried. **Send now**, in the same page's *Exactly what would be sent* box, runs
+   an exchange on demand and shows the row it wrote, so each check below can be proved
+   fixed in a click instead of a day. To see who answers at that address from inside the
+   container — it sends `{}`, nothing of the fleet:
+
+   ```bash
+   docker compose exec app python -c 'import sys, urllib.request as u, urllib.error as e
+   try: print(u.urlopen(u.Request(sys.argv[1], b"{}", {"Content-Type": "application/json"}), timeout=10).status)
+   except e.HTTPError as x: print(x.code, x.read().decode()[:200])' https://api.loonsec.io/v1/exchange
+   ```
+
+   The collector answers that with `400 {"error": "unsupported contract"}`; any other
+   answer is not the collector.
+   - `The collector at api.loonsec.io answered 403 Forbidden: {"message":"Missing
+     Authentication Token"}` → nothing at that address takes exchanges yet. Until
+     LoonSec's production cutover this is what every instance on the default endpoint
+     reads, and it is expected: nothing is lost, because each day's snapshot replaces the
+     last in full, and the first exchange after the cutover reads `sent`. After the
+     cutover the same line is reportable state **L**. From any other host, a `403` or
+     `404` means there is no collector at that path: check the pod's `SHARING_ENDPOINT`.
+   - `Could not connect to <host>: …` → the container could not reach the host at all,
+     and the text after the colon says how. `Name or service not known` is DNS — `docker
+     compose exec app getent hosts <host>` prints nothing when the container cannot
+     resolve it. `Connection refused` is nothing listening at that address.
+     `CERTIFICATE_VERIFY_FAILED` is something between this container and the collector
+     presenting its own certificate, usually a TLS-inspecting proxy: exempt the host from
+     inspection.
+   - `No answer from <host> within 10 seconds.` → an egress firewall dropping the
+     connection, or the collector down; the probe above tells them apart. An air-gapped
+     instance with sharing on reads this every day, and that is a supported configuration.
+   - `<host> answered 200 with a body that is not JSON …`, or `answered 302 Found,
+     redirecting to <another host>` → something other than the collector answered: a
+     proxy or a captive portal. The probe above shows who.
+   - `answered 400 Bad Request: …` or `answered 413 …` → the collector refused this
+     container's body, and the text after the colon is its reason. Reportable state **L**:
+     the container built something the collector will not take, which is ours to fix.
+   - `answered 429 …` or `answered 5…` → the collector is throttling or unwell. Nothing
+     to fix on this side; the next exchange tries again. The same line for more than a
+     day is reportable state **L**.
 
 **H.** A corpus has arrived on this container, this organization's tier is not `off`, and
 the pages still do not answer from it — either they say nothing is answering (grey,
@@ -381,6 +427,11 @@ describes, and a `null` there with the tier on is the defect. A `null` with the 
 **off** is step 1, not a defect.
 **I.** The published corpus is refused, unreachable, or unchanging. Report the exact log
 line (it names the epoch and the state), the build, and roughly when it started.
+**L.** The exchange reads `failed` for a reason on the collector's side: a `400` or `413`,
+a `429` or `5xx` for more than a day, or a `403`/`404` from `api.loonsec.io` after the
+production cutover. Report the reason printed under *Last exchange* (the same sentence is
+the `error` field of that row in the share-log download), when it started, the probe's
+answer from step 6, and the build (Settings › Support).
 
 ## 6. "The Jamf Patch table is empty, or it stopped refreshing"
 

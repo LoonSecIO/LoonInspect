@@ -6,8 +6,9 @@ path for both is the point: the preview cannot drift from the wire.
 
 The exchange job itself (scheduling, transport, the share log) landed as
 INSPECT-0048 and lives in the second half of this file — main.py's
-sharing_exchange_tick drives it, so the module now has two callers: the preview
-endpoint and the scheduler.
+sharing_exchange_tick drives it. Since INSPECT-0408 an administrator's **Send now**
+drives it too, through the same `run_exchange`, so the module has three callers: the
+preview endpoint, the scheduler, and the button.
 
 The conversation carries a second half now (#248): the response may point at the
 published vulnerability corpus, and `run_exchange` hands that pointer to
@@ -20,9 +21,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from fnmatch import fnmatch
+from urllib.parse import urlsplit
 
 import httpx
 from sqlalchemy import delete, distinct, func, select
@@ -197,7 +200,15 @@ async def build_exchange_request(db: AsyncSession, settings_row: DataSharingSett
 logger = logging.getLogger(__name__)
 
 _RETRY_DELAYS = (2, 8, 30)
+_TIMEOUT_SECONDS = 10.0
 _LOG_RETENTION = timedelta(days=90)
+
+# What started an exchange, on its share-log row (#408). `manual` is the runs table's word
+# for an operator's click; the scheduled case is `scheduled`, the contract's word, because
+# `sweep` — what runs call it — would name the wrong job. AI rows share the log and carry
+# neither: they are not exchanges.
+TRIGGER_SCHEDULED = "scheduled"
+TRIGGER_MANUAL = "manual"
 
 
 async def build_reveals(db: AsyncSession, settings_row: DataSharingSettings) -> list[dict]:
@@ -312,7 +323,7 @@ async def post_exchange(request_body: dict, *, transport: httpx.AsyncBaseTranspo
     against the same hazard). Without it the decode error escaped the loop and the
     caller both, and the day's attempt was never logged."""
     headers = {"User-Agent": build_user_agent("exchange")}
-    async with httpx.AsyncClient(timeout=10.0, transport=transport) as client:
+    async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS, transport=transport) as client:
         body = request_body
         # Sticky rather than recomputed from `body`: it is the record of what this run
         # gave up, and it has to survive into the result that reports the eventual 200.
@@ -334,6 +345,47 @@ async def post_exchange(request_body: dict, *, transport: httpx.AsyncBaseTranspo
         raise last_error if last_error else RuntimeError("exchange failed")
 
 
+def _failure_sentence(exc: Exception) -> str:
+    """A failed attempt's `error`, in the operator's words: who failed, and the detail
+    that says why (docs/troubleshooting.md §5, step 6 maps each shape to the next check).
+
+    It used to be `str(exc)` — httpx's vocabulary, read only by someone who downloaded the
+    NDJSON. Send now (#408) puts it on the page, so it is written for the page: the host
+    rather than the whole URL, the collector's own reason where it gave one, and how many
+    times the run tried, since every shape below is the *last* attempt's.
+    """
+    host = urlsplit(app_settings.sharing_endpoint).hostname or app_settings.sharing_endpoint
+    tried = f" Tried {len(_RETRY_DELAYS) + 1} times."
+    if isinstance(exc, httpx.HTTPStatusError):
+        response = exc.response
+        said = f"The collector at {host} answered {response.status_code} {response.reason_phrase}"
+        if response.has_redirect_location:
+            # Where to, by host only: a captive portal's redirect can carry a session in
+            # its query string, and the host is the part that names who is answering.
+            said += f", redirecting to {urlsplit(response.headers['location']).hostname or 'another address'}"
+        else:
+            # The collector's reason where it gave one (the Support collector answers a 400
+            # with {"error": …}), collapsed to one line and bounded: this is untrusted text
+            # from the far end, stored and shown as text, never as markup.
+            reason = " ".join(response.text.split())[:200]
+            if reason:
+                said += f": {reason}"
+        return said + "." + tried
+    if isinstance(exc, httpx.TimeoutException):
+        return f"No answer from {host} within {_TIMEOUT_SECONDS:g} seconds." + tried
+    if isinstance(exc, httpx.ConnectError):
+        # DNS, a refused connection and a TLS failure all arrive here; httpx's text names
+        # which (`Name or service not known`, `CERTIFICATE_VERIFY_FAILED`, …).
+        return f"Could not connect to {host}: {exc}." + tried
+    if isinstance(exc, ValueError):
+        # post_exchange's undecodable-200 case (#82).
+        return (
+            f"{host} answered 200 with a body that is not JSON, so something other than the collector "
+            "answered — usually a proxy or a captive portal." + tried
+        )
+    return f"The exchange to {host} failed: {type(exc).__name__}: {exc}." + tried
+
+
 def _jitter_minute_of_day(settings_row: DataSharingSettings) -> int:
     """Stable per-tenant minute in [0, 1440): the herd-prevention the contract
     promises, derived from the submission UUID so operators never schedule to the
@@ -353,35 +405,48 @@ async def _last_attempt_at(db: AsyncSession) -> datetime | None:
 def _due(now: datetime, last: datetime | None, minute_of_day: int) -> bool:
     """Due once per day, at or after the jittered minute. A container that was down
     at its slot sends at the first tick after it; one that already attempted today
-    (any outcome) waits for tomorrow."""
+    (any outcome) waits for tomorrow.
+
+    A Send now counts like any other attempt (#408), which is what keeps the button from
+    moving the schedule: one sent after today's slot is that day's exchange, and one sent
+    before the slot leaves the slot owed, so the scheduled exchange still runs."""
     target = now.replace(hour=minute_of_day // 60, minute=minute_of_day % 60, second=0, microsecond=0)
     if now < target:
         return False
     return last is None or last < target
 
 
-async def run_exchange(db: AsyncSession, *, transport: httpx.AsyncBaseTransport | None = None) -> None:
-    """One tenant's daily exchange, called from the scheduler tick with a
-    tenant-bound session. Assumes due-ness was already decided."""
+async def run_exchange(
+    db: AsyncSession,
+    *,
+    trigger: str = TRIGGER_SCHEDULED,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> ShareLog | None:
+    """One tenant's exchange, with a tenant-bound session: from the scheduler tick, which
+    has already decided it is due, or from Send now (`trigger="manual"`, #408), which does
+    not ask. Either way the caller holds the tenant's `exchange_lock`.
+
+    Returns the share-log row it wrote — the button shows it — or None when the tier is
+    off and nothing was attempted."""
     settings_row = await get_or_create_settings(db)
     if settings_row.tier == "off":
-        return
+        return None
 
     now = datetime.now(UTC)
 
     if not app_settings.community_sharing:
         # The env override wins, visibly: one skipped row per day keeps the share
         # log honest about why nothing is leaving.
-        db.add(
-            ShareLog(
-                occurred_at=now,
-                tier=settings_row.tier,
-                endpoint=app_settings.sharing_endpoint,
-                outcome="skipped_env",
-            )
+        skipped = ShareLog(
+            occurred_at=now,
+            tier=settings_row.tier,
+            trigger=trigger,
+            endpoint=app_settings.sharing_endpoint,
+            outcome="skipped_env",
         )
+        db.add(skipped)
         await db.commit()
-        return
+        return skipped
 
     request_body = await build_exchange_request(db, settings_row)
     request_body["reveals"] = await build_reveals(db, settings_row)
@@ -390,6 +455,7 @@ async def run_exchange(db: AsyncSession, *, transport: httpx.AsyncBaseTransport 
     log = ShareLog(
         occurred_at=now,
         tier=settings_row.tier,
+        trigger=trigger,
         endpoint=app_settings.sharing_endpoint,
         # The body this run assembled, which on a 413 day is a superset of the one the
         # server accepted — `reveals_shed` below is what records the difference.
@@ -409,7 +475,7 @@ async def run_exchange(db: AsyncSession, *, transport: httpx.AsyncBaseTransport 
         # yes again on the next tick and a persistently bad upstream would become a
         # crash loop instead of one logged failure a day.
         logger.debug("exchange failed: %s", exc)
-        log.error = str(exc)[:2000]
+        log.error = _failure_sentence(exc)[:2000]
     else:
         response = result.response
         log.outcome = "sent"
@@ -431,6 +497,7 @@ async def run_exchange(db: AsyncSession, *, transport: httpx.AsyncBaseTransport 
     # download at all, which is what makes this affordable daily.
     if pointer is not None:
         await load_epoch_if_new(db, pointer, transport=transport)
+    return log
 
 
 async def exchange_due(db: AsyncSession) -> bool:
@@ -442,3 +509,68 @@ async def exchange_due(db: AsyncSession) -> bool:
         await _last_attempt_at(db),
         _jitter_minute_of_day(settings_row),
     )
+
+
+# --- Send now (#408) ---------------------------------------------------------------
+#
+# Until #408 the tick was the only caller of `run_exchange`, and APScheduler's default
+# max_instances=1 kept it from overlapping itself. The button is a second caller, and the
+# two must not overlap for one tenant: both would POST, and both could reach
+# `load_epoch_if_new`, whose replacement is delete-then-insert. The container is one
+# process with one event loop (app/serve.py starts uvicorn with no workers), so a lock per
+# tenant is the whole of the serialization. Neither caller ever waits on it: the tick
+# skips a tenant whose lock is held — the send in flight writes the row that decides
+# whether today's slot is still owed — and the button answers busy.
+
+_exchange_locks: dict[uuid.UUID | None, asyncio.Lock] = {}
+
+
+def exchange_lock(tenant_id: uuid.UUID | None) -> asyncio.Lock:
+    """The tenant's exchange lock, shared by the tick and Send now. Callers test
+    `locked()` and then enter it with no await in between, which on one event loop is an
+    atomic claim: an uncontended `acquire` does not yield."""
+    return _exchange_locks.setdefault(tenant_id, asyncio.Lock())
+
+
+class ExchangeRefused(Exception):
+    """Send now said no, and why, in the operator's words. The API answers 409 with the
+    sentence; the page shows its own copy of the first two under a disabled button, so a
+    click only ever meets the third."""
+
+
+REFUSED_ENV = (
+    "Nothing can be sent while COMMUNITY_SHARING=false is set in the environment (the .env file beside "
+    "docker-compose.yml). Remove that line and restart the container to send."
+)
+REFUSED_OFF = "Sharing is off for this organization, so there is nothing to send. Choose a tier under Participation first."
+REFUSED_BUSY = (
+    "An exchange is already running for this organization. Its row lands in the share log when it finishes; "
+    "send again after that if you still need to."
+)
+
+
+async def send_exchange_now(db: AsyncSession, *, transport: httpx.AsyncBaseTransport | None = None) -> ShareLog:
+    """Send now (#408): this tenant's exchange, immediately, through `run_exchange` — the
+    body, the 413 handling, the share-log row and the corpus import that follows are the
+    daily run's, because a second builder would break the preview's promise that it
+    cannot drift from the wire.
+
+    Refuses in words rather than writing a row: under the environment override nothing is
+    attempted, so there is nothing to log (the daily `skipped_env` row stays the day's
+    record), and an off tier has nothing to send. The schedule does not move — see `_due`.
+    """
+    settings_row = await get_or_create_settings(db)
+    if not app_settings.community_sharing:
+        raise ExchangeRefused(REFUSED_ENV)
+    if settings_row.tier == "off":
+        raise ExchangeRefused(REFUSED_OFF)
+
+    lock = exchange_lock(get_tenant_id())
+    if lock.locked():
+        raise ExchangeRefused(REFUSED_BUSY)
+    async with lock:
+        row = await run_exchange(db, trigger=TRIGGER_MANUAL, transport=transport)
+    if row is None:
+        # The tier was turned off between the check above and the run's own read of it.
+        raise ExchangeRefused(REFUSED_OFF)
+    return row

@@ -127,6 +127,8 @@ async def test_permitted_off_pod_call_writes_one_disclosure_line(db, clean) -> N
     assert len(ai_lines) == 1
     assert ai_lines[0]["endpoint"] == DESTINATION
     assert ai_lines[0]["payload"] == {"feature": "socket-test", "fields": ["app_name", "version"]}
+    # Not an exchange, so neither of the exchange's triggers (#408).
+    assert ai_lines[0]["trigger"] is None
 
 
 async def test_off_pod_without_disclosure_is_a_programming_error(db, clean) -> None:

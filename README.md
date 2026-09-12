@@ -459,7 +459,9 @@ guarantee — is in [docs/data-sharing.md](docs/data-sharing.md).
 
 The choice is presented during first-run setup and lives under **Settings → Data
 Sharing** afterwards, alongside a button that renders the literal next payload from
-live data. **An install that was never asked does not share:** bootstrapping
+live data and, for administrators, **Send now**, which sends it immediately and shows the
+share-log row it wrote — how you test an exchange without waiting for the daily slot.
+**An install that was never asked does not share:** bootstrapping
 non-interactively with `INITIAL_ADMIN_EMAIL` / `INITIAL_ADMIN_PASSWORD` (below) skips
 the wizard, so sharing stays off until an administrator turns it on. `COMMUNITY_SHARING=false`
 in `.env` hard-disables it regardless of the UI. Air-gapped instances can leave it on —
