@@ -36,17 +36,17 @@ Description: >-
 # body is one sentence in the operator's vocabulary; it is the only thing a stranger
 # ever sees from this stack.
 #
-# WHY 120 SECONDS
+# WHY 130 SECONDS
 # ---------------
-# The ALB idle timeout floor is 120 s because POST /api/system/ai/test and
-# /api/system/ai/models wait up to 120 s synchronously for an AI host to answer
-# (backend/app/ai/adapters.py, DEFAULT_TIMEOUT_SECONDS). A shorter idle timeout turns
-# a slow model into a 504 from the balancer, with the app still working. 120 is the
-# floor, not a margin: at exactly 120, a host that never answers reaches the operator
-# as the balancer's 504 a moment before the app's own timeout reply would have. The
-# app's keep-alive must in turn exceed whatever is set here (KEEP_ALIVE_TIMEOUT_SECONDS,
-# #399, set by the pod's compute stack), or the balancer reuses a connection the app
-# has already closed — so raising this means raising that with it.
+# POST /api/system/ai/test and /api/system/ai/models wait up to 120 s synchronously
+# for an AI host to answer (backend/app/ai/adapters.py, DEFAULT_TIMEOUT_SECONDS), and
+# the balancer has to outlast that wait, not match it. At exactly 120, a host that
+# never answers reaches the operator as the balancer's 504 a moment before the app's
+# own timeout reply; 130 leaves the app ten seconds to say it gave up itself. So 130
+# is both the floor and the default (ruled 2026-09-12). The app's keep-alive must in
+# turn exceed whatever is set here (KEEP_ALIVE_TIMEOUT_SECONDS, #399; the pod design
+# sets 135), or the balancer reuses a connection the app has already closed — so
+# raising this means raising that with it.
 #
 # HOW THIS STACK IS DEPLOYED
 # --------------------------
@@ -94,13 +94,14 @@ Parameters:
 
   IdleTimeoutSeconds:
     Type: Number
-    Default: 120
-    MinValue: 120
+    Default: 130
+    MinValue: 130
     MaxValue: 4000
     Description: >-
-      The balancer's idle timeout. The floor is 120 because the AI endpoints
-      wait that long synchronously — see the header. The pods' keep-alive must
-      exceed whatever is set here.
+      The balancer's idle timeout. The floor is 130: the AI endpoints wait up
+      to 120 s synchronously, and the app needs a moment past that to answer
+      on its own — see the header. The pods' keep-alive must exceed whatever
+      is set here.
 
 Resources:
   AlbSecurityGroup:
