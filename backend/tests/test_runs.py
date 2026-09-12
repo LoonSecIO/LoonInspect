@@ -847,6 +847,30 @@ async def test_the_api_serializes_the_keys_the_panel_reads(db, connection) -> No
     assert tail.lines == [] and tail.complete is True
 
 
+async def test_the_list_narrows_to_one_trigger(db, connection) -> None:
+    """`trigger=webhook&pageSize=1` is the webhook setup panel's "last webhook run"
+    (#406). A webhook run must come back without the manual run beside it, and a
+    `trigger=manual` list must not carry the webhook run."""
+    from app.api.runs import list_runs
+    from app.core.runs import LOCK_DEVICE_SWEEP, LOCK_WEBHOOK, TRIGGER_MANUAL, TRIGGER_WEBHOOK, acquire, finish
+
+    manual = await acquire(db, connection, trigger=TRIGGER_MANUAL, lock_class=LOCK_DEVICE_SWEEP, actor_label="verify@example.com")
+    await finish(db, manual.run, ok=True, device_count=1, group_count=0)
+    hook = await acquire(
+        db, connection, trigger=TRIGGER_WEBHOOK, lock_class=LOCK_WEBHOOK, actor_label="ComputerInventoryCompleted"
+    )
+    await finish(db, hook.run, ok=True, device_count=1, group_count=0)
+
+    webhooks = await list_runs(connection_id=connection.id, status=None, page=1, page_size=200, db=db, trigger="webhook")
+    assert {item.trigger for item in webhooks.items} == {"webhook"}
+    assert str(webhooks.items[0].id) == str(hook.run.id)
+
+    manuals = await list_runs(connection_id=connection.id, status=None, page=1, page_size=200, db=db, trigger="manual")
+    manual_ids = {str(item.id) for item in manuals.items}
+    assert str(manual.run.id) in manual_ids
+    assert str(hook.run.id) not in manual_ids
+
+
 async def test_purge_drops_finished_runs_and_never_a_live_one(db, connection) -> None:
     from sqlalchemy import update
 

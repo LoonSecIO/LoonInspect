@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Fragment, useCallback, useEffect, useState, type FormEvent } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/config/api";
@@ -20,10 +20,14 @@ import type {
   MdmConnection,
   SectionInfo
 } from "@/features/mdm/types";
+import { WebhookSetupPanel } from "@/features/mdm/WebhookSetupPanel";
 import { useLocale } from "@/i18n/LocaleContext";
 
 interface CollectionsPanelProps {
   connection: MdmConnection;
+  /** The webhook setup panel saves onto the connection (receiving, the secret); the
+   *  page's copy of the row has to follow, or its next render reads the old state. */
+  onConnectionChanged: (connection: MdmConnection) => void;
 }
 
 type FormMode = "closed" | "create" | number;
@@ -49,7 +53,7 @@ function browserTimezone(): string {
   }
 }
 
-export function CollectionsPanel({ connection }: CollectionsPanelProps) {
+export function CollectionsPanel({ connection, onConnectionChanged }: CollectionsPanelProps) {
   const { t } = useLocale();
   const tc = t.collections;
   const canWrite = useHasPermission(PERMISSIONS.CONNECTION_WRITE);
@@ -58,6 +62,8 @@ export function CollectionsPanel({ connection }: CollectionsPanelProps) {
   const [rows, setRows] = useState<Collection[]>([]);
   const [loading, setLoading] = useState(true);
   const [formMode, setFormMode] = useState<FormMode>("closed");
+  // The webhook row whose setup panel is open (#406) — under its row, like the run panel.
+  const [setupOpenId, setSetupOpenId] = useState<number | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [queuedId, setQueuedId] = useState<number | null>(null);
@@ -135,7 +141,9 @@ export function CollectionsPanel({ connection }: CollectionsPanelProps) {
     if (row.kind === "device_sweep") parts.push(row.selector ? `${tc.selectorLabel}: ${row.selector}` : tc.noSelector);
     if (row.quarantinedExtensionAttributes.length > 0)
       parts.push(tc.quarantineCount(row.quarantinedExtensionAttributes.length));
-    if (row.kind === "webhook") parts.push(tc.webhookWhat);
+    // A disabled webhook collection does not stop webhooks: with no enabled one, each
+    // webhook fetches every section (`webhook_scope` in backend/app/mdm/service.py).
+    if (row.kind === "webhook") parts.push(row.enabled ? tc.webhookWhat : tc.webhookOffWhat);
     return parts.join(" · ");
   }
 
@@ -233,63 +241,91 @@ export function CollectionsPanel({ connection }: CollectionsPanelProps) {
               </tr>
             )}
             {rows.map((row) => (
-              <tr key={row.id} className={row.enabled ? "border-b last:border-0" : "border-b text-muted-foreground last:border-0"}>
-                <td className="px-3 py-2">
-                  {row.name}
-                  {!row.enabled && <span className="ml-2 text-xs">({tc.disabled})</span>}
-                </td>
-                <td className="px-3 py-2">{tc.kinds[row.kind] ?? row.kind}</td>
-                <td className="px-3 py-2 text-xs">{describeWhat(row)}</td>
-                <td className="px-3 py-2 text-xs">{describeWhen(row)}</td>
-                <td className="px-3 py-2 text-xs">{describeLastRun(row)}</td>
-                <td className="px-3 py-2 text-xs">
-                  {row.nextDueAt ? new Date(row.nextDueAt).toLocaleString() : "—"}
-                </td>
-                <td className="px-3 py-2">
-                  {pendingDeleteId === row.id ? (
-                    <div className="flex items-center justify-end gap-2">
-                      <span className="text-xs text-muted-foreground">{tc.deleteConfirm(row.name)}</span>
-                      <Button variant="destructive" size="sm" disabled={busyId === row.id} onClick={() => handleDelete(row.id)}>
-                        {t.settings.confirm}
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => setPendingDeleteId(null)}>
-                        {t.settings.cancel}
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex justify-end gap-2">
-                      {canRun && row.kind !== "webhook" && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={busyId === row.id || !row.enabled || !connection.isActive}
-                          onClick={() => handleRun(row.id)}
-                        >
-                          {queuedId === row.id ? (
-                            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                          ) : (
-                            <RefreshCw className="mr-1 h-3 w-3" />
-                          )}
-                          {queuedId === row.id ? tc.runQueued : tc.runNow}
+              <Fragment key={row.id}>
+                <tr className={row.enabled ? "border-b last:border-0" : "border-b text-muted-foreground last:border-0"}>
+                  <td className="px-3 py-2">
+                    {row.name}
+                    {!row.enabled && <span className="ml-2 text-xs">({tc.disabled})</span>}
+                  </td>
+                  <td className="px-3 py-2">{tc.kinds[row.kind] ?? row.kind}</td>
+                  <td className="px-3 py-2 text-xs">{describeWhat(row)}</td>
+                  <td className="px-3 py-2 text-xs">{describeWhen(row)}</td>
+                  <td className="px-3 py-2 text-xs">{describeLastRun(row)}</td>
+                  <td className="px-3 py-2 text-xs">
+                    {row.nextDueAt ? new Date(row.nextDueAt).toLocaleString() : "—"}
+                  </td>
+                  <td className="px-3 py-2">
+                    {pendingDeleteId === row.id ? (
+                      <div className="flex items-center justify-end gap-2">
+                        <span className="text-xs text-muted-foreground">{tc.deleteConfirm(row.name)}</span>
+                        <Button variant="destructive" size="sm" disabled={busyId === row.id} onClick={() => handleDelete(row.id)}>
+                          {t.settings.confirm}
                         </Button>
-                      )}
-                      {canWrite && (
-                        <>
-                          <Button variant="outline" size="sm" disabled={busyId === row.id} onClick={() => handleToggle(row)}>
-                            {row.enabled ? tc.disable : tc.enable}
+                        <Button variant="outline" size="sm" onClick={() => setPendingDeleteId(null)}>
+                          {t.settings.cancel}
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex justify-end gap-2">
+                        {canRun && row.kind !== "webhook" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={busyId === row.id || !row.enabled || !connection.isActive}
+                            onClick={() => handleRun(row.id)}
+                          >
+                            {queuedId === row.id ? (
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                            ) : (
+                              <RefreshCw className="mr-1 h-3 w-3" />
+                            )}
+                            {queuedId === row.id ? tc.runQueued : tc.runNow}
                           </Button>
-                          <Button variant="outline" size="sm" onClick={() => setFormMode(row.id)}>
-                            {tc.edit}
+                        )}
+                        {row.kind === "webhook" && (
+                          <Button
+                            variant={setupOpenId === row.id ? "secondary" : "outline"}
+                            size="sm"
+                            onClick={() => setSetupOpenId((current) => (current === row.id ? null : row.id))}
+                          >
+                            {setupOpenId === row.id ? tc.closeSetUp : tc.setUp}
                           </Button>
-                          <Button variant="destructive" size="sm" onClick={() => setPendingDeleteId(row.id)}>
-                            {tc.delete}
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </td>
-              </tr>
+                        )}
+                        {canWrite && (
+                          <>
+                            {/* Not offered to switch a webhook collection off: that does not
+                                stop webhooks, it widens what each one fetches (#406). The
+                                receive switch under Set up is the off switch. A row already
+                                off can still be switched back on. */}
+                            {(row.kind !== "webhook" || !row.enabled) && (
+                              <Button variant="outline" size="sm" disabled={busyId === row.id} onClick={() => handleToggle(row)}>
+                                {row.enabled ? tc.disable : tc.enable}
+                              </Button>
+                            )}
+                            <Button variant="outline" size="sm" onClick={() => setFormMode(row.id)}>
+                              {tc.edit}
+                            </Button>
+                            <Button variant="destructive" size="sm" onClick={() => setPendingDeleteId(row.id)}>
+                              {tc.delete}
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+                {row.kind === "webhook" && setupOpenId === row.id && (
+                  <tr className="border-b last:border-0">
+                    <td className="px-3 pb-3" colSpan={7}>
+                      <WebhookSetupPanel
+                        connection={connection}
+                        canWrite={canWrite}
+                        onConnectionChanged={onConnectionChanged}
+                      />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -425,6 +461,7 @@ function CollectionForm({ connectionId, collection, onSaved, onCancel }: Collect
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
         {tf.enabled}
       </label>
+      {kind === "webhook" && <p className="text-xs text-muted-foreground">{tf.enabledWebhookHelp}</p>}
 
       {usesSections && (
         <fieldset className="space-y-2 text-sm">

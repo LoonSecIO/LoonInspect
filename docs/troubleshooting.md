@@ -7,7 +7,7 @@ Every step below uses only what a fresh operator has: the app, its API,
 it was filed.
 
 Each path is ordered — *check this; if X, then that* — and ends in a fix or in a **named,
-reportable state**. When you reach a reportable state, §7 says what to include.
+reportable state**. When you reach a reportable state, §8 says what to include.
 
 ## 0. The four things you can read
 
@@ -451,7 +451,85 @@ stays missing for more than a day, or a press of **Sync now** writes nothing to 
 container log while `/api/health` answers. Report what the *Synced* column shows, the
 output of `docker compose logs app --since 1h`, and the build from Settings › Support.
 
-## 7. When a path ends in "report"
+## 7. "Jamf Pro webhooks are not arriving"
+
+A webhook is Jamf Pro calling LoonInspect — `POST /webhooks/jamf/<id>` with the header
+from **Set up** on the connection's Webhook collection ([`jamf-webhooks.md`](jamf-webhooks.md)
+sets it up). A refused webhook is refused before any run exists, so the container log is
+where it speaks: a `request` line for every callback that reached the app and, beside a
+refused one, a line saying why. Every refusal answers Jamf Pro with the same `401`, on
+purpose — a different answer per cause would tell a stranger which connection ids are
+real — so the log is the only place that says which cause it was.
+
+Make one happen first, so there is something to read: `sudo jamf recon` on a test Mac fires
+`ComputerInventoryCompleted`. Then:
+
+```bash
+docker compose logs app --since 30m | grep -E 'webhooks/jamf|jamf webhook'
+```
+
+1. **Nothing at all** — no `"path": "/webhooks/jamf/…"` request line → the callback never
+   reached this container. Check, in order:
+   - the Jamf webhook's URL is the address **Set up** shows, character for character;
+   - a Jamf Cloud instance calls from the internet, so the address must be a public name or
+     address — not `localhost`, not a private address, not a laptop (the panel warns when
+     it sees one);
+   - a firewall or security group in front admits the addresses Jamf Cloud calls out from
+     ([Permitting Inbound/Outbound Traffic with Jamf Cloud](https://docs.jamf.com/technical-articles/Permitting_InboundOutbound_Traffic_with_Jamf_Cloud.html));
+   - the certificate: whether Jamf Pro accepts one it does not trust was not tested
+     ([`jamf-webhooks.md`](jamf-webhooks.md) §1), so try a certificate from a public CA;
+   - in Jamf Pro, the webhook is enabled and its event is `ComputerInventoryCompleted` or
+     `ComputerAdded`.
+
+   All of those right, and a `sudo jamf recon` still leaves no line → reportable state **L**.
+2. **`"status_code": 401`** → refused for its credentials. The line beside it begins
+   `rejected jamf webhook:`, says what to check in words, and carries a `reason`:
+   - `no_header` — the request carried no `X-API-Key`. Its `presented` field says what it
+     carried instead: `none` (the webhook's Authentication Type is *None*, or its header
+     object names some other header), or an `authorization-…` scheme LoonInspect could not
+     read. In Jamf Pro, set Authentication
+     Type to **Header Authentication** and paste the header from Set up exactly as shown:
+     `{"X-API-Key":"…"}`.
+   - `wrong_secret` — the header arrived and is not this connection's secret. It was
+     rotated after Jamf Pro's copy was pasted, or it came from another connection's Set up.
+     Paste the current header into each Jamf webhook; if nobody holds it, **Rotate** and
+     paste the new one ([`jamf-webhooks.md`](jamf-webhooks.md) §6).
+   - `receiving_off` — **Turn on** under Set up.
+   - `no_secret_set` — **Generate secret** under Set up, then paste its header into each
+     Jamf webhook.
+   - `connection_inactive` — Settings › Connections shows the connection inactive, and an
+     inactive connection refuses every webhook.
+   - `unknown_connection` — the id at the end of the address is no connection here: copy
+     the address from Set up again. The endpoint is public, so a stranger's scanner earns
+     this line too; a burst of it from an address that is not Jamf's is not your webhook.
+
+   A `reason` that names a state the connection is not in → reportable state **L**.
+3. **`"status_code": 422`**, beside `refused jamf webhook: the body is not a JSON object` →
+   the header was right and the body was not JSON. In Jamf Pro, set the webhook's
+   **Content Type** to **JSON**.
+4. **`"status_code": 200`** → the webhook arrived and was accepted.
+   - `jamf webhook event does not warrant a fetch; dropped by design`, with an `event` →
+     an event LoonInspect does not act on; `ComputerCheckIn` above all (#76). Point the
+     webhook at `ComputerInventoryCompleted` or `ComputerAdded`.
+   - `jamf webhook carried no computer id; nothing to ingest` → the event named no
+     computer, so there was nothing to read.
+   - neither → it made a webhook run. **Set up** shows *Last webhook run* once the panel is
+     opened again, and `GET /api/runs?trigger=webhook&pageSize=5` lists it; that run's
+     `jobId` leads to its log (§0).
+5. **`"status_code": 502`**, beside `jamf webhook accepted, but reading that computer from
+   Jamf Pro failed` → the webhook was right; the read that follows it was not. The
+   traceback's last line names why: `403` is the connection's API Role, which needs
+   `Read Computers` ([README §3](../README.md)); `404` is a computer deleted since the event;
+   a timeout or connection error is Jamf Pro unreachable from this container. The webhook
+   run is recorded as failed with the same error.
+
+**L.** Callbacks that Jamf Pro sends never produce a request line while the address, the
+network and the webhook's event are right; or a refusal's `reason` names a state the
+connection is not in. Report the `rejected jamf webhook` or `request` lines (they carry no
+secret), the webhook's settings in Jamf Pro — never the header's value — the build from
+Settings › Support, and your Jamf Pro version.
+
+## 8. When a path ends in "report"
 
 Include: which path and which step you reached; the run's `jobID` and the panel's lines
 (or `GET /api/runs/{jobId}/log`); `docker compose logs app --since 30m`; the build,
@@ -459,7 +537,7 @@ from Settings › Support; and, for a delivery problem, the destination's `id`, 
 and counts. An issue with those four things is answerable; one without them starts with a
 request for them.
 
-## 8. What this document deliberately does not contain
+## 9. What this document deliberately does not contain
 
 A step that would need the source code. Where a symptom could not be walked to a fix with
 the surfaces above, the missing surface is filed as an issue against the product

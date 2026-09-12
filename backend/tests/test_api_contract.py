@@ -65,6 +65,15 @@ def test_search_is_q_wherever_a_list_searches(path: str) -> None:
     assert "q" in parameters and "search" not in parameters, sorted(parameters)
 
 
+def test_runs_narrow_by_a_closed_set_of_triggers() -> None:
+    """The webhook setup panel asks `/api/runs?trigger=webhook` for the last webhook run
+    (#406). The parameter takes the three triggers a run can have and nothing else, so a
+    typo is a 422 rather than an empty list that reads as "no webhook ever arrived"."""
+    schema = _query_parameters(_spec(), "/api/runs")["trigger"]["schema"]
+    options = schema.get("anyOf", [schema])
+    assert [set(option["enum"]) for option in options if "enum" in option] == [{"sweep", "manual", "webhook"}]
+
+
 def test_the_policy_routes_carry_a_schema() -> None:
     spec = _spec()
     for method in ("get", "put"):
