@@ -306,7 +306,11 @@ and you can say so plainly. Browsers, and anything else that validates chains, n
 **Behind a reverse proxy**, set `FORWARDED_ALLOW_IPS` to the proxy's address. Otherwise
 the audit log records the proxy's IP for every event instead of the real client's, and
 `X-Forwarded-For` is left untrusted by default because anything that can reach the port
-could otherwise forge it.
+could otherwise forge it. Set `KEEP_ALIVE_TIMEOUT_SECONDS` above the proxy's idle timeout
+too — an AWS ALB's defaults to 60 seconds, and the hosted pods' load balancer runs 130, so
+they set 135. Leave it at or below and the proxy answers an occasional blank `502` from a
+healthy app, having reused a connection the app already closed
+([docs/troubleshooting.md](docs/troubleshooting.md#a-proxy-in-front-answers-for-itself) §0).
 
 **One thing to watch:** session cookies are marked `Secure` by default, and browsers
 discard `Secure` cookies over plain HTTP on any hostname other than `localhost`. If you
