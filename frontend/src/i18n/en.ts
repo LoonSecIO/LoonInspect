@@ -41,6 +41,23 @@ export const en = {
       previewHelp:
         "Renders the literal next payload from this instance's live data, through the same code path the daily exchange uses.",
       previewButton: "Show the payload",
+      // Send now (#408). The result replaces the preview in the same box, and its lead
+      // sentence says which one is on screen: the future, or the row that just left.
+      sendButton: "Send now",
+      sendHelp:
+        "Send now runs this organization's exchange immediately, through the same code path as the daily one, and shows the row it wrote to the share log in place of the preview. The daily exchange keeps its own schedule.",
+      sending: "Sending…",
+      sendingHelp:
+        "If the collector does not answer, the exchange retries for about 80 seconds before it records a failure.",
+      sendBlockedEnv:
+        "Nothing can be sent while COMMUNITY_SHARING=false is set — the notice at the top of this page says where.",
+      sendBlockedOff: "Sharing is off, so there is nothing to send. Choose a tier under Participation first.",
+      sendRequestFailed:
+        "The exchange could not be started. Reload the page and try again; if it keeps failing, docker compose logs app says why.",
+      resultSent: (when: string, host: string) =>
+        `Sent to ${host} at ${when}. This is the row the exchange wrote to the share log: the payload below is what left, not a preview.`,
+      resultFailed: (when: string, host: string) =>
+        `Failed at ${when} — ${host} accepted nothing. This is the row the exchange wrote to the share log; the payload below is what it tried to send.`,
       identityHeading: "Submission identity",
       identityHelp:
         "The random ID that lets LoonSec replace this tenant's previous snapshot instead of counting it twice. Resetting it severs the link to everything sent before.",
