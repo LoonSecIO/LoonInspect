@@ -25,6 +25,7 @@ dev = [
     # of the suite is async now, including the RUN_DB_TESTS files that drive a real
     # Postgres session.
     "pytest-asyncio>=1.0",
+    "pyyaml>=6.0.3",
 ]
 
 [tool.pytest.ini_options]

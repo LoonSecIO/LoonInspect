@@ -1,0 +1,226 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  The shared front door for hosted LoonInspect pods in one region: an
+  internet-facing ALB named pods-ingress, the wildcard certificate for
+  *.<pods zone>, the single wildcard alias record that sends every pod name to
+  this balancer, and the ECS cluster the pods run in. One of these per region,
+  but a zone holds one wildcard record, so as written this is the first
+  region's; a pod is a host-header rule on the HTTPS listener, added by the
+  pod's own stack, never a certificate or a record of its own. Deployed by the
+  pod deploy workflow, never by hand except in a rehearsal.
+
+# WHY ONE CERTIFICATE AND ONE RECORD
+# ----------------------------------
+# The pods naming ruling (2026-08-28) makes pod names region-less — <pod>.pods.<zone>
+# — so there is exactly one certificate name, *.pods.<zone>, and exactly one wildcard
+# alias record, both owned here. A pod never gets a certificate: Certificate
+# Transparency would publish the customer list one name at a time, and the balancer's
+# certificate quota would become the pod quota. A pod never gets a record either:
+# the wildcard already answers for it, so the DNS zone stays non-enumerable. What a
+# pod does get is a host-header rule on HttpsListener, from its own stack, pointing
+# at its own target group.
+#
+# That is the first region's shape, and the only region there is. ACM is regional, so
+# a second region issues the same wildcard name again in its own copy of this stack —
+# but the zone's one wildcard record already points here, so that copy, as written,
+# fails creating WildcardRecord. By the same ruling, a second region's pods each get a
+# record aimed at their own region's balancer (AlbCanonicalHostedZoneId is for it), and
+# that copy leaves the wildcard out. Nobody has built that; no second region exists.
+#
+# THE 404 DEFAULT
+# ---------------
+# A name inside the wildcard that no pod claims still resolves and still completes
+# a TLS handshake — the record and the certificate are wildcards. The listener's
+# default action answers it with a plain-text 404 rather than forwarding to any pod,
+# so a mistyped or retired pod name can never land on someone else's instance. The
+# body is one sentence in the operator's vocabulary; it is the only thing a stranger
+# ever sees from this stack.
+#
+# WHY 120 SECONDS
+# ---------------
+# The ALB idle timeout floor is 120 s because POST /api/system/ai/test and
+# /api/system/ai/models wait up to 120 s synchronously for an AI host to answer
+# (backend/app/ai/adapters.py, DEFAULT_TIMEOUT_SECONDS). A shorter idle timeout turns
+# a slow model into a 504 from the balancer, with the app still working. 120 is the
+# floor, not a margin: at exactly 120, a host that never answers reaches the operator
+# as the balancer's 504 a moment before the app's own timeout reply would have. The
+# app's keep-alive must in turn exceed whatever is set here (KEEP_ALIVE_TIMEOUT_SECONDS,
+# #399, set by the pod's compute stack), or the balancer reuses a connection the app
+# has already closed — so raising this means raising that with it.
+#
+# HOW THIS STACK IS DEPLOYED
+# --------------------------
+# By the pod deploy workflow, under the repository's prod environment, with the
+# outputs below handed to each pod's stacks as parameters — the reason they are
+# plain outputs and not Exports, which would make every pod a dependency of this
+# stack's next update. It is not deployed by hand except in a rehearsal of that
+# workflow. pod.template.yml (the runnability proof) does not use it.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: The VPC the balancer and the pods share.
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: >-
+      Public subnets in at least two Availability Zones — an internet-facing
+      application load balancer refuses fewer.
+
+  HostedZoneId:
+    Type: String
+    AllowedPattern: ^Z[A-Z0-9]{4,31}$
+    Description: >-
+      The Route 53 hosted zone that holds PodsZoneName. No default on purpose:
+      a zone id is an account-specific fact and belongs in the deploy
+      workflow's parameters, never in this file. CloudFormation writes the
+      certificate's validation CNAME and the wildcard alias record here.
+
+  PodsZoneName:
+    Type: String
+    Default: pods.next.loonsec.io
+    AllowedPattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$
+    Description: >-
+      The zone every pod lives under: the certificate is *.<this>, the record
+      is *.<this>, and a pod is <pod>.<this>. Lowercase, no trailing dot.
+
+  IngressCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    AllowedPattern: ^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2}$
+    Description: >-
+      Who may reach ports 443 and 80. The default is the internet, which is
+      what a hosted pod is for; a rehearsal narrows it to one address.
+
+  IdleTimeoutSeconds:
+    Type: Number
+    Default: 120
+    MinValue: 120
+    MaxValue: 4000
+    Description: >-
+      The balancer's idle timeout. The floor is 120 because the AI endpoints
+      wait that long synchronously — see the header. The pods' keep-alive must
+      exceed whatever is set here.
+
+Resources:
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "pods-ingress: 443 and 80 from IngressCidr, nothing else in"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref IngressCidr
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref IngressCidr
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: pods-ingress
+      Type: application
+      Scheme: internet-facing
+      IpAddressType: ipv4
+      Subnets: !Ref SubnetIds
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: !Ref IdleTimeoutSeconds
+        # A header whose name is not letters, digits and hyphens (X_Forwarded_For,
+        # say) is dropped rather than passed to a pod: CGI-style servers read _ and -
+        # as one character, and the app trusts X-Forwarded-* from this balancer.
+        - Key: routing.http.drop_invalid_header_fields.enabled
+          Value: "true"
+
+  # DNS-validated in the zone named above: CloudFormation writes the validation
+  # CNAME itself and waits for issuance, so a first deploy takes a few minutes
+  # and needs no hand in the console.
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub "*.${PodsZoneName}"
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Sub "*.${PodsZoneName}"
+          HostedZoneId: !Ref HostedZoneId
+
+  # Port 80 exists to say "not here": a permanent redirect to the same host, path
+  # and query on 443. It never forwards.
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: "443"
+            Host: "#{host}"
+            Path: "/#{path}"
+            Query: "#{query}"
+            StatusCode: HTTP_301
+
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      Certificates:
+        - CertificateArn: !Ref Certificate
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: "404"
+            ContentType: text/plain
+            MessageBody: No pod answers at this name.
+
+  # The one record. Route 53 stores the name as \052.<zone>; that is the wildcard,
+  # not a defect.
+  WildcardRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "*.${PodsZoneName}"
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt LoadBalancer.DNSName
+        HostedZoneId: !GetAtt LoadBalancer.CanonicalHostedZoneID
+        EvaluateTargetHealth: false
+
+  # Free, and shared: every pod in the region is a service in this cluster.
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: pods
+
+Outputs:
+  VpcId:
+    Description: The VPC the pods must be placed in to sit behind this balancer.
+    Value: !Ref VpcId
+  HttpsListenerArn:
+    Description: Where a pod's stack attaches its host-header rule.
+    Value: !Ref HttpsListener
+  AlbSecurityGroupId:
+    Description: The source a pod's task security group admits on its app port.
+    Value: !Ref AlbSecurityGroup
+  ClusterName:
+    Description: The ECS cluster a pod's service runs in.
+    Value: !Ref Cluster
+  AlbDnsName:
+    Description: The balancer's own DNS name, for a rehearsal's curl before DNS.
+    Value: !GetAtt LoadBalancer.DNSName
+  AlbCanonicalHostedZoneId:
+    Description: The balancer's alias zone, for any per-pod record a second region ever needs.
+    Value: !GetAtt LoadBalancer.CanonicalHostedZoneID
