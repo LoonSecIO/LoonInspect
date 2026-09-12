@@ -8,11 +8,12 @@ None of that exercises the path an operator actually walks: set the secret over 
 have it survive `EncryptedString` into Postgres and back, and have Jamf's callback
 accepted with it.
 
-That round trip is what this file pins, together with the property the form in
-`frontend/src/features/mdm/ConnectionForm.tsx` depends on: the value goes in and never
-comes back out. The form can only be write-only if the API is, so `has_webhook_secret`
-had better be the only trace of it in any response — a "set" indicator that could be
-turned back into the secret would make the whole write-only posture theatre.
+That round trip is what this file pins, together with the property the setup panel in
+`frontend/src/features/mdm/WebhookSetupPanel.tsx` depends on: the value goes in and never
+comes back out. The panel shows the header once from the browser's own copy (#406), and
+that is only honest if the API is write-only, so `has_webhook_secret` had better be the
+only trace of it in any response — a "set" indicator that could be turned back into the
+secret would make the whole write-only posture theatre.
 
 Needs a real Postgres like every session test; gated on RUN_DB_TESTS. See
 test_tenancy_sweep.py for the local invocation pattern.

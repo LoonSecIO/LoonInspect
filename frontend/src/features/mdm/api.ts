@@ -70,10 +70,12 @@ export function syncConnection(id: number): Promise<MdmSyncTriggerResult> {
 
 /** The first page of recent runs, newest first. The endpoint answers in the shared list
  *  envelope (#137); this returns its `items`, because every caller wants the rows and
- *  none of them pages. `pageSize` is capped at 200 server-side. */
-export function listRuns(connectionId?: number, pageSize = 25): Promise<Run[]> {
+ *  none of them pages. `pageSize` is capped at 200 server-side. `trigger` narrows to one
+ *  kind of start — the webhook setup panel's "last webhook run" asks for one webhook run. */
+export function listRuns(connectionId?: number, pageSize = 25, trigger?: Run["trigger"]): Promise<Run[]> {
   const query = new URLSearchParams({ pageSize: String(pageSize) });
   if (connectionId !== undefined) query.set("connectionId", String(connectionId));
+  if (trigger !== undefined) query.set("trigger", trigger);
   return apiRequest<RunListResponse>(`/runs?${query.toString()}`).then((response) => response.items);
 }
 

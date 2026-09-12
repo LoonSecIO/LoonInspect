@@ -8,6 +8,7 @@ path, which is the pair the contract asks for.
 from __future__ import annotations
 
 import uuid
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -71,16 +72,23 @@ async def list_runs(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=200, alias="pageSize"),
     db: AsyncSession = Depends(get_db),
+    trigger: Annotated[Literal["sweep", "manual", "webhook"] | None, Query()] = None,
 ) -> RunListResponse:
     """Recent runs, newest first, paged by `page` and `pageSize` (at most 200) in the
     envelope every list shares (#137). For the last *full* sweep per connection ask
     `/api/runs/summary` instead: a webhook mints a run row per Jamf event, and on a busy
-    pod that run is past any page a client would ask for."""
+    pod that run is past any page a client would ask for.
+
+    `trigger` narrows to one kind of start. `trigger=webhook&pageSize=1` is the webhook
+    setup panel's "last webhook run" (#406): the proof, on the page where webhooks are
+    set up, that Jamf Pro's callbacks are arriving and being read."""
     conditions = []
     if connection_id is not None:
         conditions.append(Run.mdm_connection_id == connection_id)
     if status is not None:
         conditions.append(Run.status == status)
+    if trigger is not None:
+        conditions.append(Run.trigger == trigger)
     total = (await db.execute(select(func.count()).select_from(Run).where(*conditions))).scalar_one()
     query = select(Run).where(*conditions).order_by(Run.started_at.desc()).offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(query)
