@@ -3,8 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-import time
-from collections.abc import AsyncIterator, Coroutine, Iterable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -21,6 +20,7 @@ from app.mdm.jamf.contract import (
     jamf_section_param,
     parse_jamf_datetime,
 )
+from app.mdm.jamf.sign_in import HeldSignIn, TokenState, clock
 from app.schemas.payload import (
     MdmProvider,
     NormalizedApp,
@@ -64,6 +64,11 @@ _TOKEN_RESPONSE_ECHOED = ("token_type", "expires_in", "scope")
 # purpose: the lifetime itself is whatever the token response says, never a number
 # this code believes. See _token_lifetime.
 _TOKEN_REFRESH_MARGIN_SECONDS = 30.0
+
+# What a request on a connection the server has already closed raises: the pooled
+# connection a held sign-in lends (#412) can be closed by Jamf while it sits idle. Sent
+# once more on a new connection; see JamfClient._send_once_more_if_dropped.
+_DROPPED_CONNECTION = (httpx.RemoteProtocolError, httpx.ReadError, httpx.WriteError)
 
 _T = TypeVar("_T")
 
@@ -237,22 +242,23 @@ class JamfClient:
         client_id: str,
         client_secret: str,
         user_agent_override: str | None = None,
+        held: HeldSignIn | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._client_id = client_id
         self._client_secret = client_secret
         self._user_agent_override = user_agent_override
-        self._token: str | None = None
-        # Monotonic, not wall clock: a sweep must not re-authenticate early (or, worse,
-        # late) because NTP stepped the clock under it. None means the token response
-        # named no lifetime, and only a 401 will tell us the token is gone.
-        self._token_expires_at: float | None = None
-        # One expiry, one token request. Without this every coroutine in a wave that
-        # meets an expired token POSTs for its own — _CONCURRENCY tokens issued where
-        # one was needed, all but one discarded, against a tenant that rate-limits.
-        # It was never a correctness bug: _authenticate returns into a local and the
-        # retry sends that, so the redundant tokens cost requests, not sweeps.
-        self._auth_lock = asyncio.Lock()
+        # The connection's held sign-in (#412), or None under No cache, where this run
+        # signs in for itself on its own connection, as every run did before.
+        self._held = held
+        # The token, when to stop sending it, and the lock that makes one expiry cost one
+        # token request (#221). Without the lock every coroutine in a wave that meets an
+        # expired token POSTs for its own — _CONCURRENCY tokens issued where one was
+        # needed, against a tenant that rate-limits. Borrowed from the held sign-in when
+        # there is one, so every run and webhook of the connection shares one token.
+        self._tokens = held.tokens if held is not None else TokenState()
+        # Per run, always — never borrowed: the run copies these onto its own row, and a
+        # client shared across runs would mix one sweep's throttling into a webhook's.
         self.throttle = ThrottleCounters()
         self.adaptive = AdaptiveConcurrency()
 
@@ -283,36 +289,54 @@ class JamfClient:
     async def http(self) -> AsyncIterator[httpx.AsyncClient]:
         """One HTTP client for one run. Every fetch below takes it as an argument so a
         sweep reuses connections and a token across thousands of requests instead of
-        opening a client per call."""
-        async with httpx.AsyncClient(timeout=30) as client:
-            yield client
+        opening a client per call. Under a cache mode it is the connection's pooled
+        client, lent for the run (#412), so a webhook that follows another inside the
+        keep-alive skips the TLS handshake too."""
+        if self._held is not None:
+            async with self._held.lease() as client:
+                yield client
+        else:
+            async with httpx.AsyncClient(timeout=30) as client:
+                yield client
+
+    async def sign_in(self) -> None:
+        """Make sure a live token is held, requesting one only if it is not. The
+        Perpetual cache renewal's whole job (#412); a run never needs it, since `_get`
+        signs in as it goes."""
+        async with self.http() as client:
+            await self._authenticate(client)
 
     def _live_token(self) -> str | None:
-        """The cached token, if it is still worth sending."""
-        if self._token is None:
+        """The held token, if it is still worth sending. Monotonic, not wall clock: a
+        sweep must not re-authenticate early (or, worse, late) because NTP stepped the
+        clock under it."""
+        tokens = self._tokens
+        if tokens.token is None:
             return None
-        if self._token_expires_at is not None and time.monotonic() >= self._token_expires_at:
+        if tokens.expires_at is not None and clock() >= tokens.expires_at:
             return None
-        return self._token
+        return tokens.token
 
     def _forget(self, token: str) -> None:
-        """Drop the cached token, but only if it is still the one that just failed.
+        """Drop the held token, but only if it is still the one that just failed.
 
         `self._token = None` was the old line, and with a wave in flight it could wipe
         a peer's freshly issued token: one coroutine refreshes, another's 401 — carrying
         the token that already expired — lands a moment later and clears the new one.
-        Comparing first makes a late 401 harmless.
+        Comparing first makes a late 401 harmless — and matters more now that the token
+        may be shared by every run of the connection (#412).
         """
-        if self._token == token:
-            self._token = None
-            self._token_expires_at = None
+        tokens = self._tokens
+        if tokens.token == token:
+            tokens.token = None
+            tokens.expires_at = None
 
     async def _authenticate(self, client: httpx.AsyncClient) -> str:
         token = self._live_token()
         if token:
             return token
 
-        async with self._auth_lock:
+        async with self._tokens.lock:
             # Re-checking here is the point of the lock, not belt and braces: whoever
             # waited almost always waited for a peer's refresh, and POSTing anyway
             # after acquiring it would issue exactly the tokens the lock exists to
@@ -321,22 +345,37 @@ class JamfClient:
             if token:
                 return token
 
-            response = await client.post(
-                f"{self._base_url}/api/oauth/token",
-                data={
-                    "grant_type": "client_credentials",
-                    "client_id": self._client_id,
-                    "client_secret": self._client_secret,
-                },
-                headers={"User-Agent": self._user_agent("auth")},
+            response = await self._send_once_more_if_dropped(
+                lambda: client.post(
+                    f"{self._base_url}/api/oauth/token",
+                    data={
+                        "grant_type": "client_credentials",
+                        "client_id": self._client_id,
+                        "client_secret": self._client_secret,
+                    },
+                    headers={"User-Agent": self._user_agent("auth")},
+                ),
+                path="/api/oauth/token",
             )
             response.raise_for_status()
             body = response.json()
             token = body["access_token"]
             lifetime = _token_lifetime(body)
-            self._token_expires_at = None if lifetime is None else time.monotonic() + lifetime
-            self._token = token
+            self._tokens.expires_at = None if lifetime is None else clock() + lifetime
+            self._tokens.token = token
             return token
+
+    async def _send_once_more_if_dropped(self, send: Callable[[], Awaitable[httpx.Response]], *, path: str) -> httpx.Response:
+        """Send, and if the connection turns out to have been closed under us, send once
+        more on a new one. A pooled connection Jamf closed while it sat idle surfaces as
+        a protocol or read error on the next request (#412); the pool's keep-alive
+        expiry is set below Jamf's own, so this is the rare race, and one retry is its
+        whole cost. A second failure is a real one and propagates."""
+        try:
+            return await send()
+        except _DROPPED_CONNECTION:
+            logger.info("jamf closed a kept-alive connection; sending again on a new one", extra={"path": path})
+            return await send()
 
     async def _get(self, client: httpx.AsyncClient, path: str, *, comment: str, params: dict | None = None) -> httpx.Response:
         """Authenticated GET with one retry on 401 and a bounded retry on transients.
@@ -357,14 +396,17 @@ class JamfClient:
         transient_retries = 0
         while True:
             token = await self._authenticate(client)
-            response = await client.get(
-                f"{self._base_url}{path}",
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Accept": "application/json",
-                    "User-Agent": self._user_agent(comment),
-                },
-                params=params,
+            response = await self._send_once_more_if_dropped(
+                lambda token=token: client.get(
+                    f"{self._base_url}{path}",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Accept": "application/json",
+                        "User-Agent": self._user_agent(comment),
+                    },
+                    params=params,
+                ),
+                path=path,
             )
             if response.status_code == 401 and not reauthenticated:
                 self._forget(token)

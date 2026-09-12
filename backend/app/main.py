@@ -57,8 +57,10 @@ from app.core.sharing import exchange_due, run_exchange
 from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
 from app.core.vuln_library import refresh_from_db
 from app.mdm.collections import tick_tenant
+from app.mdm.factory import keep_sign_in
+from app.mdm.jamf.sign_in import MODE_NO_CACHE, MODE_PERPETUAL, SIGN_INS
 from app.mdm.patch.jamf_catalog import JamfPatchCatalogUnconfigured, sync_catalog
-from app.models.schema import Tenant, UserSession
+from app.models.schema import MdmConnection, Tenant, UserSession
 
 # Before anything else in the process emits a line, so migration output and startup
 # failures are formatted the same way as request logs rather than escaping as plain
@@ -100,6 +102,40 @@ async def tenant_job(tenant_id: uuid.UUID) -> AsyncGenerator[AsyncSession, None]
     finally:
         reset_tenant_id(tenant_token)
         reset_actor(actor_token)
+
+
+async def sign_in_tick() -> None:
+    """Keep each Jamf connection's held sign-in in step with its row (#412).
+
+    Starts the Perpetual cache renewals — at startup, and within a minute of a connection
+    being switched to it, so its first webhook finds a token ready — and retires what a
+    connection no longer needs: deleted, deactivated, or switched to No cache. Cache and
+    hold asks nothing of this tick; a run builds that sign-in when it first needs one.
+    The API retires a held sign-in the moment its connection's settings change; this is
+    the sweep that catches everything else, and the one that starts renewals at boot.
+    """
+    for tenant_id in await operational_tenant_ids():
+        keep: set[int] = set()
+        async with tenant_job(tenant_id) as db:
+            connections = (await db.execute(select(MdmConnection).where(MdmConnection.is_active.is_(True)))).scalars().all()
+            for connection in connections:
+                if connection.token_cache_mode == MODE_NO_CACHE:
+                    continue
+                keep.add(connection.id)
+                if connection.token_cache_mode != MODE_PERPETUAL:
+                    continue
+                try:
+                    keep_sign_in(connection)
+                except Exception:
+                    # Credentials this container cannot read are every run's problem too,
+                    # and the run log says so; the renewal simply has nothing to renew.
+                    logger.warning(
+                        "perpetual cache could not hold this connection's Jamf Pro sign-in; "
+                        "its stored credentials could not be read",
+                        extra={"tenant_id": str(tenant_id), "connection_id": connection.id},
+                        exc_info=True,
+                    )
+        await SIGN_INS.retire_absent(str(tenant_id), keep)
 
 
 async def collections_tick() -> None:
@@ -355,6 +391,15 @@ async def lifespan(app: FastAPI):
             replace_existing=True,
         )
         scheduler.add_job(
+            sign_in_tick,
+            IntervalTrigger(minutes=1),
+            id="sign_in_tick",
+            # Also once at startup, so Perpetual cache connections have a token before the
+            # first webhook after a restart rather than a minute after it.
+            next_run_time=datetime.now(UTC),
+            replace_existing=True,
+        )
+        scheduler.add_job(
             hourly_jamf_patch_sync,
             CronTrigger(minute=0),
             id="hourly_jamf_patch_sync",
@@ -407,6 +452,10 @@ async def lifespan(app: FastAPI):
     if scheduler.running:
         scheduler.shutdown()
         logger.info("scheduler stopped")
+
+    # Every Perpetual cache renewal stopped and every pooled connection to Jamf closed,
+    # rather than left for the event loop to find mid-teardown (#412).
+    await SIGN_INS.close_all()
 
     logger.info("shutdown complete")
 

@@ -3,13 +3,18 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 from app.core.egress import validate_mdm_base_url
 from app.schemas.payload import MdmProvider
+
+# What a connection keeps of its Jamf Pro sign-in between runs (#412). The three, and what
+# each costs Jamf, are in app.mdm.jamf.sign_in; the database holds the column to the same
+# three with a check constraint.
+TokenCacheMode = Literal["no_cache", "cache_and_hold", "perpetual"]
 
 # The destination this server will send a Jamf credential to, checked wherever it is
 # *set* rather than in the routes: the invariant belongs to the row, because the sweep
@@ -64,6 +69,7 @@ class MdmConnectionCreate(BaseModel):
     # match the slider — the API cap is 2000, but a full-section page that size is an
     # enormous body for no latency win.
     sweep_page_size: int | None = Field(default=None, ge=100, le=1000)
+    token_cache_mode: TokenCacheMode = "cache_and_hold"
     capability_devices: bool = True
     capability_users: bool = False
     capability_webhooks: bool = False
@@ -107,6 +113,7 @@ class MdmConnectionUpdate(BaseModel):
     loonsecio_data_sharing_enabled: bool | None = None
     user_agent_override: str | None = None
     sweep_page_size: int | None = Field(default=None, ge=100, le=1000)
+    token_cache_mode: TokenCacheMode | None = None
     capability_devices: bool | None = None
     capability_users: bool | None = None
     capability_webhooks: bool | None = None
@@ -173,6 +180,7 @@ class MdmConnectionOut(BaseModel):
     has_loonsecio_license_key: bool
     user_agent_override: str | None
     sweep_page_size: int | None
+    token_cache_mode: TokenCacheMode
     capability_devices: bool
     capability_users: bool
     capability_webhooks: bool

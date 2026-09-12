@@ -34,6 +34,7 @@ from app.core.tenancy import reset_tenant_id, set_tenant_id
 from app.mdm.collections import ensure_default_collections
 from app.mdm.credentials import CREDENTIAL_SCHEMAS, credential_fingerprint, fingerprint_field, secret_fields
 from app.mdm.jamf.client import JamfClient
+from app.mdm.jamf.sign_in import SIGN_INS
 from app.mdm.reemit import re_emit_connection
 from app.mdm.service import set_sync_status, sync_connection, sync_result_kwargs
 from app.models.schema import (
@@ -60,6 +61,10 @@ from app.schemas.connections import (
 from app.schemas.payload import MdmProvider, SyncStatus
 
 logger = logging.getLogger(__name__)
+
+# The fields a held Jamf sign-in is built from, plus whether the connection is active at
+# all: an update touching any of them retires the held sign-in at once (#412).
+_SIGN_IN_FIELDS = frozenset({"base_url", "credentials", "user_agent_override", "token_cache_mode", "is_active"})
 
 router = APIRouter(prefix="/api/mdm/connections", tags=["connections"])
 
@@ -163,6 +168,7 @@ def _to_out(conn: MdmConnection) -> MdmConnectionOut:
         has_loonsecio_license_key=bool(conn.loonsecio_license_key_encrypted),
         user_agent_override=conn.user_agent_override,
         sweep_page_size=conn.sweep_page_size,
+        token_cache_mode=conn.token_cache_mode,
         capability_devices=conn.capability_devices,
         capability_users=conn.capability_users,
         capability_webhooks=conn.capability_webhooks,
@@ -219,6 +225,7 @@ async def create_connection(payload: MdmConnectionCreate, db: AsyncSession = Dep
         loonsecio_data_sharing_enabled=payload.loonsecio_data_sharing_enabled,
         user_agent_override=payload.user_agent_override,
         sweep_page_size=payload.sweep_page_size,
+        token_cache_mode=payload.token_cache_mode,
         capability_devices=payload.capability_devices,
         capability_users=payload.capability_users,
         capability_webhooks=payload.capability_webhooks,
@@ -537,6 +544,8 @@ async def update_connection(
         connection.user_agent_override = data["user_agent_override"]
     if "sweep_page_size" in data:
         connection.sweep_page_size = data["sweep_page_size"]
+    if "token_cache_mode" in data:
+        connection.token_cache_mode = data["token_cache_mode"]
     if "capability_devices" in data:
         connection.capability_devices = data["capability_devices"]
     if "capability_users" in data:
@@ -601,6 +610,13 @@ async def update_connection(
             name=connection.name,
             changed_fields=credential_fields_changed,
         )
+
+    if _SIGN_IN_FIELDS & data.keys():
+        # Retired now rather than at the next run: a Perpetual cache renewal would
+        # otherwise keep signing in with the credentials, address or mode this edit just
+        # replaced until something used the connection again (#412). The next run builds
+        # a new held sign-in from the row as it stands.
+        await SIGN_INS.forget(str(connection.tenant_id), connection.id)
 
     return _to_out(connection)
 
@@ -787,6 +803,7 @@ async def delete_connection(connection_id: int, db: AsyncSession = Depends(get_d
     """
     connection = await _get_or_404(connection_id, db)
     name, provider = connection.name, connection.provider
+    tenant_id = str(connection.tenant_id)
 
     # A live sweep is writing devices and spans under this connection right now, and
     # deleting the run row out from under it is the expired-instance sad path (#125) in
@@ -829,6 +846,8 @@ async def delete_connection(connection_id: int, db: AsyncSession = Depends(get_d
     await db.execute(delete(MdmSyncState).where(MdmSyncState.mdm_connection_id == connection_id))
     await db.delete(connection)
     await db.commit()
+    # Its held sign-in goes with it — a Perpetual cache renewal must not outlive the row (#412).
+    await SIGN_INS.forget(tenant_id, connection_id)
 
     audit(
         AuditAction.CONNECTION_DELETED,

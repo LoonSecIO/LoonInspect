@@ -4,7 +4,20 @@ import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, Uuid, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -70,7 +83,13 @@ class MdmConnection(Base):
     __tablename__ = "mdm_connections"
     # Per-tenant rather than global: two tenants both calling their connection
     # "Production" is the normal case, not a conflict.
-    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_mdm_connection_tenant_name"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_mdm_connection_tenant_name"),
+        CheckConstraint(
+            "token_cache_mode IN ('no_cache', 'cache_and_hold', 'perpetual')",
+            name="ck_mdm_connections_token_cache_mode",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
@@ -98,6 +117,12 @@ class MdmConnection(Base):
     # API, so an admin fetching many sections turns this down and a narrow collection
     # may override upward (#73).
     sweep_page_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # What this connection keeps of its Jamf Pro sign-in between runs (#412): no_cache,
+    # cache_and_hold (the default — the token and a pooled connection, reused while the
+    # token is live) or perpetual (the same, renewed before it expires). The three and
+    # what each costs Jamf live in app.mdm.jamf.sign_in.
+    token_cache_mode: Mapped[str] = mapped_column(String(16), default="cache_and_hold", server_default="cache_and_hold")
 
     # What LoonInspect uses this connection for. Devices/Users are CRUD (LoonInspect
     # creates/updates/deletes its own records from the synced data); callback Webhooks
