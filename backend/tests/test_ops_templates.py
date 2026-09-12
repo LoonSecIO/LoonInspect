@@ -111,11 +111,13 @@ def test_exactly_one_record_and_it_is_the_wildcard_alias(ingress):
     assert "ResourceRecords" not in props and "TTL" not in props
 
 
-def test_idle_timeout_floor_covers_the_ai_endpoints(ingress):
+def test_idle_timeout_floor_outlasts_the_ai_endpoints(ingress):
     parameter = ingress["Parameters"]["IdleTimeoutSeconds"]
     assert parameter["Type"] == "Number"
-    # The AI endpoints' own wall clock, read rather than restated, so raising it fails here.
-    assert parameter["Default"] >= DEFAULT_TIMEOUT_SECONDS and parameter["MinValue"] >= DEFAULT_TIMEOUT_SECONDS
+    # Strictly above the AI endpoints' own wall clock, read rather than restated: at equality
+    # a host that never answers reaches the operator as the balancer's 504, not the app's reply.
+    assert parameter["MinValue"] > DEFAULT_TIMEOUT_SECONDS
+    assert parameter["Default"] >= parameter["MinValue"]
     attributes = {a["Key"]: a["Value"] for a in ingress["Resources"]["LoadBalancer"]["Properties"]["LoadBalancerAttributes"]}
     assert attributes["idle_timeout.timeout_seconds"] == {"Ref": "IdleTimeoutSeconds"}
     assert attributes["routing.http.drop_invalid_header_fields.enabled"] == "true"
