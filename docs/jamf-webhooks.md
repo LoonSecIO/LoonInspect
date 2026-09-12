@@ -95,11 +95,11 @@ Management*.)
 - **JSON, not XML.** LoonInspect reads JSON only. An XML webhook is refused with a `422`
   and a log line naming this setting.
 - **Why the read timeout.** LoonInspect answers once it has read the Mac from Jamf Pro and
-  written the reading. Measured 2026-09-12 against a Jamf Cloud instance, the reads a
-  webhook waits on took 0.7–1.0 seconds, before any writing. Jamf's own API example sets a
-  2-second read timeout, which leaves little room on a busy instance or a Mac with a large
-  inventory; 5 seconds does. The connection timeout covers only opening the connection,
-  and Jamf's example 5 seconds is fine.
+  written the reading. Measured 2026-09-12 against a Jamf Cloud instance, with webhooks naming
+  real Macs, that took about one second from arrival to answer (0.98 and 1.01 seconds), reads
+  and writes together. Jamf's own API example sets a 2-second read timeout, which leaves
+  little room on a busy instance or a Mac with a large inventory; 5 seconds does. The
+  connection timeout covers only opening the connection, and Jamf's example 5 seconds is fine.
 
 ## 4. The second webhook: `ComputerAdded`
 
