@@ -45,6 +45,17 @@ Parameters:
       non-interactive bootstrap, so the first-run claim wizard (whose token is
       process-local and lands in CloudWatch) never runs.
 
+  SharingEndpoint:
+    Type: String
+    Default: https://api.loonsec.io/v1/exchange
+    AllowedPattern: ^https://[A-Za-z0-9.-]+/v1/exchange$
+    Description: >-
+      SHARING_ENDPOINT — where the container's daily data-sharing exchange posts
+      (docs/data-sharing.md). The default is production. A pod that proves the
+      corpus path against staging passes the staging exchange here; nothing
+      else about the pod changes, and the container downloads the corpus from
+      whatever address that exchange hands it.
+
 Resources:
   LogGroup:
     Type: AWS::Logs::LogGroup
@@ -174,6 +185,7 @@ Resources:
             # the session. The browser warning on the raw IP is expected;
             # the pod's real name and cert arrive with the ALB later.
             - {Name: TLS_MODE, Value: self-signed}
+            - {Name: SHARING_ENDPOINT, Value: !Ref SharingEndpoint}
           Secrets:
             - Name: DATABASE_URL
               ValueFrom: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/pods/${PodName}/database-url
