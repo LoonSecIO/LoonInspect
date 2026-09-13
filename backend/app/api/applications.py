@@ -51,6 +51,20 @@ async def list_applications(
     page, read from the catalog by `appHash` (#299).
     """
     device_count = func.count(distinct(InstalledApp.device_id)).label("device_count")
+    # #313: the patch answer at this grain, off the columns the catalog copies onto every
+    # row (docs/app-catalog.md §1) — two filtered counts in the same scan, no join, nothing
+    # judged. Distinct devices, like `device_count`, so a Mac carrying two builds of one app
+    # is one Mac in both.
+    matched_device_count = (
+        func.count(distinct(InstalledApp.device_id))
+        .filter(InstalledApp.jamf_title_ids.is_not(None))
+        .label("matched_device_count")
+    )
+    patch_available_device_count = (
+        func.count(distinct(InstalledApp.device_id))
+        .filter(InstalledApp.patch_available.is_(True))
+        .label("patch_available_device_count")
+    )
 
     # name and bundle_id are inputs to app_hash, so every row in a group carries the
     # same pair — min() just picks it without needing them in the GROUP BY.
@@ -61,6 +75,8 @@ async def list_applications(
             func.min(InstalledApp.bundle_id).label("bundle_id"),
             device_count,
             func.count(distinct(InstalledApp.version_hash)).label("version_count"),
+            matched_device_count,
+            patch_available_device_count,
         )
         .group_by(InstalledApp.app_hash)
         .order_by(device_count.desc(), func.min(InstalledApp.name))
@@ -82,6 +98,8 @@ async def list_applications(
                 bundle_id=row.bundle_id,
                 device_count=row.device_count,
                 version_count=row.version_count,
+                matched_device_count=row.matched_device_count,
+                patch_available_device_count=row.patch_available_device_count,
             )
             for row in page_rows
         ],

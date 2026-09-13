@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 import { listCatalog } from "@/features/catalog/api";
-import { PATCH_STATE_COLORS } from "@/features/catalog/patchState";
-import type { CatalogEntry, CatalogListResponse } from "@/features/catalog/types";
+import { LatestCell, PatchAnswerCell } from "@/features/catalog/PatchAnswerCell";
+import type { CatalogListResponse } from "@/features/catalog/types";
 import { getJamfPatchTitle } from "@/features/jamfPatch/api";
 import type { JamfPatchTitleDetail } from "@/features/jamfPatch/types";
 import { AssessmentCell, CorpusBanner } from "@/features/vulnerabilities/AppAssessment";
 import { useLocale } from "@/i18n/LocaleContext";
-import type { Translations } from "@/i18n/en";
 
 /** Every row of one app: distinct builds, not installs, so a page is the whole record. */
 const RECORD_PAGE_SIZE = 500;
@@ -180,9 +179,11 @@ export function ApplicationRecordPage() {
                   </td>
                   <td className="px-4 py-2 tabular-nums">{row.deviceCount}</td>
                   <td className="px-4 py-2">
-                    <PatchCell row={row} t={t} />
+                    <PatchAnswerCell answer={row} t={t} />
                   </td>
-                  <td className="px-4 py-2 tabular-nums">{row.latestVersion ?? "—"}</td>
+                  <td className="px-4 py-2">
+                    <LatestCell answer={row} t={t} />
+                  </td>
                   <td className="px-4 py-2">
                     {/* Legal here and only here: each row is one build at key_full grain. */}
                     <AssessmentCell vuln={row.vuln} t={t} />
@@ -257,30 +258,5 @@ export function ApplicationRecordPage() {
         )}
       </section>
     </section>
-  );
-}
-
-/** #68's sentence from stored columns: `patchAvailableSince` and `releasesMissed`, never a
- *  day count. */
-function PatchCell({ row, t }: { row: CatalogEntry; t: Translations }) {
-  if (!row.patchState) return <span className="text-muted-foreground">—</span>;
-  const stateLabels: Record<string, string> = {
-    latest: t.catalog.stateLatest,
-    behind: t.catalog.stateBehind,
-    ahead: t.catalog.stateAhead,
-    unknown: t.catalog.stateUnknown
-  };
-  return (
-    <div className="space-y-0.5">
-      <span className="inline-flex items-center gap-1.5">
-        <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: PATCH_STATE_COLORS[row.patchState] }} />
-        {stateLabels[row.patchState] ?? row.patchState}
-      </span>
-      {row.patchAvailable && (
-        <span className="block text-xs text-muted-foreground">
-          {t.catalog.behindSince(formatDay(row.patchAvailableSince), row.releasesMissed)}
-        </span>
-      )}
-    </div>
   );
 }

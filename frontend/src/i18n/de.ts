@@ -643,9 +643,7 @@ export const de: Translations = {
         colBundleId: "Bundle-ID",
         orderByPatch: "Nach Jamfs Patch-Status ordnen",
         empty: "Für diesen Mac wurden keine Anwendungen gemeldet",
-        noTitle: "Kein Jamf-Patch-Titel passt zu dieser App",
-        latest: (version: string) => `aktuell ${version}`,
-        titleLink: "Jamf-Patch-Titel"
+        noTitle: "Kein Jamf-Patch-Titel passt zu dieser App"
       },
       eas: {
         heading: "Erweiterungsattribute",
@@ -738,6 +736,11 @@ export const de: Translations = {
     tableBundleId: "Bundle-ID",
     tableDevices: "Geräte",
     tableVersions: "Versionen",
+    tablePatch: "Jamf Patch",
+    patchNoTitle: "Nicht in Jamf Patch",
+    patchNone: "Kein Patch verfügbar",
+    patchAvailableFor: (n: number, of: number) => `${n} von ${of} mit verfügbarem Patch`,
+    patchCountHint: "Gezählt über die Geräte, deren Build zu einem Jamf-Patch-Titel passt.",
     searchPlaceholder: "Nach Name oder Bundle-ID filtern…",
     loading: "Anwendungen werden geladen…",
     errorLoading: "Anwendungen konnten nicht geladen werden.",
@@ -814,6 +817,13 @@ export const de: Translations = {
     stateUnknown: "Unbekannter Build",
     behindSince: (since: string, missed: number | null) =>
       missed === null ? `seit ${since}` : `seit ${since} · ${missed} ${missed === 1 ? "Version" : "Versionen"} verpasst`,
+    latestVersion: (version: string) => `aktuell ${version}`,
+    sentenceSubjectHint: (title: string) => `Datum und Anzahl stammen vom Titel „${title}“.`,
+    latestSubjectHint: (title: string) => `Die neueste Version des Titels „${title}“.`,
+    titleNameNotRead: "Der Patch-Katalog enthält keinen Namen für diesen Titel; das ist die ID, die Jamf ihm gibt.",
+    assumed: "angenommen",
+    assumedHint:
+      "Die Anforderungen dieses Titels prüfen ein Erweiterungsattribut. Der Katalog beurteilt eine App ohne Gerätefakten, daher wurde diese Prüfung als bestanden gelesen; die Zuordnung beruht auf dieser Annahme.",
     loading: "Katalog wird geladen…",
     errorLoading: "Der Katalog konnte nicht geladen werden.",
     empty: "Noch keine Apps katalogisiert – der Katalog füllt sich, sobald Geräte verarbeitet werden.",

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { Input } from "@/components/ui/input";
+import { PATCH_STATE_COLORS } from "@/features/catalog/patchState";
 import { listApplications, type Application } from "@/features/devices/applicationsApi";
 import { listSyncStatus } from "@/features/mdm/api";
 import type { MdmSyncStatus } from "@/features/mdm/types";
 import { useLocale } from "@/i18n/LocaleContext";
+import type { Translations } from "@/i18n/en";
 
 /** Why the table is empty, resolved only on the empty path (#299 §8). */
 type EmptyReason = "noConnection" | "noSync" | "synced" | "noMatch";
@@ -84,20 +86,21 @@ export function ApplicationsOverviewPage() {
               <th className="px-4 py-2 font-medium">{t.applications.tableName}</th>
               <th className="px-4 py-2 font-medium">{t.applications.tableBundleId}</th>
               <th className="px-4 py-2 font-medium">{t.applications.tableVersions}</th>
+              <th className="px-4 py-2 font-medium">{t.applications.tablePatch}</th>
               <th className="px-4 py-2 text-right font-medium">{t.applications.tableDevices}</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={4}>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={5}>
                   {t.applications.loading}
                 </td>
               </tr>
             )}
             {current && current.items.length === 0 && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={4}>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={5}>
                   {current.statuses === null && !q
                     ? t.applications.empty
                     : t.applications.emptyStates[emptyReason(q, current.statuses ?? [])]}
@@ -117,6 +120,9 @@ export function ApplicationsOverviewPage() {
                 </td>
                 <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{app.bundleId}</td>
                 <td className="px-4 py-2 tabular-nums">{app.versionCount}</td>
+                <td className="px-4 py-2">
+                  <PatchSummary app={app} t={t} />
+                </td>
                 <td className="px-4 py-2 text-right font-medium tabular-nums">{app.deviceCount}</td>
               </tr>
             ))}
@@ -126,5 +132,27 @@ export function ApplicationsOverviewPage() {
 
       {current && <p className="text-sm text-muted-foreground">{t.applications.total(current.total)}</p>}
     </section>
+  );
+}
+
+/**
+ * The patch answer at the list's grain (#313): how many of the Macs carrying this app have
+ * a patch available, over how many matched a Jamf Patch title at all. Three renderings
+ * that never look alike — no title (no answer, muted), none behind (green), some behind
+ * (red) — because "0 with a patch available" on an app no title matches would be a clean
+ * bill nobody issued. The record page has the per-build spread; this is the glance.
+ */
+function PatchSummary({ app, t }: { app: Application; t: Translations }) {
+  const ta = t.applications;
+  if (app.matchedDeviceCount === 0) return <span className="text-muted-foreground">{ta.patchNoTitle}</span>;
+  const behind = app.patchAvailableDeviceCount > 0;
+  return (
+    <span className="inline-flex items-center gap-1.5" title={ta.patchCountHint}>
+      <span
+        className="h-2 w-2 shrink-0 rounded-full"
+        style={{ backgroundColor: behind ? PATCH_STATE_COLORS.behind : PATCH_STATE_COLORS.latest }}
+      />
+      {behind ? ta.patchAvailableFor(app.patchAvailableDeviceCount, app.matchedDeviceCount) : ta.patchNone}
+    </span>
   );
 }

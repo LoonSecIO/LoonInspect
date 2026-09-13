@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 from pydantic.alias_generators import to_camel
 
+from app.schemas.catalog import CatalogTitleRef
 from app.schemas.payload import MdmProvider, VulnEnrichment
 
 
@@ -67,6 +68,22 @@ class InstalledAppOut(BaseModel):
     # releases missed" — are patch_available_since and this count. The day count below stays
     # for consumers that want it; it is derived from an unbounded date and is never the headline.
     releases_missed: int | None = None
+    # #313: what the wire has carried since #311 and the page could not show. `jamf_titles`
+    # is the matched titles BY NAME, resolved per request from the global catalog and
+    # index-aligned with `jamf_title_ids` except where a name cannot be resolved — that
+    # title is left out rather than shipped as its id in disguise, so a page always knows
+    # which it has. `ea_assumed` is the fold of `basis` across the matches: TRUE when any
+    # title needed an extension attribute this Mac does not carry, null on a row judged
+    # before the column existed (never defaulted to false). The two subject ids say WHICH
+    # title `patch_state` / `latest_version` and `patch_available_since` / `releases_missed`
+    # are about — on Wireshark 4.2.0 they are different titles, and "14 releases behind
+    # 4.6.8" is the reading the columns invite and do not support. REST carries them as
+    # stored, on every answered row; the wire's "only when several matched" is a byte rule
+    # for the wire, and the page applies the same rule at render time.
+    jamf_titles: list[CatalogTitleRef] = []
+    ea_assumed: bool | None = None
+    reference_title_id: str | None = None
+    sentence_title_id: str | None = None
     # #251: LoonInspect's own answer about this app, in the wire's own words. The default
     # is `off` — no corpus loaded, nobody looked — which is what every app reads until
     # #248 ships one, and it is deliberately NOT an absent field: a surface that cannot

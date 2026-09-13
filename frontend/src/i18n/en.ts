@@ -709,9 +709,7 @@ export const en = {
         colBundleId: "Bundle ID",
         orderByPatch: "Order by Jamf's patch state",
         empty: "No applications reported for this Mac",
-        noTitle: "No Jamf Patch title matches this app",
-        latest: (version: string) => `latest ${version}`,
-        titleLink: "Jamf Patch title"
+        noTitle: "No Jamf Patch title matches this app"
       },
       eas: {
         heading: "Extension attributes",
@@ -805,6 +803,13 @@ export const en = {
     tableBundleId: "Bundle ID",
     tableDevices: "Devices",
     tableVersions: "Versions",
+    // The patch answer at the list's grain (#313): counted over the devices whose build
+    // matched a Jamf Patch title, which is why "no title" is its own rendering.
+    tablePatch: "Jamf Patch",
+    patchNoTitle: "Not in Jamf Patch",
+    patchNone: "No patch available",
+    patchAvailableFor: (n: number, of: number) => `${n} of ${of} with a patch available`,
+    patchCountHint: "Counted over the devices whose build matched a Jamf Patch title.",
     searchPlaceholder: "Filter by name or bundle ID…",
     loading: "Loading applications…",
     errorLoading: "Could not load applications.",
@@ -884,6 +889,16 @@ export const en = {
     stateUnknown: "Unknown build",
     behindSince: (since: string, missed: number | null) =>
       missed === null ? `since ${since}` : `since ${since} · ${missed} release${missed === 1 ? "" : "s"} missed`,
+    latestVersion: (version: string) => `latest ${version}`,
+    // #313: each half of the answer names its title when several matched (the Wireshark
+    // case: the sentence is the 4.2 line's, the latest version is the rolling title's).
+    sentenceSubjectHint: (title: string) => `The date and the count are the title "${title}"'s.`,
+    latestSubjectHint: (title: string) => `The latest version of the title "${title}".`,
+    titleNameNotRead: "The patch catalog holds no name for this title; this is the id Jamf gives it.",
+    // The assumption, kept visible (2026-08-22) and quiet (#313, ruled 2026-09-13).
+    assumed: "assumed",
+    assumedHint:
+      "This title's requirements test an extension attribute. The catalog judges an app without device facts, so that test was read as passing; the match rests on that assumption.",
     loading: "Loading catalog…",
     errorLoading: "Could not load the catalog.",
     empty: "No apps catalogued yet — the catalog fills as devices are processed.",

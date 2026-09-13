@@ -1,3 +1,4 @@
+import type { CatalogTitleRef } from "@/features/catalog/types";
 import type { AppVulnerability } from "@/features/vulnerabilities/types";
 
 export interface Device {
@@ -46,6 +47,14 @@ export interface InstalledApp {
   latestReleasedAt: string | null;
   /** #68: the sentence leads with `patchAvailableSince` and this count, never a day count. */
   releasesMissed: number | null;
+  /** #313: the matched titles by name, resolved per request; a title the catalog could not
+   *  name is left out here and stays in `jamfTitleIds`, so the page prints its id rather
+   *  than a name from nowhere. */
+  jamfTitles: CatalogTitleRef[];
+  /** The assumption fold and the two subject ids, as `CatalogEntry` carries them. */
+  eaAssumed: boolean | null;
+  referenceTitleId: string | null;
+  sentenceTitleId: string | null;
   daysSincePatchAvailable: number | null;
   vuln: AppVulnerability;
 }
