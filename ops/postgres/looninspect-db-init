@@ -42,16 +42,22 @@ for var in PGHOST PGDATABASE PGUSER PGPASSWORD APP_PASSWORD; do
 done
 [ -z "$missing" ] || fail "not started:$missing not set. The pod's task gives this container the database's endpoint and name (PGHOST, PGDATABASE), the master's user and password (PGUSER, PGPASSWORD, from the RDS-managed master secret) and the application role's password (APP_PASSWORD, from pods/<name>/db-app); check the db-init container's environment and secrets."
 [ "$APP_USER" != "$PGUSER" ] || fail "APP_USER is the master user ($PGUSER). The app connects as its own role, which must not be the master; check that APP_USER and APP_PASSWORD come from the application role's secret."
+case $PGPORT in '' | *[!0-9]*) fail "PGPORT is '$PGPORT', not a port number; the data stack's DbEndpointPort output is the database's port." ;; esac
 
 # The probe only asks whether the server answers, and carries no password, so it may go
 # unencrypted: under PGSSLMODE a server without TLS would read as silence for the whole
-# wait, where psql below says so at once.
+# wait, where psql below says so at once. When the probe gives up, one real attempt puts
+# libpq's own reason on the line above the sentence.
 started=$(date +%s)
 report=0
 until PGSSLMODE=prefer pg_isready --quiet --timeout=5; do
-  [ $? -ne 3 ] || fail "could not try Postgres at $PGHOST:$PGPORT: the connection settings are not valid. Check PGHOST and PGPORT."
+  code=$?
   waited=$(($(date +%s) - started))
-  [ "$waited" -lt "$WAIT_SECONDS" ] || fail "Postgres at $PGHOST:$PGPORT did not answer within $WAIT_SECONDS s. Usually the database's security group does not admit this task (it admits only the pod's task security group), or the instance is still being created or is restarting. Check the instance's status in RDS, that this task runs in the pod's task security group, and that PGHOST is the instance's endpoint."
+  if [ "$code" -eq 3 ] || [ "$waited" -ge "$WAIT_SECONDS" ]; then
+    PGSSLMODE=prefer psql -X -w -q -c 'SELECT 1' >/dev/null && break
+    [ "$code" -ne 3 ] || fail "could not try Postgres at $PGHOST:$PGPORT: libpq refused the connection settings, for the reason on the line above. Check the PG variables the pod's task sets."
+    fail "Postgres at $PGHOST:$PGPORT did not answer within $WAIT_SECONDS s; the line above is the last attempt. Usually the database's security group does not admit this task (it admits only the pod's task security group), or the instance is still being created or is restarting. Check the instance's status in RDS, that this task runs in the pod's task security group, and that PGHOST is the instance's endpoint."
+  fi
   if [ "$waited" -ge "$report" ]; then
     echo "waiting for Postgres at $PGHOST:$PGPORT (${waited} s of $WAIT_SECONDS)"
     report=$((waited - waited % 10 + 10))
