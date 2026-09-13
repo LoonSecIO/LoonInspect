@@ -1,0 +1,282 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  The half of a hosted LoonInspect pod that outlives every deploy, created once
+  per pod as pod-<name>-data: an RDS Postgres 17 database whose master password
+  RDS manages and rotates, the application role's secret, the EFS file system
+  behind /app/data (the audit log), the task security group the pods-ingress
+  balancer admits, and the pod's log group. The compute stack pod-<name> is
+  handed these outputs as parameters and is replaced on every release; the
+  deploy workflow creates and updates this stack and never deletes it.
+  Teardown is a human act; see the header.
+
+# WHY DATA AND COMPUTE ARE TWO STACKS
+# -----------------------------------
+# A deletion-protected database cannot be rolled back. In one stack, a first create
+# that failed after the database existed (a task that never turned healthy, a listener
+# priority already taken) would try to delete it, be refused, and wedge with the pod's
+# data inside. Apart, a failed first create or a bad release rolls back the compute
+# stack alone. This is also the one stack the pods deploy role is denied deleting.
+#
+# WHY THE DATABASE URL WILL CARRY NO PASSWORD
+# -------------------------------------------
+# The compute stack gives the app DATABASE_URL=postgresql+asyncpg://looninspect_app@
+# <endpoint>:<port>/looninspect and the password as PGPASSWORD, which asyncpg reads
+# from the environment, as it does PGSSLMODE. Inside the URL it would pass through
+# Alembic's config parser (backend/migrations/env.py), where one generated '%' is an
+# interpolation error that stops every migration at startup. AppRoleSecret excludes
+# punctuation for the same reason, so even a URL built by hand is safe.
+#
+# WHY THE MASTER IS RDS-MANAGED
+# -----------------------------
+# RDS generates the master password into a secret it owns and rotates, so no template,
+# parameter or deploy log holds it. Only the pod's db-init container reads it, at every
+# task start (looninspect-db-init in the db image, #396), to create the application
+# role, sync its password from AppRoleSecret, and hand it schema public. The app
+# connects as looninspect_app: not a superuser, unable to bypass row-level security.
+#
+# TEARDOWN IS A HUMAN ACT
+# -----------------------
+# Delete the compute stack first, then lift deletion protection and delete this one:
+#   aws rds modify-db-instance --db-instance-identifier pod-<name> \
+#     --no-deletion-protection --apply-immediately
+# RDS takes a final snapshot; the file system and log group stay until deleted by hand.
+#
+# WHEN THE FIRST CREATE FAILS
+# ---------------------------
+# A first create that fails once Database exists ends in ROLLBACK_FAILED with "Cannot
+# delete protected DB Instance". Nothing has run against it yet: lift its deletion
+# protection (above), delete the stack, and re-run the deploy; the empty database's
+# final snapshot can go. To keep the instance instead, delete twice, the second time
+# with --retain-resources naming what the first could not remove. The file system and
+# log group are RetainExceptOnCreate: kept by every other operation, but deleted by this
+# rollback, where plain Retain would leave /pods/<name> to fail the re-run by name.
+
+Parameters:
+  PodName:
+    Type: String
+    AllowedPattern: ^(?!ingress-)(?!.*--)[a-z]([a-z0-9-]{0,26}[a-z0-9])?$
+    ConstraintDescription: >-
+      lowercase letters, digits and single hyphens, a letter first and no hyphen last;
+      at most 28 characters (the compute stack's target group pod-<name> must fit
+      ELBv2's 32); never ingress-<anything>, kept for regional ingress stacks.
+    Description: >-
+      The pod's permanent name: <name>.pods.<zone>, the database pod-<name>,
+      the secret pods/<name>/db-app, the log group /pods/<name>. No default.
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: The VPC pods-ingress runs in (its VpcId output).
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: >-
+      Exactly two, in different Availability Zones: the public subnets pods-ingress
+      uses. The database subnet group takes both; the file system mounts in each.
+
+  AlbSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: >-
+      The pods-ingress balancer's security group (its AlbSecurityGroupId
+      output), the only source the task security group admits on 8001.
+
+  DbInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+    AllowedPattern: ^db\.[a-z0-9]+\.[a-z0-9]+$
+    Description: The RDS instance class.
+
+  DbAllocatedStorage:
+    Type: Number
+    Default: 20
+    MinValue: 20
+    Description: Initial storage in GiB; 20 is gp3's floor.
+
+  DbMaxAllocatedStorage:
+    Type: Number
+    Default: 100
+    Description: The ceiling RDS storage autoscaling may grow to, in GiB.
+
+  DbBackupRetentionDays:
+    Type: Number
+    Default: 7
+    MinValue: 1
+    MaxValue: 35
+    Description: Days of automated backups. Zero would switch backups off, so it is refused.
+
+  LogRetentionDays:
+    Type: Number
+    Default: 30
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365]
+    Description: >-
+      Days CloudWatch keeps the pod's log. 30 follows the 30-day customer-data
+      retention ruling (2026-09-12): the request log carries client addresses.
+
+# Rules have no prefix test, so PodName's pattern refuses ingress-<anything>; this, the words.
+Rules:
+  PodNameIsNotReserved:
+    Assertions:
+      - Assert: !Not
+          - !Contains
+            - [login, admin, api, sso, billing, www, mail, secure, us, eu, emea, apac, ingress, loon, demo, try, dast, staging]
+            - !Ref PodName
+        AssertDescription: >-
+          PodName is reserved by the pods naming ruling (2026-08-28): login,
+          admin, api, sso, billing, www, mail, secure, us, eu, emea, apac,
+          ingress, loon, demo, try, dast and staging are never pod names (loon
+          is the proof pod's). Pod names are permanent, so choose another.
+
+Resources:
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "pod-${PodName} task: 8001 from pods-ingress only; out to Jamf, the exchange, ECR, logs"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 8001, ToPort: 8001, SourceSecurityGroupId: !Ref AlbSecurityGroupId}
+      SecurityGroupEgress:
+        - {IpProtocol: "-1", CidrIp: 0.0.0.0/0}
+
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "pod-${PodName} database: 5432 from the pod task only"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 5432, ToPort: 5432, SourceSecurityGroupId: !GetAtt TaskSecurityGroup.GroupId}
+
+  EfsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "pod-${PodName} file system: 2049 from the pod task only"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 2049, ToPort: 2049, SourceSecurityGroupId: !GetAtt TaskSecurityGroup.GroupId}
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub pod-${PodName} database subnets
+      SubnetIds: !Ref SubnetIds
+
+  # Named, so a change that would replace it fails instead of pointing the pod at a new,
+  # empty database. EngineVersion is the major alone, the prefix form CloudFormation
+  # documents, so AutoMinorVersionUpgrade can move the minor; cfn-lint's W3691 calls
+  # every bare major deprecated because DescribeDBEngineVersions only names minors.
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Metadata: {cfn-lint: {config: {ignore_checks: [W3691]}}}
+    Properties:
+      DBInstanceIdentifier: !Sub pod-${PodName}
+      Engine: postgres
+      EngineVersion: "17"
+      AutoMinorVersionUpgrade: true
+      DBInstanceClass: !Ref DbInstanceClass
+      AllocatedStorage: !Ref DbAllocatedStorage
+      MaxAllocatedStorage: !Ref DbMaxAllocatedStorage
+      StorageType: gp3
+      MultiAZ: false
+      PubliclyAccessible: false
+      StorageEncrypted: true
+      BackupRetentionPeriod: !Ref DbBackupRetentionDays
+      PreferredBackupWindow: "08:00-09:00"
+      CopyTagsToSnapshot: true
+      DeletionProtection: true
+      DBName: looninspect
+      MasterUsername: looninspect
+      ManageMasterUserPassword: true
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups: [!GetAtt DbSecurityGroup.GroupId]
+
+  AppRoleSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub pods/${PodName}/db-app
+      Description: The role LoonInspect connects as; db-init sets its password to this on every task start.
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"looninspect_app"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludePunctuation: true
+
+  FileSystem:
+    Type: AWS::EFS::FileSystem
+    DeletionPolicy: RetainExceptOnCreate
+    UpdateReplacePolicy: Retain
+    Properties:
+      Encrypted: true
+      ThroughputMode: elastic
+      LifecyclePolicies: [{TransitionToIA: AFTER_30_DAYS}]
+      BackupPolicy: {Status: DISABLED}
+      # No Allow on purpose: any policy replaces EFS's default allow-all, so a mount needs
+      # TLS and an IAM identity granted this file system (the compute stack's task role).
+      FileSystemPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: RefuseMountsWithoutTls
+            Effect: Deny
+            Principal: {AWS: "*"}
+            Action: "*"
+            Condition: {Bool: {"aws:SecureTransport": "false"}}
+
+  MountTargetA:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref FileSystem
+      SubnetId: !Select [0, !Ref SubnetIds]
+      SecurityGroups: [!GetAtt EfsSecurityGroup.GroupId]
+
+  MountTargetB:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref FileSystem
+      SubnetId: !Select [1, !Ref SubnetIds]
+      SecurityGroups: [!GetAtt EfsSecurityGroup.GroupId]
+
+  # Files land as uid/gid 10001 (the Dockerfile's looninspect user), in a directory only it reads.
+  AccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref FileSystem
+      PosixUser: {Uid: "10001", Gid: "10001"}
+      RootDirectory:
+        Path: !Sub /pods/${PodName}
+        CreationInfo: {OwnerUid: "10001", OwnerGid: "10001", Permissions: "0700"}
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: RetainExceptOnCreate
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub /pods/${PodName}
+      RetentionInDays: !Ref LogRetentionDays
+
+Outputs:
+  DbEndpointAddress:
+    Description: The database host, for DATABASE_URL and db-init's PGHOST.
+    Value: !GetAtt Database.Endpoint.Address
+  DbEndpointPort:
+    Description: The database port.
+    Value: !GetAtt Database.Endpoint.Port
+  MasterSecretArn:
+    Description: The RDS-managed master secret. db-init reads it; the app never does.
+    Value: !GetAtt Database.MasterUserSecret.SecretArn
+  AppRoleSecretArn:
+    Description: The application role's secret, PGPASSWORD for the app and APP_PASSWORD for db-init.
+    Value: !Ref AppRoleSecret
+  FileSystemId:
+    Description: The file system behind /app/data.
+    Value: !Ref FileSystem
+  AccessPointId:
+    Description: The access point the task mounts, as uid/gid 10001.
+    Value: !Ref AccessPoint
+  AccessPointArn:
+    Description: The same access point, for the task role's mount grant.
+    Value: !GetAtt AccessPoint.Arn
+  TaskSecurityGroupId:
+    Description: The security group the pod's task runs in.
+    Value: !GetAtt TaskSecurityGroup.GroupId
+  LogGroupName:
+    Description: Where the pod's containers log.
+    Value: !Ref LogGroup
