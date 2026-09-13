@@ -976,6 +976,18 @@ export const en = {
     errorLoading: "Failed to load Jamf Patch titles.",
     empty: "No Jamf Patch titles synced yet.",
     noMatches: "No titles match this search.",
+    // #403: the list opens on titles with a device. "With devices" is the Devices with
+    // app column — devices with an app matched to the title — never "installed".
+    onlyWithDevices: "Only titles with devices",
+    onlyWithDevicesHint:
+      "Hides titles whose Devices with app count is 0. A title reads 0 when no device has an app matched to it; some titles, such as Mozilla Firefox, are never matched at all.",
+    emptyNoneWithDevices: (hidden: number) =>
+      `No title has a device yet. All ${hidden} are hidden by "Only titles with devices".`,
+    emptyMatchesOnlyWithoutDevices: (hidden: number) =>
+      hidden === 1
+        ? `No title with devices matches this search. 1 title without a device does; untick "Only titles with devices" to see it.`
+        : `No title with devices matches this search. ${hidden} titles without a device do; untick "Only titles with devices" to see them.`,
+    hiddenWithoutDevices: (hidden: number) => `${hidden} without a device hidden`,
     total: (n: number) => `${n} title${n === 1 ? "" : "s"} total`,
     filteredTotal: (shown: number, total: number) =>
       shown === total ? `${total} title${total === 1 ? "" : "s"} total` : `${shown} of ${total} titles`,

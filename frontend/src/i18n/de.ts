@@ -887,6 +887,16 @@ export const de: Translations = {
     errorLoading: "Jamf-Patch-Titel konnten nicht geladen werden.",
     empty: "Noch keine Jamf-Patch-Titel synchronisiert.",
     noMatches: "Keine Titel entsprechen dieser Suche.",
+    onlyWithDevices: "Nur Titel mit Geräten",
+    onlyWithDevicesHint:
+      "Blendet Titel aus, deren Spalte „Geräte mit App“ 0 zeigt. Ein Titel zeigt 0, wenn keinem Gerät eine App zugeordnet ist; manche Titel, etwa Mozilla Firefox, werden nie zugeordnet.",
+    emptyNoneWithDevices: (hidden: number) =>
+      `Noch hat kein Titel ein Gerät. Alle ${hidden} sind durch „Nur Titel mit Geräten“ ausgeblendet.`,
+    emptyMatchesOnlyWithoutDevices: (hidden: number) =>
+      hidden === 1
+        ? "Kein Titel mit Geräten entspricht dieser Suche. 1 Titel ohne Gerät entspricht ihr; entfernen Sie das Häkchen bei „Nur Titel mit Geräten“, um ihn zu sehen."
+        : `Kein Titel mit Geräten entspricht dieser Suche. ${hidden} Titel ohne Gerät entsprechen ihr; entfernen Sie das Häkchen bei „Nur Titel mit Geräten“, um sie zu sehen.`,
+    hiddenWithoutDevices: (hidden: number) => `${hidden} ohne Gerät ausgeblendet`,
     total: (n: number) => `${n} Titel insgesamt`,
     filteredTotal: (shown: number, total: number) =>
       shown === total ? `${total} Titel insgesamt` : `${shown} von ${total} Titeln`,

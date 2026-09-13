@@ -181,7 +181,11 @@ page saw two pre-#65 booleans — the odd shape #313 was filed against.
 
 - Devices › Applications › Jamf Patch: "Devices with app" and "Devices on latest" per title
   (distinct devices, tenant-scoped through RLS), sortable; a title page shows devices per listed
-  version and how many devices sit on a version Jamf has not listed.
+  version and how many devices sit on a version Jamf has not listed. **Only titles with
+  devices** is ticked by default (#403) and hides titles whose "Devices with app" is 0 — on
+  every fleet measured, about 99% of the catalog. The footer says how many it hid, and each
+  empty table says which of four states it is in. "With devices" means matched, not
+  installed: the titles §3 leaves unconsidered read 0 on every fleet.
 - **One cell, three pages** (`frontend/src/features/catalog/PatchAnswerCell.tsx`, over the
   pure `patchAnswer.ts` the test lane pins): the device page's Jamf Patch column, the
   application record's version spread and the catalog all paint the same thing — the state
