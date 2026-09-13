@@ -10,14 +10,18 @@
 # variables. Passwords in particular stay runtime configuration, never build
 # args: a credential in a build arg is a credential in an image layer.
 #
-# Two things are deliberately absent:
-#   - A HEALTHCHECK. Both real consumers restate it anyway — compose because
-#     bare pg_isready reports ready during initdb's own temporary server, and
-#     ECS because Fargate ignores image healthchecks entirely, so the app
-#     container's dependsOn needs one declared in the task definition.
-#   - An RDS story. A managed database never runs this image; there
-#     /docker-entrypoint-initdb.d does not exist and the master user is not a
-#     superuser. Run the SQL from initdb/10-app-role.sh by hand instead.
+# A HEALTHCHECK is deliberately absent. Both real consumers restate it anyway —
+# compose because bare pg_isready reports ready during initdb's own temporary
+# server, and ECS because Fargate ignores image healthchecks entirely, so the
+# app container's dependsOn needs one declared in the task definition.
+#
+# The image has a second job, for a managed database (RDS) that never runs it
+# as a server: there /docker-entrypoint-initdb.d does not exist and the master
+# user is not a superuser, so nothing makes the application role at first
+# boot. looninspect-db-init does, run by the pod's task as a non-essential
+# container before the app, on every start. The entrypoint runs any command
+# other than postgres as given, so a task whose command is
+# looninspect-db-init runs that script and no server.
 FROM postgres:17-alpine
 
 # Runs once, against an empty data directory, before Postgres accepts outside
@@ -25,3 +29,6 @@ FROM postgres:17-alpine
 # Editing a script here therefore takes both a rebuild and an empty data
 # volume to have any effect; an existing database never re-runs it.
 COPY initdb/ /docker-entrypoint-initdb.d/
+
+# The managed path: idempotent, and run on every start rather than once.
+COPY --chmod=0755 looninspect-db-init /usr/local/bin/looninspect-db-init

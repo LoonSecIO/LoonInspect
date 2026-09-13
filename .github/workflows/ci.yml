@@ -271,3 +271,11 @@ jobs:
                 AND NOT (c.relrowsecurity AND c.relforcerowsecurity)")
           [ "$unforced" = "account_tenants,api_token_tenants,session_tenants" ] || {
             echo "::error::tables with tenant_id and no forced row-level security: '$unforced' — expected exactly the three identity-resolution index tables"; exit 1; }
+
+      # The db image's second job (#396): looninspect-db-init prepares a managed Postgres
+      # the image never runs as a server. smoke-db stands in for RDS. The check makes
+      # its own master, not a superuser but able to create roles and owning its
+      # database, and runs the script from the image built above: twice, then with a
+      # wrong password, then against a role that could bypass row-level security.
+      - name: Check the managed-database init
+        run: .github/scripts/check-db-init.sh looninspect-db:ci smoke-db smoke-net looninspect
