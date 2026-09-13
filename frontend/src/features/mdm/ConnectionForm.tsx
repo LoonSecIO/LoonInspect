@@ -8,8 +8,10 @@ import type {
   MdmProviderType,
   PatchManagementProvider,
   ProviderCredentialField,
-  ProviderInfo
+  ProviderInfo,
+  TokenCacheMode
 } from "@/features/mdm/types";
+import { TOKEN_CACHE_MODES, tokenCacheModeOf } from "@/features/mdm/signInReuse";
 import { useLocale } from "@/i18n/LocaleContext";
 
 interface ConnectionFormProps {
@@ -54,6 +56,7 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [userAgentOverride, setUserAgentOverride] = useState(connection?.userAgentOverride ?? "");
   const [sweepPageSize, setSweepPageSize] = useState<number>(connection?.sweepPageSize ?? 400);
+  const [tokenCacheMode, setTokenCacheMode] = useState<TokenCacheMode>(tokenCacheModeOf(connection));
   const [capabilityDevices, setCapabilityDevices] = useState(connection?.capabilityDevices ?? true);
   const [capabilityUsers, setCapabilityUsers] = useState(connection?.capabilityUsers ?? false);
   const [capabilityJamfPro, setCapabilityJamfPro] = useState(connection?.capabilityJamfPro ?? false);
@@ -186,6 +189,7 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
     // 400 is the default: stored as null so a connection that never deviated (or slid
     // back) keeps following the instance default if it ever moves.
     input.sweepPageSize = sweepPageSize === 400 ? null : sweepPageSize;
+    input.tokenCacheMode = tokenCacheMode;
 
     try {
       if (connection) {
@@ -372,6 +376,32 @@ export function ConnectionForm({ connection, onSaved, onCancel }: ConnectionForm
         {showTestDetail && testDetail && (
           <pre className="max-h-48 overflow-auto rounded-md bg-muted p-2 text-xs">{testDetail}</pre>
         )}
+
+        {/* Beside the credentials the sign-in is exchanged for, not folded into Advanced
+            settings (#412): each option says what it costs Jamf Pro, and that is the
+            whole choice. */}
+        <fieldset className="space-y-2 pt-2">
+          <legend className="text-sm font-medium">{t.connectionForm.signInReuse.label}</legend>
+          <p className="text-xs text-muted-foreground">{t.connectionForm.signInReuse.intro}</p>
+          {TOKEN_CACHE_MODES.map((mode) => (
+            <label key={mode} className="flex items-start gap-2 text-sm">
+              <input
+                type="radio"
+                name="tokenCacheMode"
+                className="mt-1"
+                value={mode}
+                checked={tokenCacheMode === mode}
+                onChange={() => setTokenCacheMode(mode)}
+              />
+              <span>
+                <span className="font-medium">{t.connectionForm.signInReuse.modes[mode].label}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {t.connectionForm.signInReuse.modes[mode].description}
+                </span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
       </div>
 
       <div className="space-y-2">

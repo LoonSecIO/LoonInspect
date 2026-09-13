@@ -155,3 +155,40 @@ it leaves out of the hash, exactly as a device sweep's do. A narrower collection
 webhook cheaper against Jamf Pro — and makes each webhook's snapshot partial by design:
 [splunk-setup.md](splunk-setup.md) §7 says what a section outside the aperture looks like
 on the wire. The sweep keeps its own sections and is unaffected.
+
+## 9. How fast: Sign-in reuse
+
+Most of a webhook's second is spent talking to Jamf Pro: signing in (a TLS handshake and a
+token exchange), the aperture's two small reads, and the Mac's inventory. The sign-in is the
+part a connection can keep. **Sign-in reuse**, on the connection's form beside Test
+connection, says how much it keeps ([#412](https://github.com/LoonSecIO/LoonInspect/issues/412)):
+
+| Mode | What it keeps | A webhook's Jamf work, measured |
+| --- | --- | --- |
+| **No cache** | Nothing: every run and webhook signs in from scratch. | 924–1123 ms, every time |
+| **Cache and hold** *(the default)* | The token and one open connection, while the token lives. | 929 ms for the first; 491–499 ms for the ones that follow it |
+| **Perpetual cache** | The same, and it renews the token before it expires. | 589 ms after a renewal; 707 ms after two quiet minutes (token ready, connection reopened) |
+
+Measured 2026-09-12 against a Jamf Cloud tenant from one site: three webhooks per mode, the
+Mac's inventory included, LoonInspect's own writes not. Your numbers will differ by distance
+and by how busy Jamf is; the proportions will not.
+
+What each costs Jamf is the other half of the choice. A token there lived **179 seconds**,
+and LoonInspect replaces one 30 seconds early:
+
+- **No cache** asks for a token per webhook — a thousand Macs submitting inventory in the
+  same few minutes are a thousand token requests.
+- **Cache and hold** asks for one about every two and a half minutes *while webhooks keep
+  arriving*, and none while the fleet is quiet. That is why it is the default.
+- **Perpetual cache** asks for one about every two and a half minutes *always* — about 580 a
+  day per connection — so that even the first webhook after a quiet spell finds a token
+  ready. Choose it when that first webhook matters more than the steady traffic.
+
+The kept connection is closed after two idle minutes, before anything between you and Jamf
+is likely to drop it; Jamf Cloud itself kept idle connections open past four minutes in the
+same measurement. The token never leaves the running container's memory: it is not stored,
+not logged, and gone when the container stops. Changing the connection's address,
+credentials, User-Agent override or this setting discards what was kept at once.
+
+Every mode stays inside the 5-second read timeout §3 asks for; Sign-in reuse is how far
+inside.

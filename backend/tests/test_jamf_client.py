@@ -125,7 +125,7 @@ async def test_an_expired_token_reauthenticates_once_mid_sweep() -> None:
     # A token the tenant no longer accepts and whose deadline this client never saw —
     # revoked, or issued before a restart. The 401 backstop is the only thing that can
     # find that out, which is why proactive refresh does not replace it.
-    client._token = "stale"
+    client._tokens.token = "stale"
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(fake.handler)) as http:
         computers = [computer async for computer in client.iter_computers(http, page_size=100)]
@@ -159,8 +159,8 @@ async def test_a_token_is_replaced_before_it_expires_rather_than_after_a_401() -
     and each one used to cost a wasted 401 per request in flight."""
     fake = FakeJamf()
     client = make_client()
-    client._token = "expired"
-    client._token_expires_at = time.monotonic() - 1  # the deadline expires_in named has passed
+    client._tokens.token = "expired"
+    client._tokens.expires_at = time.monotonic() - 1  # the deadline expires_in named has passed
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(fake.handler)) as http:
         response = await client._get(http, "/api/v1/jamf-pro-version", comment="aperture")
@@ -168,10 +168,10 @@ async def test_a_token_is_replaced_before_it_expires_rather_than_after_a_401() -
     assert response.status_code == 200
     # One GET, not two: the expiry was known, so no round trip was spent discovering it.
     assert fake.requests == ["POST /api/oauth/token", "GET /api/v1/jamf-pro-version"]
-    assert client._token == "tok"
+    assert client._tokens.token == "tok"
     # The fake answers expires_in=179, as the real tenant does; the deadline is that
     # less the 30-second margin, read off the response rather than assumed.
-    assert 148.0 < client._token_expires_at - time.monotonic() <= 149.0
+    assert 148.0 < client._tokens.expires_at - time.monotonic() <= 149.0
 
 
 async def test_one_expiry_produces_one_token_request_however_many_race() -> None:
@@ -179,7 +179,7 @@ async def test_one_expiry_produces_one_token_request_however_many_race() -> None
     issue one token between them, not one each."""
     fake = FakeJamf()
     client = make_client()
-    client._token = "revoked"  # every request in flight will 401 at the same moment
+    client._tokens.token = "revoked"  # every request in flight will 401 at the same moment
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(fake.async_handler)) as http:
         responses = await asyncio.gather(*(client._get(http, "/api/v1/jamf-pro-version", comment="race") for _ in range(4)))
@@ -198,13 +198,13 @@ async def test_a_coroutine_waiting_on_the_lock_takes_the_peers_token() -> None:
     client = make_client()
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(fake.async_handler)) as http:
-        await client._auth_lock.acquire()  # stand in for a peer mid-refresh
+        await client._tokens.lock.acquire()  # stand in for a peer mid-refresh
         waiter = asyncio.create_task(client._authenticate(http))
         await asyncio.sleep(0)
         assert not waiter.done()  # it is on the lock, not on the network
 
-        client._token = "peer-token"  # the peer's refresh lands
-        client._auth_lock.release()
+        client._tokens.token = "peer-token"  # the peer's refresh lands
+        client._tokens.lock.release()
 
         assert await waiter == "peer-token"
 
@@ -216,15 +216,15 @@ def test_a_late_401_does_not_wipe_a_peers_fresh_token() -> None:
     replaced token would clear the replacement — sending the next wave unauthenticated
     for one round trip each. Invalidation is now by value."""
     client = make_client()
-    client._token = "fresh"
-    client._token_expires_at = time.monotonic() + 100
+    client._tokens.token = "fresh"
+    client._tokens.expires_at = time.monotonic() + 100
 
     client._forget("expired")  # a slow coroutine's 401, carrying the dead token
-    assert client._token == "fresh"
+    assert client._tokens.token == "fresh"
 
     client._forget("fresh")  # the cached token itself failing is a real invalidation
-    assert client._token is None
-    assert client._token_expires_at is None
+    assert client._tokens.token is None
+    assert client._tokens.expires_at is None
 
 
 async def test_a_second_401_is_a_real_failure_and_does_not_authenticate_for_ever() -> None:

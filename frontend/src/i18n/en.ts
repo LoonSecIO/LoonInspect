@@ -1440,6 +1440,29 @@ export const en = {
       "Type them exactly as spelled — these are Jamf's own strings, and the API Role editor searches on them.",
     testProvesOnlyAuth:
       "Test connection only exchanges these credentials for a token — the one Jamf Pro call that needs no privilege. It does not check the API Role, so a role with nothing ticked still passes and then syncs no devices.",
+    // Sign-in reuse (#412). The three labels are Kyle's; each description says what the
+    // mode costs Jamf Pro, because that is the whole difference between them.
+    signInReuse: {
+      label: "Sign-in reuse",
+      intro:
+        "What this connection keeps of its Jamf Pro sign-in between runs. Jamf Pro's sign-in is short-lived (three minutes on the tenants measured), and every sweep and webhook needs one.",
+      modes: {
+        no_cache: {
+          label: "No cache",
+          description: "Every run and every webhook signs in from scratch: one token request to Jamf Pro each."
+        },
+        cache_and_hold: {
+          label: "Cache and hold",
+          description:
+            "Keeps the sign-in and the open connection while the sign-in is valid, so a webhook that follows another skips signing in. About one token request every two and a half minutes while there is activity; none while the fleet is quiet. The default."
+        },
+        perpetual: {
+          label: "Perpetual cache",
+          description:
+            "Cache and hold, and renews the sign-in before it expires, so even the first webhook after a quiet spell finds one ready. One token request every two and a half minutes, always: about 580 a day."
+        }
+      } as Record<string, { label: string; description: string }>
+    },
     testConnection: "Test connection",
     testing: "Testing...",
     testRequestFailed: "Test request failed.",
