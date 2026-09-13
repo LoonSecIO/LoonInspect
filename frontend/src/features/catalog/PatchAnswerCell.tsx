@@ -60,7 +60,7 @@ export function TitleLinks({ titles, t }: { titles: TitleLine[]; t: Translations
  * (`patchAnswer.ts`), so "14 releases missed" and "latest 4.6.8" can no longer be read as
  * one sentence about one title.
  *
- * **`assumed` is a quiet marker, pending Kyle's ruling** (#313 item 4). The 2026-08-22
+ * **`assumed` is a quiet marker** — #313 item 4, ruled by Kyle on 2026-09-13. The 2026-08-22
  * ruling kept the assumption visible on purpose, and since #67 every row is judged with no
  * device facts, so a title whose requirements test an extension attribute — Jamf's scoping
  * device for Firefox vs Firefox ESR, PyCharm Community vs Professional — reads `assumed`

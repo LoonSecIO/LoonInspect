@@ -895,7 +895,7 @@ export const en = {
     sentenceSubjectHint: (title: string) => `The date and the count are the title "${title}"'s.`,
     latestSubjectHint: (title: string) => `The latest version of the title "${title}".`,
     titleNameNotRead: "The patch catalog holds no name for this title; this is the id Jamf gives it.",
-    // The assumption, kept visible (2026-08-22) and quiet (#313, default pending a ruling).
+    // The assumption, kept visible (2026-08-22) and quiet (#313, ruled 2026-09-13).
     assumed: "assumed",
     assumedHint:
       "This title's requirements test an extension attribute. The catalog judges an app without device facts, so that test was read as passing; the match rests on that assumption.",

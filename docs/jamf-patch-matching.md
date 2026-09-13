@@ -193,9 +193,9 @@ page saw two pre-#65 booleans — the odd shape #313 was filed against.
   2024-01-03 · 14 releases missed · Wireshark 4.2" beside "latest 4.6.8 · Wireshark": the
   same two subjects §7 put on the wire, shown only when there is more than one title to be
   ambiguous between. On a single-title app the titles line already names it.
-- **`assumed`**, a muted marker with a hint after the state, when `eaAssumed` is true. This
-  is the default #313 flagged as needing a ruling and shipped quietly rather than not at
-  all: since #67 every row is judged with no device facts (`docs/app-catalog.md`), so a
+- **`assumed`**, a muted marker with a hint after the state, when `eaAssumed` is true —
+  the treatment #313 asked for a ruling on, ruled by Kyle on 2026-09-13 as built. Since #67
+  every row is judged with no device facts (`docs/app-catalog.md`), so a
   title whose requirements test an extension attribute — Jamf's scoping device for Firefox
   vs Firefox ESR, PyCharm Community vs Professional — reads `assumed` on every row it
   matches. Routine, which is why it is text and not a colour; visible, which is what the
