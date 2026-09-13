@@ -5,7 +5,7 @@ export const de: Translations = {
     updateAvailable: (tag: string) => `LoonInspect ${tag} ist verfügbar`,
     updateAvailableUntagged: "Ein neueres Release von LoonInspect ist verfügbar",
     updateWhatChanged: "was sich geändert hat",
-    updateHowTo: "wie aktualisieren",
+    updateHowTo: "so aktualisieren Sie",
     dismissUpdate: "Update-Hinweis ausblenden",
     sharing: {
       pageDescription:

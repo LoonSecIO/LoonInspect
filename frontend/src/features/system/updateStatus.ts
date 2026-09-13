@@ -50,14 +50,17 @@ export const TAG_PLACEHOLDER = "<tag>";
 /**
  * The upgrade for a Docker Compose install, in the order `docs/operations.md` §4 runs it:
  * the dump first, because the downgrade is manual and this dump is the documented way
- * back (KNOWN_ISSUES.md); then the release tag, not `git pull` of main — the notice is
+ * back (KNOWN_ISSUES.md) — owner-only, with the umask inside a subshell so it ends with the
+ * dump: left in force, it would make the files the checkout writes owner-only too, and the
+ * image build copies those modes in, where the non-root app cannot read them
+ * (`docs/operations.md` §2); then the release tag, not `git pull` of main — the notice is
  * about a release, and an install tracking main past it never sees the notice (Kyle's
  * default to overrule, #407); then the build that stamps the commit; then the log.
  */
 export function upgradeCommands(tag: string | null): string[] {
   const target = shellSafeTag(tag) ?? TAG_PLACEHOLDER;
   return [
-    'docker compose exec -T db pg_dump -U looninspect -d looninspect | gzip > "looninspect-preupgrade-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"',
+    '(umask 077 && docker compose exec -T db pg_dump -U looninspect -d looninspect | gzip > "looninspect-preupgrade-$(date -u +%Y%m%dT%H%M%SZ).sql.gz")',
     `git fetch --tags && git checkout ${target}`,
     "GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build",
     "docker compose logs -f app"

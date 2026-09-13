@@ -449,8 +449,8 @@ The check never performs the update. Updating stays a host-side decision, and th
 block prints the steps with the release's tag in place of `<tag>`, dump first:
 
 ```bash
-docker compose exec -T db pg_dump -U looninspect -d looninspect \
-  | gzip > "looninspect-preupgrade-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
+(umask 077 && docker compose exec -T db pg_dump -U looninspect -d looninspect \
+  | gzip > "looninspect-preupgrade-$(date -u +%Y%m%dT%H%M%SZ).sql.gz")
 git fetch --tags && git checkout <tag>
 GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build
 docker compose logs -f app

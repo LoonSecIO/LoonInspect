@@ -137,13 +137,26 @@ def _https_or_none(value: object) -> str | None:
     return value if isinstance(value, str) and value.startswith("https://") else None
 
 
+def _rate_limited(response: httpx.Response) -> bool:
+    """Whether a refusal is GitHub's rate limit rather than anything else that answers 403.
+
+    GitHub's primary limit answers 403 with `x-ratelimit-remaining: 0`, its secondary limit
+    403 or 429 with `retry-after`, and 429 means a limit wherever it comes from. A corporate
+    proxy's "Access denied" page is a 403 with none of those, and naming it the shared 60-an-
+    hour budget would send its operator to turn the check off on every instance but one —
+    it is `unreachable`, whose words already name a proxy.
+    """
+    headers = response.headers
+    return response.status_code == 429 or headers.get("x-ratelimit-remaining") == "0" or "retry-after" in headers
+
+
 def _unanswered(response: httpx.Response, *, not_found: UpdateReason, **names: str | None) -> _Answer | None:
     """The reason a non-200 answer carries, or None when the answer is a 200 to read."""
     if response.status_code == 200:
         return None
     if response.status_code == 404:
         return _Answer(update_available=None, reason=not_found, **names)
-    if response.status_code in (403, 429):
+    if response.status_code in (403, 429) and _rate_limited(response):
         logger.info(
             "update check refused by the provider (%s); unauthenticated api.github.com allows 60 requests an hour "
             "per address, shared by every instance behind it — the check asks again within the hour",
@@ -179,6 +192,9 @@ async def _ask(current_sha: str) -> _Answer:
                 return refused
             data = compare.json()
             status = data.get("status") if isinstance(data, dict) else None
+            # Only a string can be one of GitHub's four words; anything else from a provider
+            # that is not GitHub is no answer, never a TypeError that surfaces as a 500.
+            status = status if isinstance(status, str) else None
             base_commit = data.get("base_commit") if isinstance(data, dict) else None
             release_sha = base_commit.get("sha") if isinstance(base_commit, dict) else None
             latest_sha = release_sha if isinstance(release_sha, str) and release_sha else None

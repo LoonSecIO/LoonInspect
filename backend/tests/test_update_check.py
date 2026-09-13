@@ -190,21 +190,54 @@ async def test_a_commit_github_does_not_know_is_named_and_the_release_is_still_n
     assert (result.latest_tag, result.release_url, result.latest_sha) == (TAG, RELEASE_PAGE, None)
 
 
-@pytest.mark.parametrize("code", [403, 429])
+RATE_LIMITED = {
+    # GitHub's primary limit: 403 with the budget's own headers saying it is spent.
+    "primary 403": httpx.Response(
+        403,
+        headers={"x-ratelimit-limit": "60", "x-ratelimit-remaining": "0", "x-ratelimit-reset": "1789999999"},
+        json={"message": "API rate limit exceeded for 203.0.113.7."},
+    ),
+    # Its secondary limit: 403 with Retry-After.
+    "secondary 403": httpx.Response(
+        403, headers={"retry-after": "60"}, json={"message": "You have exceeded a secondary rate limit."}
+    ),
+    # 429 is a limit wherever it comes from.
+    "429": httpx.Response(429, json={"message": "Too Many Requests"}),
+}
+
+
+@pytest.mark.parametrize("limit", list(RATE_LIMITED), ids=list(RATE_LIMITED))
 @pytest.mark.parametrize("which", ["release", "compare"])
-async def test_a_refusal_is_named_not_swallowed_as_offline(monkeypatch, which, code) -> None:
-    """The shared 60-an-hour budget answers 403 (429 for GitHub's secondary limit). Before
-    #407 it was indistinguishable from being offline, and a fleet behind one NAT had no way
-    to see why its check never said anything."""
+async def test_a_rate_limit_is_named_not_swallowed_as_offline(monkeypatch, which, limit) -> None:
+    """The shared 60-an-hour budget. Before #407 it was indistinguishable from being
+    offline, and a fleet behind one NAT had no way to see why its check never said anything."""
     from app.core.update_check import get_update_status
 
-    refusal = httpx.Response(code, json={"message": "API rate limit exceeded"})
     _stamp(monkeypatch, SHORT)
-    _serve(monkeypatch, _github(**{which: refusal}))
+    _serve(monkeypatch, _github(**{which: RATE_LIMITED[limit]}))
 
     result = await get_update_status()
 
     assert (result.update_available, result.reason) == (None, "refused")
+
+
+@pytest.mark.parametrize("which", ["release", "compare"])
+async def test_a_proxys_403_is_unreachable_not_the_rate_limit(monkeypatch, which) -> None:
+    """A corporate proxy blocking api.github.com answers 403 with its own page and none of
+    GitHub's rate-limit headers. Called `refused`, the Updates block would blame the shared
+    budget and troubleshooting §10 would have the operator turn the check off everywhere
+    but one instance; `unreachable` is the answer whose words name a proxy."""
+    from app.core.update_check import get_update_status
+
+    blocked = httpx.Response(
+        403, headers={"content-type": "text/html"}, text="<html><h1>Access denied</h1>Policy: dev-tools</html>"
+    )
+    _stamp(monkeypatch, SHORT)
+    _serve(monkeypatch, _github(**{which: blocked}))
+
+    result = await get_update_status()
+
+    assert (result.update_available, result.reason) == (None, "unreachable")
 
 
 def _timeout(request: httpx.Request) -> httpx.Response:
@@ -220,6 +253,12 @@ def _timeout(request: httpx.Request) -> httpx.Response:
         pytest.param(_github(release=httpx.Response(200, text="<html>sign in to the wifi</html>")), id="a captive portal"),
         pytest.param(_github(release=httpx.Response(200, json={"id": 1})), id="a release with no tag_name"),
         pytest.param(_github(compare=httpx.Response(200, json={"status": "sideways"})), id="a compare status nobody wrote"),
+        # Not a string at all, from a provider that is not GitHub: no answer, never a
+        # TypeError surfacing as a 500 on every page load.
+        pytest.param(_github(compare=httpx.Response(200, json={"status": ["behind"]})), id="a compare status that is a list"),
+        pytest.param(
+            _github(compare=httpx.Response(200, json={"status": {"behind": 1}})), id="a compare status that is an object"
+        ),
     ],
 )
 async def test_no_answer_is_unreachable_never_current(monkeypatch, handler) -> None:

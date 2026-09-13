@@ -179,7 +179,7 @@ export function ApplicationRecordPage() {
                   </td>
                   <td className="px-4 py-2 tabular-nums">{row.deviceCount}</td>
                   <td className="px-4 py-2">
-                    <PatchAnswerCell answer={row} t={t} />
+                    <PatchAnswerCell answer={row} t={t} showTitles />
                   </td>
                   <td className="px-4 py-2">
                     <LatestCell answer={row} t={t} />
