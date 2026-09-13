@@ -11,7 +11,7 @@ from sqlalchemy import distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.catalog.index import lookup_versions
-from app.catalog.service import refresh_tenant
+from app.catalog.service import refresh_tenant, title_names
 from app.core.auth import require
 from app.core.database import get_db
 from app.core.permissions import Permission
@@ -20,7 +20,7 @@ from app.core.vuln_answer import stored_corpus
 from app.core.vuln_library import earned_corpus
 from app.core.vuln_read import assess, corpus_as_of, today
 from app.mdm.patch.requirements import version_tuple
-from app.models.schema import AppCatalogEntry, AppCatalogVersion, InstalledApp, JamfPatchTitle
+from app.models.schema import AppCatalogEntry, AppCatalogVersion, InstalledApp
 from app.schemas.catalog import (
     CatalogEntryAssessedOut,
     CatalogEntryOut,
@@ -53,11 +53,8 @@ def _device_counts(app_hash: str | None = None):
 
 
 async def _title_refs(db: AsyncSession, entries: list[AppCatalogEntry]) -> dict[str, CatalogTitleRef]:
-    ids = {title_id for entry in entries for title_id in (entry.jamf_title_ids or [])}
-    if not ids:
-        return {}
-    rows = (await db.execute(select(JamfPatchTitle.id, JamfPatchTitle.name).where(JamfPatchTitle.id.in_(ids)))).all()
-    return {title_id: CatalogTitleRef(id=title_id, name=name) for title_id, name in rows}
+    names = await title_names(db, (title_id for entry in entries for title_id in (entry.jamf_title_ids or [])))
+    return {title_id: CatalogTitleRef(id=title_id, name=name) for title_id, name in names.items()}
 
 
 def _stamp(out: CatalogEntryOut, devices: int, refs: dict[str, CatalogTitleRef], entry: AppCatalogEntry) -> None:

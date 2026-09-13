@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 import { ApiError } from "@/config/api";
-import { PATCH_STATE_COLORS } from "@/features/catalog/patchState";
+import { PatchAnswerCell } from "@/features/catalog/PatchAnswerCell";
 import { DiffCell } from "@/features/changes/DiffCell";
 import { getChangePolicy, listChanges } from "@/features/changes/api";
 import { detailText, diffLines, labelsFromPolicy, whatOf, type LabelMap } from "@/features/changes/render";
@@ -9,7 +9,7 @@ import type { DeviceChange } from "@/features/changes/types";
 import { getDevice } from "@/features/devices/api";
 import { collectedNotOnPage } from "@/features/devices/ledgerSections";
 import { ObservationBlock } from "@/features/devices/ObservationBlock";
-import type { DeviceDetail, ExtensionAttribute, InstalledApp } from "@/features/devices/types";
+import type { DeviceDetail, ExtensionAttribute } from "@/features/devices/types";
 import { AssessmentCell, CorpusBanner } from "@/features/vulnerabilities/AppAssessment";
 import { useLocale } from "@/i18n/LocaleContext";
 import type { Translations } from "@/i18n/en";
@@ -27,10 +27,6 @@ type Result<T> = { state: "ready"; value: T } | { state: "failed"; notFound: boo
 
 function formatInstant(value: string | null): string | null {
   return value ? new Date(value).toLocaleString() : null;
-}
-
-function formatDay(value: string | null): string {
-  return value ? new Date(value).toLocaleDateString() : "—";
 }
 
 /**
@@ -228,7 +224,9 @@ export function DevicePage() {
                     ) : null}
                   </td>
                   <td className="px-4 py-2">
-                    <PatchCell app={app} t={t} />
+                    {/* #313: state, #68's sentence, the latest version and the titles by
+                        name — each half naming its title when several matched. */}
+                    <PatchAnswerCell answer={app} t={t} showLatest showTitles none={td.apps.noTitle} />
                   </td>
                   <td className="px-4 py-2">
                     <AssessmentCell vuln={app.vuln} t={t} />
@@ -411,38 +409,6 @@ function Placement({ device, td, t }: { device: DeviceDetail; td: Translations["
         ))}
       </dl>
     </section>
-  );
-}
-
-/** #68's sentence from stored columns: a date and a count, never a day count. */
-function PatchCell({ app, t }: { app: InstalledApp; t: Translations }) {
-  const td = t.devices.detail;
-  if (!app.patchState) return <span className="text-muted-foreground">{td.apps.noTitle}</span>;
-  const stateLabels: Record<string, string> = {
-    latest: t.catalog.stateLatest,
-    behind: t.catalog.stateBehind,
-    ahead: t.catalog.stateAhead,
-    unknown: t.catalog.stateUnknown
-  };
-  const titleId = app.jamfTitleIds?.[0] ?? null;
-  return (
-    <div className="space-y-0.5">
-      <span className="inline-flex items-center gap-1.5">
-        <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: PATCH_STATE_COLORS[app.patchState] }} />
-        {stateLabels[app.patchState] ?? app.patchState}
-      </span>
-      {app.patchAvailable && (
-        <span className="block text-xs text-muted-foreground">
-          {t.catalog.behindSince(formatDay(app.patchAvailableSince), app.releasesMissed)}
-        </span>
-      )}
-      {app.latestVersion && <span className="block text-xs text-muted-foreground">{td.apps.latest(app.latestVersion)}</span>}
-      {titleId && (
-        <Link to={`/devices/applications/jamf-patch/${titleId}`} className="block text-xs underline decoration-dotted underline-offset-4 hover:decoration-solid">
-          {td.apps.titleLink}
-        </Link>
-      )}
-    </div>
   );
 }
 

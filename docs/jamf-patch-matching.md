@@ -175,14 +175,44 @@ under `/System` — match nothing. `tests/test_patch_matching.py` pins exactly t
 
 ## 6. Surfaces
 
+The page renders the whole answer since #313 (2026-09-13). Between #311 and then a Splunk
+user could read `eaAssumed` and the two subject ids off an event while the operator on the
+page saw two pre-#65 booleans — the odd shape #313 was filed against.
+
 - Devices › Applications › Jamf Patch: "Devices with app" and "Devices on latest" per title
   (distinct devices, tenant-scoped through RLS), sortable; a title page shows devices per listed
   version and how many devices sit on a version Jamf has not listed.
-- Applications overview: Compliant / Patch available per build, from the summary.
+- **One cell, three pages** (`frontend/src/features/catalog/PatchAnswerCell.tsx`, over the
+  pure `patchAnswer.ts` the test lane pins): the device page's Jamf Patch column, the
+  application record's version spread and the catalog all paint the same thing — the state
+  (`latest` / `behind` / `ahead` / `unknown`, four values, so `ahead` is visibly not a
+  problem and `unknown` is visibly its own finding), #68's sentence when a patch is
+  available, the latest version, and the titles by name linking to their pages. The device
+  page folds latest and titles into the cell; the other two have columns for them.
+- **Each half names its title when several matched.** Wireshark 4.2.0 reads "since
+  2024-01-03 · 14 releases missed · Wireshark 4.2" beside "latest 4.6.8 · Wireshark": the
+  same two subjects §7 put on the wire, shown only when there is more than one title to be
+  ambiguous between. On a single-title app the titles line already names it.
+- **`assumed`**, a muted marker with a hint after the state, when `eaAssumed` is true. This
+  is the default #313 flagged as needing a ruling and shipped quietly rather than not at
+  all: since #67 every row is judged with no device facts (`docs/app-catalog.md`), so a
+  title whose requirements test an extension attribute — Jamf's scoping device for Firefox
+  vs Firefox ESR, PyCharm Community vs Professional — reads `assumed` on every row it
+  matches. Routine, which is why it is text and not a colour; visible, which is what the
+  2026-08-22 ruling asked for. A null (a row judged before #311's column) shows nothing
+  and asserts nothing.
+- **Applications overview**: one Jamf Patch column at the list's grain — "3 of 12 with a
+  patch available" (red), "No patch available" (green), or "Not in Jamf Patch" (muted, and
+  deliberately not a zero). The two counts are aggregates over the columns the catalog
+  copies onto `installed_apps`, in the GROUP BY the row already costs.
 - `GET /api/devices/{id}`: each app carries `jamfTitleIds`, `patchState`, `thisVersionSeen`,
-  `latestVersion`, `latestReleasedAt` beside the older compliance fields. Note the spelling:
-  `jamfTitleIds`, lowercase `Ids`. The `ID` casing rule is wire-only
-  (`docs/splunk-wire-vocabulary.md` §4) and this surface is not the wire.
+  `latestVersion`, `latestReleasedAt` beside the older compliance fields, and since #313
+  `jamfTitles` (the names, resolved per request; an unnamed title is left out of this list
+  and stays on the id list), `eaAssumed`, `referenceTitleId` and `sentenceTitleId` — the
+  subject ids as stored, on every answered row; the page decides when to show them.
+  `GET /api/catalog` rows carry the same three. Note the spelling: `jamfTitleIds`,
+  lowercase `Ids`. The `ID` casing rule is wire-only (`docs/splunk-wire-vocabulary.md` §4)
+  and this surface is not the wire.
 - **The Splunk wire, since #311** (2026-09-04): every one of those columns rides
   `patch.jamfPatch{}` on the app's `device.inventory` sub-event — §7 below.
 - The title page's "Test requirements" panel applies the same rule by hand; keep the two
@@ -313,4 +343,5 @@ Re-evaluating matches when the hourly catalog sync changes a title — since shi
 vulnerability columns (LoonSecIO); fleet findings. From #311: `installedReleasedAt` on the wire
 (the build's own release date — stored as `app_catalog.released_at`, not copied to
 `installed_apps`), `patch.sources` the day a second provider exists, catalog generation on
-`loon:run`, and whether the UI should render what the wire now carries.
+`loon:run`. The UI renders what the wire carries since #313 (§6); what it does not yet
+do is sort or filter the Applications overview by the patch column.

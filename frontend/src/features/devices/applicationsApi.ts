@@ -8,6 +8,11 @@ export interface Application {
   bundleId: string;
   deviceCount: number;
   versionCount: number;
+  /** #313: the patch answer at this grain — distinct devices whose build matched a Jamf
+   *  Patch title at all, and how many of those have a patch available. The first is the
+   *  denominator that keeps a zero honest: no title is no answer, not a clean bill. */
+  matchedDeviceCount: number;
+  patchAvailableDeviceCount: number;
 }
 
 /** The list envelope every paged endpoint shares (#137): the page's rows, the count

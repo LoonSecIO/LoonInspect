@@ -20,6 +20,14 @@ class ApplicationOut(_CamelModel):
     # Distinct devices with any version installed — the sort key for the page.
     device_count: int
     version_count: int
+    # #313: the patch answer at the grain the list has. Both are column reads aggregated in
+    # the one GROUP BY the row already costs — `jamf_title_ids` and `patch_available` are
+    # copied onto every `installed_apps` row by the catalog (docs/app-catalog.md §1), so no
+    # join and no judging happens here. `matched_device_count` is the denominator that
+    # keeps a zero honest: "no patch available" on an app no title matches is not a clean
+    # bill, it is no answer, and the page says which by comparing the two.
+    matched_device_count: int = 0
+    patch_available_device_count: int = 0
 
 
 class ApplicationListResponse(_CamelModel):

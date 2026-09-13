@@ -50,7 +50,7 @@ that arrive through other paths than an MDM inventory (HEC).
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import case, delete, null, select, update
@@ -61,7 +61,7 @@ from app.core.vuln_answer import VULN_ANSWER_COLUMNS
 from app.core.vuln_library import loaded_epoch_signature, read_tenant_tier
 from app.mdm.patch.matching import CATALOG_PROBE_INTERVAL, Catalog, TitleMatch, load_catalog, match_app, summarize
 from app.mdm.patch.requirements import Facts, jamf_platform_name
-from app.models.schema import AppCatalogEntry, AppCatalogTitleMatch, Device, InstalledApp, VulnLibraryRow
+from app.models.schema import AppCatalogEntry, AppCatalogTitleMatch, Device, InstalledApp, JamfPatchTitle, VulnLibraryRow
 from app.schemas.payload import VULN_ASSESSMENT_COVERED
 
 logger = logging.getLogger(__name__)
@@ -295,6 +295,28 @@ async def evaluate_entries(db: AsyncSession, entries: Sequence[AppCatalogEntry],
     # summary columns and the title matches added above).
     await judge_vuln(db, entries, now=now)
     return len(entries)
+
+
+async def title_names(db: AsyncSession, title_ids: Iterable[str]) -> dict[str, str]:
+    """Title id -> name off the global `jamf_patch_titles`, one primary-key read for a whole
+    page of rows (#313).
+
+    The pages resolve names per request rather than storing them beside the ids: a rename in
+    Jamf then changes the label and never the identity, which is the same rule
+    `ExtensionAttributeOut` follows (#197). A title the table holds no name for — a row Jamf
+    served with an empty `name`, or an id with no row at all (`sync_catalog` only ever
+    upserts, so that takes a hand-edited table) — is absent from the result, and the caller
+    leaves that title out of the named list rather than shipping its id in disguise; the ids
+    themselves stay whole on `jamf_title_ids`, so a page can always tell "unnamed" from
+    "unmatched". The process cache (`matching.cached_title_names`) is deliberately not read
+    here: on an API worker it may hold nothing or an older catalog, and this is one indexed
+    read per page, not one per device.
+    """
+    ids = {title_id for title_id in title_ids if title_id}
+    if not ids:
+        return {}
+    rows = (await db.execute(select(JamfPatchTitle.id, JamfPatchTitle.name).where(JamfPatchTitle.id.in_(ids)))).all()
+    return {title_id: name for title_id, name in rows if name}
 
 
 def answer_columns(entry: AppCatalogEntry) -> dict[str, object]:

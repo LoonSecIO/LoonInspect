@@ -10,6 +10,7 @@ from sqlalchemy import ColumnElement, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.catalog.service import title_names
 from app.core.auth import require
 from app.core.database import get_db
 from app.core.permissions import Permission
@@ -20,6 +21,7 @@ from app.core.vuln_read import assess, corpus_as_of, today
 from app.mdm.org_units import BUILDING, DEPARTMENT, OrgUnitNames, ids_for_name, load_names, name_for
 from app.models.schema import Device, DeviceExtensionAttribute, InstalledApp
 from app.observations.read import device_observation
+from app.schemas.catalog import CatalogTitleRef
 from app.schemas.devices import (
     DeviceDetailOut,
     DeviceListResponse,
@@ -262,6 +264,32 @@ def _assessed(out: DeviceDetailOut, rows: Sequence[InstalledApp], *, corpus: Vul
     )
 
 
+def _titled(out: DeviceDetailOut, names: dict[str, str]) -> DeviceDetailOut:
+    """The matched titles by name on every app (#313), from one read of the global catalog
+    for the whole page — `title_names` in `app.catalog.service` says why per request.
+
+    A title the read could not name is left out of `jamf_titles` and stays on
+    `jamf_title_ids`: the page then knows it has an unnamed title rather than a shorter
+    match, and never prints an id as if it were a name.
+    """
+    return out.model_copy(
+        update={
+            "apps": [
+                app.model_copy(
+                    update={
+                        "jamf_titles": [
+                            CatalogTitleRef(id=title_id, name=names[title_id])
+                            for title_id in (app.jamf_title_ids or [])
+                            if title_id in names
+                        ]
+                    }
+                )
+                for app in out.apps
+            ]
+        }
+    )
+
+
 @router.get("/{device_id}/observation", response_model=DeviceObservationOut)
 async def get_device_observation(device_id: int, db: AsyncSession = Depends(get_db)) -> DeviceObservationOut:
     """What the ledger currently holds for one Mac, by section, with the four-state
@@ -288,4 +316,7 @@ async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> Devi
     # One read of this tenant's data-sharing tier for the whole response, not one per app:
     # the corpus a tenant has earned is a per-tenant fact and the gate reads it here
     # (#248, docs/vulnerabilities.md §8).
-    return _assessed(detail, device.apps, corpus=await earned_corpus(db))
+    assessed = _assessed(detail, device.apps, corpus=await earned_corpus(db))
+    # One read of the global catalog for every title this Mac's apps matched (#313): the
+    # names a person can read, beside the ids the rows store.
+    return _titled(assessed, await title_names(db, (title_id for app in device.apps for title_id in (app.jamf_title_ids or []))))
