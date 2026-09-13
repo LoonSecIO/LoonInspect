@@ -63,7 +63,9 @@ describe("the upgrade steps", () => {
   it("dump first, then the release tag, then the stamped build, then the log", () => {
     const lines = upgradeCommands("v2026.09.17");
     expect(lines).toHaveLength(4);
-    expect(lines[0]).toMatch(/^docker compose exec -T db pg_dump -U looninspect -d looninspect \| gzip > "looninspect-preupgrade-/);
+    // Owner-only, and the umask scoped to the dump alone: a umask left in force would make
+    // the checkout's files owner-only, and the image build copies those modes in.
+    expect(lines[0]).toMatch(/^\(umask 077 && docker compose exec -T db pg_dump -U looninspect -d looninspect \| gzip > "looninspect-preupgrade-.*\.sql\.gz"\)$/);
     expect(lines[1]).toBe("git fetch --tags && git checkout v2026.09.17");
     expect(lines[2]).toBe("GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build");
     expect(lines[3]).toBe("docker compose logs -f app");

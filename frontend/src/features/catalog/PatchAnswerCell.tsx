@@ -78,7 +78,9 @@ export function PatchAnswerCell({
   t: Translations;
   /** The device page has no Latest column; the catalog and the record do. */
   showLatest?: boolean;
-  /** Likewise for the titles by name. */
+  /** The device page and the record have no titles column; the catalog does. On the record
+   *  it is the only place a build's titles are named, and builds of one app can match
+   *  different titles (Wireshark 4.2.0 matches "Wireshark 4.2" too; 4.6.x does not). */
   showTitles?: boolean;
   /** What to say when no title matched; a dash where the page's other cells use one. */
   none?: string;

@@ -489,12 +489,13 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
      the shipped stack has no reverse proxy, so this is something you put in front of it.
      Reload the page — the *Synced* column will have moved.
    - `jamf patch catalog synced` and nothing else → the hourly refresh is completing. If
-     the page still shows nothing, that is reportable state **J**.
+     the page, with *Only titles with devices* unticked, still says *No Jamf Patch titles
+     synced yet.*, that is reportable state **J**.
    - nothing for `/api/jamf-patch/sync` at all — only the page's own `titles` reads, or no
      output whatever → the press never reached this container, and no hourly refresh has
      completed since it started either. The job runs at the top of each hour and not at
-     startup, so an empty table is expected for up to an hour after a restart — but a
-     press that leaves no line is not. Check that the app is reachable from the browser's
+     startup, so *No Jamf Patch titles synced yet.* is expected for up to an hour after a
+     restart — but a press that leaves no line is not. Check that the app is reachable from the browser's
      own machine (`curl -si $BASE/api/health`) and what sits in between; a press that
      still writes nothing while health answers is reportable state **J**.
 3. **The table has rows and one title you expect is missing.** Untick *Only titles with
@@ -661,10 +662,17 @@ the hour after a failure; `docker compose restart app` makes it ask now.
      was never pushed. Build from a release tag and it is compared again.
 2. **The notice names a release you believe you have.** *This build* ends in the commit it
    was built from (`+<sha>`). The notice means GitHub said that commit does not contain the
-   release's. From the checkout the image was built from:
-   `git merge-base --is-ancestor <tag> <sha> && echo contains || echo "does not contain"`.
-   *does not contain* → the image came from an older checkout or from a branch; build from
-   the tag. *contains* → reportable state **N**.
+   release's. From the checkout the image was built from, fetch the tag first, then ask git:
+
+   ```bash
+   git fetch --tags
+   git merge-base --is-ancestor <tag> <sha>; echo $?
+   ```
+
+   `1` → does not contain it: the image came from an older checkout or from a branch; build
+   from the tag. `0` → contains it: reportable state **N**. Anything else, with a `fatal:`
+   line, is git saying it does not have the tag or the commit — fetch again, or run it in
+   the checkout the image was built from.
 3. **The banner went away and the release did not.** Dismissing hides it for the browser
    session only. The Needs Attention row on the Overview and the Updates block still say it.
 

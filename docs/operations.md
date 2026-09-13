@@ -143,9 +143,8 @@ life.
 ## 2. Backup
 
 ```bash
-umask 077
-docker compose exec -T db pg_dump -U looninspect -d looninspect \
-  | gzip > "looninspect-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
+(umask 077 && docker compose exec -T db pg_dump -U looninspect -d looninspect \
+  | gzip > "looninspect-$(date -u +%Y%m%dT%H%M%SZ).sql.gz")
 ```
 
 Real output, against a stack with one connection and one admin:
@@ -181,11 +180,14 @@ without it, exit=0
 
 Four things about that command line, three of them load-bearing:
 
-- **`umask 077` first.** The dump contains every device record, every account row and
-  every audit trail in the instance. A default umask writes it world-readable; on a
-  shared host that is the whole database handed to any local account. This is the one
-  place in this document where a step exists purely to avoid making the operator's
-  posture worse.
+- **`umask 077` first, inside the parentheses.** The dump contains every device record,
+  every account row and every audit trail in the instance. A default umask writes it
+  world-readable; on a shared host that is the whole database handed to any local account.
+  This is the one place in this document where a step exists purely to avoid making the
+  operator's posture worse. The parentheses end the umask with the dump: left in force in
+  the shell, it makes every file a later `git pull` or `git checkout` writes owner-only,
+  and the image build copies those modes in as root's, where the app — uid 10001 — gets
+  `Permission denied` reading them (checked 2026-09-13 against the shipped image).
 - **`-T`.** Without it compose allocates a TTY and mangles the dump. The failure is not
   loud — you get a file, and it is subtly wrong.
 - **As `looninspect`, the bootstrap superuser, not `looninspect_app`.** The app role is
@@ -378,8 +380,8 @@ migration step to run and no flag to skip it — starting a newer image against 
 database *is* the migration.
 
 ```bash
-docker compose exec -T db pg_dump -U looninspect -d looninspect \
-  | gzip > "looninspect-preupgrade-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"   # §2
+(umask 077 && docker compose exec -T db pg_dump -U looninspect -d looninspect \
+  | gzip > "looninspect-preupgrade-$(date -u +%Y%m%dT%H%M%SZ).sql.gz")   # §2
 git pull
 GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build
 docker compose logs -f app

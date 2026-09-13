@@ -192,7 +192,9 @@ page saw two pre-#65 booleans — the odd shape #313 was filed against.
   (`latest` / `behind` / `ahead` / `unknown`, four values, so `ahead` is visibly not a
   problem and `unknown` is visibly its own finding), #68's sentence when a patch is
   available, the latest version, and the titles by name linking to their pages. The device
-  page folds latest and titles into the cell; the other two have columns for them.
+  page folds latest and titles into the cell; the record page folds the titles in beside
+  its Latest column, because builds of one app can match different titles; the catalog has
+  columns for both.
 - **Each half names its title when several matched.** Wireshark 4.2.0 reads "since
   2024-01-03 · 14 releases missed · Wireshark 4.2" beside "latest 4.6.8 · Wireshark": the
   same two subjects §7 put on the wire, shown only when there is more than one title to be
