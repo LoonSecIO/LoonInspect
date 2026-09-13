@@ -441,11 +441,16 @@ it refreshes hourly on its own. **Devices › Applications › Jamf Patch** show
 **Sync now** button that performs the same refresh immediately. The refresh dials a public
 Jamf server; no credential of yours is involved, so nothing here is a permissions problem.
 
-1. **Press Sync now and watch the table's *Synced* column.** If the row dates move, the
-   refresh works and the catalog is current; a table that is still empty after a refresh
-   that reported no error is reportable state **J**. The first press on a freshly started
-   container is the slow one — the whole catalog is fetched title by title and takes
-   minutes, not seconds, and nothing on the page cancels it. Let it finish.
+1. **Untick *Only titles with devices*, then press Sync now and watch the table's *Synced*
+   column.** The box is ticked by default and hides every title whose *Devices with app*
+   reads 0, which on a pod before its first device sweep is every title: the table then
+   says *No title has a device yet. All … are hidden*, and that is the checkbox, not the
+   catalog. Only *No Jamf Patch titles synced yet.* means the catalog itself is empty. If
+   the row dates move, the refresh works and the catalog is current; a table that still
+   says *No Jamf Patch titles synced yet.* after a refresh that reported no error is
+   reportable state **J**. The first press on a freshly started container is the slow one
+   — the whole catalog is fetched title by title and takes minutes, not seconds, and
+   nothing on the page cancels it. Let it finish.
 2. **The button says "Sync failed. Try again."** The page does not carry the reason; the
    container log does. Three different things in that log can carry it — the sentence the
    refresh writes about itself, the hourly job's name (`hourly_jamf_patch_sync`) and the
@@ -492,13 +497,23 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
      press that leaves no line is not. Check that the app is reachable from the browser's
      own machine (`curl -si $BASE/api/health`) and what sits in between; a press that
      still writes nothing while health answers is reportable state **J**.
-3. **The table has rows and one title you expect is missing.** A title whose definition
-   the server refused is skipped for that refresh and fetched again at the next one, so a
-   gap that closes by itself is working as designed. A title that is published by Jamf and
-   still missing a day later is reportable state **J**.
+3. **The table has rows and one title you expect is missing.** Untick *Only titles with
+   devices* and search again: with the box ticked, a title no device has is not listed,
+   and a search that finds only such titles says how many the box hid.
+   - The title is there once unticked, and reads 0 under *Devices with app* for software
+     you know is on your Macs → this is not a refresh problem. About 300 catalog titles
+     are never matched to an installed app — device-level (*Apple macOS …*),
+     attribute-only and version-only titles, Mozilla Firefox among them
+     ([`jamf-patch-matching.md`](jamf-patch-matching.md) §3) — so they read 0 on every
+     fleet.
+   - The title is missing with the box unticked → a title whose definition the server
+     refused is skipped for that refresh and fetched again at the next one, so a gap that
+     closes by itself is working as designed. A title that is published by Jamf and still
+     missing from the unticked list a day later is reportable state **J**.
 
-**J.** A refresh that reports no error leaves the table empty, a title Jamf publishes
-stays missing for more than a day, or a press of **Sync now** writes nothing to the
+**J.** A refresh that reports no error leaves the table saying *No Jamf Patch titles
+synced yet.*, a title Jamf publishes stays missing from the list with *Only titles with
+devices* unticked for more than a day, or a press of **Sync now** writes nothing to the
 container log while `/api/health` answers. Report what the *Synced* column shows, the
 output of `docker compose logs app --since 1h`, and the build from Settings › Support.
 

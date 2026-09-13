@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { listJamfPatchTitles, syncJamfPatchTitles } from "@/features/jamfPatch/api";
 import { PatchingPolicyStatement } from "@/features/jamfPatch/PatchingPolicyStatement";
+import { filterTitles } from "@/features/jamfPatch/titleFilter";
 import type { JamfPatchTitle } from "@/features/jamfPatch/types";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -94,6 +95,10 @@ export function JamfPatchPage() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("exact");
+  // Ticked by default (#403), as the Catalog tab's "Installed now only" is, and held in
+  // the component: the detail page's back link remounts this page, so a reader returns to
+  // the default after every title. The footer always says what it hid.
+  const [onlyWithDevices, setOnlyWithDevices] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -138,17 +143,40 @@ export function JamfPatchPage() {
     }
   }
 
-  const visibleTitles = useMemo(() => {
+  // The search, then the checkbox, then the sort. `filterTitles` decides which rows show
+  // and why none do, so the four empty states are table-tested (`titleFilter.test.ts`).
+  const filtered = useMemo(() => {
     const term = searchTerm.trim();
-    const filtered = term ? titles.filter((title) => titleMatches(title, term, searchMode)) : titles;
-
-    const sorted = [...filtered].sort((a, b) => {
-      const result = compareSortValues(sortValue(a, sortKey), sortValue(b, sortKey));
-      return sortDir === "asc" ? result : -result;
+    return filterTitles(titles, {
+      matches: (title) => titleMatches(title, term, searchMode),
+      searching: term !== "",
+      onlyWithDevices
     });
+  }, [titles, searchTerm, searchMode, onlyWithDevices]);
 
-    return sorted;
-  }, [titles, searchTerm, searchMode, sortKey, sortDir]);
+  const visibleTitles = useMemo(
+    () =>
+      [...filtered.visible].sort((a, b) => {
+        const result = compareSortValues(sortValue(a, sortKey), sortValue(b, sortKey));
+        return sortDir === "asc" ? result : -result;
+      }),
+    [filtered, sortKey, sortDir]
+  );
+
+  const emptyMessage = (() => {
+    switch (filtered.empty) {
+      case "noCatalog":
+        return t.jamfPatch.empty;
+      case "noneWithDevices":
+        return t.jamfPatch.emptyNoneWithDevices(filtered.hidden);
+      case "matchesOnlyWithoutDevices":
+        return t.jamfPatch.emptyMatchesOnlyWithoutDevices(filtered.hidden);
+      case "noMatch":
+        return t.jamfPatch.noMatches;
+      default:
+        return null;
+    }
+  })();
 
   function sortIndicator(key: SortKey): string {
     if (key !== sortKey) return "";
@@ -201,6 +229,10 @@ export function JamfPatchPage() {
           <option value="regex">{t.jamfPatch.searchModeRegex}</option>
           <option value="fuzzy">{t.jamfPatch.searchModeFuzzy}</option>
         </select>
+        <label className="flex items-center gap-2 text-sm" title={t.jamfPatch.onlyWithDevicesHint}>
+          <input type="checkbox" checked={onlyWithDevices} onChange={(e) => setOnlyWithDevices(e.target.checked)} />
+          {t.jamfPatch.onlyWithDevices}
+        </label>
       </div>
 
       <div className="overflow-x-auto rounded-lg border bg-card">
@@ -232,17 +264,11 @@ export function JamfPatchPage() {
                 </td>
               </tr>
             )}
-            {!loading && !error && titles.length === 0 && (
+            {/* Four empty states, each in its own words (#403, docs/diagnosability.md rule 1). */}
+            {!loading && !error && emptyMessage !== null && (
               <tr>
                 <td className="px-4 py-4 text-muted-foreground" colSpan={8}>
-                  {t.jamfPatch.empty}
-                </td>
-              </tr>
-            )}
-            {!loading && !error && titles.length > 0 && visibleTitles.length === 0 && (
-              <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={8}>
-                  {t.jamfPatch.noMatches}
+                  {emptyMessage}
                 </td>
               </tr>
             )}
@@ -270,7 +296,10 @@ export function JamfPatchPage() {
         </table>
       </div>
 
-      <p className="text-sm text-muted-foreground">{t.jamfPatch.filteredTotal(visibleTitles.length, total)}</p>
+      <p className="text-sm text-muted-foreground">
+        {t.jamfPatch.filteredTotal(visibleTitles.length, total)}
+        {filtered.hidden > 0 && ` · ${t.jamfPatch.hiddenWithoutDevices(filtered.hidden)}`}
+      </p>
     </section>
   );
 }
