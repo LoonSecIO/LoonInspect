@@ -125,6 +125,14 @@ tests are not applicable. A per-device override that reads a carried attribute i
   carrying the exact version now), the Jamf titles by name, state, latest, released; `q`,
   `jamf=all|matched|unmatched`, `installedOnly` (default on), paging; plus a summary (entries,
   installed now, known to Jamf, not in Jamf's catalog) and `corpusAsOf` (#251 — see below).
+  Since #313 each row also carries `eaAssumed`, `referenceTitleId` and `sentenceTitleId`, as
+  stored — the same three `GET /api/devices/{id}` carries per app, and the same facts the
+  wire's `patch.jamfPatch{}` has carried since #311 (`docs/jamf-patch-matching.md` §6, §7).
+- `GET /api/applications` — one row per app across the fleet with `deviceCount` and
+  `versionCount`, and since #313 `matchedDeviceCount` and `patchAvailableDeviceCount`: distinct
+  devices whose build matched a Jamf Patch title, and how many of those have a patch available.
+  Two filtered counts in the GROUP BY the row already costs, over the columns this catalog
+  copies onto `installed_apps` (§1) — no join, nothing judged.
 - **`vuln` on every row** (#251): LoonInspect's own answer for that exact build —
   `covered` | `unknown_app` | `off`, with the summary block of
   [`docs/vulnerabilities.md`](vulnerabilities.md) §4 under `covered`. The join is the
@@ -158,6 +166,13 @@ Devices › Applications › **Catalog**: one row per distinct app version — n
 version, devices, first seen, last seen, Jamf title(s) (linking to the title page), state, latest,
 released, **vulnerabilities** — with search, the Jamf filter, and "installed now only"; four tiles
 (distinct app versions, installed now, known to Jamf, not in Jamf's catalog). en + de.
+
+The **State** and **Latest** cells are the shared patch-answer cell of
+`docs/jamf-patch-matching.md` §6 (#313): the state with #68's sentence under it, the
+`assumed` marker when the answer rests on an extension attribute read as passing, and — on a
+row several titles matched — the title each half is about, so "14 releases missed" and
+"latest 4.6.8" read as two facts about two lines rather than one about one. The Applications
+overview carries the list-grain column the same section describes.
 
 The **Vulnerabilities** column (#251) is where the corpus's edge is shown, because this tab's
 grain — one row per distinct build — is exactly the grain the corpus is keyed on. It renders

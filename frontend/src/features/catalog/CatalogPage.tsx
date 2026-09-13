@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router";
 import { listCatalog } from "@/features/catalog/api";
-import { PATCH_STATE_COLORS } from "@/features/catalog/patchState";
+import { LatestCell, PatchAnswerCell, TitlesCell } from "@/features/catalog/PatchAnswerCell";
 import type { CatalogEntry, CatalogJamfFilter } from "@/features/catalog/types";
 import { AssessmentCell, CorpusBanner } from "@/features/vulnerabilities/AppAssessment";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -131,13 +130,6 @@ export function CatalogPage() {
     );
   }
 
-  const stateLabels: Record<string, string> = {
-    latest: t.catalog.stateLatest,
-    behind: t.catalog.stateBehind,
-    ahead: t.catalog.stateAhead,
-    unknown: t.catalog.stateUnknown
-  };
-
   return (
     <section className="space-y-4">
       <p className="text-sm text-muted-foreground">{t.catalog.description}</p>
@@ -233,38 +225,16 @@ export function CatalogPage() {
                   <td className="px-4 py-2">{formatDate(entry.firstSeenAt)}</td>
                   <td className="px-4 py-2">{formatDate(entry.lastSeenAt)}</td>
                   <td className="px-4 py-2">
-                    {entry.jamfTitles.length === 0 ? (
-                      <span className="text-muted-foreground">—</span>
-                    ) : (
-                      entry.jamfTitles.map((title, index) => (
-                        <span key={title.id}>
-                          {index > 0 && ", "}
-                          <Link to={`/devices/applications/jamf-patch/${title.id}`} className="hover:underline">
-                            {title.name}
-                          </Link>
-                        </span>
-                      ))
-                    )}
+                    <TitlesCell answer={entry} t={t} />
                   </td>
                   <td className="px-4 py-2">
-                    {entry.patchState ? (
-                      <>
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: PATCH_STATE_COLORS[entry.patchState] }} />
-                          {stateLabels[entry.patchState] ?? entry.patchState}
-                        </span>
-                        {/* #68: a date and a count, never a day count — a date does not inflate. */}
-                        {entry.patchAvailable && (
-                          <span className="block text-xs text-muted-foreground">
-                            {t.catalog.behindSince(formatDate(entry.patchAvailableSince), entry.releasesMissed)}
-                          </span>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
+                    {/* #68: a date and a count, never a day count — a date does not inflate.
+                        #313: each half names its title when several matched. */}
+                    <PatchAnswerCell answer={entry} t={t} />
                   </td>
-                  <td className="px-4 py-2 tabular-nums">{entry.latestVersion ?? "—"}</td>
+                  <td className="px-4 py-2">
+                    <LatestCell answer={entry} t={t} />
+                  </td>
                   <td className="px-4 py-2">{formatDate(entry.releasedAt)}</td>
                   <td className="px-4 py-2">
                     <AssessmentCell vuln={entry.vuln} t={t} />

@@ -47,6 +47,11 @@ class CatalogEntryOut(_CamelModel):
     this_version_seen: bool | None = None
     latest_version: str | None = None
     latest_released_at: datetime | None = None
+    # #313, the same three columns `InstalledAppOut` carries (see the note there): the
+    # assumption the answer rests on, and which of `jamf_titles` each scalar group is about.
+    ea_assumed: bool | None = None
+    reference_title_id: str | None = None
+    sentence_title_id: str | None = None
     released_at: datetime | None = None
     evaluated_at: datetime | None = None
     # What the judgement was made against (the catalog signature at `evaluated_at`), so a

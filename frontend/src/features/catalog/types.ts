@@ -33,6 +33,16 @@ export interface CatalogEntry {
   thisVersionSeen: boolean | null;
   latestVersion: string | null;
   latestReleasedAt: string | null;
+  /** #313 — what the wire has carried since #311. The fold of `basis` across the matches:
+   *  true when a title's requirements tested an extension attribute and the judging, which
+   *  has no device facts, read it as passing; null on a row judged before the column
+   *  existed, and never defaulted to false. */
+  eaAssumed: boolean | null;
+  /** Which of `jamfTitles` `patchState` / `latestVersion` are about, and which one #68's
+   *  sentence is about — routinely different titles on a multi-title app. Stored on every
+   *  answered row; a page names a subject only when several titles matched. */
+  referenceTitleId: string | null;
+  sentenceTitleId: string | null;
   releasedAt: string | null;
   evaluatedAt: string | null;
   /** What the judgement was made against, for a title attribute (#299). */

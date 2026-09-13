@@ -162,3 +162,55 @@ async def test_list_and_lookup_after_a_sweep(db, jamf: FakeJamf, connection, ind
     assert answer.jamf_title_ids == ["0C3"] and answer.is_latest is True and answer.latest == "26.6"
     (by_app,) = await _lookup(db, version_hashes=[], key_fulls=[], app_hashes=[xcode.app_hash])
     assert by_app.tenant is not None and by_app.tenant.version == "26.6"
+
+
+async def test_the_device_read_and_the_applications_list_carry_the_patch_answer(db, jamf: FakeJamf, connection, indexed) -> None:
+    """#313: what the wire has said since #311, on the two reads the pages make.
+
+    Wireshark 4.2.0 on the real record matches two titles. The device read names both,
+    says which one #68's sentence is about (the 4.2 line, 14 missed) and which one
+    `latestVersion` is about (the rolling title, 4.6.8), and carries the assumption fold —
+    false here, both matched on their requirements. The applications list answers the
+    same question at its own grain: how many of the Macs carrying the app matched a title
+    at all, and how many of those have a patch available.
+    """
+    from app.api.applications import list_applications
+    from app.api.devices import get_device
+    from app.mdm.service import sync_connection
+    from app.models.schema import Device
+
+    await _forget_fixture_apps(db, jamf)
+    assert (await sync_connection(db, connection)).ok
+    real = (
+        await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == jamf.real["id"]))
+    ).scalar_one()
+
+    detail = await get_device(device_id=real.id, db=db)
+    by_name = {app.name: app for app in detail.apps}
+    wireshark = by_name["Wireshark.app"]
+    assert wireshark.jamf_title_ids == ["612", "5F6"]
+    assert [(ref.id, ref.name) for ref in wireshark.jamf_titles] == [("612", "Wireshark"), ("5F6", "Wireshark 4.2")]
+    assert (wireshark.patch_state, wireshark.latest_version, wireshark.reference_title_id) == ("behind", "4.6.8", "612")
+    assert (wireshark.releases_missed, wireshark.sentence_title_id) == (14, "5F6")
+    assert wireshark.ea_assumed is False
+    # Matched on one title: the subject columns still name it — REST carries them as stored,
+    # and it is the page that shows a subject only when there is more than one.
+    xcode = by_name["Xcode.app"]
+    assert xcode.patch_state == "latest" and xcode.sentence_title_id is None
+    assert xcode.reference_title_id == xcode.jamf_title_ids[0]
+    # No title at all: no names, and the assumption fold is null rather than false.
+    pycharm = by_name["PyCharm.app"]
+    assert pycharm.jamf_title_ids is None and pycharm.jamf_titles == [] and pycharm.ea_assumed is None
+
+    async def row_for(app):
+        listing = await list_applications(db=db, q=app.name, page=1, page_size=50)
+        (row,) = [item for item in listing.items if item.app_hash == app.app_hash]
+        return row
+
+    behind = await row_for(wireshark)
+    assert behind.device_count >= 1
+    assert behind.matched_device_count == behind.device_count == behind.patch_available_device_count
+    latest = await row_for(xcode)
+    assert latest.matched_device_count == latest.device_count >= 1 and latest.patch_available_device_count == 0
+    untitled = await row_for(pycharm)
+    assert untitled.device_count >= 1 and (untitled.matched_device_count, untitled.patch_available_device_count) == (0, 0)
