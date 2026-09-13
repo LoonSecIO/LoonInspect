@@ -1,0 +1,89 @@
+#!/bin/sh
+# Prepares a managed Postgres for LoonInspect: the managed-database half of this image.
+#
+# initdb/10-app-role.sh gives the sidecar its application role once, as a superuser,
+# against an empty data directory. A managed database (RDS) never runs this image as a
+# server: it has no /docker-entrypoint-initdb.d, and its master user is not a superuser.
+# So a pod's task runs this instead, as a non-essential container the app waits on, on
+# every start, and it leaves the database the sidecar leaves: a role that is not a
+# superuser and cannot bypass row-level security, owning schema public. The app sees no
+# other difference, because the sidecar's script does nothing else; the one addition,
+# the master's membership in the role, is what RDS requires before the handover.
+#
+# Every step is safe to repeat, because it runs every start:
+#   - the role is created only if it is absent, and refused if it exists and could
+#     bypass row-level security, which would leave every policy in the schema enforcing
+#     nothing, silently;
+#   - its password is set from APP_PASSWORD every time, so a rotated app secret is what
+#     the database knows after the next start;
+#   - the master grants itself membership in the role, because RDS's master is not a
+#     superuser and must be a member before it may hand the role schema public;
+#   - schema public is handed over, which does nothing once the role owns it.
+#
+# Reads the libpq environment: PGHOST, PGPORT (5432), PGDATABASE, PGUSER and PGPASSWORD
+# (the master), PGSSLMODE (require, since RDS refuses unencrypted connections), and
+# APP_USER (looninspect_app) and APP_PASSWORD for the application role. The password
+# travels inside ALTER ROLE, as it does in the sidecar's script: a server set to log
+# statements would write it down.
+set -eu
+
+: "${PGPORT:=5432}" "${PGSSLMODE:=require}" "${PGCONNECT_TIMEOUT:=10}" "${APP_USER:=looninspect_app}"
+export PGPORT PGSSLMODE PGCONNECT_TIMEOUT
+WAIT_SECONDS=120
+
+fail() {
+  echo "$*" >&2
+  exit 1
+}
+
+missing=
+for var in PGHOST PGDATABASE PGUSER PGPASSWORD APP_PASSWORD; do
+  eval "[ -n \"\${$var:-}\" ]" || missing="$missing $var"
+done
+[ -z "$missing" ] || fail "not started:$missing not set. The pod's task gives this container the database's endpoint and name (PGHOST, PGDATABASE), the master's user and password (PGUSER, PGPASSWORD, from the RDS-managed master secret) and the application role's password (APP_PASSWORD, from pods/<name>/db-app); check the db-init container's environment and secrets."
+[ "$APP_USER" != "$PGUSER" ] || fail "APP_USER is the master user ($PGUSER). The app connects as its own role, which must not be the master; check that APP_USER and APP_PASSWORD come from the application role's secret."
+
+# The probe only asks whether the server answers, and carries no password, so it may go
+# unencrypted: under PGSSLMODE a server without TLS would read as silence for the whole
+# wait, where psql below says so at once.
+started=$(date +%s)
+report=0
+until PGSSLMODE=prefer pg_isready --quiet --timeout=5; do
+  [ $? -ne 3 ] || fail "could not try Postgres at $PGHOST:$PGPORT: the connection settings are not valid. Check PGHOST and PGPORT."
+  waited=$(($(date +%s) - started))
+  [ "$waited" -lt "$WAIT_SECONDS" ] || fail "Postgres at $PGHOST:$PGPORT did not answer within $WAIT_SECONDS s. Usually the database's security group does not admit this task (it admits only the pod's task security group), or the instance is still being created or is restarting. Check the instance's status in RDS, that this task runs in the pod's task security group, and that PGHOST is the instance's endpoint."
+  if [ "$waited" -ge "$report" ]; then
+    echo "waiting for Postgres at $PGHOST:$PGPORT (${waited} s of $WAIT_SECONDS)"
+    report=$((waited - waited % 10 + 10))
+  fi
+  sleep 2
+done
+
+psql -X -w -q -A -t -c 'SELECT 1' >/dev/null ||
+  fail "could not sign in to $PGDATABASE at $PGHOST:$PGPORT as $PGUSER; psql's reason is the line above. A password failure means PGUSER and PGPASSWORD are not the master's: both come from the RDS-managed master secret (the data stack's MasterSecretArn output), its username and password keys. A missing database means PGDATABASE is not the one the data stack created (looninspect). An SSL error means the server does not offer what PGSSLMODE ($PGSSLMODE) asks for; RDS always offers it."
+
+# psql substitutes :"name" as a quoted identifier and :'name' as a quoted literal, so a
+# name or password is data, never SQL. It does not substitute inside the DO block's
+# dollar quotes, so the block reads the role's name back from a session setting.
+psql -X -w -q -v ON_ERROR_STOP=1 -v SHOW_CONTEXT=never -v app_user="$APP_USER" -v app_password="$APP_PASSWORD" <<'SQL' ||
+SET client_min_messages = warning;
+SET looninspect.app_user = :'app_user';
+DO $$
+DECLARE
+    app text := current_setting('looninspect.app_user');
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = app) THEN
+        EXECUTE format('CREATE ROLE %I LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS', app);
+    ELSIF EXISTS (SELECT FROM pg_roles WHERE rolname = app AND (rolsuper OR rolbypassrls)) THEN
+        RAISE EXCEPTION 'application role % already exists as a superuser or with BYPASSRLS, so row-level security would not apply to it', app
+            USING HINT = 'A role allowed to must remove that attribute (ALTER ROLE ... NOSUPERUSER NOBYPASSRLS); the app must not start as it.';
+    END IF;
+END
+$$;
+ALTER ROLE :"app_user" WITH LOGIN PASSWORD :'app_password';
+GRANT :"app_user" TO CURRENT_USER;
+ALTER SCHEMA public OWNER TO :"app_user";
+SQL
+  fail "application role $APP_USER was not prepared in $PGDATABASE: the ERROR above is Postgres's reason. A permission error means PGUSER is not the master user, which on RDS can create roles and owns the database; an error naming row-level security carries its fix as a HINT; anything else is a report."
+
+echo "application role $APP_USER ready (owns schema public)"
