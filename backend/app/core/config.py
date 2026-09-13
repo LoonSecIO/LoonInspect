@@ -124,12 +124,15 @@ class Settings(BaseSettings):
     # and the UI shows the override as the reason the control is locked.
     community_sharing: bool = True
 
-    # Daily check against main's HEAD so the UI can say a newer build exists.
-    # UPDATE_CHECK=false turns the outbound call off entirely (see issue #43).
+    # Daily check of this build against the latest published release, so the UI can say
+    # when one is available (#407). UPDATE_CHECK=false turns the outbound call off
+    # entirely (see issue #43), and Settings > Support then says so.
     update_check: bool = True
-    # Where that check asks. Empty means the default provider (GitHub's commits API);
-    # the api.loonsec.io flip (#43) and tests point this elsewhere. The response just
-    # needs a JSON body with a "sha" key.
+    # Where that check asks: the base of a GitHub-shaped repository API. Empty means
+    # this repository's (`https://api.github.com/repos/LoonSecIO/LoonInspect`). The check
+    # asks `<base>/releases/latest` for `tag_name` and `html_url`, then
+    # `<base>/compare/<tag>...<build sha>` for `status` and `base_commit.sha` — so a mock,
+    # or api.loonsec.io after the flip (#43), answers those two paths.
     update_check_url: str = ""
 
     scheduler_enabled: bool = True

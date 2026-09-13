@@ -54,8 +54,10 @@ async def version() -> VersionOut:
     dependencies=[Depends(require(Permission.SYSTEM_READ))],
 )
 async def update_status() -> UpdateStatusOut:
-    """Whether a newer build of main exists than the one running. Authenticated on
-    purpose: the sign-in page must not advertise that an instance is behind."""
+    """Whether this build lacks the latest published release (#407) — a release, not
+    `main`, which is staging. Authenticated on purpose: the sign-in page must not
+    advertise that an instance is behind. When the check cannot answer, `reason` says
+    why, for the Updates block on Settings > Support."""
     status = await get_update_status()
     return UpdateStatusOut(
         enabled=status.enabled,
@@ -63,6 +65,9 @@ async def update_status() -> UpdateStatusOut:
         update_available=status.update_available,
         latest_sha=status.latest_sha,
         checked_at=status.checked_at,
+        latest_tag=status.latest_tag,
+        release_url=status.release_url,
+        reason=status.reason,
     )
 
 

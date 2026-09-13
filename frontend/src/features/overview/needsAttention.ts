@@ -3,6 +3,7 @@ import type { ChangeLevel } from "@/features/changes/types";
 import type { Destination } from "@/features/destinations/types";
 import type { CollectionSummary, MdmConnection } from "@/features/mdm/types";
 import type { UpdateStatusResponse } from "@/features/system/api";
+import { UPDATES_HREF } from "@/features/system/updateStatus";
 
 /**
  * **Needs attention** — the action list on `/` (#106), and the only surface on which a
@@ -639,20 +640,21 @@ export function composeAttention(inputs: AttentionInputs): AttentionResult {
 
   // --- Update available --------------------------------------------------------------
   //
-  // `true` only. `null` is "unknown" — the check is disabled, this is a dev build, or
-  // GitHub was unreachable — and unknown must be indistinguishable from current (#43),
-  // which is the rule `UpdateBanner` already follows. `href` is null because there is no
-  // page to send anyone to; the banner carries the command.
+  // `true` only: a published release this build does not contain (#407). `null` is
+  // "unknown" — the check is off, this is a dev build, GitHub did not answer, or no
+  // release exists yet — and unknown never raises a row (#43), which is the rule
+  // `UpdateBanner` follows too. The row names the release and goes to the Updates block
+  // on Settings › Support, which has the steps, dump first; it went nowhere before #407.
   const update = valueOrNull(inputs.update);
   if (update?.updateAvailable === true) {
     rows.push(
       one({
-        id: `update_available:${update.latestSha ?? "unknown"}`,
+        id: `update_available:${update.latestTag ?? update.latestSha ?? "unknown"}`,
         kind: "update_available",
         level: LEVEL_OF.update_available,
-        subject: update.latestSha?.slice(0, 7) ?? null,
+        subject: update.latestTag ?? update.latestSha?.slice(0, 7) ?? null,
         context: null,
-        href: null,
+        href: UPDATES_HREF,
         at: update.checkedAt
       })
     );

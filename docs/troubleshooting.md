@@ -612,3 +612,50 @@ beside the wrong `ENCRYPTION_KEY`, a Haiku session with only this document, the 
 became a filed defect — the failure reached the operator as a raw traceback and a bare
 `500`, not as a sentence ([`diagnosability.md`](diagnosability.md) rule 3) — and #374
 closed it the same day: a `503` whose `detail` is the sentence, shown on the page.
+
+## 10. "The update notice never appears, or names a release I do not have"
+
+The notice is the banner at the top of every page, shown to roles that can read system
+settings. It means one thing: a published release exists that this build does not contain.
+It never appears for a merge to `main`, which is staging, and it never appears while the
+check cannot answer. Its answer, and when it has none its reason, are on **Settings ›
+Support › Updates**, with the steps to update. The check asks once a day, and again within
+the hour after a failure; `docker compose restart app` makes it ask now.
+
+1. **Read the Updates block's sentence**, under *This build*, *Latest release* and *Last checked*:
+   - *Up to date: this build contains …* → there is nothing to take. A release published
+     since *Last checked* appears at the next check.
+   - *… is available, and this build does not contain it* → the notice is right; the
+     steps are under it, dump first.
+   - *Checking is off* → `UPDATE_CHECK=false` is set for this container. Remove the line
+     from `.env` beside `docker-compose.yml` and run `docker compose up -d`.
+   - *This build carries no commit to compare* → a development build, or an image built
+     without `GIT_SHA`. Build it with the commit stamped:
+     `GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build`.
+   - *GitHub could not be reached, or something else answered in its place* → from the
+     host, check that the container reaches GitHub at all:
+     `docker compose exec -T app python -c "import urllib.request as u; print(u.urlopen('https://api.github.com', timeout=5).status)"`
+     prints `200` when it does. An error here is the network's answer, not the app's.
+   - *GitHub refused the check* → its unauthenticated limit, 60 requests an hour per
+     address, is shared by everything behind this instance's egress address. The container
+     log carries `update check refused by the provider` once per attempt. Several
+     instances behind one address use the budget up together; `UPDATE_CHECK=false` on all
+     but one is the fix available today.
+   - *No release has been published yet* → true until the first release. Nothing to do.
+   - *GitHub does not know this build's commit* → a local commit, a fork, or a branch that
+     was never pushed. Build from a release tag and it is compared again.
+2. **The notice names a release you believe you have.** *This build* ends in the commit it
+   was built from (`+<sha>`). The notice means GitHub said that commit does not contain the
+   release's. From the checkout the image was built from:
+   `git merge-base --is-ancestor <tag> <sha> && echo contains || echo "does not contain"`.
+   *does not contain* → the image came from an older checkout or from a branch; build from
+   the tag. *contains* → reportable state **N**.
+3. **The banner went away and the release did not.** Dismissing hides it for the browser
+   session only. The Needs Attention row on the Overview and the Updates block still say it.
+
+**N.** The Updates block says a release is available while `git merge-base --is-ancestor`
+says this build contains it; or its sentence names a state this instance is not in.
+Report the block's four lines (build, latest release, last checked, the sentence), the
+`git merge-base` command and its output, whether `UPDATE_CHECK_URL` is set, and the
+`update check` lines from `docker compose logs app --since 24h`.
+

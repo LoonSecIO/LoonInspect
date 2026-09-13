@@ -70,6 +70,9 @@ const destination = (over: Partial<Destination> = {}): Destination => ({
 const connection = (over: Partial<MdmConnection> = {}): MdmConnection => ({ id: 1, name: "Jamf Pro", ...over }) as MdmConnection;
 
 const update = (over: Partial<UpdateStatusResponse> = {}): UpdateStatusResponse => ({
+  latestTag: null,
+  releaseUrl: null,
+  reason: null,
   enabled: true,
   currentVersion: "abc1234",
   updateAvailable: false,
@@ -267,14 +270,29 @@ describe("destination failing — evidence is not reaching the SIEM", () => {
 });
 
 describe("update available — true only", () => {
-  it("true is a low row naming the short sha, with no page to send anyone to", () => {
-    const result = composeAttention(inputs({ update: ok(update({ updateAvailable: true, latestSha: "abcdef1234567", checkedAt: ago(HOUR) })) }));
+  it("true is a low row naming the release, linking to the Updates block (#407)", () => {
+    const result = composeAttention(
+      inputs({ update: ok(update({ updateAvailable: true, latestTag: "v2026.09.17", latestSha: "abcdef1234567", checkedAt: ago(HOUR) })) })
+    );
     expect(result.rows).toHaveLength(1);
-    expect(result.rows[0]).toMatchObject({ id: "update_available:abcdef1234567", level: "low", subject: "abcdef1", href: null, at: ago(HOUR) });
+    expect(result.rows[0]).toMatchObject({
+      id: "update_available:v2026.09.17",
+      level: "low",
+      subject: "v2026.09.17",
+      href: "/settings/support#updates",
+      at: ago(HOUR)
+    });
   });
 
-  it("null is unknown and indistinguishable from current", () => {
-    expect(composeAttention(inputs({ update: ok(update({ updateAvailable: null })) })).rows).toEqual([]);
+  it("falls back to the release's short sha when no tag is named", () => {
+    const result = composeAttention(inputs({ update: ok(update({ updateAvailable: true, latestSha: "abcdef1234567" })) }));
+    expect(result.rows[0]).toMatchObject({ id: "update_available:abcdef1234567", subject: "abcdef1", href: "/settings/support#updates" });
+  });
+
+  it("null is unknown and raises no row, whatever the reason; false is current", () => {
+    for (const reason of ["disabled", "dev_build", "unreachable", "refused", "no_release", "unknown_commit"] as const) {
+      expect(composeAttention(inputs({ update: ok(update({ updateAvailable: null, reason })) })).rows).toEqual([]);
+    }
     expect(composeAttention(inputs({ update: ok(update({ updateAvailable: false })) })).rows).toEqual([]);
   });
 });

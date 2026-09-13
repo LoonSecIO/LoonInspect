@@ -85,8 +85,9 @@ function Row({ row, now }: { row: AttentionRow; now: Date }) {
     </>
   );
 
-  // A row with nowhere to go is still a row. `update_available` has no page in the
-  // product — the banner carries the command — and a dead link would be worse than none.
+  // A row with nowhere to go is still a row: a dead link would be worse than none. Every
+  // kind has a page today — `update_available` gained the Updates block on Settings ›
+  // Support with #407 — so this branch is for the next kind that arrives without one.
   return (
     <li>
       {row.href ? (

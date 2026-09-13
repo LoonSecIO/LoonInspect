@@ -54,7 +54,12 @@ export const SUPPORT_LINKS = {
   /** GitHub's rendering of SECURITY.md, which survives the file moving. */
   securityPolicy: `${GITHUB}/security/policy`,
   slackJoin: MACADMINS_JOIN,
-  slackChannel: MACADMINS_CHANNEL
+  slackChannel: MACADMINS_CHANNEL,
+  /** Every published release, for the reader who needs a tag the check has not named (#407). */
+  releases: `${GITHUB}/releases`,
+  /** The upgrade and the rollback, step by step, with real output beside each command.
+   *  Named by section: the rollback's order is the part that costs something when missed. */
+  upgradeDocs: `${GITHUB}/blob/main/docs/operations.md#4-upgrade`
 } as const;
 
 /** What the copy button puts on the clipboard, or null when there is nothing worth

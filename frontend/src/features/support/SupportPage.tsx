@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
+import { useLocation } from "react-router";
 import { Check, Copy, Globe, MessagesSquare, ShieldAlert, Bug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ExternalLink } from "@/components/ui/external-link";
+import { PERMISSIONS } from "@/features/auth/types";
+import { useHasPermission } from "@/features/auth/store";
+import { UpdatesBlock } from "@/features/support/UpdatesBlock";
 import { useBuildVersion } from "@/features/system/useBuildVersion";
+import { UPDATES_ANCHOR } from "@/features/system/updateStatus";
 import {
   NOTES_URL,
   SECURITY_EMAIL,
@@ -29,14 +34,23 @@ const COPIED_VISIBLE_MS = 2000;
  *  when something is already broken. A reader with no session at all is answered on
  *  the login page instead.
  *
- *  It reads one endpoint (`/system/version`, via useBuildVersion) and posts nothing.
- *  No ticketing, no contact form, no telemetry: LoonInspect is self-hosted and this
- *  page keeps that promise the way ErrorBoundary does.
+ *  It reads `/system/version` (via useBuildVersion) and, for a reader who holds
+ *  SYSTEM_READ, `/system/update-status` for the Updates block (#407), and posts
+ *  nothing. No ticketing, no contact form, no telemetry: LoonInspect is self-hosted and
+ *  this page keeps that promise the way ErrorBoundary does.
  */
 export function SupportPage() {
   const { t } = useLocale();
   const version = useBuildVersion();
   const build = copyableBuild(version);
+  const canSeeUpdates = useHasPermission(PERMISSIONS.SYSTEM_READ);
+  const { hash } = useLocation();
+
+  // The banner's "how to update" and the Needs Attention row land on `#updates`. A
+  // client-side navigation does not scroll to a hash by itself, so the page does.
+  useEffect(() => {
+    if (hash === `#${UPDATES_ANCHOR}`) document.getElementById(UPDATES_ANCHOR)?.scrollIntoView();
+  }, [hash]);
 
   const [copied, setCopied] = useState(false);
   const copy = useCallback(() => {
@@ -109,6 +123,10 @@ export function SupportPage() {
           <p className="text-xs text-muted-foreground">{t.support.buildUnavailable}</p>
         )}
       </div>
+
+      {/* Right after the build, because it is the next question about it: is this the
+          latest release, and if not, how to get there with the dump taken first. */}
+      {canSeeUpdates && <UpdatesBlock />}
 
       {/* The site and its docs: where the how-to pages live, so a question that is
           "how do I set this up" has somewhere to go before it becomes an issue. */}

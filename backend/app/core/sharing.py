@@ -319,8 +319,8 @@ async def post_exchange(request_body: dict, *, transport: httpx.AsyncBaseTranspo
     "Anything else" includes a 200 whose body is not JSON — a captive portal or a
     misconfigured CDN answering with text/html. `response.json()` raises
     `json.JSONDecodeError`, a `ValueError` and not an `httpx.HTTPError`, so it is
-    caught alongside one here (the same pairing `update_check._fetch_head_sha` uses
-    against the same hazard). Without it the decode error escaped the loop and the
+    caught alongside one here (the same pairing `update_check._ask` uses against the
+    same hazard). Without it the decode error escaped the loop and the
     caller both, and the day's attempt was never logged."""
     headers = {"User-Agent": build_user_agent("exchange")}
     async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS, transport=transport) as client:

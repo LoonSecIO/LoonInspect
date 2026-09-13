@@ -2,7 +2,10 @@ import type { Translations } from "@/i18n/en";
 
 export const de: Translations = {
   system: {
-    updateAvailable: "Ein neuerer Build von LoonInspect ist verfügbar",
+    updateAvailable: (tag: string) => `LoonInspect ${tag} ist verfügbar`,
+    updateAvailableUntagged: "Ein neueres Release von LoonInspect ist verfügbar",
+    updateWhatChanged: "was sich geändert hat",
+    updateHowTo: "wie aktualisieren",
     dismissUpdate: "Update-Hinweis ausblenden",
     sharing: {
       pageDescription:
@@ -320,7 +323,45 @@ export const de: Translations = {
     securityReport: "Schwachstelle vertraulich melden",
     securityPolicy: "Sicherheitsrichtlinie lesen",
     privacyNote:
-      "Diese Seite sendet nichts nach außen. Sie liest den Build-String Ihrer eigenen Instanz und zeigt sechs Links nach außen; es gibt keine Telemetrie darauf, und kein Bericht verlässt diesen Browser, sofern Sie ihn nicht selbst schreiben."
+      "Diese Seite sendet nichts nach außen. Sie liest den Build-String und die Antwort der Update-Prüfung aus Ihrer eigenen Instanz und zeigt Links nach außen; es gibt keine Telemetrie darauf, und kein Bericht verlässt diesen Browser, sofern Sie ihn nicht selbst schreiben.",
+    updates: {
+      heading: "Updates",
+      help: "Einmal am Tag fragt diese Instanz GitHub nach dem neuesten veröffentlichten Release und ob dieser Build es enthält. Sonst wird nichts gesendet. Aktualisiert wird auf dem Host; hier wird nichts ausgeführt.",
+      loading: "Update-Prüfung wird gelesen…",
+      errorLoading: "Die Update-Prüfung konnte von dieser Instanz nicht gelesen werden.",
+      thisBuild: "Dieser Build",
+      latestRelease: "Neuestes Release",
+      lastChecked: "Zuletzt geprüft",
+      notChecked: "Nicht geprüft",
+      noneYet: "Noch keines veröffentlicht",
+      available: (tag: string) => `${tag} ist verfügbar, und dieser Build enthält es nicht.`,
+      availableUntagged: "Ein neueres Release ist verfügbar, und dieser Build enthält es nicht.",
+      current: (tag: string) => `Aktuell: Dieser Build enthält ${tag}.`,
+      currentUntagged: "Aktuell: Dieser Build enthält das neueste Release.",
+      unknownNoReason: "Die Prüfung konnte nicht antworten und hat keinen Grund genannt.",
+      reasons: {
+        disabled:
+          "Die Prüfung ist aus: UPDATE_CHECK=false ist für diesen Container gesetzt, also wird nichts gefragt und kein Hinweis erscheint. Zum Einschalten die Zeile aus der Datei .env neben docker-compose.yml entfernen und docker compose up -d ausführen.",
+        dev_build:
+          "Dieser Build trägt keinen Commit zum Vergleichen: Es ist ein Entwicklungs-Build, oder das Image wurde ohne GIT_SHA gebaut. Die Schritte unten bauen mit gestempeltem Commit.",
+        unreachable:
+          "GitHub war nicht erreichbar, oder etwas anderes hat an seiner Stelle geantwortet, etwa ein Proxy oder eine Anmeldeseite. Die Prüfung versucht es innerhalb einer Stunde erneut; prüfen Sie, ob dieser Container api.github.com über HTTPS erreicht.",
+        refused:
+          "GitHub hat die Prüfung abgelehnt. Anfragen ohne Anmeldung sind auf 60 pro Stunde und Adresse begrenzt, geteilt von jeder Instanz dahinter. Die Prüfung versucht es innerhalb einer Stunde erneut.",
+        no_release:
+          "Es wurde noch kein Release veröffentlicht. main ist Staging, und verglichen wird nur mit einem veröffentlichten Release, also gibt es nichts, wohinter man zurückliegen könnte.",
+        unknown_commit:
+          "GitHub kennt den Commit dieses Builds nicht, also lässt sich nicht sagen, ob er das neueste Release enthält. Ein lokaler oder geforkter Build wird nie verglichen; bauen Sie von einem Release-Tag, um verglichen zu werden."
+      } as Record<string, string>,
+      stepsHeading: "Eine Docker-Compose-Installation aktualisieren",
+      stepsIntro:
+        "Auf dem Host, im Verzeichnis mit docker-compose.yml. Die erste Zeile ist die Sicherung: Ein Downgrade ist Handarbeit, und dieser Dump ist der dokumentierte Weg zurück.",
+      tagPlaceholder: "Ersetzen Sie <tag> durch das zu installierende Release aus der Liste der Releases.",
+      releasesPage: "Releases",
+      rollback: "Vor einem Zurückrollen die Schritte für Upgrade und Rollback lesen: Das Downgrade läuft aus dem neueren Image, und wer zuerst das Image zurücktauscht, landet in einer Absturzschleife.",
+      rollbackLink: "Upgrade und Rollback, Schritt für Schritt",
+      selfHostedOnly: "Diese Schritte gelten für eine Installation, die Sie selbst mit Docker Compose betreiben."
+    }
   },
   apiTokens: {
     title: "API-Token",
@@ -457,7 +498,7 @@ export const de: Translations = {
         // also, dass niemand sie abgeholt hat.
         collection_overdue: "Nichts hat sie gestartet",
         inventory_stale: "Inventar ist veraltet",
-        update_available: "Ein neuerer Build ist verfügbar",
+        update_available: "Ein neueres Release ist verfügbar",
         // #101. „Neue App“ und nicht „nicht genehmigte App“: bekannt ist nur, dass der
         // Mac sie beim letzten Inventar nicht hatte — über eine Genehmigung weiß das
         // Produkt nichts. Name der App und Mac stehen daneben.
