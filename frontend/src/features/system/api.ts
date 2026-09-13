@@ -1,13 +1,22 @@
 import { apiRequest } from "@/config/api";
 
+/** Why the check could not answer (#407) — one of six, never a blank. */
+export type UpdateReason = "disabled" | "dev_build" | "unreachable" | "refused" | "no_release" | "unknown_commit";
+
 export interface UpdateStatusResponse {
   enabled: boolean;
   currentVersion: string;
-  /** null is "unknown" (disabled, dev build, or provider unreachable) — render
-   *  nothing. false is "checked and current". */
+  /** null is "unknown", and `reason` says which: the banner renders nothing, and the
+   *  Updates block on Settings › Support names it. false is "checked, and this build
+   *  contains the latest published release". */
   updateAvailable: boolean | null;
+  /** The commit the latest release's tag points at — a release, no longer main (#407). */
   latestSha: string | null;
   checkedAt: string | null;
+  latestTag: string | null;
+  /** The release's page on GitHub: "what changed". Only ever an https link. */
+  releaseUrl: string | null;
+  reason: UpdateReason | null;
 }
 
 export function getUpdateStatus(): Promise<UpdateStatusResponse> {

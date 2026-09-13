@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
@@ -18,12 +19,21 @@ class UpdateStatusOut(BaseModel):
 
     enabled: bool
     current_version: str
-    # None is "unknown" — checking disabled, a dev build, or the provider was
-    # unreachable. False means "checked and current". The UI treats None as
-    # nothing-to-say, never as an error.
+    # None is "unknown", and `reason` says which. False means "checked, and this build
+    # contains the latest published release". The banner treats None as nothing-to-say,
+    # never as an error; Settings > Support's Updates block names the reason (#407).
     update_available: bool | None
+    # The commit the latest release's tag points at (#407: a release, no longer main's HEAD).
     latest_sha: str | None
     checked_at: datetime | None
+    # The latest published release: its tag and its page — "what changed" (#407).
+    latest_tag: str | None = None
+    release_url: str | None = None
+    # Why `update_available` is None: `disabled` (UPDATE_CHECK=false), `dev_build` (no
+    # comparable commit in the stamp), `unreachable`, `refused` (403/429, usually the shared
+    # rate limit), `no_release` (none published yet), `unknown_commit` (GitHub does not know
+    # this build's commit). Null whenever the check answered.
+    reason: Literal["disabled", "dev_build", "unreachable", "refused", "no_release", "unknown_commit"] | None = None
 
 
 class SharingTier(StrEnum):

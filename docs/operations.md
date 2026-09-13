@@ -388,6 +388,11 @@ docker compose logs -f app
 The backup is the first line because the downgrade path is manual and has to be walked
 *before* the old image goes back, not after — §5.
 
+`git pull` upgrades to `main`, which is staging. To install a release instead, put
+`git fetch --tags && git checkout <tag>` in its place: that is the line Settings › Support ›
+**Updates** prints, with the latest release's tag filled in, since #407 made the update
+notice about releases rather than about `main`.
+
 Before and after, the two revisions worth knowing:
 
 ```bash

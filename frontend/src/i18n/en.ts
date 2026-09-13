@@ -1,6 +1,10 @@
 export const en = {
   system: {
-    updateAvailable: "A newer build of LoonInspect is available",
+    // #407: a published release this build does not contain — never a merge to main.
+    updateAvailable: (tag: string) => `LoonInspect ${tag} is available`,
+    updateAvailableUntagged: "A newer release of LoonInspect is available",
+    updateWhatChanged: "what changed",
+    updateHowTo: "how to update",
     dismissUpdate: "Dismiss update notice",
     sharing: {
       // Present tense for what is true now. Amended 2026-09-11 (#248): one thing does now
@@ -343,7 +347,48 @@ export const en = {
     securityReport: "Report a vulnerability privately",
     securityPolicy: "Read the security policy",
     privacyNote:
-      "This page sends nothing anywhere. It reads the build string from your own instance and draws six links out; there is no telemetry on it, and no report leaves this browser unless you write one yourself."
+      "This page sends nothing anywhere. It reads the build string and the update check's answer from your own instance and draws links out; there is no telemetry on it, and no report leaves this browser unless you write one yourself.",
+    // Settings › Support › Updates (#407): every state of the update check, the reason
+    // when it could not answer, and the upgrade for a compose install, dump first.
+    updates: {
+      heading: "Updates",
+      help: "Once a day this instance asks GitHub for the latest published release, and whether this build contains it. Nothing else is sent. Updating happens on the host; nothing here runs anything.",
+      loading: "Reading the update check…",
+      errorLoading: "Could not read the update check from this instance.",
+      thisBuild: "This build",
+      latestRelease: "Latest release",
+      lastChecked: "Last checked",
+      notChecked: "Not checked",
+      noneYet: "None published yet",
+      available: (tag: string) => `${tag} is available, and this build does not contain it.`,
+      availableUntagged: "A newer release is available, and this build does not contain it.",
+      current: (tag: string) => `Up to date: this build contains ${tag}.`,
+      currentUntagged: "Up to date: this build contains the latest release.",
+      unknownNoReason: "The check could not answer, and did not say why.",
+      // One sentence per reason: what happened, then the next check.
+      reasons: {
+        disabled:
+          "Checking is off: UPDATE_CHECK=false is set for this container, so nothing is asked and no notice appears. To turn it on, remove that line from the .env file beside docker-compose.yml and run docker compose up -d.",
+        dev_build:
+          "This build carries no commit to compare: it is a development build, or the image was built without GIT_SHA. The steps below build with the commit stamped.",
+        unreachable:
+          "GitHub could not be reached, or something else answered in its place, such as a proxy or a sign-in page. The check tries again within the hour; check that this container can reach api.github.com over HTTPS.",
+        refused:
+          "GitHub refused the check. Unauthenticated requests are limited to 60 an hour per address, shared by every instance behind it. The check tries again within the hour.",
+        no_release:
+          "No release has been published yet. main is staging, and only a published release is compared against, so there is nothing to be behind.",
+        unknown_commit:
+          "GitHub does not know this build's commit, so whether it contains the latest release cannot be said. A local or forked build is never compared; build from a release tag to be compared."
+      } as Record<string, string>,
+      stepsHeading: "Updating a Docker Compose install",
+      stepsIntro:
+        "On the host, in the directory with docker-compose.yml. The first line is the backup: a downgrade is manual, and this dump is the documented way back.",
+      tagPlaceholder: "Replace <tag> with the release to install, from the list of releases.",
+      releasesPage: "Releases",
+      rollback: "Before rolling one back, read the upgrade and rollback steps: the downgrade runs from the newer image, and swapping the image back first crash-loops.",
+      rollbackLink: "Upgrade and rollback, step by step",
+      selfHostedOnly: "These steps are for an install you run yourself with Docker Compose."
+    }
   },
   apiTokens: {
     title: "API Tokens",
@@ -500,7 +545,7 @@ export const en = {
         // advances at claim, so what actually happened is that nothing picked this up.
         collection_overdue: "Nothing started it",
         inventory_stale: "Inventory is stale",
-        update_available: "A newer build is available",
+        update_available: "A newer release is available",
         // #101. "New app" and not "unapproved app": the product knows the Mac did not
         // have it at the last inventory and knows nothing at all about whether anyone
         // approved it. The app name and the Mac are interpolated beside this.

@@ -249,7 +249,7 @@ walks through both halves, the timeouts, rotating the secret, and how to see it 
 
 ### 7. Back it up before you need to
 
-**[docs/troubleshooting.md](docs/troubleshooting.md)** is where to start when something is not working: seven ordered paths — a green test and an empty sweep, a run with zero devices, events not reaching Splunk, a stack that will not start, applications reading *not assessed*, a Jamf Patch table that is empty or has stopped refreshing, Jamf Pro webhooks that never arrive — each ending in a fix or a named state to report. **[docs/operations.md](docs/operations.md)** is the operator runbook: what to back up
+**[docs/troubleshooting.md](docs/troubleshooting.md)** is where to start when something is not working: eight ordered paths — a green test and an empty sweep, a run with zero devices, events not reaching Splunk, a stack that will not start, applications reading *not assessed*, a Jamf Patch table that is empty or has stopped refreshing, Jamf Pro webhooks that never arrive, an update notice that never appears or names a release you do not have — each ending in a fix or a named state to report. **[docs/operations.md](docs/operations.md)** is the operator runbook: what to back up
 (the database *and* `ENCRYPTION_KEY` — a dump without the key restores an instance whose
 every MDM connection is permanently unreadable), the `pg_dump` and `psql` commands to do
 it, what a restore does to in-flight outbox rows and the run mutex, how upgrades and
@@ -263,9 +263,11 @@ before sizing the database volume.
 ### Upgrading an existing install
 
 Migrations run unattended at startup, so `docker compose up -d --build` on a newer
-checkout *is* the upgrade. Take a dump first, and read
-[docs/operations.md §4–5](docs/operations.md) before rolling one back: the downgrade has
-to be run from the newer image, and swapping the image back first crash-loops.
+release's tag (`git fetch --tags && git checkout <tag>`) *is* the upgrade. Take a dump
+first, and read [docs/operations.md §4–5](docs/operations.md) before rolling one back: the
+downgrade has to be run from the newer image, and swapping the image back first
+crash-loops. Settings › Support › **Updates** prints the steps with the latest release's
+tag filled in.
 
 The container now runs as a non-root user (`looninspect`, uid 10001) rather than
 as root. A data volume created by an earlier version is owned by root, and the
@@ -428,22 +430,36 @@ which is where the API's own security fixes live.
 
 ## 🔔 Update notifications
 
-Once a day, the backend asks GitHub for the newest commit on `main`
-(`api.github.com/repos/LoonSecIO/LoonInspect/commits/main`) and compares it with the
-sha this build was stamped with. Nothing is sent beyond the request itself — no
-instance ID, no telemetry, no inventory. When a newer build exists, signed-in
-operators see a banner with the update command; the sign-in page deliberately shows
-nothing, so an outdated instance never advertises that fact to strangers.
+Once a day, the backend asks GitHub for the latest published release
+(`api.github.com/repos/LoonSecIO/LoonInspect/releases/latest`) and whether this build
+contains that release's commit (`…/compare/<tag>...<this build's sha>`). A release is the
+unit: `main` is staging, so a merge to `main` never raises the notice. Nothing is sent
+beyond the two requests themselves — no instance ID, no telemetry, no inventory. When a
+release exists that this build does not contain, signed-in operators see a banner naming
+it, with what changed and how to update; the sign-in page deliberately shows nothing, so
+an outdated instance never advertises that fact to strangers.
 
-The check never performs the update. Updating stays a host-side decision:
+Settings › Support › **Updates** shows this build, the latest release, when the check last
+ran, and, when the check could not answer, why: checking is off, a development build,
+GitHub unreachable or refusing (its unauthenticated limit is 60 requests an hour per
+address, shared by everything behind it), no release published yet, or a build whose
+commit GitHub does not know. The banner says nothing in any of those states.
 
-```
-git pull && GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build
+The check never performs the update. Updating stays a host-side decision, and the Updates
+block prints the steps with the release's tag in place of `<tag>`, dump first:
+
+```bash
+docker compose exec -T db pg_dump -U looninspect -d looninspect \
+  | gzip > "looninspect-preupgrade-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
+git fetch --tags && git checkout <tag>
+GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build
+docker compose logs -f app
 ```
 
 Set `UPDATE_CHECK=false` in `.env` to disable the outbound call entirely. Air-gapped
-deployments can also simply leave it on — an unreachable check fails silently and is
-indistinguishable from being up to date.
+deployments can also simply leave it on: the banner stays silent, and the Updates block
+says GitHub could not be reached. `UPDATE_CHECK_URL` points the check at another provider
+that answers the same two paths.
 
 ---
 
