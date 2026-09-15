@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiBodyError, ApiError, apiRequest } from "@/config/api";
-import type { ChangeFilters, ChangeKind, PromptFilters, PromptResult, PromptSummary } from "@/features/changes/types";
+import type { ChangeFilters, ChangeKind, PromptFilters, PromptResult, PromptSummary, PromptWhen } from "@/features/changes/types";
 import {
   MAX_QUESTION_CHARS,
   answerLines,
@@ -50,7 +50,7 @@ function result(overrides: Partial<PromptResult> = {}): PromptResult {
 }
 
 function summary(overrides: Partial<PromptSummary> = {}): PromptSummary {
-  return { total: 0, devicesTotal: 0, truncated: false, otherSubjects: 0, devices: [], ...overrides };
+  return { total: 0, devicesTotal: 0, truncated: false, otherSubjects: 0, devices: [], when: null, ...overrides };
 }
 
 // A question the filters cannot answer, as the server sends it: nothing to run, the reason
@@ -218,7 +218,23 @@ describe("the Change filter's vocabulary", () => {
 });
 
 describe("answerLines — the response box, written from the server's count", () => {
-  const macMini = { connectionId: 1, label: "Kyle’s Mac mini", added: 0, removed: 0, updated: 0, changed: 0 };
+  // The demo's Wireshark install on the pod: Jamf's report time, the report before it, and
+  // our clock. Formatted through the same call the table's Observed column uses, so the
+  // expectation holds in any zone the suite runs in.
+  const OBSERVED = "2026-09-14T16:57:26Z";
+  const EARLIER = "2026-09-14T00:33:16Z";
+  const COLLECTED = "2026-09-14T16:57:56Z";
+  const at = (iso: string) => new Date(iso).toLocaleString();
+  const when = (overrides: Partial<PromptWhen> = {}): PromptWhen => ({
+    observedAt: OBSERVED,
+    oldestObservedAt: OBSERVED,
+    collectedAt: COLLECTED,
+    previousObservedAt: EARLIER,
+    previousCollectedAt: EARLIER,
+    deviceTimeMoved: true,
+    ...overrides
+  });
+  const macMini = { connectionId: 1, label: "Kyle’s Mac mini", added: 0, removed: 0, updated: 0, changed: 0, lastObservedAt: OBSERVED };
 
   it("the demo: two computers, one line each, serial first", () => {
     const lines = answerLines(
@@ -234,8 +250,8 @@ describe("answerLines — the response box, written from the server's count", ()
     );
     expect(lines).toEqual([
       "2 computers, 2 changes.",
-      "KY4QVD7430 — Kyle’s Mac mini · added 1",
-      "VKM73DMG47 — Kyle’s Mac mini · updated 1"
+      `KY4QVD7430 — Kyle’s Mac mini · added 1 · ${at(OBSERVED)}`,
+      `VKM73DMG47 — Kyle’s Mac mini · updated 1 · ${at(OBSERVED)}`
     ]);
   });
 
@@ -252,7 +268,7 @@ describe("answerLines — the response box, written from the server's count", ()
       }),
       en.changes
     );
-    expect(line).toBe("Jamf ID 42 · added 1, removed 2, changed 1");
+    expect(line).toBe(`Jamf ID 42 · added 1, removed 2, changed 1 · ${at(OBSERVED)}`);
   });
 
   it("a Mac named after its own serial is not printed twice", () => {
@@ -260,7 +276,7 @@ describe("answerLines — the response box, written from the server's count", ()
       summary({ total: 1, devicesTotal: 1, devices: [{ ...macMini, subjectId: "7", label: "KY4QVD7430", serial: "KY4QVD7430", added: 1 }] }),
       en.changes
     );
-    expect(line).toBe("KY4QVD7430 · added 1");
+    expect(line).toBe(`KY4QVD7430 · added 1 · ${at(OBSERVED)}`);
   });
 
   it("a truncated list says how many it left out", () => {
@@ -278,7 +294,7 @@ describe("answerLines — the response box, written from the server's count", ()
     );
     expect(lines).toEqual([
       "1 computer, 2 changes.",
-      "KY4QVD7430 — Kyle’s Mac mini · added 2",
+      `KY4QVD7430 — Kyle’s Mac mini · added 2 · ${at(OBSERVED)}`,
       "Plus 3 changes on groups or definitions."
     ]);
   });
@@ -294,7 +310,79 @@ describe("answerLines — the response box, written from the server's count", ()
       summary({ total: 2, devicesTotal: 1, devices: [{ ...macMini, subjectId: "7", serial: "KY4QVD7430", added: 2 }] }),
       de.changes
     );
-    expect(lines).toEqual(["1 Computer, 2 Änderungen.", "KY4QVD7430 — Kyle’s Mac mini · hinzugefügt 2"]);
+    expect(lines).toEqual(["1 Computer, 2 Änderungen.", `KY4QVD7430 — Kyle’s Mac mini · hinzugefügt 2 · ${at(OBSERVED)}`]);
+  });
+
+  it("states when, and the inventory before it as the other end of the window", () => {
+    const lines = answerLines(
+      summary({ total: 1, devicesTotal: 1, devices: [{ ...macMini, subjectId: "7", serial: "KY4QVD7430", added: 1 }], when: when() }),
+      en.changes
+    );
+    expect(lines).toEqual([
+      "1 computer, 1 change.",
+      `Observed ${at(OBSERVED)}.`,
+      `The inventory before it, ${at(EARLIER)}, did not show this change, so it happened between the two.`,
+      `KY4QVD7430 — Kyle’s Mac mini · added 1 · ${at(OBSERVED)}`
+    ]);
+  });
+
+  it("more than one change states both ends, which answers the first time as well as the last", () => {
+    const [, span] = answerLines(
+      summary({
+        total: 2,
+        devicesTotal: 1,
+        devices: [{ ...macMini, subjectId: "7", serial: "KY4QVD7430", added: 2 }],
+        when: when({ oldestObservedAt: EARLIER })
+      }),
+      en.changes
+    );
+    expect(span).toBe(`Observed from ${at(EARLIER)} to ${at(OBSERVED)}.`);
+  });
+
+  it("an inventory time that did not move is bounded by our own clock, not by a window of no length", () => {
+    const earlierCollection = "2026-09-12T06:00:00Z";
+    const [, line] = answerLines(
+      summary({
+        total: 1,
+        devicesTotal: 1,
+        devices: [{ ...macMini, subjectId: "7", serial: "KY4QVD7430", changed: 1 }],
+        when: when({ previousObservedAt: OBSERVED, previousCollectedAt: earlierCollection, deviceTimeMoved: false })
+      }),
+      en.changes
+    );
+    expect(line).toBe(`Observed ${at(OBSERVED)}.`);
+    expect(answerLines(summary({ total: 1, devicesTotal: 1, devices: [], when: when({ previousObservedAt: OBSERVED, previousCollectedAt: earlierCollection, deviceTimeMoved: false }) }), en.changes).at(-1)).toBe(
+      `Its inventory time did not move, so this came from Jamf's copy or from what LoonInspect reads: seen here between ${at(earlierCollection)} and ${at(COLLECTED)}.`
+    );
+  });
+
+  it("no earlier observation stored, no window claimed", () => {
+    const lines = answerLines(
+      summary({
+        total: 1,
+        devicesTotal: 1,
+        devices: [{ ...macMini, subjectId: "7", serial: "KY4QVD7430", added: 1 }],
+        when: when({ previousObservedAt: null, previousCollectedAt: null, deviceTimeMoved: false })
+      }),
+      en.changes
+    );
+    expect(lines).toEqual(["1 computer, 1 change.", `Observed ${at(OBSERVED)}.`, `KY4QVD7430 — Kyle’s Mac mini · added 1 · ${at(OBSERVED)}`]);
+  });
+
+  it("an answer that is only groups still says when", () => {
+    expect(answerLines(summary({ total: 1, otherSubjects: 1, when: when({ previousObservedAt: null, previousCollectedAt: null, deviceTimeMoved: false }) }), en.changes)).toEqual([
+      "1 change on groups or definitions, none on computers.",
+      `Observed ${at(OBSERVED)}.`
+    ]);
+  });
+
+  it("German states when in German", () => {
+    const [, observed, window] = answerLines(
+      summary({ total: 1, devicesTotal: 1, devices: [{ ...macMini, subjectId: "7", serial: "KY4QVD7430", added: 1 }], when: when() }),
+      de.changes
+    );
+    expect(observed).toBe(`Beobachtet ${at(OBSERVED)}.`);
+    expect(window).toBe(`Die Inventarisierung davor, ${at(EARLIER)}, zeigte diese Änderung nicht, sie geschah also zwischen beiden.`);
   });
 });
 
@@ -713,7 +801,17 @@ describe("isPromptResult — a 200's body is checked before anything reads it", 
     summary: summary({
       total: 1,
       devicesTotal: 1,
-      devices: [{ connectionId: 1, subjectId: "7", label: "Kyle’s Mac mini", serial: "KY4QVD7430", added: 1, removed: 0, updated: 0, changed: 0 }]
+      devices: [
+        { connectionId: 1, subjectId: "7", label: "Kyle’s Mac mini", serial: "KY4QVD7430", added: 1, removed: 0, updated: 0, changed: 0, lastObservedAt: "2026-09-14T16:57:26Z" }
+      ],
+      when: {
+        observedAt: "2026-09-14T16:57:26Z",
+        oldestObservedAt: "2026-09-14T16:57:26Z",
+        collectedAt: "2026-09-14T16:57:56Z",
+        previousObservedAt: "2026-09-14T00:33:16Z",
+        previousCollectedAt: "2026-09-14T00:40:00Z",
+        deviceTimeMoved: true
+      }
     })
   });
 
@@ -729,6 +827,22 @@ describe("isPromptResult — a 200's body is checked before anything reads it", 
 
   it("a key it does not know is left alone", () => {
     expect(isPromptResult({ ...result(), futureKey: [1, 2] })).toBe(true);
+  });
+
+  // The times the box states (#443): a body without them would print "Invalid Date" over
+  // the answer, so it is a body this page cannot read.
+  it("a summary without the times is not this shape", () => {
+    const body = withDevices.summary!;
+    expect(isPromptResult(result({ summary: { ...body, when: undefined } as never }))).toBe(false);
+    expect(isPromptResult(result({ summary: { ...body, when: { ...body.when!, observedAt: 17 } } as never }))).toBe(false);
+    expect(isPromptResult(result({ summary: { ...body, when: { ...body.when!, deviceTimeMoved: "yes" } } as never }))).toBe(false);
+    expect(isPromptResult(result({ summary: { ...body, devices: [{ ...body.devices[0], lastObservedAt: undefined }] } as never }))).toBe(
+      false
+    );
+    // A change with no observation before it: null, not missing.
+    expect(isPromptResult(result({ summary: { ...body, when: { ...body.when!, previousObservedAt: null, previousCollectedAt: null } } }))).toBe(
+      true
+    );
   });
 
   it("not an object with a known outcome", () => {

@@ -13,7 +13,8 @@ import type {
   PromptOutcome,
   PromptResult,
   PromptStatus,
-  PromptSummary
+  PromptSummary,
+  PromptWhen
 } from "@/features/changes/types";
 
 /**
@@ -145,26 +146,62 @@ export function proposedFilters(result: PromptResult): Partial<ChangeFilters> | 
   return result.outcome === "proposed" && result.filters ? filtersFromPrompt(result.filters) : null;
 }
 
+/** A time as the Changes table's own Observed column writes it, so the operator compares
+ *  like with like: the browser's format, in the browser's zone. */
+function at(iso: string): string {
+  return new Date(iso).toLocaleString();
+}
+
 function deviceLine(device: PromptDevice, words: PromptStrings): string {
   // Serial first: it is the name that survives a rename, and the one an operator pastes
   // into Jamf. A Mac Jamf named after its own serial is not printed twice.
   const names = [...new Set([device.serial, device.label].filter((name): name is string => Boolean(name)))];
   const who = names.length > 0 ? names.join(" — ") : words.answerJamfId(device.subjectId);
   const counts = CHANGE_KINDS.filter((kind) => device[kind] > 0).map((kind) => `${words.answerKinds[kind]} ${device[kind]}`);
-  return counts.length > 0 ? `${who} · ${counts.join(", ")}` : who;
+  // This Mac's newest, last: the list is ordered by it, so "which was most recent" is read
+  // off the order and "when" off the line itself.
+  return [who, counts.length > 0 ? counts.join(", ") : null, at(device.lastObservedAt)].filter(Boolean).join(" · ");
+}
+
+/**
+ * When, and the window it happened in (ruling R1 on #443). The observed time is the Mac's
+ * own inventory time, so the box states the observation and not an install: the change
+ * happened between the inventory before it and that one. Where the inventory time did not
+ * move between the two reads, nothing on the Mac dated it — Jamf's copy changed, or the
+ * aperture we read it through did — and our own clock is the only honest bound. Where the
+ * earlier observation is no longer stored there is no lower bound, and none is stated.
+ */
+function whenLines(when: PromptWhen, total: number, words: PromptStrings): string[] {
+  const lines = [
+    total > 1
+      ? words.answerWhenSpan(at(when.oldestObservedAt), at(when.observedAt))
+      : words.answerWhenOne(at(when.observedAt)),
+  ];
+  if (when.deviceTimeMoved && when.previousObservedAt) {
+    lines.push(words.answerWindowDevice(at(when.previousObservedAt)));
+  } else if (when.previousCollectedAt) {
+    lines.push(words.answerWindowOurs(at(when.previousCollectedAt), at(when.collectedAt)));
+  }
+  return lines;
 }
 
 /**
  * The response box, written by code from the server's count — the model never sees a
- * row, so it cannot be the one to say how many matched. The headline counts computers
- * and their changes; changes on smart groups and definitions are a line of their own,
- * so "2 computers" never silently includes a group.
+ * row, so it cannot be the one to say how many matched, nor when. The headline counts
+ * computers and their changes; changes on smart groups and definitions are a line of their
+ * own, so "2 computers" never silently includes a group. The time follows the headline on
+ * every answer that matched something, asked for or not: it is the answer to "when was the
+ * last time", and no reading of the question decides whether to state it.
  */
 export function answerLines(summary: PromptSummary, strings: ChangesStrings): string[] {
   const words = strings.prompt;
   if (summary.total === 0) return [words.answerNone];
-  if (summary.devicesTotal === 0 && summary.otherSubjects > 0) return [words.answerOtherOnly(summary.otherSubjects)];
-  const lines = [words.answerHeadline(summary.devicesTotal, summary.total - summary.otherSubjects)];
+  const lines =
+    summary.devicesTotal === 0 && summary.otherSubjects > 0
+      ? [words.answerOtherOnly(summary.otherSubjects)]
+      : [words.answerHeadline(summary.devicesTotal, summary.total - summary.otherSubjects)];
+  if (summary.when) lines.push(...whenLines(summary.when, summary.total, words));
+  if (summary.devicesTotal === 0 && summary.otherSubjects > 0) return lines;
   for (const device of summary.devices) lines.push(deviceLine(device, words));
   const unlisted = summary.truncated ? summary.devicesTotal - summary.devices.length : 0;
   if (unlisted > 0) lines.push(words.answerMore(unlisted));
@@ -252,7 +289,22 @@ function isDevice(value: unknown): value is PromptDevice {
     isText(value.subjectId) &&
     isTextOrNull(value.label) &&
     isTextOrNull(value.serial) &&
+    isText(value.lastObservedAt) &&
     CHANGE_KINDS.every((kind) => isCount(value[kind]))
+  );
+}
+
+/** Times are checked as text, not parsed: an unreadable one would render as "Invalid Date",
+ *  and a body that is not this shape is the server answering in a form the page cannot read. */
+function isWhen(value: unknown): value is PromptWhen {
+  return (
+    isRecord(value) &&
+    isText(value.observedAt) &&
+    isText(value.oldestObservedAt) &&
+    isText(value.collectedAt) &&
+    isTextOrNull(value.previousObservedAt) &&
+    isTextOrNull(value.previousCollectedAt) &&
+    typeof value.deviceTimeMoved === "boolean"
   );
 }
 
@@ -264,7 +316,8 @@ function isSummary(value: unknown): value is PromptSummary {
     typeof value.truncated === "boolean" &&
     isCount(value.otherSubjects) &&
     Array.isArray(value.devices) &&
-    value.devices.every(isDevice)
+    value.devices.every(isDevice) &&
+    (value.when === null || isWhen(value.when))
   );
 }
 

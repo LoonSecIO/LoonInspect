@@ -155,6 +155,23 @@ export interface PromptDevice {
   removed: number;
   updated: number;
   changed: number;
+  /** This computer's newest matching change — the column the list is ordered by. */
+  lastObservedAt: string;
+}
+
+/** When the matching changes were observed, and the window the newest one happened in
+ *  (ruling R1 on #443). `observedAt` is the Mac's own inventory time, so it is when its
+ *  inventory first held the change and never when someone made it; the change happened
+ *  between `previousObservedAt` and it. `deviceTimeMoved` is false when the inventory time
+ *  did not move between the two reads — nothing on the Mac dated the change — and then only
+ *  our clock, `previousCollectedAt` to `collectedAt`, bounds it. */
+export interface PromptWhen {
+  observedAt: string;
+  oldestObservedAt: string;
+  collectedAt: string;
+  previousObservedAt: string | null;
+  previousCollectedAt: string | null;
+  deviceTimeMoved: boolean;
 }
 
 export interface PromptSummary {
@@ -166,6 +183,8 @@ export interface PromptSummary {
   /** Matching rows on smart groups and definitions rather than computers. */
   otherSubjects: number;
   devices: PromptDevice[];
+  /** null only when nothing matched. */
+  when: PromptWhen | null;
 }
 
 export interface PromptError {

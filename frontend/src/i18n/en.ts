@@ -1455,6 +1455,15 @@ export const en = {
       answerHeadline: (computers: number, changes: number) =>
         `${computers} computer${computers === 1 ? "" : "s"}, ${changes} change${changes === 1 ? "" : "s"}.`,
       answerKinds: { added: "added", removed: "removed", updated: "updated", changed: "changed" },
+      // When (#443). "Observed" is the Mac's own inventory time, the table's Observed column,
+      // so the box states an observation and never an install — and states the inventory
+      // before it, which is the other end of the window the change happened in.
+      answerWhenOne: (observed: string) => `Observed ${observed}.`,
+      answerWhenSpan: (oldest: string, newest: string) => `Observed from ${oldest} to ${newest}.`,
+      answerWindowDevice: (previous: string) =>
+        `The inventory before it, ${previous}, did not show this change, so it happened between the two.`,
+      answerWindowOurs: (from: string, to: string) =>
+        `Its inventory time did not move, so this came from Jamf's copy or from what LoonInspect reads: seen here between ${from} and ${to}.`,
       answerJamfId: (id: string) => `Jamf ID ${id}`,
       answerMore: (n: number) => `+${n} more`,
       answerOther: (n: number) => `Plus ${n} change${n === 1 ? "" : "s"} on groups or definitions.`,
