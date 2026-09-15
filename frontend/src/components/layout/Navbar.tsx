@@ -1,6 +1,6 @@
 import { LogOut, Moon, Sun } from "lucide-react";
 import { useNavigate } from "react-router";
-import { FlaskLogo } from "@/components/icons/FlaskLogo";
+import { LoonLogo } from "@/components/icons/LoonLogo";
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { SidebarModeSwitcher } from "@/components/layout/SidebarModeSwitcher";
@@ -32,7 +32,7 @@ export function Navbar() {
             <SidebarModeSwitcher />
           </div>
           <div className="flex items-center gap-2 font-semibold">
-            <FlaskLogo className="h-5 w-5 text-primary" />
+            <LoonLogo className="h-5 w-5 text-foreground" />
             <span>LoonInspect</span>
           </div>
         </div>

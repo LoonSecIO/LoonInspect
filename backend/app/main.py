@@ -617,7 +617,7 @@ static_dir = Path(__file__).parent / "static"
 # into assets/<name>-<hash>.<ext>, so the filename *is* the cache key — a rebuild ships
 # under a new URL and the old one is simply orphaned, never requested again. Anything
 # else under static_dir — index.html, and files copied verbatim from frontend/public/
-# (favicon.svg, favicon-dark.svg, logos/) — keeps the same URL across a rebuild, so it
+# (the favicons, loon.svg, logos/) — keeps the same URL across a rebuild, so it
 # must revalidate every time instead of being cached blindly.
 _ASSETS_PREFIX = "assets/"
 _IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable"

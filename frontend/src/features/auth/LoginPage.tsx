@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router";
-import { FlaskLogo } from "@/components/icons/FlaskLogo";
+import { LoonLogo } from "@/components/icons/LoonLogo";
 import { Button } from "@/components/ui/button";
 import { ExternalLink } from "@/components/ui/external-link";
 import { Input } from "@/components/ui/input";
@@ -59,7 +59,7 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background px-4 text-foreground">
       <div className="w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center gap-2 text-center">
-          <FlaskLogo className="h-8 w-8 text-primary" />
+          <LoonLogo className="h-8 w-8 text-foreground" />
           <h1 className="text-2xl font-bold tracking-tight">{t.auth.loginTitle}</h1>
           <p className="text-sm text-muted-foreground">{t.auth.loginDescription}</p>
         </div>
