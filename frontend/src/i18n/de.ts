@@ -1226,11 +1226,24 @@ export const de: Translations = {
     anySection: "Alle Abschnitte",
     change: "Änderung",
     anyChange: "Alle Änderungen",
+    changeReset: {
+      entry: (section: string) =>
+        `Änderung auf „Alle Änderungen“ zurückgesetzt: Der Abschnitt ${section} verzeichnet Hinzugefügt, Entfernt und Aktualisiert.`,
+      field: (section: string) =>
+        `Änderung auf „Alle Änderungen“ zurückgesetzt: Der Abschnitt ${section} verzeichnet nur geänderte Werte.`
+    },
+    neverMatches: {
+      entry: (section: string) => `Der Abschnitt ${section} verzeichnet Hinzugefügt, Entfernt und Aktualisiert – nie Geändert.`,
+      field: (section: string) =>
+        `Der Abschnitt ${section} verzeichnet nur geänderte Werte – nie Hinzugefügt, Entfernt oder Aktualisiert.`
+    },
     apply: "Anwenden",
     clearAll: "Zurücksetzen",
     clearAllTitle: "Alle Filter und das Prompt-Feld zurücksetzen",
     loading: "Änderungen werden geladen…",
     empty: "Noch keine Änderungen – sie erscheinen ab der zweiten Beobachtung eines Geräts.",
+    emptyFiltered: "Keine Änderungen entsprechen diesen Filtern.",
+    emptyPastEnd: "Keine Änderungen auf dieser Seite – sie liegt hinter der letzten Ergebnisseite.",
     errorLoading: "Änderungen konnten nicht geladen werden.",
     colWhen: "Beobachtet",
     colDevice: "Gerät",

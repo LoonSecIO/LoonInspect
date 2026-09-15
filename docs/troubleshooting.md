@@ -789,13 +789,23 @@ writes one row to the disclosure log naming the destination and the one field th
    *The answer came back after the filters changed, so it was not applied* means a filter moved
    while the model was answering; the page keeps the filters you set. Ask again to apply it. *Corrections to the model's answer*
    lists what the page changed or dropped from the model's reply before running it. *No changes
-   match* means the change log holds no row for those filters: the bar matches names the way
-   *Filter to one thing* does, and a Mac that already had an app when tracking began never shows
-   it as *Added* — it appears only when something about it changes. The **Change** filter has
-   two vocabularies: entries (Applications, profiles, accounts, certificates, group memberships,
-   extension attributes, pending updates) are *Added*, *Removed* or *Updated*, and every other
-   section's settings are only ever *Changed*. Set by hand, a pair from the wrong side (say
-   Applications with *Changed*) matches nothing; the bar never sets one.
+   match* under the bar, and *No changes match these filters* in the table, mean the change log
+   holds no row for those filters: the bar matches names the way *Filter to one thing* does, and
+   a Mac that already had an app when tracking began never shows it as *Added* — it appears only
+   when something about it changes. The table says *No changes yet …* only with no filter set,
+   when the log itself is empty; *No changes on this page …* means the page number in the address
+   is past the last page — moving any filter, or **Clear**, starts again at page 1. The
+   **Change** filter has two vocabularies: entries (Applications, profiles, accounts,
+   certificates, group memberships, extension attributes, pending updates) are *Added*,
+   *Removed* or *Updated*, and every other section's settings are only ever *Changed*. With a
+   section chosen, the Change list greys out the kinds that section never records; choosing a
+   section that rules out the Change already set puts Change back to *Any change*, and the line
+   under the filters says so (*Change reset to Any change: Applications records Added, Removed
+   and Updated.*). A pair from the wrong side can still arrive in a link edited by hand. It
+   matches nothing, and the empty table's second line names why — *Applications records Added,
+   Removed and Updated — never Changed.*, or *Hardware records only Changed values — never
+   Added, Removed or Updated.* Pick a Change from that section's side, or *Any change*. The bar
+   never sets such a pair.
 
 **O.** The *Changes Prompt bar* line says *shown* while the bar stays missing after a reload; or
 the rows under an answer disagree with `GET /api/changes` run with the filters on screen. Report

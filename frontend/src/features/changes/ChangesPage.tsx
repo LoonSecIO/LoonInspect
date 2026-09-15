@@ -2,14 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { getChangePolicy, listChanges } from "@/features/changes/api";
+import { changeResetLine, emptyTable } from "@/features/changes/changeKinds";
 import { DiffCell } from "@/features/changes/DiffCell";
 import { PromptBar } from "@/features/changes/PromptBar";
 import { hasSomethingToClear } from "@/features/changes/prompt";
 import {
   artifactValueOf,
+  canMatch,
   CHANGE_KINDS,
   detailText,
   diffLines,
+  kindsRecordedBy,
   labelsFromPolicy,
   SECTION_ORDER,
   whatOf,
@@ -81,6 +84,14 @@ export function ChangesPage() {
   // The Prompt bar's session, which Clear replaces, and whether it has been used since.
   const [promptSession, setPromptSession] = useState(0);
   const [promptUsed, setPromptUsed] = useState(false);
+  // The section whose choice just put Change back to Any change, and the URL that choice
+  // produced (`chooseSection`). The line saying so shows only while the address is that
+  // URL. Every move the page makes itself (another filter, a page, the Prompt bar, Clear)
+  // forgets it, so coming back to the same address that way does not bring the line back.
+  // Back and Forward are compared rather than cleared, since the router commits a URL in
+  // a transition, a render or two after this state is set: Back hides the line, and
+  // Forward to the address the choice produced shows it again, because it is again true.
+  const [changeReset, setChangeReset] = useState<{ section: string; at: string } | null>(null);
   const pageSize = 50;
 
   // The two text boxes are drafts — typed, then applied. They still have to follow the URL
@@ -147,6 +158,18 @@ export function ChangesPage() {
 
   function update(next: Partial<ChangeFilters>) {
     setSearchParams(nextParams(next));
+    setChangeReset(null);
+  }
+
+  // A list section's entries are added, removed or updated; every other section's values
+  // are only ever changed (#437). A section that rules out the Change already set would
+  // leave a pair no row can match, so the choice takes Change back to Any change in the
+  // same move, and the line under the filters says so rather than let it vanish unseen.
+  function chooseSection(section: string | undefined) {
+    const reset = !canMatch(section, filters.change);
+    const params = nextParams(reset ? { section, change: undefined } : { section });
+    setSearchParams(params);
+    setChangeReset(reset && section ? { section, at: params.toString() } : null);
   }
 
   // The Prompt bar's answer goes through the same URL as every control. An answer naming
@@ -159,6 +182,7 @@ export function ChangesPage() {
     const params = nextParams(next);
     if (params.toString() === searchParams.toString()) setReloadToken((token) => token + 1);
     else setSearchParams(params);
+    setChangeReset(null);
   }
 
   // Back to the unfiltered feed's first page in one press: every key the URL can carry
@@ -172,6 +196,7 @@ export function ChangesPage() {
     setDraftArtifact("");
     setPromptSession((session) => session + 1);
     setPromptUsed(false);
+    setChangeReset(null);
   }
 
   const canClear = hasSomethingToClear(filters, { q: draftQuery, artifact: draftArtifact }, promptUsed);
@@ -186,6 +211,10 @@ export function ChangesPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = filters.page ?? 1;
+  // With a section chosen, the kinds it records; with Any section, all four.
+  const recorded = kindsRecordedBy(filters.section);
+  const resetLine = changeReset && changeReset.at === searchParams.toString() ? changeResetLine(changeReset.section, tc) : null;
+  const empty = emptyTable(filters, total, tc);
 
   return (
     <section className="space-y-6">
@@ -253,7 +282,9 @@ export function ChangesPage() {
         </label>
         {/* Added, removed, updated or changed, labelled as the Change column labels a row.
             "New application installs" is Applications and Added; without this the pair
-            was every application change there is, updates included. */}
+            was every application change there is, updates included. A kind the chosen
+            section never records is greyed out rather than offered to match nothing
+            (#437); with Any section, all four are there. */}
         <label className="space-y-1 text-sm">
           <span className="block text-muted-foreground">{tc.change}</span>
           <select
@@ -263,7 +294,7 @@ export function ChangesPage() {
           >
             <option value="">{tc.anyChange}</option>
             {CHANGE_KINDS.map((kind) => (
-              <option key={kind} value={kind}>
+              <option key={kind} value={kind} disabled={!recorded.includes(kind)}>
                 {tc.changeKinds[kind] ?? kind}
               </option>
             ))}
@@ -278,7 +309,7 @@ export function ChangesPage() {
           <select
             className={inputClasses}
             value={filters.section ?? ""}
-            onChange={(e) => update({ section: e.target.value || undefined })}
+            onChange={(e) => chooseSection(e.target.value || undefined)}
           >
             <option value="">{tc.anySection}</option>
             {SECTION_ORDER.map((name) => (
@@ -296,6 +327,13 @@ export function ChangesPage() {
         <Button type="button" variant="ghost" size="sm" className="mt-6" disabled={!canClear} title={tc.clearAllTitle} onClick={clearAll}>
           {tc.clearAll}
         </Button>
+        {/* Under the controls, on a row of its own: the Change filter the operator set
+            just went back to Any change, and this is the only place that says so. */}
+        {resetLine && (
+          <p className="basis-full text-sm text-muted-foreground" role="status">
+            {resetLine}
+          </p>
+        )}
       </form>
 
       {/* A subject the form has no control for (the device page's "all changes on this
@@ -333,9 +371,16 @@ export function ChangesPage() {
                 <td className="px-4 py-4 text-muted-foreground" colSpan={6}>{tc.loading}</td>
               </tr>
             )}
-            {!loading && rows.length === 0 && (
+            {/* Which empty this is, never one sentence for all of them (`emptyTable`): a
+                filtered page with no rows is not an empty log, and a pair that can never
+                match says why. Not shown under a failed load, which is not empty either —
+                the error line above says what it is. */}
+            {!loading && !error && rows.length === 0 && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={6}>{tc.empty}</td>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={6}>
+                  <p>{empty.lead}</p>
+                  {empty.reason && <p className="mt-1">{empty.reason}</p>}
+                </td>
               </tr>
             )}
             {rows.map((row) => {

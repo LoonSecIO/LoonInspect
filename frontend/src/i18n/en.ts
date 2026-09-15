@@ -1331,12 +1331,30 @@ export const en = {
     // already shows, so a row and the filter that finds it read the same.
     change: "Change",
     anyChange: "Any change",
+    // #437: the Change filter's two vocabularies, said where they bite. A list section's
+    // entries are Added, Removed or Updated; every other section's values are only ever
+    // Changed. The first pair is the line under the filters when choosing a section put
+    // Change back to Any change; the second is the empty table's reason for a pair that
+    // can never match, which a hand-edited link can still carry.
+    changeReset: {
+      entry: (section: string) => `Change reset to Any change: ${section} records Added, Removed and Updated.`,
+      field: (section: string) => `Change reset to Any change: ${section} records only Changed values.`
+    },
+    neverMatches: {
+      entry: (section: string) => `${section} records Added, Removed and Updated — never Changed.`,
+      field: (section: string) => `${section} records only Changed values — never Added, Removed or Updated.`
+    },
     apply: "Apply",
     // Beside Apply: every filter back to the unfiltered feed, and the Prompt box emptied.
     clearAll: "Clear",
     clearAllTitle: "Clear every filter and the Prompt box",
     loading: "Loading changes…",
+    // Three empty tables, three sentences (#437). `empty` is only for a log with no row in
+    // it and no filter set: under a mistyped app name it told the operator the log was
+    // empty. `emptyPastEnd` is a page number past the last page, where rows do match.
     empty: "No changes yet — they appear from the second observation of a device onward.",
+    emptyFiltered: "No changes match these filters.",
+    emptyPastEnd: "No changes on this page — it is past the last page of results.",
     errorLoading: "Could not load changes.",
     colWhen: "Observed",
     colDevice: "Device",
