@@ -598,9 +598,14 @@ async def openapi_schema() -> JSONResponse:
 # Both pages take the arguments that keep their third parties to one: the favicon is our
 # own rather than fastapi.tiangolo.com's, and ReDoc's hard-coded Google Fonts link is off,
 # so DOCS_CONTENT_SECURITY_POLICY (app.core.middleware) names jsdelivr and nothing else.
+# The favicon URL carries the same ?v= as frontend/index.html's icon links: browsers key their
+# favicon cache by URL, so a changed icon needs a changed URL. Bump both together.
+FAVICON_URL = "/favicon.svg?v=2"
+
+
 @app.get("/docs", include_in_schema=False)
 async def swagger_ui() -> HTMLResponse:
-    return get_swagger_ui_html(openapi_url="/openapi.json", title=f"{settings.app_name} API", swagger_favicon_url="/favicon.svg")
+    return get_swagger_ui_html(openapi_url="/openapi.json", title=f"{settings.app_name} API", swagger_favicon_url=FAVICON_URL)
 
 
 @app.get("/redoc", include_in_schema=False)
@@ -608,7 +613,7 @@ async def redoc_ui() -> HTMLResponse:
     return get_redoc_html(
         openapi_url="/openapi.json",
         title=f"{settings.app_name} API",
-        redoc_favicon_url="/favicon.svg",
+        redoc_favicon_url=FAVICON_URL,
         with_google_fonts=False,
     )
 
