@@ -1224,7 +1224,11 @@ export const de: Translations = {
     anyLevel: "Alle Stufen",
     section: "Abschnitt",
     anySection: "Alle Abschnitte",
+    change: "Änderung",
+    anyChange: "Alle Änderungen",
     apply: "Anwenden",
+    clearAll: "Zurücksetzen",
+    clearAllTitle: "Alle Filter und das Prompt-Feld zurücksetzen",
     loading: "Änderungen werden geladen…",
     empty: "Noch keine Änderungen – sie erscheinen ab der zweiten Beobachtung eines Geräts.",
     errorLoading: "Änderungen konnten nicht geladen werden.",
@@ -1268,7 +1272,45 @@ export const de: Translations = {
     count: (n: number) => `${n} Änderung${n === 1 ? "" : "en"}`,
     pageOf: (page: number, pages: number) => `Seite ${page} von ${pages}`,
     previous: "Zurück",
-    next: "Weiter"
+    next: "Weiter",
+    prompt: {
+      label: "Prompt",
+      placeholder: "Welche Computer haben Wireshark installiert?",
+      model: "Modell",
+      ask: "Fragen",
+      asking: (provider: string) => `Frage an ${provider}…`,
+      unavailable: "KI-Suche nicht verfügbar – die Filter unten funktionieren weiterhin.",
+      unparseable: "Das ließ sich nicht deuten – verwenden Sie die Filter direkt.",
+      closeAsAllowed: "So genau gefiltert, wie diese Bedienelemente es erlauben.",
+      askFailed: "Die Frage hat diesen Server nicht erreicht. Prüfen Sie, ob LoonInspect läuft, und laden Sie die Seite neu.",
+      askNoReason: (status: number) =>
+        `Der Server hat mit ${status} ohne Begründung geantwortet. Den Fehler nennt docker compose logs app.`,
+      askUnreadable:
+        "Der Server hat geantwortet, aber nicht in einer Form, die diese Seite lesen kann. Den Fehler nennt docker compose logs app.",
+      reasonStatus: (status: number) => `der Server hat mit ${status} ohne Begründung geantwortet`,
+      reasonNoAnswer: "dieser Server hat nicht geantwortet",
+      reasonUnreadable: "die Antwort des Servers ließ sich nicht lesen",
+      statusFailed: (reason: string) =>
+        `Die Prompt-Leiste konnte ihre Einstellungen nicht prüfen: ${reason}. Prüfen Sie docker compose logs app.`,
+      staleReply:
+        "Die Antwort kam, nachdem sich die Filter geändert hatten, und wurde deshalb nicht angewendet. Stellen Sie die Frage erneut, um sie anzuwenden.",
+      readbackNone: "Angezeigt werden alle Änderungen",
+      readbackLead: "Angezeigt werden Änderungen",
+      readbackDevice: (q: string) => `für ein Gerät, das „${q}“ entspricht`,
+      readbackArtifact: (name: string) => `mit dem Namen „${name}“`,
+      readbackSection: (section: string) => `im Abschnitt ${section}`,
+      readbackLevel: (level: string) => `auf Stufe ${level}`,
+      readbackChange: (kind: string) => `die ${kind} wurden`,
+      answerNone: "Keine Änderungen gefunden.",
+      answerHeadline: (computers: number, changes: number) =>
+        `${computers} Computer, ${changes} Änderung${changes === 1 ? "" : "en"}.`,
+      answerKinds: { added: "hinzugefügt", removed: "entfernt", updated: "aktualisiert", changed: "geändert" },
+      answerJamfId: (id: string) => `Jamf-ID ${id}`,
+      answerMore: (n: number) => `+${n} weitere`,
+      answerOther: (n: number) => `Dazu ${n} Änderung${n === 1 ? "" : "en"} an Gruppen oder Definitionen.`,
+      answerOtherOnly: (n: number) => `${n} Änderung${n === 1 ? "" : "en"} an Gruppen oder Definitionen, keine an Computern.`,
+      repairs: (n: number) => `Korrekturen an der Antwort des Modells (${n})`
+    }
   },
   changeTracking: {
     title: "Änderungsverfolgung",
@@ -1311,7 +1353,7 @@ export const de: Translations = {
   ai: {
     title: "KI",
     description:
-      "Ein Testfeld: ein Prompt an einen Modell-Endpunkt Ihrer Wahl, hinter dem KI-Flag und der Einwilligung zur KI-Inferenz. Nichts wird gespeichert. Jedes Senden schreibt eine Zeile ins Freigabeprotokoll mit dem Ziel und dem einen Feld, das den Pod verlassen hat: dem Prompt. Der Aufruf geht von diesem Server aus, nie von Ihrem Browser.",
+      "Ein Testfeld: ein Prompt an einen Modell-Endpunkt Ihrer Wahl, hinter dem KI-Flag und der Einwilligung zur KI-Inferenz. Speichern legt die Einstellungen einer Karte auf diesem Server ab, für die Prompt-Leiste unter Änderungen; ein API-Schlüssel wird verschlüsselt gespeichert und nie wieder angezeigt. Jedes Senden schreibt eine Zeile ins Freigabeprotokoll mit dem Ziel und dem einen Feld, das den Pod verlassen hat: dem Prompt. Der Aufruf geht von diesem Server aus, nie von Ihrem Browser.",
     on: "An",
     off: "Aus",
     flagLabel: "KI-Funktionen-Flag",
@@ -1374,7 +1416,38 @@ export const de: Translations = {
     tokens: "Antwort-Token",
     finish: "Abbruchgrund",
     loadFailed: "Die KI-Seite konnte nicht geladen werden.",
-    saveFailed: "Die Einwilligung konnte nicht geändert werden."
+    saveFailed: "Die Einwilligung konnte nicht geändert werden.",
+    keySaved:
+      "Ein Schlüssel ist gespeichert – leer lassen, um ihn zu behalten. Senden und Modelle laden verwenden nur einen hier eingegebenen Schlüssel.",
+    savedPill: "Gespeichert",
+    save: "Speichern",
+    saving: "Wird gespeichert…",
+    saveBlocked: "Speichern setzt das Flag, system:write, eine Basis-URL und ein Modell voraus.",
+    savedNotice: "Auf diesem Server gespeichert.",
+    configSaveFailed: "Die Einstellungen konnten nicht gespeichert werden.",
+    remove: "Entfernen",
+    removing: "Wird entfernt…",
+    removeConfirm: (provider: string) =>
+      `Die gespeicherten Einstellungen für ${provider} entfernen? Ein gespeicherter Schlüssel wird mit entfernt.`,
+    removedNotice: "Von diesem Server entfernt.",
+    configRemoveFailed: "Die gespeicherten Einstellungen konnten nicht entfernt werden.",
+    alreadyRemoved: "Diese Einstellungen waren auf diesem Server bereits entfernt.",
+    cancel: "Abbrechen",
+    configsLoadFailed: (reason: string) =>
+      `Die gespeicherten Anbieter konnten nicht gelesen werden: ${reason}. Prüfen Sie docker compose logs app.`,
+    promptStatusLoadFailed: (reason: string) =>
+      `Ob die Prompt-Leiste unter Änderungen sichtbar ist, ließ sich nicht lesen: ${reason}. Prüfen Sie docker compose logs app.`,
+    promptBarShown: (provider: string, saved: number) =>
+      saved > 1
+        ? `Prompt-Leiste unter Änderungen: sichtbar (nutzt ${provider}, sofern niemand einen anderen wählt; ${saved} Anbieter gespeichert)`
+        : `Prompt-Leiste unter Änderungen: sichtbar (nutzt ${provider})`,
+    promptBarHidden: (reason: string) => `Prompt-Leiste unter Änderungen: ausgeblendet – ${reason}`,
+    promptBarHiddenBare: "Prompt-Leiste unter Änderungen: ausgeblendet",
+    promptBarReasons: {
+      flag_off: "das KI-Funktionen-Flag ist aus. Schalten Sie es unter Feature-Flags ein.",
+      consent_off: "die Einwilligung zur KI-Inferenz ist nicht erteilt. Erteilen Sie sie auf dieser Seite.",
+      no_provider: "kein Anbieter ist gespeichert. Füllen Sie eine Karte aus und klicken Sie auf Speichern."
+    }
   },
   featureFlags: {
     title: "Feature-Flags",

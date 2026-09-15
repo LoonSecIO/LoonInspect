@@ -7,6 +7,109 @@ record of what ships; the plan below it is the road it sits on. Grounded in
 Run this session: one metadata probe, two Ollama chat completions, three Apple FM generations
 (one through a throwaway shim). No docker, no Splunk, no container.
 
+## Built (2026-09-14, spike, no issue or PR yet): the Changes Prompt bar
+
+Slot 1, sentence-to-filter, on Devices › Changes. A handoff from a claude.ai session supplied the
+design and three files (a Python translator with a whitelist and a self-test, a DOM wiring script,
+the rendered prompt). They were ported, not re-derived, and measured before anything changed.
+
+**The design decision.** The model translates the question into the page's own filter state and
+nothing else. It never sees a device row; Postgres filters. The call costs the same at any fleet
+size, and the model cannot invent a serial number or reach the database, because nothing it
+returns is used except five whitelisted values and one sentence rendered as text.
+
+**Rulings (Kyle, 2026-09-14).**
+1. *Configured* means **saved**. Each Settings › AI card has **Save** and **Remove**. Configs live
+   in `ai_provider_configs`: one row per provider per tenant, RLS like every tenant table, and the
+   key an `EncryptedString` like a Jamf credential, never returned by the API. This answers R3 with
+   a table rather than columns on the data-sharing row, because more than one provider can be saved.
+2. **Auto-apply.** Enter fills the filters and runs them. This amends "chips before execution"
+   (2026-08-29) for this slot: the filters move where the user can see them and stay editable, and
+   the query only reads.
+3. **The response box is written by code** from the matching rows (devices, serials, change
+   kinds), never by the model, so the model still never sees a row.
+4. **No replay mode.** The demo runs live.
+5. **A Change filter** (Any / Added / Removed / Updated / Changed) joins the page, so "installs"
+   means *Added*. `GET /api/changes` gained `change`.
+6. **Clear** (2026-09-15), beside Apply. It empties every filter, including the URL-only
+   `since`, `minLevel` and device chip. It also empties the Prompt box and its answer, and
+   drops a question in flight. It is disabled when there is nothing to clear.
+7. **The Model list is always shown** (2026-09-15), one option per saved card, "{card} ·
+   {model}". The hint "Only your question is sent to …" is removed: Kyle read it as false
+   beside an answer box that states counts. It was true, since the counts are Postgres, but a
+   sentence the page has to argue for is the wrong sentence.
+8. **The Apple card takes no reasoning effort** (2026-09-15). The control is hidden there, the
+   page never sends one, and the API refuses one for `apple_fm` with a sentence. The Prompt bar
+   drops a stored effort, left by an older build, before dialling. On macOS 27.0 (26A428)
+   `fm serve` answers `reasoning_effort is not supported by the 'system' model`. The 2026-09-05
+   wording further down this page is from an earlier build.
+
+**What it does.** The bar appears when the `ai_features` flag is on, AI-inference consent is on,
+and at least one provider is saved. `GET /api/changes/prompt` says which is missing, and Settings ›
+AI shows it as *Changes Prompt bar: …*. `POST /api/changes/prompt` (DEVICE_READ, so viewers can use
+it) runs these steps in order:
+
+1. Sanitise the question: NFC, control and format characters removed, 500 characters.
+2. Choose the saved provider.
+3. Apply the URL rule.
+4. The gate: `feature: changes_prompt`, `fields: ["query_text"]`, row committed first.
+5. The one bounded door: the static instructions go as a system message, with temperature 0,
+   200 reply tokens and a 30 s limit.
+6. Parse, whitelist, guards.
+7. Compute the summary with the same where-clause the page runs (`change_conditions`, extracted
+   from `list_changes`), then reply.
+
+The page replaces its filters with the reply's and renders the banner and the response box as text.
+
+**The prompt, measured before it shipped.** As delivered, the handoff's prompt passed **5 of 19**
+questions against `fm serve` on this Mac.
+- It declared nearly every question unsupported, echoing its own examples ("Cannot express 'but
+  not'" for *which computers installed wireshark*).
+- It copied section names into the name filter.
+- Kyle's demo question would have shown the warning banner.
+
+The fix re-derives nothing. The examples are kept (each answer gains a `change` key), four are
+added, none of them a test question, and `low` joins the levels. Deterministic guards follow the
+whitelist:
+- A name filter that is really a section or a kind is dropped.
+- A device search that repeats the name filter is dropped.
+- A lone serial-shaped token in the question fills the device search when the model missed it.
+- A change kind the section never records becomes *any*.
+- `unsupported` stands only when the question contains an or / not / date / value / comparison
+  word.
+
+With the handoff's prompt word for word and only the guards added, the score is 27 of 29. With the
+final prompt it is **35 of 35**, including 10 questions written after tuning and Kyle's three demo
+prompts. `tests/test_changes_prompt_live.py` is that set as a `hostbridge` test through the real
+adapter.
+
+**Numbers.** From the handoff (M4 Max, from the host): ~192 ms fixed per call, ~0.66 ms per input
+token, ~200 ms to decode a short answer, ~520 ms per question. Measured here on 2026-09-14, on the 35
+questions:
+- from the host over the same HTTP path: median 1,103 ms, p90 1,276 ms;
+- from a container through the app's adapter (the `hostbridge` lane, twice): median 1,137 ms,
+  p90 1,299–1,315 ms;
+- end to end in the app (question to answer box, including the summary's two scans), on
+  loondemo's copy of the dev database: 1.5–1.8 s for the demo questions.
+
+The gap from the handoff's figure is unexplained.
+
+**Found on the way.** The handoff's `re.search(r"\{.*\}", …, re.S)` is quadratic on a reply
+full of `{`. A megabyte of them (under the adapter's cap) blocked the event loop for 161.8 s. The
+parser now refuses a reply over 8,000 characters before it scans, and slices from the first `{`
+to the last `}`. Two verifiers checked it and found the same answers as the old regex on 20,021
+replies.
+
+**Deviations to rule on.**
+- P4 says unknown keys are a rejection, and T2 wants a proposal instead of a result. The handoff's
+  design, kept here, *repairs* instead: an unknown section becomes *any*, a value that fails the
+  whitelist is dropped, and every repair is listed under the answer. A middle road would
+  auto-apply only when nothing needed repair, and otherwise fill the controls and wait for Apply.
+- P2 and P3 describe a JSON data block and control-token stripping for fleet data. The question is
+  the operator's own text and goes as the user message, NFC-normalised with control and format
+  characters removed. Model control tokens are not stripped from it.
+- `unsupported` is model-written English, including on the German page.
+
 ## Built (2026-09-05, #319)
 
 What ships, where it lives, and what was proven against it.

@@ -43,13 +43,17 @@ CLIENT_SECRET = "jamf-client-secret-vvq-7d41e0b9a2"
 WEBHOOK_SECRET = "jamf-webhook-secret-vvq-19c3f8de55"
 LICENSE_KEY = "loonsecio-license-vvq-6b02a7c4f1"
 DESTINATION_SECRET = "splunk-hec-token-vvq-3e95d0a6bc"
+AI_KEY = "sk-ant-ai-provider-key-vvq-8f27c1b4d9"
 
-ALL_SECRETS = (CLIENT_SECRET, WEBHOOK_SECRET, LICENSE_KEY, DESTINATION_SECRET)
+ALL_SECRETS = (CLIENT_SECRET, WEBHOOK_SECRET, LICENSE_KEY, DESTINATION_SECRET, AI_KEY)
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def stored() -> None:
-    """One connection and one destination, written the way the API writes them."""
+    """One connection, one destination and one saved AI provider config, written the way
+    the API writes them."""
+    from app.ai.providers import Provider
+    from app.core.ai_configs import save_config
     from app.core.bootstrap import bootstrap_tenants
     from app.core.database import init_db, session_for_tenant, unscoped_session
     from app.core.tenancy import OPERATIONAL_TENANT_ID
@@ -84,36 +88,51 @@ async def stored() -> None:
             )
         )
         await db.commit()
+        # Upserted, so a re-run replaces the previous run's row rather than tripping the
+        # one-per-provider constraint.
+        await save_config(
+            db,
+            Provider.anthropic,
+            host_reach=None,
+            base_url="https://api.anthropic.com",
+            model="claude-fable-5-1",
+            reasoning_effort=None,
+            api_key=AI_KEY,
+            clear_key=False,
+            updated_by="vvq@example.com",
+        )
 
 
-async def _row_as_text(table: str, name: str) -> str:
+async def _row_as_text(table: str, name: str, key: str = "name") -> str:
     """Every column of the row, as the bytes Postgres holds.
 
     `text()` carries no type decorator, so nothing on this path decrypts — which is the
     whole point. `row_to_json` rather than naming columns: a column added later is
     covered by this test on the day it is added, without anyone remembering to add it.
+    `key` names the column the row is found by, for a table with no `name`.
     """
     from app.core.database import session_for_tenant
     from app.core.tenancy import OPERATIONAL_TENANT_ID
 
     async with session_for_tenant(OPERATIONAL_TENANT_ID) as db:
         result = await db.execute(
-            text(f"SELECT row_to_json(t)::text FROM {table} t WHERE t.name = :name"),
+            text(f"SELECT row_to_json(t)::text FROM {table} t WHERE t.{key} = :name"),
             {"name": name},
         )
         return result.scalar_one()
 
 
 @pytest.mark.parametrize(
-    ("table", "name"),
+    ("table", "name", "key"),
     [
-        pytest.param("mdm_connections", "vvq connection", id="mdm_connections"),
-        pytest.param("destinations", "vvq destination", id="destinations"),
+        pytest.param("mdm_connections", "vvq connection", "name", id="mdm_connections"),
+        pytest.param("destinations", "vvq destination", "name", id="destinations"),
+        pytest.param("ai_provider_configs", "anthropic", "provider", id="ai_provider_configs"),
     ],
 )
-async def test_no_secret_is_stored_in_the_clear(stored: None, table: str, name: str) -> None:
+async def test_no_secret_is_stored_in_the_clear(stored: None, table: str, name: str, key: str) -> None:
     """The claim the runbook rests on. A dump of this row hands its holder ciphertext."""
-    row = await _row_as_text(table, name)
+    row = await _row_as_text(table, name, key)
 
     for secret in ALL_SECRETS:
         assert secret not in row, (
@@ -141,3 +160,15 @@ async def test_the_stored_bytes_are_fernet_tokens_this_key_can_read(stored: None
 
     with pytest.raises(InvalidToken):
         Fernet(Fernet.generate_key()).decrypt(token.encode())
+
+
+async def test_a_saved_ai_key_is_a_fernet_token_this_key_can_read(stored: None) -> None:
+    """The same other half for the AI provider key: a column that stored nothing, or a
+    hash, would pass the absence test while losing the key the Prompt bar sends."""
+    from cryptography.fernet import Fernet
+
+    from app.core.crypto import get_encryption_key
+
+    token = json.loads(await _row_as_text("ai_provider_configs", "anthropic", "provider"))["api_key_encrypted"]
+    assert token.startswith("gAAAAA"), "not a Fernet token: the column is storing something else"
+    assert Fernet(get_encryption_key()).decrypt(token.encode()).decode() == AI_KEY

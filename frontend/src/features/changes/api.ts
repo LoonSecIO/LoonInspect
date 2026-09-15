@@ -3,7 +3,10 @@ import type {
   ChangeFilters,
   ChangePolicy,
   ChangePolicyUpdate,
-  DeviceChangeListResponse
+  DeviceChangeListResponse,
+  PromptRequest,
+  PromptResult,
+  PromptStatus
 } from "@/features/changes/types";
 
 export function listChanges(filters: ChangeFilters): Promise<DeviceChangeListResponse> {
@@ -13,6 +16,7 @@ export function listChanges(filters: ChangeFilters): Promise<DeviceChangeListRes
   if (filters.level) params.set("level", filters.level);
   if (filters.minLevel) params.set("minLevel", filters.minLevel);
   if (filters.section) params.set("section", filters.section);
+  if (filters.change) params.set("change", filters.change);
   if (filters.since) params.set("since", filters.since);
   if (filters.connectionId !== undefined) params.set("connectionId", String(filters.connectionId));
   if (filters.subjectId) params.set("subjectId", filters.subjectId);
@@ -28,4 +32,17 @@ export function getChangePolicy(): Promise<ChangePolicy> {
 
 export function putChangePolicy(update: ChangePolicyUpdate): Promise<ChangePolicy> {
   return apiRequest<ChangePolicy>("/changes/policy", { method: "PUT", json: update });
+}
+
+/** Whether the Prompt bar shows, and which saved providers it may use. Readable with
+ *  device:read alone, because viewers use the bar and cannot read Settings › AI. */
+export function getPromptStatus(): Promise<PromptStatus> {
+  return apiRequest<PromptStatus>("/changes/prompt");
+}
+
+/** The question goes to this server, which sends it — and only it — to the saved
+ *  provider. What comes back is filter settings and a count Postgres wrote. `signal`
+ *  lets the bar drop a reply nobody is waiting for any more. */
+export function askPrompt(body: PromptRequest, signal?: AbortSignal): Promise<PromptResult> {
+  return apiRequest<PromptResult>("/changes/prompt", { method: "POST", json: body, signal });
 }

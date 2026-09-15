@@ -44,6 +44,15 @@ export const SECTION_ORDER = [
 ] as const;
 
 /**
+ * The change vocabulary, in the order the Change filter offers it: the three an entry in
+ * a list section can do, then `changed`, the one a scalar section's field does
+ * (`ENTRY_RULES` and `FIELD_RULES` in `backend/app/changes/policy.py`). Kept on one line:
+ * `backend/tests/test_changes_prompt.py` reads it to hold the Prompt bar's vocabulary to
+ * the page's.
+ */
+export const CHANGE_KINDS = ["added", "removed", "updated", "changed"] as const;
+
+/**
  * Field labels, keyed by where the field lives. Scalar fields and entry fields are
  * namespaced apart because `applications` (a section) and `application` (an entry kind)
  * are one letter and one meaning apart.
