@@ -1,8 +1,10 @@
 import type { SVGProps } from "react";
 
 /**
- * LoonInspect's loon (#321): the geometry of public/loon.svg, cropped to the square
- * the favicons use so the mark fills its box. The ink is `currentColor`, so the
+ * LoonInspect's loon (#321): the full art of public/loon.svg, hexagon and all, on a
+ * 648-unit square that fills its box. The favicons are the loon alone on their own crop
+ * (Kyle, 2026-09-15: "too busy" at tab size), so this mark and favicon.svg differ on
+ * purpose — do not re-sync one to the other. The ink is `currentColor`, so the
  * caller's `text-*` class themes it; the eye stays the brand red in both themes.
  * brand.test.ts holds these paths to public/loon.svg.
  */

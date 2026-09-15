@@ -15,15 +15,19 @@ const iconLinks = () =>
     .map((match) => attributes(match[0]))
     .filter((link) => link.rel === "icon" || link.rel === "apple-touch-icon");
 
-/** Every subpath of every `d` in a file, whitespace-normalised: the unit a favicon
- * may drop but never alter. */
-const subpaths = (source: string) =>
-  [...source.matchAll(/\sd="([^"]*)"/g)].flatMap((match) =>
+/** An href without its `?v=` query: the file it names in public/. */
+const withoutQuery = (href: string) => href.split("?")[0];
+
+/** Every `d` in a file, each as its subpaths, whitespace-normalised: the subpath is the
+ * unit a favicon may drop but never alter. */
+const paths = (source: string) =>
+  [...source.matchAll(/\sd="([^"]*)"/g)].map((match) =>
     match[1]
       .split(/(?=M )/)
       .map((part) => part.trim().replace(/\s+/g, " "))
       .filter(Boolean)
   );
+const subpaths = (source: string) => paths(source).flat();
 
 /** Every circle, as "cx cy r": the eye, which a favicon may not move or enlarge either. */
 const circles = (source: string) =>
@@ -56,14 +60,44 @@ function pngHeader(relative: string) {
   };
 }
 
+/** An ICO's directory: a 6-byte header (reserved, type, image count), then 16 bytes an
+ * image. A width or height byte of 0 means 256. */
+function icoDirectory(relative: string) {
+  const bytes = readFileSync(frontend(relative));
+  const count = bytes.readUInt16LE(4);
+  return {
+    reserved: bytes.readUInt16LE(0),
+    type: bytes.readUInt16LE(2), // 1 is an icon, 2 a cursor
+    images: Array.from({ length: count }, (_, index) => {
+      const entry = 6 + index * 16;
+      const length = bytes.readUInt32LE(entry + 8);
+      const offset = bytes.readUInt32LE(entry + 12);
+      return {
+        width: bytes[entry] || 256,
+        height: bytes[entry + 1] || 256,
+        insideFile: length > 0 && offset + length <= bytes.length
+      };
+    })
+  };
+}
+
 describe("the favicon wiring in index.html", () => {
-  it("links the three icon files, PNG first so a browser that takes SVG ends on the SVG", () => {
-    // Of the icons a browser can use it takes the last in tree order.
-    expect(iconLinks()).toEqual([
-      { rel: "icon", type: "image/png", sizes: "32x32", href: "/favicon-32.png" },
+  it("links the ICO, the SVG and the touch icon, ICO first so a browser that takes SVG ends on the SVG", () => {
+    // Of the icons a browser can use it takes the last in tree order. The ICO says
+    // sizes="32x32": "any" would make Chrome prefer it to the SVG.
+    expect(iconLinks().map((link) => ({ ...link, href: withoutQuery(link.href) }))).toEqual([
+      { rel: "icon", href: "/favicon.ico", sizes: "32x32" },
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
       { rel: "apple-touch-icon", href: "/apple-touch-icon.png" }
     ]);
+  });
+
+  it("every icon link carries a ?v= query, the key a changed mark ships under", () => {
+    // A browser keeps a favicon by its URL long after the page reloads (2026-09-15: a
+    // new mark stayed invisible in the tab); the query is what a change bumps.
+    for (const link of iconLinks()) {
+      expect(link.href, link.href).toMatch(/\?v=\d+$/);
+    }
   });
 
   it("the SVG switches to its dark ink itself; no icon link is gated on a media query", () => {
@@ -74,7 +108,7 @@ describe("the favicon wiring in index.html", () => {
   });
 
   it("every linked file, and the master loon.svg, exists in public/", () => {
-    for (const href of [...iconLinks().map((link) => link.href), "/loon.svg"]) {
+    for (const href of [...iconLinks().map((link) => withoutQuery(link.href)), "/loon.svg"]) {
       expect(existsSync(frontend(`public${href}`)), href).toBe(true);
     }
   });
@@ -91,8 +125,21 @@ describe("the brand files", () => {
     expect(svg).not.toMatch(/transform=/);
   });
 
-  it("the PNGs are the sizes their links promise", () => {
-    expect(pngHeader("public/favicon-32.png")).toMatchObject({ width: 32, height: 32 });
+  it("favicon.ico is a real icon file, with 16, 32 and 48 px images", () => {
+    // Browsers ask for /favicon.ico on their own. Without the file the request fell
+    // through to the SPA shell and came back 200 text/html.
+    expect(icoDirectory("public/favicon.ico")).toEqual({
+      reserved: 0,
+      type: 1,
+      images: [
+        { width: 16, height: 16, insideFile: true },
+        { width: 32, height: 32, insideFile: true },
+        { width: 48, height: 48, insideFile: true }
+      ]
+    });
+  });
+
+  it("apple-touch-icon.png is the 180 px iOS asks for", () => {
     expect(pngHeader("public/apple-touch-icon.png")).toMatchObject({ width: 180, height: 180 });
   });
 
@@ -102,6 +149,19 @@ describe("the brand files", () => {
     // palette image gets transparency only through a tRNS chunk.
     expect([0, 2, 3]).toContain(colourType);
     expect(chunkTypes).not.toContain("tRNS");
+  });
+
+  it("favicon.svg is the loon alone: no hexagon frame, back hexagons or ripples", () => {
+    // loon.svg's paths in order: the hexagon frame (outer and inner outline); the body,
+    // the wing and the six back hexagons; the two ripples. The favicon keeps two
+    // subpaths and the eye (2026-09-15: the frame made the 16 px mark too busy).
+    const [frame, [body, wing, ...backHexagons], ...ripples] = paths(text("public/loon.svg"));
+    expect(frame).toHaveLength(2);
+    expect(backHexagons).toHaveLength(6);
+    expect(ripples).toHaveLength(2);
+    const kept = subpaths(text("public/favicon.svg"));
+    expect(kept.filter((subpath) => frame.includes(subpath))).toEqual([]);
+    expect(kept).toEqual([body, wing]);
   });
 
   it("the favicons and the in-app mark are loon.svg with detail removed, never redrawn", () => {
