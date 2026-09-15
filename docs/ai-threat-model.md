@@ -79,6 +79,7 @@ the question"); the audit line `ai.test.sent` carries the outcome. The share log
 | `tests/test_ai_host_detect.py` | the detection table and its evidence |
 | `tests/test_ai_structure.py` (2026-09-14) | S1, S2 and S4 of §6, as AST and grep walks over `app/` and the frontend's AI and Prompt files |
 | `tests/test_changes_prompt.py` (2026-09-14) | slot 1's vocabulary: the handoff's self-test cases (level now asserted too), the whitelist, unknown keys ignored and named, the guards, the sanitiser, and drift against the page's sections, levels and change kinds |
+| `tests/test_changes_prompt_tokens.py` (2026-09-15, #435) | P3's control tokens in slot 1's question, as a T1-style corpus: every family in every case, tokens among newlines and hidden characters, no strip that joins the pieces around it into a new token, a question of tokens alone refused as empty, the cap counted after the strip, and the live lane's 35 questions byte-identical |
 | `tests/test_changes_prompt_db.py`, `tests/test_ai_configs_db.py` (2026-09-14) | the Prompt endpoints and saved configs through the ASGI client: refusals, the disclosure row, the question in no log or audit row, the key never returned, a viewer allowed, the summary equal to the page's where-clause |
 
 What they cannot cover: injection. No prompt builder exists, so no fleet value can reach a
@@ -203,4 +204,13 @@ Slot 1's input is the operator's own text, which is why §7.3's sanitiser and bu
 precondition. S1, S2 and S4 landed with it. Still open for Kyle to rule:
 - P4/T2: the handoff repairs a reply rather than rejecting it (unknown section → *any*, a value
   that fails the whitelist → dropped, every repair listed on the page).
-- Model control tokens are not stripped from the question.
+- ~~Model control tokens are not stripped from the question.~~ **Ruled by Kyle, 2026-09-15 (2B,
+  #435), and done:** `sanitize_question` strips the `<|…|>` family (and DeepSeek's spelling of it
+  with full-width bars), `[INST]` and `[/INST]`, `<<SYS>>` and `<</SYS>>`, `<s>` and `</s>`,
+  `<think>` and `</think>`, and `<start_of_turn>` and `<end_of_turn>`, in any case, each replaced
+  by a space. It runs after the control and format characters are dropped, so a hidden character
+  cannot rejoin a token, and before the 500-character cap. Defence in depth for slot 1, whose
+  closed vocabulary and whitelist had already held against four injection probes. The token
+  pattern carries over to the first slot that sends fleet data; that slot still needs the rest of
+  P3 — a per-field cap with a visible truncation marker, which a question's silent cap is not. `tests/test_changes_prompt_tokens.py` is the
+  corpus; the live lane's 35 questions leave byte-identical and still pass 35 of 35.

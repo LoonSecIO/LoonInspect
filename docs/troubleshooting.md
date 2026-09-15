@@ -733,6 +733,10 @@ writes one row to the disclosure log naming the destination and the one field th
      one the key was saved under, usually after a restore. The container log carries the same
      line. An admin re-enters the key on that card and saves it, or restores the original key
      ([`operations.md`](operations.md) §1).
+   - *The question held only what the Prompt bar removes before sending …* → the question was
+     nothing but model control tokens (`<|im_start|>`, `[INST]`, `</s>` and their kin, usually
+     pasted from a chat log) or invisible characters, which are stripped before anything is sent.
+     Type the question in words.
    - *The question did not reach this server* → the browser could not reach LoonInspect itself.
      `docker compose ps`, then reload.
    - *The server answered 500 without a reason* (or another status), or *…not in a form this

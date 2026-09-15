@@ -49,7 +49,8 @@ and at least one provider is saved. `GET /api/changes/prompt` says which is miss
 AI shows it as *Changes Prompt bar: …*. `POST /api/changes/prompt` (DEVICE_READ, so viewers can use
 it) runs these steps in order:
 
-1. Sanitise the question: NFC, control and format characters removed, 500 characters.
+1. Sanitise the question: NFC, control and format characters removed, then model control tokens,
+   500 characters.
 2. Choose the saved provider.
 3. Apply the URL rule.
 4. The gate: `feature: changes_prompt`, `fields: ["query_text"]`, row committed first.
@@ -107,7 +108,9 @@ replies.
   auto-apply only when nothing needed repair, and otherwise fill the controls and wait for Apply.
 - P2 and P3 describe a JSON data block and control-token stripping for fleet data. The question is
   the operator's own text and goes as the user message, NFC-normalised with control and format
-  characters removed. Model control tokens are not stripped from it.
+  characters removed. Since 2026-09-15 its model control tokens are stripped as well, each replaced
+  by a space before the 500-character cap (Kyle ruled 2B on #435; `docs/ai-threat-model.md` §9
+  lists the families), so what remains of this deviation is the data block.
 - `unsupported` is model-written English, including on the German page.
 
 ## Built (2026-09-05, #319)
