@@ -549,16 +549,34 @@ def _names_a_kind(value: str) -> bool:
 
 
 # A claim that the controls cannot express the question may stand only when the
-# question carries a word of the kind the controls cannot express.
-_MARKERS = re.compile(
-    r"\b(or|either|nor|not|no|without|missing|except|excluding|lacking|never|none|"
-    r"today|yesterday|tonight|last|past|since|before|after|between|ago|recent|recently|"
-    r"week|weeks|month|months|day|days|hour|hours|minute|minutes|year|years|"
+# question carries a word of the kind the controls cannot express. Two groups, because one
+# kind of range the controls now do express: with a start set, a question's date words are
+# expressed after all, and only a word of the other kind keeps the caveat (rule 5).
+_TIME_UNITS = r"minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years"
+# Dates and times. Deliberately NOT here: "last", "past", "recent", "recently", "latest",
+# "most recent". Those ask for an order, not a range, and the feed is ordered by observed
+# time, newest first, with that time in the answer box (ruling R3 on #443) — asked "when was
+# the last time someone installed wireshark", the model's "Cannot express 'when' — filters
+# match names, not timestamps" stood over an answer whose first row was the answer. A unit
+# still makes a range: "last week" matches `week`, "past 3 days" matches `days`, "overnight"
+# and "last night" match a word of their own.
+_RANGE_MARKERS = re.compile(
+    r"\b(today|yesterday|tonight|night|nights|overnight|weekend|weekends|"
+    r"since|before|after|between|until|till|ago|" + _TIME_UNITS + "|"
     r"january|february|march|april|june|july|august|september|october|november|december|"
-    r"monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
-    r"version|versions|older|newer|below|above|under|over|less|greater|least|most|"
+    r"monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"
+    # A number that is a length of time — "3 days", "24h" — which "chrome 153" is not.
+    r"|(?<![a-z0-9])\d+\s*(?:" + _TIME_UNITS + r"|h|d|w|m)\b",
+    re.I,
+)
+# Everything else the controls cannot do: or, negation, a value, a comparison between rows.
+_OTHER_MARKERS = re.compile(
+    r"\b(or|either|nor|not|no|without|missing|except|excluding|lacking|never|none|"
+    r"version|versions|older|newer|below|above|under|over|less|greater|least|"
     r"compare|compared|comparing|than|versus|vs|differ|different|difference|same|both|and|also|"
-    r"more|fewer|top|every|each)\b|n't\b|(?<![a-z0-9])\d+(?:\.\d+)*(?![a-z0-9])",
+    r"more|fewer|top|every|each)\b|n't\b|\bmost\b(?!\s+recent)"
+    # A bare number: a version, a count, a threshold. Not a length of time, which is a range.
+    r"|(?<![a-z0-9])\d+(?:\.\d+)*(?![a-z0-9])(?!\s*(?:" + _TIME_UNITS + r")\b)",
     re.I,
 )
 
@@ -606,9 +624,11 @@ def guard(
        searched for KY4QVD7430, a serial from its own examples;
     4. with Search empty and exactly one serial-shaped word in the question, Search is it;
     5. ``unsupported`` stands only if the question has an or / not / date / value /
-       comparison word. The first prompt claimed "Cannot express 'but not'" for "which
-       computers installed wireshark", a banner that would have been noise on the
-       question the page is demonstrated with;
+       comparison word — and, once Since is set, only a word of the other kinds, because the
+       date words are then expressed. The first prompt claimed "Cannot express 'but not'" for
+       "which computers installed wireshark", a banner that would have been noise on the
+       question the page is demonstrated with; "last", "recent" and "latest" ask for an order,
+       not a range, so they are no longer date words (#443);
     6. a change a section never records is any: a list section's entries are added,
        removed or updated, and every other section's fields are only ever changed. With
        no section, the change stands as the model gave it.
@@ -649,14 +669,21 @@ def guard(
             ]
             repairs.append(_fixes(f"Filled {_SEARCH} with the one serial-number-shaped word in the question."))
             filters["q"] = serial
-    if unsupported and not _MARKERS.search(question):
-        repairs.append(
-            _fixes(
-                "Dropped the model's note that the filters cannot express this: the question has no or, not, "
-                "date, version or comparison word."
+    if unsupported:
+        # With a start set, the question's date words are expressed after all, so only a word
+        # of the other kind is still grounds for the caveat.
+        since_set = filters.get("since") is not None
+        if not (_OTHER_MARKERS.search(question) or (not since_set and _RANGE_MARKERS.search(question))):
+            repairs.append(
+                _fixes(
+                    "Dropped the model's note that the filters cannot express this: the time it asked for is set "
+                    "in Since, and nothing else in it is beyond the filters."
+                    if since_set
+                    else "Dropped the model's note that the filters cannot express this: the question has no or, not, "
+                    "date, version or comparison word."
+                )
             )
-        )
-        unsupported = None
+            unsupported = None
     section, change = filters.get("section"), filters.get("change")
     if section and change:
         name = _SECTION_NAME.get(section, section)

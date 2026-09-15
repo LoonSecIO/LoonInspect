@@ -33,11 +33,13 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.ai.adapters import OUTCOME_ANSWERED, AdapterError, CompletionRequest, complete
 from app.ai.changes_prompt import (
@@ -61,7 +63,7 @@ from app.core.crypto import StoredValueUnreadable
 from app.core.database import get_db
 from app.core.permissions import Permission
 from app.core.sharing import get_or_create_settings
-from app.models.schema import AIProviderConfig, DeviceChange
+from app.models.schema import AIProviderConfig, DeviceChange, ObservationSpan
 from app.schemas.ai import AIErrorOut
 from app.schemas.changes_prompt import (
     QUESTION_MAX_LENGTH,
@@ -72,6 +74,7 @@ from app.schemas.changes_prompt import (
     PromptProviderOut,
     PromptStatusOut,
     PromptSummaryOut,
+    PromptWhenOut,
 )
 
 router = APIRouter(prefix="/api/changes/prompt", tags=["changes"])
@@ -173,9 +176,42 @@ async def _chosen(db: AsyncSession, requested: Provider | None) -> AIProviderCon
     return config
 
 
+async def _when(db: AsyncSession, conditions: list, oldest: datetime) -> PromptWhenOut:
+    """The newest matching change's own times, and the ones of the observation it moved away
+    from: the window it happened in (ruling R1 on #443). One indexed row — the same
+    `observed_at desc, id desc` the feed's first row is — and a join to the earlier span.
+
+    The span may be gone (``ON DELETE SET NULL``), and then there is no lower bound to state
+    rather than a guessed one."""
+    previous = aliased(ObservationSpan)
+    row = (
+        await db.execute(
+            select(
+                DeviceChange.observed_at,
+                DeviceChange.collected_at,
+                previous.last_observed_at,
+                previous.last_collected_at,
+            )
+            .outerjoin(previous, previous.id == DeviceChange.previous_span_id)
+            .where(*conditions)
+            .order_by(DeviceChange.observed_at.desc(), DeviceChange.id.desc())
+            .limit(1)
+        )
+    ).one()
+    observed_at, collected_at, previous_observed_at, previous_collected_at = row
+    return PromptWhenOut(
+        observed_at=observed_at,
+        oldest_observed_at=oldest,
+        collected_at=collected_at,
+        previous_observed_at=previous_observed_at,
+        previous_collected_at=previous_collected_at,
+        device_time_moved=previous_observed_at is not None and previous_observed_at < observed_at,
+    )
+
+
 async def _summary(db: AsyncSession, filters: dict[str, str | None]) -> PromptSummaryOut:
-    """What the page will show for ``filters``: the rows, and the computers among them,
-    newest first. Two scans, whatever the fleet's size."""
+    """What the page will show for ``filters``: the rows, the computers among them, newest
+    first, and when they were observed. Three scans, whatever the fleet's size."""
     conditions = change_conditions(
         q=filters["q"],
         artifact=filters["artifact"],
@@ -185,8 +221,12 @@ async def _summary(db: AsyncSession, filters: dict[str, str | None]) -> PromptSu
     )
     is_computer = DeviceChange.subject_kind == "computer"
 
-    total, other_subjects = (
-        await db.execute(select(func.count(), func.count().filter(~is_computer)).select_from(DeviceChange).where(*conditions))
+    total, other_subjects, oldest = (
+        await db.execute(
+            select(func.count(), func.count().filter(~is_computer), func.min(DeviceChange.observed_at))
+            .select_from(DeviceChange)
+            .where(*conditions)
+        )
     ).one()
 
     # Grouped by the Jamf id per connection, not by name: a renamed Mac is one device
@@ -199,6 +239,8 @@ async def _summary(db: AsyncSession, filters: dict[str, str | None]) -> PromptSu
                 DeviceChange.subject_id,
                 func.max(DeviceChange.subject_label),
                 func.max(DeviceChange.serial_number),
+                # The ordering column, kept: the line says when this Mac's newest one was seen.
+                func.max(DeviceChange.observed_at),
                 *(func.count().filter(DeviceChange.change == kind) for kind in CHANGE_KINDS),
                 func.count().over(),
             )
@@ -220,13 +262,16 @@ async def _summary(db: AsyncSession, filters: dict[str, str | None]) -> PromptSu
                 subject_id=subject_id,
                 label=label,
                 serial=serial,
+                last_observed_at=last_observed_at,
                 added=added,
                 removed=removed,
                 updated=updated,
                 changed=changed,
             )
-            for connection_id, subject_id, label, serial, added, removed, updated, changed, _ in rows
+            for connection_id, subject_id, label, serial, last_observed_at, added, removed, updated, changed, _ in rows
         ],
+        # Nothing matched, nothing was observed: the box says "No changes match." and no time.
+        when=await _when(db, conditions, oldest) if total else None,
     )
 
 

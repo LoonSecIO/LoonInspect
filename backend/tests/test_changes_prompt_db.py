@@ -93,6 +93,29 @@ def _app(name: str, bundle_id: str) -> dict:
     return {"name": name, "bundleId": bundle_id, "path": f"/Applications/{name}.app"}
 
 
+def _span(connection_id: int, subject_id: str, *, observed_at: datetime, collected_at: datetime):
+    """An observation a change moved away from: its last inventory time is the lower bound of
+    the window the change happened in (#443). Never `is_current`, so several can share a
+    subject without meeting the one-open-span index."""
+    from app.models.schema import ObservationSpan
+
+    return ObservationSpan(
+        mdm_connection_id=connection_id,
+        subject_kind="computer",
+        subject_id=subject_id,
+        contract_version="v1",
+        aperture_digest="v1:" + "e" * 64,
+        head_digest="v1:" + subject_id.rjust(64, "0"),
+        section_digests={"applications": "v1:" + "0" * 64},
+        first_observed_at=observed_at,
+        last_observed_at=observed_at,
+        first_collected_at=collected_at,
+        last_collected_at=collected_at,
+        last_trigger="sweep",
+        is_current=False,
+    )
+
+
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def seeded(accounts):
     """One connection of this file's own. Two minis both named "Kyle's Mac mini" (the
@@ -114,14 +137,23 @@ async def seeded(accounts):
         await db.flush()
         cid = connection.id
         wireshark = _app("Wireshark", "org.wireshark.Wireshark")
+        # The observation each of those two moved away from. The mini's inventory time moved
+        # half an hour before its update, so the window is the device's own; the Slack Mac's
+        # did not move at all, so only our clock bounds that one.
+        before_302 = _span(cid, "302", observed_at=base + timedelta(minutes=30), collected_at=base + timedelta(minutes=40))
+        before_303 = _span(cid, "303", observed_at=base, collected_at=base - timedelta(hours=2))
+        db.add_all([before_302, before_303])
+        await db.flush()
         db.add_all(
             [
                 _change(cid, subject_id="301", subject_label=MAC_MINI, serial_number="KY4QVD7430", entry_identity=wireshark,
                         observed_at=base, collected_at=base),
                 _change(cid, subject_id="302", subject_label=MAC_MINI, serial_number="VKM73DMG47", entry_identity=wireshark,
-                        change="updated", observed_at=base + timedelta(hours=1), collected_at=base + timedelta(hours=1)),
+                        change="updated", observed_at=base + timedelta(hours=1), collected_at=base + timedelta(hours=1),
+                        previous_span_id=before_302.id),
                 _change(cid, subject_id="303", subject_label="design-mbp", serial_number="PRMSER303",
-                        entry_identity=_app("Slack", "com.tinyspeck.slackmacgap"), observed_at=base, collected_at=base),
+                        entry_identity=_app("Slack", "com.tinyspeck.slackmacgap"), observed_at=base, collected_at=base,
+                        previous_span_id=before_303.id),
                 _change(cid, subject_id="304", subject_label="probe-mac", serial_number="PRMSER304",
                         entry_identity=_app("PromptProbeVvq", "io.example.promptprobe")),
                 _change(cid, subject_kind="computer_group", subject_id="g-prompt", subject_label="Probe owners",
@@ -138,7 +170,7 @@ async def seeded(accounts):
         await db.commit()
 
     try:
-        yield {"connection_id": cid}
+        yield {"connection_id": cid, "base": base}
     finally:
         async with session_for_tenant(OPERATIONAL_TENANT_ID) as db:
             await db.execute(delete(MdmConnection).where(MdmConnection.id == cid))  # changes cascade
@@ -285,6 +317,11 @@ async def _ask(client, question: str = QUESTION, **extra) -> httpx.Response:
     return await client.post("/api/changes/prompt", json={"question": question, **extra})
 
 
+def _wire(moment: datetime) -> str:
+    """A time as the API writes it: ISO 8601 with the Z the app's encoder uses for UTC."""
+    return moment.isoformat().replace("+00:00", "Z")
+
+
 def _mine(summary: dict, seeded: dict) -> dict[str, dict]:
     return {d["subjectId"]: d for d in summary["devices"] if d["connectionId"] == seeded["connection_id"]}
 
@@ -356,6 +393,7 @@ async def test_a_question_comes_back_as_the_pages_filters_with_a_summary(
     assert mine["301"] == {
         "connectionId": seeded["connection_id"], "subjectId": "301", "label": MAC_MINI, "serial": "KY4QVD7430",
         "added": 1, "removed": 0, "updated": 0, "changed": 0,
+        "lastObservedAt": _wire(seeded["base"]),
     }  # fmt: skip
     assert mine["302"]["serial"] == "VKM73DMG47"
     assert (mine["302"]["added"], mine["302"]["updated"]) == (0, 1)
@@ -448,6 +486,67 @@ async def test_the_change_the_model_names_narrows_the_summary(client, db, clean,
     )
     assert page.status_code == 200, page.text
     assert [(r["serialNumber"], r["change"]) for r in page.json()["items"]] == [("KY4QVD7430", "added")]
+
+
+async def test_the_summary_says_when_and_the_window_the_newest_change_happened_in(client, db, clean, seeded, endpoint):
+    """Ruling R1 on #443: the observed time is Jamf's report time, so the box states it with
+    the inventory before it — the change happened between the two — and never as an install."""
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    base = seeded["base"]
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "search": "Kyle's Mac mini"}))
+    summary = (await _ask(client, "when was wireshark last touched on Kyle's Mac mini")).json()["summary"]
+    assert summary["when"] == {
+        # The update an hour after the install is the newest of the two; the install is the oldest.
+        "observedAt": _wire(base + timedelta(hours=1)),
+        "oldestObservedAt": _wire(base),
+        "collectedAt": _wire(base + timedelta(hours=1)),
+        "previousObservedAt": _wire(base + timedelta(minutes=30)),
+        "previousCollectedAt": _wire(base + timedelta(minutes=40)),
+        "deviceTimeMoved": True,
+    }
+    # Each Mac's line carries its own newest, which is the column the list is ordered by.
+    mine = _mine(summary, seeded)
+    assert mine["302"]["lastObservedAt"] == _wire(base + timedelta(hours=1))
+    assert mine["301"]["lastObservedAt"] == _wire(base)
+    # And it is the first row the page shows for the same filters.
+    page = await client.get("/api/changes", params={"q": "Kyle's Mac mini", "artifact": "Wireshark"})
+    assert page.json()["items"][0]["observedAt"] == summary["when"]["observedAt"]
+
+
+async def test_a_change_whose_inventory_time_did_not_move_says_so(client, db, clean, seeded, endpoint):
+    """Same report time on both reads: nothing on the Mac dated the change, so the window is
+    our clock's and `deviceTimeMoved` is false rather than a window of zero length."""
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    base = seeded["base"]
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "filter": "Slack"}))
+    summary = (await _ask(client, "when was slack installed")).json()["summary"]
+    assert summary["when"]["deviceTimeMoved"] is False
+    assert summary["when"]["previousObservedAt"] == summary["when"]["observedAt"] == _wire(base)
+    assert summary["when"]["previousCollectedAt"] == _wire(base - timedelta(hours=2))
+    assert summary["when"]["collectedAt"] == _wire(base)
+
+
+async def test_a_change_whose_earlier_observation_is_gone_states_no_window(client, db, clean, seeded, endpoint):
+    """The span carries the lower bound and may have been deleted (`ON DELETE SET NULL`).
+    Then the box states the observed time and no window, never a guessed one."""
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "filter": "PromptManyVvq"}))
+    when = (await _ask(client, "when did PromptManyVvq arrive")).json()["summary"]["when"]
+    assert when["previousObservedAt"] is None and when["previousCollectedAt"] is None
+    assert when["deviceTimeMoved"] is False
+    assert when["observedAt"] > when["oldestObservedAt"]
+
+
+async def test_nothing_matched_states_no_time(client, db, clean, seeded, endpoint):
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "filter": "NoSuchAppVvq"}))
+    summary = (await _ask(client, "when was NoSuchAppVvq installed")).json()["summary"]
+    assert (summary["total"], summary["devicesTotal"]) == (0, 0)
+    assert summary["when"] is None
 
 
 async def test_rows_that_are_not_devices_are_counted_apart(client, db, clean, seeded, endpoint):
