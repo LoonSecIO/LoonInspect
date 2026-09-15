@@ -77,6 +77,10 @@ the question"); the audit line `ai.test.sent` carries the outcome. The share log
 | `tests/test_ai_adapters.py` | both request shapes; reasoning kept beside content; budget-exhausted-thinking as its own outcome; parts joined; malformed replies named; the key on the wire and nowhere else; timeout, unreachable, bounded rejections, non-JSON bodies; the URL rule's accepted and refused classes with reasons; the provider table and the reserved reaches |
 | `tests/test_ai_test_box_db.py` | the endpoint through the ASGI client: refusals before the wire; the row committed before the first byte; the key on the wire and not in the reply, the log or the row; Anthropic's wire; reach refused by name; blocked URL refused before the gate; upstream failure reported not raised; auditor refused |
 | `tests/test_ai_host_detect.py` | the detection table and its evidence |
+| `tests/test_ai_structure.py` (2026-09-14) | S1, S2 and S4 of §6, as AST and grep walks over `app/` and the frontend's AI and Prompt files |
+| `tests/test_changes_prompt.py` (2026-09-14) | slot 1's vocabulary: the handoff's self-test cases (level now asserted too), the whitelist, unknown keys ignored and named, the guards, the sanitiser, and drift against the page's sections, levels and change kinds |
+| `tests/test_changes_prompt_tokens.py` (2026-09-15, #435) | P3's control tokens in slot 1's question, as a T1-style corpus: every family in every case, tokens among newlines and hidden characters, no strip that joins the pieces around it into a new token, a question of tokens alone refused as empty, the cap counted after the strip, and the live lane's 35 questions byte-identical |
+| `tests/test_changes_prompt_db.py`, `tests/test_ai_configs_db.py` (2026-09-14) | the Prompt endpoints and saved configs through the ASGI client: refusals, the disclosure row, the question in no log or audit row, the key never returned, a viewer allowed, the summary equal to the page's where-clause |
 
 What they cannot cover: injection. No prompt builder exists, so no fleet value can reach a
 prompt, so there is nothing to inject into. That is the right state for #320 and the wrong
@@ -187,3 +191,40 @@ Kyle, 2026-09-05, on reading this: the principles stand as written, and the loop
 presentation that #325 added to the Docker Desktop reach (the container says
 `Host: 127.0.0.1:<port>` while the operator keeps the alias, so Apple's `fm serve` can stay
 bound to loopback) is confirmed as the design. Slot work starts at §7.
+
+Kyle, 2026-09-14, for slot 1 (the Changes Prompt bar, built as a spike; `ai-layer.md` has the
+record):
+- Enter fills the filters **and runs them**. This amends P4's "nothing is executed without a human
+  step" for this slot only: the step is the Enter, the filters stay visible and editable, and the
+  query only reads.
+- The response box is written by code from the rows, so no fleet value reaches a prompt.
+- Provider configs are saved server-side, with the key encrypted.
+
+Slot 1's input is the operator's own text, which is why §7.3's sanitiser and builder were not a
+precondition. S1, S2 and S4 landed with it. The two items left open then are both ruled:
+- **P4/T2 — ruled by Kyle, 2026-09-15 (1C, #436):** the reply is still repaired rather than
+  rejected, and every repair is listed on the page. A repair that fixes or narrows the answer lets
+  it run on Enter. One that widens it makes it a proposal: an unknown section, level or change
+  read as *any*, a value that fails the whitelist dropped, an unknown key that held a value
+  ignored, or (since the refusal, below) a serial in Search the question never named dropped.
+  The API then answers `proposed`, and the page runs nothing until a person presses its
+  Apply button. That is T2's proposal, exactly where a repair would otherwise search for more
+  than the model named.
+- **Model control tokens — ruled by Kyle, 2026-09-15 (2B, #435), and done:** `sanitize_question`
+  strips the `<|…|>` family (and DeepSeek's spelling of it with full-width bars), `[INST]` and
+  `[/INST]`, `<<SYS>>` and `<</SYS>>`, `<s>` and `</s>`, `<think>` and `</think>`, and
+  `<start_of_turn>` and `<end_of_turn>`, in any case, each replaced by a space. It runs after
+  the control and format characters are dropped, so a hidden character cannot rejoin a token,
+  and before the 500-character cap. Defence in depth for slot 1, whose closed vocabulary and
+  whitelist had already held against four injection probes. The token pattern carries over to
+  the first slot that sends fleet data; that slot still needs the rest of P3 — a per-field cap
+  with a visible truncation marker, which a question's silent cap is not.
+  `tests/test_changes_prompt_tokens.py` is the corpus; the live lane's 35 questions leave
+  byte-identical and still pass 35 of 35.
+
+Slot 1 gained a second model output on 2026-09-15: the refusal, `{"invalid":true}`, for text
+that is not a question about device changes (`docs/ai-layer.md` ruling 10). It is a closed value,
+read as true or not, and the page answers it with its own sentence, so `unsupported` is still the
+only model-written text on the page. A question that talks the model out of refusing gets what
+it got before, the closest filters; one that talks it into refusing gets nothing run. Neither
+reaches a row the filters could not.

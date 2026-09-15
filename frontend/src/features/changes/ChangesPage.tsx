@@ -2,9 +2,23 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { getChangePolicy, listChanges } from "@/features/changes/api";
+import { changeResetLine, emptyTable } from "@/features/changes/changeKinds";
 import { DiffCell } from "@/features/changes/DiffCell";
-import { artifactValueOf, detailText, diffLines, labelsFromPolicy, SECTION_ORDER, whatOf, type LabelMap } from "@/features/changes/render";
-import type { ChangeFilters, ChangeLevel, DeviceChange } from "@/features/changes/types";
+import { PromptBar } from "@/features/changes/PromptBar";
+import { hasSomethingToClear } from "@/features/changes/prompt";
+import {
+  artifactValueOf,
+  canMatch,
+  CHANGE_KINDS,
+  detailText,
+  diffLines,
+  kindsRecordedBy,
+  labelsFromPolicy,
+  SECTION_ORDER,
+  whatOf,
+  type LabelMap
+} from "@/features/changes/render";
+import type { ChangeFilters, ChangeKind, ChangeLevel, DeviceChange } from "@/features/changes/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
 const inputClasses =
@@ -13,11 +27,14 @@ const inputClasses =
 const asLevel = (value: string | null): ChangeLevel | undefined =>
   value === "high" || value === "normal" || value === "low" ? value : undefined;
 
+const asChange = (value: string | null): ChangeKind | undefined => CHANGE_KINDS.find((kind) => kind === value);
+
 function filtersFromParams(params: URLSearchParams): ChangeFilters {
   return {
     q: params.get("q") ?? undefined,
     artifact: params.get("artifact") ?? undefined,
     level: asLevel(params.get("level")),
+    change: asChange(params.get("change")),
     // #107: the Overview feed links here with `since` and `minLevel`. Before it read
     // them, that link landed on an unfiltered feed — the window silently dropped, which
     // is the failure the absolute anchor exists to prevent.
@@ -39,6 +56,7 @@ function paramsFromFilters(filters: ChangeFilters): URLSearchParams {
   if (filters.q) params.set("q", filters.q);
   if (filters.artifact) params.set("artifact", filters.artifact);
   if (filters.level) params.set("level", filters.level);
+  if (filters.change) params.set("change", filters.change);
   if (filters.minLevel) params.set("minLevel", filters.minLevel);
   if (filters.since) params.set("since", filters.since);
   if (filters.section) params.set("section", filters.section);
@@ -61,6 +79,19 @@ export function ChangesPage() {
   const [draftQuery, setDraftQuery] = useState(filters.q ?? "");
   const [draftArtifact, setDraftArtifact] = useState(filters.artifact ?? "");
   const [labels, setLabels] = useState<LabelMap>({});
+  // Re-runs the fetch when the filters did not move — see `applyPrompt`.
+  const [reloadToken, setReloadToken] = useState(0);
+  // The Prompt bar's session, which Clear replaces, and whether it has been used since.
+  const [promptSession, setPromptSession] = useState(0);
+  const [promptUsed, setPromptUsed] = useState(false);
+  // The section whose choice just put Change back to Any change, and the URL that choice
+  // produced (`chooseSection`). The line saying so shows only while the address is that
+  // URL. Every move the page makes itself (another filter, a page, the Prompt bar, Clear)
+  // forgets it, so coming back to the same address that way does not bring the line back.
+  // Back and Forward are compared rather than cleared, since the router commits a URL in
+  // a transition, a render or two after this state is set: Back hides the line, and
+  // Forward to the address the choice produced shows it again, because it is again true.
+  const [changeReset, setChangeReset] = useState<{ section: string; at: string } | null>(null);
   const pageSize = 50;
 
   // The two text boxes are drafts — typed, then applied. They still have to follow the URL
@@ -114,16 +145,61 @@ export function ChangesPage() {
     return () => {
       cancelled = true;
     };
-  }, [filters, tc.errorLoading]);
+  }, [filters, reloadToken, tc.errorLoading]);
 
-  function update(next: Partial<ChangeFilters>) {
+  function nextParams(next: Partial<ChangeFilters>): URLSearchParams {
     // Picking an exact level drops the range one. Arriving from the Overview feed puts
     // `minLevel` in the URL, and the API refuses both together (#107) — so without this,
     // the first touch of the dropdown would turn a working feed into a 422 the operator
     // did nothing to deserve.
     const cleared = "level" in next && next.level ? { minLevel: undefined } : {};
-    setSearchParams(paramsFromFilters({ ...filters, ...next, ...cleared, page: next.page ?? 1 }));
+    return paramsFromFilters({ ...filters, ...next, ...cleared, page: next.page ?? 1 });
   }
+
+  function update(next: Partial<ChangeFilters>) {
+    setSearchParams(nextParams(next));
+    setChangeReset(null);
+  }
+
+  // A list section's entries are added, removed or updated; every other section's values
+  // are only ever changed (#437). A section that rules out the Change already set would
+  // leave a pair no row can match, so the choice takes Change back to Any change in the
+  // same move, and the line under the filters says so rather than let it vanish unseen.
+  function chooseSection(section: string | undefined) {
+    const reset = !canMatch(section, filters.change);
+    const params = nextParams(reset ? { section, change: undefined } : { section });
+    setSearchParams(params);
+    setChangeReset(reset && section ? { section, at: params.toString() } : null);
+  }
+
+  // The Prompt bar's answer goes through the same URL as every control. An answer naming
+  // the filters already on screen moves no URL, so nothing would re-fetch, and the
+  // response box — counted just now — would sit over a table loaded earlier that can
+  // disagree with it. Only then does the token re-run the fetch: a moved URL re-fetches on
+  // its own, and the router applies it in a transition, so bumping the token as well would
+  // fetch twice.
+  function applyPrompt(next: Partial<ChangeFilters>) {
+    const params = nextParams(next);
+    if (params.toString() === searchParams.toString()) setReloadToken((token) => token + 1);
+    else setSearchParams(params);
+    setChangeReset(null);
+  }
+
+  // Back to the unfiltered feed's first page in one press: every key the URL can carry
+  // goes, the ones only a link sets (`since`, `minLevel`, the device chip) with the rest.
+  // The drafts empty, and the Prompt bar starts a new session — its box and answer gone,
+  // a question still in flight dropped with the old session. A URL already empty is left
+  // alone, so Clear adds no history entry then.
+  function clearAll() {
+    if (searchParams.toString() !== "") setSearchParams(new URLSearchParams());
+    setDraftQuery("");
+    setDraftArtifact("");
+    setPromptSession((session) => session + 1);
+    setPromptUsed(false);
+    setChangeReset(null);
+  }
+
+  const canClear = hasSomethingToClear(filters, { q: draftQuery, artifact: draftArtifact }, promptUsed);
 
   const sectionLabels = useMemo(
     () => ({
@@ -135,6 +211,10 @@ export function ChangesPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = filters.page ?? 1;
+  // With a section chosen, the kinds it records; with Any section, all four.
+  const recorded = kindsRecordedBy(filters.section);
+  const resetLine = changeReset && changeReset.at === searchParams.toString() ? changeResetLine(changeReset.section, tc) : null;
+  const empty = emptyTable(filters, total, tc);
 
   return (
     <section className="space-y-6">
@@ -143,6 +223,12 @@ export function ChangesPage() {
         <h1 className="text-3xl font-bold tracking-tight">{tc.title}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{tc.description}</p>
       </div>
+
+      {/* Above the controls it moves, and through the same URL they write (`applyPrompt`):
+          the answer is a set of filters in the URL, so Back, a shared link and the table
+          all behave as if the operator had set them by hand. The bar names every key, so
+          its answer replaces the filters rather than merging into them. */}
+      <PromptBar filters={filters} onApply={applyPrompt} onUse={setPromptUsed} session={promptSession} />
 
       <form
         className="flex flex-wrap items-start gap-3"
@@ -194,6 +280,26 @@ export function ChangesPage() {
             <option value="low">{tc.levels.low}</option>
           </select>
         </label>
+        {/* Added, removed, updated or changed, labelled as the Change column labels a row.
+            "New application installs" is Applications and Added; without this the pair
+            was every application change there is, updates included. A kind the chosen
+            section never records is greyed out rather than offered to match nothing
+            (#437); with Any section, all four are there. */}
+        <label className="space-y-1 text-sm">
+          <span className="block text-muted-foreground">{tc.change}</span>
+          <select
+            className={inputClasses}
+            value={filters.change ?? ""}
+            onChange={(e) => update({ change: asChange(e.target.value) })}
+          >
+            <option value="">{tc.anyChange}</option>
+            {CHANGE_KINDS.map((kind) => (
+              <option key={kind} value={kind} disabled={!recorded.includes(kind)}>
+                {tc.changeKinds[kind] ?? kind}
+              </option>
+            ))}
+          </select>
+        </label>
         {/* A closed vocabulary of fifteen snake_case names, so it is picked and not typed.
             As a text box this was the one route to a whole entry kind — a certificate
             carries no label and is reachable by section alone — behind a control whose
@@ -203,7 +309,7 @@ export function ChangesPage() {
           <select
             className={inputClasses}
             value={filters.section ?? ""}
-            onChange={(e) => update({ section: e.target.value || undefined })}
+            onChange={(e) => chooseSection(e.target.value || undefined)}
           >
             <option value="">{tc.anySection}</option>
             {SECTION_ORDER.map((name) => (
@@ -216,6 +322,18 @@ export function ChangesPage() {
         <Button type="submit" variant="outline" size="sm" className="mt-6">
           {tc.apply}
         </Button>
+        {/* Quieter than Apply, which it undoes. Disabled with nothing to clear
+            (`hasSomethingToClear`), so the page never offers a press that does nothing. */}
+        <Button type="button" variant="ghost" size="sm" className="mt-6" disabled={!canClear} title={tc.clearAllTitle} onClick={clearAll}>
+          {tc.clearAll}
+        </Button>
+        {/* Under the controls, on a row of its own: the Change filter the operator set
+            just went back to Any change, and this is the only place that says so. */}
+        {resetLine && (
+          <p className="basis-full text-sm text-muted-foreground" role="status">
+            {resetLine}
+          </p>
+        )}
       </form>
 
       {/* A subject the form has no control for (the device page's "all changes on this
@@ -253,9 +371,16 @@ export function ChangesPage() {
                 <td className="px-4 py-4 text-muted-foreground" colSpan={6}>{tc.loading}</td>
               </tr>
             )}
-            {!loading && rows.length === 0 && (
+            {/* Which empty this is, never one sentence for all of them (`emptyTable`): a
+                filtered page with no rows is not an empty log, and a pair that can never
+                match says why. Not shown under a failed load, which is not empty either —
+                the error line above says what it is. */}
+            {!loading && !error && rows.length === 0 && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={6}>{tc.empty}</td>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={6}>
+                  <p>{empty.lead}</p>
+                  {empty.reason && <p className="mt-1">{empty.reason}</p>}
+                </td>
               </tr>
             )}
             {rows.map((row) => {

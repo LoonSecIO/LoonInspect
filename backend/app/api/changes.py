@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select, text
+from sqlalchemy import ColumnElement, String, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.changes.policy import CHANGE_POLICY_VERSION, LEVELS, EffectivePolicy, Overrides, levels_at_least
@@ -52,45 +52,33 @@ def _to_out(row: DeviceChange) -> DeviceChangeOut:
     )
 
 
-@router.get(
-    "",
-    response_model=DeviceChangeListResponse,
-    dependencies=[Depends(require(Permission.DEVICE_READ))],
-)
-async def list_changes(
-    connection_id: int | None = Query(default=None, alias="connectionId"),
-    subject_id: str | None = Query(default=None, alias="subjectId"),
-    subject_kind: str | None = Query(default=None, alias="subjectKind"),
+# macOS names a Mac "Kyle's Mac mini" with U+2019, the typographic apostrophe, and Jamf
+# reports the name as the Mac has it; nobody types one. `q` folds it to the ASCII
+# apostrophe on both sides, so the name as typed finds the name as reported.
+_TYPOGRAPHIC_APOSTROPHE = "\u2019"
+
+# What `device_changes.change` holds: an entry in a list section is added, removed or
+# updated (app.changes.diff); a field is changed (app.changes.derive).
+CHANGE_KINDS: tuple[str, ...] = ("added", "removed", "updated", "changed")
+
+
+def change_conditions(
+    *,
+    connection_id: int | None = None,
+    subject_id: str | None = None,
+    subject_kind: str | None = None,
     section: str | None = None,
     level: str | None = None,
-    min_level: str | None = Query(default=None, alias="minLevel"),
+    min_level: str | None = None,
+    change: str | None = None,
     q: str | None = None,
     artifact: str | None = None,
     since: datetime | None = None,
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=50, ge=1, le=200, alias="pageSize"),
-    db: AsyncSession = Depends(get_db),
-) -> DeviceChangeListResponse:
-    """The change feed, newest first.
-
-    Two searches, because an investigation runs in two directions. `q` names the
-    *device* — its name, serial, or Jamf id. `artifact` names the *thing that changed*
-    — an application name or bundle id, a local account's username, or the label the
-    contract carries for a group, a profile, or an extension attribute.
-
-    They are separate parameters rather than one widened `q` for two reasons. Widening
-    `q` would silently change what every existing caller gets back, the frontend and
-    any bookmarked feed URL included. And one string cannot mean both: `q=MacBook Air`
-    with `artifact=Wireshark` is "did this laptop family get Wireshark", which a single
-    OR-ed needle can only answer as "either".
-
-    Not searchable here, deliberately: `path` (an `artifact=/Applications` that matches
-    the whole fleet is a worse answer than none), and old/new values — searching the
-    values a change moved between is a different query surface, not a filter. A
-    certificate is identified only by its SHA-1 fingerprint and carries no label, so it
-    is reachable by `section=certificates`, not by name.
-    """
-    conditions = []
+) -> list[ColumnElement[bool]]:
+    """The feed's WHERE clause, ANDed, for the filters `list_changes` documents. Raises
+    the feed's own 422s. Shared with the Changes Prompt bar (app.api.changes_prompt), so
+    the count its summary states is the count the page then shows for the same filters."""
+    conditions: list[ColumnElement[bool]] = []
     if connection_id is not None:
         conditions.append(DeviceChange.mdm_connection_id == connection_id)
     if subject_id:
@@ -117,12 +105,19 @@ async def list_changes(
         if min_level not in LEVELS:
             raise HTTPException(status_code=422, detail=f"minLevel must be one of {', '.join(LEVELS)}")
         conditions.append(DeviceChange.level.in_(levels_at_least(min_level)))
+    if change:
+        # Exact, like `level`: the Changes page's Change dropdown. An unknown kind is
+        # refused, not answered with an empty feed that reads as "nothing happened".
+        if change not in CHANGE_KINDS:
+            raise HTTPException(status_code=422, detail=f"change must be one of {', '.join(CHANGE_KINDS)}")
+        conditions.append(DeviceChange.change == change)
     if since is not None:
         conditions.append(DeviceChange.observed_at >= since)
     if q:
         needle = f"%{q.strip()}%"
+        label = func.replace(DeviceChange.subject_label, _TYPOGRAPHIC_APOSTROPHE, "'", type_=String)
         conditions.append(
-            DeviceChange.subject_label.ilike(needle)
+            label.ilike(needle.replace(_TYPOGRAPHIC_APOSTROPHE, "'"))
             | DeviceChange.serial_number.ilike(needle)
             | DeviceChange.subject_id.ilike(needle)
         )
@@ -151,6 +146,60 @@ async def list_changes(
             | DeviceChange.entry_identity["bundleId"].astext.ilike(needle)
             | DeviceChange.entry_identity["username"].astext.ilike(needle)
         )
+    return conditions
+
+
+@router.get(
+    "",
+    response_model=DeviceChangeListResponse,
+    dependencies=[Depends(require(Permission.DEVICE_READ))],
+)
+async def list_changes(
+    connection_id: int | None = Query(default=None, alias="connectionId"),
+    subject_id: str | None = Query(default=None, alias="subjectId"),
+    subject_kind: str | None = Query(default=None, alias="subjectKind"),
+    section: str | None = None,
+    level: str | None = None,
+    min_level: str | None = Query(default=None, alias="minLevel"),
+    change: str | None = None,
+    q: str | None = None,
+    artifact: str | None = None,
+    since: datetime | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200, alias="pageSize"),
+    db: AsyncSession = Depends(get_db),
+) -> DeviceChangeListResponse:
+    """The change feed, newest first.
+
+    Two searches, because an investigation runs in two directions. `q` names the
+    *device* — its name, serial, or Jamf id. `artifact` names the *thing that changed*
+    — an application name or bundle id, a local account's username, or the label the
+    contract carries for a group, a profile, or an extension attribute.
+
+    They are separate parameters rather than one widened `q` for two reasons. Widening
+    `q` would silently change what every existing caller gets back, the frontend and
+    any bookmarked feed URL included. And one string cannot mean both: `q=MacBook Air`
+    with `artifact=Wireshark` is "did this laptop family get Wireshark", which a single
+    OR-ed needle can only answer as "either".
+
+    Not searchable here, deliberately: `path` (an `artifact=/Applications` that matches
+    the whole fleet is a worse answer than none), and old/new values — searching the
+    values a change moved between is a different query surface, not a filter. A
+    certificate is identified only by its SHA-1 fingerprint and carries no label, so it
+    is reachable by `section=certificates`, not by name.
+    """
+    conditions = change_conditions(
+        connection_id=connection_id,
+        subject_id=subject_id,
+        subject_kind=subject_kind,
+        section=section,
+        level=level,
+        min_level=min_level,
+        change=change,
+        q=q,
+        artifact=artifact,
+        since=since,
+    )
 
     total = (await db.execute(select(func.count()).select_from(DeviceChange).where(*conditions))).scalar_one()
     rows = (
