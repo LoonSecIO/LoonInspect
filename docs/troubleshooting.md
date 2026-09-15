@@ -682,3 +682,89 @@ Report the block's four lines (build, latest release, last checked, the sentence
 `git merge-base` command and its output, whether `UPDATE_CHECK_URL` is set, and the
 `update check` lines from `docker compose logs app --since 24h`.
 
+## 11. "The Prompt bar is missing, or it answers *AI search unavailable*"
+
+The Prompt bar is the box labelled **Prompt** above the filters on **Devices › Changes**. It
+sends the typed question — nothing else — to the card picked in its **Model** list, which names
+every card saved on **Settings › AI** and the model it uses. The model answers with filter
+settings; the page moves its filters to them and runs them, and the lines under the bar are
+written by the page from the matching rows, never by the model. **Clear**, beside Apply, empties
+every filter, the Prompt box and its answer. The bar appears only while three things are true,
+and Settings › AI names the one that is not, in its line *Changes Prompt bar: …*. Every question
+writes one row to the disclosure log naming the destination and the one field that left,
+`query_text`.
+
+1. **The bar is missing.** Read the *Changes Prompt bar* line on Settings › AI:
+   - *hidden — the AI features flag is off* → Settings › Feature Flags, turn **AI features** on,
+     then reload the Changes page.
+   - *hidden — AI-inference consent is not granted* → grant it on Settings › AI.
+   - *hidden — no provider is saved* → choose a card, fill it in, **Send** once to prove it
+     answers, then **Save**. On the Apple card, *Apple's on-device model takes no reasoning
+     effort …* means the request named one — a script, or a page from an older build; `fm serve`
+     refuses any effort on its `system` model. Save the card again from Settings › AI, which
+     sends none.
+   - *shown* → reload the Changes page; it reads this once, when it opens.
+   - Where the bar would be, *The Prompt bar could not check its settings: …* → the page asked
+     and the server failed to answer; the reason follows the colon, and
+     `docker compose logs app --since 10m` has the error.
+
+   A role without Settings asks the API the same question: `curl -s -b jar $BASE/api/changes/prompt`
+   answers `available`, and when that is `false`, a `reason` of `flag_off`, `consent_off` or
+   `no_provider`.
+2. **The answer leads with *AI search unavailable — the filters below still work*.** The sentence
+   under the lead says why:
+   - *AI features are off …* or *AI-inference consent is off …* → one was switched off after the
+     page opened. Step 1.
+   - *No AI provider is saved …* or *… is not saved in Settings › AI* → the card was removed after
+     the page opened. Save it again and reload.
+   - *could not reach the endpoint …* → the app could not open a connection to the saved Base URL. For
+     Apple's model on the same Mac, on the Mac: `curl -s http://127.0.0.1:1976/health` prints
+     `fm serve is running` when it is; if not, run `fm serve` in Terminal. From the container:
+     `docker compose exec -T app python -c "import urllib.request as u; print(u.urlopen('http://host.docker.internal:1976/health', timeout=5).read())"`.
+   - *HTTP 403* with *Cross-site requests are not allowed* → `fm serve` refuses a request that
+     names another host. Keep the Apple card's Base URL on `host.docker.internal`: the app then
+     presents `127.0.0.1`, which `fm serve` accepts. Any other address is presented as typed.
+   - *no complete reply within 30 s* → something took the connection and did not answer in time.
+     The Mac answers one model request at a time for every app on it, so another app using Apple
+     Intelligence makes this one wait: ask again. If it never answers, the Base URL reaches
+     something that is not `fm serve` (`gateway.docker.internal`, for one, answers this way);
+     **Send** on Settings › AI with the same card shows the same sentence.
+   - *The API key saved on the … card cannot be read* → this server's `ENCRYPTION_KEY` is not the
+     one the key was saved under, usually after a restore. The container log carries the same
+     line. An admin re-enters the key on that card and saves it, or restores the original key
+     ([`operations.md`](operations.md) §1).
+   - *The question did not reach this server* → the browser could not reach LoonInspect itself.
+     `docker compose ps`, then reload.
+   - *The server answered 500 without a reason* (or another status), or *…not in a form this
+     page can read* → LoonInspect received the question and failed. `docker compose logs app
+     --since 10m` names the error; that is reportable state **O**.
+3. **The answer leads with *Could not interpret that — try the filters directly*.** The model
+   answered, but not with filter settings. Rephrase around a name, a serial or a section; the
+   filters work by hand whatever the model says. If *every* question ends here, the endpoint is
+   not honouring the reply limit or is putting its reasoning into the answer: the page refuses a
+   reply over 8,000 characters without reading it. **Send** on Settings › AI shows the reply and
+   its token count; a local model needs its reasoning turned off (the card's *Reasoning effort*,
+   `none`).
+4. **The answer leads with *Filtered as close as these controls allow*.** Not a failure. The
+   question needed something the filters cannot express — an *or*, a *not*, a date range, a
+   version or other value, a comparison — and the rows are the closest the filters allow. The
+   sentence under the lead is the model's own, shown as text, and the page keeps it only when
+   the question contains a word of that kind. Ask the part that was left out as a second question.
+5. **The filters moved somewhere you did not mean, or nothing matches.** The filters are where the
+   model put them; change any of them and the page runs again, or **Clear** to start over.
+   *The answer came back after the filters changed, so it was not applied* means a filter moved
+   while the model was answering; the page keeps the filters you set. Ask again to apply it. *Corrections to the model's answer*
+   lists what the page changed or dropped from the model's reply before running it. *No changes
+   match* means the change log holds no row for those filters: the bar matches names the way
+   *Filter to one thing* does, and a Mac that already had an app when tracking began never shows
+   it as *Added* — it appears only when something about it changes. The **Change** filter has
+   two vocabularies: entries (Applications, profiles, accounts, certificates, group memberships,
+   extension attributes, pending updates) are *Added*, *Removed* or *Updated*, and every other
+   section's settings are only ever *Changed*. Set by hand, a pair from the wrong side (say
+   Applications with *Changed*) matches nothing; the bar never sets one.
+
+**O.** The *Changes Prompt bar* line says *shown* while the bar stays missing after a reload; or
+the rows under an answer disagree with `GET /api/changes` run with the filters on screen. Report
+the line, the question, the page's URL (it carries the filters), the provider, model and time from
+the answer's last line, the *Corrections* list, and `docker compose logs app --since 30m`.
+

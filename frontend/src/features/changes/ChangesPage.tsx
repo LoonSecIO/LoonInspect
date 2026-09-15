@@ -3,8 +3,19 @@ import { useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { getChangePolicy, listChanges } from "@/features/changes/api";
 import { DiffCell } from "@/features/changes/DiffCell";
-import { artifactValueOf, detailText, diffLines, labelsFromPolicy, SECTION_ORDER, whatOf, type LabelMap } from "@/features/changes/render";
-import type { ChangeFilters, ChangeLevel, DeviceChange } from "@/features/changes/types";
+import { PromptBar } from "@/features/changes/PromptBar";
+import { hasSomethingToClear } from "@/features/changes/prompt";
+import {
+  artifactValueOf,
+  CHANGE_KINDS,
+  detailText,
+  diffLines,
+  labelsFromPolicy,
+  SECTION_ORDER,
+  whatOf,
+  type LabelMap
+} from "@/features/changes/render";
+import type { ChangeFilters, ChangeKind, ChangeLevel, DeviceChange } from "@/features/changes/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
 const inputClasses =
@@ -13,11 +24,14 @@ const inputClasses =
 const asLevel = (value: string | null): ChangeLevel | undefined =>
   value === "high" || value === "normal" || value === "low" ? value : undefined;
 
+const asChange = (value: string | null): ChangeKind | undefined => CHANGE_KINDS.find((kind) => kind === value);
+
 function filtersFromParams(params: URLSearchParams): ChangeFilters {
   return {
     q: params.get("q") ?? undefined,
     artifact: params.get("artifact") ?? undefined,
     level: asLevel(params.get("level")),
+    change: asChange(params.get("change")),
     // #107: the Overview feed links here with `since` and `minLevel`. Before it read
     // them, that link landed on an unfiltered feed — the window silently dropped, which
     // is the failure the absolute anchor exists to prevent.
@@ -39,6 +53,7 @@ function paramsFromFilters(filters: ChangeFilters): URLSearchParams {
   if (filters.q) params.set("q", filters.q);
   if (filters.artifact) params.set("artifact", filters.artifact);
   if (filters.level) params.set("level", filters.level);
+  if (filters.change) params.set("change", filters.change);
   if (filters.minLevel) params.set("minLevel", filters.minLevel);
   if (filters.since) params.set("since", filters.since);
   if (filters.section) params.set("section", filters.section);
@@ -61,6 +76,11 @@ export function ChangesPage() {
   const [draftQuery, setDraftQuery] = useState(filters.q ?? "");
   const [draftArtifact, setDraftArtifact] = useState(filters.artifact ?? "");
   const [labels, setLabels] = useState<LabelMap>({});
+  // Re-runs the fetch when the filters did not move — see `applyPrompt`.
+  const [reloadToken, setReloadToken] = useState(0);
+  // The Prompt bar's session, which Clear replaces, and whether it has been used since.
+  const [promptSession, setPromptSession] = useState(0);
+  const [promptUsed, setPromptUsed] = useState(false);
   const pageSize = 50;
 
   // The two text boxes are drafts — typed, then applied. They still have to follow the URL
@@ -114,16 +134,47 @@ export function ChangesPage() {
     return () => {
       cancelled = true;
     };
-  }, [filters, tc.errorLoading]);
+  }, [filters, reloadToken, tc.errorLoading]);
 
-  function update(next: Partial<ChangeFilters>) {
+  function nextParams(next: Partial<ChangeFilters>): URLSearchParams {
     // Picking an exact level drops the range one. Arriving from the Overview feed puts
     // `minLevel` in the URL, and the API refuses both together (#107) — so without this,
     // the first touch of the dropdown would turn a working feed into a 422 the operator
     // did nothing to deserve.
     const cleared = "level" in next && next.level ? { minLevel: undefined } : {};
-    setSearchParams(paramsFromFilters({ ...filters, ...next, ...cleared, page: next.page ?? 1 }));
+    return paramsFromFilters({ ...filters, ...next, ...cleared, page: next.page ?? 1 });
   }
+
+  function update(next: Partial<ChangeFilters>) {
+    setSearchParams(nextParams(next));
+  }
+
+  // The Prompt bar's answer goes through the same URL as every control. An answer naming
+  // the filters already on screen moves no URL, so nothing would re-fetch, and the
+  // response box — counted just now — would sit over a table loaded earlier that can
+  // disagree with it. Only then does the token re-run the fetch: a moved URL re-fetches on
+  // its own, and the router applies it in a transition, so bumping the token as well would
+  // fetch twice.
+  function applyPrompt(next: Partial<ChangeFilters>) {
+    const params = nextParams(next);
+    if (params.toString() === searchParams.toString()) setReloadToken((token) => token + 1);
+    else setSearchParams(params);
+  }
+
+  // Back to the unfiltered feed's first page in one press: every key the URL can carry
+  // goes, the ones only a link sets (`since`, `minLevel`, the device chip) with the rest.
+  // The drafts empty, and the Prompt bar starts a new session — its box and answer gone,
+  // a question still in flight dropped with the old session. A URL already empty is left
+  // alone, so Clear adds no history entry then.
+  function clearAll() {
+    if (searchParams.toString() !== "") setSearchParams(new URLSearchParams());
+    setDraftQuery("");
+    setDraftArtifact("");
+    setPromptSession((session) => session + 1);
+    setPromptUsed(false);
+  }
+
+  const canClear = hasSomethingToClear(filters, { q: draftQuery, artifact: draftArtifact }, promptUsed);
 
   const sectionLabels = useMemo(
     () => ({
@@ -143,6 +194,12 @@ export function ChangesPage() {
         <h1 className="text-3xl font-bold tracking-tight">{tc.title}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{tc.description}</p>
       </div>
+
+      {/* Above the controls it moves, and through the same URL they write (`applyPrompt`):
+          the answer is a set of filters in the URL, so Back, a shared link and the table
+          all behave as if the operator had set them by hand. The bar names every key, so
+          its answer replaces the filters rather than merging into them. */}
+      <PromptBar filters={filters} onApply={applyPrompt} onUse={setPromptUsed} session={promptSession} />
 
       <form
         className="flex flex-wrap items-start gap-3"
@@ -194,6 +251,24 @@ export function ChangesPage() {
             <option value="low">{tc.levels.low}</option>
           </select>
         </label>
+        {/* Added, removed, updated or changed, labelled as the Change column labels a row.
+            "New application installs" is Applications and Added; without this the pair
+            was every application change there is, updates included. */}
+        <label className="space-y-1 text-sm">
+          <span className="block text-muted-foreground">{tc.change}</span>
+          <select
+            className={inputClasses}
+            value={filters.change ?? ""}
+            onChange={(e) => update({ change: asChange(e.target.value) })}
+          >
+            <option value="">{tc.anyChange}</option>
+            {CHANGE_KINDS.map((kind) => (
+              <option key={kind} value={kind}>
+                {tc.changeKinds[kind] ?? kind}
+              </option>
+            ))}
+          </select>
+        </label>
         {/* A closed vocabulary of fifteen snake_case names, so it is picked and not typed.
             As a text box this was the one route to a whole entry kind — a certificate
             carries no label and is reachable by section alone — behind a control whose
@@ -215,6 +290,11 @@ export function ChangesPage() {
         </label>
         <Button type="submit" variant="outline" size="sm" className="mt-6">
           {tc.apply}
+        </Button>
+        {/* Quieter than Apply, which it undoes. Disabled with nothing to clear
+            (`hasSomethingToClear`), so the page never offers a press that does nothing. */}
+        <Button type="button" variant="ghost" size="sm" className="mt-6" disabled={!canClear} title={tc.clearAllTitle} onClick={clearAll}>
+          {tc.clearAll}
         </Button>
       </form>
 

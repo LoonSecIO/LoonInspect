@@ -1327,7 +1327,14 @@ export const en = {
     anyLevel: "Any level",
     section: "Section",
     anySection: "Any section",
+    // The kinds themselves are `changeKinds` below, the words the table's Change column
+    // already shows, so a row and the filter that finds it read the same.
+    change: "Change",
+    anyChange: "Any change",
     apply: "Apply",
+    // Beside Apply: every filter back to the unfiltered feed, and the Prompt box emptied.
+    clearAll: "Clear",
+    clearAllTitle: "Clear every filter and the Prompt box",
     loading: "Loading changes…",
     empty: "No changes yet — they appear from the second observation of a device onward.",
     errorLoading: "Could not load changes.",
@@ -1374,7 +1381,51 @@ export const en = {
     count: (n: number) => `${n} change${n === 1 ? "" : "s"}`,
     pageOf: (page: number, pages: number) => `Page ${page} of ${pages}`,
     previous: "Previous",
-    next: "Next"
+    next: "Next",
+    // The Prompt bar: a question in, the filters below moved. Every line here is written
+    // by code; the one model-authored string on the page is `unsupported`, shown as text.
+    prompt: {
+      label: "Prompt",
+      placeholder: "Which computers installed Wireshark?",
+      // The picker beside the box: each option is "{card} · {model}".
+      model: "Model",
+      ask: "Ask",
+      asking: (provider: string) => `Asking ${provider}…`,
+      // The banner leads, from the handoff's showBanner: what state this is, then the
+      // server's own sentence for why.
+      unavailable: "AI search unavailable — the filters below still work.",
+      unparseable: "Could not interpret that — try the filters directly.",
+      closeAsAllowed: "Filtered as close as these controls allow.",
+      // Only for a request that never reached the server. Something that answered without
+      // a reason — a plain-text 500, a proxy's 502 — gets its status and the app's log.
+      askFailed: "The question did not reach this server. Check that LoonInspect is running, then reload the page.",
+      askNoReason: (status: number) => `The server answered ${status} without a reason. Check docker compose logs app for the error.`,
+      askUnreadable: "The server answered, but not in a form this page can read. Check docker compose logs app for the error.",
+      // A read that failed, as a clause: "…could not check its settings: <reason>. Check…".
+      reasonStatus: (status: number) => `the server answered ${status} without a reason`,
+      reasonNoAnswer: "this server did not answer",
+      reasonUnreadable: "the server's answer could not be read",
+      statusFailed: (reason: string) => `The Prompt bar could not check its settings: ${reason}. Check docker compose logs app.`,
+      // The operator moved the filters by hand while the question was out; the answer
+      // would have overwritten them, so it is not applied.
+      staleReply: "The answer came back after the filters changed, so it was not applied. Ask again to apply it.",
+      readbackNone: "Showing all changes",
+      readbackLead: "Showing changes",
+      readbackDevice: (q: string) => `for a device matching “${q}”`,
+      readbackArtifact: (name: string) => `named “${name}”`,
+      readbackSection: (section: string) => `in ${section}`,
+      readbackLevel: (level: string) => `at ${level.toLowerCase()} level`,
+      readbackChange: (kind: string) => `that were ${kind}`,
+      answerNone: "No changes match.",
+      answerHeadline: (computers: number, changes: number) =>
+        `${computers} computer${computers === 1 ? "" : "s"}, ${changes} change${changes === 1 ? "" : "s"}.`,
+      answerKinds: { added: "added", removed: "removed", updated: "updated", changed: "changed" },
+      answerJamfId: (id: string) => `Jamf ID ${id}`,
+      answerMore: (n: number) => `+${n} more`,
+      answerOther: (n: number) => `Plus ${n} change${n === 1 ? "" : "s"} on groups or definitions.`,
+      answerOtherOnly: (n: number) => `${n} change${n === 1 ? "" : "s"} on groups or definitions, none on computers.`,
+      repairs: (n: number) => `Corrections to the model's answer (${n})`
+    }
   },
   changeTracking: {
     title: "Change tracking",
@@ -1416,8 +1467,10 @@ export const en = {
   },
   ai: {
     title: "AI",
+    // "Nothing is stored." stopped being true when Save arrived: a saved card lives on
+    // this server for the Changes Prompt bar, its key encrypted like a Jamf credential.
     description:
-      "A test box: one prompt to a model endpoint you name, behind the AI flag and the AI-inference consent. Nothing is stored. Every send writes a share-log row naming the destination and the one field that left, the prompt. The call is made by this server, never by your browser.",
+      "A test box: one prompt to a model endpoint you name, behind the AI flag and the AI-inference consent. Save keeps a card's settings on this server for the Changes Prompt bar; an API key is stored encrypted and never shown again. Every send writes a share-log row naming the destination and the one field that left, the prompt. The call is made by this server, never by your browser.",
     on: "On",
     off: "Off",
     flagLabel: "AI features flag",
@@ -1480,7 +1533,40 @@ export const en = {
     tokens: "Completion tokens",
     finish: "Finish reason",
     loadFailed: "Could not load the AI page.",
-    saveFailed: "Could not update the consent."
+    saveFailed: "Could not update the consent.",
+    // Saved cards — what the Changes Prompt bar dials. The key is never read back, so
+    // the field says one is there instead of showing it.
+    keySaved: "A key is saved — leave blank to keep it. Send and Load models use only a key typed here.",
+    savedPill: "Saved",
+    save: "Save",
+    saving: "Saving…",
+    saveBlocked: "Saving needs the flag on, system:write, a base URL and a model.",
+    savedNotice: "Saved on this server.",
+    configSaveFailed: "The settings could not be saved.",
+    remove: "Remove",
+    removing: "Removing…",
+    removeConfirm: (provider: string) => `Remove the saved ${provider} settings? A saved key goes with them.`,
+    removedNotice: "Removed from this server.",
+    configRemoveFailed: "The saved settings could not be removed.",
+    // A Remove answered 404: another tab or admin got there first. The page re-reads.
+    alreadyRemoved: "These settings were already removed from this server.",
+    cancel: "Cancel",
+    // The two reads behind the Prompt bar load apart from the page's own, so either
+    // failing costs its own line instead of the whole page.
+    configsLoadFailed: (reason: string) => `Could not read the saved providers: ${reason}. Check docker compose logs app.`,
+    promptStatusLoadFailed: (reason: string) =>
+      `Could not read whether the Changes Prompt bar shows: ${reason}. Check docker compose logs app.`,
+    promptBarShown: (provider: string, saved: number) =>
+      saved > 1
+        ? `Changes Prompt bar: shown (uses ${provider} unless a user picks another; ${saved} providers saved)`
+        : `Changes Prompt bar: shown (uses ${provider})`,
+    promptBarHidden: (reason: string) => `Changes Prompt bar: hidden — ${reason}`,
+    promptBarHiddenBare: "Changes Prompt bar: hidden",
+    promptBarReasons: {
+      flag_off: "the AI features flag is off. Turn it on under Feature Flags.",
+      consent_off: "AI-inference consent is not granted. Grant it on this page.",
+      no_provider: "no provider is saved. Fill in a card and press Save."
+    }
   },
   featureFlags: {
     title: "Feature Flags",

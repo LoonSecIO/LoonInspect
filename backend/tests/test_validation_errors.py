@@ -27,7 +27,8 @@ from pydantic import BaseModel, field_validator
 from app import main as app_main
 from app.core.security import MIN_PASSWORD_LENGTH
 from app.schemas.accounts import AccountCreateRequest, PasswordChangeRequest, PasswordResetRequest
-from app.schemas.ai import AIModelsIn, AITestIn
+from app.schemas.ai import AIConfigIn, AIModelsIn, AITestIn
+from app.schemas.changes_prompt import PromptIn
 from app.schemas.connections import MdmConnectionCreate, MdmConnectionTestRequest
 from app.schemas.destinations import DestinationCreate, DestinationUpdate
 
@@ -140,6 +141,20 @@ async def test_a_body_that_is_not_json_is_refused_with_the_parsers_reason_and_no
 @pytest.mark.parametrize(
     ("model", "body", "never", "refusals"),
     [
+        pytest.param(
+            AIConfigIn,
+            {"baseUrl": "https://api.anthropic.com", "apiKey": SECRET},
+            (SECRET,),
+            [("missing", ["body", "model"])],
+            id="settings-ai-save-without-a-model",
+        ),
+        pytest.param(
+            PromptIn,
+            {"question": [SECRET]},
+            (SECRET,),
+            [("string_type", ["body", "question"])],
+            id="prompt-bar-question-not-a-string",
+        ),
         pytest.param(
             AITestIn,
             {"provider": "anthropic", "baseUrl": "https://api.anthropic.com", "model": "claude-opus-5", "apiKey": SECRET},

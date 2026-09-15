@@ -9,6 +9,7 @@ Postgres for the gate's rows, so it is gated on RUN_DB_TESTS like its siblings.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from datetime import UTC, datetime
@@ -210,6 +211,27 @@ async def test_the_key_reaches_the_wire_and_nothing_else(client, db, clean, endp
     assert KEY not in repr(rows[0].payload)
 
 
+async def test_an_over_long_key_is_refused_without_being_echoed(client, db, clean, endpoint):
+    """Bounded in the route, not the schema, for the test box and the listing alike: the
+    route's refusal says what to check, where the schema's would only count characters,
+    and neither sends the key back. Refused before the gate, as the schema's check was."""
+    await _switches(db, flag=True, consent=True)
+    too_long = KEY + "x" * 512
+    listing = {"provider": "openai_compatible", "baseUrl": "http://host.docker.internal:11434/v1", "apiKey": too_long}
+    for path, body in (("/api/system/ai/test", _body(apiKey=too_long)), ("/api/system/ai/models", listing)):
+        response = await client.post(path, json=body)
+        assert response.status_code == 422, path
+        assert "longer than the 512 characters Settings › AI accepts" in response.json()["detail"], path
+        assert KEY not in response.text, path
+    assert endpoint.requests == []
+    assert await _ai_rows(db) == []
+
+    # 512 characters is still a key, and it reaches the wire.
+    at_bound = await client.post("/api/system/ai/test", json=_body(apiKey="k" * 512))
+    assert at_bound.status_code == 200, at_bound.text
+    assert endpoint.requests[0].headers["authorization"] == f"Bearer {'k' * 512}"
+
+
 async def test_anthropic_needs_a_key_and_speaks_its_own_wire(client, db, clean, endpoint):
     await _switches(db, flag=True, consent=True)
     anthropic = {"provider": "anthropic", "baseUrl": "https://api.anthropic.com", "model": "claude-fable-5-1"}
@@ -233,6 +255,28 @@ async def test_anthropic_needs_a_key_and_speaks_its_own_wire(client, db, clean, 
     assert request.headers["x-api-key"] == KEY
     assert request.headers["host"] == "api.anthropic.com"  # no reach, no presentation
     assert request.headers["anthropic-version"] == "2023-06-01"
+
+
+async def test_apple_takes_no_reasoning_effort_and_is_refused_before_the_gate(client, db, clean, endpoint):
+    """`fm serve` answers 400 to any reasoning effort on its system model, "none" included,
+    so a test that names one is refused here with the way out, before anything is dialled
+    or disclosed. Without one, the Apple card's test goes out carrying no such field."""
+    await _switches(db, flag=True, consent=True)
+    apple = {"provider": "apple_fm", "baseUrl": "http://host.docker.internal:1976/v1", "model": "system"}
+    for effort in ("none", "low"):
+        refused = await client.post("/api/system/ai/test", json=_body(**apple, reasoningEffort=effort))
+        assert refused.status_code == 422, effort
+        assert refused.json()["detail"] == (
+            "Apple's on-device model takes no reasoning effort — fm serve refuses it on the system model. "
+            "Save the Apple Foundation Models via Docker Desktop card again from Settings › AI; the page sends none."
+        )
+    assert endpoint.requests == []
+    assert await _ai_rows(db) == []
+
+    answered = await client.post("/api/system/ai/test", json=_body(**apple, reasoningEffort=None))
+    assert answered.status_code == 200, answered.text
+    assert str(endpoint.requests[0].url) == "http://host.docker.internal:1976/v1/chat/completions"
+    assert "reasoning_effort" not in json.loads(endpoint.requests[0].content)
 
 
 async def test_a_reserved_reach_is_refused_by_name_before_the_gate(client, db, clean, endpoint):

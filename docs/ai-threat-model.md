@@ -77,6 +77,9 @@ the question"); the audit line `ai.test.sent` carries the outcome. The share log
 | `tests/test_ai_adapters.py` | both request shapes; reasoning kept beside content; budget-exhausted-thinking as its own outcome; parts joined; malformed replies named; the key on the wire and nowhere else; timeout, unreachable, bounded rejections, non-JSON bodies; the URL rule's accepted and refused classes with reasons; the provider table and the reserved reaches |
 | `tests/test_ai_test_box_db.py` | the endpoint through the ASGI client: refusals before the wire; the row committed before the first byte; the key on the wire and not in the reply, the log or the row; Anthropic's wire; reach refused by name; blocked URL refused before the gate; upstream failure reported not raised; auditor refused |
 | `tests/test_ai_host_detect.py` | the detection table and its evidence |
+| `tests/test_ai_structure.py` (2026-09-14) | S1, S2 and S4 of §6, as AST and grep walks over `app/` and the frontend's AI and Prompt files |
+| `tests/test_changes_prompt.py` (2026-09-14) | slot 1's vocabulary: the handoff's self-test cases (level now asserted too), the whitelist, unknown keys ignored and named, the guards, the sanitiser, and drift against the page's sections, levels and change kinds |
+| `tests/test_changes_prompt_db.py`, `tests/test_ai_configs_db.py` (2026-09-14) | the Prompt endpoints and saved configs through the ASGI client: refusals, the disclosure row, the question in no log or audit row, the key never returned, a viewer allowed, the summary equal to the page's where-clause |
 
 What they cannot cover: injection. No prompt builder exists, so no fleet value can reach a
 prompt, so there is nothing to inject into. That is the right state for #320 and the wrong
@@ -187,3 +190,17 @@ Kyle, 2026-09-05, on reading this: the principles stand as written, and the loop
 presentation that #325 added to the Docker Desktop reach (the container says
 `Host: 127.0.0.1:<port>` while the operator keeps the alias, so Apple's `fm serve` can stay
 bound to loopback) is confirmed as the design. Slot work starts at §7.
+
+Kyle, 2026-09-14, for slot 1 (the Changes Prompt bar, built as a spike; `ai-layer.md` has the
+record):
+- Enter fills the filters **and runs them**. This amends P4's "nothing is executed without a human
+  step" for this slot only: the step is the Enter, the filters stay visible and editable, and the
+  query only reads.
+- The response box is written by code from the rows, so no fleet value reaches a prompt.
+- Provider configs are saved server-side, with the key encrypted.
+
+Slot 1's input is the operator's own text, which is why §7.3's sanitiser and builder were not a
+precondition. S1, S2 and S4 landed with it. Still open for Kyle to rule:
+- P4/T2: the handoff repairs a reply rather than rejecting it (unknown section → *any*, a value
+  that fails the whitelist → dropped, every repair listed on the page).
+- Model control tokens are not stripped from the question.
