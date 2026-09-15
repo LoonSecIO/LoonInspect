@@ -1409,6 +1409,20 @@ export const en = {
       // The operator moved the filters by hand while the question was out; the answer
       // would have overwritten them, so it is not applied.
       staleReply: "The answer came back after the filters changed, so it was not applied. Ask again to apply it.",
+      // A correction widened the model's answer (ruled 1C, #436): a name dropped, a
+      // section, level or change the page does not have read as any, or a field it does not
+      // use that held a value. It would search for more than the model named, so it waits
+      // for the operator's Apply.
+      proposalLead: (n: number): string =>
+        n === 1
+          ? "The model's answer needed a correction that widens the search, so it was not applied."
+          : "The model's answer needed corrections that widen the search, so it was not applied.",
+      proposalNext: "Check the filters it would set, then apply them, or rephrase the question.",
+      // closeAsAllowed, for filters not yet applied: the caveat is part of what to check.
+      proposalCloseAsAllowed: "These filters would be as close as these controls allow.",
+      proposalReadbackNone: "Would show all changes",
+      proposalReadbackLead: "Would show changes",
+      applyProposal: "Apply these filters",
       readbackNone: "Showing all changes",
       readbackLead: "Showing changes",
       readbackDevice: (q: string) => `for a device matching “${q}”`,

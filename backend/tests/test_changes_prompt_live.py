@@ -11,6 +11,9 @@ It goes through the same adapter door as the Prompt bar (``complete`` with the p
 loopback ``Host``), so a pass here is a pass for the path the page uses — not for a
 host-only script. Temperature 0 makes the answers repeatable for one model build; a new
 macOS beta can move them, which is what this lane is for.
+
+No answer in the set may need a repair that widens it (ruled 1C, #436): the page would
+then show it as a proposal to apply, and the demo questions are shown running on Enter.
 """
 
 from __future__ import annotations
@@ -118,6 +121,8 @@ async def test_question_lands_on_the_expected_filters(case):
 
     got = interpret(question, result.content)
     assert got.parsed, f"unparseable reply for {question!r}"
+    # Applied on Enter, as the page runs it, never held back as a proposal.
+    assert not got.widened, (question, got.widening)
     f = got.filters
     assert f["q"] == q, (question, f, got.repairs)
     if artifact is ANY:

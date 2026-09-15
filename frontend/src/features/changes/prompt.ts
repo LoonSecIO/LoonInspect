@@ -102,7 +102,8 @@ export function hasSomethingToClear(
 }
 
 /** Port of the handoff's `describe()`: the filters as a sentence, in the page's own
- *  labels. Order: device, thing, section, level, then the kind of change. */
+ *  labels. Order: device, thing, section, level, then the kind of change. `proposed`
+ *  words it as what the filters would show, for a proposal nothing has run yet. */
 export function readback(
   filters: {
     q?: string | null;
@@ -111,7 +112,8 @@ export function readback(
     section?: string | null;
     change?: ChangeKind | null;
   },
-  strings: ChangesStrings
+  strings: ChangesStrings,
+  mode: "showing" | "proposed" = "showing"
 ): string {
   const words = strings.prompt;
   const bits: string[] = [];
@@ -120,7 +122,27 @@ export function readback(
   if (filters.section) bits.push(words.readbackSection(strings.sections[filters.section] ?? filters.section));
   if (filters.level) bits.push(words.readbackLevel(strings.levels[filters.level] ?? filters.level));
   if (filters.change) bits.push(words.readbackChange(words.answerKinds[filters.change] ?? filters.change));
-  return bits.length > 0 ? `${words.readbackLead} ${bits.join(", ")}` : words.readbackNone;
+  const [lead, none] =
+    mode === "proposed" ? [words.proposalReadbackLead, words.proposalReadbackNone] : [words.readbackLead, words.readbackNone];
+  return bits.length > 0 ? `${lead} ${bits.join(", ")}` : none;
+}
+
+/**
+ * The filters a reply moves the page to the moment it lands: an applied answer's, and no
+ * other. A proposal — a correction widened the model's answer, so it would search for
+ * more than the model named (ruled 1C, #436) — moves nothing until a person presses its
+ * Apply button (`proposedFilters`). An endpoint failure or an answer that was not filters
+ * moves nothing at all.
+ */
+export function filtersOnArrival(result: PromptResult): Partial<ChangeFilters> | null {
+  return result.outcome === "applied" && result.filters ? filtersFromPrompt(result.filters) : null;
+}
+
+/** The filters a proposal's Apply button moves the page to; null for anything that is not a
+ *  proposal. The press is the operator's own, so it replaces whatever the page shows then,
+ *  as a hand-set filter would: there is nothing for it to be stale against. */
+export function proposedFilters(result: PromptResult): Partial<ChangeFilters> | null {
+  return result.outcome === "proposed" && result.filters ? filtersFromPrompt(result.filters) : null;
 }
 
 function deviceLine(device: PromptDevice, words: PromptStrings): string {
@@ -150,17 +172,22 @@ export function answerLines(summary: PromptSummary, strings: ChangesStrings): st
   return lines;
 }
 
-export type BannerKind = "error" | "unparseable" | "unsupported" | "readback";
+export type BannerKind = "error" | "unparseable" | "proposal" | "unsupported" | "readback";
 
 /**
  * Port of the handoff's `showBanner` states. `unsupported` is the important one: the
  * controls answered a narrower question than the one asked, and the banner says so
  * rather than let an incomplete result read as complete. An answer with no filters
  * applied nothing, so it never reaches the readback — that would claim "all changes".
+ *
+ * `proposal` is a proposed answer not yet applied: the corrections that widened it, what
+ * its filters would show, and its Apply button. Once applied (`proposalApplied`), it
+ * reads as any answer does, banner and response box.
  */
-export function bannerKind(result: PromptResult): BannerKind {
+export function bannerKind(result: PromptResult, proposalApplied = false): BannerKind {
   if (result.outcome === "error") return "error";
   if (result.outcome === "unparseable" || result.filters === null) return "unparseable";
+  if (result.outcome === "proposed" && !proposalApplied) return "proposal";
   if (result.unsupported) return "unsupported";
   return "readback";
 }
@@ -202,7 +229,7 @@ const isText = (value: unknown): value is string => typeof value === "string";
 const isTextOrNull = (value: unknown): value is string | null => value === null || typeof value === "string";
 const isCount = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 
-const OUTCOMES: readonly PromptOutcome[] = ["applied", "error", "unparseable"];
+const OUTCOMES: readonly PromptOutcome[] = ["applied", "proposed", "error", "unparseable"];
 const HIDDEN_REASONS: readonly PromptHiddenReason[] = ["flag_off", "consent_off", "no_provider"];
 const FILTER_KEYS = ["q", "artifact", "level", "section", "change"] as const satisfies readonly (keyof PromptFilters)[];
 
@@ -255,6 +282,8 @@ export function isPromptResult(value: unknown): value is PromptResult {
     isTextOrNull(value.unsupported) &&
     Array.isArray(value.repairs) &&
     value.repairs.every(isText) &&
+    Array.isArray(value.widening) &&
+    value.widening.every(isText) &&
     (value.summary === null || isSummary(value.summary)) &&
     isText(value.provider) &&
     isText(value.model) &&

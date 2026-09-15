@@ -20,6 +20,11 @@ never quotes a value the whitelist refused, nor a key the page does not know: th
 free text of the model's that reaches the page is ``unsupported``, and the page renders
 it as text.
 
+A repair also carries which way it moved the answer (``Repair``). Most fix it or narrow
+it, and the page runs the answer at once. A dropped name, an unknown section, level or
+change read as any, or an unknown key that held a value widens it: the page then gets the
+filters as a proposal, and a person applies them (Kyle, 2026-09-15, ruling 1C on #436).
+
 Pure and stdlib-only on purpose: no database, no network, and none of ``app.models``,
 ``app.core.outbox`` or ``app.core.sharing`` (threat-model S1, ``tests/test_ai_structure.py``).
 The route, ``app.api.changes_prompt``, does the gating and the talking.
@@ -97,9 +102,25 @@ ENTRY_SECTIONS: frozenset[str] = frozenset(
 
 # Free-text fields are capped and character-restricted. They reach the query layer as
 # bound parameters, never interpolated, but a tight whitelist here means a malformed
-# generation fails loudly instead of quietly matching nothing. U+2019 is in it because
-# macOS names a Mac with the typographic apostrophe.
-_TEXT_OK = re.compile(r"^[A-Za-z0-9 ._@'\u2019()+/-]{1,64}$")
+# generation fails loudly instead of quietly matching nothing. A name keeps letters and
+# digits in any script (Café Manager, Pokémon GO, a name in Japanese), with the marks
+# some scripts write a letter with (a Devanagari vowel sign is one; NFC composes Latin
+# accents, not those), and the punctuation real names carry: "AT&T Global Network
+# Client", "C#". U+2019 is in it because macOS names a Mac with the typographic apostrophe.
+# Anything else is refused: the characters an injection is made of first among them
+# (; % " < > \ = * ? ` $ { } [ ] | ~ ^), and every symbol, control and format character.
+# The first whitelist was ASCII, and dropped Café Manager's name (#436).
+_NAME_CATEGORIES = frozenset({"Lu", "Ll", "Lt", "Lm", "Lo", "Mn", "Mc", "Nd"})
+_NAME_PUNCTUATION = " ._@'\u2019()+/-&#!,:"
+# Refused though their categories are a letter's or a mark's, because they draw nothing:
+# the Hangul fillers (Lo), the combining grapheme joiner, the Khmer inherent vowels, and
+# the Mongolian and Unicode variation selectors (Mn). "Wire", a Hangul filler, "shark"
+# reads back as "Wire shark" and matches no row: the quiet failure the whitelist is for.
+_INVISIBLE = (
+    frozenset("\u115f\u1160\u3164\uffa0\u034f\u17b4\u17b5\u180b\u180c\u180d\u180f")
+    | frozenset(map(chr, range(0xFE00, 0xFE10)))
+    | frozenset(map(chr, range(0xE0100, 0xE01F0)))
+)
 _NAME_MAX_CHARS = 64
 _UNSUPPORTED_MAX_CHARS = 300
 
@@ -161,6 +182,43 @@ Q: apps uninstalled from C02XL0ABJG5H
 Filters = dict[str, str | None]
 
 
+class Repair(str):
+    """One repair's sentence, and which way it moved the answer (ruled 1C, #436).
+
+    Most repairs fix the answer or narrow it: a caveat the question gives no ground for, a
+    section name in the name filter, a Search that repeated it, the serial the model
+    missed, a change the section never records, empty keys the page does not use. Three
+    kinds widen it: a Search or Filter-to-one-thing value dropped (the whitelist refused
+    it, or it was not text), an unknown section, level or change read as any, and a key
+    the page does not use that held a value, which may have been meant as a filter
+    (``{"app": "Wireshark"}``). Run as it stood, a widened answer searched for more than
+    the question asked ("which macs installed Café Manager", its name dropped, ran every
+    added app), so the page is handed it as a proposal to apply rather than running it.
+
+    ``control`` names the control a drop emptied, so a guard that fills that control
+    again from the question can say the drop no longer widens.
+
+    A str, so a list of them joins, compares and reaches the page as the sentences they
+    are; a plain str is a repair that does not widen."""
+
+    widens: bool
+    control: str | None
+
+    def __new__(cls, sentence: str, widens: bool = False, control: str | None = None) -> Repair:
+        repair = super().__new__(cls, sentence)
+        repair.widens = widens
+        repair.control = control
+        return repair
+
+
+def _widens(sentence: str, control: str | None = None) -> Repair:
+    return Repair(sentence, widens=True, control=control)
+
+
+def _fixes(sentence: str) -> Repair:
+    return Repair(sentence, widens=False)
+
+
 @dataclass(frozen=True)
 class Interpretation:
     """What a reply meant, in the page's vocabulary. ``filters`` carries the page's URL
@@ -172,6 +230,16 @@ class Interpretation:
     unsupported: str | None
     repairs: list[str]
     parsed: bool
+
+    @property
+    def widening(self) -> list[str]:
+        """The repairs that widened the answer, in the order they were made, as sentences."""
+        return [str(repair) for repair in self.repairs if isinstance(repair, Repair) and repair.widens]
+
+    @property
+    def widened(self) -> bool:
+        """Whether a repair widened the answer. Then it is proposed, never applied (1C)."""
+        return bool(self.widening)
 
 
 def _no_filters() -> Filters:
@@ -259,26 +327,65 @@ def parse_reply(text: str) -> dict[str, Any] | None:
     return obj if isinstance(obj, dict) else None
 
 
-def _ignored_keys(count: int) -> str:
-    """Counted, never named: a key is the model's own text, and the page has no use for it."""
-    return f"Ignored {count} field{'' if count == 1 else 's'} the Prompt bar does not use."
+def _fields(count: int) -> str:
+    return f"{count} field{'' if count == 1 else 's'}"
 
 
+def _ignored_keys(obj: Mapping[str, Any]) -> list[Repair]:
+    """Counted, never named: a key is the model's own text, and the page has no use for it.
+
+    An ignored key that held a value widens the answer: ``{"app": "Wireshark"}`` is a name
+    the controls never got. One that held nothing (null, an empty string, list or object)
+    moves nothing."""
+    unknown = [value for key, value in obj.items() if key not in _REPLY_KEYS]
+    held = sum(1 for value in unknown if value not in (None, "", [], {}))
+    empty = len(unknown) - held
+    repairs: list[Repair] = []
+    if held:
+        what = "a value that may have been meant as a filter" if held == 1 else "values that may have been meant as filters"
+        repairs.append(_widens(f"Ignored {_fields(held)} the Prompt bar does not use, holding {what}."))
+    if empty:
+        repairs.append(_fixes(f"Ignored {_fields(empty)} the Prompt bar does not use, holding nothing."))
+    return repairs
+
+
+def _is_name(text: str) -> bool:
+    return all(ch not in _INVISIBLE and (ch in _NAME_PUNCTUATION or unicodedata.category(ch) in _NAME_CATEGORIES) for ch in text)
+
+
+# The whitelist's punctuation as the refusal lists it: one space between each.
+_NAME_PUNCTUATION_LISTED = " ".join(_NAME_PUNCTUATION.strip())
+
+
+# Every drop here widens: the control the model filled is left empty, so the answer then
+# matches more than the model's did.
 def _name(value: Any, control: str, repairs: list[str]) -> str | None:
     if value is None:
         return None
     # A Jamf ID may arrive as a number; nothing else that is not a string is a name.
     if isinstance(value, bool) or not isinstance(value, str | int):
-        repairs.append(f"Dropped the model's value for {control}: it was not text.")
+        repairs.append(_widens(f"Dropped the model's value for {control}: it was not text.", control))
         return None
     text = str(value).strip()
     if not text:
         return None
     if len(text) > _NAME_MAX_CHARS:
-        repairs.append(f"Dropped the model's value for {control}: longer than {_NAME_MAX_CHARS} characters, so not a name.")
+        repairs.append(
+            _widens(
+                f"Dropped the model's value for {control}: longer than {_NAME_MAX_CHARS} characters, so not a name.",
+                control,
+            )
+        )
         return None
-    if not _TEXT_OK.fullmatch(text):
-        repairs.append(f"Dropped the model's value for {control}: it carried characters no name here has.")
+    if not _is_name(text):
+        # True of the value without quoting it: says what a name may hold, not what this held.
+        repairs.append(
+            _widens(
+                f"Dropped the model's value for {control}: a name here takes only letters and digits in any script, "
+                f"spaces, and {_NAME_PUNCTUATION_LISTED} — it held another character.",
+                control,
+            )
+        )
         return None
     return text
 
@@ -286,29 +393,43 @@ def _name(value: Any, control: str, repairs: list[str]) -> str | None:
 _SECTION_BY_WORD: dict[str, str] = {name.lower(): key for name, key in SECTIONS.items()} | {key: key for key in SECTIONS.values()}
 
 
+# The words a model writes for "no filter" besides the "any" it is asked for. Each is read
+# as any with no repair: the answer is no wider than the one the model meant.
+_ANY = frozenset({"any", "all", "null", "none"})
+
+
+# An unknown section, level or change is read as any, which widens the answer. Said as
+# what was done to it rather than as "showing", since a widened answer is not shown until
+# a person applies it.
 def _section(value: Any, repairs: list[str]) -> str | None:
     word = str(value or "any").strip().lower()
-    if word == "any":
+    if word in _ANY:
         return None
     key = _SECTION_BY_WORD.get(word)
     if key is None:
         # A near miss is more useful reported than silently coerced.
-        repairs.append("The model named a section this page does not have; showing any section.")
+        repairs.append(_widens("The model named a section this page does not have, so it was read as any section."))
     return key
 
 
 def _level(value: Any, repairs: list[str]) -> str | None:
     level = str(value or "any").strip().lower()
+    if level in _ANY:
+        return None
     if level not in LEVELS:
-        repairs.append("The model named a level that is not any, low, normal or high; showing any level.")
+        repairs.append(_widens("The model named a level that is not any, low, normal or high, so it was read as any level."))
         return None
     return None if level == "any" else level
 
 
 def _change(value: Any, repairs: list[str]) -> str | None:
     change = str(value or "any").strip().lower()
+    if change in _ANY:
+        return None
     if change not in CHANGES:
-        repairs.append("The model named a change that is not any, added, removed, updated or changed; showing any change.")
+        repairs.append(
+            _widens("The model named a change that is not any, added, removed, updated or changed, so it was read as any change.")
+        )
         return None
     return None if change == "any" else change
 
@@ -317,7 +438,7 @@ def _unsupported(value: Any, repairs: list[str]) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str):
-        repairs.append("Dropped the model's note on what the filters cannot express: it was not text.")
+        repairs.append(_fixes("Dropped the model's note on what the filters cannot express: it was not text."))
         return None
     text = _plain(value)[:_UNSUPPORTED_MAX_CHARS].rstrip()
     # "null" written as a string is still null; a banner reading it would be noise.
@@ -327,10 +448,7 @@ def _unsupported(value: Any, repairs: list[str]) -> str | None:
 def coerce(obj: Mapping[str, Any]) -> tuple[Filters, str | None, list[str]]:
     """Force a reply object into the page's vocabulary. Anything that does not match a
     known value is dropped, not passed through, and every drop is a repair."""
-    repairs: list[str] = []
-    unknown = sum(1 for key in obj if key not in _REPLY_KEYS)
-    if unknown:
-        repairs.append(_ignored_keys(unknown))
+    repairs: list[str] = [*_ignored_keys(obj)]
     filters: Filters = {
         "q": _name(obj.get("search"), _SEARCH, repairs),
         "artifact": _name(obj.get("filter"), _ARTIFACT, repairs),
@@ -422,36 +540,55 @@ def guard(
     5. a change a section never records is any: a list section's entries are added,
        removed or updated, and every other section's fields are only ever changed. With
        no section, the change stands as the model gave it.
+
+    Each is taken as fixing the answer or narrowing it (``Repair``): rule 3 narrows, rule
+    4 moves no filter, the pair rule 5 undoes matches no row at all, and what rule 2
+    drops names no device. Rule 1 is the one that can widen, and runs anyway: a thing
+    named for its section (a profile called "Security") loses its name, and the answer
+    shows the whole section. Held back, every answer in which the model copied a section
+    name into the filter, as the first prompt did, would be a proposal.
+
+    Rule 3 also undoes a widening. A Search value the whitelist refused ("KY4QVD7430?")
+    left Search empty; filled again with the question's one serial, the answer is no
+    wider than a clean reply's, so the drop is kept as said but no longer widens.
     """
     filters = dict(filters)
     repairs = list(repairs)
     artifact = filters.get("artifact")
     if artifact and _names_a_kind(artifact):
-        repairs.append(f"Dropped “{artifact}” from {_ARTIFACT}: it names a section or a kind of thing, not one thing.")
+        repairs.append(_fixes(f"Dropped “{artifact}” from {_ARTIFACT}: it names a section or a kind of thing, not one thing."))
         filters["artifact"] = None
     search, artifact = filters.get("q"), filters.get("artifact")
     if search and artifact and _repeats(search, artifact):
-        repairs.append(f"Cleared {_SEARCH}: it repeated the {_ARTIFACT} name instead of naming a device.")
+        repairs.append(_fixes(f"Cleared {_SEARCH}: it repeated the {_ARTIFACT} name instead of naming a device."))
         filters["q"] = None
     if filters.get("q") is None:
         serial = _one_serial(question)
         if serial:
-            repairs.append(f"Filled {_SEARCH} with the one serial-number-shaped word in the question.")
+            repairs = [
+                _fixes(repair) if isinstance(repair, Repair) and repair.widens and repair.control == _SEARCH else repair
+                for repair in repairs
+            ]
+            repairs.append(_fixes(f"Filled {_SEARCH} with the one serial-number-shaped word in the question."))
             filters["q"] = serial
     if unsupported and not _MARKERS.search(question):
         repairs.append(
-            "Dropped the model's note that the filters cannot express this: the question has no or, not, "
-            "date, version or comparison word."
+            _fixes(
+                "Dropped the model's note that the filters cannot express this: the question has no or, not, "
+                "date, version or comparison word."
+            )
         )
         unsupported = None
     section, change = filters.get("section"), filters.get("change")
     if section and change:
         name = _SECTION_NAME.get(section, section)
         if section in ENTRY_SECTIONS and change == "changed":
-            repairs.append(f"Entries in {name} are added, removed or updated, never changed; showing any change.")
+            repairs.append(_fixes(f"Entries in {name} are added, removed or updated, never changed; showing any change."))
             filters["change"] = None
         elif section not in ENTRY_SECTIONS and change in _ENTRY_CHANGES:
-            repairs.append(f"{name} only records changed values, never added, removed or updated ones; showing any change.")
+            repairs.append(
+                _fixes(f"{name} only records changed values, never added, removed or updated ones; showing any change.")
+            )
             filters["change"] = None
     return filters, unsupported, repairs
 

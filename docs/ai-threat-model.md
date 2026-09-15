@@ -201,16 +201,21 @@ record):
 - Provider configs are saved server-side, with the key encrypted.
 
 Slot 1's input is the operator's own text, which is why §7.3's sanitiser and builder were not a
-precondition. S1, S2 and S4 landed with it. Still open for Kyle to rule:
-- P4/T2: the handoff repairs a reply rather than rejecting it (unknown section → *any*, a value
-  that fails the whitelist → dropped, every repair listed on the page).
-- ~~Model control tokens are not stripped from the question.~~ **Ruled by Kyle, 2026-09-15 (2B,
-  #435), and done:** `sanitize_question` strips the `<|…|>` family (and DeepSeek's spelling of it
-  with full-width bars), `[INST]` and `[/INST]`, `<<SYS>>` and `<</SYS>>`, `<s>` and `</s>`,
-  `<think>` and `</think>`, and `<start_of_turn>` and `<end_of_turn>`, in any case, each replaced
-  by a space. It runs after the control and format characters are dropped, so a hidden character
+precondition. S1, S2 and S4 landed with it. The two items left open then are both ruled:
+- **P4/T2 — ruled by Kyle, 2026-09-15 (1C, #436):** the reply is still repaired rather than
+  rejected, and every repair is listed on the page. A repair that fixes or narrows the answer lets
+  it run on Enter. One that widens it makes it a proposal: an unknown section, level or change
+  read as *any*, a value that fails the whitelist dropped, or an unknown key that held a value
+  ignored. The API then answers `proposed`, and the page runs nothing until a person presses its
+  Apply button. That is T2's proposal, exactly where a repair would otherwise search for more
+  than the model named.
+- **Model control tokens — ruled by Kyle, 2026-09-15 (2B, #435), and done:** `sanitize_question`
+  strips the `<|…|>` family (and DeepSeek's spelling of it with full-width bars), `[INST]` and
+  `[/INST]`, `<<SYS>>` and `<</SYS>>`, `<s>` and `</s>`, `<think>` and `</think>`, and
+  `<start_of_turn>` and `<end_of_turn>`, in any case, each replaced by a space. It runs after the control and format characters are dropped, so a hidden character
   cannot rejoin a token, and before the 500-character cap. Defence in depth for slot 1, whose
   closed vocabulary and whitelist had already held against four injection probes. The token
   pattern carries over to the first slot that sends fleet data; that slot still needs the rest of
-  P3 — a per-field cap with a visible truncation marker, which a question's silent cap is not. `tests/test_changes_prompt_tokens.py` is the
-  corpus; the live lane's 35 questions leave byte-identical and still pass 35 of 35.
+  P3 — a per-field cap with a visible truncation marker, which a question's silent cap is not.
+  `tests/test_changes_prompt_tokens.py` is the corpus; the live lane's 35 questions leave
+  byte-identical and still pass 35 of 35.

@@ -687,8 +687,10 @@ Report the block's four lines (build, latest release, last checked, the sentence
 The Prompt bar is the box labelled **Prompt** above the filters on **Devices › Changes**. It
 sends the typed question — nothing else — to the card picked in its **Model** list, which names
 every card saved on **Settings › AI** and the model it uses. The model answers with filter
-settings; the page moves its filters to them and runs them, and the lines under the bar are
-written by the page from the matching rows, never by the model. **Clear**, beside Apply, empties
+settings, and the page moves its filters to them and runs them. The exception is an answer the
+page had to correct in a way that searches wider: that one waits for you to apply it (step 3).
+The lines under the bar are written by the page from the matching rows, never by the model.
+**Clear**, beside Apply, empties
 every filter, the Prompt box and its answer. The bar appears only while three things are true,
 and Settings › AI names the one that is not, in its line *Changes Prompt bar: …*. Every question
 writes one row to the disclosure log naming the destination and the one field that left,
@@ -749,11 +751,39 @@ writes one row to the disclosure log naming the destination and the one field th
    reply over 8,000 characters without reading it. **Send** on Settings › AI shows the reply and
    its token count; a local model needs its reasoning turned off (the card's *Reasoning effort*,
    `none`).
+
+   **The answer leads with *The model's answer needed a correction that widens the search, so it
+   was not applied*.** Not a failure, and nothing has run: the filters below the Prompt bar are
+   still the ones you had. The model did answer with filter settings, but the page had to change
+   one of them in a way that would match more than the model named. One of three things happened:
+   - a name it gave for **Search** or **Filter to one thing** was dropped: it was not text, was
+     longer than 64 characters, or held a character a name here may not;
+   - it named a section, level or change the page does not have, which was read as *any*;
+   - it added a field the page does not use and put a value in it, perhaps the name.
+
+   Run as it stood, an answer that lost its name would list every added app rather than the one
+   asked about, so a correction like that waits for you. A dropped **Search** does not wait when
+   the question holds one serial number: the page fills Search with it, and the answer runs. The
+   lines under the lead are those corrections, in the page's words. If the model also said the
+   filters cannot express part of the question, its sentence follows *These filters would be as
+   close as these controls allow* (step 4). *Would show changes …* is what the filters would be.
+   If that is what you meant, press
+   **Apply these filters**: they run as if you had set them, and the usual answer follows,
+   *Corrections to the model's answer* included. If not, rephrase the question, or set the
+   filters by hand. A name may hold letters and digits in any script, spaces, and
+   `. _ @ ' ’ ( ) + / - & # ! , :`. One holding anything else is dropped from the answer: a
+   quote, a semicolon, a percent sign, an angle bracket, a symbol such as ™, or a character
+   that draws nothing (a Hangul filler, a variation selector), which would have read back as a
+   plain name and matched no row. Typed into **Filter to one thing** by hand, such a name still
+   searches. The audit log records such an answer as
+   `ai.changes-prompt.sent` with `outcome` `proposed`; an answer that ran says `applied`.
 4. **The answer leads with *Filtered as close as these controls allow*.** Not a failure. The
    question needed something the filters cannot express — an *or*, a *not*, a date range, a
    version or other value, a comparison — and the rows are the closest the filters allow. The
    sentence under the lead is the model's own, shown as text, and the page keeps it only when
-   the question contains a word of that kind. Ask the part that was left out as a second question.
+   the question contains a word of that kind. On an answer waiting for **Apply these filters**
+   (step 3), the same sentence follows *These filters would be as close as these controls allow*.
+   Ask the part that was left out as a second question.
 5. **The filters moved somewhere you did not mean, or nothing matches.** The filters are where the
    model put them; change any of them and the page runs again, or **Clear** to start over.
    *The answer came back after the filters changed, so it was not applied* means a filter moved
