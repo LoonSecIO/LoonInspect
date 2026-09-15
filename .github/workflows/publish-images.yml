@@ -84,7 +84,7 @@ jobs:
       # Silicon gets a native image instead of amd64 under emulation.
       - name: Build and push app image
         if: steps.exists.outputs.published == 'false'
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -97,7 +97,7 @@ jobs:
 
       - name: Build and push database sidecar image
         if: steps.exists.outputs.published == 'false'
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ops/postgres
           platforms: linux/amd64,linux/arm64
