@@ -1331,12 +1331,30 @@ export const en = {
     // already shows, so a row and the filter that finds it read the same.
     change: "Change",
     anyChange: "Any change",
+    // #437: the Change filter's two vocabularies, said where they bite. A list section's
+    // entries are Added, Removed or Updated; every other section's values are only ever
+    // Changed. The first pair is the line under the filters when choosing a section put
+    // Change back to Any change; the second is the empty table's reason for a pair that
+    // can never match, which a hand-edited link can still carry.
+    changeReset: {
+      entry: (section: string) => `Change reset to Any change: ${section} records Added, Removed and Updated.`,
+      field: (section: string) => `Change reset to Any change: ${section} records only Changed values.`
+    },
+    neverMatches: {
+      entry: (section: string) => `${section} records Added, Removed and Updated — never Changed.`,
+      field: (section: string) => `${section} records only Changed values — never Added, Removed or Updated.`
+    },
     apply: "Apply",
     // Beside Apply: every filter back to the unfiltered feed, and the Prompt box emptied.
     clearAll: "Clear",
     clearAllTitle: "Clear every filter and the Prompt box",
     loading: "Loading changes…",
+    // Three empty tables, three sentences (#437). `empty` is only for a log with no row in
+    // it and no filter set: under a mistyped app name it told the operator the log was
+    // empty. `emptyPastEnd` is a page number past the last page, where rows do match.
     empty: "No changes yet — they appear from the second observation of a device onward.",
+    emptyFiltered: "No changes match these filters.",
+    emptyPastEnd: "No changes on this page — it is past the last page of results.",
     errorLoading: "Could not load changes.",
     colWhen: "Observed",
     colDevice: "Device",
@@ -1395,6 +1413,9 @@ export const en = {
       // server's own sentence for why.
       unavailable: "AI search unavailable — the filters below still work.",
       unparseable: "Could not interpret that — try the filters directly.",
+      // A question the filters cannot answer: nothing ran, the filters are as they were.
+      // The server's sentence under it says why and what to ask instead.
+      invalid: "Invalid question — the Prompt bar can't answer it, so nothing was run.",
       closeAsAllowed: "Filtered as close as these controls allow.",
       // Only for a request that never reached the server. Something that answered without
       // a reason — a plain-text 500, a proxy's 502 — gets its status and the app's log.
@@ -1409,6 +1430,20 @@ export const en = {
       // The operator moved the filters by hand while the question was out; the answer
       // would have overwritten them, so it is not applied.
       staleReply: "The answer came back after the filters changed, so it was not applied. Ask again to apply it.",
+      // A correction widened the model's answer (ruled 1C, #436): a name dropped, a
+      // section, level or change the page does not have read as any, or a field it does not
+      // use that held a value. It would search for more than the model named, so it waits
+      // for the operator's Apply.
+      proposalLead: (n: number): string =>
+        n === 1
+          ? "The model's answer needed a correction that widens the search, so it was not applied."
+          : "The model's answer needed corrections that widen the search, so it was not applied.",
+      proposalNext: "Check the filters it would set, then apply them, or rephrase the question.",
+      // closeAsAllowed, for filters not yet applied: the caveat is part of what to check.
+      proposalCloseAsAllowed: "These filters would be as close as these controls allow.",
+      proposalReadbackNone: "Would show all changes",
+      proposalReadbackLead: "Would show changes",
+      applyProposal: "Apply these filters",
       readbackNone: "Showing all changes",
       readbackLead: "Showing changes",
       readbackDevice: (q: string) => `for a device matching “${q}”`,

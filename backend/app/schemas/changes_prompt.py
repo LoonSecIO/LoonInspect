@@ -79,13 +79,20 @@ class PromptSummaryOut(_Base):
 
 
 class PromptOut(_Base):
-    # applied | error (the endpoint failed) | unparseable (it answered, but not filters)
-    outcome: Literal["applied", "error", "unparseable"]
+    # applied (the page runs the filters) | proposed (a repair widened the answer, so the
+    # page shows the filters for a person to apply; ruled 1C, #436) | invalid (the question
+    # is not one the filters can answer, so nothing runs; `error` carries the reason and the
+    # page's sentence) | error (the endpoint failed) | unparseable (it answered, but not
+    # filters)
+    outcome: Literal["applied", "proposed", "invalid", "error", "unparseable"]
     filters: PromptFiltersOut | None
     # The model's own note on what the filters cannot express. The only model-written
     # text that reaches the page, and the page renders it as text.
     unsupported: str | None
     repairs: list[str]
+    # The repairs, of those above, that widened the answer: non-empty exactly when the
+    # outcome is `proposed`, and the page's reason for not running the filters.
+    widening: list[str] = Field(default_factory=list)
     summary: PromptSummaryOut | None
     provider: Provider
     model: str

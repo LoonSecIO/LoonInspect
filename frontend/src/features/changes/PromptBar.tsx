@@ -5,10 +5,11 @@ import { askPrompt, getPromptStatus } from "@/features/changes/api";
 import { PromptAnswer } from "@/features/changes/PromptAnswer";
 import {
   failureReason,
-  filtersFromPrompt,
+  filtersOnArrival,
   isPromptStatus,
   MAX_QUESTION_CHARS,
   modelOptions,
+  proposedFilters,
   providerLabel,
   readReply,
   replyDisposition,
@@ -44,6 +45,10 @@ interface PromptBarProps {
  * of the fleet — to a provider saved in Settings › AI; filter settings come back and the
  * controls below move to them, so the model's reading is always on screen and always
  * editable. Postgres does the filtering and the counting, never the model.
+ *
+ * An answer the server had to correct in a way that widens it comes back as a proposal
+ * instead (ruled 1C, #436): the corrections, what its filters would show, and an Apply
+ * button; the controls move only when the operator presses it.
  *
  * Shown only when the server says it can be used: the AI flag on, the AI-inference
  * consent granted, a provider saved. Settings › AI names which of the three is missing.
@@ -195,7 +200,10 @@ function PromptSession({ providers, provider, onProvider, filters, onApply, onUs
       return;
     }
     const response = reading.result;
-    const next = response.outcome === "applied" && response.filters ? filtersFromPrompt(response.filters) : null;
+    // Only an applied answer moves the page on arrival. A proposal (a correction widened
+    // the model's answer, ruled 1C) waits for its Apply button, so it is shown even if
+    // the filters moved while it was out: it overwrites nothing until a person says so.
+    const next = filtersOnArrival(response);
     // Stale only matters when there is something to apply: an endpoint failure or an
     // answer that was not filters moves nothing, and still says why the question failed.
     if (next !== null && disposition === "stale") {
@@ -208,6 +216,15 @@ function PromptSession({ providers, provider, onProvider, filters, onApply, onUs
       latestApply.current(next);
     }
     setResult(response);
+  }
+
+  // A proposal's Apply button: the operator's own press, on the filters the proposal
+  // shows, so it replaces whatever the page shows now, as a hand-set filter would.
+  function applyProposal() {
+    const next = result === null ? null : proposedFilters(result);
+    if (next === null) return;
+    setApplied(next);
+    latestApply.current(next);
   }
 
   const label = providerLabel(provider, t.ai.providerLabels);
@@ -262,7 +279,13 @@ function PromptSession({ providers, provider, onProvider, filters, onApply, onUs
       <p role="status" className="text-xs text-muted-foreground">
         {asking ? tp.asking(label) : null}
       </p>
-      <PromptAnswer result={current ? result : null} refusal={refusal} stale={stale} />
+      <PromptAnswer
+        result={current ? result : null}
+        refusal={refusal}
+        stale={stale}
+        applied={applied !== null}
+        onApplyProposal={applyProposal}
+      />
     </div>
   );
 }

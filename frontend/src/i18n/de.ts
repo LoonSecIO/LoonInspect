@@ -1226,11 +1226,24 @@ export const de: Translations = {
     anySection: "Alle Abschnitte",
     change: "Änderung",
     anyChange: "Alle Änderungen",
+    changeReset: {
+      entry: (section: string) =>
+        `Änderung auf „Alle Änderungen“ zurückgesetzt: Der Abschnitt ${section} verzeichnet Hinzugefügt, Entfernt und Aktualisiert.`,
+      field: (section: string) =>
+        `Änderung auf „Alle Änderungen“ zurückgesetzt: Der Abschnitt ${section} verzeichnet nur geänderte Werte.`
+    },
+    neverMatches: {
+      entry: (section: string) => `Der Abschnitt ${section} verzeichnet Hinzugefügt, Entfernt und Aktualisiert – nie Geändert.`,
+      field: (section: string) =>
+        `Der Abschnitt ${section} verzeichnet nur geänderte Werte – nie Hinzugefügt, Entfernt oder Aktualisiert.`
+    },
     apply: "Anwenden",
     clearAll: "Zurücksetzen",
     clearAllTitle: "Alle Filter und das Prompt-Feld zurücksetzen",
     loading: "Änderungen werden geladen…",
     empty: "Noch keine Änderungen – sie erscheinen ab der zweiten Beobachtung eines Geräts.",
+    emptyFiltered: "Keine Änderungen entsprechen diesen Filtern.",
+    emptyPastEnd: "Keine Änderungen auf dieser Seite – sie liegt hinter der letzten Ergebnisseite.",
     errorLoading: "Änderungen konnten nicht geladen werden.",
     colWhen: "Beobachtet",
     colDevice: "Gerät",
@@ -1281,6 +1294,7 @@ export const de: Translations = {
       asking: (provider: string) => `Frage an ${provider}…`,
       unavailable: "KI-Suche nicht verfügbar – die Filter unten funktionieren weiterhin.",
       unparseable: "Das ließ sich nicht deuten – verwenden Sie die Filter direkt.",
+      invalid: "Ungültige Frage – die Prompt-Leiste kann sie nicht beantworten, daher wurde nichts ausgeführt.",
       closeAsAllowed: "So genau gefiltert, wie diese Bedienelemente es erlauben.",
       askFailed: "Die Frage hat diesen Server nicht erreicht. Prüfen Sie, ob LoonInspect läuft, und laden Sie die Seite neu.",
       askNoReason: (status: number) =>
@@ -1294,6 +1308,15 @@ export const de: Translations = {
         `Die Prompt-Leiste konnte ihre Einstellungen nicht prüfen: ${reason}. Prüfen Sie docker compose logs app.`,
       staleReply:
         "Die Antwort kam, nachdem sich die Filter geändert hatten, und wurde deshalb nicht angewendet. Stellen Sie die Frage erneut, um sie anzuwenden.",
+      proposalLead: (n: number) =>
+        n === 1
+          ? "Die Antwort des Modells brauchte eine Korrektur, die die Suche erweitert, und wurde deshalb nicht angewendet."
+          : "Die Antwort des Modells brauchte Korrekturen, die die Suche erweitern, und wurde deshalb nicht angewendet.",
+      proposalNext: "Prüfen Sie die Filter, die sie setzen würde, und wenden Sie sie dann an – oder formulieren Sie die Frage um.",
+      proposalCloseAsAllowed: "Diese Filter wären so genau, wie diese Bedienelemente es erlauben.",
+      proposalReadbackNone: "Angezeigt würden alle Änderungen",
+      proposalReadbackLead: "Angezeigt würden Änderungen",
+      applyProposal: "Diese Filter anwenden",
       readbackNone: "Angezeigt werden alle Änderungen",
       readbackLead: "Angezeigt werden Änderungen",
       readbackDevice: (q: string) => `für ein Gerät, das „${q}“ entspricht`,

@@ -10,10 +10,12 @@ import {
   bannerKind,
   failureReason,
   filtersFromPrompt,
+  filtersOnArrival,
   hasSomethingToClear,
   isPromptResult,
   isPromptStatus,
   modelOptions,
+  proposedFilters,
   providerLabel,
   readReply,
   readback,
@@ -27,6 +29,8 @@ import { en } from "@/i18n/en";
 const WIRESHARK: PromptFilters = { q: null, artifact: "Wireshark", level: null, section: "applications", change: null };
 // Kyle's first demo question, "List new application installs".
 const NEW_INSTALLS: PromptFilters = { q: null, artifact: null, level: null, section: "applications", change: "added" };
+// A correction that widens, as the server words it (backend/app/ai/changes_prompt.py).
+const WIDENED_SECTION = "The model named a section this page does not have, so it was read as any section.";
 
 function result(overrides: Partial<PromptResult> = {}): PromptResult {
   return {
@@ -34,6 +38,7 @@ function result(overrides: Partial<PromptResult> = {}): PromptResult {
     filters: { ...WIRESHARK },
     unsupported: null,
     repairs: [],
+    widening: [],
     summary: null,
     provider: "apple_fm",
     model: "system",
@@ -47,6 +52,14 @@ function result(overrides: Partial<PromptResult> = {}): PromptResult {
 function summary(overrides: Partial<PromptSummary> = {}): PromptSummary {
   return { total: 0, devicesTotal: 0, truncated: false, otherSubjects: 0, devices: [], ...overrides };
 }
+
+// A question the filters cannot answer, as the server sends it: nothing to run, the reason
+// and the server's sentence in `error`.
+const INVALID = result({
+  outcome: "invalid",
+  filters: null,
+  error: { kind: "not_about_changes", message: "It is not a question about changes on your devices.", status: null }
+});
 
 describe("filtersFromPrompt replaces the page's filters, never merges into them", () => {
   it("carries the five keys the bar speaks, nulls as unset", () => {
@@ -286,6 +299,17 @@ describe("answerLines — the response box, written from the server's count", ()
 });
 
 describe("bannerKind — the handoff's showBanner states", () => {
+  it("a question the filters cannot answer, whatever else the body holds", () => {
+    expect(bannerKind(INVALID)).toBe("invalid");
+    // Never the readback: that would say "Showing all changes" over a page that ran nothing.
+    expect(bannerKind({ ...INVALID, filters: { ...NEW_INSTALLS } })).toBe("invalid");
+    expect(bannerKind(INVALID, true)).toBe("invalid");
+    expect(en.changes.prompt.invalid).toBe("Invalid question — the Prompt bar can't answer it, so nothing was run.");
+    expect(de.changes.prompt.invalid).toBe(
+      "Ungültige Frage – die Prompt-Leiste kann sie nicht beantworten, daher wurde nichts ausgeführt."
+    );
+  });
+
   it("an endpoint failure", () => {
     expect(bannerKind(result({ outcome: "error", filters: null, error: { kind: "unreachable", message: "x", status: null } }))).toBe(
       "error"
@@ -309,6 +333,96 @@ describe("bannerKind — the handoff's showBanner states", () => {
   it("otherwise, the readback", () => {
     expect(bannerKind(result())).toBe("readback");
     expect(bannerKind(result({ unsupported: "" }))).toBe("readback");
+  });
+
+  it("a proposal until it is applied, then the answer it is", () => {
+    const proposal = result({ outcome: "proposed", repairs: [WIDENED_SECTION], widening: [WIDENED_SECTION] });
+    expect(bannerKind(proposal)).toBe("proposal");
+    expect(bannerKind(proposal, false)).toBe("proposal");
+    expect(bannerKind(proposal, true)).toBe("readback");
+    expect(bannerKind({ ...proposal, unsupported: "Cannot express 'but not'." }, true)).toBe("unsupported");
+    // A proposal with nothing to propose applied nothing either.
+    expect(bannerKind({ ...proposal, filters: null })).toBe("unparseable");
+  });
+
+  it("an applied answer is never a proposal, whatever the flag says", () => {
+    expect(bannerKind(result(), false)).toBe("readback");
+  });
+});
+
+describe("a proposal is not applied: a person applies it (ruled 1C, #436)", () => {
+  const proposal = result({
+    outcome: "proposed",
+    filters: { ...NEW_INSTALLS },
+    repairs: [WIDENED_SECTION, "Ignored 1 field the Prompt bar does not use."],
+    widening: [WIDENED_SECTION]
+  });
+
+  it("an applied answer moves the page on arrival; a proposal does not", () => {
+    expect(filtersOnArrival(result())).toEqual(filtersFromPrompt(WIRESHARK));
+    expect(filtersOnArrival(proposal)).toBeNull();
+  });
+
+  it("an endpoint failure or an answer that was not filters moves nothing", () => {
+    expect(filtersOnArrival(result({ outcome: "error", filters: null }))).toBeNull();
+    expect(filtersOnArrival(result({ outcome: "unparseable", filters: null }))).toBeNull();
+    // "What model are you?" used to arrive as every filter unset, the whole log, and run.
+    expect(filtersOnArrival(INVALID)).toBeNull();
+    expect(proposedFilters(INVALID)).toBeNull();
+    expect(filtersOnArrival(result({ filters: null }))).toBeNull();
+  });
+
+  it("its Apply button replaces the page's filters with the proposal's, as the bar always does", () => {
+    const next = proposedFilters(proposal);
+    expect(next).toEqual(filtersFromPrompt(NEW_INSTALLS));
+    // Every other key named as cleared, so a device's feed does not stay under it.
+    expect(next).toHaveProperty("subjectId", undefined);
+    expect(next).toHaveProperty("page", 1);
+  });
+
+  it("nothing but a proposal has an Apply button to press", () => {
+    expect(proposedFilters(result())).toBeNull();
+    expect(proposedFilters({ ...proposal, filters: null })).toBeNull();
+    expect(proposedFilters(result({ outcome: "error", filters: null }))).toBeNull();
+  });
+
+  it("the readback says what the filters would show, since nothing has run", () => {
+    expect(readback(NEW_INSTALLS, en.changes, "proposed")).toBe("Would show changes in Applications, that were added");
+    expect(readback({ q: null, artifact: null, level: null, section: null }, en.changes, "proposed")).toBe(
+      "Would show all changes"
+    );
+    expect(readback({ ...WIRESHARK, change: "added" }, de.changes, "proposed")).toBe(
+      "Angezeigt würden Änderungen mit dem Namen „Wireshark“, im Abschnitt Anwendungen, die hinzugefügt wurden"
+    );
+    expect(readback({ section: null }, de.changes, "proposed")).toBe("Angezeigt würden alle Änderungen");
+    // And an answer on the page still reads as shown.
+    expect(readback(NEW_INSTALLS, en.changes, "showing")).toBe(readback(NEW_INSTALLS, en.changes));
+  });
+
+  it("the lead says what happened and why, the next sentence what to do, in both languages", () => {
+    expect(en.changes.prompt.proposalLead(1)).toBe(
+      "The model's answer needed a correction that widens the search, so it was not applied."
+    );
+    expect(en.changes.prompt.proposalLead(2)).toBe(
+      "The model's answer needed corrections that widen the search, so it was not applied."
+    );
+    expect(en.changes.prompt.proposalNext).toBe("Check the filters it would set, then apply them, or rephrase the question.");
+    expect(en.changes.prompt.applyProposal).toBe("Apply these filters");
+    expect(de.changes.prompt.proposalLead(1)).toBe(
+      "Die Antwort des Modells brauchte eine Korrektur, die die Suche erweitert, und wurde deshalb nicht angewendet."
+    );
+    expect(de.changes.prompt.proposalLead(3)).toBe(
+      "Die Antwort des Modells brauchte Korrekturen, die die Suche erweitern, und wurde deshalb nicht angewendet."
+    );
+    expect(de.changes.prompt.applyProposal).toBe("Diese Filter anwenden");
+  });
+
+  it("a proposal's caveat is said of filters not yet applied, in both languages", () => {
+    // Shown before Apply: the caveat is part of what the operator checks.
+    expect(en.changes.prompt.proposalCloseAsAllowed).toBe("These filters would be as close as these controls allow.");
+    expect(de.changes.prompt.proposalCloseAsAllowed).toBe("Diese Filter wären so genau, wie diese Bedienelemente es erlauben.");
+    const proposal = result({ outcome: "proposed", repairs: [WIDENED_SECTION], widening: [WIDENED_SECTION] });
+    expect(bannerKind({ ...proposal, unsupported: "Cannot express 'but not'." }, false)).toBe("proposal");
   });
 });
 
@@ -609,6 +723,8 @@ describe("isPromptResult — a 200's body is checked before anything reads it", 
     expect(isPromptResult(result({ outcome: "error", filters: null, error: { kind: "unreachable", message: "x", status: null } }))).toBe(true);
     expect(isPromptResult(result({ outcome: "unparseable", filters: null, error: { kind: "malformed", message: "x", status: 200 } }))).toBe(true);
     expect(isPromptResult(result({ unsupported: "Cannot express 'but not'.", repairs: ["dropped q"] }))).toBe(true);
+    expect(isPromptResult(result({ outcome: "proposed", repairs: ["dropped q"], widening: ["dropped q"] }))).toBe(true);
+    expect(isPromptResult(INVALID)).toBe(true);
   });
 
   it("a key it does not know is left alone", () => {
@@ -631,6 +747,10 @@ describe("isPromptResult — a 200's body is checked before anything reads it", 
       { unsupported: { text: "x" } },
       { repairs: null },
       { repairs: ["ok", 3] },
+      // The proposal's reason is read off it, so an older body without it is not the answer.
+      { widening: undefined },
+      { widening: "dropped q" },
+      { widening: [{ text: "dropped q" }] },
       { summary: { total: 1 } },
       { summary: { ...withDevices.summary, devices: [{ connectionId: 1, subjectId: "7", label: null, serial: null }] } },
       { summary: { ...withDevices.summary, truncated: "no" } },

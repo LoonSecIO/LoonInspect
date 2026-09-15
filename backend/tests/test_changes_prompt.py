@@ -1,5 +1,6 @@
 """The Prompt bar's model half (`app.ai.changes_prompt`): the vocabulary, the parser, the
-whitelist, the guards and the sanitiser. Pure; no database, no network, no model.
+whitelist, the guards, which way each repair moves the answer, and the sanitiser. Pure;
+no database, no network, no model.
 
 The five replies at the top are the handoff's own self-test, now asserting the level as
 well as the section and the filter (the handoff never checked the level). The guard
@@ -16,6 +17,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import json
 import re
 import sys
 import time
@@ -33,9 +35,11 @@ from app.ai.changes_prompt import (
     MAX_QUESTION_CHARS,
     MAX_REPLY_CHARS,
     MAX_REPLY_TOKENS,
+    NOT_ABOUT_CHANGES,
     SECTIONS,
     SYSTEM_INSTRUCTION,
     Interpretation,
+    Repair,
     coerce,
     guard,
     interpret,
@@ -55,6 +59,11 @@ def _coerced(reply: str):
     obj = parse_reply(reply)
     assert obj is not None, reply
     return coerce(obj)
+
+
+def _widening(repairs) -> list[str]:
+    """The repairs that widen, as `Interpretation.widening` reads them."""
+    return Interpretation(filters=NO_FILTERS, unsupported=None, repairs=list(repairs), parsed=True).widening
 
 
 # --- the handoff's self-test ---------------------------------------------------------------
@@ -89,7 +98,9 @@ def test_a_fenced_reply_keeps_its_search_and_an_upper_case_level():
 
 def test_a_near_miss_section_is_reported_not_guessed():
     _, _, repairs = _coerced(SELFTEST[2][0])
-    assert any("section this page does not have" in repair for repair in repairs)
+    assert repairs == ["The model named a section this page does not have, so it was read as any section."]
+    # Any section is more than the model named: a widening repair, so the answer is proposed.
+    assert _widening(repairs) == repairs
 
 
 def test_a_section_named_by_its_key_is_accepted_too():
@@ -101,7 +112,8 @@ def test_a_section_named_by_its_key_is_accepted_too():
 def test_an_unknown_level_is_any_and_says_so():
     filters, _, repairs = coerce({"level": "critical"})
     assert filters["level"] is None
-    assert any("not any, low, normal or high" in repair for repair in repairs)
+    assert repairs == ["The model named a level that is not any, low, normal or high, so it was read as any level."]
+    assert _widening(repairs) == repairs
 
 
 # --- the change ------------------------------------------------------------------------------
@@ -124,18 +136,89 @@ def test_change_any_or_left_out_is_unset(change):
 def test_an_unknown_change_is_any_and_says_so_without_quoting_it():
     filters, _, repairs = coerce({"change": "installed"})
     assert filters["change"] is None
-    assert repairs == ["The model named a change that is not any, added, removed, updated or changed; showing any change."]
+    assert repairs == [
+        "The model named a change that is not any, added, removed, updated or changed, so it was read as any change."
+    ]
+    assert _widening(repairs) == repairs
 
 
 # --- the whitelist -------------------------------------------------------------------------
 
 
+# The refusal, as the page shows it: what a name may hold, never what this one held.
+REFUSED_FILTER = (
+    "Dropped the model's value for Filter to one thing: a name here takes only letters and digits in any script, "
+    "spaces, and . _ @ ' \u2019 ( ) + / - & # ! , : \u2014 it held another character."
+)
+
+
 def test_the_injection_value_is_dropped_and_never_quoted_back():
     filters, _, repairs = _coerced(SELFTEST[3][0])
     assert filters["artifact"] is None
-    assert any("Filter to one thing" in repair and "characters" in repair for repair in repairs)
+    assert repairs == [REFUSED_FILTER]
     assert "DROP" not in " ".join(repairs)
     assert "Robert" not in " ".join(repairs)
+    # The name filter left empty matches every application: wider than the model's answer.
+    assert _widening(repairs) == [REFUSED_FILTER]
+
+
+def test_the_refusal_is_true_of_the_whitelist_it_describes():
+    """#436: the first sentence said the value "carried characters no name here has", and
+    Café Manager has them. This one lists what is kept, so every character it names must be."""
+    listed = REFUSED_FILTER.split("spaces, and ", 1)[1].split(" \u2014 ", 1)[0].split(" ")
+    assert len(listed) == 15
+    for mark in listed:
+        filters, _, repairs = coerce({"filter": f"Wire{mark}shark"})
+        assert (filters["artifact"], repairs) == (f"Wire{mark}shark", []), mark
+
+
+# Kept: letters and digits in any script, and the punctuation real names carry.
+KEPT_NAMES = [
+    "Caf\u00e9 Manager",  # Café Manager: the issue's own example (#436)
+    "AT&T Global Network Client",
+    "C#",
+    "Pok\u00e9mon GO",  # Pokémon GO
+    "\u5fae\u4fe1",  # WeChat, in Chinese
+    "\u30ab\u30ab\u30aa\u30c8\u30fc\u30af",  # KakaoTalk in katakana; the long-vowel mark is a letter (Lm)
+    "\u0939\u093f\u0928\u094d\u0926\u0940",  # Hindi, written with vowel signs and a virama (Mc, Mn)
+    "Yahoo!",
+    "Hello, World: Notes",
+    "Kyle\u2019s Mac mini",
+    "google_chrome-2 (beta) +v1/x @home",
+]
+
+
+@pytest.mark.parametrize("name", KEPT_NAMES)
+def test_a_real_name_in_any_script_is_kept(name):
+    filters, _, repairs = coerce({"search": name, "filter": name})
+    assert (filters["q"], filters["artifact"]) == (name, name)
+    assert repairs == []
+
+
+# Refused: every character an injection is made of, and the invisible ones.
+REFUSED_NAMES = [
+    "Robert'); DROP TABLE devices;--",
+    "%",
+    "Wire%shark",
+    '"Wireshark"',
+    "<b>Wireshark</b>",
+    "Wire\\shark",
+    "name=Wireshark",
+    *(f"Wire{mark}shark" for mark in ";*?`${}[]|~^"),
+    "Wire\u200bshark",  # zero-width space
+    "Wire\u202eshark",  # right-to-left override
+    "Wire\tshark",
+    "Wire\x00shark",
+    "Wireshark \u2122",  # a symbol, not a letter
+]
+
+
+@pytest.mark.parametrize("name", REFUSED_NAMES)
+def test_an_injection_shaped_value_is_still_dropped_and_widens(name):
+    filters, _, repairs = coerce({"filter": name})
+    assert filters["artifact"] is None
+    assert repairs == [REFUSED_FILTER]
+    assert _widening(repairs) == repairs
 
 
 def test_sixty_four_characters_is_a_name_and_sixty_five_is_not():
@@ -145,6 +228,7 @@ def test_sixty_four_characters_is_a_name_and_sixty_five_is_not():
     filters, _, repairs = coerce({"filter": "a" * 65})
     assert filters["artifact"] is None
     assert any("longer than 64" in repair for repair in repairs)
+    assert _widening(repairs) == repairs
 
 
 def test_the_typographic_apostrophe_macos_names_a_mac_with_is_kept():
@@ -157,7 +241,8 @@ def test_a_jamf_id_sent_as_a_number_is_a_search_and_a_boolean_is_not():
     filters, _, repairs = coerce({"search": 42, "filter": True})
     assert filters["q"] == "42"
     assert filters["artifact"] is None
-    assert any("not text" in repair for repair in repairs)
+    assert repairs == ["Dropped the model's value for Filter to one thing: it was not text."]
+    assert _widening(repairs) == repairs
 
 
 def test_no_repair_quotes_a_value_or_a_key_the_page_refused():
@@ -177,21 +262,34 @@ def test_no_repair_quotes_a_value_or_a_key_the_page_refused():
     assert unsupported is None
     assert len(repairs) == 7
     assert "zq9" not in " ".join(repairs)
+    # The five controls emptied widen the answer, and so does the ignored key, which held
+    # a value; only the note does not.
+    assert len(_widening(repairs)) == 6
+    assert [r for r in repairs if r not in _widening(repairs)] == [
+        "Dropped the model's note on what the filters cannot express: it was not text.",
+    ]
 
 
 # --- what the reply may carry ----------------------------------------------------------------
 
 
+IGNORED_ONE = "Ignored 1 field the Prompt bar does not use, holding a value that may have been meant as a filter."
+IGNORED_EMPTY = "Ignored 1 field the Prompt bar does not use, holding nothing."
+
+
 def test_unknown_keys_are_ignored_and_counted_never_named():
-    filters, _, repairs = coerce({"filter": "Docker", "sort": "desc", "limit": 5})
+    filters, _, repairs = coerce({"filter": "Docker", "sort": "desc", "limit": 5, "why": None, "notes": []})
     assert filters == {**NO_FILTERS, "artifact": "Docker"}
-    assert repairs == ["Ignored 2 fields the Prompt bar does not use."]
+    assert repairs == [
+        "Ignored 2 fields the Prompt bar does not use, holding values that may have been meant as filters.",
+        "Ignored 2 fields the Prompt bar does not use, holding nothing.",
+    ]
 
 
 @pytest.mark.parametrize("key", ["sort", "<img src=x onerror=alert(1)>"])
 def test_one_unknown_key_is_counted_whatever_its_shape(key):
     _, _, repairs = coerce({key: 1})
-    assert repairs == ["Ignored 1 field the Prompt bar does not use."]
+    assert repairs == [IGNORED_ONE]
 
 
 @pytest.mark.parametrize(
@@ -226,7 +324,7 @@ def test_one_field_asked_for_is_an_answer_even_when_it_is_null():
     result = interpret("show me everything", '{"search": null, "foo": 1}')
     assert result.parsed is True
     assert result.filters == NO_FILTERS
-    assert result.repairs == ["Ignored 1 field the Prompt bar does not use."]
+    assert result.repairs == [IGNORED_ONE]
 
 
 def test_a_megabyte_of_braces_is_refused_at_once():
@@ -467,6 +565,273 @@ def test_guard_works_on_copies():
     assert repairs == []
 
 
+# --- which way a repair moves the answer (ruled 1C, #436) -------------------------------------
+
+
+def test_a_repair_is_the_sentence_it_says_and_carries_its_direction():
+    widening = Repair("Dropped it.", widens=True)
+    assert widening == "Dropped it." and isinstance(widening, str) and widening.widens is True
+    assert Repair("Fixed it.").widens is False
+    # A plain string handed in, as a caller of `guard` may, is a repair that does not widen.
+    assert _widening(["Fixed it.", widening]) == ["Dropped it."]
+    assert all(type(sentence) is str for sentence in _widening([widening]))
+
+
+@pytest.mark.parametrize(
+    ("question", "filters", "unsupported"),
+    [
+        ("show me changes", {**NO_FILTERS, "artifact": "Application"}, None),
+        ("machines that moved to chrome 153", {**NO_FILTERS, "q": "Chrome", "artifact": "Google Chrome"}, None),
+        ("local account changes on VKM73DMG47", NO_FILTERS, None),
+        ("who added zoom", NO_FILTERS, "Cannot express 'but not'."),
+        ("show me changes", {**NO_FILTERS, "section": "local_user_accounts", "change": "changed"}, None),
+        ("show me changes", {**NO_FILTERS, "section": "hardware", "change": "added"}, None),
+    ],
+    ids=[
+        "a kind as the name",
+        "a Search that repeats it",
+        "the serial filled",
+        "a false caveat",
+        "changed in a list",
+        "added in a field section",
+    ],
+)
+def test_every_guard_but_the_serial_rule_fixes_or_narrows(question, filters, unsupported):
+    _, _, repairs = guard(question, filters, unsupported, [])
+    assert len(repairs) == 1
+    assert _widening(repairs) == []
+
+
+def test_the_serial_rule_widens_and_says_so():
+    _, _, repairs = guard("and the other mac?", {**NO_FILTERS, "q": "C02XL0ABJG5H"}, None, [])
+    assert _widening(repairs) == repairs == [SERIAL_NOT_ASKED]
+
+
+def test_an_empty_unknown_key_and_a_note_that_is_not_text_do_not_widen():
+    _, _, repairs = coerce({"filter": "Docker", "sort": None, "unsupported": 42})
+    assert len(repairs) == 2
+    assert _widening(repairs) == []
+
+
+def test_an_unknown_key_that_held_a_name_is_proposed():
+    """The name the controls never got: run, this was every added app."""
+    reply = '{"search":null,"app":"Wireshark","level":"any","section":"Applications","change":"added"}'
+    result = interpret("which macs installed wireshark", reply)
+    assert result.filters == {**NO_FILTERS, "section": "applications", "change": "added"}
+    assert result.widening == [IGNORED_ONE]
+
+
+def test_a_widening_repair_survives_the_guards_and_marks_the_answer_widened():
+    reply = '{"search":null,"filter":"Caf\u00e9 Manager;","level":"any","section":"Applications","change":"added"}'
+    result = interpret("which macs installed caf\u00e9 manager", reply)
+    assert result.parsed is True
+    assert result.filters == {**NO_FILTERS, "section": "applications", "change": "added"}
+    assert result.widened is True
+    assert result.widening == [REFUSED_FILTER]
+
+
+def test_a_name_in_any_script_is_applied_not_proposed():
+    """The issue's question: with the ASCII whitelist its name was dropped and every added
+    app was run; now the name is kept and nothing widens."""
+    reply = '{"search":null,"filter":"Caf\u00e9 Manager","level":"any","section":"Applications","change":"added"}'
+    result = interpret("which macs installed Caf\u00e9 Manager", reply)
+    assert result.filters == {**NO_FILTERS, "artifact": "Caf\u00e9 Manager", "section": "applications", "change": "added"}
+    assert result.repairs == []
+    assert result.widened is False
+
+
+@pytest.mark.parametrize(
+    "field",
+    [{"section": "Apps"}, {"level": "critical"}, {"change": "installed"}, {"search": ["KY4QVD7430"]}, {"filter": "a" * 65}],
+    ids=["section", "level", "change", "search not text", "name too long"],
+)
+def test_each_widening_kind_marks_the_answer_widened(field):
+    reply = json.dumps({"search": None, "filter": None, "level": "any", "section": "any", "change": "any", **field})
+    result = interpret("show me changes", reply)
+    assert result.parsed is True
+    assert result.widened is True
+    assert result.widening == result.repairs and len(result.repairs) == 1
+
+
+def test_a_serial_filled_by_the_guard_is_applied_not_proposed():
+    reply = '{"search":null,"filter":null,"level":"any","section":"any","change":"any","unsupported":null}'
+    result = interpret("what happened on VKM73DMG47", reply)
+    assert result.filters == {**NO_FILTERS, "q": "VKM73DMG47"}
+    assert result.repairs == ["Filled Search with the one serial-number-shaped word in the question."]
+    assert result.widened is False
+    assert result.widening == []
+
+
+@pytest.mark.parametrize("search", ["KY4QVD7430?", ["KY4QVD7430"]], ids=["refused", "not text"])
+def test_a_search_dropped_then_filled_with_the_serial_is_applied_not_proposed(search):
+    """The filters come out as a clean reply's, so the drop is said but does not widen."""
+    reply = json.dumps({"search": search, "filter": None, "level": "any", "section": "any", "change": "any"})
+    result = interpret("what happened on KY4QVD7430?", reply)
+    assert result.filters == {**NO_FILTERS, "q": "KY4QVD7430"}
+    assert len(result.repairs) == 2 and result.repairs[0].startswith("Dropped the model's value for Search")
+    assert result.widened is False
+
+
+def test_the_serial_undoes_only_the_search_drop():
+    reply = '{"search":"KY4QVD7430?","filter":"Wireshark;","level":"any","section":"any","change":"any"}'
+    result = interpret("did KY4QVD7430 install wireshark", reply)
+    assert result.filters == {**NO_FILTERS, "q": "KY4QVD7430"}
+    assert result.widening == [REFUSED_FILTER]
+
+
+@pytest.mark.parametrize("word", ["all", "ALL", "null", "none", ""])
+def test_a_word_for_no_filter_is_any_without_a_repair(word):
+    reply = json.dumps({"search": None, "filter": None, "level": word, "section": word, "change": word})
+    result = interpret("show me changes", reply)
+    assert result == Interpretation(filters=NO_FILTERS, unsupported=None, repairs=[], parsed=True)
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["Wire\u3164shark", "Wire\u115fshark", "Wire\ufe0fshark", "Wire\u034fshark", "Wire\u180bshark", "Wire\U000e0100shark"],
+    ids=["hangul filler", "choseong filler", "variation selector 16", "grapheme joiner", "mongolian selector", "VS17"],
+)
+def test_a_name_holding_a_character_that_draws_nothing_is_refused(name):
+    """It reads back as "Wire shark" or "Wireshark" and matches no row: refused, and proposed."""
+    filters, _, repairs = coerce({"filter": name})
+    assert filters["artifact"] is None
+    assert repairs == [REFUSED_FILTER]
+    assert _widening(repairs) == repairs
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "\u0939\u093f\u0902\u0926\u0940",
+        "\u0e20\u0e32\u0e29\u0e32\u0e44\u0e17\u0e22",
+        "\u05e9\u05b8\u05c1\u05dc\u05d5\u05b9\u05dd",
+    ],
+    ids=["Devanagari", "Thai", "Hebrew with points"],
+)
+def test_a_name_written_with_combining_marks_is_kept(name):
+    """Marks that draw are part of the name: these scripts write letters with them."""
+    filters, _, repairs = coerce({"filter": name})
+    assert (filters["artifact"], repairs) == (name, [])
+
+
+# --- text that is not a question about device changes (Kyle, 2026-09-15) ---------------------
+# Asked "What model are you?", the model answered every control any: the whole log, run.
+
+REFUSAL = '{"invalid":true}'
+
+
+def test_the_models_refusal_is_invalid_and_sets_nothing():
+    result = interpret("What model are you?", REFUSAL)
+    assert result == Interpretation(filters=NO_FILTERS, unsupported=None, repairs=[], parsed=True, invalid=NOT_ABOUT_CHANGES)
+    assert result.widened is False
+
+
+@pytest.mark.parametrize(
+    "reply",
+    ['{"invalid": "true"}', '{"invalid": " TRUE "}', '```json\n{"invalid":true}\n```', 'Sure. {"invalid": true}'],
+    ids=["quoted", "quoted, spaced, upper case", "fenced", "after prose"],
+)
+def test_a_refusal_the_parser_can_read_is_a_refusal(reply):
+    assert interpret("tell me a joke", reply).invalid == NOT_ABOUT_CHANGES
+
+
+def test_a_refusal_wins_over_the_filters_beside_it():
+    """Refused is refused: filters beside it are the model's guess at a question it said
+    was not one, and running them is the defect."""
+    reply = '{"invalid":true,"search":"KY4QVD7430","filter":"Wireshark","level":"high","section":"Security","change":"added"}'
+    result = interpret("uninstall wireshark from KY4QVD7430", reply)
+    assert result.invalid == NOT_ABOUT_CHANGES
+    assert result.filters == NO_FILTERS and result.repairs == []
+
+
+@pytest.mark.parametrize("value", [False, None, 0, "false", " FALSE ", "", [], {}])
+def test_invalid_that_plainly_says_no_is_passed_over(value):
+    reply = json.dumps({"invalid": value, "filter": "Docker", "section": "Applications"})
+    result = interpret("which macs have docker", reply)
+    assert result.invalid is None
+    assert result.filters == {**NO_FILTERS, "artifact": "Docker", "section": "applications"}
+    assert result.repairs == []
+
+
+@pytest.mark.parametrize("value", [1, "yes", [True], {"why": "chat"}, "not a question about device changes"])
+def test_invalid_holding_anything_else_widens_so_nothing_runs(value):
+    """Neither the refusal nor a plain no: counted as a key holding a value, as on main, so
+    the answer waits for Apply. Passed over, the whole-log reply below ran as every change."""
+    reply = json.dumps({"invalid": value, "search": None, "filter": None, "level": "any", "section": "any", "change": "any"})
+    result = interpret("What model are you?", reply)
+    assert result.invalid is None
+    assert result.filters == NO_FILTERS
+    assert result.widening == [IGNORED_ONE]
+
+
+def test_invalid_false_alone_is_no_answer():
+    """Not a refusal, and none of the fields asked for: the page says it could not interpret it."""
+    assert interpret("what model are you", '{"invalid": false}') == NOT_PARSED
+
+
+def test_a_bare_any_is_not_read_as_any():
+    """Apple's model writes `"level":any` mostly on text that is not about changes: of the 24
+    such replies that parse once quoted (2026-09-15), 22 were, and 20 were every control
+    any, the whole log, run. Left unread, the page runs nothing and says it could not
+    interpret the answer."""
+    reply = '{"search":null,"filter":null,"level":any,"section":any,"change":any,"unsupported":null}'
+    assert parse_reply(reply) is None
+    assert interpret("what's the capital of France", reply) == NOT_PARSED
+
+
+# --- a serial the question never named (Kyle, 2026-09-15) -----------------------------------------
+
+SERIAL_NOT_ASKED = "Dropped the model's value for Search: that serial number is not in the question."
+
+
+def test_a_serial_the_question_never_named_is_dropped_and_widens():
+    """Asked "and the other mac?", the model searched for KY4QVD7430, a serial from its own
+    examples (the shipped instructions, 2026-09-15): an answer about a Mac nobody named."""
+    reply = '{"search":"KY4QVD7430","filter":null,"level":"any","section":"any","change":"any"}'
+    result = interpret("and the other mac?", reply)
+    assert result.filters == NO_FILTERS
+    assert result.widening == [SERIAL_NOT_ASKED]
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "what changed on KY4Q-VD74-30",
+        "what changed on ky4q vd74 30",
+        "what changed on " + "".join(chr(ord(c) + 0xFEE0) for c in "KY4QVD7430"),
+    ],
+    ids=["dashed", "spaced, lower case", "full-width"],
+)
+def test_a_serial_the_operator_typed_another_way_is_still_theirs(question):
+    reply = '{"search":"KY4QVD7430","filter":null,"level":"any","section":"any","change":"any"}'
+    result = interpret(question, reply)
+    assert result.filters == {**NO_FILTERS, "q": "KY4QVD7430"}
+    assert result.repairs == []
+
+
+def test_a_serial_in_the_question_is_kept_in_any_case():
+    reply = '{"search":"VKM73DMG47","filter":null,"level":"any","section":"any","change":"any"}'
+    result = interpret("what changed on vkm73dmg47", reply)
+    assert result.filters == {**NO_FILTERS, "q": "VKM73DMG47"}
+    assert result.repairs == []
+
+
+def test_the_wrong_serial_is_replaced_by_the_one_the_question_named():
+    """Dropped, then filled with the question's one serial: no wider than a clean reply."""
+    reply = '{"search":"C02XL0ABJG5H","filter":null,"level":"any","section":"any","change":"any"}'
+    result = interpret("what changed on KY4QVD7430", reply)
+    assert result.filters == {**NO_FILTERS, "q": "KY4QVD7430"}
+    assert result.repairs == [SERIAL_NOT_ASKED, "Filled Search with the one serial-number-shaped word in the question."]
+    assert result.widened is False
+
+
+@pytest.mark.parametrize("search", ["Kyle's Mac mini", "12", "Finance-iMac"])
+def test_a_device_name_or_jamf_id_is_not_held_to_the_question(search):
+    """Only a serial is checked: the model may write a name the operator spelled another way."""
+    reply = json.dumps({"search": search, "filter": None, "level": "any", "section": "any", "change": "any"})
+    assert interpret("show changes on kyles mini", reply).filters["q"] == search
+
+
 # --- whole replies ---------------------------------------------------------------------------
 
 
@@ -530,6 +895,8 @@ DEMO = [
 def test_the_demo_questions_set_the_page_as_ruled(question, reply, filters, unsupported):
     result = interpret(question, reply)
     assert result == Interpretation(filters=filters, unsupported=unsupported, repairs=[], parsed=True)
+    # Applied on Enter, never held back as a proposal (1C).
+    assert result.widened is False
 
 
 # --- the way in ------------------------------------------------------------------------------
@@ -712,4 +1079,13 @@ def test_the_instructions_are_the_measured_text():
     is allowed; doing it without re-running the eval and updating the comment, and this
     digest, is what this refuses."""
     digest = hashlib.sha256(SYSTEM_INSTRUCTION.encode()).hexdigest()
-    assert digest == "9ddf259a96bdfe612f1e222cbfca4f9551551de7b0059ddbe190d48992df9272"
+    assert digest == "de50b016e824d3bdad4af41c257cc4ff9d5cee48669a961da7fe12eb2e355280"
+
+
+def test_the_instructions_ask_for_the_refusal_the_parser_reads():
+    """The refusal is the one shape the page reads as invalid: the words asking for it and
+    the key the parser reads must stay the same object. No example teaches it: the measured
+    text has none, and the one design that added two moved all three demo answers."""
+    assert 'reply exactly {"invalid":true} and nothing else' in SYSTEM_INSTRUCTION
+    assert interpret("tell me a joke", '{"invalid":true}').invalid == NOT_ABOUT_CHANGES
+    assert '{"invalid"' not in SYSTEM_INSTRUCTION.split("Examples:\n", 1)[1]

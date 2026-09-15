@@ -102,7 +102,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           # Moves together with the `ghcr.io/astral-sh/uv:0.9.30` COPY in the Dockerfile —
           # Dependabot manages neither pin, so bump both by hand (#20).

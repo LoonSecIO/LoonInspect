@@ -687,8 +687,11 @@ Report the block's four lines (build, latest release, last checked, the sentence
 The Prompt bar is the box labelled **Prompt** above the filters on **Devices › Changes**. It
 sends the typed question — nothing else — to the card picked in its **Model** list, which names
 every card saved on **Settings › AI** and the model it uses. The model answers with filter
-settings; the page moves its filters to them and runs them, and the lines under the bar are
-written by the page from the matching rows, never by the model. **Clear**, beside Apply, empties
+settings, and the page moves its filters to them and runs them. Two exceptions: an answer the
+page had to correct in a way that searches wider waits for you to apply it, and text the model
+judged not a question about changes runs nothing and is called invalid (both step 3).
+The lines under the bar are written by the page from the matching rows, never by the model.
+**Clear**, beside Apply, empties
 every filter, the Prompt box and its answer. The bar appears only while three things are true,
 and Settings › AI names the one that is not, in its line *Changes Prompt bar: …*. Every question
 writes one row to the disclosure log naming the destination and the one field that left,
@@ -733,6 +736,10 @@ writes one row to the disclosure log naming the destination and the one field th
      one the key was saved under, usually after a restore. The container log carries the same
      line. An admin re-enters the key on that card and saves it, or restores the original key
      ([`operations.md`](operations.md) §1).
+   - *The question held only what the Prompt bar removes before sending …* → the question was
+     nothing but model control tokens (`<|im_start|>`, `[INST]`, `</s>` and their kin, usually
+     pasted from a chat log) or invisible characters, which are stripped before anything is sent.
+     Type the question in words.
    - *The question did not reach this server* → the browser could not reach LoonInspect itself.
      `docker compose ps`, then reload.
    - *The server answered 500 without a reason* (or another status), or *…not in a form this
@@ -745,26 +752,87 @@ writes one row to the disclosure log naming the destination and the one field th
    reply over 8,000 characters without reading it. **Send** on Settings › AI shows the reply and
    its token count; a local model needs its reasoning turned off (the card's *Reasoning effort*,
    `none`).
+
+   **The answer leads with *The model's answer needed a correction that widens the search, so it
+   was not applied*.** Not a failure, and nothing has run: the filters below the Prompt bar are
+   still the ones you had. The model did answer with filter settings, but the page had to change
+   one of them in a way that would match more than the model named. One of four things happened:
+   - a name it gave for **Search** or **Filter to one thing** was dropped: it was not text, was
+     longer than 64 characters, or held a character a name here may not;
+   - it put a serial number in **Search** that the question never named — often one from its
+     own instructions — which was dropped;
+   - it named a section, level or change the page does not have, which was read as *any*;
+   - it added a field the page does not use and put a value in it, perhaps the name.
+
+   Run as it stood, an answer that lost its name would list every added app rather than the one
+   asked about, so a correction like that waits for you. A dropped **Search** does not wait when
+   the question holds one serial number in capitals, as Jamf writes it: the page fills Search
+   with it, and the answer runs. The
+   lines under the lead are those corrections, in the page's words. If the model also said the
+   filters cannot express part of the question, its sentence follows *These filters would be as
+   close as these controls allow* (step 4). *Would show changes …* is what the filters would be.
+   If that is what you meant, press
+   **Apply these filters**: they run as if you had set them, and the usual answer follows,
+   *Corrections to the model's answer* included. If not, rephrase the question, or set the
+   filters by hand. A name may hold letters and digits in any script, spaces, and
+   `. _ @ ' ’ ( ) + / - & # ! , :`. One holding anything else is dropped from the answer: a
+   quote, a semicolon, a percent sign, an angle bracket, a symbol such as ™, or a character
+   that draws nothing (a Hangul filler, a variation selector), which would have read back as a
+   plain name and matched no row. Typed into **Filter to one thing** by hand, such a name still
+   searches. The audit log records such an answer as
+   `ai.changes-prompt.sent` with `outcome` `proposed`; an answer that ran says `applied`.
+
+   **The answer leads with *Invalid question — the Prompt bar can't answer it, so nothing was
+   run*.** Not a failure, and nothing has run: the filters below the Prompt bar are still the
+   ones you had. The model judged the text not a question about changes on your devices: a
+   greeting or thanks, a question about the model itself, general knowledge or how to do
+   something, arithmetic, a request to write text or code, a question about vulnerabilities,
+   compliance, risk or device health, or an order to do something — uninstall an app, turn a
+   setting on, lock a Mac, push an update — which the Prompt bar cannot do: it only reads the
+   change log. Ask what changed instead: which Macs installed, removed or updated something, or
+   what changed on one Mac. If a real question about changes gets this answer, the model
+   misjudged it. It does now and then: 5 of 81 real questions in a held-out test, each asking a
+   device's current state or a share of the fleet ("how much memory does VKM73DMG47 have",
+   "what percent of our Macs installed Zoom"). Ask about the
+   change instead ("hardware changes on VKM73DMG47", "Zoom installs"), name the device or the
+   thing, or set the filters by hand. The audit log records the answer as
+   `ai.changes-prompt.sent` with `outcome` `invalid` and `reason` `not_about_changes`; the
+   question itself is never recorded. On a build before this state existed, such text often ran
+   instead: as every change in the log, or as the closest filters to a word it held, with an
+   answer box as if the question had been understood.
 4. **The answer leads with *Filtered as close as these controls allow*.** Not a failure. The
    question needed something the filters cannot express — an *or*, a *not*, a date range, a
    version or other value, a comparison — and the rows are the closest the filters allow. The
    sentence under the lead is the model's own, shown as text, and the page keeps it only when
-   the question contains a word of that kind. Ask the part that was left out as a second question.
+   the question contains a word of that kind. On an answer waiting for **Apply these filters**
+   (step 3), the same sentence follows *These filters would be as close as these controls allow*.
+   Ask the part that was left out as a second question.
 5. **The filters moved somewhere you did not mean, or nothing matches.** The filters are where the
    model put them; change any of them and the page runs again, or **Clear** to start over.
    *The answer came back after the filters changed, so it was not applied* means a filter moved
    while the model was answering; the page keeps the filters you set. Ask again to apply it. *Corrections to the model's answer*
    lists what the page changed or dropped from the model's reply before running it. *No changes
-   match* means the change log holds no row for those filters: the bar matches names the way
-   *Filter to one thing* does, and a Mac that already had an app when tracking began never shows
-   it as *Added* — it appears only when something about it changes. The **Change** filter has
-   two vocabularies: entries (Applications, profiles, accounts, certificates, group memberships,
-   extension attributes, pending updates) are *Added*, *Removed* or *Updated*, and every other
-   section's settings are only ever *Changed*. Set by hand, a pair from the wrong side (say
-   Applications with *Changed*) matches nothing; the bar never sets one.
+   match* under the bar, and *No changes match these filters* in the table, mean the change log
+   holds no row for those filters: the bar matches names the way *Filter to one thing* does, and
+   a Mac that already had an app when tracking began never shows it as *Added* — it appears only
+   when something about it changes. The table says *No changes yet …* only with no filter set,
+   when the log itself is empty; *No changes on this page …* means the page number in the address
+   is past the last page — moving any filter, or **Clear**, starts again at page 1. The
+   **Change** filter has two vocabularies: entries (Applications, profiles, accounts,
+   certificates, group memberships, extension attributes, pending updates) are *Added*,
+   *Removed* or *Updated*, and every other section's settings are only ever *Changed*. With a
+   section chosen, the Change list greys out the kinds that section never records; choosing a
+   section that rules out the Change already set puts Change back to *Any change*, and the line
+   under the filters says so (*Change reset to Any change: Applications records Added, Removed
+   and Updated.*). A pair from the wrong side can still arrive in a link edited by hand. It
+   matches nothing, and the empty table's second line names why — *Applications records Added,
+   Removed and Updated — never Changed.*, or *Hardware records only Changed values — never
+   Added, Removed or Updated.* Pick a Change from that section's side, or *Any change*. The bar
+   never sets such a pair.
 
-**O.** The *Changes Prompt bar* line says *shown* while the bar stays missing after a reload; or
-the rows under an answer disagree with `GET /api/changes` run with the filters on screen. Report
-the line, the question, the page's URL (it carries the filters), the provider, model and time from
-the answer's last line, the *Corrections* list, and `docker compose logs app --since 30m`.
+**O.** The *Changes Prompt bar* line says *shown* while the bar stays missing after a reload; the
+rows under an answer disagree with `GET /api/changes` run with the filters on screen; or a
+question about changes is called *Invalid question* however it is worded. Report the line, the
+question, the page's URL (it carries the filters), the provider, model and time from the answer's
+last line, the *Corrections* list, and `docker compose logs app --since 30m`.
 
