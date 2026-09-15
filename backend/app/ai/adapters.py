@@ -76,6 +76,8 @@ class CompletionRequest:
     temperature: float = 0.7
     # The `Host` to present when the reach says so (``app.ai.providers.presented_host``).
     host_header: str | None = None
+    # Our static instructions, never a fleet value: a system message, or Anthropic's top-level field.
+    system: str | None = None
 
 
 @dataclass(frozen=True)
@@ -133,10 +135,11 @@ def build_request(wire: Wire, req: CompletionRequest) -> tuple[str, dict[str, st
     """The URL, headers and JSON body of a completion. Pure, and the one place either
     request shape is written down."""
     headers = {"Content-Type": "application/json", **_headers(wire, req.api_key, req.host_header)}
+    user = {"role": "user", "content": req.prompt}
     if wire is Wire.openai_chat:
         body: dict[str, Any] = {
             "model": req.model,
-            "messages": [{"role": "user", "content": req.prompt}],
+            "messages": [{"role": "system", "content": req.system}, user] if req.system else [user],
             "temperature": req.temperature,
             "max_tokens": req.max_tokens,
             # Said out loud: Apple's `fm serve` streams unless told not to (measured
@@ -152,8 +155,11 @@ def build_request(wire: Wire, req: CompletionRequest) -> tuple[str, dict[str, st
             "model": req.model,
             "max_tokens": req.max_tokens,
             "temperature": req.temperature,
-            "messages": [{"role": "user", "content": req.prompt}],
+            "messages": [user],
         }
+        if req.system:
+            # The Messages API has no system role; the instructions are a field of their own.
+            body["system"] = req.system
         return _joined_base(req.base_url, "/v1/messages"), headers, body
 
     raise ValueError(f"unknown wire {wire!r}")

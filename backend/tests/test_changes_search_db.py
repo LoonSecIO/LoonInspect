@@ -347,6 +347,42 @@ async def test_q_is_unchanged_for_existing_callers(feed) -> None:
     assert _subjects(await feed("q=pcap_service")) == set()
 
 
+async def test_q_finds_a_mac_name_typed_with_either_apostrophe(feed, seeded) -> None:
+    """macOS names a Mac with U+2019, the typographic apostrophe, and Jamf reports the
+    name as the Mac has it; an operator types the ASCII one, and so does a model. `q`
+    folds it on both sides, so either spelling finds the Mac. The row is this test's own
+    and is gone afterwards, so the assertions around it keep their seed."""
+    from app.core.database import session_for_tenant
+    from app.core.tenancy import OPERATIONAL_TENANT_ID
+    from app.models.schema import DeviceChange
+
+    async with session_for_tenant(OPERATIONAL_TENANT_ID) as db:
+        row = _change(
+            seeded["mine"],
+            subject_id="108",
+            subject_label="Kyle\u2019s Mac mini",
+            serial_number="ARTSER108",
+            section="general",
+            field="name",
+            change="changed",
+            old_value={"value": "Mac mini"},
+            new_value={"value": "Kyle\u2019s Mac mini"},
+        )
+        db.add(row)
+        await db.commit()
+        row_id = row.id
+    try:
+        assert _subjects(await feed("q=Kyle%27s%20Mac%20mini")) == {"108"}
+        assert _subjects(await feed("q=kyle%27s")) == {"108"}
+        # The typographic spelling still finds it, and still matches only it.
+        assert _subjects(await feed("q=Kyle%E2%80%99s%20Mac")) == {"108"}
+        assert _subjects(await feed("q=Mac%20mini")) == {"108"}
+    finally:
+        async with session_for_tenant(OPERATIONAL_TENANT_ID) as db:
+            await db.execute(delete(DeviceChange).where(DeviceChange.id == row_id))
+            await db.commit()
+
+
 async def test_total_counts_the_filtered_set_not_the_feed(feed, client, seeded) -> None:
     """`total` drives pagination; a filter that reached the rows but not the count would
     offer a page 2 of a Wireshark search that is empty when you click it."""
@@ -449,3 +485,60 @@ async def test_an_unknown_min_level_is_refused_like_an_unknown_level(client, see
     response = await client.get(f"/api/changes?connectionId={seeded['mine']}&minLevel=notable")
     assert response.status_code == 422
     assert "minLevel must be one of" in response.text
+
+
+# --- the Change filter (2026-09-14): the kind of change, exact -------------------------
+#
+# What the Changes page's Change dropdown means, and what the Prompt bar sets for "new
+# installs": an entry is added, removed or updated, a field is changed. This seed's
+# entries are all installs and its one field change is 107's firewall flip.
+
+
+async def test_change_narrows_to_one_kind(feed, seeded) -> None:
+    """An install and an update of the same app, told apart by the kind alone. The
+    update is this test's own row, on a Mac of its own, and is gone afterwards, so the
+    assertions around it keep their seed."""
+    from app.core.database import session_for_tenant
+    from app.core.tenancy import OPERATIONAL_TENANT_ID
+    from app.models.schema import DeviceChange
+
+    async with session_for_tenant(OPERATIONAL_TENANT_ID) as db:
+        row = _change(
+            seeded["mine"],
+            subject_id="109",
+            subject_label="qa-mini",
+            serial_number="ARTSER109",
+            section="applications",
+            entry_kind="application",
+            change="updated",
+            entry_identity=_app("Wireshark", "org.wireshark.Wireshark"),
+        )
+        db.add(row)
+        await db.commit()
+        row_id = row.id
+    try:
+        assert _subjects(await feed("artifact=Wireshark")) == {"101", "102", "103", "109"}
+        assert _subjects(await feed("artifact=Wireshark&change=added")) == {"101", "102", "103"}
+        assert _subjects(await feed("artifact=Wireshark&change=updated")) == {"109"}
+        assert await feed("artifact=Wireshark&change=removed") == EMPTY
+        # Alone it narrows the whole feed, rows and count alike.
+        installs = await feed("change=added")
+        assert {row["change"] for row in installs["items"]} == {"added"}
+        assert _subjects(installs) == {"101", "102", "103", "104", "105", "106"}
+        assert installs["total"] == len(installs["items"])
+        assert _subjects(await feed("change=changed")) == {"107"}
+        # And it composes: the field change is `changed` in its section, and only there.
+        assert _subjects(await feed("section=security&change=changed")) == {"107"}
+        assert await feed("section=security&change=added") == EMPTY
+    finally:
+        async with session_for_tenant(OPERATIONAL_TENANT_ID) as db:
+            await db.execute(delete(DeviceChange).where(DeviceChange.id == row_id))
+            await db.commit()
+
+
+async def test_an_unknown_change_is_refused_like_an_unknown_level(client, seeded) -> None:
+    """A typo is a sentence naming the four kinds, not an empty feed that reads as
+    "nothing was installed"."""
+    response = await client.get(f"/api/changes?connectionId={seeded['mine']}&change=installed")
+    assert response.status_code == 422
+    assert response.json()["detail"] == "change must be one of added, removed, updated, changed"

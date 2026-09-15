@@ -686,6 +686,32 @@ class PatchingPolicy(Base):
     updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
+class AIProviderConfig(Base):
+    """One saved AI endpoint per provider per tenant: what Save on a Settings > AI card
+    wrote, so a feature (the Changes Prompt bar first) can call the endpoint without the
+    admin's browser in the loop. The key is encrypted at rest like a Jamf client secret
+    and write-only on the wire — the API says whether one is stored, never what it is.
+    Saving sends nothing anywhere; the URL is judged again at every call
+    (app.api.ai.judged_endpoint), because what a name resolves to can change."""
+
+    __tablename__ = "ai_provider_configs"
+    __table_args__ = (UniqueConstraint("tenant_id", "provider", name="uq_ai_provider_configs_tenant_provider"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column()
+    # app.ai.providers.Provider: apple_fm | openai_compatible | anthropic
+    provider: Mapped[str] = mapped_column(String(32))
+    # app.ai.providers.HostReach; NULL is the card's default reach.
+    host_reach: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Stored as judged: validate_inference_base_url caps it at the width of share_log.endpoint.
+    base_url: Mapped[str] = mapped_column(String(255))
+    model: Mapped[str] = mapped_column(String(200))
+    reasoning_effort: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    api_key_encrypted: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
 class ShareLog(Base):
     """One row per exchange attempt: exactly what left the box, verbatim
     (docs/data-sharing.md). Plain JSONB and not EncryptedString on purpose — the

@@ -14,9 +14,36 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The server answered — `status` is what it answered — but its body could not be read: cut
+ * off mid-stream, or not JSON. A body cut off mid-stream rejects with a TypeError, the
+ * class fetch also uses for a request that never got an answer, so a caller that told
+ * those apart reported a server that did answer as one that did not. This class is the
+ * answered-but-unreadable case under its own name.
+ *
+ * Deliberately neither an ApiError nor a TypeError. The Prompt bar's reads are the only
+ * callers that test for TypeError (`failureReason`, `askFailureText` in
+ * features/changes/prompt.ts), and they read this as unreadable; every other caller tests
+ * for ApiError alone or for nothing, so to them it reads exactly as the TypeError or
+ * SyntaxError it replaces did.
+ */
+export class ApiBodyError extends Error {
+  readonly status: number;
+
+  constructor(status: number, cause: unknown) {
+    super(`API response ${status} could not be read`, { cause });
+    this.name = "ApiBodyError";
+    this.status = status;
+  }
+}
+
 type ApiRequestOptions = RequestInit & {
   json?: unknown;
 };
+
+// An abort is the caller's own doing, whenever it lands; it reaches the caller as it came.
+const isAbort = (error: unknown): boolean =>
+  typeof error === "object" && error !== null && (error as { name?: unknown }).name === "AbortError";
 
 const CSRF_COOKIE = "loon_csrf";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -98,5 +125,10 @@ export async function apiRequest<TResponse>(
     return undefined as TResponse;
   }
 
-  return response.json() as Promise<TResponse>;
+  try {
+    return (await response.json()) as TResponse;
+  } catch (error) {
+    if (isAbort(error)) throw error;
+    throw new ApiBodyError(response.status, error);
+  }
 }

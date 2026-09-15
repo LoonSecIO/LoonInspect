@@ -34,6 +34,9 @@ testpaths = ["tests"]
 # backend/ directory itself has to be on the path.
 pythonpath = ["."]
 asyncio_mode = "auto"
+markers = [
+    "hostbridge: asks a real model on the host (Apple FM via fm serve); skipped unless HOSTBRIDGE_BASE_URL is set",
+]
 
 [tool.ruff]
 # 130 is descriptive of the code as written rather than a target to converge on;

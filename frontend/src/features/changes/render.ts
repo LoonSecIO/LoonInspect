@@ -1,4 +1,4 @@
-import type { ChangePolicy, DeviceChange } from "@/features/changes/types";
+import type { ChangeKind, ChangePolicy, DeviceChange } from "@/features/changes/types";
 
 /**
  * How a change row is turned into words — shared by the Changes table and the Overview
@@ -42,6 +42,57 @@ export const SECTION_ORDER = [
   "certificates",
   "software_updates"
 ] as const;
+
+/**
+ * The change vocabulary, in the order the Change filter offers it: the three an entry in
+ * a list section can do, then `changed`, the one a scalar section's field does
+ * (`ENTRY_RULES` and `FIELD_RULES` in `backend/app/changes/policy.py`). Kept on one line:
+ * `backend/tests/test_changes_prompt.py` reads it to hold the Prompt bar's vocabulary to
+ * the page's.
+ */
+export const CHANGE_KINDS = ["added", "removed", "updated", "changed"] as const;
+
+/**
+ * The seven list sections, the ones `ENTRY_RULES` covers, in `SECTION_ORDER`'s order. An
+ * entry in one of them is added, removed or updated; a field in any other section is only
+ * ever changed — so a pair from the wrong side, Applications and Changed say, matches no
+ * row there will ever be (#437). Kept on one line:
+ * `backend/tests/test_change_kinds_by_section.py` reads it to hold it to `ENTRY_RULES` and
+ * to the Prompt bar's own `ENTRY_SECTIONS`.
+ */
+export const ENTRY_SECTIONS = ["applications", "extension_attributes", "group_memberships", "configuration_profiles", "local_user_accounts", "certificates", "software_updates"] as const;
+
+const ENTRY_CHANGE_KINDS: readonly ChangeKind[] = ["added", "removed", "updated"];
+const FIELD_CHANGE_KINDS: readonly ChangeKind[] = ["changed"];
+
+/** Which of the two vocabularies a section records: an entry's, or a field's. */
+export type SectionShape = "entry" | "field";
+
+/**
+ * The vocabulary `section` records — `null` with no section chosen, and for a name outside
+ * `SECTION_ORDER`, which only a hand-edited link carries and about which the page claims
+ * nothing (the API matches it against no row, and the empty table says only that).
+ */
+export function sectionShape(section: string | null | undefined): SectionShape | null {
+  if (!section) return null;
+  if ((ENTRY_SECTIONS as readonly string[]).includes(section)) return "entry";
+  if ((SECTION_ORDER as readonly string[]).includes(section)) return "field";
+  return null;
+}
+
+/** The change kinds a section records: an entry section's three, any other section's one,
+ *  and all four when no section is chosen (or one the page does not know). */
+export function kindsRecordedBy(section: string | null | undefined): readonly ChangeKind[] {
+  const shape = sectionShape(section);
+  if (shape === "entry") return ENTRY_CHANGE_KINDS;
+  if (shape === "field") return FIELD_CHANGE_KINDS;
+  return CHANGE_KINDS;
+}
+
+/** Whether a section and a change kind can ever match a row together. Either one unset can. */
+export function canMatch(section: string | null | undefined, change: ChangeKind | null | undefined): boolean {
+  return !change || kindsRecordedBy(section).includes(change);
+}
 
 /**
  * Field labels, keyed by where the field lives. Scalar fields and entry fields are

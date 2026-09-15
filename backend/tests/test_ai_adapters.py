@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import json
 import logging
 
 import httpx
@@ -95,6 +96,43 @@ def test_anthropic_request_is_the_messages_api_shape():
         "temperature": 0.7,
         "messages": [{"role": "user", "content": "p"}],
     }
+
+
+SYSTEM = "You convert a question about a device change log into filter settings."
+
+
+def test_openai_system_instructions_are_their_own_message_before_the_question():
+    req = CompletionRequest(base_url="http://127.0.0.1:1976/v1", model="system", prompt="who added zoom", system=SYSTEM)
+    _, _, body = build_request(Wire.openai_chat, req)
+    assert body["messages"] == [
+        {"role": "system", "content": SYSTEM},
+        {"role": "user", "content": "who added zoom"},
+    ]
+    assert "system" not in body
+
+
+def test_anthropic_system_instructions_are_the_top_level_field_not_a_message():
+    req = CompletionRequest(
+        base_url="https://api.anthropic.com", model="claude-fable-5-1", prompt="who added zoom", api_key=KEY, system=SYSTEM
+    )
+    _, _, body = build_request(Wire.anthropic_messages, req)
+    assert body["system"] == SYSTEM
+    assert body["messages"] == [{"role": "user", "content": "who added zoom"}]
+
+
+def test_without_system_instructions_both_bodies_serialise_exactly_as_before():
+    # Byte for byte, key order included: the test box's requests did not change when the
+    # field arrived.
+    _, _, body = build_request(Wire.openai_chat, REQ)
+    assert json.dumps(body) == (
+        '{"model": "qwen3.5:2b-mlx", "messages": [{"role": "user", "content": "Tell me a joke."}], '
+        '"temperature": 0.7, "max_tokens": 1024, "stream": false}'
+    )
+    _, _, body = build_request(Wire.anthropic_messages, REQ)
+    assert json.dumps(body) == (
+        '{"model": "qwen3.5:2b-mlx", "max_tokens": 1024, "temperature": 0.7, '
+        '"messages": [{"role": "user", "content": "Tell me a joke."}]}'
+    )
 
 
 # --- reply parsing ------------------------------------------------------------------------

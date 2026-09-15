@@ -7,6 +7,185 @@ record of what ships; the plan below it is the road it sits on. Grounded in
 Run this session: one metadata probe, two Ollama chat completions, three Apple FM generations
 (one through a throwaway shim). No docker, no Splunk, no container.
 
+## Built (2026-09-14, spike, no issue or PR yet): the Changes Prompt bar
+
+Slot 1, sentence-to-filter, on Devices › Changes. A handoff from a claude.ai session supplied the
+design and three files (a Python translator with a whitelist and a self-test, a DOM wiring script,
+the rendered prompt). They were ported, not re-derived, and measured before anything changed.
+
+**The design decision.** The model translates the question into the page's own filter state and
+nothing else. It never sees a device row; Postgres filters. The call costs the same at any fleet
+size, and the model cannot invent a row or reach the database, because nothing it returns is used
+except five whitelisted values, a refusal read as true or not (ruling 10), and one sentence
+rendered as text. A serial in Search that the question never named is dropped (ruling 10).
+
+**Rulings (Kyle, 2026-09-14).**
+1. *Configured* means **saved**. Each Settings › AI card has **Save** and **Remove**. Configs live
+   in `ai_provider_configs`: one row per provider per tenant, RLS like every tenant table, and the
+   key an `EncryptedString` like a Jamf credential, never returned by the API. This answers R3 with
+   a table rather than columns on the data-sharing row, because more than one provider can be saved.
+2. **Auto-apply.** Enter fills the filters and runs them. This amends "chips before execution"
+   (2026-08-29) for this slot: the filters move where the user can see them and stay editable, and
+   the query only reads.
+3. **The response box is written by code** from the matching rows (devices, serials, change
+   kinds), never by the model, so the model still never sees a row.
+4. **No replay mode.** The demo runs live.
+5. **A Change filter** (Any / Added / Removed / Updated / Changed) joins the page, so "installs"
+   means *Added*. `GET /api/changes` gained `change`.
+6. **Clear** (2026-09-15), beside Apply. It empties every filter, including the URL-only
+   `since`, `minLevel` and device chip. It also empties the Prompt box and its answer, and
+   drops a question in flight. It is disabled when there is nothing to clear.
+7. **The Model list is always shown** (2026-09-15), one option per saved card, "{card} ·
+   {model}". The hint "Only your question is sent to …" is removed: Kyle read it as false
+   beside an answer box that states counts. It was true, since the counts are Postgres, but a
+   sentence the page has to argue for is the wrong sentence.
+8. **The Apple card takes no reasoning effort** (2026-09-15). The control is hidden there, the
+   page never sends one, and the API refuses one for `apple_fm` with a sentence. The Prompt bar
+   drops a stored effort, left by an older build, before dialling. On macOS 27.0 (26A428)
+   `fm serve` answers `reasoning_effort is not supported by the 'system' model`. The 2026-09-05
+   wording further down this page is from an earlier build.
+9. **A widened answer is proposed, not run** (2026-09-15, 1C on #436). This narrows ruling 2.
+   Every repair now carries a direction. A repair that fixes or narrows the answer still lets it
+   run on Enter. Three kinds widen it, and ruling 10 added a fourth:
+   - a Search or Filter-to-one-thing value dropped (refused by the whitelist, or not text);
+   - an unknown section, level or change read as *any*;
+   - a key the page does not use that held a value (`{"app": "Wireshark"}`);
+   - a serial in Search that the question never named (ruling 10).
+
+   An answer with any of them comes back as `outcome: proposed`, with the same filters and
+   summary an applied one carries and the widening corrections in `widening`; the audit row says
+   `proposed`. The page shows those corrections, the model's `unsupported` caveat if there is one,
+   what the filters would show, and **Apply these filters**, and runs nothing until it is
+   pressed.
+   - A dropped Search that the serial rule fills again from the question no longer widens.
+   - `all`, `null` and `none` read as *any* with no repair.
+   - The guard that drops a section word from the name filter stays a fix, though a thing named
+     for its section loses its name. Holding it back would make a proposal of every answer where
+     the model copies a section name into the filter.
+
+   The whitelist keeps letters and digits in any script, the marks some scripts write letters
+   with, and the punctuation names carry (`&`, `#`, `!`, `,`, `:` joined the old set). It still
+   refuses `` ; % " < > \ = * ? ` $ { } [ ] | ~ ^ ``, and it now refuses the characters that
+   draw nothing (the Hangul fillers, the combining grapheme joiner, variation selectors). So
+   Café Manager and AT&T keep their names. The live lane asserts that none of its 35 questions is
+   widened.
+10. **Text that is not a question about device changes is invalid** (2026-09-15). Kyle asked
+    "What model are you?" and got a list of devices: the model answered every control *any*,
+    which is the whole log, and the page ran it. He asked for the question to be evaluated and,
+    when the bar cannot answer it, called invalid. The instructions gained one paragraph: for a
+    greeting or thanks, a question about the model, general knowledge or how-to, math, writing
+    or code, an order to do something to a device or to this app, or a question about
+    vulnerabilities, compliance, risk or device health, reply exactly `{"invalid":true}`. The
+    page reads that as `outcome: invalid`: no filters, no summary, the audit row says `invalid`
+    with `reason` `not_about_changes`, and the page shows *Invalid question — the Prompt bar
+    can't answer it, so nothing was run.* over the server's sentence, which says the model
+    judged it so, what the bar can answer, and what to do if the judgement is wrong.
+    - **Measured**, on a 286-question set written for this by six agents and relabelled blind
+      (valid, narrow, invalid), split in two. The panel's four designs were scored on the whole
+      set first; six wordings were then scored on one half, and the chosen one once on the
+      other. On that other half, of 56 questions not about device changes, main ran 43 (16 as
+      the whole log). This refuses 38, runs 17 (5 as the whole log) and holds 1 as a proposal.
+      Of its 81 real questions it refuses 5, each asking a device's current state or a share of
+      the fleet ("how much memory does VKM73DMG47 have"); of the 35, none, and all 35 land as
+      before, the three demo questions exactly as ruled. A refusal takes about 0.77 s. A real
+      answer's median went from 1.18 s to 1.23 s, the price of the longer instructions.
+    - **The model judges; the page adds no word lists.** A design panel built four candidates,
+      each with lists of greeting, order and injection words over the question. Every one refused
+      real questions whatever the model said ("Install macOS Sequoia" is an app, "HEY" is a mail
+      app, "Was hat sich getan?" asks what changed), and one held the event loop for 29 s on a
+      long reply. The panel's own refusal wording, with two examples, moved all three demo
+      answers. Of the six later wordings, the three that said more about orders moved a demo or
+      live answer, with an example or without; the shipped paragraph is one of the three plainer
+      ones, and has none.
+    - **A bare `any` is not repaired.** Main's run wrote `"level":any` for 27 of 321 questions.
+      Given their quotes, 24 of those replies parse, 22 to questions not about device changes,
+      and 20 are every control *any*: the whole log, run. Unread, the page says it could not
+      interpret the answer, and runs nothing.
+    - **A serial the question never named is dropped.** Asked "and the other mac?", the model
+      searched for KY4QVD7430, a serial from its own examples. A serial-shaped Search that is not
+      in the question, letters and digits compared, is now dropped, which widens the answer
+      (ruling 9); the question's one serial, if it has one in capitals, fills Search again.
+    - **What still runs.** Of the 17, most ask about state the log does not keep or a judgement
+      ("which computers are offline", "which macs are out of compliance"), and a few are orders
+      the model reads as questions ("remove the admin account from KY4QVD7430"). Five run as the
+      whole log with no banner ("list every device in jamf", "report", "any red flags?"). The
+      model gave a caveat on 9 of the 17, and 2 survive guard 5, which drops a caveat unless the
+      question has an or, not, date, version or comparison word.
+
+**What it does.** The bar appears when the `ai_features` flag is on, AI-inference consent is on,
+and at least one provider is saved. `GET /api/changes/prompt` says which is missing, and Settings ›
+AI shows it as *Changes Prompt bar: …*. `POST /api/changes/prompt` (DEVICE_READ, so viewers can use
+it) runs these steps in order:
+
+1. Sanitise the question: NFC, control and format characters removed, then model control tokens,
+   500 characters.
+2. Choose the saved provider.
+3. Apply the URL rule.
+4. The gate: `feature: changes_prompt`, `fields: ["query_text"]`, row committed first.
+5. The one bounded door: the static instructions go as a system message, with temperature 0,
+   200 reply tokens and a 30 s limit.
+6. Parse, then either the model's refusal (`{"invalid":true}`, ruling 10) or the whitelist and
+   the guards.
+7. Compute the summary with the same where-clause the page runs (`change_conditions`, extracted
+   from `list_changes`), then reply. A refusal skips this: there is nothing to count.
+
+The page replaces its filters with the reply's and renders the banner and the response box as text.
+The exceptions are a `proposed` answer (ruling 9), whose filters wait for **Apply these filters**,
+and an `invalid` one (ruling 10), which runs nothing and says why.
+
+**The prompt, measured before it shipped.** As delivered, the handoff's prompt passed **5 of 19**
+questions against `fm serve` on this Mac.
+- It declared nearly every question unsupported, echoing its own examples ("Cannot express 'but
+  not'" for *which computers installed wireshark*).
+- It copied section names into the name filter.
+- Kyle's demo question would have shown the warning banner.
+
+The fix re-derives nothing. The examples are kept (each answer gains a `change` key), four are
+added, none of them a test question, and `low` joins the levels. Deterministic guards follow the
+whitelist:
+- A name filter that is really a section or a kind is dropped.
+- A device search that repeats the name filter is dropped.
+- A lone serial-shaped token in the question fills the device search when the model missed it.
+- A change kind the section never records becomes *any*.
+- `unsupported` stands only when the question contains an or / not / date / value / comparison
+  word.
+
+With the handoff's prompt word for word and only the guards added, the score is 27 of 29. With the
+final prompt it is **35 of 35**, including 10 questions written after tuning and Kyle's three demo
+prompts. `tests/test_changes_prompt_live.py` is that set as a `hostbridge` test through the real
+adapter.
+
+**Numbers.** From the handoff (M4 Max, from the host): ~192 ms fixed per call, ~0.66 ms per input
+token, ~200 ms to decode a short answer, ~520 ms per question. Measured here on 2026-09-14, on the 35
+questions:
+- from the host over the same HTTP path: median 1,103 ms, p90 1,276 ms;
+- from a container through the app's adapter (the `hostbridge` lane, twice): median 1,137 ms,
+  p90 1,299–1,315 ms;
+- end to end in the app (question to answer box, including the summary's two scans), on
+  loondemo's copy of the dev database: 1.5–1.8 s for the demo questions.
+
+The gap from the handoff's figure is unexplained.
+
+**Found on the way.** The handoff's `re.search(r"\{.*\}", …, re.S)` is quadratic on a reply
+full of `{`. A megabyte of them (under the adapter's cap) blocked the event loop for 161.8 s. The
+parser now refuses a reply over 8,000 characters before it scans, and slices from the first `{`
+to the last `}`. Two verifiers checked it and found the same answers as the old regex on 20,021
+replies.
+
+**Deviations to rule on.**
+- *Ruled 2026-09-15 (1C, ruling 9 above).* P4 says unknown keys are a rejection, and T2 wants a
+  proposal instead of a result. The handoff's design, kept here, *repairs* instead, and every
+  repair is listed under the answer. Kyle ruled the proposal in where a repair widens the answer
+  (an unknown section, level or change becomes *any*; a value that fails the whitelist is
+  dropped; an unknown key that held a value is ignored): that answer waits for **Apply these
+  filters**. A repair that fixes or narrows still runs on Enter.
+- P2 and P3 describe a JSON data block and control-token stripping for fleet data. The question is
+  the operator's own text and goes as the user message, NFC-normalised with control and format
+  characters removed. Since 2026-09-15 its model control tokens are stripped as well, each replaced
+  by a space before the 500-character cap (Kyle ruled 2B on #435; `docs/ai-threat-model.md` §9
+  lists the families), so what remains of this deviation is the data block.
+- `unsupported` is model-written English, including on the German page.
+
 ## Built (2026-09-05, #319)
 
 What ships, where it lives, and what was proven against it.

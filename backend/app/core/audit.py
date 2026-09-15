@@ -71,6 +71,13 @@ class AuditAction(StrEnum):
     # prompt, never the key.
     AI_TEST_SENT = "ai.test.sent"
     AI_MODELS_LISTED = "ai.models.listed"
+    # A Settings > AI card's Save, and its removal: which provider, where, which model,
+    # whether a key is stored. Never the key.
+    AI_CONFIG_SAVED = "ai.config.saved"
+    AI_CONFIG_REMOVED = "ai.config.removed"
+    # The Changes Prompt bar: which provider was asked, how it went and how long it took.
+    # Never the question, never the reply (docs/ai-threat-model.md, F5).
+    AI_CHANGES_PROMPT = "ai.changes-prompt.sent"
     SHARING_UUID_RESET = "sharing.uuid.reset"
     # An administrator's Send now (#408): data left the box because a person asked, not
     # because the schedule came round, so it is on the trail beside the tier it sent under.
