@@ -12,6 +12,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
@@ -501,6 +503,38 @@ async def _stored_value_unreadable(request: Request, exc: StoredValueUnreadable)
         _unreadable_reported = True
         logger.error(STORED_VALUE_UNREADABLE, extra={"path": request.url.path})
     return JSONResponse(status_code=503, content={"detail": STORED_VALUE_UNREADABLE})
+
+
+# A refused body is answered without the body. FastAPI's own 422 returns pydantic's errors
+# as they stand, and every one carries `input`: the value it refused — which, for a
+# missing field or a rule over the whole model, is the whole body. So a sign-in without
+# its email sent the password back, a destination refused for its header name sent the
+# auth secret back, and a Settings > AI test without its prompt sent the API key back:
+# into devtools, HAR files, and any proxy that logs response bodies. The answer keeps
+# FastAPI's shape — `detail` a list of {type, loc, msg}, which frontend/src/config/api.ts
+# joins into the sentence the page shows — and drops `input`, and every `ctx` entry that
+# is not the schema's own bound, pattern or allowed values: `ctx` can hold the refused
+# value too (a validator's exception, serialised attribute by attribute, is one way).
+_SCHEMA_CTX_KEYS = frozenset(
+    {"min_length", "max_length", "gt", "ge", "lt", "le", "multiple_of", "max_digits", "decimal_places", "pattern", "expected"}
+)
+
+
+@app.exception_handler(RequestValidationError)
+async def _request_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    detail = []
+    for error in exc.errors():
+        refusal = {key: error[key] for key in ("type", "loc", "msg") if key in error}
+        ctx = error.get("ctx") or {}
+        kept = {key: value for key, value in ctx.items() if key in _SCHEMA_CTX_KEYS}
+        # One more, FastAPI's own: a body that is not JSON at all carries the parser's
+        # reason ("Expecting value"), a fixed phrase that never quotes the body.
+        if error.get("type") == "json_invalid" and isinstance(ctx.get("error"), str):
+            kept["error"] = ctx["error"]
+        if kept:
+            refusal["ctx"] = kept
+        detail.append(refusal)
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(detail)})
 
 
 # Registered first so it ends up innermost, closest to the router — it only needs to
