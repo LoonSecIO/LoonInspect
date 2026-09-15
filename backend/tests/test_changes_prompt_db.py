@@ -661,10 +661,15 @@ async def test_consent_off_refuses_before_anything_is_dialled(client, db, clean,
 async def test_an_empty_question_is_refused(client, db, clean, seeded, endpoint):
     await _switches(db, flag=True, consent=True)
     await _saved(db)
-    for question in ("", "   ", "\u200b\u202e\t\n"):
+    for question in ("", "   "):
         response = await _ask(client, question)
         assert response.status_code == 422, question
         assert response.json()["detail"] == "Type a question first."
+    # Something was typed, and sanitising removed all of it: the sentence says what went.
+    for question in ("\u200b\u202e\t\n", "<|im_start|><|im_end|>"):
+        response = await _ask(client, question)
+        assert response.status_code == 422, question
+        assert response.json()["detail"].startswith("The question held only what the Prompt bar removes before sending")
     assert endpoint.requests == []
 
 
