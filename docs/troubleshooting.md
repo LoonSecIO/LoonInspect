@@ -687,8 +687,9 @@ Report the block's four lines (build, latest release, last checked, the sentence
 The Prompt bar is the box labelled **Prompt** above the filters on **Devices › Changes**. It
 sends the typed question — nothing else — to the card picked in its **Model** list, which names
 every card saved on **Settings › AI** and the model it uses. The model answers with filter
-settings, and the page moves its filters to them and runs them. The exception is an answer the
-page had to correct in a way that searches wider: that one waits for you to apply it (step 3).
+settings, and the page moves its filters to them and runs them. Two exceptions: an answer the
+page had to correct in a way that searches wider waits for you to apply it, and text the model
+judged not a question about changes runs nothing and is called invalid (both step 3).
 The lines under the bar are written by the page from the matching rows, never by the model.
 **Clear**, beside Apply, empties
 every filter, the Prompt box and its answer. The bar appears only while three things are true,
@@ -755,15 +756,18 @@ writes one row to the disclosure log naming the destination and the one field th
    **The answer leads with *The model's answer needed a correction that widens the search, so it
    was not applied*.** Not a failure, and nothing has run: the filters below the Prompt bar are
    still the ones you had. The model did answer with filter settings, but the page had to change
-   one of them in a way that would match more than the model named. One of three things happened:
+   one of them in a way that would match more than the model named. One of four things happened:
    - a name it gave for **Search** or **Filter to one thing** was dropped: it was not text, was
      longer than 64 characters, or held a character a name here may not;
+   - it put a serial number in **Search** that the question never named — often one from its
+     own instructions — which was dropped;
    - it named a section, level or change the page does not have, which was read as *any*;
    - it added a field the page does not use and put a value in it, perhaps the name.
 
    Run as it stood, an answer that lost its name would list every added app rather than the one
    asked about, so a correction like that waits for you. A dropped **Search** does not wait when
-   the question holds one serial number: the page fills Search with it, and the answer runs. The
+   the question holds one serial number in capitals, as Jamf writes it: the page fills Search
+   with it, and the answer runs. The
    lines under the lead are those corrections, in the page's words. If the model also said the
    filters cannot express part of the question, its sentence follows *These filters would be as
    close as these controls allow* (step 4). *Would show changes …* is what the filters would be.
@@ -777,6 +781,25 @@ writes one row to the disclosure log naming the destination and the one field th
    plain name and matched no row. Typed into **Filter to one thing** by hand, such a name still
    searches. The audit log records such an answer as
    `ai.changes-prompt.sent` with `outcome` `proposed`; an answer that ran says `applied`.
+
+   **The answer leads with *Invalid question — the Prompt bar can't answer it, so nothing was
+   run*.** Not a failure, and nothing has run: the filters below the Prompt bar are still the
+   ones you had. The model judged the text not a question about changes on your devices: a
+   greeting or thanks, a question about the model itself, general knowledge or how to do
+   something, arithmetic, a request to write text or code, a question about vulnerabilities,
+   compliance, risk or device health, or an order to do something — uninstall an app, turn a
+   setting on, lock a Mac, push an update — which the Prompt bar cannot do: it only reads the
+   change log. Ask what changed instead: which Macs installed, removed or updated something, or
+   what changed on one Mac. If a real question about changes gets this answer, the model
+   misjudged it. It does now and then: 5 of 81 real questions in a held-out test, each asking a
+   device's current state or a share of the fleet ("how much memory does VKM73DMG47 have",
+   "what percent of our Macs installed Zoom"). Ask about the
+   change instead ("hardware changes on VKM73DMG47", "Zoom installs"), name the device or the
+   thing, or set the filters by hand. The audit log records the answer as
+   `ai.changes-prompt.sent` with `outcome` `invalid` and `reason` `not_about_changes`; the
+   question itself is never recorded. On a build before this state existed, such text often ran
+   instead: as every change in the log, or as the closest filters to a word it held, with an
+   answer box as if the question had been understood.
 4. **The answer leads with *Filtered as close as these controls allow*.** Not a failure. The
    question needed something the filters cannot express — an *or*, a *not*, a date range, a
    version or other value, a comparison — and the rows are the closest the filters allow. The
@@ -807,8 +830,9 @@ writes one row to the disclosure log naming the destination and the one field th
    Added, Removed or Updated.* Pick a Change from that section's side, or *Any change*. The bar
    never sets such a pair.
 
-**O.** The *Changes Prompt bar* line says *shown* while the bar stays missing after a reload; or
-the rows under an answer disagree with `GET /api/changes` run with the filters on screen. Report
-the line, the question, the page's URL (it carries the filters), the provider, model and time from
-the answer's last line, the *Corrections* list, and `docker compose logs app --since 30m`.
+**O.** The *Changes Prompt bar* line says *shown* while the bar stays missing after a reload; the
+rows under an answer disagree with `GET /api/changes` run with the filters on screen; or a
+question about changes is called *Invalid question* however it is worded. Report the line, the
+question, the page's URL (it carries the filters), the provider, model and time from the answer's
+last line, the *Corrections* list, and `docker compose logs app --since 30m`.
 

@@ -1294,6 +1294,7 @@ export const de: Translations = {
       asking: (provider: string) => `Frage an ${provider}…`,
       unavailable: "KI-Suche nicht verfügbar – die Filter unten funktionieren weiterhin.",
       unparseable: "Das ließ sich nicht deuten – verwenden Sie die Filter direkt.",
+      invalid: "Ungültige Frage – die Prompt-Leiste kann sie nicht beantworten, daher wurde nichts ausgeführt.",
       closeAsAllowed: "So genau gefiltert, wie diese Bedienelemente es erlauben.",
       askFailed: "Die Frage hat diesen Server nicht erreicht. Prüfen Sie, ob LoonInspect läuft, und laden Sie die Seite neu.",
       askNoReason: (status: number) =>

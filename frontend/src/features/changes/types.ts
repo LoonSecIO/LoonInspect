@@ -176,9 +176,10 @@ export interface PromptError {
 
 /** `applied`: the page runs the filters on arrival. `proposed`: a correction widened the
  *  model's answer, so the page shows the filters and runs them only when a person applies
- *  them (ruled 1C, #436). `error`: the endpoint failed. `unparseable`: it answered, but not
- *  with filter settings. */
-export type PromptOutcome = "applied" | "proposed" | "error" | "unparseable";
+ *  them (ruled 1C, #436). `invalid`: the question is not one the filters can answer, so
+ *  nothing runs; `error` carries the reason and the server's sentence. `error`: the
+ *  endpoint failed. `unparseable`: it answered, but not with filter settings. */
+export type PromptOutcome = "applied" | "proposed" | "invalid" | "error" | "unparseable";
 
 export interface PromptResult {
   outcome: PromptOutcome;

@@ -80,9 +80,11 @@ class PromptSummaryOut(_Base):
 
 class PromptOut(_Base):
     # applied (the page runs the filters) | proposed (a repair widened the answer, so the
-    # page shows the filters for a person to apply; ruled 1C, #436) | error (the endpoint
-    # failed) | unparseable (it answered, but not filters)
-    outcome: Literal["applied", "proposed", "error", "unparseable"]
+    # page shows the filters for a person to apply; ruled 1C, #436) | invalid (the question
+    # is not one the filters can answer, so nothing runs; `error` carries the reason and the
+    # page's sentence) | error (the endpoint failed) | unparseable (it answered, but not
+    # filters)
+    outcome: Literal["applied", "proposed", "invalid", "error", "unparseable"]
     filters: PromptFiltersOut | None
     # The model's own note on what the filters cannot express. The only model-written
     # text that reaches the page, and the page renders it as text.
