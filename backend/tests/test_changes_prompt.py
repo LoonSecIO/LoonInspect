@@ -35,6 +35,7 @@ from app.ai.changes_prompt import (
     MAX_QUESTION_CHARS,
     MAX_REPLY_CHARS,
     MAX_REPLY_TOKENS,
+    NOT_ABOUT_CHANGES,
     SECTIONS,
     SYSTEM_INSTRUCTION,
     Interpretation,
@@ -595,10 +596,15 @@ def test_a_repair_is_the_sentence_it_says_and_carries_its_direction():
         "added in a field section",
     ],
 )
-def test_every_guard_fixes_or_narrows_and_never_widens(question, filters, unsupported):
+def test_every_guard_but_the_serial_rule_fixes_or_narrows(question, filters, unsupported):
     _, _, repairs = guard(question, filters, unsupported, [])
     assert len(repairs) == 1
     assert _widening(repairs) == []
+
+
+def test_the_serial_rule_widens_and_says_so():
+    _, _, repairs = guard("and the other mac?", {**NO_FILTERS, "q": "C02XL0ABJG5H"}, None, [])
+    assert _widening(repairs) == repairs == [SERIAL_NOT_ASKED]
 
 
 def test_an_empty_unknown_key_and_a_note_that_is_not_text_do_not_widen():
@@ -706,6 +712,124 @@ def test_a_name_written_with_combining_marks_is_kept(name):
     """Marks that draw are part of the name: these scripts write letters with them."""
     filters, _, repairs = coerce({"filter": name})
     assert (filters["artifact"], repairs) == (name, [])
+
+
+# --- text that is not a question about device changes (Kyle, 2026-09-15) ---------------------
+# Asked "What model are you?", the model answered every control any: the whole log, run.
+
+REFUSAL = '{"invalid":true}'
+
+
+def test_the_models_refusal_is_invalid_and_sets_nothing():
+    result = interpret("What model are you?", REFUSAL)
+    assert result == Interpretation(filters=NO_FILTERS, unsupported=None, repairs=[], parsed=True, invalid=NOT_ABOUT_CHANGES)
+    assert result.widened is False
+
+
+@pytest.mark.parametrize(
+    "reply",
+    ['{"invalid": "true"}', '{"invalid": " TRUE "}', '```json\n{"invalid":true}\n```', 'Sure. {"invalid": true}'],
+    ids=["quoted", "quoted, spaced, upper case", "fenced", "after prose"],
+)
+def test_a_refusal_the_parser_can_read_is_a_refusal(reply):
+    assert interpret("tell me a joke", reply).invalid == NOT_ABOUT_CHANGES
+
+
+def test_a_refusal_wins_over_the_filters_beside_it():
+    """Refused is refused: filters beside it are the model's guess at a question it said
+    was not one, and running them is the defect."""
+    reply = '{"invalid":true,"search":"KY4QVD7430","filter":"Wireshark","level":"high","section":"Security","change":"added"}'
+    result = interpret("uninstall wireshark from KY4QVD7430", reply)
+    assert result.invalid == NOT_ABOUT_CHANGES
+    assert result.filters == NO_FILTERS and result.repairs == []
+
+
+@pytest.mark.parametrize("value", [False, None, 0, "false", " FALSE ", "", [], {}])
+def test_invalid_that_plainly_says_no_is_passed_over(value):
+    reply = json.dumps({"invalid": value, "filter": "Docker", "section": "Applications"})
+    result = interpret("which macs have docker", reply)
+    assert result.invalid is None
+    assert result.filters == {**NO_FILTERS, "artifact": "Docker", "section": "applications"}
+    assert result.repairs == []
+
+
+@pytest.mark.parametrize("value", [1, "yes", [True], {"why": "chat"}, "not a question about device changes"])
+def test_invalid_holding_anything_else_widens_so_nothing_runs(value):
+    """Neither the refusal nor a plain no: counted as a key holding a value, as on main, so
+    the answer waits for Apply. Passed over, the whole-log reply below ran as every change."""
+    reply = json.dumps({"invalid": value, "search": None, "filter": None, "level": "any", "section": "any", "change": "any"})
+    result = interpret("What model are you?", reply)
+    assert result.invalid is None
+    assert result.filters == NO_FILTERS
+    assert result.widening == [IGNORED_ONE]
+
+
+def test_invalid_false_alone_is_no_answer():
+    """Not a refusal, and none of the fields asked for: the page says it could not interpret it."""
+    assert interpret("what model are you", '{"invalid": false}') == NOT_PARSED
+
+
+def test_a_bare_any_is_not_read_as_any():
+    """Apple's model writes `"level":any` mostly on text that is not about changes: of the 24
+    such replies that parse once quoted (2026-09-15), 22 were, and 20 were every control
+    any, the whole log, run. Left unread, the page runs nothing and says it could not
+    interpret the answer."""
+    reply = '{"search":null,"filter":null,"level":any,"section":any,"change":any,"unsupported":null}'
+    assert parse_reply(reply) is None
+    assert interpret("what's the capital of France", reply) == NOT_PARSED
+
+
+# --- a serial the question never named (Kyle, 2026-09-15) -----------------------------------------
+
+SERIAL_NOT_ASKED = "Dropped the model's value for Search: that serial number is not in the question."
+
+
+def test_a_serial_the_question_never_named_is_dropped_and_widens():
+    """Asked "and the other mac?", the model searched for KY4QVD7430, a serial from its own
+    examples (the shipped instructions, 2026-09-15): an answer about a Mac nobody named."""
+    reply = '{"search":"KY4QVD7430","filter":null,"level":"any","section":"any","change":"any"}'
+    result = interpret("and the other mac?", reply)
+    assert result.filters == NO_FILTERS
+    assert result.widening == [SERIAL_NOT_ASKED]
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "what changed on KY4Q-VD74-30",
+        "what changed on ky4q vd74 30",
+        "what changed on " + "".join(chr(ord(c) + 0xFEE0) for c in "KY4QVD7430"),
+    ],
+    ids=["dashed", "spaced, lower case", "full-width"],
+)
+def test_a_serial_the_operator_typed_another_way_is_still_theirs(question):
+    reply = '{"search":"KY4QVD7430","filter":null,"level":"any","section":"any","change":"any"}'
+    result = interpret(question, reply)
+    assert result.filters == {**NO_FILTERS, "q": "KY4QVD7430"}
+    assert result.repairs == []
+
+
+def test_a_serial_in_the_question_is_kept_in_any_case():
+    reply = '{"search":"VKM73DMG47","filter":null,"level":"any","section":"any","change":"any"}'
+    result = interpret("what changed on vkm73dmg47", reply)
+    assert result.filters == {**NO_FILTERS, "q": "VKM73DMG47"}
+    assert result.repairs == []
+
+
+def test_the_wrong_serial_is_replaced_by_the_one_the_question_named():
+    """Dropped, then filled with the question's one serial: no wider than a clean reply."""
+    reply = '{"search":"C02XL0ABJG5H","filter":null,"level":"any","section":"any","change":"any"}'
+    result = interpret("what changed on KY4QVD7430", reply)
+    assert result.filters == {**NO_FILTERS, "q": "KY4QVD7430"}
+    assert result.repairs == [SERIAL_NOT_ASKED, "Filled Search with the one serial-number-shaped word in the question."]
+    assert result.widened is False
+
+
+@pytest.mark.parametrize("search", ["Kyle's Mac mini", "12", "Finance-iMac"])
+def test_a_device_name_or_jamf_id_is_not_held_to_the_question(search):
+    """Only a serial is checked: the model may write a name the operator spelled another way."""
+    reply = json.dumps({"search": search, "filter": None, "level": "any", "section": "any", "change": "any"})
+    assert interpret("show changes on kyles mini", reply).filters["q"] == search
 
 
 # --- whole replies ---------------------------------------------------------------------------
@@ -955,4 +1079,13 @@ def test_the_instructions_are_the_measured_text():
     is allowed; doing it without re-running the eval and updating the comment, and this
     digest, is what this refuses."""
     digest = hashlib.sha256(SYSTEM_INSTRUCTION.encode()).hexdigest()
-    assert digest == "9ddf259a96bdfe612f1e222cbfca4f9551551de7b0059ddbe190d48992df9272"
+    assert digest == "de50b016e824d3bdad4af41c257cc4ff9d5cee48669a961da7fe12eb2e355280"
+
+
+def test_the_instructions_ask_for_the_refusal_the_parser_reads():
+    """The refusal is the one shape the page reads as invalid: the words asking for it and
+    the key the parser reads must stay the same object. No example teaches it: the measured
+    text has none, and the one design that added two moved all three demo answers."""
+    assert 'reply exactly {"invalid":true} and nothing else' in SYSTEM_INSTRUCTION
+    assert interpret("tell me a joke", '{"invalid":true}').invalid == NOT_ABOUT_CHANGES
+    assert '{"invalid"' not in SYSTEM_INSTRUCTION.split("Examples:\n", 1)[1]

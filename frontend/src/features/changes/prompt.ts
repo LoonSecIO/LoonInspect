@@ -172,7 +172,7 @@ export function answerLines(summary: PromptSummary, strings: ChangesStrings): st
   return lines;
 }
 
-export type BannerKind = "error" | "unparseable" | "proposal" | "unsupported" | "readback";
+export type BannerKind = "error" | "invalid" | "unparseable" | "proposal" | "unsupported" | "readback";
 
 /**
  * Port of the handoff's `showBanner` states. `unsupported` is the important one: the
@@ -183,9 +183,15 @@ export type BannerKind = "error" | "unparseable" | "proposal" | "unsupported" | 
  * `proposal` is a proposed answer not yet applied: the corrections that widened it, what
  * its filters would show, and its Apply button. Once applied (`proposalApplied`), it
  * reads as any answer does, banner and response box.
+ *
+ * `invalid` is text the model judged not a question about device changes: a greeting, a
+ * question about the model, knowledge, writing, or an order to act on a device. Nothing
+ * ran, and the server's sentence says why; before this state, such text ran as the whole
+ * log. A question asking for all changes is not invalid: it runs, every filter unset.
  */
 export function bannerKind(result: PromptResult, proposalApplied = false): BannerKind {
   if (result.outcome === "error") return "error";
+  if (result.outcome === "invalid") return "invalid";
   if (result.outcome === "unparseable" || result.filters === null) return "unparseable";
   if (result.outcome === "proposed" && !proposalApplied) return "proposal";
   if (result.unsupported) return "unsupported";
@@ -229,7 +235,7 @@ const isText = (value: unknown): value is string => typeof value === "string";
 const isTextOrNull = (value: unknown): value is string | null => value === null || typeof value === "string";
 const isCount = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 
-const OUTCOMES: readonly PromptOutcome[] = ["applied", "proposed", "error", "unparseable"];
+const OUTCOMES: readonly PromptOutcome[] = ["applied", "proposed", "invalid", "error", "unparseable"];
 const HIDDEN_REASONS: readonly PromptHiddenReason[] = ["flag_off", "consent_off", "no_provider"];
 const FILTER_KEYS = ["q", "artifact", "level", "section", "change"] as const satisfies readonly (keyof PromptFilters)[];
 

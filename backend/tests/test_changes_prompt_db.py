@@ -596,6 +596,43 @@ async def test_a_name_in_any_script_is_applied_whole(client, db, clean, seeded, 
     assert _asked(audit_records) == [("applied", 0)]
 
 
+# --- text that is not a question about device changes: invalid (Kyle, 2026-09-15) -------------------
+
+
+async def test_a_refusal_is_invalid_runs_nothing_and_says_why(client, db, clean, seeded, endpoint, audit_records):
+    """Asked "What model are you?", the model answered every control any, and the page listed
+    every device. Now the model refuses: no filters to run, no summary, the page's sentence."""
+    from app.api.changes_prompt import NOT_A_CHANGES_QUESTION
+
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    endpoint.body = _reply('{"invalid":true}')
+    response = await _ask(client, "What model are you?")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["outcome"] == "invalid"
+    assert (body["filters"], body["summary"], body["unsupported"]) == (None, None, None)
+    assert (body["repairs"], body["widening"]) == ([], [])
+    assert body["error"] == {"kind": "not_about_changes", "message": NOT_A_CHANGES_QUESTION, "status": None}
+    # The page's words, never the question's.
+    assert "model are you" not in response.text.lower()
+
+    # The question still left the box, so its disclosure row stands; the trail says invalid.
+    assert len(await _ai_rows(db)) == 1
+    asked = [r for r in audit_records if r["action"] == "ai.changes-prompt.sent"]
+    assert [(r["outcome"], r["metadata"]["reason"]) for r in asked] == [("invalid", "not_about_changes")]
+    assert "model are you" not in json.dumps(audit_records).lower()
+
+
+async def test_a_refusal_beside_filters_still_runs_nothing(client, db, clean, seeded, endpoint, audit_records):
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    endpoint.body = _reply(json.dumps({"invalid": True, **WIRESHARK, "change": "removed"}))
+    body = (await _ask(client, "uninstall wireshark from every mac")).json()
+    assert body["outcome"] == "invalid"
+    assert (body["filters"], body["summary"]) == (None, None)
+
+
 # --- what the endpoint gets wrong -----------------------------------------------------------------
 
 

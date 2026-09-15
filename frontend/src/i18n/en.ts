@@ -1413,6 +1413,9 @@ export const en = {
       // server's own sentence for why.
       unavailable: "AI search unavailable — the filters below still work.",
       unparseable: "Could not interpret that — try the filters directly.",
+      // A question the filters cannot answer: nothing ran, the filters are as they were.
+      // The server's sentence under it says why and what to ask instead.
+      invalid: "Invalid question — the Prompt bar can't answer it, so nothing was run.",
       closeAsAllowed: "Filtered as close as these controls allow.",
       // Only for a request that never reached the server. Something that answered without
       // a reason — a plain-text 500, a proxy's 502 — gets its status and the app's log.

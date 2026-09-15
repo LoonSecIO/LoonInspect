@@ -17,7 +17,10 @@ The order is the test box's (app.api.ai), and is not to be reshuffled:
 An answer the page may run is ``applied``. One that a repair widened (a name dropped, an
 unknown section, level or change read as any, an unknown key with a value ignored) is
 ``proposed``: the same filters and summary, which the page shows beside an Apply button
-instead of running (Kyle, 2026-09-15, ruling 1C on #436).
+instead of running (Kyle, 2026-09-15, ruling 1C on #436). Text the model judged not a
+question about device changes is ``invalid``: no filters, no summary, and the page's own
+sentence for why (``INVALID_SENTENCES``), so nothing runs (Kyle, 2026-09-15: "What model
+are you?" had listed every device).
 
 The question and the reply are never logged, audited or returned: the audit row says
 which provider was asked, how it went, how long it took and how many repairs were made.
@@ -42,6 +45,7 @@ from app.ai.changes_prompt import (
     DISCLOSED_FIELDS,
     FEATURE,
     MAX_REPLY_TOKENS,
+    NOT_ABOUT_CHANGES,
     SYSTEM_INSTRUCTION,
     interpret,
     sanitize_question,
@@ -92,6 +96,15 @@ NO_PROVIDER_SAVED = "No AI provider is saved. An admin saves one in Settings ›
 UNPARSEABLE = (
     "The model's answer was not the filter settings the Prompt bar needs. Rephrase the question, or use the filters directly."
 )
+# The model judged the text not a question about device changes: a greeting, a question
+# about the model, general knowledge, writing, or an order to do something. What the bar
+# can do instead, in words an operator acts on; never the question's words.
+NOT_A_CHANGES_QUESTION = (
+    "The model judged this not a question about what changed on your devices, so nothing was run: the Prompt bar "
+    "only reads the change log. Ask which Macs installed, removed or updated something, or what changed on one Mac. "
+    "If it was such a question, word it around the change, or set the filters by hand."
+)
+INVALID_SENTENCES = {NOT_ABOUT_CHANGES: NOT_A_CHANGES_QUESTION}
 
 
 def key_unreadable(provider: Provider) -> str:
@@ -303,6 +316,24 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
             destination=destination,
             latency_ms=latency_ms,
             error=AIErrorOut(kind=kind, message=UNPARSEABLE, status=None),
+        )
+
+    # Not a question the filters can answer. Before this, "What model are you?" came back
+    # as every control unset, which is the whole log, and the page listed every device. No
+    # summary is counted: there are no filters to count for, and nothing will run.
+    if interpretation.invalid:
+        _audited("invalid", provider, destination, latency_ms, reason=interpretation.invalid)
+        return PromptOut(
+            outcome="invalid",
+            filters=None,
+            unsupported=None,
+            repairs=[],
+            summary=None,
+            provider=provider,
+            model=model,
+            destination=destination,
+            latency_ms=latency_ms,
+            error=AIErrorOut(kind=interpretation.invalid, message=INVALID_SENTENCES[interpretation.invalid], status=None),
         )
 
     # A widened answer searches for more than the model's did, so a person applies it: the

@@ -53,6 +53,14 @@ function summary(overrides: Partial<PromptSummary> = {}): PromptSummary {
   return { total: 0, devicesTotal: 0, truncated: false, otherSubjects: 0, devices: [], ...overrides };
 }
 
+// A question the filters cannot answer, as the server sends it: nothing to run, the reason
+// and the server's sentence in `error`.
+const INVALID = result({
+  outcome: "invalid",
+  filters: null,
+  error: { kind: "not_about_changes", message: "It is not a question about changes on your devices.", status: null }
+});
+
 describe("filtersFromPrompt replaces the page's filters, never merges into them", () => {
   it("carries the five keys the bar speaks, nulls as unset", () => {
     expect(filtersFromPrompt(WIRESHARK)).toMatchObject({
@@ -291,6 +299,17 @@ describe("answerLines — the response box, written from the server's count", ()
 });
 
 describe("bannerKind — the handoff's showBanner states", () => {
+  it("a question the filters cannot answer, whatever else the body holds", () => {
+    expect(bannerKind(INVALID)).toBe("invalid");
+    // Never the readback: that would say "Showing all changes" over a page that ran nothing.
+    expect(bannerKind({ ...INVALID, filters: { ...NEW_INSTALLS } })).toBe("invalid");
+    expect(bannerKind(INVALID, true)).toBe("invalid");
+    expect(en.changes.prompt.invalid).toBe("Invalid question — the Prompt bar can't answer it, so nothing was run.");
+    expect(de.changes.prompt.invalid).toBe(
+      "Ungültige Frage – die Prompt-Leiste kann sie nicht beantworten, daher wurde nichts ausgeführt."
+    );
+  });
+
   it("an endpoint failure", () => {
     expect(bannerKind(result({ outcome: "error", filters: null, error: { kind: "unreachable", message: "x", status: null } }))).toBe(
       "error"
@@ -347,6 +366,9 @@ describe("a proposal is not applied: a person applies it (ruled 1C, #436)", () =
   it("an endpoint failure or an answer that was not filters moves nothing", () => {
     expect(filtersOnArrival(result({ outcome: "error", filters: null }))).toBeNull();
     expect(filtersOnArrival(result({ outcome: "unparseable", filters: null }))).toBeNull();
+    // "What model are you?" used to arrive as every filter unset, the whole log, and run.
+    expect(filtersOnArrival(INVALID)).toBeNull();
+    expect(proposedFilters(INVALID)).toBeNull();
     expect(filtersOnArrival(result({ filters: null }))).toBeNull();
   });
 
@@ -702,6 +724,7 @@ describe("isPromptResult — a 200's body is checked before anything reads it", 
     expect(isPromptResult(result({ outcome: "unparseable", filters: null, error: { kind: "malformed", message: "x", status: 200 } }))).toBe(true);
     expect(isPromptResult(result({ unsupported: "Cannot express 'but not'.", repairs: ["dropped q"] }))).toBe(true);
     expect(isPromptResult(result({ outcome: "proposed", repairs: ["dropped q"], widening: ["dropped q"] }))).toBe(true);
+    expect(isPromptResult(INVALID)).toBe(true);
   });
 
   it("a key it does not know is left alone", () => {

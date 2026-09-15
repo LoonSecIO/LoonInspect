@@ -67,6 +67,14 @@ export function PromptAnswer({ result, refusal, stale, applied, onApplyProposal 
           {result.error && <p>{result.error.message}</p>}
         </div>
       )}
+      {/* A question the filters cannot answer: nothing ran and the filters are as they
+          were. The lead says so; the server's sentence says why and what to ask. */}
+      {kind === "invalid" && (
+        <div role="status" className={mutedClasses}>
+          <p className="font-medium text-foreground">{tp.invalid}</p>
+          {result.error && <p>{result.error.message}</p>}
+        </div>
+      )}
       {kind === "unparseable" && (
         <div role="status" className={mutedClasses}>
           <p className="font-medium text-foreground">{tp.unparseable}</p>

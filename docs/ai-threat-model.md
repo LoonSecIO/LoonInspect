@@ -205,17 +205,26 @@ precondition. S1, S2 and S4 landed with it. The two items left open then are bot
 - **P4/T2 — ruled by Kyle, 2026-09-15 (1C, #436):** the reply is still repaired rather than
   rejected, and every repair is listed on the page. A repair that fixes or narrows the answer lets
   it run on Enter. One that widens it makes it a proposal: an unknown section, level or change
-  read as *any*, a value that fails the whitelist dropped, or an unknown key that held a value
-  ignored. The API then answers `proposed`, and the page runs nothing until a person presses its
+  read as *any*, a value that fails the whitelist dropped, an unknown key that held a value
+  ignored, or (since the refusal, below) a serial in Search the question never named dropped.
+  The API then answers `proposed`, and the page runs nothing until a person presses its
   Apply button. That is T2's proposal, exactly where a repair would otherwise search for more
   than the model named.
 - **Model control tokens — ruled by Kyle, 2026-09-15 (2B, #435), and done:** `sanitize_question`
   strips the `<|…|>` family (and DeepSeek's spelling of it with full-width bars), `[INST]` and
   `[/INST]`, `<<SYS>>` and `<</SYS>>`, `<s>` and `</s>`, `<think>` and `</think>`, and
-  `<start_of_turn>` and `<end_of_turn>`, in any case, each replaced by a space. It runs after the control and format characters are dropped, so a hidden character
-  cannot rejoin a token, and before the 500-character cap. Defence in depth for slot 1, whose
-  closed vocabulary and whitelist had already held against four injection probes. The token
-  pattern carries over to the first slot that sends fleet data; that slot still needs the rest of
-  P3 — a per-field cap with a visible truncation marker, which a question's silent cap is not.
+  `<start_of_turn>` and `<end_of_turn>`, in any case, each replaced by a space. It runs after
+  the control and format characters are dropped, so a hidden character cannot rejoin a token,
+  and before the 500-character cap. Defence in depth for slot 1, whose closed vocabulary and
+  whitelist had already held against four injection probes. The token pattern carries over to
+  the first slot that sends fleet data; that slot still needs the rest of P3 — a per-field cap
+  with a visible truncation marker, which a question's silent cap is not.
   `tests/test_changes_prompt_tokens.py` is the corpus; the live lane's 35 questions leave
   byte-identical and still pass 35 of 35.
+
+Slot 1 gained a second model output on 2026-09-15: the refusal, `{"invalid":true}`, for text
+that is not a question about device changes (`docs/ai-layer.md` ruling 10). It is a closed value,
+read as true or not, and the page answers it with its own sentence, so `unsupported` is still the
+only model-written text on the page. A question that talks the model out of refusing gets what
+it got before, the closest filters; one that talks it into refusing gets nothing run. Neither
+reaches a row the filters could not.
