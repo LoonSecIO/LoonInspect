@@ -199,10 +199,38 @@ def _plain(text: str) -> str:
     return " ".join(unicodedata.normalize("NFC", "".join(kept)).split())
 
 
+# Model control tokens (docs/ai-threat-model.md P3): the strings a chat template is built
+# from, which a tokenizer reads as a turn, a system block, the end of the text or a
+# reasoning block rather than as words. Slot 1's question is written by the person who
+# asks it, but a question pasted from a chat log or from a model's own output can carry
+# them. The first slot that sends fleet data to a model needs this pattern for every value
+# it sends — and more than this function: P3's per-field cap with a visible truncation
+# marker, which a question's silent 500-character cap is not.
+#
+# The families, case-insensitive: `<|...|>` (ChatML's <|im_start|> and <|im_end|>,
+# <|endoftext|>, Llama 3's <|eot_id|> and <|start_header_id|>), and DeepSeek's spelling of
+# it with full-width bars; [INST] and [/INST]; <<SYS>> and <</SYS>>; <s> and </s>; <think>
+# and </think>; Gemma's <start_of_turn> and <end_of_turn>. None of them holds whitespace,
+# and a tokenizer matches one only character for character, so a token broken by a space or
+# a newline is plain text already. That is also why one pass is enough: each token becomes
+# a space, and no pattern matches across a space, so taking one out never joins the pieces
+# around it into another.
+_CONTROL_TOKENS = re.compile(
+    r"<[|\uff5c][^\s<>|\uff5c]*[|\uff5c]>|\[/?INST\]|<</?SYS>>|</?s>|</?think>|<(?:start|end)_of_turn>",
+    re.IGNORECASE,
+)
+
+
 def sanitize_question(text: str) -> str:
-    """The question as it may leave: plain, and at most ``MAX_QUESTION_CHARS``. Empty
-    means there was nothing to ask."""
-    return _plain(text)[:MAX_QUESTION_CHARS].rstrip()
+    """The question as it may leave: plain, without a model's control tokens, and at most
+    ``MAX_QUESTION_CHARS``. Empty means there was nothing to ask.
+
+    The tokens come out after ``_plain`` and before the cap. After, because a zero-width or
+    control character inside a token hides it from the pattern, and ``_plain`` then drops
+    the character and puts the token back together. Before, so the cap counts what leaves
+    rather than what was taken out."""
+    plain = " ".join(_CONTROL_TOKENS.sub(" ", _plain(text)).split())
+    return plain[:MAX_QUESTION_CHARS].rstrip()
 
 
 # --- the way back ----------------------------------------------------------------------

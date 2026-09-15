@@ -76,6 +76,12 @@ SUMMARY_DEVICES = 25
 
 # What failed, why, and what to check (docs/diagnosability.md rule 3).
 EMPTY_QUESTION = "Type a question first."
+# Visible text that sanitising removed entirely: say why, or the operator sees their typing
+# called empty.
+ONLY_REMOVED = (
+    "The question held only what the Prompt bar removes before sending: model control tokens such "
+    "as <|im_start|> or [INST], or invisible characters. Type the question in words."
+)
 QUESTION_TOO_LONG = f"The question is longer than the {QUESTION_MAX_LENGTH:,} characters the Prompt bar reads. Shorten it."
 NO_PROVIDER_SAVED = "No AI provider is saved. An admin saves one in Settings › AI; then the Prompt bar can use it."
 UNPARSEABLE = (
@@ -217,7 +223,7 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
         raise HTTPException(status_code=422, detail=QUESTION_TOO_LONG)
     question = sanitize_question(payload.question)
     if not question:
-        raise HTTPException(status_code=422, detail=EMPTY_QUESTION)
+        raise HTTPException(status_code=422, detail=ONLY_REMOVED if payload.question.strip() else EMPTY_QUESTION)
 
     config = await _chosen(db, payload.provider)
     provider = Provider(config.provider)
