@@ -140,6 +140,11 @@ def _allowed_schemes() -> tuple[str, ...]:
     return ("https", "http") if settings.allow_insecure_mdm_base_url else ("https",)
 
 
+# What a URL that will not parse is told, instead of the parser's own words: those quote
+# what was typed ("Port could not be cast to integer value as '<…>'"), and a basic-auth URL
+# missing its host puts the password exactly there — and this sentence reaches the 422.
+UNPARSEABLE_URL = "check the host and the port, which is a number after the host"
+
 # destinations.url is String(1024).
 MAX_DESTINATION_URL_LENGTH = 1024
 
@@ -190,7 +195,7 @@ def validate_destination_url(value: str) -> str:
         parsed = urlsplit(url)
         _ = parsed.port
     except ValueError as exc:
-        raise BlockedDestinationUrl(f"url is not a URL this server can parse: {exc}") from exc
+        raise BlockedDestinationUrl(f"url is not a URL this server can parse: {UNPARSEABLE_URL}") from exc
 
     if parsed.scheme not in _destination_schemes():
         if parsed.scheme == "http":
@@ -231,7 +236,7 @@ def validate_mdm_base_url(value: str) -> str:
         # into a refusal instead of an exception thrown later, out of httpx.
         _ = parsed.port
     except ValueError as exc:
-        raise BlockedBaseUrl(f"baseUrl is not a URL this server can parse: {exc}") from exc
+        raise BlockedBaseUrl(f"baseUrl is not a URL this server can parse: {UNPARSEABLE_URL}") from exc
 
     if parsed.scheme not in _allowed_schemes():
         if parsed.scheme == "http":
@@ -351,7 +356,7 @@ def validate_inference_base_url(value: str, *, carries_key: bool) -> str:
         parsed = urlsplit(url)
         _ = parsed.port
     except ValueError as exc:
-        raise BlockedBaseUrl(f"baseUrl is not a URL this server can parse: {exc}") from exc
+        raise BlockedBaseUrl(f"baseUrl is not a URL this server can parse: {UNPARSEABLE_URL}") from exc
     if parsed.scheme not in ("http", "https"):
         raise BlockedBaseUrl(f"baseUrl must be an absolute http:// or https:// URL, not {parsed.scheme or 'a bare hostname'!r}")
     if parsed.username or parsed.password:
@@ -409,7 +414,7 @@ def validate_corpus_url(value: str) -> str:
         parsed = urlsplit(url)
         _ = parsed.port
     except ValueError as exc:
-        raise BlockedCorpusUrl(f"the corpus link is not a URL this server can parse: {exc}") from exc
+        raise BlockedCorpusUrl(f"the corpus link is not a URL this server can parse: {UNPARSEABLE_URL}") from exc
     if parsed.scheme != "https":
         raise BlockedCorpusUrl(f"the corpus link must be an absolute https:// URL, not {parsed.scheme or 'a bare hostname'!r}")
     if parsed.username or parsed.password:

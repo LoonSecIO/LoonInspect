@@ -307,3 +307,27 @@ def test_a_partial_jamf_credential_set_is_refused_without_its_secret() -> None:
     detail = str(refused.value.detail)
     assert SECRET not in detail
     assert "clientId" in detail and "Field required" in detail
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        "validate_destination_url",
+        "validate_mdm_base_url",
+        "validate_inference_base_url",
+        "validate_corpus_url",
+    ],
+)
+def test_a_url_that_will_not_parse_is_refused_without_quoting_it(rule: str) -> None:
+    """A basic-auth URL missing its host ("https://admin:<password>/…") fails to parse at the
+    port, and the parser's own words quote the port — the password. The URL rules' sentences
+    reach the 422's msg, so they name what to check instead of what was typed."""
+    from app.core import egress
+
+    check = getattr(egress, rule)
+    url = f"https://admin:{SECRET}/services/collector"
+    kwargs = {"carries_key": False} if rule == "validate_inference_base_url" else {}
+    with pytest.raises(ValueError) as refused:
+        check(url, **kwargs)
+    assert SECRET not in str(refused.value)
+    assert "not a URL this server can parse" in str(refused.value)
