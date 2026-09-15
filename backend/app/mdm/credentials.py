@@ -10,7 +10,10 @@ from app.schemas.payload import MdmProvider
 
 
 class _CredentialsBase(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+    # hide_input_in_errors: api/connections.py answers a refused credential set with
+    # str(ValidationError), and pydantic's string quotes input_value — the whole set,
+    # client secret included, whenever a field is missing. The field and the reason stay.
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, hide_input_in_errors=True)
 
 
 class JamfCredentials(_CredentialsBase):
