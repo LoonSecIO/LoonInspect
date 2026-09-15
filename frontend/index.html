@@ -4,8 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LoonInspect</title>
+    <!-- Order matters (#321). A browser skips an icon whose type it cannot use and, of
+         the icons left, takes the last in tree order: the PNG goes first so a browser
+         that takes SVG ends on the SVG. One SVG, which switches to its dark ink itself —
+         Firefox ignores `media` on an icon link, so a dark-only second link would win in
+         light mode there too. -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: dark)" href="/favicon-dark.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <!-- Classic and blocking, before first paint, from its own same-origin file: the
          Content-Security-Policy allows no inline script (#187). Every script tag in
          this shell carries a src attribute; backend/tests/test_csp.py holds that line. -->
