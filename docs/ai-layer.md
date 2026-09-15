@@ -43,6 +43,30 @@ returns is used except five whitelisted values and one sentence rendered as text
    drops a stored effort, left by an older build, before dialling. On macOS 27.0 (26A428)
    `fm serve` answers `reasoning_effort is not supported by the 'system' model`. The 2026-09-05
    wording further down this page is from an earlier build.
+9. **A widened answer is proposed, not run** (2026-09-15, 1C on #436). This narrows ruling 2.
+   Every repair now carries a direction. A repair that fixes or narrows the answer still lets it
+   run on Enter. Three kinds widen it:
+   - a Search or Filter-to-one-thing value dropped (refused by the whitelist, or not text);
+   - an unknown section, level or change read as *any*;
+   - a key the page does not use that held a value (`{"app": "Wireshark"}`).
+
+   An answer with any of them comes back as `outcome: proposed`, with the same filters and
+   summary an applied one carries and the widening corrections in `widening`; the audit row says
+   `proposed`. The page shows those corrections, the model's `unsupported` caveat if there is one,
+   what the filters would show, and **Apply these filters**, and runs nothing until it is
+   pressed.
+   - A dropped Search that the serial rule fills again from the question no longer widens.
+   - `all`, `null` and `none` read as *any* with no repair.
+   - The guard that drops a section word from the name filter stays a fix, though a thing named
+     for its section loses its name. Holding it back would make a proposal of every answer where
+     the model copies a section name into the filter.
+
+   The whitelist keeps letters and digits in any script, the marks some scripts write letters
+   with, and the punctuation names carry (`&`, `#`, `!`, `,`, `:` joined the old set). It still
+   refuses `` ; % " < > \ = * ? ` $ { } [ ] | ~ ^ ``, and it now refuses the characters that
+   draw nothing (the Hangul fillers, the combining grapheme joiner, variation selectors). So
+   Café Manager and AT&T keep their names. The live lane asserts that none of its 35 questions is
+   widened.
 
 **What it does.** The bar appears when the `ai_features` flag is on, AI-inference consent is on,
 and at least one provider is saved. `GET /api/changes/prompt` says which is missing, and Settings ›
@@ -61,6 +85,8 @@ it) runs these steps in order:
    from `list_changes`), then reply.
 
 The page replaces its filters with the reply's and renders the banner and the response box as text.
+The exception is a `proposed` answer (ruling 9): the page shows its filters and waits for
+**Apply these filters**.
 
 **The prompt, measured before it shipped.** As delivered, the handoff's prompt passed **5 of 19**
 questions against `fm serve` on this Mac.
@@ -102,10 +128,12 @@ to the last `}`. Two verifiers checked it and found the same answers as the old 
 replies.
 
 **Deviations to rule on.**
-- P4 says unknown keys are a rejection, and T2 wants a proposal instead of a result. The handoff's
-  design, kept here, *repairs* instead: an unknown section becomes *any*, a value that fails the
-  whitelist is dropped, and every repair is listed under the answer. A middle road would
-  auto-apply only when nothing needed repair, and otherwise fill the controls and wait for Apply.
+- *Ruled 2026-09-15 (1C, ruling 9 above).* P4 says unknown keys are a rejection, and T2 wants a
+  proposal instead of a result. The handoff's design, kept here, *repairs* instead, and every
+  repair is listed under the answer. Kyle ruled the proposal in where a repair widens the answer
+  (an unknown section, level or change becomes *any*; a value that fails the whitelist is
+  dropped; an unknown key that held a value is ignored): that answer waits for **Apply these
+  filters**. A repair that fixes or narrows still runs on Enter.
 - P2 and P3 describe a JSON data block and control-token stripping for fleet data. The question is
   the operator's own text and goes as the user message, NFC-normalised with control and format
   characters removed. Since 2026-09-15 its model control tokens are stripped as well, each replaced

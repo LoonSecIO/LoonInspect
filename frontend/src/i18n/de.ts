@@ -1294,6 +1294,15 @@ export const de: Translations = {
         `Die Prompt-Leiste konnte ihre Einstellungen nicht prüfen: ${reason}. Prüfen Sie docker compose logs app.`,
       staleReply:
         "Die Antwort kam, nachdem sich die Filter geändert hatten, und wurde deshalb nicht angewendet. Stellen Sie die Frage erneut, um sie anzuwenden.",
+      proposalLead: (n: number) =>
+        n === 1
+          ? "Die Antwort des Modells brauchte eine Korrektur, die die Suche erweitert, und wurde deshalb nicht angewendet."
+          : "Die Antwort des Modells brauchte Korrekturen, die die Suche erweitern, und wurde deshalb nicht angewendet.",
+      proposalNext: "Prüfen Sie die Filter, die sie setzen würde, und wenden Sie sie dann an – oder formulieren Sie die Frage um.",
+      proposalCloseAsAllowed: "Diese Filter wären so genau, wie diese Bedienelemente es erlauben.",
+      proposalReadbackNone: "Angezeigt würden alle Änderungen",
+      proposalReadbackLead: "Angezeigt würden Änderungen",
+      applyProposal: "Diese Filter anwenden",
       readbackNone: "Angezeigt werden alle Änderungen",
       readbackLead: "Angezeigt werden Änderungen",
       readbackDevice: (q: string) => `für ein Gerät, das „${q}“ entspricht`,

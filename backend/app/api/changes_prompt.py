@@ -14,6 +14,11 @@ The order is the test box's (app.api.ai), and is not to be reshuffled:
 5. the summary is counted with the page's own WHERE clause (``change_conditions``), so
    the numbers the response box states are the numbers the page then shows.
 
+An answer the page may run is ``applied``. One that a repair widened (a name dropped, an
+unknown section, level or change read as any, an unknown key with a value ignored) is
+``proposed``: the same filters and summary, which the page shows beside an Apply button
+instead of running (Kyle, 2026-09-15, ruling 1C on #436).
+
 The question and the reply are never logged, audited or returned: the audit row says
 which provider was asked, how it went, how long it took and how many repairs were made.
 The only model-written text in the response is ``unsupported``, and the page renders it
@@ -300,13 +305,18 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
             error=AIErrorOut(kind=kind, message=UNPARSEABLE, status=None),
         )
 
+    # A widened answer searches for more than the model's did, so a person applies it: the
+    # page gets the same filters and summary as an applied one, and runs nothing until then.
+    outcome = "proposed" if interpretation.widened else "applied"
     summary = await _summary(db, interpretation.filters)
-    _audited("applied", provider, destination, latency_ms, repairs=len(interpretation.repairs))
+    _audited(outcome, provider, destination, latency_ms, repairs=len(interpretation.repairs))
     return PromptOut(
-        outcome="applied",
+        outcome=outcome,
         filters=PromptFiltersOut(**interpretation.filters),
         unsupported=interpretation.unsupported,
-        repairs=list(interpretation.repairs),
+        # Plain strings on the wire: each repair is a `Repair`, a str carrying its direction.
+        repairs=[str(repair) for repair in interpretation.repairs],
+        widening=interpretation.widening,
         summary=summary,
         provider=provider,
         model=model,

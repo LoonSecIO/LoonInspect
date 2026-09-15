@@ -1,7 +1,8 @@
 """The Changes page's Prompt bar through the running routes (/api/changes/prompt): the
 switches in order, the saved config chosen, one disclosure row before the first byte,
 only the instructions and the question on the wire, the reply forced into the page's
-vocabulary, and a summary counted by Postgres with the page's own WHERE clause.
+vocabulary (and proposed rather than applied when a repair widened it), and a summary
+counted by Postgres with the page's own WHERE clause.
 
 The endpoint is stood in for by an `httpx.MockTransport` on
 `app.api.changes_prompt.transport_override`, answering the way an OpenAI-style server
@@ -342,6 +343,7 @@ async def test_a_question_comes_back_as_the_pages_filters_with_a_summary(
     assert body["filters"] == {"q": None, "artifact": "Wireshark", "level": None, "section": "applications", "change": None}
     assert body["unsupported"] is None
     assert body["repairs"] == []
+    assert body["widening"] == []
     assert body["error"] is None
     assert body["provider"] == "apple_fm"
     assert body["model"] == "system"
@@ -509,6 +511,89 @@ async def test_an_apple_card_saved_with_a_reasoning_effort_never_sends_it(client
     assert response.status_code == 200, response.text
     assert response.json()["outcome"] == "applied"
     assert "reasoning_effort" not in json.loads(endpoint.requests[0].content)
+
+
+# --- a repair that widens the answer: proposed, not applied (ruled 1C, #436) -----------------------
+
+# The whitelist's refusal, as the page shows it: what a name may hold, never what this one held.
+REFUSED_FILTER = (
+    "Dropped the model's value for Filter to one thing: a name here takes only letters and digits in any script, "
+    "spaces, and . _ @ ' ’ ( ) + / - & # ! , : — it held another character."
+)
+
+
+def _asked(audit_records: list[dict]) -> list[tuple[str, int]]:
+    return [(r["outcome"], r["metadata"]["repairs"]) for r in audit_records if r["action"] == "ai.changes-prompt.sent"]
+
+
+async def test_a_name_the_whitelist_refuses_is_proposed_with_its_filters_and_summary(
+    client, db, clean, seeded, endpoint, audit_records
+):
+    """Dropped, the name would leave every added application: more than the model named.
+    The answer comes back as a proposal, with the filters and the summary an applied one
+    carries, so the page can show both beside its Apply button."""
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    refused = 'Wireshark"; DROP TABLE devices;--'
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "filter": refused, "change": "added"}))
+    response = await _ask(client, "which macs installed wireshark")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["outcome"] == "proposed"
+    assert body["filters"] == {"q": None, "artifact": None, "level": None, "section": "applications", "change": "added"}
+    assert body["repairs"] == [REFUSED_FILTER]
+    assert body["widening"] == [REFUSED_FILTER]
+    assert body["error"] is None
+
+    # The summary is the page's own count for the proposed filters, as for an applied answer.
+    page = (await client.get("/api/changes", params={"section": "applications", "change": "added"})).json()
+    assert body["summary"]["total"] == page["total"]
+    assert "301" in _mine(body["summary"], seeded)
+
+    # On the trail as a proposal. The refused value is nowhere: not the reply, not the trail.
+    assert _asked(audit_records) == [("proposed", 1)]
+    assert "DROP" not in response.text
+    assert "DROP" not in json.dumps(audit_records)
+
+
+async def test_a_section_the_page_does_not_have_is_proposed(client, db, clean, seeded, endpoint, audit_records):
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "filter": "PromptProbeVvq", "section": "Apps"}))
+    body = (await _ask(client, "who has PromptProbeVvq")).json()
+    assert body["outcome"] == "proposed"
+    assert body["filters"] == {"q": None, "artifact": "PromptProbeVvq", "level": None, "section": None, "change": None}
+    assert body["widening"] == ["The model named a section this page does not have, so it was read as any section."]
+    # Any section, proposed: the probe app on one Mac and in one smart group's definition.
+    summary = body["summary"]
+    assert (summary["total"], summary["devicesTotal"], summary["otherSubjects"]) == (2, 1, 1)
+    assert _asked(audit_records) == [("proposed", 1)]
+
+
+async def test_a_repair_that_narrows_is_still_applied(client, db, clean, seeded, endpoint, audit_records):
+    """The serial the model missed, filled from the question: narrower, so it runs on Enter."""
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "filter": None, "section": "any"}))
+    body = (await _ask(client, "what happened on VKM73DMG47")).json()
+    assert body["outcome"] == "applied"
+    assert body["filters"] == {"q": "VKM73DMG47", "artifact": None, "level": None, "section": None, "change": None}
+    assert body["repairs"] == ["Filled Search with the one serial-number-shaped word in the question."]
+    assert body["widening"] == []
+    assert "302" in _mine(body["summary"], seeded)
+    assert _asked(audit_records) == [("applied", 1)]
+
+
+async def test_a_name_in_any_script_is_applied_whole(client, db, clean, seeded, endpoint, audit_records):
+    """#436's own question: the ASCII whitelist dropped the name and ran every added app."""
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "filter": "Café Manager", "change": "added"}))
+    body = (await _ask(client, "which macs installed Café Manager")).json()
+    assert body["outcome"] == "applied"
+    assert body["filters"]["artifact"] == "Café Manager"
+    assert (body["repairs"], body["widening"]) == ([], [])
+    assert _asked(audit_records) == [("applied", 0)]
 
 
 # --- what the endpoint gets wrong -----------------------------------------------------------------
