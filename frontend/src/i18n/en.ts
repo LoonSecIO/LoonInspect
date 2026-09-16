@@ -707,6 +707,32 @@ export const en = {
       seeAll: "See all changes"
     },
 
+    // The stamp under every tile carrying a number (#117); the age recomputes on its own.
+    asOfStamp: (utc: string, age: string) => `as of ${utc} (${age})`,
+
+    // The inventory-read story (#115) — what `/` says to an account without
+    // destination:read. Words for every zero, never a bare numeral.
+    inventory: {
+      intro:
+        "Your role reads the fleet rather than the pipeline that carries it. This is what LoonInspect has recorded about your devices and the applications on them.",
+      // Not an empty board: nothing here was measured and found to be zero.
+      nothing:
+        "Your role cannot read devices or applications, so this page has nothing to show — which is not the same as an empty fleet. An administrator can grant the access it needs.",
+      fleetTitle: "Devices in inventory",
+      fleetCount: (n: number) => `${n.toLocaleString("en-US")} device${n === 1 ? "" : "s"}`,
+      fleetNone: "No devices in inventory yet",
+      catalogTitle: "App catalog",
+      catalogCounts: (entries: number, matched: number, unmatched: number) =>
+        `${entries.toLocaleString("en-US")} app${entries === 1 ? "" : "s"} · ` +
+        `${matched.toLocaleString("en-US")} matched to a Jamf Patch title, ${unmatched.toLocaleString("en-US")} unmatched`,
+      catalogNone: "No applications in the catalog yet",
+      topAppsTitle: "Most installed apps",
+      topAppsRow: (name: string, devices: number) =>
+        `${name} · ${devices.toLocaleString("en-US")} device${devices === 1 ? "" : "s"}`,
+      topAppsNone: "No applications recorded yet",
+      failed: "Could not load"
+    },
+
     loading: "Loading…",
     loadError: "Could not load your setup state.",
     setupHiddenForRole: "Setup for this pod is managed by an administrator."
@@ -1039,6 +1065,15 @@ export const en = {
     title: "Jamf Patch",
     description: "Software titles tracked by Jamf's patch catalog, synced hourly.",
     tableName: "Name",
+    // #478: where a title's app name came from. Jamf publishes no app name on 513 of its
+    // 1,553 titles and #385 takes one from the patch definition's killApps; only that case
+    // is marked. A name Jamf published, and a title stored before the rule, say nothing.
+    appNameDerived: "name from the patch definition",
+    appNameDerivedHint:
+      "Jamf publishes no app name for this title, so LoonInspect read one from the killApps list in the title's own patch definitions — the app an update has to close. Where a title names several apps for one bundle ID the first is taken, so this can be a miss, never a wrong match: a name no Mac reports matches nothing.",
+    appNameUnnamed: "No app name",
+    appNameUnnamedHint:
+      "Nothing names an app for this title — neither Jamf's own field nor its patch definitions — so its versions are matched by bundle ID and version alone, never by app name.",
     tablePublisher: "Publisher",
     tableBundleId: "Bundle ID",
     tableCurrentVersion: "Current version",
@@ -1568,6 +1603,7 @@ export const en = {
       readbackDepartmentNamed: (name: string) => `on Macs in department “${name}”`,
       readbackManaged: "on Macs Jamf manages",
       readbackUnmanaged: "on Macs Jamf does not manage",
+      readbackSince: (start: string) => `observed since ${start}`,
       answerNone: "No changes match.",
       answerHeadline: (computers: number, changes: number) =>
         `${computers} computer${computers === 1 ? "" : "s"}, ${changes} change${changes === 1 ? "" : "s"}.`,

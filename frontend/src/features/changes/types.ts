@@ -174,6 +174,9 @@ export interface PromptStatus {
 export interface PromptRequest {
   question: string;
   provider?: Provider | null;
+  /** The viewer's IANA zone, so the server can resolve a start the question's own words ask
+   *  for — "today" is the operator's day, not the pod's (#444). It goes no further. */
+  zone?: string;
 }
 
 /** The page's own filter vocabulary — the URL keys of the Changes page. Null means "any". */
@@ -192,6 +195,9 @@ export interface PromptFilters {
   managed: string | null;
   /** The department's name from Jamf's catalog, when a repair set `department` (#450). */
   departmentName: string | null;
+  /** The start the question's words asked for, resolved by the server against this browser's
+   *  zone (#444) — the same `since` key the Overview's feed links with, and the same chip. */
+  since: string | null;
 }
 
 /** One computer the filters match, counted by Postgres — never by the model. */

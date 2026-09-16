@@ -1,18 +1,22 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
-from collections.abc import Collection, Iterator, Mapping, Sequence
+import uuid
+from collections.abc import AsyncIterator, Collection, Iterator, Mapping, Sequence
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import NamedTuple
 
 import httpx
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.database import engine
 from app.core.egress import BlockedDestinationUrl, refuse_blocked_resolution
 from app.core.hec_fanout import fan_out
 from app.core.scheduling import Schedule, next_due
@@ -499,6 +503,62 @@ def _next_backoff(attempt_count: int) -> datetime:
     return datetime.now(UTC) + timedelta(seconds=delay)
 
 
+# Postgres keeps one 64-bit space of advisory locks per database, so the name of the loop
+# goes inside the hash: a lock added later, around some other per-tenant loop, lands
+# elsewhere in that space without either side having to know the other exists.
+_TICK_LOCK_NAMESPACE = "looninspect.outbox.tick"
+
+
+def _tick_lock_key(tenant_id: uuid.UUID) -> int:
+    """The `pg_try_advisory_lock` argument for one tenant's outbox tick.
+
+    Signed, because the parameter is a signed bigint and half of every digest sits above
+    2**63. A hash of the tenant id and nothing else, so it is the same number in every
+    process and after every restart — which is what lets two containers share a mutex
+    with no table to agree in.
+    """
+    digest = hashlib.sha256(f"{_TICK_LOCK_NAMESPACE}:{tenant_id}".encode()).digest()
+    return int.from_bytes(digest[:8], "big", signed=True)
+
+
+@asynccontextmanager
+async def outbox_tick_lock(tenant_id: uuid.UUID) -> AsyncIterator[bool]:
+    """Hold this tenant's outbox tick against every other process, for the body of the tick.
+
+    Yields whether the lock was taken. False means another process is fanning out and
+    delivering this tenant's events *right now* and this one must do neither: without it,
+    two scheduler-enabled processes select the same due deliveries and POST them both,
+    outbound to the customer's SIEM, with no API request involved (#467).
+
+    An advisory lock rather than a claim on the rows, and this is the whole of the reason:
+    Postgres releases it when the connection holding it goes away, so a worker killed
+    mid-delivery leaves nothing claimed. A `claimed_by` column outlives the process that
+    wrote it, which is `docs/ingest-scheduling.md` §4.5's deadlock — "the heartbeat is
+    inseparable from the mutex" — so it is a heartbeat, a stale-reclaim sweep and a
+    migration. The cost here is coarseness, one process per tenant at a time, which is
+    what the tick already was. Why not `SKIP LOCKED`: above `deliver_pending`'s select.
+
+    On a connection of its own for two reasons. `pg_try_advisory_lock` is *session*-scoped,
+    so it survives the per-delivery commits inside `deliver_pending` — the entire point —
+    while an `AsyncSession` does not keep one connection across a commit, so a lock taken
+    through the tick's own session could be unlocked on a connection that never held it and
+    left held on one handed back to the pool. AUTOCOMMIT so holding the lock does not also
+    hold a transaction snapshot open for the length of the tick.
+    """
+    key = _tick_lock_key(tenant_id)
+    async with engine.connect() as connection:
+        await connection.execution_options(isolation_level="AUTOCOMMIT")
+        held = bool((await connection.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": key})).scalar())
+        try:
+            yield held
+        finally:
+            if held:
+                # Explicitly, and never by closing. Closing returns the connection to the
+                # pool with the database session behind it still alive, and a session-level
+                # advisory lock rides it to the next borrower — for the life of the process.
+                await connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
+
+
 async def fan_out_pending(db: AsyncSession) -> int:
     """Create delivery rows for events that haven't been fanned out yet, oldest first,
     at most _TICK_LIMIT events per call.
@@ -701,6 +761,18 @@ async def deliver_pending(db: AsyncSession) -> None:
     # is untouched, not attempted-and-failed. Getting that backwards would spend the
     # retry budget of a perfectly healthy destination on the worker being busy, which
     # is a worse failure than the unbounded load this ceiling replaces.
+    #
+    # THE TRAP: no `FOR UPDATE SKIP LOCKED` on this select, and adding one would be
+    # wrong now although it was right when it was first proposed (#114, #467). A row
+    # lock ends with its transaction, and #91 moved the commit *inside* the loop below
+    # to shrink the at-least-once duplicate window from a whole tick of up to
+    # _TICK_LIMIT accepted POSTs down to one. So the first per-delivery commit would
+    # release the lock on every one of the rows still waiting in `due`, and a second
+    # process would take them mid-tick and deliver them a second time — the exact
+    # failure the per-delivery commit was added to prevent, passing a single-process
+    # suite the whole way and looking correct in review. Undoing that commit to make
+    # the claim work would trade a shipped fix for a lock. What guards this pass is
+    # `outbox_tick_lock` around the whole tick instead.
     result = await db.execute(
         select(OutboxDelivery)
         .where(OutboxDelivery.status == "pending", OutboxDelivery.next_attempt_at <= now)

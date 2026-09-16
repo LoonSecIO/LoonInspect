@@ -48,6 +48,15 @@ ordering against a sweep is handled by the ledger's monotonic guard instead, whi
 independently correct: an observation older than what the ledger already holds is
 refused, so sweep/webhook interleaving is irrelevant rather than coordinated.
 
+**The run is acquired before the Jamf client is built (#477).** Building the client is
+where a connection's stored credential is validated, so a credential that is not a
+credential refuses there — and above the acquisition that refusal had no row to be written
+on and no previous failed run to be rationed against, which on the one lock-exempt path is
+where an unbounded alarm hurts most. Inside the run it is the sweep's refusal exactly:
+the sentence on `runs.error`, one `run.failed` per connection per UTC day
+([`troubleshooting.md`](troubleshooting.md) §12). The two event guards stay *above* the
+acquisition — a `ComputerCheckIn` must still mint nothing and cost nothing (#76).
+
 ## 2. The heartbeat, which is not optional
 
 A mutex without a heartbeat is a deadlock. A process that dies holding a run leaves the

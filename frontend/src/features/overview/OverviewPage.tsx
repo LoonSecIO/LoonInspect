@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { useHasPermission } from "@/features/auth/store";
+import { useAuthStore, useHasPermission } from "@/features/auth/store";
 import { PERMISSIONS } from "@/features/auth/types";
 import { listDestinations } from "@/features/destinations/api";
 import type { Destination } from "@/features/destinations/types";
@@ -8,6 +8,7 @@ import { listCollections, listConnections, listRunSummaries, listRuns, listSyncS
 import type { Collection, MdmConnection, MdmSyncStatus, Run, RunSummary } from "@/features/mdm/types";
 import { ChangesFeed } from "@/features/overview/ChangesFeed";
 import { FirstSyncHero } from "@/features/overview/FirstSyncHero";
+import { InventoryStory } from "@/features/overview/InventoryStory";
 import { NeedsAttentionPanel } from "@/features/overview/NeedsAttentionPanel";
 import { HygieneTiles } from "@/features/overview/HygieneTiles";
 import { PatchLaggardsTile } from "@/features/overview/PatchLaggardsTile";
@@ -16,6 +17,7 @@ import { SetupStepper } from "@/features/overview/SetupStepper";
 import { StatusStrip } from "@/features/overview/StatusStrip";
 import { buildConnectionStatuses } from "@/features/overview/connectionStatus";
 import { findBaselineRun, findRunningHeroRun, formatUtc, runDuration } from "@/features/overview/heroRun";
+import { planOverview } from "@/features/overview/overviewPlan";
 import { useLocale } from "@/i18n/LocaleContext";
 
 /** How often the page asks whether a full sync has started. Only while nothing is being
@@ -23,6 +25,9 @@ import { useLocale } from "@/i18n/LocaleContext";
  *  strip rides this same tick rather than bringing a poller of its own: it says nothing
  *  that changes faster than a sweep does. */
 const RUN_WATCH_INTERVAL_MS = 15000;
+
+/** Stable: zustand compares by reference, and an inline `?? []` mints one per render. */
+const NO_PERMISSIONS: string[] = [];
 
 /** What `<StatusStrip>` is built from — replaced as one value so the line never renders
  *  half-joined. See the state declaration for why that matters. */
@@ -81,11 +86,16 @@ export function OverviewPage() {
   // what the session already knows.
   const canReadConnections = useHasPermission(PERMISSIONS.CONNECTION_READ);
   const canReadDestinations = useHasPermission(PERMISSIONS.DESTINATION_READ);
+  // Which of the two stories `/` tells (#115) — `overviewPlan.ts`'s decision, tested
+  // there. This page only obeys it, and asks for nothing at all on the inventory story.
+  const permissions = useAuthStore((state) => state.user?.permissions ?? NO_PERMISSIONS);
+  const plan = useMemo(() => planOverview(permissions), [permissions]);
+  const tellsPipelineStory = plan.story === "pipeline";
 
   // On until the first answer lands. A session without CONNECTION_READ asks for nothing,
   // so nothing would ever turn it off — it starts off for that session rather than relying
   // on the branch below returning before the loading line is ever reached.
-  const [loading, setLoading] = useState(canReadConnections);
+  const [loading, setLoading] = useState(tellsPipelineStory && canReadConnections);
   const [failedToLoad, setFailedToLoad] = useState(false);
   const [connected, setConnected] = useState(false);
   const [statuses, setStatuses] = useState<MdmSyncStatus[]>([]);
@@ -140,7 +150,7 @@ export function OverviewPage() {
     (quiet = false): Promise<void> => {
       // Nothing to ask for without CONNECTION_READ — the endpoints are gated server-side,
       // and `loading` starts off for that session, so there is no spinner to switch off.
-      if (!canReadConnections) return Promise.resolve();
+      if (!tellsPipelineStory || !canReadConnections) return Promise.resolve();
       return Promise.all([
         listConnections(),
         listSyncStatus(),
@@ -199,7 +209,7 @@ export function OverviewPage() {
           if (mounted.current) setLoading(false);
         });
     },
-    [adoptRunning, canReadConnections, canReadDestinations]
+    [adoptRunning, canReadConnections, canReadDestinations, tellsPipelineStory]
   );
 
   useEffect(() => {
@@ -224,14 +234,14 @@ export function OverviewPage() {
   // scheduled sweep starting. One small request every fifteen seconds, and none at all
   // while the tab is in the background.
   useEffect(() => {
-    if (!canReadConnections || heroRun !== null) return;
+    if (!tellsPipelineStory || !canReadConnections || heroRun !== null) return;
     const tick = () => {
       if (document.hidden) return;
       void refresh(true);
     };
     const handle = window.setInterval(tick, RUN_WATCH_INTERVAL_MS);
     return () => window.clearInterval(handle);
-  }, [canReadConnections, heroRun, refresh]);
+  }, [canReadConnections, heroRun, refresh, tellsPipelineStory]);
 
   // Built once and handed to every panel that needs it. #106's Needs Attention rows and
   // #101's alert counts read this same array rather than re-joining the sources — which
@@ -243,6 +253,12 @@ export function OverviewPage() {
     [statuses, stripSources]
   );
 
+  // #115: an account without `destination:read` gets the inventory-read story rather than
+  // a sentence. Before every branch below — none of that state was fetched for it.
+  if (!tellsPipelineStory) return <InventoryStory tiles={plan.tiles} />;
+
+  // Reachable only by a principal holding `destination:read` and not `connection:read`,
+  // which no built-in role composes — without it that session gets an unfetched stepper.
   if (!canReadConnections) {
     return (
       <section className="space-y-2">

@@ -287,6 +287,38 @@ moves on. Correct distributed scheduling falls out of work that is already a V0 
 The cost is granularity bounded by the tick interval. For a nightly fleet sweep, nobody
 cares.
 
+### 5.1 Which loops that promise covers
+
+"Identical behaviour on one process or six" is a property of **this pattern**, not of the
+application: it is true of a loop that claims its work in the database before doing it,
+and of nothing else. It is also the sentence a reader meets first when they are about to
+add a replica, so it has to say who it speaks for.
+
+**`collections_tick`** (`app/main.py`) is covered by the claim above, and is what the
+paragraph was written about.
+
+**`outbox_worker_tick`** is not, and has no run row to be. Until
+[#467](https://github.com/LoonSecIO/LoonInspect/issues/467) it claimed nothing at all, so
+two scheduler-enabled processes selected the same due deliveries and POSTed each event
+twice — outbound, to the customer's SIEM, with no API request involved. It honours the
+promise now by a **per-tenant advisory lock** (`outbox_tick_lock`, `app/core/outbox.py`)
+held across fan-out and delivery together, and a process that cannot take it refuses that
+tenant's tick in a named log line rather than silently doing nothing. An advisory lock
+rather than a `claimed_by` column precisely because of §4.5: a claim that outlives the
+process holding it is that deadlock, and the heartbeat that would fix it is inseparable
+from the mutex, while Postgres drops an advisory lock when the connection holding it dies.
+(Why not `FOR UPDATE SKIP LOCKED` — #91's per-delivery commit — is recorded above
+`deliver_pending`'s select.)
+
+**Every other job on the scheduler is outside the promise**, and outside here means
+unaudited rather than known-broken — with one worth naming, because it reads as covered:
+`sharing_exchange_tick`'s per-tenant lock is an `asyncio.Lock` in one process's memory
+(`app/core/sharing.py`), which serializes nothing against a second container. What makes a
+second process safe today is **`SCHEDULER_ENABLED`** (`app/core/config.py`, default
+`true`), which gates the whole job-registration block: `false` on every process but one
+leaves exactly one process running any of these loops.
+[`operations.md` §7](operations.md) is the procedure.
+
 ---
 
 ## 6. Two polling classes

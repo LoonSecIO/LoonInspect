@@ -635,6 +635,32 @@ export const de: Translations = {
       seeAll: "Alle Änderungen anzeigen"
     },
 
+    // Der Stempel unter jeder Kachel mit einer Zahl (#117); das Alter liest die Uhr selbst.
+    asOfStamp: (utc: string, age: string) => `Stand ${utc} (${age})`,
+
+    // Die Bestandsansicht (#115) — was „/“ einem Konto ohne destination:read sagt.
+    // Worte für jede Null, nie eine nackte Ziffer.
+    inventory: {
+      intro:
+        "Ihre Rolle liest die Flotte, nicht die Pipeline, die sie transportiert. Dies ist, was LoonInspect über Ihre Geräte und die Anwendungen darauf aufgezeichnet hat.",
+      // Keine leere Ansicht: hier wurde nichts gemessen und als null befunden.
+      nothing:
+        "Ihre Rolle kann weder Geräte noch Anwendungen lesen, daher hat diese Seite nichts zu zeigen — das ist nicht dasselbe wie eine leere Flotte. Eine Administratorin oder ein Administrator kann den nötigen Zugriff gewähren.",
+      fleetTitle: "Geräte im Bestand",
+      fleetCount: (n: number) => `${n.toLocaleString("de-DE")} Gerät${n === 1 ? "" : "e"}`,
+      fleetNone: "Noch keine Geräte im Bestand",
+      catalogTitle: "App-Katalog",
+      catalogCounts: (entries: number, matched: number, unmatched: number) =>
+        `${entries.toLocaleString("de-DE")} App${entries === 1 ? "" : "s"} · ` +
+        `${matched.toLocaleString("de-DE")} einem Jamf-Patch-Titel zugeordnet, ${unmatched.toLocaleString("de-DE")} ohne Zuordnung`,
+      catalogNone: "Noch keine Anwendungen im Katalog",
+      topAppsTitle: "Am häufigsten installierte Apps",
+      topAppsRow: (name: string, devices: number) =>
+        `${name} · ${devices.toLocaleString("de-DE")} Gerät${devices === 1 ? "" : "e"}`,
+      topAppsNone: "Noch keine Anwendungen erfasst",
+      failed: "Konnte nicht geladen werden"
+    },
+
     loading: "Wird geladen…",
     loadError: "Der Einrichtungsstatus konnte nicht geladen werden.",
     setupHiddenForRole: "Die Einrichtung dieses Pods wird von einer Administratorin oder einem Administrator verwaltet."
@@ -930,6 +956,12 @@ export const de: Translations = {
     title: "Jamf Patch",
     description: "Software-Titel aus dem Jamf-Patch-Katalog, stündlich synchronisiert.",
     tableName: "Name",
+    appNameDerived: "Name aus der Patch-Definition",
+    appNameDerivedHint:
+      "Jamf veröffentlicht für diesen Titel keinen App-Namen. LoonInspect hat ihn aus der killApps-Liste der Patch-Definitionen dieses Titels gelesen — der App, die ein Update schließen muss. Nennt ein Titel mehrere Apps zu einer Bundle-ID, wird die erste genommen: das kann daneben liegen, aber nie falsch zuordnen — ein Name, den kein Mac meldet, trifft nichts.",
+    appNameUnnamed: "Kein App-Name",
+    appNameUnnamedHint:
+      "Für diesen Titel nennt nichts eine App — weder Jamfs eigenes Feld noch seine Patch-Definitionen. Seine Versionen werden deshalb nur über Bundle-ID und Version zugeordnet, nie über den App-Namen.",
     tablePublisher: "Herausgeber",
     tableBundleId: "Bundle-ID",
     tableCurrentVersion: "Aktuelle Version",
@@ -1413,6 +1445,7 @@ export const de: Translations = {
       readbackDepartmentNamed: (name: string) => `auf Macs in Abteilung „${name}“`,
       readbackManaged: "auf von Jamf verwalteten Macs",
       readbackUnmanaged: "auf nicht von Jamf verwalteten Macs",
+      readbackSince: (start: string) => `beobachtet seit ${start}`,
       answerNone: "Keine Änderungen gefunden.",
       answerHeadline: (computers: number, changes: number) =>
         `${computers} Computer, ${changes} Änderung${changes === 1 ? "" : "en"}.`,

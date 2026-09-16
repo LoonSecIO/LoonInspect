@@ -4,6 +4,7 @@ import type { Provider } from "@/features/ai/api";
 import { askPrompt, getPromptStatus } from "@/features/changes/api";
 import { PromptAnswer } from "@/features/changes/PromptAnswer";
 import {
+  browserZone,
   failureReason,
   filtersOnArrival,
   isPromptStatus,
@@ -182,7 +183,8 @@ function PromptSession({ providers, provider, onProvider, filters, onApply, onUs
     // Settled before anything reads it: a rejection is the request's own failure, and a
     // body is checked before use, so a 200 that is not the answer is never misread as a
     // question that did not reach the server (`readReply`).
-    const settled: AskSettled = await askPrompt({ question: text, provider }, controller.signal).then(
+    // The zone goes with the question so "today" and "since Monday" mean the operator's day (#444).
+    const settled: AskSettled = await askPrompt({ question: text, provider, zone: browserZone() }, controller.signal).then(
       (body: unknown): AskSettled => ({ ok: true, body }),
       (error: unknown): AskSettled => ({ ok: false, error })
     );

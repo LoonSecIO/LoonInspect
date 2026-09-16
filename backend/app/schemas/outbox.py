@@ -35,9 +35,10 @@ class HeldEvents(_CamelModel):
     # Absent, never zero, on every age here: `null` is "the set is empty", where `0` would
     # be "produced this second". The tape's rule, on the read side.
     oldest_age_seconds: int | None = None
-    # Why, when that is knowable and worth saying. Events waiting the seconds before the
-    # next tick carry no reason; `no_enabled_destination` is the state that does not resolve
-    # on its own, and the only one the page speaks a sentence about.
+    # Why, when that is knowable and worth saying. `null` is every hold that resolves on its
+    # own — the seconds before the next tick, and the minutes a backlog over `_TICK_LIMIT`
+    # spends draining a thousand events at a time. `no_enabled_destination` is the one that
+    # does not, and the only one the page speaks a sentence about.
     reason: Literal["no_enabled_destination"] | None = None
 
 
