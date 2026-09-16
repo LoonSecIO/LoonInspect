@@ -298,28 +298,34 @@ async def open_departures(db: AsyncSession, *, subject_kind: str) -> dict[tuple[
 async def departure_windows(
     db: AsyncSession, *, connection_id: int, subject_kind: str
 ) -> dict[str, tuple[tuple[datetime, datetime | None], ...]]:
-    """`the id it is gone under -> ((departed_at, returned_at), …)`, oldest first — every departure this
-    connection recorded for the kind, closed ones included. `open_departures` answers the present tense, for a
+    """`the id it is gone under -> ((departed_at, ended_at or None), …)`, oldest first — every departure this
+    connection recorded for the kind, ended ones included. `open_departures` answers the present tense, for a
     surface listing current spans; a report over last March needs the past one, a stretch that has since ended
-    still relabelling the days it covered (#465). Same two columns and the same key — `prior_jamf_pro_id or
-    subject_id`, the id the row is gone under (#475) — so the two readers cannot disagree about one Mac."""
+    still relabelling the days it covered (#465). Same key as every other reader — `prior_jamf_pro_id or
+    subject_id`, the id the row is gone under — and the same half of it, asked in SQL rather than spelled a
+    second time here: a row `still_gone_under_this_id` ends at `None`, whatever `returned_at` says. A serial
+    match's `returned_at` is the day the Mac came back as a *different* subject, under its own id and with its
+    own spans; under the prior id it never came back, and bounding the stretch there would print weeks of "we
+    lost sight of it" for an id the rest of the app calls gone for good (#475). Only a plain return — the
+    departed id itself named again by a census — bounds one."""
     rows = (
-        (
-            await db.execute(
-                select(SubjectDeparture)
-                .where(
-                    SubjectDeparture.mdm_connection_id == connection_id,
-                    SubjectDeparture.subject_kind == subject_kind,
-                )
-                .order_by(SubjectDeparture.departed_at, SubjectDeparture.id)
+        await db.execute(
+            select(
+                func.coalesce(SubjectDeparture.prior_jamf_pro_id, SubjectDeparture.subject_id).label("gone_id"),
+                SubjectDeparture.departed_at,
+                SubjectDeparture.returned_at,
+                still_gone_under_this_id().label("still_gone"),
             )
+            .where(
+                SubjectDeparture.mdm_connection_id == connection_id,
+                SubjectDeparture.subject_kind == subject_kind,
+            )
+            .order_by(SubjectDeparture.departed_at, SubjectDeparture.id)
         )
-        .scalars()
-        .all()
-    )
+    ).all()
     windows: dict[str, list[tuple[datetime, datetime | None]]] = {}
     for row in rows:
-        windows.setdefault(row.prior_jamf_pro_id or row.subject_id, []).append((row.departed_at, row.returned_at))
+        windows.setdefault(row.gone_id, []).append((row.departed_at, None if row.still_gone else row.returned_at))
     return {gone_id: tuple(seen) for gone_id, seen in windows.items()}
 
 

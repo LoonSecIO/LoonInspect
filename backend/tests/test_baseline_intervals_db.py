@@ -42,9 +42,13 @@ LEDGER = (
     ("7", 0, SEC_C, APP),  # two spans, one security digest, then a departure in the tail
     ("7", 5, SEC_C, "v0:app-late"),
     ("8", 2, SEC_A, APP),  # quiet since before the window opened, and still in the report
-    ("10", 0, SEC_A, APP),  # came back under a new id, so its departure row is keyed to this one
+    ("9", 0, SEC_A, APP),  # departed, then named again by a census under its own id
+    ("10", 0, SEC_A, APP),  # departed, and back as a NEW record: this id is retired, #475
+    ("10b", 30, SEC_B, APP),  # that new record, with its own spans and no departure of its own
 )
-DEPARTURES = (("7", None, 12, None), ("10b", "10", 20, 30))  # subject, prior id, departed, returned
+# subject, prior id, departed, returned. Row two is a plain return — the id itself named again — and row
+# three is a serial match's re-key, which retires id 10 rather than bringing it back (#475).
+DEPARTURES = (("7", None, 12, None), ("9", None, 20, 30), ("10b", "10", 20, 30))
 AS_OF = _at(60)  # named, so every boundary below lands on a whole day
 HEARTBEAT = _at(50) + LAG
 
@@ -150,13 +154,26 @@ async def test_the_head_and_the_tail_are_not_observed_and_no_device_is_dropped(d
             assert all((t is not None) is (i.state == OBSERVED) for t in (i.first_collected_at, i.last_collected_at))
 
 
-async def test_a_departure_relabels_the_tail_and_a_return_bounds_it(db, ledger) -> None:
+async def test_a_departure_relabels_the_tail_and_only_a_plain_return_bounds_it(db, ledger) -> None:
+    """A Mac that came back under a *new* id never came back under the old one: that id is retired, and it
+    reads as an open departure everywhere else in the app (#475). Only a census naming the departed id itself
+    bounds the stretch — the one shape that would otherwise print weeks of "we lost sight of it" for a Mac the
+    fleet count has already written off."""
+    from app.observations.departure import open_departures
+
     security = await _read(db, ledger)
     # Two spans, one digest, one interval; a week quiet; then the census found it gone.
     assert _days(security, "7") == [(OBSERVED, 0, 5), (NOT_OBSERVED, 5, 12), (DEPARTED, 12, 60)]
-    # Back under a new id, so the departed stretch is bounded and the rest is unobserved again.
-    assert _days(security, "10") == [(OBSERVED, 0, 0), (NOT_OBSERVED, 0, 20), (DEPARTED, 20, 30), (NOT_OBSERVED, 30, 60)]
+    # Named again under its own id: departed for the days it was gone, then unobserved again.
+    assert _days(security, "9") == [(OBSERVED, 0, 0), (NOT_OBSERVED, 0, 20), (DEPARTED, 20, 30), (NOT_OBSERVED, 30, 60)]
+    # Back as a different record: id 10 stays departed, and the id it came back as carries none of it.
+    assert _days(security, "10") == [(OBSERVED, 0, 0), (NOT_OBSERVED, 0, 20), (DEPARTED, 20, 60)]
+    assert _days(security, "10b") == [(NOT_OBSERVED, 0, 30), (OBSERVED, 30, 30), (NOT_OBSERVED, 30, 60)]
     assert all(i.digest is None for s in security.subjects for i in s.intervals if i.state != OBSERVED)
+    # The invariant under all three: a tail still departed at `as_of` is exactly an id the present-tense
+    # reader calls gone. The two readers keep the same half of `still_gone_under_this_id`.
+    gone_now = {sid for cid, sid in await open_departures(db, subject_kind=COMPUTER) if cid == ledger.id}
+    assert gone_now == {s.subject_id for s in security.subjects if s.intervals[-1].state == DEPARTED} == {"7", "10"}
 
 
 async def test_the_clock_is_the_ledgers_and_history_outlives_the_runs(db, ledger) -> None:
@@ -172,5 +189,5 @@ async def test_the_clock_is_the_ledgers_and_history_outlives_the_runs(db, ledger
 
     security = await _read(db, ledger, as_of=None)
     assert security.as_of == HEARTBEAT
-    assert {s.subject_id for s in security.subjects} == {"4", "5", "6", "7", "8", "10"}
+    assert {s.subject_id for s in security.subjects} == {"4", "5", "6", "7", "8", "9", "10", "10b"}
     assert all(i.ends_at <= HEARTBEAT for s in security.subjects for i in s.intervals)
