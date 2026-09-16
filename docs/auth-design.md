@@ -149,7 +149,7 @@ class ApiToken(Base):
 
 The failure mode we're designing against: org turns on "require SSO," the IdP then has an outage or a misconfiguration, and nobody can log in to the tool that manages their fleet's security posture. Reserving one flagged local account that is *permanently* exempt from SSO enforcement is the standard answer (Okta and AWS both push this pattern for their own admin surfaces).
 
-The cost of the exemption is that it must be impossible to use quietly: every break-glass authentication writes an audit event at high severity **and** streams to the SIEM immediately, so the use shows up in the customer's alerting rather than only in our UI.
+The cost of the exemption is that it must be impossible to use quietly: every break-glass authentication writes an audit event at high severity **and** streams to the SIEM immediately, so the use shows up in the customer's alerting rather than only in our UI. **The second half of that is designed, not built (#303)** — the audit event and its WARNING log line ship (`api/auth.py` raises the "login succeeded" line to WARNING and records `break_glass` on `LOGIN_SUCCEEDED`), but no `audit.*` event type is in the outbox's `KNOWN_EVENT_TYPES`, so a break-glass login reaches the audit file and the container's stdout and goes no further. §6.6 states the same gap generally; until it closes, the alerting this paragraph asks for is a rule on that WARNING line wherever the operator collects stdout.
 
 ### 3.4 OIDC account linking — decided: auto-link on verified email
 
@@ -340,7 +340,12 @@ transaction, cascade away with it, and are read *first*: `resolve_session` and t
 bearer path ask the index for the tenant, rebind the request to it, and only then read
 the tenant-scoped row. A session minted in a second tenant therefore resolves exactly as
 one in the first does, and a cookie nobody issued resolves to nothing — the same 401 as
-a revoked one.
+a revoked one. #303, auditing what a future IdP integration would cost from here, named
+resolving identity before a tenant is known the only genuinely expensive piece of it —
+an OIDC callback has to find an account by `(issuer, subject)` with no tenant bound yet —
+and #35 built that primitive: `session_tenants` / `api_token_tenants`
+(`backend/app/core/tenancy.py`), exercised against a second operational tenant in
+`backend/tests/test_identity_resolution_db.py`.
 
 Why not the `SECURITY DEFINER` function the issue specified: it needs a `BYPASSRLS` owner
 role that Alembic cannot create, because the application role is `NOSUPERUSER
