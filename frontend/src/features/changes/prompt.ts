@@ -198,8 +198,10 @@ function deviceLine(device: PromptDevice, words: PromptStrings): string {
  * earlier observation is no longer stored there is no lower bound, and none is stated.
  */
 function whenLines(when: PromptWhen, total: number, words: PromptStrings): string[] {
+  // A span only when there is one: several changes found in the same inventory share a time,
+  // and "Observed from 11:57 to 11:57" reads as a bug over the first demo question.
   const lines = [
-    total > 1
+    total > 1 && when.oldestObservedAt !== when.observedAt
       ? words.answerWhenSpan(at(when.oldestObservedAt), at(when.observedAt))
       : words.answerWhenOne(at(when.observedAt)),
   ];
