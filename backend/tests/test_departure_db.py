@@ -731,6 +731,8 @@ async def test_a_returning_mac_carries_its_pull_and_the_id_it_departed_under(db,
     assert (await sync_connection(db, connection)).ok
     jamf._extra = []
     assert (await sync_connection(db, connection)).ok
+    (departed,) = await _departures(db, connection.id, COMPUTER)
+    await _age(db, departed, 3)  # mid-tail, so an unsuppressed notice for the retired half would go out here
 
     mark = await _high_water(db)
     reborn = _re_enrolled(clone)
@@ -738,7 +740,8 @@ async def test_a_returning_mac_carries_its_pull_and_the_id_it_departed_under(db,
     assert (await sync_connection(db, connection)).ok
     (back,) = await _events(db, mark, "subject.returned")
     (row,) = await _departures(db, connection.id, COMPUTER)
-    assert back.payload["matchedBy"] == "serialNumber" and back.payload["absentForDays"] == 0
+    assert await _events(db, mark, "subject.departure") == [], "returned and still-absent must not go out together"
+    assert back.payload["matchedBy"] == "serialNumber" and back.payload["absentForDays"] == 3
     assert back.payload["priorJamfProID"] == clone["id"], "the only join back to the departure it closes"
     assert back.payload["deviceMeta"]["jamfProID"] == reborn["id"] and back.payload["departedAt"] == row.departed_at.isoformat()
     platform = await db.scalar(select(Device.platform).filter_by(mdm_connection_id=connection.id, external_id=reborn["id"]))

@@ -1294,13 +1294,12 @@ history stay, and **Show departed** in the filter bar (`includeDeparted=true`) r
    here and enrols as a new Mac.
 4. **Your SIEM saw nothing either way.** A Mac ships under the sourcetype `loon:departure`
    ([`splunk-setup.md`](splunk-setup.md) §7), and the census line above counts what it sent:
-   `eventsEnqueued` the notices and returns, `macsRemoved` the tails it closed. A departed Mac
-   sends `state: departed`, `noticeDay` 1..7, **one per UTC day** — a second sweep the same day
-   sends nothing, a day with no clean census is never backfilled, so `noticeDay` jumps. When the
-   seven days are up and it is still gone, one `state: removed` closes the tail without waiting for
-   a clean census. A sweep that names the Mac sends `subject.returned` and no `removed` under that
-   id; a re-enrolment names a new id, so the retired one closes too and `priorJamfProID` joins them.
-   Counted here, absent in Splunk, is path 3 — `subscribedEvents` must hold both. Zero is state **T**.
+   `eventsEnqueued` the notices and returns, `macsRemoved` the tails it closed. A departed Mac sends
+   `state: departed`, `noticeDay` 1..7, **one per UTC day**: a day with no clean census is never
+   backfilled, so `noticeDay` jumps. After seven days one `state: removed` closes the tail, without
+   waiting for a clean census. A sweep that names the Mac sends `subject.returned` and no notice under
+   that id; a re-enrolment names a new one, so the retired id still closes and `priorJamfProID` joins
+   them. Counted here, absent in Splunk, is path 3 — both names must be in `subscribedEvents`; zero is **T**.
 5. **An alert closed itself, or the nightly numbers moved, and nobody touched anything.** A
    Mac leaving takes its open latches with it — the sweep is what closes a latch, and a Mac
    that left is never swept again, so one left open would read as *true of the fleet* for ever.
@@ -1324,6 +1323,6 @@ history stay, and **Show departed** in the filter bar (`includeDeparted=true`) r
 **T.** A finished, unselected, failure-free device sweep whose log has no *device census* line;
 a Mac Jamf returns on the sweep's own endpoint that still departs or stays departed; a census that
 departs a Mac and enqueues nothing for it (`eventsEnqueued: 0` beside `departed: 1`); or an open
-alert latch still on a Mac that left the fleet after a clean census has run since. Report the run's
-`jobID` and its log, the census line if there is one, the Mac's Jamf id, the collection's
+alert latch still on a Mac that left the fleet after a clean census has run since. Report the
+run's `jobID` and its log, the census line if there is one, the Mac's Jamf id, the collection's
 **Selector** field, and `docker compose logs app --since 30m`.

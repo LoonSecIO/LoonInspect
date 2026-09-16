@@ -649,11 +649,9 @@ async def _reconcile_device_census(
     # BELOW the census, not above it: a Mac this census named has closed its row and left the open set,
     # so the sweep that finds one back on the day its clock runs out does not also say it was removed.
     removed = await emit_mac_removals(db, connection=connection, at=at)
-    # The same day-seven boundary one line up, and deliberately NOT the same guarantee: the terminal
-    # also fires above the gate, where #476 put the latch close on the clean path only — so a fleet
-    # swept under a selector hears `removed` while its latch waits for a census. Unconditional on the
-    # verdict, though: a latch crosses day seven on a departure recorded on an earlier night, so what
-    # tonight's census decided has no bearing on it.
+    # The latch close is unconditional on the verdict (#476): a latch crosses day seven because of a
+    # departure recorded on an earlier night, so what tonight's census decided has no bearing on it. It
+    # is not unconditional on the CENSUS, as the terminal one line up is; #512 is that asymmetry.
     latches_closed = await close_departed_device_latches(
         db, connection_id=connection.id, at=at, run_id=run.id if run is not None else None
     )

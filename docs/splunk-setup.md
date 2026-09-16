@@ -419,8 +419,7 @@ your destination spells out `subscribedEvents`, migration `bd51c7a9e402` added B
 without returns would describe a fleet that only ever shrinks. To decline them, remove
 **both** from `subscribedEvents`; removing only one leaves exactly that half-open state.
 Pairing at search time is `departedAt`, which a return repeats verbatim, and the id — which a
-wipe-and-re-enrol does not: a Mac comes back under a new one, so the return names the id it
-departed under as `priorJamfProID` and the join is the coalesce of the two.
+wipe-and-re-enrol does not, so the return names the one it departed under as `priorJamfProID`:
 
 ```
 index=<yours> sourcetype=loon:departure
@@ -430,9 +429,9 @@ index=<yours> sourcetype=loon:departure
 ```
 
 That is every subject still gone. Swap the `where` for `mvcount(seen)=2` to list the ones
-that came back, and add `subjectKind=computer_group` to scope it to smart groups. A **Mac**
-departs on a tail — up to seven `state: departed` notices, one per UTC day — which
-`values(event)` collapses into the one bucket above; `state=removed` asks which tails closed.
+that came back, and add `subjectKind=computer_group` to scope it to smart groups. A **Mac** departs
+on a tail — seven `state: departed` notices at most, which `values(event)` collapses into one bucket;
+`state=removed` asks which tails closed.
 
 ## 8. Prove it end to end
 
