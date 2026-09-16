@@ -3,10 +3,15 @@ version, carrying the hashes LoonInspect stamps on every installed app.
 
 Kyle's point (2026-08-22): Jamf lists the name, bundle ID and version of every release it tracks,
 with the release date — "it has the values: when you get an App you can do the local MD5 lookup on
-it". `app_catalog_versions` is that table. Where Jamf gives an `appName` the row carries
+it". `app_catalog_versions` is that table. Where the title has an app name the row carries
 `app_hash = md5(appName:bundleId)`, `version_hash = md5(appName:bundleId:version)` (Jamf-style:
 no short version) and the v1 content keys; every row carries `(bundle_id, version)` for the titles
-Jamf names no app for (the versioned lines, "Wireshark 4.2"). Rebuilt after each catalog sync.
+nothing names an app for. Rebuilt after each catalog sync.
+
+**The sync decides that name, not this module** (#385). Jamf leaves `appName` null on 513 of 1,553
+titles — the versioned lines, "Wireshark 4.2" among them — and names the same app in every patch's
+`killApps` for the same bundle ID, which is what a Jamf inventory reports. `app.mdm.patch.jamf_catalog`
+reads it there before `killApps` is stripped; here a salvaged name is a name like any other.
 """
 
 from __future__ import annotations
@@ -20,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.content_keys import app_full_key, app_title_key
 from app.core.hashing import compute_app_hash, compute_version_hash
 from app.mdm.patch.matching import Catalog, CatalogTitle, load_catalog
-from app.mdm.patch.requirements import BUNDLE_ID, EXTENSION_ATTRIBUTE
+from app.mdm.patch.requirements import bundle_ids_named
 from app.models.schema import AppCatalogVersion
 
 logger = logging.getLogger(__name__)
@@ -29,19 +34,10 @@ _CHUNK = 2000
 
 
 def title_bundle_ids(title: CatalogTitle) -> list[str]:
-    """The bundle IDs a title speaks for: its own column and every `Application Bundle ID is`
-    value in its requirements (1Password 4/5/6 each name the shared ID; Jamf Self Service's
-    column is a prefix its `like` test widens — only exact values make rows)."""
-    found: list[str] = []
-    if title.bundle_id:
-        found.append(title.bundle_id)
-    for group in title.requirements:
-        for test in group.get("tests") or []:
-            if test.get("type") != EXTENSION_ATTRIBUTE and test.get("name") == BUNDLE_ID and test.get("operator") == "is":
-                value = str(test.get("value") or "").strip()
-                if value and value not in found:
-                    found.append(value)
-    return found
+    """The bundle IDs a title speaks for, in the order the catalog sync walks them — the walk is
+    `app.mdm.patch.requirements.bundle_ids_named`, shared with the sync so the bundle ID a title's
+    app name is salvaged from is the one this module makes its first rows for (#385)."""
+    return bundle_ids_named(title.bundle_id, title.requirements)
 
 
 def build_rows(catalog: Catalog) -> list[dict]:

@@ -380,6 +380,12 @@ class JamfPatchTitle(Base):
     name: Mapped[str] = mapped_column(String(255))
     publisher: Mapped[str | None] = mapped_column(String(255), nullable=True)
     app_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Where `app_name` came from (#385): `jamf` is Jamf's own top-level `appName`; `kill_apps` is
+    # the name its patches gave for the title's bundle ID, which is how the 513 titles Jamf leaves
+    # unnamed ("Wireshark 4.2") get the name a Mac reports; `unnamed` is a decision too — nothing
+    # names an app for this title, so its rows carry no content keys. NULL is a row written before
+    # the rule existed, and is what makes the sync read it once more (`_needs_refresh`).
+    app_name_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
     bundle_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     current_version: Mapped[str] = mapped_column(String(64))
     last_modified: Mapped[str] = mapped_column(String(64))

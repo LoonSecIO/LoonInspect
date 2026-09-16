@@ -67,10 +67,25 @@ catalog, so device pages and the Applications overview need no join.
   through the catalog row and `installed_apps.version_hash`.
 - **`app_catalog_versions`** (global, like `jamf_patch_titles`): Jamf's side as a local lookup —
   one row per considered title × bundle ID (the title's column and every `Application Bundle ID
-  is` value) × listed version, with `released_at`, `is_latest`, and, where Jamf names the app
-  (`appName`: 1,040 of 1,549 titles), the same four keys precomputed Jamf-style (no short
-  version). Titles Jamf names no app for — the versioned lines, "Wireshark 4.2" — are reached by
-  `(bundle_id, version)`. Rebuilt after every catalog sync.
+  is` value) × listed version, with `released_at`, `is_latest`, and, where the title has an app
+  name (§2a), the same four keys precomputed Jamf-style (no short version). Titles nothing names
+  an app for are reached by `(bundle_id, version)` alone. Rebuilt after every catalog sync.
+
+### 2a. The name a key is computed from, and why a wrong one is impossible
+
+A content key is `(appName, bundleId[, version])` hashed, so a row is keyed only where its title
+has an app name. Jamf leaves the top-level `appName` **null on 513 of its 1,553 titles** — every
+versioned line, "Wireshark 4.2" among them — while naming the same app in each patch's `killApps`
+for the same bundle ID (`{"bundleId": "org.wireshark.Wireshark", "appName": "Wireshark.app"}`),
+which is exactly what a Jamf inventory reports for the installed app. The sync takes it there,
+before `killApps` is stripped, and `jamf_patch_titles.app_name_source` says which field answered —
+`jamf`, `kill_apps`, or `unnamed` for a title nothing names an app for (#385,
+`app.mdm.patch.jamf_catalog._app_name`, copied from the engine's `app_name_for`).
+
+**Where the patches offer several names for one bundle ID — 115 titles, Adobe SpeedGrade naming
+two release years — the first is taken, and that is a possible miss, never a wrong key.** A key
+is only ever compared for equality against what an inventory reports, so a name no Mac carries
+joins to nothing; it can never make some other app's row answer.
 
 ## 3. When rows are written and judged
 

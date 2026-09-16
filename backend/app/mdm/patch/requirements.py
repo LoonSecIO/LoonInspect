@@ -32,7 +32,7 @@ admin's hand-check of the same rule):
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -63,6 +63,30 @@ APP_TESTS = frozenset({BUNDLE_ID, APPLICATION_TITLE, APPLICATION_VERSION})
 # OS version ("Apple macOS …") or an extension attribute alone (the `jamf-patch-*` titles)
 # cannot say which installed app the title is about.
 IDENTIFYING_TESTS = frozenset({BUNDLE_ID, APPLICATION_TITLE})
+
+
+def bundle_ids_named(bundle_id: str | None, groups: Iterable[Mapping] | None) -> list[str]:
+    """The bundle IDs a title speaks for: its own column and every `Application Bundle ID is`
+    value in its requirement groups (1Password 4/5/6 each name the shared ID; Jamf Self
+    Service's column is a prefix its `like` test widens — only exact values make rows).
+
+    Here rather than beside either caller because two of them need the same list in the same
+    order: `app.catalog.index.title_bundle_ids` makes one row per bundle ID, and the catalog sync
+    walks it to decide which bundle ID's `killApps` name a title with no `appName` is keyed from
+    (#385). A first bundle ID that differed between the two would key a row under one app's name
+    and look it up under another's.
+    """
+    found: list[str] = []
+    own = (bundle_id or "").strip()
+    if own:
+        found.append(own)
+    for group in groups or ():
+        for test in group.get("tests") or []:
+            if test.get("type") != EXTENSION_ATTRIBUTE and test.get("name") == BUNDLE_ID and test.get("operator") == "is":
+                value = str(test.get("value") or "").strip()
+                if value and value not in found:
+                    found.append(value)
+    return found
 
 
 # Jamf's platform names, keyed by the content-key spelling `devices.platform` and
