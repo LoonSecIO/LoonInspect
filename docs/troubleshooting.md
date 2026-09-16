@@ -1076,9 +1076,9 @@ record at all, and the sweep writes one line per deleted object instead ([`chang
    it — this instance at *High only*, smart-group (or extension-attribute) changes switched off under
    Settings › Change tracking, or that group muted: each writes no rows **and** no line. Otherwise
    nothing departed. The census that finds a deletion runs at the start of the sweep, and a refused or
-   collapsed one departs nobody and says so — *census returned nothing* or *census collapsed against
-   the population*: the circuit breaker for an API role that lost **Read Smart Computer Groups**.
-   Grant it and re-run. A line whose `objectId` names a group still in Jamf is reportable state **S**.
+   collapsed one departs nobody and says so in the same run panel: a warning-level *departures reconciled*
+   line with `skipped=empty_census`, `collapsed_census` or `not_readable` — the circuit breaker for an API
+   role that lost **Read Smart Computer Groups**. Grant it and re-run. A line whose `objectId` names a group still in Jamf is reportable state **S**.
 
 **S.** A collapse line for an object that still exists in Jamf. Report the line, the
 `jobID`, and the build from Settings › Support.
