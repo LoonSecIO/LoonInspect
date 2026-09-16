@@ -46,13 +46,28 @@ class StoredValueUnreadable(RuntimeError):
         super().__init__(message)
 
 
+def _readable_key_id(key_id: str) -> str:
+    """What the sentence is allowed to say the key id was.
+
+    The key id is whatever stands before the first colon of a column value, so it is the
+    one part of this failure that comes out of the database — and it goes straight into a
+    503 body and a log line. A corrupt or hostile row would otherwise put a megabyte, a
+    newline, or terminal control characters into both. A key id is short and plain by
+    construction (`k1`), so anything else is spelled `?`, and anything past 16 characters
+    is dropped: enough to read `k2` back, never enough to fill a log."""
+    if not key_id:
+        return "(empty)"
+    shown = "".join(c if c.isascii() and (c.isalnum() or c in "._-") else "?" for c in key_id[:16])
+    return f"{shown}…" if len(key_id) > 16 else shown
+
+
 class StoredValueUnknownKeyId(StoredValueUnreadable):
     """An envelope written under a key id this build does not know. A
     `StoredValueUnreadable` still, so the 503 and the once-per-process log line hold; its
     own sentence, because the fix is the image and not the key."""
 
     def __init__(self, key_id: str) -> None:
-        super().__init__(STORED_VALUE_UNKNOWN_KEY_ID.format(key_id=key_id))
+        super().__init__(STORED_VALUE_UNKNOWN_KEY_ID.format(key_id=_readable_key_id(key_id)))
 
 
 def get_encryption_key() -> bytes:

@@ -1008,6 +1008,39 @@ async def test_a_saved_key_this_instance_cannot_read_names_the_card_to_re_enter_
     assert [r.headers["x-api-key"] for r in endpoint.requests] == [REENTERED_KEY]
 
 
+async def test_a_saved_key_from_a_newer_build_is_not_reported_as_a_wrong_key(client, db, clean, seeded, endpoint):
+    """The other way a saved key can be unreadable (#480): a key id this build does not
+    know. The card's own sentence would have an admin re-enter a key that is fine and a
+    rollback that is not fixed by re-entering it, so this surface leaves that failure to
+    the sentence naming the image. Written through raw SQL — the type decorator would
+    restamp it `k1` on the way in, which is the point of it."""
+    from cryptography.fernet import Fernet
+    from sqlalchemy import text
+
+    from app.ai.providers import Provider
+    from app.core.ai_configs import save_config
+    from app.core.crypto import get_encryption_key
+
+    await _switches(db, flag=True, consent=True)
+    await save_config(
+        db, Provider.anthropic, host_reach=None, base_url="https://api.anthropic.com", model="claude-fable-5-1",
+        reasoning_effort=None, api_key=KEY, clear_key=False, updated_by=ADMIN[0],
+    )  # fmt: skip
+    newer = "k2:" + Fernet(get_encryption_key()).encrypt(KEY.encode()).decode()
+    await db.execute(
+        text("UPDATE ai_provider_configs SET api_key_encrypted = :value WHERE provider = 'anthropic'"), {"value": newer}
+    )
+    await db.commit()
+
+    response = await _ask(client)
+
+    assert response.status_code == 503, response.text
+    detail = response.json()["detail"]
+    assert "key id k2" in detail and "older than the database" in detail
+    assert "re-enters the key" not in detail and "Settings › AI" not in detail
+    assert endpoint.requests == []
+
+
 async def test_the_flag_off_refuses_before_anything_is_dialled(client, db, clean, seeded, endpoint):
     await _saved(db)
     response = await _ask(client)

@@ -72,10 +72,17 @@ COPY public.mdm_connections (id, tenant_id, name, provider, base_url, is_active,
 
 Since #480 the stored value begins with a key id — `k1:` and then the token, where the
 capture above predates the prefix — so a later rekey can tell which key wrote a row by
-reading the row, not a side table. It changes nothing you have to do: the dump still
+reading the row, not a side table. What you back up does not change: the dump still
 carries ciphertext and not the secret, and losing `ENCRYPTION_KEY` still costs you every
 credential in it. `k1` is the only key id this build knows; values written before the
 prefix existed are read as `k1`, with no migration and no backfill.
+
+Two things it does change, and both matter to a runbook. The break-glass check below
+takes the token out of the envelope before it tries the key — a `k1:…` value handed to
+Fernet whole is refused, and the check would report a wrong key for the right one. And
+**an image older than #480 cannot read a row this build wrote**: it hands the whole
+string to Fernet, gets the same refusal, and answers with the wrong-key sentence on an
+instance whose key is fine. That is a rollback hazard, and it is spelled out in §5.
 
 That property is pinned by a test rather than by this paragraph:
 `backend/tests/test_backup_secrecy_db.py` reads the row back through raw SQL — the path
@@ -117,7 +124,11 @@ docker compose exec -T db psql -U looninspect -d looninspect -tAc \
   "SELECT credentials_encrypted FROM mdm_connections ORDER BY id LIMIT 1" \
 | docker compose exec -T app uv run --frozen --no-sync --no-dev python -c 'import os,sys
 from cryptography.fernet import Fernet, InvalidToken
-t = sys.stdin.read().strip()
+# The column is a key id and then the token since #480, and the token alone before it. A
+# Fernet token is urlsafe base64 and carries no colon, so the tail is the token either way.
+key_id, _, t = sys.stdin.read().strip().rpartition(":")
+if key_id not in ("", "k1"):
+    sys.exit("this row was written under key id " + key_id[:16] + ", which this build does not know: the image is older than the database (docs/troubleshooting.md section 4)")
 try:
     Fernet(os.environ["ENCRYPTION_KEY"].encode()).decrypt(t.encode())
 except (InvalidToken, ValueError):
@@ -125,12 +136,24 @@ except (InvalidToken, ValueError):
 print("ENCRYPTION_KEY matches this database")'
 ```
 
+The check reads one row (`ORDER BY id LIMIT 1`), which is the whole database's answer
+while there is one key: every row is under `k1`, prefixed or not. The key-id branch is
+what keeps that true if it ever stops being — a row from a newer build is reported as
+what it is, rather than as a key that does not match.
+
 ```
-### the documented one-liner, verbatim
+### the documented one-liner, verbatim, against a row this build wrote (k1:gAAAAAB…)
+ENCRYPTION_KEY matches this database
+
+### the same, against a row written before the prefix existed (gAAAAAB…)
 ENCRYPTION_KEY matches this database
 
 ### and with a key that is valid Fernet but not this database's
 ENCRYPTION_KEY does NOT match this database
+(exit status 1)
+
+### a row carrying a key id this build does not know
+this row was written under key id k2, which this build does not know: the image is older than the database (docs/troubleshooting.md section 4)
 (exit status 1)
 ```
 
@@ -139,11 +162,19 @@ better and does not work — the heredoc *is* stdin, so `sys.stdin.read()` retur
 empty string and the check reports "nothing to check" whatever the key is. It was
 written that way first and caught by running it. `python -c` keeps stdin for the token.
 
+**Also caught by running it:** the version of this check written before #480 read the
+whole column as the token, so against a `k1:` row it printed *ENCRYPTION_KEY does NOT
+match this database* for the key that was right — a break-glass check answering the exact
+opposite of the truth. `backend/tests/test_crypto.py` now pulls this snippet out of this
+document and runs it, against a value the type decorator wrote and against an unprefixed
+one, so the two cannot drift apart again.
+
 Store the key where you store other break-glass secrets. **Not in git** — `.gitignore`
 excludes `.env` for this reason, and a key committed once is a key in every clone's
-history for ever. There is no key rotation yet (`app/core/crypto.py` says so in as many
-words), so the key you generate at install is the key that database needs for its whole
-life.
+history for ever. There is no key rotation yet — the envelope names the key that wrote a
+row, which is what makes a rekey possible later, but this build has one key and no way to
+change it (`app/core/crypto.py` says both in as many words) — so the key you generate at
+install is the key that database needs for its whole life.
 
 ---
 
@@ -501,6 +532,46 @@ otherwise restart the running one; `run --rm` because this is a one-off containe
 should not survive the command. Read the `downgrade()` you are about to run first — a
 downgrade restores the *schema*, not the data the upgrade transformed, and several here
 say so explicitly.
+
+### A downgrade does not un-write what the newer image wrote
+
+The schema is not the only thing a newer build leaves behind, and one case has a sentence
+that will send you the wrong way. Since #480 every credential this build writes carries a
+key id — `k1:` and then the Fernet token (§1). An image older than that change hands the
+whole string to Fernet, which refuses it. So after a rollback past it, a credential
+written while the newer image ran answers **503** with *Stored credentials cannot be
+read: the `ENCRYPTION_KEY` in the environment is not the one this database was written
+under…* — on an instance whose key is fine. `alembic downgrade` does not touch those
+rows. Nothing does: a row is restamped only when something writes it, so rows written
+before the upgrade are unaffected.
+
+**Measured**, running the image from before that change against a database whose one
+connection this build wrote, with the right `ENCRYPTION_KEY` in the environment. The
+request below is `GET /api/mdm/connections`; destinations, the AI key and the licence key
+are the same column type through the same seam, so they answer the same way — that part
+is reasoned, not run:
+
+```
+### the older image (pre-#480), same volume, same key
+loon480old :: Up 7 seconds (healthy)
+{"status":"ok"}  <- HTTP 200
+login HTTP 200
+
+### and the connection it cannot read
+HTTP 503  {"detail": "Stored credentials cannot be read: the ENCRYPTION_KEY in the
+environment is not the one this database was written under. …"}
+
+### the same row, same key, read by the image that wrote it
+read back: Runbook Test Jamf | {"clientId": "rb-client", "clientSecret" …
+```
+
+**The key is not the problem, so do not re-enter any secret.** That sentence's own
+step-through ends in deleting each connection and destination and creating it again
+([`troubleshooting.md`](troubleshooting.md) §4 step 3), which here is the wrong move — it
+discards credentials that are perfectly readable, under a key that was never wrong. **Go
+forward** (recovery 1 below) and they read again; or restore the pre-upgrade dump beside
+the older image (recovery 3), which has no `k1:` rows in it. The newer build reads both
+spellings, which is why this hazard runs one way only.
 
 ### If you swap the image back first, it crash-loops
 

@@ -204,6 +204,14 @@ the operator as a bare `500` and a traceback per request; it is a sentence now �
 Connections and Destinations pages show it — but it is still not detected until
 something reads a credential, which is the limit this entry records.
 
+**That sentence has a second cause since #480, and the key is fine in it.** Stored values
+now begin with the key id that wrote them (`k1:`), and an image older than that change
+cannot read one — it reports it as this same wrong-key sentence. So a rollback past #480
+produces the whole failure above on an instance whose `ENCRYPTION_KEY` was never wrong.
+Measured, with the older image against a database this build wrote, in
+[docs/operations.md §5](docs/operations.md); the fix there is to go forward, and
+re-entering secrets is the one thing not to do.
+
 **Where it bites.** Every restore, at every fleet size. It is the single most likely way
 to lose a LoonInspect instance: back up the database, not the key.
 

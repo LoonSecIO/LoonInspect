@@ -61,7 +61,7 @@ from app.core.ai import AIRefused, ai_features_enabled, require_ai
 from app.core.ai_configs import get_config, list_configs
 from app.core.audit import AuditAction, audit
 from app.core.auth import require
-from app.core.crypto import StoredValueUnreadable
+from app.core.crypto import StoredValueUnknownKeyId, StoredValueUnreadable
 from app.core.database import get_db
 from app.core.permissions import Permission
 from app.core.sharing import get_or_create_settings
@@ -156,7 +156,9 @@ async def _chosen(db: AsyncSession, requested: Provider | None) -> AIProviderCon
     The provider is settled from the listing, which never opens a key, before its row is
     loaded with the key decrypted. So a key this instance cannot read (a restore that
     brought the database and not its ENCRYPTION_KEY) is refused naming the card to
-    re-enter it on, rather than as the generic 503 about every stored credential."""
+    re-enter it on, rather than as the generic 503 about every stored credential. A value
+    carrying a key id this build does not know is a different failure with a different fix
+    and keeps its own sentence (#480)."""
     provider = requested
     if provider is None:
         saved = await list_configs(db)
@@ -165,6 +167,12 @@ async def _chosen(db: AsyncSession, requested: Provider | None) -> AIProviderCon
         provider = Provider(saved[0].provider)
     try:
         config = await get_config(db, provider)
+    except StoredValueUnknownKeyId:
+        # Not a wrong key, so not this surface's sentence (#480): the row was written by a
+        # newer build, and re-entering the key on the card would neither fix it nor be
+        # needed. Left to `main.py`'s handler, which answers every surface the same way —
+        # 503, the sentence naming the image, one log line.
+        raise
     except StoredValueUnreadable as exc:
         # Caught here, so main.py's handler never logs it: the container log is where a
         # wrong ENCRYPTION_KEY is announced (docs/diagnosability.md §4), so say it here.
