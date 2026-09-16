@@ -512,12 +512,16 @@ class AppCatalogEntry(Base):
     # no catalog key and #385's unnamed titles never reach it. Joined against the same
     # primary key, in the same statement, as a second outer join.
     #
-    # **Two clocks again.** The key moves on the JAMF clock (`_apply_summary`), the answer
-    # on the CORPUS clock (`judge_vuln`), and both writers re-judge together — so
-    # `vuln_target_version` always equals the `latest_version` beside it. It is stored
-    # anyway: it is the only honest way to tell a row judged before this column existed
-    # (NULL) from one whose target the epoch holds no row for. The key is NOT copied onto
-    # `installed_apps`; a key is a judge input, not an answer.
+    # **Two clocks again,** and this pair is where they are visible. The key moves on the
+    # JAMF clock (`_apply_summary`), the answer on the CORPUS clock (`judge_vuln`), so a row
+    # can hold a `latest_version` the corpus clock has never been asked about — every row
+    # does, between this column's migration and the next catalog sync. `vuln_target_version`
+    # is therefore NOT a copy of `latest_version`: it is the judge's record of which release
+    # it looked up, written only where the key it joined on exists, and that is the only
+    # honest way to tell a row no lookup has happened for (NULL — nothing renders) from one
+    # whose target the epoch holds no row for (a version with a NULL assessment, ruling R-D
+    # one row out: `unknown_app`). The key is NOT copied onto `installed_apps`; a key is a
+    # judge input, not an answer.
     vuln_target_key: Mapped[str | None] = mapped_column(String(67), nullable=True)
     vuln_target_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     vuln_target_assessment: Mapped[str | None] = mapped_column(String(16), nullable=True)

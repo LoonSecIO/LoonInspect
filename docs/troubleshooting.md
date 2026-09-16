@@ -432,8 +432,11 @@ and step 2 ends with how to tell that apart from a broken exchange.
      release the line names.
 
    A build with no line at all is not this: the line is printed only beside a **covered**
-   build with a target to compare against, so a grey or amber build (steps 1–4), a build
-   already on the latest release, and a build Jamf lists no title for all show nothing.
+   build whose target was actually looked up, so a grey or amber build (steps 1–4), a build
+   already on the latest release, a build Jamf lists no title for, and — for one Jamf
+   catalog sync after the upgrade that added this line — every build, all show nothing. A
+   release nobody looked up is never dressed as one the corpus has no row for, so the
+   absence of a line is the honest state and not a silent failure.
 
 **H.** A corpus has arrived on this container, this organization's tier is not `off`, and
 the pages still do not answer from it — either they say nothing is answering (grey,

@@ -20,6 +20,11 @@ whose target the epoch holds no row for (a version with a NULL assessment, which
 
 Nullable, no backfill, mirroring d4a1e8c73b29: the next catalog refresh or corpus pass
 fills them, and NULL reads as "not yet judged under this key" rather than as an answer.
+That window is the one the judge is guarded for: until the next catalog sync every row here
+has a NULL `vuln_target_key` beside a non-NULL `latest_version`, and a corpus epoch that
+moves first re-judges exactly those rows — so `judge_vuln` writes `vuln_target_version`
+only where the key it joins on exists, and a release nothing looked up stores nothing
+rather than storing itself as "not in the corpus".
 Nothing new goes on the wire (docs/vulnerabilities.md §6); this is an in-app render.
 
 Revision ID: b3e7d1a9c5f0

@@ -188,6 +188,18 @@ async def judge_vuln(db: AsyncSession, entries: Sequence[AppCatalogEntry] | None
         # the first is — a target the new epoch dropped must stop reading `covered` — and in
         # THIS statement so the two answers on a row can never come from two epochs.
         target = aliased(VulnLibraryRow)
+        # `vuln_target_version` is the record of WHICH release this pass looked up, so it may
+        # only be written where a lookup happened — hence the `case` rather than the column.
+        # The two clocks make the difference a real state and not a theoretical one: the key
+        # moves on the JAMF clock and the answer on the CORPUS clock, so from this column's
+        # migration until the next catalog sync every row carries a NULL key beside a
+        # non-NULL `latest_version`, and a corpus epoch that moves first comes through here
+        # over exactly those rows. Writing the version unguarded stored version-present /
+        # assessment-NULL, which renders as `unknown_app` — *not in the corpus of <date>*, in
+        # the warning colour, about a release nothing ever asked the corpus about, on every
+        # device page and application record for the length of the window. A lookup that
+        # never happened is not a missing row (R-D); only a row that HAS a key can be told
+        # that the epoch holds nothing for it.
         joined = (
             select(
                 AppCatalogEntry.id.label("id"),
@@ -196,7 +208,9 @@ async def judge_vuln(db: AsyncSession, entries: Sequence[AppCatalogEntry] | None
                 VulnLibraryRow.oldest_published.label("oldest_published"),
                 VulnLibraryRow.ids.label("ids"),
                 VulnLibraryRow.truncated.label("truncated"),
-                AppCatalogEntry.latest_version.label("target_version"),
+                case((AppCatalogEntry.vuln_target_key.is_not(None), AppCatalogEntry.latest_version), else_=null()).label(
+                    "target_version"
+                ),
                 target.key_full.is_not(None).label("target_covered"),
                 target.counts.label("target_counts"),
                 target.ids.label("target_ids"),

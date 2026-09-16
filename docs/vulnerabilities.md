@@ -462,8 +462,13 @@ would have left every other Mac stale forever. `docs/troubleshooting.md` §5 wal
 the Jamf Patch answer's version in the version slot — outer-joined against the same primary
 key by the same `UPDATE … FROM`, so the two answers on a row can never come from two
 epochs. The key moves on the Jamf clock beside `latest_version` and the answer on the
-corpus clock, and `vuln_target_version` records which release was answered about, which is
-what tells *not judged for a target yet* from *judged, and the epoch holds no row for it*.
+corpus clock, and `vuln_target_version` records which release was answered about — written
+only where the key it joins on exists, so a lookup that never happened stores nothing. That
+is what tells *not judged for a target yet* (no version, nothing rendered) from *judged, and
+the epoch holds no row for it* (a version with no assessment). The distinction is load-
+bearing rather than tidy: from this column's migration until the tenant's next catalog sync
+every row has a NULL key beside a real `latest_version`, and a corpus epoch that moves in
+that window re-judges exactly those rows.
 Every rule above applies unchanged one row out: a target with no row is `unknown_app`, in
 §4g's words and never *closes all of them* (R-D); an installed build that is not `covered`
 gains nothing; and the difference is **exact** — a set difference of the two id lists —
