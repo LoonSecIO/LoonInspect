@@ -285,17 +285,11 @@ describe("openingCard — the newest read of the saved cards wins the opening se
   });
 
   it("a saved card that is not offered here is not opened on (#404)", () => {
-    // An Apple card saved on a Mac, on a pod that does not offer it: selecting it would
-    // light no card and leave no Remove to reach. The page opens on the first card that
-    // is on screen; the Prompt bar still names the saved one, and §14 says how to take it
-    // off this server.
-    expect(openingCard({ ...untouched, latest: BOTH, offered: WITHOUT_APPLE })).toEqual({
-      card: "anthropic",
-      clearLines: true
-    });
-    expect(openingCard({ ...untouched, latest: byProvider([config("apple_fm")]), offered: WITHOUT_APPLE }).card).toBe(
-      "openai_compatible"
-    );
+    // An Apple card saved on a Mac and restored onto a pod that does not offer it: opening
+    // on it would light no card and leave no Remove to press. §14 says how to take it off.
+    expect(openingCard({ ...untouched, latest: BOTH, offered: WITHOUT_APPLE })).toEqual({ card: "anthropic", clearLines: true });
+    const appleOnly = byProvider([config("apple_fm")]);
+    expect(openingCard({ ...untouched, latest: appleOnly, offered: WITHOUT_APPLE }).card).toBe("openai_compatible");
   });
 
   it("a Remove made while the slowest read was out: the page stays on its card and keeps the Remove's line", () => {

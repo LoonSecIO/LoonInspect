@@ -17,16 +17,13 @@ import { PROVIDER_ORDER } from "@/features/ai/savedState";
  * Desktop on an Apple Silicon Mac, with the alias resolving from inside this container.
  * Everywhere else it is withheld and the detection panel says why in one sentence, so a
  * Mac operator whose detection missed can tell a withheld card from a missing feature
- * (`docs/diagnosability.md` rule 1). Detection stays a hint for which offered card opens
- * selected, and it gates nothing in the backend: a call naming `apple_fm` is judged,
- * gated and logged like any other, wherever this runs.
+ * (`docs/diagnosability.md` rule 1, `docs/troubleshooting.md` §14). Detection stays a hint
+ * for which offered card opens selected, and it gates nothing in the backend: a call
+ * naming `apple_fm` is judged, gated and logged like any other, wherever this runs.
  *
- * Both decisions act on the reading rather than on a guess, which cuts opposite ways: a
- * card is offered only where the reading proves its default can work, and a default is
- * withheld only where the reading proves it cannot. Before the host read settles there is
- * no reading, and the page has filled nothing in yet.
- *
- * Pure on purpose — the frontend lane is node-only and covers modules like this one.
+ * Both decisions act on the reading, which cuts opposite ways: a card is offered only where
+ * the reading proves its default can work, and a default is withheld only where it proves it
+ * cannot. Before the host read settles there is neither a reading nor anything filled in.
  */
 
 /** The name every local default on this page is written against. Docker Desktop supplies
@@ -37,12 +34,10 @@ export const HOST_ALIAS = "host.docker.internal";
 /** What the two decisions read, and `null` until `GET /api/system/ai/host` has settled. */
 export type DetectionReading = Pick<HostDetection, "alias" | "aliasResolves" | "dockerDesktopOnMacos"> | null;
 
-/**
- * The cards the page offers, in the order it shows them. The Apple card needs both halves
- * of its reach: Docker Desktop on an Apple Silicon Mac (`fm serve` runs on the Mac, never
- * in the container) and the alias resolving, which is how the container gets to the Mac.
- * The other two are offered everywhere — one takes any URL, the other a public endpoint.
- */
+/** The cards the page offers, in the order it shows them. The Apple card needs both halves
+ *  of its reach: Docker Desktop on an Apple Silicon Mac (`fm serve` runs on the Mac, never
+ *  in the container) and the alias resolving, which is how the container gets to the Mac.
+ *  The other two are offered everywhere — one takes any URL, the other a public endpoint. */
 export function offeredProviders(detection: DetectionReading): readonly Provider[] {
   const appleWorks = detection !== null && detection.dockerDesktopOnMacos && detection.aliasResolves;
   return appleWorks ? PROVIDER_ORDER : PROVIDER_ORDER.filter((candidate) => candidate !== "apple_fm");
@@ -56,15 +51,11 @@ export function localDefaultWithheld(entry: Pick<ProviderEntry, "baseUrl">, dete
   return entry.baseUrl.includes(detection.alias || HOST_ALIAS);
 }
 
-/**
- * What an unsaved card fills in: the card's own defaults, except where they only work
- * where the alias does. Then neither field is filled — the model that goes with a local
- * URL is as local as the URL (Ollama's `qwen3.5:2b-mlx`, `fm serve`'s `system`), and a
- * model on its own names nothing to send it to. The Anthropic card is never touched: its
- * default is a public endpoint, reachable from anywhere this product runs.
- *
- * A saved card is not defaults. It comes back exactly as it was saved, here as before.
- */
+/** What an unsaved card fills in: the card's own defaults, except where they only work
+ *  where the alias does. Then neither field is filled — the model that goes with a local
+ *  URL is as local as the URL (Ollama's `qwen3.5:2b-mlx`, `fm serve`'s `system`), and a
+ *  model on its own names nothing to send it to. The Anthropic card is never touched: its
+ *  default is a public endpoint. A saved card is not defaults — it comes back as saved. */
 export function providerDefaults(
   entry: Pick<ProviderEntry, "baseUrl" | "model">,
   detection: DetectionReading

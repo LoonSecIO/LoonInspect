@@ -20,12 +20,7 @@ import {
   type ProvidersResponse,
   type TestResponse
 } from "@/features/ai/api";
-import {
-  localDefaultWithheld,
-  offeredProviders,
-  providerDefaults,
-  type DetectionReading
-} from "@/features/ai/offered";
+import { localDefaultWithheld, offeredProviders, providerDefaults, type DetectionReading } from "@/features/ai/offered";
 import {
   byProvider,
   cardEffort,
@@ -196,11 +191,10 @@ export function AISettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // A saved card comes back as it was saved; an unsaved one starts from its defaults —
-  // which the reading can withhold, where they are written against a name this container
-  // cannot resolve (`providerDefaults`). Either way the key field starts empty — a saved
-  // key is never sent to the page — and the Apple card starts with no reasoning effort,
-  // whatever an older save carried.
+  // A saved card comes back as it was saved; an unsaved one starts from its defaults, which
+  // the reading can withhold where they name something this container cannot resolve
+  // (`providerDefaults`). Either way the key field starts empty — a saved key is never sent
+  // to the page — and the Apple card starts with no reasoning effort, whatever a save carried.
   function fillCard(loaded: ProvidersResponse, seen: DetectionReading, next: Provider) {
     const entry = loaded.entries.find((e) => e.provider === next);
     if (!entry) return false;
@@ -355,7 +349,7 @@ export function AISettingsPage() {
   // its local default cannot work here — the Base URL field then says which and why.
   const offered = offeredProviders(detection);
   const noLocalDefault = entry !== undefined && localDefaultWithheld(entry, detection);
-  // The OpenAI-compatible card's help names Ollama on this Mac. Where there is no Mac to
+  // The OpenAI-compatible card's help names Ollama on this Mac; where there is no Mac to
   // reach, it names what is left instead of a default the card no longer fills in.
   const cardHelp = (candidate: Provider) => {
     const card = providers?.entries.find((e) => e.provider === candidate);
@@ -434,8 +428,8 @@ export function AISettingsPage() {
           <p className="mt-1 text-xs text-muted-foreground">
             {t.ai.detectionEvidence}: {Object.values(detection.evidence).join(" · ")}
           </p>
-          {/* A card held back must not read as a feature this build lost, so the panel
-              that decided it says so — under the evidence the sentence points at. */}
+          {/* A withheld card must not read as a feature this build lost, so the panel that
+              decided it says so, under the evidence the sentence points at. */}
           {!offered.includes("apple_fm") && <p className="mt-2 text-sm text-muted-foreground">{t.ai.appleCardWithheld}</p>}
         </div>
       )}
@@ -491,8 +485,8 @@ export function AISettingsPage() {
         <label className="space-y-1 text-sm">
           <span className="font-medium">{t.ai.baseUrl}</span>
           <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} spellCheck={false} />
-          {/* Why the field is empty, while it is. The page said the alias does not resolve
-              in its evidence line; this says what that costs the field under it. */}
+          {/* Why the field is empty, while it is: the evidence line above said the alias
+              does not resolve, and this is what that costs the field. */}
           {noLocalDefault && baseUrl.trim() === "" && (
             <span className="block text-xs text-muted-foreground">{t.ai.baseUrlNoLocalDefault}</span>
           )}
