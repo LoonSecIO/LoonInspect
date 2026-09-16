@@ -99,8 +99,11 @@ export const navigationItems: NavItem[] = [
         end: false,
         permission: PERMISSIONS.SYSTEM_READ
       },
-      // Flag-gated as well as permission-gated: no top-level /ai exists, and this
-      // entry appears only once the `ai_features` switch is on (#319).
+      // Flag-gated as well as permission-gated: no top-level /ai exists, and this entry
+      // appears only once the `ai_features` switch is on (#319). The set it is judged
+      // against is the shared one the toggle writes into (#402), so switching the flag
+      // adds or removes this entry at once, and a flag read that failed leaves it hidden
+      // — the same answer the entry has always had when the flags could not be read.
       {
         labelKey: "ai",
         icon: FlaskConical,

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PERMISSIONS } from "@/features/auth/types";
 import { useHasPermission } from "@/features/auth/store";
-import { listFeatureFlags } from "@/features/settings/api";
+import { useFeatureFlagStore } from "@/features/settings/flagStore";
 import { getDataSharing, updateDataSharing } from "@/features/system/api";
 import {
   deleteConfig,
@@ -62,7 +62,10 @@ export function AISettingsPage() {
   const { t } = useLocale();
   const canWrite = useHasPermission(PERMISSIONS.SYSTEM_WRITE);
 
-  const [flagOn, setFlagOn] = useState<boolean | null>(null);
+  // The one flag state the whole session shares (#402). The route guard in front of
+  // this page reads the same value, so a page that renders at all has the flag on —
+  // the card below says so, and stops saying "\u2026" for a read that no longer happens here.
+  const flagOn = useFeatureFlagStore((state) => state.enabled.has(AI_FLAG));
   const [consent, setConsent] = useState<boolean | null>(null);
   const [providers, setProviders] = useState<ProvidersResponse | null>(null);
   const [detection, setDetection] = useState<HostDetection | null>(null);
@@ -155,10 +158,9 @@ export function AISettingsPage() {
     const openingRead = readSaved();
     // `readSaved` numbers its read as it starts it; this is the opening read's number.
     const openingReadNumber = savedReads.current;
-    Promise.all([listFeatureFlags(), getDataSharing(), getProviders(), getHostDetection(), openingRead])
-      .then(([flags, sharing, loadedProviders, loadedDetection]) => {
+    Promise.all([getDataSharing(), getProviders(), getHostDetection(), openingRead])
+      .then(([sharing, loadedProviders, loadedDetection]) => {
         if (cancelled) return;
-        setFlagOn(flags.some((f) => f.key === AI_FLAG && f.enabled));
         setConsent(sharing.aiInference);
         setProviders(loadedProviders);
         setDetection(loadedDetection);
@@ -339,7 +341,7 @@ export function AISettingsPage() {
   }
 
   const entry = providers?.entries.find((e) => e.provider === provider);
-  const switchesOn = canWrite && flagOn === true && consent === true;
+  const switchesOn = canWrite && flagOn && consent === true;
   const canSend = switchesOn && !sending && baseUrl.trim() !== "" && model.trim() !== "" && prompt.trim() !== "";
   const canLoadModels = switchesOn && !loadingModels && baseUrl.trim() !== "";
   // What the endpoint said it serves, once asked; the card's own suggestions until then.
@@ -348,7 +350,7 @@ export function AISettingsPage() {
   // Saving needs the flag but not the consent: nothing leaves the pod on a save. The
   // server judges the URL and the key rule exactly as Send does.
   const stored = saved[provider];
-  const canSave = canWrite && flagOn === true && !savingConfig && baseUrl.trim() !== "" && model.trim() !== "";
+  const canSave = canWrite && flagOn && !savingConfig && baseUrl.trim() !== "" && model.trim() !== "";
   const canRemove = canWrite && !savingConfig && stored !== undefined;
   // A Save's or a Remove's line is about the card it was pressed on, and lands under
   // whichever card is showing; so the cards hold still until it has landed.
@@ -371,7 +373,7 @@ export function AISettingsPage() {
         <div className="rounded-lg border bg-card p-4">
           <p className="text-sm font-medium">{t.ai.flagLabel}</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            {flagOn === null ? "…" : flagOn ? t.ai.on : t.ai.off}
+            {flagOn ? t.ai.on : t.ai.off}
             {" · "}
             <Link className="underline" to="/settings/feature-flags">
               {t.ai.flagHelp}

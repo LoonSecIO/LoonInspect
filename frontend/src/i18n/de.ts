@@ -129,6 +129,20 @@ export const de: Translations = {
     noAccessDescription:
       "Die Rolle Ihres Kontos umfasst keine Berechtigung für diesen Bereich. Wenden Sie sich an eine Administratorin oder einen Administrator, falls Sie ihn benötigen."
   },
+  flagGate: {
+    checking: "Es wird geprüft, welche Funktionen aktiv sind…",
+    unreadableTitle: "Dieser Bereich konnte nicht geprüft werden",
+    unreadableDescription:
+      "Die Feature-Flags konnten nicht gelesen werden; ob dieser Bereich aktiv ist, ist daher unbekannt — und unbekannt ist nicht dasselbe wie aus. Laden Sie die Seite neu; tritt es weiterhin auf, antwortet diese Instanz oder ihre Datenbank nicht, und unter Einstellungen › Support steht, wo Sie das melden.",
+    featureFlagsLink: "Einstellungen › Feature-Flags öffnen",
+    areas: {
+      ai_features: {
+        offTitle: "KI-Funktionen sind aus",
+        offDescription:
+          "KI-Funktionen sind aus. Eine Administratorin oder ein Administrator schaltet sie unter Einstellungen › Feature-Flags ein."
+      }
+    }
+  },
   errors: {
     notFoundTitle: "Diese Seite gibt es nicht",
     notFoundDescription:

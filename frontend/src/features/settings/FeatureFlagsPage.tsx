@@ -1,11 +1,16 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { listFeatureFlags, updateFeatureFlag } from "@/features/settings/api";
+import { useFeatureFlagStore } from "@/features/settings/flagStore";
 import type { FeatureFlag } from "@/features/settings/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
 export function FeatureFlagsPage() {
   const { t } = useLocale();
+  // A toggle here switches a whole area on or off, so the rest of the session learns of
+  // it now rather than at the next reload (#402): the sidebar, the drawer below `md`, the
+  // route guards and the pages behind them all read the one set this writes into.
+  const applyFlag = useFeatureFlagStore((state) => state.apply);
   const [flags, setFlags] = useState<FeatureFlag[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
@@ -37,6 +42,8 @@ export function FeatureFlagsPage() {
     updateFeatureFlag(flag.key, !flag.enabled)
       .then((updated) => {
         setFlags((current) => current.map((f) => (f.key === updated.key ? updated : f)));
+        // The server's answer, not the button's guess: a PATCH that failed changes nothing.
+        applyFlag(updated);
       })
       .catch(() => setError(t.featureFlags.errorUpdating))
       .finally(() => setPendingKey(null));
