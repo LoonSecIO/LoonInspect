@@ -16,7 +16,7 @@ from app.alerts.service import sync_new_app_latches
 from app.catalog.service import record_device_apps
 from app.changes.derive import derive_and_record
 from app.core.config import settings
-from app.core.content_keys import app_full_key, app_title_key
+from app.core.content_keys import app_bundle_key, app_full_key, app_title_key
 from app.core.context import get_request_id
 from app.core.hashing import compute_app_hash, compute_version_hash
 from app.core.outbox import enqueue_event
@@ -136,7 +136,8 @@ def sweep_failures_allowed(devices_attempted: int) -> int:
 
 
 def apply_hashes(app: NormalizedApp) -> NormalizedApp:
-    """Stamp both hashes onto a normalized app.
+    """Stamp every derived key onto a normalized app — the internal MD5 pair and the
+    three v1 content keys.
 
     Called from process_sync so recon sweeps, manual syncs, and inbound HEC webhooks
     all hash identically — the MDM clients deliberately don't do this themselves, or
@@ -146,6 +147,11 @@ def apply_hashes(app: NormalizedApp) -> NormalizedApp:
     app.version_hash = compute_version_hash(app.name, app.bundle_id, app.version, app.short_version)
     app.key_title = app_title_key(app.name, app.bundle_id)
     app.key_full = app_full_key(app.name, app.bundle_id, app.version, app.short_version)
+    # Beside the other two, at the one site, for the one reason they are here: three keys
+    # computed in three places drift, and a drifting content key is a silent false
+    # negative in the corpus rather than a loud failure. None when the app has no bundle
+    # identifier to hash (#245).
+    app.key_bundle = app_bundle_key(app.bundle_id, app.version)
     return app
 
 
@@ -1203,6 +1209,24 @@ async def process_sync(
         removed_rows = [row for version_hash, row in previous_hashes.items() if version_hash not in incoming_hashes]
         current_rows = [row for version_hash, row in previous_hashes.items() if version_hash in incoming_hashes]
 
+        # The restamp (#245). `installed_apps` is INSERT-on-version-change: a row whose
+        # build did not move is KEPT above and never rewritten, so a content key added to
+        # the table after that row was written would otherwise never arrive for it. The
+        # rows that would starve are exactly the ones a rename-proof prevalence key exists
+        # to measure — software that sits at one build for years, a pinned LOB app, the
+        # never-updated Wireshark this repo uses as its standing example — and one
+        # unstamped row is enough to make its whole `key_full` group aggregate to no
+        # `bundle` at all in the exchange. So the kept rows are stamped here, which is what
+        # lets migration `a7d3e15c2b94` decline the per-tenant backfill its sibling
+        # `9c41d20a77e1` pays for inside the operator's upgrade transaction: the cost moves
+        # to one UPDATE per row that needs one, on the first pass after the upgrade,
+        # spread across the fleet. Self-extinguishing — a row that already has the key is
+        # not touched, and a row whose app has no bundle identifier re-answers None, which
+        # is the value already there and so is not written either.
+        for row in current_rows:
+            if row.key_bundle is None:
+                row.key_bundle = app_bundle_key(row.bundle_id, row.version)
+
         for row in removed_rows:
             await db.delete(row)
 
@@ -1217,6 +1241,7 @@ async def process_sync(
                 version_hash=app.version_hash,
                 key_title=app.key_title,
                 key_full=app.key_full,
+                key_bundle=app.key_bundle,
             )
             db.add(row)
             current_rows.append(row)
