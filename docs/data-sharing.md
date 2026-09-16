@@ -335,8 +335,27 @@ Semantics the server may rely on:
   the key and must treat those as **unknown platform**, never as `macos` by default. Rows
   already summed cloud-side cannot be given a platform after the fact, which is the entire
   reason the key ships before the first exchange rather than after.
-  `hardware` is `[]` from every container shipped so far: the `devices` columns the `hw` key
-  needs do not exist yet, so the row above is the shape it will take, not one being sent.
+- **The `os` and `hw` keys carry real fields, and did not always.** The shapes above have
+  not moved — `os` has always been (platform, os_version, os_build) and `hw` has always been
+  (model_identifier, cpu_arch) — but until the container release that closed
+  [#481](https://github.com/LoonSecIO/LoonInspect/issues/481) the `devices` table held none
+  of the three, so every `os` key hashed the build as the empty string and `hardware` was
+  `[]` from every container shipped. Two consequences the server has to hold:
+  an `os` key for the same Mac **changes** across that boundary, once, because a missing
+  field and a real one are different hashes by the canonicalization rule above — the same
+  argument `platform` shipped before the first exchange for, which is why this one ships
+  before the corpus cutover rather than after; and a container that has upgraded but not
+  yet re-read a device still sends that device's old build-less key, because the columns
+  are populated from inventory reads and nothing is backfilled. A fleet mid-restamp
+  therefore submits some `os` rows keyed on a build and some not, and a `hardware` list
+  shorter than its device count. Both are the shape an older container produces by having
+  no columns at all, which is the point: one case for the server, not two.
+- **A `hardware` row is absent, never a key over nothing.** A device with no model
+  identifier produces no row — `hw` identifies a machine by its model alone, so hashing the
+  empty string would collapse every unidentified Mac onto one digest and count them as one
+  machine (the same rule `app.bundle` states above). A null `cpu_arch` beside a real model
+  is different: it participates as the empty string like any other missing field, because
+  it narrows a model rather than identifying one.
 - **An `apps` row's `bundle` is absent, never null.** `bundle` is the `app.bundle` key
   (above) and it is omitted from the row whenever there is not one: an app with no bundle
   identifier has no such identity, and a row written before the container grew the column

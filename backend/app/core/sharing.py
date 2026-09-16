@@ -32,7 +32,7 @@ from sqlalchemy import delete, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings as app_settings
-from app.core.content_keys import os_key
+from app.core.content_keys import hw_key, os_key
 from app.core.tenancy import get_tenant_id
 from app.core.user_agent import build_user_agent
 from app.core.version import get_app_version
@@ -172,15 +172,21 @@ async def build_exchange_request(db: AsyncSession, settings_row: DataSharingSett
         if not _excluded(row.bundle_id, globs)
     ]
 
-    # Devices carry os_version today but no build, model, or arch — those columns
-    # don't exist yet. The os key hashes what we have (missing fields are the empty
-    # string, per the canonicalization contract) and hardware stays an empty list
-    # until the inventory grows the fields; the contract's shape doesn't change.
+    # Since #481 the os key hashes a real build and `hardware` is a list rather than a
+    # promise: the three columns exist and are lifted from the sections Jamf already
+    # admits. Neither shape changed — both were published this way — and neither key's
+    # canonicalization moved; what moved is what is passed in.
+    #
+    # Grouped BY the build, not aggregated over it the way `key_bundle` is (#245): two
+    # builds of one point release are genuinely two os keys, so splitting them is the
+    # grain, not a halved count. The consequence during a restamp is a group of devices
+    # not yet re-read landing on the build-less key — which is the key this container
+    # sent for every device until today, so the cloud already handles it.
     os_rows = (
         await db.execute(
-            select(Device.platform, Device.os_version, func.count(Device.id).label("count"))
+            select(Device.platform, Device.os_version, Device.os_build, func.count(Device.id).label("count"))
             .where(Device.os_version.is_not(None))
-            .group_by(Device.platform, Device.os_version)
+            .group_by(Device.platform, Device.os_version, Device.os_build)
         )
     ).all()
     # The os key already hashes the platform, and the row states it anyway: the hash is not
@@ -189,11 +195,34 @@ async def build_exchange_request(db: AsyncSession, settings_row: DataSharingSett
     # rows above, so a row's key and its stated platform cannot disagree.
     os_tuples = [
         {
-            "key": os_key(row.platform, row.os_version, None),
+            "key": os_key(row.platform, row.os_version, row.os_build),
             "count": row.count,
             "platform": row.platform,
         }
         for row in os_rows
+    ]
+
+    # A device with no model identifier produces no hardware row at all — absent, never a
+    # key over the empty string. That is `app_bundle_key`'s rule applied to the domain it
+    # was argued for: `hw` is identified by the model alone, so every unidentified Mac
+    # would otherwise land on one shared digest and be counted as one machine. The
+    # architecture is allowed to be null beside it and hashes as "" like any other missing
+    # field — it narrows a model, it does not identify one. `_excluded` does not apply
+    # here: it is a bundle-id filter, and these are not apps.
+    hw_rows = (
+        await db.execute(
+            select(Device.platform, Device.model_identifier, Device.cpu_arch, func.count(Device.id).label("count"))
+            .where(Device.model_identifier.is_not(None), Device.model_identifier != "")
+            .group_by(Device.platform, Device.model_identifier, Device.cpu_arch)
+        )
+    ).all()
+    hardware = [
+        {
+            "key": hw_key(row.model_identifier, row.cpu_arch),
+            "count": row.count,
+            "platform": row.platform,
+        }
+        for row in hw_rows
     ]
 
     return {
@@ -201,7 +230,7 @@ async def build_exchange_request(db: AsyncSession, settings_row: DataSharingSett
         "submission": str(settings_row.submission_uuid),
         "tier": settings_row.tier,
         "build": get_app_version(),
-        "snapshot": {"apps": apps, "os": os_tuples, "hardware": []},
+        "snapshot": {"apps": apps, "os": os_tuples, "hardware": hardware},
         "reveals": [],
     }
 

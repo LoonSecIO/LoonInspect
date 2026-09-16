@@ -182,6 +182,16 @@ class Device(Base):
     managed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     supervised: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     os_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # What the v1 `os` and `hw` content keys hash beside the version (#481,
+    # docs/data-sharing.md): the exact build, the model identifier and the processor
+    # architecture. Written per section, like every other scalar on this row — the build
+    # under `operating_system`, the other two under `hardware` — so a narrowly scoped read
+    # never blanks a column it did not look at (#98). Nullable and un-backfilled: a device
+    # stamps them on its next inventory read, because they are facts about the Mac and not
+    # about anything this database already holds. Migration c6e1b9d3a742.
+    os_build: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    model_identifier: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cpu_arch: Mapped[str | None] = mapped_column(String(32), nullable=True)
     site: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Jamf hands the device the department and the building as opaque ids and keeps the
     # names in two catalogs of its own, so the ids are what a device carries. Storing

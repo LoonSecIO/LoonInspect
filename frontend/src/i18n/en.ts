@@ -34,7 +34,7 @@ export const en = {
         "Nothing is shared, and this instance will not receive the community-built patching and vulnerability feeds when they ship.",
       disclosureHeading: "What is shared",
       disclosureShared:
-        "Shared daily, per tenant: content-hash keys of installed applications with install counts, OS version tuples (hardware model tuples are reserved and ship empty), the pseudonymous submission ID below, and this container's build version. Counts are summed across devices before anything leaves — never per-device rows.",
+        "Shared daily, per tenant: content-hash keys of installed applications with install counts, OS version-and-build tuples, hardware model-and-architecture tuples, the pseudonymous submission ID below, and this container's build version. Counts are summed across devices before anything leaves — never per-device rows.",
       disclosureNever:
         "Never shared: device identifiers, serial numbers, hostnames, user names, file paths, extension attributes, connection or tenant names, accounts, credentials, or audit history. LoonSec does not store source IP addresses on this path.",
       disclosureReveals:
