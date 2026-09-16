@@ -1282,6 +1282,7 @@ export const de: Translations = {
     criteriaMoved: "Kriterien geändert",
     deviceDrifted: "Gerät hat sich verändert",
     subjectChip: (label: string) => `Änderungen auf ${label}`,
+    sinceChip: (start: string) => `Beobachtet seit ${start}`,
     count: (n: number) => `${n} Änderung${n === 1 ? "" : "en"}`,
     pageOf: (page: number, pages: number) => `Seite ${page} von ${pages}`,
     previous: "Zurück",
@@ -1328,6 +1329,12 @@ export const de: Translations = {
       answerHeadline: (computers: number, changes: number) =>
         `${computers} Computer, ${changes} Änderung${changes === 1 ? "" : "en"}.`,
       answerKinds: { added: "hinzugefügt", removed: "entfernt", updated: "aktualisiert", changed: "geändert" },
+      answerWhenOne: (observed: string) => `Beobachtet ${observed}.`,
+      answerWhenSpan: (oldest: string, newest: string) => `Beobachtet von ${oldest} bis ${newest}.`,
+      answerWindowDevice: (previous: string) =>
+        `Die Inventarisierung davor, ${previous}, zeigte diese Änderung nicht, sie geschah also zwischen beiden.`,
+      answerWindowOurs: (from: string, to: string) =>
+        `Die Inventarzeit blieb gleich, das kam also aus Jamfs Kopie oder aus dem, was LoonInspect liest: hier gesehen zwischen ${from} und ${to}.`,
       answerJamfId: (id: string) => `Jamf-ID ${id}`,
       answerMore: (n: number) => `+${n} weitere`,
       answerOther: (n: number) => `Dazu ${n} Änderung${n === 1 ? "" : "en"} an Gruppen oder Definitionen.`,

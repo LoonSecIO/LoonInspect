@@ -807,6 +807,34 @@ writes one row to the disclosure log naming the destination and the one field th
    the question contains a word of that kind. On an answer waiting for **Apply these filters**
    (step 3), the same sentence follows *These filters would be as close as these controls allow*.
    Ask the part that was left out as a second question.
+
+   *When* is not one of those, and neither are *the last time*, *the latest*, *the most recent*
+   or *the first time*. The table is ordered by observed time, newest first, so the top row is the
+   last time and the answer box states the time itself. A date **range** still is: "in the last 24
+   hours", "since Monday", "yesterday" and "before September" all answer over the whole log with
+   this lead, and the rows are newest-first inside it. To bound one, arrive from the Overview's
+   feed, which links here with a window, or narrow by hand. Until 2026-09-15 a question with
+   "last" in it — "When was the last time someone installed wireshark" — carried *Cannot express
+   'when' — filters match names, not timestamps* over an answer whose first row was the answer.
+
+   **The time in the answer box.** *Observed 14/09/2026, 11:57:26* is the same value as the
+   table's **Observed** column: Jamf's report time for that Mac, which is when its inventory
+   first carried the change — not when someone made it. That is why the line after it names the
+   inventory before it (*The inventory before it, 13/09/2026, 19:33:16, did not show this change,
+   so it happened between the two*): the change happened inside that window, and the window is
+   as wide as the Mac's inventory interval. With more than one row matching, the box states both
+   ends (*Observed from … to …*), which is where the first time is. Each Mac's line ends with its
+   own newest. Two things to know when the time reads oddly: *Its inventory time did not move, so
+   this came from Jamf's copy or from what LoonInspect reads* means the two reads carry the same
+   report time, so nothing on the Mac dated the change — a Jamf-side edit, or a change in what is
+   collected — and our own clock bounds it instead; and an app a Mac already had when tracking
+   began has no *Added* row at all, so no time here (`docs/jamf-observations.md` §3). The times
+   are the browser's format in the browser's zone, the table's and the box's alike.
+
+   **A window from a link shows as a chip.** The Overview's feed links here with a start, and the
+   filter form has no control for it. An active one shows under the filters as *Observed since …*;
+   press it to clear it. Before 2026-09-15 that window narrowed the table with nothing on screen
+   to say so — a bar's answer counted for the whole log could read as if the table showed it.
 5. **The filters moved somewhere you did not mean, or nothing matches.** The filters are where the
    model put them; change any of them and the page runs again, or **Clear** to start over.
    *The answer came back after the filters changed, so it was not applied* means a filter moved

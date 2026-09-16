@@ -523,6 +523,48 @@ def test_unsupported_is_dropped_when_the_question_asks_for_nothing_the_controls_
     assert any("no or, not, date, version or comparison word" in repair for repair in repairs)
 
 
+# An order, not a range (#443). The feed is ordered by observed time, newest first, and the
+# answer box states that time, so "the last time" is answered — the model's "Cannot express
+# 'when'" was a caveat over the answer itself.
+@pytest.mark.parametrize(
+    "question",
+    [
+        "When was the last time someone installed wireshark",
+        "When was Wireshark last installed?",
+        "Who installed Wireshark most recently?",
+        "most recent Wireshark install",
+        "latest changes on KY4QVD7430",
+        "what was installed recently",
+        "when did anyone add zoom",
+    ],
+)
+def test_an_order_word_is_not_grounds_for_a_caveat(question):
+    _, unsupported, repairs = guard(question, NO_FILTERS, "Cannot express 'when' — filters match names, not timestamps.", [])
+    assert unsupported is None
+    assert any("no or, not, date, version or comparison word" in repair for repair in repairs)
+
+
+# A unit, a named day or a two-ended range still is: the controls hold one start, not a span.
+@pytest.mark.parametrize(
+    "question",
+    [
+        "what changed in the last 24 hours",
+        "installs last night",
+        "what changed overnight",
+        "anything over the weekend",
+        "Wireshark installs in the past week",
+        "what changed yesterday",
+        "installs since Monday",
+        "changes between Monday and Friday",
+        "which mac has the most changes",
+    ],
+)
+def test_a_range_word_is_still_grounds_for_a_caveat(question):
+    _, unsupported, repairs = guard(question, NO_FILTERS, "Cannot express that.", [])
+    assert unsupported == "Cannot express that."
+    assert repairs == []
+
+
 @pytest.mark.parametrize("section", sorted(ENTRY_SECTIONS))
 def test_changed_in_a_list_section_is_any_change(section):
     filters, _, repairs = guard("show me changes", {**NO_FILTERS, "section": section, "change": "changed"}, None, [])

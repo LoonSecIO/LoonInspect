@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -63,6 +64,33 @@ class PromptDeviceOut(_Base):
     removed: int
     updated: int
     changed: int
+    # This computer's newest matching change — the column the list is ordered by, said out
+    # loud, so "when did this Mac get it" is answered beside the counts.
+    last_observed_at: datetime
+
+
+class PromptWhenOut(_Base):
+    """When the matching changes were observed, and the window the newest one happened in.
+
+    ``observed_at`` is the device's own inventory time (Jamf's reportDate, carried by
+    ``device_changes.observed_at``): when the Mac's inventory first held the change, never
+    when someone made it. The change happened between the inventory before it and that one,
+    so ``previous_observed_at`` — the last inventory time of the span the change moved away
+    from — is the other end of the window, and the page states both rather than let an
+    observation read as an install (Kyle, 2026-09-15, ruling R1 on #443).
+
+    ``device_time_moved`` is false when the two are equal: the Mac's inventory time did not
+    move between the two reads, so nothing on the Mac dated the change — Jamf's own copy
+    changed, or the aperture we read it through did. Then only our clock bounds it, and
+    ``previous_collected_at`` to ``collected_at`` is the honest window.
+    """
+
+    observed_at: datetime
+    oldest_observed_at: datetime
+    collected_at: datetime
+    previous_observed_at: datetime | None
+    previous_collected_at: datetime | None
+    device_time_moved: bool
 
 
 class PromptSummaryOut(_Base):
@@ -76,6 +104,8 @@ class PromptSummaryOut(_Base):
     # Matching rows on a smart group or an extension attribute definition.
     other_subjects: int
     devices: list[PromptDeviceOut]
+    # When they were observed; None only when nothing matched.
+    when: PromptWhenOut | None = None
 
 
 class PromptOut(_Base):
