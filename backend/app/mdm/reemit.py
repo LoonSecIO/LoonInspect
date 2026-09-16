@@ -47,7 +47,7 @@ from app.core.vuln_answer import stored_corpus
 from app.core.vuln_library import earned_corpus
 from app.core.wire import ENVELOPE, envelope, instance_label
 from app.mdm.jamf.contract import SECTIONS, SUBJECT_COMPUTER, Entry, Observation, SectionContent
-from app.mdm.patch.matching import cached_title_names
+from app.mdm.patch.matching import cached_title_detection, cached_title_names
 from app.mdm.service import _device_meta
 from app.mdm.snapshot import build_inventory_snapshot
 from app.models.schema import (
@@ -164,6 +164,7 @@ async def re_emit_connection(
     )
     corpus = await earned_corpus(db)
     title_names = cached_title_names()
+    title_detection = cached_title_detection()
     source = instance_label(connection.base_url)
     processed = skipped = failed = 0
 
@@ -201,6 +202,7 @@ async def re_emit_connection(
                 # device and asks the corpus nothing per app.
                 corpus=stored_corpus(corpus, apps),
                 title_names=title_names,
+                title_detection=title_detection,
             )
             payload = snapshot.to_payload()
             payload[ENVELOPE] = dict(envelope(occurred_at=occurred_at, host=device.hostname, source=source))

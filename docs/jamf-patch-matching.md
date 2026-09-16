@@ -72,12 +72,11 @@ A group with a failure is not matched; a group with no failure but something not
 inconclusive; only a group whose every test passed is matched. A title matches when any group
 matches, is inconclusive when none matches but one is inconclusive, otherwise does not match.
 
-**Which titles are considered** (Kyle's rule): only a title with at least one `recon` test on
-`Application Bundle ID` or `Application Title` — the tests that can identify an installed app.
-That is 1,248 of 1,549. The 301 others — device-level ("Apple macOS …"), attribute-only (the
-`jamf-patch-*` set: JDKs, Node, Python, daemons, and a few apps Jamf tells apart only by
-attribute, such as PyCharm Professional and Firefox) and version-only titles — are the patching
-agent's business and are never matched here.
+**Which titles are considered** (Kyle's rule, amended by #386): a title with at least one `recon`
+test on `Application Bundle ID` or `Application Title` — the tests that can identify an installed
+app — **plus** an attribute-only title carrying a `bundleId` column (§4a). That is 1,436 of 1,557;
+the 121 others are device-level ("Apple macOS …"), version-only, or attribute-only with no bundle
+ID to admit them on (`Node.js 14`), and are never matched here.
 
 ## 4. The matcher
 
@@ -118,6 +117,68 @@ One app can belong to several titles — Jamf keeps versioned titles beside roll
 real record, Wireshark 4.2.0 matches "Wireshark 4.2" (latest 4.2.14) and "Wireshark" (4.6.8);
 Camtasia 2022.6.10 is on the latest of "TechSmith Camtasia 2022" and four years behind "TechSmith
 Camtasia" (2026.2.0). Both answers are kept.
+
+### 4a. EA-only titles: detected on the device (#386)
+
+182 titles carry a `bundleId` column and requirements made only of extension-attribute tests —
+Mozilla Firefox's whole requirement is `jamf-patch-mozilla-firefox is not ""`. Under the original
+rule none was considered, so the feature had no versions and no answer for Firefox, Firefox ESR,
+Microsoft AutoUpdate, Skype, Python 3 or PyCharm Unified. Kyle ruled them in on 2026-09-11, with
+a flag.
+
+**Admitted on the column**, Jamf's own statement of the software's identity; the attribute goes on
+scoping as in §4, so an absent one resolves TRUE and the match is `ea_assumed`, and the column is
+compared exactly. They add 5,233 rows (73,347 → 78,580), closing the gap against the engine's count.
+
+**Flagged, because here the EA is not scoping — it is the detection.** *"EA-only implies on-device
+detection. Example: Python. That's why it's EA-only — the title is explicitly telling Jamf Pro the
+software is there despite recon not seeing it."* Every title therefore carries `detection` —
+`jamf_patch_titles.detection`, and `patch.jamfPatch.detection` on the wire — and two tiers follow:
+
+* **Admitted and inventory-visible.** A Mac reports an `.app` with that bundle ID, so the title
+  matches and answers like any other: Firefox, Firefox ESR, Skype, PyCharm Unified, Nextcloud.
+* **Admitted and EA-detected.** No `.app` anywhere carries the bundle ID, because the software is
+  a command-line install, a framework or a daemon: Python 3, the JDK lines, Jamf Connect Login.
+  The title enumerates and matches nothing, and the Mac reads **absent** — with
+  `detection: extension_attribute` — until the EA value is read as the presence witness, which
+  LoonInspect does not do yet (`docs/troubleshooting.md` §6 step 6).
+
+**The cost if this is wrong, named**: a title Jamf scoped by EA to a subset, matched here on the
+column alone, reads for the wrong subset — and it is already live, since `0B3` Mozilla Firefox and
+`0B4` Firefox ESR share `org.mozilla.firefox` and only the assumed EA parts them, so an installed
+Firefox matches both and #68's sentence can come from the wrong line (`sentenceTitleID` says
+which). The corpus is untouched: `key_full` is built from installed apps, so an EA-detected title
+has no row to join and reads `unknown_app`.
+
+**The 182**, on the 2026-09-16 catalog, collapsed on Jamf's own naming: every one of them is in a
+row and the arithmetic closes at 5,233 versions gained.
+
+| Family | Titles | Versions |
+| --- | --- | --- |
+| **Mozilla Firefox**, Firefox ESR, Firefox Developer Edition | 3 | 1,755 |
+| Adobe: Flash Player, Pepper Flash, Shockwave, AIR, Acrobat Updater, Camera Raw CC / CS6 / Photoshop CC / Photoshop CS6, Illustrator CS6, CSXS Infrastructure CS6 | 10 | 526 |
+| **Microsoft AutoUpdate**, Skype, Silverlight | 3 | 426 |
+| Zulu OpenJDK 8–26 | 19 | 228 |
+| Eclipse Temurin 8–26, JDK and JRE | 23 | 219 |
+| IBM Semeru Runtime (OpenJ9) 8–26, JDK and JRE | 26 | 218 |
+| JetBrains PyCharm Unified | 1 | 200 |
+| Oracle Java SE: JDK 21–26, JRE 7 / 8 / 8 (CPU) | 9 | 181 |
+| **Python 3**, Python 2 | 2 | 149 |
+| Amazon Corretto 8–26 | 14 | 147 |
+| Nextcloud Desktop Client | 1 | 128 |
+| AdoptOpenJDK 8–16, Hotspot and OpenJ9, JDK and JRE | 20 | 119 |
+| Jamf Connect Login | 1 | 109 |
+| Rhinoceros 6, Rhino 7, Rhino 8 | 3 | 105 |
+| KeyShot 9–2025, each with its Viewer and Network Rendering | 18 | 95 |
+| Axure RP 9, 10, 11 | 3 | 88 |
+| Sophos Antivirus for Mac, Endpoint for Mac, Endpoint 10 for Mac | 3 | 86 |
+| Docker Kitematic | 1 | 85 |
+| Komodo Edit 8–12; Eclipse IDE for Rust / for Testers / for Web and JavaScript | 8 | 67 |
+| Royal TSX, swiftDialog, Canon UFR II Printer Driver, Google Backup and Sync, Oracle SQLDeveloper, Octory, DisplayLink USB Graphics, YubiKey Manager, Sassafras KeyAccess Client, Citrix HDX RealTime Media Engine, Logitech Presentation, MPEG Streamclip, 3CXPhone, SD Card Formatter | 14 | 302 |
+
+That table is a copy and drifts as Jamf publishes — 111 of the 182 are JDK and JRE lines, which
+gain a title every time a vendor cuts a release. The container's own answer does not drift:
+`SELECT name FROM jamf_patch_titles WHERE detection = 'extension_attribute' AND bundle_id <> ''`.
 
 ## 5. Storage and the summary
 
@@ -167,10 +228,10 @@ which carries the raw date and the raw integer when `patch{}` ships
 (`docs/splunk-wire-vocabulary.md` §5). The posture tape reads the per-title row, not this
 column: `patch.pairs_laggard_over_14d` and `patch.pairs_unknown_build` (`docs/posture-snapshot.md`).
 
-The real Mac mini (83 apps) resolves 11 apps to 13 rows: Xcode 26.6 on latest; Camtasia 2022 on
+The real Mac mini (83 apps) resolves 12 apps to 14 rows: Xcode 26.6 on latest; Camtasia 2022 on
 the latest of its line (and behind the rolling title — both kept); Slack, Docker, Zoom, Postman,
-Codex, Bambu Studio, Self Service, Wireshark behind with the version known to Jamf; Safari ahead.
-PyCharm's only title is attribute-only and is not considered. The other 72 apps — 64 of them
+Codex, Bambu Studio, Self Service, Wireshark behind with the version known to Jamf; Safari ahead;
+PyCharm on its attribute-only title, `ea_assumed`, since §4a. The other 71 apps — 64 of them
 under `/System` — match nothing. `tests/test_patch_matching.py` pins exactly that.
 
 ## 6. Surfaces
@@ -242,6 +303,7 @@ needs to say from where."*
   "supported": true,
   "jamfPatch": {
     "titleIDs": ["612", "5F6"], "titleNames": ["Wireshark", "Wireshark 4.2"],
+    "detection": "inventory",
     "state": "behind", "onLatest": false, "versionKnown": true, "eaAssumed": false,
     "latestVersion": "4.6.8", "latestReleasedAt": "2026-08-11T17:00:00Z",
     "referenceTitleID": "612",
@@ -258,7 +320,7 @@ they were about one thing. They are not:
 
 | Keys | Subject |
 | --- | --- |
-| `onLatest`, `versionKnown`, `eaAssumed` | `any()` over **every** matched title |
+| `onLatest`, `versionKnown`, `eaAssumed`, `detection` (§4a) | `any()` over **every** matched title |
 | `state`, `latestVersion`, `latestReleasedAt` | the **reference** title (§5: the one that says latest, else the rolling title) |
 | `patchAvailableSince`, `releasesMissed` | the **sentence** title (#68: both halves from one line) |
 

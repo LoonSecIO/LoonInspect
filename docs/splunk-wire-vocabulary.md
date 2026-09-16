@@ -296,6 +296,12 @@ licence. Clause one is verbatim from #188's acceptance list; the set is asserted
 therefore permanent; `subject.departure` and `subject.returned` are new names under
 clause 1 and take nothing away from any family that already shipped.
 
+`patch.jamfPatch.detection` is a new key under clause 1, ruled 2026-09-11 on
+[#386](https://github.com/LoonSecIO/LoonInspect/issues/386): `inventory` or
+`extension_attribute`, which of the two witnesses an app's Jamf Patch answer rests on
+([`jamf-patch-matching.md`](jamf-patch-matching.md) §4a). Every key that shipped before it
+means exactly what it meant.
+
 > **Correction, 2026-09-02.** Clause 4 cited its sentinel example as `days_oldest`, a
 > snake_case name minted before this document froze camelCase and before
 > [#113](https://github.com/LoonSecIO/LoonInspect/issues/113) named the clock in the key.

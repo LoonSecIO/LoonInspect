@@ -199,8 +199,12 @@ async def test_the_device_read_and_the_applications_list_carry_the_patch_answer(
     assert xcode.patch_state == "latest" and xcode.sentence_title_id is None
     assert xcode.reference_title_id == xcode.jamf_title_ids[0]
     # No title at all: no names, and the assumption fold is null rather than false.
+    mail = by_name["Mail.app"]
+    assert mail.jamf_title_ids is None and mail.jamf_titles == [] and mail.ea_assumed is None
+    # And the app #386 brought in from that state: matched on Jamf's `bundleId` column alone,
+    # with the attribute the title scopes by assumed TRUE, which is what the fold is for.
     pycharm = by_name["PyCharm.app"]
-    assert pycharm.jamf_title_ids is None and pycharm.jamf_titles == [] and pycharm.ea_assumed is None
+    assert pycharm.jamf_title_ids == ["0EE"] and pycharm.ea_assumed is True
 
     async def row_for(app):
         listing = await list_applications(db=db, q=app.name, page=1, page_size=50)
@@ -212,5 +216,9 @@ async def test_the_device_read_and_the_applications_list_carry_the_patch_answer(
     assert behind.matched_device_count == behind.device_count == behind.patch_available_device_count
     latest = await row_for(xcode)
     assert latest.matched_device_count == latest.device_count >= 1 and latest.patch_available_device_count == 0
-    untitled = await row_for(pycharm)
+    untitled = await row_for(mail)
     assert untitled.device_count >= 1 and (untitled.matched_device_count, untitled.patch_available_device_count) == (0, 0)
+    # And the same list for an app matched only through #386's admission: counted as matched
+    # like any other, because the answer is an answer whichever witness Jamf detects it by.
+    ea_detected = await row_for(pycharm)
+    assert ea_detected.matched_device_count == ea_detected.device_count >= 1
