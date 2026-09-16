@@ -17,11 +17,13 @@ rolling ones ("Wireshark 4.2" and "Wireshark"; "TechSmith Camtasia 2022" and "Te
 Camtasia") — so matches are stored one row per (app, title) and the summary columns on
 `installed_apps` are derived from the set.
 
-Which titles are considered (Kyle, 2026-08-22): only those with at least one recon test on the
-bundle ID or the application title — the tests that can identify an installed app. Device-level
-titles ("Apple macOS …"), attribute-only titles (the `jamf-patch-*` set: JDKs, Node, Python,
-daemons, and a few apps Jamf tells apart only by attribute — PyCharm Professional, Firefox) and
-version-only titles are not considered; they are the patching agent's business.
+Which titles are considered (Kyle, 2026-08-22, amended by #386): those with at least one recon
+test on the bundle ID or the application title — the tests that can identify an installed app —
+plus the 182 whose requirements are extension attributes only and that carry a `bundleId`
+column, Firefox and Python 3 among them, admitted on the strength of that column and tagged
+`detection = extension_attribute` (docs/jamf-patch-matching.md §4a). Device-level titles ("Apple
+macOS …"), version-only titles and attribute-only titles Jamf gives no bundle ID are still not
+considered; they are the patching agent's business.
 
 Extension attributes inside a considered title are Jamf's *scoping* device for collisions
 (PyCharm Community vs Professional, Firefox vs ESR), not a fact about the app: one the device
@@ -43,13 +45,15 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mdm.patch.requirements import (
+    DETECTION_EXTENSION_ATTRIBUTE,
+    DETECTION_INVENTORY,
     EXTENSION_ATTRIBUTE,
     PLATFORM_MAC,
     Facts,
     Verdict,
     compare_versions,
+    detection_for,
     evaluate_group,
-    is_app_level,
     required_bundle_ids,
     version_tuple,
 )
@@ -102,7 +106,12 @@ class CatalogTitle:
     # attribute under the display name when a tenant subscribes to the title, while the
     # requirement names the key; the matcher accepts either.
     extension_attribute_names: Mapping[str, str]
-    app_level: bool
+    # `inventory`, `extension_attribute`, or None for a title about no app at all
+    # (`requirements.detection_for`). It replaced a separate `app_level` flag in #386, which said
+    # the same thing in one bit and would now be a second answer to the question `admitted` asks.
+    # Derived here on every build rather than read from `jamf_patch_titles.detection`, the
+    # published copy of the same value, so one definition can never disagree with itself.
+    detection: str | None
     required_bundle_ids: frozenset[str] | None
     # Casefolded names of the attribute tests (plus the definitions' keys and display names):
     # what the device would have to carry for the title to be decided without assuming.
@@ -147,10 +156,19 @@ class CatalogTitle:
             ),
             requirements=groups,
             extension_attribute_names=definitions,
-            app_level=is_app_level(groups),
+            detection=detection_for(groups),
             required_bundle_ids=required_bundle_ids(groups),
             attribute_names=frozenset(attribute_names),
         )
+
+    @property
+    def admitted(self) -> bool:
+        """Whether the matcher considers this title at all (#65, amended by #386): an
+        inventory-detected one always, an EA-detected one only when Jamf's `bundleId` column
+        says which software it is about, because nothing else on it can."""
+        if self.detection == DETECTION_INVENTORY:
+            return True
+        return self.detection == DETECTION_EXTENSION_ATTRIBUTE and bool((self.bundle_id or "").strip())
 
     def patch_for(self, version: str | None) -> Patch | None:
         wanted = _fold(version)
@@ -170,18 +188,25 @@ class CatalogTitle:
 class Catalog:
     """The considered titles, indexed for the per-app lookup: titles whose every group pins a
     bundle ID with `is` are reached through that index; everything else is evaluated for every
-    app. Titles with no identifying test (see the module docstring) are not here at all."""
+    app. Titles the matcher does not consider (see the module docstring) are not here at all."""
 
     def __init__(self, titles: Iterable[CatalogTitle], signature: tuple = ()) -> None:
         self.signature = signature
-        self.titles: list[CatalogTitle] = [title for title in titles if title.app_level]
+        self.titles: list[CatalogTitle] = [title for title in titles if title.admitted]
         self.by_bundle: dict[str, list[CatalogTitle]] = {}
         self.broad: list[CatalogTitle] = []
         for title in self.titles:
-            if title.required_bundle_ids is None:
+            pinned = title.required_bundle_ids
+            if pinned is None and title.detection == DETECTION_EXTENSION_ATTRIBUTE:
+                # #386: the column IS the identity for these, so they are reached the way a
+                # pinned title is. Not `broad` — an attribute test pins nothing, so all 182 would
+                # otherwise be evaluated against every app on the path that runs millions of
+                # times a sweep.
+                pinned = frozenset({_fold(title.bundle_id)})
+            if pinned is None:
                 self.broad.append(title)
                 continue
-            for bundle in title.required_bundle_ids:
+            for bundle in pinned:
                 self.by_bundle.setdefault(bundle, []).append(title)
 
     @classmethod
@@ -326,13 +351,23 @@ def _facts_for(facts: Facts, title: CatalogTitle) -> tuple[Facts, set[str]]:
 def _decide(title: CatalogTitle, facts: Facts) -> str | None:
     """The basis on which this title matches the app, or None. Groups are evaluated one by
     one so the basis reflects the group that carried the match; a group made only of
-    attribute tests identifies nothing by itself."""
+    attribute tests identifies nothing by itself.
+
+    **Unless the whole title is attribute-only** (#386), where that group is all there is and
+    Jamf's `bundleId` column supplies the identity it cannot. The groups then do only what the
+    attribute was always for — scoping the channel — under the same rule. The column is compared
+    exactly, never `like`: it is the only thing narrowing these titles, and a substring would let
+    `com.microsoft.autoupdate2` answer for a bundle ID that merely contains it.
+    """
+    ea_only = title.detection == DETECTION_EXTENSION_ATTRIBUTE
+    if ea_only and _fold(title.bundle_id) != _fold(facts.bundle_id):
+        return None
     title_facts, carried = _facts_for(facts, title)
     basis: str | None = None
     for group in title.requirements:
         tests = list(group.get("tests") or [])
         attribute_tests = [test for test in tests if test.get("type") == EXTENSION_ATTRIBUTE]
-        if attribute_tests and len(attribute_tests) == len(tests):
+        if not ea_only and attribute_tests and len(attribute_tests) == len(tests):
             continue  # device scoping, not an app test
         if evaluate_group(group, title_facts) is not Verdict.MATCHED:
             continue
@@ -525,3 +560,17 @@ def cached_title_names() -> dict[str, str] | None:
     if _cache is None:
         return None
     return {title.id: title.name for title in _cache.titles}
+
+
+def cached_title_detection() -> dict[str, str] | None:
+    """Title id -> `inventory` | `extension_attribute` off the same process cache, for the wire's
+    `patch.jamfPatch.detection` (#386).
+
+    Looked up rather than stored on the app row: `detection` is a fact about the title's CURRENT
+    definition, not about the judgement, so the day Jamf gives Firefox a recon test every answer
+    naming it becomes inventory-detected at once, where a copy stamped on four million rows would
+    say `extension_attribute` until each was re-judged. `None` for the same reason
+    `cached_title_names` returns it: no catalog was consulted on this path."""
+    if _cache is None:
+        return None
+    return {title.id: title.detection for title in _cache.titles if title.detection}
