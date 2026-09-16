@@ -39,9 +39,12 @@ PORTAL, CHROME, FIREFOX = f"com.Acme{SUFFIX}.portal", f"com.google{SUFFIX}.Chrom
 
 @pytest_asyncio.fixture(loop_scope="session")
 async def fleet(db):
-    """Three Macs and five titles: three unknown under one prefix (one spelled with a
-    capital A), one matched by Jamf Patch, one named by the vulnerability library. Payroll
-    is installed at two versions, so the snapshot carries more rows than titles."""
+    """Four Macs and six titles: four unknown under one prefix, one matched by Jamf Patch,
+    one named by the vulnerability library. Three properties are built in deliberately,
+    because a count that got any of them wrong still looks right on a 1:1 fixture: Payroll
+    is installed at two versions, so the snapshot carries more **rows** than titles; the
+    fourth Mac carries Payroll under a second display name, so one **bundle ID** carries two
+    titles; and Portal spells the prefix with a capital A, so `com.acme*.*` misses it."""
     from app.core.content_keys import app_full_key, app_title_key
     from app.models.schema import (
         AppCatalogEntry,
@@ -60,7 +63,7 @@ async def fleet(db):
     await db.commit()
     macs = [
         Device(mdm_provider="jamf", external_id=f"{TAG}{SUFFIX}{n}", serial_number=f"S{SUFFIX}{n}", hostname=f"h{SUFFIX}{n}")
-        for n in range(3)
+        for n in range(4)
     ]
     db.add_all(macs)
     await db.commit()
@@ -96,6 +99,9 @@ async def fleet(db):
         [
             app(macs[0], "Acme Payroll", f"{ACME}.payroll", "1.0"),
             app(macs[1], "Acme Payroll", f"{ACME}.payroll", "2.0"),
+            # The renamed build, mid-rollout: one bundle ID, a second display name, and so a
+            # second `key_title` — two apps on the wire where a bundle ID count says one.
+            app(macs[3], "Acme Payroll Pro", f"{ACME}.payroll", "2.0"),
             app(macs[0], "Acme Deploy", f"{ACME}.deploy", "1.0"),
             app(macs[1], "Acme Portal", PORTAL, "1.0"),
             app(macs[0], "Google Chrome", CHROME, "120", chrome_hash),
@@ -141,22 +147,27 @@ async def test_unknown_titles_are_candidates_and_known_ones_are_not(db, fleet) -
 
     assert {a.bundle_id for a in group.apps} == {f"{ACME}.payroll", f"{ACME}.deploy", PORTAL}
     assert {a.reason for a in group.apps} == {REASON_UNKNOWN}
-    # Payroll is on two Macs at two versions: counted once per Mac, never once per build.
-    assert next(a.device_count for a in group.apps if a.bundle_id == f"{ACME}.payroll") == 2
-    # Two of the three Macs carry something here; the third carries only Firefox. Several
+    # Payroll is on two Macs at two versions: counted once per Mac, never once per build —
+    # and the renamed build is a row of its own, one bundle ID carrying two titles.
+    assert sorted(a.device_count for a in group.apps if a.bundle_id == f"{ACME}.payroll") == [1, 2]
+    # Three of the four Macs carry something here; the fourth carries only Firefox. Several
     # unknown titles under a prefix no known title uses earns a suggestion, spelled the way
     # most of the group spells it.
-    assert (group.app_count, group.device_count, group.excluded, group.suggestion) == (3, 2, False, f"{ACME}.*")
+    assert (group.app_count, group.device_count, group.excluded, group.suggestion) == (4, 3, False, f"{ACME}.*")
     assert {CHROME, FIREFOX} & {a.bundle_id for g in answer.groups for a in g.apps} == set()
-    assert (answer.catalog_titles, answer.library_titles) >= (1, 1)
+    # Both counts, separately: a tuple comparison passes on a large catalog and no library.
+    assert answer.catalog_titles >= 1
+    assert answer.library_titles >= 1
 
 
 async def test_a_glob_counts_exactly_what_the_snapshot_loses(db, fleet) -> None:
     """The page's count and the exchange's filter are one answer, asserted as one.
 
-    `build_exchange_request` emits a row per (title key, build key, platform), so Payroll at
-    two versions is two rows and one title. Titles are what the page counts, and this keeps
-    the two from drifting apart while each looks right in isolation.
+    `build_exchange_request` emits a row per (title key, build key, platform) and drops the
+    whole group the glob matches, so the fixture is built to break a count taken at any other
+    grain: Payroll at two versions is two rows and one title, Payroll renamed is one bundle
+    ID and two titles. Matched bundle IDs would say 2 here and matched snapshot rows 4. Each
+    looks right in isolation; only one of them is what the operator loses.
     """
     from app.core.exclusion_candidates import build_candidates
     from app.core.sharing import build_exchange_request, get_or_create_settings
@@ -178,8 +189,11 @@ async def test_a_glob_counts_exactly_what_the_snapshot_loses(db, fleet) -> None:
     gone = {a["title"] for a in full["snapshot"]["apps"]} - {a["title"] for a in filtered["snapshot"]["apps"]}
     counted = {g.glob: g for g in (await build_candidates(db, [glob, "com.nobody.*"])).globs}
 
-    assert counted[glob].app_count == len(gone) == 2
-    assert (counted[glob].source, counted[glob].device_count) == ("typed", 2)
+    assert counted[glob].app_count == len(gone) == 3
+    # The neighbouring grains, stated so neither can be mistaken for the one above: the glob
+    # matches 2 bundle IDs, and the snapshot loses 4 rows. Three is the number of apps.
+    assert len(full["snapshot"]["apps"]) - len(filtered["snapshot"]["apps"]) == 4
+    assert (counted[glob].source, counted[glob].device_count) == ("typed", 3)
     # The trap, in the response the page renders: the capital A is not matched, and this
     # says so rather than leaving the app quietly out of the count. A glob that matches
     # nothing is legible too — in the preview a typo looks exactly like a working pattern.

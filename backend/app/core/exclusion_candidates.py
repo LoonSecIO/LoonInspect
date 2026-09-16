@@ -12,11 +12,16 @@ not sufficient — Jamf's catalog holds about 1,550 titles, so most of a fleet's
 public software it never heard of — so this says *no public source here knows these* and
 never *these are yours*.
 
-**Counts** use the exchange's own `_excluded`, imported rather than reimplemented, so the
-page and the wire cannot disagree. A glob matching nothing says so, and a bundle ID a
-case-insensitive comparison would have matched is named as a near-miss: `fnmatch` is
-case-sensitive in the container, which is how `com.acme.*` misses `com.Acme.Deploy`.
-Nothing here writes — an accepted suggestion goes through the audited PUT like a typed one.
+**Counts** use the exchange's own `_excluded`, imported rather than reimplemented, and they
+count *rows* — one per (bundle ID, title) — because that is the grain the exchange drops at.
+One bundle ID carries two titles whenever two display names share it (a rename mid-rollout,
+a white-labelled build, a localized name: `key_title` hashes the name), so counting matched
+bundle IDs would tell the operator a glob removes fewer apps than it does, on the one
+surface built to judge a pattern's reach. One word, one grain: `groups[].appCount` counts
+the same rows. A glob matching nothing says so, and a bundle ID a case-insensitive
+comparison would have matched is named as a near-miss: `fnmatch` is case-sensitive in the
+container, which is how `com.acme.*` misses `com.Acme.Deploy`. Nothing here writes — an
+accepted suggestion goes through the audited PUT like a typed one.
 """
 
 from __future__ import annotations
@@ -24,7 +29,7 @@ from __future__ import annotations
 from fnmatch import fnmatch
 from typing import NamedTuple
 
-from sqlalchemy import case, distinct, func, select
+from sqlalchemy import ARRAY, ColumnElement, String, any_, case, distinct, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.sharing import _excluded
@@ -85,12 +90,22 @@ async def _rows(db: AsyncSession) -> list[_Row]:
 async def _device_counts(db: AsyncSession, sets: list[set[str]]) -> list[int]:
     """Distinct devices carrying at least one app from each bundle-ID set, in one query.
     Per-app counts cannot be summed — a Mac with three of four would count three times —
-    so each set gets a `count(distinct …)` over a `CASE` that is NULL off-set."""
+    so each set gets a `count(distinct …)` over a `CASE` that is NULL off-set.
+
+    Each set travels as **one** array parameter, not an `IN (…)` list of them: `com.*` over
+    a real fleet is thousands of bundle IDs, some sixty sets are evaluated per call, and
+    asyncpg refuses a statement past 32,767 parameters — a ceiling an operator would meet as
+    a raised `InterfaceError` and a panel that stopped answering.
+    """
+
+    def one_of(bundle_ids: set[str]) -> ColumnElement[bool]:
+        return InstalledApp.bundle_id == any_(literal(sorted(bundle_ids), ARRAY(String)))
+
     wanted: set[str] = set().union(*sets) if sets else set()
     if not wanted:
         return [0] * len(sets)
-    columns = [func.count(distinct(case((InstalledApp.bundle_id.in_(sorted(s)), InstalledApp.device_id)))) for s in sets if s]
-    values = iter((await db.execute(select(*columns).where(InstalledApp.bundle_id.in_(sorted(wanted))))).one())
+    columns = [func.count(distinct(case((one_of(s), InstalledApp.device_id)))) for s in sets if s]
+    values = iter((await db.execute(select(*columns).where(one_of(wanted)))).one())
     return [int(next(values) or 0) if s else 0 for s in sets]
 
 
@@ -115,7 +130,11 @@ async def build_candidates(db: AsyncSession, globs: list[str]) -> ExclusionCandi
     grouped: dict[str, list[_Row]] = {}
     for row in rows:
         if not row.known:
-            grouped.setdefault((prefix_of(row.bundle_id) or row.bundle_id).lower(), []).append(row)
+            # A bundle ID with no prefix of its own (`com.acme`) groups alone, under a key
+            # starting with a dot so no prefix can collide with it: inside `com.acme`'s
+            # group it would be counted by a `com.acme.*` suggestion that cannot match it.
+            prefix = prefix_of(row.bundle_id)
+            grouped.setdefault(prefix.lower() if prefix else f".{row.bundle_id.lower()}", []).append(row)
     ordered = sorted(grouped.values(), key=lambda g: (-sum(r.device_count for r in g), -len(g), g[0].bundle_id))
     shown, more = ordered[:MAX_GROUPS], max(0, len(ordered) - MAX_GROUPS)
 
@@ -130,9 +149,13 @@ async def build_candidates(db: AsyncSession, globs: list[str]) -> ExclusionCandi
     ]
     evaluated = typed + [s for s in dict.fromkeys(suggestions) if s and s not in typed]
     sources = ["typed"] * len(typed) + ["suggested"] * (len(evaluated) - len(typed))
-    matched = [{b for b in all_bundle_ids if _excluded(b, [glob])} for glob in evaluated]
+    # Rows, not bundle IDs: two titles under one bundle ID are two apps the exchange drops,
+    # and this page says "app" in exactly one grain. The ID set beside it is for the device
+    # count, which is per device and so cannot be taken at the row grain at all.
+    matched = [[r for r in rows if _excluded(r.bundle_id, [glob])] for glob in evaluated]
+    matched_ids = [{r.bundle_id for r in hits} for hits in matched]
     group_sets = [{r.bundle_id for r in group} for group in shown]
-    counts = await _device_counts(db, group_sets + matched)
+    counts = await _device_counts(db, group_sets + matched_ids)
 
     return ExclusionCandidatesOut(
         groups=[
@@ -158,11 +181,13 @@ async def build_candidates(db: AsyncSession, globs: list[str]) -> ExclusionCandi
                 source=source,
                 app_count=len(hits),
                 device_count=count,
-                case_misses=sorted(b for b in all_bundle_ids if b not in hits and fnmatch(b.lower(), glob.lower()))[
+                case_misses=sorted(b for b in all_bundle_ids if b not in ids and fnmatch(b.lower(), glob.lower()))[
                     :MAX_CASE_MISSES
                 ],
             )
-            for glob, source, hits, count in zip(evaluated, sources, matched, counts[len(group_sets) :], strict=True)
+            for glob, source, hits, ids, count in zip(
+                evaluated, sources, matched, matched_ids, counts[len(group_sets) :], strict=True
+            )
         ],
         catalog_titles=(await db.execute(select(func.count(JamfPatchTitle.id)))).scalar_one(),
         library_titles=(await db.execute(select(func.count(VulnLibraryTitle.title_id)))).scalar_one(),

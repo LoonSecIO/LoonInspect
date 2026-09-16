@@ -199,7 +199,9 @@ and joins locally ([`vulnerabilities.md`](vulnerabilities.md), and the section b
 - **The box says what it matches and what the fleet has** (#483). Under the textarea,
   `GET /api/system/data-sharing/exclusion-candidates` reports, for every pattern typed or
   proposed, how many apps on how many Macs it removes — counted with that same `_excluded`,
-  so the page and the wire cannot disagree — and names any bundle ID it would match but for
+  at the grain the exchange drops at, so the page and the wire cannot disagree. An *app*
+  there is a title, and one bundle ID under two display names is two of them, because
+  `key_title` hashes the name. It also names any bundle ID the pattern would match but for
   case, because `fnmatch` is case-sensitive here and `com.acme.*` quietly misses
   `com.Acme.Deploy`. Beside it, the titles no public source on this container knows (no
   Jamf Patch title matches any of their builds, and the loaded epoch names none of them),
