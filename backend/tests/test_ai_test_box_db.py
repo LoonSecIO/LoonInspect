@@ -311,7 +311,10 @@ async def test_an_upstream_failure_is_reported_in_the_reply_and_the_attempt_is_o
     assert len(await _ai_rows(db)) == 1
 
 
-async def test_an_auditor_may_read_the_table_but_not_send(accounts, clean):
+async def test_an_auditor_may_read_the_table_but_not_send(accounts, db, clean):
+    # The flag first: the table is part of the AI area, so it is served only while the
+    # area is on (#402). What this test is about is the permission, one switch further in.
+    await _switches(db, flag=True, consent=False)
     auditor = await _signed_in(*AUDITOR)
     try:
         listing = await auditor.get("/api/system/ai/providers")
@@ -322,7 +325,18 @@ async def test_an_auditor_may_read_the_table_but_not_send(accounts, clean):
         await auditor.aclose()
 
 
-async def test_the_table_and_the_detection_are_served(client):
+@pytest.mark.parametrize("path", ["/api/system/ai/providers", "/api/system/ai/host"])
+async def test_a_read_of_the_area_is_refused_while_the_flag_is_off(client, clean, path):
+    """The flag gates the whole area, in both directions (#402): with it off, the two
+    reads Settings > AI opens with say so rather than serving a provider table and a look
+    at this container."""
+    response = await client.get(path)
+    assert response.status_code == 409, response.text
+    assert "AI features are off" in response.json()["detail"]
+
+
+async def test_the_table_and_the_detection_are_served(client, db, clean):
+    await _switches(db, flag=True, consent=False)
     providers = (await client.get("/api/system/ai/providers")).json()
     assert [e["provider"] for e in providers["entries"]] == ["apple_fm", "openai_compatible", "anthropic"]
     reaches = {r["reach"]: r for r in providers["reaches"]}
