@@ -299,7 +299,7 @@ class TestExtensionAttributes:
         title names `org.python.python`, which no `.app` reports because a command-line Python is
         not something recon walks. So the title is admitted, enumerates its versions, and matches
         nothing: the Mac reads *absent* with `detection: extension_attribute` until the EA value
-        is read as the presence witness (docs/troubleshooting.md §6 step 5)."""
+        is read as the presence witness (docs/troubleshooting.md §6 step 6)."""
         test = {"name": "jamf-patch-python-3", "type": "extensionAttribute", "value": "|3.", "operator": "like"}
         title = {
             "id": "11A",

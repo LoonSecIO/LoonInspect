@@ -587,7 +587,7 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
      are never matched to an installed app — device-level (*Apple macOS …*), version-only,
      and the attribute-only titles Jamf publishes no bundle identifier for
      ([`jamf-patch-matching.md`](jamf-patch-matching.md) §3) — so they read 0 on every
-     fleet. A title that IS matched against and still reads 0 is step 5.
+     fleet. A title that IS matched against and still reads 0 is step 6.
    - The title is missing with the box unticked → a title whose definition the server
      refused is skipped for that refresh and fetched again at the next one, so a gap that
      closes by itself is working as designed. A title that is published by Jamf and still
@@ -644,7 +644,7 @@ synced yet.*, a title Jamf publishes stays missing from the list with *Only titl
 devices* unticked for more than a day, a press of **Sync now** writes nothing to the
 container log while `/api/health` answers, or — the one where the sync did happen — a
 title LoonInspect matches against still reads 0 devices after a sweep while **Devices ›
-Applications** lists its bundle identifier (step 5). Report what the *Synced* column
+Applications** lists its bundle identifier (step 6). Report what the *Synced* column
 shows, the bundle identifier and the title's name if that was the symptom, the output of
 `docker compose logs app --since 1h`, and the build from Settings › Support.
 

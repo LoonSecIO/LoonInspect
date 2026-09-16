@@ -141,7 +141,7 @@ software is there despite recon not seeing it."* Every title therefore carries `
   a command-line install, a framework or a daemon: Python 3, the JDK lines, Jamf Connect Login.
   The title enumerates and matches nothing, and the Mac reads **absent** — with
   `detection: extension_attribute` — until the EA value is read as the presence witness, which
-  LoonInspect does not do yet (`docs/troubleshooting.md` §6 step 5).
+  LoonInspect does not do yet (`docs/troubleshooting.md` §6 step 6).
 
 **The cost if this is wrong, named**: a title Jamf scoped by EA to a subset, matched here on the
 column alone, reads for the wrong subset — and it is already live, since `0B3` Mozilla Firefox and
