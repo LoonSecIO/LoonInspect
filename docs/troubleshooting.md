@@ -35,7 +35,10 @@ curl -s -b jar $BASE/api/destinations                           # destinations w
 ```
 
 **The container log.** `docker compose logs app --since 30m` (add `db` for the
-database). This is where the app speaks before there is a run to write to.
+database). This is where the app speaks before there is a run to write to. A scheduled
+pass that could not finish says so here and nowhere else: `outbox tick failed`,
+`outbox cleanup failed` and `run cleanup failed` each name what was not done, when it is
+tried again, and what to check.
 
 **The run log.** One line per milestone: `run started`, `devices processed`,
 `group definitions observed`, `run finished`, and warnings such as `throttled by Jamf;
@@ -156,7 +159,12 @@ did Splunk keep it.
      is why. Fix the cause (step 3), then **Redrive** returns them to the queue. Events
      that arrived after the fix flow on their own.
    - `pendingCount` climbing and nothing delivered → the destination is accepting slowly
-     or the tick is behind; wait two ticks (a minute). Still climbing → reportable **D**.
+     or the tick is behind; wait two ticks (a minute). Still climbing, and `lastError` is
+     still `null` → nothing was attempted, so read the container log:
+     `docker compose logs app --since 10m | grep "outbox tick failed"`. That line means the
+     tick gave up before it dialled, and it names what to check — usually a destination
+     whose URL it refuses or whose stored secret this container cannot read (§4). Fix that,
+     and the next tick drains the queue. No such line and still climbing → reportable **D**.
    - Both zero and the runs in step 1 succeeded → step 5.
 5. **Subscriptions.** `subscribedEvents` on the destination: `null` means every event
    type; a list means only those. A list without `device.inventory` gets no snapshots,
@@ -209,11 +217,25 @@ the run `jobID`, the token's index settings, and the search you ran.
    the dump and not the key ([`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) §5). **This is the
    fix:** put the original key back from your secret store ([`operations.md`](operations.md)
    §1 has the one-liner that verifies a dump-and-key pair), then `docker compose up -d`.
-   If the original key is gone, the stored credentials are gone with it: delete each
+   **Did you just put an *older* image back?** Then read
+   [`operations.md`](operations.md) §5 before you touch a secret: credentials written by
+   the newer build carry a key id (`k1:`) that an image older than #480 cannot read, and
+   it reports that as this same wrong-key sentence on an instance whose key is fine. The
+   fix there is to go forward, not to re-enter anything.
+   If the original key really is gone, the stored credentials are gone with it: delete each
    connection and destination and create it again with its secret. Account passwords
    survive; they are hashed, not encrypted. Only if the original key is back and the 500
    persists → reportable **G**.
-4. Healthy and signed in, and something else is unreadable → reportable **G**.
+4. **The same 503, but the sentence names a *key id*.** `GET /api/mdm/connections` answers
+   **503** with *Stored credentials cannot be read: this value carries key id `k2`, which
+   this build does not know…* — not the `ENCRYPTION_KEY` sentence in step 3. **The key is
+   not the problem, so do not go looking for it.** Every stored secret says which key
+   wrote it (`k1` is the only one this build knows), and this row was written by a newer
+   build: the running image is older than the database, the shape of a rollback that
+   swapped the image back ([`operations.md`](operations.md) §5). **This is the fix:** roll
+   forward to the newer image, or restore the dump taken before the upgrade. Rolled
+   forward and the sentence persists → reportable **G**.
+5. Healthy and signed in, and something else is unreadable → reportable **G**.
 
 **F.** Startup migration failed. Report `docker compose logs app --tail 200` and the
 build (Settings › Support shows it).
@@ -537,6 +559,28 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
      closes by itself is working as designed. A title that is published by Jamf and still
      missing from the unticked list a day later is reportable state **J**.
 
+4. **Settings › Data Sharing lists half the fleet as software no public source knows.**
+   That list calls a title unknown when no Jamf Patch title matches any of its builds and
+   the loaded vulnerability epoch names none of them — so with **0 Jamf Patch titles synced
+   only the vulnerability library can make a title known**, and most of a fleet reads
+   unknown on a container whose catalog never synced. That is this section, not the list: it
+   states both counts (*… checked against N Jamf Patch titles and M vulnerability-library
+   titles*) so you are not left guessing which source is absent. Work steps 1 and 2 above
+   and the list shrinks to the fleet's real long tail on the next page load. Three
+   neighbours of that state, all three legible rather than blank:
+   - **Empty, with both counts 0** → nothing has been matched because nothing has been
+     collected: a candidate needs an installed app to be a candidate of. Sweep a connection
+     (§2), then look again.
+   - **Empty, with both counts above 0** → the list is right. Every title your Macs carry
+     with a bundle identifier is software a public source on this container already names,
+     and the exclude box needs nothing from it.
+   - **One line where the panel was: *Match counts and candidates could not be loaded…*** →
+     the read behind the panel failed, so no count under the box is a statement about your
+     fleet. The box itself is unaffected: patterns you type still save on blur, and the
+     exchange still filters on them. `docker compose logs app --since 10m` carries the
+     request to `/api/system/data-sharing/exclusion-candidates` and the reason it ended;
+     reload the page to ask again.
+
 **J.** A refresh that reports no error leaves the table saying *No Jamf Patch titles
 synced yet.*, a title Jamf publishes stays missing from the list with *Only titles with
 devices* unticked for more than a day, or a press of **Sync now** writes nothing to the
@@ -761,6 +805,9 @@ writes one row to the disclosure log naming the destination and the one field th
      one the key was saved under, usually after a restore. The container log carries the same
      line. An admin re-enters the key on that card and saves it, or restores the original key
      ([`operations.md`](operations.md) §1).
+   - *Stored credentials cannot be read: this value carries key id …* → **not** the key, and
+     nothing on Settings › AI needs re-entering: the row was written by a newer build than the
+     one running. Section 4 step 4.
    - *The question held only what the Prompt bar removes before sending …* → the question was
      nothing but model control tokens (`<|im_start|>`, `[INST]`, `</s>` and their kin, usually
      pasted from a chat log) or invisible characters, which are stripped before anything is sent.

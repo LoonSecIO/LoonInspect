@@ -660,13 +660,38 @@ one-directional — `LoonVD-` ids become CVEs, never the reverse.
 
 ### The lifecycle records — named, not built
 
-Post-v0, licensed tier, sourcetype `loon:jamf:mac:app:vuln`. One event per finding
-transition, scanner-shaped: `status: new | active | resolved` with a `reason`, per-finding
-scalars (`cveID`, `kevListed`, `epssScore`, the severity band, the publication date),
-and `supersedes` where §6 applies. **Resolution must be an emitted tombstone** — absence
-is not searchable. Rare against a static corpus, which is why v0 ships the summary
+Post-v0, Licence tier behind a switch (§8), sourcetype `loon:jamf:mac:app:vuln`. One event
+per finding transition, scanner-shaped: `status: new | active | resolved` with a `reason`,
+per-finding scalars (`cveID`, `kevListed`, `epssScore`, the severity band, the publication
+date), and `supersedes` where §6 applies. **Resolution must be an emitted tombstone** —
+absence is not searchable. Rare against a static corpus, which is why v0 ships the summary
 alone; named here because the summary's ruling above depends on where the transition
 lives.
+
+**Ruled 2026-09-16 ([#429](https://github.com/LoonSecIO/LoonInspect/issues/429)), the two
+questions this paragraph left open.**
+
+1. **A finding is keyed on (device, app build, CVE).** Scanner-shaped, which is what
+   `stats dc(cveID) by host` expects of anything landing in a vulnerability sourcetype,
+   and what makes *"which Macs still carry this one"* answerable from the fan-out alone.
+   The fleet-shaped alternative — (tenant, build, CVE) — is smaller by the device count,
+   and was rejected for what that discount buys: a second, later telling of the fleet view
+   the summary block already carries on every app event, at the cost of the one view the
+   summary cannot give. Per device is also the grain a tombstone needs in order to mean
+   anything — *this Mac is clear* is a fact an operator can act on, *the fleet is clear*
+   is a statistic.
+2. **Events are emitted on change only** — `new`, `resolved` (the tombstone), and an
+   attribute change on a finding already open, such as a KEV listing arriving. There is
+   **no per-sweep re-assertion of `active`**: the summary riding every app event already
+   *is* the standing assertion that a finding is open, so re-asserting each one nightly
+   would multiply a fleet's open findings by its sweep frequency to tell a search nothing
+   it could not already read. `active` therefore only ever appears with a `reason` — §6's
+   `superseded` is the first of them, the attribute change the second.
+
+Both are the defaults the issue proposed, ruled as written. Neither is buildable yet: one
+event per finding needs uncapped ids and per-CVE attributes, and an epoch row today is ids
+≤ 50 plus aggregates, by design (§4f). That is an upstream ask — to LoonInspect_Support,
+and to LoonVD behind it — and not a LoonInspect change.
 
 `fixed_in` stays **off the wire** (ruled 2026-08-25). Fix-version data lives in the Jamf
 Patch and `app_catalog` tables, in-app only: correctable there, and it avoids a
@@ -730,6 +755,24 @@ fleet-coverage statistic (*"% of observed apps identified"*) is gated on licence
 data-sharing consent, structurally as well as commercially: identification requires
 sending hashes.
 
+**Ruled 2026-09-16 ([#429](https://github.com/LoonSecIO/LoonInspect/issues/429)): the
+Licence row's fan-out ships behind a switch that is off by default, and that row stands.**
+Nothing reads a licence yet, and the two honest ways around that each cost something
+permanent. Building the licence check first makes a wire feature wait on a billing
+decision it does not depend on. Shipping the fan-out at the data-sharing tier instead
+moves this table — and a tier table is the one place where a line moved down is close to
+irreversible, because what a tier has already been given cannot quietly be taken back.
+So: the writer is gated on a setting that is **off by default**, which a lab, a demo or a
+design partner turns on deliberately, and which a paying tenant will have turned on for
+them. When a licence check exists, that switch *becomes* it — the same gate asking a
+different question, with no wire change, no new key, and no row moving here. Until then a
+tenant nobody has switched on is byte-identical to a tenant on the data-sharing tier: the
+summary block, and no `loon:jamf:mac:app:vuln` events at all.
+
+Off by default is the same default-deny the rest of this document runs on (§4a, §7): a
+path that forgets to ask costs a tenant its fan-out, never the reverse, and silence on
+this sourcetype keeps meaning *nobody turned it on* rather than *nothing was found*.
+
 **How the gate is built (#281, Option A; #248).** Inside `loaded_corpus()`, which is where
 Option A put it. Two conditions, and both must hold: an epoch is loaded, **and** the acting
 tenant's data-sharing tier is not `off`. The first is the shape — the corpus link rides the
@@ -791,4 +834,4 @@ block each other.
 | `vuln{}` populated on the app sub-event; `assessment` stops being a constant `off`. Also needs the fan-out ([#242](https://github.com/LoonSecIO/LoonInspect/issues/242)) | [#249](https://github.com/LoonSecIO/LoonInspect/issues/249) | **Built 2026-09-03.** `app/core/vuln.py`, `VulnEnrichment` in `app/schemas/payload.py`, the sentinel in `app/core/hec_fanout.py`, pinned in `backend/tests/test_vuln_block.py` |
 | The four `vuln.*` posture keys go ACTIVE, under §7's no-zero rule | [#250](https://github.com/LoonSecIO/LoonInspect/issues/250) | **Built 2026-09-11.** §7. Four bounded queries over the stored answers in `app/core/posture.py` (`_vuln_values`, `VULN_KEYS`), `RESERVED_KEYS` now empty; the no-rows rule pinned in `backend/tests/test_posture_db.py` and against the fixture epoch in `backend/tests/test_vuln_answer_db.py` |
 | The corpus's edge made visible in the UI — `assessment`, `corpusAsOf`, three empty states | [#251](https://github.com/LoonSecIO/LoonInspect/issues/251) | **Built 2026-09-03.** §4g. `app/core/vuln_read.py` over the same seam, `vuln` + `corpusAsOf` on the device and catalog responses, the Catalog tab's column and banner; pinned in `backend/tests/test_vuln_read.py` and `frontend/src/features/vulnerabilities/noCollapse.ts` |
-| The lifecycle fan-out under `loon:jamf:mac:app:vuln`, and `LOCAL-` ids behind their reservation | post-v0 (§5, §6) | Named, not built. The string stays minted with no writer |
+| The lifecycle fan-out under `loon:jamf:mac:app:vuln`, and `LOCAL-` ids behind their reservation | [#429](https://github.com/LoonSecIO/LoonInspect/issues/429), post-v0 (§5, §6) | Named, not built. The string stays minted with no writer. **Ruled 2026-09-16: per device, on change only, behind a switch off by default.** Waiting on uncapped ids and per-id attributes from the corpus (LoonInspect_Support / LoonVD) |
