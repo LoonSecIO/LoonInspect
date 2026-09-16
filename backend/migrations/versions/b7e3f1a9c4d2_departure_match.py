@@ -10,7 +10,7 @@ in Jamf — it must never re-enter a census population, or it departs once every
 census that names it again clears it rather than leaving a live Mac out of the fleet for good.
 
 Revision ID: b7e3f1a9c4d2
-Revises: f1b6c48a3e29
+Revises: bd51c7a9e402
 Create Date: 2026-09-16
 """
 
@@ -22,7 +22,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "b7e3f1a9c4d2"
-down_revision: Union[str, Sequence[str], None] = "f1b6c48a3e29"
+down_revision: Union[str, Sequence[str], None] = "bd51c7a9e402"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

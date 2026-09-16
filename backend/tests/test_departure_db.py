@@ -434,6 +434,8 @@ async def test_a_serial_carried_by_another_connection_closes_nothing(db, jamf: F
     assert gone.returned_at is None and verdict.returned_by_serial == 0
     await db.execute(delete(MdmConnection).where(MdmConnection.id == other.id))
     await db.commit()
+
+
 # --- the wire (#179): two types, one sourcetype, the ruled bodies -------------------
 
 
