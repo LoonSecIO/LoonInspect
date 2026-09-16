@@ -22,9 +22,8 @@ def _age_seconds(oldest: datetime | None, now: datetime) -> int | None:
 
 
 async def _by_status(db: AsyncSession, status: str) -> tuple[int, datetime | None]:
-    """Delivery rows in one state, with the production instant of the oldest event behind
-    them — the event's `created_at`, so an age here is the same quantity the held set
-    reports and the posture tape records."""
+    """Delivery rows in one state, aged from the `created_at` of the oldest event behind them
+    — the same quantity the held set reports and the posture tape records."""
     row = (
         await db.execute(
             select(func.count(OutboxDelivery.id), func.min(EventOutbox.created_at))
@@ -40,11 +39,10 @@ async def _by_status(db: AsyncSession, status: str) -> tuple[int, datetime | Non
 async def outbox_depth(db: AsyncSession = Depends(get_db)) -> OutboxDepthOut:
     """How deep this tenant's queue is, in the three states `app.schemas.outbox` names.
 
-    The one thing no destination row can say. Every other read path counts delivery rows and
-    a held event has none: on a pod with no destination configured, a week of baseline sweeps
-    is tens of thousands of events the app would not name, would not warn about, and would
-    delete on day seven without a word — `psql` was the only answer until this route, which
-    `docs/diagnosability.md` calls a defect to file. Tenant-scoped by the session.
+    The one thing no destination row can say: every other read path counts delivery rows and a
+    held event has none, so a destination-less pod's week of baseline went unnamed, unwarned and
+    purged on day seven, with `psql` the only answer — the defect `docs/diagnosability.md` says
+    to file rather than write around. Tenant-scoped by the session.
     """
     now = datetime.now(UTC)
     held = select(func.count(EventOutbox.id), func.min(EventOutbox.created_at)).where(EventOutbox.fanned_out.is_(False))

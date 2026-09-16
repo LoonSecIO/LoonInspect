@@ -158,6 +158,8 @@ destination, holding no delivery row at all), **pending** (a delivery still insi
 retry envelope) and **dead-lettered** (a delivery that spent its ten attempts and waits
 for a redrive) — plus the two retention windows and the next purge, so each state's
 deadline is readable without the source. Ages are `null` when a set is empty, never `0`.
+Settings › Destinations reads it for the two sentences above the list and says plainly when
+that read fails, so a missing sentence there is never a silent zero.
 
 1. **Was anything produced?** `GET /api/runs?pageSize=5`: a `device_sweep` run with
    `status: succeeded` and `deviceCount` above zero. None → this is §1 or §2, not a

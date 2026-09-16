@@ -102,10 +102,12 @@ function TestResultLine({ result }: { result: DestinationTestResult | undefined 
 
 /** The two queue-depth sentences (#468), above the list and only when there is something
  *  to say: a held backlog no destination exists to drain, and a dead-letter deadline. Both
- *  end in data being deleted, and neither was nameable before this read. */
-function QueueDepthLines({ depth }: { depth: OutboxDepth | null }) {
+ *  end in data being deleted, and neither was nameable before this read. A failed read gets
+ *  a third sentence rather than the silence an empty queue already owns. */
+function QueueDepthLines({ depth }: { depth: OutboxDepth | "unreadable" | null }) {
   const { t } = useLocale();
   if (!depth) return null;
+  if (depth === "unreadable") return <p className="text-sm text-muted-foreground">{t.destinations.queueUnreadable}</p>;
   const now = new Date();
   const expires = heldExpiresAt(depth, now);
   const days = deadLetterDaysLeft(depth, now);
@@ -140,9 +142,9 @@ export function DestinationsPage() {
   }
 
   const [destinations, setDestinations] = useState<Destination[]>([]);
-  // Its own read: tenant-wide, and no destination row can answer it. A failure here
-  // leaves the sentences unsaid and the list alone.
-  const [depth, setDepth] = useState<OutboxDepth | null>(null);
+  // Its own read: tenant-wide, and no destination row can answer it. A failure here says so
+  // and leaves the list alone, which is its own read and still current.
+  const [depth, setDepth] = useState<OutboxDepth | "unreadable" | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -166,7 +168,7 @@ export function DestinationsPage() {
   function load(): Promise<void> {
     void getOutbox()
       .then((queue) => setDepth(queue))
-      .catch(() => setDepth(null));
+      .catch(() => setDepth("unreadable"));
     return listDestinations()
       .then((rows) => setDestinations(rows))
       .catch((caught: unknown) => {

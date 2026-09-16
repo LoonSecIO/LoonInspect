@@ -1031,10 +1031,10 @@ async def purge_delivered_events(db: AsyncSession, retention_days: int, dead_let
     return len(purge_ids)
 
 
-# When `outbox_cleanup` runs, as wall-clock time in `sync_timezone` — the scheduler's own
-# zone (`main.py`). Named beside the purge rather than only at the `CronTrigger` because
-# `GET /api/outbox` publishes the next occurrence as a deadline, and a deadline copied from
-# a second literal is one that drifts away from the job that enforces it.
+# When `outbox_cleanup` runs, as wall-clock time in `sync_timezone` — the scheduler's own zone
+# (`main.py`). Beside the purge rather than only at the `CronTrigger`, because `GET /api/outbox`
+# publishes the next occurrence as a deadline and a deadline copied from a second literal drifts
+# away from the job that enforces it.
 PURGE_HOUR = 2
 PURGE_MINUTE = 45
 

@@ -13,8 +13,9 @@ events: one event fanning out to three destinations has three retry histories.
 `oldestExpiresAt` is when the oldest stops being redrivable: its event is kept for
 `dead_letter_retention_days`, then purged, and the gap in the trail is permanent after that.
 
-The posture tape's `outbox.pending` unions held events with events holding a pending delivery.
-This read splits that union along the line an operator acts on and redefines nothing.
+Tenant-wide, never a per-destination breakdown: those rows already are that, and a held event
+has none for them to count. The posture tape's `outbox.pending` unions held events with events
+holding a pending delivery; this read splits that union where an operator acts, redefining nothing.
 """
 
 from __future__ import annotations
@@ -60,9 +61,6 @@ class OutboxRetention(_CamelModel):
 
 
 class OutboxDepthOut(_CamelModel):
-    """How deep this tenant's queue is, in the three states above. Not a per-destination
-    breakdown — the destination rows already are that, and none of this is answerable there."""
-
     held: HeldEvents
     pending: PendingDeliveries
     dead_lettered: DeadLetteredDeliveries

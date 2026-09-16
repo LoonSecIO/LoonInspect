@@ -1,5 +1,7 @@
 /** Queue depth (#468): whether either sentence above the Destinations list is said at all,
- *  and the number it carries when it is. Frontend lane (#285). */
+ *  and the number it carries when it is. The lane is node-only by ruling (#285, see
+ *  `vitest.config.ts`), so these are the decisions behind the sentences; the rendering is
+ *  §11's UI walk, not this file's. */
 
 import { describe, expect, it } from "vitest";
 import { deadLetterDaysLeft, heldExpiresAt } from "@/features/destinations/queueDepth";
@@ -24,23 +26,18 @@ const expiring = (ms: number): Partial<OutboxDepth> => ({
   deadLettered: { deliveries: 12, oldestExpiresAt: new Date(NOW.getTime() + ms).toISOString() }
 });
 
-describe("the empty queue", () => {
-  it("says neither sentence, so a healthy stack never grows a zero to stop reading", () => {
-    // `QueueDepthLines` renders nothing when both of these are empty, which is the
-    // all-empty half of the done-when — asserted here, where a node-only lane can.
-    expect(heldExpiresAt(depth(), NOW)).toBeNull();
-    expect(deadLetterDaysLeft(depth(), NOW)).toBeNull();
-  });
-});
-
 describe("heldExpiresAt", () => {
   it("dates the expiry from when the oldest event was produced, not from now", () => {
     // Five days held against a seven-day window: two days left to add a destination.
     expect(heldExpiresAt(depth({ held: HELD }), NOW)?.toISOString()).toBe("2026-09-18T12:00:00.000Z");
   });
 
-  it("stays silent about a hold no sentence can fix — the seconds before the next tick", () => {
+  it("says nothing about a hold that resolves on its own — a tick away, or a backlog draining", () => {
     expect(heldExpiresAt(depth({ held: { ...HELD, reason: null } }), NOW)).toBeNull();
+    // Both null is the all-empty half of the done-when: `QueueDepthLines` renders nothing, so a
+    // healthy stack never grows a zero to stop reading.
+    expect(heldExpiresAt(depth(), NOW)).toBeNull();
+    expect(deadLetterDaysLeft(depth(), NOW)).toBeNull();
   });
 });
 

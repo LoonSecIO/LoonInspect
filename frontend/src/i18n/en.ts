@@ -302,6 +302,9 @@ export const en = {
       `${count === 1 ? "1 event" : `${count} events`} held — no enabled destination. The oldest expires ${expires}.`,
     deadLetters: (count: number, days: number) =>
       `${count} dead ${count === 1 ? "letter" : "letters"} · oldest expires ${days === 0 ? "today" : `in ${days} ${days === 1 ? "day" : "days"}`}`,
+    // And when that read fails, the one thing silence would be mistaken for: missing, not zero.
+    queueUnreadable:
+      "Could not read the queue depth — the held and dead-letter counts are missing, not zero. Reload, or call GET /api/outbox directly.",
     loading: "Loading destinations…",
     empty: "No destinations configured yet.",
     errorLoading: "Could not load destinations.",
