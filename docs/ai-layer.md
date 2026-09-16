@@ -371,7 +371,7 @@ gate: the card stays clickable whatever was detected" stood until the AWS pod of
 Desktop" card with no Mac anywhere near it, and filled the OpenAI-compatible card with the Mac host's
 Ollama pair — a `host.docker.internal` base URL directly under the page's own evidence line saying that
 name does not resolve. Kyle ruled it: the Apple card *"should not show in AWS"*. It is now **offered**
-only where `runtime == docker_desktop and host_os == macos` **and** `alias_resolves`; the full match
+where `runtime == docker_desktop and host_os == macos` **and** `alias_resolves`, or (#474) where this server already holds a saved `apple_fm` configuration; the full match
 alone never proved its default could work, because `fm serve` runs on the Mac and the alias is how the
 container gets to it. Where the alias is dead no card fills a `host.docker.internal` default at all — the
 OpenAI-compatible card starts empty, with a line saying why — and wherever the Apple card is withheld the

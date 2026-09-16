@@ -52,7 +52,8 @@ const AI_FLAG = "ai_features";
  * Settings › AI: the test box (#319). One prompt to an endpoint the admin names,
  * the reply shown as it came back. One card per entry; the Apple card is "via Docker
  * Desktop" because the label names the pattern the operator is on, not what powers the
- * model, and since #404 it is offered only where that pattern holds — which cards are
+ * model; since #404 it is offered where that pattern holds and, since #474, also where this
+ * server already holds a saved configuration for it — which cards are
  * offered and what an unsaved one fills in are in `offered.ts`, with the reason. Every
  * model call is made by the backend, never from here.
  *
