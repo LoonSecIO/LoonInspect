@@ -23,7 +23,7 @@ PyCharm Unified get a patch answer where they had none. Nothing is judged by thi
 tenant's rows against the wider catalog.
 
 Revision ID: d3a9c17be40f
-Revises: b7e3f1a9c4d2
+Revises: c3f8a1d7e964
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "d3a9c17be40f"
-down_revision: Union[str, Sequence[str], None] = "b7e3f1a9c4d2"
+down_revision: Union[str, Sequence[str], None] = "c3f8a1d7e964"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
