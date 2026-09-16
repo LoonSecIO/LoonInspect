@@ -514,8 +514,9 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
 
 4. **Settings › Data Sharing lists half the fleet as software no public source knows.**
    That list calls a title unknown when no Jamf Patch title matches any of its builds and
-   the loaded vulnerability epoch names none of them — so with **0 titles synced nothing
-   can be matched and everything reads unknown**. That is this section, not the list: it
+   the loaded vulnerability epoch names none of them — so with **0 Jamf Patch titles synced
+   only the vulnerability library can make a title known**, and most of a fleet reads
+   unknown on a container whose catalog never synced. That is this section, not the list: it
    states both counts (*… checked against N Jamf Patch titles and M vulnerability-library
    titles*) so you are not left guessing which source is absent. Work steps 1 and 2 above
    and the list shrinks to the fleet's real long tail on the next page load. Three
