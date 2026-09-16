@@ -42,15 +42,8 @@ BODIES = {
 }
 # (subject, day observed, security digest). Device 1 turns the firewall off and back on; device 2 is seen once and
 # goes quiet; device 3 reports the same field-less record twice; device 4 departs on day 30.
-LEDGER = (
-    ("1", 0, LOCKED),
-    ("1", 10, OPEN),
-    ("1", 20, LOCKED),
-    ("2", 5, LOCKED),
-    ("3", 0, THIN),
-    ("3", 12, THIN),
-    ("4", 0, LOCKED),
-)
+LEDGER = (("1", 0, LOCKED), ("1", 10, OPEN), ("1", 20, LOCKED), ("2", 5, LOCKED))
+LEDGER += (("3", 0, THIN), ("3", 12, THIN), ("4", 0, LOCKED))
 
 
 def _at(day: float) -> datetime:
@@ -69,29 +62,14 @@ async def ledger(db):
     for digest, body in BODIES.items():
         db.add(ObservationSection(digest=digest, section=SECURITY, body=body, entry_count=0))
     newest = {subject: day for subject, day, _ in LEDGER}
+    fixed = {"subject_kind": COMPUTER, "contract_version": "v0", "aperture_digest": "v0:aperture", "last_trigger": "sweep"}
     for subject, day, digest in LEDGER:
-        db.add(
-            ObservationSpan(
-                mdm_connection_id=row.id,
-                subject_kind=COMPUTER,
-                subject_id=subject,
-                label=f"Mac {subject}",
-                udid=f"udid-{subject}",
-                serial_number=f"serial-{subject}",
-                management_id=f"management-{subject}",
-                contract_version="v0",
-                aperture_digest="v0:aperture",
-                head_digest=f"v0:head-{uuidlib.uuid4().hex[:12]}",
-                section_digests={SECURITY: digest},
-                first_observed_at=_at(day),
-                last_observed_at=_at(day),
-                first_collected_at=_at(day) + LAG,
-                last_collected_at=_at(day) + LAG,
-                observation_count=1,
-                last_trigger="sweep",
-                is_current=newest[subject] == day,
-            )
-        )
+        at = _at(day)
+        span = fixed | {"mdm_connection_id": row.id, "subject_id": subject, "label": f"Mac {subject}"}
+        span |= {"udid": f"udid-{subject}", "serial_number": f"serial-{subject}", "management_id": f"management-{subject}"}
+        span |= {"head_digest": f"v0:head-{uuidlib.uuid4().hex[:12]}", "section_digests": {SECURITY: digest}}
+        span |= {"first_observed_at": at, "last_observed_at": at, "first_collected_at": at + LAG}
+        db.add(ObservationSpan(**span, last_collected_at=at + LAG, observation_count=1, is_current=newest[subject] == day))
     db.add(SubjectDeparture(mdm_connection_id=row.id, subject_kind=COMPUTER, subject_id="4", departed_at=_at(30)))
     await db.commit()
     connection_id = row.id  # read before the rollback below expires it
