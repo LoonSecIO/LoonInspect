@@ -11,8 +11,8 @@ nothing here reads them. Intel Macs lack the implementer signal, and ``x86_64`` 
 "Docker Desktop, host OS unknown" rather than guessing.
 
 A hint for which card opens selected, and since #404 a gate on one card. Settings >
-AI offers the "via Docker Desktop" card only on a full match whose ``alias_resolves``
-is true — the AWS pod offered a Mac-only card with no Mac anywhere near it, and the
+AI offers the "via Docker Desktop" card on a full match whose ``alias_resolves`` is true,
+or (#474) where this server already holds a saved configuration for it — the AWS pod offered a Mac-only card with no Mac anywhere near it, and the
 full match alone never proved the card's default could work — and there it also opens
 selected. Every other outcome says what was seen, says in one sentence why that card
 is withheld, and leaves the remaining choice to the operator. Nothing here refuses
