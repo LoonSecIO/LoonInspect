@@ -89,7 +89,9 @@ def _definition(record: dict) -> dict:
         "bundleId": record["bundleId"],
         "currentVersion": record["currentVersion"],
         "lastModified": record["lastModified"],
-        "patches": [{**patch, **_BULKY} for patch in record["patches"]],
+        # `killApps` per record: the stored fixture cannot carry it, so a test about the salvage
+        # supplies the entry the real definition has (#385).
+        "patches": [{**patch, **_BULKY, "killApps": record.get("killApps", _BULKY["killApps"])} for patch in record["patches"]],
         "requirements": _flatten(record["requirements"]),
         "extensionAttributes": [{**ea, "value": "IyEvYmluL3NoCmVjaG8gMQo="} for ea in record["extensionAttributes"]],
     }
@@ -184,7 +186,9 @@ class TestColdSync:
             row = rows[record["id"]]
             assert row.name == record["name"]
             assert row.publisher == record["publisher"]
-            assert row.app_name == record["appName"]
+            # "Apple macOS Catalina" is sent with `appName: ""`; empty and absent are one fact
+            # and the sync stores NULL, which is what `build_rows` already keyed neither of (#385).
+            assert row.app_name == (record["appName"] or None)
             assert row.bundle_id == record["bundleId"]
             assert row.current_version == record["currentVersion"]
             assert row.last_modified == record["lastModified"]
@@ -212,6 +216,88 @@ class TestColdSync:
         await server.sync(db)
 
         assert server.peak == DETAIL_CONCURRENCY == 8
+
+
+class TestAppNameFromKillApps:
+    """#385: Jamf leaves the top-level `appName` null on 513 of its 1,553 titles and names the
+    same app in every patch's `killApps` for the same bundle ID; the sync takes it there, the
+    last place it exists, and the rows are keyed like any other title's. The fixture is the
+    *stored* shape and predates the rule, so its fifteen null-`appName` titles carry no
+    `killApps` at all — these tests serve the entry the real definition has for "Wireshark 4.2",
+    as the engine quotes it: `{"bundleId": "org.wireshark.Wireshark", "appName": "Wireshark.app"}`.
+    """
+
+    # Spelled out rather than derived: a test that computes the expected key from the function
+    # under test would follow it anywhere it drifted (`tests/test_content_keys.py`, same argument).
+    WIRESHARK_4_2_0 = "v1:c63d39b2960e648daa2def3aaa786e60f36e40f056947be5a31ec6b1171afd42"
+
+    @staticmethod
+    def _title(records: list[dict], title_id: str, kill_apps: list[dict]) -> dict:
+        (record,) = [record for record in records if record["id"] == title_id]
+        return {**record, "killApps": kill_apps}
+
+    def _wireshark(self, records: list[dict]) -> dict:
+        """The fixture's "Wireshark 4.2": null `appName`, and 4.2.0 among fifteen versions."""
+        return self._title(records, "5F6", [{"bundleId": "org.wireshark.Wireshark", "appName": "Wireshark.app"}])
+
+    async def test_a_null_app_name_is_taken_from_the_patches(self, db, server, records) -> None:
+        server.records = {"5F6": self._wireshark(records)}
+
+        assert await server.sync(db) == 1
+
+        row = (await _rows(db, ["5F6"]))["5F6"]
+        assert row.app_name == "Wireshark.app"
+        assert row.app_name_source == "kill_apps"
+        assert all("killApps" not in patch for patch in row.patches)  # the name is all that is kept
+
+    async def test_the_salvaged_name_keys_every_row_the_title_makes(self, db, server, records) -> None:
+        """The whole point, end to end: before this the fifteen versions of "Wireshark 4.2" had
+        no `key_full`, so a Mac carrying Wireshark.app 4.2.0 could not be answered for by hash."""
+        from app.catalog.index import build_rows
+        from app.mdm.patch.matching import Catalog
+
+        server.records = {"5F6": self._wireshark(records)}
+        await server.sync(db)
+
+        rows = build_rows(Catalog.from_rows((await _rows(db, ["5F6"])).values()))
+        assert rows and all(row["key_full"] and row["key_title"] and row["version_hash"] for row in rows)
+        (four_two_zero,) = [row for row in rows if row["version"] == "4.2.0"]
+        assert four_two_zero["app_name"] == "Wireshark.app"
+        assert four_two_zero["bundle_id"] == "org.wireshark.Wireshark"
+        assert four_two_zero["key_full"] == self.WIRESHARK_4_2_0
+
+    async def test_a_title_no_one_names_an_app_for_is_marked_and_stays_unkeyed(self, db, server, records) -> None:
+        """The other half of the rule: nothing is invented. A `killApps` entry for another bundle
+        ID is about another app, so the title keeps no name and its rows stay pairs."""
+        from app.catalog.index import build_rows
+        from app.mdm.patch.matching import Catalog
+
+        elsewhere = [{"bundleId": "com.example.helper", "appName": "Helper.app"}]
+        server.records = {"5F6": self._title(records, "5F6", elsewhere)}
+        await server.sync(db)
+
+        title = (await _rows(db, ["5F6"]))["5F6"]
+        assert title.app_name is None and title.app_name_source == "unnamed"
+        rows = build_rows(Catalog.from_rows([title]))
+        assert rows and all(row["key_full"] is None and row["version_hash"] is None for row in rows)
+
+    async def test_the_upgrade_path_re_reads_a_row_that_predates_the_rule(self, db, server, records) -> None:
+        """Why `_needs_refresh` reads `app_name_source`: "Wireshark 4.2" is a frozen line whose
+        `lastModified` will not move again, so nothing else would ever fetch it again."""
+        server.records = {"5F6": self._wireshark(records)}
+        await server.sync(db)
+        # The row as an upgraded container holds it. Written through the ORM rather than an
+        # UPDATE: these sessions are `expire_on_commit=False` and the sync reads the same map.
+        stale = (await _rows(db, ["5F6"]))["5F6"]
+        stale.app_name, stale.app_name_source = None, None
+        await db.commit()
+        server.requested.clear()
+
+        assert await server.sync(db) == 1
+        assert server.details_requested() == ["5F6"]
+        assert (await _rows(db, ["5F6"]))["5F6"].app_name == "Wireshark.app"
+        server.requested.clear()
+        assert await server.sync(db) == 0
 
 
 class TestSecondSync:

@@ -13,6 +13,11 @@ That is a second implementation of two methods when it comes, not a rewrite of t
 Nothing downstream knows about any of this: `rebuild_index`, the matcher and the Jamf
 Patch page read `jamf_patch_titles`, which is written here and looks the same whatever
 filled it.
+
+This is also the **only** place a patch's `killApps` is ever read (#385). `_STRIP_PATCH_KEYS`
+drops it before the row is written, and a title Jamf gives no top-level `appName` — 513 of
+1,553 of them — takes its app name from there or has none at all. `_app_name` is that rule and
+`app_name_source` is where the answer came from.
 """
 
 from __future__ import annotations
@@ -31,9 +36,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.user_agent import build_user_agent
 from app.mdm.patch.matching import reset_catalog_cache
+from app.mdm.patch.requirements import bundle_ids_named
 from app.models.schema import JamfPatchTitle
 
 _STRIP_PATCH_KEYS = ("standalone", "minimumOperatingSystem", "reboot", "killApps", "components", "capabilities")
+
+# Where `jamf_patch_titles.app_name` came from (#385). Every title the sync writes carries one of
+# the three, `unnamed` included: it is a decision and not a missing value, and NULL is how a row
+# written before this rule existed is told apart — `_needs_refresh` re-reads exactly those, once.
+APP_NAME_FROM_JAMF = "jamf"
+APP_NAME_FROM_KILL_APPS = "kill_apps"
+APP_NAME_UNNAMED = "unnamed"
 
 # How many title definitions may be in flight at once. A fresh container has no rows, so
 # every title in the catalog is "changed" — 1,554 of them on 2026-09-10 — and the bare
@@ -167,6 +180,54 @@ async def _fetch_details(source: CatalogSource, title_ids: list[str]) -> list[di
     return await asyncio.gather(*(bounded(title_id) for title_id in title_ids), return_exceptions=True)
 
 
+def _kill_app_names(detail: dict, bundle_id: str) -> list[str]:
+    """Every distinct `.app` name the patches name for one bundle ID, in patch order. Jamf writes
+    `{"bundleId": "org.wireshark.Wireshark", "appName": "Wireshark.app"}` on each patch's
+    `killApps`, and that is the name a Jamf inventory reports for the installed app; an entry for
+    another bundle ID is about another app and is skipped."""
+    names: list[str] = []
+    for patch in detail.get("patches") or []:
+        if not isinstance(patch, dict):
+            continue
+        for kill in patch.get("killApps") or []:
+            if not isinstance(kill, dict) or (kill.get("bundleId") or "").strip() != bundle_id:
+                continue
+            name = (kill.get("appName") or "").strip()
+            if name and name not in names:
+                names.append(name)
+    return names
+
+
+def _app_name(detail: dict, groups: list[dict]) -> tuple[str | None, str]:
+    """The name this title's rows are keyed from, and where it came from.
+
+    **The engine's rule, copied rather than reinvented** — LoonVD-Internal
+    `engine/src/loonvd/catalog.py`, `AppName` and `app_name_for` — because both sides compute the
+    same content keys, and a key that differs by a name is a silent miss in vulnerability matching.
+    Jamf's top-level `appName` when it gives one; else the first `killApps` name for the first of
+    the title's bundle IDs that has one; else no name, and the rows carry no keys exactly as
+    before. Nothing is invented.
+
+    **Several names for one bundle ID take the first** — 115 titles were offered several on the
+    engine's 2026-09-11 catalog and 37 took one; Adobe SpeedGrade lists `Adobe SpeedGrade CC
+    2014.app` and `Adobe SpeedGrade CC 2015.app` on the same patch. **A possible miss, never a
+    wrong key**: a key is only ever compared for equality against what an inventory reports, so a
+    name no Mac carries joins to nothing and can never make another app's row answer
+    (docs/app-catalog.md §2a). The same sentence covers the one divergence from the engine, which
+    is this column's shape: the engine chooses per bundle ID and `jamf_patch_titles.app_name` is
+    one value for the title, so a title whose second bundle ID's `killApps` name a different app
+    is keyed from the first.
+    """
+    named = (detail.get("appName") or "").strip()
+    if named:
+        return named, APP_NAME_FROM_JAMF
+    for bundle in bundle_ids_named(detail.get("bundleId"), groups):
+        names = _kill_app_names(detail, bundle)
+        if names:
+            return names[0], APP_NAME_FROM_KILL_APPS
+    return None, APP_NAME_UNNAMED
+
+
 def _strip_patch_entry(patch: dict) -> dict:
     return {key: value for key, value in patch.items() if key not in _STRIP_PATCH_KEYS}
 
@@ -216,6 +277,12 @@ def _needs_refresh(existing: JamfPatchTitle | None, title_summary: dict) -> bool
         or existing.current_version != title_summary.get("currentVersion")
         # Fetched before extension_attributes existed: one more fetch fills it.
         or existing.extension_attributes is None
+        # Fetched before the name could come from `killApps` (#385), and the only other place it
+        # lives was dropped on the way in, so re-deciding it needs the definition again. This is
+        # the whole of the upgrade path: the comparisons above never re-fetch a frozen versioned
+        # line ("Wireshark 4.2" last moved in 2024), which is most of the 513 titles this is for.
+        # It terminates — the sync writes a source for every title.
+        or existing.app_name_source is None
     )
 
 
@@ -265,12 +332,14 @@ async def sync_catalog(db: AsyncSession, source: CatalogSource | None = None) ->
 
         row.name = detail.get("name", "")
         row.publisher = detail.get("publisher")
-        row.app_name = detail.get("appName")
         row.bundle_id = detail.get("bundleId")
         row.current_version = detail.get("currentVersion", "")
         row.last_modified = detail.get("lastModified", "")
-        row.patches = [_strip_patch_entry(patch) for patch in detail.get("patches", [])]
         row.requirements = _convert_requirements(detail.get("requirements", []))
+        # Decided from the definition, which is the last place `killApps` exists: the next line
+        # drops it from every patch and nothing downstream ever sees it again (#385).
+        row.app_name, row.app_name_source = _app_name(detail, row.requirements)
+        row.patches = [_strip_patch_entry(patch) for patch in detail.get("patches", [])]
         row.extension_attributes = _extension_attributes(detail)
         row.synced_at = now
         synced += 1
