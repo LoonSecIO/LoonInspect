@@ -19,15 +19,17 @@ the read aperture that decides which sections are fetched at all is
 `app.mdm.jamf.contract.SECTIONS`, which this module reads rather than restates, so a
 section cannot be collected without a name to travel under.
 
-What is stamped, and by whom. Four families carry a sourcetype on Splunk HEC deliveries,
+What is stamped, and by whom. Five families carry a sourcetype on Splunk HEC deliveries,
 and every string comes from this module and nowhere else (#222's acceptance): the
 `:change` family (#223, 2026-09-03 — the first the product ever stamped, because
 `device.change` was already at sub-event grain); the section tree, on the sub-events the
 fan-out (#242, 2026-09-03) expands one `device.inventory` snapshot into — `sourcetype()`
 read through `registry_rows()`; the run family, `run.completed` and `run.failed`, under
 `ASSERTION_SOURCETYPE`; and the delta family, `device.inventory.changed`, under
-`DELTA_SOURCETYPE` (#277, 2026-09-03, stamped the day before the flip). `app.core.outbox`
-stamps all four, on the `splunk_hec` destination type only. Still under the HEC input's
+`DELTA_SOURCETYPE` (#277, 2026-09-03, stamped the day before the flip); and the departure
+family, `subject.departure` AND `subject.returned` — two types, one string — under
+`DEPARTURE_SOURCETYPE` (#179, 2026-09-16). `app.core.outbox`
+stamps all five, on the `splunk_hec` destination type only. Still under the HEC input's
 own default: only `destination.test` (deliberately identifiable). The three enrichment
 strings are minted with no writer, because an enrichment rides inline on the app sub-event.
 """

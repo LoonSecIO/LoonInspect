@@ -183,7 +183,7 @@ instance, not a fix.
 
 ## 6. `sourcetype`, and the `props.conf` stanzas to hand your Splunk team
 
-**Four families carry their own; one takes the input's.** Every string is minted in
+**Five families carry their own; one takes the input's.** Every string is minted in
 [`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md) §2 and stamped by
 `core/outbox.py` on this destination type only; a `sourcetype` in the HEC body overrides
 the input's for that event.
@@ -212,16 +212,16 @@ the input's for that event.
   passing.
 
 The stanza below keys on the input's name and so covers the test event only; the same
-three lines belong under each of the thirty-one minted strings, and the section after it
-says how to avoid writing them thirty-one times. It assumes you called the input
+three lines belong under each of the thirty-two minted strings, and the section after it
+says how to avoid writing them thirty-two times. It assumes you called the input
 `loon:inspect`, so substitute your own.
 
 ```ini
 # props.conf — LoonInspect events arriving over HEC.
 # Key: the sourcetype set on the HEC input. It decides for the test event only; the
-# snapshot's sub-events, the change stream, the run family and the inventory delta send
-# their own strings and need the same three settings under each of them — a sourcetype
-# stanza takes no wildcards.
+# snapshot's sub-events, the change stream, the run family, the inventory delta and the
+# departure pair send their own strings and need the same three settings under each of
+# them — a sourcetype stanza takes no wildcards.
 [loon:inspect]
 
 # The event body is a JSON object. Search-time extraction, so this line belongs on the
@@ -251,10 +251,12 @@ TRUNCATE = 0
 they live in different places in a distributed deployment. Handing the whole stanza over
 is fine — each line is inert where it does not apply.
 
-**The thirty-two-stanza question.** `[<sourcetype>]` accepts no wildcards, so covering
+**The thirty-three-stanza question.** `[<sourcetype>]` accepts no wildcards, so covering
 every minted string the same way means repeating these three lines under each of the
-fourteen section strings, `loon:run`, `loon:inventory:changed`, and the fifteen
-`loon:jamf:mac:*:change` strings. Two ways out, in order of preference:
+fourteen section strings, `loon:run`, `loon:inventory:changed`, `loon:departure`, and the
+fifteen `loon:jamf:mac:*:change` strings — thirty-two, plus the input's own stanza above.
+`loon:departure` is one stanza and not two: both departure event types arrive under it.
+Two ways out, in order of preference:
 
 1. **Key on `source` instead.** Every LoonInspect event carries the Jamf instance as
    `source`, and a `[source::...]` stanza is the kind that *does* accept wildcards — so
@@ -263,7 +265,7 @@ fourteen section strings, `loon:run`, `loon:inventory:changed`, and the fifteen
 2. **Check whether you need `KV_MODE` at all.** Splunk's default search-time extraction
    already reads pure-JSON events on recent versions; the line above is belt-and-braces.
    If `deviceMeta.serialNumber` resolves in a search against an unconfigured sourcetype on
-   your version, the thirty-one stanzas are a convenience, not a requirement.
+   your version, the thirty-two stanzas are a convenience, not a requirement.
 
 Neither claim has been tested against a real Splunk here, which is exactly why the count
 is written down rather than glossed: it is the argument for shipping a LoonInspect TA, and
@@ -324,14 +326,14 @@ decision points forwarded to that ruling.) Where each shape is written down: the
 `removedApps`, each a list of app objects — in `app/schemas/payload.py`
 (`InventoryChangedEvent`), the one place that serializes them.
 
-One casing law covers all five families. Every key LoonInspect mints is camelCase with
+One casing law covers all six families. Every key LoonInspect mints is camelCase with
 the token `ID` uppercased — `occurredAt`, `jobID`, `connectionID`, `eventID` — and a
 vendor's native key keeps the vendor's spelling, so an app's `bundleId` is Jamf's, inside
 a snapshot's `app[].app` object as much as inside `addedApps`. `event` is the
 discriminator on every family and `jobID` is the run id everywhere, so `event=device.*`,
 `event=run.*` and a bare `jobID=$id$` each work across the whole feed.
 `tests/test_wire_casing.py` holds that on the payloads the outbox actually stores, all
-five families judged together, not on the source that built them.
+six families judged together, not on the source that built them.
 
 What "frozen" licenses is §5 of the vocabulary document: new keys may appear and
 consumers must ignore unknown keys; a key's name, type and meaning never change once

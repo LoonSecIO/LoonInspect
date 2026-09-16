@@ -9,7 +9,8 @@ Status: **frozen** · Ruled in [#188](https://github.com/LoonSecIO/LoonInspect/i
 [#311](https://github.com/LoonSecIO/LoonInspect/issues/311), 2026-09-04 and
 [#306](https://github.com/LoonSecIO/LoonInspect/issues/306), 2026-09-09 and
 [#356](https://github.com/LoonSecIO/LoonInspect/issues/356), 2026-09-10 and
-[#182](https://github.com/LoonSecIO/LoonInspect/issues/182), 2026-09-16 · Stamped on the
+[#182](https://github.com/LoonSecIO/LoonInspect/issues/182) and
+[#179](https://github.com/LoonSecIO/LoonInspect/issues/179), 2026-09-16 · Stamped on the
 wire by [#223](https://github.com/LoonSecIO/LoonInspect/issues/223) (the `:change`
 family), [#242](https://github.com/LoonSecIO/LoonInspect/issues/242) (the section tree
 and `loon:run`) and [#277](https://github.com/LoonSecIO/LoonInspect/issues/277) (the
@@ -162,12 +163,16 @@ section tree, because the "shape about to change" reason that held the tree back
 applied to a run event. `ASSERTION_EVENT_TYPES` names the two, and `app/core/runs.py`
 reads its event-type constants from there so the string and the producer cannot drift.
 
-**Thirty-one strings are stamped, and every one comes from this module** (#222's
+**Thirty-two strings are stamped, and every one comes from this module** (#222's
 acceptance, closed by #242): the fourteen section strings on the fan-out, `loon:run` on
-the run family, the fifteen `:change` strings on the change family, and
+the run family, the fifteen `:change` strings on the change family,
 `loon:inventory:changed` on the delta family
 ([#277](https://github.com/LoonSecIO/LoonInspect/issues/277), 2026-09-03, stamped the day
-before the flip). Still under the HEC input's own default: only the test event, which is
+before the flip), and `loon:departure` on the departure family described next
+([#179](https://github.com/LoonSecIO/LoonInspect/issues/179), 2026-09-16). The count moves
+by one and not by two because that family's **two event types share the one string** — the
+number to count is stanzas, not types, and [`splunk-setup.md`](splunk-setup.md) §6 counts
+the stanzas. Still under the HEC input's own default: only the test event, which is
 meant to be identifiable rather than routed. The three enrichment strings are minted with
 no writer (§7).
 
@@ -453,6 +458,6 @@ issue rather than living on as a footnote.
 
 | Consequence | Issue |
 | --- | --- |
-| The three enrichment strings — `loon:jamf:mac:app:patch`, `:vuln`, `:alert` — are minted with no writer, because an enrichment rides inline on the app sub-event under its own key (§2). `:vuln` is reserved for the lifecycle records of [`vulnerabilities.md`](vulnerabilities.md) §6; `:patch` and `:alert` name shapes nothing produces. `patch{}` and `vuln{}` themselves ship on every app sub-event since #241/#242, and both have since been populated **without stamping anything** — [#249](https://github.com/LoonSecIO/LoonInspect/issues/249) for `vuln{}` (2026-09-03) and [#311](https://github.com/LoonSecIO/LoonInspect/issues/311) for `patch.jamfPatch{}` (2026-09-04): each is an inline enrichment on `loon:jamf:mac:app`, because taking the compound for either would force `loon:jamf:mac:app:patch:vuln` on an app carrying both blocks, and a `props.conf` stanza takes no wildcards. Thirty-one strings are still stamped; the registry did not move | post-v0 (`vulnerabilities.md` §10) |
+| The three enrichment strings — `loon:jamf:mac:app:patch`, `:vuln`, `:alert` — are minted with no writer, because an enrichment rides inline on the app sub-event under its own key (§2). `:vuln` is reserved for the lifecycle records of [`vulnerabilities.md`](vulnerabilities.md) §6; `:patch` and `:alert` name shapes nothing produces. `patch{}` and `vuln{}` themselves ship on every app sub-event since #241/#242, and both have since been populated **without stamping anything** — [#249](https://github.com/LoonSecIO/LoonInspect/issues/249) for `vuln{}` (2026-09-03) and [#311](https://github.com/LoonSecIO/LoonInspect/issues/311) for `patch.jamfPatch{}` (2026-09-04): each is an inline enrichment on `loon:jamf:mac:app`, because taking the compound for either would force `loon:jamf:mac:app:patch:vuln` on an app carrying both blocks, and a `props.conf` stanza takes no wildcards. Thirty-two strings are stamped since #179 minted `loon:departure` on 2026-09-16, and neither enrichment moved the registry | post-v0 (`vulnerabilities.md` §10) |
 | The departure family's **Mac half**. `loon:departure` ships with the object subjects (`computer_group`, `extension_attribute_definition`) emitting; a Mac's seven-day tail — `noticeDay` 1..7, one emission per UTC day, and the guaranteed terminal `state: removed` when the tail ends, including where the clock expires without a clean census — is built on #183's device census and is the follow-up to this ruling. `subjectKind: computer` and `state: removed` are named in the vocabulary and written by nothing yet | [#179](https://github.com/LoonSecIO/LoonInspect/issues/179) |
 | `alert` is still minted with no writer. #101 shipped the alerts table and the Needs Attention rows (2026-09-04) with **nothing on the wire** — but it wrote the block's shape down rather than leaving it to be invented under deadline: always present, `{"open": false}` or `{"open": true, "kinds": ["new_app"]}`, graded by the change log's `level`. The shape and the closed kind vocabulary are [`alerts.md`](alerts.md) §8 and §2; emitting them later is additive under clause 1, and clause 2 will freeze them the day they first ship | [#101](https://github.com/LoonSecIO/LoonInspect/issues/101) |
