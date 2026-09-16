@@ -227,18 +227,16 @@ class UpdateEffect:
     """What updating one build to the release the Jamf Patch answer names would do to its
     findings (#482) — read off the two stored answers, derived nowhere else.
 
-    `assessment` is the TARGET's, in §4a's own vocabulary: `covered` when the epoch holds
-    a row for that release, `None` when it does not. `None` is `unknown_app` one row out
-    and is rendered in §4g's words — *outside the corpus*, dated, in the warning colour —
-    never as *closes all 17*, because nothing beside a row may upgrade a missing one.
+    `assessment` is the TARGET's, in §4a's vocabulary: `covered`, or `None` for a release
+    the epoch holds no row for. `None` is `unknown_app` one row out and renders in §4g's
+    words — outside the corpus, dated, in the warning colour — never as *closes all 17*.
 
-    `closes`/`opens` and `net` are exclusive, and which pair is filled is the truncation
-    ruling: **exact** — a set difference of the two id lists — when NEITHER stored row is
-    truncated, and otherwise the difference of the stored uncapped `counts.total`, carried
-    as `net` so a surface cannot print it as an exact count. `counts` is uncapped and
-    `ids` is capped (§4a, §4e); recounting a capped list under-reports, which is the trap
-    §4f names, and a number that is wrong in the safe-looking direction is worse here than
-    a coarser one that is right.
+    `closes`/`opens` and `net` are exclusive, and which is filled is the truncation ruling:
+    **exact**, a set difference of the two id lists, when NEITHER stored row is truncated;
+    otherwise the difference of the uncapped `counts.total`, carried as `net` so a surface
+    cannot print it as an exact count. `counts` is uncapped and `ids` is capped (§4a, §4e),
+    so recounting a capped list under-reports — the trap §4f names, wearing a number that
+    is wrong in the direction that flatters an upgrade.
     """
 
     version: str
@@ -254,21 +252,18 @@ def _total(counts: Mapping[str, object] | None) -> int | None:
 
 
 def update_effect(row: HasStoredAnswer, *, corpus: VulnCorpus) -> UpdateEffect | None:
-    """One row's `UpdateEffect`, or `None` when there is nothing to say.
-
-    Nothing to say is the common case and every arm of it is deliberate:
+    """One row's `UpdateEffect`, or `None` when there is nothing to say — which is the
+    common case, and every arm of it is deliberate:
 
     * **nobody is answering** (`off`), or this row's answer came from an epoch that is no
-      longer the one answering — the same gate `stored_corpus` applies, for the same
-      reason. An answer under a stamp that did not produce it is the silent staleness §4
-      exists to prevent, and that is no less true of the difference between two of them;
-    * **the installed build is not `covered`.** §4g's three renderings do not collapse:
-      this is a line beside findings, never a fourth state and never a way to read a count
-      off `off` or `unknown_app`;
-    * **no target has been judged for this row** (`vuln_target_version` is NULL) — a row
-      last judged before the column existed, or one Jamf lists no title for;
-    * **the target IS the installed build.** A build on the latest release would read
-      "closes 0, opens 0", which is noise dressed as an answer.
+      longer the one answering: the gate `stored_corpus` applies, for its reason. A
+      difference between two answers is no safer under a stamp that produced neither;
+    * **the installed build is not `covered`.** §4g's three renderings do not collapse;
+      this is a line beside findings, not a fourth state and not a way to read a count off
+      `off` or `unknown_app`;
+    * **no target has been judged for this row** (`vuln_target_version` is NULL) — judged
+      before the column existed, or no title matched;
+    * **the target IS the installed build**, which would read "closes 0, opens 0".
     """
     if corpus.as_of is None:
         return None

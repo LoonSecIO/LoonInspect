@@ -52,16 +52,12 @@ export interface VulnDaysOldestPublished {
 
 /**
  * What updating this build to the release Jamf Patch names would do to its findings
- * (#482) — `vulnUpdate` on the REST row, absent whenever there is nothing to say.
- *
- * It rides BESIDE `vuln` and not inside it: the block a browser receives is the wire's
- * own block (§4g), and this is in-app only — §6 keeps fix-version data off the wire.
- *
- * `assessment` is the TARGET's, in the same vocabulary: `unknown_app` means the corpus
- * holds no row for that release, which reads *outside the corpus* and never *closes all
- * of them*. `closes`/`opens` and `net` are exclusive — the pair is an exact difference of
- * the two id lists, and `net` is the difference of the uncapped totals, which is what a
- * capped list gets because recounting one under-reports.
+ * (#482) — `vulnUpdate` on the REST row, absent when there is nothing to say. It rides
+ * BESIDE `vuln`: the block a browser receives is the wire's own (§4g), and this is in-app
+ * only (§6). `assessment` is the TARGET's — `unknown_app` means the corpus holds no row
+ * for that release, which reads *outside the corpus*, never *closes all of them*.
+ * `closes`/`opens` (an exact id difference) and `net` (the difference of the uncapped
+ * totals, for a capped list, which recounting would under-report) are exclusive.
  */
 export interface AppUpdate {
   version: string;

@@ -325,11 +325,10 @@ class InstalledApp(Base):
     vuln_oldest_published: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     vuln_ids: Mapped[list | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     vuln_ids_truncated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    # The same answer for the build this one would BECOME (#482) — the release the Jamf
-    # Patch answer points at — copied with the rest. `vuln_target_version` is the judge's
-    # own record of which version it answered about, so NULL there is *not yet judged for
-    # a target* and never *the target is clean*; NULL `vuln_target_assessment` beside a
-    # version is `unknown_app` one row out, which is ruling R-D applied to the target.
+    # The same answer for the build this one would BECOME (#482), copied with the rest.
+    # `vuln_target_version` is the judge's own record of which version it answered about,
+    # so NULL there is *not yet judged for a target* and never *the target is clean*; a
+    # NULL assessment beside a version is ruling R-D one row out — `unknown_app`.
     vuln_target_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     vuln_target_assessment: Mapped[str | None] = mapped_column(String(16), nullable=True)
     vuln_target_counts: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
@@ -509,18 +508,16 @@ class AppCatalogEntry(Base):
     # --- and the same answer for the build this one would become (#482) ---
     #
     # `vuln_target_key` is `app_full_key(name, bundle_id, latest_version, None)`: this
-    # build's own identity with the Jamf Patch answer's version in the version slot, so it
-    # needs no catalog key and #385's unnamed titles never reach it. It is joined against
-    # the same primary key, in the same statement, as a second outer join.
+    # build's own identity with the patch answer's version in the version slot, so it needs
+    # no catalog key and #385's unnamed titles never reach it. Joined against the same
+    # primary key, in the same statement, as a second outer join.
     #
-    # **Two clocks again.** The key is written beside `latest_version`, on the JAMF clock
-    # (`_apply_summary`); the answer is written on the CORPUS clock (`judge_vuln`). Both
-    # writers re-judge together — `evaluate_entries` calls the judge straight after the
-    # rule pass — so `vuln_target_version` always equals the `latest_version` beside it.
-    # It is stored anyway, and is the only honest way to tell a row judged before this
-    # column existed (NULL) from one whose target the epoch holds no row for.
-    #
-    # The key is NOT copied onto `installed_apps`: a key is a judge input, not an answer.
+    # **Two clocks again.** The key moves on the JAMF clock (`_apply_summary`), the answer
+    # on the CORPUS clock (`judge_vuln`), and both writers re-judge together — so
+    # `vuln_target_version` always equals the `latest_version` beside it. It is stored
+    # anyway: it is the only honest way to tell a row judged before this column existed
+    # (NULL) from one whose target the epoch holds no row for. The key is NOT copied onto
+    # `installed_apps`; a key is a judge input, not an answer.
     vuln_target_key: Mapped[str | None] = mapped_column(String(67), nullable=True)
     vuln_target_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     vuln_target_assessment: Mapped[str | None] = mapped_column(String(16), nullable=True)

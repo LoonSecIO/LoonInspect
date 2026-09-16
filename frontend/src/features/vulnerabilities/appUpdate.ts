@@ -8,17 +8,16 @@ import type { AppUpdate, AppVulnerability } from "@/features/vulnerabilities/typ
  *
  * **One line per named title.** The answer has a subject and the columns sit next to each
  * other as if it did not (#311/#313): on Wireshark 4.2.0, "Wireshark" names 4.6.8 and
- * "Wireshark 4.2" names 4.2.14, and a difference printed against one of them is true of
- * neither if it is read as the other's. So this returns a LIST, each entry carrying the
- * title that names its release, and a cell renders one line per entry. The stored answer
- * carries one target today — the reference title's `latestVersion`, which is the one
+ * "Wireshark 4.2" names 4.2.14, so a difference read as the other title's is true of
+ * neither. Hence a LIST, each entry carrying the title that names its release. The stored
+ * answer carries one target today — the reference title's `latestVersion`, the one
  * `describePatchAnswer` already names a subject for — so the list holds at most one line,
- * and it is attributed rather than floated.
+ * attributed rather than floated.
  *
  * **Nothing at all unless the build itself is `covered`.** §4g's three renderings do not
  * collapse and this is not a fourth state: `off` and `unknown_app` carry no counts, so
- * there is nothing for an update to close, and printing a difference there would be
- * reading a count off a row nobody answered.
+ * there is nothing to close and a difference there would be a count read off a row nobody
+ * answered.
  */
 export interface UpdateLine {
   /** The release the update would land on. */

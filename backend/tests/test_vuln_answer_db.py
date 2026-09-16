@@ -39,6 +39,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import delete, event, select
 
+from app.core.content_keys import app_full_key
 from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
 from app.core.vuln import NO_CORPUS, forget_tenant_tiers, loaded_corpus
 from app.core.vuln_library import CorpusPointer, load_epoch_if_new, refresh_from_db
@@ -802,3 +803,158 @@ async def test_a_pod_that_was_never_assessed_writes_no_vuln_rows(db, fleet) -> N
     assert not set(VULN_KEYS) & set(captured)
     assert set(captured) <= set(ACTIVE_KEYS) - set(VULN_KEYS)
     assert "devices.total" in captured, "the rest of the vocabulary is unaffected; only this family is gated"
+
+
+# --- what an update would fix (#482) ----------------------------------------------------
+
+# The build the patch answer points at, keyed the way the corpus keys it: this app's own
+# name and bundle id with Jamf's latest version in the version slot, fourth slot None.
+# Hashed here rather than written as a literal, for the reason `_device` gives — two
+# implementations of one key do not fail loudly when they drift.
+WIRESHARK_TARGET = app_full_key("Wireshark.app", "org.wireshark.Wireshark", "4.6.8", None)
+# The lab's own numbers (#428): 4.2.0 is 17 findings and 4.6.0 is 94, so *update to latest*
+# is not a synonym for *clean*, and the ids overlap only in part.
+HERE = [f"CVE-2026-1{index:03d}" for index in range(17)]
+THERE = [f"CVE-2026-2{index:03d}" for index in range(90)] + HERE[:4]
+
+
+async def _with_titles(db) -> None:
+    """A Jamf patch title for Wireshark whose latest release is 4.6.8, so the catalog row
+    carries a real `latest_version` and forms a real target key. Merged rather than
+    inserted, under an id no other fixture uses: `jamf_patch_titles` is global and another
+    suite in this database may already hold the real catalog."""
+    from app.mdm.patch.matching import reset_catalog_cache
+    from app.models.schema import JamfPatchTitle
+
+    bundle_test = {"name": "Application Bundle ID", "operator": "is", "type": "recon", "value": "org.wireshark.Wireshark"}
+    await db.merge(
+        JamfPatchTitle(
+            id="LOON482",
+            name="Wireshark",
+            current_version="4.6.8",
+            last_modified="2026-08-13T09:34:31Z",
+            patches=[
+                {"version": "4.6.8", "releaseDate": "2026-08-12T19:18:22Z"},
+                {"version": "4.2.0", "releaseDate": "2024-01-03T18:00:00Z"},
+            ],
+            requirements=[{"operator": "and", "tests": [bundle_test]}],
+            extension_attributes=[],
+        )
+    )
+    await db.commit()
+    reset_catalog_cache()
+
+
+def _dated(counts: dict) -> dict:
+    """A publication stamp in every band the counts say has a finding and null in the rest
+    — the epoch format refuses a row where the two disagree."""
+    return {band: "2026-01-01T00:00:00Z" if counts[band] else None for band in ("total", "critical", "high", "medium", "low")}
+
+
+async def _epoch_with_target(db, target: dict | None) -> str:
+    """An epoch holding Wireshark 4.2.0's 17 findings and, optionally, a row for the
+    release Jamf calls latest. Returns the signature it was loaded under."""
+    counts = {"total": 17, "kev": 0, "critical": 0, "high": 9, "medium": 8, "low": 0}
+    rows = [_row(key_full=WIRESHARK_BUILD, ids=HERE, counts=counts, oldest_published=_dated(counts))]
+    if target is not None:
+        rows.append(_row(key_full=WIRESHARK_TARGET, oldest_published=_dated(target["counts"]), **target))
+    bundle, signature = _rewritten(rows=rows)
+    assert await load_epoch_if_new(db, _pointer(signature), transport=_serving(bundle)) is not None
+    return signature
+
+
+async def _update(db, device, key_full: str):
+    """One installed row's update line as a page receives it — the stored columns through
+    the read seam, never derived here."""
+    from app.core.vuln_answer import stored_corpus
+    from app.core.vuln_read import update_line
+
+    rows = (await db.execute(select(InstalledApp).where(InstalledApp.device_id == device.id))).scalars().all()
+    corpus = stored_corpus(loaded_corpus(), rows)
+    return update_line(next(row for row in rows if row.key_full == key_full), corpus=corpus)
+
+
+async def test_a_covered_target_is_judged_beside_the_build_and_reads_as_a_difference(db, fleet) -> None:
+    """The whole point: the release Jamf names has its own row, its own answer, and the
+    difference between the two is what a person reads.
+
+    Both halves are asserted, and the second is why the issue exists: 4.6.8 carries 94
+    findings against 4.2.0's 17, so "closes 17" alone would be the half of the sentence
+    that sells an upgrade. The key is the build's own identity with the patch answer's
+    version in it, which is why `vuln_target_key` is asserted against `content_keys` rather
+    than against what the judge happened to write.
+    """
+    _, device = fleet
+    await _with_titles(db)
+    signature = await _epoch_with_target(
+        db, {"ids": THERE, "counts": {"total": 94, "kev": 0, "critical": 1, "high": 26, "medium": 66, "low": 1}}
+    )
+    await _judge(db, device)
+
+    entry = await _entry(db, WIRESHARK_BUILD)
+    assert entry.latest_version == "4.6.8" and entry.vuln_target_key == WIRESHARK_TARGET
+    assert entry.vuln_target_version == "4.6.8" and entry.vuln_target_assessment == "covered"
+    assert entry.vuln_target_counts["total"] == 94 and entry.vuln_signature == signature
+
+    # The copy, which is what a device page actually reads.
+    app = await _installed(db, device, WIRESHARK_BUILD)
+    assert (app.vuln_target_version, app.vuln_target_assessment) == ("4.6.8", "covered")
+    assert app.vuln_target_ids == entry.vuln_target_ids
+
+    line = await _update(db, device, WIRESHARK_BUILD)
+    assert line is not None and line.version == "4.6.8" and line.assessment == "covered"
+    # Exact, because neither stored row is truncated: 13 of the 17 are gone and 90 are new.
+    assert (line.closes, line.opens, line.net) == (13, 90, None)
+
+
+async def test_a_target_the_epoch_holds_no_row_for_reads_unknown_and_never_closes_them_all(db, fleet) -> None:
+    """Ruling R-D, one release out. The epoch assessed 4.2.0 and never assessed 4.6.8, so
+    the target is `unknown_app` — outside the corpus, dated — and carries no numbers at all.
+
+    The wrong answer this prevents is the plausible one: with no row for the target, the
+    arithmetic "17 minus nothing" says the update closes all seventeen, which is a clean
+    bill for a build nobody assessed wearing a difference's clothes.
+    """
+    _, device = fleet
+    await _with_titles(db)
+    await _epoch_with_target(db, None)
+    await _judge(db, device)
+
+    entry = await _entry(db, WIRESHARK_BUILD)
+    assert entry.vuln_assessment == "covered" and entry.vuln_target_key == WIRESHARK_TARGET
+    # Judged, and the answer is that there is no row — which is a different fact from
+    # "not judged for a target yet", and that is what the version column is for.
+    assert entry.vuln_target_version == "4.6.8" and entry.vuln_target_assessment is None
+    assert entry.vuln_target_counts is None and entry.vuln_target_ids is None
+
+    line = await _update(db, device, WIRESHARK_BUILD)
+    assert line is not None and line.assessment == "unknown_app" and line.version == "4.6.8"
+    assert (line.closes, line.opens, line.net) == (None, None, None)
+
+
+async def test_a_truncated_pair_reads_as_a_net_difference_of_the_stored_totals(db, fleet) -> None:
+    """Kyle's R9 default, ruled on #482: exact only when NEITHER row is truncated.
+
+    The target's published list is capped, so the ids cannot answer — a set difference over
+    a capped list under-reports, which is the trap §4f names. The line falls back to the
+    difference of the uncapped `counts.total`, and it is `net` rather than `closes` so no
+    surface can print it as an exact count. Negative here: the newer build carries more.
+    """
+    _, device = fleet
+    await _with_titles(db)
+    await _epoch_with_target(
+        db,
+        {
+            "ids": THERE[:50],
+            "truncated": True,
+            "counts": {"total": 94, "kev": 0, "critical": 1, "high": 26, "medium": 66, "low": 1},
+        },
+    )
+    await _judge(db, device)
+
+    entry = await _entry(db, WIRESHARK_BUILD)
+    assert entry.vuln_ids_truncated is False and entry.vuln_target_ids_truncated is True
+
+    line = await _update(db, device, WIRESHARK_BUILD)
+    assert line is not None and line.net == 17 - 94
+    assert (line.closes, line.opens) == (None, None)

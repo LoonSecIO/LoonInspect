@@ -22,19 +22,14 @@ class VulnUpdateOut(_CamelModel):
     """What updating this build to the release Jamf Patch names would do to its findings
     (#482) — `app.core.vuln_answer.UpdateEffect` as a page receives it.
 
-    **REST only, and deliberately not on the wire.** `docs/vulnerabilities.md` §6 keeps
-    fix-version data in-app, and this is a render over a join already stored: no key of
-    `VulnEnrichment` moves, no event gains a section, and `docs/splunk-wire-vocabulary.md`
-    is untouched. It rides beside `vuln` rather than inside it for the same reason — the
-    block a browser receives IS the wire's block (§4g), and a REST-only key inside it would
-    be the first place the two dialects drift.
+    **REST only, and deliberately not on the wire.** §6 keeps fix-version data in-app, and
+    this is a render over a join already stored: no `VulnEnrichment` key moves and
+    `docs/splunk-wire-vocabulary.md` is untouched. It rides BESIDE `vuln` for the same
+    reason — the block a browser receives IS the wire's block (§4g), and a REST-only key
+    inside it would be the first place the two dialects drift.
 
-    `assessment` is the TARGET's, in §4a's vocabulary: `covered`, or `unknown_app` when the
-    epoch holds no row for that release — dated by the same `corpusAsOf` the row carries,
-    and never rendered as *closes all of them*. `closes`/`opens` and `net` are exclusive:
-    the first pair is an exact id difference and is present only when neither stored row is
-    truncated; `net` is the difference of the uncapped totals and is what a truncated pair
-    gets, because recounting a capped list under-reports (§4e, §4f).
+    `assessment` is the TARGET's, and the `closes`/`opens` and `net` rules are
+    `UpdateEffect`'s; see it for both.
     """
 
     version: str

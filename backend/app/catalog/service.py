@@ -121,12 +121,11 @@ def _apply_summary(entry: AppCatalogEntry, matches: Sequence[TitleMatch], *, now
     entry.reference_title_id = summary.reference_title_id
     entry.sentence_title_id = summary.sentence_title_id
     entry.released_at = _released_at(matches)
-    # The corpus key for the build this one would become (#482), written here because it is
-    # a fact about the JAMF answer and moves on the Jamf clock: this row's own name and
-    # bundle id with the reference title's latest version in the version slot, fourth slot
-    # `None`, which is the key `vuln_library_rows` is keyed on (docs/vulnerabilities.md
-    # §4f). Formed from the installed build's own identity, so it needs no catalog key and
-    # #385's unnamed titles never reach it. `judge_vuln` below answers it.
+    # The corpus key for the build this one would become (#482), written here because it
+    # is a fact about the JAMF answer and moves on the Jamf clock: this row's own name and
+    # bundle id with the reference title's latest version in the version slot and `None` in
+    # the fourth, which is how `vuln_library_rows` is keyed (§4f). Formed from the installed
+    # build's own identity, so #385's unnamed titles never reach it.
     entry.vuln_target_key = app_full_key(entry.name, entry.bundle_id, summary.latest_version, None)
 
 
@@ -184,13 +183,10 @@ async def judge_vuln(db: AsyncSession, entries: Sequence[AppCatalogEntry] | None
         # left join has to live in a subquery because an `UPDATE … FROM` cannot outer-join
         # its own target, and outer is the point: an inner join would leave a build the new
         # epoch dropped still carrying the old epoch's `covered`.
-        # The second outer join is the target build's answer (#482): the same table, the
-        # same primary key, one equality per row against `vuln_target_key`. Outer for the
-        # reason the first one is — a target the new epoch dropped must stop reading
-        # `covered` — and in this statement rather than its own so the two answers on a row
-        # can never come from two epochs. `target_version` rides through the subquery so
-        # the row records which version it answered about, which is what tells "not judged
-        # for a target yet" from "judged, and the epoch holds no row for that release".
+        # The second outer join is the target build's answer (#482): same table, same
+        # primary key, one equality per row against `vuln_target_key`. Outer for the reason
+        # the first is — a target the new epoch dropped must stop reading `covered` — and in
+        # THIS statement so the two answers on a row can never come from two epochs.
         target = aliased(VulnLibraryRow)
         joined = (
             select(
