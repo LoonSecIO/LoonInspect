@@ -135,6 +135,11 @@ class Settings(BaseSettings):
     # or api.loonsec.io after the flip (#43), answers those two paths.
     update_check_url: str = ""
 
+    # Every timed loop in `app.main`, on or off for this process. False is how a second
+    # container is made web-only: it still serves the UI, the API and the work a request
+    # starts, and stops doing anything on a clock. Leaving it true on more than one is
+    # safe for the outbox — #467's per-tenant advisory lock refuses the second — and
+    # docs/operations.md §7 is which loops that covers and which it does not.
     scheduler_enabled: bool = True
     sync_hour: int = 1
     sync_minute: int = 0
