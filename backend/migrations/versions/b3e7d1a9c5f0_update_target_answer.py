@@ -41,7 +41,7 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 revision: str = "b3e7d1a9c5f0"
-down_revision: Union[str, Sequence[str], None] = "f1b6c48a3e29"
+down_revision: Union[str, Sequence[str], None] = "bd51c7a9e402"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
