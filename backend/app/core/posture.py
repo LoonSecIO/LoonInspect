@@ -187,9 +187,9 @@ PLATFORM_ROLLUP = "all"
 RESERVED_KEYS: tuple[str, ...] = ()
 
 # The population vocabulary, ruled 2026-09-02 (#230): one value per Apple OS, never reused for
-# a different population. In code because `GET /api/posture` (#470) refuses a platform outside
-# it — an unrecognised population answered with an empty page would spell "nothing was ever
-# captured" for a question nobody can ask.
+# a different population. In code because `GET /api/posture` (#470) reads one of these and
+# refuses every other name — `PLATFORM_ROLLUP` included, since a population nothing writes,
+# answered with an empty page, spells "nothing was ever captured" for a question nobody asked.
 PLATFORMS: tuple[str, ...] = ("macos", "ios", "ipados", "tvos", "visionos")
 
 # What each key means, in the doc's own opening words — served by `GET /api/posture/registry`

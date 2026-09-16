@@ -11,10 +11,11 @@ class _Base(BaseModel):
 
 
 class PostureRowOut(_Base):
-    """One row of the tape as written: one metric, one capture, one population. Deliberately not
-    a grid — the table's own grain is the only shape in which a key that recorded nothing is
+    """One row of the tape as written: one metric, one capture, one population. Deliberately not a
+    grid — the table's own grain is the only shape in which a key that recorded nothing is
     *nothing*: no cell, so no zero to fill it with. `full_sweep_run_id` is null once the run is
-    purged at 30 days while this row keeps the 12-month history."""
+    purged at 30 days while this row keeps the 12-month history. `value` is a JSON number and a
+    count arrives as `12.0`: the column is NUMERIC and the two `…_s` keys carry fractions."""
 
     key: str
     value: float

@@ -1147,10 +1147,10 @@ async def test_a_departed_mac_leaves_every_key_that_counts_it(db, fleet) -> None
 
 # --- the reader (#470) ------------------------------------------------------------------
 #
-# `GET /api/posture` over a tape seeded row by row rather than swept: what matters most is a
-# shape no capture can be made to produce on demand — a key present one night, absent the next.
-# Seeded under `ipados` and `tvos`, populations no recorder writes, so it cannot collide with the
-# `macos` captures above and "two populations never sum" gets a real second population.
+# `GET /api/posture` over a tape seeded row by row rather than swept: what matters most is a shape
+# no capture can be made to produce on demand — a key present one night, absent the next. Seeded
+# under `ipados` and `tvos`, populations no recorder writes, so it cannot collide with the `macos`
+# captures above and "two populations never sum" gets a real second population.
 
 READER = ("auditor@posture-reader.example.com", "posture-reader-password")
 TAPE, OTHER = "ipados", "tvos"
@@ -1160,7 +1160,7 @@ TAPE, OTHER = "ipados", "tvos"
 async def tape(db):
     """Three nights. Night 1 held a delivery, so `outbox.oldest_pending_age_s` has a row; nights 2
     and 3 drained, so that key has **no row** while `outbox.pending` has an honest `0`. No run is
-    stamped — what a capture looks like once its run is purged at 30 days."""
+    stamped: a capture whose run was purged at 30 days."""
     from app.models.schema import PostureSnapshot
 
     now = _now().replace(microsecond=0)
@@ -1219,8 +1219,7 @@ async def test_the_latest_capture_is_the_default_and_an_absent_key_stays_absent(
     """The property this endpoint exists to hold. The queue drained two nights ago, so the latest
     capture has no `outbox.oldest_pending_age_s` row and the answer is nothing: choosing the newest
     capture that *carries* the key would answer 42.5s — an empty queue reported as a delivery
-    waiting since Tuesday. The window read finds the night that wrote it, and the key that
-    recorded `0` has a row saying `0`."""
+    waiting since Tuesday. The window read finds the night that wrote it; `0` still says `0`."""
     body = await _read(auditor)
     assert body["total"] == 2
     assert {row["key"] for row in body["items"]} == {"devices.total", "outbox.pending"}
@@ -1262,10 +1261,18 @@ async def test_a_name_the_tape_cannot_answer_is_refused_by_name(auditor, tape) -
 
     unknown = await auditor.get("/api/posture", params={"keys": "devices.total,devices.beige"})
     assert unknown.status_code == 422 and "/api/posture/registry" in unknown.json()["detail"]
+    blank = await auditor.get("/api/posture", params={"keys": ""})
+    assert blank.status_code == 422 and "no key in it" in blank.json()["detail"]
     platform = await auditor.get("/api/posture", params={"platform": "android"})
     assert platform.status_code == 422 and "macos" in platform.json()["detail"]
     both = await auditor.get("/api/posture", params={"days": 7, "since": tape[0].isoformat()})
     assert both.status_code == 422 and "never both" in both.json()["detail"]
+
+    # `all` above all (#510): ruled, written by nothing, and the word an operator reaches for, so
+    # it is refused in its own words — and the sentence a wrong platform gets never offers it.
+    rollup = await auditor.get("/api/posture", params={"platform": "all"})
+    assert rollup.status_code == 422 and "roll-up" in rollup.json()["detail"]
+    assert "all" not in platform.json()["detail"]
 
     registry = (await auditor.get("/api/posture/registry")).json()
     assert [key["key"] for key in registry["keys"]] == [*ACTIVE_KEYS, *RESERVED_KEYS]

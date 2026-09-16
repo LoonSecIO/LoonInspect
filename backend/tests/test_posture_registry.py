@@ -13,6 +13,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+from fastapi import HTTPException
+
 DOC = Path(__file__).resolve().parents[2] / "docs" / "posture-snapshot.md"
 
 _KEY_SHAPE = re.compile(r"^[a-z]+\.[a-z0-9_]+$")
@@ -85,16 +88,23 @@ def test_the_capture_platform_is_the_ruled_vocabulary() -> None:
     """#230: the population token is as immutable as a key name — a value's meaning is
     what its history means. `macos` is the content-key OS spelling (`os_key("macos", …)`),
     deliberately not the sourcetype segment's `mac` (Kyle, 2026-09-02), and `all` is
-    reserved for a roll-up no single-platform run may write."""
-    from app.api.posture import READABLE_PLATFORMS
+    reserved for a roll-up no single-platform run may write — and no read may ask for."""
+    from app.api.posture import _population
     from app.core.posture import CAPTURE_PLATFORM, PLATFORM_ROLLUP, PLATFORMS
 
     assert CAPTURE_PLATFORM == "macos"
     assert PLATFORM_ROLLUP == "all"
     assert CAPTURE_PLATFORM in PLATFORMS and PLATFORM_ROLLUP not in PLATFORMS
-    # A read filters on one of these and can never ask for a name outside them: an
-    # unrecognised population answered with an empty page reads as "never captured" (#470).
-    assert set(READABLE_PLATFORMS) == {*PLATFORMS, PLATFORM_ROLLUP}
+    # A read filters on one of these and can never ask for a name outside them — the roll-up least
+    # of all (#510), since nothing writes it and its empty page reads as "never captured". Its own
+    # sentence, and the vocabulary a wrong name is handed never advertises it as a thing to try.
+    assert _population(CAPTURE_PLATFORM) == CAPTURE_PLATFORM
+    with pytest.raises(HTTPException) as rollup:
+        _population(PLATFORM_ROLLUP)
+    with pytest.raises(HTTPException) as unknown:
+        _population("android")
+    assert rollup.value.status_code == 422 and "roll-up" in rollup.value.detail
+    assert unknown.value.status_code == 422 and PLATFORM_ROLLUP not in unknown.value.detail
 
 
 def test_the_population_rules_are_written_down() -> None:
@@ -153,12 +163,11 @@ def test_every_key_carries_a_definition_in_the_docs_own_words() -> None:
     """`GET /api/posture/registry` must not become a second home for a definition. Every line of
     `KEY_DEFINITIONS` is a verbatim prefix of that key's row in the doc (`…` marks where the row
     goes on), so a definition cannot be paraphrased, softened or left behind when a cell is
-    corrected — and both directions are checked, since a key with no line cannot be interpreted by
-    a reader and a line with no key defines something that does not exist."""
+    corrected — both directions, since a key with no line cannot be interpreted and a line with no
+    key defines nothing. The whole document goes on one line, bold dropped: a table row is a
+    line, so the opening of a cell is a substring of it."""
     from app.core.posture import ACTIVE_KEYS, KEY_DEFINITIONS, RESERVED_KEYS
 
-    # The whole document on one line, bold markers dropped: a table row is one line, so the
-    # opening of a cell is a substring of it.
     doc = " ".join(DOC.read_text().replace("*", "").split())
     assert set(KEY_DEFINITIONS) == set(ACTIVE_KEYS) | set(RESERVED_KEYS)
     for key, definition in KEY_DEFINITIONS.items():
@@ -174,11 +183,8 @@ def test_the_registry_response_is_built_from_the_registry(monkeypatch) -> None:
     reserved name marked reserved, nothing hard-coded in between, plus the sentence that keeps a
     gap from being drawn as a zero. The reserved branch outlives the tuple — emptied again when
     #476 activated `devices.departed_24h` — because a name ruled before its writer exists is told
-    so rather than handed a page that reads as "never captured"."""
+    so, not handed a page reading "never captured"; and a key that outruns its definition is too."""
     import asyncio
-
-    import pytest
-    from fastapi import HTTPException
 
     from app.api import posture
     from app.core.posture import ACTIVE_KEYS, KEY_DEFINITIONS, RESERVED_KEYS
@@ -194,6 +200,11 @@ def test_the_registry_response_is_built_from_the_registry(monkeypatch) -> None:
     with pytest.raises(HTTPException) as refusal:
         posture._wanted("devices.not_yet")
     assert refusal.value.status_code == 422 and "reserved" in refusal.value.detail
+
+    # A key the recorder gains before its definition line: served without one and named as drift,
+    # never a KeyError dressed as a 500 that tells the reader nothing about which file is behind.
+    monkeypatch.setattr(posture, "ACTIVE_KEYS", (*ACTIVE_KEYS, "devices.undefined"))
+    assert posture.UNDEFINED in [key.definition for key in asyncio.run(posture.posture_registry()).keys]
 
 
 def test_both_reads_are_behind_the_permission_the_share_log_uses() -> None:

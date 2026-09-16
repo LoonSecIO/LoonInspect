@@ -413,7 +413,8 @@ it — which is where the platform filter gets left off. **The rows, never a gri
 metric per capture per population (`key`, `value`, `capturedAt`, `platform`, `fullSweepRunId`),
 so a key that recorded nothing has no row and no cell for a renderer to fill with a zero —
 absent-not-zero held in the shape rather than in a footnote. `fullSweepRunId` is null once the
-run is purged out from under its capture.
+run is purged out from under its capture, and `value` is a JSON number, so a count arrives as
+`12.0`: the column is NUMERIC and the two `…_s` keys carry real fractions of a second.
 
 **The default is the latest capture, chosen by the tape and never by the key filter** — the
 newest `captured_at` for the population, then `keys` over that capture's rows. Picking the
@@ -421,9 +422,13 @@ newest capture that *carries* the asked-for key would answer "the last time this
 written" to a question that was "what was written last night", which is how an empty queue
 comes back as yesterday's `outbox.oldest_pending_age_s`. `days` or `since` reads the series
 instead — one or the other, never both — and `platform`, defaulting to `CAPTURE_PLATFORM` with
-no value that folds two, is one population per read. An unknown key, a `RESERVED_KEYS` name and
-a platform outside the vocabulary above are each refused in words: an empty page would read as
-"never captured", the sentence this tape reserves for a real gap.
+no value that folds two, is one population per read. An unknown key, a `keys` sent with no key
+in it, a `RESERVED_KEYS` name and a platform outside the vocabulary above are each refused in
+words: an empty page would read as "never captured", the sentence this tape reserves for a real
+gap. **`all` is refused too**, in a sentence of its own — *the reserved cross-platform roll-up,
+and nothing writes it: ask for one population* — because its empty page is guaranteed rather
+than merely possible, and because it is the English word for the fold this design forbids, so
+the reader likeliest to type it is the likeliest to read `total: 0` as "the tape is empty".
 
 **`GET /api/posture/registry`** hands over every active and reserved key with the opening of its
 definition and what an absent row means, so a value can be read without this document. The
