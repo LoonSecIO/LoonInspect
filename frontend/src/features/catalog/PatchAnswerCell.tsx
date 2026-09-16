@@ -26,7 +26,7 @@ function TitleName({ title, t }: { title: TitleLine; t: Translations }) {
  *  governs. Nothing at all when the describer named no subject (one title matched). The
  *  space after the dot does not break, so a narrow column wraps before the dot and the
  *  next line starts with it, rather than leaving it dangling at the end of the last. */
-function Subject({ title, hint, t }: { title: TitleLine | null; hint: (name: string) => string; t: Translations }) {
+export function Subject({ title, hint, t }: { title: TitleLine | null; hint: (name: string) => string; t: Translations }) {
   if (title === null) return null;
   return (
     <span title={hint(title.name ?? title.id)}>

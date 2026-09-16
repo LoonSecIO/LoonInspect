@@ -1,5 +1,5 @@
 import type { CatalogTitleRef } from "@/features/catalog/types";
-import type { AppVulnerability } from "@/features/vulnerabilities/types";
+import type { AppUpdate, AppVulnerability } from "@/features/vulnerabilities/types";
 
 export interface Device {
   id: number;
@@ -57,6 +57,10 @@ export interface InstalledApp {
   sentenceTitleId: string | null;
   daysSincePatchAvailable: number | null;
   vuln: AppVulnerability;
+  /** What updating this build to `latestVersion` would do to the findings above (#482).
+   *  `null` whenever there is nothing to say — not `covered`, no target judged, or this
+   *  build already IS the target — and never a zero. */
+  vulnUpdate: AppUpdate | null;
 }
 
 /** An extension attribute as the device last reported it (#197): keyed by Jamf's

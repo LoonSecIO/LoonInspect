@@ -447,6 +447,31 @@ and step 2 ends with how to tell that apart from a broken exchange.
      to fix on this side; the next exchange tries again. The same line for more than a
      day is reportable state **M**.
 
+7. **A build says how many findings it has, and the line beside it says *updating to
+   …: not in the corpus of …*.** That line is the answer for the release **Jamf calls
+   latest**, not for the build you are looking at, and it means the corpus holds no row
+   for that release — nobody assessed it. It is deliberately not rendered as *closes all
+   of them*: an update whose target nobody looked at buys an unknown, not a clean bill,
+   and a missing row is never upgraded into one. Nothing is broken and there is nothing
+   to fix in the container. Two things tell the ordinary reading from a fault:
+   - the release named is the one the **Latest** column names, and is usually newer than
+     anything the corpus has had time to assess — the corpus is dated on the banner, and
+     a release published after that date cannot be in it. Wait for the corpus to move;
+   - if the release is *older* than the banner's date and the same line survives a
+     *Refresh* (step 3), the corpus skipped that build. That is ours, not yours:
+     reportable state **I**, and include the app name, the installed version and the
+     release the line names.
+
+   A build with no line at all is not this: the line is printed only beside a **covered**
+   build whose target was actually looked up, so a grey or amber build (steps 1–4), a build
+   already on the latest release, and a build Jamf lists no title for all show nothing. So
+   does **every** build for a while after the upgrade that added this line: the lookup is
+   set up when the row is re-matched against the Jamf catalog, which happens on its own the
+   next time that catalog moves. A release nobody looked up is never dressed as one the
+   corpus has no row for, so the absence is the honest state and not a silent failure. To
+   stop waiting, use Devices › Applications › **Catalog** › *Refresh* (step 3) — it
+   re-matches every row, and the lines appear on the next page load.
+
 **H.** A corpus has arrived on this container, this organization's tier is not `off`, and
 the pages still do not answer from it — either they say nothing is answering (grey,
 including an epoch the container holds and cannot read), or a *Refresh* leaves builds the

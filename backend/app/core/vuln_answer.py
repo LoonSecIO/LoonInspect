@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Protocol
 
@@ -68,6 +69,16 @@ VULN_ANSWER_COLUMNS: tuple[str, ...] = (
     "vuln_ids",
     "vuln_ids_truncated",
     "vuln_signature",
+    # The target build's answer (#482) — the same join, one release along, written by the
+    # same statement. Here rather than in a second list for the reason above: this is the
+    # exact shape `ea_assumed` was added in, and it reaches all three copiers or none.
+    # `vuln_target_key` is deliberately NOT here: it is the join's input, written on the
+    # Jamf clock, and `installed_apps` has no use for it.
+    "vuln_target_version",
+    "vuln_target_assessment",
+    "vuln_target_counts",
+    "vuln_target_ids",
+    "vuln_target_ids_truncated",
 )
 
 
@@ -76,6 +87,7 @@ class HasStoredAnswer(Protocol):
     carry identical copies of it. A protocol rather than a union of the two models so this
     module imports no ORM and stays as cheap to test as `app.core.vuln_read`."""
 
+    version: str
     key_full: str
     vuln_assessment: str | None
     vuln_counts: dict | None
@@ -83,6 +95,11 @@ class HasStoredAnswer(Protocol):
     vuln_ids: list | None
     vuln_ids_truncated: bool | None
     vuln_signature: str | None
+    vuln_target_version: str | None
+    vuln_target_assessment: str | None
+    vuln_target_counts: dict | None
+    vuln_target_ids: list | None
+    vuln_target_ids_truncated: bool | None
 
 
 def stored_build(row: HasStoredAnswer) -> AssessedBuild | None:
@@ -202,4 +219,71 @@ def _unreadable(row: HasStoredAnswer, exc: Exception) -> None:
         row.key_full,
         exc,
         extra={"state": "answer_unreadable", "key_full": row.key_full},
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class UpdateEffect:
+    """What updating one build to the release the Jamf Patch answer names would do to its
+    findings (#482) — read off the two stored answers, derived nowhere else.
+
+    `assessment` is the TARGET's, in §4a's vocabulary: `covered`, or `None` for a release
+    the epoch holds no row for. `None` is `unknown_app` one row out and renders in §4g's
+    words — outside the corpus, dated, in the warning colour — never as *closes all 17*.
+
+    `closes`/`opens` and `net` are exclusive, and which is filled is the truncation ruling:
+    **exact**, a set difference of the two id lists, when NEITHER stored row is truncated;
+    otherwise the difference of the uncapped `counts.total`, carried as `net` so a surface
+    cannot print it as an exact count. `counts` is uncapped and `ids` is capped (§4a, §4e),
+    so recounting a capped list under-reports — the trap §4f names, wearing a number that
+    is wrong in the direction that flatters an upgrade.
+    """
+
+    version: str
+    assessment: str | None
+    closes: int | None
+    opens: int | None
+    net: int | None
+
+
+def _total(counts: Mapping[str, object] | None) -> int | None:
+    value = (counts or {}).get("total")
+    return value if isinstance(value, int) else None
+
+
+def update_effect(row: HasStoredAnswer, *, corpus: VulnCorpus) -> UpdateEffect | None:
+    """One row's `UpdateEffect`, or `None` when there is nothing to say — which is the
+    common case, and every arm of it is deliberate:
+
+    * **nobody is answering** (`off`), or this row's answer came from an epoch that is no
+      longer the one answering: the gate `stored_corpus` applies, for its reason. A
+      difference between two answers is no safer under a stamp that produced neither;
+    * **the installed build is not `covered`.** §4g's three renderings do not collapse;
+      this is a line beside findings, not a fourth state and not a way to read a count off
+      `off` or `unknown_app`;
+    * **no target has been judged for this row** (`vuln_target_version` is NULL) — judged
+      before the column existed, or no title matched;
+    * **the target IS the installed build**, which would read "closes 0, opens 0".
+    """
+    if corpus.as_of is None:
+        return None
+    version = row.vuln_target_version
+    if not version or version == row.version:
+        return None
+    if row.vuln_assessment != VULN_ASSESSMENT_COVERED or row.vuln_signature != loaded_epoch_signature():
+        return None
+    if row.vuln_target_assessment != VULN_ASSESSMENT_COVERED:
+        return UpdateEffect(version=version, assessment=None, closes=None, opens=None, net=None)
+    if row.vuln_ids_truncated or row.vuln_target_ids_truncated:
+        here, there = _total(row.vuln_counts), _total(row.vuln_target_counts)
+        if here is None or there is None:  # pragma: no cover - a hand-edited row; say nothing
+            return None
+        return UpdateEffect(version=version, assessment=VULN_ASSESSMENT_COVERED, closes=None, opens=None, net=here - there)
+    mine, theirs = set(row.vuln_ids or ()), set(row.vuln_target_ids or ())
+    return UpdateEffect(
+        version=version,
+        assessment=VULN_ASSESSMENT_COVERED,
+        closes=len(mine - theirs),
+        opens=len(theirs - mine),
+        net=None,
     )

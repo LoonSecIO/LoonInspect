@@ -456,6 +456,27 @@ Those two are the bounds: the window closes at the hourly refresh, or at the nex
 the device in question — not of *any* device carrying the build, which is the bound that
 would have left every other Mac stale forever. `docs/troubleshooting.md` §5 walks it.
 
+**And the answer for the build this one would become** (#482, built 2026-09-16; half 1 of
+#428). The same join, one release along: `app_catalog.vuln_target_key` is
+`app.full(name, bundleId, latest_version, None)` — the installed build's own identity with
+the Jamf Patch answer's version in the version slot — outer-joined against the same primary
+key by the same `UPDATE … FROM`, so the two answers on a row can never come from two
+epochs. The key moves on the Jamf clock beside `latest_version` and the answer on the
+corpus clock, and `vuln_target_version` records which release was answered about — written
+only where the key it joins on exists, so a lookup that never happened stores nothing. That
+is what tells *not judged for a target yet* (no version, nothing rendered) from *judged, and
+the epoch holds no row for it* (a version with no assessment). That distinction is
+load-bearing rather than tidy: from this column's migration until the tenant's next catalog
+sync every row has a NULL key beside a real `latest_version`, and a corpus epoch that moves
+in that window re-judges exactly those rows.
+Every rule above applies unchanged one row out: a target with no row is `unknown_app`, in
+§4g's words and never *closes all of them* (R-D); an installed build that is not `covered`
+gains nothing; and the difference is **exact** — a set difference of the two id lists —
+only when NEITHER row is truncated, otherwise it is the difference of the uncapped
+`counts.total` and is labelled `net`, because recounting a capped list under-reports. It is
+served as `vulnUpdate` beside `vuln` on the two REST reads below, never inside the block
+and **never on the wire** (§6).
+
 ### 4g. The same three words in front of a person
 
 Built 2026-09-03 (#251). `assessment` was ruled visible **on the wire and in the UI**, and
@@ -482,8 +503,8 @@ checking in. Every other key is the same value in both.
 | `GET /api/catalog` | `items[].vuln` — the block per distinct build; `corpusAsOf` on the list response |
 | `GET\|POST /api/catalog/lookup` | **Nothing.** See below |
 | Devices › Applications › **Catalog** | A **Vulnerabilities** column, and the corpus banner above it |
-| Devices › *hostname* (the device page, #300) | A **LoonInspect** column per installed app, and the same banner above it |
-| Devices › Applications › *appHash* (the application record, #299) | A **Vulnerabilities** column per carried build — legal there because each row is one build at `key_full` grain — and the banner |
+| Devices › *hostname* (the device page, #300) | A **LoonInspect** column per installed app, and the same banner above it; #482 added the update line inside that column |
+| Devices › Applications › *appHash* (the application record, #299) | A **Vulnerabilities** column per carried build — legal there because each row is one build at `key_full` grain — and the banner; #482's update line likewise |
 | Devices › Applications › Jamf Patch › *title* | **Nothing** (#298). A title's version row carries no `key_full`, so there is no grain to answer at; the stub column that stood there (`C — H — M — L — Σ` beside coloured dots, under a tooltip naming an integration nobody can enable) was deleted rather than rewritten, per the #95 precedent |
 
 **Where `off` goes (#298).** A terminal sentence is a dead end, and the obvious link — *turn on

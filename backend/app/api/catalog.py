@@ -18,7 +18,7 @@ from app.core.permissions import Permission
 from app.core.vuln import VulnCorpus
 from app.core.vuln_answer import stored_corpus
 from app.core.vuln_library import earned_corpus
-from app.core.vuln_read import assess, corpus_as_of, today
+from app.core.vuln_read import assess, corpus_as_of, today, update_line
 from app.mdm.patch.requirements import version_tuple
 from app.models.schema import AppCatalogEntry, AppCatalogVersion, InstalledApp
 from app.schemas.catalog import (
@@ -94,6 +94,10 @@ def _assessed_entry_out(
     out = CatalogEntryAssessedOut.model_validate(entry)
     _stamp(out, devices, refs, entry)
     out.vuln = assess(corpus, entry, as_of=as_of)
+    # And what updating this build would do to that answer (#482) — off the same row, by
+    # the same seam. The Catalog page does not paint it yet; the application record reads
+    # this endpoint scoped to one `appHash` and does.
+    out.vuln_update = update_line(entry, corpus=corpus)
     return out
 
 
