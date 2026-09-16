@@ -103,3 +103,26 @@ def test_the_applications_row_carries_no_per_version_breakdown() -> None:
 
     assert "versions" not in ApplicationOut.model_fields
     assert {"app_hash", "name", "bundle_id", "device_count", "version_count"} <= set(ApplicationOut.model_fields)
+
+
+# The ruled shape of `GET /api/outbox` (#468), pinned whole rather than as a subset: a key
+# added here is a second place the three states get named, and #469's additions belong on
+# the destination row. The mapped value is the age or instant that must be nullable —
+# absent-not-zero on the read side, so an empty set never reads as "due right now".
+OUTBOX_DEPTH = {
+    "held": ({"events", "oldestAgeSeconds", "reason"}, "oldestAgeSeconds"),
+    "pending": ({"deliveries", "oldestAgeSeconds"}, "oldestAgeSeconds"),
+    "deadLettered": ({"deliveries", "oldestExpiresAt"}, "oldestExpiresAt"),
+    "retention": ({"eventRetentionDays", "deadLetterRetentionDays", "nextPurgeAt"}, None),
+}
+
+
+def test_the_outbox_depth_answers_in_the_three_ruled_states() -> None:
+    spec = _spec()
+    schema = _response_schema(spec, "/api/outbox")
+    assert set(schema["properties"]) == set(OUTBOX_DEPTH), sorted(schema["properties"])
+    for state, (keys, nullable) in OUTBOX_DEPTH.items():
+        nested = spec["components"]["schemas"][schema["properties"][state]["$ref"].rsplit("/", 1)[1]]
+        assert set(nested["properties"]) == keys, state
+        if nullable is not None:
+            assert {"type": "null"} in nested["properties"][nullable]["anyOf"], state

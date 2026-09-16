@@ -135,6 +135,13 @@ event type Jamf sent (the webhook's own configuration), and the run log.
 Work from the app outward: was anything produced, was it queued, was it delivered, and
 did Splunk keep it.
 
+`GET /api/outbox` (`destination:read`) answers the middle of that in one read, in the
+three states an event can be in — **held** (produced, considered against no enabled
+destination, holding no delivery row at all), **pending** (a delivery still inside the
+retry envelope) and **dead-lettered** (a delivery that spent its ten attempts and waits
+for a redrive) — plus the two retention windows and the next purge, so each state's
+deadline is readable without the source. Ages are `null` when a set is empty, never `0`.
+
 1. **Was anything produced?** `GET /api/runs?pageSize=5`: a `device_sweep` run with
    `status: succeeded` and `deviceCount` above zero. None → this is §1 or §2, not a
    delivery problem.
@@ -142,7 +149,11 @@ did Splunk keep it.
    `GET /api/destinations` → `enabled: true`. A stack with no enabled destination holds
    its events and delivers nothing — the setup stepper calls the destination step
    optional, and holding is the ruled behaviour ([`splunk-setup.md`](splunk-setup.md)).
-   Add or enable one; the held events fan out on the next tick.
+   `GET /api/outbox` says how many and for how long: `held.events` with
+   `held.reason: no_enabled_destination`, and `held.oldestAgeSeconds` against
+   `retention.eventRetentionDays` is what is left before the oldest is purged and that
+   part of the baseline is gone for good — Settings › Destinations prints it as a
+   sentence. Add or enable a destination; the held events fan out on the next tick.
 3. **Test it.** The Test button, or `POST /api/destinations/<id>/test`. Read
    `statusCode` and the error:
    - connection refused, timeout, name not resolved → the URL, the port, a firewall, or a
@@ -158,13 +169,18 @@ did Splunk keep it.
    - `failedCount` above zero → those deliveries gave up after ten attempts; `lastError`
      is why. Fix the cause (step 3), then **Redrive** returns them to the queue. Events
      that arrived after the fix flow on their own.
-   - `pendingCount` climbing and nothing delivered → the destination is accepting slowly
-     or the tick is behind; wait two ticks (a minute). Still climbing, and `lastError` is
-     still `null` → nothing was attempted, so read the container log:
-     `docker compose logs app --since 10m | grep "outbox tick failed"`. That line means the
-     tick gave up before it dialled, and it names what to check — usually a destination
-     whose URL it refuses or whose stored secret this container cannot read (§4). Fix that,
-     and the next tick drains the queue. No such line and still climbing → reportable **D**.
+   - `pendingCount` climbing and nothing delivered → read `pending.oldestAgeSeconds` from
+     `GET /api/outbox` twice, a minute apart. **Falling** means the queue is draining and
+     only its head is old. **Rising by about the seconds between the reads** means nothing
+     left it: the oldest delivery is simply getting older, so nothing was attempted. Then
+     read the container log:
+     `docker compose logs app --since 10m | grep "outbox tick failed"` — that line means
+     the tick gave up before it dialled and names what to check, usually a destination
+     whose URL it refuses or whose stored secret this container cannot read (§4). Fix
+     that, and the next tick drains the queue. Still rising with no such line →
+     reportable **D**. `deadLettered.oldestExpiresAt` is the instant the oldest dead
+     letter stops being redrivable, and `retention.nextPurgeAt` is when the purge that
+     takes it runs.
    - Both zero and the runs in step 1 succeeded → step 5.
 5. **Subscriptions.** `subscribedEvents` on the destination: `null` means every event
    type; a list means only those. A list without `device.inventory` gets no snapshots,
@@ -188,7 +204,9 @@ did Splunk keep it.
    the type, the index is right, and the search is empty → reportable **E**.
 
 **D.** Deliveries stay pending across several ticks with no failures. Report the
-destination `id`, `pendingCount`, and `docker compose logs app --since 10m`.
+destination `id` and one `GET /api/outbox` body — the three numbers that describe the
+queue are `held.events`, `pending.deliveries` and `pending.oldestAgeSeconds`, and taken
+together they say whether anything is being attempted at all.
 **E.** Everything reports healthy and Splunk shows nothing. Report the destination `id`,
 the run `jobID`, the token's index settings, and the search you ran.
 

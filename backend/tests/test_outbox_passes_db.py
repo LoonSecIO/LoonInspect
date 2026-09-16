@@ -40,6 +40,9 @@ What is pinned, by section:
    ceiling existed; and — the one that would be worst to get wrong — a delivery the
    tick simply did not reach keeps its `attempt_count` and `next_attempt_at` untouched,
    so being deferred can never spend a healthy destination's retry budget.
+7. **Queue depth.** What `GET /api/outbox` reports over the same tables (#468): held events
+   with the reason they are held, pending and dead-lettered deliveries with their own
+   deadlines, and the empty queue that answers in nulls rather than zeros.
 
 Everything runs against a real Postgres in a tenant of this file's own
 (`…-000000000154`), so RLS makes the counts exact rather than "whatever else the
@@ -1158,3 +1161,78 @@ async def test_a_delivery_backlog_under_the_ceiling_is_drained_in_one_tick(db, m
     assert {row.status for row in rows} == {"delivered"}
     assert {row.attempt_count for row in rows} == {1}
     assert {json.loads(request.content)["index"] for request in seen} == set(range(6))
+
+
+# --- 7. Queue depth: the three states, read back (#468) ----------------------------
+
+
+async def _depth(db) -> dict:
+    """`GET /api/outbox`'s body, from the route function against this tenant's session."""
+    from app.api.outbox import outbox_depth
+
+    return (await outbox_depth(db)).model_dump(by_alias=True, mode="json")
+
+
+async def test_an_empty_queue_answers_in_nulls_rather_than_zeros(db) -> None:
+    body = await _depth(db)
+    assert body["held"] == {"events": 0, "oldestAgeSeconds": None, "reason": None}
+    assert body["pending"] == {"deliveries": 0, "oldestAgeSeconds": None}
+    assert body["deadLettered"] == {"deliveries": 0, "oldestExpiresAt": None}
+    # The two deadlines an operator could only read in the source before this endpoint.
+    assert body["retention"]["eventRetentionDays"] == 7
+    assert body["retention"]["deadLetterRetentionDays"] == 30
+    assert datetime.fromisoformat(body["retention"]["nextPurgeAt"]) > datetime.now(UTC)
+
+
+async def test_held_events_name_the_destination_that_is_not_there(db) -> None:
+    """The state no destination row can report: fan-out held these rather than burning them,
+    so they carry no delivery row for a destination row to count."""
+    from app.core.outbox import enqueue_event, fan_out_pending
+
+    for age_days in (5, 1):
+        event = await enqueue_event(db, EVENT_TYPE, {"event": EVENT_TYPE})
+        event.created_at = datetime.now(UTC) - timedelta(days=age_days)
+    await db.commit()
+    assert await fan_out_pending(db) == 0
+
+    held = (await _depth(db))["held"]
+    assert held["events"] == 2 and held["reason"] == "no_enabled_destination"
+    # Five days old against a seven-day window: two days left to add a destination.
+    assert 5 * 86400 <= held["oldestAgeSeconds"] < 5 * 86400 + 600
+
+    # The same backlog with a destination the next tick will drain: still held, and no
+    # reason. A sentence reading "no enabled destination" while one is enabled would be
+    # worse than no sentence at all.
+    db.add(_destination("siem"))
+    await db.commit()
+    assert (await _depth(db))["held"] == {**held, "reason": None}
+
+
+async def test_pending_and_dead_lettered_deliveries_report_their_own_deadlines(db) -> None:
+    """Both delivery states at once, so the counts cannot be confused: `pending` is the
+    retry envelope, `deadLettered` is what spent its ten attempts and waits for a redrive
+    until the day its event is purged."""
+    from app.core.outbox import enqueue_event, fan_out_pending
+
+    db.add(_destination("siem"))
+    now = datetime.now(UTC)
+    for age_days in (3, 10):
+        event = await enqueue_event(db, EVENT_TYPE, {"event": EVENT_TYPE, "age": age_days})
+        event.created_at = now - timedelta(days=age_days)
+    await db.commit()
+    await fan_out_pending(db)
+    # Delivery rows follow event id order, so the second belongs to the older event.
+    _, dead = await _deliveries(db)
+    dead.status, dead.attempt_count = "failed", 10
+    await db.commit()
+
+    body = await _depth(db)
+    # Both considered, so nothing is held: the three states do not overlap.
+    assert body["held"] == {"events": 0, "oldestAgeSeconds": None, "reason": None}
+    assert body["pending"]["deliveries"] == 1
+    assert 3 * 86400 <= body["pending"]["oldestAgeSeconds"] < 3 * 86400 + 600
+    assert body["deadLettered"]["deliveries"] == 1
+    # Thirty days from when the event was produced, not from the last attempt: ten days
+    # old leaves twenty before a redrive stops being possible.
+    expires = datetime.fromisoformat(body["deadLettered"]["oldestExpiresAt"])
+    assert timedelta(days=19, hours=23) < expires - now < timedelta(days=20, minutes=10)

@@ -296,6 +296,12 @@ export const en = {
       `Re-send ${count} failed ${count === 1 ? "delivery" : "deliveries"}? Events the destination already received will arrive again.`,
     redriveQueued: (count: number) => `${count} queued again for delivery`,
     errorRedriving: "Could not queue the redrive.",
+    // Queue depth (#468), above the list and only when there is something to say. Held
+    // events have no delivery row, so no destination row can count them.
+    heldEvents: (count: number, expires: string) =>
+      `${count === 1 ? "1 event" : `${count} events`} held — no enabled destination. The oldest expires ${expires}.`,
+    deadLetters: (count: number, days: number) =>
+      `${count} dead ${count === 1 ? "letter" : "letters"} · oldest expires ${days === 0 ? "today" : `in ${days} ${days === 1 ? "day" : "days"}`}`,
     loading: "Loading destinations…",
     empty: "No destinations configured yet.",
     errorLoading: "Could not load destinations.",

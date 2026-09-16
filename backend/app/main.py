@@ -36,6 +36,7 @@ from app.api.destinations import router as destinations_router
 from app.api.devices import router as devices_router
 from app.api.feature_flags import router as feature_flags_router
 from app.api.jamf_patch import router as jamf_patch_router
+from app.api.outbox import router as outbox_router
 from app.api.routes import router as api_router
 from app.api.runs import router as runs_router
 from app.api.settings import router as settings_router
@@ -54,7 +55,7 @@ from app.core.crypto import StoredValueUnreadable, validate_encryption_key
 from app.core.database import init_db, session_for_tenant, unscoped_session
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware, content_security_policy_mode
-from app.core.outbox import deliver_pending, fan_out_pending, purge_delivered_events
+from app.core.outbox import PURGE_HOUR, PURGE_MINUTE, deliver_pending, fan_out_pending, purge_delivered_events
 from app.core.runs import purge_runs
 from app.core.sharing import exchange_due, exchange_lock, run_exchange
 from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
@@ -471,7 +472,7 @@ async def lifespan(app: FastAPI):
         )
         scheduler.add_job(
             outbox_cleanup,
-            CronTrigger(hour=2, minute=45),
+            CronTrigger(hour=PURGE_HOUR, minute=PURGE_MINUTE),  # published by GET /api/outbox
             id="outbox_cleanup",
             replace_existing=True,
         )
@@ -616,6 +617,7 @@ app.include_router(changes_router)
 app.include_router(changes_prompt_router)
 app.include_router(alerts_router)
 app.include_router(destinations_router)
+app.include_router(outbox_router)
 app.include_router(system_router)
 app.include_router(settings_router)
 app.include_router(ai_router)
