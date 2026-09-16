@@ -52,6 +52,14 @@ class NormalizedApp(BaseModel):
     version_hash: str | None = Field(default=None, serialization_alias="versionHash")
     key_title: str | None = Field(default=None, serialization_alias="keyTitle")
     key_full: str | None = Field(default=None, serialization_alias="keyFull")
+    # The third content key (#245) rides this object only far enough to reach the
+    # `installed_apps` row, and `exclude=True` is what stops it there: the 2026-09-02
+    # ruling on #81 keeps LoonInspect's minted identity fields off the Splunk wire ("we
+    # can add keys later but we can't take them away"), and the delta's addedApps[] /
+    # removedApps[] are wire. So no `serialization_alias` — there is no wire spelling of
+    # this key to fix later — and giving it one is the change that would need the ruling
+    # revisited, not a tidy-up.
+    key_bundle: str | None = Field(default=None, exclude=True)
 
 
 class NormalizedExtensionAttribute(BaseModel):

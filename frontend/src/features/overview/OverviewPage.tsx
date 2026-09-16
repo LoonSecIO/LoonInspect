@@ -82,7 +82,10 @@ export function OverviewPage() {
   const canReadConnections = useHasPermission(PERMISSIONS.CONNECTION_READ);
   const canReadDestinations = useHasPermission(PERMISSIONS.DESTINATION_READ);
 
-  const [loading, setLoading] = useState(true);
+  // On until the first answer lands. A session without CONNECTION_READ asks for nothing,
+  // so nothing would ever turn it off — it starts off for that session rather than relying
+  // on the branch below returning before the loading line is ever reached.
+  const [loading, setLoading] = useState(canReadConnections);
   const [failedToLoad, setFailedToLoad] = useState(false);
   const [connected, setConnected] = useState(false);
   const [statuses, setStatuses] = useState<MdmSyncStatus[]>([]);
@@ -123,39 +126,47 @@ export function OverviewPage() {
     setOutcome((held) => (held?.id === running.id ? held : null));
   }, []);
 
+  /**
+   * Every read this page makes, written as a promise chain rather than `await`: the
+   * first one is started by the effect below, and React asks an effect body not to set
+   * state before it has yielded — so every setState here sits in a callback.
+   *
+   * Nothing switches the "Loading…" line on. It starts on and goes off once, when the
+   * first answer lands; `quiet` is what the callers after that are, and it is still
+   * what keeps a failed background refresh from replacing a working page with the load
+   * error.
+   */
   const refresh = useCallback(
-    async (quiet = false) => {
-      if (!canReadConnections) {
-        setLoading(false);
-        return;
-      }
-      if (!quiet) setLoading(true);
-      try {
-        const [mdmConnections, syncStatuses, recentRuns, destinationRows] = await Promise.all([
-          listConnections(),
-          listSyncStatus(),
-          // Kept as it was: this page of runs answers #104's hero and baseline, which is
-          // a different question from the stamp's. One fetch cannot serve both — the
-          // baseline is the *first* full sweep and the stamp is the *last* one, and the
-          // pinning query is the reason `/runs/summary` exists at all.
-          listRuns(undefined, 50),
-          canReadDestinations ? listDestinations() : Promise.resolve(null)
-        ]);
-        if (!mounted.current) return;
-        setConnected(mdmConnections.length > 0);
-        setStatuses(syncStatuses);
-        setRuns(recentRuns);
-        setDestinations(destinationRows);
-        adoptRunning(recentRuns);
-        setFailedToLoad(false);
+    (quiet = false): Promise<void> => {
+      // Nothing to ask for without CONNECTION_READ — the endpoints are gated server-side,
+      // and `loading` starts off for that session, so there is no spinner to switch off.
+      if (!canReadConnections) return Promise.resolve();
+      return Promise.all([
+        listConnections(),
+        listSyncStatus(),
+        // Kept as it was: this page of runs answers #104's hero and baseline, which is
+        // a different question from the stamp's. One fetch cannot serve both — the
+        // baseline is the *first* full sweep and the stamp is the *last* one, and the
+        // pinning query is the reason `/runs/summary` exists at all.
+        listRuns(undefined, 50),
+        canReadDestinations ? listDestinations() : Promise.resolve(null)
+      ])
+        .then(async ([mdmConnections, syncStatuses, recentRuns, destinationRows]) => {
+          if (!mounted.current) return;
+          setConnected(mdmConnections.length > 0);
+          setStatuses(syncStatuses);
+          setRuns(recentRuns);
+          setDestinations(destinationRows);
+          adoptRunning(recentRuns);
+          setFailedToLoad(false);
 
-        // The strip's own sources, fetched second so a pod still on the stepper issues
-        // not one extra request — and inside its OWN try, so they cannot take the page
-        // down with them. Before this the whole Overview shared one catch; adding two
-        // endpoints to it would have meant a 500 from `/runs/summary` blanking the
-        // changes feed and the baseline line as well, which is a much larger blast
-        // radius than the line those endpoints draw.
-        if (mdmConnections.length > 0) {
+          // The strip's own sources, fetched second so a pod still on the stepper issues
+          // not one extra request — and inside its OWN try, so they cannot take the page
+          // down with them. Before this the whole Overview shared one catch; adding two
+          // endpoints to it would have meant a 500 from `/runs/summary` blanking the
+          // changes feed and the baseline line as well, which is a much larger blast
+          // radius than the line those endpoints draw.
+          if (mdmConnections.length === 0) return;
           try {
             const [summaries, collectionLists] = await Promise.all([
               listRunSummaries(),
@@ -177,15 +188,16 @@ export function OverviewPage() {
             // looks at first.
             if (mounted.current) setStripFailed(true);
           }
-        }
-      } catch {
-        // A pod whose endpoints are down has not finished setup either — but it has not
-        // "not started" it. Saying so beats showing step one unchecked (#150's rule:
-        // failure must never read as emptiness).
-        if (mounted.current && !quiet) setFailedToLoad(true);
-      } finally {
-        if (mounted.current) setLoading(false);
-      }
+        })
+        .catch(() => {
+          // A pod whose endpoints are down has not finished setup either — but it has not
+          // "not started" it. Saying so beats showing step one unchecked (#150's rule:
+          // failure must never read as emptiness).
+          if (mounted.current && !quiet) setFailedToLoad(true);
+        })
+        .finally(() => {
+          if (mounted.current) setLoading(false);
+        });
     },
     [adoptRunning, canReadConnections, canReadDestinations]
   );

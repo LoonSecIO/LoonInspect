@@ -133,20 +133,26 @@ export function DestinationsPage() {
   // reproduction: test A, green line; test B, and A's line vanished.
   const [testResults, setTestResults] = useState<Record<number, DestinationTestResult>>({});
 
-  async function refresh() {
+  /** The one read of the list, as a promise chain rather than `await`: the first read is
+   *  started by the effect below, and an effect body is the one place React asks callers
+   *  not to set state (#15). `loading` starts true; only `refresh` turns it back on. */
+  function load(): Promise<void> {
+    return listDestinations()
+      .then((rows) => setDestinations(rows))
+      .catch((caught: unknown) => {
+        // A 503 carries a sentence worth showing: the stored secrets cannot be read (#374).
+        setError(caught instanceof ApiError && caught.status === 503 && caught.detail ? caught.detail : t.destinations.errorLoading);
+      })
+      .finally(() => setLoading(false));
+  }
+
+  function refresh(): Promise<void> {
     setLoading(true);
-    try {
-      setDestinations(await listDestinations());
-    } catch (caught) {
-      // A 503 carries a sentence worth showing: the stored secrets cannot be read (#374).
-      setError(caught instanceof ApiError && caught.status === 503 && caught.detail ? caught.detail : t.destinations.errorLoading);
-    } finally {
-      setLoading(false);
-    }
+    return load();
   }
 
   useEffect(() => {
-    void refresh();
+    void load();
   }, []);
 
   function openCreate() {
