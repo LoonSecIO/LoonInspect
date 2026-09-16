@@ -1175,7 +1175,12 @@ async def finish(
             )
 
         await _emit_after_release(db, row.id, RUN_COMPLETED_EVENT, emit_completed)
-    if not ok and standing and await _already_alarmed_today(db, connection_id=row.mdm_connection_id, run_id=row.id, error=error, now=now):
+    rationed = (
+        not ok
+        and standing
+        and await _already_alarmed_today(db, connection_id=row.mdm_connection_id, run_id=row.id, error=error, now=now)
+    )
+    if rationed:
         await log(
             db,
             run,

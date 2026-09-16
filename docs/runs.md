@@ -764,6 +764,24 @@ lines (the run id is the pointer to the full story):
 | `windowEnd` | When it died — the instant the row's `window_end` was stamped |
 | `error` | The stored run error, truncated to 500 characters |
 
+**The one refusal that is rationed (#393).** A sweep whose connection has no usable
+credential — the stored credential decrypts and is not a credential, an empty object or
+one missing a field — is refused before a request leaves, with one sentence in
+`runs.error` naming the connection, the missing field and Settings › Connections
+(*Re-enter the Jamf API client for "t1 jamf" on Settings › Connections — the stored
+credential has no clientId or clientSecret.*). It is the only failure that will recur
+identically on every tick until a person edits the connection, and it is therefore the
+only one whose `run.failed` is rate-limited: **at most one event per connection per UTC
+day for the same error text.** Every refusal is still a `failed` run row with the sentence
+on it, and the run whose event was withheld records that in its own log (*run.failed not
+emitted: this connection already reported this failure today*), so nothing is lost from
+the evidence trail — only from the pager. The mechanism is a SELECT against `runs`, "did
+another run on this connection close with this error today", which needs no new table, no
+column and no process memory, and works across a restart because the previous failed run
+is already durable. Nothing else in this section is rationed: an ordinary sweep failure
+still emits one event per failure. The operator's walk-through is
+[`troubleshooting.md`](troubleshooting.md) §12.
+
 ## 8. The stamp: what a rendered run id claims (#105)
 
 A run id printed in the product is evidence, and evidence has to say exactly what it

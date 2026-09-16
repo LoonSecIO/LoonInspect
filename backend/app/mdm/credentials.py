@@ -30,7 +30,7 @@ CREDENTIAL_SCHEMAS: dict[MdmProvider, type[_CredentialsBase]] = {
 
 
 # What the operator calls the thing they have to re-enter. Never the class name: the
-# sentence built below is read on Settings › Connections and in a failed run's error, by
+# sentence built below is read on Settings > Connections and in a failed run's error, by
 # someone who has never seen `JamfCredentials` and must not have to (#393,
 # docs/diagnosability.md rule 3).
 CREDENTIAL_NOUN: dict[MdmProvider, str] = {
