@@ -252,13 +252,16 @@ What ships, where it lives, and what was proven against it.
   table), `adapters.py` (`openai_chat`, `anthropic_messages`, one normalised result, four
   failure kinds), `host_detect.py` (the pure detection over `/proc/version`, `/proc/cpuinfo`
   and an alias resolution, with its evidence). `backend/app/api/ai.py` serves
-  `GET /api/system/ai/providers`, `GET /api/system/ai/host` (SYSTEM_READ) and
+  `GET /api/system/ai/providers`, `GET /api/system/ai/host` (SYSTEM_READ, and the flag
+  since #402) and
   `POST /api/system/ai/test` (SYSTEM_WRITE). `backend/app/core/egress.py` gained
   `validate_inference_base_url`, `inference_blocked_reason` and `destination_for_log`;
   `refuse_blocked_resolution` takes the reason function as a parameter. The audit log gained
   `ai.test.sent` (provider, destination, outcome, latency; never the prompt, never the key).
-- **Frontend** `frontend/src/features/ai/`: Settings > AI, listed in the sidebar only while
-  `ai_features` is on; three cards from the providers endpoint, the detection banner, the
+- **Frontend** `frontend/src/features/ai/`: Settings > AI, listed in the sidebar — and
+  reachable at all — only while `ai_features` is on, which one shared flag store answers for
+  the sidebar, the route guard and the page alike, so a toggle moves all three at once
+  (#402); three cards from the providers endpoint, the detection banner, the
   consent toggle (its first UI), the form, the reply with reasoning collapsed and error text
   verbatim. English and German.
 - **Model listing (#322, same day).** "Load models" beside the Model field asks the endpoint
@@ -359,10 +362,25 @@ runtime and `apple_silicon` hold, else `unknown`; `alias_resolves` from `getaddr
 the verdict **with the evidence strings**, exposed at `GET /api/system/ai/host`. The Settings ›
 AI page pre-selects the "via Docker Desktop" card when `runtime == docker_desktop and host_os
 == macos` and shows the evidence under it ("kernel 6.12.76-linuxkit, Apple Silicon"); every
-other outcome says what was seen and leaves the choice to the admin. It is a hint, never a
-gate: the card stays clickable whatever was detected. Tests: table-driven over fixture strings
+other outcome says what was seen and leaves the choice to the admin. Tests: table-driven over fixture strings
 (linuxkit + 0x61 → macOS Docker Desktop; WSL2; orbstack; Ubuntu kernel + 0x41 → unknown), plus
 the alias probe against a stub resolver.
+
+**Amended 2026-09-12 (#404): a hint for the selection, a gate for one card.** "It is a hint, never a
+gate: the card stays clickable whatever was detected" stood until the AWS pod offered the "via Docker
+Desktop" card with no Mac anywhere near it, and filled the OpenAI-compatible card with the Mac host's
+Ollama pair — a `host.docker.internal` base URL directly under the page's own evidence line saying that
+name does not resolve. Kyle ruled it: the Apple card *"should not show in AWS"*. It is now **offered**
+only where `runtime == docker_desktop and host_os == macos` **and** `alias_resolves`; the full match
+alone never proved its default could work, because `fm serve` runs on the Mac and the alias is how the
+container gets to it. Where the alias is dead no card fills a `host.docker.internal` default at all — the
+OpenAI-compatible card starts empty, with a line saying why — and wherever the Apple card is withheld the
+detection panel says so in one sentence, so a Mac operator whose detection missed can tell a withheld card
+from a missing feature ([`diagnosability.md`](diagnosability.md) rule 1,
+[`troubleshooting.md`](troubleshooting.md) §14). Both decisions are pure functions in
+`frontend/src/features/ai/offered.ts`, table-tested over the six readings this endpoint returns. Nothing
+moved in the backend: a call naming `apple_fm` is judged, gated and logged like any other, and the card's
+condition widens when the reserved `remote_mac` reach lands.
 
 **Build (one agent turn, one PR).**
 

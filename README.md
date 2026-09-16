@@ -249,7 +249,7 @@ walks through both halves, the timeouts, rotating the secret, and how to see it 
 
 ### 7. Back it up before you need to
 
-**[docs/troubleshooting.md](docs/troubleshooting.md)** is where to start when something is not working: ten ordered paths — a green test and an empty sweep, a run with zero devices, events not reaching Splunk, a stack that will not start, applications reading *not assessed*, a Jamf Patch table that is empty or has stopped refreshing, Jamf Pro webhooks that never arrive, an update notice that never appears or names a release you do not have, a Changes Prompt bar that is missing or answers *AI search unavailable*, one connection whose every sweep fails because what is stored against it is not a credential — each ending in a fix or a named state to report. **[docs/operations.md](docs/operations.md)** is the operator runbook: what to back up
+**[docs/troubleshooting.md](docs/troubleshooting.md)** is where to start when something is not working: fourteen ordered paths — a green test and an empty sweep, a run with zero devices, events not reaching Splunk, a stack that will not start, applications reading *not assessed*, a Jamf Patch table that is empty or has stopped refreshing, Jamf Pro webhooks that never arrive, an update notice that never appears or names a release you do not have, a Changes Prompt bar that is missing or answers *AI search unavailable*, one connection whose every sweep fails because what is stored against it is not a credential, a Settings › AI that is missing or says AI features are off, Settings › AI with no Apple Foundation Models card, a deleted smart group the Changes page says nothing about, a Mac you deleted in Jamf that is still listed or one that vanished from the list — each ending in a fix or a named state to report. **[docs/operations.md](docs/operations.md)** is the operator runbook: what to back up
 (the database *and* `ENCRYPTION_KEY` — a dump without the key restores an instance whose
 every MDM connection is permanently unreadable), the `pg_dump` and `psql` commands to do
 it, what a restore does to in-flight outbox rows and the run mutex, how upgrades and
@@ -505,12 +505,15 @@ reply shown as it came back. It exists so the first real AI feature arrives into
 that already refuses correctly. Two switches gate it, both off out of the box: the
 `ai_features` flag (Settings › Feature Flags) and the AI-inference consent (toggled on the
 page itself). Every send writes one share-log row naming the destination and the single
-field that left, the prompt. Three endpoints are offered: Apple Foundation Models through Apple's own
-`fm serve` on the Mac host (macOS 27; the card is labelled "via Docker Desktop", the one
-runtime this cut implements), any OpenAI-compatible endpoint (Ollama on the host by
-default), and Anthropic's Messages API. Bring your own URL and key; the key is used for that
-one request and never stored. Every model call is made by the backend, never by your
-browser. Design record: `docs/ai-layer.md`; issue #319.
+field that left, the prompt. Which endpoints are offered depends on where this container runs.
+Apple Foundation Models through Apple's own `fm serve` on the Mac host (macOS 27; the card is
+labelled "via Docker Desktop", the one runtime this cut implements) is offered only there —
+under Docker Desktop on an Apple Silicon Mac, with `host.docker.internal` resolving from
+inside the container — and anywhere else the page says in a sentence why it is not. Always
+offered: any OpenAI-compatible endpoint (Ollama on the Mac host by default, and no default at
+all where that name does not resolve), and Anthropic's Messages API. Bring your own URL and
+key; the key is used for that one request and never stored. Every model call is made by the
+backend, never by your browser. Design record: `docs/ai-layer.md`; issue #319.
 
 ## 👥 Accounts and roles
 

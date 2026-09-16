@@ -84,6 +84,9 @@ AI_TEST_BOX_FEATURE = "ai_test_box"
 AI_MODEL_LISTING_FEATURE = "ai_model_listing"
 # Saving a config is on-pod work: the gate is asked for the flag only, and logs nothing.
 AI_CONFIG_FEATURE = "ai_config"
+# The two reads Settings > AI opens with: on-pod work like a Save, gated the same way (#402).
+AI_PROVIDER_TABLE_FEATURE = "ai_provider_table"
+AI_HOST_DETECTION_FEATURE = "ai_host_detection"
 DISCLOSED_FIELDS = ("prompt_text",)
 REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high")
 
@@ -130,6 +133,20 @@ def _effort_accepted(provider: Provider, reasoning_effort: str | None) -> None:
         raise HTTPException(status_code=422, detail=APPLE_FM_TAKES_NO_EFFORT)
 
 
+async def _flag_or_409(db: AsyncSession, feature: str) -> None:
+    """The master flag alone, for on-pod work that sends nothing anywhere (#402).
+
+    The flag switches the whole AI area, in both directions: with it off, Settings > AI is
+    neither listed nor reachable, and the two reads that page opens with — and a Save —
+    answer the gate's sentence. ``destination=None`` for every caller, so nothing leaves,
+    nothing is logged, and ``AIConsentMissing``, the gate's other half, cannot be raised.
+    """
+    try:
+        await require_ai(db, feature=feature)
+    except AIFeaturesDisabled as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 def _reach_hostname(reach: HostReach) -> str | None:
     try:
         return hostname_for(reach)
@@ -171,9 +188,10 @@ async def judged_endpoint(
     response_model=ProvidersOut,
     dependencies=[Depends(require(Permission.SYSTEM_READ))],
 )
-async def list_providers() -> ProvidersOut:
+async def list_providers(db: AsyncSession = Depends(get_db)) -> ProvidersOut:
     """What the cards fill in, served rather than duplicated in the SPA so there is
-    one table (``app.ai.providers``)."""
+    one table (``app.ai.providers``). Behind the flag, like everything else in the area."""
+    await _flag_or_409(db, AI_PROVIDER_TABLE_FEATURE)
     return ProvidersOut(
         entries=[
             ProviderEntryOut(
@@ -207,8 +225,11 @@ async def list_providers() -> ProvidersOut:
     response_model=HostDetectionOut,
     dependencies=[Depends(require(Permission.SYSTEM_READ))],
 )
-async def host() -> HostDetectionOut:
-    """A hint with its evidence, never a gate (``app.ai.host_detect``)."""
+async def host(db: AsyncSession = Depends(get_db)) -> HostDetectionOut:
+    """A hint with its evidence; a gate on one card, and on nothing here (#404, ``app.ai.host_detect``).
+    Behind the flag all the same: with the area off, nothing reads this container's `/proc` or asks
+    DNS about the Docker Desktop alias on a page nobody may open."""
+    await _flag_or_409(db, AI_HOST_DETECTION_FEATURE)
     d = await read_host_detection()
     return HostDetectionOut(
         runtime=d.runtime,
@@ -405,10 +426,7 @@ async def save_provider_config(
     rules are judged against the key the row will hold, not only the one sent."""
     _bounded_key(payload.api_key)
     _effort_accepted(provider, payload.reasoning_effort)
-    try:
-        await require_ai(db, feature=AI_CONFIG_FEATURE, destination=None)
-    except AIFeaturesDisabled as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await _flag_or_409(db, AI_CONFIG_FEATURE)
 
     stored = await saved_config(db, provider)
     has_key = keeps_key(stored is not None and stored.has_key, payload.api_key, payload.clear_key)
