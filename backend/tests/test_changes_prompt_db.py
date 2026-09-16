@@ -171,6 +171,14 @@ async def seeded(accounts):
                         previous_span_id=before_303.id),
                 _change(cid, subject_id="304", subject_label="probe-mac", serial_number="PRMSER304",
                         entry_identity=_app("PromptProbeVvq", "io.example.promptprobe")),
+                # One install a month old and one fresh, same app: what a window set from the
+                # question's own words has to tell apart (#444).
+                _change(cid, subject_id="305", subject_label="window-old", serial_number="PRMSER305",
+                        entry_identity=_app("PromptWindowVvq", "io.example.promptwindow"),
+                        observed_at=base - timedelta(days=30), collected_at=base - timedelta(days=30)),
+                _change(cid, subject_id="306", subject_label="window-new", serial_number="PRMSER306",
+                        entry_identity=_app("PromptWindowVvq", "io.example.promptwindow"),
+                        observed_at=base, collected_at=base),
                 _change(cid, subject_kind="computer_group", subject_id="g-prompt", subject_label="Probe owners",
                         section="definition", entry_kind="criterion", entry_identity=None,
                         entry_label="Application Title is PromptProbeVvq"),
@@ -338,11 +346,13 @@ def _wire(moment: datetime) -> str:
 
 
 def _filters(**set_by_the_answer: object) -> dict:
-    """Every key the answer carries, unset but for the ones named — the five the model fills
-    and the four dimensions a repair can move a Search into (#447)."""
+    """Every key the answer carries, unset but for the ones named — the five the model fills,
+    the four dimensions a repair can move a Search into (#447), and the start the question's
+    own words set (#444)."""
     return {
         "q": None, "artifact": None, "level": None, "section": None, "change": None,
         "model": None, "osVersion": None, "department": None, "managed": None, "departmentName": None,
+        "since": None,
         **set_by_the_answer,
     }  # fmt: skip
 
@@ -695,6 +705,33 @@ async def test_a_search_the_fleet_has_nothing_for_is_left_alone(client, db, clea
     assert body["filters"]["q"] == "ThinkPad X1"
     assert body["repairs"] == []
     assert (body["summary"]["total"], body["summary"]["when"]) == (0, None)
+
+
+# --- the window the question's own words set (#444) ----------------------------------------------
+
+
+async def test_a_time_bound_in_the_question_sets_the_pages_since_and_the_summary_counts_it(client, db, clean, seeded, endpoint):
+    """Kyle's ruling on #444: the start is read from the question's own words against this
+    server's clock and the zone the browser sent, never asked of the model — whose instructions
+    do not mention time at all (`tests/test_changes_prompt.py` pins their digest). It rides the
+    page's own `since` key, so the box and the page count the same rows; a question with no
+    phrase this list holds sets no window, and the answer is what it was before #444."""
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "filter": "PromptWindowVvq"}))
+    asked = datetime.now(UTC)
+    body = (await _ask(client, "PromptWindowVvq installs in the last 24 hours", zone="America/Chicago")).json()
+    assert body["outcome"] == "applied", body
+    since = datetime.fromisoformat(body["filters"]["since"])
+    assert timedelta(hours=23, minutes=59) < asked - since < timedelta(hours=24, minutes=1), body["filters"]
+    # The month-old install is outside it; the fresh one is not, and the page agrees.
+    assert (body["summary"]["total"], [d["serial"] for d in body["summary"]["devices"]]) == (1, ["PRMSER306"])
+    page = await client.get("/api/changes", params={"artifact": "PromptWindowVvq", "since": body["filters"]["since"]})
+    assert [r["serialNumber"] for r in page.json()["items"]] == ["PRMSER306"]
+
+    body = (await _ask(client, "which macs installed PromptWindowVvq", zone="America/Chicago")).json()
+    assert body["filters"] == _filters(artifact="PromptWindowVvq", section="applications")
+    assert (body["repairs"], body["summary"]["total"]) == ([], 2)
 
 
 async def test_rows_that_are_not_devices_are_counted_apart(client, db, clean, seeded, endpoint):

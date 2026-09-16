@@ -1562,6 +1562,7 @@ export const en = {
       readbackDepartmentNamed: (name: string) => `on Macs in department “${name}”`,
       readbackManaged: "on Macs Jamf manages",
       readbackUnmanaged: "on Macs Jamf does not manage",
+      readbackSince: (start: string) => `observed since ${start}`,
       answerNone: "No changes match.",
       answerHeadline: (computers: number, changes: number) =>
         `${computers} computer${computers === 1 ? "" : "s"}, ${changes} change${changes === 1 ? "" : "s"}.`,
