@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 from pydantic.alias_generators import to_camel
 
-from app.schemas.catalog import CatalogTitleRef
+from app.schemas.catalog import CatalogTitleRef, VulnUpdateOut
 from app.schemas.payload import MdmProvider, VulnEnrichment
 
 
@@ -92,6 +92,11 @@ class InstalledAppOut(BaseModel):
     # is the wire's `VulnEnrichment` rather than a REST copy of it, so the three states
     # are spelled the same in a Splunk event and on the page.
     vuln: VulnEnrichment = Field(default_factory=VulnEnrichment)
+    # #482: what updating this build to the release `latest_version` names would do to the
+    # findings in `vuln`. `null` whenever there is nothing to say — the block is not
+    # `covered`, no target has been judged for this row, or this build already IS the
+    # target — and never a zero. REST only: nothing new goes on the wire (§6).
+    vuln_update: VulnUpdateOut | None = None
 
     @computed_field
     @property

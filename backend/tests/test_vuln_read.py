@@ -125,8 +125,11 @@ class Row:
         id: int = 1,
         answer: dict | None = None,
         signature: str | None = None,
+        version: str = "1.0",
+        target: dict | None = None,
     ) -> None:
         self.id = id
+        self.version = version
         self.key_title = key_title
         self.key_full = key_full
         self.vuln_assessment = VULN_ASSESSMENT_COVERED if answer is not None else None
@@ -135,6 +138,14 @@ class Row:
         self.vuln_ids = (answer or {}).get("ids")
         self.vuln_ids_truncated = (answer or {}).get("truncated")
         self.vuln_signature = signature
+        # The target build's stored answer (#482). A `target` with no counts is the rowless
+        # case — judged, and the epoch holds no row for that release — which is why the
+        # version and the assessment are two columns rather than one.
+        self.vuln_target_version = (target or {}).get("version")
+        self.vuln_target_assessment = VULN_ASSESSMENT_COVERED if (target or {}).get("counts") else None
+        self.vuln_target_counts = (target or {}).get("counts")
+        self.vuln_target_ids = (target or {}).get("ids")
+        self.vuln_target_ids_truncated = (target or {}).get("truncated")
 
 
 # The signature of "the epoch that judged these rows", for the tests that read a stored
@@ -174,7 +185,15 @@ OFF_ROW = Row(KNOWN_TITLE, AFFECTED_BUILD)
 # hashes make impossible.
 UNKNOWN_ROW = Row(UNKNOWN_TITLE, UNKNOWN_BUILD, id=2)
 CLEAN_ROW = Row(KNOWN_TITLE, CLEAN_BUILD, id=3, answer=STORED_CLEAN, signature=STORED_SIGNATURE)
-AFFECTED_ROW = Row(KNOWN_TITLE, AFFECTED_BUILD, id=4, answer=STORED_AFFECTED, signature=STORED_SIGNATURE)
+# Carrying a target too: Jamf says 2.0, the epoch assessed it, and two of this build's
+# three findings are gone there while one is new (#482).
+STORED_TARGET = {
+    "version": "2.0",
+    "counts": {"total": 2, "kev": 0, "critical": 0, "high": 1, "medium": 0, "low": 1},
+    "ids": ["CVE-2026-0002", "CVE-2026-0003"],
+    "truncated": False,
+}
+AFFECTED_ROW = Row(KNOWN_TITLE, AFFECTED_BUILD, id=4, answer=STORED_AFFECTED, signature=STORED_SIGNATURE, target=STORED_TARGET)
 # A title the corpus knows, in a build it never assessed — §4f's common case, and the one
 # a careless corpus turns into a clean bill.
 UNASSESSED_BUILD_ROW = Row(KNOWN_TITLE, "v1:build-never-assessed", id=5)
@@ -445,6 +464,13 @@ class TestTheRestSurface:
         # day count is arithmetic on the row's absolute date against the page's clock (§4d).
         assert payload["apps"][1]["vuln"]["daysOldestPublished"]["total"] == (AS_OF - date(2025, 8, 1)).days
         assert payload["apps"][1]["vuln"]["vulnIDs"] == STORED_AFFECTED["ids"]
+        # #482 rides beside the block, never inside it, and only where there is something
+        # to say: an exact difference of the two id lists on the row that carries a target,
+        # and absent on the rows that do not — never a zero, which would read as "this
+        # update changes nothing" for a build with no target answer at all.
+        expected = {"version": "2.0", "assessment": "covered", "closes": 2, "opens": 1, "net": None}
+        assert payload["apps"][1]["vulnUpdate"] == expected
+        assert payload["apps"][0]["vulnUpdate"] is None and payload["apps"][2]["vulnUpdate"] is None
         # **The corpus was never asked** (#381). The join ran once per distinct build at
         # judge time, so a page renders its apps off columns — this is the property that
         # holds at 250 apps as well as at three, and the one a per-app lookup would break.

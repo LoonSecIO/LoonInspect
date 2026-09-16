@@ -1,4 +1,4 @@
-import type { AppVulnerability } from "@/features/vulnerabilities/types";
+import type { AppUpdate, AppVulnerability } from "@/features/vulnerabilities/types";
 
 export interface CatalogTitleRef {
   id: string;
@@ -50,6 +50,10 @@ export interface CatalogEntry {
   /** LoonInspect's own answer about this exact build — `covered`, `unknown_app` or `off`
    *  (#251). Always present; the shape is what says which of the three it is. */
   vuln: AppVulnerability;
+  /** What updating this build to `latestVersion` would do to the findings above (#482).
+   *  `null` whenever there is nothing to say — not `covered`, no target judged, or this
+   *  build already IS the target — and never a zero. */
+  vulnUpdate: AppUpdate | null;
 }
 
 export interface CatalogSummary {

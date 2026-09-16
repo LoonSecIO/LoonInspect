@@ -354,6 +354,13 @@ async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connec
         "vuln_ids",
         "vuln_ids_truncated",
         "vuln_signature",
+        # And the target build's answer (#482), for exactly the same reason: it is judged
+        # by the same statement and has to reach all three copiers or none.
+        "vuln_target_version",
+        "vuln_target_assessment",
+        "vuln_target_counts",
+        "vuln_target_ids",
+        "vuln_target_ids_truncated",
     }
     # Xcode matches one title, so it is its own reference and has no sentence.
     assert xcode.reference_title_id == "0C3" and xcode.sentence_title_id is None

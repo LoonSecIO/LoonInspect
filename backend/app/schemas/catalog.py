@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -15,6 +16,27 @@ class _CamelModel(BaseModel):
 class CatalogTitleRef(_CamelModel):
     id: str
     name: str
+
+
+class VulnUpdateOut(_CamelModel):
+    """What updating this build to the release Jamf Patch names would do to its findings
+    (#482) — `app.core.vuln_answer.UpdateEffect` as a page receives it.
+
+    **REST only, and deliberately not on the wire.** §6 keeps fix-version data in-app, and
+    this is a render over a join already stored: no `VulnEnrichment` key moves and
+    `docs/splunk-wire-vocabulary.md` is untouched. It rides BESIDE `vuln` for the same
+    reason — the block a browser receives IS the wire's block (§4g), and a REST-only key
+    inside it would be the first place the two dialects drift.
+
+    `assessment` is the TARGET's, and the `closes`/`opens` and `net` rules are
+    `UpdateEffect`'s; see it for both.
+    """
+
+    version: str
+    assessment: Literal["covered", "unknown_app"]
+    closes: int | None = None
+    opens: int | None = None
+    net: int | None = None
 
 
 class CatalogEntryOut(_CamelModel):
@@ -81,6 +103,11 @@ class CatalogEntryAssessedOut(CatalogEntryOut):
     # and is never absent here: a column that cannot tell "no findings" from "not
     # assessed" is the failure `assessment` exists to prevent (§4a).
     vuln: VulnEnrichment = Field(default_factory=VulnEnrichment)
+    # #482: what updating this build would do to the findings above. `null` whenever there
+    # is nothing to say — not `covered`, no target judged, or already on the target — and
+    # never a zero, which would read as "this update changes nothing" for a row nobody
+    # answered. The list endpoint fills it; the Catalog page does not render it yet.
+    vuln_update: VulnUpdateOut | None = None
 
 
 class CatalogSummaryOut(_CamelModel):

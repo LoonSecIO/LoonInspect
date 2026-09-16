@@ -983,6 +983,24 @@ export const en = {
     oldestPublished: (days: number) => `oldest published ${days} day${days === 1 ? "" : "s"} ago`,
     moreIds: (count: number) => `+${count} more`,
     idsCapped: "list capped",
+    // #482. "closes" and "opens" are the two directions of one difference and both are
+    // said: the newer build can carry MORE findings than the older one (Wireshark 4.2.0 is
+    // 17, 4.6.0 is 94), so "update to latest" is not a synonym for "clean" and the copy
+    // must not let it read as one. `net` is the capped-list rendering and says so, because
+    // an exact-looking count off a capped list under-reports.
+    updateCloses: (version: string, closes: number, opens: number) =>
+      `updating to ${version} closes ${closes}, opens ${opens}`,
+    updateNet: (version: string, net: number) =>
+      net === 0
+        ? `updating to ${version} — no net change`
+        : `updating to ${version} — net ${Math.abs(net)} ${net > 0 ? "fewer" : "more"} finding${Math.abs(net) === 1 ? "" : "s"}`,
+    // "At least one", not "both": the fallback fires the moment EITHER list is capped,
+    // because one capped side is enough to make a set difference under-report.
+    updateNetHint:
+      "At least one of the two finding lists is capped, so this is the difference of the totals the corpus counted rather than of the lists themselves.",
+    // §4g's own words for the target, in the warning colour and carrying the corpus date:
+    // the release Jamf calls latest has no row in this corpus, which is not a clean bill.
+    updateUnknown: (version: string, date: string) => `updating to ${version}: not in the corpus of ${date}`,
     // #298: where "not assessed" goes. Present tense for the absence, and no date, no
     // "last checked", no "today" — `off` carries none. Amended 2026-09-11 (#248): the
     // premise moved, so `whyNoCorpus` argues from "none loaded" rather than from "in this
