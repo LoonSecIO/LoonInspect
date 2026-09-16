@@ -369,6 +369,81 @@ logged at warning on the run, because "every group departed at once" must be unr
 from a lost privilege or a short page. Returns are honoured on a collapsed census — a
 subject the census *did* name is present. What a SIEM receives about a departure is #179's.
 
+### Managed → Unmanaged: the retirement workflow (reserved, not built)
+
+**Nothing in this subsection is built** (#184, from the same #135 ruling, §3). It is the
+flag planted where the workflow will go, so a later session builds it from a written
+decision instead of re-deriving one — and so nobody mistakes it for departure, which is the
+paragraph above and a different thing entirely.
+
+**Why it is worth building**, quoted from #184 rather than paraphrased, because it is the
+argument for the whole feature:
+
+> Jamf bills for **managed** devices. Unmanaged devices cost nothing, so orgs leave them
+> in place — not out of neglect, but because Jamf is acting as the **system of record that
+> the device existed**. LoonInspect invalidates that need. Once the container holds the
+> record, the org can delete unmanaged legacy devices from Jamf and let Jamf Pro accurately
+> represent the **current** system state, instead of being bogged down by non-managed
+> legacy machines nobody dares remove.
+
+**Two states, orthogonal.** Present/departed and managed/unmanaged are separate axes, and
+every Mac holds one value on each:
+
+| Axis | Where it lives today | What moves it |
+| --- | --- | --- |
+| present / departed | `subject_departures` — objects today (#181); the Mac case is #183 | a clean census that does not name the subject |
+| managed / unmanaged | `devices.managed`, and `remoteManagement.managed` in the current span's `general` section | an admin in Jamf, or an MDM profile that stopped working |
+
+Both halves of the second axis exist already: the flip is a `high` field with its default
+on ([`change-log.md`](change-log.md) §4, `general.remoteManagement.managed`), and the
+standing count is a posture key, `devices.unmanaged`
+([`posture-snapshot.md`](posture-snapshot.md)). **An unmanaged Mac is still returned by the
+census, so it is present, not departed** — it is precisely the machine the quoted paragraph
+says nobody dares remove. Departure is unchanged by any of this.
+
+**Where the state would live: a derived predicate, and no new table until it is built.**
+"Retirement candidate" is a question asked at read time over rows that already exist. Per
+device, on one connection, it reads:
+
+- `devices.managed = false` — the cheap gate, denormalized on every sync. The ledger's own
+  answer is the current span's `general` section (`observation_spans.is_current`, then
+  `section_digests->>'general'` joined to `observation_sections.digest` for the `body`);
+  that is the evidence to show, and the tiebreaker if the two ever disagree.
+- **Days since the flip**: the most recent `device_changes` row for the subject with
+  `section = 'general'`, `field = 'remoteManagement.managed'` and a false `new_value` —
+  `observed_at` is the clock to count from. Where there is no such row, because the Mac was
+  already unmanaged when LoonInspect first saw it or the flip predates the change log, the
+  floor is `observation_spans.first_observed_at` on the oldest unmanaged span, and the
+  sentence below has to say *at least* that many days.
+- **Present**, the gate that keeps the two axes apart: no open `subject_departures` row
+  (`returned_at IS NULL`) for this subject.
+- Quiet, if the threshold wants quietness as well as elapsed time: `devices.last_check_in`
+  and `devices.last_inventory_at`, the columns the staleness posture keys already read.
+
+No new table, no new column, no new posture key and no new alert kind until someone builds
+this. The threshold itself — how many days is long enough — is unruled and Kyle's to set.
+
+**What it would emit.** A **proposed, not minted** event name:
+`device.retirement.candidate`. It exists in this sentence and nowhere else. It is not in
+`KNOWN_EVENT_TYPES` (`backend/app/core/outbox.py`), it is not in the registry or the
+sourcetype tree of [`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md), and nothing
+produces or subscribes to it. Whoever builds the workflow mints a name then, through that
+document's own process, and is free to choose a different one. What the name is for is the
+sentence an operator finally gets to read:
+
+> Retire this in Jamf — we have the record.
+
+**Two things a future builder must not do.**
+
+1. **Do not infer erasure intent from the flip.** Unmanaging a Mac is not a request to
+   forget it. Erasure — what LoonInspect drops when Jamf drops a device — is #180's, ruled
+   in principle and deferred; a retirement candidate keeps its row, its spans and its
+   change history, and the operator who then deletes it in Jamf is relying on exactly that.
+2. **Do not count unmanaged as departed.** Folding one axis into the other would pull
+   present Macs out of the device population, the posture keys and the surfaces, and would
+   tell an operator that a Mac vanished from Jamf when what happened is that it stopped
+   being billed for.
+
 ---
 
 ## 9. Storage
