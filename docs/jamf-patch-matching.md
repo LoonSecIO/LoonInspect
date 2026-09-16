@@ -128,14 +128,12 @@ a flag.
 
 **Admitted on the column**, Jamf's own statement of the software's identity; the attribute goes on
 scoping as in §4, so an absent one resolves TRUE and the match is `ea_assumed`, and the column is
-compared exactly — nothing else narrows these titles. They add 5,233 version rows (73,347 →
-78,580), the gap the engine's enumeration had over this container's.
+compared exactly. They add 5,233 rows (73,347 → 78,580), closing the gap against the engine's count.
 
-**Flagged, because here the EA is not scoping — it is the detection.** *"EA-only implies
-on-device detection. Example: Python. That's why it's EA-only — the title is explicitly telling
-Jamf Pro the software is there despite recon not seeing it."* Every title therefore carries
-`detection` — `jamf_patch_titles.detection`, and `patch.jamfPatch.detection` on the wire — and
-admission reaches two tiers:
+**Flagged, because here the EA is not scoping — it is the detection.** *"EA-only implies on-device
+detection. Example: Python. That's why it's EA-only — the title is explicitly telling Jamf Pro the
+software is there despite recon not seeing it."* Every title therefore carries `detection` —
+`jamf_patch_titles.detection`, and `patch.jamfPatch.detection` on the wire — and two tiers follow:
 
 * **Admitted and inventory-visible.** A Mac reports an `.app` with that bundle ID, so the title
   matches and answers like any other: Firefox, Firefox ESR, Skype, PyCharm Unified, Nextcloud.
@@ -145,15 +143,17 @@ admission reaches two tiers:
   `detection: extension_attribute` — until the EA value is read as the presence witness, which
   LoonInspect does not do yet (`docs/troubleshooting.md` §6 step 5).
 
-**The cost if this is wrong, named**: a title Jamf scoped by EA to a subset — a channel, an
-architecture — matched here by bundle ID alone reads `behind` or `latest` for the wrong subset, and
-`detection` is how a reader knows an answer is exposed to that. The corpus is not: `key_full` is
-built from installed apps, so an EA-detected title has no row to join and reads `unknown_app`.
+**The cost if this is wrong, named**: a title Jamf scoped by EA to a subset, matched here on the
+column alone, reads for the wrong subset — and it is already live, since `0B3` Mozilla Firefox and
+`0B4` Firefox ESR share `org.mozilla.firefox` and only the assumed EA parts them, so an installed
+Firefox matches both and #68's sentence can come from the wrong line (`sentenceTitleID` says
+which). The corpus is untouched: `key_full` is built from installed apps, so an EA-detected title
+has no row to join and reads `unknown_app`.
 
 The ten largest by versions gained: Firefox Developer Edition (1,043), **Mozilla Firefox** (410),
 Firefox ESR (302), Skype (255), PyCharm Unified (200), Flash Player (172), **Microsoft AutoUpdate**
 (154), Python 3 (131), Nextcloud (128), Jamf Connect Login (109); most of the rest are JDK and JRE
-lines. The live list, which the catalog keeps current where a copy here would go stale:
+lines. The live list, which cannot go stale the way a copy here would:
 `SELECT name FROM jamf_patch_titles WHERE detection = 'extension_attribute' AND bundle_id <> ''`.
 
 ## 5. Storage and the summary

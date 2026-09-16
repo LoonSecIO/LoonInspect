@@ -637,7 +637,7 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
      title should match: a 0 after a sweep is state **J**, with the identifier you searched for.
    - **Not listed** — the software is a command-line install, a framework or a daemon (Python 3,
      the JDKs, Jamf Connect Login), so the inventory has nothing to match and those Macs read
-     absent until LoonInspect reads the extension attribute itself. Working as built.
+     absent until LoonInspect reads the attribute itself. Working as built.
 
 **J.** A refresh that reports no error leaves the table saying *No Jamf Patch titles
 synced yet.*, a title Jamf publishes stays missing from the list with *Only titles with
