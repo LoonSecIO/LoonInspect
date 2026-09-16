@@ -267,6 +267,15 @@ freshness and `observedAt` for when the change is claimed to have happened.
 | `definition` | `siteId` — Group site | normal | on | Scope of the group. |
 | `definition` | `criteria` — Group criteria | high | on | Criteria moving re-scopes every policy the group drives. |
 
+One row above carries more than its level. **`general.remoteManagement.managed`** is also
+the seam of a workflow that is reserved and deliberately not built: a Mac that has been
+unmanaged long enough is one an org could delete from Jamf, because LoonInspect holds the
+record that it existed. The two states it must not be confused with, the tables a later
+builder would read, and the sentence it would eventually say are written down in
+[`jamf-observations.md`](jamf-observations.md) §8, *Managed → Unmanaged: the retirement
+workflow (reserved, not built)* (#184). Nothing in this document changes for it — the row
+stays a `high` field change, on by default.
+
 ### Entries
 
 | Entry kind | Identity | Added / removed | Within-entry fields | Why |
