@@ -391,8 +391,8 @@ The titles object is now coverage metadata, keyed on Jamf's `title_id` with `key
 a non-unique index (`vuln_library_titles`), and the read path does not consult it at all.
 
 > **The second measurement's arithmetic is historical since 2026-09-16.** [#386](https://github.com/LoonSecIO/LoonInspect/issues/386)
-> admitted the 182 EA-only titles the container was dropping, which is exactly the 5,223-row
-> gap that reading found, so the two enumerations of one catalog now agree. **R-D stands on
+> admitted the 182 EA-only titles the container was dropping, and those titles are what that
+> difference was made of, so the two enumerations of one catalog now agree. **R-D stands on
 > either half** — the first measurement is sufficient by itself, and the container still holds
 > builds no enumeration saw: an app Jamf publishes no title for at all, and every release cut
 > since the corpus was compiled.
