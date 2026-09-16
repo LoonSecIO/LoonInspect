@@ -655,6 +655,7 @@ async def test_a_departed_mac_notices_once_a_day_and_the_tail_closes_with_remove
     from app.core.wire import ENVELOPE
     from app.mdm.service import sync_connection
     from app.models.schema import Device
+    from app.observations.departure import DEPARTURE_TAIL_DAYS
 
     jamf.seed(1)
     (clone,) = jamf._extra
@@ -688,13 +689,13 @@ async def test_a_departed_mac_notices_once_a_day_and_the_tail_closes_with_remove
     (fourth,) = await _events(db, mark, "subject.departure")
     assert fourth.payload["state"] == "departed" and fourth.payload["noticeDay"] == 4
 
-    # Seven days up: one terminal, and nothing after it ever again.
+    # Seven days up, to the boundary `left_the_fleet` counts: one terminal, and nothing after it.
     mark = await _high_water(db)
-    await _age(db, gone, 8)
+    await _age(db, gone, DEPARTURE_TAIL_DAYS)
     for _ in range(2):
         assert (await sync_connection(db, connection)).ok
     (terminal,) = await _events(db, mark, "subject.departure")
-    assert terminal.payload["state"] == "removed" and terminal.payload["noticeDay"] == 7
+    assert terminal.payload["state"] == "removed" and terminal.payload["noticeDay"] == DEPARTURE_TAIL_DAYS
     assert "eventID" not in terminal.payload["deviceMeta"]
 
 
