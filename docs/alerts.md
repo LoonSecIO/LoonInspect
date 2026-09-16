@@ -45,7 +45,7 @@ directions, so a kind added to one without the other fails the suite.
 
 | Kind | Level | Carrier | Opens when | Closes when |
 | --- | --- | --- | --- | --- |
-| `new_app` | `high` | app | The app is present on the device and absent from that device's previous inventory. | The app is gone from the device. |
+| `new_app` | `high` | app | The app is present on the device and absent from that device's previous inventory. | The app is gone from the device — **or** the Mac left the fleet (§3b). |
 
 `level` is `app.changes.policy.LEVELS` — `high | normal | low` — reused, never a minted
 `severity` (#229, and the correction in
@@ -207,6 +207,32 @@ no role in `ROLE_PERMISSIONS` loses the pair; `tests/test_alerts_db.py` drives t
 over HTTP with API tokens scoped to one permission each, because no *role* can express a
 principal holding one and not the other.
 
+## 3b. The second close: the Mac left the fleet
+
+**Ruled and built 2026-09-16 (#476).** `process_sync` opens and closes a latch, and it only
+ever runs against a Mac a sweep returns. A Mac Jamf deleted is never swept again — so its latch
+would stay open for ever, and `alerts.open` would go on counting something that is not true of
+the fleet, which is the one sentence §1 says that key means. So the census pass that already
+runs at a sweep's close (`_reconcile_device_census`) closes them, at the **terminal exit** — the
+end of #183's seven-day tail, not the first night the Mac was missed — with the census run id.
+
+**Closed, never deleted, and nothing else is deleted either.** §6's rule holds; what differs is
+what *survives*. The app-gone close takes the `installed_apps` row with it, and this one takes
+nothing — the Mac's apps, spans and change history all stay (erasure is #180, v5). That is why
+the row carries a **reason**, a closed vocabulary beside `KINDS`
+(`app.alerts.service.CLOSE_REASONS`, migration `c3f8a1d7e964`):
+
+| Reason | What closed it |
+| --- | --- |
+| `app_gone` | The app is no longer on the device; its `installed_apps` row went with the close. |
+| `device_departed` | The Mac left the fleet at the end of its seven-day tail. Nothing was deleted. |
+
+Null while a latch is open, and null on rows closed before 2026-09-16 — *no reason was
+recorded*, deliberately not back-filled into a claim nobody made. `GET /api/alerts?open=false`
+carries it as `closedReason`, and the census line says how many closed and that nothing was
+deleted, because a row an operator was watching going quiet must never be something they infer
+([troubleshooting.md](troubleshooting.md) §16). `purge_closed_alerts` covers both closes.
+
 ## 4. Cost
 
 The latch runs once per device per pull, on the path written to move 40k devices in ten
@@ -249,9 +275,11 @@ feature's table exists, and none records after it either.
 | `alerts.open` | Alert rows with `closed_at` null at capture, on devices whose connection is active. |
 | `alerts.opened_24h` | Alert rows whose `opened_at` falls in the trailing 24h, on devices whose connection is active — **including rows that have since closed**. |
 
-Both count over the active-connection population every `devices.*` key counts over, and
-`GET /api/alerts` draws the same cut, so the tape and the surface can never disagree
-about how many things need attention. Definitions are frozen per key:
+Both count over the same population every `devices.*` key counts over — devices on active
+connections that are still in the fleet (#476) — and `GET /api/alerts` draws the
+active-connection half of that cut, so the tape and the surface can never disagree about how
+many things need attention. A departed Mac's latch is excluded by the key *and* closed in the
+table (§3b); neither half makes the other redundant. Definitions are frozen per key:
 [posture-snapshot.md](posture-snapshot.md).
 
 ## 8. The wire: named, not shipped

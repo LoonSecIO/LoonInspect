@@ -35,16 +35,29 @@ type PromptStrings = ChangesStrings["prompt"];
  *  rather than sending a tail that would be dropped without a word. */
 export const MAX_QUESTION_CHARS = 500;
 
+/** This browser's IANA zone ("America/Chicago"), or undefined where the runtime will not name one.
+ *  It rides with a question so the server resolves the start the question's own words ask for in
+ *  the operator's own day (#444), not the pod's; without it the server uses UTC. Read at the moment
+ *  of asking, never stored: a laptop that travelled is in its new zone. */
+export function browserZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 const blankToUndefined = <T extends string>(value: T | null | undefined): T | undefined =>
   value === null || value === undefined || value === "" ? undefined : value;
 
 /**
  * The prompt REPLACES the page's filters; it never merges into them. The Changes page
  * merges what it is handed (`nextParams`), so every key it could be carrying is named
- * here — the five the bar speaks, and the five it has no words for (a `since` window from
- * the Overview, a device from the device page) cleared explicitly. Otherwise "which
- * computers installed Wireshark?" asked from a device's own feed would answer for that
- * one device while the readback claimed the fleet.
+ * here — the five the bar speaks, the `since` the server read out of the question itself
+ * (#444), and the rest it has no words for (a device from the device page) cleared explicitly.
+ * Otherwise "which computers installed Wireshark?" asked from a device's own feed would answer
+ * for that one device while the readback claimed the fleet, and a question that asked for no
+ * window would keep the Overview's.
  */
 export function filtersFromPrompt(filters: PromptFilters): Partial<ChangeFilters> {
   return {
@@ -60,7 +73,7 @@ export function filtersFromPrompt(filters: PromptFilters): Partial<ChangeFilters
     department: blankToUndefined(filters.department),
     managed: blankToUndefined(filters.managed),
     minLevel: undefined,
-    since: undefined,
+    since: blankToUndefined(filters.since),
     // The six hidden keys the bar cannot set, cleared like the rest: a question asked from a
     // feed that a link had narrowed by trigger or by span must answer for the fleet.
     trigger: undefined,
@@ -133,6 +146,7 @@ export function readback(
     department?: string | null;
     managed?: string | null;
     departmentName?: string | null;
+    since?: string | null;
   },
   strings: ChangesStrings,
   mode: "showing" | "proposed" = "showing"
@@ -152,6 +166,9 @@ export function readback(
     bits.push(filters.departmentName ? words.readbackDepartmentNamed(filters.departmentName) : words.readbackDepartment(filters.department));
   }
   if (filters.managed) bits.push(filters.managed === "false" ? words.readbackUnmanaged : words.readbackManaged);
+  // Last, in the table's own format: the start the question's words asked for (#444). No control
+  // on the page shows it; the chip repeats it beside the rows.
+  if (filters.since) bits.push(words.readbackSince(at(filters.since)));
   const [lead, none] =
     mode === "proposed" ? [words.proposalReadbackLead, words.proposalReadbackNone] : [words.readbackLead, words.readbackNone];
   return bits.length > 0 ? `${lead} ${bits.join(", ")}` : none;
@@ -315,7 +332,8 @@ const FILTER_KEYS = [
   "osVersion",
   "department",
   "managed",
-  "departmentName"
+  "departmentName",
+  "since"
 ] as const satisfies readonly (keyof PromptFilters)[];
 
 function isFilters(value: unknown): value is PromptFilters {
