@@ -14,7 +14,6 @@ import {
   readReply,
   replyDisposition,
   stillShowing,
-  viewerZone,
   type AskSettled,
   type PageAt
 } from "@/features/changes/prompt";
@@ -183,7 +182,7 @@ function PromptSession({ providers, provider, onProvider, filters, onApply, onUs
     // Settled before anything reads it: a rejection is the request's own failure, and a
     // body is checked before use, so a 200 that is not the answer is never misread as a
     // question that did not reach the server (`readReply`).
-    const settled: AskSettled = await askPrompt({ question: text, provider, timeZone: viewerZone() }, controller.signal).then(
+    const settled: AskSettled = await askPrompt({ question: text, provider }, controller.signal).then(
       (body: unknown): AskSettled => ({ ok: true, body }),
       (error: unknown): AskSettled => ({ ok: false, error })
     );

@@ -101,6 +101,19 @@ CHANGE_PROBES = [
     ("operating system updates on KY4QVD7430", "KY4QVD7430", None, None, "operating_system", ANY, False),
 ]
 
+# An order, not a range (#443): the newest or the oldest, which the feed's order and the
+# answer box's time answer. The model's "Cannot express 'when' — filters match names, not
+# timestamps" used to stand over an answer whose first row was the answer (Kyle, 2026-09-15),
+# because guard rule 5 counted "last" as a date word.
+TIME_ORDER = [
+    ("When was the last time someone installed wireshark", None, "wireshark", None, "applications", "added", False),
+    ("When was Wireshark last installed?", None, "wireshark", None, "applications", "added", False),
+    ("most recent Wireshark install", None, "wireshark", None, "applications", ANY, False),
+    ("Who installed Wireshark most recently?", None, "wireshark", None, "applications", ANY, False),
+    ("when did anyone add zoom", None, "zoom", None, "applications", "added", False),
+    ("latest changes on KY4QVD7430", "KY4QVD7430", None, None, ANY, ANY, False),
+]
+
 _LATENCIES: list[float] = []
 
 
@@ -116,7 +129,7 @@ def _request(question: str) -> CompletionRequest:
     )
 
 
-@pytest.mark.parametrize("case", TUNED + HELD_OUT + DEMO + CHANGE_PROBES, ids=lambda c: c[0])
+@pytest.mark.parametrize("case", TUNED + HELD_OUT + DEMO + CHANGE_PROBES + TIME_ORDER, ids=lambda c: c[0])
 async def test_question_lands_on_the_expected_filters(case):
     question, q, artifact, level, section, change, unsupported = case
     started = time.perf_counter()

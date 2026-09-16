@@ -336,9 +336,9 @@ export function ChangesPage() {
         )}
       </form>
 
-      {/* A window the form has no control for — the Overview's link (#107), or the Prompt
-          bar's answer to a question that named a time (#443) — shows the same way, in the
-          same format as the table's Observed column. */}
+      {/* The window the Overview's feed links here with (#107). The form has no control for
+          it, so it shows in the table's own format as a chip the reader can remove: before
+          this, a link's window narrowed the table with nothing on screen to say so (#443). */}
       {filters.since && (
         <button
           type="button"

@@ -43,10 +43,6 @@ class PromptIn(_Base):
     question: str = Field(json_schema_extra={"minLength": 1, "maxLength": QUESTION_MAX_LENGTH})
     # None asks the first saved config, in the Settings > AI cards' order.
     provider: Provider | None = None
-    # The viewer's IANA zone, for "today" and "since Monday": those are the operator's days,
-    # and a server in UTC would start them hours off. Anything unknown is read as UTC
-    # (app.ai.changes_prompt.zone_or_utc), never refused; never logged or returned.
-    time_zone: str | None = None
 
 
 class PromptFiltersOut(_Base):
@@ -57,11 +53,6 @@ class PromptFiltersOut(_Base):
     level: Literal["low", "normal", "high"] | None
     section: str | None
     change: Literal["added", "removed", "updated", "changed"] | None
-    # The page's `since` key, resolved here from the closed vocabulary the model picks from
-    # (app.ai.changes_prompt.SINCE_VALUES) against this server's clock and the viewer's zone:
-    # the model never computes a date (#443). The page filters `observed_at >= since` and has
-    # no end, so a two-ended range stays unsupported.
-    since: datetime | None = None
 
 
 class PromptDeviceOut(_Base):

@@ -1,7 +1,7 @@
 """The Changes page's Prompt bar, the model's half: a question in, the page's own filter
 state out. Sentence-to-filter, the first slot of ``docs/ai-threat-model.md`` §7.
 
-The model never sees device rows. It only fills in the six controls the page already
+The model never sees device rows. It only fills in the five controls the page already
 has, chosen from closed vocabularies, and Postgres does the filtering. That keeps the
 cost of a question fixed no matter how large the fleet is, and makes it structurally
 impossible for the model to invent a row or reach the database. (It can put a serial it
@@ -49,9 +49,7 @@ import re
 import unicodedata
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta, tzinfo
 from typing import Any
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 FEATURE = "changes_prompt"
 # A typed search string is fleet data (``app.core.ai``), so the gate is told it leaves and
@@ -137,12 +135,10 @@ _INVISIBLE = (
 )
 _NAME_MAX_CHARS = 64
 _UNSUPPORTED_MAX_CHARS = 300
-# An IANA zone name ("America/North_Dakota/New_Salem" is 31); longer is not one.
-_ZONE_MAX_CHARS = 64
 
 # What the instructions below ask for. Anything else in a reply is ignored and said so,
 # and a reply carrying none of these is not an answer at all.
-_REPLY_KEYS = ("search", "filter", "level", "section", "change", "since", "unsupported")
+_REPLY_KEYS = ("search", "filter", "level", "section", "change", "unsupported")
 # The model's refusal: `{"invalid": true}` for text that is not a question about device
 # changes. Read before the keys above, and never counted as a key the page does not use.
 _REFUSAL_KEY = "invalid"
@@ -155,9 +151,6 @@ NOT_ABOUT_CHANGES = "not_about_changes"
 # SPA's copy), so a repair reads in the words the operator sees above the table.
 _SEARCH = "Search"
 _ARTIFACT = "Filter to one thing"
-# Not a control on the page: a start arrives from a link or from here, and the page shows it
-# as a chip beside the filters so a filter it applies is never one it hides.
-_SINCE = "Since"
 
 # The instructions, static and versioned here (threat-model P2). Byte for byte the text
 # measured against Apple FM through `fm serve` on 2026-09-14. The first version scored 29
@@ -188,10 +181,9 @@ Fields:
   level     one of: any, low, normal, high
   section   one of: General, Hardware, Operating system, User and location, Purchasing, Security, Disk encryption, Smart group definition, Applications, Extension attributes, Smart group memberships, Configuration profiles, Local accounts, Certificates, Pending updates — or "any"
   change    one of: any, added, removed, updated, changed. added = installed or new; removed = uninstalled or deleted; updated = an app, profile or account that was already there changed; changed = a setting's value changed. The word "changes" alone means any.
-  since     when to start from, or null. One of: 1h, 6h, 12h, 24h, 48h, 7d, 14d, 30d, 90d, today, monday, tuesday, wednesday, thursday, friday, saturday, sunday. "in the last hour" is 1h, "in the last day" or "since yesterday" is 24h, "this week" or "past week" is 7d, "this month" or "past month" is 30d, "since Monday" is monday. Never a date of your own. null if the question names no time to start from, and null for "the last time", "the latest" or "the first time": those ask for an order, and every row already shows when it was observed, newest first.
   unsupported  null, OR a short sentence naming what these controls cannot express.
 
-The controls CANNOT express: OR between two things, negation ("not", "without", "missing"), a time range with an end ("yesterday", "before September", "between Monday and Friday"), matching a version or other value, or comparing two rows. If the question needs any of those, set unsupported and still fill in the closest values you can.
+The controls CANNOT express: OR between two things, negation ("not", "without", "missing"), date or time ranges, matching a version or other value, or comparing two rows. If the question needs any of those, set unsupported and still fill in the closest values you can.
 
 Everything else is supported, so unsupported is null. Every result row shows the device name and serial number, so asking which devices, which serial numbers, or who did something is supported. filter is null unless the question names one specific app, account, group, profile, or certificate; never put a section name or a generic word such as "application" or "profile" in filter. "Severity" means level.
 
@@ -199,21 +191,21 @@ Some text is not a question about device changes, and then you reply exactly {"i
 
 Examples:
 Q: find devices that installed wireshark
-{"search":null,"filter":"Wireshark","level":"any","section":"Applications","change":"added","since":null,"unsupported":null}
+{"search":null,"filter":"Wireshark","level":"any","section":"Applications","change":"added","unsupported":null}
 Q: anything high severity on KY4QVD7430
-{"search":"KY4QVD7430","filter":null,"level":"high","section":"any","change":"any","since":null,"unsupported":null}
+{"search":"KY4QVD7430","filter":null,"level":"high","section":"any","change":"any","unsupported":null}
 Q: machines that moved to chrome 153
-{"search":null,"filter":"Google Chrome","level":"any","section":"Applications","change":"updated","since":null,"unsupported":"Cannot match a specific version — filters match names, not values."}
+{"search":null,"filter":"Google Chrome","level":"any","section":"Applications","change":"updated","unsupported":"Cannot match a specific version — filters match names, not values."}
 Q: devices with wireshark but not docker
-{"search":null,"filter":"Wireshark","level":"any","section":"Applications","change":"any","since":null,"unsupported":"Cannot express 'but not' — run the second filter separately."}
+{"search":null,"filter":"Wireshark","level":"any","section":"Applications","change":"any","unsupported":"Cannot express 'but not' — run the second filter separately."}
 Q: which serial numbers have slack
-{"search":null,"filter":"Slack","level":"any","section":"Applications","change":"any","since":null,"unsupported":null}
+{"search":null,"filter":"Slack","level":"any","section":"Applications","change":"any","unsupported":null}
 Q: hardware changes
-{"search":null,"filter":null,"level":"any","section":"Hardware","change":"any","since":null,"unsupported":null}
+{"search":null,"filter":null,"level":"any","section":"Hardware","change":"any","unsupported":null}
 Q: low level changes on C02XL0ABJG5H
-{"search":"C02XL0ABJG5H","filter":null,"level":"low","section":"any","change":"any","since":null,"unsupported":null}
+{"search":"C02XL0ABJG5H","filter":null,"level":"low","section":"any","change":"any","unsupported":null}
 Q: apps uninstalled from C02XL0ABJG5H
-{"search":"C02XL0ABJG5H","filter":null,"level":"any","section":"Applications","change":"removed","since":null,"unsupported":null}
+{"search":"C02XL0ABJG5H","filter":null,"level":"any","section":"Applications","change":"removed","unsupported":null}
 """  # noqa: E501
 
 
@@ -285,7 +277,7 @@ class Interpretation:
 
 
 def _no_filters() -> Filters:
-    return {"q": None, "artifact": None, "level": None, "section": None, "change": None, "since": None}
+    return {"q": None, "artifact": None, "level": None, "section": None, "change": None}
 
 
 # --- the way in ------------------------------------------------------------------------
@@ -505,69 +497,6 @@ def _change(value: Any, repairs: list[str]) -> str | None:
     return None if change == "any" else change
 
 
-# --- Since -----------------------------------------------------------------------------
-# The page filters `observed_at >= since` and has no end (app.api.changes), so the one range
-# the controls express is a start. The model picks from this closed list and never computes a
-# date: it does not know today's, and a date it invented would narrow an answer silently.
-# Everything two-ended — "yesterday", "before September", "between Monday and Friday" —
-# stays unsupported and keeps its banner (ruling R4 on #443).
-_SINCE_HOURS = {"1h": 1, "6h": 6, "12h": 12, "24h": 24, "48h": 48}
-_SINCE_DAYS = {"7d": 7, "14d": 14, "30d": 30, "90d": 90}
-# Monday first, as `datetime.weekday()` numbers them.
-_WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
-SINCE_VALUES: tuple[str, ...] = (*_SINCE_HOURS, *_SINCE_DAYS, "today", *_WEEKDAYS)
-
-
-def zone_or_utc(name: str | None) -> tzinfo:
-    """The viewer's IANA zone, or UTC. "Today" and "since Monday" are the operator's days,
-    not the server's, and the two are the same zone only by luck. An unknown or missing name
-    is UTC rather than a refusal: the question is still answerable, an hour or so off."""
-    if not name or len(name) > _ZONE_MAX_CHARS:
-        return UTC
-    try:
-        return ZoneInfo(name)
-    except (ZoneInfoNotFoundError, ValueError):
-        return UTC
-
-
-def resolve_since(value: str | None, *, now: datetime, zone: tzinfo) -> datetime | None:
-    """A value from ``SINCE_VALUES`` as the instant the page filters from. Durations count
-    back from now; "today" and a weekday start at midnight in the viewer's zone, and a
-    weekday means the most recent one, today included."""
-    if not value:
-        return None
-    if value in _SINCE_HOURS:
-        return now - timedelta(hours=_SINCE_HOURS[value])
-    if value in _SINCE_DAYS:
-        return now - timedelta(days=_SINCE_DAYS[value])
-    local = now.astimezone(zone)
-    midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
-    if value == "today":
-        return midnight.astimezone(UTC)
-    if value in _WEEKDAYS:
-        # Wall-clock arithmetic, then converted: a day that crossed a DST change still
-        # starts at the midnight the operator saw.
-        return (midnight - timedelta(days=(local.weekday() - _WEEKDAYS.index(value)) % 7)).astimezone(UTC)
-    return None
-
-
-def _since(value: Any, repairs: list[str]) -> str | None:
-    """A start the controls can set, or none. An unknown value is dropped, and that widens:
-    the answer then covers every date instead of the one the question named."""
-    word = str(value or "any").strip().lower().replace(" ", "")
-    if word in _ANY:
-        return None
-    if word not in SINCE_VALUES:
-        repairs.append(
-            _widens(
-                f"Dropped the model's value for {_SINCE}: it is not one of the times these controls can start from.",
-                _SINCE,
-            )
-        )
-        return None
-    return word
-
-
 def _unsupported(value: Any, repairs: list[str]) -> str | None:
     if value is None:
         return None
@@ -589,7 +518,6 @@ def coerce(obj: Mapping[str, Any]) -> tuple[Filters, str | None, list[str]]:
         "level": _level(obj.get("level"), repairs),
         "section": _section(obj.get("section"), repairs),
         "change": _change(obj.get("change"), repairs),
-        "since": _since(obj.get("since"), repairs),
     }
     return filters, _unsupported(obj.get("unsupported"), repairs), repairs
 
@@ -684,7 +612,7 @@ _ENTRY_CHANGES = frozenset({"added", "removed", "updated"})
 def guard(
     question: str, filters: Mapping[str, str | None], unsupported: str | None, repairs: Iterable[str]
 ) -> tuple[Filters, str | None, list[str]]:
-    """The seven rules, on copies, in the order they run:
+    """The six rules, on copies, in the order they run:
 
     1. a Filter-to-one-thing value that names a section or a kind of thing ("Disk
        encryption", "Application") is dropped: it would match no one thing;
@@ -695,22 +623,20 @@ def guard(
        dropped: it is the model's, not the operator's. Asked "and the other mac?", the model
        searched for KY4QVD7430, a serial from its own examples;
     4. with Search empty and exactly one serial-shaped word in the question, Search is it;
-    5. a Since the question gives no date word for is dropped: it is the model's, and an
-       answer that quietly started a week ago can show nothing at all;
-    6. ``unsupported`` stands only if the question has an or / not / date / value /
+    5. ``unsupported`` stands only if the question has an or / not / date / value /
        comparison word — and, once Since is set, only a word of the other kinds, because the
        date words are then expressed. The first prompt claimed "Cannot express 'but not'" for
        "which computers installed wireshark", a banner that would have been noise on the
        question the page is demonstrated with; "last", "recent" and "latest" ask for an order,
        not a range, so they are no longer date words (#443);
-    7. a change a section never records is any: a list section's entries are added,
+    6. a change a section never records is any: a list section's entries are added,
        removed or updated, and every other section's fields are only ever changed. With
        no section, the change stands as the model gave it.
 
     Rule 3 widens and says so (``Repair``): what it drops is a device the question never
     named. The rest are taken as fixing the answer or narrowing it: rule 4 narrows, rule 5
-    restores the question as asked, rule 6 moves no filter, the pair rule 7 undoes matches no
-    row at all, and what rule 2 drops names no device. Rule 1 can widen without saying so, and runs anyway: a thing named for
+    moves no filter, the pair rule 6 undoes matches no row at all, and what rule 2 drops
+    names no device. Rule 1 can widen without saying so, and runs anyway: a thing named for
     its section (a profile called "Security") loses its name, and the answer shows the
     whole section. Held back, every answer in which the model copied a section name into
     the filter, as the first prompt did, would be a proposal.
@@ -743,14 +669,6 @@ def guard(
             ]
             repairs.append(_fixes(f"Filled {_SEARCH} with the one serial-number-shaped word in the question."))
             filters["q"] = serial
-    since = filters.get("since")
-    if since and not _RANGE_MARKERS.search(question):
-        # The question names no time, so a start is the model's own — as the serial rule 3
-        # drops was. Dropping it restores the question as asked, so it is a fix, not a
-        # widening: asked "when was the last time someone installed wireshark", an answer
-        # that quietly started a week ago could show nothing at all.
-        repairs.append(_fixes(f"Dropped the model's value for {_SINCE}: the question names no time to start from."))
-        filters["since"] = None
     if unsupported:
         # With a start set, the question's date words are expressed after all, so only a word
         # of the other kind is still grounds for the caveat.

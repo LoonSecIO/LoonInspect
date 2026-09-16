@@ -134,9 +134,6 @@ export interface PromptStatus {
 export interface PromptRequest {
   question: string;
   provider?: Provider | null;
-  /** The viewer's IANA zone, so "today" and "since Monday" start at their midnight and not
-   *  the server's (#443). The server reads anything it does not know as UTC. */
-  timeZone?: string;
 }
 
 /** The page's own filter vocabulary — the URL keys of the Changes page. Null means "any". */
@@ -146,9 +143,6 @@ export interface PromptFilters {
   level: ChangeLevel | null;
   section: string | null;
   change: ChangeKind | null;
-  /** The page's `since` key, an instant the server resolved from the start the model named
-   *  (#443). The page has no control for it, so an applied one shows as a chip. */
-  since: string | null;
 }
 
 /** One computer the filters match, counted by Postgres — never by the model. */

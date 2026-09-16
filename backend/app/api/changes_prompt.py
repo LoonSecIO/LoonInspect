@@ -11,9 +11,7 @@ The order is the test box's (app.api.ai), and is not to be reshuffled:
    naming the destination and ``query_text``, committed before the first byte);
 4. the static instructions and the question go to the endpoint — nothing else, never a
    device row — and the reply is forced into the page's vocabulary (``interpret``);
-5. a start the model named is resolved (``resolve_since``) against this server's clock
-   and the viewer's zone, because the model never computes a date;
-6. the summary is counted with the page's own WHERE clause (``change_conditions``), so
+5. the summary is counted with the page's own WHERE clause (``change_conditions``), so
    the numbers the response box states are the numbers the page then shows.
 
 An answer the page may run is ``applied``. One that a repair widened (a name dropped, an
@@ -35,7 +33,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import UTC, datetime
+from datetime import datetime
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -52,9 +50,7 @@ from app.ai.changes_prompt import (
     NOT_ABOUT_CHANGES,
     SYSTEM_INSTRUCTION,
     interpret,
-    resolve_since,
     sanitize_question,
-    zone_or_utc,
 )
 from app.ai.providers import HostReach, Provider
 from app.api.ai import CARD_LABELS, judged_endpoint
@@ -213,19 +209,15 @@ async def _when(db: AsyncSession, conditions: list, oldest: datetime) -> PromptW
     )
 
 
-async def _summary(db: AsyncSession, filters: dict[str, str | None], since: datetime | None) -> PromptSummaryOut:
+async def _summary(db: AsyncSession, filters: dict[str, str | None]) -> PromptSummaryOut:
     """What the page will show for ``filters``: the rows, the computers among them, newest
-    first, and when they were observed. Three scans, whatever the fleet's size.
-
-    ``since`` is already resolved to an instant, because the page's key is one and the count
-    has to be of the same rows the page will then list."""
+    first, and when they were observed. Three scans, whatever the fleet's size."""
     conditions = change_conditions(
         q=filters["q"],
         artifact=filters["artifact"],
         level=filters["level"],
         section=filters["section"],
         change=filters["change"],
-        since=since,
     )
     is_computer = DeviceChange.subject_kind == "computer"
 
@@ -392,14 +384,11 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
     # A widened answer searches for more than the model's did, so a person applies it: the
     # page gets the same filters and summary as an applied one, and runs nothing until then.
     outcome = "proposed" if interpretation.widened else "applied"
-    # The model named a start from a closed list; this server's clock and the viewer's zone
-    # make it an instant, and the page's own `since` key carries it (#443).
-    since = resolve_since(interpretation.filters["since"], now=datetime.now(UTC), zone=zone_or_utc(payload.time_zone))
-    summary = await _summary(db, interpretation.filters, since)
+    summary = await _summary(db, interpretation.filters)
     _audited(outcome, provider, destination, latency_ms, repairs=len(interpretation.repairs))
     return PromptOut(
         outcome=outcome,
-        filters=PromptFiltersOut(**{**interpretation.filters, "since": since}),
+        filters=PromptFiltersOut(**interpretation.filters),
         unsupported=interpretation.unsupported,
         # Plain strings on the wire: each repair is a `Repair`, a str carrying its direction.
         repairs=[str(repair) for repair in interpretation.repairs],
