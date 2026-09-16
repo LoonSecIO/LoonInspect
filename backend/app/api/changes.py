@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import ColumnElement, String, func, select, text
+from sqlalchemy import ColumnElement, String, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.changes.policy import CHANGE_POLICY_VERSION, LEVELS, EffectivePolicy, Overrides, levels_at_least
@@ -11,6 +12,7 @@ from app.core.audit import AuditAction, audit
 from app.core.auth import Principal, current_principal, require
 from app.core.database import get_db
 from app.core.permissions import Permission
+from app.core.runs import TRIGGER_MANUAL, TRIGGER_SWEEP, TRIGGER_WEBHOOK
 from app.models.schema import ChangePolicy, DeviceChange, ObservationEntry, ObservationSpan
 from app.schemas.changes import (
     ChangePolicyOut,
@@ -48,6 +50,7 @@ def _to_out(row: DeviceChange) -> DeviceChangeOut:
         new_value=row.new_value,
         level=row.level,
         details=row.details,
+        device_meta=row.device_meta,
         policy_version=row.policy_version,
     )
 
@@ -60,6 +63,33 @@ _TYPOGRAPHIC_APOSTROPHE = "\u2019"
 # What `device_changes.change` holds: an entry in a list section is added, removed or
 # updated (app.changes.diff); a field is changed (app.changes.derive).
 CHANGE_KINDS: tuple[str, ...] = ("added", "removed", "updated", "changed")
+
+# What started the observation a change was found in. The ledger's three words, one
+# vocabulary (app.core.runs) — refused like `change` rather than answered with an empty feed.
+TRIGGERS: tuple[str, ...] = (TRIGGER_SWEEP, TRIGGER_MANUAL, TRIGGER_WEBHOOK)
+
+# The stamped dimensions this feed filters on, and how each one matches (#447). The stamp holds
+# more than this — `modelIdentifier`, `appleSilicon`, `osBuild`, `supervised`, `enrolledAt`,
+# `buildingId`, `position` (app.changes.derive.DEVICE_META_KEYS) — because what is worth
+# *keeping* on a row and what is worth a query parameter are different questions, and adding one
+# of those later is a parameter, not a migration.
+#
+# `contains` is a needle anywhere in the value, for a model an operator half-remembers
+# ("Air" finds "MacBook Air (M3, 2024)"). `starts` is a version prefix, so `osVersion=26`
+# covers 26.6.2 and `version=153` covers Chrome's 153.0.7049.84 — the shape of the question
+# nobody asks with a full build string. `is` is exact, for an id from Jamf's own catalog and for
+# a boolean.
+_DIMENSION_MATCHES: dict[str, tuple[str, str]] = {
+    "model": ("model", "contains"),
+    "os_version": ("osVersion", "starts"),
+    "file_vault": ("fileVault", "is"),
+    "site": ("siteId", "is"),
+    "department": ("departmentId", "is"),
+    "managed": ("managed", "is"),
+    # Any of the three the ledger holds for the assigned person, because an operator asking
+    # for "the VP's Mac" has one of them to hand, not all three (#446 will tokenize them).
+    "user": (("username", "realName", "email"), "contains"),
+}
 
 
 def change_conditions(
@@ -74,6 +104,10 @@ def change_conditions(
     q: str | None = None,
     artifact: str | None = None,
     since: datetime | None = None,
+    trigger: str | None = None,
+    span_id: str | None = None,
+    version: str | None = None,
+    **dimensions: str | None,
 ) -> list[ColumnElement[bool]]:
     """The feed's WHERE clause, ANDed, for the filters `list_changes` documents. Raises
     the feed's own 422s. Shared with the Changes Prompt bar (app.api.changes_prompt), so
@@ -113,6 +147,37 @@ def change_conditions(
         conditions.append(DeviceChange.change == change)
     if since is not None:
         conditions.append(DeviceChange.observed_at >= since)
+    if trigger:
+        if trigger not in TRIGGERS:
+            raise HTTPException(status_code=422, detail=f"trigger must be one of {', '.join(TRIGGERS)}")
+        conditions.append(DeviceChange.trigger == trigger)
+    if span_id:
+        # Every change found in one observation of one subject — the local `deviceMeta.eventID`:
+        # "what else moved at the same time", which the feed could only answer by eye.
+        try:
+            conditions.append(DeviceChange.span_id == uuid.UUID(span_id))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="spanId must be a UUID") from exc
+    if version:
+        # The value a change moved TO, which is the one the question names ("who moved to
+        # Chrome 153"); the value it moved from is a different query surface, as `old_value`
+        # and `new_value` still are. A prefix, so a marketing version finds a build string.
+        conditions.append(DeviceChange.new_value["version"].astext.ilike(f"{version.strip()}%"))
+    for name, value in dimensions.items():
+        if not value:
+            continue
+        keys, how = _DIMENSION_MATCHES[name]
+        keys = (keys,) if isinstance(keys, str) else keys
+        needle = value.strip()
+        matches = [
+            DeviceChange.device_meta[key].astext.ilike(f"%{needle}%")
+            if how == "contains"
+            else DeviceChange.device_meta[key].astext.ilike(f"{needle}%")
+            if how == "starts"
+            else DeviceChange.device_meta[key].astext == needle
+            for key in keys
+        ]
+        conditions.append(or_(*matches) if len(matches) > 1 else matches[0])
     if q:
         needle = f"%{q.strip()}%"
         label = func.replace(DeviceChange.subject_label, _TYPOGRAPHIC_APOSTROPHE, "'", type_=String)
@@ -120,6 +185,9 @@ def change_conditions(
             label.ilike(needle.replace(_TYPOGRAPHIC_APOSTROPHE, "'"))
             | DeviceChange.serial_number.ilike(needle)
             | DeviceChange.subject_id.ilike(needle)
+            # The fourth name a Mac has, and the one a link from another system carries: the
+            # UDID is on every row and was reachable from nowhere (#447).
+            | DeviceChange.udid.ilike(needle)
         )
     if artifact:
         # `entry_identity` holds only the kind's identity fields (app: name/bundleId/path,
@@ -165,6 +233,16 @@ async def list_changes(
     q: str | None = None,
     artifact: str | None = None,
     since: datetime | None = None,
+    trigger: str | None = None,
+    span_id: str | None = Query(default=None, alias="spanId"),
+    version: str | None = None,
+    model: str | None = None,
+    os_version: str | None = Query(default=None, alias="osVersion"),
+    file_vault: str | None = Query(default=None, alias="fileVault"),
+    site: str | None = None,
+    department: str | None = None,
+    managed: str | None = None,
+    user: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200, alias="pageSize"),
     db: AsyncSession = Depends(get_db),
@@ -183,10 +261,29 @@ async def list_changes(
     OR-ed needle can only answer as "either".
 
     Not searchable here, deliberately: `path` (an `artifact=/Applications` that matches
-    the whole fleet is a worse answer than none), and old/new values — searching the
-    values a change moved between is a different query surface, not a filter. A
-    certificate is identified only by its SHA-1 fingerprint and carries no label, so it
-    is reachable by `section=certificates`, not by name.
+    the whole fleet is a worse answer than none), and old values — searching the value a
+    change moved *from* is a different query surface, not a filter. A certificate is
+    identified only by its SHA-1 fingerprint and carries no label, so it is reachable by
+    `section=certificates`, not by name.
+
+    **What is filterable is wider than what the table shows** (#447). Three keys come off the
+    row itself — `trigger`, the observation the change was found in (`spanId`), and the version
+    it moved to (`version`) — and seven read the dimensions stamped on the row when it was
+    derived: `model`, `osVersion`, `fileVault`, `site`, `department`, `managed`, `user`. They are
+    the Mac as *that observation* saw it, not as it is today, which is the whole reason they are
+    stamped rather than joined (app.changes.derive.device_dimensions).
+
+    Two bounds a caller has to know, because a filter that silently drops rows is the failure
+    this feed exists to avoid:
+
+    * a row derived before the stamp existed carries none, so it matches no dimension filter.
+      The page says so beneath an empty table rather than letting an older change read as "not
+      a MacBook Air";
+    * a section outside the aperture of the observation stamps nothing, so a webhook's narrow
+      read can leave a row with a model and no department.
+
+    The page has controls for none of the ten. They arrive from a link, from a click on a row,
+    or from the Prompt bar, and every one of them shows as a chip while it is applied.
     """
     conditions = change_conditions(
         connection_id=connection_id,
@@ -199,6 +296,16 @@ async def list_changes(
         q=q,
         artifact=artifact,
         since=since,
+        trigger=trigger,
+        span_id=span_id,
+        version=version,
+        model=model,
+        os_version=os_version,
+        file_vault=file_vault,
+        site=site,
+        department=department,
+        managed=managed,
+        user=user,
     )
 
     total = (await db.execute(select(func.count()).select_from(DeviceChange).where(*conditions))).scalar_one()

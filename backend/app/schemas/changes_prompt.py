@@ -53,6 +53,13 @@ class PromptFiltersOut(_Base):
     level: Literal["low", "normal", "high"] | None
     section: str | None
     change: Literal["added", "removed", "updated", "changed"] | None
+    # Dimensions stamped on the row, which the model never names: a repair moved a Search value
+    # into one of them when the fleet had no device by that name but did have this (#447). The
+    # page has no control for any of them, so an applied one shows as a chip.
+    model: str | None = None
+    os_version: str | None = None
+    department: str | None = None
+    managed: str | None = None
 
 
 class PromptDeviceOut(_Base):

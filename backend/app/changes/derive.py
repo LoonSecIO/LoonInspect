@@ -18,6 +18,7 @@ Two derived judgements live here because they need more than one section:
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -66,6 +67,63 @@ _GENERAL_SECTION = "general"
 # colliding one.
 _ID_SPACES: dict[str, str] = {SUBJECT_COMPUTER: COMPUTER_PLATFORM}
 
+# The Mac's own dimensions, stamped on every change row of one boundary so the feed can be
+# filtered by them without a join and without today's values (#447, ruling H1). The wire's
+# `deviceMeta` block (`_change_device_meta`) is the same move made for the same reason — write
+# the device onto the event, so a search needs no join — and the two carry different halves of
+# it: that block is correlation (jobID, eventID, shortDate, and the identity keys #308 left it
+# as the only home for), this stamp is attributes. Neither reads the `Device` row: in
+# `ingest_computer` the derivation runs before `process_sync` updates it (#243), and a row that
+# says "MacBook Air" must mean what the Mac was when the change was observed.
+#
+# Sixteen keys of eighteen, the two held open as #189 held its thirteenth, so the next one costs
+# no migration. Spelled in this product's camelCase, not Jamf's section paths.
+DEVICE_META_KEYS: tuple[str, ...] = (
+    "model",
+    "modelIdentifier",
+    "appleSilicon",
+    "osVersion",
+    "osBuild",
+    "fileVault",
+    "siteId",
+    "buildingId",
+    "departmentId",
+    "managed",
+    "supervised",
+    "enrolledAt",
+    "username",
+    "realName",
+    "email",
+    "position",
+)
+DEVICE_META_MAX_KEYS = 18
+# (stamp key, contract section, path in that section's canonical body). The paths are the
+# policy's own field names (app.changes.policy), so a section whose spelling moves fails the
+# test that reads both rather than stamping nulls for ever.
+_DEVICE_META_SOURCES: tuple[tuple[str, str, str], ...] = (
+    ("model", "hardware", "model"),
+    ("modelIdentifier", "hardware", "modelIdentifier"),
+    ("appleSilicon", "hardware", "appleSilicon"),
+    ("osVersion", "operating_system", "version"),
+    ("osBuild", "operating_system", "build"),
+    ("fileVault", "operating_system", "fileVault2Status"),
+    # Ids, not names: Jamf keeps the names in catalogs of its own and a rename is not a change
+    # to any Mac (docs/jamf-observations.md §2.2). `jamf_org_units` turns them into names when
+    # a page or a filter needs one.
+    ("siteId", "general", "site.id"),
+    ("buildingId", "user_and_location", "buildingId"),
+    ("departmentId", "user_and_location", "departmentId"),
+    ("managed", "general", "remoteManagement.managed"),
+    ("supervised", "general", "supervised"),
+    ("enrolledAt", "general", "lastEnrolledDate"),
+    # The assigned person, in for now and to be tokenized (#446, Kyle 2026-09-15): a filter
+    # value travels in a URL, so this is the surface that issue exists for.
+    ("username", "user_and_location", "username"),
+    ("realName", "user_and_location", "realname"),
+    ("email", "user_and_location", "email"),
+    ("position", "user_and_location", "position"),
+)
+
 
 async def load_policy(db: AsyncSession) -> EffectivePolicy:
     row = (await db.execute(select(ChangePolicy))).scalars().first()
@@ -90,6 +148,43 @@ async def _load_section(db: AsyncSession, digest: str | None) -> tuple[dict | No
 
 def _entries_of(content: SectionContent) -> list[Entry]:
     return [Entry(digest=e.digest, body=e.body, label=e.label) for e in content.entries]
+
+
+def _at(body: object, path: str) -> object:
+    """A dotted path through a section's canonical body, as the policy names its fields
+    (`remoteManagement.managed`, `site.id`)."""
+    value = body
+    for step in path.split("."):
+        if not isinstance(value, Mapping):
+            return None
+        value = value.get(step)
+    return value
+
+
+def device_dimensions(observation: Observation) -> dict[str, object] | None:
+    """`DEVICE_META_KEYS` read out of this observation, for `device_changes.device_meta`.
+
+    Null and empty values are dropped rather than stored, the rule the wire's block already
+    lives under: Jamf sends "" for an unassigned user, and a stored "" would match a filter
+    for the empty string and count as a value on a page. A section outside this aperture is
+    absence of observation, not absence of the fact (#98), so its keys drop together — which
+    is also why a webhook's narrow read stamps what it saw and nothing more.
+
+    None for a subject that is not a device: a smart group has no model and no department, and
+    an invented one is worse than an absent one.
+    """
+    if observation.subject_kind != SUBJECT_COMPUTER:
+        return None
+    stamp: dict[str, object] = {}
+    for key, section, path in _DEVICE_META_SOURCES:
+        content = observation.sections.get(section)
+        if content is None:
+            continue
+        value = _at(content.body, path)
+        if value is None or value == "":
+            continue
+        stamp[key] = value
+    return stamp or None
 
 
 async def derive_and_record(
@@ -138,6 +233,10 @@ async def derive_and_record(
             field_changes.extend(diff_scalar(name, old_body, content.body))
 
     rows: list[DeviceChange] = []
+    # Once per boundary, not once per row: every change here was observed on the same pull of
+    # the same Mac, so they carry the same stamp — and re-reading it per row would only invite
+    # the copies to disagree, the same argument as the wire block above.
+    dimensions = device_dimensions(observation)
 
     def _row(**kwargs) -> DeviceChange:
         return DeviceChange(
@@ -152,6 +251,7 @@ async def derive_and_record(
             observed_at=observed_at,
             collected_at=collected_at,
             trigger=trigger,
+            device_meta=dimensions,
             policy_version=CHANGE_POLICY_VERSION,
             **kwargs,
         )

@@ -32,12 +32,13 @@ both routes ask for exactly that.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from datetime import datetime
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -63,7 +64,7 @@ from app.core.crypto import StoredValueUnreadable
 from app.core.database import get_db
 from app.core.permissions import Permission
 from app.core.sharing import get_or_create_settings
-from app.models.schema import AIProviderConfig, DeviceChange, ObservationSpan
+from app.models.schema import AIProviderConfig, DeviceChange, JamfOrgUnit, ObservationSpan
 from app.schemas.ai import AIErrorOut
 from app.schemas.changes_prompt import (
     QUESTION_MAX_LENGTH,
@@ -176,6 +177,74 @@ async def _chosen(db: AsyncSession, requested: Provider | None) -> AIProviderCon
     return config
 
 
+# The dimensions the bar can set, and the page's words for them — the chips' labels, since
+# none of them is a control on the page (#447).
+PROMPT_DIMENSIONS: tuple[str, ...] = ("model", "os_version", "department", "managed")
+_MODEL = "Model"
+_OS_VERSION = "OS version"
+_DEPARTMENT = "Department"
+# A version an operator would type: digits and dots, so "26" and "26.6.2" are one, and
+# "Sequoia" is not (the ledger stores numbers).
+_VERSIONISH = re.compile(r"\d+(?:\.\d+)*")
+# Two words for management state, and no list of synonyms: #442's lesson is that a word list
+# over the *question* refuses real questions. This reads a value the model already chose.
+_MANAGEMENT_WORDS = {"unmanaged": "false", "not managed": "false", "unenrolled": "false"}
+
+
+async def _dimension_repair(db: AsyncSession, filters: dict[str, str | None], dimensions: dict[str, str | None]) -> list[str]:
+    """A Search value that names no device but does name one of the Mac's own dimensions is
+    moved to that dimension (#447, ruling H4). Mutates both dicts; returns the repairs.
+
+    The model's vocabulary is full — #443 measured a sixth reply field at 2 to 6 wrong answers
+    of 68, and the injection refusal broke in every arrangement — so the dimensions are reached
+    from the bar this way instead: the instructions do not change, and neither does their
+    measurement. Asked "which MacBook Airs installed Wireshark", the model puts "MacBook Air"
+    in Search, where it matches no device name, no serial and no Jamf id, and the answer comes
+    back empty with nothing to say why.
+
+    **A device always wins.** The first question is whether any change row names this device,
+    because a Mac can be named after anything: "Kyle's Mac mini" is a device name, and so is a
+    Mac named after its own department. Only a Search that matches no device is read as a
+    dimension, and then in this order — the two words for management state, a model, an OS
+    version, a department from Jamf's own catalog.
+
+    Cost: one EXISTS read to settle the device, then up to three more, two of them over
+    `device_meta` with no index (the trade `change_conditions` records for `artifact`). They run
+    only after a miss, behind a model call that already cost a second.
+    """
+    search = filters.get("q")
+    if not search:
+        return []
+
+    async def matches(**where: str | None) -> bool:
+        return (await db.execute(select(literal(1)).where(*change_conditions(**where)).limit(1))).scalar() is not None
+
+    if await matches(q=search):
+        return []
+
+    word = search.strip().lower()
+    if word in _MANAGEMENT_WORDS:
+        filters["q"], dimensions["managed"] = None, _MANAGEMENT_WORDS[word]
+        return [f"Read “{search}” as Macs Jamf does not manage: it names no device."]
+    if await matches(model=search):
+        filters["q"], dimensions["model"] = None, search
+        return [f"Read “{search}” as {_MODEL}: it names no device, and it does name a Mac's model."]
+    if _VERSIONISH.fullmatch(word) and await matches(os_version=search):
+        filters["q"], dimensions["os_version"] = None, search
+        return [f"Read “{search}” as {_OS_VERSION}: it names no device, and Macs were observed on it."]
+    unit = (
+        await db.execute(
+            select(JamfOrgUnit.external_id, JamfOrgUnit.name)
+            .where(JamfOrgUnit.kind == "department", JamfOrgUnit.name.ilike(search.strip()))
+            .limit(1)
+        )
+    ).first()
+    if unit is not None:
+        filters["q"], dimensions["department"] = None, unit[0]
+        return [f"Read “{search}” as {_DEPARTMENT} {unit[1]}, Jamf's department {unit[0]}: it names no device."]
+    return []
+
+
 async def _when(db: AsyncSession, conditions: list, oldest: datetime) -> PromptWhenOut:
     """The newest matching change's own times, and the ones of the observation it moved away
     from: the window it happened in (ruling R1 on #443). One indexed row — the same
@@ -209,15 +278,19 @@ async def _when(db: AsyncSession, conditions: list, oldest: datetime) -> PromptW
     )
 
 
-async def _summary(db: AsyncSession, filters: dict[str, str | None]) -> PromptSummaryOut:
+async def _summary(db: AsyncSession, filters: dict[str, str | None], dimensions: dict[str, str | None]) -> PromptSummaryOut:
     """What the page will show for ``filters``: the rows, the computers among them, newest
-    first, and when they were observed. Three scans, whatever the fleet's size."""
+    first, and when they were observed. Three scans, whatever the fleet's size.
+
+    ``dimensions`` are the stamped ones a repair moved a Search value into (#447), counted here
+    for the same reason every other filter is: the numbers in the box are the page's numbers."""
     conditions = change_conditions(
         q=filters["q"],
         artifact=filters["artifact"],
         level=filters["level"],
         section=filters["section"],
         change=filters["change"],
+        **dimensions,
     )
     is_computer = DeviceChange.subject_kind == "computer"
 
@@ -384,14 +457,20 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
     # A widened answer searches for more than the model's did, so a person applies it: the
     # page gets the same filters and summary as an applied one, and runs nothing until then.
     outcome = "proposed" if interpretation.widened else "applied"
-    summary = await _summary(db, interpretation.filters)
-    _audited(outcome, provider, destination, latency_ms, repairs=len(interpretation.repairs))
+    # A Search the fleet has no device for, but does have a model, an OS version, a department
+    # or a management state for, is read as that instead (#447). It narrows what would otherwise
+    # have matched nothing, so it does not hold the answer back for an Apply.
+    dimensions: dict[str, str | None] = dict.fromkeys(PROMPT_DIMENSIONS)
+    moved = await _dimension_repair(db, interpretation.filters, dimensions)
+    repairs = [str(repair) for repair in interpretation.repairs] + moved
+    summary = await _summary(db, interpretation.filters, dimensions)
+    _audited(outcome, provider, destination, latency_ms, repairs=len(repairs))
     return PromptOut(
         outcome=outcome,
-        filters=PromptFiltersOut(**interpretation.filters),
+        filters=PromptFiltersOut(**interpretation.filters, **dimensions),
         unsupported=interpretation.unsupported,
         # Plain strings on the wire: each repair is a `Repair`, a str carrying its direction.
-        repairs=[str(repair) for repair in interpretation.repairs],
+        repairs=repairs,
         widening=interpretation.widening,
         summary=summary,
         provider=provider,

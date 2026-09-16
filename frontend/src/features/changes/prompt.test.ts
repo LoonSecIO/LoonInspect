@@ -26,9 +26,10 @@ import { CHANGE_KINDS } from "@/features/changes/render";
 import { de } from "@/i18n/de";
 import { en } from "@/i18n/en";
 
-const WIRESHARK: PromptFilters = { q: null, artifact: "Wireshark", level: null, section: "applications", change: null };
+const NO_DIMENSIONS = { model: null, osVersion: null, department: null, managed: null } as const;
+const WIRESHARK: PromptFilters = { q: null, artifact: "Wireshark", level: null, section: "applications", change: null, ...NO_DIMENSIONS };
 // Kyle's first demo question, "List new application installs".
-const NEW_INSTALLS: PromptFilters = { q: null, artifact: null, level: null, section: "applications", change: "added" };
+const NEW_INSTALLS: PromptFilters = { q: null, artifact: null, level: null, section: "applications", change: "added", ...NO_DIMENSIONS };
 // A correction that widens, as the server words it (backend/app/ai/changes_prompt.py).
 const WIDENED_SECTION = "The model named a section this page does not have, so it was read as any section.";
 
@@ -70,7 +71,7 @@ describe("filtersFromPrompt replaces the page's filters, never merges into them"
       section: "applications",
       change: undefined
     });
-    expect(filtersFromPrompt({ q: "KY4QVD7430", artifact: null, level: "high", section: null, change: null })).toMatchObject({
+    expect(filtersFromPrompt({ q: "KY4QVD7430", artifact: null, level: "high", section: null, change: null, ...NO_DIMENSIONS })).toMatchObject({
       q: "KY4QVD7430",
       artifact: undefined,
       level: "high",
@@ -115,8 +116,30 @@ describe("filtersFromPrompt replaces the page's filters, never merges into them"
     });
   });
 
+  // #447: the four a repair can set, and the six it cannot.
+  it("carries the dimensions a repair moved a Search into", () => {
+    const answer = { ...WIRESHARK, model: "MacBook Air", osVersion: "26", department: "5", managed: "false" };
+    expect(filtersFromPrompt(answer)).toMatchObject({
+      q: undefined,
+      artifact: "Wireshark",
+      model: "MacBook Air",
+      osVersion: "26",
+      department: "5",
+      managed: "false"
+    });
+  });
+
+  it("clears the hidden keys the bar cannot set, so a narrowed feed answers for the fleet", () => {
+    const next = filtersFromPrompt(WIRESHARK);
+    for (const key of ["trigger", "spanId", "version", "fileVault", "site", "user", "model", "osVersion", "department", "managed"] as const) {
+      expect(next).toHaveProperty(key, undefined);
+    }
+    const fromALink: ChangeFilters = { trigger: "webhook", spanId: "2f6c1e4a", version: "153", user: "dana", model: "Mac mini" };
+    expect({ ...fromALink, ...next }).toMatchObject({ trigger: undefined, spanId: undefined, version: undefined, user: undefined });
+  });
+
   it("an empty string is unset too, not a filter on nothing", () => {
-    expect(filtersFromPrompt({ q: "", artifact: "", level: null, section: "", change: null })).toMatchObject({
+    expect(filtersFromPrompt({ q: "", artifact: "", level: null, section: "", change: null, ...NO_DIMENSIONS })).toMatchObject({
       q: undefined,
       artifact: undefined,
       section: undefined
@@ -126,6 +149,16 @@ describe("filtersFromPrompt replaces the page's filters, never merges into them"
 
 describe("stillShowing hides an answer about filters the page no longer shows", () => {
   const applied = filtersFromPrompt(WIRESHARK);
+
+  it("a hidden filter is one of those filters (#447)", () => {
+    const shown = { artifact: "Wireshark", section: "applications" };
+    expect(stillShowing(applied, shown)).toBe(true);
+    for (const key of ["trigger", "spanId", "version", "model", "osVersion", "fileVault", "site", "department", "managed", "user"] as const) {
+      expect(stillShowing(applied, { ...shown, [key]: "anything" })).toBe(false);
+    }
+    expect(hasSomethingToClear({ model: "MacBook Air" }, { q: "", artifact: "" }, false)).toBe(true);
+    expect(hasSomethingToClear({ trigger: "webhook" }, { q: "", artifact: "" }, false)).toBe(true);
+  });
 
   it("the page as the bar left it, on any page of results", () => {
     expect(stillShowing(applied, { artifact: "Wireshark", section: "applications", page: 1 })).toBe(true);
@@ -173,6 +206,19 @@ describe("readback — the handoff's describe(), in the page's labels", () => {
     expect(readback({ q: null, artifact: "Wireshark", level: "high", section: "applications" }, de.changes)).toBe(
       "Angezeigt werden Änderungen mit dem Namen „Wireshark“, im Abschnitt Anwendungen, auf Stufe Hoch"
     );
+  });
+
+  // #447: no control on the page, so the words are where a reader sees them.
+  it("a dimension a repair set is named after the controls", () => {
+    expect(readback({ ...WIRESHARK, model: "MacBook Air" }, en.changes)).toBe(
+      "Showing changes named “Wireshark”, in Applications, on Macs whose model matches “MacBook Air”"
+    );
+    expect(readback({ osVersion: "26", department: "5" }, en.changes)).toBe(
+      "Showing changes on Macs observed on OS 26, on Macs in Jamf department 5"
+    );
+    expect(readback({ managed: "false" }, en.changes)).toBe("Showing changes on Macs Jamf does not manage");
+    expect(readback({ managed: "true" }, en.changes)).toBe("Showing changes on Macs Jamf manages");
+    expect(readback({ model: "Mac mini" }, de.changes)).toBe("Angezeigt werden Änderungen auf Macs mit Modell „Mac mini“");
   });
 
   it("the kind of change comes last: the first demo question", () => {
@@ -831,6 +877,14 @@ describe("isPromptResult — a 200's body is checked before anything reads it", 
 
   // The times the box states (#443): a body without them would print "Invalid Date" over
   // the answer, so it is a body this page cannot read.
+  it("filters without the dimension keys are not this shape", () => {
+    const withoutModel = { ...WIRESHARK } as Record<string, unknown>;
+    delete withoutModel.model;
+    expect(isPromptResult(result({ filters: withoutModel as never }))).toBe(false);
+    expect(isPromptResult(result({ filters: { ...WIRESHARK, managed: true } as never }))).toBe(false);
+    expect(isPromptResult(result({ filters: { ...WIRESHARK, model: "MacBook Air" } }))).toBe(true);
+  });
+
   it("a summary without the times is not this shape", () => {
     const body = withDevices.summary!;
     expect(isPromptResult(result({ summary: { ...body, when: undefined } as never }))).toBe(false);

@@ -1283,6 +1283,25 @@ export const de: Translations = {
     deviceDrifted: "Gerät hat sich verändert",
     subjectChip: (label: string) => `Änderungen auf ${label}`,
     sinceChip: (start: string) => `Beobachtet seit ${start}`,
+    hiddenChips: {
+      trigger: (found: string) => `Gefunden durch ${found}`,
+      span: "Eine Beobachtung",
+      version: (value: string) => `Gewechselt auf Version ${value}`,
+      model: (value: string) => `Modell mit „${value}“`,
+      osVersion: (value: string) => `OS-Version ${value}`,
+      fileVault: (state: string) => `FileVault: ${state}`,
+      site: (id: string) => `Jamf-Standort ${id}`,
+      department: (id: string) => `Jamf-Abteilung ${id}`,
+      managed: "Von Jamf verwaltet",
+      unmanaged: "Nicht von Jamf verwaltet",
+      user: (value: string) => `Zugewiesene Person mit „${value}“`
+    },
+    triggers: { sweep: "einen Durchlauf", manual: "einen manuellen Lauf", webhook: "einen Webhook" } as Record<string, string>,
+    fileVaultStates: {
+      BOOT_ENCRYPTED: "Startvolume verschlüsselt",
+      NOT_ENCRYPTED: "nicht verschlüsselt",
+      ENCRYPTED: "verschlüsselt"
+    } as Record<string, string>,
     count: (n: number) => `${n} Änderung${n === 1 ? "" : "en"}`,
     pageOf: (page: number, pages: number) => `Seite ${page} von ${pages}`,
     previous: "Zurück",
@@ -1325,6 +1344,11 @@ export const de: Translations = {
       readbackSection: (section: string) => `im Abschnitt ${section}`,
       readbackLevel: (level: string) => `auf Stufe ${level}`,
       readbackChange: (kind: string) => `die ${kind} wurden`,
+      readbackModel: (model: string) => `auf Macs mit Modell „${model}“`,
+      readbackOsVersion: (version: string) => `auf Macs, beobachtet mit OS ${version}`,
+      readbackDepartment: (id: string) => `auf Macs in Jamf-Abteilung ${id}`,
+      readbackManaged: "auf von Jamf verwalteten Macs",
+      readbackUnmanaged: "auf nicht von Jamf verwalteten Macs",
       answerNone: "Keine Änderungen gefunden.",
       answerHeadline: (computers: number, changes: number) =>
         `${computers} Computer, ${changes} Änderung${changes === 1 ? "" : "en"}.`,

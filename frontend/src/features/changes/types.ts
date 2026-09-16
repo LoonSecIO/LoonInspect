@@ -30,6 +30,10 @@ export interface DeviceChange {
   newValue: Record<string, unknown> | null;
   level: ChangeLevel;
   details: Record<string, unknown> | null;
+  /** The Mac as this observation saw it, or null on a row derived before the stamp existed
+   *  and on a subject that is not a device (#447). Sent so a click on a row can filter by a
+   *  value the row carries; no column shows it whole. */
+  deviceMeta: Record<string, unknown> | null;
   policyVersion: string;
 }
 
@@ -56,6 +60,24 @@ export interface ChangeFilters {
   /** Absolute ISO instant. The feed's anchor, carried into every click-through so a
    *  shared link reproduces the window the sender saw. */
   since?: string;
+  /** What started the observation the change was found in: sweep | manual | webhook. */
+  trigger?: string;
+  /** One observation of one subject — every change that pull found on that Mac (#447). */
+  spanId?: string;
+  /** A prefix of the version a change moved TO: "153" finds 153.0.7049.84. */
+  version?: string;
+  /** The Mac as the observation saw it (`deviceMeta`, #447). None of these has a control on
+   *  the page: they arrive from a link, a click on a row, or the Prompt bar, and each shows as
+   *  a removable chip while it is applied. `model` and `user` match anywhere in the value,
+   *  `osVersion` is a prefix, and the rest are exact. A row derived before the stamp existed
+   *  carries none, so it matches none of them. */
+  model?: string;
+  osVersion?: string;
+  fileVault?: string;
+  site?: string;
+  department?: string;
+  managed?: string;
+  user?: string;
   connectionId?: number;
   subjectId?: string;
   /** `computer` | `computer_group` | …: without it `subjectId=42` merges computer 42 with
@@ -64,6 +86,22 @@ export interface ChangeFilters {
   page?: number;
   pageSize?: number;
 }
+
+/** The filter keys with no control on the Changes page (#447): a link, a click on a row, or the
+ *  Prompt bar sets them, the API takes them under these names, and each shows as a removable
+ *  chip while it is applied — a filter the page applies is never one the page hides. */
+export const HIDDEN_KEYS = [
+  "trigger",
+  "spanId",
+  "version",
+  "model",
+  "osVersion",
+  "fileVault",
+  "site",
+  "department",
+  "managed",
+  "user"
+] as const satisfies readonly (keyof ChangeFilters)[];
 
 export interface PolicyField {
   key: string;
@@ -143,6 +181,13 @@ export interface PromptFilters {
   level: ChangeLevel | null;
   section: string | null;
   change: ChangeKind | null;
+  /** Dimensions stamped on the row (#447). The model never names one: the server moved a
+   *  Search value into it when the fleet had no device by that name but did have this — the
+   *  page has no control for any of them, so an applied one shows as a chip. */
+  model: string | null;
+  osVersion: string | null;
+  department: string | null;
+  managed: string | null;
 }
 
 /** One computer the filters match, counted by Postgres — never by the model. */

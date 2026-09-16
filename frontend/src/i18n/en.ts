@@ -1326,6 +1326,29 @@ export const en = {
     // The window the Overview's link sets (#107) has no control either, and a filter the page
     // applies is never one the page hides (#443).
     sinceChip: (start: string) => `Observed since ${start}`,
+    // The ten filters with no control on this page (#447), each named while it is applied.
+    // Values are shown as they matched, because that is what a reader compares to the rows.
+    hiddenChips: {
+      trigger: (found: string) => `Found by ${found}`,
+      span: "One observation",
+      version: (value: string) => `Moved to version ${value}`,
+      model: (value: string) => `Model matching “${value}”`,
+      osVersion: (value: string) => `OS version ${value}`,
+      fileVault: (state: string) => `FileVault: ${state}`,
+      site: (id: string) => `Jamf site ${id}`,
+      department: (id: string) => `Jamf department ${id}`,
+      managed: "Managed by Jamf",
+      unmanaged: "Not managed by Jamf",
+      user: (value: string) => `Assigned user matching “${value}”`
+    },
+    // What started the observation a change was found in.
+    triggers: { sweep: "a sweep", manual: "a manual run", webhook: "a webhook" } as Record<string, string>,
+    // Jamf's own words for disk-encryption state, as the ledger stores them.
+    fileVaultStates: {
+      BOOT_ENCRYPTED: "the boot volume is encrypted",
+      NOT_ENCRYPTED: "not encrypted",
+      ENCRYPTED: "encrypted"
+    } as Record<string, string>,
     level: "Level",
     anyLevel: "Any level",
     section: "Section",
@@ -1454,6 +1477,11 @@ export const en = {
       readbackSection: (section: string) => `in ${section}`,
       readbackLevel: (level: string) => `at ${level.toLowerCase()} level`,
       readbackChange: (kind: string) => `that were ${kind}`,
+      readbackModel: (model: string) => `on Macs whose model matches “${model}”`,
+      readbackOsVersion: (version: string) => `on Macs observed on OS ${version}`,
+      readbackDepartment: (id: string) => `on Macs in Jamf department ${id}`,
+      readbackManaged: "on Macs Jamf manages",
+      readbackUnmanaged: "on Macs Jamf does not manage",
       answerNone: "No changes match.",
       answerHeadline: (computers: number, changes: number) =>
         `${computers} computer${computers === 1 ? "" : "s"}, ${changes} change${changes === 1 ? "" : "s"}.`,
