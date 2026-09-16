@@ -127,11 +127,14 @@ claim() {
 # itself: a path is a numbered section whose heading is the operator's own words in
 # quotes (`## 6. "The Jamf Patch table is empty…"`), which is what separates the paths
 # from section 0's inventory of readable surfaces and the two closing sections.
-PATH_COUNT_MARKER='\b(one|two|three|four|five|six|seven|eight|nine|ten) (ordered )?paths\b'
+# The vocabulary runs well past today's count on purpose: it stopped at "ten", one path
+# away, and a count it cannot spell fails as `out-of-range`, which reads like a broken
+# script rather than like the stale number that is the actual finding (#402).
+PATH_COUNT_MARKER='\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen) (ordered )?paths\b'
 
 readme_path_count_matches_troubleshooting() {
   local doc=docs/troubleshooting.md counted written
-  local words=(zero one two three four five six seven eight nine ten)
+  local words=(zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen)
   [[ -f $doc ]] || return 1
   counted=$(grep -cE '^## [0-9]+\. "' "$doc")
   written=$(grep -oiE "$PATH_COUNT_MARKER" "$README" | head -1 | tr '[:upper:]' '[:lower:]' | cut -d' ' -f1)

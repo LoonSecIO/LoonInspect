@@ -129,6 +129,9 @@ class DeviceOut(BaseModel):
     department_id: str | None
     building: str | None = None
     department: str | None = None
+    # The first clean census that did not name this Mac (#183). Null means Jamf returned it;
+    # non-null starts the seven-day tail, after which it leaves the fleet and this list.
+    departed_at: datetime | None = None
 
 
 class DeviceDetailOut(DeviceOut):

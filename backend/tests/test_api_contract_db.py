@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import uuid as uuidlib
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -229,3 +230,35 @@ async def test_devices_narrow_to_the_carriers_of_one_app_and_one_build(client, d
         await db.execute(delete(InstalledApp).where(InstalledApp.device_id.in_(ids)))
         await db.execute(delete(Device).where(Device.id.in_(ids)))
         await db.commit()
+
+
+async def test_devices_answer_the_current_fleet_and_read_a_departed_mac_back_on_request(client, db, connection_id) -> None:
+    """#183: a Mac past its seven-day tail has left the fleet, so `GET /api/devices` stops
+    listing it — and `includeDeparted=true` is how it is read back, nothing having been
+    deleted."""
+    from app.models.schema import Device, SubjectDeparture
+
+    suffix = uuidlib.uuid4().hex[:8]
+    device = Device(
+        mdm_provider="jamf",
+        mdm_connection_id=connection_id,
+        external_id=f"departed-{suffix}",
+        serial_number=f"DEPARTED{suffix}",
+        hostname=f"departed-{suffix}",
+    )
+    db.add(device)
+    db.add(
+        SubjectDeparture(
+            mdm_connection_id=connection_id,
+            subject_kind="computer",
+            subject_id=f"departed-{suffix}",
+            departed_at=datetime.now(UTC) - timedelta(days=8),
+        )
+    )
+    await db.commit()
+    scope = f"mdmConnectionId={connection_id}&pageSize=10"
+    current = await client.get(f"/api/devices?{scope}")
+    assert current.status_code == 200 and current.json()["total"] == 0, current.text
+    widened = await client.get(f"/api/devices?{scope}&includeDeparted=true")
+    (item,) = widened.json()["items"]
+    assert item["id"] == device.id and item["departedAt"] is not None

@@ -267,18 +267,29 @@ describe("savedConfigsOf — the configs read's body, checked before anything is
 
 describe("openingCard — the newest read of the saved cards wins the opening selection too", () => {
   const untouched = { newerRead: false, removeAsked: false, current: "apple_fm" as const };
+  // The two card lists `offeredProviders` returns; its own table is in offered.test.ts.
+  const ALL = PROVIDER_ORDER;
+  const WITHOUT_APPLE: readonly Provider[] = ["openai_compatible", "anthropic"];
 
   it("the opening read still the newest: the first saved card, clean lines", () => {
-    expect(openingCard({ ...untouched, latest: BOTH, dockerDesktopOnMacos: false })).toEqual({ card: "apple_fm", clearLines: true });
-    expect(openingCard({ ...untouched, latest: ANTHROPIC_ONLY, dockerDesktopOnMacos: true })).toEqual({
+    expect(openingCard({ ...untouched, latest: BOTH, offered: ALL })).toEqual({ card: "apple_fm", clearLines: true });
+    expect(openingCard({ ...untouched, latest: ANTHROPIC_ONLY, offered: ALL })).toEqual({
       card: "anthropic",
       clearLines: true
     });
   });
 
-  it("none saved (or none readable): the detection hint, never a gate", () => {
-    expect(openingCard({ ...untouched, latest: {}, dockerDesktopOnMacos: true }).card).toBe("apple_fm");
-    expect(openingCard({ ...untouched, latest: {}, dockerDesktopOnMacos: false }).card).toBe("openai_compatible");
+  it("none saved (or none readable): the detection hint, among the cards it offers", () => {
+    expect(openingCard({ ...untouched, latest: {}, offered: ALL }).card).toBe("apple_fm");
+    expect(openingCard({ ...untouched, latest: {}, offered: WITHOUT_APPLE }).card).toBe("openai_compatible");
+  });
+
+  it("a saved card that is not offered here is not opened on (#404)", () => {
+    // An Apple card saved on a Mac and restored onto a pod that does not offer it: opening
+    // on it would light no card and leave no Remove to press. §14 says how to take it off.
+    expect(openingCard({ ...untouched, latest: BOTH, offered: WITHOUT_APPLE })).toEqual({ card: "anthropic", clearLines: true });
+    const appleOnly = byProvider([config("apple_fm")]);
+    expect(openingCard({ ...untouched, latest: appleOnly, offered: WITHOUT_APPLE }).card).toBe("openai_compatible");
   });
 
   it("a Remove made while the slowest read was out: the page stays on its card and keeps the Remove's line", () => {
@@ -295,7 +306,7 @@ describe("openingCard — the newest read of the saved cards wins the opening se
       removeAsked: true,
       latest,
       current: "apple_fm",
-      dockerDesktopOnMacos: true
+      offered: ALL
     });
     // Not the opening read's first saved card (the removed Apple card), and not a jump to
     // Anthropic: the card the operator acted on, with "Removed from this server." kept.
@@ -306,11 +317,11 @@ describe("openingCard — the newest read of the saved cards wins the opening se
   });
 
   it("either alone is enough: a newer read, or a Remove pressed before any re-read (its confirm open, its DELETE out)", () => {
-    expect(openingCard({ ...untouched, newerRead: true, latest: ANTHROPIC_ONLY, dockerDesktopOnMacos: true })).toEqual({
+    expect(openingCard({ ...untouched, newerRead: true, latest: ANTHROPIC_ONLY, offered: ALL })).toEqual({
       card: "apple_fm",
       clearLines: false
     });
-    expect(openingCard({ ...untouched, removeAsked: true, latest: BOTH, current: "anthropic", dockerDesktopOnMacos: true })).toEqual({
+    expect(openingCard({ ...untouched, removeAsked: true, latest: BOTH, current: "anthropic", offered: ALL })).toEqual({
       card: "anthropic",
       clearLines: false
     });

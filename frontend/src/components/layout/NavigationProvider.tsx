@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState, type PropsWithChildren } from "react";
+import { useEffect, useMemo, type PropsWithChildren } from "react";
 import { visibleNavigation } from "@/components/layout/navigation";
 import { NavigationContext } from "@/components/layout/useNavigation";
 import { useAuthStore } from "@/features/auth/store";
-import { listFeatureFlags } from "@/features/settings/api";
+import { useFeatureFlagStore } from "@/features/settings/flagStore";
 
 /**
  * The tree this account may see, resolved once for every surface that draws it — the
@@ -10,25 +10,19 @@ import { listFeatureFlags } from "@/features/settings/api";
  * each surface is what keeps the two from disagreeing, and keeps the flags read to one
  * request: the flags endpoint needs a session but no permission, and a failure simply
  * hides the flag-gated entries.
+ *
+ * The flags themselves live in `flagStore` (#402), not here. This is still where they are
+ * read — once, when the signed-in layout mounts — but the answer is shared, so the toggle
+ * on Settings › Feature Flags reaches this tree without a reload, in both directions.
  */
 export function NavigationProvider({ children }: PropsWithChildren) {
   const permissions = useAuthStore((state) => state.user?.permissions);
 
-  // Flags are read once per mount of the signed-in layout.
-  const [enabledFlags, setEnabledFlags] = useState<Set<string>>(() => new Set());
+  const enabledFlags = useFeatureFlagStore((state) => state.enabled);
+  const load = useFeatureFlagStore((state) => state.load);
   useEffect(() => {
-    let cancelled = false;
-    listFeatureFlags()
-      .then((flags) => {
-        if (!cancelled) setEnabledFlags(new Set(flags.filter((f) => f.enabled).map((f) => f.key)));
-      })
-      .catch(() => {
-        if (!cancelled) setEnabledFlags(new Set());
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    void load();
+  }, [load]);
 
   const items = useMemo(() => visibleNavigation(permissions, enabledFlags), [permissions, enabledFlags]);
 
