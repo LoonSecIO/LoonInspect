@@ -634,16 +634,19 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
    with a script on the Mac rather than from the inventory it walks, and LoonInspect matches the
    inventory. Search **Devices › Applications** for the bundle identifier on the title's row:
    - **Listed** — a Mac reports an `.app` with that identifier (Firefox, Skype, PyCharm) and the
-     title should match: a 0 after a sweep is state **J**, with the identifier you searched for.
+     title should match: a 0 after a sweep is state **J**'s last clause, with that identifier.
    - **Not listed** — the software is a command-line install, a framework or a daemon (Python 3,
      the JDKs, Jamf Connect Login), so the inventory has nothing to match and those Macs read
      absent until LoonInspect reads the attribute itself. Working as built.
 
 **J.** A refresh that reports no error leaves the table saying *No Jamf Patch titles
 synced yet.*, a title Jamf publishes stays missing from the list with *Only titles with
-devices* unticked for more than a day, or a press of **Sync now** writes nothing to the
-container log while `/api/health` answers. Report what the *Synced* column shows, the
-output of `docker compose logs app --since 1h`, and the build from Settings › Support.
+devices* unticked for more than a day, a press of **Sync now** writes nothing to the
+container log while `/api/health` answers, or — the one where the sync did happen — a
+title LoonInspect matches against still reads 0 devices after a sweep while **Devices ›
+Applications** lists its bundle identifier (step 5). Report what the *Synced* column
+shows, the bundle identifier and the title's name if that was the symptom, the output of
+`docker compose logs app --since 1h`, and the build from Settings › Support.
 
 ## 7. "Jamf Pro webhooks are not arriving"
 
