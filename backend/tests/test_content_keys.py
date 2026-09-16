@@ -167,8 +167,14 @@ def test_the_bundle_key_does_not_reach_the_splunk_wire() -> None:
     assert {"keyTitle", "keyFull"} <= set(dumped)
 
 
-def test_the_bundle_key_ignores_the_name_and_not_the_version() -> None:
+def test_the_bundle_key_still_splits_on_the_version() -> None:
     """Rename-proof, not version-proof: it is a *build* key, so two versions of one
     bundle stay two rows. A key that collapsed versions too would answer "is this
-    software here", which `app.title` already answers."""
+    software here", which `app.title` already answers.
+
+    The other half of the pair — that it ignores the *name* — cannot be asserted here,
+    because the function takes no name to ignore; it is proved end to end, through the
+    ingest site that stamps the column, by
+    `test_a_renamed_app_keeps_its_bundle_key_and_loses_its_title_key` above.
+    """
     assert app_bundle_key("com.x", "1.0") != app_bundle_key("com.x", "2.0")

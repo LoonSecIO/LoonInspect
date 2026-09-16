@@ -12,15 +12,21 @@ is otherwise a copy of (9c41d20a77e1). Two reasons, both permanent:
   answers None rather than hashing the empty string, because identity here is the bundle
   id alone: one shared digest for every nameless app would be counted as one piece of
   software. NULL is that absence, not a missing backfill;
-* rows are stamped at their next ingest. The sibling migration walked every tenant and
-  rewrote every row in the operator's upgrade transaction, because its columns were about
-  to be NOT NULL; this one has nothing forcing that cost. A container's next sweep
-  restamps the whole fleet through the one hashing site (`app.mdm.service.apply_hashes`),
-  and until it runs the exchange row simply omits `bundle` — absent, never null, which is
-  exactly how the cloud already reads a key an older container never sent.
+* rows are stamped at their next ingest — because the ingest path was taught to restamp
+  them. That half does not come for free and is the reason to read this note rather than
+  assume: `installed_apps` is INSERT-on-version-change, so an app pinned at one build is
+  kept, not rewritten, and would never gain the key at all. `app.mdm.service.process_sync`
+  therefore stamps the rows it KEEPS as well as the rows it inserts, once each, the first
+  time it sees one without a key. The sibling migration had no such restamp to lean on,
+  and its columns were about to be NOT NULL besides, so it paid for a per-row rewrite of
+  every tenant inside the operator's upgrade transaction; this one pays an UPDATE per row
+  on the first sweep after the upgrade instead — spread across the fleet, and
+  self-extinguishing. Until that sweep runs the exchange row simply omits `bundle` —
+  absent, never null, which is exactly how the cloud already reads a key an older
+  container never sent.
 
-Indexed like its siblings: the exchange aggregate reads it per group and the corpus joins
-on it.
+Indexed per the issue's "Done when" and like its two siblings. No query in this container
+uses that index yet; it is carried for the corpus-side joins the key is minted ahead of.
 
 Revision ID: a7d3e15c2b94
 Revises: c4e8b1d7a9f3

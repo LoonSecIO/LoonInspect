@@ -322,9 +322,11 @@ Semantics the server may rely on:
 - **An `apps` row's `bundle` is absent, never null.** `bundle` is the `app.bundle` key
   (above) and it is omitted from the row whenever there is not one: an app with no bundle
   identifier has no such identity, and a row written before the container grew the column
-  carries none until its next inventory ingest restamps it — the container backfills
-  nothing on upgrade, so a fleet mid-restamp submits some rows with the key and some
-  without, and the same app's counts must not be split between the two. This is the shape
+  carries none until the first inventory read that covers applications restamps it — the
+  container backfills nothing on upgrade, and stamps the rows instead as it re-reads each
+  device, so one full sweep does the whole fleet and a fleet mid-restamp submits some rows
+  with the key and some without. The same app's counts must not be split between the two,
+  which is why the container aggregates the key rather than grouping on it. This is the shape
   an older container already produces by not having the key at all, which is the point:
   one case for the server to handle, not two. `title`, `full`, `count` and `platform` stay
   required.

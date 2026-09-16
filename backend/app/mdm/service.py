@@ -1209,6 +1209,24 @@ async def process_sync(
         removed_rows = [row for version_hash, row in previous_hashes.items() if version_hash not in incoming_hashes]
         current_rows = [row for version_hash, row in previous_hashes.items() if version_hash in incoming_hashes]
 
+        # The restamp (#245). `installed_apps` is INSERT-on-version-change: a row whose
+        # build did not move is KEPT above and never rewritten, so a content key added to
+        # the table after that row was written would otherwise never arrive for it. The
+        # rows that would starve are exactly the ones a rename-proof prevalence key exists
+        # to measure — software that sits at one build for years, a pinned LOB app, the
+        # never-updated Wireshark this repo uses as its standing example — and one
+        # unstamped row is enough to make its whole `key_full` group aggregate to no
+        # `bundle` at all in the exchange. So the kept rows are stamped here, which is what
+        # lets migration `a7d3e15c2b94` decline the per-tenant backfill its sibling
+        # `9c41d20a77e1` pays for inside the operator's upgrade transaction: the cost moves
+        # to one UPDATE per row that needs one, on the first pass after the upgrade,
+        # spread across the fleet. Self-extinguishing — a row that already has the key is
+        # not touched, and a row whose app has no bundle identifier re-answers None, which
+        # is the value already there and so is not written either.
+        for row in current_rows:
+            if row.key_bundle is None:
+                row.key_bundle = app_bundle_key(row.bundle_id, row.version)
+
         for row in removed_rows:
             await db.delete(row)
 
