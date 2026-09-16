@@ -505,15 +505,18 @@ reply shown as it came back. It exists so the first real AI feature arrives into
 that already refuses correctly. Two switches gate it, both off out of the box: the
 `ai_features` flag (Settings › Feature Flags) and the AI-inference consent (toggled on the
 page itself). Every send writes one share-log row naming the destination and the single
-field that left, the prompt. Which endpoints are offered depends on where this container runs.
-Apple Foundation Models through Apple's own `fm serve` on the Mac host (macOS 27; the card is
-labelled "via Docker Desktop", the one runtime this cut implements) is offered only there —
-under Docker Desktop on an Apple Silicon Mac, with `host.docker.internal` resolving from
-inside the container — and anywhere else the page says in a sentence why it is not. Always
-offered: any OpenAI-compatible endpoint (Ollama on the Mac host by default, and no default at
-all where that name does not resolve), and Anthropic's Messages API. Bring your own URL and
-key; the key is used for that one request and never stored. Every model call is made by the
-backend, never by your browser. Design record: `docs/ai-layer.md`; issue #319.
+field that left, the prompt. Which endpoints are offered depends on where this container runs,
+and on what this server already holds settings for. Apple Foundation Models through Apple's
+own `fm serve` on the Mac host (macOS 27; the card is labelled "via Docker Desktop", the one
+runtime this cut implements) is offered where its default can work — under Docker Desktop on
+an Apple Silicon Mac, with `host.docker.internal` resolving from inside the container — or
+where this server holds settings saved for it, so **Remove** stays reachable; the card says so
+when that is the only reason it is on screen, and where neither holds the page says in a
+sentence why it is not offered. Always offered: any OpenAI-compatible endpoint (Ollama on the
+Mac host by default, and no default at all where that name does not resolve), and Anthropic's
+Messages API. Bring your own URL and key; the key is used for that one request and never
+stored. Every model call is made by the backend, never by your browser. Design record:
+`docs/ai-layer.md`; issue #319.
 
 ## 👥 Accounts and roles
 
