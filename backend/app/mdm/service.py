@@ -75,7 +75,7 @@ from app.models.schema import (
     MdmSyncState,
     Run,
 )
-from app.observations.departure import DEPARTURE_TAIL_DAYS, gone_for_good, reconcile_census, tail_counts
+from app.observations.departure import DEPARTURE_TAIL_DAYS, SKIP_COLLAPSED, gone_for_good, reconcile_census, tail_counts
 from app.observations.ledger import (
     RecordResult,
     current_span,
@@ -583,15 +583,14 @@ async def _reconcile_device_census(
     selector: str | None,
     devices_failed: int,
 ) -> None:
-    """A deleted Mac leaves in seven days (#183) — and only ONE clean census may say so.
-
-    Clean is all three, each ruling out a way of departing a Mac that is still there: the
-    sweep reached this line, so it succeeded; it carried no RSQL `selector`, because a scoped
-    sweep says nothing about the Macs it never asked for; and no device failed, because a
-    device Jamf *did* return but whose ingest failed has a stale `last_seen_at`. A dirty
-    night judges nobody, and the next clean one catches up. A sweep that is not a census says
-    so on the run rather than going quiet: the operator waiting for a deleted Mac to go has
-    to read which of the three is holding it. Commits, so a departure lands with its census.
+    """A deleted Mac leaves in seven days (#183) — and only ONE clean census may say so. Clean is
+    all three, each ruling out a way of departing a Mac that is still there: the sweep reached this
+    line, so it succeeded; it carried no RSQL `selector`, because a scoped sweep says nothing about
+    the Macs it never asked for; and no device failed, because a device Jamf *did* return but whose
+    ingest failed has a stale `last_seen_at`. A dirty night judges nobody, and the next clean one
+    catches up. A sweep that is not a census says so on the run rather than going quiet: the
+    operator waiting for a deleted Mac to go has to read which of the three is holding it. Commits,
+    so a departure lands with its census.
     """
     at = datetime.now(UTC)
     if selector is not None or devices_failed:
@@ -617,12 +616,23 @@ async def _reconcile_device_census(
     if run is None:
         return
     in_tail, left = await tail_counts(db, connection_id=connection.id, subject_kind=SUBJECT_COMPUTER, at=at)
+    # A refused census gets its OWN sentence, never a healthy one's at a louder level: "0 departed"
+    # because nobody left and "0 departed" because we would not judge are the same number, and the
+    # breaker's `logger.warning` is ours. So a refusal names itself and the next check (rules 1-2).
+    if verdict.skipped:
+        collapsed = f"only {verdict.observed} of {verdict.population} Macs came back, fewer than half the fleet"
+        why = collapsed if verdict.skipped == SKIP_COLLAPSED else "the sweep returned no Macs at all"
+        line = f"device census refused: {why}; departing nobody — check the API Role's privileges and this run's errors"
+    else:
+        line = (
+            f"device census: {verdict.observed} observed, {verdict.departed} departed, {verdict.returned} returned, "
+            f"{in_tail} in their seven-day tail, {left} left the fleet"
+        )
     await run_log(
         db,
         run,
         "warning" if verdict.skipped else "info",
-        f"device census: {verdict.observed} observed, {verdict.departed} departed, {verdict.returned} returned, "
-        f"{in_tail} in their seven-day tail, {left} left the fleet",
+        line,
         **verdict.as_log(),
         inTail=in_tail,
         leftTheFleet=left,
@@ -1113,36 +1123,23 @@ async def _stamp_presence(db: AsyncSession, connection: MdmConnection, external_
     """Mark that Jamf returned this Mac, whatever the read then turned out to be worth. One
     narrow UPDATE and its own commit, because the caller returns without one and a presence
     mark lost to a later device's rollback is the mark the census needs."""
-    await db.execute(
-        sa_update(Device)
-        .where(Device.mdm_connection_id == connection.id, Device.external_id == external_id)
-        .values(last_seen_at=datetime.now(UTC))
-    )
+    mine = (Device.mdm_connection_id == connection.id, Device.external_id == external_id)
+    await db.execute(sa_update(Device).where(*mine).values(last_seen_at=datetime.now(UTC)))
     await db.commit()
 
 
 async def sync_state(db: AsyncSession, connection: MdmConnection) -> None:
     """Stamp the run's end on the connection's sync state. Once per run, not per device:
     the previous per-device call recounted every device row each time, which made a
-    sweep quadratic in fleet size.
-
-    The count is the *current fleet* (#183): a Mac past its seven-day tail is out of the
-    number `/api/mdm/status` serves and the Overview's status strip shows. Deliberately not
-    the posture recorder — redefining `devices.*` is #135's open ruling, not this function's.
-    """
+    sweep quadratic in fleet size. The count is the *current fleet* (#183): a Mac past its
+    seven-day tail is out of the number `/api/mdm/status` serves and the Overview's status strip
+    shows. Deliberately not the posture recorder — that population is #135's open ruling."""
     result = await db.execute(select(MdmSyncState).where(MdmSyncState.mdm_connection_id == connection.id))
     state = result.scalar_one_or_none()
 
-    device_count = (
-        await db.execute(
-            select(func.count())
-            .select_from(Device)
-            .where(
-                Device.mdm_connection_id == connection.id,
-                ~gone_for_good(Device.mdm_connection_id, Device.external_id, at=datetime.now(UTC)),
-            )
-        )
-    ).scalar_one()
+    here = ~gone_for_good(Device.mdm_connection_id, Device.external_id, at=datetime.now(UTC))
+    fleet = select(func.count()).select_from(Device).where(Device.mdm_connection_id == connection.id, here)
+    device_count = (await db.execute(fleet)).scalar_one()
 
     if state is None:
         state = MdmSyncState(mdm_connection_id=connection.id, provider=connection.provider)

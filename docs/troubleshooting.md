@@ -1088,10 +1088,11 @@ record at all, and the sweep writes one line per deleted object instead ([`chang
 LoonInspect never asks Jamf what was deleted; it notices what a sweep stopped returning. Only a
 **clean census** may judge — a device sweep that succeeded, carried no RSQL selector and lost no
 device to a failure — and a Mac it does not name enters a **seven-day tail**: still listed, still
-counted, marked *Not returned by Jamf since …*. Seven days later it **leaves the fleet** — out of
-**Devices**, out of the device count on the Overview — and nothing is deleted: its row, its
-observations and its whole change history stay, and `GET /api/devices?includeDeparted=true` reads
-it back. A sweep that names it again at any point puts it straight back.
+counted, and unmarked on the page, so the tail shows only in the run log and in the `departedAt`
+the API returns. Seven days later it **leaves the fleet** — out of **Devices**, out of the device
+count on the Overview — and nothing is deleted: its row, observations and whole change history
+stay, and `GET /api/devices?includeDeparted=true` reads it back. A sweep that names it again at
+any point puts it straight back.
 
 1. **The Mac is still listed and you deleted it in Jamf.** Open the newest device-sweep run
    (**Runs**, or `GET /api/runs/{jobId}/log`) and read its last lines.
@@ -1105,13 +1106,13 @@ it back. A sweep that names it again at any point puts it straight back.
      `devicesFailed`, and a *device failed; sweep continues* line each). A device Jamf returned
      but whose ingest failed has a stale presence mark, so the night judges nobody. Fix what
      those lines name — path 1 or 2 — and the next clean sweep catches up.
-   - *census collapsed against the population* / *census returned nothing* → the sweep came
-     back with less than half the fleet, or none of it, and departing on that is refused by
-     design. Usually a lost privilege or a short page: path 1.
+   - *device census refused: only N of M Macs came back, fewer than half the fleet*, or
+     *device census refused: the sweep returned no Macs at all* → departing a fleet on a short
+     read is refused by design. Usually a lost privilege or a short page: path 1.
    - no census line at all on a finished sweep → reportable state **P**.
 2. **A Mac vanished and nobody deleted it.** It left the fleet, which takes seven days of clean
    censuses that never named it. `GET /api/devices?includeDeparted=true` lists it again with
-   `departedAt` — the day of the last census that named it — and its page, observations and
+   `departedAt` — the first clean census that did not return it — and its page, observations and
    changes are all still there by id. If Jamf Pro still holds the Mac, ask Jamf for it with path
    2's `curl` against `/api/v4/computers-inventory`; if Jamf returns it, reportable state **P**.
 3. **You want it gone for good.** Nothing removes a Mac's history today — not this, not

@@ -11,6 +11,7 @@ import json
 import os
 import uuid as uuidlib
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -26,6 +27,8 @@ from tests.jamf_fake import HOST, FakeJamf  # noqa: E402
 GROUP = "computer_group"
 DEFINITION = "extension_attribute_definition"
 COMPUTER = "computer"
+_ROOT = Path(__file__).resolve().parents[2]
+_BOTH = ((_ROOT / "backend/app/mdm/service.py").read_text(), (_ROOT / "docs/troubleshooting.md").read_text())
 
 
 @pytest_asyncio.fixture(loop_scope="session")
@@ -276,3 +279,8 @@ async def test_the_breaker_refuses_a_collapsed_device_census(db, jamf: FakeJamf,
     assert (await sync_connection(db, connection)).ok
     (gone,) = await _departures(db, connection.id, COMPUTER)
     assert gone.subject_id == clones[0]["id"]
+
+    # A refusal and a healthy census are different sentences on the run log, and troubleshooting
+    # path 12 quotes both (`diagnosability.md` rules 1, 2 and 4): reword one and this breaks first.
+    for phrase in ("device census not taken", "device census refused: ", "fewer than half the fleet", "no Macs at all"):
+        assert all(phrase in text for text in _BOTH), phrase

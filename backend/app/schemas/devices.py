@@ -129,8 +129,8 @@ class DeviceOut(BaseModel):
     department_id: str | None
     building: str | None = None
     department: str | None = None
-    # When the last clean census stopped naming this Mac (#183). Null means Jamf returned it;
-    # non-null is the seven-day tail, after which it leaves the fleet and this list.
+    # The first clean census that did not name this Mac (#183). Null means Jamf returned it;
+    # non-null starts the seven-day tail, after which it leaves the fleet and this list.
     departed_at: datetime | None = None
 
 

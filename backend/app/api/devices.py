@@ -78,9 +78,9 @@ async def _org_unit_where(db: AsyncSession, kind: str, column: ColumnElement[str
 
 
 def _stamped(out: _DeviceOutT, device: Device, names: OrgUnitNames, departed: Mapping[tuple[int, str], datetime]) -> _DeviceOutT:
-    """Stamp the per-request lookups onto a serialized device: the resolved department and
-    building, and when a census stopped naming this Mac (#183). One dict lookup each
-    against tables of tens of rows, rather than a join per device row."""
+    """Stamp the per-request lookups onto a serialized device: the resolved department and building,
+    and the census that first did not name this Mac (#183). One dict lookup each against tables of
+    tens of rows, rather than a join per device row."""
     connection_id = device.mdm_connection_id
     return out.model_copy(
         update={
