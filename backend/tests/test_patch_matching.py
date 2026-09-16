@@ -26,6 +26,7 @@ from app.mdm.patch.matching import (
     STATE_AHEAD,
     STATE_BEHIND,
     STATE_LATEST,
+    STATE_UNKNOWN,
     Catalog,
     TitleMatch,
     match_app,
@@ -96,6 +97,24 @@ class TestPlatform:
 
 def _ts(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
+
+
+def _firefox_line(id: str, name: str, attribute: str, patches: list[tuple[str, str]]) -> dict:
+    """One of the two real Firefox titles' shape: the shared `bundleId` column, and a lone
+    `is not ""` test on the channel's own attribute. Newest patch first, as Jamf lists them."""
+    test = {"name": attribute, "type": "extensionAttribute", "operator": "is not", "value": ""}
+    return {
+        "id": id,
+        "name": name,
+        "bundleId": "org.mozilla.firefox",
+        "currentVersion": patches[0][0],
+        "patches": [{"version": version, "releaseDate": f"2026-{day}T17:00:00Z"} for version, day in patches],
+        "requirements": [{"operator": "and", "tests": [test]}],
+    }
+
+
+def _firefox(version: str) -> Facts:
+    return Facts(app_name="Firefox.app", bundle_id="org.mozilla.firefox", versions=(version,))
 
 
 class TestCatalogIndex:
@@ -241,6 +260,38 @@ class TestExtensionAttributes:
         assert match_app(Facts(**{**firefox.__dict__, "bundle_id": "org.mozilla.firefox.nightly"}), catalog) == []
         chrome = Facts(app_name="Google Chrome.app", bundle_id="com.google.Chrome", versions=("151.0.7922.174",))
         assert [m.title.name for m in match_app(chrome, catalog)] == ["Google Chrome"]
+
+    def test_one_firefox_matches_both_channels_and_the_subject_keys_say_which(self) -> None:
+        """#386's named cost, on the most common browser in any fleet: `0B3` Mozilla Firefox and
+        `0B4` Firefox ESR both carry `org.mozilla.firefox`, and the attribute that parts them is
+        the one this rule assumes TRUE — so one installed Firefox matches both lines.
+
+        §4a claims two readings of that, and here they are. A Mac on the latest ESR reads
+        **latest**, because #65's rule is "any matched title says the installed version is its
+        current one" — the common answer stays right. A Mac behind on both folds #68's pair off
+        the ESR line and `latestVersion` off the rolling one: *2 releases behind 156.0* is true
+        of neither, which is what #311 minted `sentenceTitleID` for (§7's three subjects)."""
+        esr, rolling = "jamf-patch-mozilla-firefox-esr", "jamf-patch-mozilla-firefox"
+        rolling_line = [("156.0", "09-09"), ("155.0", "08-12"), ("154.0", "07-15")]
+        esr_line = [("153.3.0", "09-02"), ("153.2.0", "06-10"), ("153.1.0", "05-06")]
+        catalog = Catalog.from_records(
+            [
+                _firefox_line("0B3", "Mozilla Firefox", rolling, rolling_line),
+                _firefox_line("0B4", "Mozilla Firefox ESR", esr, esr_line),
+            ]
+        )
+        latest_esr = summarize(match_app(_firefox("153.3.0"), catalog))
+        assert latest_esr is not None and sorted(latest_esr.title_ids) == ["0B3", "0B4"]
+        assert latest_esr.state == STATE_LATEST and latest_esr.is_compliant is True and latest_esr.ea_assumed is True
+
+        behind_both = summarize(match_app(_firefox("153.1.0"), catalog))
+        assert behind_both is not None and behind_both.is_compliant is False
+        # The rolling title supplies the version to catch up to; the ESR title the count and date.
+        assert behind_both.reference_title_id == "0B3" and behind_both.latest_version == "156.0"
+        assert behind_both.sentence_title_id == "0B4" and behind_both.releases_missed == 2
+        assert behind_both.patch_available_since == _ts("2026-06-10T17:00:00Z")
+        # And the rolling line has never heard of this build, which is the honest `unknown`.
+        assert behind_both.state == STATE_UNKNOWN and behind_both.this_version_seen is True
 
     def test_an_ea_detected_title_reads_absent_until_the_attribute_is_read(self, device_matches) -> None:
         """Kyle's second half (#386): admission reaches Firefox, not Python. The real Mac runs
