@@ -115,10 +115,11 @@ async def _create(c: httpx.AsyncClient, name: str, **extra) -> httpx.Response:
         "name": f"{name} {uuidlib.uuid4().hex[:8]}",
         "provider": "jamf",
         "baseUrl": "https://webhook-secret.jamfcloud.com",
-        # Real credentials matter even though nothing calls Jamf here: ingest_webhook
-        # builds the client before it looks at the event, so a credential-less
-        # connection 500s on an *authenticated* callback and the 200s below would stop
-        # meaning what they say.
+        # Real credentials, so an *authenticated* callback here is answered on its own
+        # merits. Since #477 the client is built below the event guards, so the
+        # `ComputerCheckIn` used below would be dropped for free either way; a
+        # credential-less connection would still refuse an ingesting one, and the 200s
+        # below should not depend on which callback this file happens to send.
         "credentials": {"clientId": "webhook-client", "clientSecret": "webhook-client-secret"},
         "capabilityWebhooks": True,
         **extra,
