@@ -58,6 +58,35 @@ def test_long_value_round_trips(encryption_key: str) -> None:
     assert column.process_result_value(stored, None) == long_secret
 
 
+def test_a_new_write_carries_the_key_id(encryption_key: str) -> None:
+    """#480: the envelope names the key that wrote it, so a later rekey can tell which
+    rows are under which key by reading the row."""
+    assert EncryptedString().process_bind_param(_SECRET, None).startswith("k1:gAAAAA")
+
+
+def test_a_legacy_unprefixed_value_still_decrypts(encryption_key: str) -> None:
+    """No migration and no backfill: a value written before the prefix existed *is* a `k1`
+    value and is read as one. A Fernet token is urlsafe base64, an alphabet with no colon
+    in it, so the two spellings can never be confused."""
+    legacy = Fernet(get_encryption_key()).encrypt(_SECRET.encode()).decode()
+
+    assert ":" not in legacy
+    assert EncryptedString().process_result_value(legacy, None) == _SECRET
+
+
+def test_an_unknown_key_id_is_refused_in_its_own_words(encryption_key: str) -> None:
+    """The day a rollback runs an older image against a newer database. Reading it as `k1`
+    anyway would answer with the wrong sentence and send an operator to their secret store
+    for a key that was never the problem."""
+    from app.core.crypto import STORED_VALUE_UNREADABLE, StoredValueUnknownKeyId
+
+    stored = "k2:" + Fernet(get_encryption_key()).encrypt(_SECRET.encode()).decode()
+
+    with pytest.raises(StoredValueUnknownKeyId, match="older than the database") as caught:
+        EncryptedString().process_result_value(stored, None)
+    assert "k2" in str(caught.value) and str(caught.value) != STORED_VALUE_UNREADABLE
+
+
 def test_decrypt_under_a_different_key_raises_runtime_error(encryption_key: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """Key rotation without re-encrypting stored rows is the realistic trigger, and
     `crypto.py` notes rotation is an open TODO. The wrapped error is what makes that

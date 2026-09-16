@@ -70,6 +70,13 @@ COPY public.mdm_connections (id, tenant_id, name, provider, base_url, is_active,
 1  00000000-…-0002  Runbook Test Jamf  jamf  https://jamf.example.com  t  gAAAAABqlqzItdjckcvfmutOBiaE5kBD…
 ```
 
+Since #480 the stored value begins with a key id — `k1:` and then the token, where the
+capture above predates the prefix — so a later rekey can tell which key wrote a row by
+reading the row, not a side table. It changes nothing you have to do: the dump still
+carries ciphertext and not the secret, and losing `ENCRYPTION_KEY` still costs you every
+credential in it. `k1` is the only key id this build knows; values written before the
+prefix existed are read as `k1`, with no migration and no backfill.
+
 That property is pinned by a test rather than by this paragraph:
 `backend/tests/test_backup_secrecy_db.py` reads the row back through raw SQL — the path
 the ORM's type decorator never touches, and the same bytes `pg_dump` serialises — and

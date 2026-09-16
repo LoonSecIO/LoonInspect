@@ -213,7 +213,16 @@ the run `jobID`, the token's index settings, and the search you ran.
    connection and destination and create it again with its secret. Account passwords
    survive; they are hashed, not encrypted. Only if the original key is back and the 500
    persists → reportable **G**.
-4. Healthy and signed in, and something else is unreadable → reportable **G**.
+4. **The same 503, but the sentence names a *key id*.** `GET /api/mdm/connections` answers
+   **503** with *Stored credentials cannot be read: this value carries key id `k2`, which
+   this build does not know…* — not the `ENCRYPTION_KEY` sentence in step 3. **The key is
+   not the problem, so do not go looking for it.** Every stored secret says which key
+   wrote it (`k1` is the only one this build knows), and this row was written by a newer
+   build: the running image is older than the database, the shape of a rollback that
+   swapped the image back ([`operations.md`](operations.md) §5). **This is the fix:** roll
+   forward to the newer image, or restore the dump taken before the upgrade. Rolled
+   forward and the sentence persists → reportable **G**.
+5. Healthy and signed in, and something else is unreadable → reportable **G**.
 
 **F.** Startup migration failed. Report `docker compose logs app --tail 200` and the
 build (Settings › Support shows it).

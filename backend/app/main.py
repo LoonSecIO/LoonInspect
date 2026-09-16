@@ -50,7 +50,7 @@ from app.core.auth import authenticate
 from app.core.bootstrap import bootstrap_accounts, bootstrap_tenants, migrate_legacy_siem_webhook
 from app.core.config import settings
 from app.core.context import SYSTEM, reset_actor, set_actor, system_actor_for
-from app.core.crypto import STORED_VALUE_UNREADABLE, StoredValueUnreadable, validate_encryption_key
+from app.core.crypto import StoredValueUnreadable, validate_encryption_key
 from app.core.database import init_db, session_for_tenant, unscoped_session
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware, content_security_policy_mode
@@ -500,10 +500,14 @@ _unreadable_reported = False
 @app.exception_handler(StoredValueUnreadable)
 async def _stored_value_unreadable(request: Request, exc: StoredValueUnreadable) -> JSONResponse:
     global _unreadable_reported
+    # The exception's own sentence, not the constant: a value under a key id this build
+    # does not know is also unreadable, and its fix is the image rather than the key
+    # (#480). For the wrong-key case this is `STORED_VALUE_UNREADABLE`, unchanged.
+    sentence = str(exc)
     if not _unreadable_reported:
         _unreadable_reported = True
-        logger.error(STORED_VALUE_UNREADABLE, extra={"path": request.url.path})
-    return JSONResponse(status_code=503, content={"detail": STORED_VALUE_UNREADABLE})
+        logger.error(sentence, extra={"path": request.url.path})
+    return JSONResponse(status_code=503, content={"detail": sentence})
 
 
 # A refused body is answered without the body. FastAPI's own 422 returns pydantic's errors
