@@ -1,4 +1,5 @@
 import { apiRequest } from "@/config/api";
+import { HIDDEN_KEYS } from "@/features/changes/types";
 import type {
   ChangeFilters,
   ChangePolicy,
@@ -18,6 +19,11 @@ export function listChanges(filters: ChangeFilters): Promise<DeviceChangeListRes
   if (filters.section) params.set("section", filters.section);
   if (filters.change) params.set("change", filters.change);
   if (filters.since) params.set("since", filters.since);
+  // The keys with no control of their own (#447): a link, a click on a row, or the Prompt bar.
+  for (const key of HIDDEN_KEYS) {
+    const value = filters[key];
+    if (value) params.set(key, value);
+  }
   if (filters.connectionId !== undefined) params.set("connectionId", String(filters.connectionId));
   if (filters.subjectId) params.set("subjectId", filters.subjectId);
   if (filters.subjectKind) params.set("subjectKind", filters.subjectKind);

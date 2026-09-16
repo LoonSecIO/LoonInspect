@@ -33,6 +33,10 @@ class DeviceChangeOut(_Base):
     new_value: dict | None
     level: str
     details: dict | None
+    # The Mac as the observation that found this change saw it (#447): model, OS, org,
+    # management, assigned user. Sent because the page filters by a value it can see on a row —
+    # a click on the device sets the filter — never because a column shows it.
+    device_meta: dict | None
     policy_version: str
 
 

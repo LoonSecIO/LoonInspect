@@ -2,6 +2,7 @@ import { ApiBodyError, ApiError } from "@/config/api";
 import type { Translations } from "@/i18n/en";
 import type { Provider } from "@/features/ai/api";
 import { CHANGE_KINDS } from "@/features/changes/render";
+import { HIDDEN_KEYS } from "@/features/changes/types";
 import type {
   ChangeFilters,
   ChangeKind,
@@ -52,8 +53,22 @@ export function filtersFromPrompt(filters: PromptFilters): Partial<ChangeFilters
     level: blankToUndefined(filters.level),
     section: blankToUndefined(filters.section),
     change: blankToUndefined(filters.change),
+    // The four a repair can set (#447): a Search the fleet had no device for, but did have a
+    // model, an OS version, a department or a management state for.
+    model: blankToUndefined(filters.model),
+    osVersion: blankToUndefined(filters.osVersion),
+    department: blankToUndefined(filters.department),
+    managed: blankToUndefined(filters.managed),
     minLevel: undefined,
     since: undefined,
+    // The six hidden keys the bar cannot set, cleared like the rest: a question asked from a
+    // feed that a link had narrowed by trigger or by span must answer for the fleet.
+    trigger: undefined,
+    spanId: undefined,
+    version: undefined,
+    fileVault: undefined,
+    site: undefined,
+    user: undefined,
     connectionId: undefined,
     subjectId: undefined,
     subjectKind: undefined,
@@ -69,6 +84,7 @@ const COMPARED_KEYS = [
   "section",
   "change",
   "since",
+  ...HIDDEN_KEYS,
   "connectionId",
   "subjectId",
   "subjectKind"
@@ -112,6 +128,10 @@ export function readback(
     level?: ChangeLevel | null;
     section?: string | null;
     change?: ChangeKind | null;
+    model?: string | null;
+    osVersion?: string | null;
+    department?: string | null;
+    managed?: string | null;
   },
   strings: ChangesStrings,
   mode: "showing" | "proposed" = "showing"
@@ -123,6 +143,12 @@ export function readback(
   if (filters.section) bits.push(words.readbackSection(strings.sections[filters.section] ?? filters.section));
   if (filters.level) bits.push(words.readbackLevel(strings.levels[filters.level] ?? filters.level));
   if (filters.change) bits.push(words.readbackChange(words.answerKinds[filters.change] ?? filters.change));
+  // The dimensions a repair moved a Search into (#447), after the controls: the page has no
+  // control for them, so the words are where a reader learns the answer was narrowed this way.
+  if (filters.model) bits.push(words.readbackModel(filters.model));
+  if (filters.osVersion) bits.push(words.readbackOsVersion(filters.osVersion));
+  if (filters.department) bits.push(words.readbackDepartment(filters.department));
+  if (filters.managed) bits.push(filters.managed === "false" ? words.readbackUnmanaged : words.readbackManaged);
   const [lead, none] =
     mode === "proposed" ? [words.proposalReadbackLead, words.proposalReadbackNone] : [words.readbackLead, words.readbackNone];
   return bits.length > 0 ? `${lead} ${bits.join(", ")}` : none;
@@ -274,7 +300,17 @@ const isCount = (value: unknown): value is number => typeof value === "number" &
 
 const OUTCOMES: readonly PromptOutcome[] = ["applied", "proposed", "invalid", "error", "unparseable"];
 const HIDDEN_REASONS: readonly PromptHiddenReason[] = ["flag_off", "consent_off", "no_provider"];
-const FILTER_KEYS = ["q", "artifact", "level", "section", "change"] as const satisfies readonly (keyof PromptFilters)[];
+const FILTER_KEYS = [
+  "q",
+  "artifact",
+  "level",
+  "section",
+  "change",
+  "model",
+  "osVersion",
+  "department",
+  "managed"
+] as const satisfies readonly (keyof PromptFilters)[];
 
 function isFilters(value: unknown): value is PromptFilters {
   // Strings only; which ones the page knows is its own business — the URL keeps a level or

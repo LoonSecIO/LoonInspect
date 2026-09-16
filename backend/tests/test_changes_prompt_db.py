@@ -43,6 +43,11 @@ MAC_MINI = "Kyle\u2019s Mac mini"
 WIRESHARK = {
     "search": None, "filter": "Wireshark", "level": "any", "section": "Applications", "change": "any", "unsupported": None,
 }  # fmt: skip
+# What the derive path stamps on a row (#447): the Air installed Wireshark and is managed, the
+# mini updated it and is not. A repair can only move a Search into a dimension the fleet has.
+AIR = {"model": "MacBook Air (M3, 2024)", "osVersion": "26.6.2", "departmentId": "5", "managed": True}
+MINI = {"model": "Mac mini (2024) M4", "osVersion": "27.0", "departmentId": "9", "managed": False}
+
 # A key saved on a card, for the restore that cannot open it, and the one typed again.
 KEY = "sk-ant-changes-prompt-key-vvq-7d2e91"
 REENTERED_KEY = "sk-ant-changes-prompt-reentered-vvq-40b8c5"
@@ -126,7 +131,7 @@ async def seeded(accounts):
     file's devices lead the newest-first list."""
     from app.core.database import session_for_tenant
     from app.core.tenancy import OPERATIONAL_TENANT_ID
-    from app.models.schema import MdmConnection
+    from app.models.schema import JamfOrgUnit, MdmConnection
 
     base = datetime.now(UTC) + timedelta(hours=1)
     async with session_for_tenant(OPERATIONAL_TENANT_ID) as db:
@@ -143,14 +148,24 @@ async def seeded(accounts):
         before_302 = _span(cid, "302", observed_at=base + timedelta(minutes=30), collected_at=base + timedelta(minutes=40))
         before_303 = _span(cid, "303", observed_at=base, collected_at=base - timedelta(hours=2))
         db.add_all([before_302, before_303])
+        db.add(
+            JamfOrgUnit(
+                mdm_connection_id=cid,
+                kind="department",
+                external_id="5",
+                name="Finance",
+                first_seen_at=base,
+                last_seen_at=base,
+            )
+        )
         await db.flush()
         db.add_all(
             [
                 _change(cid, subject_id="301", subject_label=MAC_MINI, serial_number="KY4QVD7430", entry_identity=wireshark,
-                        observed_at=base, collected_at=base),
+                        observed_at=base, collected_at=base, device_meta=AIR),
                 _change(cid, subject_id="302", subject_label=MAC_MINI, serial_number="VKM73DMG47", entry_identity=wireshark,
                         change="updated", observed_at=base + timedelta(hours=1), collected_at=base + timedelta(hours=1),
-                        previous_span_id=before_302.id),
+                        previous_span_id=before_302.id, device_meta=MINI),
                 _change(cid, subject_id="303", subject_label="design-mbp", serial_number="PRMSER303",
                         entry_identity=_app("Slack", "com.tinyspeck.slackmacgap"), observed_at=base, collected_at=base,
                         previous_span_id=before_303.id),
@@ -322,6 +337,16 @@ def _wire(moment: datetime) -> str:
     return moment.isoformat().replace("+00:00", "Z")
 
 
+def _filters(**set_by_the_answer: object) -> dict:
+    """Every key the answer carries, unset but for the ones named — the five the model fills
+    and the four dimensions a repair can move a Search into (#447)."""
+    return {
+        "q": None, "artifact": None, "level": None, "section": None, "change": None,
+        "model": None, "osVersion": None, "department": None, "managed": None,
+        **set_by_the_answer,
+    }  # fmt: skip
+
+
 def _mine(summary: dict, seeded: dict) -> dict[str, dict]:
     return {d["subjectId"]: d for d in summary["devices"] if d["connectionId"] == seeded["connection_id"]}
 
@@ -377,7 +402,7 @@ async def test_a_question_comes_back_as_the_pages_filters_with_a_summary(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["outcome"] == "applied"
-    assert body["filters"] == {"q": None, "artifact": "Wireshark", "level": None, "section": "applications", "change": None}
+    assert body["filters"] == _filters(artifact="Wireshark", section="applications")
     assert body["unsupported"] is None
     assert body["repairs"] == []
     assert body["widening"] == []
@@ -473,9 +498,7 @@ async def test_the_change_the_model_names_narrows_the_summary(client, db, clean,
     endpoint.body = _reply(json.dumps({**WIRESHARK, "search": "Kyle's Mac mini", "change": "added"}))
     body = (await _ask(client, "new installs of wireshark on Kyle's Mac mini")).json()
     assert body["outcome"] == "applied", body
-    assert body["filters"] == {
-        "q": "Kyle's Mac mini", "artifact": "Wireshark", "level": None, "section": "applications", "change": "added",
-    }  # fmt: skip
+    assert body["filters"] == _filters(q="Kyle's Mac mini", artifact="Wireshark", section="applications", change="added")
     summary = body["summary"]
     assert (summary["total"], summary["devicesTotal"], summary["otherSubjects"], summary["truncated"]) == (1, 1, 0, False)
     assert [(d["serial"], d["added"], d["updated"]) for d in summary["devices"]] == [("KY4QVD7430", 1, 0)]
@@ -547,6 +570,79 @@ async def test_nothing_matched_states_no_time(client, db, clean, seeded, endpoin
     summary = (await _ask(client, "when was NoSuchAppVvq installed")).json()["summary"]
     assert (summary["total"], summary["devicesTotal"]) == (0, 0)
     assert summary["when"] is None
+
+
+async def test_a_search_that_names_no_device_is_read_as_the_macs_model(client, db, clean, seeded, endpoint):
+    """Ruling H4 on #447. Asked "which MacBook Airs installed Wireshark", the model puts the
+    model name in Search, where it matches no device name, no serial, no Jamf id and no UDID —
+    an empty answer with nothing to say why. The repair moves it and says so; the instructions
+    never learn a sixth field, because #443 measured what that costs."""
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "search": "MacBook Air", "change": "added"}))
+    body = (await _ask(client, "which MacBook Airs installed wireshark")).json()
+    assert body["outcome"] == "applied", body
+    assert body["filters"]["q"] is None
+    assert body["filters"]["model"] == "MacBook Air"
+    assert body["widening"] == []
+    assert any("as Model" in repair and "names no device" in repair for repair in body["repairs"])
+    # The Air's install, and not the mini's update of the same app.
+    assert [d["serial"] for d in body["summary"]["devices"]] == ["KY4QVD7430"]
+    # And the page, asked for those filters, agrees.
+    page = await client.get("/api/changes", params={"artifact": "Wireshark", "model": "MacBook Air", "change": "added"})
+    assert [r["serialNumber"] for r in page.json()["items"]] == ["KY4QVD7430"]
+
+
+async def test_a_device_name_always_wins_over_a_dimension(client, db, clean, seeded, endpoint):
+    """A Mac can be named after anything — "Kyle's Mac mini" is a device name, and so is a Mac
+    named after its department. A Search that matches a device is never read as a dimension."""
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "search": "Kyle's Mac mini"}))
+    body = (await _ask(client, "wireshark on Kyle's Mac mini")).json()
+    assert body["filters"]["q"] == "Kyle's Mac mini"
+    assert (body["filters"]["model"], body["filters"]["department"], body["filters"]["managed"]) == (None, None, None)
+    assert body["repairs"] == []
+
+
+async def test_a_word_for_management_state_and_a_department_name_are_read_too(client, db, clean, seeded, endpoint):
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "search": "unmanaged"}))
+    body = (await _ask(client, "what changed on unmanaged macs")).json()
+    assert (body["filters"]["q"], body["filters"]["managed"]) == (None, "false")
+    assert any("does not manage" in repair for repair in body["repairs"])
+    assert [d["serial"] for d in body["summary"]["devices"]] == ["VKM73DMG47"]
+
+    # A department by the name Jamf's own catalog holds, moved to the id the row carries.
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "search": "Finance"}))
+    body = (await _ask(client, "wireshark changes in Finance")).json()
+    assert (body["filters"]["q"], body["filters"]["department"]) == (None, "5")
+    assert any("Department Finance" in repair and "department 5" in repair for repair in body["repairs"])
+    assert [d["serial"] for d in body["summary"]["devices"]] == ["KY4QVD7430"]
+
+
+async def test_an_os_version_in_search_is_read_as_one(client, db, clean, seeded, endpoint):
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "search": "27.0"}))
+    body = (await _ask(client, "wireshark on macs running 27.0")).json()
+    assert (body["filters"]["q"], body["filters"]["osVersion"]) == (None, "27.0")
+    assert any("as OS version" in repair for repair in body["repairs"])
+    assert [d["serial"] for d in body["summary"]["devices"]] == ["VKM73DMG47"]
+
+
+async def test_a_search_the_fleet_has_nothing_for_is_left_alone(client, db, clean, seeded, endpoint):
+    """No device, no model, no version, no department: the Search stands as the model set it and
+    the answer is honestly empty. Moving it to a dimension that matches nothing either would
+    only make the corrections line lie."""
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "search": "ThinkPad X1"}))
+    body = (await _ask(client, "wireshark on ThinkPad X1")).json()
+    assert body["filters"]["q"] == "ThinkPad X1"
+    assert body["repairs"] == []
+    assert (body["summary"]["total"], body["summary"]["when"]) == (0, None)
 
 
 async def test_rows_that_are_not_devices_are_counted_apart(client, db, clean, seeded, endpoint):
@@ -639,7 +735,7 @@ async def test_a_name_the_whitelist_refuses_is_proposed_with_its_filters_and_sum
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["outcome"] == "proposed"
-    assert body["filters"] == {"q": None, "artifact": None, "level": None, "section": "applications", "change": "added"}
+    assert body["filters"] == _filters(section="applications", change="added")
     assert body["repairs"] == [REFUSED_FILTER]
     assert body["widening"] == [REFUSED_FILTER]
     assert body["error"] is None
@@ -661,7 +757,7 @@ async def test_a_section_the_page_does_not_have_is_proposed(client, db, clean, s
     endpoint.body = _reply(json.dumps({**WIRESHARK, "filter": "PromptProbeVvq", "section": "Apps"}))
     body = (await _ask(client, "who has PromptProbeVvq")).json()
     assert body["outcome"] == "proposed"
-    assert body["filters"] == {"q": None, "artifact": "PromptProbeVvq", "level": None, "section": None, "change": None}
+    assert body["filters"] == _filters(artifact="PromptProbeVvq")
     assert body["widening"] == ["The model named a section this page does not have, so it was read as any section."]
     # Any section, proposed: the probe app on one Mac and in one smart group's definition.
     summary = body["summary"]
@@ -676,7 +772,7 @@ async def test_a_repair_that_narrows_is_still_applied(client, db, clean, seeded,
     endpoint.body = _reply(json.dumps({**WIRESHARK, "filter": None, "section": "any"}))
     body = (await _ask(client, "what happened on VKM73DMG47")).json()
     assert body["outcome"] == "applied"
-    assert body["filters"] == {"q": "VKM73DMG47", "artifact": None, "level": None, "section": None, "change": None}
+    assert body["filters"] == _filters(q="VKM73DMG47")
     assert body["repairs"] == ["Filled Search with the one serial-number-shaped word in the question."]
     assert body["widening"] == []
     assert "302" in _mine(body["summary"], seeded)

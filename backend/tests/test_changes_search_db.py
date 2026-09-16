@@ -41,6 +41,30 @@ ADMIN = ("admin@artifact-search.example.com", "artifact-search-password")
 
 BASE = datetime(2026, 8, 30, 12, 0, tzinfo=UTC)
 
+# Two stamps that differ in every key (app.changes.derive.DEVICE_META_KEYS), and the span two
+# rows of one observation share.
+AIR = {
+    "model": "MacBook Air (M3, 2024)",
+    "osVersion": "26.6.2",
+    "fileVault": "BOOT_ENCRYPTED",
+    "departmentId": "5",
+    "managed": True,
+    "username": "dana",
+    "realName": "Dana Okonkwo",
+    "email": "dana@example.com",
+}
+MINI = {
+    "model": "Mac mini (2024) M4",
+    "osVersion": "27.0",
+    "fileVault": "NOT_ENCRYPTED",
+    "departmentId": "9",
+    "managed": False,
+    "username": "ops",
+    "realName": "Ops Service",
+    "email": "ops@example.com",
+}
+WEBHOOK_SPAN = uuidlib.UUID("2f6c1e4a-7b93-4d21-9a05-6c1d8e3f4b77")
+
 
 def _change(connection_id: int, **kwargs):
     from app.models.schema import DeviceChange
@@ -61,6 +85,29 @@ def _change(connection_id: int, **kwargs):
 def _app(name: str, bundle_id: str) -> dict:
     """An application row's identity, exactly as app.changes.policy's rule builds it."""
     return {"name": name, "bundleId": bundle_id, "path": f"/Applications/{name}.app"}
+
+
+def _span(connection_id: int, subject_id: str, span_id):
+    """The observation two change rows of one pull point at — `span_id` is a real foreign key,
+    and the id is fixed here so a test can name it."""
+    from app.models.schema import ObservationSpan
+
+    return ObservationSpan(
+        id=span_id,
+        mdm_connection_id=connection_id,
+        subject_kind="computer",
+        subject_id=subject_id,
+        contract_version="v1",
+        aperture_digest="v1:" + "e" * 64,
+        head_digest="v1:" + "a" * 64,
+        section_digests={"applications": "v1:" + "0" * 64},
+        first_observed_at=BASE,
+        last_observed_at=BASE,
+        first_collected_at=BASE,
+        last_collected_at=BASE,
+        last_trigger="webhook",
+        is_current=False,
+    )
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
@@ -93,9 +140,13 @@ async def seeded():
         db.add(mine)
         await db.flush()
         ids["mine"] = mine.id
+        db.add(_span(mine.id, "108", WEBHOOK_SPAN))
+        await db.flush()
         db.add_all(
             [
-                # The needle, on two different Macs an hour apart.
+                # The needle, on two different Macs an hour apart. Both carry the dimensions
+                # the derive path stamps (#447), and they differ in every one of them, so a
+                # filter that matches both is not filtering.
                 _change(
                     mine.id,
                     subject_id="101",
@@ -104,6 +155,7 @@ async def seeded():
                     section="applications",
                     entry_kind="application",
                     entry_identity=_app("Wireshark", "org.wireshark.Wireshark"),
+                    device_meta=AIR,
                 ),
                 _change(
                     mine.id,
@@ -112,6 +164,7 @@ async def seeded():
                     serial_number="ARTSER102",
                     section="applications",
                     entry_kind="application",
+                    device_meta=MINI,
                     observed_at=BASE + timedelta(hours=1),
                     collected_at=BASE + timedelta(hours=1),
                     entry_identity=_app("Wireshark", "org.wireshark.Wireshark"),
@@ -158,6 +211,37 @@ async def seeded():
                     entry_kind="local_user_account",
                     level="high",
                     entry_identity={"uid": "503", "username": "pcap_service"},
+                ),
+                # What the webhook brought, in one observation of one Mac: two rows sharing a
+                # span, a version moved to, and the only row with `trigger=webhook` (#447).
+                _change(
+                    mine.id,
+                    subject_id="108",
+                    subject_label="webhook-mba",
+                    serial_number="ARTSER108",
+                    section="applications",
+                    entry_kind="application",
+                    change="updated",
+                    trigger="webhook",
+                    span_id=WEBHOOK_SPAN,
+                    device_meta=AIR,
+                    entry_identity=_app("Google Chrome", "com.google.Chrome"),
+                    old_value={"version": "152.0.6999.11"},
+                    new_value={"version": "153.0.7049.84"},
+                ),
+                _change(
+                    mine.id,
+                    subject_id="108",
+                    subject_label="webhook-mba",
+                    serial_number="ARTSER108",
+                    section="operating_system",
+                    field="version",
+                    change="changed",
+                    trigger="webhook",
+                    span_id=WEBHOOK_SPAN,
+                    device_meta=AIR,
+                    old_value={"value": "26.6.1"},
+                    new_value={"value": "26.6.2"},
                 ),
                 # A field change: no entry at all, so `artifact` must never surface it.
                 _change(
@@ -526,7 +610,9 @@ async def test_change_narrows_to_one_kind(feed, seeded) -> None:
         assert {row["change"] for row in installs["items"]} == {"added"}
         assert _subjects(installs) == {"101", "102", "103", "104", "105", "106"}
         assert installs["total"] == len(installs["items"])
-        assert _subjects(await feed("change=changed")) == {"107"}
+        # 107's firewall field and 108's OS version, the one this file's webhook observation
+        # carries beside an app update (#447).
+        assert _subjects(await feed("change=changed")) == {"107", "108"}
         # And it composes: the field change is `changed` in its section, and only there.
         assert _subjects(await feed("section=security&change=changed")) == {"107"}
         assert await feed("section=security&change=added") == EMPTY
@@ -542,3 +628,89 @@ async def test_an_unknown_change_is_refused_like_an_unknown_level(client, seeded
     response = await client.get(f"/api/changes?connectionId={seeded['mine']}&change=installed")
     assert response.status_code == 422
     assert response.json()["detail"] == "change must be one of added, removed, updated, changed"
+
+
+# --- what is filterable is wider than what the table shows (#447) --------------------------------
+
+
+async def test_the_trigger_that_found_a_change_is_a_filter(feed) -> None:
+    """Every row carries what started the observation it was found in, and nothing could ask.
+    "What did the webhook bring in?" is one predicate now."""
+    assert _subjects(await feed("trigger=webhook")) == {"108"}
+    assert "108" not in _subjects(await feed("trigger=sweep"))
+    assert await feed("trigger=manual") == EMPTY
+
+
+async def test_an_unknown_trigger_is_refused_rather_than_answered_empty(client, seeded) -> None:
+    response = await client.get(f"/api/changes?connectionId={seeded['mine']}&trigger=cron")
+    assert response.status_code == 422
+    assert response.json()["detail"] == "trigger must be one of sweep, manual, webhook"
+
+
+async def test_one_observation_is_a_filter_so_what_else_moved_is_one_query(feed, client, seeded) -> None:
+    """`spanId` is the local `deviceMeta.eventID`: everything found in one pull of one Mac. The
+    two webhook rows share theirs — an app version and the OS version in the same observation."""
+    body = await feed(f"spanId={WEBHOOK_SPAN}")
+    assert {row["section"] for row in body["items"]} == {"applications", "operating_system"}
+    assert body["total"] == 2
+    assert all(row["spanId"] == str(WEBHOOK_SPAN) for row in body["items"])
+    bad = await client.get(f"/api/changes?connectionId={seeded['mine']}&spanId=not-a-uuid")
+    assert bad.status_code == 422
+    assert bad.json()["detail"] == "spanId must be a UUID"
+
+
+async def test_the_version_a_change_moved_to_is_a_filter_by_prefix(feed) -> None:
+    """ "Who moved to Chrome 153" — a marketing version against a build string, which is the
+    shape of the question. The value it moved *from* stays unsearchable."""
+    assert _subjects(await feed("version=153")) == {"108"}
+    assert _subjects(await feed("version=153.0.7049.84")) == {"108"}
+    # 152 is the old value on that same row: a filter on it finds nothing.
+    assert await feed("version=152") == EMPTY
+
+
+async def test_each_stamped_dimension_narrows_the_feed(feed) -> None:
+    """The Mac as its own observation saw it. Both Wireshark rows match the app; they differ in
+    every dimension, so each filter has to pick exactly one of them."""
+    assert _subjects(await feed("artifact=Wireshark")) == {"101", "102", "103"}
+    # A model an operator half-remembers, anywhere in the value.
+    assert _subjects(await feed("artifact=Wireshark&model=Air")) == {"101"}
+    assert _subjects(await feed("artifact=Wireshark&model=mac mini")) == {"102"}
+    # A version prefix: 26 covers 26.6.2 and leaves 27.0 out.
+    assert _subjects(await feed("artifact=Wireshark&osVersion=26")) == {"101"}
+    assert _subjects(await feed("artifact=Wireshark&osVersion=27")) == {"102"}
+    # Exact, for what Jamf's own catalog numbers and for a boolean.
+    assert _subjects(await feed("artifact=Wireshark&department=5")) == {"101"}
+    assert _subjects(await feed("artifact=Wireshark&managed=false")) == {"102"}
+    assert _subjects(await feed("artifact=Wireshark&managed=true")) == {"101"}
+    assert _subjects(await feed("artifact=Wireshark&fileVault=NOT_ENCRYPTED")) == {"102"}
+    # Any of the three names the ledger holds for the assigned person (#446 will tokenize them).
+    assert _subjects(await feed("user=dana")) == {"101", "108"}
+    assert _subjects(await feed("user=Okonkwo")) == {"101", "108"}
+    assert _subjects(await feed("user=dana@example.com")) == {"101", "108"}
+    assert _subjects(await feed("user=ops")) == {"102"}
+
+
+async def test_dimensions_compose_with_each_other_and_with_the_rest(feed) -> None:
+    assert _subjects(await feed("model=Air&trigger=webhook")) == {"108"}
+    assert await feed("model=Air&trigger=sweep&version=153") == EMPTY
+    assert _subjects(await feed("model=Air&section=operating_system")) == {"108"}
+
+
+async def test_a_row_with_no_stamp_matches_no_dimension(feed) -> None:
+    """Rows derived before the stamp existed carry none — and so do subjects that are not
+    devices. They are absent from a dimension filter rather than counted as "not a MacBook Air",
+    which is the bound `list_changes` states and the page says beneath an empty table."""
+    unstamped = _subjects(await feed("artifact=Slack"))
+    assert unstamped == {"104"}
+    assert await feed("artifact=Slack&model=Air") == EMPTY
+    assert await feed("artifact=Slack&managed=true") == EMPTY
+    assert await feed("artifact=Slack&managed=false") == EMPTY
+    # The same row is still there without the dimension, so the filter narrowed, not the seed.
+    assert _subjects(await feed("artifact=Slack&trigger=sweep")) == {"104"}
+
+
+async def test_the_udid_is_a_fourth_name_for_a_device(feed) -> None:
+    """A link from another system carries the UDID, which was on every row and reachable from
+    nowhere."""
+    assert _subjects(await feed("q=ARTSER101")) == {"101"}
+    assert await feed("q=00008132-000C28101485801E") == EMPTY

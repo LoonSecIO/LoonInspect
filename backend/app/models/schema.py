@@ -1612,6 +1612,15 @@ class DeviceChange(Base):
     new_value: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     level: Mapped[str] = mapped_column(String(8), index=True)
     details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # The Mac's own dimensions as this observation saw them — model, OS, org, management,
+    # assigned user — stamped here at derive time the way the Splunk wire writes `deviceMeta`
+    # onto every sub-event (#189, docs/runs.md §4). Stamped rather than joined from `devices`
+    # so a filter reads the value the Mac carried *then*: a Mac that moved department last
+    # week would otherwise re-label every change it ever made (#447, ruling H1). Sixteen keys,
+    # capped at eighteen (app.changes.derive.DEVICE_META_KEYS); nulls are dropped, not stored,
+    # as on the wire. Null on every row written before the stamp existed, and on subjects that
+    # are not devices; `app.api.changes` says what that means for a filter.
+    device_meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     policy_version: Mapped[str] = mapped_column(String(8))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 

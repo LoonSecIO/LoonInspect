@@ -18,6 +18,7 @@ import {
   whatOf,
   type LabelMap
 } from "@/features/changes/render";
+import { HIDDEN_KEYS } from "@/features/changes/types";
 import type { ChangeFilters, ChangeKind, ChangeLevel, DeviceChange } from "@/features/changes/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
@@ -40,6 +41,10 @@ function filtersFromParams(params: URLSearchParams): ChangeFilters {
     // is the failure the absolute anchor exists to prevent.
     minLevel: asLevel(params.get("minLevel")),
     since: params.get("since") ?? undefined,
+    // #447: the ten keys with no control on this page. Read here for the same reason `since`
+    // is — a filter the URL carries and the page ignores is a feed that answers a question
+    // nobody asked, and a chip below says which are on.
+    ...Object.fromEntries(HIDDEN_KEYS.map((key) => [key, params.get(key) ?? undefined])),
     section: params.get("section") ?? undefined,
     // #300: the device page links here with all three subject keys. Before this read
     // them, that link landed on the unfiltered fleet feed — the same silent drop #107
@@ -59,6 +64,10 @@ function paramsFromFilters(filters: ChangeFilters): URLSearchParams {
   if (filters.change) params.set("change", filters.change);
   if (filters.minLevel) params.set("minLevel", filters.minLevel);
   if (filters.since) params.set("since", filters.since);
+  for (const key of HIDDEN_KEYS) {
+    const value = filters[key];
+    if (value) params.set(key, value);
+  }
   if (filters.section) params.set("section", filters.section);
   if (filters.connectionId !== undefined) params.set("connectionId", String(filters.connectionId));
   if (filters.subjectId) params.set("subjectId", filters.subjectId);
@@ -201,6 +210,32 @@ export function ChangesPage() {
 
   const canClear = hasSomethingToClear(filters, { q: draftQuery, artifact: draftArtifact }, promptUsed);
 
+  // One chip per filter with no control of its own, in the order they were added to the page.
+  // `since` keeps the table's own time format; a dimension is shown as the value it matched,
+  // because that is what a reader has to compare against the rows (#447).
+  const hiddenChips = useMemo(() => {
+    const words = tc.hiddenChips;
+    const of: Partial<Record<keyof ChangeFilters, (value: string) => string>> = {
+      since: (value) => tc.sinceChip(new Date(value).toLocaleString()),
+      trigger: (value) => words.trigger(tc.triggers[value] ?? value),
+      spanId: () => words.span,
+      version: words.version,
+      model: words.model,
+      osVersion: words.osVersion,
+      fileVault: (value) => words.fileVault(tc.fileVaultStates[value] ?? value),
+      site: words.site,
+      department: words.department,
+      managed: (value) => (value === "false" ? words.unmanaged : words.managed),
+      user: words.user
+    };
+    const chips: { key: keyof ChangeFilters; label: string }[] = [];
+    for (const key of ["since", ...HIDDEN_KEYS] as const) {
+      const value = filters[key];
+      if (value) chips.push({ key, label: of[key]?.(value) ?? value });
+    }
+    return chips;
+  }, [filters, tc]);
+
   const sectionLabels = useMemo(
     () => ({
       section: (name: string) => tc.sections[name] ?? name,
@@ -336,19 +371,25 @@ export function ChangesPage() {
         )}
       </form>
 
-      {/* The window the Overview's feed links here with (#107). The form has no control for
-          it, so it shows in the table's own format as a chip the reader can remove: before
-          this, a link's window narrowed the table with nothing on screen to say so (#443). */}
-      {filters.since && (
-        <button
-          type="button"
-          className="mr-2 inline-flex items-center gap-2 rounded-full border bg-muted px-3 py-1 text-xs"
-          onClick={() => update({ since: undefined })}
-        >
-          {tc.sinceChip(new Date(filters.since).toLocaleString())}
-          <span aria-hidden="true">×</span>
-          <span className="sr-only">{tc.clearFilter}</span>
-        </button>
+      {/* Every filter this page has no control for, named while it is applied and removable:
+          the window the Overview's feed links here with (#107, #443), and the ten dimensions a
+          link, a click on a row or the Prompt bar can set (#447). Before them, such a filter
+          narrowed the table with nothing on screen to say so. */}
+      {hiddenChips.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {hiddenChips.map((chip) => (
+            <button
+              key={chip.key}
+              type="button"
+              className="inline-flex items-center gap-2 rounded-full border bg-muted px-3 py-1 text-xs"
+              onClick={() => update({ [chip.key]: undefined })}
+            >
+              {chip.label}
+              <span aria-hidden="true">×</span>
+              <span className="sr-only">{tc.clearFilter}</span>
+            </button>
+          ))}
+        </div>
       )}
 
       {/* A subject the form has no control for (the device page's "all changes on this
@@ -410,6 +451,19 @@ export function ChangesPage() {
                   <td className="px-4 py-2">
                     <div>{row.subjectLabel ?? row.subjectId}</div>
                     <div className="text-xs text-muted-foreground">{row.serialNumber ?? row.subjectKind}</div>
+                    {/* The one stamped dimension the row shows (#447), and it is shown because it
+                        is how the rest are discovered: a filter nobody can find is a filter
+                        nobody uses, and the identity above already works this way. */}
+                    {typeof row.deviceMeta?.model === "string" && (
+                      <button
+                        type="button"
+                        className="text-left text-xs text-muted-foreground underline decoration-dotted underline-offset-4 hover:decoration-solid"
+                        title={tc.filterTo(row.deviceMeta.model)}
+                        onClick={() => update({ model: String(row.deviceMeta?.model) })}
+                      >
+                        {row.deviceMeta.model}
+                      </button>
+                    )}
                   </td>
                   <td className="px-4 py-2">
                     <div className="text-xs text-muted-foreground">{what.head}</div>
