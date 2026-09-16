@@ -226,6 +226,26 @@ CHANGE_LEAF = "change"
 # constant.
 CHANGE_EVENT_TYPE = "device.change"
 
+# The departure family — ruled 2026-09-16 on #179, carrying #135's R3. **Two event types, one
+# sourcetype**, and the pair is the design: `subject.departure` carries every departing subject
+# kind on `subjectKind` (a SIEM asking "what left the fleet last night" must not subscribe three
+# times), while a return is its own NAME rather than a `state` on the departure, so a search for
+# departures is not one that has to exclude the returns hiding inside it. Named here for the
+# reason `CHANGE_EVENT_TYPE` is: the module that mints the string and the module that emits the
+# event must not be able to drift apart.
+#
+# `loon:departure` is #188 ruling 3's no-vendor assertion form, the way `loon:run` is — a
+# departure is LoonInspect asserting something about the fleet, derived from an absence, not a
+# vendor-shaped record of a Mac. ONE `props.conf` stanza carries both types, because `event=`
+# separates them at search time and two stanzas for one shape would be two to keep in step plus
+# a `loon:departure*` wildcard to remember. An object departure is also the first event in the
+# vocabulary with no device in it: `host` is absent from the envelope and `deviceMeta` degrades
+# to the run half plus the object's own id (#243's rider, applied unchanged).
+DEPARTURE_EVENT_TYPE = "subject.departure"
+RETURNED_EVENT_TYPE = "subject.returned"
+DEPARTURE_EVENT_TYPES: frozenset[str] = frozenset({DEPARTURE_EVENT_TYPE, RETURNED_EVENT_TYPE})
+DEPARTURE_SOURCETYPE = f"{PRODUCER}:departure"
+
 
 # What survives the split: the body keys every fan-out sub-event carries, whatever
 # sourcetype it lands under. Ruled 2026-09-02 on #220 — D1, carried over from #81's

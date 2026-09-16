@@ -76,6 +76,7 @@ from app.models.schema import (
     Run,
 )
 from app.observations.departure import DEPARTURE_TAIL_DAYS, SKIP_COLLAPSED, gone_for_good, reconcile_census, tail_counts
+from app.observations.departure_events import emit_census_events
 from app.observations.ledger import (
     RecordResult,
     current_span,
@@ -526,7 +527,11 @@ async def _reconcile_departures(
     definitions: Iterable[str] | None,
 ) -> None:
     """The departure derivation for both object kinds the catalog pass took a census of
-    (#181), logged on the run. Commits, so a departure lands with the census that found it."""
+    (#181), logged on the run, and the events it produces (#179). Commits, so a departure
+    lands with the census that found it — and so does its event: `emit_census_events`
+    enqueues into this session BEFORE the commit below, which is the whole reason the
+    verdict carries the rows. A census that departed a group and then failed to commit has
+    told no SIEM that it did."""
     at = datetime.now(UTC)
     for subject_kind, observed in ((SUBJECT_COMPUTER_GROUP, groups), (SUBJECT_EXTENSION_ATTRIBUTE_DEFINITION, definitions)):
         verdict = await reconcile_census(
@@ -537,9 +542,10 @@ async def _reconcile_departures(
             at=at,
             census_run_id=run.id if run is not None else None,
         )
+        emitted = await emit_census_events(db, connection=connection, verdict=verdict, at=at)
         if run is not None:
             level = "warning" if verdict.skipped else "info"
-            await run_log(db, run, level, "departures reconciled", **verdict.as_log())
+            await run_log(db, run, level, "departures reconciled", **verdict.as_log(), eventsEnqueued=emitted)
     await db.commit()
 
 
@@ -625,7 +631,7 @@ async def _reconcile_device_census(
         line = f"device census refused: {why}; departing nobody — check the API Role's privileges and this run's errors"
     else:
         line = (
-            f"device census: {verdict.observed} observed, {verdict.departed} departed, {verdict.returned} returned, "
+            f"device census: {verdict.observed} observed, {len(verdict.departed)} departed, {len(verdict.returned)} returned, "
             f"{in_tail} in their seven-day tail, {left} left the fleet"
         )
     await run_log(

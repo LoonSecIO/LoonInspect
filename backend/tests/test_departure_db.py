@@ -284,3 +284,134 @@ async def test_the_breaker_refuses_a_collapsed_device_census(db, jamf: FakeJamf,
     # path 16 quotes both (`diagnosability.md` rules 1, 2 and 4): reword one and this breaks first.
     for phrase in ("device census not taken", "device census refused: ", "fewer than half the fleet", "no Macs at all"):
         assert all(phrase in text for text in _BOTH), phrase
+
+
+# --- the wire (#179): two types, one sourcetype, the ruled bodies -------------------
+
+
+async def _events(db, high_water: int, event_type: str) -> list:
+    from sqlalchemy import func  # noqa: F401
+
+    from app.models.schema import EventOutbox
+
+    rows = await db.execute(
+        select(EventOutbox).where(EventOutbox.id > high_water, EventOutbox.event_type == event_type).order_by(EventOutbox.id)
+    )
+    return list(rows.scalars().all())
+
+
+async def _high_water(db) -> int:
+    from sqlalchemy import func
+
+    from app.models.schema import EventOutbox
+
+    return (await db.execute(select(func.coalesce(func.max(EventOutbox.id), 0)))).scalar_one()
+
+
+async def test_a_departed_group_emits_the_ruled_body_and_a_return_closes_it_on_departed_at(
+    db, jamf: FakeJamf, connection
+) -> None:
+    """The group case of 4.3 and the return of 4.6, on the rows the outbox actually holds.
+
+    Asserted on the stored payload rather than on the builder, because the event has to land
+    in the same transaction as the departure row: a builder test would pass even if the
+    emitter were never called at all.
+
+    The group departed is the one this fixture's Mac belongs to, so `deviceCount` exercises
+    the two-hop ledger read rather than returning a zero that any bug would also return. A
+    second group is added first and left alone — an EMPTY census departs nobody by design.
+    """
+    from types import SimpleNamespace
+
+    from app.core.outbox import _build_body
+    from app.core.wire import ENVELOPE
+    from app.core.wire_vocabulary import DEPARTURE_SOURCETYPE, ordered_event_keys
+    from app.mdm.service import sync_connection
+
+    jamf.smart_groups.append(_group(1))
+    assert (await sync_connection(db, connection)).ok
+    mark = await _high_water(db)
+
+    jamf.smart_groups = [group for group in jamf.smart_groups if group["id"] != "1"]
+    assert (await sync_connection(db, connection)).ok
+    (event,) = await _events(db, mark, "subject.departure")
+    body = event.payload
+
+    assert set(body) - {ENVELOPE} == {
+        "subjectKind",
+        "subjectLabel",
+        "state",
+        "noticeDay",
+        "departedAt",
+        "occurredAt",
+        "lastSeenAt",
+        "deviceCount",
+        "event",
+        "jobID",
+        "deviceMeta",
+    }
+    # `event_outbox.payload` is jsonb and Postgres normalises key order, so what a delivery
+    # can promise is the trailing three (#286) — the family's own keys lead, then these.
+    assert list(ordered_event_keys({key: value for key, value in body.items() if key != ENVELOPE}))[-3:] == [
+        "event",
+        "jobID",
+        "deviceMeta",
+    ]
+    assert body["subjectKind"] == GROUP and body["subjectLabel"] == "All Managed Clients"
+    assert body["state"] == "departed" and body["noticeDay"] == 1
+    assert body["departedAt"] == body["occurredAt"]
+    # LoonInspect's own count, read out of the ledger — Jamf cannot be asked for a group it
+    # no longer has, and this fixture's Mac carries it.
+    assert body["deviceCount"] >= 1
+    # The object half of `deviceMeta`: the run half, the object's own id, the schema — and no
+    # eventID, no hostName, no serialNumber, because a group is not a Mac and was not pulled.
+    assert set(body["deviceMeta"]) == {"jobID", "trigger", "connectionID", "shortDate", "jamfProID", "schemaVersion"}
+    assert body["deviceMeta"]["jamfProID"] == "1" and body["deviceMeta"]["jobID"] == body["jobID"]
+    # `host` absent, `source` the instance — the ruling that keeps a group's name out of `host`.
+    assert "host" not in body[ENVELOPE] and body[ENVELOPE]["source"]
+    assert _build_body(SimpleNamespace(type="splunk_hec"), body)["sourcetype"] == DEPARTURE_SOURCETYPE
+    assert "sourcetype" not in _build_body(SimpleNamespace(type="webhook"), body)
+
+    # The return is its own type (#135 R3) and repeats the departure it closes verbatim, so
+    # pairing is exact under repetition rather than "the most recent open departure".
+    mark = await _high_water(db)
+    jamf.smart_groups.append({"id": "1", "name": "All Managed Clients", "siteId": "-1"})
+    assert (await sync_connection(db, connection)).ok
+    (back,) = await _events(db, mark, "subject.returned")
+    assert back.payload["departedAt"] == body["departedAt"]
+    assert back.payload["absentForDays"] == 0 and back.payload["matchedBy"] == "jamfProID"
+    # No `priorJamfProID` — that is the Mac's wipe-and-re-enrol case — and no `eventID`,
+    # because an object's return coincides with a census, not with a pull of that object.
+    assert "priorJamfProID" not in back.payload and "eventID" not in back.payload["deviceMeta"]
+    assert _build_body(SimpleNamespace(type="splunk_hec"), back.payload)["sourcetype"] == DEPARTURE_SOURCETYPE
+
+
+async def test_a_departed_definition_emits_the_same_body_with_its_own_device_count(db, jamf: FakeJamf, connection) -> None:
+    """4.4: identical shape, only `subjectKind` differs — and `deviceCount` is one indexed
+    COUNT over the per-device EA rows rather than a second derivation of the group read."""
+    from app.mdm.service import sync_connection
+
+    assert (await sync_connection(db, connection)).ok
+    mark = await _high_water(db)
+    jamf.extension_attribute_definitions = [d for d in jamf.extension_attribute_definitions if d["id"] != "12"]
+    assert (await sync_connection(db, connection)).ok
+
+    (event,) = await _events(db, mark, "subject.departure")
+    body = event.payload
+    assert body["subjectKind"] == DEFINITION and body["deviceMeta"]["jamfProID"] == "12"
+    assert body["state"] == "departed" and body["noticeDay"] == 1 and body["deviceCount"] >= 0
+    assert "eventID" not in body["deviceMeta"] and "hostName" not in body["deviceMeta"]
+
+
+async def test_a_refused_census_emits_nothing_at_all(db, jamf: FakeJamf, connection) -> None:
+    """The breaker's own guarantee, carried onto the wire: a census that departs nobody must
+    not enqueue anything either, or "every group departed at once" arrives at the SIEM."""
+    from app.mdm.service import sync_connection
+
+    assert (await sync_connection(db, connection)).ok
+    mark = await _high_water(db)
+    jamf.smart_groups = []
+    jamf.extension_attribute_definitions = None
+    assert (await sync_connection(db, connection)).ok
+    assert await _events(db, mark, "subject.departure") == []
+    assert await _events(db, mark, "subject.returned") == []

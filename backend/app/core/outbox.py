@@ -20,6 +20,10 @@ from app.core.wire_vocabulary import (
     ASSERTION_EVENT_TYPES,
     ASSERTION_SOURCETYPE,
     DELTA_SOURCETYPE,
+    DEPARTURE_EVENT_TYPE,
+    DEPARTURE_EVENT_TYPES,
+    DEPARTURE_SOURCETYPE,
+    RETURNED_EVENT_TYPE,
     change_sourcetype,
     ordered_event_keys,
 )
@@ -46,7 +50,22 @@ logger = logging.getLogger(__name__)
 # snapshot weighed, in one request rather than one document. The trade is the issue's
 # own — 3x the bytes for a shape the receiver can actually query — and it is why the
 # subscription, not a shape flag, is the place a destination declines the snapshot.
-KNOWN_EVENT_TYPES = frozenset({"device.inventory", "device.inventory.changed", "device.change", "run.completed", "run.failed"})
+#
+# `subject.departure` and `subject.returned` (#179, ruled 2026-09-16) join as a PAIR, taking
+# the `run.failed` treatment rather than `device.inventory`'s: both default-on AND appended to
+# explicitly curated lists by migration `bd51c7a9e402`, because a destination that curated its
+# list and received departures without returns would hold a fleet that only ever shrinks.
+KNOWN_EVENT_TYPES = frozenset(
+    {
+        "device.inventory",
+        "device.inventory.changed",
+        "device.change",
+        "run.completed",
+        "run.failed",
+        DEPARTURE_EVENT_TYPE,
+        RETURNED_EVENT_TYPE,
+    }
+)
 
 # Not in KNOWN_EVENT_TYPES: nothing produces it and nothing can subscribe to it. It
 # exists only so the destination test button sends something identifiable rather than a
@@ -160,6 +179,10 @@ def _single_event_sourcetype(payload: Mapping[str, object]) -> str | None:
       to move under it after). The delta is LoonInspect's own derivation, not a wrapper
       around a Jamf object, so it takes #188 ruling 3's no-vendor assertion form the way
       `loon:run` does, rather than a leaf under `sourcetype()`.
+    * `subject.departure` / `subject.returned` — `DEPARTURE_SOURCETYPE`, `loon:departure` for
+      BOTH (#179, 4.7). One string, one stanza, `event=` separating the two types at search
+      time: two sourcetypes for one shape would be two stanzas to keep in step. The no-vendor
+      assertion form again — a departure is derived from an absence, not read off a Jamf object.
 
     Only `destination.test` carries none — it is meant to be identifiable rather than
     routed, and lands under the sourcetype the operator set on the HEC input, exactly as
@@ -173,6 +196,8 @@ def _single_event_sourcetype(payload: Mapping[str, object]) -> str | None:
         return ASSERTION_SOURCETYPE
     if event == "device.inventory.changed":
         return DELTA_SOURCETYPE
+    if event in DEPARTURE_EVENT_TYPES:
+        return DEPARTURE_SOURCETYPE
     return change_sourcetype(event, subject_kind=payload.get("subjectKind"), section=payload.get("section"))
 
 
