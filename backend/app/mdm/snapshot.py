@@ -52,6 +52,10 @@ from app.core.content_keys import app_full_key, app_title_key
 from app.core.vuln import VulnCorpus, vuln_block
 from app.core.wire_vocabulary import SECTION_WRAPPERS
 from app.mdm.jamf.contract import SECTIONS, Entry, Observation, canonical_string
+
+# The two spellings only, from the dependency-free evaluator — not from `app.mdm.patch.matching`,
+# which this module stays clear of so it remains a pure function of plain data (see `title_names`).
+from app.mdm.patch.requirements import DETECTION_EXTENSION_ATTRIBUTE, DETECTION_INVENTORY
 from app.schemas.payload import (
     InventoryAppItem,
     InventorySnapshotEvent,
@@ -88,7 +92,9 @@ def app_identity(name: str | None, bundle_id: str | None, version: str | None) -
 
 
 def patch_answer(
-    apps: Iterable[InstalledApp], title_names: Mapping[str, str] | None = None
+    apps: Iterable[InstalledApp],
+    title_names: Mapping[str, str] | None = None,
+    title_detection: Mapping[str, str] | None = None,
 ) -> dict[tuple[str, str, str], PatchEnrichment]:
     """`patch{}` per app identity, read off rows already in the transaction (#311).
 
@@ -114,6 +120,10 @@ def patch_answer(
     drops the whole `titleNames` list rather than shipping a hole: the two arrays are
     index-aligned by contract, and an id in disguise would be indistinguishable from a title
     genuinely named "612".
+
+    `title_detection` is the same cache's id -> `inventory` | `extension_attribute` map
+    (`matching.cached_title_detection`), folded into `detection` (#386). A title missing from it
+    drops the key rather than assuming `inventory`, for the reason the schema gives.
     """
     answers: dict[tuple[str, str, str], PatchEnrichment] = {}
     unsupported = PatchEnrichment(supported=False)
@@ -142,6 +152,7 @@ def patch_answer(
             jamf_patch=JamfPatchAnswer(
                 title_ids=title_ids,
                 title_names=_title_names(title_ids, title_names),
+                detection=_detection(title_ids, title_detection),
                 state=row.patch_state,
                 on_latest=bool(row.is_compliant),
                 version_known=bool(row.this_version_seen),
@@ -193,6 +204,22 @@ def _title_names(title_ids: Sequence[str], names: Mapping[str, str] | None) -> l
         )
         return None
     return [name for name in resolved if name is not None]
+
+
+def _detection(title_ids: Sequence[str], detection: Mapping[str, str] | None) -> str | None:
+    """`extension_attribute` if ANY of these titles is detected that way, else `inventory` —
+    or None when the loaded catalog cannot speak for all of them (#386).
+
+    All or nothing like the names above, and for a sharper reason: the fold is an `any`, so one
+    unresolved title is one title that could have carried the flag. Answering `inventory` from
+    the ones that did resolve would be the single reading this key exists to prevent.
+    """
+    if not detection:
+        return None
+    resolved = [detection.get(title_id) for title_id in title_ids]
+    if any(value is None for value in resolved):
+        return None
+    return DETECTION_EXTENSION_ATTRIBUTE if DETECTION_EXTENSION_ATTRIBUTE in resolved else DETECTION_INVENTORY
 
 
 def content_keys(apps: Iterable[InstalledApp]) -> dict[tuple[str, str, str], tuple[str, str]]:
@@ -302,6 +329,7 @@ def build_inventory_snapshot(
     device_meta: Mapping[str, object],
     corpus: VulnCorpus,
     title_names: Mapping[str, str] | None = None,
+    title_detection: Mapping[str, str] | None = None,
 ) -> InventorySnapshotEvent:
     """The snapshot for one pull.
 
@@ -339,7 +367,7 @@ def build_inventory_snapshot(
     across a day boundary re-expands the stored row to the same bytes.
     """
     apps = list(apps)
-    answers = patch_answer(apps, title_names)
+    answers = patch_answer(apps, title_names, title_detection)
     keys = content_keys(apps)
     sections: dict[str, dict | list] = {}
     for name, content in observation.sections.items():

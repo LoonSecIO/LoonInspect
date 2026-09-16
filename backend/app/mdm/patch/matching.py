@@ -17,11 +17,17 @@ rolling ones ("Wireshark 4.2" and "Wireshark"; "TechSmith Camtasia 2022" and "Te
 Camtasia") — so matches are stored one row per (app, title) and the summary columns on
 `installed_apps` are derived from the set.
 
-Which titles are considered (Kyle, 2026-08-22): only those with at least one recon test on the
-bundle ID or the application title — the tests that can identify an installed app. Device-level
-titles ("Apple macOS …"), attribute-only titles (the `jamf-patch-*` set: JDKs, Node, Python,
-daemons, and a few apps Jamf tells apart only by attribute — PyCharm Professional, Firefox) and
-version-only titles are not considered; they are the patching agent's business.
+Which titles are considered (Kyle, 2026-08-22, amended 2026-09-11 by #386): those with at least
+one recon test on the bundle ID or the application title — the tests that can identify an
+installed app — **plus** every title whose requirements are extension attributes only and that
+carries a `bundleId` column. The second set is 182 titles, Firefox and Firefox ESR and Microsoft
+AutoUpdate and Python 3 among them, and before #386 the feature had no enumerated versions and no
+answer for any of them. They are admitted on the strength of the column: it is Jamf's own
+statement of the software's identity, and the EA that would otherwise scope the match is already
+resolved TRUE below. Each title carries `detection` — `inventory` or `extension_attribute` — so
+the answer says which of the two witnesses it rests on. Device-level titles ("Apple macOS …"),
+version-only titles and attribute-only titles Jamf gives no bundle ID are still not considered;
+they are the patching agent's business.
 
 Extension attributes inside a considered title are Jamf's *scoping* device for collisions
 (PyCharm Community vs Professional, Firefox vs ESR), not a fact about the app: one the device
@@ -43,11 +49,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mdm.patch.requirements import (
+    DETECTION_EXTENSION_ATTRIBUTE,
+    DETECTION_INVENTORY,
     EXTENSION_ATTRIBUTE,
     PLATFORM_MAC,
     Facts,
     Verdict,
     compare_versions,
+    detection_for,
     evaluate_group,
     is_app_level,
     required_bundle_ids,
@@ -103,6 +112,12 @@ class CatalogTitle:
     # requirement names the key; the matcher accepts either.
     extension_attribute_names: Mapping[str, str]
     app_level: bool
+    # `inventory`, `extension_attribute`, or None for a title that is about no app at all
+    # (`requirements.detection_for`). Derived from `requirements` on every build rather than read
+    # from `jamf_patch_titles.detection`, which is the published copy of this same value: a title
+    # whose definition Jamf rewrites is re-detected by the very sync that stores the new
+    # requirements, and one definition can never disagree with itself.
+    detection: str | None
     required_bundle_ids: frozenset[str] | None
     # Casefolded names of the attribute tests (plus the definitions' keys and display names):
     # what the device would have to carry for the title to be decided without assuming.
@@ -148,9 +163,20 @@ class CatalogTitle:
             requirements=groups,
             extension_attribute_names=definitions,
             app_level=is_app_level(groups),
+            detection=detection_for(groups),
             required_bundle_ids=required_bundle_ids(groups),
             attribute_names=frozenset(attribute_names),
         )
+
+    @property
+    def admitted(self) -> bool:
+        """Whether the matcher considers this title at all (#65, amended by #386). An
+        inventory-detected title identifies the app from its own requirements; an
+        EA-detected one is admitted only when Jamf's `bundleId` column says which software
+        it is about, because nothing else on it can."""
+        if self.detection == DETECTION_INVENTORY:
+            return True
+        return self.detection == DETECTION_EXTENSION_ATTRIBUTE and bool((self.bundle_id or "").strip())
 
     def patch_for(self, version: str | None) -> Patch | None:
         wanted = _fold(version)
@@ -170,18 +196,25 @@ class CatalogTitle:
 class Catalog:
     """The considered titles, indexed for the per-app lookup: titles whose every group pins a
     bundle ID with `is` are reached through that index; everything else is evaluated for every
-    app. Titles with no identifying test (see the module docstring) are not here at all."""
+    app. Titles the matcher does not consider (see the module docstring) are not here at all."""
 
     def __init__(self, titles: Iterable[CatalogTitle], signature: tuple = ()) -> None:
         self.signature = signature
-        self.titles: list[CatalogTitle] = [title for title in titles if title.app_level]
+        self.titles: list[CatalogTitle] = [title for title in titles if title.admitted]
         self.by_bundle: dict[str, list[CatalogTitle]] = {}
         self.broad: list[CatalogTitle] = []
         for title in self.titles:
-            if title.required_bundle_ids is None:
+            pinned = title.required_bundle_ids
+            if pinned is None and title.detection == DETECTION_EXTENSION_ATTRIBUTE:
+                # #386: the column IS the identity for these, so they are reached the same way a
+                # pinned title is. Not `broad`: an attribute test pins nothing, so all 182 would
+                # otherwise be evaluated against every app on every Mac — 182 more evaluations
+                # per app, on the one path that runs millions of times a sweep.
+                pinned = frozenset({_fold(title.bundle_id)})
+            if pinned is None:
                 self.broad.append(title)
                 continue
-            for bundle in title.required_bundle_ids:
+            for bundle in pinned:
                 self.by_bundle.setdefault(bundle, []).append(title)
 
     @classmethod
@@ -323,12 +356,39 @@ def _facts_for(facts: Facts, title: CatalogTitle) -> tuple[Facts, set[str]]:
     )
 
 
+def _basis(group: Mapping, carried: set[str]) -> str:
+    """Whether the group that matched needed an attribute the device does not carry."""
+    names = [test for test in (group.get("tests") or []) if test.get("type") == EXTENSION_ATTRIBUTE]
+    assumed = any(_fold(str(test.get("name"))) not in carried for test in names)
+    return BASIS_EA_ASSUMED if assumed else BASIS_REQUIREMENTS
+
+
 def _decide(title: CatalogTitle, facts: Facts) -> str | None:
     """The basis on which this title matches the app, or None. Groups are evaluated one by
     one so the basis reflects the group that carried the match; a group made only of
-    attribute tests identifies nothing by itself."""
+    attribute tests identifies nothing by itself.
+
+    **Unless the whole title is attribute-only** (#386), where that group is all there is and
+    Jamf's `bundleId` column supplies the identity it cannot. The groups then do only what the
+    attribute was always for — scoping the release channel — under the same rule: one the device
+    carries is read, one it does not resolves TRUE and the match is recorded `ea_assumed`. The
+    column is compared exactly, never `like`: `required_bundle_ids` is None for these titles, so
+    an exact compare here is the only thing narrowing them, and a substring would let
+    `com.microsoft.autoupdate2` answer for a bundle ID that merely contains it.
+    """
     title_facts, carried = _facts_for(facts, title)
-    basis: str | None = None
+    if title.detection == DETECTION_EXTENSION_ATTRIBUTE:
+        if _fold(title.bundle_id) != _fold(facts.bundle_id):
+            return None
+        basis: str | None = None
+        for group in title.requirements:
+            if evaluate_group(group, title_facts) is not Verdict.MATCHED:
+                continue
+            if (found := _basis(group, carried)) == BASIS_REQUIREMENTS:
+                return found
+            basis = found
+        return basis
+    basis = None
     for group in title.requirements:
         tests = list(group.get("tests") or [])
         attribute_tests = [test for test in tests if test.get("type") == EXTENSION_ATTRIBUTE]
@@ -336,10 +396,9 @@ def _decide(title: CatalogTitle, facts: Facts) -> str | None:
             continue  # device scoping, not an app test
         if evaluate_group(group, title_facts) is not Verdict.MATCHED:
             continue
-        assumed = any(_fold(str(test.get("name"))) not in carried for test in attribute_tests)
-        if not assumed:
-            return BASIS_REQUIREMENTS
-        basis = BASIS_EA_ASSUMED
+        if (found := _basis(group, carried)) == BASIS_REQUIREMENTS:
+            return found
+        basis = found
     return basis
 
 
@@ -525,3 +584,19 @@ def cached_title_names() -> dict[str, str] | None:
     if _cache is None:
         return None
     return {title.id: title.name for title in _cache.titles}
+
+
+def cached_title_detection() -> dict[str, str] | None:
+    """Title id -> `inventory` | `extension_attribute` off the same process cache, for the wire's
+    `patch.jamfPatch.detection` (#386).
+
+    Read here rather than stored on the app row on purpose. `detection` is a fact about the
+    *title's current definition*, not about the judgement: the day Jamf gives Firefox a recon
+    test, every answer that names it becomes inventory-detected at once, and a copy stamped on
+    four million app rows would say `extension_attribute` until each was re-judged. The title ids
+    the answer names are stable; what they are is looked up. `None` for the same reason
+    `cached_title_names` returns None — no catalog was consulted on this path.
+    """
+    if _cache is None:
+        return None
+    return {title.id: title.detection for title in _cache.titles if title.detection}

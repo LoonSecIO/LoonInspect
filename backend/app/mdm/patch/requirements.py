@@ -61,8 +61,24 @@ APP_TESTS = frozenset({BUNDLE_ID, APPLICATION_TITLE, APPLICATION_VERSION})
 # The tests that can *identify* an app. Kyle's rule (2026-08-22): only consider a title that has
 # at least one recon test on the bundle ID or the application title — a version alone, an
 # OS version ("Apple macOS …") or an extension attribute alone (the `jamf-patch-*` titles)
-# cannot say which installed app the title is about.
+# cannot say which installed app the title is about. #386 did not touch the rule; it changed
+# what follows from it for the titles that carry a `bundleId` column anyway (`detection_for`).
 IDENTIFYING_TESTS = frozenset({BUNDLE_ID, APPLICATION_TITLE})
+
+# How Jamf detects a title on a Mac — and therefore what an answer about it rests on (#386,
+# ruled by Kyle 2026-09-11).
+#
+# `inventory`: the title carries a recon test on the bundle ID or the application title, so the
+# application inventory Jamf walks is the witness that the software is there.
+#
+# `extension_attribute`: every test the title carries is an extension attribute. On such a title
+# the EA is not the scoping device #65 described — it IS the detection. *"EA-only implies
+# on-device detection. Example: Python. That's why it's EA-only — the title is explicitly telling
+# Jamf Pro the software is there despite recon not seeing it."* Jamf writes titles this way for
+# software recon cannot walk (command-line installs, JDKs, frameworks, daemons) and for a few
+# ordinary apps it wants told apart by channel (Firefox, Firefox ESR, PyCharm Unified).
+DETECTION_INVENTORY = "inventory"
+DETECTION_EXTENSION_ATTRIBUTE = "extension_attribute"
 
 
 def bundle_ids_named(bundle_id: str | None, groups: Iterable[Mapping] | None) -> list[str]:
@@ -270,10 +286,29 @@ def _tests(groups: Sequence[Mapping]):
 
 
 def is_app_level(groups: Sequence[Mapping]) -> bool:
-    """Whether the title can identify an installed app: at least one recon test on the bundle
-    ID or the application title (Kyle's rule). Device-level titles ("Apple macOS …"),
-    attribute-only titles (the `jamf-patch-*` set) and version-only titles are not considered."""
+    """Whether the title can identify an installed app from its requirements alone: at least one
+    recon test on the bundle ID or the application title (Kyle's rule). Device-level titles
+    ("Apple macOS …"), attribute-only titles (the `jamf-patch-*` set) and version-only titles
+    cannot, and only the second of those three is admitted anyway (`detection_for`)."""
     return any(test.get("type") != EXTENSION_ATTRIBUTE and test.get("name") in IDENTIFYING_TESTS for test in _tests(groups))
+
+
+def detection_for(groups: Sequence[Mapping]) -> str | None:
+    """How Jamf detects this title on a Mac, or None when it is not a title about an app at all.
+
+    Three answers, not two, because the third is what keeps the other two honest: a device-level
+    title ("Apple macOS …", tested on `Operating System Version`) and a version-only title detect
+    no *application*, so neither constant describes them and neither is written for them. They
+    are the 15 titles the matcher still refuses outright, next to the 106 extension-attribute
+    titles Jamf gives no `bundleId` column — nothing names the software those are about, so
+    admitting them would be admitting a row with no identity (#386).
+    """
+    if is_app_level(groups):
+        return DETECTION_INVENTORY
+    tests = list(_tests(groups))
+    if tests and all(test.get("type") == EXTENSION_ATTRIBUTE for test in tests):
+        return DETECTION_EXTENSION_ATTRIBUTE
+    return None
 
 
 def required_bundle_ids(groups: Sequence[Mapping]) -> frozenset[str] | None:

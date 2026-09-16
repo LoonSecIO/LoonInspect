@@ -418,6 +418,16 @@ class JamfPatchTitle(Base):
     # names an app for this title, so its rows carry no content keys. NULL is a row written before
     # the rule existed, and is what makes the sync read it once more (`_needs_refresh`).
     app_name_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # How Jamf detects this title on a Mac (#386): `inventory` — a recon test on the bundle ID or
+    # the application title — or `extension_attribute`, where every test is an EA and the EA is
+    # the detection rather than a scoping device. NULL is the third answer and not an absence: a
+    # device-level ("Apple macOS …") or version-only title detects no application at all.
+    #
+    # The published copy of `requirements.detection_for(requirements)`, which the sync writes
+    # from the same definition it writes `requirements` from, and which the matcher re-derives
+    # rather than reads. It is a column so the titles list and an operator's query can filter on
+    # it — 182 of 1,557 rows are `extension_attribute` — without unpacking JSONB per row.
+    detection: Mapped[str | None] = mapped_column(String(24), nullable=True)
     bundle_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     current_version: Mapped[str] = mapped_column(String(64))
     last_modified: Mapped[str] = mapped_column(String(64))

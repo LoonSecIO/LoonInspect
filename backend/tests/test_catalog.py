@@ -71,9 +71,21 @@ class TestRows:
 
     def test_not_considered_titles_make_no_rows(self, rows) -> None:
         names = {row["title_name"] for row in rows}
-        for absent in ("Apple macOS", "Apple macOS Catalina", "Node.js 14", "Mozilla Firefox", "JetBrains PyCharm Unified"):
+        # Device-level, version-only, and the attribute-only titles Jamf gives no bundle ID —
+        # nothing on those names the software, so a row for one would carry no identity (#386).
+        for absent in ("Apple macOS", "Apple macOS Catalina", "Node.js 14", "Eclipse Temurin (JRE) 19"):
             assert absent not in names
         assert "JetBrains PyCharm Community" in names  # it has a bundle-ID group
+
+    def test_an_admitted_extension_attribute_title_enumerates_on_its_column(self, rows) -> None:
+        """#386: Firefox and PyCharm Unified are attribute-only titles WITH a `bundleId`, so they
+        are admitted and `build_rows` enumerates them — the 5,233 version rows the engine had and
+        this container did not. Every row keys on the column, which is the only bundle ID they
+        name: `bundle_ids_named` finds no `Application Bundle ID is` test on an EA-only title."""
+        firefox = _rows(rows, title_id="0B3")
+        assert len(firefox) == 36 and {row["bundle_id"] for row in firefox} == {"org.mozilla.firefox"}
+        assert sum(row["is_latest"] for row in firefox) == 1
+        assert {row["title_name"] for row in _rows(rows, title_id="0EE")} == {"JetBrains PyCharm Unified"}
 
     def test_versions_are_not_duplicated_per_bundle(self, rows) -> None:
         seen = {(row["title_id"], row["bundle_id"], row["version"].casefold()) for row in rows}
