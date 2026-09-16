@@ -295,6 +295,34 @@ async def open_departures(db: AsyncSession, *, subject_kind: str) -> dict[tuple[
     return {(row.mdm_connection_id, row.prior_jamf_pro_id or row.subject_id): row.departed_at for row in rows}
 
 
+async def departure_windows(
+    db: AsyncSession, *, connection_id: int, subject_kind: str
+) -> dict[str, tuple[tuple[datetime, datetime | None], ...]]:
+    """`the id it is gone under -> ((departed_at, returned_at), …)`, oldest first — every departure this
+    connection recorded for the kind, closed ones included. `open_departures` answers the present tense, for a
+    surface listing current spans; a report over last March needs the past one, a stretch that has since ended
+    still relabelling the days it covered (#465). Same two columns and the same key — `prior_jamf_pro_id or
+    subject_id`, the id the row is gone under (#475) — so the two readers cannot disagree about one Mac."""
+    rows = (
+        (
+            await db.execute(
+                select(SubjectDeparture)
+                .where(
+                    SubjectDeparture.mdm_connection_id == connection_id,
+                    SubjectDeparture.subject_kind == subject_kind,
+                )
+                .order_by(SubjectDeparture.departed_at, SubjectDeparture.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    windows: dict[str, list[tuple[datetime, datetime | None]]] = {}
+    for row in rows:
+        windows.setdefault(row.prior_jamf_pro_id or row.subject_id, []).append((row.departed_at, row.returned_at))
+    return {gone_id: tuple(seen) for gone_id, seen in windows.items()}
+
+
 async def tail_counts(db: AsyncSession, *, connection_id: int, subject_kind: str, at: datetime) -> tuple[int, int]:
     """`(still in their tail, left the fleet)` among the subjects this connection is missing — the
     two halves of the census line on the run, counted through the same `left_the_fleet` the surfaces
