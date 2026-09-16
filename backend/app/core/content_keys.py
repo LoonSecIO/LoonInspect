@@ -27,6 +27,7 @@ _PREFIX = "v1:"
 # Domain namespaces, so an OS tuple can never collide with an app tuple.
 DOMAIN_APP_TITLE = "app.title"
 DOMAIN_APP_FULL = "app.full"
+DOMAIN_APP_BUNDLE = "app.bundle"
 DOMAIN_OS = "os"
 DOMAIN_HW = "hw"
 
@@ -54,6 +55,30 @@ def app_title_key(name: str, bundle_id: str) -> str:
 def app_full_key(name: str, bundle_id: str, version: str, short_version: str | None) -> str:
     """A specific build — the prevalence key."""
     return canonical_key(DOMAIN_APP_FULL, name, bundle_id, version, short_version)
+
+
+def app_bundle_key(bundle_id: str | None, version: str) -> str | None:
+    """The build *without its name* — the rename-proof prevalence key (#245).
+
+    `key_title` and `key_full` both hash the display name, so an admin who renames an app
+    — a rebranded Self Service, a white-labelled Electron build — mints keys only their
+    own fleet has, and the corpus's reveal threshold counts one submitter forever
+    (docs/data-sharing.md, the k-rule). Every rename of one bundle collapses onto one
+    `app.bundle` key, so prevalence measures the software rather than the popularity of
+    its default name.
+
+    Returns None — never a key — when there is no bundle identifier to hash. This is the
+    one place the empty-string rule of `_canonical_field` would do real harm rather than
+    merely absorb a null: identity here is the bundle id alone, so every nameless app at
+    one version would land on a single shared digest and be counted as one piece of
+    software. An absent key is a row the corpus skips; a wrong key is a count that lies.
+    Jamf's client already falls back to the app's name where `bundleId` is missing
+    (`app.mdm.jamf.client`), which can leave the field blank as well as null, so both
+    spellings of absence answer None.
+    """
+    if bundle_id is None or not _canonical_field(bundle_id):
+        return None
+    return canonical_key(DOMAIN_APP_BUNDLE, bundle_id, version)
 
 
 def os_key(platform: str, os_version: str, os_build: str | None) -> str:

@@ -45,25 +45,33 @@ export function ConnectionsPage() {
   const [reEmitting, setReEmitting] = useState(false);
   const [reEmitError, setReEmitError] = useState<string | null>(null);
 
-  async function refresh() {
+  /** The one read of the table, as a promise chain rather than `await`: the first read is
+   *  started by the effect below, and an effect body is the one place React asks callers
+   *  not to set state (#15). `loading` starts true; `refresh` turns it back on and clears
+   *  the error line, where a click is what asked for the re-read. */
+  function load(): Promise<void> {
+    return Promise.all([listConnections(), listSyncStatus()])
+      .then(([rows, statuses]) => {
+        setConnections(rows);
+        setSyncStatuses(Object.fromEntries(statuses.map((s) => [s.mdmConnectionId, s])));
+      })
+      .catch((caught: unknown) => {
+        // Without this, a failed load leaves connections empty and the table says
+        // "no connections yet" — failure must not read as emptiness. A 503 carries a
+        // sentence worth showing: the stored credentials cannot be read (#374).
+        setLoadError(caught instanceof ApiError && caught.status === 503 && caught.detail ? caught.detail : t.settings.errorLoading);
+      })
+      .finally(() => setLoading(false));
+  }
+
+  function refresh(): Promise<void> {
     setLoading(true);
     setLoadError(null);
-    try {
-      const [rows, statuses] = await Promise.all([listConnections(), listSyncStatus()]);
-      setConnections(rows);
-      setSyncStatuses(Object.fromEntries(statuses.map((s) => [s.mdmConnectionId, s])));
-    } catch (caught) {
-      // Without this, a failed load leaves connections empty and the table says
-      // "no connections yet" — failure must not read as emptiness. A 503 carries a
-      // sentence worth showing: the stored credentials cannot be read (#374).
-      setLoadError(caught instanceof ApiError && caught.status === 503 && caught.detail ? caught.detail : t.settings.errorLoading);
-    } finally {
-      setLoading(false);
-    }
+    return load();
   }
 
   useEffect(() => {
-    refresh();
+    void load();
   }, []);
 
   // A manual sync runs in the background, so the only way to see it finish is to keep

@@ -44,7 +44,7 @@ from contextlib import contextmanager
 import httpx
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 
 pytestmark = [
     pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
@@ -258,6 +258,46 @@ async def test_sweep_then_repeat_then_webhook(db, jamf: FakeJamf, connection) ->
         )
     ).scalar_one()
     assert current.last_trigger == "webhook" and current.previous_id == real_span.id
+
+
+async def test_an_app_that_never_changes_still_gains_the_bundle_key(db, jamf: FakeJamf, connection) -> None:
+    """#245's upgrade path, which is the only path most rows will ever take.
+
+    Migration `a7d3e15c2b94` adds `key_bundle` with no backfill, so every row in an
+    upgraded container starts NULL. `installed_apps` is INSERT-on-version-change, so a row
+    only gets rewritten when that device's build of that app moves — which means the rows
+    a rename-proof prevalence key exists to measure (software pinned at one build for
+    years) are precisely the rows nothing rewrites. Without the restamp in `process_sync`
+    they would carry NULL for as long as they stayed installed, their whole `key_full`
+    group would aggregate to no `bundle` at all, and `docs/data-sharing.md` would be
+    telling the cloud operator something untrue about how transient the absence is.
+
+    Simulates the upgrade the only honest way: sweep, blank the column the way the
+    migration leaves it, then sweep again on a record where NOTHING changed.
+    """
+    from app.mdm.service import sync_connection
+    from app.models.schema import Device, InstalledApp
+
+    first = await sync_connection(db, connection)
+    assert first.ok
+    real_device = (
+        await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == jamf.real["id"]))
+    ).scalar_one()
+    rows = select(InstalledApp).where(InstalledApp.device_id == real_device.id)
+    stamped = {row.version_hash: row.key_bundle for row in (await db.execute(rows)).scalars()}
+    assert len(stamped) == 83 and all(key is not None for key in stamped.values())
+
+    # The state the migration leaves behind on an upgraded container: column present, every
+    # row NULL.
+    await db.execute(update(InstalledApp).where(InstalledApp.device_id == real_device.id).values(key_bundle=None))
+    await db.commit()
+
+    # Not one app moved — `reportDate` is untouched, so this is the "repeat" pass, the
+    # cheapest thing a sweep can be and the one that writes nothing about the device. It
+    # still restamps, and every row comes back with the key it had.
+    second = await sync_connection(db, connection)
+    assert second.observations["repeat"] == 2, second.observations
+    assert {row.version_hash: row.key_bundle for row in (await db.execute(rows)).scalars()} == stamped
 
 
 async def test_a_stale_observation_enqueues_no_snapshot_and_no_delta(db, jamf: FakeJamf, connection) -> None:

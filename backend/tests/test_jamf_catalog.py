@@ -25,10 +25,14 @@ from app.core import config as config_module
 from app.core.config import Settings, settings
 from app.mdm.patch import jamf_catalog
 from app.mdm.patch.jamf_catalog import (
+    APP_NAME_FROM_JAMF,
+    APP_NAME_FROM_KILL_APPS,
+    APP_NAME_UNNAMED,
     DETAIL_CONCURRENCY,
     JAMF_PATCH_BASE_URL_UNUSABLE,
     JamfApiCatalogSource,
     JamfPatchCatalogUnconfigured,
+    _app_name,
     _convert_requirements,
     _extension_attributes,
     _fetch_details,
@@ -145,6 +149,109 @@ class TestStripPatchEntry:
         assert _strip_patch_entry({"version": "4.0.1"}) == {"version": "4.0.1"}
 
 
+def _detail(*, app_name: str | None, bundle_id: str | None, kill_apps: list, requirement_bundles: tuple[str, ...] = ()) -> dict:
+    """One title as the server answers it, cut to what `_app_name` reads: the top-level name, the
+    bundle ID column, the requirements naming more bundle IDs, and each patch's `killApps`."""
+    return {
+        "id": "T1",
+        "appName": app_name,
+        "bundleId": bundle_id,
+        "patches": [{"version": "1.0", "killApps": kill_apps}, {"version": "0.9", "killApps": kill_apps}],
+        "requirements": [
+            {"name": "Application Bundle ID", "operator": "is", "value": value, "type": "recon", "and": index == 0}
+            for index, value in enumerate(requirement_bundles)
+        ],
+    }
+
+
+def _decide(detail: dict) -> tuple[str | None, str]:
+    """`_app_name` as `sync_catalog` calls it: over the grouped requirements, not the flat list."""
+    return _app_name(detail, _convert_requirements(detail.get("requirements", [])))
+
+
+class TestAppName:
+    """The rule `sync_catalog` decides a title's app name by (#385), copied from the engine's
+    `app_name_for` (LoonVD-Internal `engine/src/loonvd/catalog.py`): 513 of 1,553 titles had a null
+    `appName` on its 2026-09-11 catalog, and 115 were offered several names for one bundle ID."""
+
+    def test_jamfs_own_name_is_the_name(self) -> None:
+        detail = _detail(app_name="Xcode.app", bundle_id="com.apple.dt.Xcode", kill_apps=[])
+
+        assert _decide(detail) == ("Xcode.app", APP_NAME_FROM_JAMF)
+
+    def test_a_null_name_is_taken_from_the_patches(self) -> None:
+        """Jamf names no app for "Wireshark 4.2" at the top level and names it on every patch."""
+        detail = _detail(
+            app_name=None,
+            bundle_id="org.wireshark.Wireshark",
+            kill_apps=[{"bundleId": "org.wireshark.Wireshark", "appName": "Wireshark.app"}],
+        )
+
+        assert _decide(detail) == ("Wireshark.app", APP_NAME_FROM_KILL_APPS)
+
+    def test_several_names_for_one_bundle_id_take_the_first(self) -> None:
+        """Adobe SpeedGrade names two apps on one patch. The first is used and the rest are not
+        enumerated — a possible miss, never a wrong key (docs/app-catalog.md §2a)."""
+        detail = _detail(
+            app_name=None,
+            bundle_id="com.adobe.SpeedGrade",
+            kill_apps=[
+                {"bundleId": "com.adobe.SpeedGrade", "appName": "Adobe SpeedGrade CC 2014.app"},
+                {"bundleId": "com.adobe.SpeedGrade", "appName": "Adobe SpeedGrade CC 2015.app"},
+            ],
+        )
+
+        assert _decide(detail) == ("Adobe SpeedGrade CC 2014.app", APP_NAME_FROM_KILL_APPS)
+
+    def test_a_bundle_id_from_the_requirements_can_name_the_title(self) -> None:
+        """The rolling "Wireshark" title has no `bundleId` column; its requirements name one, and
+        `bundle_ids_named` walks them in the order `build_rows` makes rows in."""
+        detail = _detail(
+            app_name=None,
+            bundle_id=None,
+            kill_apps=[{"bundleId": "org.wireshark.Wireshark", "appName": "Wireshark.app"}],
+            requirement_bundles=("org.wireshark.Wireshark",),
+        )
+
+        assert _decide(detail) == ("Wireshark.app", APP_NAME_FROM_KILL_APPS)
+
+    def test_jamfs_name_wins_over_a_more_specific_one_in_the_patches(self) -> None:
+        """`10A` GIMP keys its salvaged bundle IDs as `GIMP-2.10.app` where the patches say
+        `GIMP.app`, and the top-level name still wins: **the key is a join, not a description**,
+        and a better name here would be one no row on the other side carries."""
+        detail = _detail(
+            app_name="GIMP-2.10.app",
+            bundle_id="org.gimp.gimp",
+            kill_apps=[{"bundleId": "org.gimp.gimp", "appName": "GIMP.app"}],
+        )
+
+        assert _decide(detail) == ("GIMP-2.10.app", APP_NAME_FROM_JAMF)
+
+    def test_nothing_is_invented(self) -> None:
+        """Two ways to have no name: none anywhere ("Apple macOS", "Node.js 14"), and a `killApps`
+        entry for another bundle ID, which is about another app — a suite installer names its
+        siblings. Both still make rows, carrying `(bundle_id, version)` and no content keys."""
+        elsewhere = [{"bundleId": "com.example.helper", "appName": "Helper.app"}]
+
+        assert _decide(_detail(app_name=None, bundle_id="com.example.app", kill_apps=[])) == (None, APP_NAME_UNNAMED)
+        assert _decide(_detail(app_name=None, bundle_id="com.x", kill_apps=elsewhere)) == (None, APP_NAME_UNNAMED)
+
+    def test_a_malformed_kill_apps_entry_is_skipped_rather_than_raising(self) -> None:
+        """A public source, read inside a scheduled job: a string where an object belongs must
+        cost the name, not the sync."""
+        detail = _detail(
+            app_name=None,
+            bundle_id="com.example.app",
+            kill_apps=[
+                "Example.app",
+                {"bundleId": "com.example.app", "appName": ""},
+                {"bundleId": "com.example.app", "appName": "Example.app"},
+            ],
+        )
+
+        assert _decide(detail) == ("Example.app", APP_NAME_FROM_KILL_APPS)
+
+
 class TestNeedsRefresh:
     def test_an_unseen_title_needs_refreshing(self) -> None:
         assert _needs_refresh(None, {"id": "slack", "lastModified": "1", "currentVersion": "4.0.1"}) is True
@@ -152,26 +259,40 @@ class TestNeedsRefresh:
     def test_an_unchanged_title_does_not(self) -> None:
         """The whole point of the check: without it every hourly tick re-fetches the
         full detail payload for every title in the catalog."""
-        existing = JamfPatchTitle(id="slack", last_modified="1", current_version="4.0.1", extension_attributes=[])
+        existing = JamfPatchTitle(
+            id="slack", last_modified="1", current_version="4.0.1", extension_attributes=[], app_name_source="jamf"
+        )
 
         assert _needs_refresh(existing, {"id": "slack", "lastModified": "1", "currentVersion": "4.0.1"}) is False
 
     def test_a_changed_last_modified_triggers_a_refresh(self) -> None:
-        existing = JamfPatchTitle(id="slack", last_modified="1", current_version="4.0.1")
+        existing = JamfPatchTitle(id="slack", last_modified="1", current_version="4.0.1", app_name_source="jamf")
 
         assert _needs_refresh(existing, {"id": "slack", "lastModified": "2", "currentVersion": "4.0.1"}) is True
 
     def test_a_changed_current_version_triggers_a_refresh(self) -> None:
-        existing = JamfPatchTitle(id="slack", last_modified="1", current_version="4.0.1")
+        existing = JamfPatchTitle(id="slack", last_modified="1", current_version="4.0.1", app_name_source="jamf")
 
         assert _needs_refresh(existing, {"id": "slack", "lastModified": "1", "currentVersion": "4.1.0"}) is True
 
     def test_a_row_without_extension_attributes_is_refreshed_once(self) -> None:
         """Null marks a row fetched before the column existed; the next sync fills it."""
-        existing = JamfPatchTitle(id="slack", last_modified="1", current_version="4.0.1", extension_attributes=None)
+        existing = JamfPatchTitle(
+            id="slack", last_modified="1", current_version="4.0.1", extension_attributes=None, app_name_source="jamf"
+        )
         summary = {"id": "slack", "lastModified": "1", "currentVersion": "4.0.1"}
         assert _needs_refresh(existing, summary) is True
         existing.extension_attributes = []
+        assert _needs_refresh(existing, summary) is False
+
+    def test_a_row_without_an_app_name_source_is_refreshed_once(self) -> None:
+        """The upgrade path for #385, and the only one there is: the comparisons above never
+        re-fetch a frozen versioned line, which would then keep the null `app_name` this change
+        exists to fill. It terminates — the sync writes a source for every title."""
+        existing = JamfPatchTitle(id="slack", last_modified="1", current_version="4.0.1", extension_attributes=[])
+        summary = {"id": "slack", "lastModified": "1", "currentVersion": "4.0.1"}
+        assert _needs_refresh(existing, summary) is True
+        existing.app_name_source = APP_NAME_UNNAMED
         assert _needs_refresh(existing, summary) is False
 
 

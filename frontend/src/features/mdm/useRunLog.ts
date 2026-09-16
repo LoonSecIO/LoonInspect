@@ -63,16 +63,24 @@ export function useRunLog(
     }
   }, [jobId]);
 
-  useEffect(() => {
-    cursor.current = 0;
-    finishedNotified.current = false;
+  // Pointed at a different job, the hook starts from nothing: the lines and the run it
+  // holds belong to the job just left. Cleared here, during the render that changed
+  // `jobId`, rather than from an effect — an effect clears them a render late, and the
+  // panel paints one frame of the previous run's log under the new run's heading.
+  const [watching, setWatching] = useState(jobId);
+  if (watching !== jobId) {
+    setWatching(jobId);
     setLines([]);
     setRun(null);
-  }, [jobId]);
+  }
 
   useEffect(() => {
     let cancelled = false;
     let handle: number | undefined;
+    // The cursor and the finished latch belong to the job being polled, and `poll`
+    // changes with `jobId` — so this runs exactly when the job does.
+    cursor.current = 0;
+    finishedNotified.current = false;
 
     const tick = async () => {
       if (cancelled || document.hidden) return;

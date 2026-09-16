@@ -139,6 +139,14 @@ async def build_exchange_request(db: AsyncSession, settings_row: DataSharingSett
                 InstalledApp.key_full,
                 Device.platform,
                 func.max(InstalledApp.bundle_id).label("bundle_id"),
+                # Aggregated rather than grouped by (#245). Every row in a `key_full` group
+                # holds the same `key_bundle` — the tuple one hashes contains the tuple the
+                # other does — so `max` cannot pick between disagreeing values; what it does
+                # do is ignore NULLs, which keeps a fleet mid-upgrade on ONE row. Grouping by
+                # the column instead would split each app into a stamped group and an
+                # un-stamped one and halve both counts, which is a prevalence lie told to the
+                # corpus for as long as the restamp takes.
+                func.max(InstalledApp.key_bundle).label("key_bundle"),
                 func.count(distinct(InstalledApp.device_id)).label("count"),
             )
             .join(Device, Device.id == InstalledApp.device_id)
@@ -152,6 +160,13 @@ async def build_exchange_request(db: AsyncSession, settings_row: DataSharingSett
             "full": row.key_full,
             "count": row.count,
             "platform": row.platform,
+            # Absent, never null, when this app has no bundle key — either it has no bundle
+            # identifier at all or no ingest has restamped the row since the column was
+            # added. The contract's own rule for an unknown field is "ignore it", and a
+            # server reading `"bundle": null` would have to invent a second meaning for a
+            # key it is told to skip. The same shape an older container produces by not
+            # having the key: one case for the cloud, not two.
+            **({"bundle": row.key_bundle} if row.key_bundle else {}),
         }
         for row in app_rows
         if not _excluded(row.bundle_id, globs)

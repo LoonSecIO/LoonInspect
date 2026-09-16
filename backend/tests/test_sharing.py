@@ -415,17 +415,20 @@ class _StubSession:
         return _StubResult(self._results.pop(0))
 
 
-def _app_row(title: str, full: str, bundle_id: str, count: int) -> SimpleNamespace:
+def _app_row(title: str, full: str, bundle_id: str, count: int, bundle: str | None = None) -> SimpleNamespace:
     # `platform` is what the join on `devices.platform` hands the builder per row (#233).
-    return SimpleNamespace(key_title=title, key_full=full, bundle_id=bundle_id, count=count, platform="macos")
+    # `key_bundle` is `max(key_bundle)` over the group (#245) and is None for a group whose
+    # rows have not been restamped since the column was added — the default here, so every
+    # test that does not care about it exercises the omission.
+    return SimpleNamespace(key_title=title, key_full=full, bundle_id=bundle_id, count=count, platform="macos", key_bundle=bundle)
 
 
-async def _snapshot(*, exclude_globs: list[str] | None = None) -> dict:
+async def _snapshot(*, exclude_globs: list[str] | None = None, bundle: str | None = None) -> dict:
     row = _row("reveal")
     row.exclude_globs = exclude_globs or []
     db = _StubSession(
         [
-            _app_row("v1:title-chrome", "v1:full-chrome", "com.google.Chrome", 412),
+            _app_row("v1:title-chrome", "v1:full-chrome", "com.google.Chrome", 412, bundle),
             _app_row("v1:title-tool", "v1:full-tool", "com.vendor.tool", 31),
             _app_row("v1:title-acme", "v1:full-acme", "com.acme.payroll", 7),
         ],
@@ -453,6 +456,34 @@ async def test_every_app_row_names_the_platform_it_was_counted_on() -> None:
         "count": 412,
         "platform": "macos",
     }
+
+
+@pytest.mark.asyncio
+async def test_an_apps_row_carries_its_bundle_key_when_it_has_one() -> None:
+    """#245: the rename-proof key rides beside the other two, and the row is otherwise
+    untouched — additive, not a reshape."""
+    apps = (await _snapshot(bundle="v1:bundle-chrome"))["snapshot"]["apps"]
+    assert apps[0] == {
+        "title": "v1:title-chrome",
+        "full": "v1:full-chrome",
+        "bundle": "v1:bundle-chrome",
+        "count": 412,
+        "platform": "macos",
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_row_with_no_bundle_key_omits_the_field_rather_than_sending_null() -> None:
+    """Absent, never null. A row has no bundle key either because the app has no bundle
+    identifier or because no ingest has restamped it since the column was added with no
+    backfill — and in both cases the shape must be the one an older container already
+    produces by not having the key at all. `"bundle": null` would make the server invent a
+    second meaning for a field the contract tells it to ignore."""
+    apps = (await _snapshot(bundle="v1:bundle-chrome"))["snapshot"]["apps"]
+    assert "bundle" not in apps[1], apps[1]
+    assert set(apps[1]) == {"title", "full", "count", "platform"}
+    # And the omission is per row: the one that has a key still sends it.
+    assert apps[0]["bundle"] == "v1:bundle-chrome"
 
 
 @pytest.mark.asyncio

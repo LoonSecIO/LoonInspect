@@ -34,19 +34,24 @@ export function AccountsPage() {
   const [resetFor, setResetFor] = useState<string | null>(null);
   const [resetPw, setResetPw] = useState("");
 
-  async function refresh() {
+  /** The one read of the list, as a promise chain rather than `await`: the first read is
+   *  started by the effect below, and an effect body is the one place React asks callers
+   *  not to set state (#15). `loading` starts true, so only `refresh` turns it back on —
+   *  there, a click is what asked for the re-read. */
+  function load(): Promise<void> {
+    return listAccounts()
+      .then((rows) => setAccounts(rows))
+      .catch(() => setError(t.accounts.errorLoading))
+      .finally(() => setLoading(false));
+  }
+
+  function refresh(): Promise<void> {
     setLoading(true);
-    try {
-      setAccounts(await listAccounts());
-    } catch {
-      setError(t.accounts.errorLoading);
-    } finally {
-      setLoading(false);
-    }
+    return load();
   }
 
   useEffect(() => {
-    void refresh();
+    void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

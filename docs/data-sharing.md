@@ -49,6 +49,7 @@ key = "v1:" + lowercase_hex(sha256(utf8(domain ⟂ field₁ ⟂ field₂ ⟂ …
 | --- | --- |
 | `app.title` | app_name, bundle_id |
 | `app.full` | app_name, bundle_id, version, short_version |
+| `app.bundle` | bundle_id, version |
 | `os` | platform, os_version, os_build |
 | `hw` | model_identifier, cpu_arch |
 
@@ -63,6 +64,21 @@ vulnerability rules are ranges while keys are points, and because reveal thresho
 on full tuples would starve on fast-moving versions (a five-customer app with five
 versions never crosses any per-tuple threshold).
 
+`app.bundle` is the same build as `app.full` **without its name**, and it exists because
+both of the others hash one. An administrator who renames an app — a rebranded Self
+Service, a white-labelled Electron build — produces `app.title` and `app.full` values no
+other organization can produce, so the [k-rule](#what-is-shared-and-what-never-is) never sees a second
+submitter and the software is indistinguishable from one shop's internal tool. Every
+rename of one bundle collapses onto one `app.bundle` key, so prevalence measures the
+software rather than the popularity of its default name. It is a **prevalence** key only:
+it names no application to anyone, it is never the subject of a reveal request, and it
+carries no `short_version` — that field is the half of the build that renaming does not
+touch, and a rename-proof key that splits on it would be starved the same way `app.full`
+is. An app with no bundle identifier has **no** `app.bundle` key: the container emits
+nothing rather than hashing an empty field, which would land every nameless app at one
+version on a single shared digest and count them as one piece of software.
+Added 2026-09-16 ([#245](https://github.com/LoonSecIO/LoonInspect/issues/245)), additively.
+
 MD5 from the prior art is replaced by SHA-256: same role (a stored, derivable surrogate
 key — computed once at snapshot build, never per lookup), without shipping MD5 in a
 security product's public wire format.
@@ -73,6 +89,7 @@ security product's public wire format.
 | --- | --- |
 | `app.title` ("Google Chrome", "com.google.Chrome") | `v1:be346ceb600488c11f502c5b8cccd213941d12e783c798ce9ef901a0b88a0830` |
 | `app.full` ("Google Chrome", "com.google.Chrome", "6478.127", "126.0.6478.127") | `v1:7ffc73c1311760fa2de0b52b84865940380264906a8f63d4c5fb2075fbde7378` |
+| `app.bundle` ("com.google.Chrome", "6478.127") | `v1:d1cced6faaa7eb9549f07208bbff3c58cb00e3453c395c349b57734d460448f1` |
 | `app.full` ("Contoso Deploy", "com.contoso.deploy", "1.4", null) | `v1:333332009338fd345dfdc481009910bc729ef2cf965ad33a90df297e2f4d9592` |
 | `app.title` ("Café Tool" — NFC *or* NFD input, "io.example.cafetool") | `v1:1db5e02b18524033fd33aa36d27b3f26e70953a13f57de3cb45729e91e7e36bb` |
 | `os` ("macos", "14.6.1", "23G93") | `v1:f74565fbdda8b8036799e1e3a67b22ee909acac8840f2a6ae040b3d5a4e18867` |
@@ -220,7 +237,8 @@ thing that distinguishes an exchange from an update check.
   "tier": "keys" | "reveal",
   "build": "2026.08.20+d4488cd",         // container build (public builds; coarse)
   "snapshot": {                           // full replacement, idempotent
-    "apps":     [ { "title": "v1:…", "full": "v1:…", "count": 412, "platform": "macos" }, … ],
+    // "bundle" is the rename-proof key; ABSENT, never null, when the row has none
+    "apps":     [ { "title": "v1:…", "full": "v1:…", "bundle": "v1:…", "count": 412, "platform": "macos" }, … ],
     "os":       [ { "key": "v1:…", "count": 380, "platform": "macos" }, … ],
     "hardware": [ { "key": "v1:…", "count": 380, "platform": "macos" }, … ]
   },
@@ -301,6 +319,18 @@ Semantics the server may rely on:
   reason the key ships before the first exchange rather than after.
   `hardware` is `[]` from every container shipped so far: the `devices` columns the `hw` key
   needs do not exist yet, so the row above is the shape it will take, not one being sent.
+- **An `apps` row's `bundle` is absent, never null.** `bundle` is the `app.bundle` key
+  (above) and it is omitted from the row whenever there is not one: an app with no bundle
+  identifier has no such identity, and a row written before the container grew the column
+  carries none until the first inventory read that covers applications restamps it — the
+  container backfills nothing on upgrade, and stamps the rows instead as it re-reads each
+  device, so one full sweep does the whole fleet and a fleet mid-restamp submits some rows
+  with the key and some without. The same app's counts must not be split between the two,
+  which is why the container aggregates the key rather than grouping on it. This is the shape
+  an older container already produces by not having the key at all, which is the point:
+  one case for the server to handle, not two. `title`, `full`, `count` and `platform` stay
+  required.
+  Added in the container release that closed [#245](https://github.com/LoonSecIO/LoonInspect/issues/245).
 - **Idempotent replacement.** A request fully supersedes the previous snapshot for its
   `submission`. Aggregation is sum-over-latest; UUIDs unseen for N days age out (the
   ingest store's TTL is the natural mechanism).

@@ -62,6 +62,9 @@ class TestRows:
         assert {r["version_hash"] for r in four}.isdisjoint({r["version_hash"] for r in five})
 
     def test_titles_without_an_app_name_make_pair_rows_only(self, rows) -> None:
+        """The fixture is the *stored* shape, captured before #385, so "Wireshark 4.2" carries the
+        null `appName` Jamf publishes and a synced container would not (`TestASalvagedName`). What
+        this pins is the other half: a title nothing names makes rows, with the pair and no keys."""
         wireshark = _rows(rows, title_id="5F6")
         assert wireshark and all(r["app_name"] is None and r["version_hash"] is None and r["key_full"] is None for r in wireshark)
         assert any(r["version"] == "4.2.0" for r in wireshark) and sum(r["is_latest"] for r in wireshark) == 1
@@ -75,6 +78,26 @@ class TestRows:
     def test_versions_are_not_duplicated_per_bundle(self, rows) -> None:
         seen = {(row["title_id"], row["bundle_id"], row["version"].casefold()) for row in rows}
         assert len(seen) == len(rows)
+
+
+class TestASalvagedName:
+    """#385: where Jamf leaves the top-level `appName` null, the sync takes the name the patches'
+    `killApps` give for the title's bundle ID — what a Jamf inventory reports for the installed
+    app. Here that name is a name like any other."""
+
+    def test_wireshark_4_2_0_keys_to_the_value_the_engine_computes(self) -> None:
+        """The literal is what an installed Wireshark.app 4.2.0 computes, and what the engine and
+        the epoch fixture carry for the same triple. Spelled out rather than derived: a key that
+        drifts is a silent miss, so something has to hold the digest still."""
+        records = json.loads((FIXTURES / "patch_titles_subset.json").read_text())
+        (versioned,) = [record for record in records if record["id"] == "5F6"]
+
+        rows = build_rows(Catalog.from_records([{**versioned, "appName": "Wireshark.app"}]))
+
+        (row,) = [row for row in rows if row["version"] == "4.2.0"]
+        assert row["bundle_id"] == "org.wireshark.Wireshark"
+        assert row["key_full"] == "v1:c63d39b2960e648daa2def3aaa786e60f36e40f056947be5a31ec6b1171afd42"
+        assert row["key_title"] == app_title_key("Wireshark.app", "org.wireshark.Wireshark")
 
 
 class TestSignature:
