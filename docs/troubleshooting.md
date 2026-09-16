@@ -590,6 +590,20 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
      request to `/api/system/data-sharing/exclusion-candidates` and the reason it ended;
      reload the page to ask again.
 
+5. **A title's app name reads *name from the patch definition*, or *No app name*.** Both
+   lines are the page saying where the name under the title came from; neither is a fault
+   and neither needs anything from you. Jamf publishes no app name on 513 of its 1,553
+   titles — every versioned line, *Wireshark 4.2* among them — so LoonInspect reads one
+   out of the `killApps` list in the title's own patch definitions and marks that it did.
+   Nothing on a marked row is less trustworthy for carrying the marker: where a title
+   names several apps for one bundle ID the first is taken, which can miss, and a name no
+   Mac reports matches nothing — it can never make some other app's row answer
+   ([`app-catalog.md`](app-catalog.md) §2a is the rule, and the marker's hover text is its
+   short form). *No app name* means nothing names an app for that title at all; it still
+   matches installed apps, by bundle ID and version, and only the name-keyed lookup is
+   closed to it. A title showing neither line was stored before the rule existed — the
+   next refresh (step 1) reads it once more and it gains one.
+
 **J.** A refresh that reports no error leaves the table saying *No Jamf Patch titles
 synced yet.*, a title Jamf publishes stays missing from the list with *Only titles with
 devices* unticked for more than a day, or a press of **Sync now** writes nothing to the
