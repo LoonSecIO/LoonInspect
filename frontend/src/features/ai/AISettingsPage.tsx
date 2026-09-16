@@ -348,14 +348,13 @@ export function AISettingsPage() {
   // The cards this reading offers, and whether the card on screen was left empty because
   // its local default cannot work here — the Base URL field then says which and why.
   const offered = offeredProviders(detection);
+  const appleOffered = offered.includes("apple_fm");
   const noLocalDefault = entry !== undefined && localDefaultWithheld(entry, detection);
   // The OpenAI-compatible card's help names Ollama on this Mac; where there is no Mac to
   // reach, it names what is left instead of a default the card no longer fills in.
-  const cardHelp = (candidate: Provider) => {
-    const card = providers?.entries.find((e) => e.provider === candidate);
-    const away = candidate === "openai_compatible" && card !== undefined && localDefaultWithheld(card, detection);
-    return away ? t.ai.openaiHelpNoLocalDefault : t.ai.providerHelp[candidate];
-  };
+  const openaiAway = providers?.entries.some((e) => e.provider === "openai_compatible" && localDefaultWithheld(e, detection));
+  const cardHelp = (candidate: Provider) =>
+    candidate === "openai_compatible" && openaiAway === true ? t.ai.openaiHelpNoLocalDefault : t.ai.providerHelp[candidate];
   const switchesOn = canWrite && flagOn && consent === true;
   const canSend = switchesOn && !sending && baseUrl.trim() !== "" && model.trim() !== "" && prompt.trim() !== "";
   const canLoadModels = switchesOn && !loadingModels && baseUrl.trim() !== "";
@@ -423,14 +422,14 @@ export function AISettingsPage() {
               : detection.runtime === "docker_desktop"
                 ? t.ai.detectionDockerDesktop
                 : t.ai.detectionUnknown}
-            {offered.includes("apple_fm") ? ` ${t.ai.detectionAppleCardOffered}` : ""}
+            {appleOffered ? ` ${t.ai.detectionAppleCardOffered}` : ""}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             {t.ai.detectionEvidence}: {Object.values(detection.evidence).join(" · ")}
           </p>
           {/* A withheld card must not read as a feature this build lost, so the panel that
               decided it says so, under the evidence the sentence points at. */}
-          {!offered.includes("apple_fm") && <p className="mt-2 text-sm text-muted-foreground">{t.ai.appleCardWithheld}</p>}
+          {!appleOffered && <p className="mt-2 text-sm text-muted-foreground">{t.ai.appleCardWithheld}</p>}
         </div>
       )}
 
@@ -475,10 +474,13 @@ export function AISettingsPage() {
             </label>
           ))}
         </div>
-        <p className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
-          <ExternalLink href={APPLE_FM_GUIDE_URL}>{t.ai.appleGuide}</ExternalLink>
-          <span>{t.ai.otherRuntimes}</span>
-        </p>
+        {/* Both lines are the Apple card's — how to set it up, which runtimes it does not reach — so they go with it. */}
+        {appleOffered && (
+          <p className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
+            <ExternalLink href={APPLE_FM_GUIDE_URL}>{t.ai.appleGuide}</ExternalLink>
+            <span>{t.ai.otherRuntimes}</span>
+          </p>
+        )}
       </div>
 
       <div className="grid gap-4 rounded-lg border bg-card p-4 md:grid-cols-2">

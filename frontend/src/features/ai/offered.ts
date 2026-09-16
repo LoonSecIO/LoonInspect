@@ -4,26 +4,22 @@ import { PROVIDER_ORDER } from "@/features/ai/savedState";
 /**
  * Which cards Settings › AI offers, and what an unsaved one fills in (#404).
  *
- * Host detection used to be a hint and never a gate: every card was offered everywhere,
- * and a full match only decided which one opened selected. On the AWS pod that offered
- * "Apple Foundation Models via Docker Desktop" with no Mac anywhere near it, and filled
- * the OpenAI-compatible card with the Mac host's Ollama pair — a `host.docker.internal`
- * base URL directly under the page's own evidence line saying that name does not resolve.
- * Sending it wrote a share-log row naming a destination nothing could answer, then failed
- * with `Name or service not known`.
+ * Host detection used to be a hint and never a gate. For the card list it is now a gate
+ * (Kyle, 2026-09-12: the Apple card *"should not show in AWS"* — the pod offered it with no
+ * Mac anywhere near it, and filled the OpenAI-compatible card with the Mac host's Ollama
+ * pair under the page's own evidence line saying that name does not resolve; the record of
+ * what that cost is `docs/ai-layer.md`). The Apple card is offered only where its default
+ * can work: Docker Desktop on an Apple Silicon Mac, with the alias resolving from inside
+ * this container. Everywhere else it is withheld and the detection panel says why in one
+ * sentence — and the Apple setup link and the unsupported-runtime line go with the card, so
+ * nothing left on the page points at it — which is how a Mac operator whose detection missed
+ * tells a withheld card from a missing feature (`docs/diagnosability.md` rule 1,
+ * `docs/troubleshooting.md` §12). Detection stays a hint for which offered card opens
+ * selected, and it gates nothing in the backend: a call naming `apple_fm` is judged, gated
+ * and logged like any other, wherever this runs.
  *
- * So for the card list detection is now a gate (Kyle, 2026-09-12: the Apple card *"should
- * not show in AWS"*). The Apple card is offered only where its default can work: Docker
- * Desktop on an Apple Silicon Mac, with the alias resolving from inside this container.
- * Everywhere else it is withheld and the detection panel says why in one sentence, so a
- * Mac operator whose detection missed can tell a withheld card from a missing feature
- * (`docs/diagnosability.md` rule 1, `docs/troubleshooting.md` §14). Detection stays a hint
- * for which offered card opens selected, and it gates nothing in the backend: a call
- * naming `apple_fm` is judged, gated and logged like any other, wherever this runs.
- *
- * Both decisions act on the reading, which cuts opposite ways: a card is offered only where
- * the reading proves its default can work, and a default is withheld only where it proves it
- * cannot. Before the host read settles there is neither a reading nor anything filled in.
+ * The two cut opposite ways: a card is offered only where the reading proves its default can
+ * work, a default withheld only where it proves it cannot. Before the read there is neither.
  */
 
 /** The name every local default on this page is written against. Docker Desktop supplies

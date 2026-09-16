@@ -286,7 +286,7 @@ describe("openingCard — the newest read of the saved cards wins the opening se
 
   it("a saved card that is not offered here is not opened on (#404)", () => {
     // An Apple card saved on a Mac and restored onto a pod that does not offer it: opening
-    // on it would light no card and leave no Remove to press. §14 says how to take it off.
+    // on it would light no card and leave no Remove to press. §12 says how to take it off.
     expect(openingCard({ ...untouched, latest: BOTH, offered: WITHOUT_APPLE })).toEqual({ card: "anthropic", clearLines: true });
     const appleOnly = byProvider([config("apple_fm")]);
     expect(openingCard({ ...untouched, latest: appleOnly, offered: WITHOUT_APPLE }).card).toBe("openai_compatible");

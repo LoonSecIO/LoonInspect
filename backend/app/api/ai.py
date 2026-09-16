@@ -226,10 +226,9 @@ async def list_providers(db: AsyncSession = Depends(get_db)) -> ProvidersOut:
     dependencies=[Depends(require(Permission.SYSTEM_READ))],
 )
 async def host(db: AsyncSession = Depends(get_db)) -> HostDetectionOut:
-    """A hint with its evidence; a gate on one card, and on nothing here (#404,
-    ``app.ai.host_detect``). Behind the flag all the same: with the area off, nothing
-    reads this container's `/proc` or asks DNS about the Docker Desktop alias on a page
-    nobody may open."""
+    """A hint with its evidence; a gate on one card, and on nothing here (#404, ``app.ai.host_detect``).
+    Behind the flag all the same: with the area off, nothing reads this container's `/proc` or asks
+    DNS about the Docker Desktop alias on a page nobody may open."""
     await _flag_or_409(db, AI_HOST_DETECTION_FEATURE)
     d = await read_host_detection()
     return HostDetectionOut(
