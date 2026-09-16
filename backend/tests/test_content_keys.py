@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import unicodedata
 
-from app.core.content_keys import app_full_key, app_title_key, hw_key, os_key
+from app.core.content_keys import app_bundle_key, app_full_key, app_title_key, hw_key, os_key
 
 # The vector table from docs/data-sharing.md, verbatim.
 
@@ -33,6 +33,13 @@ def test_app_full_vector() -> None:
     assert (
         app_full_key("Google Chrome", "com.google.Chrome", "6478.127", "126.0.6478.127")
         == "v1:7ffc73c1311760fa2de0b52b84865940380264906a8f63d4c5fb2075fbde7378"
+    )
+
+
+def test_app_bundle_vector() -> None:
+    assert (
+        app_bundle_key("com.google.Chrome", "6478.127")
+        == "v1:d1cced6faaa7eb9549f07208bbff3c58cb00e3453c395c349b57734d460448f1"
     )
 
 
@@ -87,3 +94,82 @@ def test_domains_never_collide() -> None:
     """Identical field values under different domains are different keys — an OS
     tuple can never masquerade as an app."""
     assert os_key("a", "b", "c") != hw_key("a", "b") != app_title_key("a", "b")
+    # `app.bundle` and `app.title` are both two-field app domains, so this pair is the
+    # one that would actually collide without the namespace.
+    assert app_bundle_key("a", "b") != app_title_key("a", "b")
+
+
+# --- the rename-proof key (#245) --------------------------------------------------
+
+
+def test_a_renamed_app_keeps_its_bundle_key_and_loses_its_title_key() -> None:
+    """The whole reason `app.bundle` exists. Two fleets run the same build of the same
+    software; one administrator renamed it in place. Their `app.title` and `app.full`
+    keys can never match, so the corpus's reveal threshold counts one submitter for each
+    spelling forever and neither crosses it — the software reads as somebody's internal
+    tool. On `app.bundle` they are one row.
+
+    Stamped through `apply_hashes`, not by calling the key functions twice: the property
+    under test is that renaming survives *the ingest path*, and every ingest path funnels
+    through that one site. A test that called `app_bundle_key` directly would still pass
+    on the day someone stopped stamping the column.
+    """
+    from app.mdm.service import apply_hashes
+    from app.schemas.payload import NormalizedApp
+
+    def _app(name: str) -> NormalizedApp:
+        return apply_hashes(
+            NormalizedApp(
+                name=name,
+                bundle_id="com.jamf.management.SelfService",
+                version="11.9.1",
+                short_version="11.9.1",
+            )
+        )
+
+    original = _app("Self Service")
+    renamed = _app("Contoso App Store")
+
+    assert original.key_bundle == renamed.key_bundle
+    assert original.key_bundle == app_bundle_key("com.jamf.management.SelfService", "11.9.1")
+    assert original.key_title != renamed.key_title
+    assert original.key_full != renamed.key_full
+
+
+def test_an_app_with_no_bundle_identifier_has_no_bundle_key() -> None:
+    """Never hash an empty identity. `_canonical_field` folds null and empty together,
+    which is right for a missing `short_version` and catastrophic here: the bundle id is
+    the whole identity, so hashing its absence would land every nameless app at one
+    version on ONE digest and report them to the corpus as a single popular product.
+    Both spellings of absence answer None — Jamf's client substitutes the app's name when
+    `bundleId` is missing, which can leave a blank behind as easily as a null."""
+    assert app_bundle_key(None, "1.0") is None
+    assert app_bundle_key("", "1.0") is None
+    assert app_bundle_key("   ", "1.0") is None
+    assert app_bundle_key("com.x", "1.0") is not None
+
+
+def test_the_bundle_key_does_not_reach_the_splunk_wire() -> None:
+    """Kyle, 2026-09-02 on #81: LoonInspect's minted identity fields stay off the wire —
+    "we can add keys later but we can't take them away." The key rides `NormalizedApp`
+    only as far as the `installed_apps` row, and the delta's `addedApps[]` /
+    `removedApps[]` ARE wire, so `exclude=True` is the entire mechanism keeping the
+    ruling. This is the test that notices when a tidy-up hands it a `serialization_alias`
+    to match its two neighbours."""
+    from app.schemas.payload import NormalizedApp
+
+    app = NormalizedApp(name="Self Service", bundle_id="com.jamf.management.SelfService", version="11.9.1")
+    app.key_bundle = "v1:whatever"
+    dumped = app.model_dump(mode="json", by_alias=True)
+    assert "keyBundle" not in dumped
+    assert "key_bundle" not in dumped
+    # The two that were ruled onto the delta are still there — this is the narrow
+    # exclusion, not a quiet reversal of the earlier decision.
+    assert {"keyTitle", "keyFull"} <= set(dumped)
+
+
+def test_the_bundle_key_ignores_the_name_and_not_the_version() -> None:
+    """Rename-proof, not version-proof: it is a *build* key, so two versions of one
+    bundle stay two rows. A key that collapsed versions too would answer "is this
+    software here", which `app.title` already answers."""
+    assert app_bundle_key("com.x", "1.0") != app_bundle_key("com.x", "2.0")

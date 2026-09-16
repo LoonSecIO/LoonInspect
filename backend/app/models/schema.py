@@ -262,6 +262,14 @@ class InstalledApp(Base):
     # because they are recomputed never and joined on daily: "v1:" + 64 hex chars.
     key_title: Mapped[str] = mapped_column(String(67), index=True)
     key_full: Mapped[str] = mapped_column(String(67), index=True)
+    # The build without its name (#245) — the corpus's rename-proof prevalence key.
+    # Nullable where the other two are not, for two reasons that both stay true: an app
+    # with no bundle identifier has no bundle identity to hash (`app_bundle_key` answers
+    # None rather than minting a digest every nameless app would share), and the column
+    # was added with no backfill, so a row written before that migration carries NULL
+    # until its next ingest restamps it. Indexed like its siblings: the exchange
+    # aggregate groups apps and the corpus joins on it.
+    key_bundle: Mapped[str | None] = mapped_column(String(67), index=True, nullable=True)
 
     is_compliant: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     patch_available: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
