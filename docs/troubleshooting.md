@@ -196,12 +196,11 @@ that read fails, so a missing sentence there is never a silent zero.
      only its head is old; `pendingCount` can climb at the same time, because new events
      keep arriving, which is why the age is the sharper measure. **Rising by about the
      seconds between the reads** means nothing left it — nothing was attempted. Only then
-     is a log worth reading, and two lines say which of the two reasons it is. The first
-     is a fault:
-     `docker compose logs app --since 10m | grep "outbox tick failed"` — the tick gave up
-     before it dialled, and the line names what to check, usually a destination whose URL
-     it refuses or whose stored secret this container cannot read (§4). Fix that, and the
-     next tick drains the queue. The second is the next bullet. Still rising with neither
+     is a log worth reading, and two lines say which of the two reasons it is. The first is
+     a fault: `docker compose logs app --since 10m | grep "outbox tick failed"` — the tick
+     gave up before it dialled, and the line names what to check, usually a destination
+     whose URL it refuses or whose stored secret this container cannot read (§4). Fix that,
+     and the next tick drains the queue. The second is the next bullet. Still rising with
      line → reportable **D**. `deadLettered.oldestExpiresAt` is the instant the oldest
      dead letter stops being redrivable, and `retention.nextPurgeAt` is when the purge
      that takes it runs.
