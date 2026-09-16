@@ -15,11 +15,11 @@ Two derived judgements live here because they need more than one section:
   cannot say; the ledger keeps both histories. The third cause is the object itself:
   when the group has an open `subject_departures` row (#181) it was deleted, and no
   device drifted anywhere.
-* **The deletion echo (#182).** One admin click deleting a smart group produces one
-  removal row per member — forty thousand on a forty-thousand-device fleet. They are one
-  fleet-level event's detail, not N peers, so they collapse the way system apps collapse
-  into the OS update: level `low`, off by default, and one run-log line per departed
-  object. Same for a deleted extension-attribute definition's rows.
+* **The deletion echo (#182).** One admin click deleting a smart group produces one removal
+  row per member — forty thousand on a forty-thousand-device fleet. They are one fleet-level
+  event's detail, not N peers, so they collapse the way system apps collapse into the OS
+  update: graded `low`, which the default preset does not record at all, and one run-log line
+  per departed object says so. Same for a deleted EA definition's rows.
 """
 
 from __future__ import annotations
@@ -144,8 +144,8 @@ _DEVICE_META_SOURCES: tuple[tuple[str, str, str], ...] = (
 )
 
 
-# The per-device entry kinds that echo a fleet-level object: entry kind -> (the subject
-# kind the object departs as, the identity field holding its id, the operator's word).
+# Entry kinds that echo a fleet-level object -> (its subject kind, the identity field holding
+# its id, the operator's word for it).
 _ECHOED_OBJECTS: dict[str, tuple[str, str, str]] = {
     "group_membership": (SUBJECT_COMPUTER_GROUP, "groupId", "smart group"),
     "extension_attribute": (SUBJECT_EXTENSION_ATTRIBUTE_DEFINITION, "definitionId", "extension attribute"),
@@ -161,19 +161,18 @@ class CollapsedDeparture:
     label: str | None
     departed_at: datetime
     rows: int = 0
+    recorded: bool = False  # were the collapsed rows kept, or is level low off here?
 
 
 # A context variable for the reason the run is (`app.core.runs`): the derivation runs six
 # frames below the sweep, once per device, and "this one deletion cost N rows across the
-# fleet" exists only across the whole loop. A webhook's single device opens no tally — the
-# collapse still happens there, because one device is not an echo.
+# fleet" exists only across the whole loop. A webhook opens one around its single device.
 _collapsed: ContextVar[dict[tuple[str, str], CollapsedDeparture] | None] = ContextVar("collapsed_departures", default=None)
 
 
 @contextlib.asynccontextmanager
 async def collecting_departures() -> AsyncIterator[dict[tuple[str, str], CollapsedDeparture]]:
-    """Collect this sweep's echo. Async only so a caller can open it on the same
-    `async with` line as its HTTP client rather than indenting a device loop."""
+    """Collect one run's echo. Async so a caller opens it beside its HTTP client."""
     tally: dict[tuple[str, str], CollapsedDeparture] = {}
     token = _collapsed.set(tally)
     try:
@@ -183,9 +182,8 @@ async def collecting_departures() -> AsyncIterator[dict[tuple[str, str], Collaps
 
 
 def _echoed(change: EntryChange) -> tuple[str, str, str] | None:
-    """(subject kind, object id, the operator's word) for a change that echoes a
-    fleet-level object; None for every other change. A removal is the only echo there is:
-    a group that is gone adds nobody, and a definition that is gone updates nothing."""
+    """(subject kind, object id, the operator's word) for a change that echoes a fleet-level
+    object; None for the rest. Only a removal echoes: a group that is gone adds nobody."""
     echoed = _ECHOED_OBJECTS.get(change.kind)
     if echoed is None or change.change != "removed":
         return None
@@ -199,9 +197,9 @@ async def _departed_objects(
 ) -> dict[tuple[str, str], datetime]:
     """When each object this boundary lost departed, for the ones that did.
 
-    Asked per boundary and only for the ids in it, rather than every open departure per
-    device. The census that explains them has already committed: the catalog pass runs
-    before the device loop (#136) and `_reconcile_departures` commits inside it.
+    One indexed read, only for a boundary that lost a group or an EA value, and it takes the
+    place of the `_membership_cause` read those same removals used to cost. The census that
+    explains them has committed already: the catalog pass runs before the device loop (#136).
     """
     wanted: dict[str, set[str]] = {}
     for change in changes:
@@ -221,12 +219,13 @@ async def _departed_objects(
     return found
 
 
-def _note_collapsed(object_kind: str, object_id: str, label: str | None, departed_at: datetime) -> None:
+def _note_collapsed(object_kind: str, object_id: str, label: str | None, departed_at: datetime, recorded: bool) -> None:
     tally = _collapsed.get()
     if tally is None:
         return
     entry = tally.setdefault((object_kind, object_id), CollapsedDeparture(object_kind, object_id, label, departed_at))
     entry.rows += 1
+    entry.recorded = recorded  # one policy for the whole run, so the last writer agrees with the first
 
 
 async def load_policy(db: AsyncSession) -> EffectivePolicy:
@@ -406,23 +405,21 @@ async def derive_and_record(
             echoed = _echoed(change)
             departed_at = departed.get(echoed[:2]) if echoed is not None else None
             if echoed is not None and departed_at is not None:
-                # The object was deleted (#182) — the third cause, and the one the other
-                # two cannot express: a deleted group's definition span is never closed,
-                # so `_membership_cause` would find it unmoved and say "the device
-                # drifted", the one thing that did not happen. `criteriaChanged: null` is
-                # that question refused rather than answered wrongly, and it rides the
-                # membership row only: an extension attribute has no criteria.
+                # The object was deleted (#182) — the third cause, and the one the other two
+                # cannot express: a deleted group's definition span is never closed, so
+                # `_membership_cause` would read it as drift, the one thing that did not happen.
+                # `criteriaChanged: null` refuses the question, on the membership row only.
                 _, object_id, object_kind = echoed
                 details = {"objectDeparted": True, "departedAt": departed_at.isoformat()}
                 if change.kind == "group_membership":
                     details["criteriaChanged"] = None
-                # One click produced this row on every member, so it is that click's
-                # detail: graded `low` (off by default) and counted into one run-log line
-                # for the object. Counted before the level gate, because what the line
-                # reports is what the deletion cost.
-                _note_collapsed(object_kind, object_id, change.label, departed_at)
+                # One click produced this row on every member, so it is that click's detail:
+                # graded `low`, which the default preset drops. Tallied either way — what the
+                # run-log line reports is what the deletion cost.
                 level = LOW
-                if not policy.keeps_level(level):
+                kept = policy.keeps_level(level)
+                _note_collapsed(object_kind, object_id, change.label, departed_at, kept)
+                if not kept:
                     continue
             elif change.kind == "group_membership":
                 details.update(await _membership_cause(db, connection, change, previous))
@@ -481,9 +478,8 @@ async def _membership_cause(db: AsyncSession, connection: MdmConnection, change:
     current definition span opened after the device's previous span was last observed,
     the criteria changed in between; otherwise the device drifted.
 
-    Two causes, asked only when the third is ruled out: the caller checks for an open
-    departure first (#182), because a deleted group's span is never closed and this
-    function would read its unmoved definition as drift.
+    Two causes, asked only when the third is ruled out: a deleted group's span is never closed,
+    so the caller checks for an open departure first (#182) — this would read it as drift.
     """
     group_id = str(change.identity.get("groupId"))
     definition = (

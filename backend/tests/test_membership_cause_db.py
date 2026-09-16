@@ -14,11 +14,9 @@ Jamf's `reportDate` while a group span is stamped with our clock, and the compar
 between the two.
 
 The third cause is #182's: the group itself was deleted. Its span is never closed, so the
-two-cause question would answer "the device drifted" on every member — the one thing that
-did not happen — and one click would produce N of them. Those rows carry `objectDeparted`
-and collapse to level `low` behind one run-log line, and the tests below hold both halves:
-what the rows say when a tenant asks for everything, and that the default sees one line
-instead of N notable changes.
+two-cause question would answer "the device drifted" on every member — the one thing that did
+not happen — and one click would produce N of them. Those rows carry `objectDeparted` and collapse
+to level `low` behind one run-log line: the default records none of them, *Everything* records all.
 
 Needs a real Postgres and the fake Jamf tenant, like the other sweep suites.
 """
@@ -225,6 +223,7 @@ async def test_a_deleted_group_costs_one_line_and_no_notable_rows(db, connection
     (line,) = await _collapse_lines(db, connection.id)
     assert line.fields["objectKind"] == "smart group" and line.fields["objectId"] == "17"
     assert line.fields["rows"] == 2, "both members, counted once for the object"
+    assert line.fields["rowsRecorded"] is False and "were not recorded" in line.message, line.message
     assert "Falcon Installed" in line.message and "level low" in line.message
 
 
@@ -250,6 +249,8 @@ async def test_a_deleted_group_departed_it_never_says_the_device_drifted(db, con
         assert row.details["departedAt"]
         assert "groupDefinitionSpanId" not in row.details
     assert [r for r in rows if r.details.get("criteriaChanged") is False] == [], "no row reads as drifted"
+    (line,) = await _collapse_lines(db, connection.id)
+    assert line.fields["rowsRecorded"] is True and "Level: Low" in line.message, line.message
 
 
 async def test_a_deleted_extension_attribute_definition_collapses_the_same_way(db, connection, jamf: FakeJamf) -> None:

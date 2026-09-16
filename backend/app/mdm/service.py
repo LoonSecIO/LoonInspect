@@ -544,24 +544,32 @@ async def _reconcile_departures(
 async def _log_collapsed_departures(db: AsyncSession, run: Run, collapsed: Mapping[tuple[str, str], CollapsedDeparture]) -> None:
     """One line per departed object, not one per device (#182).
 
-    This line is the echo's only trace at the default level, because the rows it counts
-    are graded `low`. So it names what is gone, how many rows that cost, and where those
-    rows are: an operator who deletes a group and finds the Changes page quiet has the
-    answer on the run they were watching rather than in the source.
+    At the default preset this line is the echo's *whole* trace: the rows it counts are
+    graded `low`, low is off, so they were never written. It names what is gone, what the
+    deletion cost, whether any of it was kept, and the next check either way — the
+    operator who finds the Changes page quiet gets the answer on the run they watched.
     """
     for entry in sorted(collapsed.values(), key=lambda e: (e.object_kind, e.object_id)):
+        tail = (
+            "They are on Devices › Changes under Level: Low; the page prints no sentence for this cause, so "
+            "GET /api/changes?minLevel=low is where objectDeparted reads."
+            if entry.recorded
+            else "Level low is off under this instance's change-tracking preset, so they were not recorded; "
+            "Settings › Change tracking → Everything keeps them from the next sweep on."
+        )
         await run_log(
             db,
             run,
             "info",
             f'{entry.object_kind} "{entry.label or entry.object_id}" is gone; its {entry.rows} per-device '
-            f"{'row' if entry.rows == 1 else 'rows'} collapsed to level low — see Devices › Changes with Level: Everything",
+            f"removal {'row' if entry.rows == 1 else 'rows'} collapsed into this line at level low. {tail}",
             objectKind=entry.object_kind,
             objectId=entry.object_id,
             objectName=entry.label,
             rows=entry.rows,
             departedAt=entry.departed_at.isoformat(),
             rowLevel="low",
+            rowsRecorded=entry.recorded,
         )
 
 
@@ -968,7 +976,10 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
     # runs concurrently and never queues behind a forty-minute sweep (§4.4).
     acquisition = await acquire(db, connection, trigger=TRIGGER_WEBHOOK, lock_class=LOCK_WEBHOOK, actor_label=event.event_name)
     run = acquisition.run
-    async with entered(run):
+    # One device is not an echo, but a membership its deleted group took with it is still
+    # dropped at the default preset (#182) — and on this path the sweep's line is not
+    # coming, so the webhook's own run carries it.
+    async with entered(run), collecting_departures() as collapsed:
         try:
             async with client.http() as http:
                 aperture = await capture_aperture(client, http, sections=sections, quarantined_extension_attributes=quarantine)
@@ -996,6 +1007,7 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
             await db.refresh(run)
             await finish(db, run, ok=False, error=str(exc))
             raise
+        await _log_collapsed_departures(db, run, collapsed)
         # The return is deliberately unchecked: if a slow fetch let the reclaim take
         # this run, the refused finish leaves that verdict standing, and the device
         # write above stands on its own — it is fresh from Jamf, and staleness is the

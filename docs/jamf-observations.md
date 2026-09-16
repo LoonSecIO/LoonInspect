@@ -368,10 +368,9 @@ population of ten or more departs nobody either (`app.observations.departure`); 
 logged at warning on the run, because "every group departed at once" must be unreachable
 from a lost privilege or a short page. Returns are honoured on a collapsed census — a
 subject the census *did* name is present. What a SIEM receives about a departure is #179's.
-An open row is also read by the change derivation (#182): a membership or an
-extension-attribute value removed from a device because its *object* is gone carries
-`objectDeparted` and collapses to level `low` under one run-log line per object, instead of
-telling every member of a deleted group that it drifted
+An open row is also read by the change derivation (#182): a membership or EA value removed
+because its *object* is gone says `objectDeparted` and collapses to level `low` under one
+run-log line per object, rather than telling every member it drifted
 ([`change-log.md`](change-log.md) §1).
 
 ### Managed → Unmanaged: the retirement workflow (reserved, not built)

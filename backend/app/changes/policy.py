@@ -476,10 +476,8 @@ class EffectivePolicy:
         The level question on its own, for the one caller that decides a level *after*
         `entry_enabled` answered the enabled question at the rule's level: the deletion
         echo (#182), which downgrades a removal to `low` because forty thousand of them
-        are one object's detail rather than forty thousand peers. An explicit per-entry
-        override still turns those rows off — `entry_enabled` is asked first — but it
-        cannot turn the collapse off, because the collapse is not a judgement about
-        whether removals are interesting.
+        are one object's detail rather than forty thousand peers. `False` here is what
+        drops the row, and under the default preset that is every one of them.
         """
         return default_on(level, self.overrides.minimum_level)
 

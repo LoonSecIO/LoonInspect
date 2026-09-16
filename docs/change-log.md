@@ -18,8 +18,7 @@ That is what makes opinionated defaults safe.
 
 The defaults were reasoned from a real Jamf Pro 11.31.1 inventory of an M4 Mac mini
 (`backend/tests/fixtures/jamf/computer_inventory_detail_real.json`), section by section.
-The shape of the record decided four things; the fifth is the same argument made about an
-object rather than a section:
+The shape of the record decided five things:
 
 1. **Apple system apps collapse into the OS update.** 64 of the record's 83 applications
    live under `/System/Applications` and bump versions with every macOS update. Logged
@@ -40,11 +39,11 @@ object rather than a section:
    events.
 5. **A deleted object's per-device rows collapse under it** (#182, the same shape as 1).
    Deleting one smart group removes it from every member at once — 40,000 removal rows on a
-   40,000-device fleet, every one of them one admin click's echo rather than a change on
-   that Mac. They are graded `low`, so by default they neither count toward
-   `changes.notable_24h` nor fan out, and the sweep writes **one run-log line per departed
-   object** naming it and the rows it collapsed. A deleted extension-attribute definition
-   goes the same way, and *Everything* still shows the rows and their cause.
+   40,000-device fleet, every one of them one admin click's echo rather than a change on that
+   Mac. They are graded `low`, so the default preset does not record them at all: no
+   `changes.notable_24h`, no fan-out, and **one run-log line per departed object** instead,
+   naming it and what it cost. A deleted extension-attribute definition goes the same way;
+   *Everything* records both from the next sweep on, at level `low`.
 
 Entries (the list sections) follow the same logic with identities: an application is
 (name, bundleId, path) so a version bump is one `updated`, not a removal and an
@@ -96,19 +95,18 @@ engine: the system-app collapse above, and **three-cause membership** — a grou
 left carries `criteriaChanged`: whether the group's own definition span moved since this
 device was last observed (criteria moved) or not (device drifted). Jamf cannot say; the
 ledger keeps both histories. The third cause is the group itself: with an open
-`subject_departures` row ([`jamf-observations.md`](jamf-observations.md) §8) it was deleted,
-and the row says `objectDeparted: true`, `departedAt`, and `criteriaChanged: null` — the
-question refused rather than answered wrongly. It is asked first, because a deleted group's
-definition span is never closed and the two-cause question would find it unmoved and report
-*device drifted* on every member of a group that no longer exists. A deleted
-extension-attribute definition's rows carry the same two keys and no `criteriaChanged`.
+`subject_departures` row ([`jamf-observations.md`](jamf-observations.md) §8) it was deleted, and
+the row says `objectDeparted: true`, `departedAt`, and `criteriaChanged: null` — the question
+refused rather than answered wrongly. It is asked first, because a deleted group's definition
+span is never closed and the two-cause question would find it unmoved and report *device
+drifted* on every member of a group that no longer exists. A deleted extension-attribute
+definition's rows carry the same two keys and no `criteriaChanged`.
 
 **The fleet-level event is not minted here.** What a SIEM receives when an *object* is
 gone — one event about a group, with no device in it — is #179's and does not exist yet;
 nothing invents a name for it and `KNOWN_EVENT_TYPES` is untouched. It will hang off the
-departure the census already writes (`app.observations.departure.reconcile_census`, where
-the object and the instant are), not off these per-device rows: they are its detail, which
-is exactly why they collapse.
+departure the census already writes (`app.observations.departure.reconcile_census`, which
+holds the object and the instant), not off these per-device rows: they are its detail.
 
 Every `device_changes` **row** carries the correlation triple (serial, Jamf URL, Jamf id),
 the UDID, both span ids, the device's own `observed_at`, the trigger, and the policy

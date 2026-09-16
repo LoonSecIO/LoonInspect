@@ -357,18 +357,18 @@ latest `eventID` per device wins, and a lost event's absence is filled rather th
 ### 6d. `objectDeparted` and `departedAt` inside `device.change`'s `details` (#182)
 
 Amended additively, 2026-09-16. `details` is the change family's per-change extras bag and
-has carried `changedFields`, `criteriaChanged` and `collapsedSystemApps` since #223. Two
-keys join it on the rows a *deleted object* produces — a `group_membership` or an
-`extension_attribute` removed because the group or the definition itself is gone
-(`subject_departures`, #181): **`objectDeparted`**, always `true` where present, and
-**`departedAt`**, the ISO instant the census found it absent. On the membership row
-`criteriaChanged` ships explicitly `null` beside them — the existing key answering
-"neither", not a new meaning. Clause 1, not clause 2.
+has carried `changedFields`, `criteriaChanged` and `collapsedSystemApps` since #223. Two keys
+join it on the rows a *deleted object* produces — a `group_membership` or `extension_attribute`
+removed because the group or the definition itself is gone (`subject_departures`, #181):
+**`objectDeparted`**, always `true` where present, and **`departedAt`**, the ISO instant the
+census found it absent. Absent means what absence always means here: the object is still there,
+and `criteriaChanged` answers the removal alone. On a membership row the two arrive with
+`criteriaChanged` explicitly `null`. Clause 1, not clause 2.
 
-Those rows are graded `level: low`, so a destination at the default minimum level never
-receives them; a search that wants them reads `details.objectDeparted=true`. The
-fleet-level event about the object itself — one event with no device in it — is #179's and
-is **not** minted: no event type, no sourcetype, `KNOWN_EVENT_TYPES` untouched.
+Those rows are graded `level: low`, which the default preset does not record at all, so no
+destination receives them unless the tenant sets *Everything* — then they fan out like any other
+row, and a search reads `details.objectDeparted=true`. The fleet-level event about the object
+itself is #179's and is **not** minted: `KNOWN_EVENT_TYPES` untouched.
 
 ### 6a. The order those keys appear in
 
