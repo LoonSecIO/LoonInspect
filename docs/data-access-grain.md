@@ -157,6 +157,19 @@ Mechanically, for the surfaces that will consume it:
 
 ## 5. User boards: personal, not secret — confirmed, with two riders
 
+> **Note, 2026-09-16 (#114 R6, filed as #471): `/dashboards` is not a v1 item, and these
+> two riders wait with it.** The route was carried through the v1 conversation as the
+> place pipeline health would finally be shown. It is not needed for that, and nothing is
+> waiting on it: a dead pipe is already the top row of **Needs Attention** on `/` —
+> `destination_failing`, level `high`, rank 0
+> (`frontend/src/features/overview/needsAttention.ts`) — and how deep the queue behind it
+> is goes on **Settings › Destinations**, where #468's two sentences land. No new Needs
+> Attention kind is minted for it. There is no `/dashboards` under `frontend/src` at all,
+> and #95's launch-nav ruling deleted five pages, so there is nothing half-built to
+> finish either. This is v1 *sequencing*, not a `v-never` entry (§7) — the ruling is
+> about when, not whether — so Rider 1 and Rider 2 stand exactly as written, as inputs to
+> whatever first needs the route rather than as work owed by anything shipping before it.
+
 The design record's 2-2 split is **confirmed**. A user-scope board is enumerable under
 `audit:read`, carries owner and last-edited metadata only, and has **no edit ledger** —
 a scratchpad does not get a revision history. Two riders close what the original wording
@@ -247,4 +260,5 @@ verbatim, and the two are edited together or not at all.
   the sanctioned path for multi-scope customers; their own designs are unchanged and
   unblocked by this.
 * **The `/dashboards` v1 API contract.** §5's riders are inputs to it, not the contract
-  itself.
+  itself — and since 2026-09-16 the route is not a v1 item at all, so there is nothing
+  for them to be inputs to yet (§5's note).
