@@ -150,6 +150,23 @@ export const en = {
     noAccessDescription:
       "Your account's role doesn't include permission for this area. Ask an administrator if you need it."
   },
+  // The flag guard on a route (#402), a sibling of the permission guard above: an area
+  // being checked, an area switched off, and an area whose switch could not be read —
+  // never reported as "off" (#150). One `areas` entry per route-gating flag, by its key.
+  flagGate: {
+    checking: "Checking which features are on…",
+    unreadableTitle: "This area could not be checked",
+    unreadableDescription:
+      "The feature flags could not be read, so whether this area is on is unknown — which is not the same as off. Reload the page; if it keeps happening, this instance or its database is not answering, and Settings › Support says where to report that.",
+    featureFlagsLink: "Open Settings › Feature Flags",
+    areas: {
+      ai_features: {
+        offTitle: "AI features are off",
+        offDescription:
+          "AI features are off. An administrator turns them on under Settings › Feature Flags."
+      }
+    }
+  },
   errors: {
     notFoundTitle: "That page doesn't exist",
     notFoundDescription:
