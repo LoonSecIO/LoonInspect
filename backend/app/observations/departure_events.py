@@ -13,12 +13,12 @@ cannot be asked once the subject is gone. **`deviceMeta` degrades by subject kin
 either subject**: a departure is derived from an absence, so minting one would fabricate a
 correlation key for a read that never happened.
 
-**A Mac is a tail, not an event** (4.5, built by #495). `emit_mac_notices` sends `state:
-departed` with `noticeDay` 1..7, one per UTC day, off the open rows rather than off one
-census's verdict, so all seven days have one producer that cannot disagree with itself.
-`emit_mac_removals` sends the guaranteed terminal `state: removed` on `left_the_fleet` alone —
-the predicate that drops the Mac from **Devices** — and on the wall clock, not on a census, so
-a tail nobody watched still closes.
+**A Mac is a tail, not an event** (4.5, built by #495), and its emitters are called from the
+device census rather than from the object one. `emit_mac_notices` sends `state: departed` with
+`noticeDay` 1..7, one per UTC day, off the open rows rather than off one census's verdict, so
+all seven days have one producer that cannot disagree with itself. `emit_mac_removals` sends the
+guaranteed terminal `state: removed` on `left_the_fleet` alone — the predicate that drops the Mac
+from **Devices** — and on the wall clock, not on a census, so a tail nobody watched still closes.
 """
 
 from __future__ import annotations
