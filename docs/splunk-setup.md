@@ -204,6 +204,9 @@ the input's for that event.
   assertion about the delta between two pulls, the same no-vendor form as `loon:run`
   ([#277](https://github.com/LoonSecIO/LoonInspect/issues/277), 2026-09-03, stamped the
   day before the flip).
+- `subject.departure` and `subject.returned` both arrive under `loon:departure` — one
+  stanza for two types, with `event=` telling them apart
+  ([#179](https://github.com/LoonSecIO/LoonInspect/issues/179), 2026-09-16).
 - Only the test event sends none and arrives under whichever sourcetype **you** set on
   the input (§2), and a string once minted is a permanent stanza, so none was invented in
   passing.
@@ -407,6 +410,22 @@ ships; a destination subscribed only to `device.inventory.changed` never receive
 and one subscribed only to `device.inventory` gets the state without the deltas. The
 field is on the API (`subscribedEvents` on `POST`/`PATCH /api/destinations`); the UI
 carries it but has no editor for it yet.
+
+**The departure pair is default-on and was appended to lists that already existed.** If
+your destination spells out `subscribedEvents`, migration `bd51c7a9e402` added BOTH
+`subject.departure` and `subject.returned` to it, because a list that received departures
+without returns would describe a fleet that only ever shrinks. To decline them, remove
+**both** from `subscribedEvents`; removing only one leaves exactly that half-open state.
+Pairing at search time is `departedAt`, which a return repeats verbatim:
+
+```
+index=<yours> sourcetype=loon:departure
+| stats values(event) as seen, min(_time) as first by deviceMeta.jamfProID, departedAt
+| where mvcount(seen)=1 AND seen="subject.departure"
+```
+
+That is every subject still gone. Swap the `where` for `mvcount(seen)=2` to list the ones
+that came back, and add `subjectKind=computer_group` to scope it to smart groups.
 
 ## 8. Prove it end to end
 
