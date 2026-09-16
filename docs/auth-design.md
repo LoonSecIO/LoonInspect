@@ -342,11 +342,15 @@ bearer path ask the index for the tenant, rebind the request to it, and only the
 the tenant-scoped row. A session minted in a second tenant therefore resolves exactly as
 one in the first does, and a cookie nobody issued resolves to nothing — the same 401 as
 a revoked one. #303, auditing what a future IdP integration would cost from here, named
-resolving identity before a tenant is known the only genuinely expensive piece of it —
-an OIDC callback has to find an account by `(issuer, subject)` with no tenant bound yet —
-and #35 built that primitive: `session_tenants` / `api_token_tenants`
-(`backend/app/core/tenancy.py`), exercised against a second operational tenant in
-`backend/tests/test_identity_resolution_db.py`.
+resolving identity before a tenant is known the only genuinely expensive piece of it, and
+#35 built the half of it that is about a *credential*: `session_tenants` /
+`api_token_tenants` (`backend/app/core/tenancy.py`) take a session or token hash and
+return a tenant, exercised against a second operational tenant in
+`backend/tests/test_identity_resolution_db.py`. The half an OIDC callback needs is **not**
+built — finding an account by `(issuer, subject)` with no tenant bound yet is a read of
+`accounts`, which is still under `IDENTITY_RESOLUTION_TENANT_ID` exactly as
+`api/auth.py`'s `select(Account).where(Account.email == email)` is. That is #303's own
+item 1, and it is the pre-authentication surface this section returns to below.
 
 Why not the `SECURITY DEFINER` function the issue specified: it needs a `BYPASSRLS` owner
 role that Alembic cannot create, because the application role is `NOSUPERUSER
