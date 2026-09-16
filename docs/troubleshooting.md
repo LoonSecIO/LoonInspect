@@ -1055,7 +1055,7 @@ compose exec -T app getent hosts host.docker.internal` answers with an address. 
 /proc/version`, your Docker Desktop version, and the build from Settings › Support.
 
 
-## 12. "I deleted a smart group and the Changes page says nothing"
+## 15. "I deleted a smart group and the Changes page says nothing"
 
 Deliberate, and the run log says so. Deleting one group removes it from every member at once,
 and one change per Mac would bury the sweep under tens of thousands of rows describing the same
@@ -1076,7 +1076,7 @@ record at all, and the sweep writes one line per deleted object instead ([`chang
    of the sweep, and a refused or collapsed one departs nobody and says so on the run — *census
    returned nothing* or *census collapsed against the population*. That is the circuit breaker:
    the API role lost **Read Smart Computer Groups**. Grant it and re-run. A line whose
-   `objectId` names a group still in Jamf is reportable state **P**.
+   `objectId` names a group still in Jamf is reportable state **S**.
 
-**P.** A collapse line for an object that still exists in Jamf. Report the line, the
+**S.** A collapse line for an object that still exists in Jamf. Report the line, the
 `jobID`, and the build from Settings › Support.
