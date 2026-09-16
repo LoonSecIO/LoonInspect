@@ -128,6 +128,72 @@ async def test_exclude_globs_cover_the_reveal_path(db, clean) -> None:
     assert not any(name.startswith("Acme Payroll") for name in names), f"plaintext name leaked: {names}"
 
 
+async def test_hardware_rows_count_models_and_a_device_without_one_has_no_row(db, clean) -> None:
+    """#481: the first `hardware` list this container has ever assembled, and the one row
+    it must never produce.
+
+    `hw` identifies a machine by its model alone, so a device whose model identifier has
+    not been read is **absent** from the list rather than hashed over the empty string —
+    one shared digest for every unidentified Mac, counted by the corpus as one machine
+    (`app_bundle_key` makes the same argument for the app domain). That device is still an
+    `os` row, which is the half that has to keep working while the columns fill in: they
+    are un-backfilled, so until a sweep has covered a fleet, some of its devices have a
+    model and some do not.
+
+    The SQL is the subject here, so this needs a real Postgres: the stub-session tests in
+    test_sharing.py cannot see a WHERE clause. The fixture values are unique to the run
+    because other suites share this tenant's `devices` table — what the real record
+    actually carries is pinned by the normalizer test in test_jamf_observation_contract.py.
+    """
+    import uuid as uuidlib
+
+    from app.core.content_keys import hw_key, os_key
+    from app.core.sharing import build_exchange_request, get_or_create_settings
+    from app.models.schema import Device
+
+    suffix = uuidlib.uuid4().hex[:8]
+    version, build, model = f"15.6.1-{suffix}", f"24G{suffix}", f"Mac16,{suffix}"
+
+    def _device(n: int, **columns) -> Device:
+        return Device(
+            mdm_provider="jamf",
+            external_id=f"hw-{suffix}-{n}",
+            serial_number=f"SER{suffix}{n}",
+            hostname=f"host-{suffix}-{n}",
+            os_version=version,
+            os_build=build,
+            **columns,
+        )
+
+    rows = [
+        _device(1, model_identifier=model, cpu_arch="arm64"),
+        _device(2, model_identifier=model, cpu_arch="arm64"),
+        # Read for its OS and not yet for its hardware — the state every device is in
+        # between the upgrade and its next sweep.
+        _device(3),
+    ]
+    db.add_all(rows)
+    await db.commit()
+
+    try:
+        snapshot = (await build_exchange_request(db, await get_or_create_settings(db)))["snapshot"]
+    finally:
+        for row in rows:
+            await db.delete(row)
+        await db.commit()
+
+    # Two of the three are identified, and the third is not a row — not a row with a key
+    # over "", and not a row with a null key.
+    assert [row for row in snapshot["hardware"] if row["key"] == hw_key(model, "arm64")] == [
+        {"key": hw_key(model, "arm64"), "count": 2, "platform": "macos"}
+    ], snapshot["hardware"]
+    assert all(row["key"] != hw_key("", None) for row in snapshot["hardware"]), snapshot["hardware"]
+    # All three are one os row, keyed on the build the container actually read.
+    assert [row for row in snapshot["os"] if row["key"] == os_key("macos", version, build)] == [
+        {"key": os_key("macos", version, build), "count": 3, "platform": "macos"}
+    ], snapshot["os"]
+
+
 async def _exchange_rows(db) -> list:
     from app.models.schema import ShareLog
 

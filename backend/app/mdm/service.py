@@ -1188,8 +1188,14 @@ async def process_sync(
         existing.last_inventory_at = device.last_inventory_at
     if device.observed("hardware"):
         existing.serial_number = device.serial_number
+        # #481. Under `hardware` and not beside the build, because that is the section
+        # they arrive in: a webhook collection scoped to applications must leave a Mac's
+        # model and architecture standing, exactly as it leaves the serial.
+        existing.model_identifier = device.model_identifier
+        existing.cpu_arch = device.cpu_arch
     if device.observed("operating_system"):
         existing.os_version = device.os_version
+        existing.os_build = device.os_build
     if device.observed("user_and_location"):
         existing.building_id = device.building_id
         existing.department_id = device.department_id
