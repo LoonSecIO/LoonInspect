@@ -1002,12 +1002,14 @@ session's cookies, and `docker compose logs app --since 30m`.
 
 ## 14. "Settings › AI has no Apple Foundation Models card"
 
-That card is offered only where its default can work: LoonInspect under **Docker Desktop on
+That card is offered where its default can work: LoonInspect under **Docker Desktop on
 an Apple Silicon Mac**, with **`host.docker.internal` resolving from inside the container**.
 Apple's `fm serve` runs on the Mac, never in the container, and that name is how the
 container reaches it. Anywhere else the card is withheld on purpose — it is not a feature
 this build lost, and the panel **Where this container runs** says so in a sentence under its
-evidence. The **OpenAI-compatible** and **Anthropic** cards are offered everywhere.
+evidence. One exception keeps it on the page anywhere: a server that holds settings saved for
+that card shows it, saying on the card itself that that is why, so **Remove** stays reachable
+(step 3). The **OpenAI-compatible** and **Anthropic** cards are offered everywhere.
 
 1. **Read *Where this container runs*, and the *Evidence* line under it** — the kernel, the
    CPU implementer, and the alias:
@@ -1030,17 +1032,12 @@ evidence. The **OpenAI-compatible** and **Anthropic** cards are offered everywhe
    (*the local default cannot work here*). Type an address this container can reach — not
    `localhost`, which inside a container is the container — press **Send** once to prove it
    answers, then **Save**. Anthropic's card needs no local endpoint at all.
-3. **The Prompt bar names a card the page does not show.** *Changes Prompt bar: shown (uses
-   Apple Foundation Models via Docker Desktop)* where that card is withheld means this server
-   still holds settings saved for it — from a Mac, or from a database restored here. The bar
-   will dial it and fail. There is no card to press **Remove** on, so take it off through the
-   API, which judges nothing about where it runs (`$BASE`, `jar` and `$CSRF` from §0):
-
-   ```bash
-   curl -s -b jar -X DELETE -H "X-CSRF-Token: $CSRF" $BASE/api/system/ai/configs/apple_fm
-   ```
-
-   Then save the OpenAI-compatible or the Anthropic card and reload the Changes page.
+3. **The Prompt bar names the card while the evidence says it cannot work.** *Changes Prompt
+   bar: shown (uses Apple Foundation Models via Docker Desktop)* under an evidence line saying
+   the alias does not resolve means this server holds settings saved for that card — from a
+   Mac, or from a database restored here — and the bar will dial it and fail. That is why the
+   card is on this page at all, and the card says so. Select it, press **Remove**, then save
+   the OpenAI-compatible or the Anthropic card and reload the Changes page.
 4. **You are on that Mac and the panel disagrees.** The detection reads `/proc/version` and
    `/proc/cpuinfo` from inside the container; `curl -s -b jar $BASE/api/system/ai/host`
    answers with the verdict and the evidence it was read from. `runtime` is `docker_desktop`

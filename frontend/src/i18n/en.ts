@@ -1588,6 +1588,11 @@ export const en = {
     detectionAppleCardOffered: "The Apple Foundation Models card is the one for this setup.",
     appleCardWithheld:
       "The Apple Foundation Models card is not offered here: it needs Docker Desktop on an Apple Silicon Mac with host.docker.internal resolving from inside this container, which the evidence above does not show.",
+    // #474: the same card on a server that holds settings saved for it — restored from a
+    // Mac, or moved to another runtime. The card is here so Remove is: the Changes Prompt
+    // bar dials what is saved wherever this runs, and the only way off used to be a curl.
+    appleCardSavedOnly:
+      "This card is on screen because this server holds settings saved for it, not because it can work here: fm serve runs on a Mac this container cannot reach, and Remove takes those settings off this server.",
     baseUrlNoLocalDefault:
       "host.docker.internal does not resolve from this container, so the local default cannot work here. Type the address of an endpoint this container can reach.",
     providersHeading: "Endpoint",

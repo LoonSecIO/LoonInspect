@@ -1443,6 +1443,8 @@ export const de: Translations = {
     detectionAppleCardOffered: "Die Karte Apple Foundation Models passt zu dieser Umgebung.",
     appleCardWithheld:
       "Die Karte Apple Foundation Models wird hier nicht angeboten: Sie setzt Docker Desktop auf einem Apple-Silicon-Mac voraus, auf dem host.docker.internal aus diesem Container heraus auflösbar ist – die Belege oben zeigen das nicht.",
+    appleCardSavedOnly:
+      "Diese Karte wird angezeigt, weil auf diesem Server Einstellungen dafür gespeichert sind, nicht weil sie hier funktionieren kann: fm serve läuft auf einem Mac, den dieser Container nicht erreicht, und „Entfernen“ nimmt diese Einstellungen von diesem Server.",
     baseUrlNoLocalDefault:
       "host.docker.internal ist aus diesem Container nicht auflösbar, der lokale Standardwert kann hier also nicht funktionieren. Geben Sie die Adresse eines Endpunkts ein, den dieser Container erreicht.",
     providersHeading: "Endpunkt",

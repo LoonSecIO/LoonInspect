@@ -61,10 +61,11 @@ export function savedConfigsOf(body: unknown): SavedConfig[] | null {
  * the detection hint: the Apple card where it is offered, otherwise the documented default
  * (Ollama, #28).
  *
- * It opens only on a card that is on screen (`offered`, #404). A card this server holds
- * settings for but does not offer here — an Apple card saved on a Mac and restored onto a
- * pod — would otherwise be selected with no card lit and no Remove to reach it. The Prompt
- * bar still names it, and `troubleshooting.md` §14 says how to take it off this server.
+ * It opens only on a card that is on screen (`offered`, #404): one not on screen would be
+ * selected with no card lit and no Remove to reach it. Since #474 `offered` holds every card
+ * this server has settings for, wherever it runs, so the case that used to need this rule —
+ * an Apple card saved on a Mac and restored onto a pod — now opens on a lit card with a
+ * Remove on it. The rule stays for the cards a reading withholds and nothing has saved.
  *
  * The operator can get to the card first: Remove works before the page's other reads
  * settle, since it needs only the saved cards. `newerRead` — a Remove made while the host

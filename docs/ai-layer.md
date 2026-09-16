@@ -382,6 +382,21 @@ from a missing feature ([`diagnosability.md`](diagnosability.md) rule 1,
 moved in the backend: a call naming `apple_fm` is judged, gated and logged like any other, and the card's
 condition widens when the reserved `remote_mac` reach lands.
 
+**Amended 2026-09-16 (#474, Kyle's R9 default): offered where its default works, *or* where this server
+holds settings for it.** The gate above is the right cut for a card nobody has configured and the wrong
+one for a card this server already has an `apple_fm` row for — a database restored from a Mac onto a pod,
+a container moved to another runtime. The backend judges a saved card wherever it runs, so the Changes
+Prompt bar kept dialling it and kept naming it ("shown (uses Apple Foundation Models via Docker
+Desktop)"), while the one page with a **Remove** button no longer showed the card to press it on; the way
+out was a `curl -X DELETE` in [`troubleshooting.md`](troubleshooting.md) §14, which is the "no step 3"
+smell — the operator who needs it is the least likely to run it. `offeredProviders` now takes the saved
+map beside the reading and keeps the Apple card wherever `apple_fm` is saved. Offering a saved card
+claims nothing about whether it can work here: the card carries one sentence saying it is on screen
+because this server holds settings for it, that `fm serve` runs on a Mac this container cannot reach, and
+that Remove takes those settings off — and the detection panel's "the one for this setup" line follows
+the reading alone, so the two are never both on screen. `providerDefaults` and the withheld-card sentence
+are untouched: a saved card comes back as saved, never as defaults, and the panel keeps the unsaved case.
+
 **Build (one agent turn, one PR).**
 
 - **The AI section: three entries, two wire adapters, one host-reach seam (Kyle, 2026-09-05).**

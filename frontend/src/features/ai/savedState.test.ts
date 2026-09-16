@@ -285,8 +285,9 @@ describe("openingCard — the newest read of the saved cards wins the opening se
   });
 
   it("a saved card that is not offered here is not opened on (#404)", () => {
-    // An Apple card saved on a Mac and restored onto a pod that does not offer it: opening
-    // on it would light no card and leave no Remove to press. §14 says how to take it off.
+    // Opening on a card that is not on screen would light no card and leave no Remove to
+    // press. Since #474 a saved card is on screen wherever this runs, so `offered` and
+    // `latest` disagreeing this way is the caller's contract, not a page it can reach.
     expect(openingCard({ ...untouched, latest: BOTH, offered: WITHOUT_APPLE })).toEqual({ card: "anthropic", clearLines: true });
     const appleOnly = byProvider([config("apple_fm")]);
     expect(openingCard({ ...untouched, latest: appleOnly, offered: WITHOUT_APPLE }).card).toBe("openai_compatible");

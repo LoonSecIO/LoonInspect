@@ -171,13 +171,14 @@ export function AISettingsPage() {
         // newest read of the saved cards wins here as it does for the pills: a Remove
         // asked for or made while the slowest of these reads was still out keeps its card
         // and its confirm or its line (`openingCard`). The reading is passed along rather
-        // than read from state, which this render has not seen yet.
+        // than read from state, which this render has not seen yet — and so is the newest
+        // saved map, which is the other half of what is offered (#474).
         const opening = openingCard({
           newerRead: openingReadNumber !== savedReads.current,
           removeAsked: removeAsked.current,
           latest: savedLatest.current,
           current: providerLatest.current,
-          offered: offeredProviders(loadedDetection)
+          offered: offeredProviders(loadedDetection, savedLatest.current)
         });
         if (opening.clearLines) selectCard(loadedProviders, loadedDetection, opening.card);
         else fillCard(loadedProviders, loadedDetection, opening.card);
@@ -345,10 +346,19 @@ export function AISettingsPage() {
   }
 
   const entry = providers?.entries.find((e) => e.provider === provider);
-  // The cards this reading offers, and whether the card on screen was left empty because
-  // its local default cannot work here — the Base URL field then says which and why.
-  const offered = offeredProviders(detection);
+  // The cards this reading and this server's saved settings offer, and whether the card on
+  // screen was left empty because its local default cannot work here — the Base URL field
+  // then says which and why. `saved` is level with `savedLatest.current` (`keepSaved` writes
+  // both), so a Remove's re-read takes a saved-only card off the page as the server says so.
+  const offered = offeredProviders(detection, saved);
   const appleOffered = offered.includes("apple_fm");
+  // What the reading alone offers. An Apple card on screen that this does not hold is there
+  // only because this server holds settings for it (#474): the same card doing a different
+  // job — keeping Remove reachable — so it says so, and the detection panel may not call it
+  // the one for this setup. Only once the reading has settled: the saved cards land in their
+  // own read, and until the host read lands beside it, nothing has said this is not that Mac.
+  const appleDefaultWorks = offeredProviders(detection, {}).includes("apple_fm");
+  const appleSavedOnly = appleOffered && detection !== null && !appleDefaultWorks;
   const noLocalDefault = entry !== undefined && localDefaultWithheld(entry, detection);
   // The OpenAI-compatible card's help names Ollama on this Mac; where there is no Mac to
   // reach, it names what is left instead of a default the card no longer fills in.
@@ -422,7 +432,9 @@ export function AISettingsPage() {
               : detection.runtime === "docker_desktop"
                 ? t.ai.detectionDockerDesktop
                 : t.ai.detectionUnknown}
-            {appleOffered ? ` ${t.ai.detectionAppleCardOffered}` : ""}
+            {/* The reading's own verdict: a card offered only because it is saved here is
+                not the one for this setup, and says why it is on screen on the card. */}
+            {appleDefaultWorks ? ` ${t.ai.detectionAppleCardOffered}` : ""}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             {t.ai.detectionEvidence}: {Object.values(detection.evidence).join(" · ")}
@@ -471,6 +483,11 @@ export function AISettingsPage() {
                 )}
               </span>
               <span className="text-xs text-muted-foreground">{cardHelp(candidate)}</span>
+              {/* A card on screen only because this server holds settings for it says which
+                  case it is in, and that Remove is here to press (#474). */}
+              {candidate === "apple_fm" && appleSavedOnly && (
+                <span className="text-xs text-muted-foreground">{t.ai.appleCardSavedOnly}</span>
+              )}
             </label>
           ))}
         </div>
