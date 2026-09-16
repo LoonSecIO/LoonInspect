@@ -905,12 +905,23 @@ writes one row to the disclosure log naming the destination and the one field th
 
    *When* is not one of those, and neither are *the last time*, *the latest*, *the most recent*
    or *the first time*. The table is ordered by observed time, newest first, so the top row is the
-   last time and the answer box states the time itself. A date **range** still is: "in the last 24
-   hours", "since Monday", "yesterday" and "before September" all answer over the whole log with
-   this lead, and the rows are newest-first inside it. To bound one, arrive from the Overview's
-   feed, which links here with a window, or narrow by hand. Until 2026-09-15 a question with
+   last time and the answer box states the time itself. A date range with two **ends** still is —
+   "before September", "between Monday and Friday" — because the feed filters *observed at or
+   after* and has no `until`; a **start** is not, since 2026-09-16. Until 2026-09-15 a question with
    "last" in it — "When was the last time someone installed wireshark" — carried *Cannot express
    'when' — filters match names, not timestamps* over an answer whose first row was the answer.
+
+   **A question can set a start, and the chip says which one.** The server reads it out of the
+   question's own words — never the model, which is not asked and does not know today's date —
+   against its own clock and your browser's time zone, so *today* is your day. It knows *in the
+   last 24 hours*, *last 7 days*, *past week*, *3 days ago* and their kin (minutes, hours, days,
+   weeks, months of 30 days, years of 365), and *today*, *yesterday*, *since yesterday*, *since
+   Monday*…*since Sunday*, *this week* (from Monday), *this month*, *this year*. It reads back as
+   *Observed since …*, shows as the chip, which clears it in a press, and the audit row carries
+   `window: true`. Anything else sets none — "last night", "before September", a month by name —
+   and the answer is over the whole log, as it was. "Yesterday" is read as its **start**, so the
+   answer runs to now: that is why the model's *Cannot express a date range* still stands over
+   that one and goes over "in the last 24 hours".
 
    **The time in the answer box.** *Observed 14/09/2026, 11:57:26* is the same value as the
    table's **Observed** column: Jamf's report time for that Mac, which is when its inventory
@@ -1233,11 +1244,28 @@ history stay, and **Show departed** in the filter bar (`includeDeparted=true`) r
    `GET /api/devices?includeDeparted=true` are where a departed Mac is visible, and a saved
    search on `loon:departure` will correctly find no `subjectKind=computer` events. That is
    not a delivery fault and not reportable.
-5. **You want it gone for good.** Nothing removes a Mac's history today — not this, not
+5. **An alert closed itself, or the nightly numbers moved, and nobody touched anything.** A
+   Mac leaving takes its open latches with it — the sweep is what closes a latch, and a Mac
+   that left is never swept again, so one left open would read as *true of the fleet* for ever.
+   The census line says so: *…N open alert latches closed on Macs that left the fleet; nothing
+   was deleted*. **Nothing was** — `GET /api/alerts?open=false` lists the row with
+   `closedReason: "device_departed"`, which is what tells it from an ordinary `app_gone` close,
+   and the Mac's apps, observations and changes are all still there (closed rows then age out
+   at 30 days, like run history). No `closedReason` at all means the row closed before
+   2026-09-16, when the reason started being recorded; not a fault. The same day is the answer
+   to the numbers: the posture tape counts the fleet without its departed Macs — device counts,
+   alert counts, and every app, catalog, patch and vulnerability key that counts what a Mac
+   carries ([posture-snapshot.md](posture-snapshot.md), *Departed Macs*) — so a Mac's numbers
+   leave on **day seven of its tail**, not the day you deleted it in Jamf, `devices.departed_24h`
+   says how many left that night, and captures written before 2026-09-16 counted deleted Macs
+   and cannot be corrected. An open latch still sitting on a Mac that left *is* a fault: the
+   census has not run since it crossed day seven (step 1), and if a clean one has, state **T**.
+6. **You want it gone for good.** Nothing removes a Mac's history today — not this, not
    deleting the connection. Honouring a Jamf deletion as an erasure is a stated, deliberate
    deferral (v5); [`jamf-observations.md`](jamf-observations.md) §8 says what is held.
 
 **T.** A finished, unselected, failure-free device sweep whose log has no *device census* line;
-or a Mac Jamf returns on the sweep's own endpoint that still departs or stays departed. Report
-the run's `jobID` and its log, the census line if there is one, the Mac's Jamf id, the
-collection's **Selector** field, and `docker compose logs app --since 30m`.
+a Mac Jamf returns on the sweep's own endpoint that still departs or stays departed; or an open
+alert latch still on a Mac that left the fleet after a clean census has run since. Report the
+run's `jobID` and its log, the census line if there is one, the Mac's Jamf id, the collection's
+**Selector** field, and `docker compose logs app --since 30m`.

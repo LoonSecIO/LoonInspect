@@ -10,7 +10,9 @@ The order is the test box's (app.api.ai), and is not to be reshuffled:
 3. the gate is asked (``require_ai``: the flag, the consent, and one share-log row
    naming the destination and ``query_text``, committed before the first byte);
 4. the static instructions and the question go to the endpoint — nothing else, never a
-   device row — and the reply is forced into the page's vocabulary (``interpret``);
+   device row — and the reply is forced into the page's vocabulary (``interpret``), which also
+   reads a start out of the question's own words against this server's clock and the viewer's
+   zone (#444); the model is never asked for one;
 5. the summary is counted with the page's own WHERE clause (``change_conditions``), so
    the numbers the response box states are the numbers the page then shows.
 
@@ -34,7 +36,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -350,18 +352,22 @@ async def _when(db: AsyncSession, conditions: list, oldest: datetime) -> PromptW
     )
 
 
-async def _summary(db: AsyncSession, filters: dict[str, str | None], dimensions: dict[str, str | None]) -> PromptSummaryOut:
+async def _summary(
+    db: AsyncSession, filters: dict[str, str | None], dimensions: dict[str, str | None], since: datetime | None = None
+) -> PromptSummaryOut:
     """What the page will show for ``filters``: the rows, the computers among them, newest
     first, and when they were observed. Three scans, whatever the fleet's size.
 
-    ``dimensions`` are the stamped ones a repair moved a Search value into (#447), counted here
-    for the same reason every other filter is: the numbers in the box are the page's numbers."""
+    ``dimensions`` are the stamped ones a repair moved a Search value into (#447) and ``since``
+    the start the question's own words asked for (#444), counted here for the same reason every
+    other filter is: the numbers in the box are the page's numbers."""
     conditions = change_conditions(
         q=filters["q"],
         artifact=filters["artifact"],
         level=filters["level"],
         section=filters["section"],
         change=filters["change"],
+        since=since,
         **dimensions,
     )
     is_computer = DeviceChange.subject_kind == "computer"
@@ -489,7 +495,10 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
         )
     latency_ms = int((time.monotonic() - started) * 1000)
 
-    interpretation = interpret(question, result.content) if result.outcome == OUTCOME_ANSWERED else None
+    # The clock is this server's and the zone the browser's: between them a question's own words
+    # may set a start (#444). The model is not asked for one and never sees either.
+    answered = result.outcome == OUTCOME_ANSWERED
+    interpretation = interpret(question, result.content, datetime.now(UTC), payload.zone) if answered else None
     if interpretation is None or not interpretation.parsed:
         # empty | budget_exhausted_thinking from the adapter, or an answer holding no
         # filter object: either way nothing is applied, and the page keeps its filters.
@@ -535,8 +544,9 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
     dimensions: dict[str, str | None] = dict.fromkeys(PROMPT_DIMENSIONS)
     moved, department_name = await _dimension_repair(db, question, interpretation.filters, dimensions)
     repairs = [str(repair) for repair in interpretation.repairs] + moved
-    summary = await _summary(db, interpretation.filters, dimensions)
-    _audited(outcome, provider, destination, latency_ms, repairs=len(repairs))
+    since = interpretation.since_asked
+    summary = await _summary(db, interpretation.filters, dimensions, since.at if since else None)
+    _audited(outcome, provider, destination, latency_ms, repairs=len(repairs), window=since is not None)
     return PromptOut(
         outcome=outcome,
         filters=PromptFiltersOut(**interpretation.filters, **dimensions, department_name=department_name),

@@ -1415,6 +1415,7 @@ export const de: Translations = {
       readbackDepartmentNamed: (name: string) => `auf Macs in Abteilung „${name}“`,
       readbackManaged: "auf von Jamf verwalteten Macs",
       readbackUnmanaged: "auf nicht von Jamf verwalteten Macs",
+      readbackSince: (start: string) => `beobachtet seit ${start}`,
       answerNone: "Keine Änderungen gefunden.",
       answerHeadline: (computers: number, changes: number) =>
         `${computers} Computer, ${changes} Änderung${changes === 1 ? "" : "en"}.`,
