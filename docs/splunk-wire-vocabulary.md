@@ -209,13 +209,13 @@ exactly as it does on `device.change`, and a departure carries **no `eventID`**:
 2026-09-16). `subjectKind: computer` emits `state: departed` with `noticeDay` 1..7 — **one per UTC
 day**, driven by the device census and by no timer, so a day with no clean census sends nothing, is
 never backfilled, and `noticeDay` may jump. The tail ends with a **guaranteed** terminal `state:
-removed` the moment the Mac leaves the device population, on the same wall clock **Devices** drops
-it on, and it fires even when those seven days passed without one clean census. `deviceCount` is
-absent — a Mac carries no count of Macs — `deviceMeta` is the **whole block as the `Device` row
-last knew it**, and the envelope's `host` **is** the hostname. A Mac's `subject.returned` is the
-family's one asymmetry: it carries `deviceMeta.eventID` because a return coincides with a real
-pull, and after a wipe-and-re-enrol `matchedBy: serialNumber` with `priorJamfProID`, the retired id
-the departure went out under and the only key joining that return to what it closes.
+removed` once the Mac has left the device population, on the same wall clock **Devices** drops it
+on; it fires even when those seven days passed without one clean census, and never for a Mac the
+emitting census itself named. `deviceCount` is absent — a Mac carries no count of Macs — the
+envelope's `host` **is** the hostname, and `deviceMeta` is the **whole block as the `Device` row
+last knew it**, degrading to the object block when that row is gone. A Mac's `subject.returned` is
+the family's one asymmetry: it carries `deviceMeta.eventID`, a pull that really happened, and after
+a re-enrolment `matchedBy: serialNumber` with `priorJamfProID`, the retired id it departed under.
 
 ## 3. Why some wrapper keys are short and some are not
 

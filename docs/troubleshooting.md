@@ -1295,12 +1295,12 @@ history stay, and **Show departed** in the filter bar (`includeDeparted=true`) r
 4. **Your SIEM saw nothing either way.** A Mac ships under the sourcetype `loon:departure`
    ([`splunk-setup.md`](splunk-setup.md) §7), and the census line above counts what it sent:
    `eventsEnqueued` the notices and returns, `macsRemoved` the tails it closed. A departed Mac
-   sends `state: departed` with `noticeDay` 1..7, **one per UTC day** — so a second sweep the same
-   day sends nothing, and a day with no clean census is never backfilled, which is why `noticeDay`
-   jumps. When the seven days are up it sends one `state: removed`, and that one does **not** wait
-   for a clean census. A return is `subject.returned`; after a re-enrolment it carries
-   `priorJamfProID`, because the Mac came back under a new id. Counted here and absent in Splunk is
-   path 3 — check `subscribedEvents` still holds both names. Counted zero is reportable state **T**.
+   sends `state: departed`, `noticeDay` 1..7, **one per UTC day** — a second sweep the same day
+   sends nothing, a day with no clean census is never backfilled, so `noticeDay` jumps. When the
+   seven days are up and it is still gone, one `state: removed` closes the tail without waiting for
+   a clean census; a sweep that names the Mac sends `subject.returned` instead, never both, and
+   after a re-enrolment that return carries `priorJamfProID`, the id it departed under. Counted
+   here and absent in Splunk is path 3 — `subscribedEvents` must hold both names. Zero is state **T**.
 5. **An alert closed itself, or the nightly numbers moved, and nobody touched anything.** A
    Mac leaving takes its open latches with it — the sweep is what closes a latch, and a Mac
    that left is never swept again, so one left open would read as *true of the fleet* for ever.

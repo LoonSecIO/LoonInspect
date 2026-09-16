@@ -13,12 +13,10 @@ cannot be asked once the subject is gone. **`deviceMeta` degrades by subject kin
 either subject**: a departure is derived from an absence, so minting one would fabricate a
 correlation key for a read that never happened.
 
-**A Mac is a tail, not an event** (4.5, built by #495), and its emitters are called from the
-device census rather than from the object one. `emit_mac_notices` sends `state: departed` with
-`noticeDay` 1..7, one per UTC day, off the open rows rather than off one census's verdict, so
-all seven days have one producer that cannot disagree with itself. `emit_mac_removals` sends the
-guaranteed terminal `state: removed` on `left_the_fleet` alone — the predicate that drops the Mac
-from **Devices** — and on the wall clock, not on a census, so a tail nobody watched still closes.
+**A Mac is a tail, not an event** (4.5, built by #495), emitted from the device census rather than the
+object one. `emit_mac_notices` sends `state: departed` with `noticeDay` 1..7 off the open rows rather
+than one census's verdict, so all seven days have one producer that cannot disagree with itself, and
+`emit_mac_removals` sends the guaranteed terminal `state: removed` on `left_the_fleet` — **Devices**' own.
 """
 
 from __future__ import annotations
@@ -62,10 +60,9 @@ _MEMBERSHIP_ENTRY = "group_membership"
 
 
 async def emit_census_events(db: AsyncSession, *, connection: MdmConnection, verdict: CensusVerdict, at: datetime) -> int:
-    """One event per row this census moved. Enqueues into the caller's session; commits nothing.
-
-    A Mac's DEPARTURES are the exception: a tail rather than one event, so day one is left to
-    `emit_mac_notices` with days two to seven — one producer over one open set. Returns are here."""
+    """One event per row this census moved; enqueues into the caller's session and commits nothing.
+    A Mac's DEPARTURES are the exception — a tail, not one event, so day one goes out with days two to
+    seven from `emit_mac_notices`, one producer over one open set. A Mac's RETURNS are here."""
     if verdict.subject_kind == SUBJECT_COMPUTER:
         return await _emit_mac_returns(db, connection=connection, rows=verdict.returned, at=at)
     moved = (*verdict.departed, *verdict.returned)
@@ -93,15 +90,14 @@ async def emit_census_events(db: AsyncSession, *, connection: MdmConnection, ver
 
 
 def _gone_id(row: SubjectDeparture) -> str:
-    """The id this row is GONE under: a serial match re-keys `subject_id` to the id the Mac came
-    back as, so `prior_jamf_pro_id` — retired, still serving out the tail — is what the notices
-    name, coalesced exactly as `gone_for_good` does so the wire and the list name one Mac."""
+    """The id this row is GONE under, coalesced as `gone_for_good` does: a serial match re-keys
+    `subject_id` to the id the Mac came back as, so the retired `prior_jamf_pro_id` is what the wire names."""
     return row.prior_jamf_pro_id or row.subject_id
 
 
 async def _open_macs(db: AsyncSession, connection_id: int, *, at: datetime, expired: bool) -> list[SubjectDeparture]:
-    """The Macs this connection still owes an emission on: tail run out by `at` (`expired`) or
-    still inside it — `removed_notified_at` takes a row out of both sets for good."""
+    """The Macs this connection owes an emission on: tail run out by `at` (`expired`) or still inside
+    it — `removed_notified_at` takes a row out of both sets for good."""
     ran_out = left_the_fleet(SubjectDeparture.departed_at, at=at)
     rows = await db.execute(
         select(SubjectDeparture)
@@ -118,12 +114,11 @@ async def _open_macs(db: AsyncSession, connection_id: int, *, at: datetime, expi
 
 
 async def emit_mac_removals(db: AsyncSession, *, connection: MdmConnection, at: datetime) -> int:
-    """The tail's guaranteed close (4.5): `state: removed` the moment a Mac leaves the device
-    population, which is `left_the_fleet` and nothing else — the predicate **Devices** and the
-    Overview count drop it on. **Not census-driven, on purpose**: a fleet whose last seven sweeps
-    were all scoped or lossy still has Macs whose seven days ran out, and a receiver that watched
-    one start a tail must never hold a state that never closes. So it runs at the run close either
-    way, and `removed_notified_at` fires it once."""
+    """The tail's guaranteed close (4.5): `state: removed` once a Mac has left the device population —
+    `left_the_fleet` and nothing else, the predicate **Devices** and the Overview count drop it on. **No
+    census can withhold it**: seven scoped or lossy sweeps still leave Macs whose days ran out, and no
+    receiver may hold one open forever. But no census may be CONTRADICTED either, so the caller runs this
+    after `reconcile_census` — a Mac it named has left this set — and above the gate where none runs."""
     rows = await _open_macs(db, connection.id, at=at, expired=True)
     for row in rows:
         row.removed_notified_at = at
@@ -132,10 +127,9 @@ async def emit_mac_removals(db: AsyncSession, *, connection: MdmConnection, at: 
 
 
 async def emit_mac_notices(db: AsyncSession, *, connection: MdmConnection, at: datetime) -> int:
-    """`state: departed`, `noticeDay` 1..7, one per Mac per UTC day (4.5). The census is the
-    heartbeat and there is no timer: a day with no clean census emits nothing and is never
-    backfilled, because a notice asserts an absence the skipped sweep did not observe. A fleet
-    quiet from Tuesday to Friday resumes at `noticeDay` 4, not at two."""
+    """`state: departed`, `noticeDay` 1..7, one per Mac per UTC day (4.5). The census is the heartbeat
+    and there is no timer: a day with no clean census emits nothing and is never backfilled, because a
+    notice asserts an absence the skipped sweep did not observe — quiet to Friday resumes at 4, not 2."""
     due = []
     for row in await _open_macs(db, connection.id, at=at, expired=False):
         # UTC calendar days as ruled, not elapsed hours: 23:50 then 00:10 is the next notice day.
@@ -150,9 +144,8 @@ async def emit_mac_notices(db: AsyncSession, *, connection: MdmConnection, at: d
 async def _emit_macs(
     db: AsyncSession, *, connection: MdmConnection, rows: list[SubjectDeparture], at: datetime, state: str
 ) -> None:
-    """One departure event per Mac, with the `Device` row's own identity: `deviceMeta` is that
-    row's whole block last known (4.2), `host` is the hostname (a Mac IS a host, unlike a group),
-    and `deviceCount` is absent — a Mac carries no count of Macs."""
+    """One departure event per Mac with the `Device` row's own identity: `deviceMeta` is that row's
+    whole block last known (4.2), `host` is the hostname (a Mac IS a host), `deviceCount` is absent."""
     if not rows:
         return
     devices = await _devices(db, connection.id, [_gone_id(row) for row in rows])
@@ -178,10 +171,9 @@ async def _emit_macs(
 async def _emit_mac_returns(
     db: AsyncSession, *, connection: MdmConnection, rows: tuple[SubjectDeparture, ...], at: datetime
 ) -> int:
-    """4.6 for a Mac, read off the row #475 writes rather than re-derived: `matchedBy` is how the
-    census recognised it, and `priorJamfProID` — the id it departed under — is the only thing
-    joining a wipe-and-re-enrol back to what it closes. `deviceMeta` keeps its `eventID`: this Mac
-    really was pulled here, so the key names a read that happened."""
+    """4.6 for a Mac, read off the row #475 writes rather than re-derived: `matchedBy` is how the census
+    recognised it, `priorJamfProID` is the only thing joining a wipe-and-re-enrol to the departure it
+    closes, and `deviceMeta` keeps its `eventID` because this Mac really was read here."""
     if not rows:
         return 0
     devices = await _devices(db, connection.id, [row.subject_id for row in rows])
@@ -293,21 +285,16 @@ def _object_device_meta(subject_id: str) -> dict[str, object]:
     """#189's block, degrading by subject kind exactly as `_change_device_meta` degrades it:
     an object takes the run half plus `jamfProID` — its own id — plus `schemaVersion`, and no
     `hostName` or `serialNumber`, because an absent identity is recoverable where an invented
-    one is not. No `eventID` on either of an object's two events (4.2): a census of every object
-    is not a pull of this one, so there is no read for the correlation key to name."""
+    one is not. No `eventID` on either of its two events (4.2): a census of all is not a pull of one."""
     meta = {**run_meta(), "jamfProID": subject_id, "schemaVersion": WIRE_SCHEMA_VERSION}
     return {key: value for key, value in meta.items() if value is not None}
 
 
 def _mac_device_meta(device: Device | None, *, subject_id: str, pulled: bool) -> dict[str, object]:
-    """A Mac's WHOLE block as the `Device` row last knew it (4.2) — the Mac is gone and there is
-    nothing left to read — from the one builder the inventory family uses, so a departure and that
-    Mac's last `device.inventory` cannot disagree about eleven keys. Imported at call time because
-    `mdm.service` imports this module; the cycle is real and a few Macs a sweep is not a cost.
-
-    `eventID` names a pull: a departure has none so it is dropped, and a return rides a real read
-    so it stays. A Mac whose `Device` row is gone degrades to the object block rather than
-    inventing an identity."""
+    """A Mac's WHOLE block as the `Device` row last knew it (4.2), from the one builder the inventory family
+    uses, so a departure and that Mac's last `device.inventory` cannot disagree about eleven keys. Imported
+    at call time: `mdm.service` imports this module and the cycle is real. `eventID` names a pull, so a
+    departure drops it and a return keeps it; a Mac with no `Device` row left takes the object block."""
     if device is None:
         return _object_device_meta(subject_id)
     from app.mdm.service import _device_meta

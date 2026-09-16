@@ -614,11 +614,10 @@ async def _reconcile_device_census(
     fleet is never swept again, so its latch would stay open for ever.
     """
     at = datetime.now(UTC)
-    # Before the gate, deliberately (#179 4.5): the terminal `state: removed` is GUARANTEED and a
-    # tail runs out on the wall clock, not on a census — so a sweep too dirty to judge anybody is
-    # still the run close that has to say so, on the clock **Devices** already drops the Mac on.
-    removed = await emit_mac_removals(db, connection=connection, at=at)
     if selector is not None or devices_failed:
+        # Above the gate deliberately (#179 4.5): the terminal is GUARANTEED and a tail runs out on
+        # the wall clock, so a sweep too dirty to judge anybody still closes one. No census to contradict.
+        removed = await emit_mac_removals(db, connection=connection, at=at)
         await db.commit()
         if run is not None:
             await run_log(
@@ -640,17 +639,21 @@ async def _reconcile_device_census(
         census_run_id=run.id if run is not None else None,
         observed_lineage=observed_lineage,
     )
-    # The wire, inside this transaction so an event and the row it describes land together (#179,
-    # built by #495). Returns first, notices second: the census closes a returning Mac's row before
-    # the tail is walked, so a Mac back this morning is not also told it is on day four.
+    # The wire, inside this transaction so an event and the row it describes land together (#179, built
+    # by #495). Returns first: the census closes a returning Mac's row before the tail is walked.
     emitted = await emit_census_events(db, connection=connection, verdict=verdict, at=at)
     if not verdict.skipped:
-        # A notice asserts "still absent", and a census the breaker refused observed nothing to
-        # assert it from, so the tail pauses on a short read exactly as departing does. Returns are
-        # unaffected: a Mac the census DID name is present, whatever else it failed to say.
+        # A notice asserts "still absent" and a census the breaker refused observed nothing to assert
+        # it from, so the tail pauses on a short read exactly as departing does. Returns do not.
         emitted += await emit_mac_notices(db, connection=connection, at=at)
-    # The latch close is unconditional on the verdict (#476): a latch crosses day seven because of a
-    # departure recorded on an earlier night, so what tonight's census decided has no bearing on it.
+    # BELOW the census, not above it: a Mac this census named has closed its row and left the open set,
+    # so the sweep that finds one back on the day its clock runs out does not also say it was removed.
+    removed = await emit_mac_removals(db, connection=connection, at=at)
+    # The same day-seven boundary one line up, and deliberately NOT the same guarantee: the terminal
+    # also fires above the gate, where #476 put the latch close on the clean path only — so a fleet
+    # swept under a selector hears `removed` while its latch waits for a census. Unconditional on the
+    # verdict, though: a latch crosses day seven on a departure recorded on an earlier night, so what
+    # tonight's census decided has no bearing on it.
     latches_closed = await close_departed_device_latches(
         db, connection_id=connection.id, at=at, run_id=run.id if run is not None else None
     )
@@ -688,8 +691,7 @@ async def _reconcile_device_census(
         inTail=in_tail,
         leftTheFleet=left,
         latchesClosed=latches_closed,
-        # What went on the wire, so "my SIEM saw nothing" is answerable from the run alone
-        # (troubleshooting.md §16 step 4). `macsRemoved` is counted on the refused path too.
+        # What went on the wire, so "my SIEM saw nothing" is answerable from the run (troubleshooting §16.4).
         eventsEnqueued=emitted,
         macsRemoved=removed,
         # The sentence says "seven-day"; the machine-readable number comes from the constant.

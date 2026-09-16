@@ -660,8 +660,7 @@ async def test_a_departed_mac_notices_once_a_day_and_the_tail_closes_with_remove
     jamf.seed(1)
     (clone,) = jamf._extra
     assert (await sync_connection(db, connection)).ok
-    mine = (Device.mdm_connection_id == connection.id, Device.external_id == clone["id"])
-    hostname = (await db.execute(select(Device.hostname).where(*mine))).scalar_one()
+    hostname = await db.scalar(select(Device.hostname).filter_by(mdm_connection_id=connection.id, external_id=clone["id"]))
     mark = await _high_water(db)
 
     jamf._extra = []
@@ -669,10 +668,9 @@ async def test_a_departed_mac_notices_once_a_day_and_the_tail_closes_with_remove
     (event,) = await _events(db, mark, "subject.departure")
     body = event.payload
     assert body["subjectKind"] == COMPUTER and body["state"] == "departed" and body["noticeDay"] == 1
-    # A Mac IS a host, unlike a group, and carries no count of Macs.
     assert body["subjectLabel"] == hostname and body[ENVELOPE]["host"] == hostname and "deviceCount" not in body
     # The whole block as the Device row last knew it, minus the one key that would name a pull.
-    assert {"serialNumber", "hostName", "jamfProID", "lastReportDate", "managed"} <= set(body["deviceMeta"])
+    assert {"serialNumber", "hostName", "lastReportDate", "managed"} <= set(body["deviceMeta"])
     assert body["deviceMeta"]["jamfProID"] == clone["id"]
     assert "eventID" not in body["deviceMeta"], "a departure is derived from an absence; no read happened"
 
@@ -739,19 +737,38 @@ async def test_a_returning_mac_carries_its_pull_and_the_id_it_departed_under(db,
     jamf._extra = [reborn]
     assert (await sync_connection(db, connection)).ok
     (back,) = await _events(db, mark, "subject.returned")
+    (row,) = await _departures(db, connection.id, COMPUTER)
     assert back.payload["matchedBy"] == "serialNumber" and back.payload["absentForDays"] == 0
     assert back.payload["priorJamfProID"] == clone["id"], "the only join back to the departure it closes"
-    assert back.payload["deviceMeta"]["jamfProID"] == reborn["id"]
-    mine = (Device.mdm_connection_id == connection.id, Device.external_id == reborn["id"])
-    platform = (await db.execute(select(Device.platform).where(*mine))).scalar_one()
+    assert back.payload["deviceMeta"]["jamfProID"] == reborn["id"] and back.payload["departedAt"] == row.departed_at.isoformat()
+    platform = await db.scalar(select(Device.platform).filter_by(mdm_connection_id=connection.id, external_id=reborn["id"]))
     job = uuidlib.UUID(back.payload["jobID"])
     assert back.payload["deviceMeta"]["eventID"] == pull_event_id(job, platform, reborn["id"])
 
-    # The retired id serves out the tail it started (troubleshooting §16 path 3), so the SIEM sees
-    # that half close too — under the id the departure went out with, not the one it came back as.
-    (row,) = await _departures(db, connection.id, COMPUTER)
+    # The retired id serves out the tail it started (troubleshooting §16 path 3), so the SIEM sees that
+    # half close too — under the id the departure went out with, not the one it came back as.
     await _age(db, row, 8)
     mark = await _high_water(db)
     assert (await sync_connection(db, connection)).ok
     (terminal,) = await _events(db, mark, "subject.departure")
     assert terminal.payload["state"] == "removed" and terminal.payload["deviceMeta"]["jamfProID"] == clone["id"]
+
+
+async def test_a_mac_this_sweep_names_after_its_deadline_is_not_told_it_was_removed(db, jamf: FakeJamf, connection) -> None:
+    """The terminal belongs to the population, not to the clock alone: the sweep that first runs after the
+    seven days may name the Mac, and a `removed` beside its own `subject.returned` asserts what that census disproves."""
+    from app.mdm.service import sync_connection
+
+    jamf.seed(1)
+    (clone,) = jamf._extra
+    assert (await sync_connection(db, connection)).ok
+    jamf._extra = []
+    assert (await sync_connection(db, connection)).ok
+    (gone,) = await _departures(db, connection.id, COMPUTER)
+    await _age(db, gone, 8)
+
+    mark, jamf._extra = await _high_water(db), [clone]
+    assert (await sync_connection(db, connection)).ok
+    assert await _events(db, mark, "subject.departure") == [], "this census named it; it never left"
+    (back,) = await _events(db, mark, "subject.returned")
+    assert back.payload["matchedBy"] == "jamfProID" and back.payload["departedAt"] == gone.departed_at.isoformat()
