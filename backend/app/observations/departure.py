@@ -17,19 +17,20 @@ Three rules, in the order they are applied:
   census *did* name is present, whatever else the census failed to say.
 * **The ledger stays clean.** Absence was never observed, so it opens and closes no span
   (#135 rider 4). Departure is a `subject_departures` row: derived, timestamped, and
-  re-derivable from the spans and the census that found it. A return closes the row.
+  re-derivable from the spans and the census that found it. A return closes the row, and a return
+  under a *new* id retires the old one (#475).
 """
 
 from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mdm.jamf.contract import SUBJECT_COMPUTER
@@ -46,11 +47,12 @@ logger = logging.getLogger(__name__)
 MIN_POPULATION_FOR_COLLAPSE = 10
 COLLAPSE_RATIO = 0.5
 
-# How a return was recognised (#475, Kyle's R3). A Mac wiped, rebuilt, board-repaired or simply
-# re-enrolled comes back under a *new* Jamf computer id; matched on that id alone its departure
-# never closes and it leaves the fleet from someone's desk. Lineage is (instance, UDID, serial).
+# How a return was recognised (#475, Kyle's R3): wiped, rebuilt, board-repaired or re-enrolled, a Mac
+# comes back under a *new* computer id, so matched on that alone its departure never closes. The
+# batch is asyncpg's 32767-bind-parameter cap; the census's own serials are never bound at all.
 MATCHED_BY_JAMF_ID = "jamf_id"
 MATCHED_BY_SERIAL = "serial"
+_DEPARTED_BATCH = 1000
 
 SKIP_NOT_READABLE = "not_readable"
 SKIP_EMPTY = "empty_census"
@@ -67,9 +69,17 @@ def left_the_fleet(departed_at: datetime | ColumnElement[datetime], *, at: datet
     because "departed_at plus a week" spelled in two languages is two definitions waiting to
     disagree about one Mac. Handed a `datetime` it answers a bool — the run log's tally; handed
     `SubjectDeparture.departed_at`, the same question as a SQL predicate — the device list, the
-    fleet count. `returned_at IS NULL` is the caller's half, and every caller below filters on it.
+    fleet count. `still_gone_under_this_id` is the caller's half, and every caller below filters on it.
     """
     return departed_at <= at - DEPARTURE_TAIL
+
+
+def still_gone_under_this_id() -> ColumnElement[bool]:
+    """Gone under the id this row is about: never returned, or returned *as something else* (#475). A
+    serial match did not put that id back — it is dead in Jamf, what came back is listed under its own
+    new row — so a retired id reads everywhere exactly like an open departure: it keeps its tail, it
+    leaves the fleet on day seven, and it never rejoins a census population."""
+    return or_(SubjectDeparture.returned_at.is_(None), SubjectDeparture.matched_by == MATCHED_BY_SERIAL)
 
 
 def gone_for_good(connection_id: Any, external_id: Any, *, at: datetime) -> ColumnElement[bool]:
@@ -84,7 +94,7 @@ def gone_for_good(connection_id: Any, external_id: Any, *, at: datetime) -> Colu
             SubjectDeparture.mdm_connection_id == connection_id,
             SubjectDeparture.subject_kind == SUBJECT_COMPUTER,
             SubjectDeparture.subject_id == external_id,
-            SubjectDeparture.returned_at.is_(None),
+            still_gone_under_this_id(),
             left_the_fleet(SubjectDeparture.departed_at, at=at),
         )
         .exists()
@@ -101,8 +111,7 @@ class CensusVerdict:
     departed: int
     returned: int
     skipped: str | None = None
-    # How many of `returned` came back under a *new* id, by serial (#475): "3 returned" and "3
-    # returned, 2 of them re-enrolled" are different facts about a fleet, and only one is derivable.
+    # How many of `returned` came back under a *new* id (#475) — not derivable afterwards.
     returned_by_serial: int = 0
 
     def as_log(self) -> dict[str, object]:
@@ -118,23 +127,22 @@ class CensusVerdict:
 
 
 async def _returned_by_serial(
-    db: AsyncSession, *, connection_id: int, subject_kind: str, subject_ids: list[str], serials: Iterable[str] | None
-) -> list[str]:
-    """Which of these departed Macs is the census naming under a *different* Jamf id (#475)? The
-    departed Mac's `devices` row carries the serial it was last read with, and a census naming that
-    serial has found it again whatever id Jamf gave it back. Scoped to the connection, never across
-    instances — a serial is Apple's, an instance's view of it is not. Computers only."""
-    wanted = {s.strip() for s in serials or ()} - {""}
-    if subject_kind != SUBJECT_COMPUTER or not subject_ids or serials is None or not wanted:
-        return []
-    rows = await db.execute(
-        select(Device.external_id).where(
-            Device.mdm_connection_id == connection_id,
-            Device.external_id.in_(subject_ids),
-            Device.serial_number.in_(wanted),
-        )
-    )
-    return sorted(set(rows.scalars().all()))
+    db: AsyncSession, *, connection_id: int, subject_kind: str, subject_ids: list[str], serials: Mapping[str, str] | None
+) -> dict[str, str]:
+    """Which of these departed Macs is the census naming under a *different* Jamf id, and as what
+    (#475)? `{departed id -> the id it came back under}`. Its `devices` row carries the serial it was
+    last read with, and a census naming that serial found it whatever id Jamf gave it back — scoped to
+    the connection, a serial being Apple's and an instance's view of it not. Computers only."""
+    if subject_kind != SUBJECT_COMPUTER or not subject_ids or not serials:
+        return {}
+    census = {serial.strip(): jamf_id for serial, jamf_id in serials.items() if serial.strip()}
+    found: dict[str, str] = {}
+    for start in range(0, len(subject_ids), _DEPARTED_BATCH):
+        batch = subject_ids[start : start + _DEPARTED_BATCH]
+        mine = (Device.mdm_connection_id == connection_id, Device.external_id.in_(batch))
+        rows = await db.execute(select(Device.external_id, Device.serial_number).where(*mine))
+        found.update({device: census[(serial or "").strip()] for device, serial in rows if (serial or "").strip() in census})
+    return found
 
 
 async def reconcile_census(
@@ -145,16 +153,15 @@ async def reconcile_census(
     observed_ids: Iterable[str] | None,
     at: datetime,
     census_run_id: uuid.UUID | None = None,
-    observed_serials: Iterable[str] | None = None,
+    observed_serials: Mapping[str, str] | None = None,
 ) -> CensusVerdict:
     """Apply one census to the departures table. Commits nothing; the caller does.
 
     `observed_ids` is every subject id the census named, or None when the census could
     not be taken at all (a refused read) — which departs nobody and returns nobody.
 
-    `observed_serials` is every serial the same census carried (#475); `None` means it had none to
-    carry — sections without `hardware` — so the match is id-only and the caller says which it was
-    on the run, because degrading under the healthy sentence breaks rule 2.
+    `observed_serials` maps every serial the same census carried to the id it carried it under (#475);
+    `None` is "none to carry" — no `hardware` section — so the match is id-only and the run says so.
     """
     current_ids = set(
         (
@@ -183,9 +190,12 @@ async def reconcile_census(
         .scalars()
         .all()
     }
-    # The present population: what the ledger holds minus what has already departed. A
-    # fleet that legitimately shrank over months must not keep tripping the breaker.
-    population = current_ids - set(open_rows)
+    # The present population: what the ledger holds minus what is already gone under that id — open
+    # departures, and the ids a serial match retired, which no span closes (#475). Leave one in and it
+    # departs again next census, closes again the pass after, and flaps forever.
+    mine = (SubjectDeparture.mdm_connection_id == connection_id, SubjectDeparture.subject_kind == subject_kind)
+    still_gone = select(SubjectDeparture.subject_id).where(*mine, still_gone_under_this_id())
+    population = current_ids - set((await db.execute(still_gone)).scalars().all())
 
     if observed_ids is None:
         return CensusVerdict(subject_kind, 0, len(population), 0, 0, SKIP_NOT_READABLE)
@@ -202,16 +212,16 @@ async def reconcile_census(
         else:
             absent.append(subject_id)
 
-    # Then by serial (#475), before the breaker for the same reason the id match is: a Mac the
-    # census *did* name, under any id, is present.
+    # Then by serial (#475), before the breaker for the reason the id match is: a Mac the census *did*
+    # name, under any id, is present. The close retires the id the row is about, for good.
     by_serial = await _returned_by_serial(
         db, connection_id=connection_id, subject_kind=subject_kind, subject_ids=absent, serials=observed_serials
     )
-    for subject_id in by_serial:
+    for subject_id, came_back_as in sorted(by_serial.items()):
         row = open_rows[subject_id]
         row.returned_at = at
         row.matched_by = MATCHED_BY_SERIAL
-        row.prior_jamf_pro_id = subject_id
+        row.returned_as_subject_id = came_back_as
         returned += 1
 
     if not observed and population:
@@ -249,13 +259,11 @@ async def reconcile_census(
 
 async def open_departures(db: AsyncSession, *, subject_kind: str) -> dict[tuple[int, str], datetime]:
     """`(connection id, subject id) -> departed_at` for every subject of the kind that is
-    currently gone — what a surface listing current spans consults to say so."""
+    currently gone, retired ids included (#475) — what a surface listing current spans consults."""
     rows = (
         (
             await db.execute(
-                select(SubjectDeparture).where(
-                    SubjectDeparture.subject_kind == subject_kind, SubjectDeparture.returned_at.is_(None)
-                )
+                select(SubjectDeparture).where(SubjectDeparture.subject_kind == subject_kind, still_gone_under_this_id())
             )
         )
         .scalars()
@@ -265,8 +273,8 @@ async def open_departures(db: AsyncSession, *, subject_kind: str) -> dict[tuple[
 
 
 async def tail_counts(db: AsyncSession, *, connection_id: int, subject_kind: str, at: datetime) -> tuple[int, int]:
-    """`(still in their tail, left the fleet)` among this connection's open departures — the two
-    halves of the census line on the run, counted through the same `left_the_fleet` the surfaces
+    """`(still in their tail, left the fleet)` among the subjects this connection is missing — the
+    two halves of the census line on the run, counted through the same `left_the_fleet` the surfaces
     ask, so the run and the list cannot disagree about one Mac."""
     gone = func.count().filter(left_the_fleet(SubjectDeparture.departed_at, at=at))
     open_rows, left = (
@@ -274,7 +282,7 @@ async def tail_counts(db: AsyncSession, *, connection_id: int, subject_kind: str
             select(func.count(), gone).where(
                 SubjectDeparture.mdm_connection_id == connection_id,
                 SubjectDeparture.subject_kind == subject_kind,
-                SubjectDeparture.returned_at.is_(None),
+                still_gone_under_this_id(),
             )
         )
     ).one()

@@ -619,7 +619,7 @@ export const de: Translations = {
     carrierChipUnnamed: "Läuft eine Anwendung",
     tailChip: "Verlässt die Flotte",
     leftChip: "Flotte verlassen",
-    showDeparted: "Abgemeldete anzeigen",
+    showDeparted: "Ausgeschiedene anzeigen", // nicht "Abgemeldete" — das ist #184s Stilllegung
     detail: {
       back: "Alle Geräte",
       subtitle: (serial: string, externalId: string) => `${serial} · Jamf-Computer ${externalId}`,

@@ -49,8 +49,7 @@ function searchParamsFromFilters(filters: DeviceFilters): URLSearchParams {
   // runs this build" would silently be the whole fleet — #107's shape again.
   if (filters.appHash) params.set("appHash", filters.appHash);
   if (filters.versionHash) params.set("versionHash", filters.versionHash);
-  // In the URL too, so the answer a shared link opens is the answer that was shared (#475).
-  if (filters.includeDeparted) params.set("includeDeparted", "true");
+  if (filters.includeDeparted) params.set("includeDeparted", "true"); // shared links carry it (#475)
   if (filters.page && filters.page !== 1) params.set("page", String(filters.page));
   return params;
 }

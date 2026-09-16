@@ -574,8 +574,8 @@ async def _log_collapsed_departures(db: AsyncSession, run: Run, collapsed: Mappi
         )
 
 
-# The census line's last clause (#475): which keys it could match a return on. Constants, not
-# literals in an f-string, because the drift test pins both to path 16, which quotes them.
+# The census line's last clause (#475): which keys it could match a return on. Constants because the
+# drift test pins both to path 16, which quotes them.
 _MATCHED_BY_ID_AND_SERIAL = "matched by Jamf id and serial"
 _MATCHED_BY_ID_ONLY = "matched by Jamf id only: this sweep's sections carry no hardware, so no serial to match on"
 
@@ -586,7 +586,7 @@ async def _reconcile_device_census(
     run: Run | None,
     *,
     observed_ids: list[str],
-    observed_serials: list[str] | None,
+    observed_serials: dict[str, str] | None,
     selector: str | None,
     devices_failed: int,
 ) -> None:
@@ -600,8 +600,8 @@ async def _reconcile_device_census(
     so a departure lands with its census.
 
     `observed_serials` is None when this sweep's sections carry no `hardware` (#475): no serial to
-    census with, so a Mac back under a new id is not recognised — and the line says which match it
-    got, because matching on less under the same sentence is rule 2.
+    census with, so a Mac back under a new id is not recognised, and the line says which match it got
+    — matching on less under the same sentence is rule 2.
     """
     at = datetime.now(UTC)
     if selector is not None or devices_failed:
@@ -759,9 +759,9 @@ async def _sync_jamf(
     devices_failed = 0
     group_count = 0
     observed_ids: list[str] = []
-    # The census's second key (#475). None rather than [] without `hardware` in the sections: an
-    # empty list is "a fleet with no serials", None is "none were asked for", and they differ.
-    observed_serials: list[str] | None = [] if "hardware" in sections else None
+    # The census's second key (#475): serial -> the id this sweep carried it under. None rather than
+    # {} without `hardware` — "a fleet with no serials" and "none were asked for" are different facts.
+    observed_serials: dict[str, str] | None = {} if "hardware" in sections else None
 
     # The deletion echo's tally (#182), open across the whole pass: the per-device rows a
     # departure explains are derived six frames below this one, so the count is collected
@@ -837,8 +837,8 @@ async def _sync_jamf(
             # is asked at its close is which Macs Jamf *returned* — stored, stale or failed alike.
             if jamf_id is not None:
                 observed_ids.append(str(jamf_id))
-            if serial and observed_serials is not None:
-                observed_serials.append(str(serial))
+                if serial and observed_serials is not None:
+                    observed_serials[str(serial)] = str(jamf_id)
             try:
                 result = await ingest_computer(
                     db,

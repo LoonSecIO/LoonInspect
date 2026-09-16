@@ -1211,11 +1211,13 @@ class SubjectDeparture(Base):
     subject_id: Mapped[str] = mapped_column(String(255))
     departed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     returned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # How the return was recognised, and what the Mac used to be called (#475): `jamf_id` or
-    # `serial`, and a `prior_jamf_pro_id` only on a serial match, so non-null IS "it came back
-    # under a new computer id". On the row, because #179's event needs both. Migration b7e3f1a9c4d2.
+    # How the return was recognised, and what the Mac is called now (#475): `jamf_id` or `serial`,
+    # and `returned_as_subject_id` only on a serial match — the *new* computer id, which no later
+    # census can recover, where the old one is this row's own `subject_id`. `matched_by='serial'`
+    # is also "this id is retired": it is dead in Jamf, it will never be censused again, and the
+    # row keeps its tail. On the row, because #179's event needs both. Migration b7e3f1a9c4d2.
     matched_by: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    prior_jamf_pro_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    returned_as_subject_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     census_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 

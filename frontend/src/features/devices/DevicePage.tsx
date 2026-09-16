@@ -162,7 +162,6 @@ export function DevicePage() {
         <p className="mt-1 font-mono text-sm text-muted-foreground">{td.subtitle(device.serialNumber, device.externalId)}</p>
       </div>
 
-      {/* Above the clocks: still a Mac this fleet has comes before when it was last read. */}
       <DepartureNote departedAt={device.departedAt} td={td} />
 
       {/* Three clocks, each labelled with whose clock it is. Stale data misread as current
@@ -373,13 +372,17 @@ export function DevicePage() {
   );
 }
 
-/** "Not returned by Jamf since ⟨date⟩; leaves the fleet on ⟨date⟩" — the tail on the page it is
- *  about (#475). Nothing for the Macs Jamf still returns; past the tail the sentence changes rather
- *  than going, because this page is reachable by id whatever the list is answering. */
+/** "Not returned by Jamf since ⟨date⟩; leaves the fleet on ⟨date⟩" — the tail on the page it is about
+ *  (#475), above the clocks. Nothing for the Macs Jamf still returns; past the tail the sentence
+ *  changes rather than going, because this page is reachable by id whatever the list answers. */
 function DepartureNote({ departedAt, td }: { departedAt: string | null; td: Translations["devices"]["detail"] }) {
   const state = departureState(departedAt, new Date());
   if (departedAt === null || state === "present") return null;
-  const since = new Date(departedAt).toLocaleDateString();
+  // An instant this page cannot read is no sentence it can write — both halves are dates, and
+  // "Invalid Date" is not one. The list's chip still says so. A guard: the API ships ISO-8601.
+  const departed = new Date(departedAt);
+  if (Number.isNaN(departed.getTime())) return null;
+  const since = departed.toLocaleDateString();
   const leaves = leavesTheFleetAt(departedAt).toLocaleDateString();
   return (
     <p className="rounded-lg border border-dashed px-4 py-3 text-sm">

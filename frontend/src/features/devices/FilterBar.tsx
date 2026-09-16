@@ -105,8 +105,7 @@ export function FilterBar({ filters, onChange }: FilterBarProps) {
           </select>
         </label>
 
-        {/* The one control over `?includeDeparted=true` (#475): off by default, and visible,
-            because an operator looking for a Mac that has gone must not have to type a URL. */}
+        {/* The one control over `?includeDeparted=true` (#475): off by default, and visible. */}
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           <input
             type="checkbox"

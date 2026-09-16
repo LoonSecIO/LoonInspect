@@ -207,9 +207,8 @@ async def test_a_deleted_mac_departs_on_a_clean_census_and_a_return_closes_the_r
     assert (await sync_connection(db, connection)).ok
     (returned,) = await _departures(db, connection.id, COMPUTER)
     assert returned.returned_at is not None
-    # Recognised by the id it departed under, so there is no prior id to name (#475): a
-    # non-null `prior_jamf_pro_id` IS the statement "this Mac came back as something else".
-    assert returned.matched_by == "jamf_id" and returned.prior_jamf_pro_id is None
+    # Recognised as itself, so there is no other id to name (#475).
+    assert returned.matched_by == "jamf_id" and returned.returned_as_subject_id is None
 
 
 async def test_a_scoped_sweep_and_one_device_failure_depart_nobody(db, jamf: FakeJamf, connection, monkeypatch) -> None:
@@ -290,6 +289,14 @@ async def test_the_breaker_refuses_a_collapsed_device_census(db, jamf: FakeJamf,
 
 
 # --- a Mac that comes back is the same Mac (#475) -------------------------------------------
+async def _in_the_fleet(db, connection_id: int, at: datetime) -> set[str]:
+    """The Macs **Devices** lists and the Overview counts at `at`, through the list's own predicate."""
+    from app.models.schema import Device
+    from app.observations.departure import gone_for_good
+
+    here = ~gone_for_good(Device.mdm_connection_id, Device.external_id, at=at)
+    listed = select(Device.external_id).where(Device.mdm_connection_id == connection_id, here)
+    return set((await db.execute(listed)).scalars().all())
 
 
 async def _census_lines(db, connection_id: int) -> list[str]:
@@ -300,8 +307,7 @@ async def _census_lines(db, connection_id: int) -> list[str]:
 
 
 def _re_enrolled(clone: dict) -> dict:
-    """The same Mac after a wipe, a rebuild or a board repair: new computer id, new UDID, and the
-    serial is the one thing that survives."""
+    """The same Mac after a wipe, a rebuild or a board repair: new id, new UDID, the serial survives."""
     reborn = json.loads(json.dumps(clone))
     reborn["id"] = f"8{uuidlib.uuid4().hex[:8]}"
     reborn["udid"] = str(uuidlib.uuid4()).upper()
@@ -326,14 +332,24 @@ async def test_a_mac_back_under_a_new_jamf_id_closes_its_departure_by_serial(db,
     assert (await sync_connection(db, connection)).ok
     await db.refresh(gone)
     assert gone.returned_at is not None, "the same serial on the same connection is the same Mac"
-    assert gone.matched_by == "serial" and gone.prior_jamf_pro_id == clone["id"] != reborn["id"]
+    # The old id is this row's own `subject_id`; the new one is what no later census can recover.
+    assert gone.matched_by == "serial" and gone.returned_as_subject_id == reborn["id"] != clone["id"]
     assert any("1 by serial, under a new Jamf id" in line for line in await _census_lines(db, connection.id))
+
+    # And the dead id stays dead. Nothing in the ledger closes its span, so a population that still
+    # counted it would depart it again next census and close it again the pass after — forever, with a
+    # duplicate `devices` row that never reaches a seventh day to leave on.
+    for _ in range(3):
+        assert (await sync_connection(db, connection)).ok
+    (still,) = await _departures(db, connection.id, COMPUTER)
+    assert still.id == gone.id and still.returned_at is not None, "one departure, closed, and no second"
+    assert clone["id"] in await _in_the_fleet(db, connection.id, still.departed_at), "in its tail, not erased"
+    assert clone["id"] not in await _in_the_fleet(db, connection.id, still.departed_at + timedelta(days=8))
 
 
 async def test_a_census_without_hardware_matches_on_the_id_alone_and_says_which(db, jamf: FakeJamf, connection) -> None:
     """The aperture caveat: no `hardware` is no serial to census with, so a re-enrolled Mac is not
-    recognised and the line says so rather than the healthy sentence over a narrower match (rule
-    2). `extension_attributes` goes too — asking for those forces every carrier section back in."""
+    recognised and the line says so, never the healthy sentence over a narrower match (rule 2)."""
     from app.mdm import service
     from app.models.schema import Collection
 
@@ -360,8 +376,7 @@ async def test_a_census_without_hardware_matches_on_the_id_alone_and_says_which(
 
 
 async def test_a_serial_carried_by_another_connection_closes_nothing(db, jamf: FakeJamf, connection) -> None:
-    """A serial is Apple's; an instance's view of it is not. Two Jamf Pro servers hand out the
-    same small computer ids, so the lookup behind the match is scoped to the connection."""
+    """Two Jamf Pro servers hand out the same small computer ids, so the lookup is connection-scoped."""
     from app.mdm.service import sync_connection
     from app.models.schema import Device, MdmConnection
     from app.observations.departure import reconcile_census
@@ -379,10 +394,9 @@ async def test_a_serial_carried_by_another_connection_closes_nothing(db, jamf: F
     mac = {"mdm_provider": "jamf", "external_id": gone.subject_id, "serial_number": "X1", "hostname": "not-ours"}
     db.add(Device(mdm_connection_id=other.id, **mac))
     await db.commit()
-
     ids = [jamf.real["id"], jamf.synthetic["id"]]
     census = {"connection_id": connection.id, "subject_kind": COMPUTER, "observed_ids": ids, "at": datetime.now(UTC)}
-    verdict = await reconcile_census(db, **census, observed_serials=["X1"])
+    verdict = await reconcile_census(db, **census, observed_serials={"X1": "77001"})
     await db.commit()
     await db.refresh(gone)
     assert gone.returned_at is None and verdict.returned_by_serial == 0

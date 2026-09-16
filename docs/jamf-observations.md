@@ -380,9 +380,10 @@ for — and no device failed, because a device Jamf *did* return but whose inges
 `last_seen_at`, so a dirty night judges nobody. It names every computer the sweep returned across
 every page, **including the reads skipped as stale**: the monotonic guard is about what a record
 says, not whether the Mac is there, so a stale-skipped read stamps `last_seen_at` and counts as
-presence (rider 3). A census logs *device census: N observed, D departed, R returned, T in their
-seven-day tail, L left the fleet*; a sweep that was not one says which of the three disqualified it;
-one the breaker refused says *device census refused: …*, never a healthy sentence at a louder level.
+presence (rider 3). A census logs *device census: N observed, D departed, R returned (M by serial,
+under a new Jamf id), T in their seven-day tail, L left the fleet; matched by …*; a sweep that was
+not one says which of the three disqualified it; one the breaker refused says *device census
+refused: …*, never a healthy sentence at a louder level.
 
 The consequence is the **seven-day tail**: an open row *is* the tail, and seven days after
 `departed_at` — the first clean census that did not name the Mac — it has **left the fleet**, out of
@@ -397,15 +398,16 @@ Mac or its installed apps — exclude a Mac that has left the fleet; PR #462 res
 and the predicate lands with #476, so captures before it still count a deleted Mac. The daily "device is gone"
 emission and any "device returned" event are #179's shape, and are not built.
 
-**A return matches on the id or on the serial** (#475, Kyle's R3). A census naming the departed
-Mac's computer id closes its row; so does one naming a **serial** the same connection already
-carries for it, because re-enrolment, a wipe and rebuild and a board repair all mint a *new*
-computer id — the lineage ruling's own key: lineage is (instance, UDID, serial), and a board repair
-keeps the serial. Never across instances: a serial is Apple's, an instance's view of it is not. The
-close records `matched_by` (`jamf_id` / `serial`) and, on a serial match, `prior_jamf_pro_id`,
-because #179's return event has to say how the Mac was recognised and what it used to be called and
-neither survives the next census. A sweep with neither `hardware` nor `extension_attributes` in its
-sections has no serial to census with: the match is id-only and the run's line says so.
+**A return matches on the id or on the serial** (#475, Kyle's R3). A census naming the departed Mac's
+computer id closes its row; so does one naming a **serial** this connection already carries for it,
+because re-enrolment, a wipe and rebuild and a board repair all mint a *new* id — never across
+instances, a serial being Apple's and an instance's view of it not. The close records `matched_by`
+(`jamf_id` / `serial`) and, on a serial match, `returned_as_subject_id`: the *new* id, which no later
+census recovers and #179's event needs. It also **retires** the old id, dead in Jamf — out of the
+census population for good, or it departs again next census and closes again the pass after, forever
+— while its row keeps the tail it departed with and leaves the fleet on day seven, the Mac being
+listed already under its new id. A sweep with neither `hardware` nor `extension_attributes` in its
+sections has no serial to census with: the match is id-only, and the run's line says so.
 
 ### Managed → Unmanaged: the retirement workflow (reserved, not built)
 
