@@ -16,6 +16,10 @@ What comes back is forced into the page's vocabulary before the page sees it:
    character whitelist accepts, and ignores keys it does not know;
 3. ``guard`` applies six deterministic rules for what the model gets wrong on its own.
 
+One filter is not the model's at all: ``resolve_since`` reads a start out of the question's
+own words, against the server's clock and the viewer's zone (Kyle, 2026-09-16, #444). The
+instructions never mention it, so their measurement holds.
+
 Every change a step makes is written down as a repair, in the page's words. A repair
 never quotes a value the whitelist refused, nor a key the page does not know: the only
 free text of the model's that reaches the page is ``unsupported``, and the page renders
@@ -49,7 +53,9 @@ import re
 import unicodedata
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta, tzinfo
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 FEATURE = "changes_prompt"
 # A typed search string is fleet data (``app.core.ai``), so the gate is told it leaves and
@@ -253,9 +259,12 @@ def _fixes(sentence: str) -> Repair:
 @dataclass(frozen=True)
 class Interpretation:
     """What a reply meant, in the page's vocabulary. ``filters`` carries the page's URL
-    keys (``q``, ``artifact``, ``level``, ``section``, ``change``; None is "any" or
-    unset). ``parsed`` is False when the reply held neither a filter object nor the
-    model's refusal, and then nothing else is said."""
+    keys (``q``, ``artifact``, ``level``, ``section``, ``change``, ``since``; None is
+    "any" or unset). ``parsed`` is False when the reply held neither a filter object nor
+    the model's refusal, and then nothing else is said.
+
+    ``since`` is the one the model never wrote: it is read from the question's own words
+    (#444), and ``since_asked`` carries the same start as an instant, to count rows with."""
 
     filters: Filters
     unsupported: str | None
@@ -264,6 +273,8 @@ class Interpretation:
     # Why the question is not one the filters can answer (``NOT_ABOUT_CHANGES``), or None.
     # When set, the filters are all unset and nothing is to run: the page says why instead.
     invalid: str | None = None
+    # The start the question's words asked for, as ``resolve_since`` read it, or None.
+    since_asked: Since | None = None
 
     @property
     def widening(self) -> list[str]:
@@ -277,7 +288,7 @@ class Interpretation:
 
 
 def _no_filters() -> Filters:
-    return {"q": None, "artifact": None, "level": None, "section": None, "change": None}
+    return {"q": None, "artifact": None, "level": None, "section": None, "change": None, "since": None}
 
 
 # --- the way in ------------------------------------------------------------------------
@@ -518,8 +529,113 @@ def coerce(obj: Mapping[str, Any]) -> tuple[Filters, str | None, list[str]]:
         "level": _level(obj.get("level"), repairs),
         "section": _section(obj.get("section"), repairs),
         "change": _change(obj.get("change"), repairs),
+        # Never the model's: `interpret` fills it from the question (#444), and one the model
+        # invented is an unknown key like any other — counted, ignored, and widening.
+        "since": None,
     }
     return filters, _unsupported(obj.get("unsupported"), repairs), repairs
+
+
+# --- the time bound ---------------------------------------------------------------------
+# Kyle ruled it on #444 (2026-09-16): the start comes from the question's own words, read here.
+# Ruling 11 (`docs/ai-layer.md`) measured a sixth reply field at 2 to 6 wrong answers of 68, the
+# injection refusal broken in every arrangement, so the instructions stay as measured and this
+# costs them nothing. A word list was ruled out for *refusing* a question (#442); one that only
+# sets a start refuses nothing, and a phrase it does not know sets no window at all.
+
+
+@dataclass(frozen=True)
+class Since:
+    """A start the question asked for: the instant in UTC, and the words that set it. ``closed``
+    marks a phrase that named an end as well — the answer runs past that end, so the question's
+    date words are still beyond the controls and a caveat on them stands (guard rule 5)."""
+
+    at: datetime
+    phrase: str
+    closed: bool = False
+
+
+# A length of time back from now: "in the last 24 hours", "past 7 days", "3 days ago". A month is
+# 30 days and a year 365 — an approximation, and the chip states the instant it resolved to.
+_SINCE_UNITS: dict[str, timedelta] = {
+    "minute": timedelta(minutes=1), "hour": timedelta(hours=1), "h": timedelta(hours=1),
+    "day": timedelta(days=1), "d": timedelta(days=1), "week": timedelta(weeks=1), "w": timedelta(weeks=1),
+    "month": timedelta(days=30), "year": timedelta(days=365),
+}  # fmt: skip
+_UNIT_WORDS = "|".join(sorted(_SINCE_UNITS, key=len, reverse=True))
+_BACK = re.compile(
+    r"\b(?:(?:in|over|within|during|from)\s+)?(?:the\s+)?(?:last|past|previous)\s+"
+    rf"(?:(\d{{1,4}})\s*)?({_UNIT_WORDS})s?\b"
+    rf"|\b(\d{{1,4}})\s*({_UNIT_WORDS})s?\s+ago\b",
+    re.I,
+)
+_WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+_SINCE_WEEKDAY = re.compile(rf"\bsince\s+({'|'.join(_WEEKDAYS)})\b", re.I)
+# From its first day; a week starts on Monday (ISO), which the chip's own date settles.
+_THIS = re.compile(r"\bthis\s+(week|month|year)\b", re.I)
+# "yesterday" named an end there is none to set (`closed`); "since yesterday" did not.
+_DAY = re.compile(r"\b(since\s+)?(today|yesterday)\b", re.I)
+# A zone as `Intl.DateTimeFormat().resolvedOptions().timeZone` writes one, checked before
+# `ZoneInfo` is handed browser-supplied text.
+_ZONE_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_+/-]{0,63}")
+
+
+def _viewer_zone(name: str | None) -> tzinfo:
+    """The viewer's IANA zone, or UTC. Anything that is not a plain zone name, and any name this
+    build's tzdb does not hold, is UTC: a start an hour or two off is a window the chip still
+    states honestly, and a refusal would cost the answer."""
+    if not name or not _ZONE_NAME.fullmatch(name):
+        return UTC
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return UTC
+
+
+def _since(at: datetime, phrase: str, closed: bool = False) -> Since:
+    return Since(at=at.astimezone(UTC), phrase=" ".join(phrase.split()), closed=closed)
+
+
+def resolve_since(question: str, now: datetime, zone: str | None = None) -> Since | None:
+    """The start the question's own words ask for, resolved against ``now`` and the viewer's
+    zone — or None, when they ask for none or ask for one this list does not hold.
+
+    ``now`` is the server's clock, because the model does not know today's date and one it invented
+    would narrow an answer silently (ruling 11); the zone is the browser's, so "today" is the
+    operator's day. Midnight is taken there — on the one day a year a zone has none, it lands an
+    hour to one side, inside the day either way."""
+    text = sanitize_question(question)
+    local = now.astimezone(_viewer_zone(zone))
+    midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    back = _BACK.search(text)
+    if back:
+        count, unit = (back[1], back[2]) if back[2] else (back[3], back[4])
+        try:
+            return _since(now - int(count or 1) * _SINCE_UNITS[unit.lower()], back[0])
+        except OverflowError:
+            return None  # "the last 9999 years" predates the year datetime counts from
+    weekday = _SINCE_WEEKDAY.search(text)
+    if weekday:
+        back_days = (local.weekday() - _WEEKDAYS.index(weekday[1].lower())) % 7
+        return _since(midnight - timedelta(days=back_days), weekday[0])
+    period = _THIS.search(text)
+    if period:
+        word = period[1].lower()
+        if word == "week":
+            return _since(midnight - timedelta(days=local.weekday()), period[0])
+        return _since(midnight.replace(day=1) if word == "month" else midnight.replace(month=1, day=1), period[0])
+    day = _DAY.search(text)
+    if day:
+        if day[2].lower() == "today":
+            return _since(midnight, day[0])
+        return _since(midnight - timedelta(days=1), day[0], closed=not day[1])
+    return None
+
+
+def wire_time(at: datetime) -> str:
+    """A start as the `since` URL key already carries one: UTC, ISO 8601, `Z` — the Overview
+    link's format (`sinceAnchor.ts`), so both arrive at the page the same way."""
+    return at.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 # --- the guards ------------------------------------------------------------------------
@@ -610,7 +726,7 @@ _ENTRY_CHANGES = frozenset({"added", "removed", "updated"})
 
 
 def guard(
-    question: str, filters: Mapping[str, str | None], unsupported: str | None, repairs: Iterable[str]
+    question: str, filters: Mapping[str, str | None], unsupported: str | None, repairs: Iterable[str], since_set: bool = False
 ) -> tuple[Filters, str | None, list[str]]:
     """The six rules, on copies, in the order they run:
 
@@ -624,7 +740,7 @@ def guard(
        searched for KY4QVD7430, a serial from its own examples;
     4. with Search empty and exactly one serial-shaped word in the question, Search is it;
     5. ``unsupported`` stands only if the question has an or / not / date / value /
-       comparison word — and, once Since is set, only a word of the other kinds, because the
+       comparison word — and, with ``since_set``, only a word of the other kinds, because the
        date words are then expressed. The first prompt claimed "Cannot express 'but not'" for
        "which computers installed wireshark", a banner that would have been noise on the
        question the page is demonstrated with; "last", "recent" and "latest" ask for an order,
@@ -671,9 +787,10 @@ def guard(
             filters["q"] = serial
     if unsupported:
         # With a start set, the question's date words are expressed after all, so only a word
-        # of the other kind is still grounds for the caveat.
-        since_set = filters.get("since") is not None
-        if not (_OTHER_MARKERS.search(question) or (not since_set and _RANGE_MARKERS.search(question))):
+        # of the other kind is still grounds for the caveat. A phrase that named an end too
+        # ("yesterday") does not set it: the answer runs past that end (``Since.closed``).
+        dates_stand = not since_set and bool(_RANGE_MARKERS.search(question))
+        if not (_OTHER_MARKERS.search(question) or dates_stand):
             repairs.append(
                 _fixes(
                     "Dropped the model's note that the filters cannot express this: the time it asked for is set "
@@ -698,10 +815,14 @@ def guard(
     return filters, unsupported, repairs
 
 
-def interpret(question: str, reply_text: str) -> Interpretation:
+def interpret(question: str, reply_text: str, now: datetime | None = None, zone: str | None = None) -> Interpretation:
     """A model's reply to ``question``, parsed, forced into the vocabulary and guarded.
     The question is sanitised here too, so a caller passing the raw text gets the same
     answer as one passing what was sent.
+
+    ``now`` and ``zone`` are the server's clock and the viewer's IANA zone; with them the
+    question's own words may set ``since`` (``resolve_since``, #444), and without ``now`` no
+    window is set — what every caller before #444 got.
 
     An object with none of the fields the instructions ask for is no answer either:
     ``{"foo": 1}`` coerces to every control unset, and applied, that is the whole feed
@@ -715,6 +836,11 @@ def interpret(question: str, reply_text: str) -> Interpretation:
         return Interpretation(filters=_no_filters(), unsupported=None, repairs=[], parsed=True, invalid=NOT_ABOUT_CHANGES)
     if obj is None or not any(key in obj for key in _REPLY_KEYS):
         return Interpretation(filters=_no_filters(), unsupported=None, repairs=[], parsed=False)
+    asked = sanitize_question(question)
+    since = resolve_since(asked, now, zone) if now is not None else None
     filters, unsupported, repairs = coerce(obj)
-    filters, unsupported, repairs = guard(sanitize_question(question), filters, unsupported, repairs)
-    return Interpretation(filters=filters, unsupported=unsupported, repairs=repairs, parsed=True)
+    filters["since"] = wire_time(since.at) if since else None
+    # No repair is recorded: the corrections list is what the page changed in the model's answer,
+    # and this filter is not the model's. The chip and the readback state the start.
+    filters, unsupported, repairs = guard(asked, filters, unsupported, repairs, since_set=since is not None and not since.closed)
+    return Interpretation(filters=filters, unsupported=unsupported, repairs=repairs, parsed=True, since_asked=since)

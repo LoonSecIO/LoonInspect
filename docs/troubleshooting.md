@@ -891,12 +891,23 @@ writes one row to the disclosure log naming the destination and the one field th
 
    *When* is not one of those, and neither are *the last time*, *the latest*, *the most recent*
    or *the first time*. The table is ordered by observed time, newest first, so the top row is the
-   last time and the answer box states the time itself. A date **range** still is: "in the last 24
-   hours", "since Monday", "yesterday" and "before September" all answer over the whole log with
-   this lead, and the rows are newest-first inside it. To bound one, arrive from the Overview's
-   feed, which links here with a window, or narrow by hand. Until 2026-09-15 a question with
+   last time and the answer box states the time itself. A date range with two **ends** still is —
+   "before September", "between Monday and Friday" — because the feed filters *observed at or
+   after* and has no `until`; a **start** is not, since 2026-09-16. Until 2026-09-15 a question with
    "last" in it — "When was the last time someone installed wireshark" — carried *Cannot express
    'when' — filters match names, not timestamps* over an answer whose first row was the answer.
+
+   **A question can set a start, and the chip says which one.** The server reads it out of the
+   question's own words — never the model, which is not asked and does not know today's date —
+   against its own clock and your browser's time zone, so *today* is your day. It knows *in the
+   last 24 hours*, *last 7 days*, *past week*, *3 days ago* and their kin (minutes, hours, days,
+   weeks, months of 30 days, years of 365), and *today*, *yesterday*, *since yesterday*, *since
+   Monday*…*since Sunday*, *this week* (from Monday), *this month*, *this year*. It reads back as
+   *Observed since …*, shows as the chip, which clears it in a press, and the audit row carries
+   `window: true`. Anything else sets none — "last night", "before September", a month by name —
+   and the answer is over the whole log, as it was. "Yesterday" is read as its **start**, so the
+   answer runs to now: that is why the model's *Cannot express a date range* still stands over
+   that one and goes over "in the last 24 hours".
 
    **The time in the answer box.** *Observed 14/09/2026, 11:57:26* is the same value as the
    table's **Observed** column: Jamf's report time for that Mac, which is when its inventory

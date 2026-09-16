@@ -43,6 +43,10 @@ class PromptIn(_Base):
     question: str = Field(json_schema_extra={"minLength": 1, "maxLength": QUESTION_MAX_LENGTH})
     # None asks the first saved config, in the Settings > AI cards' order.
     provider: Provider | None = None
+    # The viewer's IANA zone ("America/Chicago"). It never leaves this server: it resolves the
+    # start a question's own words ask for, so "today" is the operator's day (#444). Missing, or
+    # a name this build's tzdb does not hold, is UTC — never a refusal.
+    zone: str | None = Field(default=None, max_length=64)
 
 
 class PromptFiltersOut(_Base):
@@ -53,6 +57,10 @@ class PromptFiltersOut(_Base):
     level: Literal["low", "normal", "high"] | None
     section: str | None
     change: Literal["added", "removed", "updated", "changed"] | None
+    # The start the question's own words asked for, ISO 8601 in UTC, resolved against the
+    # viewer's zone (#444) and never written by the model. It rides the page's own `since` URL
+    # key, which the Overview's feed has set since #107, and shows as that chip.
+    since: str | None = None
     # Dimensions stamped on the row, which the model never names: a repair moved a Search value
     # into one of them when the fleet had no device by that name but did have this (#447). The
     # page has no control for any of them, so an applied one shows as a chip.
