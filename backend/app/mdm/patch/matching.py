@@ -54,7 +54,6 @@ from app.mdm.patch.requirements import (
     compare_versions,
     detection_for,
     evaluate_group,
-    is_app_level,
     required_bundle_ids,
     version_tuple,
 )
@@ -107,11 +106,11 @@ class CatalogTitle:
     # attribute under the display name when a tenant subscribes to the title, while the
     # requirement names the key; the matcher accepts either.
     extension_attribute_names: Mapping[str, str]
-    app_level: bool
     # `inventory`, `extension_attribute`, or None for a title about no app at all
-    # (`requirements.detection_for`). Derived here on every build rather than read from
-    # `jamf_patch_titles.detection`, the published copy of the same value, so one definition can
-    # never disagree with itself.
+    # (`requirements.detection_for`). It replaced a separate `app_level` flag in #386, which said
+    # the same thing in one bit and would now be a second answer to the question `admitted` asks.
+    # Derived here on every build rather than read from `jamf_patch_titles.detection`, the
+    # published copy of the same value, so one definition can never disagree with itself.
     detection: str | None
     required_bundle_ids: frozenset[str] | None
     # Casefolded names of the attribute tests (plus the definitions' keys and display names):
@@ -157,7 +156,6 @@ class CatalogTitle:
             ),
             requirements=groups,
             extension_attribute_names=definitions,
-            app_level=is_app_level(groups),
             detection=detection_for(groups),
             required_bundle_ids=required_bundle_ids(groups),
             attribute_names=frozenset(attribute_names),

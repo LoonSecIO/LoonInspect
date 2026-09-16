@@ -200,9 +200,9 @@ def test_every_matched_app_carries_a_jamf_patch_block_and_only_ruled_keys(blocks
     for name, block in matched.items():
         assert set(block) == {"supported", "jamfPatch"}, name
         assert set(block["jamfPatch"]) <= set(RULED_KEYS), name
-        # The five keys that are never absent on an answer: without them the block cannot say
-        # what it found, and `patch_answer` degrades to `supported: false` rather than ship a
-        # partial one.
+        # The keys never absent from an answer built with a catalog loaded — the five #311 ruled
+        # plus #386's `detection`: without them the block cannot say what it found, and
+        # `patch_answer` degrades to `supported: false` rather than ship a partial one.
         assert {"titleIDs", "titleNames", "detection", "state", "onLatest", "versionKnown"} <= set(block["jamfPatch"]), name
 
 
