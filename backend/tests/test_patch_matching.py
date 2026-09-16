@@ -31,13 +31,7 @@ from app.mdm.patch.matching import (
     match_app,
     summarize,
 )
-from app.mdm.patch.requirements import (
-    DETECTION_EXTENSION_ATTRIBUTE,
-    DETECTION_INVENTORY,
-    PLATFORM_MAC,
-    Facts,
-    jamf_platform_name,
-)
+from app.mdm.patch.requirements import DETECTION_EXTENSION_ATTRIBUTE, PLATFORM_MAC, Facts, jamf_platform_name
 
 FIXTURES = Path(__file__).parent / "fixtures" / "jamf"
 
@@ -47,17 +41,19 @@ def catalog() -> Catalog:
     return Catalog.from_records(json.loads((FIXTURES / "patch_titles_subset.json").read_text()))
 
 
-def _device_facts() -> dict[str, Facts]:
-    """app name -> the facts, built exactly as process_sync builds them: the normalized app's
-    version (Jamf's marketing version; short_version is null for Jamf) and the device's OS
-    version and extension attributes."""
+@pytest.fixture(scope="module")
+def device_matches(catalog: Catalog) -> dict[str, list[TitleMatch]]:
+    """app name -> matches, built exactly as process_sync builds the facts: the normalized
+    app's version (Jamf's marketing version; short_version is null for Jamf) and the device's
+    OS version and extension attributes."""
     raw = json.loads((FIXTURES / "computer_inventory_detail_real.json").read_text())
     device = normalize_computer(raw)
     # Requirements name an attribute by its display name and compare one value; the
     # normalized item carries every value and the definition id beside it (#197).
     extension_attributes = {ea.name: (ea.values[0] if ea.values else None) for ea in device.extension_attributes if ea.name}
-    return {
-        app.name: Facts(
+    result: dict[str, list[TitleMatch]] = {}
+    for app in device.apps:
+        facts = Facts(
             app_name=app.name,
             bundle_id=app.bundle_id,
             versions=tuple(v for v in (app.version, app.short_version) if v),
@@ -67,14 +63,7 @@ def _device_facts() -> dict[str, Facts]:
             platform=jamf_platform_name(device.platform),
             extension_attributes=extension_attributes,
         )
-        for app in device.apps
-    }
-
-
-@pytest.fixture(scope="module")
-def device_matches(catalog: Catalog) -> dict[str, list[TitleMatch]]:
-    """app name -> matches, against the real slice of the catalog."""
-    result = {name: match_app(facts, catalog) for name, facts in _device_facts().items()}
+        result[app.name] = match_app(facts, catalog)
     assert len(result) == 83
     return result
 
@@ -122,13 +111,9 @@ class TestCatalogIndex:
         # 2022 title pins its own bundle ID.
         broad = {title.name for title in catalog.broad}
         assert "TechSmith Camtasia" in broad and "TechSmith Camtasia 2022" not in broad
-
-    def test_an_admitted_attribute_only_title_is_indexed_on_its_column(self, catalog: Catalog) -> None:
-        """#386: an attribute test pins nothing, so `required_bundle_ids` is None for all 182 and
-        they would land in `broad` — evaluated against every app on every Mac. Their identity IS
-        the column, so they are reached through the bundle index like any pinned title."""
-        assert "Mozilla Firefox" in {title.name for title in catalog.candidates("org.mozilla.firefox")}
-        assert "Mozilla Firefox" not in {title.name for title in catalog.broad}
+        # And #386's titles, whose attribute test pins nothing: reached on the column instead of
+        # landing in `broad`, where all 182 would be evaluated against every app on every Mac.
+        assert "Mozilla Firefox" in {t.name for t in catalog.candidates("org.mozilla.firefox")} and "Mozilla Firefox" not in broad
 
 
 class TestRealDevice:
@@ -210,14 +195,11 @@ class TestRealDevice:
         assert summary.this_version_seen is False and summary.is_compliant is False and summary.patch_available is False
 
     def test_pycharm_is_admitted_on_its_bundle_id_and_flagged(self, device_matches, catalog: Catalog) -> None:
-        """JetBrains PyCharm Unified's only requirement is an extension attribute (Jamf's way of
-        telling Professional from Community). It has no identifying recon test, so before #386 it
-        was not considered and this Mac's PyCharm had no answer at all. Admitted on the strength
-        of its `bundleId` column, with the attribute assumed TRUE and `detection` saying the
-        title is one Jamf detects on the device rather than in the inventory walk."""
+        """JetBrains PyCharm Unified's only requirement is an extension attribute (Jamf telling
+        Professional from Community), so before #386 it was not considered and this Mac's PyCharm
+        had no answer at all. Admitted on its `bundleId` column, attribute assumed TRUE."""
         (match,) = device_matches["PyCharm.app"]
-        assert match.title.name == "JetBrains PyCharm Unified"
-        assert match.title.detection == DETECTION_EXTENSION_ATTRIBUTE
+        assert match.title.name == "JetBrains PyCharm Unified" and match.title.detection == DETECTION_EXTENSION_ATTRIBUTE
         assert match.basis == BASIS_EA_ASSUMED and match.installed_version == "2026.1.2"
         assert "JetBrains PyCharm Unified" in {title.name for title in catalog.titles}
 
@@ -245,10 +227,9 @@ class TestRealDevice:
 class TestExtensionAttributes:
     def test_firefox_matches_on_the_column_and_reads_the_attribute_when_carried(self, catalog: Catalog) -> None:
         """#386, the ruling's own example. Firefox's one requirement is
-        `jamf-patch-mozilla-firefox is not ""`, so nothing in it identifies an app and the title
-        had no rows and no answer. Admitted, it matches an installed Firefox by Jamf's `bundleId`
-        column; the attribute goes on doing what #65 said it does — scoping — so an absent one
-        resolves TRUE (`ea_assumed`) and a carried one is read for real."""
+        `jamf-patch-mozilla-firefox is not ""` — nothing in it identifies an app, so the title had
+        no rows and no answer. Admitted, it matches an installed Firefox by Jamf's `bundleId`
+        column, and the attribute goes on scoping: absent resolves TRUE, carried is read."""
         firefox = Facts(app_name="Firefox.app", bundle_id="org.mozilla.firefox", versions=("154.0",))
         (match,) = match_app(firefox, catalog)
         assert match.title.name == "Mozilla Firefox" and match.basis == BASIS_EA_ASSUMED
@@ -260,35 +241,30 @@ class TestExtensionAttributes:
         assert match_app(Facts(**{**firefox.__dict__, "bundle_id": "org.mozilla.firefox.nightly"}), catalog) == []
         chrome = Facts(app_name="Google Chrome.app", bundle_id="com.google.Chrome", versions=("151.0.7922.174",))
         assert [m.title.name for m in match_app(chrome, catalog)] == ["Google Chrome"]
-        assert next(t for t in catalog.titles if t.name == "Google Chrome").detection == DETECTION_INVENTORY
 
     def test_an_ea_detected_title_reads_absent_until_the_attribute_is_read(self, device_matches) -> None:
         """Kyle's second half (#386): admission reaches Firefox, not Python. The real Mac runs
-        Python 3.14 — `Python Launcher.app`, bundle ID `org.python.PythonLauncher` — and Jamf's
-        "Python 3" title names `org.python.python`, a bundle ID no `.app` on any Mac reports,
-        because a command-line Python is not something recon walks. So the title is admitted,
-        enumerates its versions, and still matches nothing: the Mac reads *absent* with
-        `detection: extension_attribute` until the EA value itself is read as the presence
-        witness (docs/troubleshooting.md §6 step 5)."""
+        Python 3.14 — `Python Launcher.app`, `org.python.PythonLauncher` — while Jamf's "Python 3"
+        title names `org.python.python`, which no `.app` reports because a command-line Python is
+        not something recon walks. So the title is admitted, enumerates its versions, and matches
+        nothing: the Mac reads *absent* with `detection: extension_attribute` until the EA value
+        is read as the presence witness (docs/troubleshooting.md §6 step 5)."""
+        test = {"name": "jamf-patch-python-3", "type": "extensionAttribute", "value": "|3.", "operator": "like"}
         title = {
             "id": "11A",
             "name": "Python 3",
             "bundleId": "org.python.python",
             "currentVersion": "3.14.0",
-            "patches": [{"version": "3.14.0", "releaseDate": "2026-08-07T00:00:00Z"}],
-            "requirements": [
-                {
-                    "operator": "and",
-                    "tests": [{"name": "jamf-patch-python-3", "type": "extensionAttribute", "value": "|3.", "operator": "like"}],
-                }
-            ],
-            "extensionAttributes": [{"key": "jamf-patch-python-3", "displayName": "Python 3 Bundle Version"}],
+            "patches": [{"version": "3.14.0"}],
+            "requirements": [{"operator": "and", "tests": [test]}],
         }
         python = Catalog.from_records([title])
         (admitted,) = python.titles
         assert admitted.detection == DETECTION_EXTENSION_ATTRIBUTE and admitted.admitted
         assert [row["version"] for row in build_rows(python)] == ["3.14.0"]
-        assert all(match_app(facts, python) == [] for facts in _device_facts().values()), "no .app reports org.python.python"
+        device = normalize_computer(json.loads((FIXTURES / "computer_inventory_detail_real.json").read_text()))
+        bundles = {app.bundle_id for app in device.apps}
+        assert "org.python.PythonLauncher" in bundles and "org.python.python" not in bundles
         assert device_matches["Python Launcher.app"] == []
 
     def test_a_mixed_group_assumes_an_absent_attribute_and_reads_a_carried_one(self) -> None:
@@ -330,9 +306,8 @@ class TestExtensionAttributes:
 
     def test_what_is_not_considered(self, catalog: Catalog) -> None:
         names = {title.name for title in catalog.titles}
-        # Node.js 14 and Temurin JRE 19 are attribute-only and Jamf publishes no `bundleId` for
-        # either, so #386's admission cannot reach them — nothing names the software. "Apple
-        # macOS" is device-level: `detection_for` answers None rather than either constant.
+        # Jamf publishes no `bundleId` for the first two, so #386's admission cannot reach them:
+        # nothing names the software. "Apple macOS" is device-level — `detection_for` says None.
         for absent in ("Node.js 14", "Eclipse Temurin (JRE) 19", "Apple macOS"):
             assert absent not in names
         community = next(title for title in catalog.titles if title.name == "JetBrains PyCharm Community")

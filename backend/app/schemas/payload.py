@@ -311,16 +311,13 @@ class JamfPatchAnswer(BaseModel):
     # The only key in this block a person can read — "612" and "5F6" mean nothing in a search
     # bar, and `stats count by ...titleNames` is the query a patch dashboard opens with.
     title_names: list[str] | None = Field(default=None, serialization_alias="titleNames")
-    # What the answer rests on (#386, ruled by Kyle 2026-09-11) — read before the values it
-    # qualifies, which is why it sits above `state` rather than beside `eaAssumed`.
-    # `extension_attribute` when ANY matched title's requirements are extension attributes only:
-    # Jamf detects that title from a script's output at the device's last recon, not from the
-    # application inventory it walked, and the container admitted it on the strength of its
-    # `bundleId` column alone. `any`, the same conservative direction `eaAssumed` folds in —
-    # `behind` on such a title can be `behind` for the wrong release channel, and the flag must
-    # not be cleared by a second title that happens to be ordinary. Absent on an event produced
-    # where no catalog was loaded (a scoped read), never defaulted to `inventory`: clause 4's
-    # absence, not a claim about evidence nobody looked for.
+    # What the answer rests on (#386) — above `state` because a discriminator reads before the
+    # values it qualifies. `extension_attribute` when ANY matched title's requirements are
+    # extension attributes only: Jamf detects it from a script's output at the last recon rather
+    # than from the inventory it walked, and the container admitted it on its `bundleId` column.
+    # `any`, the conservative direction `eaAssumed` folds in — `behind` there can be behind for
+    # the wrong channel, and an ordinary second title must not clear the flag. Absent where no
+    # catalog was loaded, never defaulted: clause 4's absence, not a claim nobody checked.
     detection: PATCH_DETECTION | None = Field(default=None)
     state: PATCH_STATES
     # Kyle's #65 rule: at least one matched title says the installed version is its current

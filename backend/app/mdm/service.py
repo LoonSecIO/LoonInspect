@@ -1561,8 +1561,8 @@ async def process_sync(
         # older answer. Reading it here rather than inside the producer keeps that coupling
         # visible at the one call site where the ordering is guaranteed.
         title_names=cached_title_names() if device.apps is not None else None,
-        # And what detects each of those titles, for `patch.jamfPatch.detection` (#386) — the
-        # same cache, the same call site, the same `None` on the same path.
+        # What detects each of them, for `patch.jamfPatch.detection` (#386): same cache, same
+        # call site, same `None` on the same path.
         title_detection=cached_title_detection() if device.apps is not None else None,
         # The one place the container's corpus reaches the wire (#249). `NO_CORPUS` until
         # an epoch is loaded AND this tenant's tier earns it — both decided inside

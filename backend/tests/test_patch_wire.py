@@ -161,32 +161,27 @@ def test_the_state_vocabulary_is_the_matchers(catalog: Catalog) -> None:
     wire registry and `ADDITIVE_ONLY_CLAUSES` already run against their own docs."""
     declared = set(JamfPatchAnswer.model_fields["state"].annotation.__args__)  # type: ignore[union-attr]
     assert declared == {STATE_LATEST, STATE_BEHIND, STATE_AHEAD, STATE_UNKNOWN}
-
-
-def test_the_detection_vocabulary_is_the_evaluators() -> None:
-    """The same guard for #386's discriminator: `PATCH_DETECTION` is restated in
-    `app.schemas.payload` and must stay the evaluator's two spellings."""
-    declared = JamfPatchAnswer.model_fields["detection"].annotation.__args__[0]  # type: ignore[union-attr]
-    assert set(declared.__args__) == {DETECTION_INVENTORY, DETECTION_EXTENSION_ATTRIBUTE}
+    # And #386's discriminator, restated in the same file for the same reason.
+    detection = JamfPatchAnswer.model_fields["detection"].annotation.__args__[0]  # type: ignore[union-attr]
+    assert set(detection.__args__) == {DETECTION_INVENTORY, DETECTION_EXTENSION_ATTRIBUTE}
 
 
 def test_detection_says_which_witness_the_answer_rests_on(blocks: dict[str, dict]) -> None:
     """#386. PyCharm's only title is attribute-only — Jamf detects it from a script's output at
-    the device's last recon, and the container admitted it on its `bundleId` column alone — so a
-    reader is told before reading `state`, which can be `behind` for the wrong release channel.
-    Slack's title carries a recon test and says the ordinary thing."""
+    the device's last recon — so the reader is told before reading `state`, which can be `behind`
+    for the wrong channel. Slack's title carries a recon test and says the ordinary thing."""
     assert blocks["PyCharm.app"]["jamfPatch"]["detection"] == DETECTION_EXTENSION_ATTRIBUTE
     assert blocks["Slack.app"]["jamfPatch"]["detection"] == DETECTION_INVENTORY
-    # `any`, not "the reference title's": Wireshark matches two ordinary titles and still says
-    # inventory, and one attribute-only title among several would carry the flag for all of them.
+    # `any`, not the reference title's: Wireshark matches two ordinary titles and says inventory,
+    # and one attribute-only title among several would carry the flag for all of them.
     assert blocks["Wireshark.app"]["jamfPatch"]["detection"] == DETECTION_INVENTORY
 
 
 def test_a_catalog_that_cannot_speak_for_every_title_drops_the_key(rows: list[InstalledApp]) -> None:
-    """Clause 4's absence, not a claim: the fold is an `any`, so answering `inventory` off the
-    titles that did resolve is exactly the reading the key exists to prevent."""
+    """Clause 4's absence, not a claim: answering `inventory` off the titles that did resolve is
+    the reading the key exists to prevent."""
     answers = patch_answer(rows, None, None)
-    assert all("detection" not in answer.model_dump(by_alias=True).get("jamfPatch", {}) for answer in answers.values())
+    assert all("detection" not in a.model_dump(by_alias=True).get("jamfPatch", {}) for a in answers.values())
 
 
 def test_an_unmatched_app_is_one_key_wide(blocks: dict[str, dict]) -> None:

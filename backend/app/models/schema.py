@@ -421,12 +421,10 @@ class JamfPatchTitle(Base):
     # How Jamf detects this title on a Mac (#386): `inventory` — a recon test on the bundle ID or
     # the application title — or `extension_attribute`, where every test is an EA and the EA is
     # the detection rather than a scoping device. NULL is the third answer and not an absence: a
-    # device-level ("Apple macOS …") or version-only title detects no application at all.
-    #
-    # The published copy of `requirements.detection_for(requirements)`, which the sync writes
-    # from the same definition it writes `requirements` from, and which the matcher re-derives
-    # rather than reads. It is a column so the titles list and an operator's query can filter on
-    # it — 182 of 1,557 rows are `extension_attribute` — without unpacking JSONB per row.
+    # device-level ("Apple macOS …") or version-only title detects no application at all. The
+    # published copy of `requirements.detection_for(requirements)`, written by the sync from the
+    # same definition and re-derived rather than read by the matcher; a column so an operator can
+    # filter on it (docs/jamf-patch-matching.md §4a) without unpacking JSONB per row.
     detection: Mapped[str | None] = mapped_column(String(24), nullable=True)
     bundle_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     current_version: Mapped[str] = mapped_column(String(64))

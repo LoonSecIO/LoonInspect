@@ -336,8 +336,7 @@ async def sync_catalog(db: AsyncSession, source: CatalogSource | None = None) ->
         row.current_version = detail.get("currentVersion", "")
         row.last_modified = detail.get("lastModified", "")
         row.requirements = _convert_requirements(detail.get("requirements", []))
-        # Written from the requirements the line above just stored, so the column and the
-        # definition it describes can only ever move together (#386).
+        # From the requirements just stored, so column and definition move together (#386).
         row.detection = detection_for(row.requirements)
         # Decided from the definition, which is the last place `killApps` exists: the next line
         # drops it from every patch and nothing downstream ever sees it again (#385).

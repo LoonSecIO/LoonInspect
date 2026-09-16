@@ -53,8 +53,8 @@ from app.core.vuln import VulnCorpus, vuln_block
 from app.core.wire_vocabulary import SECTION_WRAPPERS
 from app.mdm.jamf.contract import SECTIONS, Entry, Observation, canonical_string
 
-# The two spellings only, from the dependency-free evaluator — not from `app.mdm.patch.matching`,
-# which this module stays clear of so it remains a pure function of plain data (see `title_names`).
+# Two spellings from the dependency-free evaluator — not from `app.mdm.patch.matching`, which
+# this module stays clear of so it stays a pure function of plain data (see `title_names`).
 from app.mdm.patch.requirements import DETECTION_EXTENSION_ATTRIBUTE, DETECTION_INVENTORY
 from app.schemas.payload import (
     InventoryAppItem,
@@ -122,8 +122,7 @@ def patch_answer(
     genuinely named "612".
 
     `title_detection` is the same cache's id -> `inventory` | `extension_attribute` map
-    (`matching.cached_title_detection`), folded into `detection` (#386). A title missing from it
-    drops the key rather than assuming `inventory`, for the reason the schema gives.
+    (`matching.cached_title_detection`), folded into `detection` (#386).
     """
     answers: dict[tuple[str, str, str], PatchEnrichment] = {}
     unsupported = PatchEnrichment(supported=False)
@@ -207,12 +206,11 @@ def _title_names(title_ids: Sequence[str], names: Mapping[str, str] | None) -> l
 
 
 def _detection(title_ids: Sequence[str], detection: Mapping[str, str] | None) -> str | None:
-    """`extension_attribute` if ANY of these titles is detected that way, else `inventory` —
-    or None when the loaded catalog cannot speak for all of them (#386).
-
-    All or nothing like the names above, and for a sharper reason: the fold is an `any`, so one
-    unresolved title is one title that could have carried the flag. Answering `inventory` from
-    the ones that did resolve would be the single reading this key exists to prevent.
+    """`extension_attribute` if ANY of these titles is detected that way, else `inventory` — or
+    None when the loaded catalog cannot speak for all of them (#386). All or nothing like the
+    names above, and for a sharper reason: the fold is an `any`, so one unresolved title is one
+    title that could have carried the flag, and answering `inventory` off the rest would be the
+    single reading this key exists to prevent.
     """
     if not detection:
         return None

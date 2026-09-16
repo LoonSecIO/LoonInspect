@@ -22,11 +22,6 @@ class JamfPatchTitleOut(BaseModel):
     # the same rule. Defaulted so a construction that predates the field still builds.
     app_name_source: str | None = None
     bundle_id: str | None
-    # `inventory` | `extension_attribute` | null (#386) — which witness says the software is on
-    # a Mac. The list's only honest answer to "why does this title read 0 devices with software
-    # I know I have": an `extension_attribute` title whose app never enters the inventory walk
-    # matches nothing here, by construction, and the column says so before anyone opens a log.
-    detection: str | None = None
     current_version: str
     last_modified: str
     synced_at: datetime
