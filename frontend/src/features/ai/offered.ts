@@ -14,7 +14,7 @@ import { PROVIDER_ORDER } from "@/features/ai/savedState";
  * sentence — and the Apple setup link and the unsupported-runtime line go with the card, so
  * nothing left on the page points at it — which is how a Mac operator whose detection missed
  * tells a withheld card from a missing feature (`docs/diagnosability.md` rule 1,
- * `docs/troubleshooting.md` §12). Detection stays a hint for which offered card opens
+ * `docs/troubleshooting.md` §14). Detection stays a hint for which offered card opens
  * selected, and it gates nothing in the backend: a call naming `apple_fm` is judged, gated
  * and logged like any other, wherever this runs.
  *

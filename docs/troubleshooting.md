@@ -1046,9 +1046,9 @@ evidence. The **OpenAI-compatible** and **Anthropic** cards are offered everywhe
    answers with the verdict and the evidence it was read from. `runtime` is `docker_desktop`
    only when the kernel carries `linuxkit`, and `hostOs` is `macos` only when the CPU
    implementer is Apple's `0x61`. Neither of those on an Apple Silicon Mac under Docker
-   Desktop is reportable state **P**.
+   Desktop is reportable state **R**.
 
-**P.** *Where this container runs* reads a runtime or host OS the machine is not, under
+**R.** *Where this container runs* reads a runtime or host OS the machine is not, under
 Docker Desktop on an Apple Silicon Mac; or the alias reads *does not resolve* while `docker
 compose exec -T app getent hosts host.docker.internal` answers with an address. Report the
 *Evidence* line, the body of `GET /api/system/ai/host`, `docker compose exec -T app cat

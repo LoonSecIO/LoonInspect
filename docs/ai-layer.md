@@ -377,7 +377,7 @@ container gets to it. Where the alias is dead no card fills a `host.docker.inter
 OpenAI-compatible card starts empty, with a line saying why — and wherever the Apple card is withheld the
 detection panel says so in one sentence, so a Mac operator whose detection missed can tell a withheld card
 from a missing feature ([`diagnosability.md`](diagnosability.md) rule 1,
-[`troubleshooting.md`](troubleshooting.md) §12). Both decisions are pure functions in
+[`troubleshooting.md`](troubleshooting.md) §14). Both decisions are pure functions in
 `frontend/src/features/ai/offered.ts`, table-tested over the six readings this endpoint returns. Nothing
 moved in the backend: a call naming `apple_fm` is judged, gated and logged like any other, and the card's
 condition widens when the reserved `remote_mac` reach lands.
