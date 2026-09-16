@@ -165,6 +165,14 @@ did Splunk keep it.
      tick gave up before it dialled, and it names what to check — usually a destination
      whose URL it refuses or whose stored secret this container cannot read (§4). Fix that,
      and the next tick drains the queue. No such line and still climbing → reportable **D**.
+   - **More than one app process, and the queue is not draining.**
+     `docker compose logs app --since 10m | grep "outbox tick skipped"`. That line means
+     the process printing it found another one already delivering for that organization
+     and did nothing, which is correct: one process delivers at a time and the rest say
+     so every tick ([`operations.md` §7](operations.md)). It is only a problem when
+     *every* process prints it and `pendingCount` still climbs — then the process holding
+     the lock is wedged rather than working. Restart the stack: the lock goes with its
+     connection, and the next tick takes it.
    - Both zero and the runs in step 1 succeeded → step 5.
 5. **Subscriptions.** `subscribedEvents` on the destination: `null` means every event
    type; a list means only those. A list without `device.inventory` gets no snapshots,

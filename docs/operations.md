@@ -671,3 +671,47 @@ Note the "Up". **Docker never restarts a container for failing its healthcheck**
 monitoring at `/api/health` and alert on the 503; the container status alone will sit
 there unhealthy and running indefinitely. See
 [KNOWN_ISSUES.md §4](../KNOWN_ISSUES.md).
+
+---
+
+## 7. More than one app process
+
+Reasoned about and tested, not transcribed: the shipped stack is one app container, and
+what follows was exercised as two ticks against one database
+(`backend/tests/test_outbox_tick_lock_db.py`), never as two containers.
+
+`app/serve.py` runs one uvicorn process and passes no `--workers`, so a second process
+means a second container against the same database. **`SCHEDULER_ENABLED`** (default
+`true`) is the decision to make before you start one, and each container says which way
+it was answered on its `starting` line — `docker compose logs app | grep scheduler_enabled`.
+
+`SCHEDULER_ENABLED=false` makes a process **web-only**. It still serves the UI and the
+API, and the work a person starts still runs in the process that served the request:
+Sync now, Run now, Re-emit inventory, a destination's **Test** button, **Redrive**, and
+**Send now** on Settings › Data sharing. What it stops is everything on a clock — the
+eight jobs in `app/main.py`: collections coming due, the outbox's fan-out and delivery,
+the purges (sessions hourly, the outbox and the run log nightly), the hourly Jamf Patch
+catalog sync, the sign-in cache renewals, the daily data-sharing exchange. So what a
+web-only process *queues* — a re-emit's events, a redriven dead letter — is delivered by
+the process that still has the scheduler, not by it; with no such process running, the
+queue simply grows.
+
+**Leaving it `true` everywhere is safe for the outbox, and only for the outbox.** Each
+tenant's outbox tick takes a per-tenant advisory lock for the length of the tick, and a
+process that cannot take it delivers nothing and says so, every tick:
+
+```
+outbox tick skipped: another process holds this tenant's outbox lock; that process is
+fanning out and delivering this tenant's events, this tick did nothing, …
+```
+
+That line is the design and not a fault: one process delivers an organization's events at
+a time, and the others name which of your containers is doing it. The lock lives on that
+process's own database connection, so Postgres drops it when the process does — a worker
+killed mid-tick leaves nothing to clean up and the next tick takes it. Delivery stays
+at-least-once, as it is with one process.
+
+The other timed loops are outside that promise. Collections claim their work with a run
+row and are safe by the same argument
+([`ingest-scheduling.md`](ingest-scheduling.md) §5); the rest have not been audited for a
+second process. One process with the scheduler on is still the supported shape.

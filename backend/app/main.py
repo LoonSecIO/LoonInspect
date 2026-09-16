@@ -54,7 +54,7 @@ from app.core.crypto import StoredValueUnreadable, validate_encryption_key
 from app.core.database import init_db, session_for_tenant, unscoped_session
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware, content_security_policy_mode
-from app.core.outbox import deliver_pending, fan_out_pending, purge_delivered_events
+from app.core.outbox import deliver_pending, fan_out_pending, outbox_tick_lock, purge_delivered_events
 from app.core.runs import purge_runs
 from app.core.sharing import exchange_due, exchange_lock, run_exchange
 from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
@@ -272,18 +272,38 @@ async def outbox_worker_tick() -> None:
     # whose destination row raises ends the tick for every tenant sorted after it, for
     # ever, while their Destinations pages show `pendingCount` climbing and
     # `lastError: null` — nothing failed for them, nothing was attempted.
+    #
+    # Per process too, and that is the advisory lock (#467). This is the one scheduled
+    # loop that claims nothing in the database — `collections_tick` races for a run row
+    # whose partial unique index is the mutex — so two of these would select the same due
+    # deliveries and POST them both. The lock spans fan-out and delivery together, because
+    # fan-out decides which rows delivery will find.
     for tenant_id in await operational_tenant_ids():
-        async with tenant_job(tenant_id) as db:
-            try:
-                await fan_out_pending(db)
-                await deliver_pending(db)
-            except Exception:
-                logger.exception(
-                    "outbox tick failed for this tenant; none of its events were fanned out or delivered this pass "
-                    "and the next tick retries them; check its Destinations page for a destination whose URL or "
-                    "stored secret this container cannot use",
-                    extra={"tenant_id": str(tenant_id)},
-                )
+        try:
+            async with outbox_tick_lock(tenant_id) as held:
+                if not held:
+                    # Refusing out loud is the feature. A second process that silently
+                    # did nothing would be indistinguishable from a second process that
+                    # is broken, and this is the only line that tells an operator which
+                    # of their containers is delivering.
+                    logger.info(
+                        "outbox tick skipped: another process holds this tenant's outbox lock; that process is "
+                        "fanning out and delivering this tenant's events, this tick did nothing, and the next one "
+                        "tries again — expected on every app process but one when more than one runs with "
+                        "SCHEDULER_ENABLED=true (docs/operations.md §7)",
+                        extra={"tenant_id": str(tenant_id)},
+                    )
+                    continue
+                async with tenant_job(tenant_id) as db:
+                    await fan_out_pending(db)
+                    await deliver_pending(db)
+        except Exception:
+            logger.exception(
+                "outbox tick failed for this tenant; none of its events were fanned out or delivered this pass "
+                "and the next tick retries them; check its Destinations page for a destination whose URL or "
+                "stored secret this container cannot use",
+                extra={"tenant_id": str(tenant_id)},
+            )
 
 
 async def outbox_cleanup() -> None:
