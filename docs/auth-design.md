@@ -1,6 +1,6 @@
 # LoonInspect Auth & Logging Design
 
-Status: **implemented through Phase 6** (§8) — originally a proposal · Target: v1 local accounts + RBAC + audit log, built so OIDC/Okta drops in without a rewrite.
+Status: **implemented through Phase 6** (§8) — originally a proposal · Target: v1 local accounts + RBAC + audit log, built so OIDC/Okta drops in without a rewrite. One §3.1 mitigation is outside that scope and is **designed, not built** — `local_login_policy` appears in this document and nowhere in the code (audited in #303, re-checked 2026-09-16).
 
 ---
 
@@ -44,7 +44,7 @@ These are the specific choices that make OIDC painful if you get them wrong. Eac
 | `account.role` column | SCIM/OIDC group sync overwrites manually granted roles, and you can't tell an IdP-derived grant from a human one — so the sync silently demotes your break-glass admin. | `account_role` rows carrying `source` (`manual` \| `oidc_group` \| `scim`). A sync only touches rows of its own source. |
 | Session row that assumes password login | No way to record *how* someone authenticated, which blocks per-method audit, step-up MFA, and IdP backchannel logout. | Session references `identity_id` + `auth_method`, with a nullable `idp_session_id` reserved for backchannel logout. |
 | Hard-deleting accounts | SCIM deprovision is `active: false`, not DELETE. Deleting also strands the `actor_id` on every historical audit event, so past actions become unattributable. | `status` enum; accounts are never hard-deleted. |
-| Global "disable local login" boolean | Turning on SSO enforcement bricks your break-glass account. | `local_login_policy` = `enabled` \| `break_glass_only` \| `disabled`, with `is_break_glass` accounts exempt from the last two. |
+| Global "disable local login" boolean | Turning on SSO enforcement bricks your break-glass account. | `local_login_policy` = `enabled` \| `break_glass_only` \| `disabled`, with `is_break_glass` accounts exempt from the last two. **Designed, not built (#303)** — alone among the rows in this table it is still only a design, so `is_break_glass` ships with no enforcement mode to be exempt from. |
 | `if account.role == "admin"` in endpoints | Every new role means editing every endpoint. | Endpoints depend on **permissions**; roles are named bundles of permissions. New role = data, not code. |
 | SCIM bearer token owned by a person | That admin is eventually deprovisioned *by Okta*, which kills the token Okta was using to tell us about deprovisioning. Provisioning stops silently and can't be fixed through the broken path. | `is_service_account` flag; the SCIM token belongs to a non-human principal. §3.5 |
 | Reusing the OIDC `sub` as SCIM's `externalId` | They're distinct values, and a SCIM identity can exist before the user has ever logged in — so `auth_identities.subject` may be empty when SCIM first needs to correlate. | Dedicated `account.external_id`, unique per `external_source`. §3.5 |
