@@ -385,6 +385,14 @@ describe("answerLines — the response box, written from the server's count", ()
     expect(span).toBe(`Observed from ${at(EARLIER)} to ${at(OBSERVED)}.`);
   });
 
+  it("several changes from one inventory share a time, and the box says it once", () => {
+    const [, observed] = answerLines(
+      summary({ total: 2, devicesTotal: 1, devices: [{ ...macMini, subjectId: "7", serial: "KY4QVD7430", added: 2 }], when: when() }),
+      en.changes
+    );
+    expect(observed).toBe(`Observed ${at(OBSERVED)}.`);
+  });
+
   it("an inventory time that did not move is bounded by our own clock, not by a window of no length", () => {
     const earlierCollection = "2026-09-12T06:00:00Z";
     const [, line] = answerLines(
