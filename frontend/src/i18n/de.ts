@@ -876,7 +876,7 @@ export const de: Translations = {
         ? `Update auf ${version} — keine Nettoänderung`
         : `Update auf ${version} — netto ${Math.abs(net)} ${net > 0 ? "weniger" : "mehr"} Fund${Math.abs(net) === 1 ? "" : "e"}`,
     updateNetHint:
-      "Beide Fundlisten sind gekürzt; dies ist die Differenz der gezählten Gesamtwerte, nicht der Listen.",
+      "Mindestens eine der beiden Fundlisten ist gekürzt; dies ist die Differenz der gezählten Gesamtwerte, nicht der Listen.",
     updateUnknown: (version: string, date: string) => `Update auf ${version}: nicht im Korpus vom ${date}`,
     whySummary: "Warum dieser Container nichts sagt",
     whyNoCorpus:

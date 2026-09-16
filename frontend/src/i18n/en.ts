@@ -962,8 +962,10 @@ export const en = {
       net === 0
         ? `updating to ${version} — no net change`
         : `updating to ${version} — net ${Math.abs(net)} ${net > 0 ? "fewer" : "more"} finding${Math.abs(net) === 1 ? "" : "s"}`,
+    // "At least one", not "both": the fallback fires the moment EITHER list is capped,
+    // because one capped side is enough to make a set difference under-report.
     updateNetHint:
-      "Both finding lists are capped, so this is the difference of the totals the corpus counted rather than of the lists themselves.",
+      "At least one of the two finding lists is capped, so this is the difference of the totals the corpus counted rather than of the lists themselves.",
     // §4g's own words for the target, in the warning colour and carrying the corpus date:
     // the release Jamf calls latest has no row in this corpus, which is not a clean bill.
     updateUnknown: (version: string, date: string) => `updating to ${version}: not in the corpus of ${date}`,

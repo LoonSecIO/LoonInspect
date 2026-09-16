@@ -6,13 +6,17 @@ import type { AppUpdate, AppVulnerability } from "@/features/vulnerabilities/typ
  * pure, so the rules are pinned in the frontend test lane rather than checked by eye, for
  * the reason `patchAnswer.ts` gives.
  *
- * **One line per named title.** The answer has a subject and the columns sit next to each
- * other as if it did not (#311/#313): on Wireshark 4.2.0, "Wireshark" names 4.6.8 and
- * "Wireshark 4.2" names 4.2.14, so a difference read as the other title's is true of
- * neither. Hence a LIST, each entry carrying the title that names its release. The stored
- * answer carries one target today — the reference title's `latestVersion`, the one
- * `describePatchAnswer` already names a subject for — so the list holds at most one line,
- * attributed rather than floated.
+ * **Every line names its own title, and ONE line is built.** The answer has a subject and
+ * the columns sit next to each other as if it did not (#311/#313): on Wireshark 4.2.0,
+ * "Wireshark" names 4.6.8 and "Wireshark 4.2" names 4.2.14, so a difference read as the
+ * other title's is true of neither. Attribution is therefore built and pinned, and the
+ * return is a LIST so a second entry can join it. But only the REFERENCE title's target is
+ * built: the row stores one `vuln_target_key`, so 4.2.14 — the update most admins would
+ * actually push — gets no line and is not mentioned. #482's done-when asks for a line per
+ * named title and this is short of it; the missing half needs a stored answer per
+ * `app_catalog_title_matches` row, which `installed_apps` has no path to and which is a
+ * new stored shape rather than a clause here. **Unruled cut, raised on the PR.** Until it
+ * is ruled, no name in this file or its test may claim the rule is implemented.
  *
  * **Nothing at all unless the build itself is `covered`.** §4g's three renderings do not
  * collapse and this is not a fourth state: `off` and `unknown_app` carry no counts, so
@@ -40,6 +44,9 @@ export function describeUpdate(
 ): UpdateLine[] {
   if (vuln.assessment !== "covered" || !update) return [];
   const latest = describePatchAnswer(answer)?.latest ?? null;
+  // One entry, and the list shape is not a promise that there will be more: the second
+  // line — the in-branch target, "Wireshark 4.2" → 4.2.14 — is not built, and the
+  // docstring above says whose ruling that is waiting on.
   return [
     {
       version: update.version,

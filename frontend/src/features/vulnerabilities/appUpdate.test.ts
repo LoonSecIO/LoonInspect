@@ -34,12 +34,11 @@ const COVERED: AppVulnerability = {
 const EXACT: AppUpdate = { version: "4.6.8", assessment: "covered", closes: 17, opens: 94, net: null };
 
 describe("describeUpdate", () => {
-  it("prints one line per named title, attributed to the title that names the release", () => {
+  it("attributes the line to the title that names the release, never floating it between titles", () => {
     // The whole reason the line carries a subject: 4.6.8 is "Wireshark"'s latest, not
     // "Wireshark 4.2"'s (which is 4.2.14), and a difference floated between the two is
     // true of neither (#311/#313).
     const lines = describeUpdate(COVERED, EXACT, WIRESHARK);
-    expect(lines).toHaveLength(1);
     expect(lines[0]).toEqual({
       version: "4.6.8",
       subject: { id: "612", name: "Wireshark" },
@@ -48,6 +47,20 @@ describe("describeUpdate", () => {
       opens: 94,
       net: null
     });
+  });
+
+  it("builds only the reference title's target — the in-branch release gets no line, and #482 asked for one", () => {
+    // NOT the rule #482 states ("one line per named title"): this pins the CUT, under a
+    // name that says so, because a test called for the rule while asserting its absence is
+    // worse than the absence. Wireshark 4.2.0 matches two titles; "Wireshark 4.2" names
+    // 4.2.14, which is the update most admins would actually push, and nothing here says a
+    // word about it. Building it needs a stored answer per `app_catalog_title_matches` row
+    // — a new shape, not a clause — so the cut is raised on the PR rather than smuggled.
+    // When the second target lands, this test is replaced by the rule's own.
+    const lines = describeUpdate(COVERED, EXACT, WIRESHARK);
+    expect(lines).toHaveLength(1);
+    expect(lines.map((line) => line.version)).toEqual(["4.6.8"]);
+    expect(lines.some((line) => line.subject?.id === "5F6")).toBe(false);
   });
 
   it("names no subject when one title matched — it is the subject, and the titles line says so", () => {
@@ -71,7 +84,7 @@ describe("describeUpdate", () => {
     expect(lines[0].version).toBe("4.6.8");
   });
 
-  it("carries the capped pair as net and never as an exact count", () => {
+  it("carries a capped side as net and never as an exact count", () => {
     const lines = describeUpdate(COVERED, { version: "4.6.8", assessment: "covered", closes: null, opens: null, net: -77 }, WIRESHARK);
     expect(lines[0].net).toBe(-77);
     expect(lines[0].closes).toBeNull();

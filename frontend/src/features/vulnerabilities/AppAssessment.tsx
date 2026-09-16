@@ -34,8 +34,8 @@ function Label({ color, children }: { color: string | null; children: ReactNode 
  * Three renderings and no fourth. **Exact** is a difference of the two id lists and says
  * both directions, because the newer build can carry more — the lab found Wireshark 4.2.0
  * at 17 findings and 4.6.0 at 94, so "closes 17" alone is the half that sells an upgrade.
- * **Net** is what a capped pair gets: the difference of the uncapped totals, labelled so
- * nobody reads it as exact, with the hint saying why. A target the corpus holds no row for
+ * **Net** is what a capped list on EITHER side gets: the difference of the uncapped totals,
+ * labelled so nobody reads it as exact, with the hint saying why. A target the corpus holds no row for
  * reads in §4g's own words — outside the corpus, warning colour, carrying the date — never
  * in green, never a zero, never "closes all 17". Nothing beside a row may upgrade a
  * missing one (R-D), and that is as true of the target as of the build.
