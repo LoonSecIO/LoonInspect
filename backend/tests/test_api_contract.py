@@ -23,6 +23,7 @@ PAGED_LISTS = [
     "/api/catalog",
     "/api/jamf-patch/titles",
     "/api/runs",
+    "/api/posture",
 ]
 SEARCHED_LISTS = ["/api/devices", "/api/changes", "/api/applications", "/api/catalog", "/api/jamf-patch/titles"]
 RETIRED_NAMES = {"limit", "offset", "search"}
