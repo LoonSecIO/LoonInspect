@@ -692,6 +692,11 @@ docker compose logs app --since 30m | grep -E 'webhooks/jamf|jamf webhook'
    Jamf Pro refused the sign-in, or could not be reached. Nothing waits on the renewal —
    it backs off, doubling up to ten minutes, and each read signs in as it needs to — so
    the fix is the same as for anything on `/api/oauth/token` above: **Test connection**.
+6. **`"status_code": 503`**, beside `jamf webhook refused: the stored credential is not a
+   credential` → the callback was right, and this connection cannot ask Jamf Pro anything:
+   what is stored against it is not a credential, so nothing was sent. The log line carries
+   the whole sentence and names the connection; §12 is the walk-through, and the webhook's
+   own failed run says the same thing.
 
 **L.** Callbacks that Jamf Pro sends never produce a request line while the address, the
 network and the webhook's event are right; or a refusal's `reason` names a state the
@@ -1065,6 +1070,19 @@ every destination. Every refusal is still recorded on its run, and the run whose
 withheld says so in its own log (*run.failed not emitted: this connection already reported
 this failure today*). So the silence after the first alarm is not the problem clearing:
 the connection's row is what says whether it is fixed.
+
+**Webhooks refuse in the same words, and each refusal is its own run.** While the
+credential is unusable, a connection answers `503` to every callback it would have acted
+on — a `ComputerAdded` or `ComputerInventoryCompleted` naming a computer. A
+`ComputerCheckIn` is still dropped by name before any of this and still answers `200`, so
+a fleet-wide check-in webhook is not what you are looking at.
+`docker compose logs app --since 30m | grep 'jamf webhook refused'` carries the same
+sentence, and `GET /api/runs?trigger=webhook&pageSize=5` lists the failed runs behind it —
+one per callback Jamf Pro sent or retried, which is why the run list can fill faster than
+the ten-minute tick would explain. It is the same failure on a second path, not a second
+failure: the ration is counted over the connection's failed runs whatever wrote them, so
+one `run.failed` a day covers ticks, webhooks and any mix of the two, and the **Save** in
+step 2 ends both at once.
 
 **P.** The connection's row says nothing and `credentialProblem` is `null`, while its runs
 keep failing with this sentence — or the sentence stays on the row after a successful Save
