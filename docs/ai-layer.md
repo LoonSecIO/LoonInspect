@@ -371,7 +371,7 @@ gate: the card stays clickable whatever was detected" stood until the AWS pod of
 Desktop" card with no Mac anywhere near it, and filled the OpenAI-compatible card with the Mac host's
 Ollama pair — a `host.docker.internal` base URL directly under the page's own evidence line saying that
 name does not resolve. Kyle ruled it: the Apple card *"should not show in AWS"*. It is now **offered**
-only where `runtime == docker_desktop and host_os == macos` **and** `alias_resolves`; the full match
+where `runtime == docker_desktop and host_os == macos` **and** `alias_resolves`, or (#474) where this server already holds a saved `apple_fm` configuration; the full match
 alone never proved its default could work, because `fm serve` runs on the Mac and the alias is how the
 container gets to it. Where the alias is dead no card fills a `host.docker.internal` default at all — the
 OpenAI-compatible card starts empty, with a line saying why — and wherever the Apple card is withheld the
@@ -381,6 +381,26 @@ from a missing feature ([`diagnosability.md`](diagnosability.md) rule 1,
 `frontend/src/features/ai/offered.ts`, table-tested over the six readings this endpoint returns. Nothing
 moved in the backend: a call naming `apple_fm` is judged, gated and logged like any other, and the card's
 condition widens when the reserved `remote_mac` reach lands.
+
+**Amended 2026-09-16 (#474, Kyle's R9 default): offered where its default works, *or* where this server
+holds settings for it.** The gate above is the right cut for a card nobody has configured and the wrong
+one for a card this server already has an `apple_fm` row for — a database restored from a Mac onto a pod,
+a container moved to another runtime. The backend judges a saved card wherever it runs, so the Changes
+Prompt bar kept dialling it and kept naming it ("shown (uses Apple Foundation Models via Docker
+Desktop)"), while the one page with a **Remove** button no longer showed the card to press it on; the way
+out was a `curl -X DELETE` in [`troubleshooting.md`](troubleshooting.md) §14, which is the "no step 3"
+smell — the operator who needs it is the least likely to run it. `offeredProviders` now takes the saved
+map beside the reading and keeps the Apple card wherever `apple_fm` is saved. Offering a saved card
+claims nothing about whether it can work here: the card carries one sentence saying it is on screen
+because this server holds settings for it, that `fm serve` runs on a Mac this container cannot reach, and
+that Remove takes those settings off — and the detection panel's "the one for this setup" line follows
+the reading alone, so the two are never both on screen — and so do the Apple setup link and the
+unsupported-runtime line, which are for setting the card up rather than for taking it off. The cost of the
+widening is that the row of cards now moves under the page: the **Remove** that clears a saved-only card
+takes that card off the row on the same answer, so the page moves to a card still on it
+(`cardAfterOffer`) instead of sitting on one no radio can light, over that card's editor, with **Save**
+pointed at the row just removed. `providerDefaults` and the withheld-card sentence are untouched: a saved
+card comes back as saved, never as defaults, and the panel keeps the unsaved case.
 
 **Build (one agent turn, one PR).**
 
