@@ -1023,6 +1023,7 @@ export const de: Translations = {
     syncNever: "Nie synchronisiert",
     syncDeviceCount: (n: number) => `${n} Gerät${n === 1 ? "" : "e"}`,
     syncError: "Die Synchronisierung konnte nicht gestartet werden.",
+    credentialProblem: "Problem mit den Anmeldedaten:",
     reEmit: "Inventar erneut senden",
     reEmitTitle: "Das aktuelle Inventar jedes Geräts erneut senden?",
     reEmitHelp: (devices: number, megabytes: number) =>

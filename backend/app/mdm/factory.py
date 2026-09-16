@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 
-from app.mdm.credentials import JamfCredentials
+from pydantic import ValidationError
+
+from app.mdm.credentials import CredentialUnusable, JamfCredentials, decoded_credentials, refusal_sentence
 from app.mdm.jamf.client import JamfClient
 from app.mdm.jamf.sign_in import SIGN_INS, HeldSignIn
 from app.models.schema import MdmConnection
+from app.schemas.payload import MdmProvider
 
 
 def get_mdm_client(connection: MdmConnection) -> JamfClient:
@@ -30,8 +32,19 @@ def keep_sign_in(connection: MdmConnection) -> None:
 
 
 def _credentials(connection: MdmConnection) -> JamfCredentials:
-    raw = json.loads(connection.credentials_encrypted) if connection.credentials_encrypted else {}
-    return JamfCredentials.model_validate(raw)
+    """The connection's credential, or a refusal in words.
+
+    This is the construction site #393 was filed against: a connection whose stored
+    credentials decrypt to `{}` reached `model_validate` and the sweep recorded pydantic's
+    two-paragraph report — a diagnostic that needs source code to read — into `runs.error`,
+    on every tick, for as long as the connection stayed active. The validation still
+    happens here, at the top of every sweep before a single request leaves; what changed is
+    what comes out of it.
+    """
+    try:
+        return JamfCredentials.model_validate(decoded_credentials(connection.credentials_encrypted))
+    except ValidationError as exc:
+        raise CredentialUnusable(refusal_sentence(MdmProvider(connection.provider), connection.name, exc)) from exc
 
 
 def _builder(connection: MdmConnection, credentials: JamfCredentials) -> Callable[[HeldSignIn | None], JamfClient]:

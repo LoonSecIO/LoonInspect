@@ -224,7 +224,18 @@ export function ConnectionsPage() {
             )}
             {connections.map((connection) => (
               <tr key={connection.id} className="border-b last:border-0">
-                <td className="px-4 py-2">{connection.name}</td>
+                <td className="px-4 py-2">
+                  {connection.name}
+                  {/* The sweep's refusal, on the row that can fix it (#393). The sentence is
+                      the server's — it names this connection and the missing field — so only
+                      the label around it is translated. */}
+                  {connection.credentialProblem && (
+                    <p className="mt-1 max-w-md text-xs text-destructive">
+                      <span className="font-medium">{t.settings.credentialProblem}</span>{" "}
+                      {connection.credentialProblem}
+                    </p>
+                  )}
+                </td>
                 <td className="px-4 py-2">{connection.provider}</td>
                 <td className="px-4 py-2">{connection.baseUrl}</td>
                 <td className="px-4 py-2">{connection.patchManagementProvider}</td>

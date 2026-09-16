@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from typing import ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
 
 from app.schemas.payload import MdmProvider
@@ -26,6 +27,93 @@ class JamfCredentials(_CredentialsBase):
 CREDENTIAL_SCHEMAS: dict[MdmProvider, type[_CredentialsBase]] = {
     MdmProvider.jamf: JamfCredentials,
 }
+
+
+# What the operator calls the thing they have to re-enter. Never the class name: the
+# sentence built below is read on Settings > Connections and in a failed run's error, by
+# someone who has never seen `JamfCredentials` and must not have to (#393,
+# docs/diagnosability.md rule 3).
+CREDENTIAL_NOUN: dict[MdmProvider, str] = {
+    MdmProvider.jamf: "Jamf API client",
+}
+
+
+class CredentialUnusable(RuntimeError):
+    """What the column holds is not a credential — the neighbour of #374's wrong
+    ENCRYPTION_KEY, where the key is right and the payload opened under it is `{}` or
+    missing a field.
+
+    Carries the sentence `refusal_sentence` builds and nothing else. A RuntimeError so a
+    caller that already handles one keeps working; a type of its own so the sweep can
+    refuse in words instead of letting pydantic's report reach `runs.error`.
+    """
+
+
+def decoded_credentials(stored: str | None) -> object:
+    """The credential column as Python, without raising.
+
+    `{}` for an empty column and `None` for a value that is not JSON at all — both of
+    which fail validation below and become a sentence, which is the point: every way the
+    column can hold a non-credential has to end at the same refusal, not at a decoder
+    traceback in a different frame.
+    """
+    if not stored:
+        return {}
+    try:
+        return json.loads(stored)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
+
+
+def _names(aliases: list[str], conjunction: str) -> str:
+    unique = list(dict.fromkeys(aliases))
+    if len(unique) == 1:
+        return unique[0]
+    return f"{', '.join(unique[:-1])} {conjunction} {unique[-1]}"
+
+
+def refusal_sentence(provider: MdmProvider, connection_name: str, exc: ValidationError) -> str:
+    """One sentence: what to do, for which connection, and which field is wrong.
+
+    Field names in the spelling the connection form shows (`clientId`), because the
+    reader's next action is to find that box and fill it. Never a value — `hide_input_in_errors`
+    keeps pydantic from quoting the stored set, and nothing here re-introduces it.
+    """
+    missing: list[str] = []
+    unusable: list[str] = []
+    for error in exc.errors():
+        loc = error.get("loc") or ()
+        if not loc:
+            # A payload that is not an object at all: no field to name, so the clause
+            # below says so rather than inventing one.
+            continue
+        (missing if error.get("type") == "missing" else unusable).append(to_camel(str(loc[0])))
+    clauses = []
+    if missing:
+        clauses.append(f"has no {_names(missing, 'or')}")
+    if unusable:
+        clauses.append(f"cannot use its {_names(unusable, 'and')}")
+    problem = " and ".join(clauses) or "is not a set of credential fields"
+    noun = CREDENTIAL_NOUN.get(provider, "credential")
+    return f'Re-enter the {noun} for "{connection_name}" on Settings › Connections — the stored credential {problem}.'
+
+
+def credential_problem(provider: MdmProvider, connection_name: str, stored: str | None) -> str | None:
+    """The same sentence as reportable state: what is wrong with this connection's stored
+    credential, or None when nothing is.
+
+    Computed at read time from the decrypted column rather than kept in one, because a
+    column would have to be filled by a migration that decrypts — and a migration that
+    decrypts is a migration that fails on a restore without its key (`88a6f0da5041`).
+    """
+    schema = CREDENTIAL_SCHEMAS.get(provider)
+    if schema is None:
+        return None
+    try:
+        schema.model_validate(decoded_credentials(stored))
+    except ValidationError as exc:
+        return refusal_sentence(provider, connection_name, exc)
+    return None
 
 
 def field_specs(schema: type[_CredentialsBase]) -> list[dict[str, object]]:

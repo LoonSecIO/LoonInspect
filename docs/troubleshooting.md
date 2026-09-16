@@ -910,3 +910,58 @@ question about changes is called *Invalid question* however it is worded. Report
 question, the page's URL (it carries the filters), the provider, model and time from the answer's
 last line, the *Corrections* list, and `docker compose logs app --since 30m`.
 
+
+## 12. "Every sweep for one connection fails at once, and the run says the stored credential has no clientId"
+
+One connection's sweeps fail, every one of them, minutes apart, from the first tick after
+you noticed. Every other connection is fine. The run's error is a sentence, not a
+traceback:
+
+> Re-enter the Jamf API client for "t1 jamf" on Settings › Connections — the stored
+> credential has no clientId or clientSecret.
+
+That is the whole diagnosis. What is stored against the connection is not a credential:
+the row has a credential column, it decrypts, and what comes out of it is an empty object
+or one missing a field. Nothing was asked of Jamf — the sweep refuses before it opens a
+connection, so this is not a Jamf outage, a privilege problem or a network problem, and
+nothing is retried.
+
+Read it against the two neighbours it is easy to confuse:
+
+- **Section 4, step 3** is the *key* being wrong: every connection and every destination is
+  unreadable at once, the page says *Stored credentials cannot be read…*, and the answer is
+  to restore `ENCRYPTION_KEY`. Here the key is right; one connection's payload is not a
+  credential.
+- **Section 1** is a credential Jamf rejects — a real `clientId` and `clientSecret` that the
+  API refuses (`401`, `invalid_client`). Here there is nothing to reject.
+
+**The fix.**
+
+1. **Settings › Connections.** The connection's row carries the same sentence under its
+   name, so you do not have to open a run to find which connection it is. A role without
+   Settings asks the API the same question:
+   `curl -s -b jar $BASE/api/mdm/connections` — each connection carries
+   `credentialProblem`, which is `null` on every healthy one.
+2. **Edit the connection and fill in Client ID and Client Secret**, then **Save**. Both, not
+   one: the sentence names the fields that are missing, and a secret cannot be recovered
+   from Jamf — mint a new API client in Jamf Pro (Settings › System › API roles and clients)
+   if the original is gone.
+3. **Sync now.** The row's sentence disappears on the next page load — it is computed from
+   the stored credential on every read, not remembered — and the run should reach `running`.
+4. **Or turn the connection off.** A leftover or half-built connection that nobody meant to
+   keep is fixed by clearing **Active** on it, or by deleting it. An inactive connection is
+   not swept and not ticked.
+
+**Why your alert only fired once.** A destination subscribed to `run.failed` gets **at most
+one of these events per connection per UTC day**, on purpose: before that rule the outbox
+carried one identical alarm per tick — 144 a day for a single unattended connection — to
+every destination. Every refusal is still recorded on its run, and the run whose alarm was
+withheld says so in its own log (*run.failed not emitted: this connection already reported
+this failure today*). So the silence after the first alarm is not the problem clearing:
+the connection's row is what says whether it is fixed.
+
+**P.** The connection's row says nothing and `credentialProblem` is `null`, while its runs
+keep failing with this sentence — or the sentence stays on the row after a successful Save
+and a page reload. Report the connection's `id`, the row from
+`GET /api/mdm/connections`, the failing run's `jobID` and error, and
+`docker compose logs app --since 30m`.

@@ -1114,6 +1114,9 @@ export const en = {
     syncNever: "Never synced",
     syncDeviceCount: (n: number) => `${n} device${n === 1 ? "" : "s"}`,
     syncError: "Could not start the sync.",
+    // #393: the label only. The sentence after it is the server's, names this connection
+    // and the field that is missing, and is the same text the failed run carries.
+    credentialProblem: "Credential problem:",
     // The re-emit (#356): the half of an outage a redrive cannot reach. The help names
     // the volume before the click, because the button's cost is the fleet's inventory.
     reEmit: "Re-emit inventory",

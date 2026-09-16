@@ -1024,6 +1024,40 @@ async def beat(db: AsyncSession, run: Run) -> None:
     await db.commit()
 
 
+async def _already_alarmed_today(
+    db: AsyncSession, *, connection_id: int, run_id: uuid.UUID, error: str | None, now: datetime
+) -> bool:
+    """Has another run on this connection already closed with this exact error today?
+
+    The whole of #393's rate limit, and it needs no table, no column and no memory: the
+    `runs` rows are already the record of what failed and when, retention keeps them for
+    thirty days, and two processes racing to refuse the same connection both see whichever
+    one committed first. The current run is excluded by id — `finish` commits its own row
+    before this is asked.
+
+    Deliberately an exact match on the error text rather than a category: the sentence
+    names the connection and the field, so "the same failure" and "the same sentence" are
+    the same thing, and a connection that starts failing for a *different* reason gets its
+    own alarm the same hour. UTC day, because every other boundary in the run object is UTC.
+    """
+    if not error:
+        return False
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    seen = await db.execute(
+        select(Run.id)
+        .where(
+            Run.mdm_connection_id == connection_id,
+            Run.id != run_id,
+            Run.status == STATUS_FAILED,
+            Run.error == error,
+            Run.finished_at >= day_start,
+            Run.finished_at < day_start + timedelta(days=1),
+        )
+        .limit(1)
+    )
+    return seen.first() is not None
+
+
 async def finish(
     db: AsyncSession,
     run: Run,
@@ -1035,6 +1069,7 @@ async def finish(
     devices_failed: int = 0,
     observations: dict | None = None,
     error: str | None = None,
+    standing: bool = False,
 ) -> bool:
     """Close the run, releasing the lock. True when this call is what closed it.
 
@@ -1061,6 +1096,17 @@ async def finish(
     run is exactly as silent as a failed sweep. Neither fires for a refused finish — the
     reclaim's verdict stands, and the reclaim already emitted its own run.failed when it
     wrote that verdict, so a second event here would double-count one failure.
+
+    **`standing` is the tick storm's off switch (#393).** A failure that will recur
+    identically until a person edits the connection — a stored credential that is not a
+    credential — is worth one alarm, not one per tick: the connection's sweeps failed all
+    night at ten-minute intervals and the outbox carried every one of them to every
+    destination. The run row still records the refusal every time, and so does the run
+    log; only the event is rationed, to at most one per connection per UTC day. The
+    mechanism is a SELECT against `runs` itself — "did another run on this connection
+    close with this same error today?" — because the previous failed run is already
+    durable state that outlives a restart, and the alternatives (a new table, a column, a
+    process-memory latch) each cost more than the thing they suppress.
 
     Both are enqueued AFTER the release commits, not with it (`_emit_after_release`).
     They used to ride the same transaction as the status flip, which paired them
@@ -1129,7 +1175,20 @@ async def finish(
             )
 
         await _emit_after_release(db, row.id, RUN_COMPLETED_EVENT, emit_completed)
-    if not ok:
+    rationed = (
+        not ok
+        and standing
+        and await _already_alarmed_today(db, connection_id=row.mdm_connection_id, run_id=row.id, error=error, now=now)
+    )
+    if rationed:
+        await log(
+            db,
+            run,
+            "info",
+            "run.failed not emitted: this connection already reported this failure today",
+            error=error,
+        )
+    elif not ok:
 
         async def emit_failed() -> None:
             await _enqueue_run_failed(
