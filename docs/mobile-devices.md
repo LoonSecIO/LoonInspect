@@ -183,8 +183,33 @@ Everything in §1 is read from this codebase. The mobile-device API shapes in §
 vocabulary, and the RSQL field that separates the OSes —
 are from the published Jamf reference and have **not** been read against
 the maintainer's own tenant. The demo unit has no mobile device enrolled, so there is nothing
-to read yet; enrolling one and capturing the record is [#238](https://github.com/LoonSecIO/LoonInspect/issues/238). Until that fixture
+to read yet; enrolling them and capturing the record is [#238](https://github.com/LoonSecIO/LoonInspect/issues/238). Until that fixture
 exists, every mobile shape in this file is an assumption — which is not the standard the
 computer contract was built to
 (`tests/fixtures/jamf/computer_inventory_detail_real.json`), and the section registry should
 not be estimated against it.
+
+### How to capture
+
+`backend/scripts/capture_jamf_mobile_device.py` is every part of #238 except the enrolment.
+**Enrol two devices**: one iPad **supervised** and, if a second is cheap, one **unsupervised**.
+§4 is the reason — one device cannot show what supervision removes — and the script reads each
+record's own `supervised` flag to choose the file it lands in, so nothing is labelled by hand.
+
+```bash
+export JAMF_URL=https://<tenant>.jamfcloud.com JAMF_CLIENT_ID=… JAMF_CLIENT_SECRET=…
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/repo -w /repo \
+  -e JAMF_URL -e JAMF_CLIENT_ID -e JAMF_CLIENT_SECRET -e HOME=/tmp -e UV_CACHE_DIR=/tmp/uv \
+  ghcr.io/astral-sh/uv:python3.12-alpine \
+  uv run --script backend/scripts/capture_jamf_mobile_device.py   # a host with uv: just this line
+```
+
+Into `backend/tests/fixtures/jamf/` it writes `mobile_device_detail_real.json` and
+`mobile_device_detail_unsupervised_real.json` (every section of each), the list page
+`mobile_devices_list_real.json` (where §2's OS field can be checked),
+`mobile_inventory_collection_settings_real.json`, `mobile_smart_group_real.json`, and the
+`mobile_privileges.txt` ledger. **Run it twice**: first with an API Role holding nothing, so
+each 403 names the privilege it wants; tick those, run again, and the ledger marks `needed` on
+every read that went 403 → 200 — evidence `app.mdm.jamf.privileges` can carry rather than a
+name copied from a document. Paths are unverified, so each read tries candidates and records
+which answered; credentials come from the environment only; read each file before committing.
