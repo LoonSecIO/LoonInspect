@@ -94,19 +94,18 @@ Two judgements need more than one section and live in the derivation rather than
 engine: the system-app collapse above, and **three-cause membership** — a group joined or
 left carries `criteriaChanged`: whether the group's own definition span moved since this
 device was last observed (criteria moved) or not (device drifted). Jamf cannot say; the
-ledger keeps both histories. The third cause is the group itself: with an open
-`subject_departures` row ([`jamf-observations.md`](jamf-observations.md) §8) it was deleted, and
-the row says `objectDeparted: true`, `departedAt`, and `criteriaChanged: null` — the question
-refused rather than answered wrongly. It is asked first, because a deleted group's definition
-span is never closed and the two-cause question would find it unmoved and report *device
-drifted* on every member of a group that no longer exists. A deleted extension-attribute
-definition's rows carry the same two keys and no `criteriaChanged`.
+ledger keeps both histories. The third cause is the group itself: with an open `subject_departures`
+row ([`jamf-observations.md`](jamf-observations.md) §8) it was deleted, and the row says
+`objectDeparted: true`, `departedAt` and `criteriaChanged: null` — the question refused rather than
+answered wrongly. Asked first, because a deleted group's definition span is never closed and the
+two-cause question would report *device drifted* on every member of a group that no longer exists.
+A deleted extension-attribute definition's rows carry the two keys and no `criteriaChanged`.
 
-**The fleet-level event is not minted here.** What a SIEM receives when an *object* is
-gone — one event about a group, with no device in it — is #179's and does not exist yet;
-nothing invents a name for it and `KNOWN_EVENT_TYPES` is untouched. It will hang off the
-departure the census already writes (`app.observations.departure.reconcile_census`, which
-holds the object and the instant), not off these per-device rows: they are its detail.
+**The fleet-level event is not minted here.** What a SIEM receives when an *object* is gone — one
+event about a group, with no device in it — is #179's and does not exist yet; nothing invents a name
+for it and `KNOWN_EVENT_TYPES` is untouched. It will hang off the departure the census already writes
+(`app.observations.departure.reconcile_census`, which holds the object and the instant), not off
+these per-device rows: they are its detail.
 
 Every `device_changes` **row** carries the correlation triple (serial, Jamf URL, Jamf id),
 the UDID, both span ids, the device's own `observed_at`, the trigger, and the policy
@@ -301,7 +300,7 @@ stays a `high` field change, on by default.
 | --- | --- | --- | --- | --- |
 | `application` — Applications | name, bundleId, path | normal (on) | version (normal), cfBundleShortVersionString (normal), cfBundleVersion (normal), macAppStore (low) | Installs, removals and version changes are the inventory's core; Apple system apps collapse into the OS update unless logged individually. |
 | `extension_attribute` — Extension attributes | definitionId | normal (on) | values (normal) | Admins wrote these for exactly the facts they care about; the quarantine already removes the churny ones. |
-| `group_membership` — Smart group memberships | groupId | normal (on) | smartGroup (low) | Joining and leaving drives policy scoping; each event says whether the criteria moved or the device drifted. |
+| `group_membership` — Smart group memberships | groupId | normal (on) | smartGroup (low) | Joining and leaving drives policy scoping; each event says whether the criteria moved, the device drifted, or the group itself was deleted. |
 | `configuration_profile` — Configuration profiles | profileIdentifier | high (on) | uuid (high), id (low), removable (normal), username (low) | A removed profile is configuration drift; a new one is new configuration. |
 | `local_user_account` — Local accounts | uid, username | high (on) | admin (high), fileVault2Enabled (high), passwordMinLength (high), passwordMaxAge (high), passwordMinComplexCharacters (high), passwordHistoryDepth (high), passwordRequireAlphanumeric (high), userAccountType (normal), computerAzureActiveDirectoryId (normal), userAzureActiveDirectoryId (normal), azureActiveDirectoryId (normal), fullName (low), homeDirectory (low), userGuid (low) | New or removed accounts, and admin or FileVault flips, are privilege changes. |
 | `certificate` — Certificates | sha1Fingerprint | normal (on) | identity (low), username (low) | New identities and CAs on a device matter; expiry is a query-time finding, not a change. |
@@ -315,6 +314,9 @@ stays a `high` field change, on by default.
 - Changing a default level, adding a field, or changing an identity is a new
   `CHANGE_POLICY_VERSION`; overrides stay keyed by `section.field` / `kind.field` and
   carry over.
+- A *derivation* collapse is not one of those: no §4 rule changes level, default or identity —
+  the derivation regrades rows it folds into another event (system apps into the OS update; a
+  deleted object's per-device rows, #182), and `v0` still describes what judged them.
 - A contract field the policy does not name yet is treated as `normal`, so a new
   contract version cannot silently drop changes.
 - Rows record the policy version they were derived under.

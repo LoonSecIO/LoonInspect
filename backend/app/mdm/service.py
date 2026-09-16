@@ -544,18 +544,17 @@ async def _reconcile_departures(
 async def _log_collapsed_departures(db: AsyncSession, run: Run, collapsed: Mapping[tuple[str, str], CollapsedDeparture]) -> None:
     """One line per departed object, not one per device (#182).
 
-    At the default preset this line is the echo's *whole* trace: the rows it counts are
-    graded `low`, low is off, so they were never written. It names what is gone, what the
-    deletion cost, whether any of it was kept, and the next check either way — the
-    operator who finds the Changes page quiet gets the answer on the run they watched.
-    """
+    At the default preset this line is the echo's *whole* trace: the rows it counts are graded
+    `low`, low is off, so they were never written. It names what is gone, what the deletion cost,
+    whether any of it was kept, and the next check either way."""
     for entry in sorted(collapsed.values(), key=lambda e: (e.object_kind, e.object_id)):
         tail = (
             "They are on Devices › Changes under Level: Low; the page prints no sentence for this cause, so "
             "GET /api/changes?minLevel=low is where objectDeparted reads."
             if entry.recorded
-            else "Level low is off under this instance's change-tracking preset, so they were not recorded; "
-            "Settings › Change tracking → Everything keeps them from the next sweep on."
+            else "Level low is off under this instance's change-tracking preset, so they were not recorded; the memberships "
+            "are already gone, so no later sweep derives them and nothing shows them now. Settings › Change tracking → "
+            "Everything keeps the rows of the next deletion, not of this one."
         )
         await run_log(
             db,

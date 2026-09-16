@@ -1062,21 +1062,23 @@ and one change per Mac would bury the sweep under tens of thousands of rows desc
 click — so they collapse to level **low**, which the default *High + normal* preset does not
 record at all, and the sweep writes one line per deleted object instead ([`change-log.md`](change-log.md) §1).
 
-1. **Find the line.** Open the connection's run panel (or `GET /api/runs/{jobId}/log`) for
-   the first sweep after the deletion: *smart group "…" is gone; its N per-device removal
-   rows collapsed into this line at level low*, then a sentence saying whether those rows
-   were recorded. `objectKind`, `objectId`, `rows`, `departedAt` and `rowsRecorded` sit beside
-   it, and a deleted extension attribute reads the same with `extension attribute`.
-2. **Keep the rows next time.** A preset governs new changes only: the rows this deletion
-   would have produced were never written, and nothing shows them after the fact. Settings ›
-   Change tracking → **Everything** records them from the next sweep onward, at **Level:
-   Low** on Devices › Changes — where the row names the group but not why, because the page
-   prints no sentence for this cause. `objectDeparted` reads in `GET /api/changes?minLevel=low`.
-3. **No line at all.** Then nothing departed. The census that finds a deletion runs at the start
-   of the sweep, and a refused or collapsed one departs nobody and says so on the run — *census
-   returned nothing* or *census collapsed against the population*. That is the circuit breaker:
-   the API role lost **Read Smart Computer Groups**. Grant it and re-run. A line whose
-   `objectId` names a group still in Jamf is reportable state **S**.
+1. **Find the line.** Open the connection's run panel (or `GET /api/runs/{jobId}/log`) for the
+   first sweep after the deletion: *smart group "…" is gone; its N per-device removal rows
+   collapsed into this line at level low*, then a sentence saying whether those rows were
+   recorded. `objectKind`, `objectId`, `rows`, `departedAt` and `rowsRecorded` sit beside it; a
+   deleted extension attribute reads the same with `extension attribute`.
+2. **Keep the rows next time — only next time.** The rows this deletion would have produced were
+   never written and nothing shows them after the fact: the membership is already gone, so no later
+   sweep derives its removal again. Settings › Change tracking → **Everything** keeps the *next*
+   deletion's rows, at **Level: Low** on Devices › Changes — where the row names the group but not
+   why, because the page prints no sentence for this cause. `objectDeparted` reads in `GET /api/changes?minLevel=low`.
+3. **No line at all.** First rule out the three gates that drop the removal before the collapse sees
+   it — this instance at *High only*, smart-group (or extension-attribute) changes switched off under
+   Settings › Change tracking, or that group muted: each writes no rows **and** no line. Otherwise
+   nothing departed. The census that finds a deletion runs at the start of the sweep, and a refused or
+   collapsed one departs nobody and says so — *census returned nothing* or *census collapsed against
+   the population*: the circuit breaker for an API role that lost **Read Smart Computer Groups**.
+   Grant it and re-run. A line whose `objectId` names a group still in Jamf is reportable state **S**.
 
 **S.** A collapse line for an object that still exists in Jamf. Report the line, the
 `jobID`, and the build from Settings › Support.
