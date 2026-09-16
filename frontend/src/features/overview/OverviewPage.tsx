@@ -82,7 +82,10 @@ export function OverviewPage() {
   const canReadConnections = useHasPermission(PERMISSIONS.CONNECTION_READ);
   const canReadDestinations = useHasPermission(PERMISSIONS.DESTINATION_READ);
 
-  const [loading, setLoading] = useState(true);
+  // On until the first answer lands. A session without CONNECTION_READ asks for nothing,
+  // so nothing would ever turn it off — it starts off for that session rather than relying
+  // on the branch below returning before the loading line is ever reached.
+  const [loading, setLoading] = useState(canReadConnections);
   const [failedToLoad, setFailedToLoad] = useState(false);
   const [connected, setConnected] = useState(false);
   const [statuses, setStatuses] = useState<MdmSyncStatus[]>([]);
@@ -136,8 +139,7 @@ export function OverviewPage() {
   const refresh = useCallback(
     (quiet = false): Promise<void> => {
       // Nothing to ask for without CONNECTION_READ — the endpoints are gated server-side,
-      // and the page returns its own line for that case above the loading line, so there
-      // is no spinner left running to switch off here.
+      // and `loading` starts off for that session, so there is no spinner to switch off.
       if (!canReadConnections) return Promise.resolve();
       return Promise.all([
         listConnections(),

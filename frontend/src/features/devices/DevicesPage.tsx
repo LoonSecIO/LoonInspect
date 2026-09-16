@@ -67,10 +67,13 @@ export function DevicesPage() {
   // the render that moved the filters (React's own "adjusting state when a prop changes",
   // the move the Changes page's filter boxes already make), rather than from the effect
   // below: from an effect it lands a render late, so the old rows paint one frame looking
-  // settled.
-  const [asked, setAsked] = useState(filters);
-  if (asked !== filters) {
-    setAsked(filters);
+  // settled. Keyed on everything the effect re-runs for — the locale beside the filters —
+  // because a guard on less than that is a re-fetch that clears nothing: switch language
+  // after a failed load and the new rows arrive under the old failure's line (#150 in
+  // reverse, success reading as failure).
+  const [asked, setAsked] = useState({ filters, t });
+  if (asked.filters !== filters || asked.t !== t) {
+    setAsked({ filters, t });
     setLoading(true);
     setError(null);
   }
