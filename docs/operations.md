@@ -682,18 +682,19 @@ what follows was exercised as two ticks against one database
 
 `app/serve.py` runs one uvicorn process and passes no `--workers`, so a second process
 means a second container against the same database. **`SCHEDULER_ENABLED`** (default
-`true`) is the decision to make before you start one; it is in the first line the
-container logs, as `"scheduler_enabled": true`.
+`true`) is the decision to make before you start one, and each container says which way
+it was answered on its `starting` line — `docker compose logs app | grep scheduler_enabled`.
 
 `SCHEDULER_ENABLED=false` makes a process **web-only**. It still serves the UI and the
 API, and the work a person starts still runs in the process that served the request:
 Sync now, Run now, Re-emit inventory, a destination's **Test** button, **Redrive**, and
-**Send now** on Settings › Data sharing. What it stops is everything on a clock —
-collections coming due, the outbox's fan-out and delivery, the nightly purges, the hourly
-Jamf Patch catalog sync, the sign-in cache renewals, the daily data-sharing exchange. So
-what a web-only process *queues* — a re-emit's events, a redriven dead letter — is
-delivered by the process that still has the scheduler, not by it. With no such process
-running, the queue simply grows.
+**Send now** on Settings › Data sharing. What it stops is everything on a clock — the
+eight jobs in `app/main.py`: collections coming due, the outbox's fan-out and delivery,
+the purges (sessions hourly, the outbox and the run log nightly), the hourly Jamf Patch
+catalog sync, the sign-in cache renewals, the daily data-sharing exchange. So what a
+web-only process *queues* — a re-emit's events, a redriven dead letter — is delivered by
+the process that still has the scheduler, not by it; with no such process running, the
+queue simply grows.
 
 **Leaving it `true` everywhere is safe for the outbox, and only for the outbox.** Each
 tenant's outbox tick takes a per-tenant advisory lock for the length of the tick, and a
