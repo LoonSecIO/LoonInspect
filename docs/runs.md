@@ -203,8 +203,9 @@ Casing is camelCase throughout with the token `ID` uppercased on LoonInspect's o
 (#188). A vendor's native key keeps the vendor's spelling — Jamf writes `bundleId`, so
 the wire does too.
 
-The law covers **all five families** — `device.inventory`, `device.inventory.changed`,
-`device.change`, `run.completed`, `run.failed` — and for a year it was applied to one. The consequence,
+The law covers **all six families** — `device.inventory`, `device.inventory.changed`,
+`device.change`, `run.completed`, `run.failed` and, since #179 (2026-09-16), the departure
+pair `subject.departure` / `subject.returned` — and for a year it was applied to one. The consequence,
 seen on real indexed data, was one index, one sourcetype, and one run UUID arriving under
 three names (`deviceMeta.jobID`, `job_id`, `run_id`) with no single predicate able to
 select LoonInspect events by type. Three decisions closed that:
@@ -225,7 +226,7 @@ select LoonInspect events by type. Three decisions closed that:
   so the two id spaces are separated by the field Splunk routes on. Joining across
   sourcetypes on the id alone still mixes them, and this sentence is the warning.
 
-`jobID` is **top-level on all five families**, and on the three device families —
+`jobID` is **top-level on all six families**, and on the three device families —
 `device.inventory`, `device.inventory.changed`, `device.change` — it is carried a second
 time inside `deviceMeta`, where Splunk's JSON extraction names it `deviceMeta.jobID`. The
 cross-family join is therefore a bare `jobID=$id$` — not
@@ -256,7 +257,7 @@ event's own `occurredAt`, `host` from the hostname, and `source` from the Jamf i
 (scheme dropped, non-default port kept — `jamf.corp.local:8443`). They are indexed
 metadata, so they cost no licence volume.
 
-**`sourcetype` is set on four families, on Splunk HEC deliveries only**, decided by
+**`sourcetype` is set on five families, on Splunk HEC deliveries only**, decided by
 `app/core/wire_vocabulary.py` and stamped in `app/core/outbox.py`; every other destination
 type gets the canonical event with no sourcetype at all. The one exception is the fanned-out
 snapshot, where since [#306](https://github.com/LoonSecIO/LoonInspect/issues/306) the string
@@ -266,6 +267,10 @@ fan-out" below). The strings are ruled in
 [`splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md) §2 and the stanzas they imply are
 in [`splunk-setup.md`](splunk-setup.md) §6.
 
+- `subject.departure` and `subject.returned` — one string for both, `loon:departure`
+  ([#179](https://github.com/LoonSecIO/LoonInspect/issues/179), 2026-09-16). `event=`
+  separates the two types at search time; the object subjects emit today and the Mac tail
+  is the follow-up.
 - `device.change` — its entity's string, `loon:jamf:mac:<wrapper>:change`, fifteen in all
   ([#243](https://github.com/LoonSecIO/LoonInspect/issues/243), stamped by
   [#223](https://github.com/LoonSecIO/LoonInspect/issues/223)). It went first because it was

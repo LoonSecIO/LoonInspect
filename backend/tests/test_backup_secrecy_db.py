@@ -155,11 +155,12 @@ async def test_the_stored_bytes_are_fernet_tokens_this_key_can_read(stored: None
     row = json.loads(await _row_as_text("mdm_connections", "vvq connection"))
     token = row["credentials_encrypted"]
 
-    assert token.startswith("gAAAAA"), "not a Fernet token: the column is storing something else"
-    assert json.loads(Fernet(get_encryption_key()).decrypt(token.encode()))["clientSecret"] == (CLIENT_SECRET)
+    key_id, _, sealed = token.partition(":")
+    assert (key_id, sealed[:6]) == ("k1", "gAAAAA"), "not a k1 Fernet envelope: the column is storing something else"
+    assert json.loads(Fernet(get_encryption_key()).decrypt(sealed.encode()))["clientSecret"] == (CLIENT_SECRET)
 
     with pytest.raises(InvalidToken):
-        Fernet(Fernet.generate_key()).decrypt(token.encode())
+        Fernet(Fernet.generate_key()).decrypt(sealed.encode())
 
 
 async def test_a_saved_ai_key_is_a_fernet_token_this_key_can_read(stored: None) -> None:
@@ -170,5 +171,5 @@ async def test_a_saved_ai_key_is_a_fernet_token_this_key_can_read(stored: None) 
     from app.core.crypto import get_encryption_key
 
     token = json.loads(await _row_as_text("ai_provider_configs", "anthropic", "provider"))["api_key_encrypted"]
-    assert token.startswith("gAAAAA"), "not a Fernet token: the column is storing something else"
-    assert Fernet(get_encryption_key()).decrypt(token.encode()).decode() == AI_KEY
+    assert token.startswith("k1:gAAAAA"), "not a k1 Fernet envelope: the column is storing something else"
+    assert Fernet(get_encryption_key()).decrypt(token.removeprefix("k1:").encode()).decode() == AI_KEY

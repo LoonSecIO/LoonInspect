@@ -92,6 +92,68 @@ class SendExchangeOut(BaseModel):
     settings: DataSharingOut
 
 
+class ExclusionCandidateAppOut(BaseModel):
+    """One title no public source on this container knows (#483). `reason` is
+    `no_public_source` today — the only one there is — and a client that does not know a
+    value shows the row untagged rather than hiding it."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    name: str
+    bundle_id: str
+    device_count: int
+    reason: str
+
+
+class ExclusionCandidateGroupOut(BaseModel):
+    """Unknown titles under one reverse-DNS prefix. `suggestion` is null where the prefix
+    earns none — a lone unknown title, or a prefix some title a public source DOES know
+    already uses — and `excluded` means a glob in the box already removes them all."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    prefix: str
+    suggestion: str | None
+    excluded: bool
+    app_count: int
+    device_count: int
+    apps: list[ExclusionCandidateAppOut]
+
+
+class ExclusionGlobCountOut(BaseModel):
+    """What one glob matches, counted with the exchange's own `_excluded` at the grain the
+    exchange drops: `app_count` is titles, and one bundle ID under two display names is two
+    of them. `source` is `typed` (in the box) or `suggested` (proposed here, nothing saved).
+    `case_misses` are bundle IDs it would match if either side were lower-cased — the quiet
+    ones — listed to a handful, with `more_case_misses` for the rest rather than silence."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    glob: str
+    source: str
+    app_count: int
+    device_count: int
+    case_misses: list[str]
+    more_case_misses: int
+
+
+class ExclusionCandidatesOut(BaseModel):
+    """`more_groups` is what the screenful left out and `more_globs` what the ceiling did not
+    count, so neither a truncated list nor an uncounted pattern can read as the whole answer.
+    The two title counts are what "unknown" was decided against: with no catalog synced only
+    the library can make a title known, and the page names the missing source rather than
+    calling the whole fleet public."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    groups: list[ExclusionCandidateGroupOut]
+    more_groups: int
+    globs: list[ExclusionGlobCountOut]
+    more_globs: int
+    catalog_titles: int
+    library_titles: int
+
+
 class DataSharingUpdate(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 

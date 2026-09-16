@@ -3,7 +3,9 @@
 The ruling (#135, 2026-08-31): a smart group vanishing is not an edge case — large orgs
 delete them constantly, because a group is how a phased rollout is expressed and a finished
 rollout is a group nobody needs — and extension-attribute definitions go the same way. This
-is **detection and state**. The wire format is #179's, and nothing here emits.
+is **detection and state**. The wire format is #179's and lives in
+`app.observations.departure_events`, which reads the rows this module returns; nothing here
+emits.
 
 Three rules, in the order they are applied:
 
@@ -106,24 +108,33 @@ def gone_for_good(connection_id: Any, external_id: Any, *, at: datetime) -> Colu
 
 @dataclass(frozen=True)
 class CensusVerdict:
-    """What one census did to one subject kind under one connection."""
+    """What one census did to one subject kind under one connection.
+
+    `departed` and `returned` are the ROWS, not tallies (#179): the emitter needs the subject
+    each row names, and it enqueues inside the caller's transaction — before the commit, so the
+    event and the row land together — so a count here would mean re-reading what this function
+    just wrote. The run log still reads numbers; `as_log` takes their lengths.
+    """
 
     subject_kind: str
     observed: int
     population: int
-    departed: int
-    returned: int
+    departed: tuple[SubjectDeparture, ...] = ()
+    returned: tuple[SubjectDeparture, ...] = ()
     skipped: str | None = None
-    # How many of `returned` came back under a *new* id (#475) — not derivable afterwards.
-    returned_by_serial: int = 0
+
+    @property
+    def returned_by_serial(self) -> int:
+        """How many of `returned` came back under a *new* id (#475): the rows say so themselves."""
+        return sum(1 for row in self.returned if row.matched_by == MATCHED_BY_SERIAL)
 
     def as_log(self) -> dict[str, object]:
         return {
             "subjectKind": self.subject_kind,
             "observed": self.observed,
             "population": self.population,
-            "departed": self.departed,
-            "returned": self.returned,
+            "departed": len(self.departed),
+            "returned": len(self.returned),
             "returnedBySerial": self.returned_by_serial,
             "skipped": self.skipped,
         }
@@ -207,14 +218,14 @@ async def reconcile_census(
     population = current_ids - set(gone_rows)
 
     if observed_ids is None:
-        return CensusVerdict(subject_kind, 0, len(population), 0, 0, SKIP_NOT_READABLE)
+        return CensusVerdict(subject_kind, 0, len(population), (), (), SKIP_NOT_READABLE)
     observed = set(observed_ids)
 
     # Returns first: a subject the census named is present, whatever else it says — including an id a
     # serial match retired. Jamf handing it back says that retirement was wrong (a reused id, a
     # duplicate record, one serial on two records), so the row becomes the plain return it should have
     # been rather than holding a Mac that is right there out of the fleet for good.
-    returned = 0
+    returned: list[SubjectDeparture] = []
     absent = []
     for gone_id, row in gone_rows.items():
         if gone_id not in observed:
@@ -223,7 +234,7 @@ async def reconcile_census(
             continue
         row.subject_id, row.prior_jamf_pro_id = gone_id, None
         row.returned_at, row.matched_by = at, MATCHED_BY_JAMF_ID
-        returned += 1
+        returned.append(row)
 
     # Then by serial and UDID (#475), before the breaker for the reason the id match is: a Mac the
     # census *did* name, under any id, is present. The close re-keys the row to the id it came back
@@ -235,14 +246,14 @@ async def reconcile_census(
         row = gone_rows[departed_id]
         row.subject_id, row.prior_jamf_pro_id = came_back_as, departed_id
         row.returned_at, row.matched_by = at, MATCHED_BY_SERIAL
-        returned += 1
+        returned.append(row)
 
     if not observed and population:
         logger.warning(
             "census returned nothing; departing nobody",
             extra={"connection_id": connection_id, "subject_kind": subject_kind, "population": len(population)},
         )
-        return CensusVerdict(subject_kind, 0, len(population), 0, returned, SKIP_EMPTY, len(by_serial))
+        return CensusVerdict(subject_kind, 0, len(population), (), tuple(returned), SKIP_EMPTY)
     if len(population) >= MIN_POPULATION_FOR_COLLAPSE and len(observed) < COLLAPSE_RATIO * len(population):
         logger.warning(
             "census collapsed against the population; departing nobody",
@@ -253,21 +264,20 @@ async def reconcile_census(
                 "population": len(population),
             },
         )
-        return CensusVerdict(subject_kind, len(observed), len(population), 0, returned, SKIP_COLLAPSED, len(by_serial))
+        return CensusVerdict(subject_kind, len(observed), len(population), (), tuple(returned), SKIP_COLLAPSED)
 
-    departed = 0
+    departed: list[SubjectDeparture] = []
     for subject_id in sorted(population - observed):
-        db.add(
-            SubjectDeparture(
-                mdm_connection_id=connection_id,
-                subject_kind=subject_kind,
-                subject_id=subject_id,
-                departed_at=at,
-                census_run_id=census_run_id,
-            )
+        row = SubjectDeparture(
+            mdm_connection_id=connection_id,
+            subject_kind=subject_kind,
+            subject_id=subject_id,
+            departed_at=at,
+            census_run_id=census_run_id,
         )
-        departed += 1
-    return CensusVerdict(subject_kind, len(observed), len(population), departed, returned, None, len(by_serial))
+        db.add(row)
+        departed.append(row)
+    return CensusVerdict(subject_kind, len(observed), len(population), tuple(departed), tuple(returned))
 
 
 async def open_departures(db: AsyncSession, *, subject_kind: str) -> dict[tuple[int, str], datetime]:

@@ -27,6 +27,12 @@ Every PR must pass the same gates `main` enforces:
   superuser or the row-level-security tests prove nothing.
 - **Frontend** — `npx tsc -b --noEmit`, `npx eslint .`, `npm test` (vitest, node
   environment, over the pure modules), `npm run build` (Node 22, `npm ci`).
+  `react-hooks/set-state-in-effect` is an error, and it follows a call in an effect body
+  into a function declared in the component body: every `setState` that call can reach is
+  reported at the call site, including ones that run after an `await`, so making the
+  loader `async` does not satisfy the rule. Load data as a promise chain the effect
+  starts, with every `setState` in a `.then` / `.catch` / `.finally` callback — the shape
+  in `frontend/src/features/tokens/ApiTokensPage.tsx` (#15).
 - **Image** — the multi-stage Docker build must complete.
 
 Lockfiles are part of the contract: `uv.lock` and `package-lock.json` must match

@@ -62,7 +62,25 @@ prefix, which invalidates every vector below and every count already summed agai
 `app.full` is the prevalence key (the exact tuple). The split exists because
 vulnerability rules are ranges while keys are points, and because reveal thresholds
 on full tuples would starve on fast-moving versions (a five-customer app with five
-versions never crosses any per-tuple threshold).
+versions never crosses any per-tuple threshold). The fourth field is `None` on every
+Jamf app today, and not because the string does not exist — Jamf Pro 11.31 reports
+`cfBundleShortVersionString` and `cfBundleVersion` beside `version`, and both are content
+in the observation digest — but because `app.mdm.jamf.client.normalize_computer` pins
+`short_version=None` on every app it builds, and the catalog index hashes that same
+`None` on the other side of the join. That pin is what makes the two agree. When a source
+is read that genuinely carries both strings, **the prevalence key may take the real short
+version** and become the two-string tuple the vector table below already shows: counting
+the exact tuple is what `app.full` is for. **The corpus key never moves with it.** Jamf's
+patch catalog and the NVD speak only the short version, so the key the vulnerability join
+is built on stays `(name, bundleId, shortVersion, None)` — the short version in the
+version field, nothing in the fourth — for as long as those are its sources, because a
+fourth field on the container's side of that join has nothing to meet on the other. The
+pin is internal, never wire, and the test in `backend/tests/test_inventory_snapshot.py`
+that asserts it is there to fail the day it moves rather than let the two sides diverge
+in silence. [`vulnerabilities.md`](vulnerabilities.md) §4f says the same thing from the
+join's side, and names the failure if it is ignored: `unknown_app` for every app on every
+device, with nothing to say why.
+Ruled 2026-09-16 ([#383](https://github.com/LoonSecIO/LoonInspect/issues/383)).
 
 `app.bundle` is the same build as `app.full` **without its name**, and it exists because
 both of the others hash one. An administrator who renames an app — a rebranded Self
@@ -196,6 +214,20 @@ and joins locally ([`vulnerabilities.md`](vulnerabilities.md), and the section b
   server's own rules. Both, deliberately: until INSPECT-0174 the filter covered only
   snapshots, so an excluded app still had its name revealed once the server asked
   about the title. Anything added here that sends app data must apply `_excluded`.
+- **The box says what it matches and what the fleet has** (#483). Under the textarea,
+  `GET /api/system/data-sharing/exclusion-candidates` reports, for every pattern typed or
+  proposed, how many apps on how many Macs it removes — counted with that same `_excluded`,
+  at the grain the exchange drops at, so the page and the wire cannot disagree. An *app*
+  there is a title, and one bundle ID under two display names is two of them, because
+  `key_title` hashes the name. It also names any bundle ID the pattern would match but for
+  case, because `fnmatch` is case-sensitive here and `com.acme.*` quietly misses
+  `com.Acme.Deploy`. Beside it, the titles no public source on this container knows (no
+  Jamf Patch title matches any of their builds, and the loaded epoch names none of them),
+  grouped by reverse-DNS prefix with device counts, and a `com.acme.*` proposed where
+  several of them share a prefix no known title uses. No model is involved and nothing
+  leaves the box: unknown is a shortlist, never a claim that a title is the organization's,
+  since Jamf's ~1,550 titles leave most of any long tail unmatched. Accepting a proposal is
+  the audited `PUT` a typed glob takes, and the audit record cannot tell the two apart.
 
 ### AI inference (INSPECT-0112)
 
@@ -317,8 +349,27 @@ Semantics the server may rely on:
   the key and must treat those as **unknown platform**, never as `macos` by default. Rows
   already summed cloud-side cannot be given a platform after the fact, which is the entire
   reason the key ships before the first exchange rather than after.
-  `hardware` is `[]` from every container shipped so far: the `devices` columns the `hw` key
-  needs do not exist yet, so the row above is the shape it will take, not one being sent.
+- **The `os` and `hw` keys carry real fields, and did not always.** The shapes above have
+  not moved — `os` has always been (platform, os_version, os_build) and `hw` has always been
+  (model_identifier, cpu_arch) — but until the container release that closed
+  [#481](https://github.com/LoonSecIO/LoonInspect/issues/481) the `devices` table held none
+  of the three, so every `os` key hashed the build as the empty string and `hardware` was
+  `[]` from every container shipped. Two consequences the server has to hold:
+  an `os` key for the same Mac **changes** across that boundary, once, because a missing
+  field and a real one are different hashes by the canonicalization rule above — the same
+  argument `platform` shipped before the first exchange for, which is why this one ships
+  before the corpus cutover rather than after; and a container that has upgraded but not
+  yet re-read a device still sends that device's old build-less key, because the columns
+  are populated from inventory reads and nothing is backfilled. A fleet mid-restamp
+  therefore submits some `os` rows keyed on a build and some not, and a `hardware` list
+  shorter than its device count. Both are the shape an older container produces by having
+  no columns at all, which is the point: one case for the server, not two.
+- **A `hardware` row is absent, never a key over nothing.** A device with no model
+  identifier produces no row — `hw` identifies a machine by its model alone, so hashing the
+  empty string would collapse every unidentified Mac onto one digest and count them as one
+  machine (the same rule `app.bundle` states above). A null `cpu_arch` beside a real model
+  is different: it participates as the empty string like any other missing field, because
+  it narrows a model rather than identifying one.
 - **An `apps` row's `bundle` is absent, never null.** `bundle` is the `app.bundle` key
   (above) and it is omitted from the row whenever there is not one: an app with no bundle
   identifier has no such identity, and a row written before the container grew the column

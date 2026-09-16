@@ -597,3 +597,37 @@ def test_one_device_derives_one_event_id_across_calls_in_one_run(run: RunContext
     """Derived, not minted: a retry within the run recomputes the same id."""
     assert _device_meta(_device())["eventID"] == _device_meta(_device())["eventID"]
     assert _device_meta(_device())["eventID"] == pull_event_id(_RUN_ID, "macos", "1743")
+
+
+# --- the third producer: a departure, and the one return that is not symmetric ---------
+
+
+def test_a_departure_carries_no_event_id_and_a_return_carries_the_pull_that_read_it(run: RunContext) -> None:
+    """#179's 4.2, and the one asymmetry 4.6 rules.
+
+    `eventID` is `uuid5(run, platform ␟ jamfProID)` and names *a pull of that subject*. A
+    departure is derived from an ABSENCE — there is no pull — so minting one would fabricate
+    a correlation key for a read that never happened, and the key is withheld on either
+    subject. A return is the exception, and only for a Mac: the Mac was genuinely read, so
+    the id it is handed is real rather than invented. An object's return coincides with a
+    census of every object, not with a pull of that one, so it is handed none.
+
+    Judged beside `_change_device_meta` because the two blocks must degrade the same way:
+    this is the third producer of #189's block, and a third rule would be a third vocabulary.
+    """
+    from app.observations.departure_events import _departure_device_meta
+
+    departed = _departure_device_meta("101", event_id=None)
+    assert set(departed) == {"jobID", "trigger", "connectionID", "shortDate", "jamfProID", "schemaVersion"}
+    assert "eventID" not in departed and "hostName" not in departed and "serialNumber" not in departed
+    assert departed["jamfProID"] == "101"
+    assert set(departed) < set(SHIPPED_ELEVEN), "a departure mints no name the block does not already have"
+
+    # The same block for an object's return: still no eventID, because nothing pulled it.
+    assert _departure_device_meta("101", event_id=None) == departed
+
+    # And the Mac's return, handed the id of the pull that read it — the same key the
+    # inventory family and `device.change` agree on, never a second spelling.
+    returned = _departure_device_meta("1743", event_id=pull_event_id(run.id, "macos", "1743"))
+    assert returned["eventID"] == pull_event_id(run.id, "macos", "1743")
+    assert set(returned) <= set(SHIPPED_ELEVEN)

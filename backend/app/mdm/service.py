@@ -76,6 +76,7 @@ from app.models.schema import (
     Run,
 )
 from app.observations.departure import DEPARTURE_TAIL_DAYS, SKIP_COLLAPSED, gone_for_good, reconcile_census, tail_counts
+from app.observations.departure_events import emit_census_events
 from app.observations.ledger import (
     RecordResult,
     current_span,
@@ -526,7 +527,11 @@ async def _reconcile_departures(
     definitions: Iterable[str] | None,
 ) -> None:
     """The departure derivation for both object kinds the catalog pass took a census of
-    (#181), logged on the run. Commits, so a departure lands with the census that found it."""
+    (#181), logged on the run, and the events it produces (#179). Commits, so a departure
+    lands with the census that found it — and so does its event: `emit_census_events`
+    enqueues into this session BEFORE the commit below, which is the whole reason the
+    verdict carries the rows. A census that departed a group and then failed to commit has
+    told no SIEM that it did."""
     at = datetime.now(UTC)
     for subject_kind, observed in ((SUBJECT_COMPUTER_GROUP, groups), (SUBJECT_EXTENSION_ATTRIBUTE_DEFINITION, definitions)):
         verdict = await reconcile_census(
@@ -537,9 +542,10 @@ async def _reconcile_departures(
             at=at,
             census_run_id=run.id if run is not None else None,
         )
+        emitted = await emit_census_events(db, connection=connection, verdict=verdict, at=at)
         if run is not None:
             level = "warning" if verdict.skipped else "info"
-            await run_log(db, run, level, "departures reconciled", **verdict.as_log())
+            await run_log(db, run, level, "departures reconciled", **verdict.as_log(), eventsEnqueued=emitted)
     await db.commit()
 
 
@@ -624,6 +630,12 @@ async def _reconcile_device_census(
         census_run_id=run.id if run is not None else None,
         observed_lineage=observed_lineage,
     )
+    # No `emit_census_events` here yet, and the absence is deliberate rather than forgotten:
+    # a Mac's departure is not one event but a tail — `noticeDay` 1..7, one per UTC day, and a
+    # guaranteed terminal `state: removed` that must fire even when the clock runs out without
+    # a clean census (#179, 4.5). That needs a producer this function does not have, so it is
+    # #179's follow-up; the object half above emits today. Until then `loon:departure` carries
+    # no `subjectKind: computer` event, which docs/troubleshooting.md §16 tells an operator.
     await db.commit()
     if run is None:
         return
@@ -637,9 +649,10 @@ async def _reconcile_device_census(
         line = f"device census refused: {why}; departing nobody — check the API Role's privileges and this run's errors"
     else:
         line = (
-            f"device census: {verdict.observed} observed, {verdict.departed} departed, {verdict.returned} returned "
-            f"({verdict.returned_by_serial} by serial, under a new Jamf id), {in_tail} in their seven-day tail, "
-            f"{left} left the fleet; {_MATCHED_BY_ID_AND_SERIAL if observed_lineage is not None else _MATCHED_BY_ID_ONLY}"
+            f"device census: {verdict.observed} observed, {len(verdict.departed)} departed, "
+            f"{len(verdict.returned)} returned ({verdict.returned_by_serial} by serial, under a new Jamf id), "
+            f"{in_tail} in their seven-day tail, {left} left the fleet; "
+            f"{_MATCHED_BY_ID_AND_SERIAL if observed_lineage is not None else _MATCHED_BY_ID_ONLY}"
         )
     await run_log(
         db,
@@ -1347,8 +1360,14 @@ async def process_sync(
         existing.last_inventory_at = device.last_inventory_at
     if device.observed("hardware"):
         existing.serial_number = device.serial_number
+        # #481. Under `hardware` and not beside the build, because that is the section
+        # they arrive in: a webhook collection scoped to applications must leave a Mac's
+        # model and architecture standing, exactly as it leaves the serial.
+        existing.model_identifier = device.model_identifier
+        existing.cpu_arch = device.cpu_arch
     if device.observed("operating_system"):
         existing.os_version = device.os_version
+        existing.os_build = device.os_build
     if device.observed("user_and_location"):
         existing.building_id = device.building_id
         existing.department_id = device.department_id

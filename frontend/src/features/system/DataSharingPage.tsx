@@ -5,11 +5,13 @@ import { PERMISSIONS } from "@/features/auth/types";
 import { useHasPermission } from "@/features/auth/store";
 import {
   getDataSharing,
+  getExclusionCandidates,
   previewExchange,
   resetSubmissionUuid,
   sendExchangeNow,
   updateDataSharing,
   type DataSharingSettings,
+  type ExclusionCandidates,
   type ShareLogEntry,
   type SharingTier
 } from "@/features/system/api";
@@ -34,16 +36,49 @@ export function DataSharingPage() {
   const [sending, setSending] = useState(false);
   const [sendRefusal, setSendRefusal] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // What the fleet carries that no public source here knows, and what each pattern
+  // matches (#483). Three states, never one: counting, counted, and could-not-count.
+  const [candidates, setCandidates] = useState<ExclusionCandidates | null>(null);
+  const [candidatesError, setCandidatesError] = useState<string | null>(null);
+
+  /** #150's rule, on this panel: a read that failed must not render as a build without a
+   *  panel, nor as a first load still in flight. It says so instead — and says it under
+   *  the textarea, because the panel is an aid to the box, never a reason to block it. */
+  function refreshCandidates(globs: string[]) {
+    setCandidatesError(null);
+    getExclusionCandidates(globs)
+      .then(setCandidates)
+      .catch(() => {
+        // The stale counts go with it. A count of the box as it was two edits ago is a
+        // wrong answer where "could not be loaded" is a true one.
+        setCandidates(null);
+        setCandidatesError(t.system.sharing.candidatesFailed);
+      });
+  }
 
   useEffect(() => {
     getDataSharing()
       .then((loaded) => {
         setSettings(loaded);
         setGlobsDraft(loaded.excludeGlobs.join("\n"));
+        refreshCandidates(loaded.excludeGlobs);
       })
       .catch(() => setError(t.system.sharing.loadFailed));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function draftGlobs(): string[] {
+    return globsDraft.split("\n").map((g) => g.trim()).filter(Boolean);
+  }
+
+  /** Accepting a suggestion is the same audited PUT a hand-typed glob takes — no second
+   *  write path, and the audit record cannot tell the two apart. */
+  async function addGlob(glob: string) {
+    const next = draftGlobs().includes(glob) ? draftGlobs() : [...draftGlobs(), glob];
+    setGlobsDraft(next.join("\n"));
+    await apply({ excludeGlobs: next });
+    refreshCandidates(next);
+  }
 
   async function apply(update: { tier?: SharingTier; excludeGlobs?: string[] }) {
     try {
@@ -296,11 +331,83 @@ export function DataSharingPage() {
           value={globsDraft}
           disabled={locked}
           onChange={(event) => setGlobsDraft(event.target.value)}
-          onBlur={() =>
-            void apply({ excludeGlobs: globsDraft.split("\n").map((g) => g.trim()).filter(Boolean) })
-          }
+          onBlur={() => {
+            void apply({ excludeGlobs: draftGlobs() });
+            refreshCandidates(draftGlobs());
+          }}
           placeholder="com.acme.*"
         />
+        {candidatesError && (
+          <p role="alert" className="border-t pt-3 text-xs text-amber-700 dark:text-amber-500">
+            {candidatesError}
+          </p>
+        )}
+        {!candidates && !candidatesError && (
+          <p className="border-t pt-3 text-xs text-muted-foreground">{t.system.sharing.candidatesLoading}</p>
+        )}
+        {candidates && (
+          <div className="space-y-3 border-t pt-3">
+            {candidates.globs.map((count) => (
+              <p key={count.glob} className="text-xs">
+                <code className="font-mono">{count.glob}</code>{" "}
+                {t.system.sharing.globMatches(count.appCount, count.deviceCount)}
+                {/* The case trap, said out loud: fnmatch is case-sensitive in the
+                    container, so com.acme.* leaves com.Acme.Deploy on the wire. */}
+                {count.caseMisses.map((bundleId) => (
+                  <span key={bundleId} className="block text-amber-700 dark:text-amber-500">
+                    {t.system.sharing.caseMiss(bundleId)}
+                  </span>
+                ))}
+                {count.moreCaseMisses > 0 && (
+                  <span className="block text-amber-700 dark:text-amber-500">
+                    {t.system.sharing.moreCaseMisses(count.moreCaseMisses)}
+                  </span>
+                )}
+              </p>
+            ))}
+            {candidates.moreGlobs > 0 && (
+              <p className="text-xs text-muted-foreground">{t.system.sharing.moreGlobs(candidates.moreGlobs)}</p>
+            )}
+            <h3 className="text-sm font-medium">{t.system.sharing.candidatesHeading}</h3>
+            <p className="text-xs text-muted-foreground">{t.system.sharing.candidatesHelp}</p>
+            {candidates.groups.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                {t.system.sharing.candidatesNone(candidates.catalogTitles, candidates.libraryTitles)}
+              </p>
+            ) : (
+              candidates.groups.map((group) => (
+                <div key={group.prefix} className="rounded-md border p-3 text-xs">
+                  <p className="flex flex-wrap items-center gap-2">
+                    <code className="font-mono text-sm">{group.prefix}</code>
+                    <span className="text-muted-foreground">
+                      {t.system.sharing.groupSummary(group.appCount, group.deviceCount)}
+                    </span>
+                    {group.excluded && (
+                      <span className="text-muted-foreground">{t.system.sharing.groupCovered}</span>
+                    )}
+                    {group.suggestion !== null && !group.excluded && !locked && (
+                      <Button type="button" size="sm" variant="outline" onClick={() => void addGlob(group.suggestion!)}>
+                        {t.system.sharing.addGlob(group.suggestion)}
+                      </Button>
+                    )}
+                  </p>
+                  <ul className="mt-2 space-y-1 text-muted-foreground">
+                    {/* Keyed on both: one bundle ID carries two titles wherever two display
+                        names share it, and that is a row each. */}
+                    {group.apps.map((app) => (
+                      <li key={`${app.bundleId}|${app.name}`}>
+                        {t.system.sharing.candidateRow(app.name, app.bundleId, app.deviceCount)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))
+            )}
+            {candidates.moreGroups > 0 && (
+              <p className="text-xs text-muted-foreground">{t.system.sharing.moreGroups(candidates.moreGroups)}</p>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="space-y-3 rounded-lg border bg-card p-6">
