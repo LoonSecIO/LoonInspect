@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PERMISSIONS } from "@/features/auth/types";
 import { useHasPermission } from "@/features/auth/store";
-import { listFeatureFlags } from "@/features/settings/api";
+import { useFeatureFlagStore } from "@/features/settings/flagStore";
 import { getDataSharing, updateDataSharing } from "@/features/system/api";
 import {
   deleteConfig,
@@ -20,12 +20,12 @@ import {
   type ProvidersResponse,
   type TestResponse
 } from "@/features/ai/api";
+import { localDefaultWithheld, offeredProviders, providerDefaults, type DetectionReading } from "@/features/ai/offered";
 import {
   byProvider,
   cardEffort,
   effortToSend,
   openingCard,
-  PROVIDER_ORDER,
   REMOVED,
   removeAnswer,
   removeLine,
@@ -49,9 +49,11 @@ const AI_FLAG = "ai_features";
 
 /**
  * Settings › AI: the test box (#319). One prompt to an endpoint the admin names,
- * the reply shown as it came back. Three cards, one per entry; the Apple card is
- * "via Docker Desktop" because the label names the pattern the operator is on, not
- * what powers the model. Every model call is made by the backend, never from here.
+ * the reply shown as it came back. One card per entry; the Apple card is "via Docker
+ * Desktop" because the label names the pattern the operator is on, not what powers the
+ * model, and since #404 it is offered only where that pattern holds — which cards are
+ * offered and what an unsaved one fills in are in `offered.ts`, with the reason. Every
+ * model call is made by the backend, never from here.
  *
  * Save keeps a card on this server for the Changes Prompt bar, judged the way Send
  * judges it; the key goes in encrypted and never comes back, so the field says one is
@@ -62,7 +64,9 @@ export function AISettingsPage() {
   const { t } = useLocale();
   const canWrite = useHasPermission(PERMISSIONS.SYSTEM_WRITE);
 
-  const [flagOn, setFlagOn] = useState<boolean | null>(null);
+  // The one flag state the whole session shares (#402). The route guard in front of this
+  // page reads the same value, so a page that renders at all has the flag on.
+  const flagOn = useFeatureFlagStore((state) => state.enabled.has(AI_FLAG));
   const [consent, setConsent] = useState<boolean | null>(null);
   const [providers, setProviders] = useState<ProvidersResponse | null>(null);
   const [detection, setDetection] = useState<HostDetection | null>(null);
@@ -155,28 +159,28 @@ export function AISettingsPage() {
     const openingRead = readSaved();
     // `readSaved` numbers its read as it starts it; this is the opening read's number.
     const openingReadNumber = savedReads.current;
-    Promise.all([listFeatureFlags(), getDataSharing(), getProviders(), getHostDetection(), openingRead])
-      .then(([flags, sharing, loadedProviders, loadedDetection]) => {
+    Promise.all([getDataSharing(), getProviders(), getHostDetection(), openingRead])
+      .then(([sharing, loadedProviders, loadedDetection]) => {
         if (cancelled) return;
-        setFlagOn(flags.some((f) => f.key === AI_FLAG && f.enabled));
         setConsent(sharing.aiInference);
         setProviders(loadedProviders);
         setDetection(loadedDetection);
-        // A saved card opens first — the first one is what the Prompt bar uses. With
-        // none saved (or none readable), the hint, never a gate: a full match pre-selects
-        // the Apple card; anything else starts on the documented default (Ollama, #28)
-        // and says what it saw. The newest read of the saved cards wins here as it does
-        // for the pills: a Remove asked for or made while the slowest of these reads was
-        // still out keeps its card and its confirm or its line (`openingCard`).
+        // A saved card opens first — the first one is what the Prompt bar uses — as long
+        // as this reading offers it. With none saved (or none readable), the hint: the
+        // Apple card where it is offered, else the documented default (Ollama, #28). The
+        // newest read of the saved cards wins here as it does for the pills: a Remove
+        // asked for or made while the slowest of these reads was still out keeps its card
+        // and its confirm or its line (`openingCard`). The reading is passed along rather
+        // than read from state, which this render has not seen yet.
         const opening = openingCard({
           newerRead: openingReadNumber !== savedReads.current,
           removeAsked: removeAsked.current,
           latest: savedLatest.current,
           current: providerLatest.current,
-          dockerDesktopOnMacos: loadedDetection.dockerDesktopOnMacos
+          offered: offeredProviders(loadedDetection)
         });
-        if (opening.clearLines) selectCard(loadedProviders, opening.card);
-        else fillCard(loadedProviders, opening.card);
+        if (opening.clearLines) selectCard(loadedProviders, loadedDetection, opening.card);
+        else fillCard(loadedProviders, loadedDetection, opening.card);
       })
       .catch(() => {
         if (!cancelled) setLoadError(t.ai.loadFailed);
@@ -187,25 +191,27 @@ export function AISettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // A saved card comes back as it was saved; an unsaved one starts from its defaults.
-  // Either way the key field starts empty — a saved key is never sent to the page — and
-  // the Apple card starts with no reasoning effort, whatever an older save carried.
-  function fillCard(loaded: ProvidersResponse, next: Provider) {
+  // A saved card comes back as it was saved; an unsaved one starts from its defaults, which
+  // the reading can withhold where they name something this container cannot resolve
+  // (`providerDefaults`). Either way the key field starts empty — a saved key is never sent
+  // to the page — and the Apple card starts with no reasoning effort, whatever a save carried.
+  function fillCard(loaded: ProvidersResponse, seen: DetectionReading, next: Provider) {
     const entry = loaded.entries.find((e) => e.provider === next);
     if (!entry) return false;
     const kept = savedLatest.current[next];
+    const defaults = providerDefaults(entry, seen);
     providerLatest.current = next;
     setProvider(next);
-    setBaseUrl(kept?.baseUrl ?? entry.baseUrl);
-    setModel(kept?.model ?? entry.model);
+    setBaseUrl(kept?.baseUrl ?? defaults.baseUrl);
+    setModel(kept?.model ?? defaults.model);
     setApiKey("");
     setReasoningEffort(cardEffort(next, kept, entry.reasoningEffort));
     return true;
   }
 
   // Picking a card starts it clean: the last card's reply and its lines go with it.
-  function selectCard(loaded: ProvidersResponse, next: Provider) {
-    if (!fillCard(loaded, next)) return;
+  function selectCard(loaded: ProvidersResponse, seen: DetectionReading, next: Provider) {
+    if (!fillCard(loaded, seen, next)) return;
     setResult(null);
     setSendError(null);
     setLoaded(null);
@@ -339,7 +345,17 @@ export function AISettingsPage() {
   }
 
   const entry = providers?.entries.find((e) => e.provider === provider);
-  const switchesOn = canWrite && flagOn === true && consent === true;
+  // The cards this reading offers, and whether the card on screen was left empty because
+  // its local default cannot work here — the Base URL field then says which and why.
+  const offered = offeredProviders(detection);
+  const appleOffered = offered.includes("apple_fm");
+  const noLocalDefault = entry !== undefined && localDefaultWithheld(entry, detection);
+  // The OpenAI-compatible card's help names Ollama on this Mac; where there is no Mac to
+  // reach, it names what is left instead of a default the card no longer fills in.
+  const openaiAway = providers?.entries.some((e) => e.provider === "openai_compatible" && localDefaultWithheld(e, detection));
+  const cardHelp = (candidate: Provider) =>
+    candidate === "openai_compatible" && openaiAway === true ? t.ai.openaiHelpNoLocalDefault : t.ai.providerHelp[candidate];
+  const switchesOn = canWrite && flagOn && consent === true;
   const canSend = switchesOn && !sending && baseUrl.trim() !== "" && model.trim() !== "" && prompt.trim() !== "";
   const canLoadModels = switchesOn && !loadingModels && baseUrl.trim() !== "";
   // What the endpoint said it serves, once asked; the card's own suggestions until then.
@@ -348,7 +364,7 @@ export function AISettingsPage() {
   // Saving needs the flag but not the consent: nothing leaves the pod on a save. The
   // server judges the URL and the key rule exactly as Send does.
   const stored = saved[provider];
-  const canSave = canWrite && flagOn === true && !savingConfig && baseUrl.trim() !== "" && model.trim() !== "";
+  const canSave = canWrite && flagOn && !savingConfig && baseUrl.trim() !== "" && model.trim() !== "";
   const canRemove = canWrite && !savingConfig && stored !== undefined;
   // A Save's or a Remove's line is about the card it was pressed on, and lands under
   // whichever card is showing; so the cards hold still until it has landed.
@@ -371,7 +387,7 @@ export function AISettingsPage() {
         <div className="rounded-lg border bg-card p-4">
           <p className="text-sm font-medium">{t.ai.flagLabel}</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            {flagOn === null ? "…" : flagOn ? t.ai.on : t.ai.off}
+            {flagOn ? t.ai.on : t.ai.off}
             {" · "}
             <Link className="underline" to="/settings/feature-flags">
               {t.ai.flagHelp}
@@ -406,10 +422,14 @@ export function AISettingsPage() {
               : detection.runtime === "docker_desktop"
                 ? t.ai.detectionDockerDesktop
                 : t.ai.detectionUnknown}
+            {appleOffered ? ` ${t.ai.detectionAppleCardOffered}` : ""}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             {t.ai.detectionEvidence}: {Object.values(detection.evidence).join(" · ")}
           </p>
+          {/* A withheld card must not read as a feature this build lost, so the panel that
+              decided it says so, under the evidence the sentence points at. */}
+          {!appleOffered && <p className="mt-2 text-sm text-muted-foreground">{t.ai.appleCardWithheld}</p>}
         </div>
       )}
 
@@ -426,8 +446,8 @@ export function AISettingsPage() {
             </p>
           ))}
         {configsError && <p className="text-sm text-destructive">{configsError}</p>}
-        <div className="grid gap-3 md:grid-cols-3">
-          {PROVIDER_ORDER.map((candidate) => (
+        <div className={`grid gap-3 ${offered.length > 2 ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
+          {offered.map((candidate) => (
             <label
               key={candidate}
               className={`flex flex-col gap-1 rounded-lg border p-4 ${cardsLocked ? "cursor-default" : "cursor-pointer"} ${
@@ -440,7 +460,7 @@ export function AISettingsPage() {
                 className="sr-only"
                 checked={provider === candidate}
                 disabled={cardsLocked}
-                onChange={() => providers && selectCard(providers, candidate)}
+                onChange={() => providers && selectCard(providers, detection, candidate)}
               />
               <span className="flex items-start justify-between gap-2">
                 <span className="text-sm font-medium">{t.ai.providerLabels[candidate]}</span>
@@ -450,20 +470,28 @@ export function AISettingsPage() {
                   </span>
                 )}
               </span>
-              <span className="text-xs text-muted-foreground">{t.ai.providerHelp[candidate]}</span>
+              <span className="text-xs text-muted-foreground">{cardHelp(candidate)}</span>
             </label>
           ))}
         </div>
-        <p className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
-          <ExternalLink href={APPLE_FM_GUIDE_URL}>{t.ai.appleGuide}</ExternalLink>
-          <span>{t.ai.otherRuntimes}</span>
-        </p>
+        {/* Both lines are the Apple card's — how to set it up, which runtimes it does not reach — so they go with it. */}
+        {appleOffered && (
+          <p className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
+            <ExternalLink href={APPLE_FM_GUIDE_URL}>{t.ai.appleGuide}</ExternalLink>
+            <span>{t.ai.otherRuntimes}</span>
+          </p>
+        )}
       </div>
 
       <div className="grid gap-4 rounded-lg border bg-card p-4 md:grid-cols-2">
         <label className="space-y-1 text-sm">
           <span className="font-medium">{t.ai.baseUrl}</span>
           <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} spellCheck={false} />
+          {/* Why the field is empty, while it is: the evidence line above said the alias
+              does not resolve, and this is what that costs the field. */}
+          {noLocalDefault && baseUrl.trim() === "" && (
+            <span className="block text-xs text-muted-foreground">{t.ai.baseUrlNoLocalDefault}</span>
+          )}
         </label>
         <div className="space-y-1 text-sm">
           <div className="flex items-center justify-between gap-2">

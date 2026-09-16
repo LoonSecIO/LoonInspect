@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
-from datetime import datetime
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from typing import TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,8 +18,10 @@ from app.core.vuln import VulnCorpus
 from app.core.vuln_answer import stored_corpus
 from app.core.vuln_library import earned_corpus
 from app.core.vuln_read import assess, corpus_as_of, today, update_line
+from app.mdm.jamf.contract import SUBJECT_COMPUTER
 from app.mdm.org_units import BUILDING, DEPARTMENT, OrgUnitNames, ids_for_name, load_names, name_for
 from app.models.schema import Device, DeviceExtensionAttribute, InstalledApp
+from app.observations.departure import gone_for_good, open_departures
 from app.observations.read import device_observation
 from app.schemas.catalog import CatalogTitleRef
 from app.schemas.devices import (
@@ -75,14 +77,16 @@ async def _org_unit_where(db: AsyncSession, kind: str, column: ColumnElement[str
     return or_(tuple_(Device.mdm_connection_id, column).in_(pairs), by_id)
 
 
-def _with_names(out: _DeviceOutT, device: Device, names: OrgUnitNames) -> _DeviceOutT:
-    """Stamp the resolved department and building onto a serialized device. One dict
-    lookup per device against a table of tens of rows, rather than a join per row."""
+def _stamped(out: _DeviceOutT, device: Device, names: OrgUnitNames, departed: Mapping[tuple[int, str], datetime]) -> _DeviceOutT:
+    """Stamp the per-request lookups onto a serialized device: the resolved department and building,
+    and the census that first did not name this Mac (#183). One dict lookup each against tables of
+    tens of rows, rather than a join per device row."""
     connection_id = device.mdm_connection_id
     return out.model_copy(
         update={
             "building": name_for(names, connection_id=connection_id, kind=BUILDING, external_id=device.building_id),
             "department": name_for(names, connection_id=connection_id, kind=DEPARTMENT, external_id=device.department_id),
+            "departed_at": departed.get((connection_id, device.external_id)) if connection_id is not None else None,
         }
     )
 
@@ -136,10 +140,19 @@ async def list_devices(
     app_hash: str | None = Query(default=None, alias="appHash", max_length=32),
     version_hash: str | None = Query(default=None, alias="versionHash", max_length=32),
     ea: list[str] | None = Query(default=None, description="Repeated key:value extension-attribute filters"),
+    include_departed: bool = Query(
+        default=False,
+        alias="includeDeparted",
+        description="Also list Macs that left the fleet — absent from every clean census for seven days.",
+    ),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200, alias="pageSize"),
 ) -> DeviceListResponse:
     stmt = select(Device)
+    if not include_departed:
+        # The default answer is the current fleet (#183), pushed into the WHERE clause rather
+        # than filtered after paging, so `total` and page 2 are about the same population.
+        stmt = stmt.where(~gone_for_good(Device.mdm_connection_id, Device.external_id, at=datetime.now(UTC)))
 
     if q:
         like = f"%{q}%"
@@ -222,8 +235,9 @@ async def list_devices(
         devices = result.scalars().all()
 
     names = await load_names(db)
+    departed = await open_departures(db, subject_kind=SUBJECT_COMPUTER)
     return DeviceListResponse(
-        items=[_with_names(DeviceOut.model_validate(device), device, names) for device in devices],
+        items=[_stamped(DeviceOut.model_validate(device), device, names, departed) for device in devices],
         total=total,
         page=page,
         page_size=page_size,
@@ -321,7 +335,8 @@ async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> Devi
     device = result.scalar_one_or_none()
     if device is None:
         raise HTTPException(status_code=404, detail="Device not found")
-    detail = _with_names(DeviceDetailOut.model_validate(device), device, await load_names(db))
+    departed = await open_departures(db, subject_kind=SUBJECT_COMPUTER)
+    detail = _stamped(DeviceDetailOut.model_validate(device), device, await load_names(db), departed)
     # One read of this tenant's data-sharing tier for the whole response, not one per app:
     # the corpus a tenant has earned is a per-tenant fact and the gate reads it here
     # (#248, docs/vulnerabilities.md §8).

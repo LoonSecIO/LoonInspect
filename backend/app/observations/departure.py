@@ -26,11 +26,13 @@ import logging
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.mdm.jamf.contract import SUBJECT_COMPUTER
 from app.models.schema import ObservationSpan, SubjectDeparture
 
 logger = logging.getLogger(__name__)
@@ -47,6 +49,40 @@ COLLAPSE_RATIO = 0.5
 SKIP_NOT_READABLE = "not_readable"
 SKIP_EMPTY = "empty_census"
 SKIP_COLLAPSED = "collapsed_census"
+
+# The seven-day tail (#183, from the same ruling): an open departure row IS the tail — no column,
+# no timer, because a row's age is the whole state and cannot drift from what it is derived from.
+DEPARTURE_TAIL_DAYS = 7
+DEPARTURE_TAIL = timedelta(days=DEPARTURE_TAIL_DAYS)
+
+
+def left_the_fleet(departed_at: datetime | ColumnElement[datetime], *, at: datetime) -> Any:
+    """Has this departure's tail run out by `at`? The ONE place the seven days are counted,
+    because "departed_at plus a week" spelled in two languages is two definitions waiting to
+    disagree about one Mac. Handed a `datetime` it answers a bool — the run log's tally; handed
+    `SubjectDeparture.departed_at`, the same question as a SQL predicate — the device list, the
+    fleet count. `returned_at IS NULL` is the caller's half, and every caller below filters on it.
+    """
+    return departed_at <= at - DEPARTURE_TAIL
+
+
+def gone_for_good(connection_id: Any, external_id: Any, *, at: datetime) -> ColumnElement[bool]:
+    """EXISTS: this Mac's tail has run out, so it is no longer part of the fleet. Correlated
+    rather than `IN` over a tuple subquery: a device whose `mdm_connection_id` is NULL — its
+    connection deleted out from under it (#185) — makes `NOT IN` answer NULL and would vanish
+    the row from every list. An orphan has nobody to be absent from.
+    """
+    return (
+        select(SubjectDeparture.id)
+        .where(
+            SubjectDeparture.mdm_connection_id == connection_id,
+            SubjectDeparture.subject_kind == SUBJECT_COMPUTER,
+            SubjectDeparture.subject_id == external_id,
+            SubjectDeparture.returned_at.is_(None),
+            left_the_fleet(SubjectDeparture.departed_at, at=at),
+        )
+        .exists()
+    )
 
 
 @dataclass(frozen=True)
@@ -175,3 +211,20 @@ async def open_departures(db: AsyncSession, *, subject_kind: str) -> dict[tuple[
         .all()
     )
     return {(row.mdm_connection_id, row.subject_id): row.departed_at for row in rows}
+
+
+async def tail_counts(db: AsyncSession, *, connection_id: int, subject_kind: str, at: datetime) -> tuple[int, int]:
+    """`(still in their tail, left the fleet)` among this connection's open departures — the two
+    halves of the census line on the run, counted through the same `left_the_fleet` the surfaces
+    ask, so the run and the list cannot disagree about one Mac."""
+    gone = func.count().filter(left_the_fleet(SubjectDeparture.departed_at, at=at))
+    open_rows, left = (
+        await db.execute(
+            select(func.count(), gone).where(
+                SubjectDeparture.mdm_connection_id == connection_id,
+                SubjectDeparture.subject_kind == subject_kind,
+                SubjectDeparture.returned_at.is_(None),
+            )
+        )
+    ).one()
+    return open_rows - left, left
