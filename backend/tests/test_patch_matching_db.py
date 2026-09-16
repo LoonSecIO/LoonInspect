@@ -169,7 +169,10 @@ async def test_a_second_platform_gets_its_own_rows_and_no_jamf_answer(
 async def test_the_coverage_endpoint_reads_the_recorders_own_definition(db, jamf: FakeJamf, connection, catalog_rows) -> None:
     """#109: the tile's two inputs come from `patch_pair_counts`, the function the nightly
     recorder writes `patch.pairs_total` / `patch.pairs_on_latest` from, so live and recorded
-    cannot drift."""
+    cannot drift. The departure cut is an instant the caller hands in (#476) — `now()` here,
+    `captured_at` in the recorder — which is one definition read twice, not two."""
+    from datetime import UTC, datetime
+
     from app.api.jamf_patch import coverage
     from app.core.posture import patch_pair_counts
     from app.mdm.service import sync_connection
@@ -177,7 +180,7 @@ async def test_the_coverage_endpoint_reads_the_recorders_own_definition(db, jamf
     await _forget_fixture_apps(db, jamf)
     assert (await sync_connection(db, connection)).ok
     served = await coverage(db=db)
-    total, on_latest = await patch_pair_counts(db)
+    total, on_latest = await patch_pair_counts(db, at=datetime.now(UTC))
     assert (served.pairs_total, served.pairs_on_latest) == (total, on_latest)
     assert served.pairs_total > 0 and 0 <= served.pairs_on_latest <= served.pairs_total
 

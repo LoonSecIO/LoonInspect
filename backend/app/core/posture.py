@@ -32,7 +32,7 @@ Four writing rules the reader of the table must be able to rely on:
   the percentage derives at render, so the inputs stay auditable forever.
 * **Every row names the population it counted.** `platform` is stamped from
   `CAPTURE_PLATFORM`, so a number is never read against a fleet it did not measure.
-  Seventeen active keys change meaning the night a sweep observes more than Macs, and
+  Eighteen active keys change meaning the night a sweep observes more than Macs, and
   immutable definitions leave no way to say so afterwards (#230).
 
 Recorder failure never fails the run: the caller (runs.finish) catches everything,
@@ -70,6 +70,7 @@ from app.models.schema import (
     Run,
     VulnLibraryEpoch,
 )
+from app.observations.departure import gone_for_good
 from app.schemas.payload import VULN_ASSESSMENT_COVERED
 
 logger = logging.getLogger(__name__)
@@ -109,7 +110,7 @@ VULN_KEYS: tuple[str, ...] = (
     "vuln.devices_affected",
 )
 
-# Definitions v1 — the 33 active keys, in the order their rows are written. The names
+# Definitions v1 — the 34 active keys, in the order their rows are written. The names
 # are the contract: a definition change mints a new key, so a name in this tuple means
 # exactly what docs/posture-snapshot.md says it means, forever.
 #
@@ -128,6 +129,8 @@ ACTIVE_KEYS: tuple[str, ...] = (
     "devices.stale_checkin_7d",
     "devices.unmanaged",
     "devices.stale_inventory_7d",
+    # Activated 2026-09-16 (#476) with the build that can evaluate a departure (#183).
+    "devices.departed_24h",
     "catalog.entries",
     "catalog.installed",
     "catalog.matched",
@@ -179,61 +182,79 @@ PLATFORM_ROLLUP = "all"
 # when the four `vuln.*` names reserved since #102 moved into `VULN_KEYS` above, and it
 # stayed named for exactly the case below.
 #
-# `devices.departed_24h` — ruled 2026-09-16 on #135, activates with #183. It counts Macs
-# leaving the counted population at the end of #183's seven-day tail, and #183 is what
-# will give it something to count; today nothing in this codebase can say a device is
-# gone. Priming it with zeros now would write "no Mac has ever left this fleet" over every
-# night before departure could be derived at all — the no-zero-priming guardrail, in the
-# one shape it exists for (docs/posture-snapshot.md, Departed Macs).
-RESERVED_KEYS: tuple[str, ...] = ("devices.departed_24h",)
+# It emptied a second time on 2026-09-16, when `devices.departed_24h` — reserved five days
+# earlier, when nothing here could say a device was gone — activated with #183's census (#476).
+RESERVED_KEYS: tuple[str, ...] = ()
 
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _devices_on_active_connections():
-    """The device population every devices.* key counts over: rows on active connections."""
+def _in_the_fleet(at: datetime):
+    """**The departure cut, written once for the twenty keys that have to agree** (#476).
+
+    `gone_for_good` is the one definition of the terminal exit — the end of #183's seven-day
+    tail — and spelling "departed_at plus a week" a second time is how twenty keys start
+    disagreeing about one Mac on a tape nobody can re-run. Asked at `captured_at`, never at
+    `now()`: a capture is as of its instant. `Device` must be in the caller's FROM — the three
+    install-grain helpers join `devices` for no other reason. Deliberately NOT narrowed to
+    active connections; docs/posture-snapshot.md rules that second narrowing out.
+    """
+    return ~gone_for_good(Device.mdm_connection_id, Device.external_id, at=at)
+
+
+def _devices_on_active_connections(at: datetime):
+    """The device population every devices.* key counts over: rows on active connections
+    that had not left the fleet at `at`."""
     return (
         select(func.count())
         .select_from(Device)
         .join(MdmConnection, MdmConnection.id == Device.mdm_connection_id)
-        .where(MdmConnection.is_active.is_(True))
+        .where(MdmConnection.is_active.is_(True), _in_the_fleet(at))
     )
 
 
-def _alerts_on_active_connections():
+def _alerts_on_active_connections(at: datetime):
     """The alert population both alerts.* keys count over: latches on devices whose
-    connection is active — the same cut `_devices_on_active_connections` draws, and the
-    same cut `GET /api/alerts` returns, so the tape and the surface can never disagree
-    about how many things need attention."""
+    connection is active and that are still in the fleet (#476) — the same cut
+    `_devices_on_active_connections` draws, and the same cut `GET /api/alerts` returns, so the
+    tape and the surface can never disagree about how many things need attention. A departed
+    Mac's latch is also closed in the table (`app.alerts.service.close_departed_device_latches`);
+    neither half makes the other redundant."""
     return (
         select(func.count())
         .select_from(Alert)
         .join(Device, Device.id == Alert.device_id)
         .join(MdmConnection, MdmConnection.id == Device.mdm_connection_id)
-        .where(MdmConnection.is_active.is_(True))
+        .where(MdmConnection.is_active.is_(True), _in_the_fleet(at))
     )
 
 
-def _installed():
-    """An app_catalog row someone actually has: at least one installed app carries its hash —
-    the same "devices > 0" cut CatalogSummaryOut draws, computed recorder-side."""
-    return exists(select(InstalledApp.id).where(InstalledApp.version_hash == AppCatalogEntry.version_hash))
+def _installed(at: datetime):
+    """An app_catalog row someone actually has: at least one installed app **on a Mac still in
+    the fleet** carries its hash — the same "devices > 0" cut CatalogSummaryOut draws, computed
+    recorder-side. A departed Mac's rows stay and stop being evidence anybody has the build."""
+    return exists(
+        select(InstalledApp.id)
+        .join(Device, Device.id == InstalledApp.device_id)
+        .where(InstalledApp.version_hash == AppCatalogEntry.version_hash, _in_the_fleet(at))
+    )
 
 
-async def patch_pair_counts(db: AsyncSession) -> tuple[int, int]:
+async def patch_pair_counts(db: AsyncSession, *, at: datetime) -> tuple[int, int]:
     """`(pairs_total, pairs_on_latest)` — the two inputs the coverage ratio derives from,
     at the pair grain the recorder writes them at. The one implementation of that
     definition (#109): the recorder calls this for the nightly row, and
     `GET /api/jamf-patch/coverage` calls it for the live tile, so the tile and the tape
-    can never disagree about what "on latest" means."""
-    total = await _count(db, select(func.count()).select_from(_patch_pairs()))
-    on_latest = await _count(db, select(func.count()).select_from(_patch_pairs(AppCatalogTitleMatch.on_latest.is_(True))))
+    can never disagree about what "on latest" means. `at` is where the departure cut is drawn
+    (#476): `captured_at` for the tape, `now()` for the tile."""
+    total = await _count(db, select(func.count()).select_from(_patch_pairs(at)))
+    on_latest = await _count(db, select(func.count()).select_from(_patch_pairs(at, AppCatalogTitleMatch.on_latest.is_(True))))
     return total, on_latest
 
 
-def _patch_pairs(*criteria):
+def _patch_pairs(at: datetime, *criteria):
     """Distinct (device, matched Jamf Patch title) install pairs — the
     AppCatalogTitleMatch → catalog row → InstalledApp join /api/jamf-patch counts devices
     through, kept at the pair grain. `criteria` are predicates on the match row: `on_latest`
@@ -243,6 +264,8 @@ def _patch_pairs(*criteria):
         select(InstalledApp.device_id, AppCatalogTitleMatch.title_id)
         .join_from(AppCatalogTitleMatch, AppCatalogEntry, AppCatalogEntry.id == AppCatalogTitleMatch.app_catalog_id)
         .join(InstalledApp, InstalledApp.version_hash == AppCatalogEntry.version_hash)
+        .join(Device, Device.id == InstalledApp.device_id)
+        .where(_in_the_fleet(at))
     )
     if criteria:
         stmt = stmt.where(*criteria)
@@ -300,7 +323,7 @@ def _findings(band: str):
     return AppCatalogEntry.vuln_counts[band].astext.cast(Integer)
 
 
-async def _vuln_values(db: AsyncSession) -> dict[str, float]:
+async def _vuln_values(db: AsyncSession, at: datetime) -> dict[str, float]:
     """The four `vuln.*` keys — or an empty dict, which writes no rows at all (#250).
 
     **The rule, and the whole reason this function is not four lines inside `_compute`:**
@@ -364,7 +387,8 @@ async def _vuln_values(db: AsyncSession) -> dict[str, float]:
     devices on active connections — so a build only a deactivated connection's Mac carries
     is counted in the three app keys and in no device here. Documented in the key rows
     rather than folded away, because making them agree would give the app keys a denominator
-    `catalog.installed` no longer matches.
+    `catalog.installed` no longer matches. The **departure** cut is the one line all four
+    draw together (#476): a Mac that left the fleet carries no build in any of them.
     """
     epoch = (await db.execute(select(VulnLibraryEpoch.signature).limit(1))).scalars().first()
     if epoch is None:
@@ -388,14 +412,14 @@ async def _vuln_values(db: AsyncSession) -> dict[str, float]:
     values: dict[str, float] = {}
     values["vuln.apps_affected"] = await _count(
         db,
-        select(func.count()).select_from(AppCatalogEntry).where(of_platform, _installed(), answered, _findings("total") > 0),
+        select(func.count()).select_from(AppCatalogEntry).where(of_platform, _installed(at), answered, _findings("total") > 0),
     )
     # KEV is a subset of affected, never its own population: a KEV-listed finding is one of
     # the findings `total` already counted, and the two keys land separately because ratios
     # are never stored.
     values["vuln.apps_kev_affected"] = await _count(
         db,
-        select(func.count()).select_from(AppCatalogEntry).where(of_platform, _installed(), answered, _findings("kev") > 0),
+        select(func.count()).select_from(AppCatalogEntry).where(of_platform, _installed(at), answered, _findings("kev") > 0),
     )
     # Everything in the same population that is NOT answered: no row in the epoch, or an
     # answer from an epoch that is no longer the one answering. `is_distinct_from` because
@@ -407,7 +431,7 @@ async def _vuln_values(db: AsyncSession) -> dict[str, float]:
         .select_from(AppCatalogEntry)
         .where(
             of_platform,
-            _installed(),
+            _installed(at),
             or_(
                 AppCatalogEntry.vuln_assessment.is_distinct_from(VULN_ASSESSMENT_COVERED),
                 AppCatalogEntry.vuln_signature.is_distinct_from(epoch),
@@ -426,7 +450,7 @@ async def _vuln_values(db: AsyncSession) -> dict[str, float]:
             AppCatalogEntry,
             and_(AppCatalogEntry.version_hash == InstalledApp.version_hash, AppCatalogEntry.platform == Device.platform),
         )
-        .where(MdmConnection.is_active.is_(True), of_platform, answered, _findings("total") > 0),
+        .where(MdmConnection.is_active.is_(True), _in_the_fleet(at), of_platform, answered, _findings("total") > 0),
     )
     return values
 
@@ -439,18 +463,25 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
     window_start = captured_at - timedelta(hours=_WINDOW_HOURS)
     values: dict[str, float] = {}
 
-    # devices.* — device rows across active connections. NULLs count as stale in both
-    # staleness keys: a device that has never checked in is the worst staleness there is.
-    values["devices.total"] = await _count(db, _devices_on_active_connections())
+    # devices.* — device rows across active connections that are still in the fleet
+    # (`_in_the_fleet`, #476). NULLs count as stale in both staleness keys: a device that has
+    # never checked in is the worst staleness there is.
+    counted = _devices_on_active_connections(captured_at)
+    values["devices.total"] = await _count(db, counted)
     values["devices.stale_checkin_7d"] = await _count(
-        db,
-        _devices_on_active_connections().where(or_(Device.last_check_in.is_(None), Device.last_check_in < stale_cutoff)),
+        db, counted.where(or_(Device.last_check_in.is_(None), Device.last_check_in < stale_cutoff))
     )
-    values["devices.unmanaged"] = await _count(db, _devices_on_active_connections().where(Device.managed.is_(False)))
+    values["devices.unmanaged"] = await _count(db, counted.where(Device.managed.is_(False)))
     values["devices.stale_inventory_7d"] = await _count(
-        db,
-        _devices_on_active_connections().where(or_(Device.last_inventory_at.is_(None), Device.last_inventory_at < stale_cutoff)),
+        db, counted.where(or_(Device.last_inventory_at.is_(None), Device.last_inventory_at < stale_cutoff))
     )
+    # devices.departed_24h — the exit itself, the one key here that counts the Macs the four
+    # above have just stopped counting. **Derived, never a column** (#183): an open departure row
+    # IS the tail. The SAME predicate at two instants — in the population 24h ago, gone for good
+    # by capture — so the key cannot drift from the exclusion it measures, and a Jamf id retired
+    # by a serial match (#475) lands here on its own day seven.
+    left = gone_for_good(Device.mdm_connection_id, Device.external_id, at=captured_at)
+    values["devices.departed_24h"] = await _count(db, _devices_on_active_connections(window_start).where(left))
 
     # catalog.* — CatalogSummaryOut's semantics, computed here rather than through the
     # API. installed_not_latest is at the catalog-entry grain, deliberately not device
@@ -461,7 +492,7 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
     of_platform = AppCatalogEntry.platform == CAPTURE_PLATFORM
     values["catalog.entries"] = await _count(db, select(func.count()).select_from(AppCatalogEntry).where(of_platform))
     values["catalog.installed"] = await _count(
-        db, select(func.count()).select_from(AppCatalogEntry).where(of_platform, _installed())
+        db, select(func.count()).select_from(AppCatalogEntry).where(of_platform, _installed(captured_at))
     )
     values["catalog.matched"] = await _count(
         db,
@@ -483,14 +514,20 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
         db,
         select(func.count())
         .select_from(AppCatalogEntry)
-        .where(of_platform, _installed(), AppCatalogEntry.is_latest.is_(False), AppCatalogEntry.latest_version.is_not(None)),
+        .where(
+            of_platform,
+            _installed(captured_at),
+            AppCatalogEntry.is_latest.is_(False),
+            AppCatalogEntry.latest_version.is_not(None),
+        ),
     )
 
-    values["apps.distinct"] = await _count(db, select(func.count(distinct(InstalledApp.app_hash))))
+    installs = select(func.count(distinct(InstalledApp.app_hash))).join(Device, Device.id == InstalledApp.device_id)
+    values["apps.distinct"] = await _count(db, installs.where(_in_the_fleet(captured_at)))
 
     # patch.* — the pair grain, and the per-title laggard cut /api/jamf-patch renders as
     # devices_on_latest < device_count. Coverage % derives at render; both inputs land.
-    values["patch.pairs_total"], values["patch.pairs_on_latest"] = await patch_pair_counts(db)
+    values["patch.pairs_total"], values["patch.pairs_on_latest"] = await patch_pair_counts(db, at=captured_at)
     # patch.pairs_laggard_over_14d — #68's clock, ruled 2026-09-02: Jamf's release date of the
     # earliest listed version newer than the installed one, read from the pair's own title row.
     # Behind only: an unlisted build cannot be placed against a specific missed update, so it
@@ -502,6 +539,7 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
         db,
         select(func.count()).select_from(
             _patch_pairs(
+                captured_at,
                 AppCatalogTitleMatch.state == STATE_BEHIND,
                 AppCatalogTitleMatch.first_newer_released_at < laggard_cutoff,
             )
@@ -518,6 +556,7 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
         db,
         select(func.count()).select_from(
             _patch_pairs(
+                captured_at,
                 AppCatalogTitleMatch.state == STATE_BEHIND,
                 or_(
                     AppCatalogTitleMatch.first_newer_released_at >= laggard_cutoff,
@@ -527,7 +566,7 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
         ),
     )
     values["patch.pairs_unknown_build"] = await _count(
-        db, select(func.count()).select_from(_patch_pairs(AppCatalogTitleMatch.state == STATE_UNKNOWN))
+        db, select(func.count()).select_from(_patch_pairs(captured_at, AppCatalogTitleMatch.state == STATE_UNKNOWN))
     )
     # patch.pairs_ahead — installed NEWER than anything the title lists. Given a key of its own
     # for the reason `pairs_unknown_build` has one (#314): before it, `ahead` was counted in
@@ -535,7 +574,7 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
     # absorb it. Not rare — Chrome and Safari sit here on essentially every Mac fleet, because
     # they auto-update faster than Jamf's catalog publishes.
     values["patch.pairs_ahead"] = await _count(
-        db, select(func.count()).select_from(_patch_pairs(AppCatalogTitleMatch.state == STATE_AHEAD))
+        db, select(func.count()).select_from(_patch_pairs(captured_at, AppCatalogTitleMatch.state == STATE_AHEAD))
     )
     # The five state keys partition `pairs_total`, and this asserts it rather than trusting it.
     # `classify` assigns exactly one of latest/ahead/behind/unknown, `on_latest` is true iff the
@@ -564,7 +603,7 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
     # a silent seat in a laggard number. Both remain visible in their own keys. No 14-day cut
     # here: this key answers "which titles have someone behind at all", and the dated question
     # is `pairs_laggard_over_14d` one grain down.
-    behind_pairs = _patch_pairs(AppCatalogTitleMatch.state == STATE_BEHIND)
+    behind_pairs = _patch_pairs(captured_at, AppCatalogTitleMatch.state == STATE_BEHIND)
     values["patch.titles_with_laggards"] = await _count(
         db, select(func.count(distinct(behind_pairs.c.title_id))).select_from(behind_pairs)
     )
@@ -582,16 +621,16 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
         ),
     )
 
-    # alerts.* — the derived latch (#101, docs/alerts.md), on the same active-connection
-    # population every devices.* key counts over. `open` is literally "true of the fleet
-    # at capture": the latch has no acknowledge path, so an open row is a live fact and
+    # alerts.* — the derived latch (#101, docs/alerts.md), on the same population every
+    # devices.* key counts over: active connections, still in the fleet. `open` is "true of
+    # the fleet at capture": the latch has no acknowledge path, so an open row is a live fact and
     # never a chore nobody ticked off. `opened_24h` counts rows that have since closed —
     # which is why closed rows are purged on a clock rather than deleted at close, and
     # why the count cannot ride the partial index the open read uses.
-    values["alerts.open"] = await _count(db, _alerts_on_active_connections().where(Alert.closed_at.is_(None)))
+    values["alerts.open"] = await _count(db, _alerts_on_active_connections(captured_at).where(Alert.closed_at.is_(None)))
     values["alerts.opened_24h"] = await _count(
         db,
-        _alerts_on_active_connections().where(Alert.opened_at > window_start, Alert.opened_at <= captured_at),
+        _alerts_on_active_connections(captured_at).where(Alert.opened_at > window_start, Alert.opened_at <= captured_at),
     )
 
     # runs.* — 30-day run retention against 12-month audit periods: these rows are the
@@ -653,7 +692,7 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
     # vuln.* — the stored per-build answers (#381), counted; or nothing at all on a tenant
     # the corpus join has never judged, which is the one place this recorder writes no rows
     # rather than zeros for a whole family of keys.
-    values.update(await _vuln_values(db))
+    values.update(await _vuln_values(db, captured_at))
 
     return values
 
