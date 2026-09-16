@@ -26,6 +26,7 @@ accepted suggestion goes through the audited PUT like a typed one.
 
 from __future__ import annotations
 
+import asyncio
 from fnmatch import fnmatch
 from typing import NamedTuple
 
@@ -109,6 +110,18 @@ async def _device_counts(db: AsyncSession, sets: list[set[str]]) -> list[int]:
     return [int(next(values) or 0) if s else 0 for s in sets]
 
 
+def _match(rows: list[_Row], bundle_ids: list[str], globs: list[str]) -> tuple[list[list[_Row]], list[list[str]]]:
+    """Per glob: the rows it removes, and the bundle IDs it removes only if case is ignored.
+
+    Pure Python and self-contained, because the caller hands it to a thread: one `fnmatch`
+    per glob per row, twice over, is about a second of counting on a real fleet — and this
+    read refreshes every time the textarea loses focus.
+    """
+    matched = [[r for r in rows if _excluded(r.bundle_id, [glob])] for glob in globs]
+    misses = [[b for b in bundle_ids if not _excluded(b, [glob]) and fnmatch(b.lower(), glob.lower())] for glob in globs]
+    return matched, misses
+
+
 def _spelling(bundle_ids: list[str]) -> str | None:
     """Which casing to show where the fleet spells a prefix more than one way: the
     commonest, lowercase breaking the tie. A glob matches case-sensitively, so this decides
@@ -138,7 +151,8 @@ async def build_candidates(db: AsyncSession, globs: list[str]) -> ExclusionCandi
     ordered = sorted(grouped.values(), key=lambda g: (-sum(r.device_count for r in g), -len(g), g[0].bundle_id))
     shown, more = ordered[:MAX_GROUPS], max(0, len(ordered) - MAX_GROUPS)
 
-    typed = [g for g in dict.fromkeys(globs) if g][:MAX_GLOBS]
+    unique = [g for g in dict.fromkeys(globs) if g]
+    typed, more_globs = unique[:MAX_GLOBS], max(0, len(unique) - MAX_GLOBS)
     labels = [_spelling([r.bundle_id for r in group]) for group in shown]
     # Several titles, under a prefix no known title uses: the two conditions that make
     # "everything under this prefix" a statement about the organization rather than about
@@ -152,7 +166,7 @@ async def build_candidates(db: AsyncSession, globs: list[str]) -> ExclusionCandi
     # Rows, not bundle IDs: two titles under one bundle ID are two apps the exchange drops,
     # and this page says "app" in exactly one grain. The ID set beside it is for the device
     # count, which is per device and so cannot be taken at the row grain at all.
-    matched = [[r for r in rows if _excluded(r.bundle_id, [glob])] for glob in evaluated]
+    matched, misses = await asyncio.to_thread(_match, rows, sorted(all_bundle_ids), evaluated)
     matched_ids = [{r.bundle_id for r in hits} for hits in matched]
     group_sets = [{r.bundle_id for r in group} for group in shown]
     counts = await _device_counts(db, group_sets + matched_ids)
@@ -181,14 +195,14 @@ async def build_candidates(db: AsyncSession, globs: list[str]) -> ExclusionCandi
                 source=source,
                 app_count=len(hits),
                 device_count=count,
-                case_misses=sorted(b for b in all_bundle_ids if b not in ids and fnmatch(b.lower(), glob.lower()))[
-                    :MAX_CASE_MISSES
-                ],
+                case_misses=miss[:MAX_CASE_MISSES],
+                more_case_misses=max(0, len(miss) - MAX_CASE_MISSES),
             )
-            for glob, source, hits, ids, count in zip(
-                evaluated, sources, matched, matched_ids, counts[len(group_sets) :], strict=True
+            for glob, source, hits, miss, count in zip(
+                evaluated, sources, matched, misses, counts[len(group_sets) :], strict=True
             )
         ],
+        more_globs=more_globs,
         catalog_titles=(await db.execute(select(func.count(JamfPatchTitle.id)))).scalar_one(),
         library_titles=(await db.execute(select(func.count(VulnLibraryTitle.title_id)))).scalar_one(),
     )

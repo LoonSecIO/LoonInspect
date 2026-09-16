@@ -150,7 +150,7 @@ async def test_unknown_titles_are_candidates_and_known_ones_are_not(db, fleet) -
     # Payroll is on two Macs at two versions: counted once per Mac, never once per build —
     # and the renamed build is a row of its own, one bundle ID carrying two titles.
     assert sorted(a.device_count for a in group.apps if a.bundle_id == f"{ACME}.payroll") == [1, 2]
-    # Three of the four Macs carry something here; the fourth carries only Firefox. Several
+    # Three of the four Macs carry something here; the one that does not has only Firefox. Several
     # unknown titles under a prefix no known title uses earns a suggestion, spelled the way
     # most of the group spells it.
     assert (group.app_count, group.device_count, group.excluded, group.suggestion) == (4, 3, False, f"{ACME}.*")
@@ -169,7 +169,7 @@ async def test_a_glob_counts_exactly_what_the_snapshot_loses(db, fleet) -> None:
     ID and two titles. Matched bundle IDs would say 2 here and matched snapshot rows 4. Each
     looks right in isolation; only one of them is what the operator loses.
     """
-    from app.core.exclusion_candidates import build_candidates
+    from app.core.exclusion_candidates import MAX_GLOBS, build_candidates
     from app.core.sharing import build_exchange_request, get_or_create_settings
 
     glob = f"{ACME}.*"
@@ -197,11 +197,15 @@ async def test_a_glob_counts_exactly_what_the_snapshot_loses(db, fleet) -> None:
     # The trap, in the response the page renders: the capital A is not matched, and this
     # says so rather than leaving the app quietly out of the count. A glob that matches
     # nothing is legible too — in the preview a typo looks exactly like a working pattern.
-    assert counted[glob].case_misses == [PORTAL]
+    assert (counted[glob].case_misses, counted[glob].more_case_misses) == ([PORTAL], 0)
     assert (counted["com.nobody.*"].app_count, counted["com.nobody.*"].case_misses) == (0, [])
     # With the capital spelling excluded too, the group has nothing left to offer.
     covered = await build_candidates(db, [glob, f"com.Acme{SUFFIX}.*"])
     assert next(g for g in covered.groups if g.prefix.lower() == ACME.lower()).excluded is True
+    # A box past the ceiling says how many patterns went uncounted rather than dropping them
+    # without a word, which would read as "those match nothing".
+    over = await build_candidates(db, [f"com.pattern{n}.*" for n in range(MAX_GLOBS + 3)])
+    assert (sum(g.source == "typed" for g in over.globs), over.more_globs) == (MAX_GLOBS, 3)
 
 
 async def test_the_matcher_is_the_exchange_s_own(db) -> None:

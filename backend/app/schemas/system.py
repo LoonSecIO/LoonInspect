@@ -121,9 +121,11 @@ class ExclusionCandidateGroupOut(BaseModel):
 
 
 class ExclusionGlobCountOut(BaseModel):
-    """What one glob matches, counted with the exchange's own `_excluded`. `source` is
-    `typed` (in the box) or `suggested` (proposed here, nothing saved). `case_misses` are
-    bundle IDs it would match if either side were lower-cased — the quiet ones."""
+    """What one glob matches, counted with the exchange's own `_excluded` at the grain the
+    exchange drops: `app_count` is titles, and one bundle ID under two display names is two
+    of them. `source` is `typed` (in the box) or `suggested` (proposed here, nothing saved).
+    `case_misses` are bundle IDs it would match if either side were lower-cased — the quiet
+    ones — listed to a handful, with `more_case_misses` for the rest rather than silence."""
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
@@ -132,19 +134,22 @@ class ExclusionGlobCountOut(BaseModel):
     app_count: int
     device_count: int
     case_misses: list[str]
+    more_case_misses: int
 
 
 class ExclusionCandidatesOut(BaseModel):
-    """`more_groups` is what the screenful left out, so a truncated list cannot read as the
-    whole answer, and the two title counts are what "unknown" was decided against: with no
-    catalog synced and no epoch loaded nothing is known, and the page names the missing
-    source rather than calling the whole fleet public."""
+    """`more_groups` is what the screenful left out and `more_globs` what the ceiling did not
+    count, so neither a truncated list nor an uncounted pattern can read as the whole answer.
+    The two title counts are what "unknown" was decided against: with no catalog synced only
+    the library can make a title known, and the page names the missing source rather than
+    calling the whole fleet public."""
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     groups: list[ExclusionCandidateGroupOut]
     more_groups: int
     globs: list[ExclusionGlobCountOut]
+    more_globs: int
     catalog_titles: int
     library_titles: int
 
