@@ -395,7 +395,7 @@ export function DataSharingPage() {
                     {/* Keyed on both: one bundle ID carries two titles wherever two display
                         names share it, and that is a row each. */}
                     {group.apps.map((app) => (
-                      <li key={`${app.bundleId} ${app.name}`}>
+                      <li key={`${app.bundleId}|${app.name}`}>
                         {t.system.sharing.candidateRow(app.name, app.bundleId, app.deviceCount)}
                       </li>
                     ))}
