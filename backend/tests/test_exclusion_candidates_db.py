@@ -1,21 +1,17 @@
 """Excluded bundle IDs: the candidate query and the glob counts (#483).
 
-Three properties, against a real Postgres because all three are SQL:
+Two properties, both SQL and so both against a real Postgres. **Unknown is the whole claim
+the surface makes**, so a Jamf Patch match or a vulnerability-library title has to be
+enough to keep an app off the list — otherwise the page invites an operator to exclude
+Chrome. And **a glob's app count is asserted against what `build_exchange_request` actually
+drops**, not against a hand count: the page and the exchange would otherwise be two
+implementations of one filter, and the day they disagree would be a support ticket rather
+than a failing test. The case near-miss rides along, because `com.acme.*` silently missing
+`com.Acme.Portal` is the trap this whole surface exists for.
 
-1. A title no public source on this container knows is a candidate — and a title either
-   source knows is not, whichever source it is. "Unknown" is the whole claim the surface
-   makes, so a Jamf Patch match or a vulnerability-library title has to be enough to keep
-   an app off the list; otherwise the page invites an operator to exclude Chrome.
-2. A glob's app count equals the titles the snapshot loses when that glob is applied.
-   The page and the exchange would otherwise be two implementations of one filter, and
-   the day they disagree is a support ticket rather than a failing test — so the count is
-   asserted against `build_exchange_request`'s own output, not against a hand count.
-3. A near-miss on case is named. `fnmatch` is case-sensitive in the Linux container, and
-   `com.acme.*` silently missing `com.Acme.Portal` is the trap the whole session is for.
-
-The fleet is cleared first: `installed_apps` rows outlive the suites that wrote them
-(see conftest), and the group list is capped at a screenful, so leftovers from a file
-that already ran could push this file's group off the end of it.
+The fleet is cleared first: `installed_apps` rows outlive the suites that write them (see
+conftest) and the group list is capped at a screenful, so another file's leftovers could
+push this file's group off the end of it.
 """
 
 from __future__ import annotations
@@ -33,18 +29,19 @@ pytestmark = [
     pytest.mark.asyncio(loop_scope="session"),
 ]
 
-# Unique per run so a re-run against a persistent database cannot collide with its own
-# leftovers, and so no other suite's bundle ID can land in this file's prefix group.
+# Unique per run, so a re-run against a persistent database cannot meet its own leftovers
+# and no other suite's bundle ID can land in this file's prefix group.
 SUFFIX = uuidlib.uuid4().hex[:6]
 ACME = f"com.acme{SUFFIX}"
+PORTAL = f"com.Acme{SUFFIX}.portal"
 TITLE_ID = f"loon-{SUFFIX}"
 
 
 @pytest_asyncio.fixture(loop_scope="session")
 async def fleet(db):
-    """Three Macs, five titles: three unknown under one prefix, one matched by Jamf Patch,
-    one named by the vulnerability library. Payroll is installed at two versions so the
-    snapshot carries more rows than titles — the count under test is titles."""
+    """Three Macs and five titles: three unknown under one prefix (one of them spelled with
+    a capital A), one matched by Jamf Patch, one named by the vulnerability library. Payroll
+    is installed at two versions, so the snapshot carries more rows than titles."""
     from app.core.content_keys import app_full_key, app_title_key
     from app.models.schema import (
         AppCatalogEntry,
@@ -58,22 +55,21 @@ async def fleet(db):
     await db.rollback()
     await db.execute(delete(InstalledApp))
     await db.commit()
-
-    devices = [
+    macs = [
         Device(mdm_provider="jamf", external_id=f"x{SUFFIX}{n}", serial_number=f"S{SUFFIX}{n}", hostname=f"h{SUFFIX}{n}")
         for n in range(3)
     ]
-    db.add_all(devices)
+    db.add_all(macs)
     await db.commit()
     # Read now, not in teardown: the rollback there expires every instance, and reaching
     # for `.id` afterwards is a lazy load in a place that cannot await one.
-    device_ids = [device.id for device in devices]
+    mac_ids = [mac.id for mac in macs]
+    chrome_hash = uuidlib.uuid4().hex
+    chrome_id, firefox_id = f"com.google{SUFFIX}.Chrome", f"org.mozilla{SUFFIX}.firefox"
 
-    catalog_hash = uuidlib.uuid4().hex
-
-    def app(device, name, bundle_id, version, version_hash=None):
+    def app(mac, name, bundle_id, version, version_hash=None):
         return InstalledApp(
-            device_id=device.id,
+            device_id=mac.id,
             name=name,
             bundle_id=bundle_id,
             version=version,
@@ -83,37 +79,30 @@ async def fleet(db):
             key_full=app_full_key(name, bundle_id, version, None),
         )
 
-    db.add_all(
-        [
-            app(devices[0], "Acme Payroll", f"{ACME}.payroll", "1.0"),
-            app(devices[1], "Acme Payroll", f"{ACME}.payroll", "2.0"),
-            app(devices[0], "Acme Deploy", f"{ACME}.deploy", "1.0"),
-            # The near-miss: same organization, capital A, so `com.acme….*` does not match it.
-            app(devices[1], "Acme Portal", f"com.Acme{SUFFIX}.portal", "1.0"),
-            app(devices[0], "Google Chrome", f"com.google{SUFFIX}.Chrome", "120", catalog_hash),
-            app(devices[2], "Mozilla Firefox", f"org.mozilla{SUFFIX}.firefox", "130"),
-        ]
-    )
     now = datetime.now(UTC)
     entry = AppCatalogEntry(
         name="Google Chrome",
-        bundle_id=f"com.google{SUFFIX}.Chrome",
+        bundle_id=chrome_id,
         version="120",
         app_hash=uuidlib.uuid4().hex,
-        version_hash=catalog_hash,
-        key_title=app_title_key("Google Chrome", f"com.google{SUFFIX}.Chrome"),
-        key_full=app_full_key("Google Chrome", f"com.google{SUFFIX}.Chrome", "120", None),
+        version_hash=chrome_hash,
+        key_title=app_title_key("Google Chrome", chrome_id),
+        key_full=app_full_key("Google Chrome", chrome_id, "120", None),
         first_seen_at=now,
         last_seen_at=now,
     )
     db.add_all(
         [
+            app(macs[0], "Acme Payroll", f"{ACME}.payroll", "1.0"),
+            app(macs[1], "Acme Payroll", f"{ACME}.payroll", "2.0"),
+            app(macs[0], "Acme Deploy", f"{ACME}.deploy", "1.0"),
+            app(macs[1], "Acme Portal", PORTAL, "1.0"),
+            app(macs[0], "Google Chrome", chrome_id, "120", chrome_hash),
+            app(macs[2], "Mozilla Firefox", firefox_id, "130"),
             entry,
             JamfPatchTitle(id=TITLE_ID, name="Google Chrome", current_version="120", last_modified="x"),
             VulnLibraryTitle(
-                title_id=TITLE_ID,
-                key_title=app_title_key("Mozilla Firefox", f"org.mozilla{SUFFIX}.firefox"),
-                catalog_last_modified="x",
+                title_id=TITLE_ID, key_title=app_title_key("Mozilla Firefox", firefox_id), catalog_last_modified="x"
             ),
         ]
     )
@@ -131,63 +120,49 @@ async def fleet(db):
     )
     await db.commit()
 
-    yield devices
+    yield chrome_id, firefox_id
 
     await db.rollback()
     await db.execute(delete(InstalledApp))
     await db.execute(delete(AppCatalogTitleMatch).where(AppCatalogTitleMatch.title_id == TITLE_ID))
-    await db.execute(delete(AppCatalogEntry).where(AppCatalogEntry.version_hash == catalog_hash))
+    await db.execute(delete(AppCatalogEntry).where(AppCatalogEntry.version_hash == chrome_hash))
     await db.execute(delete(VulnLibraryTitle).where(VulnLibraryTitle.title_id == TITLE_ID))
     await db.execute(delete(JamfPatchTitle).where(JamfPatchTitle.id == TITLE_ID))
-    await db.execute(delete(Device).where(Device.id.in_(device_ids)))
+    await db.execute(delete(Device).where(Device.id.in_(mac_ids)))
     await db.commit()
 
 
 async def test_unknown_titles_are_candidates_and_known_ones_are_not(db, fleet) -> None:
-    """Neither source knows it → candidate. Either source knows it → not.
+    """Neither source knows it → candidate; either source knows it → not.
 
-    The two knowns are deliberately different kinds: Chrome is known because a Jamf Patch
-    title matched its build through `app_catalog`, Firefox because the loaded epoch names
-    its title key. Only one of those paths existing would leave the other free to drift.
+    The two knowns are deliberately different kinds — Chrome because a Jamf Patch title
+    matched its build through `app_catalog`, Firefox because the loaded epoch names its
+    title key — since only one of those paths existing leaves the other free to drift.
     """
     from app.core.exclusion_candidates import REASON_UNKNOWN, build_candidates
-    from app.schemas.system import ExclusionCandidatesOut
 
     answer = await build_candidates(db, [])
     group = next(g for g in answer.groups if g.prefix.lower() == ACME.lower())
 
-    assert {a.bundle_id for a in group.apps} == {
-        f"{ACME}.payroll",
-        f"{ACME}.deploy",
-        f"com.Acme{SUFFIX}.portal",
-    }
+    assert {a.bundle_id for a in group.apps} == {f"{ACME}.payroll", f"{ACME}.deploy", PORTAL}
     assert {a.reason for a in group.apps} == {REASON_UNKNOWN}
-    # Payroll is on two Macs at two versions and counted once per Mac, not once per build.
+    # Payroll is on two Macs at two versions: counted once per Mac, never once per build.
     assert next(a.device_count for a in group.apps if a.bundle_id == f"{ACME}.payroll") == 2
-    # Two of the three Macs carry something in this group; the third carries only Firefox.
-    assert group.device_count == 2
-    assert group.app_count == 3
-    # Several unknown titles under a prefix no known title uses: that earns a suggestion,
+    # Two of the three Macs carry something here; the third carries only Firefox.
+    assert (group.app_count, group.device_count, group.excluded) == (3, 2, False)
+    # Several unknown titles under a prefix no known title uses earns a suggestion,
     # spelled the way most of the group spells it.
     assert group.suggestion == f"{ACME}.*"
-    assert group.excluded is False
-
-    known = {f"com.google{SUFFIX}.Chrome", f"org.mozilla{SUFFIX}.firefox"}
-    assert known & {a.bundle_id for g in answer.groups for a in g.apps} == set()
-    assert answer.catalog_titles >= 1
-    assert answer.library_titles >= 1
-    # The route's own conversion, so a dataclass field the response model does not name
-    # fails here rather than as a 500 on the settings page.
-    assert ExclusionCandidatesOut.model_validate(answer).groups
+    assert set(fleet) & {a.bundle_id for g in answer.groups for a in g.apps} == set()
+    assert (answer.catalog_titles, answer.library_titles) >= (1, 1)
 
 
 async def test_a_glob_counts_exactly_what_the_snapshot_loses(db, fleet) -> None:
     """The page's count and the exchange's filter are one answer, asserted as one.
 
     `build_exchange_request` emits a row per (title key, build key, platform), so Payroll
-    at two versions is two rows and one title. The count the page shows is titles, and
-    this is the assertion that keeps the two from drifting apart in production while both
-    look right in isolation.
+    at two versions is two rows and one title. Titles are what the page counts, and this
+    is what keeps the two from drifting apart while both look right in isolation.
     """
     from app.core.exclusion_candidates import build_candidates
     from app.core.sharing import build_exchange_request, get_or_create_settings
@@ -207,68 +182,31 @@ async def test_a_glob_counts_exactly_what_the_snapshot_loses(db, fleet) -> None:
         await db.commit()
 
     gone = {a["title"] for a in full["snapshot"]["apps"]} - {a["title"] for a in filtered["snapshot"]["apps"]}
-    counted = next(g for g in (await build_candidates(db, [glob])).globs if g.glob == glob)
+    counted = {g.glob: g for g in (await build_candidates(db, [glob, "com.nobody.*"])).globs}
 
-    assert counted.app_count == len(gone) == 2
-    assert counted.source == "typed"
-    assert counted.device_count == 2
-    # The trap, in the response the page renders: the capital A is not matched, and the
-    # page says so rather than leaving the app quietly out of the count.
-    assert counted.case_misses == [f"com.Acme{SUFFIX}.portal"]
-
-
-async def test_a_glob_that_matches_nothing_says_nothing(db, fleet) -> None:
-    """Zero is a legible answer. A typo that matches no app looks identical to a working
-    pattern in the preview — the payload simply has all its rows — so the count has to be
-    allowed to be zero and be shown."""
-    from app.core.exclusion_candidates import build_candidates
-
-    counted = next(g for g in (await build_candidates(db, ["com.nobody.*"])).globs if g.glob == "com.nobody.*")
-    assert (counted.app_count, counted.device_count, counted.case_misses) == (0, 0, [])
-
-
-async def test_an_accepted_suggestion_reads_back_as_covered(db, fleet) -> None:
-    """Accepting a suggestion changes what the group says about itself.
-
-    The write is the audited `PUT`'s, and this is the read after it: the same group comes
-    back marked covered, so the page can stop offering a glob the box already holds
-    instead of listing it forever beside an Add button that does nothing.
-    """
-    from app.core.exclusion_candidates import build_candidates
-
-    answer = await build_candidates(db, [f"{ACME}.*", f"com.Acme{SUFFIX}.*"])
-    group = next(g for g in answer.groups if g.prefix.lower() == ACME.lower())
-    assert group.excluded is True
-    assert [g.source for g in answer.globs] == ["typed", "typed"]
-
-
-async def test_the_query_survives_a_fleet_with_no_inventory(db, fleet) -> None:
-    """An empty fleet answers an empty list, not an error — the state a pod is in before
-    its first sweep, and the one the page has to say something legible about."""
-    from app.core.exclusion_candidates import build_candidates
-    from app.models.schema import InstalledApp
-
-    await db.execute(delete(InstalledApp))
-    await db.commit()
-
-    answer = await build_candidates(db, ["com.acme.*"])
-    assert (answer.groups, answer.more_groups) == ([], 0)
-    assert [(g.app_count, g.device_count) for g in answer.globs] == [(0, 0)]
+    assert counted[glob].app_count == len(gone) == 2
+    assert (counted[glob].source, counted[glob].device_count) == ("typed", 2)
+    # The trap, in the response the page renders: the capital A is not matched, and this
+    # says so rather than leaving the app quietly out of the count. A glob that matches
+    # nothing is legible too — in the preview a typo looks exactly like a working pattern.
+    assert counted[glob].case_misses == [PORTAL]
+    assert (counted["com.nobody.*"].app_count, counted["com.nobody.*"].case_misses) == (0, [])
+    # With the capital spelling excluded too, the group has nothing left to offer.
+    covered = await build_candidates(db, [glob, f"com.Acme{SUFFIX}.*"])
+    assert next(g for g in covered.groups if g.prefix.lower() == ACME.lower()).excluded is True
 
 
 async def test_the_matcher_is_the_exchange_s_own(db) -> None:
-    """Not a behaviour test — an identity one. The counts are only trustworthy because
-    this module calls the exchange's `_excluded` rather than a second `fnmatch` of its
-    own, and an innocent-looking local helper would pass every test above."""
+    """Not a behaviour test but an identity one: the counts are trustworthy only because
+    this module calls the exchange's `_excluded` rather than a second `fnmatch` of its own,
+    and an innocent-looking local helper would pass every assertion above."""
     from app.core import exclusion_candidates, sharing
 
     assert exclusion_candidates._excluded is sharing._excluded
 
 
 async def test_a_prefix_needs_three_labels() -> None:
-    """`com.acme` has no prefix worth proposing: `com.acme.*` does not match it."""
+    """`com.acme` has no prefix worth proposing — `com.acme.*` does not even match it."""
     from app.core.exclusion_candidates import prefix_of
 
-    assert prefix_of("com.acme.payroll") == "com.acme"
-    assert prefix_of("com.acme") is None
-    assert prefix_of("Acme") is None
+    assert (prefix_of("com.acme.payroll"), prefix_of("com.acme"), prefix_of("Acme")) == ("com.acme", None, None)

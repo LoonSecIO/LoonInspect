@@ -93,12 +93,12 @@ class SendExchangeOut(BaseModel):
 
 
 class ExclusionCandidateAppOut(BaseModel):
-    """One unknown title: its name, the bundle ID a glob would have to match, how many
-    devices carry it, and why it is listed (#483). `reason` is `no_public_source` today —
-    the only reason there is — and a client that does not recognize a value shows the row
-    without the tag rather than hiding it."""
+    """One title no public source on this container knows (#483): its name, the bundle ID
+    a glob would have to match, the devices carrying it, and why it is listed. `reason` is
+    `no_public_source` today — the only reason there is — and a client that does not know a
+    value shows the row without the tag rather than hiding it."""
 
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, from_attributes=True)
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     name: str
     bundle_id: str
@@ -107,13 +107,14 @@ class ExclusionCandidateAppOut(BaseModel):
 
 
 class ExclusionCandidateGroupOut(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, from_attributes=True)
+    """Unknown titles under one reverse-DNS prefix. `suggestion` is null where the prefix
+    does not earn one — a single unknown title, or a prefix some title a public source DOES
+    know already uses — and `excluded` means a glob in the box already removes them all."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     prefix: str
-    # The glob to offer, or null where the prefix does not earn one: a single unknown
-    # title, or a prefix some title a public source DOES know already uses.
     suggestion: str | None
-    # Every app in the group is already removed by a glob in the box.
     excluded: bool
     app_count: int
     device_count: int
@@ -121,29 +122,29 @@ class ExclusionCandidateGroupOut(BaseModel):
 
 
 class ExclusionGlobCountOut(BaseModel):
-    """What one glob matches, counted with the exchange's own `_excluded` (#483)."""
+    """What one glob matches, counted with the exchange's own `_excluded`. `source` is
+    `typed` (it is in the box) or `suggested` (this page proposed it and nothing is saved).
+    `case_misses` are bundle IDs it would match if either side were lower-cased: the Linux
+    container's `fnmatch` is case-sensitive, so these are the quiet misses."""
 
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, from_attributes=True)
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     glob: str
-    # typed (it is in the box) | suggested (this page proposed it and nothing is saved).
     source: str
     app_count: int
     device_count: int
-    # Bundle IDs this glob would match if either side were lower-cased. The Linux
-    # container's `fnmatch` is case-sensitive, so these are the quiet misses.
     case_misses: list[str]
 
 
 class ExclusionCandidatesOut(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, from_attributes=True)
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     groups: list[ExclusionCandidateGroupOut]
     more_groups: int
     globs: list[ExclusionGlobCountOut]
-    # What "unknown" was decided against, so an empty list is a legible state rather than
-    # a blank panel: with no catalog synced and no epoch loaded, nothing is known and the
-    # page says which source is missing instead of claiming the fleet is all public.
+    # What "unknown" was decided against, so an empty list is a legible state and not a
+    # blank panel: with no catalog synced and no epoch loaded nothing here is known, and
+    # the page names the missing source instead of calling the whole fleet public.
     catalog_titles: int
     library_titles: int
 

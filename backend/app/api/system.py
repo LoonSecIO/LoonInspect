@@ -172,20 +172,15 @@ async def exclusion_candidates(
     glob: Annotated[list[str] | None, Query()] = None,
     db: AsyncSession = Depends(get_db),
 ) -> ExclusionCandidatesOut:
-    """Bundle IDs no public source on this container knows, and what each glob matches (#483).
+    """Bundle IDs no public source here knows, and what each glob matches (#483).
 
     Read-only and modelless, so it sits behind SYSTEM_READ beside the preview rather than
-    behind the AI flag: it is the same inventory the Applications page already shows,
-    arranged for the one decision this page makes. Accepting a suggestion is a separate
-    call to the audited `PUT` above — this endpoint proposes and never writes.
-
-    `glob` repeated is the box as it is being typed, which is how a pattern can be counted
-    before it is saved; omitted, the stored list answers.
+    behind the AI flag. Accepting a suggestion is a separate call to the audited `PUT`
+    above — this endpoint proposes and never writes. `glob` repeated is the box as it is
+    being typed; omitted, the stored list answers.
     """
     row = await get_or_create_settings(db)
-    return ExclusionCandidatesOut.model_validate(
-        await build_candidates(db, glob if glob is not None else list(row.exclude_globs or []))
-    )
+    return await build_candidates(db, glob if glob is not None else list(row.exclude_globs or []))
 
 
 @router.post(
