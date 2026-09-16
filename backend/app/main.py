@@ -267,10 +267,23 @@ async def outbox_worker_tick() -> None:
     # silently, outbound, to a third party, with no API request involved. The
     # predicate is the RLS policy on `destinations`, which only applies to a session
     # that named a tenant, which is what this loop does.
+    #
+    # And one tenant's bad luck is its own (#466). Without the guard the first tenant
+    # whose destination row raises ends the tick for every tenant sorted after it, for
+    # ever, while their Destinations pages show `pendingCount` climbing and
+    # `lastError: null` — nothing failed for them, nothing was attempted.
     for tenant_id in await operational_tenant_ids():
         async with tenant_job(tenant_id) as db:
-            await fan_out_pending(db)
-            await deliver_pending(db)
+            try:
+                await fan_out_pending(db)
+                await deliver_pending(db)
+            except Exception:
+                logger.exception(
+                    "outbox tick failed for this tenant; none of its events were fanned out or delivered this pass "
+                    "and the next tick retries them; check its Destinations page for a destination whose URL or "
+                    "stored secret this container cannot use",
+                    extra={"tenant_id": str(tenant_id)},
+                )
 
 
 async def outbox_cleanup() -> None:
@@ -279,7 +292,18 @@ async def outbox_cleanup() -> None:
     than nightly-batched."""
     for tenant_id in await operational_tenant_ids():
         async with tenant_job(tenant_id) as db:
-            purged = await purge_delivered_events(db, settings.event_outbox_retention_days, settings.dead_letter_retention_days)
+            try:
+                purged = await purge_delivered_events(
+                    db, settings.event_outbox_retention_days, settings.dead_letter_retention_days
+                )
+            except Exception:
+                logger.exception(
+                    "outbox cleanup failed for this tenant; nothing was purged for it tonight and its outbox keeps "
+                    "growing until a later night succeeds; check the database container is healthy "
+                    "(docker compose ps db) and has room to write",
+                    extra={"tenant_id": str(tenant_id)},
+                )
+                continue
         if purged:
             logger.info(
                 "purged old outbox events",
@@ -305,8 +329,17 @@ async def run_cleanup() -> None:
     """
     for tenant_id in await operational_tenant_ids():
         async with tenant_job(tenant_id) as db:
-            purged = await purge_runs(db, settings.run_retention_days)
-            closed_alerts = await purge_closed_alerts(db, settings.run_retention_days)
+            try:
+                purged = await purge_runs(db, settings.run_retention_days)
+                closed_alerts = await purge_closed_alerts(db, settings.run_retention_days)
+            except Exception:
+                logger.exception(
+                    "run cleanup failed for this tenant; nothing was purged for it tonight and its run log and "
+                    "closed alerts keep growing until a later night succeeds; check the database container is "
+                    "healthy (docker compose ps db) and has room to write",
+                    extra={"tenant_id": str(tenant_id)},
+                )
+                continue
         if purged:
             logger.info(
                 "purged old runs",

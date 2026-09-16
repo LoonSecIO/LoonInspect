@@ -35,7 +35,10 @@ curl -s -b jar $BASE/api/destinations                           # destinations w
 ```
 
 **The container log.** `docker compose logs app --since 30m` (add `db` for the
-database). This is where the app speaks before there is a run to write to.
+database). This is where the app speaks before there is a run to write to. A scheduled
+pass that could not finish says so here and nowhere else: `outbox tick failed`,
+`outbox cleanup failed` and `run cleanup failed` each name what was not done, when it is
+tried again, and what to check.
 
 **The run log.** One line per milestone: `run started`, `devices processed`,
 `group definitions observed`, `run finished`, and warnings such as `throttled by Jamf;
@@ -156,7 +159,12 @@ did Splunk keep it.
      is why. Fix the cause (step 3), then **Redrive** returns them to the queue. Events
      that arrived after the fix flow on their own.
    - `pendingCount` climbing and nothing delivered → the destination is accepting slowly
-     or the tick is behind; wait two ticks (a minute). Still climbing → reportable **D**.
+     or the tick is behind; wait two ticks (a minute). Still climbing, and `lastError` is
+     still `null` → nothing was attempted, so read the container log:
+     `docker compose logs app --since 10m | grep "outbox tick failed"`. That line means the
+     tick gave up before it dialled, and it names what to check — usually a destination
+     whose URL it refuses or whose stored secret this container cannot read (§4). Fix that,
+     and the next tick drains the queue. No such line and still climbing → reportable **D**.
    - Both zero and the runs in step 1 succeeded → step 5.
 5. **Subscriptions.** `subscribedEvents` on the destination: `null` means every event
    type; a list means only those. A list without `device.inventory` gets no snapshots,
