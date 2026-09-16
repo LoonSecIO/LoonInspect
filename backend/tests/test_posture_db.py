@@ -1037,3 +1037,108 @@ async def test_a_tenant_one_epoch_behind_is_not_a_tenant_nobody_assessed(db, fle
     # The whole installed population, unanswered — the documented shape of "nothing answered
     # tonight", and the reason `apps_unknown` is the key that carries such a night.
     assert behind["vuln.apps_unknown"] == behind["catalog.installed"] > 0
+
+
+# --- a departed Mac leaves twenty keys (#476) --------------------------------------------
+
+# What one Mac leaving does to every key that counts it (docs/posture-snapshot.md, Departed
+# Macs). Asserted as one dict because the property under test is that the twenty AGREE about
+# one Mac: a key that quietly stops drawing the cut is a key whose series stops meaning its
+# own definition. d1 is the Mac the seeded fleet hangs everything on — three of four catalog
+# entries, four of five patch pairs, the one open latch, the one judged vulnerable build.
+_D1_LEAVES: dict[str, float] = {
+    "devices.total": -1,
+    "devices.stale_checkin_7d": 0,  # d1 checked in an hour ago; the stale two are d2 and d3
+    "devices.unmanaged": 0,  # d3's
+    "devices.stale_inventory_7d": 0,  # d3's
+    "alerts.open": -1,  # d1 held the one open latch on an active connection
+    "alerts.opened_24h": -1,  # d1's, opened 2h ago; d2's closed one stays
+    "catalog.installed": -3,  # the behind entry, the ahead one and the vulnerable one were d1's alone
+    "catalog.installed_not_latest": -2,  # the first two of those carry `is_latest = false`
+    "apps.distinct": -3,  # d2 still carries the fourth
+    "patch.pairs_total": -4,  # (d1,T1) (d1,T2) (d1,T3) (d1,T4); (d2,T2) remains
+    "patch.pairs_on_latest": -1,
+    "patch.titles_with_laggards": -1,
+    "patch.pairs_behind_under_14d": 0,
+    "patch.pairs_laggard_over_14d": -1,
+    "patch.pairs_unknown_build": -1,
+    "patch.pairs_ahead": -1,
+    "vuln.apps_affected": -1,
+    "vuln.apps_kev_affected": -1,
+    # The affected build and the two d1 alone carried, which stop being installed at all.
+    "vuln.apps_unknown": -2,
+    "vuln.devices_affected": -1,
+}
+
+
+async def _depart(db, fleet, external_id: str, *, departed_at):
+    """One `subject_departures` row — the whole of what says a Mac is gone. Written directly:
+    deriving it is `test_departure_db.py`'s subject, and this file is about what the recorder
+    does with the answer."""
+    from app.models.schema import SubjectDeparture
+
+    row = SubjectDeparture(
+        mdm_connection_id=fleet.connection.id, subject_kind="computer", subject_id=external_id, departed_at=departed_at
+    )
+    db.add(row)
+    await db.commit()
+    return row
+
+
+async def test_a_departed_mac_leaves_every_key_that_counts_it(db, fleet) -> None:
+    """The whole of #476 in one fleet: one Mac, four captures, twenty keys and the exit itself.
+
+    The four captures are the four states a departure can be in: **in its tail it counts
+    everywhere, past the tail nowhere, back it counts again.** A predicate missing from any of
+    the four join sites shows up as a key that did not move. `devices.departed_24h` is asserted
+    against the same four, because it is that exclusion read at two instants.
+    """
+    from app.core.posture import ACTIVE_KEYS, record_full_sweep_snapshot
+    from app.models.schema import Device, SubjectDeparture
+
+    await _seed_fleet(db, fleet)
+    signature = await _epoch(db, fleet)
+    d1 = (await db.execute(select(Device).where(Device.external_id == f"{fleet.suffix}-1"))).scalar_one()
+    # The vulnerability half of the twenty: one judged, affected, KEV-listed build only the
+    # departing Mac carries. Without it the fleet is unassessed and those four keys write nothing.
+    await _build(db, fleet, "departing", answer="covered", counts=_counts(2, 1), signature=signature, devices=[d1])
+
+    async def capture() -> dict[str, float]:
+        run = await _run(db, fleet)
+        await record_full_sweep_snapshot(db, run_id=run.id)
+        return await _capture(db, run.id)
+
+    def moved(before, after) -> dict[str, float]:
+        return {key: after[key] - before[key] for key in _D1_LEAVES}
+
+    # 1. In its tail: absence is derived, the Mac is still here, and nothing has moved.
+    departure = await _depart(db, fleet, d1.external_id, departed_at=_now() - timedelta(days=3))
+    in_tail = await capture()
+    assert set(_D1_LEAVES) <= set(ACTIVE_KEYS) & set(in_tail), "the twenty are registry names with values to move"
+
+    # 2. Past the tail, with the terminal exit inside the trailing 24h.
+    departure.departed_at = _now() - timedelta(days=7, hours=6)
+    await db.commit()
+    gone = await capture()
+    assert moved(in_tail, gone) == _D1_LEAVES
+    assert gone["devices.departed_24h"] - in_tail["devices.departed_24h"] == 1, "the exit, in the capture that holds it"
+    # The five state keys still partition `pairs_total` with the predicate applied.
+    states = ("pairs_on_latest", "pairs_behind_under_14d", "pairs_laggard_over_14d", "pairs_unknown_build", "pairs_ahead")
+    assert gone["patch.pairs_total"] == sum(gone[f"patch.{state}"] for state in states)
+
+    # 3. The next night: still gone from all twenty, and the exit is no longer news — this key
+    # counts a departure once, on the night it happened, never for ever after.
+    departure.departed_at = _now() - timedelta(days=9)
+    await db.commit()
+    tomorrow = await capture()
+    assert moved(gone, tomorrow) == dict.fromkeys(_D1_LEAVES, 0)
+    assert tomorrow["devices.departed_24h"] == in_tail["devices.departed_24h"]
+
+    # 4. A Mac Jamf hands back counts again, everywhere, and its exit is taken back with it.
+    await db.execute(
+        update(SubjectDeparture).where(SubjectDeparture.id == departure.id).values(returned_at=_now(), matched_by="jamfProID")
+    )
+    await db.commit()
+    back = await capture()
+    assert moved(in_tail, back) == dict.fromkeys(_D1_LEAVES, 0)
+    assert back["devices.departed_24h"] == in_tail["devices.departed_24h"]

@@ -1,0 +1,196 @@
+# The baseline rule catalogue, v1 — the vocabulary of the macOS technical baseline evidence report (#463, from the R5
+# ruling on #219). Machine-readable because code reads it: `app.baseline.catalogue` loads this file, and the evaluator,
+# the interval query, the artefact and the printable page each name a rule by an id minted here. Shaped like
+# docs/controls.yml — a `version:` key and one mapping per rule — for the same reason: a register restated in prose
+# drifts from the register the code runs.
+#
+# Four rules about this file, written here because they are the ones a later tidy-up undoes:
+#
+# 1. **Ids are never renumbered.** `LI-NNNN` is flat, zero-padded and allocated in order. The artefact is archived: next
+#    year's auditor compares against last year's copy, and a renumber silently makes two documents disagree about what
+#    a row said.
+# 2. **Grouping lives in `section`, never in the id.** A rule can be regrouped without changing what an archived report
+#    calls it.
+# 3. **An MSCP id is cited only when our evaluation and its check are the same proposition** — not "related to", not
+#    "in the spirit of". In v1 that is three rules, the ones MSCP checks through `mdmclient QuerySecurityInfo` rather
+#    than through a managed preference: secure boot level, recovery lock, remote management. Two reasons, both of which
+#    get worse with time:
+#      a. **MSCP rule files carry CMMC and 800-171 mappings inside them.** Read, not assumed: `os_recovery_lock_enable`
+#         on the `tahoe` branch carries a `cmmc:` block and an `800-171r3:` block in its own `references:`. An id is not
+#         an inert label — printing `os_sip_enable` on the artefact would import framework attestation through a string,
+#         which is exactly what #219's scope ruling forbids.
+#      b. **Most MSCP rules check the managed preference, not the effective state.** MSCP asks whether the profile that
+#         *should* set a thing is in place; Jamf reports what the Mac *is*. They disagree exactly when it matters — a
+#         profile scoped and not yet delivered, a user who turned something back on. Claiming their id for our answer
+#         claims their method for our data.
+# 4. **`difference` is required on every rule.** It sits inside `mscp` for the three that cite an id, because it
+#    describes that citation, and at the top level for the seven that carry `mscp: null`, because there is no mapping to
+#    put it in. One per rule, never both.
+#
+# `section` is the Jamf contract's own section name (`SECTIONS` in backend/app/mdm/jamf/contract.py) and `field` is that
+# name plus the path into the section's document; every one is already in the normalization allowlist, and all ten read
+# scalar sections (a list section stores entry digests and needs a join — a second evaluator, not v1's). `predicate` is
+# the operator and the operand, never prose. `witnessed` is the sentence printed beside the verdict, because "met" alone
+# is a spreadsheet with better typography; its substitutions are only `{field}`, `{value}` and `{operand}`, and every
+# rule prints the field it read. tests/test_baseline_rules.py fails the build if any of that stops holding.
+
+version: 1
+
+rules:
+  - id: LI-0001
+    title: FileVault is on for the boot volume
+    section: disk_encryption
+    field: disk_encryption.bootPartitionEncryptionDetails.partitionFileVault2State
+    predicate: {operator: equals, operand: ENCRYPTED}
+    witnessed: Jamf reported the boot volume encryption state as {value} ({field}).
+    mscp: null
+    difference: >-
+      MSCP's `system_settings_filevault_enforce` reads the `com.apple.MCX/dontAllowFDEDisable` managed preference
+      together with `fdesetup status` — it asks whether a profile forbids turning FileVault off, which this rule does
+      not ask at all.
+    origin: >-
+      The first thing every assessor asks about a Mac. Three contract fields could answer it and they are not the same
+      claim: `disk_encryption.fileVault2Enabled` is the disk section's summary, `operating_system.fileVault2Status` the
+      OS section's roll-up, and both fold other volumes in. The boot partition's own state is the narrowest and the one
+      an auditor means, so it is the field; the other two are cross-checks a later rule may cite, never swaps.
+  - id: LI-0002
+    title: Gatekeeper is enabled
+    section: security
+    field: security.gatekeeperStatus
+    predicate: {operator: in, operand: [APP_STORE, APP_STORE_AND_IDENTIFIED_DEVELOPERS]}
+    witnessed: Jamf reported the Gatekeeper assessment policy as {value} ({field}).
+    mscp: null
+    difference: >-
+      MSCP's `os_gatekeeper_enable` reads the `com.apple.systempolicy.control/EnableAssessment` managed preference and
+      answers yes or no; Jamf reports which policy is in force, so this rule can tell `APP_STORE` from
+      `APP_STORE_AND_IDENTIFIED_DEVELOPERS` and that check cannot.
+    origin: >-
+      Paired with SIP as the two macOS protections an operator answers for without reaching for a profile. Both accepted
+      values are Gatekeeper on; the predicate is a set so that tightening to `APP_STORE` is a new rule, not an edit.
+  - id: LI-0003
+    title: The application firewall is on
+    section: security
+    field: security.firewallEnabled
+    predicate: {operator: equals, operand: true}
+    witnessed: Jamf reported the application firewall as enabled = {value} ({field}).
+    mscp: null
+    difference: >-
+      MSCP's `system_settings_firewall_enable` reads the `com.apple.security.firewall/EnableFirewall` managed preference
+      — the profile's intent. Jamf reports the effective state, which is the one that disagrees with intent on exactly
+      the Macs worth finding.
+    origin: >-
+      One of the two booleans (with auto-login) a Mac can flip back locally between reports, which is what makes the
+      ledger's history worth printing rather than one current-state read.
+  - id: LI-0004
+    title: System Integrity Protection is enabled
+    section: security
+    field: security.sipStatus
+    predicate: {operator: equals, operand: ENABLED}
+    witnessed: Jamf reported System Integrity Protection as {value} ({field}).
+    mscp: null
+    difference: >-
+      MSCP's `os_sip_enable` runs `csrutil status` on the box at audit time and counts one line; this rule reads what
+      Jamf's last inventory reported, which carries a third value (`NOT_COLLECTED`) that a binary count has no room for
+      and that must not read as unmet.
+    origin: >-
+      The protection whose absence explains most other findings on the same Mac: its place is earned on diagnostic value
+      rather than on how often it fails.
+  - id: LI-0005
+    title: Secure boot is set to full security
+    section: security
+    field: security.secureBootLevel
+    predicate: {operator: equals, operand: FULL_SECURITY}
+    witnessed: Jamf reported the secure boot level as {value} ({field}).
+    mscp:
+      id: os_secure_boot_verify
+      branch: tahoe
+      match: partial
+      difference: >-
+        The same proposition read from the same place — MSCP counts `SecureBootLevel = full` out of `mdmclient
+        QuerySecurityInfo`, the field Jamf reports as `FULL_SECURITY`. Partial rather than exact because MSCP's own file
+        scopes the check to T2 and Apple Silicon Macs and this rule does not, so a Mac reporting `NOT_SUPPORTED` reads
+        as unmet here and as out of scope there.
+    origin: >-
+      One of the three v1 rules where MSCP reads the same QuerySecurityInfo field we do, so the citation states a method
+      rather than borrowing a framework mapping.
+  - id: LI-0006
+    title: A recovery lock password is set
+    section: security
+    field: security.recoveryLockEnabled
+    predicate: {operator: equals, operand: true}
+    witnessed: Jamf reported the recovery lock as enabled = {value} ({field}).
+    mscp:
+      id: os_recovery_lock_enable
+      branch: tahoe
+      match: partial
+      difference: >-
+        MSCP counts `IsRecoveryLockEnabled = 1` out of `mdmclient QuerySecurityInfo`, which is the field Jamf reports
+        here. Partial because MSCP's file states recovery lock is unsupported on Intel Macs and scopes itself
+        accordingly, where this rule reads Jamf's `false` on an Intel Mac as unmet.
+    origin: >-
+      The one rule set by an MDM command rather than by a profile or a user, so a fleet-wide unmet reads as "nobody has
+      sent it yet" rather than as drift.
+  - id: LI-0007
+    title: Remote management is off
+    section: security
+    field: security.remoteDesktopEnabled
+    predicate: {operator: equals, operand: false}
+    witnessed: Jamf reported Apple Remote Desktop access as enabled = {value} ({field}).
+    mscp:
+      id: system_settings_remote_management_disable
+      branch: tahoe
+      match: exact
+      difference: >-
+        None that changes the answer: MSCP counts `RemoteDesktopEnabled = 0` out of `mdmclient QuerySecurityInfo`, and
+        Jamf reports that same field as `security.remoteDesktopEnabled`. Same field, same source, differing only in
+        spelling.
+    origin: >-
+      Filed with its trap attached. The field is `security.remoteDesktopEnabled` — Apple Remote Desktop on the Mac — and
+      **not** `general.remoteManagement.managed`, which is Jamf's own flag for "Jamf manages this Mac". Inverting the
+      second would print a fleet-wide failure across a correctly managed fleet, and the two sit one section apart in the
+      same record.
+  - id: LI-0008
+    title: Automatic login is disabled
+    section: security
+    field: security.autoLoginDisabled
+    predicate: {operator: equals, operand: true}
+    witnessed: Jamf reported automatic login as disabled = {value} ({field}).
+    mscp: null
+    difference: >-
+      MSCP's `os_filevault_autologin_disable` reads the `com.apple.loginwindow/DisableFDEAutoLogin` managed preference,
+      and only for the FileVault case; Jamf reports the Mac's effective auto-login state whether or not FileVault is on.
+    origin: >-
+      The field is already phrased as the safe state, so the predicate is `true` rather than a negation — recorded
+      because the neighbouring LI-0007 is the opposite shape and a skimming reader assumes one polarity for both.
+  - id: LI-0009
+    title: A bootstrap token is escrowed to Jamf
+    section: security
+    field: security.bootstrapTokenEscrowedStatus
+    predicate: {operator: equals, operand: ESCROWED}
+    witnessed: Jamf reported the bootstrap token escrow status as {value} ({field}).
+    mscp: null
+    difference: >-
+      MSCP has no rule for this: escrow is a fact about the MDM's relationship with the Mac rather than about a setting
+      on the Mac. The companion field `security.bootstrapTokenAllowed` says the Mac *may* escrow; this rule is about
+      `bootstrapTokenEscrowedStatus`, which says it *did*, and the two must not be swapped.
+    origin: >-
+      The prerequisite for the MDM acting at all on an Apple Silicon Mac: a fleet with no escrowed tokens can neither
+      install updates nor set a recovery lock, which is why it sits beside LI-0006 rather than in a later batch.
+  - id: LI-0010
+    title: macOS is at or above the supported version floor
+    section: operating_system
+    field: operating_system.version
+    predicate: {operator: version_at_least, operand: '26.0'}
+    witnessed: Jamf reported macOS {value}, against a floor of {operand} ({field}).
+    mscp: null
+    difference: >-
+      Loon-original: MSCP has no version-floor rule. Its nearest neighbours (`system_settings_softwareupdate_current`,
+      `os_software_update_deferral`) ask whether update settings are enforced, which is a claim about configuration;
+      this asks what the Mac is running, which is a claim about state.
+    origin: >-
+      The one rule in the ten whose *meaning* drifts, because the floor is a value an operator edits as Apple's
+      supported releases move — so the artefact prints the floor it used (`{operand}` in `witnessed`) and not only the
+      verdict, or two archived reports a year apart say "met" about two different propositions. The shipped `26.0` is a
+      starting value, not a claim about which releases Apple still patches; set it on the day. The comparison is a
+      floor, so the operator is `version_at_least` and never `equals`: `26.10` is above `26.9`, which string and float
+      comparison both get wrong.

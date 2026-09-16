@@ -583,3 +583,61 @@ async def test_a_refused_census_emits_nothing_at_all(db, jamf: FakeJamf, connect
     # subject the census named is present whatever else the census says (`departure.py` rule 1).
     assert await _events(db, mark, "subject.returned") == []
     assert await _events(db, mark, "subject.returned") == []
+
+
+# --- a departed Mac's latches close with it (#476) -------------------------------------
+
+
+async def test_a_departed_macs_open_latch_closes_at_the_terminal_exit(db, jamf: FakeJamf, connection) -> None:
+    """#476: the one exception to "the latch closes itself". `process_sync` opens and closes a
+    latch and only runs against Macs a sweep returns, so a Mac Jamf deleted would keep its latch
+    open for ever; the census is the pass that knows the tail ran out. Three properties: it
+    closes at the **terminal exit** and not on the first missed census; it deletes nothing; and
+    it stamps a **reason**, the only thing telling this close from an uninstall afterwards."""
+    from app.alerts.service import CLOSED_DEVICE_DEPARTED, NEW_APP
+    from app.mdm.service import sync_connection
+    from app.models.schema import Alert, Device, InstalledApp, SubjectDeparture
+
+    jamf.seed(1)
+    (clone,) = jamf._extra
+    assert (await sync_connection(db, connection)).ok
+    device = (
+        await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == clone["id"]))
+    ).scalar_one()
+    apps_before = (await db.execute(select(InstalledApp.id).where(InstalledApp.device_id == device.id))).scalars().all()
+
+    app = {"app_hash": "d" * 32, "app_name": "Wireshark", "bundle_id": "org.wireshark.Wireshark"}
+    db.add(Alert(kind=NEW_APP, level="high", device_id=device.id, opened_at=datetime.now(UTC) - timedelta(days=30), **app))
+    await db.commit()
+
+    async def latch() -> Alert:
+        return (await db.execute(select(Alert).where(Alert.device_id == device.id))).scalars().one()
+
+    # Missed by one clean census: the tail starts and nothing closes — a Mac in its tail is
+    # still in the fleet, and an alert about it is still true of the fleet.
+    jamf._extra = []
+    assert (await sync_connection(db, connection)).ok
+    (gone,) = await _departures(db, connection.id, COMPUTER)
+    assert (await latch()).closed_at is None, "a latch closing on day one would be the tail said twice"
+
+    # The tail runs out. The next census is the seam.
+    await db.execute(
+        update(SubjectDeparture).where(SubjectDeparture.id == gone.id).values(departed_at=datetime.now(UTC) - timedelta(days=8))
+    )
+    await db.commit()
+    assert (await sync_connection(db, connection)).ok
+
+    closed = await latch()
+    assert closed.closed_at is not None and closed.closed_reason == CLOSED_DEVICE_DEPARTED
+    assert closed.closed_run_id is not None, "the census run stamps this close, as the sweep stamps the other"
+    # NOTHING ELSE WENT — the app-gone close takes the `installed_apps` row with it, this one
+    # takes nothing, which is why the reason has to be on the row. And it is said out loud, on
+    # the census line an operator is already reading (path 16, step 5).
+    assert apps_before, "the fixture Mac must carry apps for the next line to mean anything"
+    assert (await db.execute(select(InstalledApp.id).where(InstalledApp.device_id == device.id))).scalars().all() == apps_before
+    assert any("alert latch" in line and "nothing was deleted" in line for line in await _census_lines(db, connection.id))
+
+    # Idempotent: the next census finds nothing left to close and says nothing about it.
+    assert (await sync_connection(db, connection)).ok
+    assert (await latch()).closed_at == closed.closed_at
+    assert sum("alert latch" in line for line in await _census_lines(db, connection.id)) == 1
