@@ -115,6 +115,49 @@ async def test_the_catalog_and_the_jamf_patch_titles_echo_the_page(client) -> No
         assert (body["page"], body["pageSize"]) == (page, page_size)
 
 
+async def test_the_jamf_patch_titles_say_where_each_app_name_came_from(client, db) -> None:
+    """#478: `appNameSource` rides the titles list and the title detail, spelled camelCase.
+
+    #385 gives a title Jamf leaves unnamed the app name its own patches' `killApps` carry,
+    and the page cannot mark a derived name — a possible miss, never a wrong key — unless
+    the response says which is which. Pinned here, against the running route and a real
+    row, because the column and the marker are two halves of one claim.
+    """
+    from app.models.schema import JamfPatchTitle
+
+    prefix = f"contract-appname-{uuidlib.uuid4().hex[:8]}"
+    stored = {"derived": "kill_apps", "published": "jamf", "nameless": "unnamed", "older": None}
+    for suffix, source in stored.items():
+        db.add(
+            JamfPatchTitle(
+                id=f"{prefix}-{suffix}",
+                name=f"{prefix} {suffix}",
+                app_name=None if source == "unnamed" else f"{suffix.title()}.app",
+                app_name_source=source,
+                current_version="1.0",
+                last_modified="2026-09-16",
+            )
+        )
+    await db.commit()
+    try:
+        response = await client.get(f"/api/jamf-patch/titles?q={prefix}&pageSize=10")
+        assert response.status_code == 200, response.text
+        items = {item["id"].rsplit("-", 1)[1]: item for item in response.json()["items"]}
+        assert set(items) == set(stored), sorted(items)
+        for suffix, source in stored.items():
+            assert items[suffix]["appNameSource"] == source, items[suffix]
+            assert "app_name_source" not in items[suffix], sorted(items[suffix])
+        assert items["derived"]["appName"] == "Derived.app"
+        assert items["nameless"]["appName"] is None
+
+        detail = await client.get(f"/api/jamf-patch/titles/{prefix}-derived")
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["appNameSource"] == "kill_apps"
+    finally:
+        await db.execute(delete(JamfPatchTitle).where(JamfPatchTitle.id.startswith(prefix)))
+        await db.commit()
+
+
 async def test_runs_answer_in_the_shared_envelope(client) -> None:
     response = await client.get("/api/runs?pageSize=5")
     assert response.status_code == 200, response.text

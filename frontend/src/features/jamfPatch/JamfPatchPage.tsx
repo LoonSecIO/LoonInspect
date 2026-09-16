@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
+import { AppNameLine } from "@/features/jamfPatch/AppNameLine";
 import { listJamfPatchTitles, syncJamfPatchTitles } from "@/features/jamfPatch/api";
 import { PatchingPolicyStatement } from "@/features/jamfPatch/PatchingPolicyStatement";
 import { filterTitles } from "@/features/jamfPatch/titleFilter";
@@ -285,7 +286,12 @@ export function JamfPatchPage() {
                 onClick={() => navigate(`/devices/applications/jamf-patch/${title.id}`)}
                 className="cursor-pointer border-b last:border-0 hover:bg-accent/50"
               >
-                <td className="px-4 py-2 font-medium">{title.name}</td>
+                {/* The title's name, and under it the app name its content keys are
+                    computed from — marked when LoonInspect derived it (#478). */}
+                <td className="px-4 py-2 font-medium">
+                  {title.name}
+                  <AppNameLine title={title} t={t} className="mt-0.5 block text-xs font-normal text-muted-foreground" />
+                </td>
                 <td className="px-4 py-2">{title.publisher ?? "—"}</td>
                 <td className="px-4 py-2">{title.bundleId ?? "—"}</td>
                 <td className="px-4 py-2">{title.currentVersion}</td>

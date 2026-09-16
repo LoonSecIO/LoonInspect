@@ -6,6 +6,7 @@ function title(overrides: Partial<JamfPatchTitle> & { id: string; name: string }
   return {
     publisher: null,
     appName: null,
+    appNameSource: null,
     bundleId: null,
     currentVersion: "1.0",
     lastModified: "",
