@@ -62,10 +62,21 @@ export function DevicesPage() {
   const [error, setError] = useState<string | null>(null);
   const pageSize = 50;
 
-  useEffect(() => {
-    let cancelled = false;
+  // A new set of filters is a new question, and the table has to say it is asking rather
+  // than leave the last answer standing as though it were this one. Adjusted here, during
+  // the render that moved the filters (React's own "adjusting state when a prop changes",
+  // the move the Changes page's filter boxes already make), rather than from the effect
+  // below: from an effect it lands a render late, so the old rows paint one frame looking
+  // settled.
+  const [asked, setAsked] = useState(filters);
+  if (asked !== filters) {
+    setAsked(filters);
     setLoading(true);
     setError(null);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
 
     // Debounced so typing in the filter doesn't fire a query per keystroke.
     const handle = setTimeout(() => {

@@ -141,10 +141,20 @@ export function ChangesPage() {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
+  // A new question — moved filters, or the Prompt bar re-asking the same one — has to
+  // read as a question being asked, not as the last answer. Adjusted here, during the
+  // render that changed it, for the same reason the draft boxes above are: from an
+  // effect it lands a render late, and the table paints one frame of the previous
+  // filter's rows as though they were the answer.
+  const [asked, setAsked] = useState({ filters, reloadToken });
+  if (asked.filters !== filters || asked.reloadToken !== reloadToken) {
+    setAsked({ filters, reloadToken });
     setLoading(true);
     setError(null);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
     listChanges({ ...filters, pageSize })
       .then((response) => {
         if (cancelled) return;

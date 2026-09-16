@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { listChanges } from "@/features/changes/api";
 import { diffLines, whatOf } from "@/features/changes/render";
@@ -66,35 +66,37 @@ export function ChangesFeed({ baselineAt }: { baselineAt: string | null }) {
   const [rows, setRows] = useState<DeviceChange[] | null>(null);
   const [total, setTotal] = useState(0);
   const [failed, setFailed] = useState(false);
-  const mounted = useRef(true);
 
   useEffect(() => {
-    mounted.current = true;
     return () => {
-      mounted.current = false;
       // The visit is stamped as the operator leaves, so "since you last looked" means the
       // last time they finished looking.
       writeLastVisit(new Date());
     };
   }, []);
 
-  const load = useCallback(async () => {
-    try {
-      const response = await listChanges({ since: anchor, minLevel: FEED_MIN_LEVEL, pageSize: FETCH_SIZE });
-      if (!mounted.current) return;
-      setRows(response.items);
-      setTotal(response.total);
-      setFailed(false);
-    } catch {
-      // #150's rule: failure must never read as emptiness. A feed that could not load
-      // says so, rather than showing the same panel a quiet fleet shows.
-      if (mounted.current) setFailed(true);
-    }
-  }, [anchor]);
-
+  // The panel's one read. A promise chain rather than `await`: React asks an effect body
+  // not to set state before it has yielded, so every setState below sits in a callback.
+  // `cancelled` belongs to this mount rather than to a ref shared by all of them, which
+  // is what makes it certain an answer for a panel already gone is dropped.
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+    listChanges({ since: anchor, minLevel: FEED_MIN_LEVEL, pageSize: FETCH_SIZE })
+      .then((response) => {
+        if (cancelled) return;
+        setRows(response.items);
+        setTotal(response.total);
+        setFailed(false);
+      })
+      .catch(() => {
+        // #150's rule: failure must never read as emptiness. A feed that could not load
+        // says so, rather than showing the same panel a quiet fleet shows.
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [anchor]);
 
   if (failed) {
     return (

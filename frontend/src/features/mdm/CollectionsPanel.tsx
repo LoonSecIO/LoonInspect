@@ -69,18 +69,26 @@ export function CollectionsPanel({ connection, onConnectionChanged }: Collection
   const [queuedId, setQueuedId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  /** The one read of this connection's collections, as a promise chain rather than
+   *  `await`: the first read is started by the effect below, and an effect body is the
+   *  one place React asks callers not to set state (#15). `loading` starts true; only
+   *  `refresh` turns it back on. */
+  const load = useCallback(
+    () =>
+      listCollections(connection.id)
+        .then((collections) => setRows(collections))
+        .finally(() => setLoading(false)),
+    [connection.id]
+  );
+
+  const refresh = useCallback(() => {
     setLoading(true);
-    try {
-      setRows(await listCollections(connection.id));
-    } finally {
-      setLoading(false);
-    }
-  }, [connection.id]);
+    return load();
+  }, [load]);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    void load();
+  }, [load]);
 
   // A queued run finishes in the background; its outcome lands on the row's lastRun
   // fields, so keep asking for a while after queueing rather than forever.
