@@ -701,6 +701,32 @@ export const en = {
       seeAll: "See all changes"
     },
 
+    // The stamp under every tile carrying a number (#117); the age recomputes on its own.
+    asOfStamp: (utc: string, age: string) => `as of ${utc} (${age})`,
+
+    // The inventory-read story (#115) — what `/` says to an account without
+    // destination:read. Words for every zero, never a bare numeral.
+    inventory: {
+      intro:
+        "Your role reads the fleet rather than the pipeline that carries it. This is what LoonInspect has recorded about your devices and the applications on them.",
+      // Not an empty board: nothing here was measured and found to be zero.
+      nothing:
+        "Your role cannot read devices or applications, so this page has nothing to show — which is not the same as an empty fleet. An administrator can grant the access it needs.",
+      fleetTitle: "Devices in inventory",
+      fleetCount: (n: number) => `${n.toLocaleString("en-US")} device${n === 1 ? "" : "s"}`,
+      fleetNone: "No devices in inventory yet",
+      catalogTitle: "App catalog",
+      catalogCounts: (entries: number, matched: number, unmatched: number) =>
+        `${entries.toLocaleString("en-US")} app${entries === 1 ? "" : "s"} · ` +
+        `${matched.toLocaleString("en-US")} matched to a Jamf Patch title, ${unmatched.toLocaleString("en-US")} unmatched`,
+      catalogNone: "No applications in the catalog yet",
+      topAppsTitle: "Most installed apps",
+      topAppsRow: (name: string, devices: number) =>
+        `${name} · ${devices.toLocaleString("en-US")} device${devices === 1 ? "" : "s"}`,
+      topAppsNone: "No applications recorded yet",
+      failed: "Could not load"
+    },
+
     loading: "Loading…",
     loadError: "Could not load your setup state.",
     setupHiddenForRole: "Setup for this pod is managed by an administrator."

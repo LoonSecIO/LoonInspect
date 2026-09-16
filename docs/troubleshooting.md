@@ -45,6 +45,21 @@ tried again, and what to check.
 backed off and continued` or `extension attribute definitions not readable; census
 skipped`. It is the panel under the connection's row, or `GET /api/runs/{jobId}/log`.
 
+### The front page is not the same for every role
+
+`/` tells one of two stories ([#115](https://github.com/LoonSecIO/LoonInspect/issues/115)).
+An account holding `destination:read` — analyst, auditor, admin — gets the pipeline:
+stepper, running sweep, status strip, Needs Attention. A Viewer holds inventory read only
+and gets the inventory board instead: fleet size, the hygiene counts, the catalog, the
+most-installed apps. Two people on one pod seeing different tiles is the design.
+
+Every tile on that board carries `as of <UTC> (<age>)` and the age climbs while the page
+stays open: an age in hours means the browser stopped getting answers — reload, then §4.
+One tile reading **Could not load** means that source refused while the others answered;
+`GET /api/devices?pageSize=1`, `/api/catalog?pageSize=1` and `/api/applications?pageSize=5`
+say which, and with what status. A board saying your role cannot read devices or
+applications is not an empty fleet: an administrator grants `device:read` and `app:read`.
+
 ### A proxy in front answers for itself
 
 With a reverse proxy or load balancer in front, not every error the browser shows is the
