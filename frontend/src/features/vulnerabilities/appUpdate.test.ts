@@ -49,14 +49,15 @@ describe("describeUpdate", () => {
     });
   });
 
-  it("builds only the reference title's target — the in-branch release gets no line, and #482 asked for one", () => {
-    // NOT the rule #482 states ("one line per named title"): this pins the CUT, under a
-    // name that says so, because a test called for the rule while asserting its absence is
-    // worse than the absence. Wireshark 4.2.0 matches two titles; "Wireshark 4.2" names
-    // 4.2.14, which is the update most admins would actually push, and nothing here says a
-    // word about it. Building it needs a stored answer per `app_catalog_title_matches` row
-    // — a new shape, not a clause — so the cut is raised on the PR rather than smuggled.
-    // When the second target lands, this test is replaced by the rule's own.
+  it("builds exactly one line, the reference title's target, and none for the in-branch title", () => {
+    // The name says what is asserted — a SINGULAR target — because this pins the CUT and
+    // not the rule. #482 states "one line per named title"; that rule is NOT implemented,
+    // and a test carrying its name while asserting its absence is worse than the absence.
+    // Wireshark 4.2.0 matches two titles; "Wireshark 4.2" names 4.2.14, which is the
+    // update most admins would actually push, and nothing here says a word about it.
+    // Building it needs a stored answer per `app_catalog_title_matches` row — a new shape,
+    // not a clause — so the cut is raised on the PR and the ruling asked on #482 rather
+    // than smuggled. When the second target lands, this test is replaced by the rule's own.
     const lines = describeUpdate(COVERED, EXACT, WIRESHARK);
     expect(lines).toHaveLength(1);
     expect(lines.map((line) => line.version)).toEqual(["4.6.8"]);

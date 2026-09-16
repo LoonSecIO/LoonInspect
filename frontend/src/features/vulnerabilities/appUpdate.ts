@@ -15,8 +15,9 @@ import type { AppUpdate, AppVulnerability } from "@/features/vulnerabilities/typ
  * actually push — gets no line and is not mentioned. #482's done-when asks for a line per
  * named title and this is short of it; the missing half needs a stored answer per
  * `app_catalog_title_matches` row, which `installed_apps` has no path to and which is a
- * new stored shape rather than a clause here. **Unruled cut, raised on the PR.** Until it
- * is ruled, no name in this file or its test may claim the rule is implemented.
+ * new stored shape rather than a clause here. **Unruled cut, raised on the PR and asked on
+ * #482.** Until it is ruled, no name in this file or its test may claim the rule is
+ * implemented.
  *
  * **Nothing at all unless the build itself is `covered`.** §4g's three renderings do not
  * collapse and this is not a fourth state: `off` and `unknown_app` carry no counts, so
