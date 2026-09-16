@@ -205,6 +205,18 @@ collects every family a single Jamf Pro produced. `deviceMeta` degrades by subje
 exactly as it does on `device.change`, and a departure carries **no `eventID`**: it names a
 *pull* of that subject, and a departure has none.
 
+**A Mac is the one subject with a tail** ([#495](https://github.com/LoonSecIO/LoonInspect/issues/495),
+2026-09-16). `subjectKind: computer` emits `state: departed` with `noticeDay` 1..7 — **one per UTC
+day**, driven by the device census and by no timer, so a day with no clean census sends nothing, is
+never backfilled, and `noticeDay` may jump. The tail ends with a **guaranteed** terminal `state:
+removed` the moment the Mac leaves the device population, on the same wall clock **Devices** drops
+it on, and it fires even when those seven days passed without one clean census. `deviceCount` is
+absent — a Mac carries no count of Macs — `deviceMeta` is the **whole block as the `Device` row
+last knew it**, and the envelope's `host` **is** the hostname. A Mac's `subject.returned` is the
+family's one asymmetry: it carries `deviceMeta.eventID` because a return coincides with a real
+pull, and after a wipe-and-re-enrol `matchedBy: serialNumber` with `priorJamfProID`, the retired id
+the departure went out under and the only key joining that return to what it closes.
+
 ## 3. Why some wrapper keys are short and some are not
 
 **Short where the fan-out is high; long where the section is one-per-device.** The block
@@ -465,5 +477,4 @@ issue rather than living on as a footnote.
 | Consequence | Issue |
 | --- | --- |
 | The three enrichment strings — `loon:jamf:mac:app:patch`, `:vuln`, `:alert` — are minted with no writer, because an enrichment rides inline on the app sub-event under its own key (§2). `:vuln` is reserved for the lifecycle records of [`vulnerabilities.md`](vulnerabilities.md) §6; `:patch` and `:alert` name shapes nothing produces. `patch{}` and `vuln{}` themselves ship on every app sub-event since #241/#242, and both have since been populated **without stamping anything** — [#249](https://github.com/LoonSecIO/LoonInspect/issues/249) for `vuln{}` (2026-09-03) and [#311](https://github.com/LoonSecIO/LoonInspect/issues/311) for `patch.jamfPatch{}` (2026-09-04): each is an inline enrichment on `loon:jamf:mac:app`, because taking the compound for either would force `loon:jamf:mac:app:patch:vuln` on an app carrying both blocks, and a `props.conf` stanza takes no wildcards. Thirty-two strings are stamped since #179 minted `loon:departure` on 2026-09-16, and neither enrichment moved the registry | post-v0 (`vulnerabilities.md` §10) |
-| The departure family's **Mac half**. `loon:departure` ships with the object subjects (`computer_group`, `extension_attribute_definition`) emitting; a Mac's seven-day tail — `noticeDay` 1..7, one emission per UTC day, and the guaranteed terminal `state: removed` when the tail ends, including where the clock expires without a clean census — is built on #183's device census and is the follow-up to this ruling. `subjectKind: computer` and `state: removed` are named in the vocabulary and written by nothing yet | [#179](https://github.com/LoonSecIO/LoonInspect/issues/179) |
 | `alert` is still minted with no writer. #101 shipped the alerts table and the Needs Attention rows (2026-09-04) with **nothing on the wire** — but it wrote the block's shape down rather than leaving it to be invented under deadline: always present, `{"open": false}` or `{"open": true, "kinds": ["new_app"]}`, graded by the change log's `level`. The shape and the closed kind vocabulary are [`alerts.md`](alerts.md) §8 and §2; emitting them later is additive under clause 1, and clause 2 will freeze them the day they first ship | [#101](https://github.com/LoonSecIO/LoonInspect/issues/101) |
