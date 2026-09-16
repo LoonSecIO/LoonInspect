@@ -67,7 +67,9 @@ export const de: Translations = {
       candidatesHelp:
         "Titel, die keine öffentliche Quelle auf diesem Container kennt: kein Jamf-Patch-Titel passt auf einen ihrer Builds, und die Schwachstellen-Bibliothek nennt keinen von ihnen. Unbekannt heißt nicht Ihre — der lange Schwanz einer Flotte ist meist öffentliche Software, von der der Katalog nie gehört hat. Lesen Sie dies als Vorauswahl, nicht als Antwort. Nichts wird ausgeschlossen, bevor Sie ein Muster hinzufügen und es gespeichert ist.",
       candidatesNone: (catalog: number, library: number) =>
-        `Keine Kandidaten: jeder Titel dieser Flotte ist hier einer öffentlichen Quelle bekannt, geprüft gegen ${catalog} Jamf-Patch-Titel und ${library} Titel der Schwachstellen-Bibliothek. Beide Zahlen stehen auf 0, solange der Patch-Katalog nicht synchronisiert und keine Epoche geladen ist — dann kann nichts bekannt sein, siehe troubleshooting.md §6 Schritt 4.`,
+        catalog === 0
+          ? `Nichts vorzuschlagen, und nichts, woraus sich etwas vorschlagen ließe: dieser Container hat 0 Jamf-Patch-Titel synchronisiert und hält ${library} Titel der Schwachstellen-Bibliothek, es kann hier also kein Build überhaupt zugeordnet werden. Eine leere Liste bei diesen Zahlen heißt, dass noch kein Anwendungsinventar erhoben wurde — erfassen Sie eine Verbindung, siehe troubleshooting.md §6 Schritt 4.`
+          : `Keine Kandidaten: jeder Titel dieser Flotte ist hier einer öffentlichen Quelle bekannt, geprüft gegen ${catalog} Jamf-Patch-Titel und ${library} Titel der Schwachstellen-Bibliothek.`,
       candidateRow: (name: string, bundleId: string, devices: number) =>
         `${name} — ${bundleId} — ${devices} Mac${devices === 1 ? "" : "s"} — keine öffentliche Quelle hier kennt sie`,
       groupSummary: (apps: number, devices: number) => `${apps} unbekannte Titel auf ${devices} Macs`,

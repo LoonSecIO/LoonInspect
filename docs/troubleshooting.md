@@ -512,15 +512,20 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
      closes by itself is working as designed. A title that is published by Jamf and still
      missing from the unticked list a day later is reportable state **J**.
 
-4. **Settings › Data Sharing says it knows every title your fleet carries.** The
-   candidate list under *Excluded bundle IDs* names titles no public source on this
-   container knows, and it says what it checked against: *… checked against N Jamf Patch
-   titles and M vulnerability-library titles*. **N of 0 is this section's fault** — with no
-   catalog synced, no build can be matched, so nothing is unknown and nothing is known
-   either; work steps 1 and 2 above and the list fills in on the next page load. M of 0 is
-   not: no vulnerability epoch has been loaded, which needs a sharing tier above *off* and
-   one completed exchange (§5). With both above 0 and the list still empty, the list is
-   right — every title your Macs carry is software a public source here already names.
+4. **Settings › Data Sharing lists half the fleet as software no public source knows.**
+   That list calls a title unknown when no Jamf Patch title matches any of its builds and
+   the loaded vulnerability epoch names none of them — so with **0 titles synced nothing
+   can be matched and everything reads unknown**. That is this section, not the list: it
+   states both counts (*… checked against N Jamf Patch titles and M vulnerability-library
+   titles*) so you are not left guessing which source is absent. Work steps 1 and 2 above
+   and the list shrinks to the fleet's real long tail on the next page load. Two neighbours
+   of that state, both legible rather than blank:
+   - **Empty, with both counts 0** → nothing has been matched because nothing has been
+     collected: a candidate needs an installed app to be a candidate of. Sweep a connection
+     (§2), then look again.
+   - **Empty, with both counts above 0** → the list is right. Every title your Macs carry
+     is software a public source on this container already names, and the exclude box needs
+     nothing from it.
 
 **J.** A refresh that reports no error leaves the table saying *No Jamf Patch titles
 synced yet.*, a title Jamf publishes stays missing from the list with *Only titles with
