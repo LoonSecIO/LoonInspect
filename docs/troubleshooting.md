@@ -126,6 +126,13 @@ One symptom, three unrelated causes, and only one of them is a problem.
 2. **The selector** → §1 step 4.
 3. **The privileges** → §1 step 3.
 4. Still zero → §1 reportable state **B**.
+5. **The evidence report refuses with *this connection has no observations*.** Same root, asked
+   a different way: `GET /api/evidence/report` reads the observation ledger, which only a
+   `device_sweep` writes — a connection that has only ever run `catalog` or unacted webhook runs
+   has no ledger to report on. Run a device sweep (Connections → **Run now**), then ask again;
+   if the sweep itself reports zero, you are at step 1 above, not here. A window with no
+   observations *in it* is answered rather than refused, as not-observed days by device —
+   see [`compliance-evidence.md`](compliance-evidence.md) §5.
 
 **C.** Webhook runs for inventory events process zero devices. Report the `jobID`, the
 event type Jamf sent (the webhook's own configuration), and the run log.

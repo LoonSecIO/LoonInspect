@@ -168,3 +168,11 @@ def _hashed_leaf(allow: Mapping[str, Any], path: tuple[str, ...]) -> bool:
             return False
         node = node[step]
     return not isinstance(node, Mapping)
+
+
+def field_value(document: Mapping[str, Any], path: tuple[str, ...]) -> Any:
+    """The value a rule's `field` reads out of a stored section document, or `None` where the document does not carry
+    it at all. `_prune` never wrote a null, so `None` here is absence and nothing else — which is what lets the
+    evidence report print the field it read beside the verdict, and say so plainly when there was none (#472)."""
+    value = _read(document, path)
+    return None if value is _ABSENT else value
