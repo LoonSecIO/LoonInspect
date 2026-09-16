@@ -1,6 +1,6 @@
 """The posture-snapshot key registry against its own vocabulary doc.
 
-Definitions v1 is a frozen contract: 33 active keys, each immutable per name, plus the
+Definitions v1 is a frozen contract: 34 active keys, each immutable per name, plus the
 reserved names whose definitions exist before their writers do, and the population
 vocabulary (#230) each captured row is stamped with. The registry
 (app.core.posture) and docs/posture-snapshot.md must tell the same story — a key added
@@ -31,7 +31,7 @@ def _documented(status: str) -> set[str]:
 def test_active_registry_is_definitions_v1() -> None:
     from app.core.posture import ACTIVE_KEYS
 
-    assert len(ACTIVE_KEYS) == 33
+    assert len(ACTIVE_KEYS) == 34
     assert len(set(ACTIVE_KEYS)) == len(ACTIVE_KEYS), "duplicate active key"
     assert all(_KEY_SHAPE.match(key) for key in ACTIVE_KEYS)
 
@@ -56,11 +56,12 @@ def test_the_vuln_keys_are_active_and_named_as_their_own_family() -> None:
 
 
 def test_reserved_keys_are_named_and_disjoint() -> None:
-    """Empty since #250 activated the last four, and still enforced.
+    """Empty again since #476 activated `devices.departed_24h`, and still enforced.
 
-    The reservation is a mechanism, not a list: the next key ruled before its writer
-    exists is declared in `RESERVED_KEYS`, and these assertions are what keep it out of
-    `ACTIVE_KEYS` until it has rows to write.
+    The reservation is a mechanism, not a list: a key ruled before its writer exists is
+    declared in `RESERVED_KEYS`, and these assertions are what keep it out of `ACTIVE_KEYS`
+    until it has rows to write. Twice now a name has gone in and come out without ever
+    writing the run of zeros that would have lied about when measurement began.
     """
     from app.core.posture import ACTIVE_KEYS, RESERVED_KEYS
 

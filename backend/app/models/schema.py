@@ -1714,7 +1714,8 @@ class Alert(Base):
     `app_name` and `bundle_id` are denormalised on purpose, against the usual rule. The
     `installed_apps` row is deleted the instant the latch closes — that deletion is the
     close — so a closed row that joined for its label would have nothing to join to, and
-    `alerts.opened_24h` would be a count of rows nobody can read.
+    `alerts.opened_24h` would be a count of rows nobody can read. The *second* close (#476)
+    deletes nothing, so `closed_reason` is what tells the two apart.
 
     Both run ids are `SET NULL` for the reason `PostureSnapshot.full_sweep_run_id` is:
     runs are purged after 30 days (`app.core.runs.purge_runs`) and an alert must outlive
@@ -1777,6 +1778,11 @@ class Alert(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     opened_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
     closed_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
+    # WHICH of the two closes this was (#476) — `app.alerts.service.CLOSE_REASONS`. The app
+    # went, or the Mac left the fleet; nothing else distinguishes them afterwards, since the
+    # second close deletes nothing. NULL on rows closed before 2026-09-16 — "no reason was
+    # recorded", deliberately not back-filled into a claim nobody made. Migration c3f8a1d7e964.
+    closed_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 # --- The posture snapshot -------------------------------------------------------------
@@ -1800,7 +1806,7 @@ class PostureSnapshot(Base):
     apply that night (e.g. `outbox.oldest_pending_age_s` with an empty queue), never
     that it was zero — zero is written as 0.
 
-    `platform` names the population the number counted (#230). Seventeen of the active
+    `platform` names the population the number counted (#230). Eighteen of the active
     keys mean something different once a sweep observes more than Macs, and a key
     cannot be redefined after the fact, so the population is recorded in the row
     rather than inferred from the era it was written in. `app.core.posture` stamps it;

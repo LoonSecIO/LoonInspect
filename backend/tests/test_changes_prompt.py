@@ -21,11 +21,13 @@ import json
 import re
 import sys
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from app.ai.changes_prompt import (
+from app.ai.changes_prompt import (  # the reply keys are read to prove `since` is not one
+    _REPLY_KEYS,
     CALL_TIMEOUT_SECONDS,
     CHANGES,
     DISCLOSED_FIELDS,
@@ -44,14 +46,16 @@ from app.ai.changes_prompt import (
     guard,
     interpret,
     parse_reply,
+    resolve_since,
     sanitize_question,
+    wire_time,
 )
 
 _ROOT = Path(__file__).resolve().parents[2]
 RENDER_TS = _ROOT / "frontend" / "src" / "features" / "changes" / "render.ts"
 MODULE = _ROOT / "backend" / "app" / "ai" / "changes_prompt.py"
 
-NO_FILTERS = {"q": None, "artifact": None, "level": None, "section": None, "change": None}
+NO_FILTERS = {"q": None, "artifact": None, "level": None, "section": None, "change": None, "since": None}
 NOT_PARSED = Interpretation(filters=NO_FILTERS, unsupported=None, repairs=[], parsed=False)
 
 
@@ -1049,6 +1053,97 @@ def test_every_other_section_is_a_field_rule_section():
     assert set(SECTIONS.values()) - ENTRY_SECTIONS == {rule.section for rule in FIELD_RULES}
 
 
+# --- the time bound (#444) ---------------------------------------------------------------
+# The start is read from the question's own words against the server's clock and the viewer's
+# zone, never asked of the model; a miss sets no window. 02:30 UTC on Wednesday 2026-09-16 is
+# 21:30 on Tuesday the 15th in Chicago, so every calendar phrase below lands on a different day
+# in the two zones — which is the point of sending a zone at all.
+NOW = datetime(2026, 9, 16, 2, 30, tzinfo=UTC)
+CHICAGO = "America/Chicago"
+MIDNIGHT_15 = datetime(2026, 9, 15, 5, 0, tzinfo=UTC)  # midnight in Chicago, which is UTC-5 in September
+
+
+@pytest.mark.parametrize(
+    ("question", "expected", "phrase"),
+    [
+        ("what changed in the last 24 hours", NOW - timedelta(hours=24), "in the last 24 hours"),
+        ("apps installed last 7 days", NOW - timedelta(days=7), "last 7 days"),
+        ("changes in the past week", NOW - timedelta(weeks=1), "in the past week"),
+        ("changes 3 days ago", NOW - timedelta(days=3), "3 days ago"),
+        # Calendar phrases, from midnight in the viewer's day: the 15th is a Tuesday there.
+        ("what changed today", MIDNIGHT_15, "today"),
+        ("what changed yesterday", MIDNIGHT_15 - timedelta(days=1), "yesterday"),
+        ("what happened since yesterday", MIDNIGHT_15 - timedelta(days=1), "since yesterday"),
+        ("what changed since Monday", MIDNIGHT_15 - timedelta(days=1), "since Monday"),
+        ("this week's changes", MIDNIGHT_15 - timedelta(days=1), "this week"),
+        ("anything this month", datetime(2026, 9, 1, 5, 0, tzinfo=UTC), "this month"),
+        ("everything this year", datetime(2026, 1, 1, 6, 0, tzinfo=UTC), "this year"),
+    ],
+)
+def test_the_phrase_table_resolves_a_start_against_the_clock_and_the_zone(question, expected, phrase):
+    since = resolve_since(question, NOW, CHICAGO)
+    assert since is not None, question
+    assert (since.at, since.phrase) == (expected, phrase), question
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "which macs installed wireshark",
+        "machines that moved to chrome 153",
+        # Ruling 11: an order word is not a range, and the answer box already states the time.
+        "when was the last time someone installed wireshark",
+        "Changes made to VKM73DMG47",  # Kyle's demo question: still the whole log
+        "what changed before September",  # two-ended, and there is no `until` to set
+        "changes between Monday and Friday",
+        "what changed last night",  # a phrase the list does not hold; a miss costs nothing
+        "everything in the last 9999 years",  # before the year datetime counts from: no crash
+    ],
+)
+def test_a_question_the_phrase_list_does_not_hold_sets_no_window(question):
+    assert resolve_since(question, NOW, CHICAGO) is None
+
+
+def test_the_same_question_is_a_different_day_in_a_different_zone():
+    """Why the browser sends its zone: at 02:30 UTC "today" is already the 16th in Berlin and still
+    the 15th in Chicago, and the operator means their own day. A length of time back from now is
+    the same instant everywhere, so only the calendar phrases move."""
+    assert resolve_since("what changed today", NOW, CHICAGO).at == MIDNIGHT_15
+    assert resolve_since("what changed today", NOW, "Europe/Berlin").at == datetime(2026, 9, 15, 22, 0, tzinfo=UTC)
+    assert resolve_since("what changed today", NOW, None).at == datetime(2026, 9, 16, 0, 0, tzinfo=UTC)
+    zones = (CHICAGO, "Europe/Berlin", None)
+    assert {resolve_since("in the last 24 hours", NOW, zone).at for zone in zones} == {NOW - timedelta(hours=24)}
+    # The name is browser-supplied text: one that is not a plain zone, or one this build's tzdb
+    # does not hold, is UTC rather than a refusal, which would cost the whole answer.
+    for bad in ("Mars/Olympus_Mons", "../../etc/passwd", "America/Chicago\x00", "a" * 65, ""):
+        assert resolve_since("what changed today", NOW, bad).at == datetime(2026, 9, 16, 0, 0, tzinfo=UTC), bad
+
+
+ADDED_WS = '{"search":null,"filter":"Wireshark","level":"any","section":"Applications","change":"added","unsupported":null}'
+
+
+def test_a_resolved_start_rides_the_pages_own_since_key_and_nothing_else_moves():
+    asked = "which macs installed wireshark in the last 24 hours"
+    result = interpret(asked, ADDED_WS, now=NOW, zone=CHICAGO)
+    assert result.filters["since"] == "2026-09-15T02:30:00Z" == wire_time(result.since_asked.at)
+    # It narrows and is no repair of the model's answer, so the page runs it on Enter (ruled 1C).
+    assert (result.repairs, result.widened) == ([], False)
+    bare = interpret(asked, ADDED_WS)  # no clock, no window: every caller before #444
+    assert (bare.filters["since"], bare.since_asked) == (None, None)
+
+
+def test_a_start_that_expresses_the_question_drops_the_caveat_and_a_closed_one_keeps_it():
+    """Guard rule 5. "in the last 24 hours" is expressed exactly, so the model's note that the
+    controls cannot express it is no longer true; "yesterday" named an end too and there is no
+    `until` to set, so the answer runs past it and the note stands (#444)."""
+    caveat = "Cannot express a date range — these filters match names, not timestamps."
+    reply = ADDED_WS.replace('"unsupported":null', f'"unsupported":"{caveat}"')
+    expressed = interpret("wireshark installs in the last 24 hours", reply, now=NOW, zone=CHICAGO)
+    assert expressed.unsupported is None and "the time it asked for is set in Since" in expressed.repairs[-1]
+    closed = interpret("wireshark installs yesterday", reply, now=NOW, zone=CHICAGO)
+    assert (closed.unsupported, closed.filters["since"]) == (caveat, wire_time(MIDNIGHT_15 - timedelta(days=1)))
+
+
 # --- the instructions ------------------------------------------------------------------------
 
 # The first prompt's four examples, as the measured prompt carries them. The Change control
@@ -1122,6 +1217,17 @@ def test_the_instructions_are_the_measured_text():
     digest, is what this refuses."""
     digest = hashlib.sha256(SYSTEM_INSTRUCTION.encode()).hexdigest()
     assert digest == "de50b016e824d3bdad4af41c257cc4ff9d5cee48669a961da7fe12eb2e355280"
+
+
+def test_the_time_bound_is_read_from_the_question_and_never_asked_of_the_model():
+    """#444's whole point. Ruling 11 measured a sixth reply field at 2 to 6 wrong answers of
+    68, the injection refusal broken in every arrangement; the start is read server-side
+    instead, so these bytes — and their measurement — do not move."""
+    assert hashlib.sha256(SYSTEM_INSTRUCTION.encode()).hexdigest().startswith("de50b016")
+    assert "since" not in SYSTEM_INSTRUCTION.lower()
+    assert '"since"' not in SYSTEM_INSTRUCTION
+    # The reply keys the parser reads are the six that were measured; `since` is not one.
+    assert "since" not in _REPLY_KEYS
 
 
 def test_the_instructions_ask_for_the_refusal_the_parser_reads():

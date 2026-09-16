@@ -170,6 +170,21 @@ rendered as text. A serial in Search that the question never named is dropped (r
     - **What the operator sees:** the readback names the dimension after the controls, and the
       page shows it as a removable chip, because it has no control of its own.
 
+13. **The start comes from the question, not from the model** (2026-09-16, #444). Kyle took option
+    2 of that issue's three, so ruling 11's R4 field is not coming back. `resolve_since` reads a
+    start out of the question's own words — a small closed list of phrasings — against the server's
+    clock and the viewer's IANA zone, which the browser now sends with the question. The
+    instructions are untouched and `tests/test_changes_prompt.py` pins their digest (`de50b016…`),
+    so they stay the bytes that were measured: ruling 11's discipline, kept.
+    - **A word list that only sets a start refuses nothing**, which is why #442's objection — a
+      word list over the question *refused real questions* — does not carry. A phrase the list does
+      not hold sets no window, and the answer is what it was before.
+    - **It rides the `since` key the page already has** (#107, chipped in #443), so the readback
+      names it, the chip clears it, and Postgres counts the rows the page will show.
+    - **No end, so two-ended ranges stay unsupported.** `/api/changes` has no `until`. A phrase that
+      named one ("yesterday") is read as its start and guard rule 5 keeps the model's caveat over
+      it; an open phrase ("in the last 24 hours") expresses the question, and the caveat goes.
+
 **What it does.** The bar appears when the `ai_features` flag is on, AI-inference consent is on,
 and at least one provider is saved. `GET /api/changes/prompt` says which is missing, and Settings ›
 AI shows it as *Changes Prompt bar: …*. `POST /api/changes/prompt` (DEVICE_READ, so viewers can use

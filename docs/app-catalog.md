@@ -87,6 +87,15 @@ two release years — the first is taken, and that is a possible miss, never a w
 is only ever compared for equality against what an inventory reports, so a name no Mac carries
 joins to nothing; it can never make some other app's row answer.
 
+**The page says which of the three it is looking at (#478).** `app_name_source` is served as
+`appNameSource` on `GET /api/jamf-patch/titles` and on the title detail, and Devices ›
+Applications › Jamf Patch prints the app name under the title's own name: a `kill_apps` name
+carries a muted *name from the patch definition* whose hover is the paragraph above, a `jamf`
+name is printed plain — the ordinary case is not an annotation — and a title nothing names an
+app for reads *No app name* rather than a blank cell. A NULL source (a row written before the
+rule) prints the name and marks nothing, because it is not a claim; `_needs_refresh` re-reads
+exactly those rows once.
+
 ## 3. When rows are written and judged
 
 1. **At device process** — `record_device_apps` runs inside `process_sync` after the app rows

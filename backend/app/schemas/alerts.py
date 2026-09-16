@@ -17,6 +17,10 @@ class AlertOut(_Base):
     unlike `app_name` and `bundle_id` — which the close *deletes* the source of — the
     device row outlives every alert on it by CASCADE, so denormalising its name would
     only buy a stale one after a rename.
+
+    `closed_reason` is which close this was (#476) — `app_gone`, or `device_departed` for a
+    Mac that left the fleet. It is on this payload because `open=false` is where the run log
+    sends an operator whose latches closed by themselves, and the two are not the same answer.
     """
 
     id: int
@@ -29,6 +33,7 @@ class AlertOut(_Base):
     bundle_id: str
     opened_at: datetime
     closed_at: datetime | None
+    closed_reason: str | None = None
 
 
 class AlertListResponse(_Base):
