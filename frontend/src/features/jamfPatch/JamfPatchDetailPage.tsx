@@ -26,12 +26,24 @@ export function JamfPatchDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [versionsExpanded, setVersionsExpanded] = useState(false);
 
+  // A different title is a different question, and the page has to say it is asking
+  // rather than leave the last title's facts standing under the new name. Adjusted here,
+  // during the render that changed the id, rather than from the effect below — React's
+  // own "adjusting state when a prop changes". From an effect it lands a render late.
+  // Keyed on everything the effect re-runs for, the locale beside the id: a guard on less
+  // is a re-fetch that clears nothing, and here a stale failure line does not merely sit
+  // above the answer, it replaces it — the title block below is gated on `!error`.
+  const [asked, setAsked] = useState({ titleId, t });
+  if (asked.titleId !== titleId || asked.t !== t) {
+    setAsked({ titleId, t });
+    setLoading(true);
+    setError(null);
+  }
+
   useEffect(() => {
     if (!titleId) return;
 
     let cancelled = false;
-    setLoading(true);
-    setError(null);
 
     getJamfPatchTitle(titleId)
       .then((response) => {

@@ -141,10 +141,23 @@ export function ChangesPage() {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
+  // A new question — moved filters, or the Prompt bar re-asking the same one — has to
+  // read as a question being asked, not as the last answer. Adjusted here, during the
+  // render that changed it, for the same reason the draft boxes above are: from an
+  // effect it lands a render late, and the table paints one frame of the previous
+  // filter's rows as though they were the answer. Keyed on everything the fetch below
+  // re-runs for, the locale's error sentence included, or a language switch would re-fetch
+  // and clear nothing — the last failure's line left standing over the new rows.
+  const asking = { filters, reloadToken, errorLoading: tc.errorLoading };
+  const [asked, setAsked] = useState(asking);
+  if (asked.filters !== filters || asked.reloadToken !== reloadToken || asked.errorLoading !== asking.errorLoading) {
+    setAsked(asking);
     setLoading(true);
     setError(null);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
     listChanges({ ...filters, pageSize })
       .then((response) => {
         if (cancelled) return;

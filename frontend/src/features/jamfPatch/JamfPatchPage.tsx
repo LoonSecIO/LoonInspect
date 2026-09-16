@@ -102,10 +102,11 @@ export function JamfPatchPage() {
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  function refresh(): Promise<void> {
-    setLoading(true);
-    setError(null);
-
+  /** The one read of the list. Nothing here turns the spinner on or clears the error
+   *  line: the first read comes from the effect below, and an effect body is the one
+   *  place React asks callers not to set state (#15). `loading` starts true; a re-read
+   *  goes through `refresh`, where a click is what asked for it. */
+  function load(): Promise<void> {
     return listJamfPatchTitles()
       .then((response) => {
         setTitles(response.items);
@@ -119,8 +120,14 @@ export function JamfPatchPage() {
       });
   }
 
+  function refresh(): Promise<void> {
+    setLoading(true);
+    setError(null);
+    return load();
+  }
+
   useEffect(() => {
-    refresh();
+    void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

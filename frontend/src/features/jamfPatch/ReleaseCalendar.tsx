@@ -99,18 +99,20 @@ export function ReleaseCalendar({ patches }: { patches: JamfPatchVersion[] }) {
 
   const { weeks, windowTotal } = useMemo(() => buildCalendar(countsByDay), [countsByDay]);
 
-  const monthLabels = useMemo(() => {
-    let lastMonth = -1;
-    return weeks.map((week) => {
-      const firstDay = week[0].date;
-      const month = firstDay.getMonth();
-      if (month !== lastMonth) {
-        lastMonth = month;
+  // One label per week, printed only where the month turns over. Each week is compared
+  // with the week before it rather than with a counter carried across the loop: which
+  // label a week gets depends on nothing but the two weeks it sits between, and saying
+  // so leaves the callback with no state that outlives the call.
+  const monthLabels = useMemo(
+    () =>
+      weeks.map((week, index) => {
+        const firstDay = week[0].date;
+        const previousMonth = index === 0 ? -1 : weeks[index - 1][0].date.getMonth();
+        if (firstDay.getMonth() === previousMonth) return "";
         return firstDay.toLocaleDateString(undefined, { month: "short" });
-      }
-      return "";
-    });
-  }, [weeks]);
+      }),
+    [weeks]
+  );
 
   function cellLabel(day: DayCell): string {
     const dateLabel = day.date.toLocaleDateString(undefined, {

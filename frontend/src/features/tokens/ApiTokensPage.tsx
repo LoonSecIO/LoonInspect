@@ -28,19 +28,23 @@ export function ApiTokensPage() {
   const [copied, setCopied] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
 
-  async function refresh() {
+  /** The one read of the list, as a promise chain rather than `await`: the first read is
+   *  started by the effect below, and an effect body is the one place React asks callers
+   *  not to set state (#15). `loading` starts true; only `refresh` turns it back on. */
+  function load(): Promise<void> {
+    return listTokens()
+      .then((rows) => setTokens(rows))
+      .catch(() => setError(t.apiTokens.errorLoading))
+      .finally(() => setLoading(false));
+  }
+
+  function refresh(): Promise<void> {
     setLoading(true);
-    try {
-      setTokens(await listTokens());
-    } catch {
-      setError(t.apiTokens.errorLoading);
-    } finally {
-      setLoading(false);
-    }
+    return load();
   }
 
   useEffect(() => {
-    void refresh();
+    void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
