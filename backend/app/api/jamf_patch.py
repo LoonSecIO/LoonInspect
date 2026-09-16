@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -116,9 +118,11 @@ async def coverage(db: AsyncSession = Depends(get_db)) -> JamfPatchCoverageOut:
     """Distinct (device, matched title) pairs, and how many are on the title's current
     version — the live reading of the posture recorder's `patch.pairs_*` definition, from
     the recorder's own function, so the Overview tile and the nightly tape agree (#109).
-    The ratio derives at render; both inputs are served so it stays auditable.
+    The ratio derives at render; both inputs are served so it stays auditable. The departure
+    cut (#476) is drawn at `now()` here and at `captured_at` in the recorder: one predicate,
+    each reading as of its own instant.
     """
-    total, on_latest = await patch_pair_counts(db)
+    total, on_latest = await patch_pair_counts(db, at=datetime.now(UTC))
     return JamfPatchCoverageOut(pairs_total=total, pairs_on_latest=on_latest)
 
 

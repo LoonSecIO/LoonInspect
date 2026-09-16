@@ -13,7 +13,15 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from app.alerts.service import KIND_LEVELS, KINDS, NEW_APP, latch_delta
+from app.alerts.service import (
+    CLOSE_REASONS,
+    CLOSED_APP_GONE,
+    CLOSED_DEVICE_DEPARTED,
+    KIND_LEVELS,
+    KINDS,
+    NEW_APP,
+    latch_delta,
+)
 from app.changes.policy import HIGH, LEVELS
 
 DOC = Path(__file__).resolve().parents[2] / "docs" / "alerts.md"
@@ -127,6 +135,18 @@ def test_the_kind_vocabulary_and_the_doc_tell_the_same_story() -> None:
     assert _documented_kinds() == set(KINDS)
     assert len(set(KINDS)) == len(KINDS), "duplicate kind"
     assert set(KIND_LEVELS) == set(KINDS)
+
+
+def test_the_close_reasons_and_the_doc_tell_the_same_story() -> None:
+    """#476: `closed_reason` is a closed vocabulary beside `KINDS`, and for the same reason —
+    the value is read back years later by someone who cannot ask. A reason in the tuple with no
+    row in §3b is undocumented; a row with no tuple entry is a promise nothing keeps."""
+    doc = DOC.read_text()
+    assert "## 3b." in doc, "the second close must be a section a reader can be sent to"
+    rows = doc.split("## 3b.")[1].split("## 4.")[0].splitlines()
+    documented = {m.group(1) for line in rows if (m := re.match(r"^\|\s*`([a-z_]+)`\s*\|", line))}
+
+    assert documented == {CLOSED_APP_GONE, CLOSED_DEVICE_DEPARTED} == set(CLOSE_REASONS)
 
 
 def test_every_kind_is_graded_in_the_closed_levels_vocabulary() -> None:
