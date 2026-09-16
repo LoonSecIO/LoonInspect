@@ -421,14 +421,7 @@ async def run_jamf_catalog(
                     await run_log(db, run, "warning", "throttled by Jamf; backed off and continued", **throttle)
                 await run_log(db, run, "info", "group definitions observed", groupCount=group_count)
                 await _log_definition_census(db, run, definitions)
-                await run_log(
-                    db,
-                    run,
-                    "info",
-                    "department and building names cached",
-                    departments=org_units[DEPARTMENT],
-                    buildings=org_units[BUILDING],
-                )
+                await _log_org_units(db, run, org_units)
     except RunReclaimed:
         # Same as run_jamf: the reclaim already closed the run; its owner stops the work.
         raise
@@ -554,16 +547,38 @@ async def _log_definition_census(db: AsyncSession, run: Run, observed: list[str]
         await run_log(db, run, "info", "extension attribute definitions observed", definitionCount=len(observed))
 
 
+async def _log_org_units(db: AsyncSession, run: Run, org_units: dict[str, int | None]) -> None:
+    """The run's own record of the two catalogs: how many names were cached, and — when the API
+    client may not read one — that its names were cleared and which privilege brings them back
+    (#450). The line an operator reads on the run, not only in the container log."""
+    await run_log(
+        db,
+        run,
+        "info",
+        "department and building names cached",
+        departments=org_units[DEPARTMENT] or 0,
+        buildings=org_units[BUILDING] or 0,
+    )
+    for kind, privilege in ((DEPARTMENT, "Read Departments"), (BUILDING, "Read Buildings")):
+        if org_units[kind] is None:
+            await run_log(
+                db,
+                run,
+                "warning",
+                f"{kind} names cleared: this Jamf API client cannot read {kind}s; grant its API role {privilege}",
+            )
+
+
 async def _refresh_org_units(
     db: AsyncSession, connection: MdmConnection, client: JamfClient, http: httpx.AsyncClient
-) -> dict[str, int]:
+) -> dict[str, int | None]:
     """Cache Jamf's department and building names for this connection.
 
     Two paged reads of tens of rows each — the whole cost of turning `departmentId: "7"`
     into "Engineering" for every device in the fleet (app.mdm.org_units). Not an
     observation and not hashed: renaming a department changes nothing about any Mac.
     """
-    counts: dict[str, int] = {}
+    counts: dict[str, int | None] = {}
     for kind, units in (
         (DEPARTMENT, await client.fetch_departments(http)),
         (BUILDING, await client.fetch_buildings(http)),
@@ -616,14 +631,7 @@ async def _sync_jamf(
         org_units = await _refresh_org_units(db, connection, client, http)
         await db.commit()
         if run is not None:
-            await run_log(
-                db,
-                run,
-                "info",
-                "department and building names cached",
-                departments=org_units[DEPARTMENT],
-                buildings=org_units[BUILDING],
-            )
+            await _log_org_units(db, run, org_units)
 
         # Group definitions ride along with the device sweep, and they go *first* (#136).
         # A membership change is judged by `changes.derive._membership_cause` as the

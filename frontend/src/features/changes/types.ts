@@ -145,6 +145,8 @@ export interface ChangePolicy {
   sections: { section: string; fields: PolicyField[] }[];
   entries: PolicyEntry[];
   knownGroups: { id: string; name: string | null }[];
+  /** Jamf's department names, for the chip a `department` filter shows (#450). */
+  knownDepartments?: { id: string; name: string }[];
   knownExtensionAttributes: { definitionId: string; name: string | null }[];
   updatedAt: string | null;
 }
@@ -188,6 +190,8 @@ export interface PromptFilters {
   osVersion: string | null;
   department: string | null;
   managed: string | null;
+  /** The department's name from Jamf's catalog, when a repair set `department` (#450). */
+  departmentName: string | null;
 }
 
 /** One computer the filters match, counted by Postgres — never by the model. */

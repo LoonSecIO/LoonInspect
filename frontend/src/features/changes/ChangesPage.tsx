@@ -13,6 +13,7 @@ import {
   detailText,
   diffLines,
   kindsRecordedBy,
+  departmentNamesFromPolicy,
   labelsFromPolicy,
   SECTION_ORDER,
   whatOf,
@@ -88,6 +89,9 @@ export function ChangesPage() {
   const [draftQuery, setDraftQuery] = useState(filters.q ?? "");
   const [draftArtifact, setDraftArtifact] = useState(filters.artifact ?? "");
   const [labels, setLabels] = useState<LabelMap>({});
+  // Department id to name, for the chip a `department` filter shows (#450). Empty until the
+  // policy document loads, and for any id whose name is not unambiguous: then the id shows.
+  const [departmentNames, setDepartmentNames] = useState<Record<string, string>>({});
   // Re-runs the fetch when the filters did not move — see `applyPrompt`.
   const [reloadToken, setReloadToken] = useState(0);
   // The Prompt bar's session, which Clear replaces, and whether it has been used since.
@@ -125,7 +129,9 @@ export function ChangesPage() {
     let cancelled = false;
     getChangePolicy()
       .then((policy) => {
-        if (!cancelled) setLabels(labelsFromPolicy(policy));
+        if (cancelled) return;
+        setLabels(labelsFromPolicy(policy));
+        setDepartmentNames(departmentNamesFromPolicy(policy));
       })
       .catch(() => {
         /* raw field names are a fine answer; nothing to tell the operator */
@@ -224,7 +230,7 @@ export function ChangesPage() {
       osVersion: words.osVersion,
       fileVault: (value) => words.fileVault(tc.fileVaultStates[value] ?? value),
       site: words.site,
-      department: words.department,
+      department: (value) => (departmentNames[value] ? words.departmentNamed(departmentNames[value]) : words.department(value)),
       managed: (value) => (value === "false" ? words.unmanaged : words.managed),
       user: words.user
     };
@@ -234,7 +240,7 @@ export function ChangesPage() {
       if (value) chips.push({ key, label: of[key]?.(value) ?? value });
     }
     return chips;
-  }, [filters, tc]);
+  }, [filters, tc, departmentNames]);
 
   const sectionLabels = useMemo(
     () => ({

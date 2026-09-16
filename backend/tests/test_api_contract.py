@@ -84,11 +84,12 @@ def test_the_policy_routes_carry_a_schema() -> None:
 def test_the_described_policy_round_trips_through_its_model() -> None:
     """`describe()` builds plain dicts and `ChangePolicyOut` names their fields; if either
     side moves, this is the test that says so. The dump has to reproduce every key the
-    document carried plus the three the route adds, so nothing is quietly dropped."""
+    document carried plus the four the route adds, so nothing is quietly dropped."""
     document = EffectivePolicy(Overrides.from_document(None)).describe()
-    out = ChangePolicyOut.model_validate({**document, "knownGroups": [], "knownExtensionAttributes": [], "updatedAt": None})
+    added = {"knownGroups": [], "knownExtensionAttributes": [], "knownDepartments": [], "updatedAt": None}
+    out = ChangePolicyOut.model_validate({**document, **added})
     dumped = out.model_dump(by_alias=True, mode="json")
-    assert set(dumped) == set(document) | {"knownGroups", "knownExtensionAttributes", "updatedAt"}
+    assert set(dumped) == set(document) | set(added)
     assert dumped["sections"] == document["sections"]
     assert dumped["entries"] == document["entries"]
     assert dumped["minimumLevel"] == "normal"

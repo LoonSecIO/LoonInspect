@@ -13,12 +13,14 @@ from app.core.auth import Principal, current_principal, require
 from app.core.database import get_db
 from app.core.permissions import Permission
 from app.core.runs import TRIGGER_MANUAL, TRIGGER_SWEEP, TRIGGER_WEBHOOK
-from app.models.schema import ChangePolicy, DeviceChange, ObservationEntry, ObservationSpan
+from app.mdm.org_units import DEPARTMENT
+from app.models.schema import ChangePolicy, DeviceChange, JamfOrgUnit, ObservationEntry, ObservationSpan
 from app.schemas.changes import (
     ChangePolicyOut,
     ChangePolicyUpdate,
     DeviceChangeListResponse,
     DeviceChangeOut,
+    KnownDepartment,
     KnownExtensionAttribute,
     KnownGroup,
 )
@@ -354,6 +356,19 @@ async def _describe(db: AsyncSession, row: ChangePolicy | None) -> ChangePolicyO
     document["knownExtensionAttributes"] = [
         KnownExtensionAttribute(definition_id=e[0], name=e[1]) for e in eas if e[0] is not None
     ]
+    # The names behind the department ids a change row carries (#450), so a `department=5` chip
+    # reads "Engineering : Product". Jamf's own catalog, as cached hourly and on every sweep
+    # (app.mdm.org_units); empty when the API client may not read it, and then the chip shows
+    # the id, which is all anyone can vouch for.
+    departments = (
+        await db.execute(
+            select(JamfOrgUnit.external_id, JamfOrgUnit.name)
+            .where(JamfOrgUnit.kind == DEPARTMENT)
+            .distinct()
+            .order_by(JamfOrgUnit.external_id)
+        )
+    ).all()
+    document["knownDepartments"] = [KnownDepartment(id=d[0], name=d[1]) for d in departments]
     document["updatedAt"] = row.updated_at if row else None
     # Typed on the way out (#137): the document is built by `describe()` as plain dicts,
     # and validating it here is what puts a real schema in the OpenAPI document and

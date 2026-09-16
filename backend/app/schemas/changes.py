@@ -69,6 +69,15 @@ class KnownExtensionAttribute(_Base):
     name: str | None
 
 
+class KnownDepartment(_Base):
+    """A department id and the name Jamf's catalog gives it. One row per distinct pair: two
+    connections that both have a department 5 with different names send both, and the page
+    labels an id only when its name is unambiguous."""
+
+    id: str
+    name: str
+
+
 # The policy document `EffectivePolicy.describe()` hands the API, typed (#137). These
 # mirror that method field for field — `tests/test_api_contract.py` round-trips the
 # described document through `ChangePolicyOut` so the two cannot drift silently — and
@@ -126,4 +135,5 @@ class ChangePolicyOut(_Base):
     entries: list[PolicyEntryOut]
     known_groups: list[KnownGroup]
     known_extension_attributes: list[KnownExtensionAttribute]
+    known_departments: list[KnownDepartment] = []
     updated_at: datetime | None

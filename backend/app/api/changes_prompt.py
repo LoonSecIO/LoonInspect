@@ -49,6 +49,7 @@ from app.ai.changes_prompt import (
     FEATURE,
     MAX_REPLY_TOKENS,
     NOT_ABOUT_CHANGES,
+    SECTIONS,
     SYSTEM_INSTRUCTION,
     interpret,
     sanitize_question,
@@ -64,7 +65,8 @@ from app.core.crypto import StoredValueUnreadable
 from app.core.database import get_db
 from app.core.permissions import Permission
 from app.core.sharing import get_or_create_settings
-from app.models.schema import AIProviderConfig, DeviceChange, JamfOrgUnit, ObservationSpan
+from app.mdm.org_units import DEPARTMENT, ids_for_name
+from app.models.schema import AIProviderConfig, DeviceChange, ObservationSpan
 from app.schemas.ai import AIErrorOut
 from app.schemas.changes_prompt import (
     QUESTION_MAX_LENGTH,
@@ -191,58 +193,120 @@ _VERSIONISH = re.compile(r"\d+(?:\.\d+)*")
 _MANAGEMENT_WORDS = {"unmanaged": "false", "not managed": "false", "unenrolled": "false"}
 
 
-async def _dimension_repair(db: AsyncSession, filters: dict[str, str | None], dimensions: dict[str, str | None]) -> list[str]:
-    """A Search value that names no device but does name one of the Mac's own dimensions is
-    moved to that dimension (#447, ruling H4). Mutates both dicts; returns the repairs.
+# The words a question uses for a section. For one decision only: when a Filter-to-one-thing value
+# is re-read as a department, the section the model chose beside it stays if the question named
+# that section ("which apps changed in Finance") and goes if the model only guessed it from the
+# misread ("What changed on Macs in Engineering : Product?" came back as Configuration profiles,
+# because a profile is the kind of thing that has a name like that). Not a word list over the
+# question that refuses anything (#442): it only decides whether to keep a value the model chose.
+_SECTION_NAMED_BY: dict[str, tuple[str, ...]] = {
+    "applications": ("app", "application"),
+    "configuration_profiles": ("profile",),
+    "group_memberships": ("group",),
+    "local_user_accounts": ("account",),
+    "certificates": ("certificate", "cert"),
+    "extension_attributes": ("extension attribute", "attribute"),
+    "software_updates": ("update",),
+    "hardware": ("hardware",),
+    "operating_system": ("os", "macos", "operating system"),
+    "security": ("security",),
+    "disk_encryption": ("filevault", "encryption"),
+}
+_SECTION_DISPLAY = {key: name for name, key in SECTIONS.items()}
+
+
+def _question_names_section(question: str, section: str) -> bool:
+    words = _SECTION_NAMED_BY.get(section, ())
+    return any(re.search(rf"\b{re.escape(word)}s?\b", question, re.I) for word in words)
+
+
+async def _one_department(db: AsyncSession, name: str) -> tuple[str, str] | None:
+    """The department id a name means, as `(id, name)` — or None when no department has that name,
+    or when two connections name different ids with it. The page's filter is an id, and it cannot
+    say "5 on one Jamf and 12 on the other"; guessing one would narrow the answer silently."""
+    pairs = await ids_for_name(db, kind=DEPARTMENT, name=name)
+    ids = {external_id for _, external_id in pairs}
+    if len(ids) != 1:
+        return None
+    (external_id,) = ids
+    return external_id, name.strip()
+
+
+async def _dimension_repair(
+    db: AsyncSession, question: str, filters: dict[str, str | None], dimensions: dict[str, str | None]
+) -> tuple[list[str], str | None]:
+    """A value the model put in the wrong box, moved to the dimension it names (#447 ruling H4,
+    #450). Mutates both dicts; returns the repairs, and the department's name when one was set,
+    for the readback.
 
     The model's vocabulary is full — #443 measured a sixth reply field at 2 to 6 wrong answers
     of 68, and the injection refusal broke in every arrangement — so the dimensions are reached
     from the bar this way instead: the instructions do not change, and neither does their
-    measurement. Asked "which MacBook Airs installed Wireshark", the model puts "MacBook Air"
-    in Search, where it matches no device name, no serial and no Jamf id, and the answer comes
-    back empty with nothing to say why.
+    measurement.
 
-    **A device always wins.** The first question is whether any change row names this device,
-    because a Mac can be named after anything: "Kyle's Mac mini" is a device name, and so is a
-    Mac named after its own department. Only a Search that matches no device is read as a
-    dimension, and then in this order — the two words for management state, a model, an OS
-    version, a department from Jamf's own catalog.
+    **Search.** Asked "which MacBook Airs installed Wireshark", the model puts "MacBook Air" in
+    Search, where it matches no device name, no serial and no Jamf id. A device always wins: the
+    first question is whether any change row names this device, because a Mac can be named after
+    anything — "Kyle's Mac mini" is a device name, and so is a Mac named after its own
+    department. Only a Search that matches no device is read as a dimension, in this order: the
+    words for management state, a model, an OS version, a department from Jamf's own catalog.
 
-    Cost: one EXISTS read to settle the device, then up to three more, two of them over
-    `device_meta` with no index (the trade `change_conditions` records for `artifact`). They run
-    only after a miss, behind a model call that already cost a second.
+    **Filter to one thing** (#450). Asked "What changed on Macs in Engineering : Product?", the
+    model read the department as the name of a profile: Filter to one thing "Engineering :
+    Product", Section Configuration profiles — zero rows, over a question the feed can answer. A
+    thing always wins here the same way a device does: only a value no change row names is read
+    as a department, and only when Jamf's catalog holds exactly that name. The section the model
+    chose beside it goes too, unless the question named that section itself, because the model
+    only chose it from the misread. Both moves are one correction of one reading, so the answer
+    runs on Enter rather than waiting for Apply (Kyle, 2026-09-16).
+
+    Names are matched exactly, case aside (`app.mdm.org_units.ids_for_name`), and a department
+    name that cached catalog no longer holds — the API client lost "Read Departments", and its
+    names were cleared — moves nothing.
+
+    Cost: one EXISTS read to settle the device or the thing, then up to three more on a miss, two
+    of them over `device_meta` with no index (the trade `change_conditions` records for
+    `artifact`). They run only after a miss, behind a model call that already cost a second.
     """
-    search = filters.get("q")
-    if not search:
-        return []
 
     async def matches(**where: str | None) -> bool:
         return (await db.execute(select(literal(1)).where(*change_conditions(**where)).limit(1))).scalar() is not None
 
-    if await matches(q=search):
-        return []
+    search = filters.get("q")
+    if search and not await matches(q=search):
+        word = search.strip().lower()
+        if word in _MANAGEMENT_WORDS:
+            filters["q"], dimensions["managed"] = None, _MANAGEMENT_WORDS[word]
+            return [f"Read “{search}” as Macs Jamf does not manage: it names no device."], None
+        if await matches(model=search):
+            filters["q"], dimensions["model"] = None, search
+            return [f"Read “{search}” as {_MODEL}: it names no device, and it does name a Mac's model."], None
+        if _VERSIONISH.fullmatch(word) and await matches(os_version=search):
+            filters["q"], dimensions["os_version"] = None, search
+            return [f"Read “{search}” as {_OS_VERSION}: it names no device, and Macs were observed on it."], None
+        unit = await _one_department(db, search)
+        if unit is not None:
+            filters["q"], dimensions["department"] = None, unit[0]
+            return [f"Read “{search}” as {_DEPARTMENT} {unit[1]}, Jamf's department {unit[0]}: it names no device."], unit[1]
 
-    word = search.strip().lower()
-    if word in _MANAGEMENT_WORDS:
-        filters["q"], dimensions["managed"] = None, _MANAGEMENT_WORDS[word]
-        return [f"Read “{search}” as Macs Jamf does not manage: it names no device."]
-    if await matches(model=search):
-        filters["q"], dimensions["model"] = None, search
-        return [f"Read “{search}” as {_MODEL}: it names no device, and it does name a Mac's model."]
-    if _VERSIONISH.fullmatch(word) and await matches(os_version=search):
-        filters["q"], dimensions["os_version"] = None, search
-        return [f"Read “{search}” as {_OS_VERSION}: it names no device, and Macs were observed on it."]
-    unit = (
-        await db.execute(
-            select(JamfOrgUnit.external_id, JamfOrgUnit.name)
-            .where(JamfOrgUnit.kind == "department", JamfOrgUnit.name.ilike(search.strip()))
-            .limit(1)
-        )
-    ).first()
-    if unit is not None:
-        filters["q"], dimensions["department"] = None, unit[0]
-        return [f"Read “{search}” as {_DEPARTMENT} {unit[1]}, Jamf's department {unit[0]}: it names no device."]
-    return []
+    artifact = filters.get("artifact")
+    if artifact and not await matches(artifact=artifact):
+        unit = await _one_department(db, artifact)
+        if unit is not None:
+            filters["artifact"], dimensions["department"] = None, unit[0]
+            repairs = [
+                f"Read “{artifact}” as {_DEPARTMENT} {unit[1]}, Jamf's department {unit[0]}: "
+                "no app, profile, group or account has that name."
+            ]
+            section = filters.get("section")
+            if section and not _question_names_section(question, section):
+                filters["section"] = None
+                repairs.append(
+                    f"Cleared Section {_SECTION_DISPLAY.get(section, section)}: the model chose it because it read “{artifact}” "
+                    "as the name of one, and the question does not ask about it."
+                )
+            return repairs, unit[1]
+    return [], None
 
 
 async def _when(db: AsyncSession, conditions: list, oldest: datetime) -> PromptWhenOut:
@@ -461,13 +525,13 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
     # or a management state for, is read as that instead (#447). It narrows what would otherwise
     # have matched nothing, so it does not hold the answer back for an Apply.
     dimensions: dict[str, str | None] = dict.fromkeys(PROMPT_DIMENSIONS)
-    moved = await _dimension_repair(db, interpretation.filters, dimensions)
+    moved, department_name = await _dimension_repair(db, question, interpretation.filters, dimensions)
     repairs = [str(repair) for repair in interpretation.repairs] + moved
     summary = await _summary(db, interpretation.filters, dimensions)
     _audited(outcome, provider, destination, latency_ms, repairs=len(repairs))
     return PromptOut(
         outcome=outcome,
-        filters=PromptFiltersOut(**interpretation.filters, **dimensions),
+        filters=PromptFiltersOut(**interpretation.filters, **dimensions, department_name=department_name),
         unsupported=interpretation.unsupported,
         # Plain strings on the wire: each repair is a `Repair`, a str carrying its direction.
         repairs=repairs,

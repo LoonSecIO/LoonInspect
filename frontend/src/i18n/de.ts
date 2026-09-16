@@ -1292,6 +1292,7 @@ export const de: Translations = {
       fileVault: (state: string) => `FileVault: ${state}`,
       site: (id: string) => `Jamf-Standort ${id}`,
       department: (id: string) => `Jamf-Abteilung ${id}`,
+      departmentNamed: (name: string) => `Abteilung „${name}“`,
       managed: "Von Jamf verwaltet",
       unmanaged: "Nicht von Jamf verwaltet",
       user: (value: string) => `Zugewiesene Person mit „${value}“`
@@ -1347,6 +1348,7 @@ export const de: Translations = {
       readbackModel: (model: string) => `auf Macs mit Modell „${model}“`,
       readbackOsVersion: (version: string) => `auf Macs, beobachtet mit OS ${version}`,
       readbackDepartment: (id: string) => `auf Macs in Jamf-Abteilung ${id}`,
+      readbackDepartmentNamed: (name: string) => `auf Macs in Abteilung „${name}“`,
       readbackManaged: "auf von Jamf verwalteten Macs",
       readbackUnmanaged: "auf nicht von Jamf verwalteten Macs",
       answerNone: "Keine Änderungen gefunden.",

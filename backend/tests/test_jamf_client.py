@@ -306,14 +306,16 @@ async def test_departments_and_buildings_are_fetched_as_id_and_name() -> None:
     assert buildings == [{"id": "2", "name": "Bletchley Park"}]
 
 
-async def test_a_catalog_without_the_privilege_is_empty_not_fatal() -> None:
-    """No "Read Departments" privilege: ids stay unresolved, and the sweep that came
-    for inventory still gets it. A missing label may never cost a device read."""
+async def test_a_catalog_without_the_privilege_is_none_not_fatal() -> None:
+    """No "Read Departments" privilege: None, which clears the cached names (#450), and
+    the sweep that came for inventory still gets it. A missing label may never cost a
+    device read. None and not an empty list, because the two mean different things to the
+    cache: this client may not read the catalog, versus a read that failed."""
     fake = FakeJamf()
     fake.departments = None
     client = make_client()
     async with httpx.AsyncClient(transport=httpx.MockTransport(fake.handler)) as http:
-        assert await client.fetch_departments(http) == []
+        assert await client.fetch_departments(http) is None
         assert await client.fetch_buildings(http) == [{"id": "2", "name": "Bletchley Park"}]
 
 

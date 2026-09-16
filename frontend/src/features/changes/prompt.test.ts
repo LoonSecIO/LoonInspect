@@ -26,7 +26,7 @@ import { CHANGE_KINDS } from "@/features/changes/render";
 import { de } from "@/i18n/de";
 import { en } from "@/i18n/en";
 
-const NO_DIMENSIONS = { model: null, osVersion: null, department: null, managed: null } as const;
+const NO_DIMENSIONS = { model: null, osVersion: null, department: null, managed: null, departmentName: null } as const;
 const WIRESHARK: PromptFilters = { q: null, artifact: "Wireshark", level: null, section: "applications", change: null, ...NO_DIMENSIONS };
 // Kyle's first demo question, "List new application installs".
 const NEW_INSTALLS: PromptFilters = { q: null, artifact: null, level: null, section: "applications", change: "added", ...NO_DIMENSIONS };
@@ -217,6 +217,10 @@ describe("readback — the handoff's describe(), in the page's labels", () => {
       "Showing changes on Macs observed on OS 26, on Macs in Jamf department 5"
     );
     expect(readback({ managed: "false" }, en.changes)).toBe("Showing changes on Macs Jamf does not manage");
+    // #450: the name the server resolved, when it resolved one; the id otherwise.
+    expect(readback({ department: "5", departmentName: "Engineering : Product" }, en.changes)).toBe(
+      "Showing changes on Macs in department “Engineering : Product”"
+    );
     expect(readback({ managed: "true" }, en.changes)).toBe("Showing changes on Macs Jamf manages");
     expect(readback({ model: "Mac mini" }, de.changes)).toBe("Angezeigt werden Änderungen auf Macs mit Modell „Mac mini“");
   });
