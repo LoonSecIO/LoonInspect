@@ -281,6 +281,6 @@ async def test_the_breaker_refuses_a_collapsed_device_census(db, jamf: FakeJamf,
     assert gone.subject_id == clones[0]["id"]
 
     # A refusal and a healthy census are different sentences on the run log, and troubleshooting
-    # path 12 quotes both (`diagnosability.md` rules 1, 2 and 4): reword one and this breaks first.
+    # path 16 quotes both (`diagnosability.md` rules 1, 2 and 4): reword one and this breaks first.
     for phrase in ("device census not taken", "device census refused: ", "fewer than half the fleet", "no Macs at all"):
         assert all(phrase in text for text in _BOTH), phrase
