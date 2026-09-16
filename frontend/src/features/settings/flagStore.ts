@@ -5,34 +5,28 @@ import type { FeatureFlag } from "@/features/settings/types";
 /**
  * One flag state for the whole signed-in session (#402).
  *
- * The flags used to be read into `NavigationProvider`'s own state, which is mounted once
- * for every page and never refetches, so a toggle on Settings › Feature Flags reached the
- * sidebar only after a reload — in both directions. A store instead: read once where the
- * read already happened, written by the toggle that confirmed it, and read by everything
- * that judges a flag (the sidebar, the drawer below `md` — #141, the route guard, the AI
- * page). A flag is instance-wide, not per-account, so one set serves every surface.
- *
- * Not covered, deliberately (#402 Out): a toggle made in another tab or by another
- * administrator. It reaches an open session at the next reload or sign-in; there is no
- * polling.
+ * The flags used to be read into `NavigationProvider`'s own state, which mounts once and
+ * never refetches, so a toggle on Settings › Feature Flags reached the sidebar only after
+ * a reload — in both directions. A store instead, like `useAuthStore`: read once where the
+ * read already happened, written by the toggle the server confirmed, and read by every
+ * surface that judges a flag (the sidebar, the drawer below `md` — #141, the route guard,
+ * the AI page). Out of scope on purpose: a toggle in another tab or by another
+ * administrator, which reaches an open session at its next reload. There is no polling.
  */
 
-/** Whether the flags have been read at all, and whether the read worked. `failed` is a
- *  third state on purpose: a read that failed says so, and is never reported as "off"
- *  (#150 — failure is not emptiness). */
+/** How the read went, and what a flag-gated surface may say about it. `failed` and its
+ *  `unreadable` are a third state because a read that failed says so, and is never
+ *  reported as "off" (#150). */
 export type FlagRead = "loading" | "read" | "failed";
-
-/** What one flag-gated surface may say. `unreadable` is `failed` seen from a surface:
- *  the answer is missing, which is not the same as the flag being off. */
 export type FlagGate = "loading" | "on" | "off" | "unreadable";
 
-/** The enabled keys of a listing, which is the only part of a flag the gates read. */
+/** The enabled keys of a listing — the only part of a flag a gate reads. */
 export function enabledKeys(flags: readonly FeatureFlag[]): ReadonlySet<string> {
   return new Set(flags.filter((flag) => flag.enabled).map((flag) => flag.key));
 }
 
-/** One confirmed `PATCH /api/feature-flags/{key}` folded into the set: the server's own
- *  answer decides, never what the button was showing when it was pressed. */
+/** One confirmed `PATCH /api/feature-flags/{key}` folded in, as a new set so React sees
+ *  the change: the server's answer decides, never what the button showed when pressed. */
 export function withFlag(current: ReadonlySet<string>, updated: FeatureFlag): ReadonlySet<string> {
   const next = new Set(current);
   if (updated.enabled) next.add(updated.key);
@@ -40,8 +34,8 @@ export function withFlag(current: ReadonlySet<string>, updated: FeatureFlag): Re
   return next;
 }
 
-/** The decision every flag-gated surface makes, as a function so the test lane can hold
- *  all four states (`flagStore.test.ts`) without rendering anything. */
+/** The decision every flag-gated surface makes, as a function, so the node test lane can
+ *  hold all four states without rendering anything (`flagStore.test.ts`). */
 export function flagGate(read: FlagRead, enabled: ReadonlySet<string>, flag: string): FlagGate {
   if (read === "loading") return "loading";
   if (read === "failed") return "unreadable";
@@ -51,11 +45,11 @@ export function flagGate(read: FlagRead, enabled: ReadonlySet<string>, flag: str
 interface FeatureFlagStore {
   read: FlagRead;
   enabled: ReadonlySet<string>;
-  /** Read the flags once, where the signed-in layout mounts. Never throws: the failure
-   *  is a state, and an empty set with it, so a nav entry whose flag could not be read
-   *  stays hidden exactly as it did before this store existed. */
+  /** Read once, where the signed-in layout mounts. Never throws: the failure is a state,
+   *  and the empty set with it keeps a flag-gated nav entry hidden exactly as before. */
   load: () => Promise<void>;
-  /** The Feature Flags page's confirmed toggle. */
+  /** The Feature Flags page's confirmed toggle. It leaves `read` alone — a set that could
+   *  not be read is still one, whatever a single later PATCH confirmed. */
   apply: (updated: FeatureFlag) => void;
 }
 
@@ -72,9 +66,6 @@ export const useFeatureFlagStore = create<FeatureFlagStore>((set) => ({
   },
 
   apply(updated) {
-    // A toggle is the newest truth there is about that key, so it does not wait for a
-    // re-read, and it leaves `read` alone: a set that could not be read is still a set
-    // that could not be read, whatever one PATCH afterwards confirmed.
     set((state) => ({ enabled: withFlag(state.enabled, updated) }));
   }
 }));

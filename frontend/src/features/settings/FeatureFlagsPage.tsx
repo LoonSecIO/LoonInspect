@@ -7,9 +7,9 @@ import { useLocale } from "@/i18n/LocaleContext";
 
 export function FeatureFlagsPage() {
   const { t } = useLocale();
-  // A toggle here switches a whole area on or off, so the rest of the session learns of
-  // it now rather than at the next reload (#402): the sidebar, the drawer below `md`, the
-  // route guards and the pages behind them all read the one set this writes into.
+  // A toggle here switches a whole area on or off, so the rest of the session learns of it
+  // now rather than at the next reload (#402): the sidebar, the drawer below `md` and the
+  // route guards all read the one set this writes into.
   const applyFlag = useFeatureFlagStore((state) => state.apply);
   const [flags, setFlags] = useState<FeatureFlag[]>([]);
   const [loading, setLoading] = useState(true);

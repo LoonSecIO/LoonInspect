@@ -150,12 +150,9 @@ export const en = {
     noAccessDescription:
       "Your account's role doesn't include permission for this area. Ask an administrator if you need it."
   },
-  // The flag guard on a route (#402), a sibling of the permission guard above. A flag is
-  // the switch for a whole area, so its answers are three different sentences and never
-  // one shrug: an area still being checked, an area switched off, and an area whose
-  // switch could not be read — which is never reported as "off" (#150, failure is not
-  // emptiness). One entry under `areas` per flag that gates a route; the key is the
-  // flag's own key, so a guard cannot name an area the server has never heard of.
+  // The flag guard on a route (#402), a sibling of the permission guard above: an area
+  // being checked, an area switched off, and an area whose switch could not be read —
+  // never reported as "off" (#150). One `areas` entry per route-gating flag, by its key.
   flagGate: {
     checking: "Checking which features are on…",
     unreadableTitle: "This area could not be checked",

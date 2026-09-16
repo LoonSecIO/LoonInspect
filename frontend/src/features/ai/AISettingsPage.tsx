@@ -62,9 +62,8 @@ export function AISettingsPage() {
   const { t } = useLocale();
   const canWrite = useHasPermission(PERMISSIONS.SYSTEM_WRITE);
 
-  // The one flag state the whole session shares (#402). The route guard in front of
-  // this page reads the same value, so a page that renders at all has the flag on —
-  // the card below says so, and stops saying "\u2026" for a read that no longer happens here.
+  // The one flag state the whole session shares (#402). The route guard in front of this
+  // page reads the same value, so a page that renders at all has the flag on.
   const flagOn = useFeatureFlagStore((state) => state.enabled.has(AI_FLAG));
   const [consent, setConsent] = useState<boolean | null>(null);
   const [providers, setProviders] = useState<ProvidersResponse | null>(null);

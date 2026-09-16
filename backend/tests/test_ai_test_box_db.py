@@ -327,9 +327,8 @@ async def test_an_auditor_may_read_the_table_but_not_send(accounts, db, clean):
 
 @pytest.mark.parametrize("path", ["/api/system/ai/providers", "/api/system/ai/host"])
 async def test_a_read_of_the_area_is_refused_while_the_flag_is_off(client, clean, path):
-    """The flag gates the whole area, in both directions (#402): with it off, the two
-    reads Settings > AI opens with say so rather than serving a provider table and a look
-    at this container."""
+    """The flag gates the whole area, in both directions (#402): with it off, the two reads
+    Settings > AI opens with say so rather than serving what is behind them."""
     response = await client.get(path)
     assert response.status_code == 409, response.text
     assert "AI features are off" in response.json()["detail"]

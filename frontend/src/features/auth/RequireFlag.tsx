@@ -9,24 +9,17 @@ import { useLocale } from "@/i18n/LocaleContext";
 /** The flags that gate a route, which is the set that has words (`t.flagGate.areas`). */
 export type GatedFlag = keyof Translations["flagGate"]["areas"];
 
-interface RequireFlagProps {
-  flag: GatedFlag;
-}
-
 /** Guards a route whose whole area one feature flag switches on (#402).
  *
- *  A sibling of `RequirePermission`, and it explains rather than redirects for the same
+ *  A sibling of `RequirePermission`, explaining rather than redirecting for the same
  *  reason: someone who followed a bookmark into an area an administrator has since
- *  switched off should read why it is gone. It sits *inside* the permission guard on the
- *  route, so an account that may not open the page at all still gets the permission's
- *  answer — the narrower refusal wins.
- *
+ *  switched off should read why it is gone. It sits inside the permission guard, so the
+ *  narrower refusal wins for an account that may not open the page at all.
  *  Three states, three sentences (docs/diagnosability.md rule 1). The loading one is why
- *  this reads a store rather than fetching: a guard that started at "off" would flash a
- *  refusal on every first paint, and one that started at "on" would flash the page it is
- *  meant to be guarding.
+ *  this reads the store rather than fetching: a guard starting at "off" would flash a
+ *  refusal on first paint, and one starting at "on" would flash the page it guards.
  */
-export function RequireFlag({ flag }: RequireFlagProps) {
+export function RequireFlag({ flag }: { flag: GatedFlag }) {
   const { t } = useLocale();
   const gate = useFlagGate(flag);
   // The link is for the person who can act on it. Everyone else reads who to ask.
@@ -42,16 +35,14 @@ export function RequireFlag({ flag }: RequireFlagProps) {
     );
   }
 
+  // A switch that is off, and a switch nobody could read, are different pictures.
   const off = gate === "off";
   const words = t.flagGate.areas[flag];
+  const Icon = off ? Power : HelpCircle;
 
   return (
     <section className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed bg-muted/30 px-6 py-16 text-center">
-      {off ? (
-        <Power className="h-6 w-6 text-muted-foreground" />
-      ) : (
-        <HelpCircle className="h-6 w-6 text-muted-foreground" />
-      )}
+      <Icon className="h-6 w-6 text-muted-foreground" />
       <h1 className="text-lg font-semibold">{off ? words.offTitle : t.flagGate.unreadableTitle}</h1>
       <p className="max-w-md text-sm text-muted-foreground">
         {off ? words.offDescription : t.flagGate.unreadableDescription}

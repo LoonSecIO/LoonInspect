@@ -965,3 +965,36 @@ keep failing with this sentence — or the sentence stays on the row after a suc
 and a page reload. Report the connection's `id`, the row from
 `GET /api/mdm/connections`, the failing run's `jobID` and error, and
 `docker compose logs app --since 30m`.
+
+
+## 13. "Settings › AI is missing, or says AI features are off"
+
+One switch owns the whole AI area: **AI features**, on **Settings › Feature Flags**. On, the
+**AI** entry is listed under Settings and the page opens. Off, the entry is gone, the address
+refuses in words, and the page's own two reads answer `409`. It takes effect at once in the
+session that flipped it; other open sessions see it at their next reload or sign-in.
+
+1. **The AI entry is not under Settings.** Check whether **Data Sharing** is listed there.
+   Both need the same permission, so if neither is listed it is the role, not the switch — ask
+   an administrator for an account that can read system settings. If Data Sharing is listed and
+   AI is not, the switch is off: turn on **AI features** on Settings › Feature Flags, which
+   needs an administrator, and the entry appears without a reload.
+2. **The address `/settings/ai` says *AI features are off*.** Same switch, same fix — the link
+   under the sentence goes straight to Feature Flags for an account that may toggle it.
+3. **It says *This area could not be checked*, and *the feature flags could not be read*.**
+   That is not the switch being off: the answer is missing. This instance did not answer
+   `GET /api/feature-flags`, which needs only a session, so the rest of the app is failing too.
+   Reload; then read `docker compose logs app --since 15m` and § 4 above, which is the path for
+   an instance that cannot serve its own settings. Nothing here is evidence about the switch.
+4. **An administrator turned it on, and your session still hides it.** Each session reads the
+   flags once, when it signs in. A toggle made in another browser, another tab or by another
+   person reaches yours at the next reload — ⌘R. This is deliberate and not a fault.
+5. **`GET /api/system/ai/providers` or `/host` answers `409`.** The body says
+   *AI features are off; ai_provider_table may not run*. It is the same switch under its code
+   name; the page behind those reads is Settings › AI.
+
+**P.** **AI features** reads **On** on Settings › Feature Flags and Settings › AI still refuses
+after a reload, or the entry is listed and the page refuses. Report what the Feature Flags row
+shows, what the page says word for word, the output of
+`curl -sk -o /dev/null -w '%{http_code}\n' <address>/api/system/ai/providers` run with your
+session's cookies, and `docker compose logs app --since 30m`.

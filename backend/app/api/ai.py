@@ -139,9 +139,8 @@ async def _flag_or_409(db: AsyncSession, feature: str) -> None:
 
     The flag is the switch for the whole AI area, in both directions: while it is off,
     Settings > AI is neither listed nor reachable, and the two reads that page opens with
-    answer the gate's sentence rather than a provider table and a look at this container.
-    ``destination=None``, so nothing leaves the pod and nothing is logged — ``require_ai``
-    checks the flag and returns, which is why ``AIConsentMissing`` cannot be raised here.
+    answer the gate's sentence. ``destination=None``, so nothing leaves and nothing is
+    logged — which is also why ``AIConsentMissing`` cannot be raised here.
     """
     try:
         await require_ai(db, feature=feature)

@@ -92,12 +92,11 @@ export function AppRoutes() {
             provider table for anyone with it, and hides Send without SYSTEM_WRITE,
             which is what the backend's POST gate requires.
 
-            Then the flag, inside the permission and never instead of it (#402). The
-            master switch is the switch for the whole area — the page's own two reads
-            answer 409 while it is off — so the route says so rather than rendering a
-            page whose every panel is refused. The permission guard is outside because
-            the narrower refusal is the truer one: an account that may not open Settings ›
-            AI at all reads that, not that AI features are off. */}
+            Then the flag, inside the permission and never instead of it (#402): the
+            master switch owns the whole area — the page's own two reads answer 409 while
+            it is off — so the route says so rather than drawing a page whose every panel
+            is refused. Permission outside, because the narrower refusal is the truer one
+            for an account that may not open Settings › AI at all. */}
         <Route element={<RequirePermission permission={PERMISSIONS.SYSTEM_READ} />}>
           <Route element={<RequireFlag flag="ai_features" />}>
             <Route path="settings/ai" element={<AISettingsPage />} />

@@ -252,13 +252,16 @@ What ships, where it lives, and what was proven against it.
   table), `adapters.py` (`openai_chat`, `anthropic_messages`, one normalised result, four
   failure kinds), `host_detect.py` (the pure detection over `/proc/version`, `/proc/cpuinfo`
   and an alias resolution, with its evidence). `backend/app/api/ai.py` serves
-  `GET /api/system/ai/providers`, `GET /api/system/ai/host` (SYSTEM_READ) and
+  `GET /api/system/ai/providers`, `GET /api/system/ai/host` (SYSTEM_READ, and the flag
+  since #402) and
   `POST /api/system/ai/test` (SYSTEM_WRITE). `backend/app/core/egress.py` gained
   `validate_inference_base_url`, `inference_blocked_reason` and `destination_for_log`;
   `refuse_blocked_resolution` takes the reason function as a parameter. The audit log gained
   `ai.test.sent` (provider, destination, outcome, latency; never the prompt, never the key).
-- **Frontend** `frontend/src/features/ai/`: Settings > AI, listed in the sidebar only while
-  `ai_features` is on; three cards from the providers endpoint, the detection banner, the
+- **Frontend** `frontend/src/features/ai/`: Settings > AI, listed in the sidebar — and
+  reachable at all — only while `ai_features` is on, which one shared flag store answers for
+  the sidebar, the route guard and the page alike, so a toggle moves all three at once
+  (#402); three cards from the providers endpoint, the detection banner, the
   consent toggle (its first UI), the form, the reply with reasoning collapsed and error text
   verbatim. English and German.
 - **Model listing (#322, same day).** "Load models" beside the Model field asks the endpoint
