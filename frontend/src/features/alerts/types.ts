@@ -32,6 +32,9 @@ export interface Alert {
   bundleId: string;
   openedAt: string;
   closedAt: string | null;
+  /** Which close this was — `app_gone`, or `device_departed` for a Mac that left the fleet
+   *  (`docs/alerts.md` §3b). Optional: nothing on this side renders it yet. */
+  closedReason?: string | null;
 }
 
 export interface AlertListResponse {

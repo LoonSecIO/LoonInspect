@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import generate_token, tokens_equal
+from app.mdm.credentials import CredentialUnusable
 from app.mdm.service import ingest_webhook
 from app.models.schema import MdmConnection
 
@@ -232,6 +233,20 @@ async def jamf_webhook(
     # diff an empty inventory against the stored one and report everything removed.
     try:
         result = await ingest_webhook(db, connection, payload)
+    except CredentialUnusable as exc:
+        # The stored credential is not a credential (#393, #477). The sentence is the
+        # whole diagnosis, so it is answered rather than raised: an uncaught one would
+        # be a 500 with a traceback, which is the diagnostic-needing-source-code this
+        # failure path was given words to avoid. `503`, not the `502` below: nothing was
+        # asked of Jamf Pro, so naming it as a bad gateway would point the reader at the
+        # wrong host. The refusal is already recorded on the webhook's own run, and the
+        # alarm behind it is rationed to one a day (docs/troubleshooting.md §12).
+        logger.warning(
+            "jamf webhook refused: the stored credential is not a credential. %s",
+            exc,
+            extra={"connection_id": connection_id},
+        )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from None
     except httpx.HTTPError:
         logger.warning(
             "jamf webhook accepted, but reading that computer from Jamf Pro failed. The "

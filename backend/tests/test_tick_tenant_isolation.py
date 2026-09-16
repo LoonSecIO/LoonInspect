@@ -33,7 +33,8 @@ TENANT_B = uuidlib.UUID("00000000-0000-0000-0000-0000000004b6")
 
 @pytest.fixture
 def two_tenants(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Two operational tenants, and a per-tenant job that reaches no database.
+    """Two operational tenants, a per-tenant job that reaches no database, and the
+    outbox tick's lock granted.
 
     The stub yields the tenant id where the real one yields an `AsyncSession`, so the
     collaborators below can tell whose pass they are in from the argument they are given.
@@ -46,8 +47,16 @@ def two_tenants(monkeypatch: pytest.MonkeyPatch) -> None:
     async def tenant_job(tenant_id: uuidlib.UUID) -> AsyncIterator[uuidlib.UUID]:
         yield tenant_id
 
+    @asynccontextmanager
+    async def outbox_tick_lock(tenant_id: uuidlib.UUID) -> AsyncIterator[bool]:
+        # Granted, always. #467's per-tenant advisory lock is a real connection to a real
+        # Postgres, and what this file pins is the loop's control flow once the tick is
+        # this process's to run; the refusal path is `test_outbox_tick_lock_db.py`.
+        yield True
+
     monkeypatch.setattr(main, "operational_tenant_ids", tenant_ids)
     monkeypatch.setattr(main, "tenant_job", tenant_job)
+    monkeypatch.setattr(main, "outbox_tick_lock", outbox_tick_lock)
 
 
 def _dies_for_a(seen: list[uuidlib.UUID], result: int = 0) -> Callable[..., Any]:
