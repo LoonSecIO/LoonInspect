@@ -33,6 +33,7 @@
 # the operator and the operand, never prose. `witnessed` is the sentence printed beside the verdict, because "met" alone
 # is a spreadsheet with better typography; its substitutions are only `{field}`, `{value}` and `{operand}`, and every
 # rule prints the field it read. tests/test_baseline_rules.py fails the build if any of that stops holding.
+
 version: 1
 
 rules:
