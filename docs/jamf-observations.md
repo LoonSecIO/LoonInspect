@@ -373,6 +373,26 @@ because its *object* is gone says `objectDeparted` and collapses to level `low` 
 run-log line per object, rather than telling every member it drifted
 ([`change-log.md`](change-log.md) §1).
 
+**A Mac is its own category** (#183, from the same ruling), with stricter evidence and a stricter
+consequence than a group's. The census closes a **device sweep**, and only a *clean* one: it
+succeeded, it carried no RSQL `selector` — a scoped sweep says nothing about the Macs it never asked
+for — and no device failed, because a device Jamf *did* return but whose ingest failed has a stale
+`last_seen_at`, so a dirty night judges nobody. It names every computer the sweep returned across
+every page, **including the reads skipped as stale**: the monotonic guard is about what a record
+says, not whether the Mac is there, so a stale-skipped read stamps `last_seen_at` and counts as
+presence (rider 3). A census logs *device census: N observed, D departed, R returned, T in their
+seven-day tail, L left the fleet*; a sweep that was not one says which of the three disqualified it;
+one the breaker refused says *device census refused: …*, never a healthy sentence at a louder level.
+
+The consequence is the **seven-day tail**: an open row *is* the tail, and seven days after
+`departed_at` — the first clean census that did not name the Mac — it has **left the fleet**, out of
+`GET /api/devices` (`includeDeparted=true` reads one back) and out of the device count on
+`/api/mdm/status` and the Overview. No column, no timer, one place (`left_the_fleet`). **Held**: the
+device row, its spans, its sections and its whole change history; erasure is deferred to #180 (v5),
+and this stamp is what that pass selects on. **Not moved**: the `devices.*` posture keys, which still
+count every row — redefining that population is #135's open ruling. The daily "device is gone"
+emission and any "device returned" event are #179's shape, and are not built.
+
 ### Managed → Unmanaged: the retirement workflow (reserved, not built)
 
 **Nothing in this subsection is built** (#184, from the same #135 ruling, §3). It is the
