@@ -389,8 +389,9 @@ The consequence is the **seven-day tail**: an open row *is* the tail, and seven 
 `GET /api/devices` (`includeDeparted=true` reads one back) and out of the device count on
 `/api/mdm/status` and the Overview. No column, no timer, one place (`left_the_fleet`). **Held**: the
 device row, its spans, its sections and its whole change history; erasure is deferred to #180 (v5),
-and this stamp is what that pass selects on. **Not moved**: the `devices.*` posture keys, which still
-count every row — redefining that population is #135's open ruling. The daily "device is gone"
+and this stamp is what that pass selects on. **Moved by ruling** (#135, 2026-09-16, R1 a): the `devices.*` posture keys — and every key that counts a
+Mac or its installed apps — exclude a Mac that has left the fleet; PR #462 reserves `devices.departed_24h`
+and the predicate lands with #476, so captures before it still count a deleted Mac. The daily "device is gone"
 emission and any "device returned" event are #179's shape, and are not built.
 
 ### Managed → Unmanaged: the retirement workflow (reserved, not built)
