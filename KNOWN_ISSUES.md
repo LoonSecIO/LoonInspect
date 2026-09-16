@@ -14,11 +14,14 @@ Operating procedures — backup, restore, upgrade, rollback — are in
 
 ## 1. `device_changes` grows for ever
 
-**The limit.** Three things are bounded: outbox events after 7 days
-(`event_outbox_retention_days`), runs and their log lines after 30
-(`run_retention_days`), and the audit log by daily file rotation keeping
-`audit_retention_days` files. The change log is not one of them. Nothing deletes a
-`device_changes` row, ever, and there is no setting that would.
+**The limit.** What ages out on a clock is the machinery around the record, not the
+record: outbox events after 7 days (`event_outbox_retention_days`, or 30 under
+`dead_letter_retention_days` for one whose delivery dead-lettered), runs and their log
+lines after 30 (`run_retention_days`), the closed alert latches that ride that same
+setting, the audit log by daily file rotation keeping `audit_retention_days` files, the
+share log of what left the box after 90 days, and expired or revoked sessions a day after
+they die. The change log is not one of them. Nothing deletes a `device_changes` row,
+ever, and there is no setting that would.
 
 **Measured.** 514 bytes per row, all in — 390 bytes of heap and 124 of index across the
 seven indexes on the table — over 200,000 synthetic rows of the commonest shape (an
