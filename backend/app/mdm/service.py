@@ -618,6 +618,12 @@ async def _reconcile_device_census(
         at=at,
         census_run_id=run.id if run is not None else None,
     )
+    # No `emit_census_events` here yet, and the absence is deliberate rather than forgotten:
+    # a Mac's departure is not one event but a tail — `noticeDay` 1..7, one per UTC day, and a
+    # guaranteed terminal `state: removed` that must fire even when the clock runs out without
+    # a clean census (#179, 4.5). That needs a producer this function does not have, so it is
+    # #179's follow-up; the object half above emits today. Until then `loon:departure` carries
+    # no `subjectKind: computer` event, which docs/troubleshooting.md §16 tells an operator.
     await db.commit()
     if run is None:
         return
