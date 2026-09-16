@@ -20,15 +20,16 @@ import {
   readReply,
   readback,
   replyDisposition,
-  stillShowing
+  stillShowing,
+  viewerZone
 } from "@/features/changes/prompt";
 import { CHANGE_KINDS } from "@/features/changes/render";
 import { de } from "@/i18n/de";
 import { en } from "@/i18n/en";
 
-const WIRESHARK: PromptFilters = { q: null, artifact: "Wireshark", level: null, section: "applications", change: null };
+const WIRESHARK: PromptFilters = { q: null, artifact: "Wireshark", level: null, section: "applications", change: null, since: null };
 // Kyle's first demo question, "List new application installs".
-const NEW_INSTALLS: PromptFilters = { q: null, artifact: null, level: null, section: "applications", change: "added" };
+const NEW_INSTALLS: PromptFilters = { q: null, artifact: null, level: null, section: "applications", change: "added", since: null };
 // A correction that widens, as the server words it (backend/app/ai/changes_prompt.py).
 const WIDENED_SECTION = "The model named a section this page does not have, so it was read as any section.";
 
@@ -62,7 +63,7 @@ const INVALID = result({
 });
 
 describe("filtersFromPrompt replaces the page's filters, never merges into them", () => {
-  it("carries the five keys the bar speaks, nulls as unset", () => {
+  it("carries the six keys the bar speaks, nulls as unset", () => {
     expect(filtersFromPrompt(WIRESHARK)).toMatchObject({
       q: undefined,
       artifact: "Wireshark",
@@ -70,7 +71,7 @@ describe("filtersFromPrompt replaces the page's filters, never merges into them"
       section: "applications",
       change: undefined
     });
-    expect(filtersFromPrompt({ q: "KY4QVD7430", artifact: null, level: "high", section: null, change: null })).toMatchObject({
+    expect(filtersFromPrompt({ q: "KY4QVD7430", artifact: null, level: "high", section: null, change: null, since: null })).toMatchObject({
       q: "KY4QVD7430",
       artifact: undefined,
       level: "high",
@@ -115,8 +116,14 @@ describe("filtersFromPrompt replaces the page's filters, never merges into them"
     });
   });
 
+  it("carries a start the server resolved, and clears a window the page arrived with", () => {
+    const start = "2026-09-15T05:00:00.000Z";
+    expect(filtersFromPrompt({ ...WIRESHARK, since: start })).toMatchObject({ since: start });
+    expect(filtersFromPrompt(WIRESHARK)).toHaveProperty("since", undefined);
+  });
+
   it("an empty string is unset too, not a filter on nothing", () => {
-    expect(filtersFromPrompt({ q: "", artifact: "", level: null, section: "", change: null })).toMatchObject({
+    expect(filtersFromPrompt({ q: "", artifact: "", level: null, section: "", change: null, since: "" })).toMatchObject({
       q: undefined,
       artifact: undefined,
       section: undefined
@@ -172,6 +179,17 @@ describe("readback — the handoff's describe(), in the page's labels", () => {
   it("German reads German", () => {
     expect(readback({ q: null, artifact: "Wireshark", level: "high", section: "applications" }, de.changes)).toBe(
       "Angezeigt werden Änderungen mit dem Namen „Wireshark“, im Abschnitt Anwendungen, auf Stufe Hoch"
+    );
+  });
+
+  // #443: the page has no Since control, so the words are where a reader sees the window.
+  it("a start comes after every control, in the table's own format", () => {
+    const start = "2026-09-15T05:00:00.000Z";
+    expect(readback({ ...NEW_INSTALLS, since: start }, en.changes)).toBe(
+      `Showing changes in Applications, that were added, observed since ${new Date(start).toLocaleString()}`
+    );
+    expect(readback({ since: start }, de.changes)).toBe(
+      `Angezeigt werden Änderungen beobachtet seit ${new Date(start).toLocaleString()}`
     );
   });
 
@@ -831,6 +849,17 @@ describe("isPromptResult — a 200's body is checked before anything reads it", 
 
   // The times the box states (#443): a body without them would print "Invalid Date" over
   // the answer, so it is a body this page cannot read.
+  it("filters without the start are not this shape", () => {
+    expect(
+      isPromptResult(result({ filters: { q: null, artifact: null, level: null, section: null, change: null } as never }))
+    ).toBe(false);
+  });
+
+  it("the zone the bar sends is the browser's own, or nothing", () => {
+    const zone = viewerZone();
+    expect(zone === undefined || typeof zone === "string").toBe(true);
+  });
+
   it("a summary without the times is not this shape", () => {
     const body = withDevices.summary!;
     expect(isPromptResult(result({ summary: { ...body, when: undefined } as never }))).toBe(false);

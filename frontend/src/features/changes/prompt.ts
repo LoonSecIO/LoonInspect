@@ -40,10 +40,11 @@ const blankToUndefined = <T extends string>(value: T | null | undefined): T | un
 /**
  * The prompt REPLACES the page's filters; it never merges into them. The Changes page
  * merges what it is handed (`nextParams`), so every key it could be carrying is named
- * here — the five the bar speaks, and the five it has no words for (a `since` window from
+ * here — the six the bar speaks, and the four it has no words for (a `minLevel` range from
  * the Overview, a device from the device page) cleared explicitly. Otherwise "which
  * computers installed Wireshark?" asked from a device's own feed would answer for that
- * one device while the readback claimed the fleet.
+ * one device while the readback claimed the fleet. `since` is the bar's as of #443: it
+ * carries the start the answer was counted for, and clears a window the page arrived with.
  */
 export function filtersFromPrompt(filters: PromptFilters): Partial<ChangeFilters> {
   return {
@@ -53,7 +54,7 @@ export function filtersFromPrompt(filters: PromptFilters): Partial<ChangeFilters
     section: blankToUndefined(filters.section),
     change: blankToUndefined(filters.change),
     minLevel: undefined,
-    since: undefined,
+    since: blankToUndefined(filters.since),
     connectionId: undefined,
     subjectId: undefined,
     subjectKind: undefined,
@@ -112,6 +113,7 @@ export function readback(
     level?: ChangeLevel | null;
     section?: string | null;
     change?: ChangeKind | null;
+    since?: string | null;
   },
   strings: ChangesStrings,
   mode: "showing" | "proposed" = "showing"
@@ -123,6 +125,9 @@ export function readback(
   if (filters.section) bits.push(words.readbackSection(strings.sections[filters.section] ?? filters.section));
   if (filters.level) bits.push(words.readbackLevel(strings.levels[filters.level] ?? filters.level));
   if (filters.change) bits.push(words.readbackChange(words.answerKinds[filters.change] ?? filters.change));
+  // Last, and never left out: a start the reader cannot see in a control has to be in words,
+  // or the table is narrower than the readback says (#443).
+  if (filters.since) bits.push(words.readbackSince(at(filters.since)));
   const [lead, none] =
     mode === "proposed" ? [words.proposalReadbackLead, words.proposalReadbackNone] : [words.readbackLead, words.readbackNone];
   return bits.length > 0 ? `${lead} ${bits.join(", ")}` : none;
@@ -150,6 +155,17 @@ export function proposedFilters(result: PromptResult): Partial<ChangeFilters> | 
  *  like with like: the browser's format, in the browser's zone. */
 function at(iso: string): string {
   return new Date(iso).toLocaleString();
+}
+
+/** The viewer's IANA zone, sent with a question so the server can resolve "today" and
+ *  "since Monday" to their midnight (#443). Undefined when the browser will not say, which
+ *  the server reads as UTC. */
+export function viewerZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function deviceLine(device: PromptDevice, words: PromptStrings): string {
@@ -274,7 +290,7 @@ const isCount = (value: unknown): value is number => typeof value === "number" &
 
 const OUTCOMES: readonly PromptOutcome[] = ["applied", "proposed", "invalid", "error", "unparseable"];
 const HIDDEN_REASONS: readonly PromptHiddenReason[] = ["flag_off", "consent_off", "no_provider"];
-const FILTER_KEYS = ["q", "artifact", "level", "section", "change"] as const satisfies readonly (keyof PromptFilters)[];
+const FILTER_KEYS = ["q", "artifact", "level", "section", "change", "since"] as const satisfies readonly (keyof PromptFilters)[];
 
 function isFilters(value: unknown): value is PromptFilters {
   // Strings only; which ones the page knows is its own business — the URL keeps a level or

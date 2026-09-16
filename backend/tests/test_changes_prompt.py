@@ -21,7 +21,9 @@ import json
 import re
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -37,6 +39,7 @@ from app.ai.changes_prompt import (
     MAX_REPLY_TOKENS,
     NOT_ABOUT_CHANGES,
     SECTIONS,
+    SINCE_VALUES,
     SYSTEM_INSTRUCTION,
     Interpretation,
     Repair,
@@ -44,14 +47,16 @@ from app.ai.changes_prompt import (
     guard,
     interpret,
     parse_reply,
+    resolve_since,
     sanitize_question,
+    zone_or_utc,
 )
 
 _ROOT = Path(__file__).resolve().parents[2]
 RENDER_TS = _ROOT / "frontend" / "src" / "features" / "changes" / "render.ts"
 MODULE = _ROOT / "backend" / "app" / "ai" / "changes_prompt.py"
 
-NO_FILTERS = {"q": None, "artifact": None, "level": None, "section": None, "change": None}
+NO_FILTERS = {"q": None, "artifact": None, "level": None, "section": None, "change": None, "since": None}
 NOT_PARSED = Interpretation(filters=NO_FILTERS, unsupported=None, repairs=[], parsed=False)
 
 
@@ -1049,35 +1054,162 @@ def test_every_other_section_is_a_field_rule_section():
     assert set(SECTIONS.values()) - ENTRY_SECTIONS == {rule.section for rule in FIELD_RULES}
 
 
+# --- Since, the one range the controls express ------------------------------------------------
+
+CHICAGO = ZoneInfo("America/Chicago")
+# A Tuesday, 11:57 in Chicago (16:57Z), which is the demo pod's Wireshark install.
+TUESDAY = datetime(2026, 9, 15, 16, 57, 26, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("1h", datetime(2026, 9, 15, 15, 57, 26, tzinfo=UTC)),
+        ("24h", datetime(2026, 9, 14, 16, 57, 26, tzinfo=UTC)),
+        ("7d", datetime(2026, 9, 8, 16, 57, 26, tzinfo=UTC)),
+        ("30d", datetime(2026, 8, 16, 16, 57, 26, tzinfo=UTC)),
+        # Midnight where the operator is, not where the server is: 00:00 CDT is 05:00Z.
+        ("today", datetime(2026, 9, 15, 5, 0, tzinfo=UTC)),
+        ("tuesday", datetime(2026, 9, 15, 5, 0, tzinfo=UTC)),
+        ("monday", datetime(2026, 9, 14, 5, 0, tzinfo=UTC)),
+        ("wednesday", datetime(2026, 9, 9, 5, 0, tzinfo=UTC)),
+        (None, None),
+        ("", None),
+        ("2026-09-01", None),
+    ],
+)
+def test_a_start_resolves_against_this_clock_and_the_viewers_zone(value, expected):
+    assert resolve_since(value, now=TUESDAY, zone=CHICAGO) == expected
+
+
+def test_every_value_the_model_may_name_resolves():
+    """A value in the vocabulary that resolved to None would filter nothing and say nothing."""
+    for value in SINCE_VALUES:
+        assert resolve_since(value, now=TUESDAY, zone=CHICAGO) is not None, value
+        assert resolve_since(value, now=TUESDAY, zone=CHICAGO) <= TUESDAY, value
+    assert SINCE_VALUES.count("today") == 1 and len(set(SINCE_VALUES)) == len(SINCE_VALUES)
+
+
+def test_the_instructions_name_every_start_the_parser_takes():
+    for value in SINCE_VALUES:
+        assert value in SYSTEM_INSTRUCTION, value
+
+
+def test_an_unknown_zone_is_utc_rather_than_a_refusal():
+    assert zone_or_utc("America/Chicago") is not UTC
+    assert resolve_since("today", now=TUESDAY, zone=zone_or_utc("America/Chicago")) == datetime(2026, 9, 15, 5, 0, tzinfo=UTC)
+    for name in (None, "", "Mars/Olympus_Mons", "../../etc/passwd", "A" * 200, "Europe/Berlin\x00"):
+        assert resolve_since("today", now=TUESDAY, zone=zone_or_utc(name)) == datetime(2026, 9, 15, tzinfo=UTC)
+
+
+@pytest.mark.parametrize("word", ["any", "all", "null", "none", "", None])
+def test_no_start_is_no_repair(word):
+    filters, _, repairs = coerce(
+        {"search": None, "filter": None, "level": "any", "section": "any", "change": "any", "since": word}
+    )
+    assert filters["since"] is None
+    assert repairs == []
+
+
+def test_a_start_outside_the_vocabulary_is_dropped_and_widens():
+    filters, _, repairs = coerce(
+        {"search": None, "filter": None, "level": "any", "section": "any", "change": "any", "since": "2026-09-01"}
+    )
+    assert filters["since"] is None
+    assert len(repairs) == 1
+    assert isinstance(repairs[0], Repair) and repairs[0].widens
+    assert "Since" in repairs[0] and "start from" in repairs[0]
+
+
+def test_a_start_is_read_however_the_model_spaced_or_cased_it():
+    for written in ("24H", " 7d ", "Today", "MONDAY", "24 h"):
+        filters, _, repairs = coerce(
+            {"search": None, "filter": None, "level": "any", "section": "any", "change": "any", "since": written}
+        )
+        assert filters["since"] is not None and repairs == [], written
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "When was the last time someone installed wireshark",
+        "most recent Wireshark install",
+        "which macs installed wireshark",
+    ],
+)
+def test_a_start_the_question_never_asked_for_is_dropped(question):
+    """Rule 5. An answer that quietly started a week ago can show nothing at all."""
+    filters, _, repairs = guard(question, {**NO_FILTERS, "since": "7d"}, None, [])
+    assert filters["since"] is None
+    assert len(repairs) == 1
+    assert not (isinstance(repairs[0], Repair) and repairs[0].widens)
+    assert "names no time to start from" in repairs[0]
+
+
+@pytest.mark.parametrize(
+    "question", ["what changed in the last 24 hours", "installs since Monday", "what changed today", "changes overnight"]
+)
+def test_a_start_the_question_asked_for_stands(question):
+    filters, _, repairs = guard(question, {**NO_FILTERS, "since": "24h"}, None, [])
+    assert filters["since"] == "24h"
+    assert repairs == []
+
+
+def test_a_caveat_about_a_range_the_start_expresses_is_dropped():
+    """Rule 6 with a start set: the date words are expressed, so only a word of the other
+    kinds still grounds the caveat."""
+    _, unsupported, repairs = guard(
+        "what changed in the last 24 hours", {**NO_FILTERS, "since": "24h"}, "Cannot express date or time ranges.", []
+    )
+    assert unsupported is None
+    assert any("the time it asked for is set in Since" in repair for repair in repairs)
+
+
+def test_a_caveat_about_anything_else_stands_beside_a_start():
+    _, unsupported, repairs = guard(
+        "wireshark but not docker since Monday", {**NO_FILTERS, "since": "monday"}, "Cannot express 'but not'.", []
+    )
+    assert unsupported == "Cannot express 'but not'."
+    assert repairs == []
+
+
+def test_a_two_ended_range_keeps_its_caveat_and_sets_no_start():
+    for question in ("what changed yesterday", "installs before September", "changes between Monday and Friday"):
+        _, unsupported, repairs = guard(question, NO_FILTERS, "Cannot express a range with an end.", [])
+        assert unsupported == "Cannot express a range with an end.", question
+        assert repairs == [], question
+
+
 # --- the instructions ------------------------------------------------------------------------
 
-# The first prompt's four examples, as the measured prompt carries them. The Change control
-# came after that prompt, so each of its answers gained a "change" key ("updated" for the
-# Chrome move: a new version of an app that was already there) and nothing else in them
-# moved. The second prompt's lines are pinned, with the first prompt's beside them so the
-# key is provably the only difference. Copied here, not read from anywhere, so a reword of
-# any copy fails. (question, the answer as measured, the answer as first handed over)
+# The first prompt's four examples, as the measured prompt carries them. Two controls came
+# after that prompt, so each of its answers gained a "change" key ("updated" for the Chrome
+# move: a new version of an app that was already there) and a "since" key, null in all four
+# because none of these questions names a time (#443) — and nothing else in them moved. The
+# current lines are pinned, with the first prompt's beside them, so those two keys are
+# provably the only difference. Copied here, not read from anywhere, so a reword of any copy
+# fails. (question, the answer as measured, the answer as first handed over)
 ORIGINAL_EXAMPLES = [
     (
         "Q: find devices that installed wireshark",
-        '{"search":null,"filter":"Wireshark","level":"any","section":"Applications","change":"added","unsupported":null}',
+        '{"search":null,"filter":"Wireshark","level":"any","section":"Applications","change":"added","since":null,"unsupported":null}',
         '{"search":null,"filter":"Wireshark","level":"any","section":"Applications","unsupported":null}',
     ),
     (
         "Q: anything high severity on KY4QVD7430",
-        '{"search":"KY4QVD7430","filter":null,"level":"high","section":"any","change":"any","unsupported":null}',
+        '{"search":"KY4QVD7430","filter":null,"level":"high","section":"any","change":"any","since":null,"unsupported":null}',
         '{"search":"KY4QVD7430","filter":null,"level":"high","section":"any","unsupported":null}',
     ),
     (
         "Q: machines that moved to chrome 153",
-        '{"search":null,"filter":"Google Chrome","level":"any","section":"Applications","change":"updated",'
+        '{"search":null,"filter":"Google Chrome","level":"any","section":"Applications","change":"updated","since":null,'
         '"unsupported":"Cannot match a specific version — filters match names, not values."}',
         '{"search":null,"filter":"Google Chrome","level":"any","section":"Applications",'
         '"unsupported":"Cannot match a specific version — filters match names, not values."}',
     ),
     (
         "Q: devices with wireshark but not docker",
-        '{"search":null,"filter":"Wireshark","level":"any","section":"Applications","change":"any",'
+        '{"search":null,"filter":"Wireshark","level":"any","section":"Applications","change":"any","since":null,'
         '"unsupported":"Cannot express \'but not\' — run the second filter separately."}',
         '{"search":null,"filter":"Wireshark","level":"any","section":"Applications",'
         '"unsupported":"Cannot express \'but not\' — run the second filter separately."}',
@@ -1103,7 +1235,7 @@ def test_the_instructions_name_every_section_level_and_change_in_order():
 @pytest.mark.parametrize(("question", "answer", "first"), ORIGINAL_EXAMPLES)
 def test_the_original_examples_are_kept_word_for_word_but_for_the_change(question, answer, first):
     assert f"{question}\n{answer}\n" in SYSTEM_INSTRUCTION
-    assert re.sub(r'"change":"[a-z]+",', "", answer, count=1) == first
+    assert re.sub(r'"change":"[a-z]+",|"since":null,', "", answer) == first
 
 
 def test_every_example_survives_the_parser_and_the_guards_untouched():
@@ -1121,7 +1253,7 @@ def test_the_instructions_are_the_measured_text():
     is allowed; doing it without re-running the eval and updating the comment, and this
     digest, is what this refuses."""
     digest = hashlib.sha256(SYSTEM_INSTRUCTION.encode()).hexdigest()
-    assert digest == "de50b016e824d3bdad4af41c257cc4ff9d5cee48669a961da7fe12eb2e355280"
+    assert digest == "97a650b5b217a363fcc4a0b468527d1e32212c18db6d4d3c695973505b9c9862"
 
 
 def test_the_instructions_ask_for_the_refusal_the_parser_reads():

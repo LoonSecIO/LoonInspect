@@ -1282,6 +1282,7 @@ export const de: Translations = {
     criteriaMoved: "Kriterien geändert",
     deviceDrifted: "Gerät hat sich verändert",
     subjectChip: (label: string) => `Änderungen auf ${label}`,
+    sinceChip: (start: string) => `Beobachtet seit ${start}`,
     count: (n: number) => `${n} Änderung${n === 1 ? "" : "en"}`,
     pageOf: (page: number, pages: number) => `Seite ${page} von ${pages}`,
     previous: "Zurück",
@@ -1324,6 +1325,7 @@ export const de: Translations = {
       readbackSection: (section: string) => `im Abschnitt ${section}`,
       readbackLevel: (level: string) => `auf Stufe ${level}`,
       readbackChange: (kind: string) => `die ${kind} wurden`,
+      readbackSince: (start: string) => `beobachtet seit ${start}`,
       answerNone: "Keine Änderungen gefunden.",
       answerHeadline: (computers: number, changes: number) =>
         `${computers} Computer, ${changes} Änderung${changes === 1 ? "" : "en"}.`,

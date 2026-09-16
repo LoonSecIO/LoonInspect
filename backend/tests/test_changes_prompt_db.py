@@ -156,6 +156,11 @@ async def seeded(accounts):
                         previous_span_id=before_303.id),
                 _change(cid, subject_id="304", subject_label="probe-mac", serial_number="PRMSER304",
                         entry_identity=_app("PromptProbeVvq", "io.example.promptprobe")),
+                # Forty days back, for the one range the controls express: a start of 30d
+                # leaves it out, and no start shows it (#443).
+                _change(cid, subject_id="305", subject_label="old-mac", serial_number="PRMSER305",
+                        entry_identity=_app("PromptOldVvq", "io.example.promptold"),
+                        observed_at=base - timedelta(days=40), collected_at=base - timedelta(days=40)),
                 _change(cid, subject_kind="computer_group", subject_id="g-prompt", subject_label="Probe owners",
                         section="definition", entry_kind="criterion", entry_identity=None,
                         entry_label="Application Title is PromptProbeVvq"),
@@ -377,7 +382,9 @@ async def test_a_question_comes_back_as_the_pages_filters_with_a_summary(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["outcome"] == "applied"
-    assert body["filters"] == {"q": None, "artifact": "Wireshark", "level": None, "section": "applications", "change": None}
+    assert body["filters"] == {
+        "q": None, "artifact": "Wireshark", "level": None, "section": "applications", "change": None, "since": None,
+    }  # fmt: skip
     assert body["unsupported"] is None
     assert body["repairs"] == []
     assert body["widening"] == []
@@ -475,6 +482,7 @@ async def test_the_change_the_model_names_narrows_the_summary(client, db, clean,
     assert body["outcome"] == "applied", body
     assert body["filters"] == {
         "q": "Kyle's Mac mini", "artifact": "Wireshark", "level": None, "section": "applications", "change": "added",
+        "since": None,
     }  # fmt: skip
     summary = body["summary"]
     assert (summary["total"], summary["devicesTotal"], summary["otherSubjects"], summary["truncated"]) == (1, 1, 0, False)
@@ -547,6 +555,57 @@ async def test_nothing_matched_states_no_time(client, db, clean, seeded, endpoin
     summary = (await _ask(client, "when was NoSuchAppVvq installed")).json()["summary"]
     assert (summary["total"], summary["devicesTotal"]) == (0, 0)
     assert summary["when"] is None
+
+
+async def test_a_start_narrows_the_summary_and_the_page_shows_the_same_rows(client, db, clean, seeded, endpoint):
+    """Ruling R4 on #443: the model names a start from a closed list, the server resolves it,
+    and it rides the page's own `since` key — so the count is of the rows the page then lists."""
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "filter": "PromptOldVvq", "since": "30d"}))
+    body = (await _ask(client, "was PromptOldVvq installed in the last 30 days")).json()
+    assert body["outcome"] == "applied", body
+    since = body["filters"]["since"]
+    assert since is not None and body["repairs"] == []
+    # Forty days old: inside the log, outside the window.
+    assert (body["summary"]["total"], body["summary"]["when"]) == (0, None)
+    page = await client.get("/api/changes", params={"artifact": "PromptOldVvq", "since": since})
+    assert page.status_code == 200, page.text
+    assert page.json()["total"] == 0
+
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "filter": "PromptOldVvq"}))
+    whole = (await _ask(client, "when was PromptOldVvq installed")).json()
+    assert whole["filters"]["since"] is None
+    assert whole["summary"]["total"] == 1
+
+
+async def test_today_starts_where_the_viewer_is(client, db, clean, seeded, endpoint):
+    """ "Today" is the operator's day. Two viewers a day apart get two starts, and neither is
+    the server's midnight unless that is theirs."""
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "since": "today"}))
+    starts = set()
+    for zone in ("America/Chicago", "Pacific/Kiritimati", "Mars/Olympus_Mons", None):
+        body = (await _ask(client, "what changed today", timeZone=zone)).json()
+        assert body["outcome"] == "applied", body
+        starts.add(body["filters"]["since"])
+    # Chicago, Kiritimati (UTC+14), and UTC for the zone that is not one and for none sent.
+    assert len(starts) == 3
+
+
+async def test_a_start_the_question_never_asked_for_is_not_applied(client, db, clean, seeded, endpoint):
+    """The demo question with a start the model invented: dropped, and the answer is the one
+    the question asked for rather than a week of it."""
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "change": "added", "since": "7d"}))
+    body = (await _ask(client, "when was the last time someone installed wireshark")).json()
+    assert body["outcome"] == "applied", body
+    assert body["filters"]["since"] is None
+    assert any("names no time to start from" in repair for repair in body["repairs"])
+    assert body["widening"] == []
+    assert body["summary"]["total"] == 1
 
 
 async def test_rows_that_are_not_devices_are_counted_apart(client, db, clean, seeded, endpoint):
@@ -639,7 +698,9 @@ async def test_a_name_the_whitelist_refuses_is_proposed_with_its_filters_and_sum
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["outcome"] == "proposed"
-    assert body["filters"] == {"q": None, "artifact": None, "level": None, "section": "applications", "change": "added"}
+    assert body["filters"] == {
+        "q": None, "artifact": None, "level": None, "section": "applications", "change": "added", "since": None,
+    }  # fmt: skip
     assert body["repairs"] == [REFUSED_FILTER]
     assert body["widening"] == [REFUSED_FILTER]
     assert body["error"] is None
@@ -661,7 +722,9 @@ async def test_a_section_the_page_does_not_have_is_proposed(client, db, clean, s
     endpoint.body = _reply(json.dumps({**WIRESHARK, "filter": "PromptProbeVvq", "section": "Apps"}))
     body = (await _ask(client, "who has PromptProbeVvq")).json()
     assert body["outcome"] == "proposed"
-    assert body["filters"] == {"q": None, "artifact": "PromptProbeVvq", "level": None, "section": None, "change": None}
+    assert body["filters"] == {
+        "q": None, "artifact": "PromptProbeVvq", "level": None, "section": None, "change": None, "since": None,
+    }  # fmt: skip
     assert body["widening"] == ["The model named a section this page does not have, so it was read as any section."]
     # Any section, proposed: the probe app on one Mac and in one smart group's definition.
     summary = body["summary"]
@@ -676,7 +739,9 @@ async def test_a_repair_that_narrows_is_still_applied(client, db, clean, seeded,
     endpoint.body = _reply(json.dumps({**WIRESHARK, "filter": None, "section": "any"}))
     body = (await _ask(client, "what happened on VKM73DMG47")).json()
     assert body["outcome"] == "applied"
-    assert body["filters"] == {"q": "VKM73DMG47", "artifact": None, "level": None, "section": None, "change": None}
+    assert body["filters"] == {
+        "q": "VKM73DMG47", "artifact": None, "level": None, "section": None, "change": None, "since": None,
+    }  # fmt: skip
     assert body["repairs"] == ["Filled Search with the one serial-number-shaped word in the question."]
     assert body["widening"] == []
     assert "302" in _mine(body["summary"], seeded)

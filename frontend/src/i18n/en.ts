@@ -1323,6 +1323,9 @@ export const en = {
     filterTo: (name: string) => `Filter to ${name}`,
     clearFilter: "Clear this filter",
     subjectChip: (label: string) => `Changes on ${label}`,
+    // A window has no control either: it arrives from the Overview's link or from the Prompt
+    // bar (#443), and a filter the page applies is never one the page hides.
+    sinceChip: (start: string) => `Observed since ${start}`,
     level: "Level",
     anyLevel: "Any level",
     section: "Section",
@@ -1451,6 +1454,7 @@ export const en = {
       readbackSection: (section: string) => `in ${section}`,
       readbackLevel: (level: string) => `at ${level.toLowerCase()} level`,
       readbackChange: (kind: string) => `that were ${kind}`,
+      readbackSince: (start: string) => `observed since ${start}`,
       answerNone: "No changes match.",
       answerHeadline: (computers: number, changes: number) =>
         `${computers} computer${computers === 1 ? "" : "s"}, ${changes} change${changes === 1 ? "" : "s"}.`,

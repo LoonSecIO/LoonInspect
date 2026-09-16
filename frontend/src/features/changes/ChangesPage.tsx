@@ -336,6 +336,21 @@ export function ChangesPage() {
         )}
       </form>
 
+      {/* A window the form has no control for — the Overview's link (#107), or the Prompt
+          bar's answer to a question that named a time (#443) — shows the same way, in the
+          same format as the table's Observed column. */}
+      {filters.since && (
+        <button
+          type="button"
+          className="mr-2 inline-flex items-center gap-2 rounded-full border bg-muted px-3 py-1 text-xs"
+          onClick={() => update({ since: undefined })}
+        >
+          {tc.sinceChip(new Date(filters.since).toLocaleString())}
+          <span aria-hidden="true">×</span>
+          <span className="sr-only">{tc.clearFilter}</span>
+        </button>
+      )}
+
       {/* A subject the form has no control for (the device page's "all changes on this
           Mac" link, #300) shows as a removable chip, so a filter the page applies is never
           one the page hides. Named by the rows' own label when there is one. */}
