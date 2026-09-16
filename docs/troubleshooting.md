@@ -543,6 +543,28 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
      closes by itself is working as designed. A title that is published by Jamf and still
      missing from the unticked list a day later is reportable state **J**.
 
+4. **Settings › Data Sharing lists half the fleet as software no public source knows.**
+   That list calls a title unknown when no Jamf Patch title matches any of its builds and
+   the loaded vulnerability epoch names none of them — so with **0 Jamf Patch titles synced
+   only the vulnerability library can make a title known**, and most of a fleet reads
+   unknown on a container whose catalog never synced. That is this section, not the list: it
+   states both counts (*… checked against N Jamf Patch titles and M vulnerability-library
+   titles*) so you are not left guessing which source is absent. Work steps 1 and 2 above
+   and the list shrinks to the fleet's real long tail on the next page load. Three
+   neighbours of that state, all three legible rather than blank:
+   - **Empty, with both counts 0** → nothing has been matched because nothing has been
+     collected: a candidate needs an installed app to be a candidate of. Sweep a connection
+     (§2), then look again.
+   - **Empty, with both counts above 0** → the list is right. Every title your Macs carry
+     with a bundle identifier is software a public source on this container already names,
+     and the exclude box needs nothing from it.
+   - **One line where the panel was: *Match counts and candidates could not be loaded…*** →
+     the read behind the panel failed, so no count under the box is a statement about your
+     fleet. The box itself is unaffected: patterns you type still save on blur, and the
+     exchange still filters on them. `docker compose logs app --since 10m` carries the
+     request to `/api/system/data-sharing/exclusion-candidates` and the reason it ended;
+     reload the page to ask again.
+
 **J.** A refresh that reports no error leaves the table saying *No Jamf Patch titles
 synced yet.*, a title Jamf publishes stays missing from the list with *Only titles with
 devices* unticked for more than a day, or a press of **Sync now** writes nothing to the
