@@ -502,6 +502,12 @@ async def test_narrow_scope_leaves_scalars_and_eas_untouched(db, jamf: FakeJamf,
     ).scalar_one()
     hostname_before = real_device.hostname
     assert hostname_before and real_device.os_version == "27.0" and real_device.supervised is True
+    # #481: the sweep populated all three from the real record, each under its own section.
+    assert (real_device.os_build, real_device.model_identifier, real_device.cpu_arch) == (
+        "26A5378n",
+        "Mac16,10",
+        "arm64",
+    )
     ea_rows = select(DeviceExtensionAttribute).where(DeviceExtensionAttribute.device_id == real_device.id)
     eas_before = {(ea.definition_id, tuple(ea.values)) for ea in (await db.execute(ea_rows)).scalars()}
     # Two in the top-level array and one displayed under General — all three reach the
@@ -517,6 +523,10 @@ async def test_narrow_scope_leaves_scalars_and_eas_untouched(db, jamf: FakeJamf,
     jamf.real["general"]["reportDate"] = "2026-08-30T09:00:00.000Z"
     jamf.real["general"]["name"] = "renamed while unwatched"
     jamf.real["operatingSystem"]["version"] = "27.1"
+    jamf.real["operatingSystem"]["build"] = "26B1000x"
+    # A logic-board swap is how a Mac's model identifier moves at all; the point is that
+    # a read scoped below HARDWARE must not blank the column either way (#481).
+    jamf.real["hardware"]["modelIdentifier"] = "Mac16,11"
     jamf.real["extensionAttributes"][0]["values"] = ["set while unwatched"]
     payload = {
         "webhook": {"webhookEvent": "ComputerInventoryCompleted"},
@@ -528,6 +538,7 @@ async def test_narrow_scope_leaves_scalars_and_eas_untouched(db, jamf: FakeJamf,
     await db.refresh(real_device)
     assert real_device.hostname == hostname_before
     assert real_device.os_version == "27.0" and real_device.supervised is True
+    assert (real_device.os_build, real_device.model_identifier) == ("26A5378n", "Mac16,10")
     assert {(ea.definition_id, tuple(ea.values)) for ea in (await db.execute(ea_rows)).scalars()} == eas_before
 
     # Any full-aperture read heals: the next sweep reads everything and writes it.
@@ -536,6 +547,7 @@ async def test_narrow_scope_leaves_scalars_and_eas_untouched(db, jamf: FakeJamf,
     await db.refresh(real_device)
     assert real_device.hostname == "renamed while unwatched"
     assert real_device.os_version == "27.1"
+    assert (real_device.os_build, real_device.model_identifier) == ("26B1000x", "Mac16,11")
     healed = {(ea.definition_id, tuple(ea.values)) for ea in (await db.execute(ea_rows)).scalars()}
     assert ("3", ("set while unwatched",)) in healed
 

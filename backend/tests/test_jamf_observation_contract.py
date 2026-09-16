@@ -672,6 +672,31 @@ def test_real_record_current_state_normalizer(real: dict) -> None:
     assert device.last_inventory_at == datetime(2026, 8, 21, 21, 44, 27, tzinfo=UTC)
 
 
+def test_the_build_the_model_and_the_arch_are_lifted_from_the_real_record(real: dict) -> None:
+    """#481: the three fields the v1 `os` and `hw` content keys hash beside the version.
+
+    The contract admitted all three from the start — `operatingSystem.build` in
+    `_OPERATING_SYSTEM`, `modelIdentifier` and `processorArchitecture` in `_HARDWARE` —
+    and the current-state view read none of them, so `hw_key` had no caller and `os_key`
+    was handed None for the build on every exchange. Asserted against the record Jamf
+    actually sent, like its department/building sibling below: the way this goes wrong is
+    reading a key the inventory API does not have, and a fixture of invented values would
+    agree with any spelling.
+    """
+    from app.mdm.jamf.client import normalize_computer
+
+    device = normalize_computer(real)
+    assert (device.os_build, device.model_identifier, device.cpu_arch) == ("26A5378n", "Mac16,10", "arm64")
+
+    # Each under the section that carries it, which is what lets process_sync write them
+    # per section (#98): a read of one must leave the other's columns unasserted.
+    os_only = normalize_computer(real, ("operating_system",))
+    assert os_only.os_build == "26A5378n" and (os_only.model_identifier, os_only.cpu_arch) == (None, None)
+    hardware_only = normalize_computer(real, ("hardware",))
+    assert hardware_only.os_build is None
+    assert (hardware_only.model_identifier, hardware_only.cpu_arch) == ("Mac16,10", "arm64")
+
+
 def test_department_and_building_are_read_as_ids(raw: dict, real: dict) -> None:
     """`userAndLocation` names its department and building by id and never by name.
 

@@ -1,6 +1,10 @@
 """A wrong ENCRYPTION_KEY through the running routes (#374): the request answers 503 with the
 sentence, the Connections and Destinations lists both do, and the log carries the sentence
-once per process with no traceback. Gated on RUN_DB_TESTS like the other suites."""
+once per process with no traceback. Gated on RUN_DB_TESTS like the other suites.
+
+Since #480 a stored value can be unreadable for a second reason — a key id this build does
+not know — and that one is answered in its own words through the same routes, because its
+fix is the image and not the key."""
 
 from __future__ import annotations
 
@@ -12,7 +16,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from cryptography.fernet import Fernet
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
 pytestmark = [
     pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
@@ -81,7 +85,7 @@ async def written_under_this_key(db, admin):
     await db.commit()
     connection_id = connection.id
     try:
-        yield
+        yield connection_id
     finally:
         await db.rollback()
         await db.execute(delete(MdmConnection).where(MdmConnection.id == connection_id))
@@ -116,3 +120,37 @@ async def test_a_wrong_key_answers_a_sentence_and_a_503_and_logs_it_once(
     # The service is up: health and sign-in are untouched by a credential nobody can read.
     assert (await admin.get("/api/health")).status_code == 200
     assert (await admin.get("/api/auth/me")).status_code == 200
+
+
+async def test_a_key_id_this_build_does_not_know_answers_in_its_own_words(
+    admin, written_under_this_key, db, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The same 503 through the same routes, for the other reason a stored value can be
+    unreadable (#480): a row written by a newer build. The machinery is #374's — one
+    sentence, one log line, no traceback — and the sentence is not, because the fix is the
+    image. An operator sent to their secret store here would hunt a key that was never
+    wrong. Written through raw SQL: the type decorator would restamp it `k1` on the way
+    in, which is the point of it."""
+    import app.main as main_module
+    from app.core.crypto import STORED_VALUE_UNREADABLE, get_encryption_key
+
+    newer = "k2:" + Fernet(get_encryption_key()).encrypt(b'{"clientId": "c", "clientSecret": "s"}').decode()
+    await db.execute(
+        text("UPDATE mdm_connections SET credentials_encrypted = :value WHERE id = :id"),
+        {"value": newer, "id": written_under_this_key},
+    )
+    await db.commit()
+
+    monkeypatch.setattr(main_module, "_unreadable_reported", False)
+    with caplog.at_level(logging.ERROR, logger="app.main"):
+        connections = await admin.get("/api/mdm/connections")
+
+    assert connections.status_code == 503, connections.text
+    detail = connections.json()["detail"]
+    assert detail != STORED_VALUE_UNREADABLE
+    assert "key id k2" in detail and "older than the database" in detail and "docs/operations.md §5" in detail
+
+    lines = [record for record in caplog.records if record.getMessage() == detail]
+    assert len(lines) == 1 and lines[0].levelno == logging.ERROR and lines[0].exc_info is None
+
+    assert (await admin.get("/api/health")).status_code == 200
