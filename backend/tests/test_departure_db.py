@@ -399,7 +399,11 @@ async def test_a_departed_definition_emits_the_same_body_with_its_own_device_cou
     (event,) = await _events(db, mark, "subject.departure")
     body = event.payload
     assert body["subjectKind"] == DEFINITION and body["deviceMeta"]["jamfProID"] == "12"
-    assert body["state"] == "departed" and body["noticeDay"] == 1 and body["deviceCount"] >= 0
+    assert body["subjectLabel"] == "Crowdstrike Sensor Version"
+    assert body["state"] == "departed" and body["noticeDay"] == 1
+    # The Macs this fixture sweeps report a value for the definition, so the count is real
+    # and is what LoonInspect last held — Jamf cannot be asked for a definition it lost.
+    assert body["deviceCount"] >= 1
     assert "eventID" not in body["deviceMeta"] and "hostName" not in body["deviceMeta"]
 
 
