@@ -643,6 +643,9 @@ export const de: Translations = {
     clearFilter: "Diesen Filter entfernen",
     carrierChip: (app: string) => `Läuft ${app}`,
     carrierChipUnnamed: "Läuft eine Anwendung",
+    tailChip: "Verlässt die Flotte",
+    leftChip: "Flotte verlassen",
+    showDeparted: "Ausgeschiedene anzeigen", // nicht "Abgemeldete" — das ist #184s Stilllegung
     detail: {
       back: "Alle Geräte",
       subtitle: (serial: string, externalId: string) => `${serial} · Jamf-Computer ${externalId}`,
@@ -656,6 +659,10 @@ export const de: Translations = {
         checkInNone: "Jamf hat von diesem Mac noch nichts gehört",
         seen: "LoonInspect hat ihn zuletzt gelesen",
         seenNone: "LoonInspect hat diesen Mac noch nicht gelesen"
+      },
+      departure: {
+        inTail: (since: string, leaves: string) => `Seit ${since} nicht mehr von Jamf zurückgegeben; verlässt die Flotte am ${leaves}.`,
+        left: (since: string) => `Hat die Flotte verlassen – seit ${since} nicht mehr von Jamf zurückgegeben. Nichts wurde gelöscht: dieser Datensatz, seine Beobachtungen und die gesamte Änderungshistorie bleiben erhalten, und ein Sweep, der diesen Mac wieder nennt, holt ihn sofort zurück.`
       },
       lastRecordedChange: (when: string, level: string) => `Letzte aufgezeichnete Änderung: ${when} (${level})`,
       noRecordedChange: "Für diesen Mac wurde noch keine Änderung aufgezeichnet",

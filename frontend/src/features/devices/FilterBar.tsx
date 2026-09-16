@@ -104,6 +104,16 @@ export function FilterBar({ filters, onChange }: FilterBarProps) {
             <option value="false">{t.devices.no}</option>
           </select>
         </label>
+
+        {/* The one control over `?includeDeparted=true` (#475): off by default, and visible. */}
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={filters.includeDeparted ?? false}
+            onChange={(e) => update({ includeDeparted: e.target.checked || undefined })}
+          />
+          {t.devices.showDeparted}
+        </label>
       </div>
     </div>
   );

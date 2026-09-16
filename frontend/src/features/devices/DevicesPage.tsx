@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { FilterBar } from "@/features/devices/FilterBar";
 import { lookupCatalog } from "@/features/catalog/api";
 import { listDevices } from "@/features/devices/api";
+import { departureState, includeDepartedFrom } from "@/features/devices/departure";
 import type { Device, DeviceFilters, VersionOperator } from "@/features/devices/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
@@ -24,6 +25,7 @@ function filtersFromSearchParams(params: URLSearchParams): DeviceFilters {
     lastCheckInAfter: params.get("lastCheckInAfter") ?? undefined,
     appHash: params.get("appHash") ?? undefined,
     versionHash: params.get("versionHash") ?? undefined,
+    includeDeparted: includeDepartedFrom(params),
     page: params.get("page") ? Number(params.get("page")) : 1
   };
 }
@@ -47,6 +49,7 @@ function searchParamsFromFilters(filters: DeviceFilters): URLSearchParams {
   // runs this build" would silently be the whole fleet — #107's shape again.
   if (filters.appHash) params.set("appHash", filters.appHash);
   if (filters.versionHash) params.set("versionHash", filters.versionHash);
+  if (filters.includeDeparted) params.set("includeDeparted", "true"); // shared links carry it (#475)
   if (filters.page && filters.page !== 1) params.set("page", String(filters.page));
   return params;
 }
@@ -192,6 +195,11 @@ export function DevicesPage() {
                   <Link to={`/devices/${device.id}`} className="font-medium hover:underline">
                     {device.hostname}
                   </Link>
+                  {device.departedAt && (
+                    <span className="ml-2 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
+                      {departureState(device.departedAt, new Date()) === "left" ? t.devices.leftChip : t.devices.tailChip}
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-2">{device.serialNumber}</td>
                 <td className="px-4 py-2">{device.osVersion ?? "—"}</td>

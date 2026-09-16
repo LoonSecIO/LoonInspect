@@ -389,19 +389,37 @@ for — and no device failed, because a device Jamf *did* return but whose inges
 `last_seen_at`, so a dirty night judges nobody. It names every computer the sweep returned across
 every page, **including the reads skipped as stale**: the monotonic guard is about what a record
 says, not whether the Mac is there, so a stale-skipped read stamps `last_seen_at` and counts as
-presence (rider 3). A census logs *device census: N observed, D departed, R returned, T in their
-seven-day tail, L left the fleet*; a sweep that was not one says which of the three disqualified it;
-one the breaker refused says *device census refused: …*, never a healthy sentence at a louder level.
+presence (rider 3). A census logs *device census: N observed, D departed, R returned (M by serial,
+under a new Jamf id), T in their seven-day tail, L left the fleet; matched by …*; a sweep that was
+not one says which of the three disqualified it; one the breaker refused says *device census
+refused: …*, never a healthy sentence at a louder level.
 
 The consequence is the **seven-day tail**: an open row *is* the tail, and seven days after
 `departed_at` — the first clean census that did not name the Mac — it has **left the fleet**, out of
 `GET /api/devices` (`includeDeparted=true` reads one back) and out of the device count on
-`/api/mdm/status` and the Overview. No column, no timer, one place (`left_the_fleet`). **Held**: the
+`/api/mdm/status` and the Overview. No column, no timer, one place (`left_the_fleet`). The tail is on
+the page it is about (#475): the device page says *Not returned by Jamf since ⟨date⟩; leaves the fleet
+on ⟨date⟩* — displayed, never recomputed as a decision — the Devices row carries a chip, and **Show
+departed** in the filter bar is the visible control over `includeDeparted`. **Held**: the
 device row, its spans, its sections and its whole change history; erasure is deferred to #180 (v5),
 and this stamp is what that pass selects on. **Moved by ruling** (#135, 2026-09-16, R1 a): the `devices.*` posture keys — and every key that counts a
 Mac or its installed apps — exclude a Mac that has left the fleet; PR #462 reserves `devices.departed_24h`
 and the predicate lands with #476, so captures before it still count a deleted Mac. The daily "device is gone"
 emission and any "device returned" event are #179's shape, and are not built.
+
+**A return matches on the id, or on serial and UDID together** (#475, Kyle's R3). A census naming the
+departed Mac's computer id closes its row; so does one naming **both** hardware keys this connection
+holds for it, because a wipe, a rebuild or a re-enrolment mints a *new* id and keeps the board — the
+duplicate-record shape of §3. Same serial under a **new UDID is a board replacement**: a lineage event,
+not a return, and it matches nothing. Never across instances, a serial being Apple's and an instance's
+view of it not. The close re-keys the row to the id the Mac came back under and records `matched_by`
+(`jamfProID` / `serialNumber`) and `prior_jamf_pro_id`, the id it departed under — #179's `matchedBy`
+and `priorJamfProID` — which is also what **retires** that old id: out of the census population, or it
+departs again next census and closes again the pass after, forever, while its row serves out the tail
+it departed with and the Mac is listed under its new id. A census naming a retired id again takes the
+retirement back: Jamf handing a Mac over outranks what a serial match decided about it. A sweep with
+neither `hardware` nor `extension_attributes` in its sections has no serial to census with: the match
+is id-only, and the run's line says so.
 
 ### Managed → Unmanaged: the retirement workflow (reserved, not built)
 

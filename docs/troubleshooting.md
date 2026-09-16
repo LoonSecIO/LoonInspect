@@ -1170,11 +1170,12 @@ record at all, and the sweep writes one line per deleted object instead ([`chang
 LoonInspect never asks Jamf what was deleted; it notices what a sweep stopped returning. Only a
 **clean census** may judge — a device sweep that succeeded, carried no RSQL selector and lost no
 device to a failure — and a Mac it does not name enters a **seven-day tail**: still listed, still
-counted, and unmarked on the page, so the tail shows only in the run log and in the `departedAt`
-the API returns. Seven days later it **leaves the fleet** — out of **Devices**, out of the device
-count on the Overview — and nothing is deleted: its row, observations and whole change history
-stay, and `GET /api/devices?includeDeparted=true` reads it back. A sweep that names it again at
-any point puts it straight back.
+counted, its row chipped *Leaving the fleet* and its page saying *Not returned by Jamf since ⟨date⟩;
+leaves the fleet on ⟨date⟩*. Seven days later it **leaves the fleet** — out of **Devices**, out of
+the device count on the Overview — and nothing is deleted: its row, observations and whole change
+history stay, and **Show departed** in the filter bar (`includeDeparted=true`) reads it back chipped
+*Left the fleet*. A sweep that names it again puts it straight back — by Jamf computer id, or by
+**serial and UDID** on the same connection, which is how a wiped or re-enrolled Mac comes back.
 
 1. **The Mac is still listed and you deleted it in Jamf.** Open the newest device-sweep run
    (**Runs**, or `GET /api/runs/{jobId}/log`) and read its last lines.
@@ -1193,11 +1194,24 @@ any point puts it straight back.
      read is refused by design. Usually a lost privilege or a short page: path 1.
    - no census line at all on a finished sweep → reportable state **T**.
 2. **A Mac vanished and nobody deleted it.** It left the fleet, which takes seven days of clean
-   censuses that never named it. `GET /api/devices?includeDeparted=true` lists it again with
+   censuses that never named it. **Show departed** (`includeDeparted=true`) lists it again with
    `departedAt` — the first clean census that did not return it — and its page, observations and
    changes are all still there by id. If Jamf Pro still holds the Mac, ask Jamf for it with path
    2's `curl` against `/api/v4/computers-inventory`; if Jamf returns it, reportable state **T**.
-3. **Your SIEM saw nothing either way.** A Mac's departure and return are not on the wire
+3. **You re-enrolled the Mac and it is still departing.** A wipe, a rebuild or a re-enrolment mints
+   a *new* Jamf computer id and keeps the board, so the return is matched by **serial and UDID
+   together** on the same connection, counted as *returned N (M by serial, under a new Jamf id)*.
+   The old id is then **retired**: its row serves out the tail it started, chipped *Leaving the
+   fleet* until day seven — one Mac under two rows for a week — unless a sweep names that old id
+   again, which puts it straight back. If yours is not in the count, read the census line's last
+   clause. *…; matched by Jamf id, and by serial with UDID* → both keys were there, so compare them
+   on its page against Jamf Pro's: one differs, and a **new UDID under the same serial is a
+   logic-board repair**, a lineage event rather than a return. *…; matched by Jamf id only: this
+   sweep's sections carry no hardware, so no serial to match on* → the collection carries neither
+   **hardware** nor **extension attributes** (which force it back in); add either. A serial is
+   Apple's and an instance's view of it is not, so a Mac moved to a *different* Jamf Pro departs
+   here and enrols as a new Mac.
+4. **Your SIEM saw nothing either way.** A Mac's departure and return are not on the wire
    yet. `subject.departure` / `subject.returned` ship today for **objects** — a smart group or
    an extension-attribute definition (path 15) — under the sourcetype `loon:departure`; the
    Mac's own seven-day tail and its closing `state: removed` are built on this census and are
@@ -1205,7 +1219,7 @@ any point puts it straight back.
    `GET /api/devices?includeDeparted=true` are where a departed Mac is visible, and a saved
    search on `loon:departure` will correctly find no `subjectKind=computer` events. That is
    not a delivery fault and not reportable.
-4. **You want it gone for good.** Nothing removes a Mac's history today — not this, not
+5. **You want it gone for good.** Nothing removes a Mac's history today — not this, not
    deleting the connection. Honouring a Jamf deletion as an erasure is a stated, deliberate
    deferral (v5); [`jamf-observations.md`](jamf-observations.md) §8 says what is held.
 

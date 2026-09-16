@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 pytestmark = [
     pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
@@ -207,6 +207,8 @@ async def test_a_deleted_mac_departs_on_a_clean_census_and_a_return_closes_the_r
     assert (await sync_connection(db, connection)).ok
     (returned,) = await _departures(db, connection.id, COMPUTER)
     assert returned.returned_at is not None
+    # Recognised as itself, so there is no other id to name (#475).
+    assert returned.matched_by == "jamfProID" and returned.prior_jamf_pro_id is None
 
 
 async def test_a_scoped_sweep_and_one_device_failure_depart_nobody(db, jamf: FakeJamf, connection, monkeypatch) -> None:
@@ -284,6 +286,154 @@ async def test_the_breaker_refuses_a_collapsed_device_census(db, jamf: FakeJamf,
     # path 16 quotes both (`diagnosability.md` rules 1, 2 and 4): reword one and this breaks first.
     for phrase in ("device census not taken", "device census refused: ", "fewer than half the fleet", "no Macs at all"):
         assert all(phrase in text for text in _BOTH), phrase
+
+
+# --- a Mac that comes back is the same Mac (#475) -------------------------------------------
+async def _in_the_fleet(db, connection_id: int, at: datetime) -> set[str]:
+    """The Macs **Devices** lists and the Overview counts at `at`, through the list's own predicate."""
+    from app.models.schema import Device
+    from app.observations.departure import gone_for_good
+
+    here = ~gone_for_good(Device.mdm_connection_id, Device.external_id, at=at)
+    listed = select(Device.external_id).where(Device.mdm_connection_id == connection_id, here)
+    return set((await db.execute(listed)).scalars().all())
+
+
+async def _census_lines(db, connection_id: int) -> list[str]:
+    from app.models.schema import Run, RunLogLine
+
+    query = select(RunLogLine.message).join(Run, RunLogLine.run_id == Run.id).where(Run.mdm_connection_id == connection_id)
+    return [line for line in (await db.execute(query.order_by(RunLogLine.id))).scalars().all() if "device census" in line]
+
+
+def _re_enrolled(clone: dict) -> dict:
+    """The same Mac after a wipe or a rebuild: a new computer id, the same board — so both hardware
+    keys survive, which is §3's duplicate-record shape and not a new device."""
+    reborn = json.loads(json.dumps(clone))
+    reborn["id"] = f"8{uuidlib.uuid4().hex[:8]}"
+    return reborn
+
+
+async def test_a_mac_back_under_a_new_jamf_id_closes_its_departure_by_serial(db, jamf: FakeJamf, connection) -> None:
+    """Kyle's R3: re-enrolment is the ordinary way a Mac returns, and it always brings a new
+    computer id — matched on that alone the row never closes and the Mac leaves from a desk."""
+    from app.mdm.service import sync_connection
+
+    jamf.seed(1)
+    (clone,) = jamf._extra
+    assert (await sync_connection(db, connection)).ok
+    jamf._extra = []
+    assert (await sync_connection(db, connection)).ok
+    (gone,) = await _departures(db, connection.id, COMPUTER)
+    assert gone.returned_at is None and gone.matched_by is None
+
+    reborn = _re_enrolled(clone)
+    jamf._extra = [reborn]
+    assert (await sync_connection(db, connection)).ok
+    await db.refresh(gone)
+    assert gone.returned_at is not None, "same serial, same UDID, same connection is the same Mac"
+    # Re-keyed to the life it came back under, naming — and retiring — the id it departed under.
+    assert gone.matched_by == "serialNumber" and gone.subject_id == reborn["id"] != clone["id"]
+    assert gone.prior_jamf_pro_id == clone["id"]
+    assert any("1 by serial, under a new Jamf id" in line for line in await _census_lines(db, connection.id))
+
+    # And the dead id stays dead: nothing in the ledger closes its span, so a population still counting
+    # it would depart it again next census and close it again the pass after, forever.
+    for _ in range(3):
+        assert (await sync_connection(db, connection)).ok
+    (still,) = await _departures(db, connection.id, COMPUTER)
+    assert still.id == gone.id and still.returned_at is not None, "one departure, closed, and no second"
+    assert clone["id"] in await _in_the_fleet(db, connection.id, still.departed_at), "in its tail, not erased"
+    assert clone["id"] not in await _in_the_fleet(db, connection.id, still.departed_at + timedelta(days=8))
+
+    # But dead is Jamf's to say: a census naming that id takes the retirement back, or a reused id — or
+    # one serial on two records — strands a live Mac outside the fleet under a page saying it is back.
+    jamf._extra = [clone, reborn]
+    for _ in range(2):
+        assert (await sync_connection(db, connection)).ok
+    (back,) = await _departures(db, connection.id, COMPUTER)
+    assert back.subject_id == clone["id"] and back.prior_jamf_pro_id is None and back.matched_by == "jamfProID"
+    assert {clone["id"], reborn["id"]} <= await _in_the_fleet(db, connection.id, back.departed_at + timedelta(days=8))
+
+
+async def test_a_board_swap_keeps_the_serial_and_is_not_a_return(db, jamf: FakeJamf, connection) -> None:
+    """The two hardware keys fail in different directions (§3): a logic-board repair keeps the serial
+    and *changes* the UDID, so same serial under a new UDID is a lineage event, not this Mac back."""
+    from app.mdm.service import sync_connection
+
+    jamf.seed(1)
+    (clone,) = jamf._extra
+    assert (await sync_connection(db, connection)).ok
+    jamf._extra = []
+    assert (await sync_connection(db, connection)).ok
+    (gone,) = await _departures(db, connection.id, COMPUTER)
+
+    swapped = _re_enrolled(clone) | {"udid": str(uuidlib.uuid4()).upper()}
+    jamf._extra = [swapped]
+    assert (await sync_connection(db, connection)).ok
+    await db.refresh(gone)
+    assert gone.returned_at is None and gone.matched_by is None, "a new board is not a return"
+    assert any("0 by serial, under a new Jamf id" in line for line in await _census_lines(db, connection.id))
+
+
+async def test_a_census_without_hardware_matches_on_the_id_alone_and_says_which(db, jamf: FakeJamf, connection) -> None:
+    """The aperture caveat: no `hardware` is no serial to census with, so a re-enrolled Mac is not
+    recognised and the line says so, never the healthy sentence over a narrower match (rule 2)."""
+    from app.mdm import service
+    from app.models.schema import Collection
+
+    jamf.seed(1)
+    (clone,) = jamf._extra
+    assert (await service.sync_connection(db, connection)).ok
+    narrow = [s for s in service.V0_SECTIONS if s not in {"hardware", "extension_attributes"}]
+    await db.execute(update(Collection).where(Collection.mdm_connection_id == connection.id).values(sections=narrow))
+    await db.commit()
+
+    jamf._extra = []
+    assert (await service.sync_connection(db, connection)).ok
+    (gone,) = await _departures(db, connection.id, COMPUTER)
+
+    jamf._extra = [_re_enrolled(clone)]
+    assert (await service.sync_connection(db, connection)).ok
+    await db.refresh(gone)
+    assert gone.returned_at is None, "no serial in this census, so nothing to recognise it by"
+    lines = await _census_lines(db, connection.id)
+    assert any(service._MATCHED_BY_ID_ONLY in line for line in lines), lines
+    # Path 16 quotes both (the second to its colon, where the doc wraps): reword one and this fails.
+    for phrase in (service._MATCHED_BY_ID_AND_SERIAL, service._MATCHED_BY_ID_ONLY.split(":")[0]):
+        assert all(phrase in text for text in _BOTH), phrase
+
+
+async def test_a_serial_carried_by_another_connection_closes_nothing(db, jamf: FakeJamf, connection) -> None:
+    """Two Jamf Pro servers hand out the same small computer ids, so the lookup is connection-scoped."""
+    from app.mdm.service import sync_connection
+    from app.models.schema import MdmConnection, ObservationSpan
+    from app.observations.departure import reconcile_census
+
+    jamf.seed(1)
+    assert (await sync_connection(db, connection)).ok
+    jamf._extra = []
+    assert (await sync_connection(db, connection)).ok
+    (gone,) = await _departures(db, connection.id, COMPUTER)
+
+    other = MdmConnection(name=f"other {uuidlib.uuid4().hex[:8]}", provider="jamf", base_url=HOST, credentials_encrypted="{}")
+    db.add(other)
+    await db.commit()
+    # The same small computer id on that other Jamf Pro, carrying hardware keys of its own.
+    now = datetime.now(UTC)
+    clocks = dict.fromkeys(("first_observed_at", "last_observed_at", "first_collected_at", "last_collected_at"), now)
+    span = {"subject_kind": COMPUTER, "subject_id": gone.subject_id, "udid": "U1", "serial_number": "X1"}
+    digests = {"aperture_digest": "a", "head_digest": "h", "section_digests": {}, "last_trigger": "s", "contract_version": "v0"}
+    db.add(ObservationSpan(mdm_connection_id=other.id, **span, **digests, **clocks))
+    await db.commit()
+    ids = [jamf.real["id"], jamf.synthetic["id"]]
+    census = {"connection_id": connection.id, "subject_kind": COMPUTER, "observed_ids": ids, "at": now}
+    verdict = await reconcile_census(db, **census, observed_lineage={("X1", "U1"): "77001"})
+    await db.commit()
+    await db.refresh(gone)
+    assert gone.returned_at is None and verdict.returned_by_serial == 0
+    await db.execute(delete(MdmConnection).where(MdmConnection.id == other.id))
+    await db.commit()
 
 
 # --- the wire (#179): two types, one sourcetype, the ruled bodies -------------------

@@ -7,6 +7,7 @@ import { getChangePolicy, listChanges } from "@/features/changes/api";
 import { detailText, diffLines, labelsFromPolicy, whatOf, type LabelMap } from "@/features/changes/render";
 import type { DeviceChange } from "@/features/changes/types";
 import { getDevice } from "@/features/devices/api";
+import { departureState, leavesTheFleetAt } from "@/features/devices/departure";
 import { collectedNotOnPage } from "@/features/devices/ledgerSections";
 import { ObservationBlock } from "@/features/devices/ObservationBlock";
 import type { DeviceDetail, ExtensionAttribute } from "@/features/devices/types";
@@ -160,6 +161,8 @@ export function DevicePage() {
         <h1 className="text-3xl font-bold tracking-tight">{device.hostname}</h1>
         <p className="mt-1 font-mono text-sm text-muted-foreground">{td.subtitle(device.serialNumber, device.externalId)}</p>
       </div>
+
+      <DepartureNote departedAt={device.departedAt} td={td} />
 
       {/* Three clocks, each labelled with whose clock it is. Stale data misread as current
           is the fastest route to a wrong conclusion, so this is the first band. A null
@@ -368,6 +371,25 @@ export function DevicePage() {
         </footer>
       )}
     </section>
+  );
+}
+
+/** "Not returned by Jamf since ⟨date⟩; leaves the fleet on ⟨date⟩" — the tail on the page it is about
+ *  (#475), above the clocks. Nothing for the Macs Jamf still returns; past the tail the sentence
+ *  changes rather than going, because this page is reachable by id whatever the list answers. */
+function DepartureNote({ departedAt, td }: { departedAt: string | null; td: Translations["devices"]["detail"] }) {
+  const state = departureState(departedAt, new Date());
+  if (departedAt === null || state === "present") return null;
+  // An instant this page cannot read is no sentence it can write — both halves are dates, and
+  // "Invalid Date" is not one. The list's chip still says so. A guard: the API ships ISO-8601.
+  const departed = new Date(departedAt);
+  if (Number.isNaN(departed.getTime())) return null;
+  const since = departed.toLocaleDateString();
+  const leaves = leavesTheFleetAt(departedAt).toLocaleDateString();
+  return (
+    <p className="rounded-lg border border-dashed px-4 py-3 text-sm">
+      {state === "left" ? td.departure.left(since) : td.departure.inTail(since, leaves)}
+    </p>
   );
 }
 

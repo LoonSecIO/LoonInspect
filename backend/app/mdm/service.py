@@ -580,12 +580,19 @@ async def _log_collapsed_departures(db: AsyncSession, run: Run, collapsed: Mappi
         )
 
 
+# The census line's last clause (#475): which keys it could match a return on. Constants because the
+# drift test pins both to path 16, which quotes them.
+_MATCHED_BY_ID_AND_SERIAL = "matched by Jamf id, and by serial with UDID"
+_MATCHED_BY_ID_ONLY = "matched by Jamf id only: this sweep's sections carry no hardware, so no serial to match on"
+
+
 async def _reconcile_device_census(
     db: AsyncSession,
     connection: MdmConnection,
     run: Run | None,
     *,
     observed_ids: list[str],
+    observed_lineage: dict[tuple[str, str], str] | None,
     selector: str | None,
     devices_failed: int,
 ) -> None:
@@ -597,6 +604,10 @@ async def _reconcile_device_census(
     catches up. A sweep that is not a census says so on the run rather than going quiet: the
     operator waiting for a deleted Mac to go has to read which of the three is holding it. Commits,
     so a departure lands with its census.
+
+    `observed_lineage` is None when this sweep's sections carry no `hardware` (#475): no serial to
+    census with, so a Mac back under a new id is not recognised, and the line says which match it got
+    — matching on less under the same sentence is rule 2.
     """
     at = datetime.now(UTC)
     if selector is not None or devices_failed:
@@ -617,6 +628,7 @@ async def _reconcile_device_census(
         observed_ids=observed_ids,
         at=at,
         census_run_id=run.id if run is not None else None,
+        observed_lineage=observed_lineage,
     )
     # No `emit_census_events` here yet, and the absence is deliberate rather than forgotten:
     # a Mac's departure is not one event but a tail — `noticeDay` 1..7, one per UTC day, and a
@@ -637,8 +649,10 @@ async def _reconcile_device_census(
         line = f"device census refused: {why}; departing nobody — check the API Role's privileges and this run's errors"
     else:
         line = (
-            f"device census: {verdict.observed} observed, {len(verdict.departed)} departed, {len(verdict.returned)} returned, "
-            f"{in_tail} in their seven-day tail, {left} left the fleet"
+            f"device census: {verdict.observed} observed, {len(verdict.departed)} departed, "
+            f"{len(verdict.returned)} returned ({verdict.returned_by_serial} by serial, under a new Jamf id), "
+            f"{in_tail} in their seven-day tail, {left} left the fleet; "
+            f"{_MATCHED_BY_ID_AND_SERIAL if observed_lineage is not None else _MATCHED_BY_ID_ONLY}"
         )
     await run_log(
         db,
@@ -758,6 +772,10 @@ async def _sync_jamf(
     devices_failed = 0
     group_count = 0
     observed_ids: list[str] = []
+    # The census's second key (#475): (serial, UDID) -> the id this sweep carried them under — both,
+    # because a serial under a new UDID is a board swap, not a return. None rather than {} without
+    # `hardware`: "a fleet with no serials" and "none were asked for" are different facts.
+    observed_lineage: dict[tuple[str, str], str] | None = {} if "hardware" in sections else None
 
     # The deletion echo's tally (#182), open across the whole pass: the per-device rows a
     # departure explains are derived six frames below this one, so the count is collected
@@ -828,10 +846,13 @@ async def _sync_jamf(
         async for raw in client.iter_computers(http, sections, rsql_filter=selector, page_size=effective_page_size):
             device_count += 1
             jamf_id = raw.get("id")
+            serial = (raw.get("hardware") or {}).get("serialNumber")
             # The census's evidence (#183), collected before ingest, not after: what the sweep
             # is asked at its close is which Macs Jamf *returned* — stored, stale or failed alike.
             if jamf_id is not None:
                 observed_ids.append(str(jamf_id))
+                if serial and raw.get("udid") and observed_lineage is not None:
+                    observed_lineage[(str(serial), str(raw["udid"]))] = str(jamf_id)
             try:
                 result = await ingest_computer(
                     db,
@@ -859,7 +880,6 @@ async def _sync_jamf(
                 # two the loop keeps using, or the next attribute read raises instead
                 # of lazily refreshing (asyncio).
                 await db.refresh(connection)
-                serial = (raw.get("hardware") or {}).get("serialNumber")
                 failure = f"{type(exc).__name__}: {exc}"[:_FAILURE_ERROR_CHARS]
                 logger.warning(
                     "device failed; sweep continues",
@@ -933,7 +953,13 @@ async def _sync_jamf(
         # The sweep's own census closes it (#183), before the fleet count below is taken off
         # it: a Mac that left on this pass must not still be in the number the Overview shows.
         await _reconcile_device_census(
-            db, connection, run, observed_ids=observed_ids, selector=selector, devices_failed=devices_failed
+            db,
+            connection,
+            run,
+            observed_ids=observed_ids,
+            observed_lineage=observed_lineage,
+            selector=selector,
+            devices_failed=devices_failed,
         )
 
     await sync_state(db, connection)
