@@ -831,10 +831,36 @@ writes one row to the disclosure log naming the destination and the one field th
    began has no *Added* row at all, so no time here (`docs/jamf-observations.md` §3). The times
    are the browser's format in the browser's zone, the table's and the box's alike.
 
-   **A window from a link shows as a chip.** The Overview's feed links here with a start, and the
-   filter form has no control for it. An active one shows under the filters as *Observed since …*;
-   press it to clear it. Before 2026-09-15 that window narrowed the table with nothing on screen
-   to say so — a bar's answer counted for the whole log could read as if the table showed it.
+   **A window from a link shows as a chip, and so does every other filter without a control.**
+   The Overview's feed links here with a start; the filter form has no control for it, and none
+   for the ten filters added in #447 either. Every one that is on shows under the filters as a
+   chip — *Observed since …*, *Found by a webhook*, *One observation*, *Moved to version 153*,
+   *Model matching “Air”*, *OS version 26*, *FileVault: not encrypted*, *Jamf site 3*, *Jamf
+   department 5*, *Not managed by Jamf*, *Assigned user matching “dana”* — and a press clears it.
+   Before this, a link's window narrowed the table with nothing on screen to say so.
+
+   **Filtering by what the table does not show.** The feed can be filtered by the Mac as the
+   observation saw it: its model, OS version and build, FileVault state, site, building,
+   department, whether Jamf manages and supervises it, when it was enrolled, and the person
+   assigned to it. Seven of those are query keys today — `model`, `osVersion`, `fileVault`,
+   `site`, `department`, `managed`, `user` — beside three read off the row itself: `trigger`
+   (which of a sweep, a manual run or a webhook found the change), `spanId` (every change found
+   in one observation of one Mac, which answers "what else moved at the same time"), and
+   `version` (the version a change moved *to*, by prefix, so `version=153` finds 153.0.7049.84).
+   `q` also matches a Mac's UDID now, beside its name, serial and Jamf id.
+
+   They arrive three ways: a link, the Prompt bar (which reads a Search value the fleet has no
+   device for as a model, an OS version, a department name or "unmanaged", and says so in its
+   corrections), and a click on a row's model, which is how the rest are discovered.
+
+   Two bounds, because a filter that silently drops rows is the failure this page exists to
+   avoid. A change derived before 2026-09-15 carries no device details at all, so it matches
+   none of the seven — *No changes match these filters* is the honest answer, not "this Mac is
+   not a MacBook Air". And a webhook's narrow read stamps only the sections it read, so a row
+   can carry a model and no department. `model` and `user` match anywhere in the value,
+   `osVersion` and `version` are prefixes, and the rest are exact — a site and a department are
+   Jamf's own ids, which is what a Mac carries (a rename is not a change to any Mac), so the
+   chip shows the id and the Prompt bar's correction names the department it resolved.
 5. **The filters moved somewhere you did not mean, or nothing matches.** The filters are where the
    model put them; change any of them and the page runs again, or **Clear** to start over.
    *The answer came back after the filters changed, so it was not applied* means a filter moved

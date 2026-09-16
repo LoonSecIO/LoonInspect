@@ -158,6 +158,14 @@ Two rules a consumer can rely on:
   inventory pass: two sweeps in a day share a `shortDate`, and one sweep's `jobID` is
   shared by every device in the fleet.
 
+**Not to be confused with the stamp on a change row.** `device_changes.device_meta` (#447) is
+the same move made for the same reason — write the device onto the row so a filter needs no
+join — and a different half of it: sixteen *attributes* (model, OS version, FileVault state,
+site, building, department, managed, supervised, enrolment, the assigned person) that exist only
+in this database and never on the wire. This block is *correlation*, it is frozen at the names
+below, and `managed` is the one name the two share, read from the same GENERAL field.
+`backend/tests/test_change_dimensions.py` holds the boundary.
+
 **`device.change` carries the same block**, since
 [#223](https://github.com/LoonSecIO/LoonInspect/issues/223) (2026-09-03) on the fold ruled
 in [#243](https://github.com/LoonSecIO/LoonInspect/issues/243) — the same names, the same

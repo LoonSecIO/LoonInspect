@@ -147,6 +147,29 @@ rendered as text. A serial in Search that the question never named is dropped (r
     - **A window the page hides is a bug of its own.** An active `since` — the Overview's link
       since #107 — now shows as a removable chip beside the filters, in the table's own format.
 
+12. **The bar reaches a stamped dimension by repair, not by a field** (2026-09-15, H4 on #447).
+    The feed can now be filtered by what the Mac *was* when a change was observed — its model,
+    OS version, FileVault state, site, building, department, management state, assigned person,
+    stamped onto each row at derive time (`app.changes.derive.device_dimensions`). Four of those
+    are reachable from the Prompt bar, and none of them is a reply field: ruling 11 measured a
+    sixth field at 2 to 6 wrong answers of 68, with the injection refusal broken in every
+    arrangement, so the instructions stay byte-identical and the server does the reading.
+    - Asked "which MacBook Airs installed Wireshark", the model puts the model name in
+      **Search**, where it matches no device name, no serial, no Jamf id and no UDID — an empty
+      answer with nothing to say why. `_dimension_repair` moves it to Model and the corrections
+      line says so, in the same shape as every other repair.
+    - **A device always wins.** The first question is whether any row names that device, because
+      a Mac can be named after anything: "Kyle's Mac mini" is a device name, and so is a Mac
+      named after its own department. Only a Search that matches no device is read as a
+      dimension, and then in one order — the two words for management state, a model, an OS
+      version, a department from Jamf's own catalog. A Search the fleet has nothing for is left
+      exactly as the model set it, and the answer is honestly empty.
+    - **Cost:** one EXISTS read to settle the device, then up to three more on a miss, two of
+      them over `device_meta` with no index. They run behind a model call that already cost a
+      second.
+    - **What the operator sees:** the readback names the dimension after the controls, and the
+      page shows it as a removable chip, because it has no control of its own.
+
 **What it does.** The bar appears when the `ai_features` flag is on, AI-inference consent is on,
 and at least one provider is saved. `GET /api/changes/prompt` says which is missing, and Settings ›
 AI shows it as *Changes Prompt bar: …*. `POST /api/changes/prompt` (DEVICE_READ, so viewers can use
