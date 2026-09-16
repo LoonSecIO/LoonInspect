@@ -26,7 +26,11 @@ from app.baseline.report import REFUSAL, UNDER_ONE_INTERVAL, evidence_report  # 
 COMPUTER, SECURITY, FIREWALL = "computer", "security", "LI-0003"
 LOCKED, OPEN, THIN = "v0:sec-locked", "v0:sec-open", "v0:sec-thin"
 BASE = datetime(2026, 3, 1, tzinfo=UTC)  # months older than the 30-day run horizon: history outlives its runs
-LAG, AS_OF = timedelta(hours=1), datetime(2026, 4, 10, tzinfo=UTC)
+# Device time is whole seconds (`parse_jamf_datetime` drops the fraction); every clock we write ourselves is
+# `datetime.now(UTC)` and carries microseconds. HALF is that fraction, and the fixture wears it where production
+# does — the collection lag, and the departure — so the artefact's arithmetic is tested on a real-shaped ledger.
+HALF = timedelta(microseconds=500000)
+LAG, AS_OF = timedelta(hours=1, microseconds=123456), datetime(2026, 4, 10, tzinfo=UTC)
 FRAMEWORKS = ("cmmc", "800-171", "soc 2", "cyber essentials")
 AUDITOR, VIEWER = (
     ("evidence-auditor@report.example.com", "auditor-password"),
@@ -41,9 +45,10 @@ BODIES = {
     THIN: {"sipStatus": "ENABLED"},
 }
 # (subject, day observed, security digest). Device 1 turns the firewall off and back on; device 2 is seen once and
-# goes quiet; device 3 reports the same field-less record twice; device 4 departs on day 30.
+# goes quiet; device 3 reports the same field-less record twice; device 4 departs on day 30; device 5's aperture
+# never read the section at all — a span carrying no digest for it, which is a third way to have nothing to say.
 LEDGER = (("1", 0, LOCKED), ("1", 10, OPEN), ("1", 20, LOCKED), ("2", 5, LOCKED))
-LEDGER += (("3", 0, THIN), ("3", 12, THIN), ("4", 0, LOCKED))
+LEDGER += (("3", 0, THIN), ("3", 12, THIN), ("4", 0, LOCKED), ("5", 3, None))
 
 
 def _at(day: float) -> datetime:
@@ -67,10 +72,11 @@ async def ledger(db):
         at = _at(day)
         span = fixed | {"mdm_connection_id": row.id, "subject_id": subject, "label": f"Mac {subject}"}
         span |= {"udid": f"udid-{subject}", "serial_number": f"serial-{subject}", "management_id": f"management-{subject}"}
-        span |= {"head_digest": f"v0:head-{uuidlib.uuid4().hex[:12]}", "section_digests": {SECURITY: digest}}
+        carried = {SECURITY: digest} if digest else {}  # no key at all is how a section the aperture skipped reads
+        span |= {"head_digest": f"v0:head-{uuidlib.uuid4().hex[:12]}", "section_digests": carried}
         span |= {"first_observed_at": at, "last_observed_at": at, "first_collected_at": at + LAG}
         db.add(ObservationSpan(**span, last_collected_at=at + LAG, observation_count=1, is_current=newest[subject] == day))
-    db.add(SubjectDeparture(mdm_connection_id=row.id, subject_kind=COMPUTER, subject_id="4", departed_at=_at(30)))
+    db.add(SubjectDeparture(mdm_connection_id=row.id, subject_kind=COMPUTER, subject_id="4", departed_at=_at(30) + HALF))
     await db.commit()
     connection_id = row.id  # read before the rollback below expires it
     try:
@@ -127,22 +133,49 @@ async def test_the_absences_stay_apart_and_a_quiet_device_keeps_its_name(report:
     assert (seen[1]["duration"], seen[1]["seconds"]) == (UNDER_ONE_INTERVAL, 0) and "days" not in seen[1]
     tail = _rows(report, "4")[-1]
     assert (tail["state"], tail["departedAt"]) == ("departed", _at(30).isoformat())
-    assert {device["deviceID"] for device in report["devices"]} == {"1", "2", "3", "4"}
+    assert {device["deviceID"] for device in report["devices"]} == {"1", "2", "3", "4", "5"}
+    # Device 5's span carried no digest for the section at all. Also notReported — and the row still names the field
+    # nobody read, because a state with no words beside it is the blank cell §3 exists to prevent.
+    (unread,) = [r for r in _rows(report, "5") if r["state"] == "notReported"]
+    assert "carried no security.firewallEnabled" in unread["witnessed"]["statement"] and "sectionDigest" not in unread
 
 
-async def test_the_three_numbers_add_up_to_the_window(report: dict) -> None:
-    """met + unmet + not observed = the window, with the third's parts named rather than folded away."""
-    window = int((AS_OF - BASE).total_seconds())
+def _closes(report: dict, window: int) -> None:
+    """The identity asserted on the numbers PRINTED, at all three grains, and §3's named parts against the number
+    they are parts of. Above the (device, rule) grain the window is multiplied by the rows folded into the bucket."""
     devices, rules, totals = len(report["devices"]), len(report["rules"]), report["totals"]
     scopes = ((totals["byDevice"].values(), rules), (totals["byRule"].values(), devices), ([totals["fleet"]], devices * rules))
     for buckets, folded in scopes:
         for bucket in buckets:
             three = sum(bucket[state]["seconds"] for state in ("met", "unmet", "notObserved"))
             assert three == bucket["window"]["seconds"] == window * folded
+            parts = bucket.get("notObservedParts", {}).values()
+            assert sum(part["seconds"] for part in parts) == bucket["notObserved"]["seconds"]
+
+
+async def test_the_three_numbers_add_up_to_the_window(report: dict) -> None:
+    """met + unmet + not observed = the window, with the third's parts named rather than folded away."""
+    totals = report["totals"]
+    _closes(report, int((AS_OF - BASE).total_seconds()))
     assert set(totals["byRule"]) == {rule["ruleID"] for rule in report["rules"]}
     # Device 3 never departed, so that part is absent rather than a zero beside the two that happened.
     assert set(totals["byDevice"]["3"]["notObservedParts"]) == {"notReported", "noObservation"}
     assert "departed" in totals["byDevice"]["4"]["notObservedParts"]
+
+
+async def test_the_sum_closes_on_a_window_carrying_a_fraction(db, ledger) -> None:
+    """The window the endpoint builds for itself carries microseconds — `asOf` defaults to the ledger's heartbeat,
+    written as `datetime.now(UTC)` — while device time is whole seconds. A Mac clipped to such an opening puts a
+    fraction in `met` or `unmet` and its complement in the tail, and two truncations lose the second between them."""
+    report = await evidence_report(db, connection=ledger, window_from=_at(15) + HALF, as_of=AS_OF + HALF)
+    assert report["header"]["method"]["window"] == {"start": _at(15).isoformat(), "asOf": AS_OF.isoformat()}
+    _closes(report, int((AS_OF - _at(15)).total_seconds()))
+    # Device 1's open-firewall stretch began on day 10 and prints from the window's opening, carrying the fraction.
+    clipped = _rows(report, "1")[0]
+    assert (clipped["state"], clipped["from"]) == ("unmet", _at(15).isoformat())
+    # Device 4's departure is the other fraction — `departed_at` is our clock too — so `notObserved` has two parts
+    # here, and the pair has to add up to it as well.
+    assert set(report["totals"]["byDevice"]["4"]["notObservedParts"]) == {"noObservation", "departed"}
 
 
 async def test_an_empty_ledger_counts_nothing_rather_than_counting_zero(db, ledger) -> None:

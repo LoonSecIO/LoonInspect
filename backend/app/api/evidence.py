@@ -27,7 +27,10 @@ NO_LEDGER = (
     "This connection has no observations, so there is nothing to report on. The report reads the observation ledger, "
     "which a device sweep writes: run one from Connections, then ask again."
 )
-EMPTY_WINDOW = "The report window is empty: `start` must be earlier than `asOf`."
+EMPTY_WINDOW = (
+    "The report window is empty: `start` must be earlier than `asOf`. Given neither, the report covers the ninety "
+    "days before the ledger's last collection."
+)
 
 
 def _utc(value: datetime) -> datetime:

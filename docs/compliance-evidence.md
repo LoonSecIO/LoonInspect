@@ -24,14 +24,19 @@ on the three rules that cite one.
 
 **`devices`** is `deviceID` — the Jamf computer id, `devices.external_id` on the same connection — with `name` and
 the lineage triple `udid`, `serialNumber`, `managementID`. All three: a logic-board repair keeps the serial and
-changes the UDID, so neither alone is a Mac over its life.
+changes the UDID, so neither alone is a Mac over its life. It is named **once here** and cited by `deviceID` from
+every row: a Mac with ten rules over eight intervals is eighty rows, and the triple repeated on each of them is the
+same four strings printed eighty times in a document that gets archived.
 
 **`rows`** is one row per (device, rule, interval): `ruleID`, `deviceID`, `state`, `from`, `to`, `seconds`, `days`,
-`duration`, `longestGap`, and on an observed stretch `observations`, `collectedFrom`, `collectedTo`,
-`sectionDigest`, `contractVersion`, `witnessed`. A departed stretch adds `departedAt`. **`witnessed`** is the
-artefact's whole value over a spreadsheet — `field`, `value`, and the `statement` the catalogue's sentence renders,
-not "FileVault: met" but "met — `…partitionFileVault2State` = `ENCRYPTED`". **`sectionDigest`** lets a row say *this
-content hashes to this value under contract v0*, stronger than a printed number and free, the hash being on disk.
+`duration`, `longestGap`, and on an observed stretch `observations`, `collectedFrom`, `collectedTo`, `witnessed`,
+plus `sectionDigest` and `contractVersion` where the span carried a digest for the section. A departed stretch adds
+`departedAt`. **`witnessed`** is the artefact's whole value over a spreadsheet — `field`, `value`, and the
+`statement` the catalogue's sentence renders, not "FileVault: met" but "met — `…partitionFileVault2State` =
+`ENCRYPTED`". It is on **every** observed row, digest or none: a span whose aperture never read the section is
+`notReported`, and that row says *Jamf's record for this stretch carried no `…`* rather than leaving the cell blank.
+**`sectionDigest`** lets a row say *this content hashes to this value under contract v0*, stronger than a printed
+number and free, the hash being on disk.
 
 ## 2. The header, and the four words that must not appear on it
 
@@ -69,6 +74,16 @@ trusting the first two.
 **Absent, never zero.** A rule nothing could be counted for has no `byRule` entry at all, not an entry of zeros —
 [`posture-snapshot.md`](posture-snapshot.md)'s no-zero-priming rule, so a careless sum cannot hand a fleet nobody
 assessed a clean bill. The three columns themselves always print: an identity a reader cannot check is not one.
+
+**The clock is one second wide, and the boundaries take the floor.** Device time arrives whole — Jamf's
+`reportDate`, parsed with the fraction dropped — but the two instants the report supplies itself, the window's edges
+and a `departed_at`, are `datetime.now(UTC)` and carry microseconds. The artefact floors every instant it prints and
+measures between the floored ones, so `window` is `floor(asOf) - floor(start)` and the buckets telescope to it
+exactly: adjacent intervals share a boundary, and a shared boundary floored moves both sides together. Flooring each
+*duration* instead is the version that does not add up — the default window puts a fraction in `met` or `unmet` and
+its complement in the tail, and two truncations lose the second between them. Every composite figure in `totals` is
+therefore the sum of the printed figures under it, `notObserved` of its `notObservedParts` included: the identity
+holds on the page, not only on the floats behind it.
 
 **Duration is exact in `seconds`**, which the identity is asserted on; `days` is the reading figure derived from it,
 **absent** where it would round to zero, and `duration` then reads **"under one reporting interval"** rather than

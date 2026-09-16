@@ -29,7 +29,10 @@ UNDER_ONE_INTERVAL = "under one reporting interval"
 NOT_CARRIED = "Jamf's record for this stretch carried no {field}."
 METHOD = "What each Mac reported to one Jamf Pro connection at each inventory, read from LoonInspect's observation ledger."
 NOT_VISIBLE_SAID = "Nothing here reads a policy, a process or a person; none of the three is visible from an MDM's inventory."
-CLOCK = "Device time — the inventory time Jamf reported — is the interval clock, with LoonInspect's collection time beside it."
+CLOCK = (
+    "Device time — the inventory time Jamf reported, read to the whole second — is the interval clock, "
+    "with LoonInspect's collection time beside it."
+)
 
 #: The five states in the artefact's spelling. `met` and `unmet` are the only two that assert anything about a Mac;
 #: the other three are the named parts of `notObserved` and are never folded into the first two.
@@ -37,8 +40,20 @@ STATES = {"met": "met", "unmet": "unmet", NOT_REPORTED: "notReported", NOT_OBSER
 UNANSWERED = (NOT_REPORTED, NOT_OBSERVED, DEPARTED)
 
 
+def _floor(value: datetime) -> datetime:
+    """The artefact's clock, one second wide — every instant it prints and every boundary it measures between."""
+    return value.replace(microsecond=0)
+
+
 def _ts(value: datetime | None) -> str | None:
-    return None if value is None else value.isoformat()
+    return None if value is None else _floor(value).isoformat()
+
+
+def _seconds(interval: Interval) -> float:
+    """How long an interval is on that clock: floored BOUNDARIES, never a floored duration. Adjacent intervals share
+    a boundary, so floored boundaries telescope and the sums close; flooring each duration instead loses a second per
+    fractional bucket, and the endpoint's own default window makes two of them. The argument is §4."""
+    return (_floor(interval.ends_at) - _floor(interval.starts_at)).total_seconds()
 
 
 def _span(seconds: float) -> dict[str, Any]:
@@ -69,7 +84,7 @@ def _mscp(rule: BaselineRule) -> dict[str, Any]:
 
 
 def _row(rule: BaselineRule, subject_id: str, state: str, interval: Interval, body: dict | None, gone: tuple) -> dict:
-    seconds = interval.duration.total_seconds()
+    seconds = _seconds(interval)
     row: dict[str, Any] = {"ruleID": rule.id, "deviceID": subject_id, "state": STATES[state]}
     row |= {"from": _ts(interval.starts_at), "to": _ts(interval.ends_at), **_span(seconds), "duration": _duration(seconds)}
     if interval.longest_gap:
@@ -77,9 +92,11 @@ def _row(rule: BaselineRule, subject_id: str, state: str, interval: Interval, bo
     if interval.state == OBSERVED:
         row |= {"observations": interval.observation_count, "collectedFrom": _ts(interval.first_collected_at)}
         row["collectedTo"] = _ts(interval.last_collected_at)
-    if interval.digest:
-        # Prefixed with its contract version, so the row says *this content hashes to this under v0*.
-        row |= {"sectionDigest": interval.digest, "contractVersion": interval.digest.split(":", 1)[0]}
+        if interval.digest:
+            # Prefixed with its contract version, so the row says *this content hashes to this under v0*.
+            row |= {"sectionDigest": interval.digest, "contractVersion": interval.digest.split(":", 1)[0]}
+        # Outside that: a span carrying no digest for the section at all is `notReported` too, and the row saying so
+        # has to name the field nobody read. An absence printed as a blank cell is the defect §3 exists to forbid.
         row["witnessed"] = _witnessed(rule, body)
     row |= _mscp(rule)
     opened = [at for at, _ in gone if at <= interval.starts_at]
@@ -89,12 +106,15 @@ def _row(rule: BaselineRule, subject_id: str, state: str, interval: Interval, bo
 
 
 def _totals(acc: dict[str, float]) -> dict[str, Any]:
-    """met + unmet + not observed = the window, and it closes. All three print even at zero — an identity a reader
-    cannot check is not one — while a rule nothing could be counted for is absent from `byRule` instead."""
-    unanswered = sum(acc[state] for state in UNANSWERED)
-    out = {"met": _span(acc["met"]), "unmet": _span(acc["unmet"]), "notObserved": _span(unanswered)}
-    out["window"] = _span(acc["met"] + acc["unmet"] + unanswered)
+    """met + unmet + not observed = the window, and it closes on the numbers PRINTED — every composite here is the
+    sum of the printed figures under it, never a second reading of the floats behind them, because an auditor adds
+    up what is on the page. All three print even at zero — an identity a reader cannot check is not one — while a
+    rule nothing could be counted for is absent from `byRule` instead."""
+    met, unmet = _span(acc["met"]), _span(acc["unmet"])
     parts = {STATES[state]: _span(acc[state]) for state in UNANSWERED if acc[state]}
+    unanswered = sum(_span(acc[state])["seconds"] for state in UNANSWERED)
+    out = {"met": met, "unmet": unmet, "notObserved": _span(unanswered)}
+    out["window"] = _span(met["seconds"] + unmet["seconds"] + unanswered)
     return out | ({"notObservedParts": parts} if parts else {})
 
 
@@ -166,7 +186,7 @@ async def evidence_report(
             for interval in subject.intervals:
                 verdicts = _verdicts(section, interval, section_rules, bodies)
                 body = bodies.get(interval.digest) if interval.digest else None
-                seconds = interval.duration.total_seconds()
+                seconds = _seconds(interval)
                 seen |= {interval.digest.split(":", 1)[0]} if interval.digest else set()
                 for rule in section_rules:
                     state = verdicts[rule.id]
