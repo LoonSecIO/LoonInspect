@@ -120,10 +120,10 @@ async def _open_macs(db: AsyncSession, connection_id: int, *, at: datetime, expi
 async def emit_mac_removals(db: AsyncSession, *, connection: MdmConnection, at: datetime) -> int:
     """The tail's guaranteed close (4.5): `state: removed` the moment a Mac leaves the device
     population, which is `left_the_fleet` and nothing else — the predicate **Devices** and the
-    Overview count drop it on, so the wire names the moment the product does. **Not census-driven,
-    on purpose**: a fleet whose last seven sweeps were all scoped or lossy still has Macs whose
-    seven days ran out, and a receiver that watched one start a tail must never hold a state that
-    never closes. So it runs at the run close either way, and `removed_notified_at` fires it once."""
+    Overview count drop it on. **Not census-driven, on purpose**: a fleet whose last seven sweeps
+    were all scoped or lossy still has Macs whose seven days ran out, and a receiver that watched
+    one start a tail must never hold a state that never closes. So it runs at the run close either
+    way, and `removed_notified_at` fires it once."""
     rows = await _open_macs(db, connection.id, at=at, expired=True)
     for row in rows:
         row.removed_notified_at = at
@@ -132,11 +132,10 @@ async def emit_mac_removals(db: AsyncSession, *, connection: MdmConnection, at: 
 
 
 async def emit_mac_notices(db: AsyncSession, *, connection: MdmConnection, at: datetime) -> int:
-    """`state: departed`, `noticeDay` 1..7, one per Mac per UTC day (4.5).
-
-    The census is the heartbeat and there is no timer: a day with no clean census emits nothing
-    and is never backfilled, because a notice asserts an absence the skipped sweep did not
-    observe. A fleet quiet from Tuesday to Friday resumes at `noticeDay` 4, not at two."""
+    """`state: departed`, `noticeDay` 1..7, one per Mac per UTC day (4.5). The census is the
+    heartbeat and there is no timer: a day with no clean census emits nothing and is never
+    backfilled, because a notice asserts an absence the skipped sweep did not observe. A fleet
+    quiet from Tuesday to Friday resumes at `noticeDay` 4, not at two."""
     due = []
     for row in await _open_macs(db, connection.id, at=at, expired=False):
         # UTC calendar days as ruled, not elapsed hours: 23:50 then 00:10 is the next notice day.
