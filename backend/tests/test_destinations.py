@@ -351,3 +351,65 @@ async def test_health_reports_the_last_error_and_the_queue_depth(db) -> None:
         await db.execute(delete(EventOutbox).where(EventOutbox.id == event_id))
         await db.execute(delete(Destination).where(Destination.id == destination_id))
         await db.commit()
+
+
+@pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1")
+@pytest.mark.asyncio(loop_scope="session")
+async def test_migration_appends_both_departure_types_to_explicit_subscription_lists(db) -> None:
+    """#179's 4.8, as data. The pair is what makes this the `run.failed` treatment rather than
+    `device.inventory`'s: a curated list receiving departures without returns would hold a
+    fleet that only ever shrinks, so BOTH go in and BOTH come back out. Idempotent, so a row
+    an admin already subscribed by hand collects no duplicate.
+
+    Runs the migration's own UPDATEs, imported from the revision file, so this cannot drift
+    from what `alembic upgrade` executes.
+    """
+    import importlib.util
+
+    from sqlalchemy import delete, select, text
+
+    from app.models.schema import Destination
+
+    path = os.path.join(os.path.dirname(__file__), "..", "migrations", "versions", "bd51c7a9e402_departure_family_default_on.py")
+    spec = importlib.util.spec_from_file_location("migration_bd51c7a9e402", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    tag = uuidlib.uuid4().hex[:8]
+    explicit = Destination(name=f"curated siem {tag}", url="https://siem.example/hook", subscribed_events=["device.change"])
+    unfiltered = Destination(name=f"everything {tag}", url="https://all.example/hook", subscribed_events=None)
+    already = Destination(
+        name=f"half-subscribed {tag}", url="https://pager.example/hook", subscribed_events=["subject.departure"]
+    )
+    db.add_all([explicit, unfiltered, already])
+    await db.commit()
+    ids = {"explicit": explicit.id, "unfiltered": unfiltered.id, "already": already.id}
+
+    try:
+        for statement in migration.ADD_DEPARTURE_TYPES:
+            await db.execute(text(statement))
+        await db.commit()
+
+        # Columns, not entities: the raw UPDATE went around the ORM.
+        subs = dict(
+            (
+                await db.execute(
+                    select(Destination.id, Destination.subscribed_events).where(Destination.id.in_(list(ids.values())))
+                )
+            ).all()
+        )
+        assert subs[ids["explicit"]] == ["device.change", "subject.departure", "subject.returned"]
+        # Null already means every event; narrowing it here would change what it means.
+        assert subs[ids["unfiltered"]] is None
+        # The half-subscribed row collects the missing half and no duplicate of the one it had.
+        assert subs[ids["already"]] == ["subject.departure", "subject.returned"]
+
+        for statement in migration.REMOVE_DEPARTURE_TYPES:
+            await db.execute(text(statement))
+        await db.commit()
+        removed = (await db.execute(select(Destination.subscribed_events).where(Destination.id == ids["explicit"]))).scalar_one()
+        assert removed == ["device.change"]
+    finally:
+        await db.rollback()
+        await db.execute(delete(Destination).where(Destination.id.in_(list(ids.values()))))
+        await db.commit()

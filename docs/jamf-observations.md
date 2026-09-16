@@ -373,6 +373,15 @@ because its *object* is gone says `objectDeparted` and collapses to level `low` 
 run-log line per object, rather than telling every member it drifted
 ([`change-log.md`](change-log.md) §1).
 
+**What a SIEM receives** (#179, ruled 2026-09-16): `subject.departure`, one event type for
+every departing subject kind with the kind on `subjectKind`, and `subject.returned` for a
+subject that comes back — two names under one sourcetype, `loon:departure`. The body names
+the object (`subjectLabel`), when it was last seen, and `deviceCount`: **LoonInspect's own
+last count of the Macs carrying it**, read out of the ledger, because Jamf cannot be asked
+about an object it no longer has. The event is enqueued in the transaction that writes the
+departure row, so a census that departed a group and failed to commit has told nobody it
+did. The shape is `docs/splunk-wire-vocabulary.md` §2.
+
 **A Mac is its own category** (#183, from the same ruling), with stricter evidence and a stricter
 consequence than a group's. The census closes a **device sweep**, and only a *clean* one: it
 succeeded, it carried no RSQL `selector` — a scoped sweep says nothing about the Macs it never asked

@@ -10,11 +10,11 @@ LoonInspect events at all.
 
 This suite exists because per-family tests could not catch that. Each family's own test
 asserted its own key set and passed; the defect was only visible across families, which
-is precisely the view a customer's SPL has. So this module drives all five producers in
+is precisely the view a customer's SPL has. So this module drives all six producers in
 one transaction sequence and then judges the payloads *together*:
 
 1. Every emitted key on every family is camelCase with `ID` uppercased.
-2. One discriminator, `event`, selects all five types with one predicate.
+2. One discriminator, `event`, selects all six types with one predicate.
 3. The run UUID has exactly one name, `jobID` — and the documented join works, with the
    one nesting caveat pinned honestly rather than glossed.
 4. The three device families carry ONE `deviceMeta` block, agreeing key for key on the
@@ -24,7 +24,7 @@ one transaction sequence and then judges the payloads *together*:
    that ruling: a change event that spelled every key correctly and carried no block at
    all was still outside the vocabulary.
 
-The fifth family, `device.inventory`, is the per-device snapshot (#241): fourteen section
+`device.inventory` is the per-device snapshot (#241): fourteen section
 wrapper keys whose VALUES are Jamf's own objects under Jamf's spelling. The law judges
 the keys LoonInspect minted — the head and `deviceMeta` — and the wrapper keys themselves,
 which are the frozen registry's and pass on their own; it does not descend into a
@@ -54,6 +54,8 @@ from app.core.wire import ENVELOPE
 from app.core.wire_vocabulary import (
     ASSERTION_SOURCETYPE,
     DELTA_SOURCETYPE,
+    DEPARTURE_EVENT_TYPES,
+    DEPARTURE_SOURCETYPE,
     SECTION_WRAPPERS,
     SUB_EVENT_KEYS,
     SUBJECT_WRAPPERS,
@@ -68,7 +70,18 @@ pytestmark = [
     pytest.mark.asyncio(loop_scope="session"),
 ]
 
-FAMILIES = {"device.inventory", "device.inventory.changed", "device.change", "run.completed", "run.failed"}
+FAMILIES = {
+    "device.inventory",
+    "device.inventory.changed",
+    "device.change",
+    "run.completed",
+    "run.failed",
+    # The sixth, since #179 (2026-09-16). It is judged here rather than only in its own
+    # suite because the failure this module exists for is cross-family: a new producer
+    # spelling `job_id` or `subject_kind` passes its own test and breaks the one search a
+    # customer writes over the whole feed.
+    "subject.departure",
+}
 
 # camelCase: a lower-case first word, then letters and digits only. Underscores are the
 # whole point of the rule, so they are rejected by construction rather than by a second
@@ -193,6 +206,12 @@ async def five_families(db, jamf: FakeJamf, connection):
     from app.mdm.service import sync_connection
     from app.models.schema import EventOutbox
 
+    # Two smart groups before the baseline, one of them deleted before the judged sweep:
+    # that is what makes the sixth family fire here. The other stays, because an EMPTY census
+    # departs nobody by design (the breaker) and would leave this suite judging five families
+    # while believing it judged six.
+    jamf.smart_groups.append({"id": "907", "name": "Sonoma 14.6 rollout — wave 2", "siteId": "-1", "criteria": []})
+
     # The baseline. A first observation is not a change, so this sweep's events are not
     # what we judge — it exists to give the second sweep something to diff against.
     baseline = await sync_connection(db, connection)
@@ -204,6 +223,7 @@ async def five_families(db, jamf: FakeJamf, connection):
     # device, an inventory delta for the app that appeared, a device.change per derived
     # row, and the run.completed that closes over all of them.
     _second_inventory(jamf)
+    jamf.smart_groups = [group for group in jamf.smart_groups if group["id"] != "907"]
     sweep = await sync_connection(db, connection)
     assert sweep.ok, sweep
 
@@ -262,7 +282,7 @@ async def test_every_emitted_key_on_every_family_is_camel_case_with_id_uppercase
     assert _offences({"addedApps": [{"bundleId": "com.example"}]}) == []
 
 
-async def test_one_predicate_selects_all_five_types(five_families) -> None:
+async def test_one_predicate_selects_all_six_types(five_families) -> None:
     """`event=...` is the whole discriminator, on every family.
 
     Before this, device events said `event` and run events said `event_type`, so
@@ -322,6 +342,10 @@ async def test_the_run_uuid_has_one_name_and_the_documented_join_works(five_fami
         "device.inventory.changed",
         "device.change",
         "run.completed",
+        # A departure joins the sweep that derived it on the same bare predicate — which is
+        # the point of the hoist, and the reason a family with no device in it still carries
+        # `jobID` at the root.
+        "subject.departure",
     }
     assert len(joined) == len(sweep_events), "no event of this sweep is left out of the join"
 
@@ -498,5 +522,9 @@ async def test_every_change_is_delivered_under_its_entitys_change_sourcetype(fiv
             assert body["sourcetype"] == ASSERTION_SOURCETYPE
         elif row.event_type == "device.inventory.changed":
             assert body["sourcetype"] == DELTA_SOURCETYPE
+        elif row.event_type in DEPARTURE_EVENT_TYPES:
+            # One string for both departure types (#179, 4.7): `event=` is what separates
+            # them, so this is the one family where two types share a stanza.
+            assert body["sourcetype"] == DEPARTURE_SOURCETYPE
         else:
             assert "sourcetype" not in body

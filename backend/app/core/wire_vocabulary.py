@@ -19,15 +19,17 @@ the read aperture that decides which sections are fetched at all is
 `app.mdm.jamf.contract.SECTIONS`, which this module reads rather than restates, so a
 section cannot be collected without a name to travel under.
 
-What is stamped, and by whom. Four families carry a sourcetype on Splunk HEC deliveries,
+What is stamped, and by whom. Five families carry a sourcetype on Splunk HEC deliveries,
 and every string comes from this module and nowhere else (#222's acceptance): the
 `:change` family (#223, 2026-09-03 — the first the product ever stamped, because
 `device.change` was already at sub-event grain); the section tree, on the sub-events the
 fan-out (#242, 2026-09-03) expands one `device.inventory` snapshot into — `sourcetype()`
 read through `registry_rows()`; the run family, `run.completed` and `run.failed`, under
 `ASSERTION_SOURCETYPE`; and the delta family, `device.inventory.changed`, under
-`DELTA_SOURCETYPE` (#277, 2026-09-03, stamped the day before the flip). `app.core.outbox`
-stamps all four, on the `splunk_hec` destination type only. Still under the HEC input's
+`DELTA_SOURCETYPE` (#277, 2026-09-03, stamped the day before the flip); and the departure
+family, `subject.departure` AND `subject.returned` — two types, one string — under
+`DEPARTURE_SOURCETYPE` (#179, 2026-09-16). `app.core.outbox`
+stamps all five, on the `splunk_hec` destination type only. Still under the HEC input's
 own default: only `destination.test` (deliberately identifiable). The three enrichment
 strings are minted with no writer, because an enrichment rides inline on the app sub-event.
 """
@@ -225,6 +227,26 @@ CHANGE_LEAF = "change"
 # that emits the event cannot drift apart: `app.changes.derive.EVENT_TYPE` is this
 # constant.
 CHANGE_EVENT_TYPE = "device.change"
+
+# The departure family — ruled 2026-09-16 on #179, carrying #135's R3. **Two event types, one
+# sourcetype**, and the pair is the design: `subject.departure` carries every departing subject
+# kind on `subjectKind` (a SIEM asking "what left the fleet last night" must not subscribe three
+# times), while a return is its own NAME rather than a `state` on the departure, so a search for
+# departures is not one that has to exclude the returns hiding inside it. Named here for the
+# reason `CHANGE_EVENT_TYPE` is: the module that mints the string and the module that emits the
+# event must not be able to drift apart.
+#
+# `loon:departure` is #188 ruling 3's no-vendor assertion form, the way `loon:run` is — a
+# departure is LoonInspect asserting something about the fleet, derived from an absence, not a
+# vendor-shaped record of a Mac. ONE `props.conf` stanza carries both types, because `event=`
+# separates them at search time and two stanzas for one shape would be two to keep in step plus
+# a `loon:departure*` wildcard to remember. An object departure is also the first event in the
+# vocabulary with no device in it: `host` is absent from the envelope and `deviceMeta` degrades
+# to the run half plus the object's own id (#243's rider, applied unchanged).
+DEPARTURE_EVENT_TYPE = "subject.departure"
+RETURNED_EVENT_TYPE = "subject.returned"
+DEPARTURE_EVENT_TYPES: frozenset[str] = frozenset({DEPARTURE_EVENT_TYPE, RETURNED_EVENT_TYPE})
+DEPARTURE_SOURCETYPE = f"{PRODUCER}:departure"
 
 
 # What survives the split: the body keys every fan-out sub-event carries, whatever
