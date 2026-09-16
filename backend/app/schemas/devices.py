@@ -129,6 +129,12 @@ class DeviceOut(BaseModel):
     department_id: str | None
     building: str | None = None
     department: str | None = None
+    # When the last clean census stopped naming this Mac (#183). Null is the normal case:
+    # Jamf returned it. Non-null means it is in its seven-day tail — still listed, still
+    # counted, still every word of history it ever had — and seven days after this stamp it
+    # leaves the fleet and this list. A row that has already left carries it too, for the
+    # caller that asked to see them.
+    departed_at: datetime | None = None
 
 
 class DeviceDetailOut(DeviceOut):

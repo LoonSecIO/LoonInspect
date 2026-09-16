@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import uuid as uuidlib
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -24,6 +25,7 @@ from tests.jamf_fake import HOST, FakeJamf  # noqa: E402
 
 GROUP = "computer_group"
 DEFINITION = "extension_attribute_definition"
+COMPUTER = "computer"
 
 
 @pytest_asyncio.fixture(loop_scope="session")
@@ -176,3 +178,109 @@ async def test_the_cost_page_says_which_group_is_gone(db, jamf: FakeJamf, connec
     by_id = {item.id: item for item in board.items if item.mdm_connection_id == connection.id}
     assert by_id["107"].departed_at is not None, "still listed — its definition is current — and marked gone"
     assert by_id["1"].departed_at is None
+
+
+# --- a Mac is its own category (#183) ------------------------------------------------------
+
+
+async def test_a_deleted_mac_departs_on_a_clean_census_and_a_return_closes_the_row(db, jamf: FakeJamf, connection) -> None:
+    """The sweep is the heartbeat: the census is taken at the close of a sweep that
+    succeeded, carried no selector and lost no device, and a Mac it did not name is gone."""
+    from app.mdm.service import sync_connection
+
+    jamf.seed(1)
+    (clone,) = jamf._extra
+    assert (await sync_connection(db, connection)).ok
+    assert await _departures(db, connection.id, COMPUTER) == []
+
+    jamf._extra = []
+    assert (await sync_connection(db, connection)).ok
+    (gone,) = await _departures(db, connection.id, COMPUTER)
+    assert gone.subject_id == clone["id"] and gone.returned_at is None and gone.departed_at is not None
+
+    # Re-enrolled under the same Jamf id inside the tail: named again, so the row closes
+    # and the Mac was never out of the fleet.
+    jamf._extra = [clone]
+    assert (await sync_connection(db, connection)).ok
+    (returned,) = await _departures(db, connection.id, COMPUTER)
+    assert returned.returned_at is not None
+
+
+async def test_a_scoped_sweep_and_one_device_failure_depart_nobody(db, jamf: FakeJamf, connection, monkeypatch) -> None:
+    """Rider 1: only a clean census judges. A scoped sweep never asked about the Macs its
+    selector excluded, and a device that failed ingest has a stale `last_seen_at` through
+    no fault of Jamf's — so a dirty night judges nobody and the next clean one catches up."""
+    from app.mdm import service
+
+    jamf.seed(1)
+    assert (await service.run_jamf(db, connection, trigger="sweep")).ok
+    jamf._extra = []  # deleted in Jamf, and about to be unprovable twice over
+
+    scoped = await service.run_jamf(db, connection, trigger="sweep", selector="general.remoteManagement.managed==true")
+    assert scoped.ok, scoped
+    assert await _departures(db, connection.id, COMPUTER) == [], "a scoped sweep is not a census"
+
+    ingest = service.ingest_computer
+
+    async def one_bad_device(session, conn, raw, **kwargs):
+        if raw.get("id") == jamf.real["id"]:
+            raise RuntimeError("ingest failed for this device")
+        return await ingest(session, conn, raw, **kwargs)
+
+    monkeypatch.setattr(service, "ingest_computer", one_bad_device)
+    dirty = await service.run_jamf(db, connection, trigger="sweep")
+    assert dirty.ok and dirty.devices_failed == 1, dirty
+    assert await _departures(db, connection.id, COMPUTER) == [], "one failed device, and nobody departs"
+
+
+async def test_a_stale_read_stamps_presence_and_keeps_the_mac_in_the_census(db, jamf: FakeJamf, connection) -> None:
+    """Rider 3: the monotonic guard is about content, not existence. A read Jamf answered
+    marks the Mac present even when the ledger refuses what it says."""
+    from app.mdm.service import sync_connection
+    from app.models.schema import Device, ObservationSpan
+
+    assert (await sync_connection(db, connection)).ok
+    external_id = jamf.real["id"]
+    where = (Device.mdm_connection_id == connection.id, Device.external_id == external_id)
+    device = (await db.execute(select(Device).where(*where))).scalar_one()
+    span = (
+        await db.execute(
+            select(ObservationSpan).where(
+                ObservationSpan.mdm_connection_id == connection.id,
+                ObservationSpan.subject_kind == COMPUTER,
+                ObservationSpan.subject_id == external_id,
+                ObservationSpan.is_current.is_(True),
+            )
+        )
+    ).scalar_one()
+    # The ledger has already seen something newer than the next read will carry, so the
+    # next read is refused before `process_sync` ever runs.
+    span.last_observed_at = datetime.now(UTC) + timedelta(days=1)
+    device.last_seen_at = datetime(2020, 1, 1, tzinfo=UTC)
+    await db.commit()
+
+    result = await sync_connection(db, connection)
+    assert result.ok and result.observations.get("stale") == 1, result.observations
+    await db.refresh(device)
+    assert device.last_seen_at > datetime(2020, 1, 2, tzinfo=UTC), "the read reached us, so the Mac is here"
+    assert await _departures(db, connection.id, COMPUTER) == [], "a stale-skipped read is presence"
+
+
+async def test_the_breaker_refuses_a_collapsed_device_census(db, jamf: FakeJamf, connection) -> None:
+    """The breaker is the module's, and it covers Macs too: a sweep that paged short must
+    not be able to depart a fleet."""
+    from app.mdm.service import sync_connection
+    from app.observations.departure import COLLAPSE_RATIO, MIN_POPULATION_FOR_COLLAPSE
+
+    jamf.seed(MIN_POPULATION_FOR_COLLAPSE - 2)  # the two fixture records round out the population
+    clones = list(jamf._extra)
+    assert (await sync_connection(db, connection)).ok
+
+    jamf._extra = clones[: int(MIN_POPULATION_FOR_COLLAPSE * COLLAPSE_RATIO) - 3]
+    assert (await sync_connection(db, connection)).ok
+    assert await _departures(db, connection.id, COMPUTER) == [], "fewer than half named is a short read, not a mass deletion"
+
+    jamf._extra = clones[1:]
+    assert (await sync_connection(db, connection)).ok
+    (gone,) = await _departures(db, connection.id, COMPUTER)
+    assert gone.subject_id == clones[0]["id"]
