@@ -8,11 +8,10 @@
 Every mobile shape in `docs/mobile-devices.md` comes from Jamf's published reference and has
 never been read against a tenant. This is the trip that fixes that; §6 there is the command.
 
-Credentials come from the environment and nowhere else — not an argument (a secret on a
-command line is in the shell history and in every `ps` on the box), not a file (a file is
-a thing that gets committed). Nothing written carries the host, the tenant or a token, and
-which file a device lands in is read off its own `supervised` flag rather than an argument:
-the pair is the fixture (§4), and a mislabelled pair is worse than none.
+Credentials come from the environment and nowhere else — not an argument (a secret on a command
+line is in the shell history and in every `ps` on the box), not a file (a file gets committed).
+Nothing written carries the host, the tenant or a token, and which file a device lands in is read
+off its own `supervised` flag: the pair is the fixture (§4), and a mislabelled pair is worse than none.
 """
 
 from __future__ import annotations
@@ -29,46 +28,44 @@ import httpx
 
 FIXTURES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tests", "fixtures", "jamf")
 
-# The reference's mobile section vocabulary. Unverified: if the detail endpoint refuses it
-# the script asks again with none, and records which it was — itself one of #238's answers.
+# The reference's mobile section vocabulary, unverified: if it is refused, the script asks with none.
 SECTIONS = (
     "GENERAL,HARDWARE,USER_AND_LOCATION,PURCHASING,SECURITY,APPLICATIONS,EBOOKS,NETWORK,SERVICE_SUBSCRIPTIONS,"
     "CERTIFICATES,PROFILES,USER_PROFILES,PROVISIONING_PROFILES,SHARED_USERS,EXTENSION_ATTRIBUTES"
 )
-# (what, the privilege the reference names, candidates tried in order). The Jamf Pro API and
+# what | the privilege the reference names | candidate paths, tried in order. The Jamf Pro API and
 # the Classic API take the same bearer token, so a classic spelling is a free candidate.
-READS = (
-    ("devices", "Read Mobile Devices", "/api/v2/mobile-devices"),
-    (
-        "inventory collection settings",
-        "Read Mobile Device Inventory Collection Settings",
-        "/api/v1/mobile-device-inventory-collection-settings /api/v2/mobile-device-inventory-collection-settings"
+READS = tuple(
+    rule.split("|")
+    for rule in (
+        "devices|Read Mobile Devices|/api/v2/mobile-devices",
+        "inventory collection settings|Read Mobile Device Inventory Collection Settings"
+        "|/api/v1/mobile-device-inventory-collection-settings /api/v2/mobile-device-inventory-collection-settings"
         " /JSSResource/mobiledeviceinventorycollection",
-    ),
-    (
-        "smart groups",
-        "Read Smart Mobile Device Groups",
-        "/api/v1/mobile-device-groups/smart-groups /api/v1/mobile-device-groups /api/v2/mobile-device-groups"
-        " /JSSResource/mobiledevicegroups",
-    ),
+        "smart groups|Read Smart Mobile Device Groups|/api/v1/mobile-device-groups/smart-groups"
+        " /api/v1/mobile-device-groups /api/v2/mobile-device-groups /JSSResource/mobiledevicegroups",
+    )
 )
 
 # --- redaction ----------------------------------------------------------------------
 #
-# The fields the computer fixture scrubbed — names, usernames, serials, UDIDs, MACs,
-# addresses, certificate identities — plus what only mobile carries: the cellular identifiers
-# and the Managed Apple ID. It over-redacts where it cannot judge (a public CA's subject name
-# goes too: the contract reads shapes, not issuer names), and it sweeps — an identifier under
-# a key this table never heard of is replaced anyway, and the key printed.
+# What the computer fixture scrubbed — names, usernames, serials, UDIDs, MACs, addresses, certificate
+# identities — plus what only mobile carries: the cellular identifiers, the Managed Apple ID, the
+# coordinates, and Lost Mode's phone, message and footnote. It over-redacts where it cannot judge (a
+# public CA's subject name, every EA value) and it sweeps: an identifier under a key this table never
+# heard of is replaced anyway, and the key printed.
 
 _SWEEPS = (
-    (re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"), "uuid"),
+    (re.compile(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}"), "uuid"),
     (re.compile(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}"), "mac"),
     (re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"), "email"),
+    # Narrow enough to miss a timestamp, a version and an IMEI: a leading `+`, or 3-3-4 separated.
+    (re.compile(r"\+\d[\d\s().-]{6,}\d|(?<![\d.-])(?:\(\d{3}\)\s?|\d{3}[\s.-])\d{3}[\s.-]\d{4}(?![\d-])"), "phone"),
 )
-_TOKEN_RULES = (  # a substring of the lowercased key → its replacement kind, most specific first
+_TOKEN_RULES = (  # a substring of the key, lowercased and stripped of punctuation, most specific first
     "udid:uuid managementid:uuid serialnumber:serial macaddress:mac ipaddress:ipv4 ipv6:ipv6 ipv4:ipv4 "
-    "email:email appleid:email username:user phonenumber:phone fingerprint:hex assettag:label"
+    "email:email appleid:email username:user phonenumber:phone fingerprint:hex assettag:label "
+    "latitude:geo longitude:geo lostmodephone:phone lostmodemessage:label lostmodefootnote:label"
 )
 _KEY_RULES = (  # whole-key matches, for keys too short or too common to match on a substring
     "imei:digits meid:digits iccid:digits eid:digits phone:phone realname:person fullname:person "
@@ -78,9 +75,10 @@ _KEY_RULES = (  # whole-key matches, for keys too short or too common to match o
 )
 _BY_TOKEN = tuple(rule.split(":") for rule in _TOKEN_RULES.split())
 _BY_KEY = dict(rule.split(":") for rule in _KEY_RULES.split())
-# A bare `name` is the device's or an org unit's only under these parents; everywhere else it
-# labels an app, a group, a profile or a partition — shapes the contract reads, not identity.
+# A bare `name` is the device's or an org unit's only under these parents; elsewhere it labels an
+# app, a group, a profile or a partition — shapes the contract reads, not identity.
 _NAME_PARENTS = frozenset({"", "results", "general", "site", "location", "userandlocation", "hardware"})
+_PUNCTUATION = re.compile(r"[^a-z0-9]")  # the Classic API spells the same field `serial_number`
 _SHAPE_RULES = (  # kind → the placeholder it mints, keeping the shape a reader expects
     "uuid=A1B2C3D4-0000-4000-8000-{n:012X}|mac=02:00:00:00:00:{n:02X}|ipv4=203.0.113.{n}|ipv6=fe80::{n:x}|"
     "serial=LOONMOBILE{n:02d}|email=loonuser{n}@example.com|user=loonuser{n}|person=Loon User {n}|"
@@ -90,15 +88,21 @@ _SHAPES = dict(rule.split("=") for rule in _SHAPE_RULES.split("|"))
 
 
 def _kind(path: tuple[str, ...]) -> str | None:
-    key = path[-1].lower()
+    key = _PUNCTUATION.sub("", path[-1].lower())
+    parent = _PUNCTUATION.sub("", path[-2].lower()) if len(path) > 1 else ""
+    # An EA named "Device Owner" holds a username, a person or a number; its key says so nowhere.
+    if parent == "extensionattributes" and key in ("value", "values"):
+        return "label"
     if key == "name":
-        return "label" if (path[-2].lower() if len(path) > 1 else "") in _NAME_PARENTS else None
+        return "label" if parent in _NAME_PARENTS else None
     if key in _BY_KEY:
         return _BY_KEY[key]
     return next((kind for token, kind in _BY_TOKEN if token in key), None)
 
 
-def _placeholder(kind: str, n: int, original: Any) -> str:
+def _placeholder(kind: str, n: int, original: Any) -> Any:
+    if kind == "geo":  # a position is not a shape worth keeping, and it keeps the record's own type
+        return "0.0" if isinstance(original, str) else 0.0
     width = len(str(original))
     if kind in ("digits", "hex"):  # an IMEI and a fingerprint keep their length: a shape is a fact
         return (str(n) if kind == "digits" else f"{n:x}").rjust(width, "0")[-width:]
@@ -115,7 +119,9 @@ class Scrub:
         self.swept: set[str] = set()
 
     def mint(self, kind: str, original: Any) -> Any:
-        if isinstance(original, bool) or not isinstance(original, str | int) or original == "":
+        # Absent stays absent and a flag is a shape; everything else a rule names is replaced
+        # whatever its type — a latitude is a float, and letting floats through was the leak.
+        if original is None or original == "" or isinstance(original, bool):
             return original
         if (kind, original) not in self.seen:
             self.counts[kind] += 1
@@ -222,7 +228,8 @@ def _privileges(rows: list[tuple[str, str, int, str]], version: str) -> None:
         "# was ticked between two runs — the reference is a claim; that is a fact.",
     ]
     for what, path, status, privilege in rows:
-        needed = " (needed)" if before.get(what, "").startswith("403") and status == 200 else ""
+        was = before.get(what, "")  # carried, not re-derived: a third run must not erase run two's evidence
+        needed = " (needed)" if status == 200 and (was.startswith("403") or "(needed)" in was) else ""
         note = privilege if status != 403 else f"{privilege} — 403: tick it in the API Role and run again"
         lines.append(f"{what}\t{path}\t{status}{needed}\t{note}")
     with open(target, "w") as handle:
@@ -231,8 +238,7 @@ def _privileges(rows: list[tuple[str, str, int, str]], version: str) -> None:
 
 
 def _devices(http: httpx.Client, base: str, token: str, body: Any, rows: list[tuple[str, str, int, str]]) -> list[str]:
-    """Every listed device's full detail (the first four; a demo tenant has two), each named by
-    its own supervision."""
+    """Every listed device's full detail (the first four; a demo tenant has two), named by supervision."""
     _write("mobile_devices_list_real.json", body)
     written: list[str] = []
     for device in (body.get("results", []) if isinstance(body, dict) else [])[:4]:
@@ -243,8 +249,7 @@ def _devices(http: httpx.Client, base: str, token: str, body: Any, rows: list[tu
         response = _get(http, base, token, path, {"section": SECTIONS})
         asked = "?section=<every>"
         if response.status_code == 400:
-            # The endpoint may take no section parameter at all; nobody has asked it. Ask
-            # again with none, and record which it was.
+            # The endpoint may take no section parameter at all; nobody has asked. Ask again with none.
             response, asked = _get(http, base, token, path), "(the sectioned form was refused)"
         read = f"/api/v2/mobile-devices/{{id}}/detail {asked}"
         rows.append(("device detail", read, response.status_code, "Read Mobile Devices"))
@@ -293,12 +298,10 @@ def main() -> int:
 
     _privileges(rows, version)
     if not captured:
-        print(
+        sys.exit(
             "No mobile device record was captured. Enrol an iPad — supervised, and a second unsupervised if it is "
-            "cheap — and run this again; docs/mobile-devices.md §4 says why the pair is the fixture.",
-            file=sys.stderr,
+            "cheap — and run this again; docs/mobile-devices.md §4 says why the pair is the fixture."
         )
-        return 1
     unknown = f"; keys the table did not know: {', '.join(sorted(_RUN.swept))}" if _RUN.swept else ""
     print(f"redacted: {', '.join(f'{k} ×{v}' for k, v in sorted(_RUN.counts.items())) or 'nothing'}{unknown}")
     print("Read every written file before committing it: this fixtures directory is public.")
