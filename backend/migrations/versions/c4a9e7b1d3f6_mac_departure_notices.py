@@ -15,7 +15,7 @@ Existing rows backfill to 0 / NULL, which is correct rather than convenient: not
 about them, so the next census sends the day they are actually on and the terminal fires once.
 
 Revision ID: c4a9e7b1d3f6
-Revises: c3f8a1d7e964
+Revises: d3a9c17be40f
 Create Date: 2026-09-16
 """
 
@@ -27,7 +27,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "c4a9e7b1d3f6"
-down_revision: Union[str, Sequence[str], None] = "c3f8a1d7e964"
+down_revision: Union[str, Sequence[str], None] = "d3a9c17be40f"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
