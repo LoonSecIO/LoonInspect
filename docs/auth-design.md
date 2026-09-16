@@ -70,7 +70,8 @@ class Account(Base):
     username: Mapped[str | None] = mapped_column(String(255), unique=True, index=True)
 
     # Break-glass accounts keep local password login even under SSO enforcement,
-    # and every authentication by one emits a high-severity audit + SIEM event.
+    # and every authentication by one is logged at WARNING and audited. (§3.3: the
+    # SIEM half of that is designed, not built.)
     is_break_glass: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Non-human principals (the SCIM bearer token's owner, CI, the macOS app's
