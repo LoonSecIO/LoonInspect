@@ -387,12 +387,25 @@ one the breaker refused says *device census refused: …*, never a healthy sente
 The consequence is the **seven-day tail**: an open row *is* the tail, and seven days after
 `departed_at` — the first clean census that did not name the Mac — it has **left the fleet**, out of
 `GET /api/devices` (`includeDeparted=true` reads one back) and out of the device count on
-`/api/mdm/status` and the Overview. No column, no timer, one place (`left_the_fleet`). **Held**: the
+`/api/mdm/status` and the Overview. No column, no timer, one place (`left_the_fleet`). The tail is
+on the page it is about (#475): the device page says *Not returned by Jamf since ⟨date⟩; leaves the
+fleet on ⟨date⟩*, the Devices row carries a chip, and **Show departed** in the filter bar is the
+visible control over `includeDeparted` — both dates *displayed*, never recomputed as a decision. **Held**: the
 device row, its spans, its sections and its whole change history; erasure is deferred to #180 (v5),
 and this stamp is what that pass selects on. **Moved by ruling** (#135, 2026-09-16, R1 a): the `devices.*` posture keys — and every key that counts a
 Mac or its installed apps — exclude a Mac that has left the fleet; PR #462 reserves `devices.departed_24h`
 and the predicate lands with #476, so captures before it still count a deleted Mac. The daily "device is gone"
 emission and any "device returned" event are #179's shape, and are not built.
+
+**A return matches on the id or on the serial** (#475, Kyle's R3). A census naming the departed
+Mac's computer id closes its row; so does one naming a **serial** the same connection already
+carries for it, because re-enrolment, a wipe and rebuild and a board repair all mint a *new*
+computer id — the lineage ruling's own key: lineage is (instance, UDID, serial), and a board repair
+keeps the serial. Never across instances: a serial is Apple's, an instance's view of it is not. The
+close records `matched_by` (`jamf_id` / `serial`) and, on a serial match, `prior_jamf_pro_id`,
+because #179's return event has to say how the Mac was recognised and what it used to be called and
+neither survives the next census. A sweep with neither `hardware` nor `extension_attributes` in its
+sections has no serial to census with: the match is id-only and the run's line says so.
 
 ### Managed → Unmanaged: the retirement workflow (reserved, not built)
 

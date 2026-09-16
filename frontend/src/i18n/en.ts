@@ -684,6 +684,10 @@ export const en = {
     // The application record page's carrier links (#299), named by the catalog lookup.
     carrierChip: (app: string) => `Running ${app}`,
     carrierChipUnnamed: "Running one application",
+    // The seven-day tail (#475): the chip so a departed Mac read back is not taken for a present one, the toggle so nobody types a URL.
+    tailChip: "Leaving the fleet",
+    leftChip: "Left the fleet",
+    showDeparted: "Show departed",
     // The device page (#300). Every absence is a sentence about whose clock or whose
     // catalog is silent, never a dash: "Reported with no value" ≠ "no EAs" ≠ "not read".
     detail: {
@@ -699,6 +703,10 @@ export const en = {
         checkInNone: "Jamf has not heard from this Mac",
         seen: "LoonInspect last read it",
         seenNone: "LoonInspect has not read this Mac yet"
+      },
+      departure: {
+        inTail: (since: string, leaves: string) => `Not returned by Jamf since ${since}; leaves the fleet on ${leaves}.`,
+        left: (since: string) => `Left the fleet — not returned by Jamf since ${since}. Nothing was deleted: this record, its observations and its whole change history are kept, and a sweep that names this Mac again puts it straight back.`
       },
       lastRecordedChange: (when: string, level: string) => `Last recorded change: ${when} (${level})`,
       noRecordedChange: "No change has been recorded for this Mac yet",

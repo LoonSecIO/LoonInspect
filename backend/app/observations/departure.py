@@ -33,7 +33,7 @@ from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mdm.jamf.contract import SUBJECT_COMPUTER
-from app.models.schema import ObservationSpan, SubjectDeparture
+from app.models.schema import Device, ObservationSpan, SubjectDeparture
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,12 @@ logger = logging.getLogger(__name__)
 # "departed" rows from one bad read.
 MIN_POPULATION_FOR_COLLAPSE = 10
 COLLAPSE_RATIO = 0.5
+
+# How a return was recognised (#475, Kyle's R3). A Mac wiped, rebuilt, board-repaired or simply
+# re-enrolled comes back under a *new* Jamf computer id; matched on that id alone its departure
+# never closes and it leaves the fleet from someone's desk. Lineage is (instance, UDID, serial).
+MATCHED_BY_JAMF_ID = "jamf_id"
+MATCHED_BY_SERIAL = "serial"
 
 SKIP_NOT_READABLE = "not_readable"
 SKIP_EMPTY = "empty_census"
@@ -95,6 +101,9 @@ class CensusVerdict:
     departed: int
     returned: int
     skipped: str | None = None
+    # How many of `returned` came back under a *new* id, by serial (#475): "3 returned" and "3
+    # returned, 2 of them re-enrolled" are different facts about a fleet, and only one is derivable.
+    returned_by_serial: int = 0
 
     def as_log(self) -> dict[str, object]:
         return {
@@ -103,8 +112,29 @@ class CensusVerdict:
             "population": self.population,
             "departed": self.departed,
             "returned": self.returned,
+            "returnedBySerial": self.returned_by_serial,
             "skipped": self.skipped,
         }
+
+
+async def _returned_by_serial(
+    db: AsyncSession, *, connection_id: int, subject_kind: str, subject_ids: list[str], serials: Iterable[str] | None
+) -> list[str]:
+    """Which of these departed Macs is the census naming under a *different* Jamf id (#475)? The
+    departed Mac's `devices` row carries the serial it was last read with, and a census naming that
+    serial has found it again whatever id Jamf gave it back. Scoped to the connection, never across
+    instances — a serial is Apple's, an instance's view of it is not. Computers only."""
+    wanted = {s.strip() for s in serials or ()} - {""}
+    if subject_kind != SUBJECT_COMPUTER or not subject_ids or serials is None or not wanted:
+        return []
+    rows = await db.execute(
+        select(Device.external_id).where(
+            Device.mdm_connection_id == connection_id,
+            Device.external_id.in_(subject_ids),
+            Device.serial_number.in_(wanted),
+        )
+    )
+    return sorted(set(rows.scalars().all()))
 
 
 async def reconcile_census(
@@ -115,11 +145,16 @@ async def reconcile_census(
     observed_ids: Iterable[str] | None,
     at: datetime,
     census_run_id: uuid.UUID | None = None,
+    observed_serials: Iterable[str] | None = None,
 ) -> CensusVerdict:
     """Apply one census to the departures table. Commits nothing; the caller does.
 
     `observed_ids` is every subject id the census named, or None when the census could
     not be taken at all (a refused read) — which departs nobody and returns nobody.
+
+    `observed_serials` is every serial the same census carried (#475); `None` means it had none to
+    carry — sections without `hardware` — so the match is id-only and the caller says which it was
+    on the run, because degrading under the healthy sentence breaks rule 2.
     """
     current_ids = set(
         (
@@ -158,17 +193,33 @@ async def reconcile_census(
 
     # Returns first: a subject the census named is present, whatever else it says.
     returned = 0
+    absent = []
     for subject_id, row in open_rows.items():
         if subject_id in observed:
             row.returned_at = at
+            row.matched_by = MATCHED_BY_JAMF_ID
             returned += 1
+        else:
+            absent.append(subject_id)
+
+    # Then by serial (#475), before the breaker for the same reason the id match is: a Mac the
+    # census *did* name, under any id, is present.
+    by_serial = await _returned_by_serial(
+        db, connection_id=connection_id, subject_kind=subject_kind, subject_ids=absent, serials=observed_serials
+    )
+    for subject_id in by_serial:
+        row = open_rows[subject_id]
+        row.returned_at = at
+        row.matched_by = MATCHED_BY_SERIAL
+        row.prior_jamf_pro_id = subject_id
+        returned += 1
 
     if not observed and population:
         logger.warning(
             "census returned nothing; departing nobody",
             extra={"connection_id": connection_id, "subject_kind": subject_kind, "population": len(population)},
         )
-        return CensusVerdict(subject_kind, 0, len(population), 0, returned, SKIP_EMPTY)
+        return CensusVerdict(subject_kind, 0, len(population), 0, returned, SKIP_EMPTY, len(by_serial))
     if len(population) >= MIN_POPULATION_FOR_COLLAPSE and len(observed) < COLLAPSE_RATIO * len(population):
         logger.warning(
             "census collapsed against the population; departing nobody",
@@ -179,7 +230,7 @@ async def reconcile_census(
                 "population": len(population),
             },
         )
-        return CensusVerdict(subject_kind, len(observed), len(population), 0, returned, SKIP_COLLAPSED)
+        return CensusVerdict(subject_kind, len(observed), len(population), 0, returned, SKIP_COLLAPSED, len(by_serial))
 
     departed = 0
     for subject_id in sorted(population - observed):
@@ -193,7 +244,7 @@ async def reconcile_census(
             )
         )
         departed += 1
-    return CensusVerdict(subject_kind, len(observed), len(population), departed, returned)
+    return CensusVerdict(subject_kind, len(observed), len(population), departed, returned, None, len(by_serial))
 
 
 async def open_departures(db: AsyncSession, *, subject_kind: str) -> dict[tuple[int, str], datetime]:

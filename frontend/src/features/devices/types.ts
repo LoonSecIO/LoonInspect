@@ -24,6 +24,8 @@ export interface Device {
   departmentId: string | null;
   building: string | null;
   department: string | null;
+  /** The first clean census that did not name this Mac (#183): null means Jamf returned it, non-null starts the seven-day tail. */
+  departedAt: string | null;
 }
 
 /** One installed app as `GET /api/devices/{id}` ships it: the row, the Jamf Patch answer
@@ -103,6 +105,8 @@ export interface DeviceFilters {
    *  "→ Devices" links (#299). Carried through paging like every other filter. */
   appHash?: string;
   versionHash?: string;
+  /** Read back the Macs that left the fleet (#475). Off by default, as the API's default is. */
+  includeDeparted?: boolean;
   page?: number;
   pageSize?: number;
 }

@@ -574,12 +574,19 @@ async def _log_collapsed_departures(db: AsyncSession, run: Run, collapsed: Mappi
         )
 
 
+# The census line's last clause (#475): which keys it could match a return on. Constants, not
+# literals in an f-string, because the drift test pins both to path 16, which quotes them.
+_MATCHED_BY_ID_AND_SERIAL = "matched by Jamf id and serial"
+_MATCHED_BY_ID_ONLY = "matched by Jamf id only: this sweep's sections carry no hardware, so no serial to match on"
+
+
 async def _reconcile_device_census(
     db: AsyncSession,
     connection: MdmConnection,
     run: Run | None,
     *,
     observed_ids: list[str],
+    observed_serials: list[str] | None,
     selector: str | None,
     devices_failed: int,
 ) -> None:
@@ -591,6 +598,10 @@ async def _reconcile_device_census(
     catches up. A sweep that is not a census says so on the run rather than going quiet: the
     operator waiting for a deleted Mac to go has to read which of the three is holding it. Commits,
     so a departure lands with its census.
+
+    `observed_serials` is None when this sweep's sections carry no `hardware` (#475): no serial to
+    census with, so a Mac back under a new id is not recognised — and the line says which match it
+    got, because matching on less under the same sentence is rule 2.
     """
     at = datetime.now(UTC)
     if selector is not None or devices_failed:
@@ -611,6 +622,7 @@ async def _reconcile_device_census(
         observed_ids=observed_ids,
         at=at,
         census_run_id=run.id if run is not None else None,
+        observed_serials=observed_serials,
     )
     await db.commit()
     if run is None:
@@ -625,8 +637,9 @@ async def _reconcile_device_census(
         line = f"device census refused: {why}; departing nobody — check the API Role's privileges and this run's errors"
     else:
         line = (
-            f"device census: {verdict.observed} observed, {verdict.departed} departed, {verdict.returned} returned, "
-            f"{in_tail} in their seven-day tail, {left} left the fleet"
+            f"device census: {verdict.observed} observed, {verdict.departed} departed, {verdict.returned} returned "
+            f"({verdict.returned_by_serial} by serial, under a new Jamf id), {in_tail} in their seven-day tail, "
+            f"{left} left the fleet; {_MATCHED_BY_ID_AND_SERIAL if observed_serials is not None else _MATCHED_BY_ID_ONLY}"
         )
     await run_log(
         db,
@@ -746,6 +759,9 @@ async def _sync_jamf(
     devices_failed = 0
     group_count = 0
     observed_ids: list[str] = []
+    # The census's second key (#475). None rather than [] without `hardware` in the sections: an
+    # empty list is "a fleet with no serials", None is "none were asked for", and they differ.
+    observed_serials: list[str] | None = [] if "hardware" in sections else None
 
     # The deletion echo's tally (#182), open across the whole pass: the per-device rows a
     # departure explains are derived six frames below this one, so the count is collected
@@ -816,10 +832,13 @@ async def _sync_jamf(
         async for raw in client.iter_computers(http, sections, rsql_filter=selector, page_size=effective_page_size):
             device_count += 1
             jamf_id = raw.get("id")
+            serial = (raw.get("hardware") or {}).get("serialNumber")
             # The census's evidence (#183), collected before ingest, not after: what the sweep
             # is asked at its close is which Macs Jamf *returned* — stored, stale or failed alike.
             if jamf_id is not None:
                 observed_ids.append(str(jamf_id))
+            if serial and observed_serials is not None:
+                observed_serials.append(str(serial))
             try:
                 result = await ingest_computer(
                     db,
@@ -847,7 +866,6 @@ async def _sync_jamf(
                 # two the loop keeps using, or the next attribute read raises instead
                 # of lazily refreshing (asyncio).
                 await db.refresh(connection)
-                serial = (raw.get("hardware") or {}).get("serialNumber")
                 failure = f"{type(exc).__name__}: {exc}"[:_FAILURE_ERROR_CHARS]
                 logger.warning(
                     "device failed; sweep continues",
@@ -921,7 +939,13 @@ async def _sync_jamf(
         # The sweep's own census closes it (#183), before the fleet count below is taken off
         # it: a Mac that left on this pass must not still be in the number the Overview shows.
         await _reconcile_device_census(
-            db, connection, run, observed_ids=observed_ids, selector=selector, devices_failed=devices_failed
+            db,
+            connection,
+            run,
+            observed_ids=observed_ids,
+            observed_serials=observed_serials,
+            selector=selector,
+            devices_failed=devices_failed,
         )
 
     await sync_state(db, connection)
