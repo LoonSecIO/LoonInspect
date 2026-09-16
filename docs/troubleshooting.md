@@ -518,14 +518,20 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
    can be matched and everything reads unknown**. That is this section, not the list: it
    states both counts (*… checked against N Jamf Patch titles and M vulnerability-library
    titles*) so you are not left guessing which source is absent. Work steps 1 and 2 above
-   and the list shrinks to the fleet's real long tail on the next page load. Two neighbours
-   of that state, both legible rather than blank:
+   and the list shrinks to the fleet's real long tail on the next page load. Three
+   neighbours of that state, all three legible rather than blank:
    - **Empty, with both counts 0** → nothing has been matched because nothing has been
      collected: a candidate needs an installed app to be a candidate of. Sweep a connection
      (§2), then look again.
    - **Empty, with both counts above 0** → the list is right. Every title your Macs carry
-     is software a public source on this container already names, and the exclude box needs
-     nothing from it.
+     with a bundle identifier is software a public source on this container already names,
+     and the exclude box needs nothing from it.
+   - **One line where the panel was: *Match counts and candidates could not be loaded…*** →
+     the read behind the panel failed, so no count under the box is a statement about your
+     fleet. The box itself is unaffected: patterns you type still save on blur, and the
+     exchange still filters on them. `docker compose logs app --since 10m` carries the
+     request to `/api/system/data-sharing/exclusion-candidates` and the reason it ended;
+     reload the page to ask again.
 
 **J.** A refresh that reports no error leaves the table saying *No Jamf Patch titles
 synced yet.*, a title Jamf publishes stays missing from the list with *Only titles with

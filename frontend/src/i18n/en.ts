@@ -74,22 +74,33 @@ export const en = {
       globMatches: (apps: number, devices: number) =>
         apps === 0 ? "matches nothing on this fleet" : `${apps} app${apps === 1 ? "" : "s"} on ${devices} Mac${devices === 1 ? "" : "s"}`,
       caseMiss: (bundleId: string) => `${bundleId} is not matched (case)`,
+      moreCaseMisses: (count: number) => `…and ${count} more, also not matched (case)`,
+      moreGlobs: (count: number) =>
+        count === 1
+          ? "1 more pattern in the box is not counted here."
+          : `${count} more patterns in the box are not counted here.`,
       candidatesHeading: "Candidates",
       candidatesHelp:
         "Titles no public source on this container knows: no Jamf Patch title matches any of their builds, and the vulnerability library names none of them. Unknown is not the same as yours — most of a fleet's long tail is public software the catalog never heard of — so read this as a shortlist, not an answer. Nothing is excluded until you add a pattern and it saves.",
-      // Empty is a state with two causes, and they are not the same sentence (#483). With
-      // no catalog synced nothing can be matched, so everything would read unknown — an
-      // empty list there means there is no inventory to judge, not that all is known.
+      // Empty is a state with more than one cause, and they are not one sentence (#483).
+      // With no catalog synced only the library can make a title known, so an empty list
+      // there is about missing inventory and not about a fleet nothing knows.
       candidatesNone: (catalog: number, library: number) =>
         catalog === 0
-          ? `Nothing to suggest, and nothing to suggest it from: this container has synced 0 Jamf Patch titles and holds ${library} vulnerability-library titles, so no build here can be matched at all. An empty list under those counts means no application inventory has been collected yet — sweep a connection, then troubleshooting.md §6 step 4.`
-          : `No candidates: every title this fleet carries is known to a public source here, checked against ${catalog} Jamf Patch titles and ${library} vulnerability-library titles.`,
+          ? `Nothing to suggest, and little to suggest it from: this container has synced 0 Jamf Patch titles, so only the ${library} vulnerability-library titles it holds can make a title known here. An empty list under those counts means no application inventory has been collected yet, or that the apps collected carry no bundle identifier — sweep a connection, then troubleshooting.md §6 step 4.`
+          : `No candidates: every title this fleet carries with a bundle identifier is known to a public source here, checked against ${catalog} Jamf Patch titles and ${library} vulnerability-library titles.`,
+      candidatesLoading: "Counting what each pattern matches…",
+      // Said, not swallowed: a panel that vanished reads as a build without one (#150).
+      candidatesFailed:
+        "Match counts and candidates could not be loaded, so nothing is being said here about this fleet — the box above still saves. Check docker compose logs app, then reload the page.",
       candidateRow: (name: string, bundleId: string, devices: number) =>
         `${name} — ${bundleId} — ${devices} Mac${devices === 1 ? "" : "s"} — no public source here knows it`,
-      groupSummary: (apps: number, devices: number) => `${apps} unknown titles on ${devices} Macs`,
+      groupSummary: (apps: number, devices: number) =>
+        `${apps} unknown title${apps === 1 ? "" : "s"} on ${devices} Mac${devices === 1 ? "" : "s"}`,
       groupCovered: "already covered by a pattern in the box",
       addGlob: (glob: string) => `Add ${glob}`,
-      moreGroups: (count: number) => `${count} more prefixes are not shown.`,
+      moreGroups: (count: number) =>
+        count === 1 ? "1 more prefix is not shown." : `${count} more prefixes are not shown.`,
       lastExchange: "Last exchange",
       neverExchanged: "never — no exchange has been recorded yet",
       outcomeSent: "sent",

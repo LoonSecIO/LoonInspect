@@ -63,19 +63,29 @@ export const de: Translations = {
       globMatches: (apps: number, devices: number) =>
         apps === 0 ? "trifft auf nichts in dieser Flotte zu" : `${apps} App${apps === 1 ? "" : "s"} auf ${devices} Mac${devices === 1 ? "" : "s"}`,
       caseMiss: (bundleId: string) => `${bundleId} wird nicht erfasst (Groß-/Kleinschreibung)`,
+      moreCaseMisses: (count: number) => `… und ${count} weitere, ebenfalls nicht erfasst (Groß-/Kleinschreibung)`,
+      moreGlobs: (count: number) =>
+        count === 1
+          ? "1 weiteres Muster im Feld wird hier nicht gezählt."
+          : `${count} weitere Muster im Feld werden hier nicht gezählt.`,
       candidatesHeading: "Kandidaten",
       candidatesHelp:
         "Titel, die keine öffentliche Quelle auf diesem Container kennt: kein Jamf-Patch-Titel passt auf einen ihrer Builds, und die Schwachstellen-Bibliothek nennt keinen von ihnen. Unbekannt heißt nicht Ihre — der lange Schwanz einer Flotte ist meist öffentliche Software, von der der Katalog nie gehört hat. Lesen Sie dies als Vorauswahl, nicht als Antwort. Nichts wird ausgeschlossen, bevor Sie ein Muster hinzufügen und es gespeichert ist.",
       candidatesNone: (catalog: number, library: number) =>
         catalog === 0
-          ? `Nichts vorzuschlagen, und nichts, woraus sich etwas vorschlagen ließe: dieser Container hat 0 Jamf-Patch-Titel synchronisiert und hält ${library} Titel der Schwachstellen-Bibliothek, es kann hier also kein Build überhaupt zugeordnet werden. Eine leere Liste bei diesen Zahlen heißt, dass noch kein Anwendungsinventar erhoben wurde — erfassen Sie eine Verbindung, siehe troubleshooting.md §6 Schritt 4.`
-          : `Keine Kandidaten: jeder Titel dieser Flotte ist hier einer öffentlichen Quelle bekannt, geprüft gegen ${catalog} Jamf-Patch-Titel und ${library} Titel der Schwachstellen-Bibliothek.`,
+          ? `Nichts vorzuschlagen, und wenig, woraus sich etwas vorschlagen ließe: dieser Container hat 0 Jamf-Patch-Titel synchronisiert, sodass hier nur die ${library} Titel der Schwachstellen-Bibliothek einen Titel bekannt machen können. Eine leere Liste bei diesen Zahlen heißt, dass noch kein Anwendungsinventar erhoben wurde oder dass die erfassten Anwendungen keine Bundle-ID tragen — erfassen Sie eine Verbindung, siehe troubleshooting.md §6 Schritt 4.`
+          : `Keine Kandidaten: jeder Titel dieser Flotte mit einer Bundle-ID ist hier einer öffentlichen Quelle bekannt, geprüft gegen ${catalog} Jamf-Patch-Titel und ${library} Titel der Schwachstellen-Bibliothek.`,
+      candidatesLoading: "Es wird gezählt, was jedes Muster trifft …",
+      candidatesFailed:
+        "Trefferzahlen und Kandidaten konnten nicht geladen werden; hier wird also nichts über diese Flotte ausgesagt — das Feld oben speichert weiterhin. Prüfen Sie docker compose logs app und laden Sie die Seite neu.",
       candidateRow: (name: string, bundleId: string, devices: number) =>
         `${name} — ${bundleId} — ${devices} Mac${devices === 1 ? "" : "s"} — keine öffentliche Quelle hier kennt sie`,
-      groupSummary: (apps: number, devices: number) => `${apps} unbekannte Titel auf ${devices} Macs`,
+      groupSummary: (apps: number, devices: number) =>
+        `${apps} unbekannte${apps === 1 ? "r" : ""} Titel auf ${devices} Mac${devices === 1 ? "" : "s"}`,
       groupCovered: "bereits durch ein Muster im Feld abgedeckt",
       addGlob: (glob: string) => `${glob} hinzufügen`,
-      moreGroups: (count: number) => `${count} weitere Präfixe werden nicht angezeigt.`,
+      moreGroups: (count: number) =>
+        count === 1 ? "1 weiteres Präfix wird nicht angezeigt." : `${count} weitere Präfixe werden nicht angezeigt.`,
       lastExchange: "Letzter Austausch",
       neverExchanged: "nie — bisher wurde kein Austausch aufgezeichnet",
       outcomeSent: "gesendet",

@@ -135,12 +135,16 @@ export interface ExclusionGlobCount {
   deviceCount: number;
   /** Bundle IDs the glob would match but for case — the container's fnmatch is not. */
   caseMisses: string[];
+  /** How many more of those the cap left out; 0 when the list above is all of them. */
+  moreCaseMisses: number;
 }
 
 export interface ExclusionCandidates {
   groups: ExclusionCandidateGroup[];
   moreGroups: number;
   globs: ExclusionGlobCount[];
+  /** Patterns in the box past the ceiling, which nothing above counted. */
+  moreGlobs: number;
   /** What "unknown" was decided against: both 0 means nothing here can be known yet. */
   catalogTitles: number;
   libraryTitles: number;
