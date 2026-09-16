@@ -37,8 +37,9 @@ from datetime import UTC, date, datetime
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, event, select
+from sqlalchemy import delete, event, select, update
 
+from app.core.content_keys import app_full_key
 from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
 from app.core.vuln import NO_CORPUS, forget_tenant_tiers, loaded_corpus
 from app.core.vuln_library import CorpusPointer, load_epoch_if_new, refresh_from_db
@@ -46,6 +47,7 @@ from app.models.schema import (
     AppCatalogEntry,
     Device,
     InstalledApp,
+    JamfPatchTitle,
     MdmConnection,
     VulnLibraryEpoch,
     VulnLibraryRow,
@@ -174,6 +176,10 @@ async def fleet(db, acting_tenant):
         await db.execute(delete(VulnLibraryRow))
         await db.execute(delete(VulnLibraryTitle))
         await db.execute(delete(VulnLibraryEpoch))
+        # And #482's Jamf title. `jamf_patch_titles` is GLOBAL — no tenant column, so no
+        # rollback and no policy takes it away — and a title left behind matches an app in
+        # another suite's fake catalog, which is a failure in a file nobody touched.
+        await db.execute(delete(JamfPatchTitle).where(JamfPatchTitle.id == TARGET_TITLE_ID))
         await db.commit()
         await refresh_from_db(db)
         await _set_tier(db, "off")
@@ -802,3 +808,230 @@ async def test_a_pod_that_was_never_assessed_writes_no_vuln_rows(db, fleet) -> N
     assert not set(VULN_KEYS) & set(captured)
     assert set(captured) <= set(ACTIVE_KEYS) - set(VULN_KEYS)
     assert "devices.total" in captured, "the rest of the vocabulary is unaffected; only this family is gated"
+
+
+# --- what an update would fix (#482) ----------------------------------------------------
+
+# The build the patch answer points at, keyed the way the corpus keys it: this app's own
+# name and bundle id with Jamf's latest version in the version slot, fourth slot None.
+# Hashed here rather than written as a literal, for the reason `_device` gives — two
+# implementations of one key do not fail loudly when they drift.
+WIRESHARK_TARGET = app_full_key("Wireshark.app", "org.wireshark.Wireshark", "4.6.8", None)
+# An id no other fixture uses, and deleted by the `fleet` teardown: `jamf_patch_titles` is
+# global, so a title left behind is another suite's extra match.
+TARGET_TITLE_ID = "LOON482"
+# The lab's own numbers (#428): 4.2.0 is 17 findings and 4.6.0 is 94, so *update to latest*
+# is not a synonym for *clean*, and the ids overlap only in part.
+HERE = [f"CVE-2026-1{index:03d}" for index in range(17)]
+THERE = [f"CVE-2026-2{index:03d}" for index in range(90)] + HERE[:4]
+
+
+async def _with_titles(db) -> None:
+    """A Jamf patch title for Wireshark whose latest release is 4.6.8, so the catalog row
+    carries a real `latest_version` and forms a real target key. Merged rather than
+    inserted, under an id no other fixture uses: `jamf_patch_titles` is global and another
+    suite in this database may already hold the real catalog."""
+    from app.mdm.patch.matching import reset_catalog_cache
+
+    bundle_test = {"name": "Application Bundle ID", "operator": "is", "type": "recon", "value": "org.wireshark.Wireshark"}
+    await db.merge(
+        JamfPatchTitle(
+            id=TARGET_TITLE_ID,
+            name="Wireshark",
+            current_version="4.6.8",
+            last_modified="2026-08-13T09:34:31Z",
+            patches=[
+                {"version": "4.6.8", "releaseDate": "2026-08-12T19:18:22Z"},
+                {"version": "4.2.0", "releaseDate": "2024-01-03T18:00:00Z"},
+            ],
+            requirements=[{"operator": "and", "tests": [bundle_test]}],
+            extension_attributes=[],
+        )
+    )
+    await db.commit()
+    reset_catalog_cache()
+
+
+def _dated(counts: dict) -> dict:
+    """A publication stamp in every band the counts say has a finding and null in the rest
+    — the epoch format refuses a row where the two disagree."""
+    return {band: "2026-01-01T00:00:00Z" if counts[band] else None for band in ("total", "critical", "high", "medium", "low")}
+
+
+async def _epoch_with_target(db, target: dict | None, *, extra: list[dict] | None = None) -> str:
+    """An epoch holding Wireshark 4.2.0's 17 findings and, optionally, a row for the
+    release Jamf calls latest. Returns the signature it was loaded under.
+
+    `extra` is any further row, and exists to move the signature: an epoch is identified by
+    its content, so "the same corpus, a pass later" needs something in it to differ."""
+    counts = {"total": 17, "kev": 0, "critical": 0, "high": 9, "medium": 8, "low": 0}
+    rows = [_row(key_full=WIRESHARK_BUILD, ids=HERE, counts=counts, oldest_published=_dated(counts))]
+    if target is not None:
+        rows.append(_row(key_full=WIRESHARK_TARGET, oldest_published=_dated(target["counts"]), **target))
+    rows.extend(extra or [])
+    bundle, signature = _rewritten(rows=rows)
+    assert await load_epoch_if_new(db, _pointer(signature), transport=_serving(bundle)) is not None
+    return signature
+
+
+async def _update(db, device, key_full: str):
+    """One installed row's update line as a page receives it — the stored columns through
+    the read seam, never derived here."""
+    from app.core.vuln_answer import stored_corpus
+    from app.core.vuln_read import update_line
+
+    rows = (await db.execute(select(InstalledApp).where(InstalledApp.device_id == device.id))).scalars().all()
+    corpus = stored_corpus(loaded_corpus(), rows)
+    return update_line(next(row for row in rows if row.key_full == key_full), corpus=corpus)
+
+
+async def test_a_covered_target_is_judged_beside_the_build_and_reads_as_a_difference(db, fleet) -> None:
+    """The whole point: the release Jamf names has its own row, its own answer, and the
+    difference between the two is what a person reads.
+
+    Both halves are asserted, and the second is why the issue exists: 4.6.8 carries 94
+    findings against 4.2.0's 17, so "closes 17" alone would be the half of the sentence
+    that sells an upgrade. The key is the build's own identity with the patch answer's
+    version in it, which is why `vuln_target_key` is asserted against `content_keys` rather
+    than against what the judge happened to write.
+    """
+    _, device = fleet
+    await _with_titles(db)
+    signature = await _epoch_with_target(
+        db, {"ids": THERE, "counts": {"total": 94, "kev": 0, "critical": 1, "high": 26, "medium": 66, "low": 1}}
+    )
+    await _judge(db, device)
+
+    entry = await _entry(db, WIRESHARK_BUILD)
+    assert entry.latest_version == "4.6.8" and entry.vuln_target_key == WIRESHARK_TARGET
+    assert entry.vuln_target_version == "4.6.8" and entry.vuln_target_assessment == "covered"
+    assert entry.vuln_target_counts["total"] == 94 and entry.vuln_signature == signature
+
+    # The copy, which is what a device page actually reads.
+    app = await _installed(db, device, WIRESHARK_BUILD)
+    assert (app.vuln_target_version, app.vuln_target_assessment) == ("4.6.8", "covered")
+    assert app.vuln_target_ids == entry.vuln_target_ids
+
+    line = await _update(db, device, WIRESHARK_BUILD)
+    assert line is not None and line.version == "4.6.8" and line.assessment == "covered"
+    # Exact, because neither stored row is truncated: 13 of the 17 are gone and 90 are new.
+    assert (line.closes, line.opens, line.net) == (13, 90, None)
+
+
+async def test_a_target_the_epoch_holds_no_row_for_reads_unknown_and_never_closes_them_all(db, fleet) -> None:
+    """Ruling R-D, one release out. The epoch assessed 4.2.0 and never assessed 4.6.8, so
+    the target is `unknown_app` — outside the corpus, dated — and carries no numbers at all.
+
+    The wrong answer this prevents is the plausible one: with no row for the target, the
+    arithmetic "17 minus nothing" says the update closes all seventeen, which is a clean
+    bill for a build nobody assessed wearing a difference's clothes.
+    """
+    _, device = fleet
+    await _with_titles(db)
+    await _epoch_with_target(db, None)
+    await _judge(db, device)
+
+    entry = await _entry(db, WIRESHARK_BUILD)
+    assert entry.vuln_assessment == "covered" and entry.vuln_target_key == WIRESHARK_TARGET
+    # Judged, and the answer is that there is no row — which is a different fact from
+    # "not judged for a target yet", and that is what the version column is for.
+    assert entry.vuln_target_version == "4.6.8" and entry.vuln_target_assessment is None
+    assert entry.vuln_target_counts is None and entry.vuln_target_ids is None
+
+    line = await _update(db, device, WIRESHARK_BUILD)
+    assert line is not None and line.assessment == "unknown_app" and line.version == "4.6.8"
+    assert (line.closes, line.opens, line.net) == (None, None, None)
+
+
+async def test_a_truncated_list_on_either_side_reads_as_a_net_difference_of_the_stored_totals(db, fleet) -> None:
+    """Kyle's R9 default, ruled on #482: exact only when NEITHER row is truncated.
+
+    The target's published list is capped, so the ids cannot answer — a set difference over
+    a capped list under-reports, which is the trap §4f names. The line falls back to the
+    difference of the uncapped `counts.total`, and it is `net` rather than `closes` so no
+    surface can print it as an exact count. Negative here: the newer build carries more.
+    """
+    _, device = fleet
+    await _with_titles(db)
+    await _epoch_with_target(
+        db,
+        {
+            "ids": THERE[:50],
+            "truncated": True,
+            "counts": {"total": 94, "kev": 0, "critical": 1, "high": 26, "medium": 66, "low": 1},
+        },
+    )
+    await _judge(db, device)
+
+    entry = await _entry(db, WIRESHARK_BUILD)
+    assert entry.vuln_ids_truncated is False and entry.vuln_target_ids_truncated is True
+
+    line = await _update(db, device, WIRESHARK_BUILD)
+    assert line is not None and line.net == 17 - 94
+    assert (line.closes, line.opens) == (None, None)
+
+
+async def test_a_row_with_no_target_key_says_nothing_rather_than_not_in_the_corpus(db, fleet) -> None:
+    """The migration window, which is every row of every tenant until the next catalog sync.
+
+    `b3e7d1a9c5f0` adds `vuln_target_key` nullable with no backfill and only `_apply_summary`
+    writes it — on the JAMF clock. The corpus moves on its own, and when it moves first
+    `refresh_tenant` re-matches nothing (`evaluated_signature` is current) and goes straight
+    to `judge_vuln(db, None, …)` over every epoch-stale row: NULL key, non-NULL
+    `latest_version`. Writing the version there stored version-present / assessment-NULL,
+    which `update_effect` reads as ruling R-D and the cell prints, in the warning colour, as
+    *updating to 4.6.8: not in the corpus of …* — about a release nothing ever asked the
+    corpus about, and about one the corpus in fact holds. The copy fans that out to every
+    device carrying the build.
+
+    So: judge normally, put the row back where the migration leaves it, then move the CORPUS
+    clock and let the hourly pass run — the real sequence, not a hand-written state. The
+    moved epoch still holds 4.6.8, which is the sharp part: the release is in the corpus and
+    the row must still say nothing about it, because nothing looked it up. *No lookup* is not
+    *no row*, and it is the version column, not the assessment, that carries the difference.
+    """
+    _, device = fleet
+    await _with_titles(db)
+    target = {"ids": THERE, "counts": {"total": 94, "kev": 0, "critical": 1, "high": 26, "medium": 66, "low": 1}}
+    await _epoch_with_target(db, target)
+    await _judge(db, device)
+    assert (await _entry(db, WIRESHARK_BUILD)).vuln_target_assessment == "covered", "sanity: the epoch holds 4.6.8"
+
+    from app.catalog.service import refresh_tenant
+
+    # The migration's own state: the column exists and nothing backfilled it. Only
+    # `_apply_summary` writes the key, and only a catalog sync runs it.
+    await db.execute(update(AppCatalogEntry).where(AppCatalogEntry.key_full == WIRESHARK_BUILD).values(vuln_target_key=None))
+    await db.commit()
+
+    # And now the corpus moves first, which is the whole hazard: `refresh_tenant` re-matches
+    # nothing (the Jamf catalog has not moved, so `evaluated_signature` is current and the
+    # key stays NULL) and goes straight to `judge_vuln(db, None, …)` over every epoch-stale
+    # row. One unrelated row carries the new signature; both Wireshark rows are unchanged.
+    await _epoch_with_target(db, target, extra=[_row(key_full=STALE_UNASSESSED_BUILD)])
+    await refresh_tenant(db, now=NOW)
+    await db.commit()
+
+    # Columns, not the ORM instance: `judge_vuln` and the copy both run
+    # `synchronize_session=False`, so the identity map still holds the pre-window values and
+    # an assertion that reads objects would pass while the database said otherwise.
+    stored = (
+        await db.execute(
+            select(
+                AppCatalogEntry.vuln_assessment, AppCatalogEntry.vuln_target_version, AppCatalogEntry.vuln_target_assessment
+            ).where(AppCatalogEntry.key_full == WIRESHARK_BUILD)
+        )
+    ).one()
+    assert stored.vuln_assessment == "covered", "the build's own answer is untouched by the target's absence"
+    assert (stored.vuln_target_version, stored.vuln_target_assessment) == (None, None)
+
+    copied = (
+        await db.execute(
+            select(InstalledApp.vuln_target_version, InstalledApp.vuln_target_assessment).where(
+                InstalledApp.device_id == device.id, InstalledApp.key_full == WIRESHARK_BUILD
+            )
+        )
+    ).one()
+    assert (copied.vuln_target_version, copied.vuln_target_assessment) == (None, None)
+
+    assert await _update(db, device, WIRESHARK_BUILD) is None, "nothing looked up, so the cell prints no line at all"

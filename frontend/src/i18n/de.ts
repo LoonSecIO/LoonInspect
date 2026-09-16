@@ -901,6 +901,16 @@ export const de: Translations = {
     oldestPublished: (days: number) => `ältester Fund vor ${days} Tag${days === 1 ? "" : "en"} veröffentlicht`,
     moreIds: (count: number) => `+${count} weitere`,
     idsCapped: "Liste gekürzt",
+    // #482: beide Richtungen, denn die neuere Version kann mehr Funde tragen als die alte.
+    updateCloses: (version: string, closes: number, opens: number) =>
+      `Update auf ${version} schließt ${closes}, öffnet ${opens}`,
+    updateNet: (version: string, net: number) =>
+      net === 0
+        ? `Update auf ${version} — keine Nettoänderung`
+        : `Update auf ${version} — netto ${Math.abs(net)} ${net > 0 ? "weniger" : "mehr"} Fund${Math.abs(net) === 1 ? "" : "e"}`,
+    updateNetHint:
+      "Mindestens eine der beiden Fundlisten ist gekürzt; dies ist die Differenz der gezählten Gesamtwerte, nicht der Listen.",
+    updateUnknown: (version: string, date: string) => `Update auf ${version}: nicht im Korpus vom ${date}`,
     whySummary: "Warum dieser Container nichts sagt",
     whyNoCorpus:
       "Die Abfrage läuft lokal gegen einen Korpus, den dieser Container vorhält und mit dem er für eine Organisation antwortet, die ihn sich verdient hat. Eines von beidem fehlt: Entweder ist hier kein Schwachstellen-Korpus geladen, oder die Datenfreigabe ist für diese Organisation ausgeschaltet — also hat sich niemand diese Versionen angesehen, und nichts hier wurde gegen irgendetwas geprüft.",
@@ -1476,6 +1486,8 @@ export const de: Translations = {
     detectionAppleCardOffered: "Die Karte Apple Foundation Models passt zu dieser Umgebung.",
     appleCardWithheld:
       "Die Karte Apple Foundation Models wird hier nicht angeboten: Sie setzt Docker Desktop auf einem Apple-Silicon-Mac voraus, auf dem host.docker.internal aus diesem Container heraus auflösbar ist – die Belege oben zeigen das nicht.",
+    appleCardSavedOnly:
+      "Diese Karte wird angezeigt, weil auf diesem Server Einstellungen dafür gespeichert sind, nicht weil sie hier funktionieren kann: fm serve läuft auf einem Mac, den dieser Container nicht erreicht, und „Entfernen“ nimmt diese Einstellungen von diesem Server.",
     baseUrlNoLocalDefault:
       "host.docker.internal ist aus diesem Container nicht auflösbar, der lokale Standardwert kann hier also nicht funktionieren. Geben Sie die Adresse eines Endpunkts ein, den dieser Container erreicht.",
     providersHeading: "Endpunkt",

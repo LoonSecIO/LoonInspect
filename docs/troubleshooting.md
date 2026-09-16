@@ -447,6 +447,31 @@ and step 2 ends with how to tell that apart from a broken exchange.
      to fix on this side; the next exchange tries again. The same line for more than a
      day is reportable state **M**.
 
+7. **A build says how many findings it has, and the line beside it says *updating to
+   …: not in the corpus of …*.** That line is the answer for the release **Jamf calls
+   latest**, not for the build you are looking at, and it means the corpus holds no row
+   for that release — nobody assessed it. It is deliberately not rendered as *closes all
+   of them*: an update whose target nobody looked at buys an unknown, not a clean bill,
+   and a missing row is never upgraded into one. Nothing is broken and there is nothing
+   to fix in the container. Two things tell the ordinary reading from a fault:
+   - the release named is the one the **Latest** column names, and is usually newer than
+     anything the corpus has had time to assess — the corpus is dated on the banner, and
+     a release published after that date cannot be in it. Wait for the corpus to move;
+   - if the release is *older* than the banner's date and the same line survives a
+     *Refresh* (step 3), the corpus skipped that build. That is ours, not yours:
+     reportable state **I**, and include the app name, the installed version and the
+     release the line names.
+
+   A build with no line at all is not this: the line is printed only beside a **covered**
+   build whose target was actually looked up, so a grey or amber build (steps 1–4), a build
+   already on the latest release, and a build Jamf lists no title for all show nothing. So
+   does **every** build for a while after the upgrade that added this line: the lookup is
+   set up when the row is re-matched against the Jamf catalog, which happens on its own the
+   next time that catalog moves. A release nobody looked up is never dressed as one the
+   corpus has no row for, so the absence is the honest state and not a silent failure. To
+   stop waiting, use Devices › Applications › **Catalog** › *Refresh* (step 3) — it
+   re-matches every row, and the lines appear on the next page load.
+
 **H.** A corpus has arrived on this container, this organization's tier is not `off`, and
 the pages still do not answer from it — either they say nothing is answering (grey,
 including an epoch the container holds and cannot read), or a *Refresh* leaves builds the
@@ -1058,15 +1083,18 @@ session's cookies, and `docker compose logs app --since 30m`.
 
 ## 14. "Settings › AI has no Apple Foundation Models card"
 
-That card is offered only where its default can work: LoonInspect under **Docker Desktop on
+That card is offered where its default can work: LoonInspect under **Docker Desktop on
 an Apple Silicon Mac**, with **`host.docker.internal` resolving from inside the container**.
 Apple's `fm serve` runs on the Mac, never in the container, and that name is how the
 container reaches it. Anywhere else the card is withheld on purpose — it is not a feature
 this build lost, and the panel **Where this container runs** says so in a sentence under its
-evidence. The **OpenAI-compatible** and **Anthropic** cards are offered everywhere.
+evidence. One exception keeps it on the page anywhere: a server that holds settings saved for
+that card shows it, saying on the card itself that that is why, so **Remove** stays reachable
+(step 3). The **OpenAI-compatible** and **Anthropic** cards are offered everywhere.
 
 1. **Read *Where this container runs*, and the *Evidence* line under it** — the kernel, the
-   CPU implementer, and the alias:
+   CPU implementer, and the alias. They decide whether the card is offered on the reading
+   alone; a card this server holds settings for is on the page whatever they say (step 3):
    - *host.docker.internal resolves*, and the verdict names macOS → the card is offered.
      Reload the page if it is still not there.
    - *host.docker.internal does not resolve*, and the verdict names macOS → the Mac is right
@@ -1086,17 +1114,15 @@ evidence. The **OpenAI-compatible** and **Anthropic** cards are offered everywhe
    (*the local default cannot work here*). Type an address this container can reach — not
    `localhost`, which inside a container is the container — press **Send** once to prove it
    answers, then **Save**. Anthropic's card needs no local endpoint at all.
-3. **The Prompt bar names a card the page does not show.** *Changes Prompt bar: shown (uses
-   Apple Foundation Models via Docker Desktop)* where that card is withheld means this server
-   still holds settings saved for it — from a Mac, or from a database restored here. The bar
-   will dial it and fail. There is no card to press **Remove** on, so take it off through the
-   API, which judges nothing about where it runs (`$BASE`, `jar` and `$CSRF` from §0):
-
-   ```bash
-   curl -s -b jar -X DELETE -H "X-CSRF-Token: $CSRF" $BASE/api/system/ai/configs/apple_fm
-   ```
-
-   Then save the OpenAI-compatible or the Anthropic card and reload the Changes page.
+3. **The Prompt bar names the card while the evidence says it cannot work.** *Changes Prompt
+   bar: shown (uses Apple Foundation Models via Docker Desktop)* under an evidence line saying
+   the alias does not resolve means this server holds settings saved for that card — from a
+   Mac, or from a database restored here — and the bar will dial it and fail. That is why the
+   card is on this page at all, and the card says so. Select it, press **Remove**: the card
+   leaves the page with the settings, and the page moves to one still on it. Save the
+   OpenAI-compatible or the Anthropic card there, then reload the Changes page. If Settings ›
+   AI will not load at all, turning **ai_features** off (§13) takes the Prompt bar down with
+   it, so nothing dials the saved card until the page is back.
 4. **You are on that Mac and the panel disagrees.** The detection reads `/proc/version` and
    `/proc/cpuinfo` from inside the container; `curl -s -b jar $BASE/api/system/ai/host`
    answers with the verdict and the evidence it was read from. `runtime` is `docker_desktop`

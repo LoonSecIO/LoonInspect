@@ -54,6 +54,25 @@ export function savedConfigsOf(body: unknown): SavedConfig[] | null {
 }
 
 /**
+ * The card the page moves to when the row of cards changes under it, or null to stay on the
+ * one it is on. Since #474 the row follows the saved cards, so the page's own card can leave
+ * it: a Remove of a card that was on the row only because this server held settings for it
+ * takes that card off the row as the server answers. Left there, the page sits on a card no
+ * radio can light, over an editor nothing on screen names, under the panel's sentence saying
+ * that card is not offered here — with a Save that would write the settings straight back
+ * and a Send that would dial them. So it moves: to the first card still on the row that this
+ * server holds settings for — the one the Changes Prompt bar uses — else to the first card
+ * on the row.
+ *
+ * A card still on the row is kept, and says so with `null`: nothing moves under an operator
+ * who did not ask it to.
+ */
+export function cardAfterOffer(current: Provider, offered: readonly Provider[], saved: SavedByProvider): Provider | null {
+  if (offered.length === 0 || offered.includes(current)) return null;
+  return offered.find((candidate) => saved[candidate]) ?? offered[0];
+}
+
+/**
  * Where Settings › AI opens once its first reads settle, and whether it starts with clean
  * lines. `latest` is the newest saved map the page knows — never the list the opening read
  * of the saved cards returned, which may be older. While that read is still the newest, the
@@ -61,10 +80,11 @@ export function savedConfigsOf(body: unknown): SavedConfig[] | null {
  * the detection hint: the Apple card where it is offered, otherwise the documented default
  * (Ollama, #28).
  *
- * It opens only on a card that is on screen (`offered`, #404). A card this server holds
- * settings for but does not offer here — an Apple card saved on a Mac and restored onto a
- * pod — would otherwise be selected with no card lit and no Remove to reach it. The Prompt
- * bar still names it, and `troubleshooting.md` §14 says how to take it off this server.
+ * It opens only on a card that is on screen (`offered`, #404): one not on screen would be
+ * selected with no card lit and no Remove to reach it. Since #474 `offered` holds every card
+ * this server has settings for, wherever it runs, so the case that used to need this rule —
+ * an Apple card saved on a Mac and restored onto a pod — now opens on a lit card with a
+ * Remove on it. The rule stays for the cards a reading withholds and nothing has saved.
  *
  * The operator can get to the card first: Remove works before the page's other reads
  * settle, since it needs only the saved cards. `newerRead` — a Remove made while the host
@@ -72,7 +92,9 @@ export function savedConfigsOf(body: unknown): SavedConfig[] | null {
  * `removeAsked` — Remove was pressed, its confirm open or its DELETE out, before any re-read.
  * Either way the page stays on the card it is on, and the Remove's confirm or the line
  * saying what it did stays. Re-selecting from the opening read put the removed card back
- * and wiped that line.
+ * and wiped that line. Unless that Remove took the card off the row (#474) — then staying is
+ * not on offer, and the page moves as `cardAfterOffer` says, while the line still stays: it
+ * is about what just happened, not about the card now showing.
  */
 export function openingCard(opening: {
   newerRead: boolean;
@@ -81,7 +103,9 @@ export function openingCard(opening: {
   current: Provider;
   offered: readonly Provider[];
 }): { card: Provider; clearLines: boolean } {
-  if (opening.newerRead || opening.removeAsked) return { card: opening.current, clearLines: false };
+  if (opening.newerRead || opening.removeAsked) {
+    return { card: cardAfterOffer(opening.current, opening.offered, opening.latest) ?? opening.current, clearLines: false };
+  }
   const firstSaved = opening.offered.find((candidate) => opening.latest[candidate]);
   return { card: firstSaved ?? (opening.offered.includes("apple_fm") ? "apple_fm" : "openai_compatible"), clearLines: true };
 }

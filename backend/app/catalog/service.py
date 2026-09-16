@@ -55,8 +55,10 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import case, delete, null, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import set_committed_value
 
+from app.core.content_keys import app_full_key
 from app.core.vuln_answer import VULN_ANSWER_COLUMNS
 from app.core.vuln_library import loaded_epoch_signature, read_tenant_tier
 from app.mdm.patch.matching import CATALOG_PROBE_INTERVAL, Catalog, TitleMatch, load_catalog, match_app, summarize
@@ -104,6 +106,7 @@ def _apply_summary(entry: AppCatalogEntry, matches: Sequence[TitleMatch], *, now
         entry.reference_title_id = None
         entry.sentence_title_id = None
         entry.released_at = None
+        entry.vuln_target_key = None
         return
     entry.jamf_title_ids = summary.title_ids
     entry.patch_state = summary.state
@@ -118,6 +121,12 @@ def _apply_summary(entry: AppCatalogEntry, matches: Sequence[TitleMatch], *, now
     entry.reference_title_id = summary.reference_title_id
     entry.sentence_title_id = summary.sentence_title_id
     entry.released_at = _released_at(matches)
+    # The corpus key for the build this one would become (#482), written here because it
+    # is a fact about the JAMF answer and moves on the Jamf clock: this row's own name and
+    # bundle id with the reference title's latest version in the version slot and `None` in
+    # the fourth, which is how `vuln_library_rows` is keyed (§4f). Formed from the installed
+    # build's own identity, so #385's unnamed titles never reach it.
+    entry.vuln_target_key = app_full_key(entry.name, entry.bundle_id, summary.latest_version, None)
 
 
 async def judge_vuln(db: AsyncSession, entries: Sequence[AppCatalogEntry] | None, *, now: datetime) -> int:
@@ -174,6 +183,23 @@ async def judge_vuln(db: AsyncSession, entries: Sequence[AppCatalogEntry] | None
         # left join has to live in a subquery because an `UPDATE … FROM` cannot outer-join
         # its own target, and outer is the point: an inner join would leave a build the new
         # epoch dropped still carrying the old epoch's `covered`.
+        # The second outer join is the target build's answer (#482): same table, same
+        # primary key, one equality per row against `vuln_target_key`. Outer for the reason
+        # the first is — a target the new epoch dropped must stop reading `covered` — and in
+        # THIS statement so the two answers on a row can never come from two epochs.
+        target = aliased(VulnLibraryRow)
+        # `vuln_target_version` is the record of WHICH release this pass looked up, so it may
+        # only be written where a lookup happened — hence the `case` rather than the column.
+        # The two clocks make the difference a real state and not a theoretical one: the key
+        # moves on the JAMF clock and the answer on the CORPUS clock, so from this column's
+        # migration until the next catalog sync every row carries a NULL key beside a
+        # non-NULL `latest_version`, and a corpus epoch that moves first comes through here
+        # over exactly those rows. Writing the version unguarded stored version-present /
+        # assessment-NULL, which renders as `unknown_app` — *not in the corpus of <date>*, in
+        # the warning colour, about a release nothing ever asked the corpus about, on every
+        # device page and application record for the length of the window. A lookup that
+        # never happened is not a missing row (R-D); only a row that HAS a key can be told
+        # that the epoch holds nothing for it.
         joined = (
             select(
                 AppCatalogEntry.id.label("id"),
@@ -182,9 +208,17 @@ async def judge_vuln(db: AsyncSession, entries: Sequence[AppCatalogEntry] | None
                 VulnLibraryRow.oldest_published.label("oldest_published"),
                 VulnLibraryRow.ids.label("ids"),
                 VulnLibraryRow.truncated.label("truncated"),
+                case((AppCatalogEntry.vuln_target_key.is_not(None), AppCatalogEntry.latest_version), else_=null()).label(
+                    "target_version"
+                ),
+                target.key_full.is_not(None).label("target_covered"),
+                target.counts.label("target_counts"),
+                target.ids.label("target_ids"),
+                target.truncated.label("target_truncated"),
             )
             .select_from(AppCatalogEntry)
             .outerjoin(VulnLibraryRow, VulnLibraryRow.key_full == AppCatalogEntry.key_full)
+            .outerjoin(target, target.key_full == AppCatalogEntry.vuln_target_key)
             .where(scope)
             .subquery()
         )
@@ -199,6 +233,11 @@ async def judge_vuln(db: AsyncSession, entries: Sequence[AppCatalogEntry] | None
                 vuln_ids_truncated=joined.c.truncated,
                 vuln_signature=epoch,
                 vuln_evaluated_at=now,
+                vuln_target_version=joined.c.target_version,
+                vuln_target_assessment=case((joined.c.target_covered, VULN_ASSESSMENT_COVERED), else_=null()),
+                vuln_target_counts=joined.c.target_counts,
+                vuln_target_ids=joined.c.target_ids,
+                vuln_target_ids_truncated=joined.c.target_truncated,
             )
         )
     # The ORM cannot reconcile a criteria-driven UPDATE with what it holds in memory, and
