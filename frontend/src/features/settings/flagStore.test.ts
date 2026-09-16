@@ -29,6 +29,16 @@ describe("the flag set", () => {
     expect([...store().enabled]).toEqual(["other"]);
   });
 
+  it("a second read starts at loading, not at the last account's answer", async () => {
+    listFeatureFlags.mockResolvedValue([flag(AI, true)]);
+    await store().load();
+    // Signing out and back in mounts the layout again on a store that still holds the
+    // previous answer; the set stands until the new one lands, but `read` may not.
+    listFeatureFlags.mockReturnValue(new Promise<FeatureFlag[]>(() => {}));
+    void store().load();
+    expect([store().read, store().enabled.has(AI)]).toEqual(["loading", true]);
+  });
+
   it("a read that failed is its own state, and holds no keys", async () => {
     listFeatureFlags.mockRejectedValue(new Error("no answer"));
     await store().load();

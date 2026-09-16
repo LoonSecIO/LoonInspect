@@ -45,7 +45,9 @@ export function flagGate(read: FlagRead, enabled: ReadonlySet<string>, flag: str
 interface FeatureFlagStore {
   read: FlagRead;
   enabled: ReadonlySet<string>;
-  /** Read once, where the signed-in layout mounts. Never throws: the failure is a state,
+  /** Read where the signed-in layout mounts, and again if it mounts again — it puts `read`
+   *  back to "loading" first, so one session never reads the last one's answer as its own,
+   *  while the set stands until the new answer lands. Never throws: the failure is a state,
    *  and the empty set with it keeps a flag-gated nav entry hidden exactly as before. */
   load: () => Promise<void>;
   /** The Feature Flags page's confirmed toggle. It leaves `read` alone — a set that could
@@ -58,6 +60,7 @@ export const useFeatureFlagStore = create<FeatureFlagStore>((set) => ({
   enabled: new Set<string>(),
 
   async load() {
+    set({ read: "loading" });
     try {
       set({ enabled: enabledKeys(await listFeatureFlags()), read: "read" });
     } catch {

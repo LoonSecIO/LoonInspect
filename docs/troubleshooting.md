@@ -989,11 +989,12 @@ session that flipped it; other open sessions see it at their next reload or sign
 4. **An administrator turned it on, and your session still hides it.** Each session reads the
    flags once, when it signs in. A toggle made in another browser, another tab or by another
    person reaches yours at the next reload — ⌘R. This is deliberate and not a fault.
-5. **`GET /api/system/ai/providers` or `/host` answers `409`.** The body says
-   *AI features are off; ai_provider_table may not run*. It is the same switch under its code
-   name; the page behind those reads is Settings › AI.
+5. **`GET /api/system/ai/providers` or `/host` answers `409`.** Each read names itself in the
+   body: *AI features are off; ai_provider_table may not run* for the provider table, and
+   *AI features are off; ai_host_detection may not run* for the host detection. Two code
+   names, one switch — this one — and the page behind both reads is Settings › AI.
 
-**P.** **AI features** reads **On** on Settings › Feature Flags and Settings › AI still refuses
+**Q.** **AI features** reads **On** on Settings › Feature Flags and Settings › AI still refuses
 after a reload, or the entry is listed and the page refuses. Report what the Feature Flags row
 shows, what the page says word for word, the output of
 `curl -sk -o /dev/null -w '%{http_code}\n' <address>/api/system/ai/providers` run with your

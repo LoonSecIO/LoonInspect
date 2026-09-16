@@ -84,8 +84,7 @@ AI_TEST_BOX_FEATURE = "ai_test_box"
 AI_MODEL_LISTING_FEATURE = "ai_model_listing"
 # Saving a config is on-pod work: the gate is asked for the flag only, and logs nothing.
 AI_CONFIG_FEATURE = "ai_config"
-# The two reads Settings > AI opens with. On-pod work like a Save, so they ask the gate
-# the same way (#402).
+# The two reads Settings > AI opens with: on-pod work like a Save, gated the same way (#402).
 AI_PROVIDER_TABLE_FEATURE = "ai_provider_table"
 AI_HOST_DETECTION_FEATURE = "ai_host_detection"
 DISCLOSED_FIELDS = ("prompt_text",)
@@ -135,12 +134,12 @@ def _effort_accepted(provider: Provider, reasoning_effort: str | None) -> None:
 
 
 async def _flag_or_409(db: AsyncSession, feature: str) -> None:
-    """The master flag alone, for a read that sends nothing anywhere (#402).
+    """The master flag alone, for on-pod work that sends nothing anywhere (#402).
 
-    The flag is the switch for the whole AI area, in both directions: while it is off,
-    Settings > AI is neither listed nor reachable, and the two reads that page opens with
-    answer the gate's sentence. ``destination=None``, so nothing leaves and nothing is
-    logged — which is also why ``AIConsentMissing`` cannot be raised here.
+    The flag switches the whole AI area, in both directions: with it off, Settings > AI is
+    neither listed nor reachable, and the two reads that page opens with — and a Save —
+    answer the gate's sentence. ``destination=None`` for every caller, so nothing leaves,
+    nothing is logged, and ``AIConsentMissing``, the gate's other half, cannot be raised.
     """
     try:
         await require_ai(db, feature=feature)
@@ -427,10 +426,7 @@ async def save_provider_config(
     rules are judged against the key the row will hold, not only the one sent."""
     _bounded_key(payload.api_key)
     _effort_accepted(provider, payload.reasoning_effort)
-    try:
-        await require_ai(db, feature=AI_CONFIG_FEATURE, destination=None)
-    except AIFeaturesDisabled as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await _flag_or_409(db, AI_CONFIG_FEATURE)
 
     stored = await saved_config(db, provider)
     has_key = keeps_key(stored is not None and stored.has_key, payload.api_key, payload.clear_key)
