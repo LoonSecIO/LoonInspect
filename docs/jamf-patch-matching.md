@@ -150,10 +150,34 @@ Firefox matches both and #68's sentence can come from the wrong line (`sentenceT
 which). The corpus is untouched: `key_full` is built from installed apps, so an EA-detected title
 has no row to join and reads `unknown_app`.
 
-The ten largest by versions gained: Firefox Developer Edition (1,043), **Mozilla Firefox** (410),
-Firefox ESR (302), Skype (255), PyCharm Unified (200), Flash Player (172), **Microsoft AutoUpdate**
-(154), Python 3 (131), Nextcloud (128), Jamf Connect Login (109); most of the rest are JDK and JRE
-lines. The live list, which cannot go stale the way a copy here would:
+**The 182**, on the 2026-09-16 catalog, collapsed on Jamf's own naming: every one of them is in a
+row and the arithmetic closes at 5,233 versions gained.
+
+| Family | Titles | Versions |
+| --- | --- | --- |
+| **Mozilla Firefox**, Firefox ESR, Firefox Developer Edition | 3 | 1,755 |
+| Adobe: Flash Player, Pepper Flash, Shockwave, AIR, Acrobat Updater, Camera Raw CC / CS6 / Photoshop CC / Photoshop CS6, Illustrator CS6, CSXS Infrastructure CS6 | 10 | 526 |
+| **Microsoft AutoUpdate**, Skype, Silverlight | 3 | 426 |
+| Zulu OpenJDK 8–26 | 19 | 228 |
+| Eclipse Temurin 8–26, JDK and JRE | 23 | 219 |
+| IBM Semeru Runtime (OpenJ9) 8–26, JDK and JRE | 26 | 218 |
+| JetBrains PyCharm Unified | 1 | 200 |
+| Oracle Java SE: JDK 21–26, JRE 7 / 8 / 8 (CPU) | 9 | 181 |
+| **Python 3**, Python 2 | 2 | 149 |
+| Amazon Corretto 8–26 | 14 | 147 |
+| Nextcloud Desktop Client | 1 | 128 |
+| AdoptOpenJDK 8–16, Hotspot and OpenJ9, JDK and JRE | 20 | 119 |
+| Jamf Connect Login | 1 | 109 |
+| Rhinoceros 6, Rhino 7, Rhino 8 | 3 | 105 |
+| KeyShot 9–2025, each with its Viewer and Network Rendering | 18 | 95 |
+| Axure RP 9, 10, 11 | 3 | 88 |
+| Sophos Antivirus for Mac, Endpoint for Mac, Endpoint 10 for Mac | 3 | 86 |
+| Docker Kitematic | 1 | 85 |
+| Komodo Edit 8–12; Eclipse IDE for Rust / for Testers / for Web and JavaScript | 8 | 67 |
+| Royal TSX, swiftDialog, Canon UFR II Printer Driver, Google Backup and Sync, Oracle SQLDeveloper, Octory, DisplayLink USB Graphics, YubiKey Manager, Sassafras KeyAccess Client, Citrix HDX RealTime Media Engine, Logitech Presentation, MPEG Streamclip, 3CXPhone, SD Card Formatter | 14 | 302 |
+
+That table is a copy and drifts as Jamf publishes — 111 of the 182 are JDK and JRE lines, which
+gain a title every time a vendor cuts a release. The container's own answer does not drift:
 `SELECT name FROM jamf_patch_titles WHERE detection = 'extension_attribute' AND bundle_id <> ''`.
 
 ## 5. Storage and the summary
@@ -296,7 +320,7 @@ they were about one thing. They are not:
 
 | Keys | Subject |
 | --- | --- |
-| `onLatest`, `versionKnown`, `eaAssumed` | `any()` over **every** matched title |
+| `onLatest`, `versionKnown`, `eaAssumed`, `detection` (§4a) | `any()` over **every** matched title |
 | `state`, `latestVersion`, `latestReleasedAt` | the **reference** title (§5: the one that says latest, else the rolling title) |
 | `patchAvailableSince`, `releasesMissed` | the **sentence** title (#68: both halves from one line) |
 
