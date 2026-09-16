@@ -58,8 +58,13 @@ export function savedConfigsOf(body: unknown): SavedConfig[] | null {
  * lines. `latest` is the newest saved map the page knows — never the list the opening read
  * of the saved cards returned, which may be older. While that read is still the newest, the
  * page opens on the first saved card (the one the Prompt bar uses) or, with none saved, on
- * the detection hint: the Apple card on Docker Desktop on macOS, otherwise the documented
- * default (Ollama, #28).
+ * the detection hint: the Apple card where it is offered, otherwise the documented default
+ * (Ollama, #28).
+ *
+ * It opens only on a card that is on screen (`offered`, #404). A card this server holds
+ * settings for but does not offer here — an Apple card saved on a Mac and restored onto a
+ * pod — would otherwise be selected with no card lit and no Remove to reach it. The Prompt
+ * bar still names it, and `troubleshooting.md` §14 says how to take it off this server.
  *
  * The operator can get to the card first: Remove works before the page's other reads
  * settle, since it needs only the saved cards. `newerRead` — a Remove made while the host
@@ -74,11 +79,11 @@ export function openingCard(opening: {
   removeAsked: boolean;
   latest: SavedByProvider;
   current: Provider;
-  dockerDesktopOnMacos: boolean;
+  offered: readonly Provider[];
 }): { card: Provider; clearLines: boolean } {
   if (opening.newerRead || opening.removeAsked) return { card: opening.current, clearLines: false };
-  const firstSaved = PROVIDER_ORDER.find((candidate) => opening.latest[candidate]);
-  return { card: firstSaved ?? (opening.dockerDesktopOnMacos ? "apple_fm" : "openai_compatible"), clearLines: true };
+  const firstSaved = opening.offered.find((candidate) => opening.latest[candidate]);
+  return { card: firstSaved ?? (opening.offered.includes("apple_fm") ? "apple_fm" : "openai_compatible"), clearLines: true };
 }
 
 /** Whether a card takes a reasoning effort. Apple's does not: `fm serve` answers 400 to any

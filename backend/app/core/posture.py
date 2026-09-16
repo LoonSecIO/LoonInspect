@@ -173,12 +173,19 @@ PLATFORM_ROLLUP = "all"
 # Frozen definitions, no writer yet — each activates with its feature's table, never
 # before (docs/posture-snapshot.md carries the definitions and the gates).
 #
-# Empty since 2026-09-11: the four `vuln.*` names reserved here since #102 moved into
-# `VULN_KEYS` above the day #381 gave them a table to count. The tuple stays, and stays
-# named, because the reservation is a mechanism rather than a list — the next key whose
-# definition is ruled before its writer exists is declared here and is kept out of
-# `ACTIVE_KEYS` by `tests/test_posture_registry.py` until its rows are real.
-RESERVED_KEYS: tuple[str, ...] = ()
+# The reservation is a mechanism rather than a list: a key whose definition is ruled
+# before its writer exists is declared here, and `tests/test_posture_registry.py` is what
+# keeps it out of `ACTIVE_KEYS` until its rows are real. The tuple emptied on 2026-09-11,
+# when the four `vuln.*` names reserved since #102 moved into `VULN_KEYS` above, and it
+# stayed named for exactly the case below.
+#
+# `devices.departed_24h` — ruled 2026-09-16 on #135, activates with #183. It counts Macs
+# leaving the counted population at the end of #183's seven-day tail, and #183 is what
+# will give it something to count; today nothing in this codebase can say a device is
+# gone. Priming it with zeros now would write "no Mac has ever left this fleet" over every
+# night before departure could be derived at all — the no-zero-priming guardrail, in the
+# one shape it exists for (docs/posture-snapshot.md, Departed Macs).
+RESERVED_KEYS: tuple[str, ...] = ("devices.departed_24h",)
 
 
 def _utcnow() -> datetime:

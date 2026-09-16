@@ -1,7 +1,8 @@
 # The posture snapshot
 
 Status: **implemented (#102, 2026-08-29)** · 33 keys, last activated 2026-09-11 (the four
-`vuln.*`, #250) · Target: V0
+`vuln.*`, #250) · 1 reserved (`devices.departed_24h`, ruled 2026-09-16 on #135, activates
+with #183) · Target: V0
 
 The nightly tape of fleet posture. One table, `posture_snapshot(tenant_id, metric_key,
 platform, value, captured_at, full_sweep_run_id)` — one row per metric per capture per
@@ -108,6 +109,61 @@ The rules the column carries:
   first row for a tenant is written the night the corpus join first judges it, under that
   night's platform.
 
+### Departed Macs
+
+Ruled 2026-09-16 ([#135](https://github.com/LoonSecIO/LoonInspect/issues/135)), ahead of
+the [#183](https://github.com/LoonSecIO/LoonInspect/issues/183) build that needs it. A Mac
+Jamf has deleted leaves the counted population at the end of #183's seven-day tail — not
+on the first night it is missed, and never on a dirty or scoped sweep, because the
+evidence is one clean census. Its `devices` row, its observation spans and its change
+history all **stay**; erasing them is
+[#180](https://github.com/LoonSecIO/LoonInspect/issues/180) and v5.
+
+**One predicate, twenty keys.** The exclusion is not a `devices.*` rule. It reaches every
+key that counts a Mac, and every key that counts what was installed on one:
+
+* `_devices_on_active_connections()` — the four `devices.*` keys.
+* `_alerts_on_active_connections()` — `alerts.open` and `alerts.opened_24h`, which draw
+  the device cut through their own helper so the tape and `GET /api/alerts` can never
+  disagree.
+* the device join inside `_vuln_values` — `vuln.devices_affected`.
+* `_installed()`, `_patch_pairs()`, and `apps.distinct`'s own count over
+  `installed_apps` — `catalog.installed`, `catalog.installed_not_latest`,
+  `apps.distinct`, the three `vuln.apps_*` keys and the seven `patch.*` keys. A departed
+  Mac's `installed_apps` rows stay in the database and stop being evidence that anybody
+  has the build.
+
+**Why this is not a redefinition.** Today no device row *can* be departed: nothing removes
+a device or marks one absent, so every capture this tape already holds counts exactly the
+Macs Jamf knew about that night. "Device rows on active connections" and "Macs Jamf
+currently knows about" are the same set today — the first is only the spelling of the
+second that the database could express. #183 is what introduces rows that are not that: a
+Mac Jamf deleted, kept for its history. Excluding them is what keeps `devices.total`
+meaning in 2027 what it meant on its first night; *including* them is what would change
+every series in the list under itself, silently, with no new key and no error. So this is
+*definitions immutable per key* obeyed rather than bent — and it is written down before the
+v2026.09.17 tag because after the tag it stops being possible to say at all.
+
+**Explicitly out of scope: an active-connection filter on `_installed()` or
+`_patch_pairs()`.** Those two count `installed_apps` rows without asking whether the
+device's connection is active, and that is deliberate and already documented — a build
+carried only by a Mac on a deactivated connection is counted by `catalog.installed` and by
+no device in `vuln.devices_affected` ([Vulnerabilities](#vulnerabilities) says so in the
+key rows themselves). Departure and deactivation are different facts: a deactivated
+connection is an operator turning a source off, a departure is Jamf saying the Mac is gone.
+Narrowing those helpers to active connections is a second, separate redefinition of five
+key families, and nothing here rules it.
+
+**Captures taken before #183 count deleted Macs** (2026-09-16). The predicate activates
+with the build that can evaluate it; until then `last_seen_at` is the only evidence of
+absence and no key reads it, so every key in the list above counts a Mac Jamf deleted for
+as long as the container has been running. A fleet with ordinary churn reads a few percent
+high per month across that family, and the drift is monotonic — it never corrects itself
+and cannot be backfilled out. Read the stretch of tape between the tag and #183 the way
+`outbox.pending`'s destination-less accumulation and `patch.pairs_laggard_over_14d`'s
+dateless under-count are read: a known direction of error, stated here, not a number to
+correct later.
+
 ## Definitions v1
 
 Every key is one bounded SQL query inside the capture (`app.core.posture._compute`).
@@ -117,16 +173,21 @@ never calendar boundaries. `capture` below is `captured_at`.
 ### Devices
 
 The population for every `devices.*` key is device rows on **active** connections, of
-the capture's own platform — the recorder counts what the sweep observed and the row
-records which that was ([Population](#population)). NULLs count as stale in both
-staleness keys — a device that has never checked in is the worst staleness there is.
+the capture's own platform, **that the last clean census still observed** — the recorder
+counts what the sweep observed and the row records which that was
+([Population](#population)). A Mac Jamf has deleted leaves this population at the end of
+#183's seven-day tail; its row, its spans and its change history stay
+([Departed Macs](#departed-macs), where the same exclusion's other sixteen keys are
+listed). NULLs count as stale in both staleness keys — a device that has never checked in
+is the worst staleness there is.
 
 | Key | Status | Definition | Source |
 | --- | --- | --- | --- |
-| `devices.total` | ACTIVE | Device rows across active connections. | `devices` ⋈ `mdm_connections.is_active` |
-| `devices.stale_checkin_7d` | ACTIVE | `last_check_in` older than capture − 168h, NULLs included. | `devices` |
-| `devices.unmanaged` | ACTIVE | `managed = false`. | `devices` |
-| `devices.stale_inventory_7d` | ACTIVE | `last_inventory_at` older than capture − 168h, NULLs included. | `devices` |
+| `devices.total` | ACTIVE | Device rows across active connections that the last clean census still observed. A Mac Jamf deleted leaves this count at the end of #183's seven-day tail and keeps its row, spans and change history — erasure is #180 (v5). | `devices` ⋈ `mdm_connections.is_active` |
+| `devices.stale_checkin_7d` | ACTIVE | `last_check_in` older than capture − 168h, NULLs included, over that same population: active connections, still observed by the last clean census. | `devices` |
+| `devices.unmanaged` | ACTIVE | `managed = false`, over that same population: active connections, still observed by the last clean census. | `devices` |
+| `devices.stale_inventory_7d` | ACTIVE | `last_inventory_at` older than capture − 168h, NULLs included, over that same population: active connections, still observed by the last clean census. | `devices` |
+| `devices.departed_24h` | RESERVED | Devices that left the counted population in the trailing 24h — the end of #183's seven-day tail, not the day absence was first derived. A Mac that returns inside its tail never reaches this key. Activates with #183. | `devices` (#183's departure stamp) |
 
 ### App catalog and applications
 

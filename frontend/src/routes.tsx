@@ -4,6 +4,7 @@ import { AccountsPage } from "@/features/accounts/AccountsPage";
 import { MyAccountPage } from "@/features/accounts/MyAccountPage";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { RequireAuth } from "@/features/auth/RequireAuth";
+import { RequireFlag } from "@/features/auth/RequireFlag";
 import { RequirePermission } from "@/features/auth/RequirePermission";
 import { SetupPage } from "@/features/auth/SetupPage";
 import { PERMISSIONS } from "@/features/auth/types";
@@ -73,8 +74,8 @@ export function AppRoutes() {
             vendor marks under public/logos/ are deliberately left in place: the
             page comes back once its grid is mostly real (#95). */}
         {/* Still no top-level /ai (#95). What exists is Settings › AI below: the test
-            box (#319), one prompt to an endpoint the admin names, listed in the
-            sidebar only while the `ai_features` switch is on. */}
+            box (#319), one prompt to an endpoint the admin names — listed in the sidebar,
+            and reachable at all, only while the `ai_features` switch is on (#402). */}
         <Route element={<RequirePermission permission={PERMISSIONS.CONNECTION_READ} />}>
           <Route path="settings/connections" element={<ConnectionsPage />} />
           <Route path="settings/change-tracking" element={<ChangeTrackingPage />} />
@@ -89,9 +90,17 @@ export function AppRoutes() {
         </Route>
         {/* SYSTEM_READ like data-sharing: the page reads the switches and the
             provider table for anyone with it, and hides Send without SYSTEM_WRITE,
-            which is what the backend's POST gate requires. */}
+            which is what the backend's POST gate requires.
+
+            Then the flag, inside the permission and never instead of it (#402): the
+            master switch owns the whole area — the page's own two reads answer 409 while
+            it is off — so the route says so rather than drawing a page whose every panel
+            is refused. Permission outside, because the narrower refusal is the truer one
+            for an account that may not open Settings › AI at all. */}
         <Route element={<RequirePermission permission={PERMISSIONS.SYSTEM_READ} />}>
-          <Route path="settings/ai" element={<AISettingsPage />} />
+          <Route element={<RequireFlag flag="ai_features" />}>
+            <Route path="settings/ai" element={<AISettingsPage />} />
+          </Route>
         </Route>
         <Route element={<RequirePermission permission={PERMISSIONS.TOKEN_CREATE} />}>
           <Route path="settings/api-tokens" element={<ApiTokensPage />} />

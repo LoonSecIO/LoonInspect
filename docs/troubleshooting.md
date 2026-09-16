@@ -965,3 +965,161 @@ keep failing with this sentence — or the sentence stays on the row after a suc
 and a page reload. Report the connection's `id`, the row from
 `GET /api/mdm/connections`, the failing run's `jobID` and error, and
 `docker compose logs app --since 30m`.
+
+
+## 13. "Settings › AI is missing, or says AI features are off"
+
+One switch owns the whole AI area: **AI features**, on **Settings › Feature Flags**. On, the
+**AI** entry is listed under Settings and the page opens. Off, the entry is gone, the address
+refuses in words, and the page's own two reads answer `409`. It takes effect at once in the
+session that flipped it; other open sessions see it at their next reload or sign-in.
+
+1. **The AI entry is not under Settings.** Check whether **Data Sharing** is listed there.
+   Both need the same permission, so if neither is listed it is the role, not the switch — ask
+   an administrator for an account that can read system settings. If Data Sharing is listed and
+   AI is not, the switch is off: turn on **AI features** on Settings › Feature Flags, which
+   needs an administrator, and the entry appears without a reload.
+2. **The address `/settings/ai` says *AI features are off*.** Same switch, same fix — the link
+   under the sentence goes straight to Feature Flags for an account that may toggle it.
+3. **It says *This area could not be checked*, and *the feature flags could not be read*.**
+   That is not the switch being off: the answer is missing. This instance did not answer
+   `GET /api/feature-flags`, which needs only a session, so the rest of the app is failing too.
+   Reload; then read `docker compose logs app --since 15m` and § 4 above, which is the path for
+   an instance that cannot serve its own settings. Nothing here is evidence about the switch.
+4. **An administrator turned it on, and your session still hides it.** Each session reads the
+   flags once, when it signs in. A toggle made in another browser, another tab or by another
+   person reaches yours at the next reload — ⌘R. This is deliberate and not a fault.
+5. **`GET /api/system/ai/providers` or `/host` answers `409`.** Each read names itself in the
+   body: *AI features are off; ai_provider_table may not run* for the provider table, and
+   *AI features are off; ai_host_detection may not run* for the host detection. Two code
+   names, one switch — this one — and the page behind both reads is Settings › AI.
+
+**Q.** **AI features** reads **On** on Settings › Feature Flags and Settings › AI still refuses
+after a reload, or the entry is listed and the page refuses. Report what the Feature Flags row
+shows, what the page says word for word, the output of
+`curl -sk -o /dev/null -w '%{http_code}\n' <address>/api/system/ai/providers` run with your
+session's cookies, and `docker compose logs app --since 30m`.
+
+## 14. "Settings › AI has no Apple Foundation Models card"
+
+That card is offered only where its default can work: LoonInspect under **Docker Desktop on
+an Apple Silicon Mac**, with **`host.docker.internal` resolving from inside the container**.
+Apple's `fm serve` runs on the Mac, never in the container, and that name is how the
+container reaches it. Anywhere else the card is withheld on purpose — it is not a feature
+this build lost, and the panel **Where this container runs** says so in a sentence under its
+evidence. The **OpenAI-compatible** and **Anthropic** cards are offered everywhere.
+
+1. **Read *Where this container runs*, and the *Evidence* line under it** — the kernel, the
+   CPU implementer, and the alias:
+   - *host.docker.internal resolves*, and the verdict names macOS → the card is offered.
+     Reload the page if it is still not there.
+   - *host.docker.internal does not resolve*, and the verdict names macOS → the Mac is right
+     and the name is not. Docker Desktop supplies it, and this project's `docker-compose.yml`
+     declares it; a container started some other way, or with its own `--dns`, may have
+     neither. Check it from the host — `docker compose exec -T app getent hosts
+     host.docker.internal` prints an address when the name works — then bring the stack up
+     with `docker compose up -d` beside this repo's `docker-compose.yml` and reload.
+   - *Docker Desktop detected; the host OS could not be told …* → Docker Desktop, but no
+     Apple implementer: an Intel Mac, or Windows. Apple's model needs an Apple Silicon Mac.
+   - *Runtime not recognised from inside the container.* → OrbStack, Colima, Podman, Docker
+     Engine on Linux, a cloud runtime such as ECS on Fargate, or the backend run outside a
+     container at all. None of them is the one runtime this cut implements.
+2. **Use the OpenAI-compatible card instead.** It reaches anything that speaks the OpenAI
+   chat wire: Ollama, LM Studio, vLLM, a gateway, OpenAI itself. Where the alias does not
+   resolve it starts **empty** rather than on a Mac's Ollama, and the Base URL field says why
+   (*the local default cannot work here*). Type an address this container can reach — not
+   `localhost`, which inside a container is the container — press **Send** once to prove it
+   answers, then **Save**. Anthropic's card needs no local endpoint at all.
+3. **The Prompt bar names a card the page does not show.** *Changes Prompt bar: shown (uses
+   Apple Foundation Models via Docker Desktop)* where that card is withheld means this server
+   still holds settings saved for it — from a Mac, or from a database restored here. The bar
+   will dial it and fail. There is no card to press **Remove** on, so take it off through the
+   API, which judges nothing about where it runs (`$BASE`, `jar` and `$CSRF` from §0):
+
+   ```bash
+   curl -s -b jar -X DELETE -H "X-CSRF-Token: $CSRF" $BASE/api/system/ai/configs/apple_fm
+   ```
+
+   Then save the OpenAI-compatible or the Anthropic card and reload the Changes page.
+4. **You are on that Mac and the panel disagrees.** The detection reads `/proc/version` and
+   `/proc/cpuinfo` from inside the container; `curl -s -b jar $BASE/api/system/ai/host`
+   answers with the verdict and the evidence it was read from. `runtime` is `docker_desktop`
+   only when the kernel carries `linuxkit`, and `hostOs` is `macos` only when the CPU
+   implementer is Apple's `0x61`. Neither of those on an Apple Silicon Mac under Docker
+   Desktop is reportable state **R**.
+
+**R.** *Where this container runs* reads a runtime or host OS the machine is not, under
+Docker Desktop on an Apple Silicon Mac; or the alias reads *does not resolve* while `docker
+compose exec -T app getent hosts host.docker.internal` answers with an address. Report the
+*Evidence* line, the body of `GET /api/system/ai/host`, `docker compose exec -T app cat
+/proc/version`, your Docker Desktop version, and the build from Settings › Support.
+
+
+## 15. "I deleted a smart group and the Changes page says nothing"
+
+Deliberate, and the run log says so. Deleting one group removes it from every member at once,
+and one change per Mac would bury the sweep under tens of thousands of rows describing the same
+click — so they collapse to level **low**, which the default *High + normal* preset does not
+record at all, and the sweep writes one line per deleted object instead ([`change-log.md`](change-log.md) §1).
+
+1. **Find the line.** Open the connection's run panel (or `GET /api/runs/{jobId}/log`) for the
+   first sweep after the deletion: *smart group "…" is gone; its N per-device removal rows
+   collapsed into this line at level low*, then a sentence saying whether those rows were
+   recorded. `objectKind`, `objectId`, `rows`, `departedAt` and `rowsRecorded` sit beside it; a
+   deleted extension attribute reads the same with `extension attribute`.
+2. **Keep the rows next time — only next time.** The rows this deletion would have produced were
+   never written and nothing shows them after the fact: the membership is already gone, so no later
+   sweep derives its removal again. Settings › Change tracking → **Everything** keeps the *next*
+   deletion's rows, at **Level: Low** on Devices › Changes — where the row names the group but not
+   why, because the page prints no sentence for this cause. `objectDeparted` reads in `GET /api/changes?minLevel=low`.
+3. **No line at all.** First rule out the three gates that drop the removal before the collapse sees
+   it — this instance at *High only*, smart-group (or extension-attribute) changes switched off under
+   Settings › Change tracking, or that group muted: each writes no rows **and** no line. Otherwise
+   nothing departed. The census that finds a deletion runs at the start of the sweep, and a refused or
+   collapsed one departs nobody and says so in the same run panel: a warning-level *departures reconciled*
+   line with `skipped=empty_census`, `collapsed_census` or `not_readable` — the circuit breaker for an API
+   role that lost **Read Smart Computer Groups**. Grant it and re-run. A line whose `objectId` names a group still in Jamf is reportable state **S**.
+
+**S.** A collapse line for an object that still exists in Jamf. Report the line, the
+`jobID`, and the build from Settings › Support.
+
+## 16. "A Mac I deleted in Jamf is still listed, or a Mac vanished from the list"
+
+LoonInspect never asks Jamf what was deleted; it notices what a sweep stopped returning. Only a
+**clean census** may judge — a device sweep that succeeded, carried no RSQL selector and lost no
+device to a failure — and a Mac it does not name enters a **seven-day tail**: still listed, still
+counted, and unmarked on the page, so the tail shows only in the run log and in the `departedAt`
+the API returns. Seven days later it **leaves the fleet** — out of **Devices**, out of the device
+count on the Overview — and nothing is deleted: its row, observations and whole change history
+stay, and `GET /api/devices?includeDeparted=true` reads it back. A sweep that names it again at
+any point puts it straight back.
+
+1. **The Mac is still listed and you deleted it in Jamf.** Open the newest device-sweep run
+   (**Runs**, or `GET /api/runs/{jobId}/log`) and read its last lines.
+   - *device census: N observed, …* → the census ran. `departed 0` with this Mac among the
+     `N observed` means Jamf still returned it: it was not deleted, or it lives in a
+     different Jamf Pro instance than this connection points at. Check it in Jamf Pro.
+   - *device census not taken; this sweep was not a clean one*, `reason=selector` → that
+     collection carries an RSQL selector and proves nothing about Macs outside it. **Settings ›
+     Connections › Collections**: the sweep with an empty **Selector** takes the census. Run it.
+   - the same line with `reason=device_failures` → devices failed on this sweep (see
+     `devicesFailed`, and a *device failed; sweep continues* line each). A device Jamf returned
+     but whose ingest failed has a stale presence mark, so the night judges nobody. Fix what
+     those lines name — path 1 or 2 — and the next clean sweep catches up.
+   - *device census refused: only N of M Macs came back, fewer than half the fleet*, or
+     *device census refused: the sweep returned no Macs at all* → departing a fleet on a short
+     read is refused by design. Usually a lost privilege or a short page: path 1.
+   - no census line at all on a finished sweep → reportable state **T**.
+2. **A Mac vanished and nobody deleted it.** It left the fleet, which takes seven days of clean
+   censuses that never named it. `GET /api/devices?includeDeparted=true` lists it again with
+   `departedAt` — the first clean census that did not return it — and its page, observations and
+   changes are all still there by id. If Jamf Pro still holds the Mac, ask Jamf for it with path
+   2's `curl` against `/api/v4/computers-inventory`; if Jamf returns it, reportable state **T**.
+3. **You want it gone for good.** Nothing removes a Mac's history today — not this, not
+   deleting the connection. Honouring a Jamf deletion as an erasure is a stated, deliberate
+   deferral (v5); [`jamf-observations.md`](jamf-observations.md) §8 says what is held.
+
+**T.** A finished, unselected, failure-free device sweep whose log has no *device census* line;
+or a Mac Jamf returns on the sweep's own endpoint that still departs or stays departed. Report
+the run's `jobID` and its log, the census line if there is one, the Mac's Jamf id, the
+collection's **Selector** field, and `docker compose logs app --since 30m`.
