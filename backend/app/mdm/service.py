@@ -64,7 +64,7 @@ from app.mdm.jamf.contract import (
     with_extension_attribute_carriers,
 )
 from app.mdm.org_units import BUILDING, DEPARTMENT, record_org_units
-from app.mdm.patch.matching import cached_title_names
+from app.mdm.patch.matching import cached_title_detection, cached_title_names
 from app.mdm.snapshot import build_inventory_snapshot
 from app.models.schema import (
     Collection,
@@ -1561,6 +1561,9 @@ async def process_sync(
         # older answer. Reading it here rather than inside the producer keeps that coupling
         # visible at the one call site where the ordering is guaranteed.
         title_names=cached_title_names() if device.apps is not None else None,
+        # What detects each of them, for `patch.jamfPatch.detection` (#386): same cache, same
+        # call site, same `None` on the same path.
+        title_detection=cached_title_detection() if device.apps is not None else None,
         # The one place the container's corpus reaches the wire (#249). `NO_CORPUS` until
         # an epoch is loaded AND this tenant's tier earns it — both decided inside
         # `loaded_corpus()` and neither costing a query here: the tier was read once at the

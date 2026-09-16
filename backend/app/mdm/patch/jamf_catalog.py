@@ -36,7 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.user_agent import build_user_agent
 from app.mdm.patch.matching import reset_catalog_cache
-from app.mdm.patch.requirements import bundle_ids_named
+from app.mdm.patch.requirements import bundle_ids_named, detection_for
 from app.models.schema import JamfPatchTitle
 
 _STRIP_PATCH_KEYS = ("standalone", "minimumOperatingSystem", "reboot", "killApps", "components", "capabilities")
@@ -336,6 +336,8 @@ async def sync_catalog(db: AsyncSession, source: CatalogSource | None = None) ->
         row.current_version = detail.get("currentVersion", "")
         row.last_modified = detail.get("lastModified", "")
         row.requirements = _convert_requirements(detail.get("requirements", []))
+        # From the requirements just stored, so column and definition move together (#386).
+        row.detection = detection_for(row.requirements)
         # Decided from the definition, which is the last place `killApps` exists: the next line
         # drops it from every patch and nothing downstream ever sees it again (#385).
         row.app_name, row.app_name_source = _app_name(detail, row.requirements)

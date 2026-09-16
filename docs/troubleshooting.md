@@ -610,11 +610,11 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
    devices* and search again: with the box ticked, a title no device has is not listed,
    and a search that finds only such titles says how many the box hid.
    - The title is there once unticked, and reads 0 under *Devices with app* for software
-     you know is on your Macs → this is not a refresh problem. About 300 catalog titles
-     are never matched to an installed app — device-level (*Apple macOS …*),
-     attribute-only and version-only titles, Mozilla Firefox among them
+     you know is on your Macs → this is not a refresh problem. About 120 catalog titles
+     are never matched to an installed app — device-level (*Apple macOS …*), version-only,
+     and the attribute-only titles Jamf publishes no bundle identifier for
      ([`jamf-patch-matching.md`](jamf-patch-matching.md) §3) — so they read 0 on every
-     fleet.
+     fleet. A title that IS matched against and still reads 0 is step 6.
    - The title is missing with the box unticked → a title whose definition the server
      refused is skipped for that refresh and fetched again at the next one, so a gap that
      closes by itself is working as designed. A title that is published by Jamf and still
@@ -656,11 +656,24 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
    closed to it. A title showing neither line was stored before the rule existed — the
    next refresh (step 1) reads it once more and it gains one.
 
+6. **A title from [`jamf-patch-matching.md`](jamf-patch-matching.md) §4a reads 0 devices for
+   software you know is installed** — *my Python Mac reads absent*. Jamf detects those 182 titles
+   with a script on the Mac rather than from the inventory it walks, and LoonInspect matches the
+   inventory. Search **Devices › Applications** for the bundle identifier on the title's row:
+   - **Listed** — a Mac reports an `.app` with that identifier (Firefox, Skype, PyCharm) and the
+     title should match: a 0 after a sweep is state **J**'s last clause, with that identifier.
+   - **Not listed** — the software is a command-line install, a framework or a daemon (Python 3,
+     the JDKs, Jamf Connect Login), so the inventory has nothing to match and those Macs read
+     absent until LoonInspect reads the attribute itself. Working as built.
+
 **J.** A refresh that reports no error leaves the table saying *No Jamf Patch titles
 synced yet.*, a title Jamf publishes stays missing from the list with *Only titles with
-devices* unticked for more than a day, or a press of **Sync now** writes nothing to the
-container log while `/api/health` answers. Report what the *Synced* column shows, the
-output of `docker compose logs app --since 1h`, and the build from Settings › Support.
+devices* unticked for more than a day, a press of **Sync now** writes nothing to the
+container log while `/api/health` answers, or — the one where the sync did happen — a
+title LoonInspect matches against still reads 0 devices after a sweep while **Devices ›
+Applications** lists its bundle identifier (step 6). Report what the *Synced* column
+shows, the bundle identifier and the title's name if that was the symptom, the output of
+`docker compose logs app --since 1h`, and the build from Settings › Support.
 
 ## 7. "Jamf Pro webhooks are not arriving"
 

@@ -47,7 +47,7 @@ from app.mdm.patch.matching import (
     match_app,
     reset_catalog_cache,
 )
-from app.mdm.patch.requirements import Facts
+from app.mdm.patch.requirements import DETECTION_EXTENSION_ATTRIBUTE, DETECTION_INVENTORY, Facts
 from app.mdm.service import apply_hashes
 from app.mdm.snapshot import build_inventory_snapshot, patch_answer
 from app.models.schema import AppCatalogEntry, InstalledApp
@@ -63,6 +63,7 @@ _WINDOW = datetime(2026, 9, 4, 2, 0, tzinfo=UTC)
 RULED_KEYS = (
     "titleIDs",
     "titleNames",
+    "detection",
     "state",
     "onLatest",
     "versionKnown",
@@ -84,6 +85,11 @@ def catalog() -> Catalog:
 @pytest.fixture(scope="module")
 def title_names(catalog: Catalog) -> dict[str, str]:
     return {title.id: title.name for title in catalog.titles}
+
+
+@pytest.fixture(scope="module")
+def title_detection(catalog: Catalog) -> dict[str, str]:
+    return {title.id: title.detection for title in catalog.titles if title.detection}
 
 
 @pytest.fixture(scope="module")
@@ -129,7 +135,7 @@ def rows(raw: dict, catalog: Catalog) -> list[InstalledApp]:
 
 
 @pytest.fixture(scope="module")
-def blocks(rows: list[InstalledApp], raw: dict, title_names: dict[str, str]) -> dict[str, dict]:
+def blocks(rows: list[InstalledApp], raw: dict, title_names: dict[str, str], title_detection: dict[str, str]) -> dict[str, dict]:
     """App name -> the serialised `patch{}` block, off the real producer and the real payload."""
     event = build_inventory_snapshot(
         canonicalize_computer(raw, ("applications",)),
@@ -139,6 +145,7 @@ def blocks(rows: list[InstalledApp], raw: dict, title_names: dict[str, str]) -> 
         device_meta={},
         corpus=NO_CORPUS,
         title_names=title_names,
+        title_detection=title_detection,
     )
     payload = event.to_payload()
     return {item["app"]["name"]: item["patch"] for item in payload["app"]}
@@ -154,28 +161,49 @@ def test_the_state_vocabulary_is_the_matchers(catalog: Catalog) -> None:
     wire registry and `ADDITIVE_ONLY_CLAUSES` already run against their own docs."""
     declared = set(JamfPatchAnswer.model_fields["state"].annotation.__args__)  # type: ignore[union-attr]
     assert declared == {STATE_LATEST, STATE_BEHIND, STATE_AHEAD, STATE_UNKNOWN}
+    # And #386's discriminator, restated in the same file for the same reason.
+    detection = JamfPatchAnswer.model_fields["detection"].annotation.__args__[0]  # type: ignore[union-attr]
+    assert set(detection.__args__) == {DETECTION_INVENTORY, DETECTION_EXTENSION_ATTRIBUTE}
+
+
+def test_detection_says_which_witness_the_answer_rests_on(blocks: dict[str, dict]) -> None:
+    """#386. PyCharm's only title is attribute-only — Jamf detects it from a script's output at
+    the device's last recon — so the reader is told before reading `state`, which can be `behind`
+    for the wrong channel. Slack's title carries a recon test and says the ordinary thing."""
+    assert blocks["PyCharm.app"]["jamfPatch"]["detection"] == DETECTION_EXTENSION_ATTRIBUTE
+    assert blocks["Slack.app"]["jamfPatch"]["detection"] == DETECTION_INVENTORY
+    # `any`, not the reference title's: Wireshark matches two ordinary titles and says inventory,
+    # and one attribute-only title among several would carry the flag for all of them.
+    assert blocks["Wireshark.app"]["jamfPatch"]["detection"] == DETECTION_INVENTORY
+
+
+def test_a_catalog_that_cannot_speak_for_every_title_drops_the_key(rows: list[InstalledApp]) -> None:
+    """Clause 4's absence, not a claim: answering `inventory` off the titles that did resolve is
+    the reading the key exists to prevent."""
+    answers = patch_answer(rows, None, None)
+    assert all("detection" not in a.model_dump(by_alias=True).get("jamfPatch", {}) for a in answers.values())
 
 
 def test_an_unmatched_app_is_one_key_wide(blocks: dict[str, dict]) -> None:
     """`supported: false` ships NOTHING else, which is what makes the block affordable at one
-    per app per device per sync: 72 of this device's 83 apps match no title, so a `false`
-    padded with nine nulls would be ~87% of the object's bytes saying nothing."""
+    per app per device per sync: 71 of this device's 83 apps match no title, so a `false`
+    padded with nine nulls would be ~86% of the object's bytes saying nothing."""
     unmatched = {name: block for name, block in blocks.items() if not block["supported"]}
-    assert len(unmatched) == 72
+    assert len(unmatched) == 71
     assert {tuple(block) for block in unmatched.values()} == {("supported",)}
     assert blocks["Mail.app"] == {"supported": False}
 
 
 def test_every_matched_app_carries_a_jamf_patch_block_and_only_ruled_keys(blocks: dict[str, dict]) -> None:
     matched = {name: block for name, block in blocks.items() if block["supported"]}
-    assert len(matched) == 11
+    assert len(matched) == 12
     for name, block in matched.items():
         assert set(block) == {"supported", "jamfPatch"}, name
         assert set(block["jamfPatch"]) <= set(RULED_KEYS), name
-        # The five keys that are never absent on an answer: without them the block cannot say
-        # what it found, and `patch_answer` degrades to `supported: false` rather than ship a
-        # partial one.
-        assert {"titleIDs", "titleNames", "state", "onLatest", "versionKnown"} <= set(block["jamfPatch"]), name
+        # The keys never absent from an answer built with a catalog loaded — the five #311 ruled
+        # plus #386's `detection`: without them the block cannot say what it found, and
+        # `patch_answer` degrades to `supported: false` rather than ship a partial one.
+        assert {"titleIDs", "titleNames", "detection", "state", "onLatest", "versionKnown"} <= set(block["jamfPatch"]), name
 
 
 def test_the_keys_are_camel_case_with_the_token_id_uppercased(blocks: dict[str, dict]) -> None:
@@ -427,14 +455,14 @@ def test_a_row_naming_titles_with_no_state_degrades_rather_than_raising(caplog) 
 def test_a_single_title_answer_carries_no_subject_keys(blocks: dict[str, dict]) -> None:
     """With one matched title every scalar is about that title by construction, and `titleIDs`
     already names it. Shipping the subjects anyway would repeat a value already on the event on
-    the nine-in-eleven apps that match one title — and `mvcount(titleIDs) == 1` is the test a
+    the ten-in-twelve apps that match one title — and `mvcount(titleIDs) == 1` is the test a
     consumer writes, so the absence needs no discriminator of its own."""
     single = {
         name: block["jamfPatch"]
         for name, block in blocks.items()
         if block["supported"] and len(block["jamfPatch"]["titleIDs"]) == 1
     }
-    assert len(single) == 9
+    assert len(single) == 10
     for name, answer in single.items():
         assert "referenceTitleID" not in answer and "sentenceTitleID" not in answer, name
 
