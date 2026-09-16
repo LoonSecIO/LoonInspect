@@ -470,6 +470,19 @@ class EffectivePolicy:
             return NORMAL
         return min(levels, key=lambda level: _RANK[level])
 
+    def keeps_level(self, level: str) -> bool:
+        """Is a row of this level kept at the tenant's minimum level?
+
+        The level question on its own, for the one caller that decides a level *after*
+        `entry_enabled` answered the enabled question at the rule's level: the deletion
+        echo (#182), which downgrades a removal to `low` because forty thousand of them
+        are one object's detail rather than forty thousand peers. An explicit per-entry
+        override still turns those rows off — `entry_enabled` is asked first — but it
+        cannot turn the collapse off, because the collapse is not a judgement about
+        whether removals are interesting.
+        """
+        return default_on(level, self.overrides.minimum_level)
+
     def group_muted(self, group_id: str) -> bool:
         return str(group_id) in self.overrides.muted_groups
 

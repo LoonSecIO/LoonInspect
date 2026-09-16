@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from app.alerts.service import sync_new_app_latches
 from app.catalog.service import record_device_apps
-from app.changes.derive import derive_and_record
+from app.changes.derive import CollapsedDeparture, collecting_departures, derive_and_record
 from app.core.config import settings
 from app.core.content_keys import app_bundle_key, app_full_key, app_title_key
 from app.core.context import get_request_id
@@ -541,6 +541,33 @@ async def _reconcile_departures(
     await db.commit()
 
 
+async def _log_collapsed_departures(
+    db: AsyncSession, run: Run, collapsed: Mapping[tuple[str, str], CollapsedDeparture]
+) -> None:
+    """One line per departed object, not one per device (#182).
+
+    The line is the echo's only trace at the default level: the per-device rows it counts
+    are graded `low`, so they are off unless the tenant asks for everything. It therefore
+    names what was deleted, how many rows that cost, and where those rows are — an
+    operator who deletes a group and finds the Changes page quiet has the answer on the
+    run they were watching rather than in the source.
+    """
+    for entry in sorted(collapsed.values(), key=lambda e: (e.object_kind, e.object_id)):
+        await run_log(
+            db,
+            run,
+            "info",
+            f'{entry.object_kind} "{entry.label or entry.object_id}" is gone; its {entry.rows} per-device '
+            f"{'row' if entry.rows == 1 else 'rows'} collapsed to level low — see Devices › Changes with Level: Everything",
+            objectKind=entry.object_kind,
+            objectId=entry.object_id,
+            objectName=entry.label,
+            rows=entry.rows,
+            departedAt=entry.departed_at.isoformat(),
+            level="low",
+        )
+
+
 async def _observe_extension_attribute_definitions(
     db: AsyncSession,
     connection: MdmConnection,
@@ -646,7 +673,11 @@ async def _sync_jamf(
     devices_failed = 0
     group_count = 0
 
-    async with client.http() as http:
+    # The deletion echo's tally (#182), open across the whole pass: the censuses that
+    # depart objects run before the device loop, and every per-device row they explain is
+    # derived six frames below this one, so the count is collected in a context variable
+    # and reported as one line per object after the loop.
+    async with client.http() as http, collecting_departures() as collapsed:
         aperture = await capture_aperture(client, http, sections=sections, quarantined_extension_attributes=quarantine)
         aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)
         connection.last_successful_auth_at = datetime.now(UTC)
@@ -794,6 +825,7 @@ async def _sync_jamf(
         # and a dynamic tuner (#74) reads structure instead of parsing text.
         throttle = {**client.throttle.observations(), **client.adaptive.observations()}
         if run is not None:
+            await _log_collapsed_departures(db, run, collapsed)
             if client.adaptive.changes:
                 await run_log(db, run, "warning", "throttled: sweep width reduced", reductions=client.adaptive.changes)
             if throttle:

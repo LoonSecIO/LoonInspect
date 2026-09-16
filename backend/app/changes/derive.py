@@ -10,15 +10,26 @@ Two derived judgements live here because they need more than one section:
 * **System-app collapse.** When the OS version (or build) changed in the same boundary,
   the version bumps of applications under /System are folded into the OS change as a
   count rather than logged one by one — unless the policy says otherwise.
-* **Two-cause membership.** A group joined or left carries `criteriaChanged`: whether
+* **Three-cause membership.** A group joined or left carries `criteriaChanged`: whether
   the group's own definition span moved since this device was last observed. Jamf
-  cannot say; the ledger keeps both histories.
+  cannot say; the ledger keeps both histories. The third cause is the object itself:
+  when the group has an open `subject_departures` row (#181) it was deleted, and no
+  device drifted anywhere.
+* **The deletion echo (#182).** One admin click deleting a smart group produces one
+  removal row per member — forty thousand on a forty-thousand-device fleet. They are the
+  detail of one fleet-level event, not N peers, so they collapse the way system apps
+  collapse into the OS update: level `low`, off by default, and one run-log line naming
+  the object and how many rows it produced. Same for a deleted extension-attribute
+  definition's per-device rows.
 """
 
 from __future__ import annotations
 
+import contextlib
 import logging
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -28,6 +39,7 @@ from app.changes.diff import Entry, EntryChange, FieldChange, diff_entries, diff
 from app.changes.policy import (
     CHANGE_POLICY_VERSION,
     ENTRY_RULES_BY_KIND,
+    LOW,
     EffectivePolicy,
     Overrides,
     is_system_app,
@@ -38,7 +50,14 @@ from app.core.runs import event_time, get_run, pull_event_id, run_meta
 from app.core.wire import ENVELOPE, envelope, instance_label
 from app.core.wire_vocabulary import CHANGE_EVENT_TYPE
 from app.mdm.jamf.client import COMPUTER_PLATFORM
-from app.mdm.jamf.contract import SECTIONS, SUBJECT_COMPUTER, Observation, SectionContent
+from app.mdm.jamf.contract import (
+    SECTIONS,
+    SUBJECT_COMPUTER,
+    SUBJECT_COMPUTER_GROUP,
+    SUBJECT_EXTENSION_ATTRIBUTE_DEFINITION,
+    Observation,
+    SectionContent,
+)
 from app.models.schema import (
     ChangePolicy,
     DeviceChange,
@@ -46,6 +65,7 @@ from app.models.schema import (
     ObservationEntry,
     ObservationSection,
     ObservationSpan,
+    SubjectDeparture,
 )
 from app.observations.ledger import RecordResult
 from app.schemas.payload import WIRE_SCHEMA_VERSION
@@ -123,6 +143,117 @@ _DEVICE_META_SOURCES: tuple[tuple[str, str, str], ...] = (
     ("email", "user_and_location", "email"),
     ("position", "user_and_location", "position"),
 )
+
+
+# The per-device entry kinds that echo a fleet-level object, and the object each one
+# names: (subject kind the object departs as, the identity field holding its id, the
+# operator's word for it). A removal of one of these is the only change a departure can
+# explain — a group that is gone adds nobody, and an EA definition that is gone reports
+# no value to update.
+_ECHOED_OBJECTS: dict[str, tuple[str, str, str]] = {
+    "group_membership": (SUBJECT_COMPUTER_GROUP, "groupId", "smart group"),
+    "extension_attribute": (SUBJECT_EXTENSION_ATTRIBUTE_DEFINITION, "definitionId", "extension attribute"),
+}
+
+
+@dataclass(slots=True)
+class CollapsedDeparture:
+    """One departed object and the per-device rows its deletion produced in this sweep."""
+
+    object_kind: str  # the operator's word: "smart group", "extension attribute"
+    object_id: str
+    label: str | None
+    departed_at: datetime
+    rows: int = 0
+
+
+# The tally is a context variable for the reason the run is (`app.core.runs`): the
+# derivation runs six frames below the sweep, once per device, and the fact being
+# collected — "this one deletion cost N rows across the fleet" — exists only across the
+# whole device loop. A sweep opens one with `collecting_departures()`; a webhook's single
+# device opens none, and the collapse still happens, because one device is not an echo.
+_collapsed: ContextVar[dict[tuple[str, str], CollapsedDeparture] | None] = ContextVar("collapsed_departures", default=None)
+
+
+@contextlib.asynccontextmanager
+async def collecting_departures() -> AsyncIterator[dict[tuple[str, str], CollapsedDeparture]]:
+    """Collect this sweep's echo. Async only so a caller can open it on the same
+    `async with` line as its HTTP client rather than indenting a device loop."""
+    tally: dict[tuple[str, str], CollapsedDeparture] = {}
+    token = _collapsed.set(tally)
+    try:
+        yield tally
+    finally:
+        _collapsed.reset(token)
+
+
+@dataclass(slots=True)
+class _Departed:
+    """The open departures relevant to one span boundary, looked up once."""
+
+    rows: dict[tuple[str, str], datetime] = field(default_factory=dict)
+
+    def of(self, change: EntryChange) -> tuple[str, str, datetime] | None:
+        """(object id, the operator's word, when it departed) for a removal whose object
+        is gone; None for every other change."""
+        echoed = _ECHOED_OBJECTS.get(change.kind)
+        if echoed is None or change.change != "removed":
+            return None
+        subject_kind, identity_field, object_kind = echoed
+        object_id = change.identity.get(identity_field)
+        if object_id is None:
+            return None
+        departed_at = self.rows.get((subject_kind, str(object_id)))
+        return None if departed_at is None else (str(object_id), object_kind, departed_at)
+
+
+async def _departed_objects(db: AsyncSession, connection: MdmConnection, changes: list[EntryChange]) -> _Departed:
+    """The open `subject_departures` rows for exactly the objects this boundary lost.
+
+    Asked per boundary, and only for the ids in it, rather than loading every open
+    departure per device: a sweep calls this once per device that lost a membership or an
+    EA value, and the census that would explain them has already committed — the catalog
+    pass runs before the device loop (#136) and `_reconcile_departures` commits inside it.
+    """
+    wanted: dict[str, set[str]] = {}
+    for change in changes:
+        echoed = _ECHOED_OBJECTS.get(change.kind)
+        if echoed is None or change.change != "removed":
+            continue
+        subject_kind, identity_field, _ = echoed
+        object_id = change.identity.get(identity_field)
+        if object_id is not None:
+            wanted.setdefault(subject_kind, set()).add(str(object_id))
+    found = _Departed()
+    for subject_kind, ids in wanted.items():
+        rows = (
+            (
+                await db.execute(
+                    select(SubjectDeparture).where(
+                        SubjectDeparture.mdm_connection_id == connection.id,
+                        SubjectDeparture.subject_kind == subject_kind,
+                        SubjectDeparture.subject_id.in_(sorted(ids)),
+                        SubjectDeparture.returned_at.is_(None),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for row in rows:
+            found.rows[(subject_kind, row.subject_id)] = row.departed_at
+    return found
+
+
+def _note_collapsed(object_kind: str, object_id: str, label: str | None, departed_at: datetime) -> None:
+    tally = _collapsed.get()
+    if tally is None:
+        return
+    entry = tally.get((object_kind, object_id))
+    if entry is None:
+        entry = CollapsedDeparture(object_kind=object_kind, object_id=object_id, label=label, departed_at=departed_at)
+        tally[(object_kind, object_id)] = entry
+    entry.rows += 1
 
 
 async def load_policy(db: AsyncSession) -> EffectivePolicy:
@@ -274,6 +405,7 @@ async def derive_and_record(
             os_row = row
 
     collapsed_system_apps = 0
+    departed = await _departed_objects(db, connection, entry_changes)
     for change in entry_changes:
         if change.kind == "group_membership" and policy.group_muted(str(change.identity.get("groupId"))):
             continue
@@ -298,7 +430,28 @@ async def derive_and_record(
                 continue
             level = policy.entry_level(change.kind, change.change)
             details = {}
-            if change.kind == "group_membership":
+            gone = departed.of(change)
+            if gone is not None:
+                # The object was deleted (#182) — the third cause, and the one the other
+                # two cannot express: a deleted group's definition span is never closed,
+                # so `_membership_cause` would find it unmoved and say "the device
+                # drifted", the one thing that did not happen. `criteriaChanged: null`
+                # is that question refused rather than answered wrongly, and it rides
+                # only the membership row: an extension attribute has no criteria.
+                object_id, object_kind, departed_at = gone
+                details = {"objectDeparted": True, "departedAt": departed_at.isoformat()}
+                if change.kind == "group_membership":
+                    details["criteriaChanged"] = None
+                # The echo collapses. One click produced this row on every member; it is
+                # that click's detail, so it is graded `low` (off by default) and counted
+                # into one run-log line for the object rather than logged as a peer of
+                # every other change in the sweep. The count is taken before the level
+                # gate, because what the line reports is what the deletion cost.
+                _note_collapsed(object_kind, object_id, change.label, departed_at)
+                level = LOW
+                if not policy.keeps_level(level):
+                    continue
+            elif change.kind == "group_membership":
                 details.update(await _membership_cause(db, connection, change, previous))
         rows.append(
             _row(
@@ -353,7 +506,12 @@ async def derive_and_record(
 async def _membership_cause(db: AsyncSession, connection: MdmConnection, change: EntryChange, previous: ObservationSpan) -> dict:
     """Did the group's criteria move since this device was last observed? If the group's
     current definition span opened after the device's previous span was last observed,
-    the criteria changed in between; otherwise the device drifted."""
+    the criteria changed in between; otherwise the device drifted.
+
+    Two causes, asked only when the third is ruled out: the caller checks for an open
+    departure first (#182), because a deleted group's span is never closed and this
+    function would read its unmoved definition as drift.
+    """
     group_id = str(change.identity.get("groupId"))
     definition = (
         (
