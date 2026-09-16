@@ -10,9 +10,13 @@ nothing here reads them. Intel Macs lack the implementer signal, and ``x86_64`` 
 ``linuxkit`` is then ambiguous with Windows on the Hyper-V backend: the verdict says
 "Docker Desktop, host OS unknown" rather than guessing.
 
-It is a hint, never a gate. The Settings > AI page pre-selects the "via Docker
-Desktop" card on a full match and shows the evidence under it; every other outcome
-says what was seen and leaves the choice to the operator.
+A hint for which card opens selected, and since #404 a gate on one card. Settings >
+AI offers the "via Docker Desktop" card only on a full match whose ``alias_resolves``
+is true — the AWS pod offered a Mac-only card with no Mac anywhere near it, and the
+full match alone never proved the card's default could work — and there it also opens
+selected. Every other outcome says what was seen, says in one sentence why that card
+is withheld, and leaves the remaining choice to the operator. Nothing here refuses
+anything: a call naming ``apple_fm`` is judged, gated and logged like any other.
 """
 
 from __future__ import annotations

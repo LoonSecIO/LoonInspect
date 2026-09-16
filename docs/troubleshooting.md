@@ -999,3 +999,57 @@ after a reload, or the entry is listed and the page refuses. Report what the Fea
 shows, what the page says word for word, the output of
 `curl -sk -o /dev/null -w '%{http_code}\n' <address>/api/system/ai/providers` run with your
 session's cookies, and `docker compose logs app --since 30m`.
+
+## 14. "Settings › AI has no Apple Foundation Models card"
+
+That card is offered only where its default can work: LoonInspect under **Docker Desktop on
+an Apple Silicon Mac**, with **`host.docker.internal` resolving from inside the container**.
+Apple's `fm serve` runs on the Mac, never in the container, and that name is how the
+container reaches it. Anywhere else the card is withheld on purpose — it is not a feature
+this build lost, and the panel **Where this container runs** says so in a sentence under its
+evidence. The **OpenAI-compatible** and **Anthropic** cards are offered everywhere.
+
+1. **Read *Where this container runs*, and the *Evidence* line under it** — the kernel, the
+   CPU implementer, and the alias:
+   - *host.docker.internal resolves*, and the verdict names macOS → the card is offered.
+     Reload the page if it is still not there.
+   - *host.docker.internal does not resolve*, and the verdict names macOS → the Mac is right
+     and the name is not. Docker Desktop supplies it, and this project's `docker-compose.yml`
+     declares it; a container started some other way, or with its own `--dns`, may have
+     neither. Check it from the host — `docker compose exec -T app getent hosts
+     host.docker.internal` prints an address when the name works — then bring the stack up
+     with `docker compose up -d` beside this repo's `docker-compose.yml` and reload.
+   - *Docker Desktop detected; the host OS could not be told …* → Docker Desktop, but no
+     Apple implementer: an Intel Mac, or Windows. Apple's model needs an Apple Silicon Mac.
+   - *Runtime not recognised from inside the container.* → OrbStack, Colima, Podman, Docker
+     Engine on Linux, a cloud runtime such as ECS on Fargate, or the backend run outside a
+     container at all. None of them is the one runtime this cut implements.
+2. **Use the OpenAI-compatible card instead.** It reaches anything that speaks the OpenAI
+   chat wire: Ollama, LM Studio, vLLM, a gateway, OpenAI itself. Where the alias does not
+   resolve it starts **empty** rather than on a Mac's Ollama, and the Base URL field says why
+   (*the local default cannot work here*). Type an address this container can reach — not
+   `localhost`, which inside a container is the container — press **Send** once to prove it
+   answers, then **Save**. Anthropic's card needs no local endpoint at all.
+3. **The Prompt bar names a card the page does not show.** *Changes Prompt bar: shown (uses
+   Apple Foundation Models via Docker Desktop)* where that card is withheld means this server
+   still holds settings saved for it — from a Mac, or from a database restored here. The bar
+   will dial it and fail. There is no card to press **Remove** on, so take it off through the
+   API, which judges nothing about where it runs (`$BASE`, `jar` and `$CSRF` from §0):
+
+   ```bash
+   curl -s -b jar -X DELETE -H "X-CSRF-Token: $CSRF" $BASE/api/system/ai/configs/apple_fm
+   ```
+
+   Then save the OpenAI-compatible or the Anthropic card and reload the Changes page.
+4. **You are on that Mac and the panel disagrees.** The detection reads `/proc/version` and
+   `/proc/cpuinfo` from inside the container; `curl -s -b jar $BASE/api/system/ai/host`
+   answers with the verdict and the evidence it was read from. `runtime` is `docker_desktop`
+   only when the kernel carries `linuxkit`, and `hostOs` is `macos` only when the CPU
+   implementer is Apple's `0x61`. Neither of those on an Apple Silicon Mac under Docker
+   Desktop is reportable state **R**.
+
+**R.** *Where this container runs* reads a runtime or host OS the machine is not, under
+Docker Desktop on an Apple Silicon Mac; or the alias reads *does not resolve* while `docker
+compose exec -T app getent hosts host.docker.internal` answers with an address. Report the
+*Evidence* line, the body of `GET /api/system/ai/host`, `docker compose exec -T app cat
+/proc/version`, your Docker Desktop version, and the build from Settings › Support.

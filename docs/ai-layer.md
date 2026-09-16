@@ -362,10 +362,25 @@ runtime and `apple_silicon` hold, else `unknown`; `alias_resolves` from `getaddr
 the verdict **with the evidence strings**, exposed at `GET /api/system/ai/host`. The Settings ›
 AI page pre-selects the "via Docker Desktop" card when `runtime == docker_desktop and host_os
 == macos` and shows the evidence under it ("kernel 6.12.76-linuxkit, Apple Silicon"); every
-other outcome says what was seen and leaves the choice to the admin. It is a hint, never a
-gate: the card stays clickable whatever was detected. Tests: table-driven over fixture strings
+other outcome says what was seen and leaves the choice to the admin. Tests: table-driven over fixture strings
 (linuxkit + 0x61 → macOS Docker Desktop; WSL2; orbstack; Ubuntu kernel + 0x41 → unknown), plus
 the alias probe against a stub resolver.
+
+**Amended 2026-09-12 (#404): a hint for the selection, a gate for one card.** "It is a hint, never a
+gate: the card stays clickable whatever was detected" stood until the AWS pod offered the "via Docker
+Desktop" card with no Mac anywhere near it, and filled the OpenAI-compatible card with the Mac host's
+Ollama pair — a `host.docker.internal` base URL directly under the page's own evidence line saying that
+name does not resolve. Kyle ruled it: the Apple card *"should not show in AWS"*. It is now **offered**
+only where `runtime == docker_desktop and host_os == macos` **and** `alias_resolves`; the full match
+alone never proved its default could work, because `fm serve` runs on the Mac and the alias is how the
+container gets to it. Where the alias is dead no card fills a `host.docker.internal` default at all — the
+OpenAI-compatible card starts empty, with a line saying why — and wherever the Apple card is withheld the
+detection panel says so in one sentence, so a Mac operator whose detection missed can tell a withheld card
+from a missing feature ([`diagnosability.md`](diagnosability.md) rule 1,
+[`troubleshooting.md`](troubleshooting.md) §14). Both decisions are pure functions in
+`frontend/src/features/ai/offered.ts`, table-tested over the six readings this endpoint returns. Nothing
+moved in the backend: a call naming `apple_fm` is judged, gated and logged like any other, and the card's
+condition widens when the reserved `remote_mac` reach lands.
 
 **Build (one agent turn, one PR).**
 
