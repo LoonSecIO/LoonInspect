@@ -1205,7 +1205,11 @@ async def test_held_events_name_the_destination_that_is_not_there(db) -> None:
     # worse than no sentence at all.
     db.add(_destination("siem"))
     await db.commit()
-    assert (await _depth(db))["held"] == {**held, "reason": None}
+    again = (await _depth(db))["held"]
+    # Field by field rather than dict against dict: the age is measured off a second
+    # clock read, so a whole-dict compare fails whenever the two straddle a second.
+    assert again["events"] == held["events"] and again["reason"] is None
+    assert again["oldestAgeSeconds"] >= held["oldestAgeSeconds"]
 
 
 async def test_pending_and_dead_lettered_deliveries_report_their_own_deadlines(db) -> None:

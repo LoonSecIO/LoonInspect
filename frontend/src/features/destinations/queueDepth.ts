@@ -15,9 +15,12 @@ export function heldExpiresAt(depth: OutboxDepth, now: Date): Date | null {
 }
 
 /** Whole days until the oldest dead letter stops being redrivable, null when there are none.
- *  Rounded up, floored at 0: a deadline inside today is today, never a negative. */
+ *  Rounded **down**, floored at 0: under a day left reads as today, and so does a deadline the
+ *  daily purge has not caught up with — never a negative, and never more time than there is.
+ *  Rounding up would print "in 1 day" over a window closing in two hours, and would leave
+ *  "today" a word that only ever arrives once the redrive is already impossible. */
 export function deadLetterDaysLeft(depth: OutboxDepth, now: Date): number | null {
   const { deliveries, oldestExpiresAt } = depth.deadLettered;
   if (deliveries < 1 || oldestExpiresAt === null) return null;
-  return Math.max(Math.ceil((new Date(oldestExpiresAt).getTime() - now.getTime()) / DAY_MS), 0);
+  return Math.max(Math.floor((new Date(oldestExpiresAt).getTime() - now.getTime()) / DAY_MS), 0);
 }
