@@ -23,6 +23,7 @@ import {
 import { localDefaultWithheld, offeredProviders, providerDefaults, type DetectionReading } from "@/features/ai/offered";
 import {
   byProvider,
+  cardAfterOffer,
   cardEffort,
   effortToSend,
   openingCard,
@@ -100,11 +101,13 @@ export function AISettingsPage() {
   // re-read would otherwise put back what the server held before the Remove.
   const savedReads = useRef(0);
   const statusReads = useRef(0);
-  // The newest saved map and the card the page is on, for code that runs after an await:
-  // the opening selection reads these rather than what its own, possibly older, read said.
-  // `keepSaved` and `fillCard` are the only writers, so each stays level with its state.
+  // The newest saved map, the card the page is on and the newest reading, for code that runs
+  // after an await: the opening selection and `followOffer` read these rather than what their
+  // own, possibly older, read said. `keepSaved`, `fillCard` and the opening effect are the
+  // only writers, so each stays level with its state.
   const savedLatest = useRef<SavedByProvider>({});
   const providerLatest = useRef<Provider>("apple_fm");
+  const detectionLatest = useRef<DetectionReading>(null);
   // Remove is the one control that works before the page's reads settle (it needs only the
   // saved cards); once pressed, the opening selection leaves the card and its lines alone.
   const removeAsked = useRef(false);
@@ -164,6 +167,7 @@ export function AISettingsPage() {
         if (cancelled) return;
         setConsent(sharing.aiInference);
         setProviders(loadedProviders);
+        detectionLatest.current = loadedDetection;
         setDetection(loadedDetection);
         // A saved card opens first — the first one is what the Prompt bar uses — as long
         // as this reading offers it. With none saved (or none readable), the hint: the
@@ -210,6 +214,17 @@ export function AISettingsPage() {
     return true;
   }
 
+  // The card the page is on has to be one the row still shows. Since #474 the row follows the
+  // saved cards too, so the saved map moving can take the page's own card off it — a Remove
+  // of a card offered only because it was saved here removes exactly the card being shown.
+  // Called wherever that map moves. The card it moves to is filled, never `selectCard`ed: the
+  // line that is up belongs to the Remove or the Save that just landed, and stays.
+  function followOffer() {
+    const seen = detectionLatest.current;
+    const next = cardAfterOffer(providerLatest.current, offeredProviders(seen, savedLatest.current), savedLatest.current);
+    if (next !== null && providers) fillCard(providers, seen, next);
+  }
+
   // Picking a card starts it clean: the last card's reply and its lines go with it.
   function selectCard(loaded: ProvidersResponse, seen: DetectionReading, next: Provider) {
     if (!fillCard(loaded, seen, next)) return;
@@ -223,8 +238,11 @@ export function AISettingsPage() {
 
   // After a save or a consent change: what is saved, and whether the Prompt bar now
   // shows. Each read reports its own failure. (A removal re-reads in `handleRemove`.)
+  // That read can also be where this page first learns another admin removed a card — this
+  // one's, if it was on the row only because that card was saved — so the page follows it.
   async function reloadSaved() {
     await Promise.all([readSaved(), readPromptStatus()]);
+    followOffer();
   }
 
   async function handleSave() {
@@ -272,9 +290,15 @@ export function AISettingsPage() {
       // now, and a status line naming it with them, whatever the re-reads do.
       keepSaved(savedAfterAnswer(savedLatest.current, target, answer));
       setStatusReading((current) => statusAfterAnswer(current, target, answer));
+      // And the card itself, where this server holding settings for it was the only reason
+      // it was on the row (#474). The page cannot stay on a card that has left it.
+      followOffer();
       // Whatever the removal did, the page shows what the server now holds rather than
       // what it held before. Each read reports its own failure in its own line.
       const [reread] = await Promise.all([readSaved(), readPromptStatus()]);
+      // The re-read is the last word on what is saved, so it is the last word on the row:
+      // a Remove whose answer failed but whose card the re-read no longer finds lands here.
+      followOffer();
       const line = removeLine(target, answer, reread, t.ai);
       setConfigNotice(line.notice);
       setConfigError(line.error);
@@ -372,12 +396,16 @@ export function AISettingsPage() {
   const suggestions = loaded && !loaded.error ? loaded.models.map((m) => m.id) : (entry?.models ?? []);
   const modelNotListed = loaded !== null && !loaded.error && model.trim() !== "" && !suggestions.includes(model.trim());
   // Saving needs the flag but not the consent: nothing leaves the pod on a save. The
-  // server judges the URL and the key rule exactly as Send does.
+  // server judges the URL and the key rule exactly as Send does. What it saves is the card
+  // the page is on, and `followOffer` keeps that one of the cards the row shows — so a Save
+  // pressed after a Remove cannot quietly write back the settings the Remove took off.
   const stored = saved[provider];
   const canSave = canWrite && flagOn && !savingConfig && baseUrl.trim() !== "" && model.trim() !== "";
   const canRemove = canWrite && !savingConfig && stored !== undefined;
   // A Save's or a Remove's line is about the card it was pressed on, and lands under
-  // whichever card is showing; so the cards hold still until it has landed.
+  // whichever card is showing; so the cards hold still until it has landed — the operator's
+  // hand, at least. A Remove that takes its own card off the row still moves the page
+  // (`followOffer`), because there is nowhere on the row left to stand.
   const cardsLocked = !providers || savingConfig;
   const promptBarLine = statusLine(statusReading, t.ai);
 
@@ -491,8 +519,11 @@ export function AISettingsPage() {
             </label>
           ))}
         </div>
-        {/* Both lines are the Apple card's — how to set it up, which runtimes it does not reach — so they go with it. */}
-        {appleOffered && (
+        {/* Both lines are the Apple card's — how to set it up, which runtimes it does not
+            reach — so they go with it, as #404 ruled, and with the reading that says this is
+            the setup for it. Not with a card here only to be removed: setting it up is the
+            one thing that card is not for, and its own sentence says so. */}
+        {appleDefaultWorks && (
           <p className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
             <ExternalLink href={APPLE_FM_GUIDE_URL}>{t.ai.appleGuide}</ExternalLink>
             <span>{t.ai.otherRuntimes}</span>

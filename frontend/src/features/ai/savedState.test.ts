@@ -3,10 +3,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiBodyError, ApiError } from "@/config/api";
 import { listConfigs, type Provider, type SavedConfig } from "@/features/ai/api";
+import { offeredProviders, type DetectionReading } from "@/features/ai/offered";
 import {
   PROVIDER_ORDER,
   REMOVED,
   byProvider,
+  cardAfterOffer,
   cardEffort,
   effortToSend,
   isSavedConfigList,
@@ -45,6 +47,9 @@ function config(provider: Provider, overrides: Partial<SavedConfig> = {}): Saved
 
 const BOTH: SavedByProvider = byProvider([config("apple_fm"), config("anthropic")]);
 const ANTHROPIC_ONLY: SavedByProvider = byProvider([config("anthropic")]);
+/** The card row without the Apple card — what a reading that withholds it leaves, once
+ *  nothing saved keeps it on (`offeredProviders`, whose own table is in offered.test.ts). */
+const WITHOUT_APPLE: readonly Provider[] = ["openai_compatible", "anthropic"];
 const FAILED: RemoveAnswer = { kind: "failed", sentence: ta.configRemoveFailed };
 
 /**
@@ -267,9 +272,8 @@ describe("savedConfigsOf — the configs read's body, checked before anything is
 
 describe("openingCard — the newest read of the saved cards wins the opening selection too", () => {
   const untouched = { newerRead: false, removeAsked: false, current: "apple_fm" as const };
-  // The two card lists `offeredProviders` returns; its own table is in offered.test.ts.
+  // The other card list `offeredProviders` returns; its own table is in offered.test.ts.
   const ALL = PROVIDER_ORDER;
-  const WITHOUT_APPLE: readonly Provider[] = ["openai_compatible", "anthropic"];
 
   it("the opening read still the newest: the first saved card, clean lines", () => {
     expect(openingCard({ ...untouched, latest: BOTH, offered: ALL })).toEqual({ card: "apple_fm", clearLines: true });
@@ -287,10 +291,22 @@ describe("openingCard — the newest read of the saved cards wins the opening se
   it("a saved card that is not offered here is not opened on (#404)", () => {
     // Opening on a card that is not on screen would light no card and leave no Remove to
     // press. Since #474 a saved card is on screen wherever this runs, so `offered` and
-    // `latest` disagreeing this way is the caller's contract, not a page it can reach.
+    // `latest` disagreeing this way is the caller's contract rather than a page it can
+    // reach — the same contract `cardAfterOffer` holds below, on a page that does reach it.
     expect(openingCard({ ...untouched, latest: BOTH, offered: WITHOUT_APPLE })).toEqual({ card: "anthropic", clearLines: true });
     const appleOnly = byProvider([config("apple_fm")]);
     expect(openingCard({ ...untouched, latest: appleOnly, offered: WITHOUT_APPLE }).card).toBe("openai_compatible");
+  });
+
+  it("a Remove that took its own card off the row moves the page, and still keeps the line (#474)", () => {
+    // The pod with an `apple_fm` row restored onto it: the card is on the row because it is
+    // saved, so removing it takes it off. Staying would light no card, leave an editor for a
+    // card the panel has just said is not offered here, and point Save at it.
+    const afterRemove = removeFlow(BOTH, "apple_fm", REMOVED, ANTHROPIC_ONLY).final;
+    expect(openingCard({ ...untouched, removeAsked: true, latest: afterRemove, offered: WITHOUT_APPLE })).toEqual({
+      card: "anthropic",
+      clearLines: false
+    });
   });
 
   it("a Remove made while the slowest read was out: the page stays on its card and keeps the Remove's line", () => {
@@ -330,6 +346,56 @@ describe("openingCard — the newest read of the saved cards wins the opening se
 
   it("the cards in the order the page shows them", () => {
     expect(PROVIDER_ORDER).toEqual(["apple_fm", "openai_compatible", "anthropic"]);
+  });
+});
+
+/**
+ * #474. What is on the row now follows the saved cards, so it moves under the page: the card
+ * the operator presses **Remove** on can be the card that leaves. This is the page's own
+ * sequence in `handleRemove`, with the two modules composed the way the page composes them —
+ * which is where the strand was, each module being right on its own.
+ */
+describe("cardAfterOffer — the page never sits on a card the row does not show", () => {
+  // The pod's reading and this Mac's, as `GET /api/system/ai/host` returns them.
+  const POD: DetectionReading = { alias: "host.docker.internal", aliasResolves: false, dockerDesktopOnMacos: false };
+  const MAC: DetectionReading = { alias: "host.docker.internal", aliasResolves: true, dockerDesktopOnMacos: true };
+  const APPLE_ONLY: SavedByProvider = byProvider([config("apple_fm")]);
+
+  it("nothing moves under an operator who did not ask it to", () => {
+    expect(cardAfterOffer("apple_fm", PROVIDER_ORDER, BOTH)).toBeNull();
+    expect(cardAfterOffer("anthropic", WITHOUT_APPLE, ANTHROPIC_ONLY)).toBeNull();
+    expect(cardAfterOffer("openai_compatible", WITHOUT_APPLE, {})).toBeNull();
+  });
+
+  it("the pod's Remove of a saved-only Apple card takes the card off the row, so the page moves", () => {
+    // The page opens on the saved Apple card — the one the Prompt bar dials — and the Remove
+    // that reaches it is the reason it is on the row at all. Staying lit no card, left the
+    // Apple card's Base URL and model in the editor under the panel's "not offered here"
+    // sentence, and left Save pointed at the row that had just been removed.
+    expect(offeredProviders(POD, APPLE_ONLY)).toEqual(PROVIDER_ORDER);
+    const answered = savedAfterAnswer(APPLE_ONLY, "apple_fm", REMOVED);
+    const row = offeredProviders(POD, answered);
+    expect(row).toEqual(WITHOUT_APPLE);
+    expect(cardAfterOffer("apple_fm", row, answered)).toBe("openai_compatible");
+  });
+
+  it("it moves to a card this server holds settings for — the one the Prompt bar takes next", () => {
+    const answered = savedAfterAnswer(BOTH, "apple_fm", REMOVED);
+    expect(cardAfterOffer("apple_fm", offeredProviders(POD, answered), answered)).toBe("anthropic");
+  });
+
+  it("on the Mac the reading offers the card on its own, so the same Remove moves nothing", () => {
+    const answered = savedAfterAnswer(BOTH, "apple_fm", REMOVED);
+    expect(offeredProviders(MAC, answered)).toEqual(PROVIDER_ORDER);
+    expect(cardAfterOffer("apple_fm", offeredProviders(MAC, answered), answered)).toBeNull();
+  });
+
+  it("a Remove answered before the host read lands: the row is what the page has been told so far", () => {
+    // Remove is the one control that works before the other reads settle. With no reading
+    // yet, the saved map is the whole row — so removing the Apple card moves the page then
+    // too, rather than leave it where the opening selection would have to find it.
+    const answered = savedAfterAnswer(APPLE_ONLY, "apple_fm", REMOVED);
+    expect(cardAfterOffer("apple_fm", offeredProviders(null, answered), answered)).toBe("openai_compatible");
   });
 });
 

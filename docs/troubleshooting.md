@@ -1012,7 +1012,8 @@ that card shows it, saying on the card itself that that is why, so **Remove** st
 (step 3). The **OpenAI-compatible** and **Anthropic** cards are offered everywhere.
 
 1. **Read *Where this container runs*, and the *Evidence* line under it** — the kernel, the
-   CPU implementer, and the alias:
+   CPU implementer, and the alias. They decide whether the card is offered on the reading
+   alone; a card this server holds settings for is on the page whatever they say (step 3):
    - *host.docker.internal resolves*, and the verdict names macOS → the card is offered.
      Reload the page if it is still not there.
    - *host.docker.internal does not resolve*, and the verdict names macOS → the Mac is right
@@ -1036,8 +1037,11 @@ that card shows it, saying on the card itself that that is why, so **Remove** st
    bar: shown (uses Apple Foundation Models via Docker Desktop)* under an evidence line saying
    the alias does not resolve means this server holds settings saved for that card — from a
    Mac, or from a database restored here — and the bar will dial it and fail. That is why the
-   card is on this page at all, and the card says so. Select it, press **Remove**, then save
-   the OpenAI-compatible or the Anthropic card and reload the Changes page.
+   card is on this page at all, and the card says so. Select it, press **Remove**: the card
+   leaves the page with the settings, and the page moves to one still on it. Save the
+   OpenAI-compatible or the Anthropic card there, then reload the Changes page. If Settings ›
+   AI will not load at all, turning **ai_features** off (§13) takes the Prompt bar down with
+   it, so nothing dials the saved card until the page is back.
 4. **You are on that Mac and the panel disagrees.** The detection reads `/proc/version` and
    `/proc/cpuinfo` from inside the container; `curl -s -b jar $BASE/api/system/ai/host`
    answers with the verdict and the evidence it was read from. `runtime` is `docker_desktop`

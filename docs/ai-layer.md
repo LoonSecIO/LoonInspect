@@ -394,8 +394,13 @@ map beside the reading and keeps the Apple card wherever `apple_fm` is saved. Of
 claims nothing about whether it can work here: the card carries one sentence saying it is on screen
 because this server holds settings for it, that `fm serve` runs on a Mac this container cannot reach, and
 that Remove takes those settings off — and the detection panel's "the one for this setup" line follows
-the reading alone, so the two are never both on screen. `providerDefaults` and the withheld-card sentence
-are untouched: a saved card comes back as saved, never as defaults, and the panel keeps the unsaved case.
+the reading alone, so the two are never both on screen — and so do the Apple setup link and the
+unsupported-runtime line, which are for setting the card up rather than for taking it off. The cost of the
+widening is that the row of cards now moves under the page: the **Remove** that clears a saved-only card
+takes that card off the row on the same answer, so the page moves to a card still on it
+(`cardAfterOffer`) instead of sitting on one no radio can light, over that card's editor, with **Save**
+pointed at the row just removed. `providerDefaults` and the withheld-card sentence are untouched: a saved
+card comes back as saved, never as defaults, and the panel keeps the unsaved case.
 
 **Build (one agent turn, one PR).**
 
