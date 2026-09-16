@@ -1082,3 +1082,43 @@ record at all, and the sweep writes one line per deleted object instead ([`chang
 
 **S.** A collapse line for an object that still exists in Jamf. Report the line, the
 `jobID`, and the build from Settings › Support.
+
+## 15. "A Mac I deleted in Jamf is still listed, or a Mac vanished from the list"
+
+LoonInspect never asks Jamf what was deleted; it notices what a sweep stopped returning. Only a
+**clean census** may judge — a device sweep that succeeded, carried no RSQL selector and lost no
+device to a failure — and a Mac it does not name enters a **seven-day tail**: still listed, still
+counted, marked *Not returned by Jamf since …*. Seven days later it **leaves the fleet** — out of
+**Devices**, out of the device count on the Overview — and nothing is deleted: its row, its
+observations and its whole change history stay, and `GET /api/devices?includeDeparted=true` reads
+it back. A sweep that names it again at any point puts it straight back.
+
+1. **The Mac is still listed and you deleted it in Jamf.** Open the newest device-sweep run
+   (**Runs**, or `GET /api/runs/{jobId}/log`) and read its last lines.
+   - *device census: N observed, …* → the census ran. `departed 0` with this Mac among the
+     `N observed` means Jamf still returned it: it was not deleted, or it lives in a
+     different Jamf Pro instance than this connection points at. Check it in Jamf Pro.
+   - *device census not taken; this sweep was not a clean one*, `reason=selector` → that
+     collection carries an RSQL selector and proves nothing about Macs outside it. **Settings ›
+     Connections › Collections**: the sweep with an empty **Selector** takes the census. Run it.
+   - the same line with `reason=device_failures` → devices failed on this sweep (see
+     `devicesFailed`, and a *device failed; sweep continues* line each). A device Jamf returned
+     but whose ingest failed has a stale presence mark, so the night judges nobody. Fix what
+     those lines name — path 1 or 2 — and the next clean sweep catches up.
+   - *census collapsed against the population* / *census returned nothing* → the sweep came
+     back with less than half the fleet, or none of it, and departing on that is refused by
+     design. Usually a lost privilege or a short page: path 1.
+   - no census line at all on a finished sweep → reportable state **P**.
+2. **A Mac vanished and nobody deleted it.** It left the fleet, which takes seven days of clean
+   censuses that never named it. `GET /api/devices?includeDeparted=true` lists it again with
+   `departedAt` — the day of the last census that named it — and its page, observations and
+   changes are all still there by id. If Jamf Pro still holds the Mac, ask Jamf for it with path
+   2's `curl` against `/api/v4/computers-inventory`; if Jamf returns it, reportable state **P**.
+3. **You want it gone for good.** Nothing removes a Mac's history today — not this, not
+   deleting the connection. Honouring a Jamf deletion as an erasure is a stated, deliberate
+   deferral (v5); [`jamf-observations.md`](jamf-observations.md) §8 says what is held.
+
+**P.** A finished, unselected, failure-free device sweep whose log has no *device census* line;
+or a Mac Jamf returns on the sweep's own endpoint that still departs or stays departed. Report
+the run's `jobID` and its log, the census line if there is one, the Mac's Jamf id, the
+collection's **Selector** field, and `docker compose logs app --since 30m`.

@@ -143,19 +143,15 @@ async def list_devices(
     include_departed: bool = Query(
         default=False,
         alias="includeDeparted",
-        description=(
-            "Include Macs that have left the fleet — absent from every clean census for seven days or more. "
-            "Off by default: the list is the current fleet. Their rows, spans and change history are never deleted, "
-            "so this is how you read one back."
-        ),
+        description="Also list Macs that left the fleet — absent from every clean census for seven days.",
     ),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200, alias="pageSize"),
 ) -> DeviceListResponse:
     stmt = select(Device)
     if not include_departed:
-        # The default answer is the current fleet (#183). Pushed into the WHERE clause,
-        # not filtered after paging, so `total` and page 2 are about the same population.
+        # The default answer is the current fleet (#183), pushed into the WHERE clause rather
+        # than filtered after paging, so `total` and page 2 are about the same population.
         stmt = stmt.where(~gone_for_good(Device.mdm_connection_id, Device.external_id, at=datetime.now(UTC)))
 
     if q:

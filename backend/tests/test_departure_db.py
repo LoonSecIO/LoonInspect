@@ -184,8 +184,8 @@ async def test_the_cost_page_says_which_group_is_gone(db, jamf: FakeJamf, connec
 
 
 async def test_a_deleted_mac_departs_on_a_clean_census_and_a_return_closes_the_row(db, jamf: FakeJamf, connection) -> None:
-    """The sweep is the heartbeat: the census is taken at the close of a sweep that
-    succeeded, carried no selector and lost no device, and a Mac it did not name is gone."""
+    """The sweep is the heartbeat: a census closes a sweep that succeeded, carried no
+    selector and lost no device, and a Mac it did not name is gone."""
     from app.mdm.service import sync_connection
 
     jamf.seed(1)
@@ -208,8 +208,8 @@ async def test_a_deleted_mac_departs_on_a_clean_census_and_a_return_closes_the_r
 
 async def test_a_scoped_sweep_and_one_device_failure_depart_nobody(db, jamf: FakeJamf, connection, monkeypatch) -> None:
     """Rider 1: only a clean census judges. A scoped sweep never asked about the Macs its
-    selector excluded, and a device that failed ingest has a stale `last_seen_at` through
-    no fault of Jamf's — so a dirty night judges nobody and the next clean one catches up."""
+    selector excluded, and a failed ingest leaves a stale `last_seen_at` through no fault
+    of Jamf's."""
     from app.mdm import service
 
     jamf.seed(1)
@@ -241,20 +241,13 @@ async def test_a_stale_read_stamps_presence_and_keeps_the_mac_in_the_census(db, 
 
     assert (await sync_connection(db, connection)).ok
     external_id = jamf.real["id"]
-    where = (Device.mdm_connection_id == connection.id, Device.external_id == external_id)
-    device = (await db.execute(select(Device).where(*where))).scalar_one()
-    span = (
-        await db.execute(
-            select(ObservationSpan).where(
-                ObservationSpan.mdm_connection_id == connection.id,
-                ObservationSpan.subject_kind == COMPUTER,
-                ObservationSpan.subject_id == external_id,
-                ObservationSpan.is_current.is_(True),
-            )
-        )
+    mine = (ObservationSpan.mdm_connection_id == connection.id, ObservationSpan.subject_id == external_id)
+    device = (
+        await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == external_id))
     ).scalar_one()
-    # The ledger has already seen something newer than the next read will carry, so the
-    # next read is refused before `process_sync` ever runs.
+    span = (await db.execute(select(ObservationSpan).where(*mine, ObservationSpan.is_current.is_(True)))).scalar_one()
+    # The ledger has already seen something newer than the next read carries, so that read
+    # is refused before `process_sync` ever runs.
     span.last_observed_at = datetime.now(UTC) + timedelta(days=1)
     device.last_seen_at = datetime(2020, 1, 1, tzinfo=UTC)
     await db.commit()
@@ -267,8 +260,7 @@ async def test_a_stale_read_stamps_presence_and_keeps_the_mac_in_the_census(db, 
 
 
 async def test_the_breaker_refuses_a_collapsed_device_census(db, jamf: FakeJamf, connection) -> None:
-    """The breaker is the module's, and it covers Macs too: a sweep that paged short must
-    not be able to depart a fleet."""
+    """The module's breaker, over Macs: a sweep that paged short cannot depart a fleet."""
     from app.mdm.service import sync_connection
     from app.observations.departure import COLLAPSE_RATIO, MIN_POPULATION_FOR_COLLAPSE
 

@@ -51,9 +51,8 @@ SKIP_EMPTY = "empty_census"
 SKIP_COLLAPSED = "collapsed_census"
 
 # The seven-day tail (#183, from the same ruling): a Mac is its own category. An open
-# departure row IS the tail — there is no column and no timer, because a row's age is the
-# whole state and a derived answer cannot drift from the row it is derived from. Seven
-# days after `departed_at` the Mac has left the fleet.
+# departure row IS the tail — no column, no timer, because a row's age is the whole state
+# and a derived answer cannot drift from what it is derived from.
 DEPARTURE_TAIL_DAYS = 7
 DEPARTURE_TAIL = timedelta(days=DEPARTURE_TAIL_DAYS)
 
@@ -62,11 +61,10 @@ def left_the_fleet(departed_at: Any, *, at: datetime) -> Any:
     """Has this departure's tail run out by `at`?
 
     The ONE place the seven days are counted, because "departed_at plus a week" spelled in
-    two languages is two definitions waiting to disagree about one Mac. Handed a
-    `datetime` it answers a bool — the run log's tally, one device's page; handed
-    `SubjectDeparture.departed_at` it answers the same question as a SQL predicate — the
-    device list, the fleet count. `returned_at IS NULL` is the caller's half: a returned
-    row is not a departure at all, and every caller below already filters on it.
+    two languages is two definitions waiting to disagree about one Mac. Handed a `datetime`
+    it answers a bool — the run log's tally; handed `SubjectDeparture.departed_at`, the same
+    question as a SQL predicate — the device list, the fleet count. `returned_at IS NULL` is
+    the caller's half, and every caller below filters on it.
     """
     return departed_at <= at - DEPARTURE_TAIL
 
@@ -74,10 +72,9 @@ def left_the_fleet(departed_at: Any, *, at: datetime) -> Any:
 def gone_for_good(connection_id: Any, external_id: Any, *, at: datetime) -> ColumnElement[bool]:
     """EXISTS: this Mac's tail has run out, so it is no longer part of the fleet.
 
-    Correlated rather than an `IN` over a tuple subquery, because a device whose
-    `mdm_connection_id` is NULL — a connection deleted out from under it (#185) — makes
-    `NOT IN` answer NULL and would vanish the row from every list. An orphan has not
-    departed; it has nobody to be absent from.
+    Correlated rather than `IN` over a tuple subquery: a device whose `mdm_connection_id` is
+    NULL — its connection deleted out from under it (#185) — makes `NOT IN` answer NULL and
+    would vanish the row from every list. An orphan has nobody to be absent from.
     """
     return (
         select(SubjectDeparture.id)
@@ -221,12 +218,9 @@ async def open_departures(db: AsyncSession, *, subject_kind: str) -> dict[tuple[
 
 
 async def tail_counts(db: AsyncSession, *, connection_id: int, subject_kind: str, at: datetime) -> tuple[int, int]:
-    """`(still in their tail, left the fleet)` among this connection's open departures.
-
-    The two halves of the census line on the run, counted off the same rows and through
-    the same `left_the_fleet` the surfaces ask, so what an operator reads on the run and
-    what the device list shows them cannot disagree.
-    """
+    """`(still in their tail, left the fleet)` among this connection's open departures — the
+    two halves of the census line on the run, counted off the same rows and through the same
+    `left_the_fleet` the surfaces ask, so the run and the list cannot disagree."""
     gone = func.count().filter(left_the_fleet(SubjectDeparture.departed_at, at=at))
     open_rows, left = (
         await db.execute(
