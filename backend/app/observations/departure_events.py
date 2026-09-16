@@ -205,12 +205,18 @@ async def _device_count(db: AsyncSession, connection_id: int, kind: str, subject
 
 
 async def _group_device_count(db: AsyncSession, connection_id: int, subject_id: str) -> int:
-    """Two GIN hops through the ledger, the only place membership is held: the sections holding
-    an entry that names this group (`ix_observation_sections_entry_digests`), then the current
-    computer spans whose section map contains one of those digests
-    (`ix_observation_spans_section_digests`, `jsonb_path_ops`). Content addressing is what makes
-    it cheap — one section digest covers every Mac with the same membership set, so the OR is
-    bounded by distinct membership sets carrying this group, not by the fleet."""
+    """Three reads through the ledger, the only place membership is held, and only the last two
+    are GIN-served — said plainly because the cheapness claim is load-bearing: (1) the
+    group-membership ENTRIES naming this group, which narrows on the b-tree over
+    `observation_entries.kind` and then filters `body->>'groupId'` with **no index on that
+    expression**, so it scans the tenant's membership entries; (2) the sections holding one of
+    those digests (`ix_observation_sections_entry_digests`); (3) the current computer spans whose
+    section map contains one of those section digests (`ix_observation_spans_section_digests`,
+    `jsonb_path_ops`). Content addressing is what keeps the last two cheap — one section digest
+    covers every Mac with the same membership set, so the OR is bounded by distinct membership
+    sets carrying this group, not by the fleet — and hop (1) is bounded by distinct memberships
+    too, not by devices. It has never been measured against a fleet-sized ledger; it runs once
+    per departed group, which is what makes that acceptable rather than a per-device read."""
     found = await db.execute(
         select(ObservationEntry.digest).where(
             ObservationEntry.kind == _MEMBERSHIP_ENTRY, ObservationEntry.body["groupId"].astext == subject_id

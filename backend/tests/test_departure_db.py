@@ -290,8 +290,6 @@ async def test_the_breaker_refuses_a_collapsed_device_census(db, jamf: FakeJamf,
 
 
 async def _events(db, high_water: int, event_type: str) -> list:
-    from sqlalchemy import func  # noqa: F401
-
     from app.models.schema import EventOutbox
 
     rows = await db.execute(
@@ -361,8 +359,11 @@ async def test_a_departed_group_emits_the_ruled_body_and_a_return_closes_it_on_d
     assert body["state"] == "departed" and body["noticeDay"] == 1
     assert body["departedAt"] == body["occurredAt"]
     # LoonInspect's own count, read out of the ledger — Jamf cannot be asked for a group it
-    # no longer has, and this fixture's Mac carries it.
-    assert body["deviceCount"] >= 1
+    # no longer has. Exactly ONE of this fixture's two Macs carries group `1`: the real record
+    # is in `All Managed Clients` and the synthetic one is in `3`/`17`/`40`. `>= 1` would pass
+    # just as well for a read that counted the fleet and ignored the membership, which is the
+    # bug worth catching — a SIEM reading `deviceCount` reads it as "Macs that carried this".
+    assert body["deviceCount"] == 1, "the two ledger hops, not a count of every current Mac"
     # The object half of `deviceMeta`: the run half, the object's own id, the schema — and no
     # eventID, no hostName, no serialNumber, because a group is not a Mac and was not pulled.
     assert set(body["deviceMeta"]) == {"jobID", "trigger", "connectionID", "shortDate", "jamfProID", "schemaVersion"}
@@ -384,6 +385,13 @@ async def test_a_departed_group_emits_the_ruled_body_and_a_return_closes_it_on_d
     # because an object's return coincides with a census, not with a pull of that object.
     assert "priorJamfProID" not in back.payload and "eventID" not in back.payload["deviceMeta"]
     assert _build_body(SimpleNamespace(type="splunk_hec"), back.payload)["sourcetype"] == DEPARTURE_SOURCETYPE
+    # The casing law, on the one type the cross-family suite cannot reach: a return needs a
+    # THIRD census (depart, then come back), and `test_wire_casing`'s fixture runs two sweeps.
+    # So the predicate is borrowed rather than reimplemented — one spelling of the law, and a
+    # `subject_kind` or `absentFor_days` here fails against the same regex the other five face.
+    from tests.test_wire_casing import _offences
+
+    assert _offences(back.payload) == []
 
 
 async def test_a_departed_definition_emits_the_same_body_with_its_own_device_count(db, jamf: FakeJamf, connection) -> None:
@@ -401,9 +409,10 @@ async def test_a_departed_definition_emits_the_same_body_with_its_own_device_cou
     assert body["subjectKind"] == DEFINITION and body["deviceMeta"]["jamfProID"] == "12"
     assert body["subjectLabel"] == "Crowdstrike Sensor Version"
     assert body["state"] == "departed" and body["noticeDay"] == 1
-    # The Macs this fixture sweeps report a value for the definition, so the count is real
-    # and is what LoonInspect last held — Jamf cannot be asked for a definition it lost.
-    assert body["deviceCount"] >= 1
+    # One of the two Macs reports a value for definition `12` and the other does not, so the
+    # count is what LoonInspect last held for THIS definition rather than a count of devices:
+    # `>= 1` would not tell those apart, and the COUNT is the only thing 4.4 asks of this kind.
+    assert body["deviceCount"] == 1, "distinct devices carrying this definition, not the fleet"
     assert "eventID" not in body["deviceMeta"] and "hostName" not in body["deviceMeta"]
 
 
@@ -418,4 +427,9 @@ async def test_a_refused_census_emits_nothing_at_all(db, jamf: FakeJamf, connect
     jamf.extension_attribute_definitions = None
     assert (await sync_connection(db, connection)).ok
     assert await _events(db, mark, "subject.departure") == []
+    # Both types, not just the one the breaker withholds. A census that names nobody closes no
+    # return either, so "nothing at all" is the whole claim — note that a COLLAPSED census is
+    # different on purpose: it still closes returns for the subjects it did name, because a
+    # subject the census named is present whatever else the census says (`departure.py` rule 1).
+    assert await _events(db, mark, "subject.returned") == []
     assert await _events(db, mark, "subject.returned") == []
