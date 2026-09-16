@@ -12,15 +12,14 @@ import type { PermissionName } from "@/features/auth/types";
  * gating handed a viewer-role account one sentence where a board should be. The answer is
  * not to leak destinations — it is to tell the story that account *can* read. On a pod
  * with only the built-in roles that account is exactly `Role.viewer`
- * (`backend/app/core/permissions.py`), so "the viewer's page" and "the page of an account
- * without `destination:read`" name the same sessions today; this function is the one
- * place to change if a role composition ever splits them.
+ * (`backend/app/core/permissions.py`); this function is the one place to change if a role
+ * composition ever splits those two readings.
  *
  * **Every tile is planned against the permission its own source demands**, so none is
- * rendered into a 403. That is also why per-connection freshness is not a tile here:
- * `/api/mdm/status` is `connection:read`-gated rather than inventory-read, which no
- * session reaching this board holds. Fleet size comes from the `/api/devices` total
- * instead, and a viewer-readable freshness fact is Kyle's to rule.
+ * rendered into a 403 — which is why per-connection freshness is not a tile here:
+ * `/api/mdm/status` is `connection:read`-gated, which no session reaching this board holds.
+ * Fleet size comes from the `/api/devices` total instead; a viewer-readable freshness fact
+ * is Kyle's to rule, and #115 stays open carrying that question.
  */
 
 /** The tiles the story is built from, in laid-out order: each a claim plus the source

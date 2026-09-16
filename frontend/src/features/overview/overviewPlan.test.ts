@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { planOverview } from "./overviewPlan";
 
-/** The built-in roles, transcribed from `backend/app/core/permissions.py` — this lane
- *  cannot reach the enum, so the copy is part of what is under test: a role whose grants
- *  moved shows up here as a failure rather than as a viewer staring at a gap. */
+/** The built-in roles as `backend/app/core/permissions.py` grants them today, transcribed
+ *  by hand — fixtures, not a drift guard: a role whose grants move fails the backend's own
+ *  `test_the_role_model_holds_its_documented_shape`, and this copy is updated to match. */
 const INVENTORY_READ = ["device:read", "app:read", "vuln:read"];
 const SHARED = ["connection:read", "audit:read", "token:create", "destination:read", "system:read"];
 const VIEWER = INVENTORY_READ;

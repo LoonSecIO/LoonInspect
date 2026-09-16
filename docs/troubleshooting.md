@@ -55,6 +55,8 @@ most-installed apps. Two people on one pod seeing different tiles is the design.
 
 Every tile on that board carries `as of <UTC> (<age>)` and the age climbs while the page
 stays open: an age in hours means the browser stopped getting answers — reload, then §4.
+That stamp dates the browser's read, not the pod's inventory: it says *just now* even on a
+pod whose Jamf sync died last week. Freshness per connection is an administrator's page.
 One tile reading **Could not load** means that source refused while the others answered;
 `GET /api/devices?pageSize=1`, `/api/catalog?pageSize=1` and `/api/applications?pageSize=5`
 say which, and with what status. A board saying your role cannot read devices or

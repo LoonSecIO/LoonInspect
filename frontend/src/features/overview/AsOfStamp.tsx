@@ -9,12 +9,13 @@ const TICK_MS = 60_000;
 /**
  * `as of 2026-09-16 14:32 UTC (2h ago)` — the stamp under a tile, and #117's hard line:
  * every tile ages visibly so a dead refresh can never read as calm. **It carries its own
- * clock, and that is the point**: a page left open on a wall or in a forgotten tab
- * re-renders nothing, so without the interval the age would freeze at the last render and
- * a board whose data stopped arriving hours ago would go on reading as current.
+ * clock, and that is the point**: a page left open on a wall re-renders nothing, so
+ * without the interval the age would freeze at the last render and a board whose data
+ * stopped arriving hours ago would go on reading as current. It dates the *read*, which
+ * is the browser's clock, not the inventory's — a viewer-readable inventory freshness
+ * fact is the open ruling on #115.
  *
- * `null` renders nothing — the body already says there is no answer yet, and a stamp over
- * nothing would date a number that is not there.
+ * `null` renders nothing — a stamp over no answer dates a number that is not there.
  */
 export function AsOfStamp({ asOf }: { asOf: string | null }) {
   const { t } = useLocale();
