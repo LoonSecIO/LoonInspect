@@ -27,7 +27,7 @@ export const de: Translations = {
         "Es wird nichts geteilt, und diese Instanz wird die aus der Community aufgebauten Patch- und Schwachstellen-Feeds nicht erhalten, wenn sie erscheinen.",
       disclosureHeading: "Was geteilt wird",
       disclosureShared:
-        "Täglich pro Tenant geteilt: Content-Hash-Schlüssel installierter Anwendungen mit Installationszahlen, OS-Versions-Tupel (Hardware-Modell-Tupel sind reserviert und werden leer gesendet), die pseudonyme Übermittlungs-ID unten und die Build-Version dieses Containers. Zahlen werden vor dem Versand über Geräte summiert — nie einzelne Gerätezeilen.",
+        "Täglich pro Tenant geteilt: Content-Hash-Schlüssel installierter Anwendungen mit Installationszahlen, Tupel aus OS-Version und Build, Tupel aus Hardware-Modell und Architektur, die pseudonyme Übermittlungs-ID unten und die Build-Version dieses Containers. Zahlen werden vor dem Versand über Geräte summiert — nie einzelne Gerätezeilen.",
       disclosureNever:
         "Nie geteilt: Gerätekennungen, Seriennummern, Hostnamen, Benutzernamen, Dateipfade, Extension Attributes, Verbindungs- oder Tenant-Namen, Konten, Zugangsdaten oder Audit-Historie. LoonSec speichert auf diesem Pfad keine Quell-IP-Adressen.",
       disclosureReveals:

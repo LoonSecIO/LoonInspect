@@ -89,12 +89,15 @@ record — what each device looked like each time it was read, and through what 
 configuration — so history can be diffed without phantom changes when the shape evolves.
 The contract is in [docs/jamf-observations.md](docs/jamf-observations.md).
 
-**Nothing here is deleted.** Devices, installed apps, extension attributes, the
+**No fleet data here is deleted.** Devices, installed apps, extension attributes, the
 observation ledger, and the change log (`device_changes`) have no retention setting and
-no purge job — a Mac removed from Jamf keeps its full history. The only three things this
-project ever prunes are the delivery outbox (7 days), finished runs (30 days), and the
-audit log (30 days, by file rotation). See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for what
-that means at scale.
+no purge job — a Mac removed from Jamf keeps its full history. What this project prunes
+is the machinery around that record, never the record: the delivery outbox (7 days, or 30
+for an event whose delivery dead-lettered), finished runs and the closed alert latches
+that ride the same `run_retention_days` (30 days), the audit log (30 days, by daily file
+rotation), the share log of what left the box for community sharing or AI (90 days,
+pruned on write), and expired or revoked sessions (hourly, a day after they die). See
+[KNOWN_ISSUES.md](KNOWN_ISSUES.md) for what that means at scale.
 
 ---
 
