@@ -256,13 +256,15 @@ async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connec
     by_entry: dict[int, list] = {}
     for row in match_rows:
         by_entry.setdefault(row.app_catalog_id, []).append(row)
-    assert len(match_rows) == 13 and len(by_entry) == 11
+    assert len(match_rows) == 14 and len(by_entry) == 12
     assert all(row.releases_missed is not None for row in match_rows)
     wireshark = {row.title_id: row for row in by_entry[entries[apps["Wireshark.app"].version_hash].id]}
     assert set(wireshark) == {"5F6", "612"} and all(
         row.basis == "requirements" and row.state == "behind" for row in wireshark.values()
     )
-    assert entries[apps["PyCharm.app"].version_hash].id not in by_entry  # attribute-only title: not considered
+    # The attribute-only title, admitted on its bundle ID by #386 and recorded `ea_assumed`.
+    (pycharm,) = by_entry[entries[apps["PyCharm.app"].version_hash].id]
+    assert pycharm.title_id == "0EE" and pycharm.basis == "ea_assumed"
 
     # What the Jamf Patch page reads, through the catalog row (tenant-scoped by RLS):
     # (devices, on latest, genuinely behind).
@@ -299,7 +301,7 @@ async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connec
             .where(AppCatalogTitleMatch.app_catalog_id.in_([e.id for e in entries.values()]))
         )
     ).scalar_one()
-    assert again == 13
+    assert again == 14
 
     # Once the row is older than the granularity, the next device process moves last_seen.
     from datetime import timedelta

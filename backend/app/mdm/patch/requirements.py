@@ -62,7 +62,19 @@ APP_TESTS = frozenset({BUNDLE_ID, APPLICATION_TITLE, APPLICATION_VERSION})
 # at least one recon test on the bundle ID or the application title — a version alone, an
 # OS version ("Apple macOS …") or an extension attribute alone (the `jamf-patch-*` titles)
 # cannot say which installed app the title is about.
+# #386 amended what FOLLOWS from that, not the rule itself: see `detection_for`.
 IDENTIFYING_TESTS = frozenset({BUNDLE_ID, APPLICATION_TITLE})
+
+# How Jamf detects a title on a Mac — what an answer about it rests on (#386, Kyle 2026-09-11).
+# `inventory`: a recon test on the bundle ID or the application title, so the inventory Jamf
+# walks is the witness. `extension_attribute`: every test is an EA, and there the EA is not the
+# scoping device #65 described — it IS the detection. *"EA-only implies on-device detection.
+# Example: Python. That's why it's EA-only — the title is explicitly telling Jamf Pro the
+# software is there despite recon not seeing it."* Jamf writes titles this way for software
+# recon cannot walk (CLI installs, JDKs, frameworks, daemons) and for a few ordinary apps it
+# wants told apart by channel (Firefox, Firefox ESR, PyCharm Unified).
+DETECTION_INVENTORY = "inventory"
+DETECTION_EXTENSION_ATTRIBUTE = "extension_attribute"
 
 
 def bundle_ids_named(bundle_id: str | None, groups: Iterable[Mapping] | None) -> list[str]:
@@ -272,8 +284,21 @@ def _tests(groups: Sequence[Mapping]):
 def is_app_level(groups: Sequence[Mapping]) -> bool:
     """Whether the title can identify an installed app: at least one recon test on the bundle
     ID or the application title (Kyle's rule). Device-level titles ("Apple macOS …"),
-    attribute-only titles (the `jamf-patch-*` set) and version-only titles are not considered."""
+    attribute-only titles (the `jamf-patch-*` set) and version-only titles cannot; of those
+    three only the attribute-only ones are admitted anyway, and on a column (`detection_for`)."""
     return any(test.get("type") != EXTENSION_ATTRIBUTE and test.get("name") in IDENTIFYING_TESTS for test in _tests(groups))
+
+
+def detection_for(groups: Sequence[Mapping]) -> str | None:
+    """How Jamf detects this title on a Mac, or None when it is about no application at all —
+    a device-level ("Apple macOS …") or version-only title, which neither constant describes and
+    the matcher never considers (#386)."""
+    if is_app_level(groups):
+        return DETECTION_INVENTORY
+    tests = list(_tests(groups))
+    if tests and all(test.get("type") == EXTENSION_ATTRIBUTE for test in tests):
+        return DETECTION_EXTENSION_ATTRIBUTE
+    return None
 
 
 def required_bundle_ids(groups: Sequence[Mapping]) -> frozenset[str] | None:

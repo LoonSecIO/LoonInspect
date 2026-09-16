@@ -243,6 +243,11 @@ VulnAssessment = Literal["covered", "unknown_app", "off"]
 # and `ADDITIVE_ONLY_CLAUSES` already run.
 PATCH_STATES = Literal["latest", "behind", "ahead", "unknown"]
 
+# The two witnesses a Jamf Patch title can be detected by, as `app.mdm.patch.requirements`
+# spells them (#386). Restated here for the same reason the four states above are, and asserted
+# against that module by `test_patch_wire.py`.
+PATCH_DETECTION = Literal["inventory", "extension_attribute"]
+
 
 class JamfPatchAnswer(BaseModel):
     """`patch.jamfPatch{}` — Jamf's Patch Management catalog's answer about THIS build (#311).
@@ -306,6 +311,14 @@ class JamfPatchAnswer(BaseModel):
     # The only key in this block a person can read — "612" and "5F6" mean nothing in a search
     # bar, and `stats count by ...titleNames` is the query a patch dashboard opens with.
     title_names: list[str] | None = Field(default=None, serialization_alias="titleNames")
+    # What the answer rests on (#386) — above `state` because a discriminator reads before the
+    # values it qualifies. `extension_attribute` when ANY matched title's requirements are
+    # extension attributes only: Jamf detects it from a script's output at the last recon rather
+    # than from the inventory it walked, and the container admitted it on its `bundleId` column.
+    # `any`, the conservative direction `eaAssumed` folds in — `behind` there can be behind for
+    # the wrong channel, and an ordinary second title must not clear the flag. Absent where no
+    # catalog was loaded, never defaulted: clause 4's absence, not a claim nobody checked.
+    detection: PATCH_DETECTION | None = Field(default=None)
     state: PATCH_STATES
     # Kyle's #65 rule: at least one matched title says the installed version is its current
     # one — so a Firefox ESR user on the latest ESR is latest even though the rolling title

@@ -32,6 +32,7 @@ curl -s -b jar $BASE/api/runs/<jobId>/log                       # its log lines
 curl -s -b jar $BASE/api/mdm/connections                        # connections
 curl -s -b jar $BASE/api/mdm/connections/<id>/collections       # what each connection collects
 curl -s -b jar $BASE/api/destinations                           # destinations with delivery counts
+curl -s -b jar $BASE/api/posture                                # last night's posture tape
 ```
 
 **The container log.** `docker compose logs app --since 30m` (add `db` for the
@@ -44,6 +45,23 @@ tried again, and what to check.
 `group definitions observed`, `run finished`, and warnings such as `throttled by Jamf;
 backed off and continued` or `extension attribute definitions not readable; census
 skipped`. It is the panel under the connection's row, or `GET /api/runs/{jobId}/log`.
+
+### The front page is not the same for every role
+
+`/` tells one of two stories ([#115](https://github.com/LoonSecIO/LoonInspect/issues/115)).
+An account holding `destination:read` — analyst, auditor, admin — gets the pipeline:
+stepper, running sweep, status strip, Needs Attention. A Viewer holds inventory read only
+and gets the inventory board instead: fleet size, the hygiene counts, the catalog, the
+most-installed apps. Two people on one pod seeing different tiles is the design.
+
+Every tile on that board carries `as of <UTC> (<age>)` and the age climbs while the page
+stays open: an age in hours means the browser stopped getting answers — reload, then §4.
+That stamp dates the browser's read, not the pod's inventory: it says *just now* even on a
+pod whose Jamf sync died last week. Freshness per connection is an administrator's page.
+One tile reading **Could not load** means that source refused while the others answered;
+`GET /api/devices?pageSize=1`, `/api/catalog?pageSize=1` and `/api/applications?pageSize=5`
+say which, and with what status. A board saying your role cannot read devices or
+applications is not an empty fleet: an administrator grants `device:read` and `app:read`.
 
 ### A proxy in front answers for itself
 
@@ -180,6 +198,13 @@ did Splunk keep it.
      *every* process prints it and `pendingCount` still climbs — then the process holding
      the lock is wedged rather than working. Restart the stack: the lock goes with its
      connection, and the next tick takes it.
+   - **How long has it been held?** The nightly tape is the only history of the held set:
+     `GET /api/posture?keys=outbox.pending,outbox.failed_24h,outbox.oldest_pending_age_s&days=7`
+     is one row per key per night it was captured. `outbox.oldest_pending_age_s` **missing
+     from a night that carries the other two** is that night's empty queue — absence is
+     never zero here — and `total: 0` means no full sweep closed in the window, so the tape
+     has nothing to say about those nights (§1, §2) rather than saying the queue was empty.
+     `GET /api/posture/registry` is what each key counts.
    - Both zero and the runs in step 1 succeeded → step 5.
 5. **Subscriptions.** `subscribedEvents` on the destination: `null` means every event
    type; a list means only those. A list without `device.inventory` gets no snapshots,
@@ -573,11 +598,11 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
    devices* and search again: with the box ticked, a title no device has is not listed,
    and a search that finds only such titles says how many the box hid.
    - The title is there once unticked, and reads 0 under *Devices with app* for software
-     you know is on your Macs → this is not a refresh problem. About 300 catalog titles
-     are never matched to an installed app — device-level (*Apple macOS …*),
-     attribute-only and version-only titles, Mozilla Firefox among them
+     you know is on your Macs → this is not a refresh problem. About 120 catalog titles
+     are never matched to an installed app — device-level (*Apple macOS …*), version-only,
+     and the attribute-only titles Jamf publishes no bundle identifier for
      ([`jamf-patch-matching.md`](jamf-patch-matching.md) §3) — so they read 0 on every
-     fleet.
+     fleet. A title that IS matched against and still reads 0 is step 6.
    - The title is missing with the box unticked → a title whose definition the server
      refused is skipped for that refresh and fetched again at the next one, so a gap that
      closes by itself is working as designed. A title that is published by Jamf and still
@@ -619,11 +644,24 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
    closed to it. A title showing neither line was stored before the rule existed — the
    next refresh (step 1) reads it once more and it gains one.
 
+6. **A title from [`jamf-patch-matching.md`](jamf-patch-matching.md) §4a reads 0 devices for
+   software you know is installed** — *my Python Mac reads absent*. Jamf detects those 182 titles
+   with a script on the Mac rather than from the inventory it walks, and LoonInspect matches the
+   inventory. Search **Devices › Applications** for the bundle identifier on the title's row:
+   - **Listed** — a Mac reports an `.app` with that identifier (Firefox, Skype, PyCharm) and the
+     title should match: a 0 after a sweep is state **J**'s last clause, with that identifier.
+   - **Not listed** — the software is a command-line install, a framework or a daemon (Python 3,
+     the JDKs, Jamf Connect Login), so the inventory has nothing to match and those Macs read
+     absent until LoonInspect reads the attribute itself. Working as built.
+
 **J.** A refresh that reports no error leaves the table saying *No Jamf Patch titles
 synced yet.*, a title Jamf publishes stays missing from the list with *Only titles with
-devices* unticked for more than a day, or a press of **Sync now** writes nothing to the
-container log while `/api/health` answers. Report what the *Synced* column shows, the
-output of `docker compose logs app --since 1h`, and the build from Settings › Support.
+devices* unticked for more than a day, a press of **Sync now** writes nothing to the
+container log while `/api/health` answers, or — the one where the sync did happen — a
+title LoonInspect matches against still reads 0 devices after a sweep while **Devices ›
+Applications** lists its bundle identifier (step 6). Report what the *Synced* column
+shows, the bundle identifier and the title's name if that was the symptom, the output of
+`docker compose logs app --since 1h`, and the build from Settings › Support.
 
 ## 7. "Jamf Pro webhooks are not arriving"
 

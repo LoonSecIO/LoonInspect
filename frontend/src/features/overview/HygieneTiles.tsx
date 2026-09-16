@@ -4,6 +4,7 @@ import { PERMISSIONS } from "@/features/auth/types";
 import { useHasPermission } from "@/features/auth/store";
 import { listDevices } from "@/features/devices/api";
 import { getJamfPatchCoverage } from "@/features/jamfPatch/api";
+import { AsOfStamp } from "@/features/overview/AsOfStamp";
 import { STALE_CHECK_IN_DAYS, coveragePercent, staleCheckInBefore } from "@/features/overview/hygiene";
 import { useLocale } from "@/i18n/LocaleContext";
 
@@ -12,6 +13,9 @@ type Counts = {
   unmanaged: number | "failed";
   // null when the reader lacks app:read and the tile is not rendered at all.
   coverage: { onLatest: number; total: number } | "failed" | null;
+  /** When these landed. Each tile is stamped with it and ages from it, so a tab left
+   *  open — a wall display, or yesterday's — cannot read as calm (#117). */
+  readAt: string;
 };
 
 /**
@@ -49,7 +53,7 @@ export function HygieneTiles() {
           ? settle(getJamfPatchCoverage().then((c) => ({ onLatest: c.pairsOnLatest, total: c.pairsTotal })))
           : Promise.resolve(null)
       ]).then(([stale, unmanaged, coverage]) => {
-        if (!cancelled) setCounts({ stale, unmanaged, coverage });
+        if (!cancelled) setCounts({ stale, unmanaged, coverage, readAt: new Date().toISOString() });
       });
     };
     if (typeof IntersectionObserver === "undefined") {
@@ -88,6 +92,7 @@ export function HygieneTiles() {
                 : th.staleCount(counts.stale)
         }
         failed={counts?.stale === "failed"}
+        asOf={counts?.readAt ?? null}
       />
       <Tile
         title={th.unmanagedTitle}
@@ -102,6 +107,7 @@ export function HygieneTiles() {
                 : th.unmanagedCount(counts.unmanaged)
         }
         failed={counts?.unmanaged === "failed"}
+        asOf={counts?.readAt ?? null}
       />
       {canReadApps && (
         <Tile
@@ -109,17 +115,21 @@ export function HygieneTiles() {
           href="/devices/applications/jamf-patch"
           body={coverageBody(counts, t.auth.loading, th)}
           failed={counts?.coverage === "failed"}
+          asOf={counts?.readAt ?? null}
         />
       )}
     </section>
   );
 }
 
-function Tile({ title, href, body, failed }: { title: string; href: string; body: string; failed: boolean }) {
+// `asOf` is when these counts were read: null until they land, and dropped on a failure,
+// where a stamp would date a number that is not there.
+function Tile({ title, href, body, failed, asOf }: { title: string; href: string; body: string; failed: boolean; asOf: string | null }) {
   return (
     <Link to={href} className="block rounded-lg border bg-card px-5 py-4 text-sm shadow-sm hover:bg-accent/40">
       <p className="text-xs font-medium text-muted-foreground">{title}</p>
       <p className={`mt-1 font-semibold ${failed ? "text-destructive" : "text-card-foreground"}`}>{body}</p>
+      <AsOfStamp asOf={failed ? null : asOf} />
     </Link>
   );
 }
