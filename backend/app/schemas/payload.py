@@ -115,6 +115,14 @@ class NormalizedDevice(BaseModel):
     managed: bool | None = None
     supervised: bool | None = None
     os_version: str | None = None
+    # The fields the v1 `os` and `hw` content keys join on (#481). They ride the sections
+    # that carry them and not a new one: the build is `operatingSystem.build`, the other
+    # two are `hardware.modelIdentifier` and `hardware.processorArchitecture`, all three
+    # already inside the contract's aperture. None is "the section was not read, or Jamf
+    # did not send it" — `observed()` below is what tells process_sync which.
+    os_build: str | None = None
+    model_identifier: str | None = None
+    cpu_arch: str | None = None
     site: str | None = None
     # Jamf's own ids for the two objects the device names by id and never by name; the
     # names are resolved at read time from `jamf_org_units` (app.mdm.org_units).

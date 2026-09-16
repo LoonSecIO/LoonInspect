@@ -406,10 +406,10 @@ class _StubResult:
 
 
 class _StubSession:
-    """Answers `build_exchange_request`'s two aggregates in order: apps, then os."""
+    """Answers `build_exchange_request`'s three aggregates in order: apps, os, hardware."""
 
-    def __init__(self, app_rows: list, os_rows: list) -> None:
-        self._results = [app_rows, os_rows]
+    def __init__(self, app_rows: list, os_rows: list, hw_rows: list) -> None:
+        self._results = [app_rows, os_rows, hw_rows]
 
     async def execute(self, _statement):
         return _StubResult(self._results.pop(0))
@@ -433,9 +433,13 @@ async def _snapshot(*, exclude_globs: list[str] | None = None, bundle: str | Non
             _app_row("v1:title-acme", "v1:full-acme", "com.acme.payroll", 7),
         ],
         [
-            SimpleNamespace(platform="macos", os_version="14.6.1", count=380),
-            SimpleNamespace(platform="macos", os_version="15.0", count=12),
+            # `os_build` is None on the second row on purpose (#481): the columns are
+            # un-backfilled, so a fleet mid-restamp holds devices that have not been
+            # re-read since the upgrade and still key on the build-less tuple.
+            SimpleNamespace(platform="macos", os_version="14.6.1", os_build="23G93", count=380),
+            SimpleNamespace(platform="macos", os_version="15.0", os_build=None, count=12),
         ],
+        [SimpleNamespace(platform="macos", model_identifier="Mac15,7", cpu_arch="arm64", count=380)],
     )
     return await sharing.build_exchange_request(db, row)
 
@@ -502,6 +506,26 @@ async def test_os_rows_state_the_platform_they_already_hash() -> None:
     os_rows = (await _snapshot())["snapshot"]["os"]
     assert all(row["platform"] == "macos" for row in os_rows), os_rows
     assert [row["count"] for row in os_rows] == [380, 12]
+
+
+@pytest.mark.asyncio
+async def test_the_os_key_hashes_a_real_build_and_hardware_is_no_longer_empty() -> None:
+    """#481. Both keys were published over these fields and neither had them: every `os`
+    row ever sent hashed the build as the empty string — one digest for every build of a
+    point release — and `hardware` was `[]` from every container shipped, because `hw_key`
+    had no caller at all.
+
+    Asserted by calling the key functions rather than against literals. This issue changes
+    what is passed to the keys and never how they hash; the digests themselves are pinned
+    by the frozen vectors in test_content_keys.py, which it must not touch."""
+    from app.core.content_keys import hw_key, os_key
+
+    snapshot = (await _snapshot())["snapshot"]
+    assert snapshot["os"][0] == {"key": os_key("macos", "14.6.1", "23G93"), "count": 380, "platform": "macos"}
+    # And a device not yet re-read still sends the build-less key it has always sent —
+    # the same shape an older container produces, not a second one for the cloud to learn.
+    assert snapshot["os"][1]["key"] == os_key("macos", "15.0", None)
+    assert snapshot["hardware"] == [{"key": hw_key("Mac15,7", "arm64"), "count": 380, "platform": "macos"}]
 
 
 @pytest.mark.asyncio

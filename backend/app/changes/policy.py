@@ -265,7 +265,7 @@ ENTRY_RULES: tuple[EntryRule, ...] = (
         identity=("groupId",),
         level=NORMAL,
         label="Smart group memberships",
-        why="Joining and leaving drives policy scoping; each event says whether the criteria moved or the device drifted.",
+        why="Joining and leaving drives policy scoping; each event says whether the criteria moved, the device drifted, or the group itself was deleted.",
         fields=(EntryFieldRule("smartGroup", LOW, "Smart flag"),),
     ),
     EntryRule(
@@ -469,6 +469,15 @@ class EffectivePolicy:
         if not levels:
             return NORMAL
         return min(levels, key=lambda level: _RANK[level])
+
+    def keeps_level(self, level: str) -> bool:
+        """Is a row of this level kept at the tenant's minimum level?
+
+        The level question alone, for the one caller that decides a level *after* `entry_enabled`
+        answered the enabled question at the rule's level: the deletion echo (#182), which regrades
+        a removal to `low` because forty thousand of them are one object's detail rather than forty
+        thousand peers. `False` here drops the row — under the default preset, every one of them."""
+        return default_on(level, self.overrides.minimum_level)
 
     def group_muted(self, group_id: str) -> bool:
         return str(group_id) in self.overrides.muted_groups

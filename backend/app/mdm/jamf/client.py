@@ -836,6 +836,14 @@ def normalize_computer(
         managed=remote_management.get("managed"),
         supervised=general.get("supervised"),
         os_version=operating_system.get("version") or hardware.get("osVersion"),
+        # The three the v1 content keys hash and nothing else read (#481). No new section
+        # and no new request: `build` is already in the OPERATING_SYSTEM allow-list and
+        # the other two in HARDWARE's (app.mdm.jamf.contract), so these come out of the
+        # dicts above. No `or` fallbacks — unlike the serial and the OS version, there is
+        # no second spelling of any of them to fall back to, and a guess would be hashed.
+        os_build=operating_system.get("build"),
+        model_identifier=hardware.get("modelIdentifier"),
+        cpu_arch=hardware.get("processorArchitecture"),
         site=site.get("name"),
         # Ids, not names. Jamf's inventory API carries `departmentId` and `buildingId`
         # and nothing else — verified against the 11.31 record in

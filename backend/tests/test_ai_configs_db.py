@@ -125,7 +125,7 @@ def _decrypted(token: str) -> str:
 
     from app.core.crypto import get_encryption_key
 
-    return Fernet(get_encryption_key()).decrypt(token.encode()).decode()
+    return Fernet(get_encryption_key()).decrypt(token.removeprefix("k1:").encode()).decode()
 
 
 @pytest.fixture
@@ -170,7 +170,7 @@ async def test_a_save_keeps_the_config_and_the_key_only_as_ciphertext(client, db
     # At rest: a Fernet token this deployment's key opens, never the plaintext.
     stored = await _stored_key("anthropic")
     assert stored is not None and stored != KEY and KEY not in stored
-    assert stored.startswith("gAAAAA"), "not a Fernet token: the column is storing something else"
+    assert stored.startswith("k1:gAAAAA"), "not a k1 Fernet envelope: the column is storing something else"
     assert _decrypted(stored) == KEY
 
     # On the trail, the save and whether a key is stored; never the key, in the audit or the log.

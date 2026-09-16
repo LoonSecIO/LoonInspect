@@ -426,6 +426,13 @@ why: a slow or down destination must never block a sync or delay a webhook ACK.
 Making delivery a user-facing schedule would reintroduce exactly the coupling the outbox
 exists to remove.
 
+The tick sweeps every operational tenant in one pass, and each tenant's pass stands alone:
+a tenant whose fan-out or delivery raises is logged by name and the pass moves to the
+next, because a shared 30-second tick that one tenant's unusable destination row could
+stop would decouple delivery from the sweep only to recouple every tenant to each other
+([#466](https://github.com/LoonSecIO/LoonInspect/issues/466)). The two nightly purges —
+the outbox's and the run log's — carry the same guard for the same reason.
+
 There are three questions hiding inside "how does scheduling connect to outbound," and
 only one is open:
 
