@@ -14,11 +14,14 @@ Operating procedures — backup, restore, upgrade, rollback — are in
 
 ## 1. `device_changes` grows for ever
 
-**The limit.** Three things are bounded: outbox events after 7 days
-(`event_outbox_retention_days`), runs and their log lines after 30
-(`run_retention_days`), and the audit log by daily file rotation keeping
-`audit_retention_days` files. The change log is not one of them. Nothing deletes a
-`device_changes` row, ever, and there is no setting that would.
+**The limit.** What ages out on a clock is the machinery around the record, not the
+record: outbox events after 7 days (`event_outbox_retention_days`, or 30 under
+`dead_letter_retention_days` for one whose delivery dead-lettered), runs and their log
+lines after 30 (`run_retention_days`), the closed alert latches that ride that same
+setting, the audit log by daily file rotation keeping `audit_retention_days` files, the
+share log of what left the box after 90 days, and expired or revoked sessions a day after
+they die. The change log is not one of them. Nothing deletes a `device_changes` row,
+ever, and there is no setting that would.
 
 **Measured.** 514 bytes per row, all in — 390 bytes of heap and 124 of index across the
 seven indexes on the table — over 200,000 synthetic rows of the commonest shape (an
@@ -203,6 +206,14 @@ credentials are Fernet ciphertext, which does not. Until 2026-09-10 (#374) this 
 the operator as a bare `500` and a traceback per request; it is a sentence now — the
 Connections and Destinations pages show it — but it is still not detected until
 something reads a credential, which is the limit this entry records.
+
+**That sentence has a second cause since #480, and the key is fine in it.** Stored values
+now begin with the key id that wrote them (`k1:`), and an image older than that change
+cannot read one — it reports it as this same wrong-key sentence. So a rollback past #480
+produces the whole failure above on an instance whose `ENCRYPTION_KEY` was never wrong.
+Measured, with the older image against a database this build wrote, in
+[docs/operations.md §5](docs/operations.md); the fix there is to go forward, and
+re-entering secrets is the one thing not to do.
 
 **Where it bites.** Every restore, at every fleet size. It is the single most likely way
 to lose a LoonInspect instance: back up the database, not the key.
