@@ -1053,3 +1053,32 @@ Docker Desktop on an Apple Silicon Mac; or the alias reads *does not resolve* wh
 compose exec -T app getent hosts host.docker.internal` answers with an address. Report the
 *Evidence* line, the body of `GET /api/system/ai/host`, `docker compose exec -T app cat
 /proc/version`, your Docker Desktop version, and the build from Settings › Support.
+
+
+## 15. "I deleted a smart group and the Changes page says nothing"
+
+Deliberate, and the run log says so. Deleting one group removes it from every member at once,
+and one change per Mac would bury the sweep under tens of thousands of rows describing the same
+click — so they collapse to level **low**, which the default *High + normal* preset does not
+record at all, and the sweep writes one line per deleted object instead ([`change-log.md`](change-log.md) §1).
+
+1. **Find the line.** Open the connection's run panel (or `GET /api/runs/{jobId}/log`) for the
+   first sweep after the deletion: *smart group "…" is gone; its N per-device removal rows
+   collapsed into this line at level low*, then a sentence saying whether those rows were
+   recorded. `objectKind`, `objectId`, `rows`, `departedAt` and `rowsRecorded` sit beside it; a
+   deleted extension attribute reads the same with `extension attribute`.
+2. **Keep the rows next time — only next time.** The rows this deletion would have produced were
+   never written and nothing shows them after the fact: the membership is already gone, so no later
+   sweep derives its removal again. Settings › Change tracking → **Everything** keeps the *next*
+   deletion's rows, at **Level: Low** on Devices › Changes — where the row names the group but not
+   why, because the page prints no sentence for this cause. `objectDeparted` reads in `GET /api/changes?minLevel=low`.
+3. **No line at all.** First rule out the three gates that drop the removal before the collapse sees
+   it — this instance at *High only*, smart-group (or extension-attribute) changes switched off under
+   Settings › Change tracking, or that group muted: each writes no rows **and** no line. Otherwise
+   nothing departed. The census that finds a deletion runs at the start of the sweep, and a refused or
+   collapsed one departs nobody and says so in the same run panel: a warning-level *departures reconciled*
+   line with `skipped=empty_census`, `collapsed_census` or `not_readable` — the circuit breaker for an API
+   role that lost **Read Smart Computer Groups**. Grant it and re-run. A line whose `objectId` names a group still in Jamf is reportable state **S**.
+
+**S.** A collapse line for an object that still exists in Jamf. Report the line, the
+`jobID`, and the build from Settings › Support.

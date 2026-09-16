@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from app.alerts.service import sync_new_app_latches
 from app.catalog.service import record_device_apps
-from app.changes.derive import derive_and_record
+from app.changes.derive import CollapsedDeparture, collecting_departures, derive_and_record
 from app.core.config import settings
 from app.core.content_keys import app_bundle_key, app_full_key, app_title_key
 from app.core.context import get_request_id
@@ -541,6 +541,37 @@ async def _reconcile_departures(
     await db.commit()
 
 
+async def _log_collapsed_departures(db: AsyncSession, run: Run, collapsed: Mapping[tuple[str, str], CollapsedDeparture]) -> None:
+    """One line per departed object, not one per device (#182).
+
+    At the default preset this line is the echo's *whole* trace: the rows it counts are graded
+    `low`, low is off, so they were never written. It names what is gone, what the deletion cost,
+    whether any of it was kept, and the next check either way."""
+    for entry in sorted(collapsed.values(), key=lambda e: (e.object_kind, e.object_id)):
+        tail = (
+            "They are on Devices › Changes under Level: Low; the page prints no sentence for this cause, so "
+            "GET /api/changes?minLevel=low is where objectDeparted reads."
+            if entry.recorded
+            else "Level low is off under this instance's change-tracking preset, so they were not recorded; the memberships "
+            "are already gone, so no later sweep derives them and nothing shows them now. Settings › Change tracking → "
+            "Everything keeps the rows of the next deletion, not of this one."
+        )
+        await run_log(
+            db,
+            run,
+            "info",
+            f'{entry.object_kind} "{entry.label or entry.object_id}" is gone; its {entry.rows} per-device '
+            f"removal {'row' if entry.rows == 1 else 'rows'} collapsed into this line at level low. {tail}",
+            objectKind=entry.object_kind,
+            objectId=entry.object_id,
+            objectName=entry.label,
+            rows=entry.rows,
+            departedAt=entry.departed_at.isoformat(),
+            rowLevel="low",
+            rowsRecorded=entry.recorded,
+        )
+
+
 async def _observe_extension_attribute_definitions(
     db: AsyncSession,
     connection: MdmConnection,
@@ -646,7 +677,10 @@ async def _sync_jamf(
     devices_failed = 0
     group_count = 0
 
-    async with client.http() as http:
+    # The deletion echo's tally (#182), open across the whole pass: the per-device rows a
+    # departure explains are derived six frames below this one, so the count is collected
+    # in a context variable and reported as one line per object after the loop.
+    async with client.http() as http, collecting_departures() as collapsed:
         aperture = await capture_aperture(client, http, sections=sections, quarantined_extension_attributes=quarantine)
         aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)
         connection.last_successful_auth_at = datetime.now(UTC)
@@ -794,6 +828,7 @@ async def _sync_jamf(
         # and a dynamic tuner (#74) reads structure instead of parsing text.
         throttle = {**client.throttle.observations(), **client.adaptive.observations()}
         if run is not None:
+            await _log_collapsed_departures(db, run, collapsed)
             if client.adaptive.changes:
                 await run_log(db, run, "warning", "throttled: sweep width reduced", reductions=client.adaptive.changes)
             if throttle:
@@ -940,7 +975,10 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
     # runs concurrently and never queues behind a forty-minute sweep (§4.4).
     acquisition = await acquire(db, connection, trigger=TRIGGER_WEBHOOK, lock_class=LOCK_WEBHOOK, actor_label=event.event_name)
     run = acquisition.run
-    async with entered(run):
+    # One device is not an echo, but a membership its deleted group took with it is still
+    # dropped at the default preset (#182) — and on this path the sweep's line is not
+    # coming, so the webhook's own run carries it.
+    async with entered(run), collecting_departures() as collapsed:
         try:
             async with client.http() as http:
                 aperture = await capture_aperture(client, http, sections=sections, quarantined_extension_attributes=quarantine)
@@ -968,6 +1006,7 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
             await db.refresh(run)
             await finish(db, run, ok=False, error=str(exc))
             raise
+        await _log_collapsed_departures(db, run, collapsed)
         # The return is deliberately unchecked: if a slow fetch let the reclaim take
         # this run, the refused finish leaves that verdict standing, and the device
         # write above stands on its own — it is fresh from Jamf, and staleness is the
