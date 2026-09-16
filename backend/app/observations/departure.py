@@ -34,7 +34,7 @@ from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mdm.jamf.contract import SUBJECT_COMPUTER
-from app.models.schema import Device, ObservationSpan, SubjectDeparture
+from app.models.schema import ObservationSpan, SubjectDeparture
 
 logger = logging.getLogger(__name__)
 
@@ -47,12 +47,14 @@ logger = logging.getLogger(__name__)
 MIN_POPULATION_FOR_COLLAPSE = 10
 COLLAPSE_RATIO = 0.5
 
-# How a return was recognised (#475, Kyle's R3): wiped, rebuilt, board-repaired or re-enrolled, a Mac
-# comes back under a *new* computer id, so matched on that alone its departure never closes. The
-# batch is asyncpg's 32767-bind-parameter cap; the census's own serials are never bound at all.
-MATCHED_BY_JAMF_ID = "jamf_id"
-MATCHED_BY_SERIAL = "serial"
+# How a return was recognised (#475, Kyle's R3), spelled as #179's `matchedBy` carries it: wiped,
+# rebuilt or re-enrolled, a Mac comes back under a *new* computer id, so matched on that alone its
+# departure never closes. The batch is asyncpg's 32767-bind cap; the census's own keys never bind.
+MATCHED_BY_JAMF_ID = "jamfProID"
+MATCHED_BY_SERIAL = "serialNumber"
 _DEPARTED_BATCH = 1000
+# One census's second key, both halves of it: (serial, UDID) -> the id it carried them under.
+_Lineage = Mapping[tuple[str, str], str]
 
 SKIP_NOT_READABLE = "not_readable"
 SKIP_EMPTY = "empty_census"
@@ -75,11 +77,12 @@ def left_the_fleet(departed_at: datetime | ColumnElement[datetime], *, at: datet
 
 
 def still_gone_under_this_id() -> ColumnElement[bool]:
-    """Gone under the id this row is about: never returned, or returned *as something else* (#475). A
-    serial match did not put that id back — it is dead in Jamf, what came back is listed under its own
-    new row — so a retired id reads everywhere exactly like an open departure: it keeps its tail, it
-    leaves the fleet on day seven, and it never rejoins a census population."""
-    return or_(SubjectDeparture.returned_at.is_(None), SubjectDeparture.matched_by == MATCHED_BY_SERIAL)
+    """Gone under the id it departed under: never returned, or returned under *another* id (#475) — a
+    serial match re-keys the row to the Mac's new life, leaving `prior_jamf_pro_id` to name and retire
+    the old one. A retired id reads everywhere like an open departure — it keeps its tail, leaves on
+    day seven, rejoins no census population — until a census names it, which takes the retirement
+    back (`reconcile_census`): a Mac Jamf hands over is here, whatever a serial match decided."""
+    return or_(SubjectDeparture.returned_at.is_(None), SubjectDeparture.prior_jamf_pro_id.isnot(None))
 
 
 def gone_for_good(connection_id: Any, external_id: Any, *, at: datetime) -> ColumnElement[bool]:
@@ -93,7 +96,7 @@ def gone_for_good(connection_id: Any, external_id: Any, *, at: datetime) -> Colu
         .where(
             SubjectDeparture.mdm_connection_id == connection_id,
             SubjectDeparture.subject_kind == SUBJECT_COMPUTER,
-            SubjectDeparture.subject_id == external_id,
+            func.coalesce(SubjectDeparture.prior_jamf_pro_id, SubjectDeparture.subject_id) == external_id,
             still_gone_under_this_id(),
             left_the_fleet(SubjectDeparture.departed_at, at=at),
         )
@@ -127,21 +130,28 @@ class CensusVerdict:
 
 
 async def _returned_by_serial(
-    db: AsyncSession, *, connection_id: int, subject_kind: str, subject_ids: list[str], serials: Mapping[str, str] | None
+    db: AsyncSession, *, connection_id: int, subject_kind: str, subject_ids: list[str], lineage: _Lineage | None
 ) -> dict[str, str]:
     """Which of these departed Macs is the census naming under a *different* Jamf id, and as what
-    (#475)? `{departed id -> the id it came back under}`. Its `devices` row carries the serial it was
-    last read with, and a census naming that serial found it whatever id Jamf gave it back — scoped to
-    the connection, a serial being Apple's and an instance's view of it not. Computers only."""
-    if subject_kind != SUBJECT_COMPUTER or not subject_ids or not serials:
+    (#475)? `{departed id -> the id it came back under}`. The key is **serial and UDID together**,
+    off the Mac's current span — the ledger's own lineage keys (`docs/jamf-observations.md` §3) — and
+    within the connection, that walk across instances being nobody's build yet. Same serial and same
+    UDID under a new id is the duplicate-record shape a re-enrolment makes; same serial under a *new*
+    UDID is a board replacement, a lineage event and not a return, so it matches nothing. Computers
+    only."""
+    if subject_kind != SUBJECT_COMPUTER or not subject_ids or not lineage:
         return {}
-    census = {serial.strip(): jamf_id for serial, jamf_id in serials.items() if serial.strip()}
+    census = {(s.strip(), u.strip()): jamf_id for (s, u), jamf_id in lineage.items() if s.strip() and u.strip()}
     found: dict[str, str] = {}
     for start in range(0, len(subject_ids), _DEPARTED_BATCH):
-        batch = subject_ids[start : start + _DEPARTED_BATCH]
-        mine = (Device.mdm_connection_id == connection_id, Device.external_id.in_(batch))
-        rows = await db.execute(select(Device.external_id, Device.serial_number).where(*mine))
-        found.update({device: census[(serial or "").strip()] for device, serial in rows if (serial or "").strip() in census})
+        mine = (
+            ObservationSpan.mdm_connection_id == connection_id,
+            ObservationSpan.is_current.is_(True),
+            ObservationSpan.subject_id.in_(subject_ids[start : start + _DEPARTED_BATCH]),
+        )
+        keys = select(ObservationSpan.subject_id, ObservationSpan.serial_number, ObservationSpan.udid)
+        rows = await db.execute(keys.where(*mine, ObservationSpan.subject_kind == SUBJECT_COMPUTER))
+        found.update({d: census[k] for d, s, u in rows if (k := ((s or "").strip(), (u or "").strip())) in census})
     return found
 
 
@@ -153,15 +163,16 @@ async def reconcile_census(
     observed_ids: Iterable[str] | None,
     at: datetime,
     census_run_id: uuid.UUID | None = None,
-    observed_serials: Mapping[str, str] | None = None,
+    observed_lineage: _Lineage | None = None,
 ) -> CensusVerdict:
     """Apply one census to the departures table. Commits nothing; the caller does.
 
     `observed_ids` is every subject id the census named, or None when the census could
     not be taken at all (a refused read) — which departs nobody and returns nobody.
 
-    `observed_serials` maps every serial the same census carried to the id it carried it under (#475);
-    `None` is "none to carry" — no `hardware` section — so the match is id-only and the run says so.
+    `observed_lineage` maps every (serial, UDID) the same census carried to the id it carried them
+    under (#475); `None` is "none to carry" — no `hardware` section — so the match is id-only and the
+    run says so.
     """
     current_ids = set(
         (
@@ -176,52 +187,54 @@ async def reconcile_census(
         .scalars()
         .all()
     )
-    open_rows = {
-        row.subject_id: row
+    # Keyed by the id each row is gone under — for a row a serial match re-keyed, the one it departed
+    # under, not the one it came back as (#475). The population is what the ledger holds minus exactly
+    # these: absence closes no span, so a retired id left in departs again next census, forever.
+    gone_rows = {
+        row.prior_jamf_pro_id or row.subject_id: row
         for row in (
             await db.execute(
                 select(SubjectDeparture).where(
                     SubjectDeparture.mdm_connection_id == connection_id,
                     SubjectDeparture.subject_kind == subject_kind,
-                    SubjectDeparture.returned_at.is_(None),
+                    still_gone_under_this_id(),
                 )
             )
         )
         .scalars()
         .all()
     }
-    # The present population: what the ledger holds minus what is already gone under that id — open
-    # departures, and the ids a serial match retired, which no span closes (#475). Leave one in and it
-    # departs again next census, closes again the pass after, and flaps forever.
-    mine = (SubjectDeparture.mdm_connection_id == connection_id, SubjectDeparture.subject_kind == subject_kind)
-    still_gone = select(SubjectDeparture.subject_id).where(*mine, still_gone_under_this_id())
-    population = current_ids - set((await db.execute(still_gone)).scalars().all())
+    population = current_ids - set(gone_rows)
 
     if observed_ids is None:
         return CensusVerdict(subject_kind, 0, len(population), 0, 0, SKIP_NOT_READABLE)
     observed = set(observed_ids)
 
-    # Returns first: a subject the census named is present, whatever else it says.
+    # Returns first: a subject the census named is present, whatever else it says — including an id a
+    # serial match retired. Jamf handing it back says that retirement was wrong (a reused id, a
+    # duplicate record, one serial on two records), so the row becomes the plain return it should have
+    # been rather than holding a Mac that is right there out of the fleet for good.
     returned = 0
     absent = []
-    for subject_id, row in open_rows.items():
-        if subject_id in observed:
-            row.returned_at = at
-            row.matched_by = MATCHED_BY_JAMF_ID
-            returned += 1
-        else:
-            absent.append(subject_id)
+    for gone_id, row in gone_rows.items():
+        if gone_id not in observed:
+            if row.returned_at is None:
+                absent.append(gone_id)
+            continue
+        row.subject_id, row.prior_jamf_pro_id = gone_id, None
+        row.returned_at, row.matched_by = at, MATCHED_BY_JAMF_ID
+        returned += 1
 
-    # Then by serial (#475), before the breaker for the reason the id match is: a Mac the census *did*
-    # name, under any id, is present. The close retires the id the row is about, for good.
+    # Then by serial and UDID (#475), before the breaker for the reason the id match is: a Mac the
+    # census *did* name, under any id, is present. The close re-keys the row to the id it came back
+    # under; `prior_jamf_pro_id`, the one it departed under, is what retires that old id.
     by_serial = await _returned_by_serial(
-        db, connection_id=connection_id, subject_kind=subject_kind, subject_ids=absent, serials=observed_serials
+        db, connection_id=connection_id, subject_kind=subject_kind, subject_ids=absent, lineage=observed_lineage
     )
-    for subject_id, came_back_as in sorted(by_serial.items()):
-        row = open_rows[subject_id]
-        row.returned_at = at
-        row.matched_by = MATCHED_BY_SERIAL
-        row.returned_as_subject_id = came_back_as
+    for departed_id, came_back_as in sorted(by_serial.items()):
+        row = gone_rows[departed_id]
+        row.subject_id, row.prior_jamf_pro_id = came_back_as, departed_id
+        row.returned_at, row.matched_by = at, MATCHED_BY_SERIAL
         returned += 1
 
     if not observed and population:
@@ -258,7 +271,7 @@ async def reconcile_census(
 
 
 async def open_departures(db: AsyncSession, *, subject_kind: str) -> dict[tuple[int, str], datetime]:
-    """`(connection id, subject id) -> departed_at` for every subject of the kind that is
+    """`(connection id, the id it is gone under) -> departed_at` for every subject of the kind that is
     currently gone, retired ids included (#475) — what a surface listing current spans consults."""
     rows = (
         (
@@ -269,7 +282,7 @@ async def open_departures(db: AsyncSession, *, subject_kind: str) -> dict[tuple[
         .scalars()
         .all()
     )
-    return {(row.mdm_connection_id, row.subject_id): row.departed_at for row in rows}
+    return {(row.mdm_connection_id, row.prior_jamf_pro_id or row.subject_id): row.departed_at for row in rows}
 
 
 async def tail_counts(db: AsyncSession, *, connection_id: int, subject_kind: str, at: datetime) -> tuple[int, int]:

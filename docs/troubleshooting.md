@@ -1093,7 +1093,7 @@ leaves the fleet on ⟨date⟩*. Seven days later it **leaves the fleet** — ou
 the device count on the Overview — and nothing is deleted: its row, observations and whole change
 history stay, and **Show departed** in the filter bar (`includeDeparted=true`) reads it back chipped
 *Left the fleet*. A sweep that names it again puts it straight back — by Jamf computer id, or by
-**serial** on the same connection, which is how a wiped, rebuilt or re-enrolled Mac comes back.
+**serial and UDID** on the same connection, which is how a wiped or re-enrolled Mac comes back.
 
 1. **The Mac is still listed and you deleted it in Jamf.** Open the newest device-sweep run
    (**Runs**, or `GET /api/runs/{jobId}/log`) and read its last lines.
@@ -1116,17 +1116,19 @@ history stay, and **Show departed** in the filter bar (`includeDeparted=true`) r
    `departedAt` — the first clean census that did not return it — and its page, observations and
    changes are all still there by id. If Jamf Pro still holds the Mac, ask Jamf for it with path
    2's `curl` against `/api/v4/computers-inventory`; if Jamf returns it, reportable state **T**.
-3. **You re-enrolled the Mac and it is still departing.** Re-enrolment, a wipe and rebuild and a
-   board repair all mint a *new* Jamf computer id, so the return is matched by **serial** on the
-   same connection and counted as *returned N (M by serial, under a new Jamf id)*. The old id is
-   then **retired**: its row serves out the tail it started, chipped *Leaving the fleet* until day
-   seven — one Mac under two rows for a week, the new one listed normally. If yours is not in that
-   count, read the census line's last clause. *…; matched by Jamf id and serial* → both keys were
-   there, so compare the serial on its page against Jamf Pro's: they differ. *…;
-   matched by Jamf id only: this sweep's sections carry no hardware, so no serial to match on* →
-   the collection carries neither **hardware** nor **extension attributes** (which force it back
-   in); add either. A serial is Apple's and an instance's view of it is not, so a Mac moved to a
-   *different* Jamf Pro departs here and enrols as a new Mac.
+3. **You re-enrolled the Mac and it is still departing.** A wipe, a rebuild or a re-enrolment mints
+   a *new* Jamf computer id and keeps the board, so the return is matched by **serial and UDID
+   together** on the same connection, counted as *returned N (M by serial, under a new Jamf id)*.
+   The old id is then **retired**: its row serves out the tail it started, chipped *Leaving the
+   fleet* until day seven — one Mac under two rows for a week — unless a sweep names that old id
+   again, which puts it straight back. If yours is not in the count, read the census line's last
+   clause. *…; matched by Jamf id, and by serial with UDID* → both keys were there, so compare them
+   on its page against Jamf Pro's: one differs, and a **new UDID under the same serial is a
+   logic-board repair**, a lineage event rather than a return. *…; matched by Jamf id only: this
+   sweep's sections carry no hardware, so no serial to match on* → the collection carries neither
+   **hardware** nor **extension attributes** (which force it back in); add either. A serial is
+   Apple's and an instance's view of it is not, so a Mac moved to a *different* Jamf Pro departs
+   here and enrols as a new Mac.
 4. **You want it gone for good.** Nothing removes a Mac's history today — not this, not
    deleting the connection. Honouring a Jamf deletion as an erasure is a stated, deliberate
    deferral (v5); [`jamf-observations.md`](jamf-observations.md) §8 says what is held.

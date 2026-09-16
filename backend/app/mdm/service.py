@@ -576,7 +576,7 @@ async def _log_collapsed_departures(db: AsyncSession, run: Run, collapsed: Mappi
 
 # The census line's last clause (#475): which keys it could match a return on. Constants because the
 # drift test pins both to path 16, which quotes them.
-_MATCHED_BY_ID_AND_SERIAL = "matched by Jamf id and serial"
+_MATCHED_BY_ID_AND_SERIAL = "matched by Jamf id, and by serial with UDID"
 _MATCHED_BY_ID_ONLY = "matched by Jamf id only: this sweep's sections carry no hardware, so no serial to match on"
 
 
@@ -586,7 +586,7 @@ async def _reconcile_device_census(
     run: Run | None,
     *,
     observed_ids: list[str],
-    observed_serials: dict[str, str] | None,
+    observed_lineage: dict[tuple[str, str], str] | None,
     selector: str | None,
     devices_failed: int,
 ) -> None:
@@ -599,7 +599,7 @@ async def _reconcile_device_census(
     operator waiting for a deleted Mac to go has to read which of the three is holding it. Commits,
     so a departure lands with its census.
 
-    `observed_serials` is None when this sweep's sections carry no `hardware` (#475): no serial to
+    `observed_lineage` is None when this sweep's sections carry no `hardware` (#475): no serial to
     census with, so a Mac back under a new id is not recognised, and the line says which match it got
     — matching on less under the same sentence is rule 2.
     """
@@ -622,7 +622,7 @@ async def _reconcile_device_census(
         observed_ids=observed_ids,
         at=at,
         census_run_id=run.id if run is not None else None,
-        observed_serials=observed_serials,
+        observed_lineage=observed_lineage,
     )
     await db.commit()
     if run is None:
@@ -639,7 +639,7 @@ async def _reconcile_device_census(
         line = (
             f"device census: {verdict.observed} observed, {verdict.departed} departed, {verdict.returned} returned "
             f"({verdict.returned_by_serial} by serial, under a new Jamf id), {in_tail} in their seven-day tail, "
-            f"{left} left the fleet; {_MATCHED_BY_ID_AND_SERIAL if observed_serials is not None else _MATCHED_BY_ID_ONLY}"
+            f"{left} left the fleet; {_MATCHED_BY_ID_AND_SERIAL if observed_lineage is not None else _MATCHED_BY_ID_ONLY}"
         )
     await run_log(
         db,
@@ -759,9 +759,10 @@ async def _sync_jamf(
     devices_failed = 0
     group_count = 0
     observed_ids: list[str] = []
-    # The census's second key (#475): serial -> the id this sweep carried it under. None rather than
-    # {} without `hardware` — "a fleet with no serials" and "none were asked for" are different facts.
-    observed_serials: dict[str, str] | None = {} if "hardware" in sections else None
+    # The census's second key (#475): (serial, UDID) -> the id this sweep carried them under — both,
+    # because a serial under a new UDID is a board swap, not a return. None rather than {} without
+    # `hardware`: "a fleet with no serials" and "none were asked for" are different facts.
+    observed_lineage: dict[tuple[str, str], str] | None = {} if "hardware" in sections else None
 
     # The deletion echo's tally (#182), open across the whole pass: the per-device rows a
     # departure explains are derived six frames below this one, so the count is collected
@@ -837,8 +838,8 @@ async def _sync_jamf(
             # is asked at its close is which Macs Jamf *returned* — stored, stale or failed alike.
             if jamf_id is not None:
                 observed_ids.append(str(jamf_id))
-                if serial and observed_serials is not None:
-                    observed_serials[str(serial)] = str(jamf_id)
+                if serial and raw.get("udid") and observed_lineage is not None:
+                    observed_lineage[(str(serial), str(raw["udid"]))] = str(jamf_id)
             try:
                 result = await ingest_computer(
                     db,
@@ -943,7 +944,7 @@ async def _sync_jamf(
             connection,
             run,
             observed_ids=observed_ids,
-            observed_serials=observed_serials,
+            observed_lineage=observed_lineage,
             selector=selector,
             devices_failed=devices_failed,
         )
