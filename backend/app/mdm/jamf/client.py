@@ -706,15 +706,17 @@ class JamfClient:
 
     # --- departments and buildings ----------------------------------------------------
 
-    async def fetch_departments(self, client: httpx.AsyncClient, *, page_size: int = _PAGE_SIZE) -> list[dict]:
-        """Every department, as `{"id", "name"}`. Needs "Read Departments"."""
+    async def fetch_departments(self, client: httpx.AsyncClient, *, page_size: int = _PAGE_SIZE) -> list[dict] | None:
+        """Every department, as `{"id", "name"}`, or None when this API client may not read
+        them. Needs "Read Departments"."""
         return await self._fetch_named_objects(client, "/api/v1/departments", "departments", page_size)
 
-    async def fetch_buildings(self, client: httpx.AsyncClient, *, page_size: int = _PAGE_SIZE) -> list[dict]:
-        """Every building, as `{"id", "name"}`. Needs "Read Buildings"."""
+    async def fetch_buildings(self, client: httpx.AsyncClient, *, page_size: int = _PAGE_SIZE) -> list[dict] | None:
+        """Every building, as `{"id", "name"}`, or None when this API client may not read
+        them. Needs "Read Buildings"."""
         return await self._fetch_named_objects(client, "/api/v1/buildings", "buildings", page_size)
 
-    async def _fetch_named_objects(self, client: httpx.AsyncClient, path: str, kind: str, page_size: int) -> list[dict]:
+    async def _fetch_named_objects(self, client: httpx.AsyncClient, path: str, kind: str, page_size: int) -> list[dict] | None:
         """One of Jamf's small id-and-name catalogs, paged.
 
         Departments and buildings are the two objects a computer record names by id and
@@ -722,11 +724,18 @@ class JamfClient:
         nobody can act on. Tens of rows per tenant, two requests per sweep — a catalog
         read, not a sweep, which is why it is fetched whole rather than per device.
 
-        A tenant whose API client lacks the privilege yields an empty list and a log
-        line — and so does a catalog that errors outright, which is the stronger of the
-        two promises: names are display, and no missing label may cost a sweep the
-        inventory it came for. An empty answer never blanks what is already cached
-        (app.mdm.org_units.record_org_units upserts).
+        Two failures, answered differently, and neither costs a sweep the inventory it came
+        for — names are display:
+
+        * **The API client may not read the catalog** (401, 403 or 404 after `_get`'s one
+          re-authentication): None. The names already cached for this connection are then
+          cleared rather than left standing, because a name the client can no longer read is
+          a name nobody can vouch for, and it would travel on every page and filter that
+          shows one (Kyle, 2026-09-16, #450). The ids stay, and a warning names the privilege
+          to grant.
+        * **The read failed** — a 5xx past the retry budget, a timeout, a body that is not
+          JSON: an empty list, which changes nothing cached. One bad hour must not strip
+          every department name from the fleet until the next good read.
         """
         objects: list[dict] = []
         page = 0
@@ -736,11 +745,13 @@ class JamfClient:
                     client, path, comment="catalog", params={"page": page, "page-size": page_size, "sort": "id:asc"}
                 )
                 if response.status_code in (401, 403, 404):
-                    logger.info(
-                        "jamf catalog not readable; ids will not resolve to names",
+                    logger.warning(
+                        "jamf catalog not readable by this API client; its cached names are cleared until it is — "
+                        "grant the Jamf Pro API role the Read %s privilege",
+                        kind.capitalize(),
                         extra={"status": response.status_code, "catalog": kind},
                     )
-                    return []
+                    return None
                 response.raise_for_status()
                 results = response.json().get("results", [])
                 if not isinstance(results, list):

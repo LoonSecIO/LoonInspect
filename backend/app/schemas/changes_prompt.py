@@ -60,6 +60,10 @@ class PromptFiltersOut(_Base):
     os_version: str | None = None
     department: str | None = None
     managed: str | None = None
+    # The department's name as Jamf's catalog holds it, when a repair set `department` — so the
+    # readback says "Engineering : Product" rather than an id nobody can act on (#450). Not a
+    # URL key: the page's chip reads the same catalog for itself.
+    department_name: str | None = None
 
 
 class PromptDeviceOut(_Base):

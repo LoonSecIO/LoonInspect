@@ -36,6 +36,7 @@ Gated on RUN_DB_TESTS like the other database-backed suites.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid as uuidlib
 from contextlib import contextmanager
@@ -679,7 +680,9 @@ async def test_an_ingesting_webhook_reads_the_tier_exactly_once(db, jamf: FakeJa
     assert len([s for s in seen if "data_sharing_settings" in s]) == 1
 
 
-async def test_department_and_building_ids_resolve_to_names_and_filter(db, jamf: FakeJamf, connection, admin) -> None:
+async def test_department_and_building_ids_resolve_to_names_and_filter(
+    db, jamf: FakeJamf, connection, admin, caplog: pytest.LogCaptureFixture
+) -> None:
     """The whole chain for the two fields that never worked.
 
     `userAndLocation` names its department and building by id — `departmentId: "7"` —
@@ -752,3 +755,32 @@ async def test_department_and_building_ids_resolve_to_names_and_filter(db, jamf:
         select(func.count()).select_from(JamfOrgUnit).where(JamfOrgUnit.mdm_connection_id == connection.id)
     )
     assert renamed_count.scalar_one() == len(units)
+
+    # The API client loses "Read Departments" (#450, Kyle 2026-09-16): the department names
+    # are cleared rather than left standing, the buildings it can still read stay, the
+    # device keeps its id, and the log says which privilege brings the names back. (A run
+    # records the same sentence on its own log; this call runs without one.)
+    jamf.departments = None
+    with caplog.at_level(logging.WARNING, logger="app.mdm.jamf.client"):
+        cleared = await run_jamf_catalog(db, connection, trigger="manual")
+    assert cleared.ok, cleared
+    assert await ids_for_name(db, kind=DEPARTMENT, name="Platform") == []
+    assert await ids_for_name(db, kind=BUILDING, name="Bletchley Park") == [(connection.id, "2")]
+    await db.refresh(assigned)
+    assert assigned.department_id == "7"
+    async with _client() as c:
+        response = await c.post("/api/auth/login", json={"email": ADMIN[0], "password": ADMIN[1]})
+        assert response.status_code == 200, response.text
+        item = (await c.get(f"/api/devices/{assigned.id}")).json()
+        assert (item["department"], item["departmentId"]) == (None, "7")
+        assert item["building"] == "Bletchley Park"
+    assert any("Read Departments" in record.getMessage() for record in caplog.records), caplog.text
+
+    # A read that fails for another reason changes nothing: four 503s, one past the retry
+    # budget, and the names the previous good read cached are all still there.
+    jamf.departments = [{"id": "7", "name": "Platform"}]
+    assert (await run_jamf_catalog(db, connection, trigger="manual")).ok
+    assert await ids_for_name(db, kind=DEPARTMENT, name="Platform") == [(connection.id, "7")]
+    jamf.transient.extend([("/api/v1/departments", 503, {}) for _ in range(4)])
+    assert (await run_jamf_catalog(db, connection, trigger="manual")).ok
+    assert await ids_for_name(db, kind=DEPARTMENT, name="Platform") == [(connection.id, "7")]

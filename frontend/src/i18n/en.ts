@@ -1337,6 +1337,7 @@ export const en = {
       fileVault: (state: string) => `FileVault: ${state}`,
       site: (id: string) => `Jamf site ${id}`,
       department: (id: string) => `Jamf department ${id}`,
+      departmentNamed: (name: string) => `Department “${name}”`,
       managed: "Managed by Jamf",
       unmanaged: "Not managed by Jamf",
       user: (value: string) => `Assigned user matching “${value}”`
@@ -1480,6 +1481,7 @@ export const en = {
       readbackModel: (model: string) => `on Macs whose model matches “${model}”`,
       readbackOsVersion: (version: string) => `on Macs observed on OS ${version}`,
       readbackDepartment: (id: string) => `on Macs in Jamf department ${id}`,
+      readbackDepartmentNamed: (name: string) => `on Macs in department “${name}”`,
       readbackManaged: "on Macs Jamf manages",
       readbackUnmanaged: "on Macs Jamf does not manage",
       answerNone: "No changes match.",

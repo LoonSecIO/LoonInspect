@@ -132,6 +132,7 @@ export function readback(
     osVersion?: string | null;
     department?: string | null;
     managed?: string | null;
+    departmentName?: string | null;
   },
   strings: ChangesStrings,
   mode: "showing" | "proposed" = "showing"
@@ -147,7 +148,9 @@ export function readback(
   // control for them, so the words are where a reader learns the answer was narrowed this way.
   if (filters.model) bits.push(words.readbackModel(filters.model));
   if (filters.osVersion) bits.push(words.readbackOsVersion(filters.osVersion));
-  if (filters.department) bits.push(words.readbackDepartment(filters.department));
+  if (filters.department) {
+    bits.push(filters.departmentName ? words.readbackDepartmentNamed(filters.departmentName) : words.readbackDepartment(filters.department));
+  }
   if (filters.managed) bits.push(filters.managed === "false" ? words.readbackUnmanaged : words.readbackManaged);
   const [lead, none] =
     mode === "proposed" ? [words.proposalReadbackLead, words.proposalReadbackNone] : [words.readbackLead, words.readbackNone];
@@ -311,7 +314,8 @@ const FILTER_KEYS = [
   "model",
   "osVersion",
   "department",
-  "managed"
+  "managed",
+  "departmentName"
 ] as const satisfies readonly (keyof PromptFilters)[];
 
 function isFilters(value: unknown): value is PromptFilters {

@@ -342,7 +342,7 @@ def _filters(**set_by_the_answer: object) -> dict:
     and the four dimensions a repair can move a Search into (#447)."""
     return {
         "q": None, "artifact": None, "level": None, "section": None, "change": None,
-        "model": None, "osVersion": None, "department": None, "managed": None,
+        "model": None, "osVersion": None, "department": None, "managed": None, "departmentName": None,
         **set_by_the_answer,
     }  # fmt: skip
 
@@ -620,6 +620,58 @@ async def test_a_word_for_management_state_and_a_department_name_are_read_too(cl
     assert (body["filters"]["q"], body["filters"]["department"]) == (None, "5")
     assert any("Department Finance" in repair and "department 5" in repair for repair in body["repairs"])
     assert [d["serial"] for d in body["summary"]["devices"]] == ["KY4QVD7430"]
+
+
+async def test_a_department_read_as_a_profile_is_moved_and_its_guessed_section_cleared(client, db, clean, seeded, endpoint):
+    """#450, as it happened on the demo pod: asked "What changed on Macs in Engineering :
+    Product?", the model put the department in Filter to one thing and chose Configuration
+    profiles beside it — zero rows. No item has that name and Jamf's catalog does, so it is
+    read as the department, and the section it only chose from the misread goes too. One
+    correction of one reading: applied, not proposed."""
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "filter": "Finance", "section": "Configuration profiles"}))
+    body = (await _ask(client, "What changed on Macs in Finance?")).json()
+    assert body["outcome"] == "applied", body
+    assert body["widening"] == []
+    assert body["filters"] == _filters(department="5", departmentName="Finance")
+    assert any("as Department Finance" in r and "no app, profile, group or account" in r for r in body["repairs"])
+    assert any(r.startswith("Cleared Section Configuration profiles") for r in body["repairs"])
+    # The Air is department 5; the mini is not.
+    assert [d["serial"] for d in body["summary"]["devices"]] == ["KY4QVD7430"]
+
+
+async def test_a_section_the_question_named_stays_beside_the_department(client, db, clean, seeded, endpoint):
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    endpoint.body = _reply(json.dumps({**WIRESHARK, "filter": "Finance", "section": "Applications"}))
+    body = (await _ask(client, "which apps changed in Finance")).json()
+    assert body["filters"] == _filters(department="5", departmentName="Finance", section="applications")
+    assert not any(r.startswith("Cleared Section") for r in body["repairs"])
+
+
+async def test_a_department_name_two_ids_share_moves_nothing(client, db, clean, seeded, endpoint):
+    """The page's filter is one id. A name that means 5 in one place and 12 in another cannot
+    be one filter, and picking either would narrow the answer silently."""
+    from app.models.schema import JamfOrgUnit
+
+    await _switches(db, flag=True, consent=True)
+    await _saved(db)
+    now = datetime.now(UTC)
+    twin = JamfOrgUnit(
+        mdm_connection_id=seeded["connection_id"], kind="department", external_id="12", name="Finance",
+        first_seen_at=now, last_seen_at=now,
+    )  # fmt: skip
+    db.add(twin)
+    await db.commit()
+    try:
+        endpoint.body = _reply(json.dumps({**WIRESHARK, "filter": "Finance", "section": "Configuration profiles"}))
+        body = (await _ask(client, "What changed on Macs in Finance?")).json()
+        assert (body["filters"]["artifact"], body["filters"]["department"]) == ("Finance", None)
+        assert body["repairs"] == []
+    finally:
+        await db.delete(twin)
+        await db.commit()
 
 
 async def test_an_os_version_in_search_is_read_as_one(client, db, clean, seeded, endpoint):

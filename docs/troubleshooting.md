@@ -853,6 +853,26 @@ writes one row to the disclosure log naming the destination and the one field th
    device for as a model, an OS version, a department name or "unmanaged", and says so in its
    corrections), and a click on a row's model, which is how the rest are discovered.
 
+   **Asking about a department in the Prompt bar.** "What changed on Macs in Engineering :
+   Product?" works when Jamf's catalog holds that department's name. The model tends to read a
+   department as the name of a profile and put it in *Filter to one thing*, with *Section:
+   Configuration profiles* beside it; when no app, profile, group or account has that name and
+   exactly one department does, the page reads it as the department instead and clears the
+   section the model guessed — unless the question named that section itself ("which apps
+   changed in Finance" keeps *Applications*). *Corrections to the model's answer* lists both
+   moves, the chip reads *Department “Engineering : Product”*, and the answer runs on Enter.
+   Nothing moves when two Jamf connections give the same name to different departments: one
+   filter cannot hold both.
+
+   **Department chips that show a number.** *Jamf department 5* instead of the name means
+   LoonInspect holds no name for that id. Names come from Jamf's department and building
+   catalogs, read every hour with the group refresh and on every sweep. If the API client's role
+   lacks **Read Departments** (or **Read Buildings**), those reads are refused, the names cached
+   before are cleared rather than left to go stale, and the run log says *department names
+   cleared: this Jamf API client cannot read departments; grant its API role Read Departments*.
+   Grant the privilege; the next hourly refresh brings every name back. A read that failed for
+   any other reason — Jamf down, a timeout — keeps the names from the last good read.
+
    Two bounds, because a filter that silently drops rows is the failure this page exists to
    avoid. A change derived before 2026-09-15 carries no device details at all, so it matches
    none of the seven — *No changes match these filters* is the honest answer, not "this Mac is

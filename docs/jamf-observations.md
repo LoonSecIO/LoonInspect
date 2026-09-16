@@ -452,7 +452,9 @@ Groups (definitions; absent → groups are not observed, logged), Read Computer 
 Attributes (definitions; absent → the census is skipped and logged — skipped, never read
 as empty), Read Computer Inventory Collection Settings (aperture; absent →
 `available: false`), Read Departments and Read Buildings (names; absent → the ids are
-still stored and still filterable, but they resolve to no name, logged). `/v1/jamf-pro-version` needs authentication and no
+still stored and still filterable, but they resolve to no name, and any name cached before the
+privilege went is cleared rather than left standing — a warning on the run and in the container
+log names the privilege, #450). `/v1/jamf-pro-version` needs authentication and no
 privilege at all, so a missing version is never a privilege problem.
 
 This list is no longer only here: it is a registry in `app.mdm.jamf.privileges`, a table

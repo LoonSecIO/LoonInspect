@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,15 +38,26 @@ KINDS = (DEPARTMENT, BUILDING)
 OrgUnitNames = dict[tuple[int, str, str], str]
 
 
-async def record_org_units(db: AsyncSession, *, connection_id: int, kind: str, units: list[dict]) -> int:
-    """Cache one catalog. Returns how many objects it held.
+async def record_org_units(db: AsyncSession, *, connection_id: int, kind: str, units: list[dict] | None) -> int | None:
+    """Cache one catalog. Returns how many objects it held, or None when it was cleared.
 
-    Upsert, never replace: a rename lands on the existing row, and a catalog read that
-    came back empty because the API client lost a privilege leaves the last known names
-    standing rather than blanking every device's department. Objects deleted in Jamf
-    keep a stale row whose `last_seen_at` stops moving — departure is #181's subject,
+    **None clears.** The API client may not read this catalog (app.mdm.jamf.client), so
+    every name cached for this connection and kind is deleted: a name the client can no
+    longer read is one nobody can vouch for, and it would otherwise go on showing on the
+    devices page, on the Changes page's chips and in the Prompt bar's corrections (Kyle,
+    2026-09-16, #450). The ids on the devices and the change rows are untouched, so the next
+    readable catalog brings every name back.
+
+    **An empty list changes nothing.** That is a read that failed for another reason, or a
+    tenant with no such objects, and one bad hour must not blank the fleet's names.
+
+    Otherwise upsert, never replace: a rename lands on the existing row. Objects deleted in
+    Jamf keep a stale row whose `last_seen_at` stops moving — departure is #181's subject,
     and a label nobody references any more costs one row.
     """
+    if units is None:
+        await db.execute(delete(JamfOrgUnit).where(JamfOrgUnit.mdm_connection_id == connection_id, JamfOrgUnit.kind == kind))
+        return None
     if not units:
         return 0
 

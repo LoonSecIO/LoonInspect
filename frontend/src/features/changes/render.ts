@@ -104,6 +104,21 @@ export type LabelMap = Record<string, string>;
 const fieldKey = (section: string, field: string) => `field:${section}.${field}`;
 const entryKey = (kind: string, field: string) => `entry:${kind}.${field}`;
 
+/** The department ids whose name is unambiguous, id to name (#450). Two Jamf connections can
+ *  both number a department 5 and call it different things; an id with two names is left out,
+ *  and its chip shows the id rather than a guess. */
+export function departmentNamesFromPolicy(policy: ChangePolicy): Record<string, string> {
+  const seen = new Map<string, Set<string>>();
+  for (const department of policy.knownDepartments ?? []) {
+    const names = seen.get(department.id) ?? new Set<string>();
+    names.add(department.name);
+    seen.set(department.id, names);
+  }
+  const named: Record<string, string> = {};
+  for (const [id, names] of seen) if (names.size === 1) named[id] = [...names][0];
+  return named;
+}
+
 /** Every label the policy document carries, flattened into one lookup. */
 export function labelsFromPolicy(policy: ChangePolicy): LabelMap {
   const labels: LabelMap = {};
