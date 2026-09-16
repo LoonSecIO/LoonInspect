@@ -88,9 +88,9 @@ def test_an_unknown_key_id_is_refused_in_its_own_words(encryption_key: str) -> N
 
 
 def test_decrypt_under_a_different_key_raises_runtime_error(encryption_key: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Key rotation without re-encrypting stored rows is the realistic trigger, and
-    `crypto.py` notes rotation is an open TODO. The wrapped error is what makes that
-    diagnosable."""
+    """Key rotation without re-encrypting stored rows is the realistic trigger: the
+    envelope now names the key that wrote it, but `k1` is still the only one there is
+    (#144). The wrapped error is what makes that diagnosable."""
     column = EncryptedString()
     stored = column.process_bind_param(_SECRET, None)
 
