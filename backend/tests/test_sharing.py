@@ -420,9 +420,7 @@ def _app_row(title: str, full: str, bundle_id: str, count: int, bundle: str | No
     # `key_bundle` is `max(key_bundle)` over the group (#245) and is None for a group whose
     # rows have not been restamped since the column was added — the default here, so every
     # test that does not care about it exercises the omission.
-    return SimpleNamespace(
-        key_title=title, key_full=full, bundle_id=bundle_id, count=count, platform="macos", key_bundle=bundle
-    )
+    return SimpleNamespace(key_title=title, key_full=full, bundle_id=bundle_id, count=count, platform="macos", key_bundle=bundle)
 
 
 async def _snapshot(*, exclude_globs: list[str] | None = None, bundle: str | None = None) -> dict:

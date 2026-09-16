@@ -38,8 +38,7 @@ def test_app_full_vector() -> None:
 
 def test_app_bundle_vector() -> None:
     assert (
-        app_bundle_key("com.google.Chrome", "6478.127")
-        == "v1:d1cced6faaa7eb9549f07208bbff3c58cb00e3453c395c349b57734d460448f1"
+        app_bundle_key("com.google.Chrome", "6478.127") == "v1:d1cced6faaa7eb9549f07208bbff3c58cb00e3453c395c349b57734d460448f1"
     )
 
 
