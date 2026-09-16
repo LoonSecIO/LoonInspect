@@ -32,7 +32,13 @@ from app.core.runs import (
 )
 from app.core.tenancy import reset_tenant_id, set_tenant_id
 from app.mdm.collections import ensure_default_collections
-from app.mdm.credentials import CREDENTIAL_SCHEMAS, credential_fingerprint, fingerprint_field, secret_fields
+from app.mdm.credentials import (
+    CREDENTIAL_SCHEMAS,
+    credential_fingerprint,
+    credential_problem,
+    fingerprint_field,
+    secret_fields,
+)
 from app.mdm.jamf.client import JamfClient
 from app.mdm.jamf.sign_in import SIGN_INS
 from app.mdm.reemit import re_emit_connection
@@ -176,6 +182,10 @@ def _to_out(conn: MdmConnection) -> MdmConnectionOut:
         last_successful_auth_at=conn.last_successful_auth_at,
         credentials_rotated_at=conn.credentials_rotated_at,
         credentials_fingerprint=conn.credentials_fingerprint,
+        # Validated here rather than remembered anywhere (#393): the sweep's refusal and
+        # this row's sentence come out of one function, so the page cannot say a
+        # connection is fine while every sweep of it refuses.
+        credential_problem=credential_problem(MdmProvider(conn.provider), conn.name, conn.credentials_encrypted),
         created_at=conn.created_at,
         updated_at=conn.updated_at,
     )

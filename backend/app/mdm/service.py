@@ -40,6 +40,7 @@ from app.core.vuln import loaded_corpus
 from app.core.vuln_answer import stored_corpus
 from app.core.vuln_library import read_tenant_tier
 from app.core.wire import ENVELOPE, envelope, instance_label
+from app.mdm.credentials import CredentialUnusable
 from app.mdm.factory import get_mdm_client
 from app.mdm.jamf.client import (
     DEFAULT_SWEEP_PAGE_SIZE,
@@ -168,6 +169,10 @@ class ConnectionSyncResult:
     # Which collection this run served, when it served one (None for the generic path
     # and for connection-level runs that aggregate several).
     collection_id: int | None = None
+    # A failure that will recur identically on every tick until a person edits the
+    # connection — a stored credential that is not a credential (#393). The run row still
+    # records it every time; `finish` gives the outbox at most one run.failed a day for it.
+    standing: bool = False
 
 
 def sync_result_kwargs(result: ConnectionSyncResult) -> dict[str, object]:
@@ -192,6 +197,7 @@ def sync_result_kwargs(result: ConnectionSyncResult) -> dict[str, object]:
         "devices_failed": result.devices_failed,
         "observations": dict(result.observations),
         "error": result.error,
+        "standing": result.standing,
     }
 
 
@@ -315,6 +321,22 @@ async def run_jamf(
         # reclaimed process narrating someone else's run. The run's owner stops the
         # rest of the work (app.mdm.collections.run_collection).
         raise
+    except CredentialUnusable as exc:
+        # The stored credential is not a credential (#393). Its own clause, above the
+        # generic handler, for three reasons: the sentence is the whole diagnosis so
+        # there is no traceback worth logging, nothing was fetched so there is no
+        # accounting to report, and it will happen again on the next tick and every tick
+        # after — which is what `standing` tells `finish` about the outbox.
+        await db.rollback()
+        logger.warning(
+            "jamf sweep refused: the stored credential is not a credential",
+            extra={"connection_id": connection_id, "collection_id": collection_id, "trigger": trigger},
+        )
+        await db.refresh(connection)
+        await set_sync_status(db, connection, SyncStatus.failed)
+        return ConnectionSyncResult(
+            connection_id=connection_id, ok=False, error=str(exc), collection_id=collection_id, standing=True
+        )
     except SweepFailureThresholdExceeded as exc:
         # No rollback here: the device loop rolled back the last failing device before
         # raising, so the session is clean — and the accounting on the exception is
@@ -425,6 +447,18 @@ async def run_jamf_catalog(
     except RunReclaimed:
         # Same as run_jamf: the reclaim already closed the run; its owner stops the work.
         raise
+    except CredentialUnusable as exc:
+        # Same refusal as run_jamf's, and it has to be here too: the catalog class keeps
+        # its own cadence between sweeps, so leaving it to the generic handler would put
+        # the pydantic report back into `runs.error` on every catalog tick (#393).
+        await db.rollback()
+        logger.warning(
+            "jamf catalog refresh refused: the stored credential is not a credential",
+            extra={"connection_id": connection_id, "collection_id": collection_id, "trigger": trigger},
+        )
+        return ConnectionSyncResult(
+            connection_id=connection_id, ok=False, error=str(exc), collection_id=collection_id, standing=True
+        )
     except Exception as exc:
         await db.rollback()
         logger.exception(

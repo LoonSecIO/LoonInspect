@@ -48,6 +48,11 @@ export interface MdmConnection {
    *  itself — so a rotation is visible without a credential-tier permission. Null until a
    *  secret is saved under that scheme. */
   credentialsFingerprint: string | null;
+  /** The one sentence to act on when the stored credential is not a credential — the same
+   *  words a sweep of this connection writes into its run's error. Null when the stored
+   *  credential validates, which is every healthy connection. Computed by the server on
+   *  every read, so it disappears as soon as the credential is re-entered. */
+  credentialProblem: string | null;
   createdAt: string;
   updatedAt: string;
 }

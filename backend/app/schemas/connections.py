@@ -190,6 +190,11 @@ class MdmConnectionOut(BaseModel):
     # Rotation metadata for CONNECTION_READ: a truncated hash of the stored secret, so a
     # reader can tell that it changed without learning anything about it (#316).
     credentials_fingerprint: str | None
+    # Reportable state, not a stored column (#393): the one sentence to act on when the
+    # stored credential is not a credential — "Re-enter the Jamf API client for … — the
+    # stored credential has no clientId." Null when it validates, which is every healthy
+    # connection. Computed on every read, so it clears the moment the credential is fixed.
+    credential_problem: str | None = None
     created_at: datetime
     updated_at: datetime
 
