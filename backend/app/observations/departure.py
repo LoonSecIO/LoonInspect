@@ -3,7 +3,9 @@
 The ruling (#135, 2026-08-31): a smart group vanishing is not an edge case — large orgs
 delete them constantly, because a group is how a phased rollout is expressed and a finished
 rollout is a group nobody needs — and extension-attribute definitions go the same way. This
-is **detection and state**. The wire format is #179's, and nothing here emits.
+is **detection and state**. The wire format is #179's and lives in
+`app.observations.departure_events`, which reads the rows this module returns; nothing here
+emits.
 
 Three rules, in the order they are applied:
 
@@ -87,13 +89,19 @@ def gone_for_good(connection_id: Any, external_id: Any, *, at: datetime) -> Colu
 
 @dataclass(frozen=True)
 class CensusVerdict:
-    """What one census did to one subject kind under one connection."""
+    """What one census did to one subject kind under one connection.
+
+    `departed` and `returned` are the ROWS, not tallies (#179): the emitter needs the subject
+    each row names, and it enqueues inside the caller's transaction — before the commit, so the
+    event and the row land together — so a count here would mean re-reading what this function
+    just wrote. The run log still reads numbers; `as_log` takes their lengths.
+    """
 
     subject_kind: str
     observed: int
     population: int
-    departed: int
-    returned: int
+    departed: tuple[SubjectDeparture, ...] = ()
+    returned: tuple[SubjectDeparture, ...] = ()
     skipped: str | None = None
 
     def as_log(self) -> dict[str, object]:
@@ -101,8 +109,8 @@ class CensusVerdict:
             "subjectKind": self.subject_kind,
             "observed": self.observed,
             "population": self.population,
-            "departed": self.departed,
-            "returned": self.returned,
+            "departed": len(self.departed),
+            "returned": len(self.returned),
             "skipped": self.skipped,
         }
 
@@ -153,22 +161,22 @@ async def reconcile_census(
     population = current_ids - set(open_rows)
 
     if observed_ids is None:
-        return CensusVerdict(subject_kind, 0, len(population), 0, 0, SKIP_NOT_READABLE)
+        return CensusVerdict(subject_kind, 0, len(population), (), (), SKIP_NOT_READABLE)
     observed = set(observed_ids)
 
     # Returns first: a subject the census named is present, whatever else it says.
-    returned = 0
+    returned: list[SubjectDeparture] = []
     for subject_id, row in open_rows.items():
         if subject_id in observed:
             row.returned_at = at
-            returned += 1
+            returned.append(row)
 
     if not observed and population:
         logger.warning(
             "census returned nothing; departing nobody",
             extra={"connection_id": connection_id, "subject_kind": subject_kind, "population": len(population)},
         )
-        return CensusVerdict(subject_kind, 0, len(population), 0, returned, SKIP_EMPTY)
+        return CensusVerdict(subject_kind, 0, len(population), (), tuple(returned), SKIP_EMPTY)
     if len(population) >= MIN_POPULATION_FOR_COLLAPSE and len(observed) < COLLAPSE_RATIO * len(population):
         logger.warning(
             "census collapsed against the population; departing nobody",
@@ -179,21 +187,20 @@ async def reconcile_census(
                 "population": len(population),
             },
         )
-        return CensusVerdict(subject_kind, len(observed), len(population), 0, returned, SKIP_COLLAPSED)
+        return CensusVerdict(subject_kind, len(observed), len(population), (), tuple(returned), SKIP_COLLAPSED)
 
-    departed = 0
+    departed: list[SubjectDeparture] = []
     for subject_id in sorted(population - observed):
-        db.add(
-            SubjectDeparture(
-                mdm_connection_id=connection_id,
-                subject_kind=subject_kind,
-                subject_id=subject_id,
-                departed_at=at,
-                census_run_id=census_run_id,
-            )
+        row = SubjectDeparture(
+            mdm_connection_id=connection_id,
+            subject_kind=subject_kind,
+            subject_id=subject_id,
+            departed_at=at,
+            census_run_id=census_run_id,
         )
-        departed += 1
-    return CensusVerdict(subject_kind, len(observed), len(population), departed, returned)
+        db.add(row)
+        departed.append(row)
+    return CensusVerdict(subject_kind, len(observed), len(population), tuple(departed), tuple(returned))
 
 
 async def open_departures(db: AsyncSession, *, subject_kind: str) -> dict[tuple[int, str], datetime]:

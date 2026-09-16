@@ -170,6 +170,15 @@ did Splunk keep it.
    type; a list means only those. A list without `device.inventory` gets no snapshots,
    without `device.change` no change events, and a list of none gets nothing at all,
    silently. Set it to what you expect, or clear it.
+   - **No departure events, and a smart group really was deleted.** These are their own
+     types, `subject.departure` and `subject.returned`, under the sourcetype
+     `loon:departure`, and nothing else carries them: a search for `loon:jamf:mac:*` will
+     never show one. Migration `bd51c7a9e402` added **both** to every explicit list, so a
+     list holding one and not the other was edited by hand — put the other back, because
+     departures without returns describe a fleet that only ever shrinks. Then confirm the
+     census actually departed something: the catalog run's log line is *departures
+     reconciled* with `departed`, `returned` and `eventsEnqueued`. `departed 0` is path 15,
+     not a delivery problem; `departed 1, eventsEnqueued 0` is reportable **E**.
 6. **The index.** LoonInspect never sends an `index` field. The HEC token must have exactly
    one allowed index and it must be the default ([`splunk-setup.md`](splunk-setup.md)
    §2); a token with no default index does not put the events where you are looking.
@@ -1162,7 +1171,15 @@ any point puts it straight back.
    `departedAt` — the first clean census that did not return it — and its page, observations and
    changes are all still there by id. If Jamf Pro still holds the Mac, ask Jamf for it with path
    2's `curl` against `/api/v4/computers-inventory`; if Jamf returns it, reportable state **T**.
-3. **You want it gone for good.** Nothing removes a Mac's history today — not this, not
+3. **Your SIEM saw nothing either way.** A Mac's departure and return are not on the wire
+   yet. `subject.departure` / `subject.returned` ship today for **objects** — a smart group or
+   an extension-attribute definition (path 15) — under the sourcetype `loon:departure`; the
+   Mac's own seven-day tail and its closing `state: removed` are built on this census and are
+   the follow-up to #179. Until then the run log above and
+   `GET /api/devices?includeDeparted=true` are where a departed Mac is visible, and a saved
+   search on `loon:departure` will correctly find no `subjectKind=computer` events. That is
+   not a delivery fault and not reportable.
+4. **You want it gone for good.** Nothing removes a Mac's history today — not this, not
    deleting the connection. Honouring a Jamf deletion as an erasure is a stated, deliberate
    deferral (v5); [`jamf-observations.md`](jamf-observations.md) §8 says what is held.
 
