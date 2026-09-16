@@ -15,6 +15,10 @@ Three things are asserted here and each is a separate promise:
 3. the same sentence comes back on the connection's own row, so an operator finds it on
    Settings > Connections without opening a run.
 
+The webhook path earns the first two of those separately (#477). It builds its client
+inside the run rather than above it, so a stream of retried webhooks against a broken
+connection is one alarm a day, the same as a stream of ticks.
+
 Gated on RUN_DB_TESTS like the other database-backed suites.
 """
 
@@ -155,6 +159,84 @@ async def test_a_second_refusal_the_same_day_emits_no_second_event(db, no_creden
     from app.models.schema import RunLogLine
 
     lines = (await db.execute(select(RunLogLine.message).where(RunLogLine.run_id == runs[1].id))).scalars().all()
+    assert any("already reported this failure today" in line for line in lines)
+
+
+async def _webhook(db, connection_id: int, *, event: str = "ComputerAdded"):
+    """One webhook, with the connection loaded the way the route loads it.
+
+    Fresh per call on purpose: in production every callback is its own request with its
+    own session, and the refusal's rollback expires the instance this file holds. Loading
+    it again is what a second request does, not a concession to the test.
+    """
+    from app.mdm.service import ingest_webhook
+    from app.models.schema import MdmConnection
+
+    connection = await db.get(MdmConnection, connection_id)
+    return await ingest_webhook(db, connection, {"webhook": {"webhookEvent": event}, "event": {"jssID": 477}})
+
+
+async def test_a_webhook_refuses_onto_a_run_of_its_own(db, no_credential) -> None:
+    """The webhook path gets the sweep's refusal, and gets it on a run row (#477).
+
+    Before this the client was built above the guards, so the refusal happened before any
+    run existed: the sentence had nowhere to be written, the Runs page said nothing, and
+    the operator's only trace was a 500.
+    """
+    from app.mdm.credentials import CredentialUnusable
+
+    connection, _ = no_credential
+    name, connection_id = connection.name, connection.id
+
+    # The free path stays free. A ComputerCheckIn is dropped by name above `acquire`, so
+    # a heartbeat times the whole fleet costs nothing even on a connection that cannot
+    # authenticate — which is what building the client below the guards buys.
+    assert await _webhook(db, connection_id, event="ComputerCheckIn") is None
+    assert await _runs_of(db, connection_id) == [], "a dropped heartbeat mints no run"
+
+    with pytest.raises(CredentialUnusable) as raised:
+        await _webhook(db, connection_id)
+    sentence = str(raised.value)
+
+    assert name in sentence
+    assert "clientId" in sentence
+    assert "Settings › Connections" in sentence
+    assert "pydantic" not in sentence.lower()
+    assert "validation error" not in sentence.lower()
+
+    runs = await _runs_of(db, connection_id)
+    assert len(runs) == 1, "one refused webhook is one run"
+    assert runs[0].status == "failed"
+    assert runs[0].trigger == "webhook"
+    assert runs[0].error == sentence
+
+
+async def test_a_burst_of_webhooks_the_same_day_raises_one_alarm(db, no_credential) -> None:
+    """The ration, on the one path that is allowed to run concurrently.
+
+    Webhooks do not take the sweep lock, Jamf Pro retries them, and a busy tenant's are a
+    stream — so an alarm per webhook is the tick storm #393 closed, reopened wider. Every
+    refusal is still a run row; only the event is rationed.
+    """
+    from app.mdm.credentials import CredentialUnusable
+    from app.models.schema import RunLogLine
+
+    connection, _ = no_credential
+    connection_id = connection.id
+
+    for _ in range(4):
+        with pytest.raises(CredentialUnusable):
+            await _webhook(db, connection_id)
+
+    runs = await _runs_of(db, connection_id)
+    assert [row.status for row in runs] == ["failed"] * 4, "every refusal is recorded"
+
+    events = await _run_failed_events_of(db, connection_id)
+    assert len(events) == 1, "four refused webhooks in one UTC day are one alarm"
+    assert events[0].payload["jobID"] == str(runs[0].id)
+    assert events[0].payload["trigger"] == "webhook"
+
+    lines = (await db.execute(select(RunLogLine.message).where(RunLogLine.run_id == runs[3].id))).scalars().all()
     assert any("already reported this failure today" in line for line in lines)
 
 

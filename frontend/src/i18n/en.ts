@@ -1059,6 +1059,15 @@ export const en = {
     title: "Jamf Patch",
     description: "Software titles tracked by Jamf's patch catalog, synced hourly.",
     tableName: "Name",
+    // #478: where a title's app name came from. Jamf publishes no app name on 513 of its
+    // 1,553 titles and #385 takes one from the patch definition's killApps; only that case
+    // is marked. A name Jamf published, and a title stored before the rule, say nothing.
+    appNameDerived: "name from the patch definition",
+    appNameDerivedHint:
+      "Jamf publishes no app name for this title, so LoonInspect read one from the killApps list in the title's own patch definitions — the app an update has to close. Where a title names several apps for one bundle ID the first is taken, so this can be a miss, never a wrong match: a name no Mac reports matches nothing.",
+    appNameUnnamed: "No app name",
+    appNameUnnamedHint:
+      "Nothing names an app for this title — neither Jamf's own field nor its patch definitions — so its versions are matched by bundle ID and version alone, never by app name.",
     tablePublisher: "Publisher",
     tableBundleId: "Bundle ID",
     tableCurrentVersion: "Current version",
@@ -1588,6 +1597,7 @@ export const en = {
       readbackDepartmentNamed: (name: string) => `on Macs in department “${name}”`,
       readbackManaged: "on Macs Jamf manages",
       readbackUnmanaged: "on Macs Jamf does not manage",
+      readbackSince: (start: string) => `observed since ${start}`,
       answerNone: "No changes match.",
       answerHeadline: (computers: number, changes: number) =>
         `${computers} computer${computers === 1 ? "" : "s"}, ${changes} change${changes === 1 ? "" : "s"}.`,

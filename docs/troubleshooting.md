@@ -182,6 +182,14 @@ did Splunk keep it.
      tick gave up before it dialled, and it names what to check — usually a destination
      whose URL it refuses or whose stored secret this container cannot read (§4). Fix that,
      and the next tick drains the queue. No such line and still climbing → reportable **D**.
+   - **More than one app process, and the queue is not draining.**
+     `docker compose logs app --since 10m | grep "outbox tick skipped"`. That line means
+     the process printing it found another one already delivering for that organization
+     and did nothing, which is correct: one process delivers at a time and the rest say
+     so every tick ([`operations.md` §7](operations.md)). It is only a problem when
+     *every* process prints it and `pendingCount` still climbs — then the process holding
+     the lock is wedged rather than working. Restart the stack: the lock goes with its
+     connection, and the next tick takes it.
    - Both zero and the runs in step 1 succeeded → step 5.
 5. **Subscriptions.** `subscribedEvents` on the destination: `null` means every event
    type; a list means only those. A list without `device.inventory` gets no snapshots,
@@ -607,6 +615,20 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
      request to `/api/system/data-sharing/exclusion-candidates` and the reason it ended;
      reload the page to ask again.
 
+5. **A title's app name reads *name from the patch definition*, or *No app name*.** Both
+   lines are the page saying where the name under the title came from; neither is a fault
+   and neither needs anything from you. Jamf publishes no app name on 513 of its 1,553
+   titles — every versioned line, *Wireshark 4.2* among them — so LoonInspect reads one
+   out of the `killApps` list in the title's own patch definitions and marks that it did.
+   Nothing on a marked row is less trustworthy for carrying the marker: where a title
+   names several apps for one bundle ID the first is taken, which can miss, and a name no
+   Mac reports matches nothing — it can never make some other app's row answer
+   ([`app-catalog.md`](app-catalog.md) §2a is the rule, and the marker's hover text is its
+   short form). *No app name* means nothing names an app for that title at all; it still
+   matches installed apps, by bundle ID and version, and only the name-keyed lookup is
+   closed to it. A title showing neither line was stored before the rule existed — the
+   next refresh (step 1) reads it once more and it gains one.
+
 **J.** A refresh that reports no error leaves the table saying *No Jamf Patch titles
 synced yet.*, a title Jamf publishes stays missing from the list with *Only titles with
 devices* unticked for more than a day, or a press of **Sync now** writes nothing to the
@@ -695,6 +717,11 @@ docker compose logs app --since 30m | grep -E 'webhooks/jamf|jamf webhook'
    Jamf Pro refused the sign-in, or could not be reached. Nothing waits on the renewal —
    it backs off, doubling up to ten minutes, and each read signs in as it needs to — so
    the fix is the same as for anything on `/api/oauth/token` above: **Test connection**.
+6. **`"status_code": 503`**, beside `jamf webhook refused: the stored credential is not a
+   credential` → the callback was right, and this connection cannot ask Jamf Pro anything:
+   what is stored against it is not a credential, so nothing was sent. The log line carries
+   the whole sentence and names the connection; §12 is the walk-through, and the webhook's
+   own failed run says the same thing.
 
 **L.** Callbacks that Jamf Pro sends never produce a request line while the address, the
 network and the webhook's event are right; or a refusal's `reason` names a state the
@@ -908,12 +935,23 @@ writes one row to the disclosure log naming the destination and the one field th
 
    *When* is not one of those, and neither are *the last time*, *the latest*, *the most recent*
    or *the first time*. The table is ordered by observed time, newest first, so the top row is the
-   last time and the answer box states the time itself. A date **range** still is: "in the last 24
-   hours", "since Monday", "yesterday" and "before September" all answer over the whole log with
-   this lead, and the rows are newest-first inside it. To bound one, arrive from the Overview's
-   feed, which links here with a window, or narrow by hand. Until 2026-09-15 a question with
+   last time and the answer box states the time itself. A date range with two **ends** still is —
+   "before September", "between Monday and Friday" — because the feed filters *observed at or
+   after* and has no `until`; a **start** is not, since 2026-09-16. Until 2026-09-15 a question with
    "last" in it — "When was the last time someone installed wireshark" — carried *Cannot express
    'when' — filters match names, not timestamps* over an answer whose first row was the answer.
+
+   **A question can set a start, and the chip says which one.** The server reads it out of the
+   question's own words — never the model, which is not asked and does not know today's date —
+   against its own clock and your browser's time zone, so *today* is your day. It knows *in the
+   last 24 hours*, *last 7 days*, *past week*, *3 days ago* and their kin (minutes, hours, days,
+   weeks, months of 30 days, years of 365), and *today*, *yesterday*, *since yesterday*, *since
+   Monday*…*since Sunday*, *this week* (from Monday), *this month*, *this year*. It reads back as
+   *Observed since …*, shows as the chip, which clears it in a press, and the audit row carries
+   `window: true`. Anything else sets none — "last night", "before September", a month by name —
+   and the answer is over the whole log, as it was. "Yesterday" is read as its **start**, so the
+   answer runs to now: that is why the model's *Cannot express a date range* still stands over
+   that one and goes over "in the last 24 hours".
 
    **The time in the answer box.** *Observed 14/09/2026, 11:57:26* is the same value as the
    table's **Observed** column: Jamf's report time for that Mac, which is when its inventory
@@ -1057,6 +1095,19 @@ every destination. Every refusal is still recorded on its run, and the run whose
 withheld says so in its own log (*run.failed not emitted: this connection already reported
 this failure today*). So the silence after the first alarm is not the problem clearing:
 the connection's row is what says whether it is fixed.
+
+**Webhooks refuse in the same words, and each refusal is its own run.** While the
+credential is unusable, a connection answers `503` to every callback it would have acted
+on — a `ComputerAdded` or `ComputerInventoryCompleted` naming a computer. A
+`ComputerCheckIn` is still dropped by name before any of this and still answers `200`, so
+a fleet-wide check-in webhook is not what you are looking at.
+`docker compose logs app --since 30m | grep 'jamf webhook refused'` carries the same
+sentence, and `GET /api/runs?trigger=webhook&pageSize=5` lists the failed runs behind it —
+one per callback Jamf Pro sent or retried, which is why the run list can fill faster than
+the ten-minute tick would explain. It is the same failure on a second path, not a second
+failure: the ration is counted over the connection's failed runs whatever wrote them, so
+one `run.failed` a day covers ticks, webhooks and any mix of the two, and the **Save** in
+step 2 ends both at once.
 
 **P.** The connection's row says nothing and `credentialProblem` is `null`, while its runs
 keep failing with this sentence — or the sentence stays on the row after a successful Save
@@ -1236,11 +1287,28 @@ history stay, and **Show departed** in the filter bar (`includeDeparted=true`) r
    `GET /api/devices?includeDeparted=true` are where a departed Mac is visible, and a saved
    search on `loon:departure` will correctly find no `subjectKind=computer` events. That is
    not a delivery fault and not reportable.
-5. **You want it gone for good.** Nothing removes a Mac's history today — not this, not
+5. **An alert closed itself, or the nightly numbers moved, and nobody touched anything.** A
+   Mac leaving takes its open latches with it — the sweep is what closes a latch, and a Mac
+   that left is never swept again, so one left open would read as *true of the fleet* for ever.
+   The census line says so: *…N open alert latches closed on Macs that left the fleet; nothing
+   was deleted*. **Nothing was** — `GET /api/alerts?open=false` lists the row with
+   `closedReason: "device_departed"`, which is what tells it from an ordinary `app_gone` close,
+   and the Mac's apps, observations and changes are all still there (closed rows then age out
+   at 30 days, like run history). No `closedReason` at all means the row closed before
+   2026-09-16, when the reason started being recorded; not a fault. The same day is the answer
+   to the numbers: the posture tape counts the fleet without its departed Macs — device counts,
+   alert counts, and every app, catalog, patch and vulnerability key that counts what a Mac
+   carries ([posture-snapshot.md](posture-snapshot.md), *Departed Macs*) — so a Mac's numbers
+   leave on **day seven of its tail**, not the day you deleted it in Jamf, `devices.departed_24h`
+   says how many left that night, and captures written before 2026-09-16 counted deleted Macs
+   and cannot be corrected. An open latch still sitting on a Mac that left *is* a fault: the
+   census has not run since it crossed day seven (step 1), and if a clean one has, state **T**.
+6. **You want it gone for good.** Nothing removes a Mac's history today — not this, not
    deleting the connection. Honouring a Jamf deletion as an erasure is a stated, deliberate
    deferral (v5); [`jamf-observations.md`](jamf-observations.md) §8 says what is held.
 
 **T.** A finished, unselected, failure-free device sweep whose log has no *device census* line;
-or a Mac Jamf returns on the sweep's own endpoint that still departs or stays departed. Report
-the run's `jobID` and its log, the census line if there is one, the Mac's Jamf id, the
-collection's **Selector** field, and `docker compose logs app --since 30m`.
+a Mac Jamf returns on the sweep's own endpoint that still departs or stays departed; or an open
+alert latch still on a Mac that left the fleet after a clean census has run since. Report the
+run's `jobID` and its log, the census line if there is one, the Mac's Jamf id, the collection's
+**Selector** field, and `docker compose logs app --since 30m`.

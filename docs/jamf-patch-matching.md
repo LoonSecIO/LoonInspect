@@ -185,7 +185,12 @@ page saw two pre-#65 booleans — the odd shape #313 was filed against.
   devices** is ticked by default (#403) and hides titles whose "Devices with app" is 0 — on
   every fleet measured, about 99% of the catalog. The footer says how many it hid, and each
   empty table says which of four states it is in. "With devices" means matched, not
-  installed: the titles §3 leaves unconsidered read 0 on every fleet.
+  installed: the titles §3 leaves unconsidered read 0 on every fleet. Since #478 the row
+  also carries the title's **app name** and, when LoonInspect derived it rather than Jamf
+  publishing it, says so: `GET /api/jamf-patch/titles` and the title detail serve
+  `appNameSource` (`jamf` | `kill_apps` | `unnamed`, null on a row stored before #385)
+  beside `appName`, and the page marks only the derived case
+  ([`app-catalog.md`](app-catalog.md) §2a).
 - **One cell, three pages** (`frontend/src/features/catalog/PatchAnswerCell.tsx`, over the
   pure `patchAnswer.ts` the test lane pins): the device page's Jamf Patch column, the
   application record's version spread and the catalog all paint the same thing — the state

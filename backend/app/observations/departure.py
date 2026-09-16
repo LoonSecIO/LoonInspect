@@ -295,6 +295,40 @@ async def open_departures(db: AsyncSession, *, subject_kind: str) -> dict[tuple[
     return {(row.mdm_connection_id, row.prior_jamf_pro_id or row.subject_id): row.departed_at for row in rows}
 
 
+async def departure_windows(
+    db: AsyncSession, *, connection_id: int, subject_kind: str
+) -> dict[str, tuple[tuple[datetime, datetime | None], ...]]:
+    """`the id it is gone under -> ((departed_at, ended_at or None), …)`, oldest first — every departure this
+    connection recorded for the kind, ended ones included. `open_departures` answers the present tense, for a
+    surface listing current spans; a report over last March needs the past one, a stretch that has since ended
+    still relabelling the days it covered (#465). Same key as every other reader — `prior_jamf_pro_id or
+    subject_id`, the id the row is gone under — and the same half of it, asked in SQL rather than spelled a
+    second time here: a row `still_gone_under_this_id` ends at `None`, whatever `returned_at` says. A serial
+    match's `returned_at` is the day the Mac came back as a *different* subject, under its own id and with its
+    own spans; under the prior id it never came back, and bounding the stretch there would print weeks of "we
+    lost sight of it" for an id the rest of the app calls gone for good (#475). Only a plain return — the
+    departed id itself named again by a census — bounds one."""
+    rows = (
+        await db.execute(
+            select(
+                func.coalesce(SubjectDeparture.prior_jamf_pro_id, SubjectDeparture.subject_id).label("gone_id"),
+                SubjectDeparture.departed_at,
+                SubjectDeparture.returned_at,
+                still_gone_under_this_id().label("still_gone"),
+            )
+            .where(
+                SubjectDeparture.mdm_connection_id == connection_id,
+                SubjectDeparture.subject_kind == subject_kind,
+            )
+            .order_by(SubjectDeparture.departed_at, SubjectDeparture.id)
+        )
+    ).all()
+    windows: dict[str, list[tuple[datetime, datetime | None]]] = {}
+    for row in rows:
+        windows.setdefault(row.gone_id, []).append((row.departed_at, None if row.still_gone else row.returned_at))
+    return {gone_id: tuple(seen) for gone_id, seen in windows.items()}
+
+
 async def tail_counts(db: AsyncSession, *, connection_id: int, subject_kind: str, at: datetime) -> tuple[int, int]:
     """`(still in their tail, left the fleet)` among the subjects this connection is missing — the
     two halves of the census line on the run, counted through the same `left_the_fleet` the surfaces

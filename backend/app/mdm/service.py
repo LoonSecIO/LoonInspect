@@ -13,7 +13,7 @@ from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.alerts.service import sync_new_app_latches
+from app.alerts.service import close_departed_device_latches, sync_new_app_latches
 from app.catalog.service import record_device_apps
 from app.changes.derive import CollapsedDeparture, collecting_departures, derive_and_record
 from app.core.config import settings
@@ -608,6 +608,10 @@ async def _reconcile_device_census(
     `observed_lineage` is None when this sweep's sections carry no `hardware` (#475): no serial to
     census with, so a Mac back under a new id is not recognised, and the line says which match it got
     — matching on less under the same sentence is rule 2.
+
+    This is also where a departed Mac's open alert latches are closed (#476), because it is the only
+    place that can be: `process_sync` runs against Macs a sweep returns, and a Mac that left the
+    fleet is never swept again, so its latch would stay open for ever.
     """
     at = datetime.now(UTC)
     if selector is not None or devices_failed:
@@ -636,6 +640,12 @@ async def _reconcile_device_census(
     # a clean census (#179, 4.5). That needs a producer this function does not have, so it is
     # #179's follow-up; the object half above emits today. Until then `loon:departure` carries
     # no `subjectKind: computer` event, which docs/troubleshooting.md §16 tells an operator.
+    #
+    # The latch close is unconditional on the verdict (#476): a latch crosses day seven because of a
+    # departure recorded on an earlier night, so what tonight's census decided has no bearing on it.
+    latches_closed = await close_departed_device_latches(
+        db, connection_id=connection.id, at=at, run_id=run.id if run is not None else None
+    )
     await db.commit()
     if run is None:
         return
@@ -654,6 +664,13 @@ async def _reconcile_device_census(
             f"{in_tail} in their seven-day tail, {left} left the fleet; "
             f"{_MATCHED_BY_ID_AND_SERIAL if observed_lineage is not None else _MATCHED_BY_ID_ONLY}"
         )
+    # On both lines, refusal included: a latch closing is a row an operator was watching going
+    # quiet, and must never be something they infer from a number that moved. Path 16, step 5.
+    if latches_closed:
+        line += (
+            f". {latches_closed} open alert {'latch' if latches_closed == 1 else 'latches'} closed on Macs "
+            f"that left the fleet; nothing was deleted — GET /api/alerts?open=false lists them"
+        )
     await run_log(
         db,
         run,
@@ -662,6 +679,7 @@ async def _reconcile_device_census(
         **verdict.as_log(),
         inTail=in_tail,
         leftTheFleet=left,
+        latchesClosed=latches_closed,
         # The sentence says "seven-day"; the machine-readable number comes from the constant.
         tailDays=DEPARTURE_TAIL_DAYS,
     )
@@ -1062,12 +1080,17 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
     from the sweep's; an aperture is content-addressed, so an unchanged one is an upsert
     of `last_seen_at` and nothing more.
     """
-    client = get_mdm_client(connection)
+    # Read while the instance is certainly live, for the refusal handler below: a
+    # rollback expires every ORM attribute, and reading an expired one under asyncio
+    # raises MissingGreenlet rather than refreshing (#125).
+    connection_id = connection.id
     event = parse_webhook_event(payload)
     if event.event_name not in REACTIVE_WEBHOOK_EVENTS:
         # Dropped by name, not by accident: a ComputerCheckIn is a heartbeat times
         # the whole fleet, and reacting would mint a run and burn three API reads
-        # per heartbeat (#76). Nothing has been fetched and no run row exists yet.
+        # per heartbeat (#76). Nothing has been fetched, no client has been built and no
+        # run row exists yet — so this drop is free even on a connection whose stored
+        # credential is unusable (#477).
         logger.info(
             "jamf webhook event does not warrant a fetch; dropped by design",
             extra={"connection_id": connection.id, "event": event.event_name, "jamf_id": event.jamf_id},
@@ -1102,6 +1125,13 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
     # coming, so the webhook's own run carries it.
     async with entered(run), collecting_departures() as collapsed:
         try:
+            # **Below `acquire`, not above it (#477).** Building the client is where the
+            # stored credential is validated, and a credential that is not a credential
+            # refuses here — so the refusal has to happen inside a run, or it has no row
+            # to be written on and no previous failed run to be rationed against. Built
+            # above the guards until #477, which cost a `ComputerCheckIn` a 500 and a
+            # traceback on a connection that would have dropped it for free.
+            client = get_mdm_client(connection)
             async with client.http() as http:
                 aperture = await capture_aperture(client, http, sections=sections, quarantined_extension_attributes=quarantine)
                 aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)
@@ -1116,6 +1146,22 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
                 sections=sections,
                 quarantined_extension_attributes=quarantine,
             )
+        except CredentialUnusable as exc:
+            # The stored credential is not a credential (#393). The sweep's refusal, on
+            # the one path that is allowed to run concurrently: Jamf Pro retries a
+            # webhook and a busy tenant's webhooks are a stream, so this is the path
+            # where an unbounded alarm would hurt most. `standing=True` is what rations
+            # it to one `run.failed` per connection per UTC day; the run row still
+            # records every refusal, which is what the ration is measured against.
+            await db.rollback()
+            logger.warning(
+                "jamf webhook refused: the stored credential is not a credential. "
+                "Settings › Connections carries the same sentence on this connection's row",
+                extra={"connection_id": connection_id, "event": event.event_name},
+            )
+            await db.refresh(run)
+            await finish(db, run, ok=False, error=str(exc), standing=True)
+            raise
         except Exception as exc:
             await db.rollback()
             # The rollback expired every ORM instance in the session; reload the run

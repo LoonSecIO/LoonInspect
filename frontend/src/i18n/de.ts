@@ -952,6 +952,12 @@ export const de: Translations = {
     title: "Jamf Patch",
     description: "Software-Titel aus dem Jamf-Patch-Katalog, stündlich synchronisiert.",
     tableName: "Name",
+    appNameDerived: "Name aus der Patch-Definition",
+    appNameDerivedHint:
+      "Jamf veröffentlicht für diesen Titel keinen App-Namen. LoonInspect hat ihn aus der killApps-Liste der Patch-Definitionen dieses Titels gelesen — der App, die ein Update schließen muss. Nennt ein Titel mehrere Apps zu einer Bundle-ID, wird die erste genommen: das kann daneben liegen, aber nie falsch zuordnen — ein Name, den kein Mac meldet, trifft nichts.",
+    appNameUnnamed: "Kein App-Name",
+    appNameUnnamedHint:
+      "Für diesen Titel nennt nichts eine App — weder Jamfs eigenes Feld noch seine Patch-Definitionen. Seine Versionen werden deshalb nur über Bundle-ID und Version zugeordnet, nie über den App-Namen.",
     tablePublisher: "Herausgeber",
     tableBundleId: "Bundle-ID",
     tableCurrentVersion: "Aktuelle Version",
@@ -1435,6 +1441,7 @@ export const de: Translations = {
       readbackDepartmentNamed: (name: string) => `auf Macs in Abteilung „${name}“`,
       readbackManaged: "auf von Jamf verwalteten Macs",
       readbackUnmanaged: "auf nicht von Jamf verwalteten Macs",
+      readbackSince: (start: string) => `beobachtet seit ${start}`,
       answerNone: "Keine Änderungen gefunden.",
       answerHeadline: (computers: number, changes: number) =>
         `${computers} Computer, ${changes} Änderung${changes === 1 ? "" : "en"}.`,
