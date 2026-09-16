@@ -156,8 +156,12 @@ async def test_the_refused_tick_touches_nothing_and_says_which_process_is_delive
 
     async with outbox.outbox_tick_lock(TENANT_ID) as held:  # the other process, mid-tick
         assert held
-        async with outbox.outbox_tick_lock(OTHER_TENANT_ID) as elsewhere:
-            assert elsewhere  # keyed per tenant, so one slow SIEM is one tenant's problem
+        with pytest.raises(RuntimeError):
+            async with outbox.outbox_tick_lock(OTHER_TENANT_ID) as elsewhere:
+                assert elsewhere  # keyed per tenant: one slow SIEM is one tenant's problem
+                raise RuntimeError("the tick this lock was wrapping died")
+        async with outbox.outbox_tick_lock(OTHER_TENANT_ID) as after_a_death:
+            assert after_a_death  # released on the exception path too, so nothing deadlocks
         with caplog.at_level(logging.INFO, logger="app.main"):
             await main.outbox_worker_tick()
 
