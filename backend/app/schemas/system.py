@@ -93,10 +93,9 @@ class SendExchangeOut(BaseModel):
 
 
 class ExclusionCandidateAppOut(BaseModel):
-    """One title no public source on this container knows (#483): its name, the bundle ID
-    a glob would have to match, the devices carrying it, and why it is listed. `reason` is
-    `no_public_source` today — the only reason there is — and a client that does not know a
-    value shows the row without the tag rather than hiding it."""
+    """One title no public source on this container knows (#483). `reason` is
+    `no_public_source` today — the only one there is — and a client that does not know a
+    value shows the row untagged rather than hiding it."""
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
@@ -108,8 +107,8 @@ class ExclusionCandidateAppOut(BaseModel):
 
 class ExclusionCandidateGroupOut(BaseModel):
     """Unknown titles under one reverse-DNS prefix. `suggestion` is null where the prefix
-    does not earn one — a single unknown title, or a prefix some title a public source DOES
-    know already uses — and `excluded` means a glob in the box already removes them all."""
+    earns none — a lone unknown title, or a prefix some title a public source DOES know
+    already uses — and `excluded` means a glob in the box already removes them all."""
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
@@ -123,9 +122,8 @@ class ExclusionCandidateGroupOut(BaseModel):
 
 class ExclusionGlobCountOut(BaseModel):
     """What one glob matches, counted with the exchange's own `_excluded`. `source` is
-    `typed` (it is in the box) or `suggested` (this page proposed it and nothing is saved).
-    `case_misses` are bundle IDs it would match if either side were lower-cased: the Linux
-    container's `fnmatch` is case-sensitive, so these are the quiet misses."""
+    `typed` (in the box) or `suggested` (proposed here, nothing saved). `case_misses` are
+    bundle IDs it would match if either side were lower-cased — the quiet ones."""
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
@@ -137,14 +135,16 @@ class ExclusionGlobCountOut(BaseModel):
 
 
 class ExclusionCandidatesOut(BaseModel):
+    """`more_groups` is what the screenful left out, so a truncated list cannot read as the
+    whole answer, and the two title counts are what "unknown" was decided against: with no
+    catalog synced and no epoch loaded nothing is known, and the page names the missing
+    source rather than calling the whole fleet public."""
+
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     groups: list[ExclusionCandidateGroupOut]
     more_groups: int
     globs: list[ExclusionGlobCountOut]
-    # What "unknown" was decided against, so an empty list is a legible state and not a
-    # blank panel: with no catalog synced and no epoch loaded nothing here is known, and
-    # the page names the missing source instead of calling the whole fleet public.
     catalog_titles: int
     library_titles: int
 

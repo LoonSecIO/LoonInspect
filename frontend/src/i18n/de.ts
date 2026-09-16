@@ -60,6 +60,20 @@ export const de: Translations = {
       excludeHeading: "Ausgeschlossene Bundle-IDs",
       excludeHelp:
         "Glob-Muster, eines pro Zeile. Passende Anwendungen gelangen nie in einen Snapshot — gefiltert vor der Aggregation, vor jeder serverseitigen Regel.",
+      globMatches: (apps: number, devices: number) =>
+        apps === 0 ? "trifft auf nichts in dieser Flotte zu" : `${apps} App${apps === 1 ? "" : "s"} auf ${devices} Mac${devices === 1 ? "" : "s"}`,
+      caseMiss: (bundleId: string) => `${bundleId} wird nicht erfasst (Groß-/Kleinschreibung)`,
+      candidatesHeading: "Kandidaten",
+      candidatesHelp:
+        "Titel, die keine öffentliche Quelle auf diesem Container kennt: kein Jamf-Patch-Titel passt auf einen ihrer Builds, und die Schwachstellen-Bibliothek nennt keinen von ihnen. Unbekannt heißt nicht Ihre — der lange Schwanz einer Flotte ist meist öffentliche Software, von der der Katalog nie gehört hat. Lesen Sie dies als Vorauswahl, nicht als Antwort. Nichts wird ausgeschlossen, bevor Sie ein Muster hinzufügen und es gespeichert ist.",
+      candidatesNone: (catalog: number, library: number) =>
+        `Keine Kandidaten: jeder Titel dieser Flotte ist hier einer öffentlichen Quelle bekannt, geprüft gegen ${catalog} Jamf-Patch-Titel und ${library} Titel der Schwachstellen-Bibliothek. Beide Zahlen stehen auf 0, solange der Patch-Katalog nicht synchronisiert und keine Epoche geladen ist — dann kann nichts bekannt sein, siehe troubleshooting.md §6 Schritt 4.`,
+      candidateRow: (name: string, bundleId: string, devices: number) =>
+        `${name} — ${bundleId} — ${devices} Mac${devices === 1 ? "" : "s"} — keine öffentliche Quelle hier kennt sie`,
+      groupSummary: (apps: number, devices: number) => `${apps} unbekannte Titel auf ${devices} Macs`,
+      groupCovered: "bereits durch ein Muster im Feld abgedeckt",
+      addGlob: (glob: string) => `${glob} hinzufügen`,
+      moreGroups: (count: number) => `${count} weitere Präfixe werden nicht angezeigt.`,
       lastExchange: "Letzter Austausch",
       neverExchanged: "nie — bisher wurde kein Austausch aufgezeichnet",
       outcomeSent: "gesendet",

@@ -5,11 +5,13 @@ import { PERMISSIONS } from "@/features/auth/types";
 import { useHasPermission } from "@/features/auth/store";
 import {
   getDataSharing,
+  getExclusionCandidates,
   previewExchange,
   resetSubmissionUuid,
   sendExchangeNow,
   updateDataSharing,
   type DataSharingSettings,
+  type ExclusionCandidates,
   type ShareLogEntry,
   type SharingTier
 } from "@/features/system/api";
@@ -34,16 +36,38 @@ export function DataSharingPage() {
   const [sending, setSending] = useState(false);
   const [sendRefusal, setSendRefusal] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // What the fleet carries that no public source here knows, and what each pattern
+  // matches (#483). Null until the first read answers, and again if one fails: the panel
+  // is an aid to the box below, never a reason to block editing it.
+  const [candidates, setCandidates] = useState<ExclusionCandidates | null>(null);
+
+  function refreshCandidates(globs: string[]) {
+    getExclusionCandidates(globs).then(setCandidates).catch(() => setCandidates(null));
+  }
 
   useEffect(() => {
     getDataSharing()
       .then((loaded) => {
         setSettings(loaded);
         setGlobsDraft(loaded.excludeGlobs.join("\n"));
+        refreshCandidates(loaded.excludeGlobs);
       })
       .catch(() => setError(t.system.sharing.loadFailed));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function draftGlobs(): string[] {
+    return globsDraft.split("\n").map((g) => g.trim()).filter(Boolean);
+  }
+
+  /** Accepting a suggestion is the same audited PUT a hand-typed glob takes — no second
+   *  write path, and the audit record cannot tell the two apart. */
+  async function addGlob(glob: string) {
+    const next = draftGlobs().includes(glob) ? draftGlobs() : [...draftGlobs(), glob];
+    setGlobsDraft(next.join("\n"));
+    await apply({ excludeGlobs: next });
+    refreshCandidates(next);
+  }
 
   async function apply(update: { tier?: SharingTier; excludeGlobs?: string[] }) {
     try {
@@ -296,11 +320,65 @@ export function DataSharingPage() {
           value={globsDraft}
           disabled={locked}
           onChange={(event) => setGlobsDraft(event.target.value)}
-          onBlur={() =>
-            void apply({ excludeGlobs: globsDraft.split("\n").map((g) => g.trim()).filter(Boolean) })
-          }
+          onBlur={() => {
+            void apply({ excludeGlobs: draftGlobs() });
+            refreshCandidates(draftGlobs());
+          }}
           placeholder="com.acme.*"
         />
+        {candidates && (
+          <div className="space-y-3 border-t pt-3">
+            {candidates.globs.map((count) => (
+              <p key={count.glob} className="text-xs">
+                <code className="font-mono">{count.glob}</code>{" "}
+                {t.system.sharing.globMatches(count.appCount, count.deviceCount)}
+                {/* The case trap, said out loud: fnmatch is case-sensitive in the
+                    container, so com.acme.* leaves com.Acme.Deploy on the wire. */}
+                {count.caseMisses.map((bundleId) => (
+                  <span key={bundleId} className="block text-amber-700 dark:text-amber-500">
+                    {t.system.sharing.caseMiss(bundleId)}
+                  </span>
+                ))}
+              </p>
+            ))}
+            <h3 className="text-sm font-medium">{t.system.sharing.candidatesHeading}</h3>
+            <p className="text-xs text-muted-foreground">{t.system.sharing.candidatesHelp}</p>
+            {candidates.groups.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                {t.system.sharing.candidatesNone(candidates.catalogTitles, candidates.libraryTitles)}
+              </p>
+            ) : (
+              candidates.groups.map((group) => (
+                <div key={group.prefix} className="rounded-md border p-3 text-xs">
+                  <p className="flex flex-wrap items-center gap-2">
+                    <code className="font-mono text-sm">{group.prefix}</code>
+                    <span className="text-muted-foreground">
+                      {t.system.sharing.groupSummary(group.appCount, group.deviceCount)}
+                    </span>
+                    {group.excluded && (
+                      <span className="text-muted-foreground">{t.system.sharing.groupCovered}</span>
+                    )}
+                    {group.suggestion !== null && !group.excluded && !locked && (
+                      <Button type="button" size="sm" variant="outline" onClick={() => void addGlob(group.suggestion!)}>
+                        {t.system.sharing.addGlob(group.suggestion)}
+                      </Button>
+                    )}
+                  </p>
+                  <ul className="mt-2 space-y-1 text-muted-foreground">
+                    {group.apps.map((app) => (
+                      <li key={app.bundleId}>
+                        {t.system.sharing.candidateRow(app.name, app.bundleId, app.deviceCount)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))
+            )}
+            {candidates.moreGroups > 0 && (
+              <p className="text-xs text-muted-foreground">{t.system.sharing.moreGroups(candidates.moreGroups)}</p>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="space-y-3 rounded-lg border bg-card p-6">

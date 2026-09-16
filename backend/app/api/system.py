@@ -175,9 +175,8 @@ async def exclusion_candidates(
     """Bundle IDs no public source here knows, and what each glob matches (#483).
 
     Read-only and modelless, so it sits behind SYSTEM_READ beside the preview rather than
-    behind the AI flag. Accepting a suggestion is a separate call to the audited `PUT`
-    above — this endpoint proposes and never writes. `glob` repeated is the box as it is
-    being typed; omitted, the stored list answers.
+    behind the AI flag; accepting a suggestion is a separate call to the audited PUT above.
+    `glob` repeated is the box as it is being typed — omitted, the stored list answers.
     """
     row = await get_or_create_settings(db)
     return await build_candidates(db, glob if glob is not None else list(row.exclude_globs or []))

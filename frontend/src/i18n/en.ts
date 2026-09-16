@@ -69,6 +69,22 @@ export const en = {
       excludeHeading: "Excluded bundle IDs",
       excludeHelp:
         "Glob patterns, one per line. Matching applications never enter a snapshot at all — filtered before aggregation, ahead of any server-side rule.",
+      // What a pattern matches, counted on the same fnmatch the exchange filters with
+      // (#483). Zero is an answer: in the preview a typo looks like a working pattern.
+      globMatches: (apps: number, devices: number) =>
+        apps === 0 ? "matches nothing on this fleet" : `${apps} app${apps === 1 ? "" : "s"} on ${devices} Mac${devices === 1 ? "" : "s"}`,
+      caseMiss: (bundleId: string) => `${bundleId} is not matched (case)`,
+      candidatesHeading: "Candidates",
+      candidatesHelp:
+        "Titles no public source on this container knows: no Jamf Patch title matches any of their builds, and the vulnerability library names none of them. Unknown is not the same as yours — most of a fleet's long tail is public software the catalog never heard of — so read this as a shortlist, not an answer. Nothing is excluded until you add a pattern and it saves.",
+      candidatesNone: (catalog: number, library: number) =>
+        `No candidates: every title this fleet carries is known to a public source here, checked against ${catalog} Jamf Patch titles and ${library} vulnerability-library titles. Both counts read 0 before the patch catalog has synced and before an epoch is loaded, and nothing can be known then — troubleshooting.md §6 step 4.`,
+      candidateRow: (name: string, bundleId: string, devices: number) =>
+        `${name} — ${bundleId} — ${devices} Mac${devices === 1 ? "" : "s"} — no public source here knows it`,
+      groupSummary: (apps: number, devices: number) => `${apps} unknown titles on ${devices} Macs`,
+      groupCovered: "already covered by a pattern in the box",
+      addGlob: (glob: string) => `Add ${glob}`,
+      moreGroups: (count: number) => `${count} more prefixes are not shown.`,
       lastExchange: "Last exchange",
       neverExchanged: "never — no exchange has been recorded yet",
       outcomeSent: "sent",

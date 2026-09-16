@@ -106,3 +106,50 @@ export function sendExchangeNow(): Promise<SendExchangeResponse> {
     method: "POST"
   });
 }
+
+/** One title no public source on this container knows (#483). `reason` is
+ *  `no_public_source` today; an unrecognized value renders untagged, never hidden. */
+export interface ExclusionCandidateApp {
+  name: string;
+  bundleId: string;
+  deviceCount: number;
+  reason: string;
+}
+
+/** Unknown titles under one reverse-DNS prefix. `suggestion` is null where the prefix earns
+ *  no glob; `excluded` means a pattern already in the box removes all of them. */
+export interface ExclusionCandidateGroup {
+  prefix: string;
+  suggestion: string | null;
+  excluded: boolean;
+  appCount: number;
+  deviceCount: number;
+  apps: ExclusionCandidateApp[];
+}
+
+export interface ExclusionGlobCount {
+  glob: string;
+  /** typed (it is in the box) | suggested (proposed by the page, nothing saved). */
+  source: "typed" | "suggested";
+  appCount: number;
+  deviceCount: number;
+  /** Bundle IDs the glob would match but for case — the container's fnmatch is not. */
+  caseMisses: string[];
+}
+
+export interface ExclusionCandidates {
+  groups: ExclusionCandidateGroup[];
+  moreGroups: number;
+  globs: ExclusionGlobCount[];
+  /** What "unknown" was decided against: both 0 means nothing here can be known yet. */
+  catalogTitles: number;
+  libraryTitles: number;
+}
+
+/** Candidates and glob counts for the box as it stands (#483) — a read, never a write. An
+ *  empty draft still sends one empty `glob`, so a cleared box is counted as cleared rather
+ *  than falling back to the stored list. */
+export function getExclusionCandidates(globs: string[]): Promise<ExclusionCandidates> {
+  const query = (globs.length ? globs : [""]).map((g) => `glob=${encodeURIComponent(g)}`).join("&");
+  return apiRequest<ExclusionCandidates>(`/system/data-sharing/exclusion-candidates?${query}`);
+}

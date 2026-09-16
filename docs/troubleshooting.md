@@ -512,6 +512,16 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
      closes by itself is working as designed. A title that is published by Jamf and still
      missing from the unticked list a day later is reportable state **J**.
 
+4. **Settings › Data Sharing says it knows every title your fleet carries.** The
+   candidate list under *Excluded bundle IDs* names titles no public source on this
+   container knows, and it says what it checked against: *… checked against N Jamf Patch
+   titles and M vulnerability-library titles*. **N of 0 is this section's fault** — with no
+   catalog synced, no build can be matched, so nothing is unknown and nothing is known
+   either; work steps 1 and 2 above and the list fills in on the next page load. M of 0 is
+   not: no vulnerability epoch has been loaded, which needs a sharing tier above *off* and
+   one completed exchange (§5). With both above 0 and the list still empty, the list is
+   right — every title your Macs carry is software a public source here already names.
+
 **J.** A refresh that reports no error leaves the table saying *No Jamf Patch titles
 synced yet.*, a title Jamf publishes stays missing from the list with *Only titles with
 devices* unticked for more than a day, or a press of **Sync now** writes nothing to the
