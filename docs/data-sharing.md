@@ -62,7 +62,25 @@ prefix, which invalidates every vector below and every count already summed agai
 `app.full` is the prevalence key (the exact tuple). The split exists because
 vulnerability rules are ranges while keys are points, and because reveal thresholds
 on full tuples would starve on fast-moving versions (a five-customer app with five
-versions never crosses any per-tuple threshold).
+versions never crosses any per-tuple threshold). The fourth field is `None` on every
+Jamf app today, and not because the string does not exist — Jamf Pro 11.31 reports
+`cfBundleShortVersionString` and `cfBundleVersion` beside `version`, and both are content
+in the observation digest — but because `app.mdm.jamf.client.normalize_computer` pins
+`short_version=None` on every app it builds, and the catalog index hashes that same
+`None` on the other side of the join. That pin is what makes the two agree. When a source
+is read that genuinely carries both strings, **the prevalence key may take the real short
+version** and become the two-string tuple the vector table below already shows: counting
+the exact tuple is what `app.full` is for. **The corpus key never moves with it.** Jamf's
+patch catalog and the NVD speak only the short version, so the key the vulnerability join
+is built on stays `(name, bundleId, shortVersion, None)` — the short version in the
+version field, nothing in the fourth — for as long as those are its sources, because a
+fourth field on the container's side of that join has nothing to meet on the other. The
+pin is internal, never wire, and the test in `backend/tests/test_inventory_snapshot.py`
+that asserts it is there to fail the day it moves rather than let the two sides diverge
+in silence. [`vulnerabilities.md`](vulnerabilities.md) §4f says the same thing from the
+join's side, and names the failure if it is ignored: `unknown_app` for every app on every
+device, with nothing to say why.
+Ruled 2026-09-16 ([#383](https://github.com/LoonSecIO/LoonInspect/issues/383)).
 
 `app.bundle` is the same build as `app.full` **without its name**, and it exists because
 both of the others hash one. An administrator who renames an app — a rebranded Self

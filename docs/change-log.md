@@ -18,7 +18,7 @@ That is what makes opinionated defaults safe.
 
 The defaults were reasoned from a real Jamf Pro 11.31.1 inventory of an M4 Mac mini
 (`backend/tests/fixtures/jamf/computer_inventory_detail_real.json`), section by section.
-The shape of the record decided four things:
+The shape of the record decided five things:
 
 1. **Apple system apps collapse into the OS update.** 64 of the record's 83 applications
    live under `/System/Applications` and bump versions with every macOS update. Logged
@@ -37,6 +37,13 @@ The shape of the record decided four things:
    OS update), the alternate MAC (docks), pending software updates (appear when Apple
    releases). `low`; most are better served by a fleet-level finding than by per-device
    events.
+5. **A deleted object's per-device rows collapse under it** (#182, the same shape as 1).
+   Deleting one smart group removes it from every member at once — 40,000 removal rows on a
+   40,000-device fleet, every one of them one admin click's echo rather than a change on that
+   Mac. They are graded `low`, so the default preset does not record them at all: no
+   `changes.notable_24h`, no fan-out, and **one run-log line per departed object** instead,
+   naming it and what it cost. A deleted extension-attribute definition goes the same way;
+   *Everything* records both from the next sweep on, at level `low`.
 
 Entries (the list sections) follow the same logic with identities: an application is
 (name, bundleId, path) so a version bump is one `updated`, not a removal and an
@@ -84,10 +91,21 @@ then applies the policy and writes one `device_changes` row and one `device.chan
 outbox event per kept change, in the same transaction as the device's state tables.
 
 Two judgements need more than one section and live in the derivation rather than the
-engine: the system-app collapse above, and **two-cause membership** — a group joined or
+engine: the system-app collapse above, and **three-cause membership** — a group joined or
 left carries `criteriaChanged`: whether the group's own definition span moved since this
 device was last observed (criteria moved) or not (device drifted). Jamf cannot say; the
-ledger keeps both histories.
+ledger keeps both histories. The third cause is the group itself: with an open `subject_departures`
+row ([`jamf-observations.md`](jamf-observations.md) §8) it was deleted, and the row says
+`objectDeparted: true`, `departedAt` and `criteriaChanged: null` — the question refused rather than
+answered wrongly. Asked first, because a deleted group's definition span is never closed and the
+two-cause question would report *device drifted* on every member of a group that no longer exists.
+A deleted extension-attribute definition's rows carry the two keys and no `criteriaChanged`.
+
+**The fleet-level event is not minted here.** What a SIEM receives when an *object* is gone — one
+event about a group, with no device in it — is #179's and does not exist yet; nothing invents a name
+for it and `KNOWN_EVENT_TYPES` is untouched. It will hang off the departure the census already writes
+(`app.observations.departure.reconcile_census`, which holds the object and the instant), not off
+these per-device rows: they are its detail.
 
 Every `device_changes` **row** carries the correlation triple (serial, Jamf URL, Jamf id),
 the UDID, both span ids, the device's own `observed_at`, the trigger, and the policy
@@ -127,7 +145,7 @@ since body keys freeze at the public flip. Nineteen keys:
 | `change` | `added` \| `removed` \| `updated` \| `changed` |
 | `old` / `new` | The entry or value on each side. `old` is absent on `added`, `new` on `removed` |
 | `level` | `high` \| `normal` \| `low` — the policy's grade, what a saved search alerts on |
-| `details` | Per-change extras: `changedFields`, `criteriaChanged`, `collapsedSystemApps` |
+| `details` | Per-change extras: `changedFields`, `criteriaChanged`, `collapsedSystemApps`, `objectDeparted` / `departedAt` |
 | `spanID` / `previousSpanID` | Both ledger spans, so any change walks back to its evidence |
 | `policyVersion` | The change policy that judged it — **not** `deviceMeta.schemaVersion`, which versions the wire |
 
@@ -282,7 +300,7 @@ stays a `high` field change, on by default.
 | --- | --- | --- | --- | --- |
 | `application` — Applications | name, bundleId, path | normal (on) | version (normal), cfBundleShortVersionString (normal), cfBundleVersion (normal), macAppStore (low) | Installs, removals and version changes are the inventory's core; Apple system apps collapse into the OS update unless logged individually. |
 | `extension_attribute` — Extension attributes | definitionId | normal (on) | values (normal) | Admins wrote these for exactly the facts they care about; the quarantine already removes the churny ones. |
-| `group_membership` — Smart group memberships | groupId | normal (on) | smartGroup (low) | Joining and leaving drives policy scoping; each event says whether the criteria moved or the device drifted. |
+| `group_membership` — Smart group memberships | groupId | normal (on) | smartGroup (low) | Joining and leaving drives policy scoping; each event says whether the criteria moved, the device drifted, or the group itself was deleted. |
 | `configuration_profile` — Configuration profiles | profileIdentifier | high (on) | uuid (high), id (low), removable (normal), username (low) | A removed profile is configuration drift; a new one is new configuration. |
 | `local_user_account` — Local accounts | uid, username | high (on) | admin (high), fileVault2Enabled (high), passwordMinLength (high), passwordMaxAge (high), passwordMinComplexCharacters (high), passwordHistoryDepth (high), passwordRequireAlphanumeric (high), userAccountType (normal), computerAzureActiveDirectoryId (normal), userAzureActiveDirectoryId (normal), azureActiveDirectoryId (normal), fullName (low), homeDirectory (low), userGuid (low) | New or removed accounts, and admin or FileVault flips, are privilege changes. |
 | `certificate` — Certificates | sha1Fingerprint | normal (on) | identity (low), username (low) | New identities and CAs on a device matter; expiry is a query-time finding, not a change. |
@@ -296,6 +314,9 @@ stays a `high` field change, on by default.
 - Changing a default level, adding a field, or changing an identity is a new
   `CHANGE_POLICY_VERSION`; overrides stay keyed by `section.field` / `kind.field` and
   carry over.
+- A *derivation* collapse is not one of those: no §4 rule changes level, default or identity —
+  the derivation regrades rows it folds into another event (system apps into the OS update; a
+  deleted object's per-device rows, #182), and `v0` still describes what judged them.
 - A contract field the policy does not name yet is treated as `normal`, so a new
   contract version cannot silently drop changes.
 - Rows record the policy version they were derived under.

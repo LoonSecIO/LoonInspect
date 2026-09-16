@@ -8,7 +8,8 @@ Status: **frozen** · Ruled in [#188](https://github.com/LoonSecIO/LoonInspect/i
 [#243](https://github.com/LoonSecIO/LoonInspect/issues/243), 2026-09-03 and
 [#311](https://github.com/LoonSecIO/LoonInspect/issues/311), 2026-09-04 and
 [#306](https://github.com/LoonSecIO/LoonInspect/issues/306), 2026-09-09 and
-[#356](https://github.com/LoonSecIO/LoonInspect/issues/356), 2026-09-10 · Stamped on the
+[#356](https://github.com/LoonSecIO/LoonInspect/issues/356), 2026-09-10 and
+[#182](https://github.com/LoonSecIO/LoonInspect/issues/182), 2026-09-16 · Stamped on the
 wire by [#223](https://github.com/LoonSecIO/LoonInspect/issues/223) (the `:change`
 family), [#242](https://github.com/LoonSecIO/LoonInspect/issues/242) (the section tree
 and `loon:run`) and [#277](https://github.com/LoonSecIO/LoonInspect/issues/277) (the
@@ -352,6 +353,20 @@ What a consumer sees: the re-emitted `device.inventory` events carry the re-emit
 **not** duplicates of the events that were lost — they are a newer observation of the same
 devices — so the dedup story is the redrive's ([`splunk-setup.md`](splunk-setup.md) §7):
 latest `eventID` per device wins, and a lost event's absence is filled rather than doubled.
+
+### 6d. `objectDeparted` and `departedAt` inside `device.change`'s `details` (#182)
+
+Amended additively, 2026-09-16. `details` is the change family's per-change extras bag and has carried
+`changedFields`, `criteriaChanged` and `collapsedSystemApps` since #223. Two keys join it on the rows a
+*deleted object* produces — a `group_membership` or `extension_attribute` removed because the group or
+the definition itself is gone (`subject_departures`, #181): **`objectDeparted`**, always `true` where
+present, and **`departedAt`**, the ISO instant the census found it absent. Absent means what absence
+always means here: the object is still there, and `criteriaChanged` answers the removal alone. On a
+membership row the two arrive with `criteriaChanged` explicitly `null`. Clause 1, not clause 2.
+
+Those rows are graded `level: low`, which the default preset does not record at all, so no destination
+receives them unless the tenant sets *Everything* — then they fan out like any other row and a search reads
+`details.objectDeparted=true`. The object's own departure event is #179's: not minted, `KNOWN_EVENT_TYPES` untouched.
 
 ### 6a. The order those keys appear in
 
