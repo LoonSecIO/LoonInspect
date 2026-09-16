@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -14,6 +15,7 @@ from app.core.audit import AuditAction, audit
 from app.core.auth import require
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.exclusion_candidates import build_candidates
 from app.core.permissions import Permission
 from app.core.sharing import (
     ExchangeRefused,
@@ -28,6 +30,7 @@ from app.models.schema import ShareLog
 from app.schemas.system import (
     DataSharingOut,
     DataSharingUpdate,
+    ExclusionCandidatesOut,
     SendExchangeOut,
     ShareLogEntryOut,
     UpdateStatusOut,
@@ -158,6 +161,31 @@ async def preview_exchange(db: AsyncSession = Depends(get_db)) -> dict:
     the exchange job uses — the preview cannot drift from the wire."""
     row = await get_or_create_settings(db)
     return await build_exchange_request(db, row)
+
+
+@router.get(
+    "/data-sharing/exclusion-candidates",
+    response_model=ExclusionCandidatesOut,
+    dependencies=[Depends(require(Permission.SYSTEM_READ))],
+)
+async def exclusion_candidates(
+    glob: Annotated[list[str] | None, Query()] = None,
+    db: AsyncSession = Depends(get_db),
+) -> ExclusionCandidatesOut:
+    """Bundle IDs no public source on this container knows, and what each glob matches (#483).
+
+    Read-only and modelless, so it sits behind SYSTEM_READ beside the preview rather than
+    behind the AI flag: it is the same inventory the Applications page already shows,
+    arranged for the one decision this page makes. Accepting a suggestion is a separate
+    call to the audited `PUT` above — this endpoint proposes and never writes.
+
+    `glob` repeated is the box as it is being typed, which is how a pattern can be counted
+    before it is saved; omitted, the stored list answers.
+    """
+    row = await get_or_create_settings(db)
+    return ExclusionCandidatesOut.model_validate(
+        await build_candidates(db, glob if glob is not None else list(row.exclude_globs or []))
+    )
 
 
 @router.post(

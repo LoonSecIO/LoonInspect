@@ -92,6 +92,62 @@ class SendExchangeOut(BaseModel):
     settings: DataSharingOut
 
 
+class ExclusionCandidateAppOut(BaseModel):
+    """One unknown title: its name, the bundle ID a glob would have to match, how many
+    devices carry it, and why it is listed (#483). `reason` is `no_public_source` today —
+    the only reason there is — and a client that does not recognize a value shows the row
+    without the tag rather than hiding it."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, from_attributes=True)
+
+    name: str
+    bundle_id: str
+    device_count: int
+    reason: str
+
+
+class ExclusionCandidateGroupOut(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, from_attributes=True)
+
+    prefix: str
+    # The glob to offer, or null where the prefix does not earn one: a single unknown
+    # title, or a prefix some title a public source DOES know already uses.
+    suggestion: str | None
+    # Every app in the group is already removed by a glob in the box.
+    excluded: bool
+    app_count: int
+    device_count: int
+    apps: list[ExclusionCandidateAppOut]
+
+
+class ExclusionGlobCountOut(BaseModel):
+    """What one glob matches, counted with the exchange's own `_excluded` (#483)."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, from_attributes=True)
+
+    glob: str
+    # typed (it is in the box) | suggested (this page proposed it and nothing is saved).
+    source: str
+    app_count: int
+    device_count: int
+    # Bundle IDs this glob would match if either side were lower-cased. The Linux
+    # container's `fnmatch` is case-sensitive, so these are the quiet misses.
+    case_misses: list[str]
+
+
+class ExclusionCandidatesOut(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, from_attributes=True)
+
+    groups: list[ExclusionCandidateGroupOut]
+    more_groups: int
+    globs: list[ExclusionGlobCountOut]
+    # What "unknown" was decided against, so an empty list is a legible state rather than
+    # a blank panel: with no catalog synced and no epoch loaded, nothing is known and the
+    # page says which source is missing instead of claiming the fleet is all public.
+    catalog_titles: int
+    library_titles: int
+
+
 class DataSharingUpdate(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
