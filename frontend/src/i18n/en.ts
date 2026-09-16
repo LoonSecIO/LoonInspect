@@ -1579,10 +1579,17 @@ export const en = {
     consentToggleOff: "Withdraw consent",
     consentHelp: "Whether any byte may leave this pod for inference. The same consent lane as community data sharing.",
     detectionHeading: "Where this container runs",
-    detectionDockerDesktopMac: "Docker Desktop on macOS detected. The Apple Foundation Models card is the one for this setup.",
+    detectionDockerDesktopMac: "Docker Desktop on macOS detected.",
     detectionDockerDesktop: "Docker Desktop detected; the host OS could not be told from inside the container.",
     detectionUnknown: "Runtime not recognised from inside the container. Pick a card yourself.",
     detectionEvidence: "Evidence",
+    // #404: the card list follows the reading now, so the panel says when a card is held
+    // back and why — a withheld card must not read as a feature this build lost.
+    detectionAppleCardOffered: "The Apple Foundation Models card is the one for this setup.",
+    appleCardWithheld:
+      "The Apple Foundation Models card is not offered here: it needs Docker Desktop on an Apple Silicon Mac with host.docker.internal resolving from inside this container, which the evidence above does not show.",
+    baseUrlNoLocalDefault:
+      "host.docker.internal does not resolve from this container, so the local default cannot work here. Type the address of an endpoint this container can reach.",
     providersHeading: "Endpoint",
     providerLabels: {
       apple_fm: "Apple Foundation Models via Docker Desktop",
@@ -1596,6 +1603,9 @@ export const en = {
         "Ollama on this Mac by default. Also OpenAI itself, a gateway, LM Studio or vLLM. Bring your own URL and key.",
       anthropic: "The Messages API. Bring your own key."
     },
+    // The same card where there is no Mac host to default to (#404).
+    openaiHelpNoLocalDefault:
+      "OpenAI itself, a gateway, LM Studio, vLLM, or an Ollama this container can reach. Bring your own URL and key.",
     appleGuide: "How to set up Apple's on-device model with Docker Desktop",
     otherRuntimes: "Running under OrbStack, Colima or Podman? Not supported yet. Type the URL instead.",
     baseUrl: "Base URL",

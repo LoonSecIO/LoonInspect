@@ -1436,10 +1436,15 @@ export const de: Translations = {
     consentToggleOff: "Einwilligung widerrufen",
     consentHelp: "Ob überhaupt ein Byte diesen Pod zur Inferenz verlassen darf. Dieselbe Einwilligungsschiene wie die Community-Datenfreigabe.",
     detectionHeading: "Wo dieser Container läuft",
-    detectionDockerDesktopMac: "Docker Desktop unter macOS erkannt. Die Karte Apple Foundation Models passt zu dieser Umgebung.",
+    detectionDockerDesktopMac: "Docker Desktop unter macOS erkannt.",
     detectionDockerDesktop: "Docker Desktop erkannt; das Host-Betriebssystem ließ sich aus dem Container nicht erkennen.",
     detectionUnknown: "Laufzeitumgebung aus dem Container nicht erkannt. Wählen Sie selbst eine Karte.",
     detectionEvidence: "Belege",
+    detectionAppleCardOffered: "Die Karte Apple Foundation Models passt zu dieser Umgebung.",
+    appleCardWithheld:
+      "Die Karte Apple Foundation Models wird hier nicht angeboten: Sie setzt Docker Desktop auf einem Apple-Silicon-Mac voraus, auf dem host.docker.internal aus diesem Container heraus auflösbar ist – die Belege oben zeigen das nicht.",
+    baseUrlNoLocalDefault:
+      "host.docker.internal ist aus diesem Container nicht auflösbar, der lokale Standardwert kann hier also nicht funktionieren. Geben Sie die Adresse eines Endpunkts ein, den dieser Container erreicht.",
     providersHeading: "Endpunkt",
     providerLabels: {
       apple_fm: "Apple Foundation Models über Docker Desktop",
@@ -1453,6 +1458,8 @@ export const de: Translations = {
         "Standardmäßig Ollama auf diesem Mac. Ebenso OpenAI selbst, ein Gateway, LM Studio oder vLLM. Eigene URL und eigener Schlüssel.",
       anthropic: "Die Messages-API. Eigener Schlüssel."
     },
+    openaiHelpNoLocalDefault:
+      "OpenAI selbst, ein Gateway, LM Studio, vLLM oder ein Ollama, das dieser Container erreicht. Eigene URL und eigener Schlüssel.",
     appleGuide: "So richten Sie Apples On-Device-Modell mit Docker Desktop ein",
     otherRuntimes: "OrbStack, Colima oder Podman im Einsatz? Noch nicht unterstützt. Geben Sie stattdessen die URL ein.",
     baseUrl: "Basis-URL",
