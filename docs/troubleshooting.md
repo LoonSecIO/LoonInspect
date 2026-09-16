@@ -32,6 +32,7 @@ curl -s -b jar $BASE/api/runs/<jobId>/log                       # its log lines
 curl -s -b jar $BASE/api/mdm/connections                        # connections
 curl -s -b jar $BASE/api/mdm/connections/<id>/collections       # what each connection collects
 curl -s -b jar $BASE/api/destinations                           # destinations with delivery counts
+curl -s -b jar $BASE/api/posture                                # last night's posture tape
 ```
 
 **The container log.** `docker compose logs app --since 30m` (add `db` for the
@@ -190,6 +191,13 @@ did Splunk keep it.
      *every* process prints it and `pendingCount` still climbs — then the process holding
      the lock is wedged rather than working. Restart the stack: the lock goes with its
      connection, and the next tick takes it.
+   - **How long has it been held?** The nightly tape is the only history of the held set:
+     `GET /api/posture?keys=outbox.pending,outbox.failed_24h,outbox.oldest_pending_age_s&days=7`
+     is one row per key per night it was captured. `outbox.oldest_pending_age_s` **missing
+     from a night that carries the other two** is that night's empty queue — absence is
+     never zero here — and `total: 0` means no full sweep closed in the window, so the tape
+     has nothing to say about those nights (§1, §2) rather than saying the queue was empty.
+     `GET /api/posture/registry` is what each key counts.
    - Both zero and the runs in step 1 succeeded → step 5.
 5. **Subscriptions.** `subscribedEvents` on the destination: `null` means every event
    type; a list means only those. A list without `device.inventory` gets no snapshots,

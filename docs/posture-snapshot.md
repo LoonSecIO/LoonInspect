@@ -16,7 +16,7 @@ This is the one piece of the 2026-08-29 design record that had to be code before
 freeze: history not recorded can never be backfilled, so this is the only decision in
 the whole design that destroys data if taken late. Recording buys zero pixels — no
 chart, no endpoint, no surface ships with it. The tape starts at launch; what reads it
-comes later.
+came later — `GET /api/posture`, ruled and built 2026-09-16 ([The reader](#the-reader)).
 
 Three mechanical facts about the rows:
 
@@ -405,6 +405,36 @@ keys a denominator `catalog.installed` no longer matches.
 | `vuln.apps_kev_affected` | ACTIVE | The same population with `counts.kev > 0` — carrying a KEV-listed vulnerability. A subset of `apps_affected`. Same build grain and same `catalog.installed` cut, so a build only a deactivated connection's Mac carries is counted here and in no device under `devices_affected`. **No row while the tenant has never been judged.** | `app_catalog` ⋈ `installed_apps` |
 | `vuln.apps_unknown` | ACTIVE | Installed builds the corpus cannot assess (`unknown_app` — a ruled wire value, deliberately snake_case): no row in the epoch, or an answer from an epoch that is no longer answering. Same build grain and same `catalog.installed` cut, deactivated connections included. Equals `catalog.installed` on a night when nothing answered. **No row while the tenant has never been judged.** | `app_catalog` ⋈ `installed_apps` |
 | `vuln.devices_affected` | ACTIVE | Distinct devices on active connections carrying at least one build `apps_affected` counted. Folded through the catalog row, not the device's copy, so a copy lagging its device's sync cannot make the two disagree about a build — the copy-lag axis only. On the population axis they differ by design: this is the active-connection device cut every `devices.*` key draws, while the app keys are `catalog.installed`'s any-device-row cut, so a build only a deactivated connection's Mac carries is counted there and nowhere here. **No row while the tenant has never been judged.** | `installed_apps` ⋈ `app_catalog` ⋈ `devices` |
+
+## The reader
+
+`GET /api/posture` (#470, 2026-09-16), after three weeks of tape with nothing but `psql` to read
+it — which is where the platform filter gets left off. **The rows, never a grid:** one row per
+metric per capture per population (`key`, `value`, `capturedAt`, `platform`, `fullSweepRunId`),
+so a key that recorded nothing has no row and no cell for a renderer to fill with a zero —
+absent-not-zero held in the shape rather than in a footnote. `fullSweepRunId` is null once the
+run is purged out from under its capture.
+
+**The default is the latest capture, chosen by the tape and never by the key filter** — the
+newest `captured_at` for the population, then `keys` over that capture's rows. Picking the
+newest capture that *carries* the asked-for key would answer "the last time this was
+written" to a question that was "what was written last night", which is how an empty queue
+comes back as yesterday's `outbox.oldest_pending_age_s`. `days` or `since` reads the series
+instead — one or the other, never both — and `platform`, defaulting to `CAPTURE_PLATFORM` with
+no value that folds two, is one population per read. An unknown key, a `RESERVED_KEYS` name and
+a platform outside the vocabulary above are each refused in words: an empty page would read as
+"never captured", the sentence this tape reserves for a real gap.
+
+**`GET /api/posture/registry`** hands over every active and reserved key with the opening of its
+definition and what an absent row means, so a value can be read without this document. The
+definitions still live *here*: `app.core.posture.KEY_DEFINITIONS` quotes each row's opening
+words and `tests/test_posture_registry.py` refuses a sentence this document does not open with.
+
+**Permission: `AUDIT_READ`**, the one the share-log export uses — fleet-level scalars with no
+per-entity grain ([data-access-grain.md](data-access-grain.md) §3), answering the auditor's
+question: the durable history of a fleet. `SYSTEM_READ` guards a different subject, this
+instance's own status; analyst, auditor and admin hold both, so the choice moves no access,
+it names the question. Still no pixels — what renders these rows is a separate conversation.
 
 ## The process line
 

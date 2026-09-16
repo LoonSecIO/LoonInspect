@@ -186,6 +186,55 @@ PLATFORM_ROLLUP = "all"
 # earlier, when nothing here could say a device was gone — activated with #183's census (#476).
 RESERVED_KEYS: tuple[str, ...] = ()
 
+# The population vocabulary, ruled 2026-09-02 (#230): one value per Apple OS, never reused for
+# a different population. In code because `GET /api/posture` (#470) refuses a platform outside
+# it — an unrecognised population answered with an empty page would spell "nothing was ever
+# captured" for a question nobody can ask.
+PLATFORMS: tuple[str, ...] = ("macos", "ios", "ipados", "tvos", "visionos")
+
+# What each key means, in the doc's own opening words — served by `GET /api/posture/registry`
+# (#470) so a reader holding a value need not go and find the document to interpret it. **Not a
+# second home for the definitions**: docs/posture-snapshot.md holds them, every line below is a
+# verbatim prefix of that key's row there (`…` marks where the row goes on), and
+# `tests/test_posture_registry.py` refuses a sentence the doc does not open with.
+KEY_DEFINITIONS: dict[str, str] = {
+    "devices.total": "Device rows across active connections that the last clean census still observed.",
+    "devices.stale_checkin_7d": "`last_check_in` older than capture − 168h, NULLs included, over that same population: active…",
+    "devices.unmanaged": "`managed = false`, over that same population: active connections, still observed by the last clean…",
+    "devices.stale_inventory_7d": "`last_inventory_at` older than capture − 168h, NULLs included, over that same population…",
+    "devices.departed_24h": "Devices that left the counted population in the trailing 24h — in it at capture − 24h, gone for…",
+    "catalog.entries": "All `app_catalog` rows.",
+    "catalog.installed": "Entries with at least one install.",
+    "catalog.matched": "Entries with `jamf_title_ids` not null.",
+    "catalog.unmatched": "Entries with `jamf_title_ids` null.",
+    "catalog.installed_not_latest": "Installed entries where `is_latest = false` and `latest_version` is present.",
+    "apps.distinct": "Distinct `app_hash` groups in the fleet.",
+    "patch.pairs_total": "Distinct (device, matched title) install pairs.",
+    "patch.pairs_on_latest": "Pairs where the installed version equals the title's latest (`on_latest`).",
+    "patch.titles_with_laggards": "Matched titles carrying at least one pair with `state = behind`.",
+    "patch.pairs_laggard_over_14d": "Pairs with `state = behind` whose `first_newer_released_at` — Jamf's release date of the…",
+    "patch.pairs_behind_under_14d": "Pairs with `state = behind` that the laggard cut does not reach: `first_newer_released_at`…",
+    "patch.pairs_unknown_build": "Pairs with `state = unknown`: the installed build is one Jamf never listed and is not newer…",
+    "patch.pairs_ahead": "Pairs with `state = ahead`: installed newer than anything the title lists.",
+    "changes.notable_24h": "`device_changes` rows at level ≥ notable (the closed LEVELS ordering at `normal` or above — one SQL…",
+    "alerts.open": "`alerts` rows with `closed_at` null at capture, on devices whose connection is active.",
+    "alerts.opened_24h": "`alerts` rows with `opened_at` in the trailing 24h, on devices whose connection is active — including…",
+    "runs.sweeps_succeeded_24h": "Runs with `trigger = sweep`, `status = succeeded`, finished in the window.",
+    "runs.failed_24h": "Runs with `status = failed` (any trigger), finished in the window.",
+    "runs.full_sweep_duration_s": "`finished_at − started_at` of the very run this capture stamps.",
+    "outbox.pending": "`event_outbox` rows awaiting delivery (not yet fanned out, or holding a pending delivery).",
+    "outbox.failed_24h": "`outbox_deliveries` rows entering `failed` (dead-lettered) in the window, timed by the last attempt.",
+    # Two sentences, for the key the absence rule was written for.
+    "outbox.oldest_pending_age_s": "Max age of undelivered `event_outbox` rows at capture. If zero rows are pending…",
+    "accounts.total": "Non-revoked accounts (`status = active`).",
+    "accounts.admins": "Active accounts holding the admin role — the same cut the accounts API's last-admin guard counts.",
+    "tokens.active": "API tokens with `revoked_at` null.",
+    "vuln.apps_affected": "Installed builds whose stored answer is `covered` under the answering epoch with `counts.total > 0`…",
+    "vuln.apps_kev_affected": "The same population with `counts.kev > 0` — carrying a KEV-listed vulnerability.",
+    "vuln.apps_unknown": "Installed builds the corpus cannot assess (`unknown_app` — a ruled wire value, deliberately…",
+    "vuln.devices_affected": "Distinct devices on active connections carrying at least one build `apps_affected` counted.",
+}
+
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)

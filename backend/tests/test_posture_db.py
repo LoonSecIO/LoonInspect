@@ -22,6 +22,7 @@ import uuid as uuidlib
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
+import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy import delete, select, update
@@ -1142,3 +1143,130 @@ async def test_a_departed_mac_leaves_every_key_that_counts_it(db, fleet) -> None
     back = await capture()
     assert moved(in_tail, back) == dict.fromkeys(_D1_LEAVES, 0)
     assert back["devices.departed_24h"] == in_tail["devices.departed_24h"]
+
+
+# --- the reader (#470) ------------------------------------------------------------------
+#
+# `GET /api/posture` over a tape seeded row by row rather than swept: what matters most is a
+# shape no capture can be made to produce on demand — a key present one night, absent the next.
+# Seeded under `ipados` and `tvos`, populations no recorder writes, so it cannot collide with the
+# `macos` captures above and "two populations never sum" gets a real second population.
+
+READER = ("auditor@posture-reader.example.com", "posture-reader-password")
+TAPE, OTHER = "ipados", "tvos"
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def tape(db):
+    """Three nights. Night 1 held a delivery, so `outbox.oldest_pending_age_s` has a row; nights 2
+    and 3 drained, so that key has **no row** while `outbox.pending` has an honest `0`. No run is
+    stamped — what a capture looks like once its run is purged at 30 days."""
+    from app.models.schema import PostureSnapshot
+
+    now = _now().replace(microsecond=0)
+    nights = [now - timedelta(days=2), now - timedelta(days=1), now]
+
+    def row(key, value, at, platform=TAPE):
+        return PostureSnapshot(metric_key=key, platform=platform, value=value, captured_at=at)
+
+    db.add_all(
+        [
+            row("devices.total", 10, nights[0]),
+            row("outbox.pending", 3, nights[0]),
+            row("outbox.oldest_pending_age_s", 42.5, nights[0]),
+            row("devices.total", 11, nights[1]),
+            row("devices.total", 12, nights[2]),
+            row("outbox.pending", 0, nights[2]),
+            row("devices.total", 99, nights[2], platform=OTHER),
+        ]
+    )
+    await db.commit()
+    try:
+        yield nights
+    finally:
+        await db.rollback()
+        await db.execute(delete(PostureSnapshot).where(PostureSnapshot.platform.in_((TAPE, OTHER))))
+        await db.commit()
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def auditor(tenant_ready):
+    """Signed in as the role the tape is guarded for; https, because the cookie is Secure."""
+    from app.core.bootstrap import create_account
+    from app.core.database import session_for_tenant
+    from app.core.tenancy import OPERATIONAL_TENANT_ID
+    from app.main import app
+    from app.models.schema import Account
+
+    async with session_for_tenant(OPERATIONAL_TENANT_ID) as setup:
+        if (await setup.execute(select(Account).where(Account.email == READER[0]))).scalars().first() is None:
+            await create_account(setup, email=READER[0], display_name="posture auditor", password=READER[1], roles=("auditor",))
+            await setup.commit()
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://posture.example.com")
+    response = await client.post("/api/auth/login", json={"email": READER[0], "password": READER[1]})
+    assert response.status_code == 200, f"login failed: {response.status_code} {response.text}"
+    yield client
+    await client.aclose()
+
+
+async def _read(client, **params) -> dict:
+    response = await client.get("/api/posture", params={"platform": TAPE, **params})
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+async def test_the_latest_capture_is_the_default_and_an_absent_key_stays_absent(auditor, tape) -> None:
+    """The property this endpoint exists to hold. The queue drained two nights ago, so the latest
+    capture has no `outbox.oldest_pending_age_s` row and the answer is nothing: choosing the newest
+    capture that *carries* the key would answer 42.5s — an empty queue reported as a delivery
+    waiting since Tuesday. The window read finds the night that wrote it, and the key that
+    recorded `0` has a row saying `0`."""
+    body = await _read(auditor)
+    assert body["total"] == 2
+    assert {row["key"] for row in body["items"]} == {"devices.total", "outbox.pending"}
+    # The wire spells an instant with `Z`, never `+00:00`.
+    assert {row["capturedAt"] for row in body["items"]} == {tape[2].isoformat().replace("+00:00", "Z")}
+    assert {(row["platform"], row["fullSweepRunId"]) for row in body["items"]} == {(TAPE, None)}
+
+    assert await _read(auditor, keys="outbox.oldest_pending_age_s") == {"items": [], "total": 0, "page": 1, "pageSize": 50}
+    window = await _read(auditor, keys="outbox.oldest_pending_age_s", days=7)
+    assert [(row["value"], row["capturedAt"]) for row in window["items"]] == [(42.5, tape[0].isoformat().replace("+00:00", "Z"))]
+    assert [row["value"] for row in (await _read(auditor, keys="outbox.pending"))["items"]] == [0.0]
+
+
+async def test_two_populations_are_two_reads_and_never_one_sum(auditor, tape) -> None:
+    """One key, one capture, two populations: 12 iPads and 99 Apple TVs, and no read returns 111.
+    The default is the population the recorder writes, so a caller who forgets the parameter gets
+    the Mac fleet's rows or none — never a fold."""
+    from app.core.posture import CAPTURE_PLATFORM
+
+    assert [row["value"] for row in (await _read(auditor, keys="devices.total"))["items"]] == [12.0]
+    assert [row["value"] for row in (await _read(auditor, keys="devices.total", platform=OTHER))["items"]] == [99.0]
+    defaulted = await auditor.get("/api/posture", params={"keys": "devices.total"})
+    assert defaulted.status_code == 200 and all(row["platform"] == CAPTURE_PLATFORM for row in defaulted.json()["items"])
+
+
+async def test_the_series_reads_newest_first_and_pages(auditor, tape) -> None:
+    assert [row["value"] for row in (await _read(auditor, keys="devices.total", days=7))["items"]] == [12.0, 11.0, 10.0]
+    since = await _read(auditor, keys="devices.total", since=tape[1].isoformat())
+    assert [row["value"] for row in since["items"]] == [12.0, 11.0]
+    paged = await _read(auditor, keys="devices.total", days=7, pageSize=1, page=3)
+    assert paged["total"] == 3 and [row["value"] for row in paged["items"]] == [10.0]
+
+
+async def test_a_name_the_tape_cannot_answer_is_refused_by_name(auditor, tape) -> None:
+    """Never an empty page: a refusal says which word was wrong and where the vocabulary is,
+    because an empty answer reads as "that was never captured". The registry is that vocabulary
+    over the wire, with what an absent row means."""
+    from app.core.posture import ACTIVE_KEYS, RESERVED_KEYS
+
+    unknown = await auditor.get("/api/posture", params={"keys": "devices.total,devices.beige"})
+    assert unknown.status_code == 422 and "/api/posture/registry" in unknown.json()["detail"]
+    platform = await auditor.get("/api/posture", params={"platform": "android"})
+    assert platform.status_code == 422 and "macos" in platform.json()["detail"]
+    both = await auditor.get("/api/posture", params={"days": 7, "since": tape[0].isoformat()})
+    assert both.status_code == 422 and "never both" in both.json()["detail"]
+
+    registry = (await auditor.get("/api/posture/registry")).json()
+    assert [key["key"] for key in registry["keys"]] == [*ACTIVE_KEYS, *RESERVED_KEYS]
+    assert all(key["definition"] for key in registry["keys"]) and "never zero" in registry["absence"]
