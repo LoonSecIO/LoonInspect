@@ -214,6 +214,20 @@ and joins locally ([`vulnerabilities.md`](vulnerabilities.md), and the section b
   server's own rules. Both, deliberately: until INSPECT-0174 the filter covered only
   snapshots, so an excluded app still had its name revealed once the server asked
   about the title. Anything added here that sends app data must apply `_excluded`.
+- **The box says what it matches and what the fleet has** (#483). Under the textarea,
+  `GET /api/system/data-sharing/exclusion-candidates` reports, for every pattern typed or
+  proposed, how many apps on how many Macs it removes — counted with that same `_excluded`,
+  at the grain the exchange drops at, so the page and the wire cannot disagree. An *app*
+  there is a title, and one bundle ID under two display names is two of them, because
+  `key_title` hashes the name. It also names any bundle ID the pattern would match but for
+  case, because `fnmatch` is case-sensitive here and `com.acme.*` quietly misses
+  `com.Acme.Deploy`. Beside it, the titles no public source on this container knows (no
+  Jamf Patch title matches any of their builds, and the loaded epoch names none of them),
+  grouped by reverse-DNS prefix with device counts, and a `com.acme.*` proposed where
+  several of them share a prefix no known title uses. No model is involved and nothing
+  leaves the box: unknown is a shortlist, never a claim that a title is the organization's,
+  since Jamf's ~1,550 titles leave most of any long tail unmatched. Accepting a proposal is
+  the audited `PUT` a typed glob takes, and the audit record cannot tell the two apart.
 
 ### AI inference (INSPECT-0112)
 
