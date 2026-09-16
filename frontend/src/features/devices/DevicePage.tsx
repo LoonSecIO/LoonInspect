@@ -229,7 +229,9 @@ export function DevicePage() {
                     <PatchAnswerCell answer={app} t={t} showLatest showTitles none={td.apps.noTitle} />
                   </td>
                   <td className="px-4 py-2">
-                    <AssessmentCell vuln={app.vuln} t={t} />
+                    {/* #482: and what updating to the version the cell left of this one
+                        names would do to those findings. */}
+                    <AssessmentCell vuln={app.vuln} t={t} row={app} />
                   </td>
                   <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{app.bundleId}</td>
                 </tr>

@@ -185,8 +185,10 @@ export function ApplicationRecordPage() {
                     <LatestCell answer={row} t={t} />
                   </td>
                   <td className="px-4 py-2">
-                    {/* Legal here and only here: each row is one build at key_full grain. */}
-                    <AssessmentCell vuln={row.vuln} t={t} />
+                    {/* Legal here and only here: each row is one build at key_full grain.
+                        Which is also what makes the update line legal (#482): the target is
+                        THIS build's, formed from its own name and the release Jamf names. */}
+                    <AssessmentCell vuln={row.vuln} t={t} row={row} />
                   </td>
                   <td className="px-4 py-2">{formatDay(row.firstSeenAt)}</td>
                   <td className="px-4 py-2">{formatDay(row.lastSeenAt)}</td>

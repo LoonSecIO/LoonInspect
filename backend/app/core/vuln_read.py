@@ -62,7 +62,9 @@ from datetime import UTC, date, datetime
 from typing import Protocol
 
 from app.core.vuln import VulnCorpus, vuln_block
-from app.schemas.payload import VulnEnrichment
+from app.core.vuln_answer import HasStoredAnswer, update_effect
+from app.schemas.catalog import VulnUpdateOut
+from app.schemas.payload import VULN_ASSESSMENT_UNKNOWN_APP, VulnEnrichment
 
 
 class HasContentKeys(Protocol):
@@ -108,3 +110,26 @@ def assess_all(corpus: VulnCorpus, rows: Iterable[HasContentKeys], *, as_of: dat
     separately. The corpus answers per build.
     """
     return [assess(corpus, row, as_of=as_of) for row in rows]
+
+
+def update_line(row: HasStoredAnswer, *, corpus: VulnCorpus) -> VulnUpdateOut | None:
+    """One row's *what updating would fix*, for a reader (#482), or `None` for nothing to say.
+
+    The same shape as `assess` above and for the same reason: the arithmetic is one pure
+    function (`update_effect`) over columns the caller already loaded, and this is only the
+    REST dress for it. No lookup, no database, and no fleet-wide count — half 2 of #428 is
+    what needs one, and §4g's "no fleet-wide count per request" is untouched here.
+
+    `None` from the seam becomes an absent field rather than a zero: a surface that printed
+    `closes: 0` for a row nobody answered would be §4a's failure a release along.
+    """
+    effect = update_effect(row, corpus=corpus)
+    if effect is None:
+        return None
+    return VulnUpdateOut(
+        version=effect.version,
+        assessment=effect.assessment or VULN_ASSESSMENT_UNKNOWN_APP,
+        closes=effect.closes,
+        opens=effect.opens,
+        net=effect.net,
+    )

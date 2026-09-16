@@ -17,7 +17,7 @@ from app.core.permissions import Permission
 from app.core.vuln import VulnCorpus
 from app.core.vuln_answer import stored_corpus
 from app.core.vuln_library import earned_corpus
-from app.core.vuln_read import assess, corpus_as_of, today
+from app.core.vuln_read import assess, corpus_as_of, today, update_line
 from app.mdm.org_units import BUILDING, DEPARTMENT, OrgUnitNames, ids_for_name, load_names, name_for
 from app.models.schema import Device, DeviceExtensionAttribute, InstalledApp
 from app.observations.read import device_observation
@@ -259,7 +259,16 @@ def _assessed(out: DeviceDetailOut, rows: Sequence[InstalledApp], *, corpus: Vul
             # the epoch answering now, which is exactly why an answer judged against a
             # different one is not served under it.
             "corpus_as_of": corpus_as_of(corpus),
-            "apps": [app.model_copy(update={"vuln": assess(stored, by_id[app.id], as_of=as_of)}) for app in out.apps],
+            "apps": [
+                app.model_copy(
+                    update={
+                        "vuln": assess(stored, by_id[app.id], as_of=as_of),
+                        # And what updating would do to it (#482), off the same row.
+                        "vuln_update": update_line(by_id[app.id], corpus=stored),
+                    }
+                )
+                for app in out.apps
+            ],
         }
     )
 

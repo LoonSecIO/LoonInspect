@@ -1,7 +1,10 @@
 import type { ReactNode } from "react";
 import { ExternalLink } from "@/components/ui/external-link";
 import type { Translations } from "@/i18n/en";
-import { assertExhaustive, formatCorpusDate, type AppVulnerability } from "@/features/vulnerabilities/types";
+import { Subject } from "@/features/catalog/PatchAnswerCell";
+import type { PatchAnswer } from "@/features/catalog/patchAnswer";
+import { describeUpdate, type UpdateLine } from "@/features/vulnerabilities/appUpdate";
+import { assertExhaustive, formatCorpusDate, type AppUpdate, type AppVulnerability } from "@/features/vulnerabilities/types";
 
 // Fixed status colours, never themed, per the dataviz palette the catalog's patch-state
 // column already uses: good / warning / critical / neutral. `unknown_app` is the warning
@@ -24,6 +27,44 @@ function Label({ color, children }: { color: string | null; children: ReactNode 
   );
 }
 
+/**
+ * What an update would do to these findings, beside them (#482) — one line per named
+ * title, in the same cell as the count it is about.
+ *
+ * Three renderings and no fourth. **Exact** is a difference of the two id lists and says
+ * both directions, because the newer build can carry more: the lab that produced this
+ * issue found Wireshark 4.2.0 at 17 findings and 4.6.0 at 94, so "closes 17" alone would
+ * be the half of the sentence that sells an upgrade. **Net** is what a capped pair gets —
+ * the difference of the uncapped totals, labelled so nobody reads it as an exact count,
+ * with the hint saying why. And a target the corpus holds no row for reads in §4g's own
+ * words for `unknown_app`: outside the corpus, in the warning colour, carrying the date —
+ * never in green, never as a zero, and never as "closes all 17". Nothing beside a row may
+ * upgrade a missing one (ruling R-D), and that is as true of the target as of the build.
+ */
+function UpdateLines({ lines, corpusAsOf, t }: { lines: UpdateLine[]; corpusAsOf: string; t: Translations }) {
+  const copy = t.vulnerabilities;
+  return (
+    <>
+      {lines.map((line) => (
+        <span key={line.version} className="block text-xs">
+          {line.unknown ? (
+            <Label color={WARNING}>
+              <span className="text-muted-foreground">{copy.updateUnknown(line.version, formatCorpusDate(corpusAsOf))}</span>
+            </Label>
+          ) : line.closes !== null && line.opens !== null ? (
+            <span className="text-muted-foreground">{copy.updateCloses(line.version, line.closes, line.opens)}</span>
+          ) : line.net !== null ? (
+            <span className="text-muted-foreground" title={copy.updateNetHint}>
+              {copy.updateNet(line.version, line.net)}
+            </span>
+          ) : null}
+          <Subject title={line.subject} hint={t.catalog.latestSubjectHint} t={t} />
+        </span>
+      ))}
+    </>
+  );
+}
+
 /** How many finding ids to name before collapsing the rest into a count. */
 const IDS_SHOWN = 3;
 
@@ -39,8 +80,20 @@ const IDS_SHOWN = 3;
  * carry a date: `covered` with nothing found says we looked, and when; `off` says nobody
  * looked, and shows no date at all rather than borrowing today's.
  */
-export function AssessmentCell({ vuln, t }: { vuln: AppVulnerability; t: Translations }) {
+export function AssessmentCell({
+  vuln,
+  t,
+  row
+}: {
+  vuln: AppVulnerability;
+  t: Translations;
+  /** The row this cell is about, when the surface wants the update line too (#482). Legal
+   *  only where each row is one build at `key_full` grain — the device page's apps and the
+   *  application record's builds. The catalog passes nothing and paints nothing new. */
+  row?: (PatchAnswer & { vulnUpdate: AppUpdate | null }) | null;
+}) {
   const copy = t.vulnerabilities;
+  const updates = row ? describeUpdate(vuln, row.vulnUpdate, row) : [];
 
   switch (vuln.assessment) {
     case "off":
@@ -77,6 +130,9 @@ export function AssessmentCell({ vuln, t }: { vuln: AppVulnerability; t: Transla
         return (
           <div className="space-y-0.5">
             <Label color={GOOD}>{copy.stateCoveredClean}</Label>
+            {/* A clean build is exactly where "opens 94" earns its place: updating can
+                ADD findings, and nothing else on the page would say so. */}
+            <UpdateLines lines={updates} corpusAsOf={vuln.corpusAsOf} t={t} />
             <span className="block text-xs text-muted-foreground">{checked}</span>
           </div>
         );
@@ -101,6 +157,7 @@ export function AssessmentCell({ vuln, t }: { vuln: AppVulnerability; t: Transla
             {/* The cap bit: the count above is every finding, the list below is not. */}
             {vulnIDsTruncated ? ` · ${copy.idsCapped}` : ""}
           </span>
+          <UpdateLines lines={updates} corpusAsOf={vuln.corpusAsOf} t={t} />
           <span className="block text-xs text-muted-foreground">{checked}</span>
         </div>
       );
