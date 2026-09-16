@@ -25,6 +25,9 @@ has to be maintained:
   queried* when no app left, so the latch adds zero round-trips per device to a sweep
   designed to move 40k devices in ten minutes (cache, don't calculate).
 
+There is a **second close** (#476), the one exception to "the latch closes itself": a Mac that
+left the fleet is never swept again, so `close_departed_device_latches` closes it from the census.
+
 The kind vocabulary is CLOSED. A later kind is an entry in `KINDS`, an entry in
 `KIND_LEVELS`, and a row in docs/alerts.md — never a reshape of this module or the
 table. `tests/test_alerts.py` holds the doc and the tuple to each other in both
@@ -40,12 +43,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete as sa_delete
+from sqlalchemy import select
 from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.changes.policy import HIGH
-from app.models.schema import Alert, InstalledApp
+from app.models.schema import Alert, Device, InstalledApp
+from app.observations.departure import gone_for_good
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +66,15 @@ KINDS: tuple[str, ...] = (NEW_APP,)
 # product already has one word for how much a thing matters, and a second vocabulary
 # would have to be mapped onto the first forever.
 KIND_LEVELS: dict[str, str] = {NEW_APP: HIGH}
+
+# WHY a latch closed (#476) — a CLOSED vocabulary for the reason the kinds are one: the value is
+# read back years later by someone who cannot ask. `app_gone` takes the `installed_apps` row with
+# it; `device_departed` deletes nothing at all (erasure is #180, v5). Once both are rows with a
+# `closed_at`, the reason is the only thing telling an uninstall from a Mac Jamf deleted.
+CLOSED_APP_GONE = "app_gone"
+CLOSED_DEVICE_DEPARTED = "device_departed"
+
+CLOSE_REASONS: tuple[str, ...] = (CLOSED_APP_GONE, CLOSED_DEVICE_DEPARTED)
 
 
 # --- The pure half ----------------------------------------------------------------------
@@ -194,10 +208,32 @@ async def sync_new_app_latches(
                 Alert.closed_at.is_(None),
                 Alert.app_hash.in_(delta.departed),
             )
-            .values(closed_at=now, closed_run_id=run_id)
+            .values(closed_at=now, closed_run_id=run_id, closed_reason=CLOSED_APP_GONE)
         )
 
     return delta
+
+
+async def close_departed_device_latches(db: AsyncSession, *, connection_id: int, at: datetime, run_id: uuid.UUID | None) -> int:
+    """Close the open latches of Macs that have left the fleet. Commits nothing; the caller does.
+
+    **A latch on a departed Mac would stay open for ever.** `process_sync` opens and closes it,
+    and it only runs against Macs a sweep returns — so `alerts.open` would go on counting a thing
+    that is not true of the fleet, which is the whole of what that key means (docs/alerts.md §1).
+    Closed and never deleted, like every close here, and nothing else is deleted either, which is
+    why the row carries `closed_reason`. Idempotent, so the count returned is the latches that
+    crossed day seven tonight.
+    """
+    departed = select(Device.id).where(
+        Device.mdm_connection_id == connection_id,
+        gone_for_good(Device.mdm_connection_id, Device.external_id, at=at),
+    )
+    result = await db.execute(
+        sa_update(Alert)
+        .where(Alert.closed_at.is_(None), Alert.device_id.in_(departed))
+        .values(closed_at=at, closed_run_id=run_id, closed_reason=CLOSED_DEVICE_DEPARTED)
+    )
+    return result.rowcount or 0
 
 
 async def purge_closed_alerts(db: AsyncSession, retention_days: int) -> int:
