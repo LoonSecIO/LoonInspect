@@ -541,16 +541,13 @@ async def _reconcile_departures(
     await db.commit()
 
 
-async def _log_collapsed_departures(
-    db: AsyncSession, run: Run, collapsed: Mapping[tuple[str, str], CollapsedDeparture]
-) -> None:
+async def _log_collapsed_departures(db: AsyncSession, run: Run, collapsed: Mapping[tuple[str, str], CollapsedDeparture]) -> None:
     """One line per departed object, not one per device (#182).
 
-    The line is the echo's only trace at the default level: the per-device rows it counts
-    are graded `low`, so they are off unless the tenant asks for everything. It therefore
-    names what was deleted, how many rows that cost, and where those rows are — an
-    operator who deletes a group and finds the Changes page quiet has the answer on the
-    run they were watching rather than in the source.
+    This line is the echo's only trace at the default level, because the rows it counts
+    are graded `low`. So it names what is gone, how many rows that cost, and where those
+    rows are: an operator who deletes a group and finds the Changes page quiet has the
+    answer on the run they were watching rather than in the source.
     """
     for entry in sorted(collapsed.values(), key=lambda e: (e.object_kind, e.object_id)):
         await run_log(
@@ -564,7 +561,7 @@ async def _log_collapsed_departures(
             objectName=entry.label,
             rows=entry.rows,
             departedAt=entry.departed_at.isoformat(),
-            level="low",
+            rowLevel="low",
         )
 
 
@@ -673,10 +670,9 @@ async def _sync_jamf(
     devices_failed = 0
     group_count = 0
 
-    # The deletion echo's tally (#182), open across the whole pass: the censuses that
-    # depart objects run before the device loop, and every per-device row they explain is
-    # derived six frames below this one, so the count is collected in a context variable
-    # and reported as one line per object after the loop.
+    # The deletion echo's tally (#182), open across the whole pass: the per-device rows a
+    # departure explains are derived six frames below this one, so the count is collected
+    # in a context variable and reported as one line per object after the loop.
     async with client.http() as http, collecting_departures() as collapsed:
         aperture = await capture_aperture(client, http, sections=sections, quarantined_extension_attributes=quarantine)
         aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)

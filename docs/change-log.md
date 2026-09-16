@@ -18,7 +18,8 @@ That is what makes opinionated defaults safe.
 
 The defaults were reasoned from a real Jamf Pro 11.31.1 inventory of an M4 Mac mini
 (`backend/tests/fixtures/jamf/computer_inventory_detail_real.json`), section by section.
-The shape of the record decided four things:
+The shape of the record decided four things; the fifth is the same argument made about an
+object rather than a section:
 
 1. **Apple system apps collapse into the OS update.** 64 of the record's 83 applications
    live under `/System/Applications` and bump versions with every macOS update. Logged
@@ -37,6 +38,13 @@ The shape of the record decided four things:
    OS update), the alternate MAC (docks), pending software updates (appear when Apple
    releases). `low`; most are better served by a fleet-level finding than by per-device
    events.
+5. **A deleted object's per-device rows collapse under it** (#182, the same shape as 1).
+   Deleting one smart group removes it from every member at once — 40,000 removal rows on a
+   40,000-device fleet, every one of them one admin click's echo rather than a change on
+   that Mac. They are graded `low`, so by default they neither count toward
+   `changes.notable_24h` nor fan out, and the sweep writes **one run-log line per departed
+   object** naming it and the rows it collapsed. A deleted extension-attribute definition
+   goes the same way, and *Everything* still shows the rows and their cause.
 
 Entries (the list sections) follow the same logic with identities: an application is
 (name, bundleId, path) so a version bump is one `updated`, not a removal and an
@@ -84,10 +92,23 @@ then applies the policy and writes one `device_changes` row and one `device.chan
 outbox event per kept change, in the same transaction as the device's state tables.
 
 Two judgements need more than one section and live in the derivation rather than the
-engine: the system-app collapse above, and **two-cause membership** — a group joined or
+engine: the system-app collapse above, and **three-cause membership** — a group joined or
 left carries `criteriaChanged`: whether the group's own definition span moved since this
 device was last observed (criteria moved) or not (device drifted). Jamf cannot say; the
-ledger keeps both histories.
+ledger keeps both histories. The third cause is the group itself: with an open
+`subject_departures` row ([`jamf-observations.md`](jamf-observations.md) §8) it was deleted,
+and the row says `objectDeparted: true`, `departedAt`, and `criteriaChanged: null` — the
+question refused rather than answered wrongly. It is asked first, because a deleted group's
+definition span is never closed and the two-cause question would find it unmoved and report
+*device drifted* on every member of a group that no longer exists. A deleted
+extension-attribute definition's rows carry the same two keys and no `criteriaChanged`.
+
+**The fleet-level event is not minted here.** What a SIEM receives when an *object* is
+gone — one event about a group, with no device in it — is #179's and does not exist yet;
+nothing invents a name for it and `KNOWN_EVENT_TYPES` is untouched. It will hang off the
+departure the census already writes (`app.observations.departure.reconcile_census`, where
+the object and the instant are), not off these per-device rows: they are its detail, which
+is exactly why they collapse.
 
 Every `device_changes` **row** carries the correlation triple (serial, Jamf URL, Jamf id),
 the UDID, both span ids, the device's own `observed_at`, the trigger, and the policy
@@ -127,7 +148,7 @@ since body keys freeze at the public flip. Nineteen keys:
 | `change` | `added` \| `removed` \| `updated` \| `changed` |
 | `old` / `new` | The entry or value on each side. `old` is absent on `added`, `new` on `removed` |
 | `level` | `high` \| `normal` \| `low` — the policy's grade, what a saved search alerts on |
-| `details` | Per-change extras: `changedFields`, `criteriaChanged`, `collapsedSystemApps` |
+| `details` | Per-change extras: `changedFields`, `criteriaChanged`, `collapsedSystemApps`, `objectDeparted` / `departedAt` |
 | `spanID` / `previousSpanID` | Both ledger spans, so any change walks back to its evidence |
 | `policyVersion` | The change policy that judged it — **not** `deviceMeta.schemaVersion`, which versions the wire |
 

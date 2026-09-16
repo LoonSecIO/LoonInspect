@@ -16,11 +16,10 @@ Two derived judgements live here because they need more than one section:
   when the group has an open `subject_departures` row (#181) it was deleted, and no
   device drifted anywhere.
 * **The deletion echo (#182).** One admin click deleting a smart group produces one
-  removal row per member — forty thousand on a forty-thousand-device fleet. They are the
-  detail of one fleet-level event, not N peers, so they collapse the way system apps
-  collapse into the OS update: level `low`, off by default, and one run-log line naming
-  the object and how many rows it produced. Same for a deleted extension-attribute
-  definition's per-device rows.
+  removal row per member — forty thousand on a forty-thousand-device fleet. They are one
+  fleet-level event's detail, not N peers, so they collapse the way system apps collapse
+  into the OS update: level `low`, off by default, and one run-log line per departed
+  object. Same for a deleted extension-attribute definition's rows.
 """
 
 from __future__ import annotations
@@ -29,7 +28,7 @@ import contextlib
 import logging
 from collections.abc import AsyncIterator, Mapping
 from contextvars import ContextVar
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -145,11 +144,8 @@ _DEVICE_META_SOURCES: tuple[tuple[str, str, str], ...] = (
 )
 
 
-# The per-device entry kinds that echo a fleet-level object, and the object each one
-# names: (subject kind the object departs as, the identity field holding its id, the
-# operator's word for it). A removal of one of these is the only change a departure can
-# explain — a group that is gone adds nobody, and an EA definition that is gone reports
-# no value to update.
+# The per-device entry kinds that echo a fleet-level object: entry kind -> (the subject
+# kind the object departs as, the identity field holding its id, the operator's word).
 _ECHOED_OBJECTS: dict[str, tuple[str, str, str]] = {
     "group_membership": (SUBJECT_COMPUTER_GROUP, "groupId", "smart group"),
     "extension_attribute": (SUBJECT_EXTENSION_ATTRIBUTE_DEFINITION, "definitionId", "extension attribute"),
@@ -167,11 +163,10 @@ class CollapsedDeparture:
     rows: int = 0
 
 
-# The tally is a context variable for the reason the run is (`app.core.runs`): the
-# derivation runs six frames below the sweep, once per device, and the fact being
-# collected — "this one deletion cost N rows across the fleet" — exists only across the
-# whole device loop. A sweep opens one with `collecting_departures()`; a webhook's single
-# device opens none, and the collapse still happens, because one device is not an echo.
+# A context variable for the reason the run is (`app.core.runs`): the derivation runs six
+# frames below the sweep, once per device, and "this one deletion cost N rows across the
+# fleet" exists only across the whole loop. A webhook's single device opens no tally — the
+# collapse still happens there, because one device is not an echo.
 _collapsed: ContextVar[dict[tuple[str, str], CollapsedDeparture] | None] = ContextVar("collapsed_departures", default=None)
 
 
@@ -187,61 +182,42 @@ async def collecting_departures() -> AsyncIterator[dict[tuple[str, str], Collaps
         _collapsed.reset(token)
 
 
-@dataclass(slots=True)
-class _Departed:
-    """The open departures relevant to one span boundary, looked up once."""
-
-    rows: dict[tuple[str, str], datetime] = field(default_factory=dict)
-
-    def of(self, change: EntryChange) -> tuple[str, str, datetime] | None:
-        """(object id, the operator's word, when it departed) for a removal whose object
-        is gone; None for every other change."""
-        echoed = _ECHOED_OBJECTS.get(change.kind)
-        if echoed is None or change.change != "removed":
-            return None
-        subject_kind, identity_field, object_kind = echoed
-        object_id = change.identity.get(identity_field)
-        if object_id is None:
-            return None
-        departed_at = self.rows.get((subject_kind, str(object_id)))
-        return None if departed_at is None else (str(object_id), object_kind, departed_at)
+def _echoed(change: EntryChange) -> tuple[str, str, str] | None:
+    """(subject kind, object id, the operator's word) for a change that echoes a
+    fleet-level object; None for every other change. A removal is the only echo there is:
+    a group that is gone adds nobody, and a definition that is gone updates nothing."""
+    echoed = _ECHOED_OBJECTS.get(change.kind)
+    if echoed is None or change.change != "removed":
+        return None
+    subject_kind, identity_field, object_kind = echoed
+    object_id = change.identity.get(identity_field)
+    return None if object_id is None else (subject_kind, str(object_id), object_kind)
 
 
-async def _departed_objects(db: AsyncSession, connection: MdmConnection, changes: list[EntryChange]) -> _Departed:
-    """The open `subject_departures` rows for exactly the objects this boundary lost.
+async def _departed_objects(
+    db: AsyncSession, connection: MdmConnection, changes: list[EntryChange]
+) -> dict[tuple[str, str], datetime]:
+    """When each object this boundary lost departed, for the ones that did.
 
-    Asked per boundary, and only for the ids in it, rather than loading every open
-    departure per device: a sweep calls this once per device that lost a membership or an
-    EA value, and the census that would explain them has already committed — the catalog
-    pass runs before the device loop (#136) and `_reconcile_departures` commits inside it.
+    Asked per boundary and only for the ids in it, rather than every open departure per
+    device. The census that explains them has already committed: the catalog pass runs
+    before the device loop (#136) and `_reconcile_departures` commits inside it.
     """
     wanted: dict[str, set[str]] = {}
     for change in changes:
-        echoed = _ECHOED_OBJECTS.get(change.kind)
-        if echoed is None or change.change != "removed":
-            continue
-        subject_kind, identity_field, _ = echoed
-        object_id = change.identity.get(identity_field)
-        if object_id is not None:
-            wanted.setdefault(subject_kind, set()).add(str(object_id))
-    found = _Departed()
+        echoed = _echoed(change)
+        if echoed is not None:
+            wanted.setdefault(echoed[0], set()).add(echoed[1])
+    found: dict[tuple[str, str], datetime] = {}
     for subject_kind, ids in wanted.items():
-        rows = (
-            (
-                await db.execute(
-                    select(SubjectDeparture).where(
-                        SubjectDeparture.mdm_connection_id == connection.id,
-                        SubjectDeparture.subject_kind == subject_kind,
-                        SubjectDeparture.subject_id.in_(sorted(ids)),
-                        SubjectDeparture.returned_at.is_(None),
-                    )
-                )
-            )
-            .scalars()
-            .all()
+        query = select(SubjectDeparture).where(
+            SubjectDeparture.mdm_connection_id == connection.id,
+            SubjectDeparture.subject_kind == subject_kind,
+            SubjectDeparture.subject_id.in_(sorted(ids)),
+            SubjectDeparture.returned_at.is_(None),
         )
-        for row in rows:
-            found.rows[(subject_kind, row.subject_id)] = row.departed_at
+        for row in (await db.execute(query)).scalars():
+            found[(subject_kind, row.subject_id)] = row.departed_at
     return found
 
 
@@ -249,10 +225,7 @@ def _note_collapsed(object_kind: str, object_id: str, label: str | None, departe
     tally = _collapsed.get()
     if tally is None:
         return
-    entry = tally.get((object_kind, object_id))
-    if entry is None:
-        entry = CollapsedDeparture(object_kind=object_kind, object_id=object_id, label=label, departed_at=departed_at)
-        tally[(object_kind, object_id)] = entry
+    entry = tally.setdefault((object_kind, object_id), CollapsedDeparture(object_kind, object_id, label, departed_at))
     entry.rows += 1
 
 
@@ -430,23 +403,23 @@ async def derive_and_record(
                 continue
             level = policy.entry_level(change.kind, change.change)
             details = {}
-            gone = departed.of(change)
-            if gone is not None:
+            echoed = _echoed(change)
+            departed_at = departed.get(echoed[:2]) if echoed is not None else None
+            if echoed is not None and departed_at is not None:
                 # The object was deleted (#182) — the third cause, and the one the other
                 # two cannot express: a deleted group's definition span is never closed,
                 # so `_membership_cause` would find it unmoved and say "the device
-                # drifted", the one thing that did not happen. `criteriaChanged: null`
-                # is that question refused rather than answered wrongly, and it rides
-                # only the membership row: an extension attribute has no criteria.
-                object_id, object_kind, departed_at = gone
+                # drifted", the one thing that did not happen. `criteriaChanged: null` is
+                # that question refused rather than answered wrongly, and it rides the
+                # membership row only: an extension attribute has no criteria.
+                _, object_id, object_kind = echoed
                 details = {"objectDeparted": True, "departedAt": departed_at.isoformat()}
                 if change.kind == "group_membership":
                     details["criteriaChanged"] = None
-                # The echo collapses. One click produced this row on every member; it is
-                # that click's detail, so it is graded `low` (off by default) and counted
-                # into one run-log line for the object rather than logged as a peer of
-                # every other change in the sweep. The count is taken before the level
-                # gate, because what the line reports is what the deletion cost.
+                # One click produced this row on every member, so it is that click's
+                # detail: graded `low` (off by default) and counted into one run-log line
+                # for the object. Counted before the level gate, because what the line
+                # reports is what the deletion cost.
                 _note_collapsed(object_kind, object_id, change.label, departed_at)
                 level = LOW
                 if not policy.keeps_level(level):

@@ -1053,3 +1053,29 @@ Docker Desktop on an Apple Silicon Mac; or the alias reads *does not resolve* wh
 compose exec -T app getent hosts host.docker.internal` answers with an address. Report the
 *Evidence* line, the body of `GET /api/system/ai/host`, `docker compose exec -T app cat
 /proc/version`, your Docker Desktop version, and the build from Settings › Support.
+
+
+## 12. "I deleted a smart group and the Changes page says nothing"
+
+Deliberate, and the run log says so. Deleting one group removes it from every member at
+once, and one change per Mac would bury the sweep under tens of thousands of rows
+describing the same click — so they are recorded at level **low**, off under the default
+*High + normal*, and the sweep writes one line per deleted object instead
+([`change-log.md`](change-log.md) §1).
+
+1. **Find the line.** Open the connection's run panel (or `GET /api/runs/{jobId}/log`) for
+   the first sweep after the deletion. It reads *smart group "…" is gone; its N per-device
+   rows collapsed to level low*, with `objectKind`, `objectId`, `rows` and `departedAt`
+   beside it. A deleted extension attribute reads the same with `extension attribute`.
+2. **Read the rows.** Settings › Change tracking → preset **Everything**, then Devices ›
+   Changes. Each row says `objectDeparted` rather than *device drifted*, because no device
+   moved. The preset governs new changes only — rows already collapsed stay at level low
+   and are found with **Level: Everything** on the page, or `GET /api/changes?minLevel=low`.
+3. **No line, and no rows either.** Then nothing departed. The census that finds a deletion
+   runs at the start of the sweep, and a refused or collapsed one departs nobody and says so
+   on the run — *census returned nothing* or *census collapsed against the population*. That
+   is the circuit breaker: the API role lost **Read Smart Computer Groups**. Grant it and
+   re-run. A line whose `objectId` names a group still in Jamf is reportable state **M**.
+
+**M.** A collapse line for an object that still exists in Jamf. Report the line, the
+`jobID`, and the build from Settings › Support.

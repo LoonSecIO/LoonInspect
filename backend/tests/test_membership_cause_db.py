@@ -13,6 +13,13 @@ by hand on either side of the group observation, because a device span is stampe
 Jamf's `reportDate` while a group span is stamped with our clock, and the comparison is
 between the two.
 
+The third cause is #182's: the group itself was deleted. Its span is never closed, so the
+two-cause question would answer "the device drifted" on every member — the one thing that
+did not happen — and one click would produce N of them. Those rows carry `objectDeparted`
+and collapse to level `low` behind one run-log line, and the tests below hold both halves:
+what the rows say when a tenant asks for everything, and that the default sees one line
+instead of N notable changes.
+
 Needs a real Postgres and the fake Jamf tenant, like the other sweep suites.
 """
 
@@ -135,6 +142,8 @@ async def test_a_membership_moved_by_a_criteria_edit_says_so_and_drift_does_not(
     assert left.change == "removed"
     assert left.details["criteriaChanged"] is False, left.details
     assert left.details["groupDefinitionSpanId"] == joined.details["groupDefinitionSpanId"]
+    # Neither is read as a departure: the group is still in the census (#182).
+    assert "objectDeparted" not in joined.details and "objectDeparted" not in left.details
 
 
 async def test_the_sweep_observes_the_definitions_before_the_first_device(db, connection, jamf: FakeJamf) -> None:
@@ -149,3 +158,118 @@ async def test_the_sweep_observes_the_definitions_before_the_first_device(db, co
     first_group_read = next(i for i, path in enumerate(paths) if "smart-groups" in path)
     first_inventory_read = next(i for i, path in enumerate(paths) if "computers-inventory" in path)
     assert first_group_read < first_inventory_read, paths
+
+
+# --- the third cause: the object was deleted (#182) ------------------------------------
+
+FALCON = {"id": "17", "name": "Falcon Installed", "siteId": "-1", "criteria": []}
+EA = "12"  # "Crowdstrike Sensor Version", carried by the synthetic record's general section
+
+
+async def _change_rows(db, connection_id: int) -> list:
+    from app.models.schema import DeviceChange
+
+    query = select(DeviceChange).where(DeviceChange.mdm_connection_id == connection_id).order_by(DeviceChange.id)
+    return list((await db.execute(query)).scalars().all())
+
+
+def _notable(rows: list) -> int:
+    """What `changes.notable_24h` counts — the closed LEVELS ordering at `normal` or above."""
+    from app.changes.policy import NORMAL, levels_at_least
+
+    return len([row for row in rows if row.level in levels_at_least(NORMAL)])
+
+
+async def _collapse_lines(db, connection_id: int) -> list:
+    """The run-log lines the collapse writes — one per departed object, whatever the level."""
+    from app.models.schema import Run, RunLogLine
+
+    query = select(RunLogLine).join(Run, RunLogLine.run_id == Run.id).where(Run.mdm_connection_id == connection_id)
+    lines = (await db.execute(query.order_by(RunLogLine.id))).scalars().all()
+    return [line for line in lines if (line.fields or {}).get("objectKind")]
+
+
+async def _everything(db) -> None:
+    """The *Everything* preset — what it takes to see a collapsed row at all."""
+    from app.changes.policy import CHANGE_POLICY_VERSION
+    from app.models.schema import ChangePolicy
+
+    db.add(ChangePolicy(version=CHANGE_POLICY_VERSION, overrides={"minimumLevel": "low"}))
+    await db.commit()
+
+
+def _delete_group(jamf: FakeJamf, group_id: str) -> None:
+    """One admin click: the group is gone from Jamf, and from every member's memberships."""
+    jamf.smart_groups = [group for group in jamf.smart_groups if group["id"] != group_id]
+    for computer in jamf.computers:
+        computer["groupMemberships"] = [g for g in computer["groupMemberships"] if g["groupId"] != group_id]
+
+
+async def test_a_deleted_group_costs_one_line_and_no_notable_rows(db, connection, jamf: FakeJamf) -> None:
+    from app.mdm.service import sync_connection
+
+    jamf.smart_groups.append(FALCON)
+    jamf.real["groupMemberships"].append({"groupId": "17", "groupName": "Falcon Installed", "smartGroup": True})
+    _report(jamf, datetime.now(UTC) - timedelta(minutes=1))
+    assert (await sync_connection(db, connection)).ok
+    notable_before = _notable(await _change_rows(db, connection.id))
+
+    _delete_group(jamf, "17")
+    _report(jamf, datetime.now(UTC) + timedelta(seconds=10))
+    assert (await sync_connection(db, connection)).ok
+
+    rows = await _change_rows(db, connection.id)
+    assert [r for r in rows if (r.entry_identity or {}).get("groupId") == "17"] == [], "level low is off by default"
+    assert _notable(rows) == notable_before, "one deletion must not move changes.notable_24h"
+
+    (line,) = await _collapse_lines(db, connection.id)
+    assert line.fields["objectKind"] == "smart group" and line.fields["objectId"] == "17"
+    assert line.fields["rows"] == 2, "both members, counted once for the object"
+    assert "Falcon Installed" in line.message and "level low" in line.message
+
+
+async def test_a_deleted_group_departed_it_never_says_the_device_drifted(db, connection, jamf: FakeJamf) -> None:
+    from app.mdm.service import sync_connection
+
+    await _everything(db)
+    jamf.smart_groups.append(FALCON)
+    jamf.real["groupMemberships"].append({"groupId": "17", "groupName": "Falcon Installed", "smartGroup": True})
+    _report(jamf, datetime.now(UTC) - timedelta(minutes=1))
+    assert (await sync_connection(db, connection)).ok
+
+    _delete_group(jamf, "17")
+    _report(jamf, datetime.now(UTC) + timedelta(seconds=10))
+    assert (await sync_connection(db, connection)).ok
+
+    rows = [r for r in await _change_rows(db, connection.id) if (r.entry_identity or {}).get("groupId") == "17"]
+    assert len(rows) == 2, "one per member"
+    for row in rows:
+        assert row.change == "removed" and row.level == "low", row.level
+        assert row.details["objectDeparted"] is True
+        assert row.details["criteriaChanged"] is None, "the question is refused, not answered wrongly"
+        assert row.details["departedAt"]
+        assert "groupDefinitionSpanId" not in row.details
+    assert [r for r in rows if r.details.get("criteriaChanged") is False] == [], "no row reads as drifted"
+
+
+async def test_a_deleted_extension_attribute_definition_collapses_the_same_way(db, connection, jamf: FakeJamf) -> None:
+    from app.mdm.service import sync_connection
+
+    await _everything(db)
+    _report(jamf, datetime.now(UTC) - timedelta(minutes=1))
+    assert (await sync_connection(db, connection)).ok
+
+    jamf.extension_attribute_definitions = [d for d in jamf.extension_attribute_definitions if d["id"] != EA]
+    jamf.synthetic["general"]["extensionAttributes"] = [
+        ea for ea in jamf.synthetic["general"]["extensionAttributes"] if ea["definitionId"] != EA
+    ]
+    _report(jamf, datetime.now(UTC) + timedelta(seconds=10))
+    assert (await sync_connection(db, connection)).ok
+
+    (row,) = [r for r in await _change_rows(db, connection.id) if (r.entry_identity or {}).get("definitionId") == EA]
+    assert row.entry_kind == "extension_attribute" and row.change == "removed" and row.level == "low"
+    assert row.details["objectDeparted"] is True and row.details["departedAt"]
+    assert "criteriaChanged" not in row.details, "an extension attribute has no criteria"
+    (line,) = await _collapse_lines(db, connection.id)
+    assert line.fields["objectKind"] == "extension attribute" and line.fields["objectId"] == EA
+    assert line.fields["rows"] == 1
