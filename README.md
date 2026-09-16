@@ -91,10 +91,11 @@ The contract is in [docs/jamf-observations.md](docs/jamf-observations.md).
 
 **Nothing here is deleted.** Devices, installed apps, extension attributes, the
 observation ledger, and the change log (`device_changes`) have no retention setting and
-no purge job — a Mac removed from Jamf keeps its full history. The only three things this
-project ever prunes are the delivery outbox (7 days), finished runs (30 days), and the
-audit log (30 days, by file rotation). See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for what
-that means at scale.
+no purge job — a Mac removed from Jamf keeps its full history. The only four things this
+project ever prunes are the delivery outbox (7 days), finished runs (30 days), closed
+alert latches (the same 30-day `run_retention_days` the runs use, since a closed latch is
+run history in the same sense), and the audit log (30 days, by file rotation). See
+[KNOWN_ISSUES.md](KNOWN_ISSUES.md) for what that means at scale.
 
 ---
 
