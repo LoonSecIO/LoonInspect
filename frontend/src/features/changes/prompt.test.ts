@@ -7,6 +7,7 @@ import {
   MAX_QUESTION_CHARS,
   answerLines,
   askFailureText,
+  browserZone,
   bannerKind,
   failureReason,
   filtersFromPrompt,
@@ -26,7 +27,9 @@ import { CHANGE_KINDS } from "@/features/changes/render";
 import { de } from "@/i18n/de";
 import { en } from "@/i18n/en";
 
-const NO_DIMENSIONS = { model: null, osVersion: null, department: null, managed: null, departmentName: null } as const;
+// The keys the model never writes: the four dimensions a repair moves a Search into and the
+// department's name (#447, #450), and the start the server read out of the question (#444).
+const NO_DIMENSIONS = { model: null, osVersion: null, department: null, managed: null, departmentName: null, since: null } as const;
 const WIRESHARK: PromptFilters = { q: null, artifact: "Wireshark", level: null, section: "applications", change: null, ...NO_DIMENSIONS };
 // Kyle's first demo question, "List new application installs".
 const NEW_INSTALLS: PromptFilters = { q: null, artifact: null, level: null, section: "applications", change: "added", ...NO_DIMENSIONS };
@@ -127,6 +130,16 @@ describe("filtersFromPrompt replaces the page's filters, never merges into them"
       department: "5",
       managed: "false"
     });
+  });
+
+  // #444: the one filter the server reads from the question rather than from the reply. A window
+  // the Overview's link had set goes when a question asked for none — that question was about the
+  // whole log, and a readback claiming so over a narrowed feed lies.
+  it("carries the start the question's words asked for, and clears it when they asked for none", () => {
+    const since = "2026-09-15T02:30:00Z";
+    const fromTheOverview = { since: "2026-09-07T12:00:00.000Z" };
+    expect({ ...fromTheOverview, ...filtersFromPrompt({ ...WIRESHARK, since }) }).toMatchObject({ artifact: "Wireshark", since });
+    expect({ ...fromTheOverview, ...filtersFromPrompt(WIRESHARK) }).toMatchObject({ since: undefined });
   });
 
   it("clears the hidden keys the bar cannot set, so a narrowed feed answers for the fleet", () => {
@@ -251,6 +264,21 @@ describe("readback — the handoff's describe(), in the page's labels", () => {
       "Angezeigt werden Änderungen mit dem Namen „Wireshark“, im Abschnitt Anwendungen, die hinzugefügt wurden"
     );
   });
+
+  // #444: the window the server read out of the question. No control shows it, so the readback
+  // is where a reader learns the answer was bounded, in the browser's own format and zone.
+  it("the start the question asked for is named last, in the table's own format", () => {
+    const since = "2026-09-15T02:30:00Z";
+    const shown = new Date(since).toLocaleString();
+    expect(readback({ ...WIRESHARK, change: "added", since }, en.changes)).toBe(
+      `Showing changes named “Wireshark”, in Applications, that were added, observed since ${shown}`
+    );
+    expect(readback({ since }, de.changes)).toBe(`Angezeigt werden Änderungen beobachtet seit ${shown}`);
+  });
+});
+
+describe("browserZone — what a question carries so a start means the operator's day (#444)", () => {
+  it("is this runtime's IANA zone", () => expect(browserZone()).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone));
 });
 
 describe("the Change filter's vocabulary", () => {

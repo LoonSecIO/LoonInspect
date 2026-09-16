@@ -3,6 +3,10 @@ export interface JamfPatchTitle {
   name: string;
   publisher: string | null;
   appName: string | null;
+  /** Where `appName` came from (#478): `jamf`, `kill_apps`, `unnamed`, or null on a title
+   *  stored before #385's rule existed. Widened to `string` on purpose — a value this
+   *  build does not know shows the name and claims nothing (`appNameMarker.ts`). */
+  appNameSource: string | null;
   bundleId: string | null;
   currentVersion: string;
   lastModified: string;

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { AppNameLine } from "@/features/jamfPatch/AppNameLine";
 import { getJamfPatchTitle } from "@/features/jamfPatch/api";
 import type { JamfPatchTitleDetail } from "@/features/jamfPatch/types";
 import { ReleaseCalendar } from "@/features/jamfPatch/ReleaseCalendar";
@@ -82,6 +83,8 @@ export function JamfPatchDetailPage() {
               {title.publisher ?? "—"} · {title.bundleId ?? "—"} · {t.jamfPatch.tableCurrentVersion}:{" "}
               {title.currentVersion}
             </p>
+            {/* The same marker the row carried, where the row sent the reader (#478). */}
+            <AppNameLine title={title} t={t} className="mt-1 block text-sm text-muted-foreground" />
             <p className="mt-1 text-sm text-muted-foreground">
               {t.jamfPatch.detail.deviceSummary(title.deviceCount, title.devicesOnLatest)}
             </p>

@@ -13,6 +13,14 @@ class JamfPatchTitleOut(BaseModel):
     name: str
     publisher: str | None
     app_name: str | None
+    # Where `app_name` came from (#478, over the column #385 writes): `jamf`, `kill_apps`,
+    # `unnamed`, or NULL on a row stored before that rule existed. Served because the page
+    # cannot otherwise tell a name Jamf published from one LoonInspect read out of the
+    # patches' `killApps`, and only the second is a possible miss (docs/app-catalog.md §2a).
+    # Camel-cased to `appNameSource` by the alias generator above; the wire vocabulary
+    # freeze (#188) is about the Splunk wire and not this response, but the spelling obeys
+    # the same rule. Defaulted so a construction that predates the field still builds.
+    app_name_source: str | None = None
     bundle_id: str | None
     current_version: str
     last_modified: str
