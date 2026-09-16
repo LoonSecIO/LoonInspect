@@ -1046,16 +1046,18 @@ withheld says so in its own log (*run.failed not emitted: this connection alread
 this failure today*). So the silence after the first alarm is not the problem clearing:
 the connection's row is what says whether it is fixed.
 
-**Webhooks refuse in the same words, and each refusal is its own run.** A connection that
-also receives webhooks answers every one of them `503` while the credential is unusable.
+**Webhooks refuse in the same words, and each refusal is its own run.** While the
+credential is unusable, a connection answers `503` to every callback it would have acted
+on — a `ComputerAdded` or `ComputerInventoryCompleted` naming a computer. A
+`ComputerCheckIn` is still dropped by name before any of this and still answers `200`, so
+a fleet-wide check-in webhook is not what you are looking at.
 `docker compose logs app --since 30m | grep 'jamf webhook refused'` carries the same
 sentence, and `GET /api/runs?trigger=webhook&pageSize=5` lists the failed runs behind it —
-one per callback Jamf Pro sent or retried, which is why the run list fills faster than the
-ten-minute tick would explain. It is the same failure on a second path, not a second
-failure: the ration is counted across both, so one `run.failed` a day covers ticks,
-webhooks and any mix of them, and the **Save** in step 2 ends both at once. A
-`ComputerCheckIn` still costs nothing — it is dropped by name before any of this — so a
-fleet-wide check-in webhook is not what is filling the list.
+one per callback Jamf Pro sent or retried, which is why the run list can fill faster than
+the ten-minute tick would explain. It is the same failure on a second path, not a second
+failure: the ration is counted over the connection's failed runs whatever wrote them, so
+one `run.failed` a day covers ticks, webhooks and any mix of the two, and the **Save** in
+step 2 ends both at once.
 
 **P.** The connection's row says nothing and `credentialProblem` is `null`, while its runs
 keep failing with this sentence — or the sentence stays on the row after a successful Save
