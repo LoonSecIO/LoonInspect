@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { AppNameLine } from "@/features/jamfPatch/AppNameLine";
 import { listJamfPatchTitles, syncJamfPatchTitles } from "@/features/jamfPatch/api";
@@ -106,20 +106,28 @@ export function JamfPatchPage() {
   /** The one read of the list. Nothing here turns the spinner on or clears the error
    *  line: the first read comes from the effect below, and an effect body is the one
    *  place React asks callers not to set state (#15). `loading` starts true; a re-read
-   *  goes through `refresh`, where a click is what asked for it. */
-  function load(): Promise<void> {
-    return listJamfPatchTitles()
-      .then((response) => {
-        setTitles(response.items);
-        setTotal(response.total);
-      })
-      .catch(() => {
-        setError(t.jamfPatch.errorLoading);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }
+   *  goes through `refresh`, where a click is what asked for it.
+   *
+   *  Held against the dictionary — the failure line is written in it — so a language switch
+   *  re-reads (#479); `live` is how the effect drops a read that switch superseded, leaving
+   *  the language just left unable to write the last word. A click's re-read is not the
+   *  effect's, is not what the switch replaces, and passes none. */
+  const load = useCallback(
+    (live: () => boolean = () => true): Promise<void> =>
+      listJamfPatchTitles()
+        .then((response) => {
+          if (!live()) return;
+          setTitles(response.items);
+          setTotal(response.total);
+        })
+        .catch(() => {
+          if (live()) setError(t.jamfPatch.errorLoading);
+        })
+        .finally(() => {
+          if (live()) setLoading(false);
+        }),
+    [t]
+  );
 
   function refresh(): Promise<void> {
     setLoading(true);
@@ -127,10 +135,24 @@ export function JamfPatchPage() {
     return load();
   }
 
+  // A language switch re-runs the read below, and the page has to read as asking rather than
+  // leave the previous language's answer standing as this one's. Adjusted during the render
+  // that moved the locale, keyed on the effect's whole dependency array — the frontend rule
+  // in CONTRIBUTING.md, and the reason it is there (#479).
+  const [asked, setAsked] = useState({ load });
+  if (asked.load !== load) {
+    setAsked({ load });
+    setLoading(true);
+    setError(null);
+  }
+
   useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    let cancelled = false;
+    void load(() => !cancelled);
+    return () => {
+      cancelled = true;
+    };
+  }, [load]);
 
   function handleSyncNow() {
     setSyncing(true);
