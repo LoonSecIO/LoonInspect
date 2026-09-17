@@ -1,21 +1,12 @@
 """The evidence artefact as one printable, self-contained HTML document (#473, #219 R5 5.6).
 
-An auditor does not receive JSON. This renders #472's object — whose contract is docs/compliance-evidence.md — into
-a file that opens in a browser with **no network**: no CDN, no external font, no external stylesheet, because it will
-be opened a year from now on a machine that cannot reach us. The machine-readable bundle travels *inside* the page,
-in a `<script type="application/json">` block, rather than beside it where it could be separated from the document
-it belongs to.
-
-**No server-side PDF.** A rendering service is a font problem and a permanent maintenance surface bought on a guess
-about what a reader wants; until a real assessor says a browser-printed page is not acceptable, that is a fact we do
-not have (#473).
-
-**The fleet is untrusted input** (docs/ai-threat-model.md). Device names and extension-attribute values come from
-machines we do not control, so every interpolation goes through `_t` for text and `_bundle` for the JSON: a Mac named
-`</script>` closes nothing.
-
-Pure and synchronous. It reads the object and the ledger heartbeat its caller already holds and asks the database
-nothing, which is what lets its failure sentences be tested without a Postgres.
+An auditor does not receive JSON. This renders #472's object — contract in docs/compliance-evidence.md §6 — as a
+file that opens with **no network**: no CDN, no font, no stylesheet, because it will be opened a year from now on a
+machine that cannot reach us. The bundle travels *inside* the page rather than beside it, where the two could be
+separated. **No server-side PDF**: until a real assessor says a printed page is not acceptable, that is a fact we
+do not have. **The fleet is untrusted input** (docs/ai-threat-model.md) — text through `_t`, the bundle through
+`_bundle` — so a Mac named `</script>` closes nothing. Pure and synchronous, which is what lets the failure
+sentences, the half of this surface that only shows up on a bad day, be tested at all.
 """
 
 from __future__ import annotations
@@ -32,9 +23,9 @@ from app.mdm.jamf.contract import CONTRACT_VERSION
 BUNDLE_ID = "evidence-bundle"
 TITLE = "Evidence report"
 
-#: Every sentence this surface prints about itself, kept in one place because they are its diagnosability contract:
-#: docs/troubleshooting.md §17 steps through each, and a sentence reworded there and not here is how that document
-#: decays. Each says what happened, why, and the next check, in the operator's vocabulary (docs/diagnosability.md §2).
+#: Every sentence this surface prints about itself, together because they are its diagnosability contract:
+#: docs/troubleshooting.md §17 steps through each, and one reworded there and not here is how that document decays.
+#: Each says what happened, why, and the next check, in the operator's vocabulary (docs/diagnosability.md §2).
 NO_OBSERVATION = (
     "No observation in this window. This connection has observations, but none between {start} and {as_of}, so no Mac "
     "is named below and the sum is empty. Check when the last device sweep ran — Settings › Connections, the run "
@@ -88,25 +79,20 @@ table{width:100%;border-collapse:collapse;margin:0 0 10px}
 th,td{border:1px solid #bbb;padding:4px 6px;text-align:left;vertical-align:top}
 th{background:#f1f1f1;font-weight:600}
 td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-/* Every character prints: nothing here is ever given overflow:hidden or an ellipsis, because a truncated
-   digest on paper is not evidence and a truncated one that looks whole is worse. Which is why the three
-   classes differ. `hash` may break anywhere, a digest being one long token that has to fit somehow.
-   `nb` never breaks — a rule id split across two lines ("LI-\n0003") is unreadable and the column can
-   simply be wider. `mono` is the middle: break a token only when it cannot fit a line of its own, which
-   leaves a UDID breaking at its hyphens. First printed against a real fixture, which is where all three
-   were found. */
+/* Every character prints; nothing gets overflow:hidden or an ellipsis, a truncated digest on paper being
+   not evidence. `hash` may break anywhere, `nb`/`ts` never (a split rule id or timestamp is unreadable
+   when the column could be wider), `mono` breaks a token only when it cannot fit a line of its own. All
+   three came from printing the page. */
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;
   overflow-wrap:break-word;hyphens:none}
 .hash{overflow-wrap:anywhere}
 .nb,.ts{white-space:nowrap}
 .note{border:1px solid #111;padding:7px 10px;margin:0 0 8px}
 .note b{display:block}
-/* The whole document is one row of one table so that the refusal can be that table's repeating `thead`:
-   printed and measured, this is the only construction Chrome repeats at the top of every page WITHOUT
-   printing over the content. `position:fixed` was tried five ways first — plain, negative `top`, negative
-   `margin-top`, a transform, and an offset child — and every offset form fell to the foot of the page
-   while the plain one printed over the first row. On screen the row is hidden: the refusal is already in
-   the header block, and a reader who is scrolling has not lost page one. */
+/* The document is one row of one table so the refusal can be that table's repeating `thead` — measured
+   against Chrome, the only construction that repeats on every page without printing over the content.
+   `position:fixed` was tried five ways and every one failed. On screen the row is hidden: the refusal is
+   already in the header block. */
 .sheet>thead{display:none}
 .sheet>thead>tr>th{background:none;border:0;border-bottom:.5pt solid #000;padding:0 0 3px;
   font-weight:400;font-size:9px}
@@ -114,8 +100,7 @@ td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 @media print{
   @page{size:A4 portrait;margin:14mm 12mm 14mm}
   body{padding:0;font-size:10px;background:#fff;color:#000}
-  .sheet>thead{display:table-header-group}
-  thead{display:table-header-group}
+  .sheet>thead,thead{display:table-header-group}
   tr,.note,dl,dd{break-inside:avoid}
   h1,h2,header{break-after:avoid}
   a{color:#000;text-decoration:none}
@@ -136,24 +121,24 @@ def _bundle(report: dict[str, Any]) -> str:
 
 
 def _when(value: Any) -> str:
-    """To the minute, in the tables. The seconds were dropped after a printed fixture showed the interval column
-    wrapping one token per line; the columns say UTC once in their heading instead of on every cell."""
+    """To the minute; the columns say UTC once in their heading. The seconds went after a printed fixture showed the
+    interval column wrapping one token per line."""
     return str(value)[:16].replace("T", " ") if value else "—"
 
 
 def _when_said(value: Any) -> str:
-    """With its clock spelled out, for the header block and the sentences, where there is no column to carry it."""
+    """With its clock spelled out, for the header and the sentences, where no column carries it."""
     return f"{_when(value)} UTC" if value else "—"
 
 
 def _range(start: Any, end: Any) -> str:
-    """Both ends, each unbreakable: a timestamp split across two lines is a timestamp a reader has to reassemble."""
+    """Both ends, each unbreakable: a timestamp split over two lines is one a reader has to reassemble."""
     return f'<span class="ts">{_t(_when(start))}</span> → <span class="ts">{_t(_when(end))}</span>'
 
 
 def _span_said(span: dict[str, Any]) -> str:
-    """ "under one reporting interval", never "0 days": the artefact's own spelling of a zero that means we saw it
-    once, which must not wear the costume of a zero that means it never happened (#472 §4)."""
+    """ "under one reporting interval", never "0 days": a zero meaning we saw it once must not wear the costume of a
+    zero meaning it never happened (#472 §4), least of all on a page someone files."""
     days = span.get("days")
     return f"{days:g} days" if days else "under one reporting interval"
 
@@ -169,11 +154,9 @@ def _table(headers: tuple[str, ...], body: list[list[str]], klass: str = "") -> 
 
 
 def notices(report: dict[str, Any], *, heartbeat: datetime | None, now: datetime | None = None) -> list[str]:
-    """What this report has to say about itself, before a reader infers it wrong.
-
-    Every one of these is a state an empty or ugly table would otherwise be read as — #150's rule, that failure is
-    not emptiness, applied to a page someone files. Derived from the object and the heartbeat alone, so the sentences
-    are testable without a fleet."""
+    """What this report has to say about itself, before a reader infers it wrong. Each is a state an empty or ugly
+    table would otherwise be read as — #150's rule, that failure is not emptiness, applied to a page someone files.
+    Derived from the object and the heartbeat alone, so the sentences are testable without a fleet."""
     window = report["header"]["method"]["window"]
     if heartbeat is None:
         return [NO_LEDGER_SAID]
@@ -200,7 +183,7 @@ def _header_html(report: dict[str, Any]) -> str:
     not get trimmed: a page of technical evidence with no framework claim on it is read as a framework claim by
     whoever receives it unless it says otherwise in its own header."""
     head = report["header"]
-    method, clock, absent = head["method"], head["clock"], head["notVisible"]
+    method, absent = head["method"], head["notVisible"]
     window, connection, catalogue = method["window"], method["connection"], method["catalogue"]
     pairs = (
         ("Connection", f"{connection['name']} — {connection['provider']}, #{connection['connectionID']}"),
@@ -208,7 +191,7 @@ def _header_html(report: dict[str, Any]) -> str:
         ("Window", f"{_when_said(window['start'])} → {_when_said(window['asOf'])}"),
         ("Rule catalogue", f"version {catalogue['version']}, {catalogue['rules']} rules"),
         ("Contract version", ", ".join(head["contractVersions"]) or "—"),
-        ("Clock", clock["statement"]),
+        ("Clock", head["clock"]["statement"]),
         ("Not visible from here", f"{', '.join(absent['controls'])} — {absent['statement']}"),
     )
     items = "".join(f"<dt>{_t(key)}</dt><dd>{_t(value)}</dd>" for key, value in pairs)
@@ -219,8 +202,8 @@ def _header_html(report: dict[str, Any]) -> str:
 
 
 def _totals_html(report: dict[str, Any]) -> str:
-    """met + unmet + not observed = the window, printed where a reader cannot miss it, with the fourth thing —
-    `notReported`, a field the aperture never collected — kept beside the third rather than inside it."""
+    """met + unmet + not observed = the window, where a reader cannot miss it, with `notReported` — a field the
+    aperture never collected — beside the third rather than inside it."""
     titles = {rule["ruleID"]: rule["title"] for rule in report["rules"]}
     fleet = report["totals"].get("fleet")
     buckets = list(report["totals"]["byRule"].items()) + ([("Every rule, every Mac", fleet)] if fleet else [])
@@ -243,8 +226,8 @@ def _totals_html(report: dict[str, Any]) -> str:
 
 
 def _devices_html(report: dict[str, Any]) -> str:
-    """The lineage triple beside the name: a logic-board repair keeps the serial and changes the UDID, so neither
-    alone identifies a Mac over its life."""
+    """The lineage triple beside the name: a repair keeps the serial and changes the UDID, so neither alone
+    identifies a Mac over its life."""
     body = [
         [
             _cell(device.get("name") or "—"),
@@ -256,21 +239,6 @@ def _devices_html(report: dict[str, Any]) -> str:
         for device in report["devices"]
     ]
     return f"<h2>The Macs in this window</h2>{_table(('Mac', 'Jamf id', 'UDID', 'Serial', 'Management id'), body)}"
-
-
-def _rules_html(report: dict[str, Any]) -> str:
-    """The catalogue as evaluated, archived with the report: LI-0010's OS floor is the one operand that drifts, so a
-    copy filed a year ago has to carry the floor it was judged against."""
-    body = [
-        [
-            _cell(rule["ruleID"], "mono nb"),
-            _cell(rule["title"]),
-            _cell(rule["field"], "mono"),
-            _cell(f"{rule['predicate']['operator']} {rule['predicate']['operand']}", "mono"),
-        ]
-        for rule in report["rules"]
-    ]
-    return f"<h2>The rules</h2>{_table(('Rule', 'Title', 'Field read', 'Predicate'), body)}"
 
 
 def _row_html(row: dict[str, Any], names: dict[str, str]) -> list[str]:
@@ -301,14 +269,13 @@ def render_evidence_page(report: dict[str, Any], *, heartbeat: datetime | None, 
     )
     headers = ("Mac", "Rule", "State", "Interval, device time (UTC)", "For", "Collected (UTC)", "What was read")
     window = report["header"]["method"]["window"]
-    name = report["header"]["method"]["connection"]["name"]
-    title = f"{TITLE} — {name}, {str(window['start'])[:10]} to {str(window['asOf'])[:10]}"
+    title = f"{TITLE} — {report['header']['method']['connection']['name']}, {str(window['start'])[:10]}"
     body = (
-        f"{_header_html(report)}{said}{_totals_html(report)}{_devices_html(report)}{_rules_html(report)}"
+        f"{_header_html(report)}{said}{_totals_html(report)}{_devices_html(report)}"
         f"<h2>Every interval</h2>{_table(headers, [_row_html(row, names) for row in report['rows']])}"
         "<h2>The bundle</h2><p>The machine-readable object this page was rendered from travels inside it: "
-        f'<code class="mono">document.getElementById("{BUNDLE_ID}").textContent</code>, parsed as JSON. Its '
-        "contract is docs/compliance-evidence.md.</p>"
+        f'<code class="mono">document.getElementById("{BUNDLE_ID}").textContent</code>, parsed as JSON. It carries '
+        "each rule's predicate and every field this page shows. Its contract is docs/compliance-evidence.md.</p>"
         f'<script type="application/json" id="{BUNDLE_ID}">{_bundle(report)}</script>'
     )
     return (

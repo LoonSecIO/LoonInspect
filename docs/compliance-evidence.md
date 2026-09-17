@@ -1,8 +1,8 @@
 # The evidence artefact
 
-Status: **the object and its endpoint are built; the printable page is #473** · Ruled on
-[#219](https://github.com/LoonSecIO/LoonInspect/issues/219) (R5, 2026-09-16) 5.1–5.6 · Built by
-[#472](https://github.com/LoonSecIO/LoonInspect/issues/472)
+Status: **built** · Ruled on [#219](https://github.com/LoonSecIO/LoonInspect/issues/219) (R5, 2026-09-16)
+5.1–5.6 · Built by [#472](https://github.com/LoonSecIO/LoonInspect/issues/472) (the object) and
+[#473](https://github.com/LoonSecIO/LoonInspect/issues/473) (the page)
 
 The contract for the object `GET /api/evidence/report` returns, here for the reason
 [`vulnerabilities.md`](vulnerabilities.md) is: the artefact is **archived the day it is first printed**, and next
@@ -99,5 +99,25 @@ at all (R5 5.5) — and `start` to a quarter before it. Neither is clamped to th
 was observed answers with not-observed days. A connection with no observations is refused (409) rather than answered
 with an empty document; [`troubleshooting.md`](troubleshooting.md) §2 step 5 has the words.
 
-No page, no print CSS, no download — #473. No posture keys: the report's own wait for #183's follow-up, as #219
-ruled.
+## 6. The page
+
+`GET /api/evidence/report.html`, same permission and same parameters, is the object as one **self-contained** HTML
+document: no CDN, no font, no stylesheet, because it will be opened a year from now on a machine that cannot reach
+us. The object travels **inside** it — `<script type="application/json" id="evidence-bundle">`, one selector, then
+`JSON.parse` — rather than beside it, where the two could be separated. `<` is written `\u003c` there, so a Mac
+named `</script>` cannot end the block; fleet strings are untrusted input ([`ai-threat-model.md`](ai-threat-model.md)).
+The response is an attachment named `evidence-<connectionID>-<start>-to-<asOf>.html`, following
+[`/api/system/share-log`](../backend/app/api/system.py) in shape as well as in permission.
+
+Print CSS is A4 portrait, table headings repeating, rows unbroken, and the **refusal on every sheet** — carried by
+the repeating `thead` of the one table the document sits in, which is the only construction Chrome repeats without
+printing over the content. **No server-side PDF and no stub for one**: a rendering service is a font problem and a
+permanent maintenance surface bought on a guess, and the question it answers — whether a printed page is an
+acceptable artefact — is one the first assessor settles.
+
+The page says what it cannot answer, rather than printing a thin table and letting a reader infer:
+`app.baseline.page`'s six sentences cover no observation in the window, no ledger at all, a stretch the collector
+missed, an `asOf` past the last collection, a window older than the run-retention horizon, and a contract version
+this build has no rules for. [`troubleshooting.md`](troubleshooting.md) §17 steps through each.
+
+No posture keys: the report's own wait for #183's follow-up, as #219 ruled.

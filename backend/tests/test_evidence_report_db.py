@@ -232,6 +232,13 @@ async def test_the_endpoint_answers_an_auditor_and_nobody_else(ledger, accounts)
         assert answer.json()["header"]["refusal"] == REFUSAL
         assert (await auditor.get("/api/evidence/report", params={"connectionID": 10**9})).status_code == 404
         assert (await viewer.get("/api/evidence/report", params={"connectionID": connection_id})).status_code == 403
+        # The document (#473): same permission, same answer, served as a named attachment with the object inside it.
+        page = await auditor.get("/api/evidence/report.html", params=asked)
+        assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
+        named = f'attachment; filename="evidence-{connection_id}-2026-03-01-to-2026-04-10.html"'
+        assert page.headers["content-disposition"] == named
+        assert REFUSAL in page.text and '<script type="application/json" id="evidence-bundle">' in page.text
+        assert (await viewer.get("/api/evidence/report.html", params=asked)).status_code == 403
     finally:
         await auditor.aclose()
         await viewer.aclose()
