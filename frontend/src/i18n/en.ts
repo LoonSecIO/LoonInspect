@@ -1168,6 +1168,19 @@ export const en = {
     // #533 — one id, and the builds whose answer names it. Nothing per id: the container holds an
     // ordered list and no band, date or KEV mark against one.
     searchIdHint: "That is a finding id. Press Enter to look it up — the lists below search names, bundle ids and versions, which no id is.",
+    // #534 — the AI lever on the search box. Everything the lever shares with the Changes
+    // Prompt bar is said in `changes.prompt`'s own words, because the two bars fail the same
+    // ways for the same reasons; only what is this page's is here.
+    aiLever: "AI",
+    aiLabel: "Ask about these builds",
+    aiPlaceholder: "Which apps are on CISA KEV?",
+    aiHint:
+      "Your question goes to the model picked here and sets this page's filters. Nothing about your Macs leaves with it, and every number below is counted here, not by the model.",
+    aiForApp: (q: string) => `apps matching “${q}”`,
+    aiShowing: (what: string) => `Showing ${what}.`,
+    aiWouldShow: (what: string) => `Would show ${what}.`,
+    aiTotal: (total: number) => `${total} build${total === 1 ? "" : "s"} match.`,
+    aiNone: "No build matches.",
     lookupIntro: "Builds on this fleet whose answer names this id — one row per build, not one per Mac.",
     lookupLoading: "Looking this id up…",
     lookupFailed: "Could not look this id up.",

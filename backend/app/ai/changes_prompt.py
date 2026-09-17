@@ -44,6 +44,12 @@ wherever it was tried.
 Pure and stdlib-only on purpose: no database, no network, and none of ``app.models``,
 ``app.core.outbox`` or ``app.core.sharing`` (threat-model S1, ``tests/test_ai_structure.py``).
 The route, ``app.api.changes_prompt``, does the gating and the talking.
+
+Six names here are public because slot 2 (``app.ai.vulnerabilities_prompt``, #534) imports
+them rather than keeping a second copy: ``sanitize_question`` with its control-token strip
+(#435), ``parse_reply``, ``refused``, ``ignored_keys``, ``whitelisted_name`` and
+``unsupported_note``. What is shared is the handling of a model's reply; the vocabulary is
+not. Each slot's fields, guards and instructions are its own, and are measured on their own.
 """
 
 from __future__ import annotations
@@ -379,7 +385,7 @@ def parse_reply(text: str) -> dict[str, Any] | None:
     return obj if isinstance(obj, dict) else None
 
 
-def _refused(obj: Mapping[str, Any]) -> bool:
+def refused(obj: Mapping[str, Any]) -> bool:
     """The model's ``{"invalid": true}``. True, or the word true in quotes; nothing else,
     so a model that writes ``"invalid": false`` beside real filters has its filters read."""
     value = obj.get(_REFUSAL_KEY)
@@ -397,7 +403,7 @@ def _fields(count: int) -> str:
     return f"{count} field{'' if count == 1 else 's'}"
 
 
-def _ignored_keys(obj: Mapping[str, Any]) -> list[Repair]:
+def ignored_keys(obj: Mapping[str, Any], keys: tuple[str, ...] = _REPLY_KEYS) -> list[Repair]:
     """Counted, never named: a key is the model's own text, and the page has no use for it.
 
     An ignored key that held a value widens the answer: ``{"app": "Wireshark"}`` is a name
@@ -409,9 +415,7 @@ def _ignored_keys(obj: Mapping[str, Any]) -> list[Repair]:
     words, 1, "yes" — is counted here like any key holding a value, so the answer widens and
     waits for Apply. Passed over silently, such a reply beside every control any was the
     whole log, run: the defect the refusal exists for."""
-    unknown = [
-        value for key, value in obj.items() if key not in _REPLY_KEYS and not (key == _REFUSAL_KEY and _not_refused(value))
-    ]
+    unknown = [value for key, value in obj.items() if key not in keys and not (key == _REFUSAL_KEY and _not_refused(value))]
     held = sum(1 for value in unknown if value not in (None, "", [], {}))
     empty = len(unknown) - held
     repairs: list[Repair] = []
@@ -433,7 +437,7 @@ _NAME_PUNCTUATION_LISTED = " ".join(_NAME_PUNCTUATION.strip())
 
 # Every drop here widens: the control the model filled is left empty, so the answer then
 # matches more than the model's did.
-def _name(value: Any, control: str, repairs: list[str]) -> str | None:
+def whitelisted_name(value: Any, control: str, repairs: list[str]) -> str | None:
     if value is None:
         return None
     # A Jamf ID may arrive as a number; nothing else that is not a string is a name.
@@ -508,7 +512,7 @@ def _change(value: Any, repairs: list[str]) -> str | None:
     return None if change == "any" else change
 
 
-def _unsupported(value: Any, repairs: list[str]) -> str | None:
+def unsupported_note(value: Any, repairs: list[str]) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str):
@@ -522,10 +526,10 @@ def _unsupported(value: Any, repairs: list[str]) -> str | None:
 def coerce(obj: Mapping[str, Any]) -> tuple[Filters, str | None, list[str]]:
     """Force a reply object into the page's vocabulary. Anything that does not match a
     known value is dropped, not passed through, and every drop is a repair."""
-    repairs: list[str] = [*_ignored_keys(obj)]
+    repairs: list[str] = [*ignored_keys(obj)]
     filters: Filters = {
-        "q": _name(obj.get("search"), _SEARCH, repairs),
-        "artifact": _name(obj.get("filter"), _ARTIFACT, repairs),
+        "q": whitelisted_name(obj.get("search"), _SEARCH, repairs),
+        "artifact": whitelisted_name(obj.get("filter"), _ARTIFACT, repairs),
         "level": _level(obj.get("level"), repairs),
         "section": _section(obj.get("section"), repairs),
         "change": _change(obj.get("change"), repairs),
@@ -533,7 +537,7 @@ def coerce(obj: Mapping[str, Any]) -> tuple[Filters, str | None, list[str]]:
         # invented is an unknown key like any other — counted, ignored, and widening.
         "since": None,
     }
-    return filters, _unsupported(obj.get("unsupported"), repairs), repairs
+    return filters, unsupported_note(obj.get("unsupported"), repairs), repairs
 
 
 # --- the time bound ---------------------------------------------------------------------
@@ -832,7 +836,7 @@ def interpret(question: str, reply_text: str, now: datetime | None = None, zone:
     ``invalid``, every control unset, whatever filters came with it. It is read first
     because it is not a filter answer at all, and it is never a key the page ignores."""
     obj = parse_reply(reply_text)
-    if obj is not None and _refused(obj):
+    if obj is not None and refused(obj):
         return Interpretation(filters=_no_filters(), unsupported=None, repairs=[], parsed=True, invalid=NOT_ABOUT_CHANGES)
     if obj is None or not any(key in obj for key in _REPLY_KEYS):
         return Interpretation(filters=_no_filters(), unsupported=None, repairs=[], parsed=False)

@@ -1040,6 +1040,18 @@ export const de: Translations = {
     numbersAbsence: "Ein Schlüssel ohne Zeile galt in jener Nacht nicht und ist nie null: Diese vier werden erst geschrieben, wenn ein Korpus diese Organisation geprüft hat. Ein Strich sagt also, dass die Aufzeichnung nichts zu sagen hatte — nicht, dass die Antwort keine war.",
     numbersFailed: "Die nächtliche Aufzeichnung ließ sich nicht lesen; diese vier Zahlen werden daher nicht gezeigt.",
     searchIdHint: "Das ist eine Fund-ID. Drücken Sie die Eingabetaste, um sie nachzuschlagen — die Listen unten durchsuchen Namen, Bundle-IDs und Versionen, was keine ID ist.",
+    // #534 — der KI-Hebel am Suchfeld. Alles, was er mit der Prompt-Leiste teilt, steht in
+    // deren eigenen Worten (`changes.prompt`); hier steht nur, was dieser Seite gehört.
+    aiLever: "KI",
+    aiLabel: "Zu diesen Builds fragen",
+    aiPlaceholder: "Welche Apps stehen auf der CISA-KEV-Liste?",
+    aiHint:
+      "Ihre Frage geht an das hier gewählte Modell und setzt die Filter dieser Seite. Nichts über Ihre Macs verlässt den Pod, und jede Zahl unten wird hier gezählt, nicht vom Modell.",
+    aiForApp: (q: string) => `Apps, die zu „${q}“ passen`,
+    aiShowing: (what: string) => `Zeigt ${what}.`,
+    aiWouldShow: (what: string) => `Würde ${what} zeigen.`,
+    aiTotal: (total: number) => `${total} Build${total === 1 ? "" : "s"} passen.`,
+    aiNone: "Kein Build passt.",
     lookupIntro: "Builds auf dieser Flotte, deren Antwort diese ID nennt — eine Zeile pro Build, nicht pro Mac.",
     lookupLoading: "Diese ID wird nachgeschlagen…",
     lookupFailed: "Diese ID konnte nicht nachgeschlagen werden.",

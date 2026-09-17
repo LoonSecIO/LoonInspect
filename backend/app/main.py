@@ -46,6 +46,7 @@ from app.api.smart_groups import router as smart_groups_router
 from app.api.system import router as system_router
 from app.api.tokens import router as tokens_router
 from app.api.vulnerabilities import router as vulnerabilities_router
+from app.api.vulnerabilities_prompt import router as vulnerabilities_prompt_router
 from app.api.webhooks import router as webhooks_router
 from app.catalog.index import rebuild_index
 from app.catalog.service import refresh_tenant
@@ -653,6 +654,9 @@ app.include_router(smart_groups_router)
 app.include_router(feature_flags_router)
 app.include_router(posture_router)
 app.include_router(evidence_router)
+# Before the router that owns `/api/vulnerabilities/{vuln_id}`: FastAPI matches in
+# declaration order, and that dynamic segment would otherwise swallow GET /prompt as an id.
+app.include_router(vulnerabilities_prompt_router)
 app.include_router(vulnerabilities_router)
 
 

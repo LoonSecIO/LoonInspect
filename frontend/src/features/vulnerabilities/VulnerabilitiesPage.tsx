@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router";
 import { ApiError, apiRequest } from "@/config/api";
 import { useAuthStore } from "@/features/auth/store";
 import { listCatalog } from "@/features/catalog/api";
@@ -7,7 +7,9 @@ import { LatestCell, PatchAnswerCell, Subject } from "@/features/catalog/PatchAn
 import type { CatalogBand, CatalogEntry, CatalogListResponse, CatalogVulnFilter } from "@/features/catalog/types";
 import { AssessmentCell, CorpusBanner } from "@/features/vulnerabilities/AppAssessment";
 import { closesCell, describeUpdate } from "@/features/vulnerabilities/appUpdate";
-import { findingIdIn, findingRoute } from "@/features/vulnerabilities/findingId";
+import { findingIdIn } from "@/features/vulnerabilities/findingId";
+import { leverParams, type VulnPromptFilters } from "@/features/vulnerabilities/prompt";
+import { SearchBox } from "@/features/vulnerabilities/SearchBox";
 import type { AppChip, NumbersRead, PostureRow } from "@/features/vulnerabilities/pageBands";
 import { VULN_KEYS, agedList, emptySays, exploreByApp, payoffList, planNumbers, readNumbers } from "@/features/vulnerabilities/pageBands";
 import { pageView, type Load } from "@/features/vulnerabilities/pageView";
@@ -28,8 +30,9 @@ import type { Translations } from "@/i18n/en";
  * §4a); loaded but nothing judged against it yet (`vulnJudged` false — one sentence, no
  * list); judged — which is `pageView`, beside this file. Then three ranked bands: most exposed,
  * easily patchable (#532 — what an update would close, times the Macs it reaches) and longest
- * exposed. Not here, none stubbed: the by-id route (#533), the AI lever (#534). Nothing counts
- * the fleet per request and nothing sums a band (§4g).
+ * exposed. The search box and its **AI** lever are `SearchBox.tsx` (#533, #534): with the lever
+ * on the box holds a question, and the `q` below comes from the answer it applied rather than
+ * from what is typed. Nothing counts the fleet per request and nothing sums a band (§4g).
  */
 
 const TOP = 10;
@@ -132,8 +135,12 @@ export function VulnerabilitiesPage() {
   // A plain text box over the catalog's own `q` (name, bundle id, version). An id-shaped
   // query is routed to the by-id page by #533 and the AI lever is #534 — said here rather
   // than drawn as a control with nothing behind it.
-  const navigate = useNavigate();
   const [term, setTerm] = useState("");
+  // What the box IS, and what the lever applied. With the lever on the typed text is a
+  // question, so it must never reach the lists as a search: `search` is the one `q` they read.
+  const [asks, setAsks] = useState(false);
+  const [askedFor, setAskedFor] = useState("");
+  const search = asks ? askedFor : term;
   const [expanded, setExpanded] = useState(false);
   const [order, setOrder] = useState<"exposure" | "age">("exposure");
   const [page, setPage] = useState(1);
@@ -163,9 +170,9 @@ export function VulnerabilitiesPage() {
   // the effect's whole dependency array — the frontend rule in CONTRIBUTING.md, and the
   // reason it is there (#479). From inside the effect's timer it would land a debounce late,
   // so the previous answer would paint as settled under the new term for all 300ms.
-  const [asked, setAsked] = useState({ term, vuln, band, byAge, byPayoff, jamf, expanded, page });
-  if (asked.term !== term || asked.vuln !== vuln || asked.band !== band || asked.byAge !== byAge || asked.byPayoff !== byPayoff || asked.jamf !== jamf || asked.expanded !== expanded || asked.page !== page) {
-    setAsked({ term, vuln, band, byAge, byPayoff, jamf, expanded, page });
+  const [asked, setAsked] = useState({ term: search, vuln, band, byAge, byPayoff, jamf, expanded, page });
+  if (asked.term !== search || asked.vuln !== vuln || asked.band !== band || asked.byAge !== byAge || asked.byPayoff !== byPayoff || asked.jamf !== jamf || asked.expanded !== expanded || asked.page !== page) {
+    setAsked({ term: search, vuln, band, byAge, byPayoff, jamf, expanded, page });
     setLoad("loading");
     // The two bands below re-read with it, so their rows and their error lines go too.
     setOldest(null); setOldestFailed(false);
@@ -176,7 +183,7 @@ export function VulnerabilitiesPage() {
     let cancelled = false;
     const timer = setTimeout(() => {
       // An id was never a filter: as `q` it answers *no matches* for an id the fleet carries.
-      const q = findingIdIn(term) ? undefined : term.trim() || undefined;
+      const q = findingIdIn(search) ? undefined : search.trim() || undefined;
       listCatalog({ vuln, band: band ?? undefined, jamf: jamf ?? undefined, order: byPayoff ? "payoff" : byAge ? "age" : "exposure", q, page: expanded ? page : 1, pageSize: expanded ? PAGE : TOP })
         .then((response) => {
           if (cancelled) return;
@@ -207,7 +214,7 @@ export function VulnerabilitiesPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [term, vuln, band, byAge, byPayoff, jamf, expanded, page]);
+  }, [search, vuln, band, byAge, byPayoff, jamf, expanded, page]);
 
   useEffect(() => {
     if (!plansNumbers) return;
@@ -237,6 +244,22 @@ export function VulnerabilitiesPage() {
   // Parallel to `VULN_KEYS`, a fixed tuple in the order the foot prints.
   const labels = [copy.numAppsAffected, copy.numAppsKev, copy.numAppsUnknown, copy.numDevicesAffected];
 
+  // The lever's own two moves, stable across renders because `SearchBox` announces its mode
+  // from an effect. An answer is one whole URL state, as a Popular filter chip is: it replaces
+  // the filters rather than merging into them, and the ranked bands close so the one list the
+  // answer counted is the one on screen.
+  const onMode = useCallback((next: boolean) => { setAsks(next); setAskedFor(""); setPage(1); }, []);
+  const onApply = useCallback((filters: VulnPromptFilters) => {
+    setAskedFor(filters.q ?? "");
+    setParams(leverParams(filters));
+    // `age` is this page's expanded list of builds with findings and nothing else
+    // (`agedList`) — where its own *See all* sends it; set anywhere else it is ignored.
+    const aged = filters.order === "age";
+    setOrder(aged ? "age" : "exposure");
+    setExpanded(aged);
+    setPage(1);
+  }, [setParams]);
+
   function filterTo(next: CatalogVulnFilter | null, nextBand: CatalogBand | null, nextJamf: string | null = null) {
     // One chip is one whole URL state: pressing another replaces it rather than adding to it.
     // `patchable` carries its order, because the ranking is the half that makes it an answer.
@@ -260,24 +283,13 @@ export function VulnerabilitiesPage() {
 
       {shown.controls && (
         <>
-          <input
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            placeholder={copy.searchPlaceholder}
-            value={term}
-            onChange={(event) => {
-              setTerm(event.target.value);
-              setPage(1);
-            }}
-            // An id is a lookup, not a filter (#533) — on ENTER, the reader saying the id is
-            // finished; `findingRoute` holds why a keystroke must not do it.
-            onKeyDown={(event) => { const to = findingRoute(event.key, term); if (to) navigate(to); }}
-          />
-          {/* Said where the typing is, because the lists below have gone back to unfiltered: no
-              build's name, bundle id or version contains a CVE id. */}
-          {findingIdIn(term) !== null && <p className="text-sm text-muted-foreground">{copy.searchIdHint}</p>}
+          <SearchBox term={term} onTerm={(next) => { setTerm(next); setPage(1); }} onMode={onMode} onApply={onApply}
+            shown={{ vuln, band, order: byPayoff ? "payoff" : byAge ? "age" : "exposure" }} />
 
-          {/* Heading and chips stand or fall together: no bordered empty row where a band was. */}
-          {chips.length > 0 && <><h2 className="text-lg font-medium">{copy.exploreByApp}</h2>
+          {/* Heading and chips stand or fall together: no bordered empty row where a band was.
+              Hidden while the box holds a question: a chip sets the search, and the search is
+              then the answer's, so pressing one would light a chip and filter nothing. */}
+          {chips.length > 0 && !asks && <><h2 className="text-lg font-medium">{copy.exploreByApp}</h2>
             <div className="flex flex-wrap gap-2">{chips.map(({ name }) => <button key={name} type="button" className={chip(term === name)} onClick={() => { setTerm(term === name ? "" : name); setPage(1); }}>{name}</button>)}</div></>}
 
           <h2 className="text-lg font-medium">{copy.popularFilters}</h2>

@@ -1145,6 +1145,24 @@ writes one row to the disclosure log naming the destination and the one field th
    Added, Removed or Updated.* Pick a Change from that section's side, or *Any change*. The bar
    never sets such a pair.
 
+5. **The AI lever is missing from the search box on Posture › Vulnerabilities**, or it calls a
+   question invalid. The lever is the toggle labelled **AI** beside that page's search box
+   (#534): the same bar, the same three causes, a different surface. It is drawn only while all
+   three of step 1's conditions hold, so read the same *Changes Prompt bar* line on Settings ›
+   AI and follow step 1 — the lever and the Prompt bar appear and disappear together. A role
+   without Settings asks `curl -s -b jar $BASE/api/vulnerabilities/prompt`, which answers with
+   the same `available` and, when that is `false`, the same `reason`. With the lever **off** —
+   where it starts, in every browser that has not turned it on — the box is the plain search it
+   always was, and a finding id still routes on Enter.
+
+   *The model judged this not a question about the builds on this page …* means nothing ran and
+   the filters are as they were. The lever sets this page's filters and nothing else, so a
+   question about **Macs, departments or sites** is invalid here, and the sentence says where it
+   is answered: the device list under **Devices**. This page answers per build, never per Mac.
+   Ask which apps carry findings, which are on CISA KEV, which are outside the corpus, or what
+   to patch first. The audit log records it as `ai.vulnerabilities-prompt.sent` with `outcome`
+   `invalid` and `reason` `not_about_vulnerabilities`; the question itself is never recorded.
+
 **O.** The *Changes Prompt bar* line says *shown* while the bar stays missing after a reload; the
 rows under an answer disagree with `GET /api/changes` run with the filters on screen; or a
 question about changes is called *Invalid question* however it is worded. Report the line, the

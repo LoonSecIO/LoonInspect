@@ -152,7 +152,7 @@ async def prompt_status(db: AsyncSession = Depends(get_db)) -> PromptStatusOut:
     )
 
 
-async def _chosen(db: AsyncSession, requested: Provider | None) -> AIProviderConfig:
+async def chosen_config(db: AsyncSession, requested: Provider | None) -> AIProviderConfig:
     """The saved config to ask: the one named, or the first in the cards' order.
 
     The provider is settled from the listing, which never opens a key, before its row is
@@ -439,7 +439,7 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
     if not question:
         raise HTTPException(status_code=422, detail=ONLY_REMOVED if payload.question.strip() else EMPTY_QUESTION)
 
-    config = await _chosen(db, payload.provider)
+    config = await chosen_config(db, payload.provider)
     provider = Provider(config.provider)
     model = config.model
     api_key = config.api_key_encrypted
