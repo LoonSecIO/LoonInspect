@@ -15,6 +15,12 @@ Security findings go through [SECURITY.md](SECURITY.md), never a public issue.
 `INSPECT-NNNN` in code comments, commit subjects and issue titles is issue #NNNN in
 this tracker; the convention is in [docs/BRANCHING.md](docs/BRANCHING.md) §2.
 
+An issue that names a condition under which it should be **closed rather than built** — a
+"where this issue is weak" paragraph, a "close instead if…" line, the form's close-instead
+checkbox — is a ruling for the maintainer before it is a build, whatever label it carries.
+Agent sessions route such issues to a ruling first (the 2026-09-16 case: #245 was built and
+then had to be judged after the fact).
+
 ## What CI expects
 
 Every PR must pass the same gates `main` enforces:

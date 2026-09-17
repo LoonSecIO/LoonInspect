@@ -41,6 +41,9 @@ COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-install-project --no-dev
 
 COPY backend/ ./
+# The baseline rule catalogue, read at request time by the evidence report (#472). `app.baseline.catalogue`
+# looks beside the backend root, which is /app here, so it lands at /app/docs/.
+COPY docs/baseline-rules.yml ./docs/baseline-rules.yml
 RUN uv sync --frozen --no-dev
 
 # Which build this is: CalVer date of the build plus the commit it was built from.

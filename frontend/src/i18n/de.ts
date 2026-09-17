@@ -1127,6 +1127,9 @@ export const de: Translations = {
     reEmitEveryDestination: "Jedes aktive Ziel",
     reEmitConfirm: "Erneut senden",
     reEmitError: "Das erneute Senden konnte nicht gestartet werden.",
+    evidenceReport: "Nachweisbericht",
+    evidenceReportError:
+      "Der Nachweisbericht konnte nicht erstellt werden. Öffnen Sie das Ausführungsprotokoll der Verbindung, um zu sehen, ob ein Geräte-Sweep abgeschlossen wurde.",
     runProcessing: "Wird verarbeitet…",
     runJoined: "Läuft bereits — der laufende Durchlauf wird angezeigt.",
     runMoreDetails: "Mehr Details",
