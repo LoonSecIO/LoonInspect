@@ -28,7 +28,7 @@ import os
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, text
+from sqlalchemy import delete, select, text
 
 # One event loop for the whole module — the engine's pooled connections belong to
 # whichever loop first used them.
@@ -47,60 +47,97 @@ AI_KEY = "sk-ant-ai-provider-key-vvq-8f27c1b4d9"
 
 ALL_SECRETS = (CLIENT_SECRET, WEBHOOK_SECRET, LICENSE_KEY, DESTINATION_SECRET, AI_KEY)
 
+CONNECTION_NAME = "vvq connection"
+DESTINATION_NAME = "vvq destination"
 
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
-async def stored() -> None:
+
+async def _remove_this_modules_rows(db) -> None:
+    """This module's connection and destination, and every row that references them.
+
+    Deliveries before the destination they point at, and that order is the whole
+    reason this is a function. `outbox_deliveries.destination_id` is the only foreign
+    key into `destinations`, and this destination subscribes to every event type
+    (`subscribed_events` null), so any fan-out pass that runs while it exists writes
+    delivery rows against it that outlive the run. Deleting the destination with those
+    rows still present is `ForeignKeyViolationError`, which is what made the suite
+    single-use against a database (#514): run 1 passed, run 2 errored here in fixture
+    setup, and the five errors read as a regression in whatever was under review.
+
+    Cheap enough to run on both ends. Setup covers the run that crashed before its
+    teardown; teardown covers the ordinary case and leaves the database as it was
+    found.
+    """
+    from app.models.schema import Destination, MdmConnection, OutboxDelivery
+
+    ours = select(Destination.id).where(Destination.name == DESTINATION_NAME)
+    await db.execute(delete(OutboxDelivery).where(OutboxDelivery.destination_id.in_(ours)))
+    await db.execute(delete(Destination).where(Destination.name == DESTINATION_NAME))
+    await db.execute(delete(MdmConnection).where(MdmConnection.name == CONNECTION_NAME))
+    await db.commit()
+
+
+async def _write_this_modules_rows(db) -> None:
     """One connection, one destination and one saved AI provider config, written the way
     the API writes them."""
     from app.ai.providers import Provider
     from app.core.ai_configs import save_config
+    from app.models.schema import Destination, MdmConnection
+
+    db.add(
+        MdmConnection(
+            name=CONNECTION_NAME,
+            provider="jamf",
+            base_url="https://jamf.vvq.example.com",
+            credentials_encrypted=json.dumps({"clientId": "vvq-client-id", "clientSecret": CLIENT_SECRET}),
+            webhook_secret_encrypted=WEBHOOK_SECRET,
+            loonsecio_license_key_encrypted=LICENSE_KEY,
+        )
+    )
+    db.add(
+        Destination(
+            name=DESTINATION_NAME,
+            type="splunk_hec",
+            url="https://splunk.vvq.example.com:8088/services/collector",
+            auth_type="splunk_hec",
+            auth_secret_encrypted=DESTINATION_SECRET,
+        )
+    )
+    await db.commit()
+    # Upserted, so a re-run replaces the previous run's row rather than tripping the
+    # one-per-provider constraint.
+    await save_config(
+        db,
+        Provider.anthropic,
+        host_reach=None,
+        base_url="https://api.anthropic.com",
+        model="claude-fable-5-1",
+        reasoning_effort=None,
+        api_key=AI_KEY,
+        clear_key=False,
+        updated_by="vvq@example.com",
+    )
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def stored():
+    """The three rows this module reads, cleared away either side of the run."""
     from app.core.bootstrap import bootstrap_tenants
     from app.core.database import init_db, session_for_tenant, unscoped_session
     from app.core.tenancy import OPERATIONAL_TENANT_ID
-    from app.models.schema import Destination, MdmConnection
 
     await init_db()
     async with unscoped_session() as db:
         await bootstrap_tenants(db)
 
     async with session_for_tenant(OPERATIONAL_TENANT_ID) as db:
-        # Re-runnable locally: the previous run's rows would trip the unique constraint
-        # on (tenant_id, name) and turn a failure here into a fixture mystery.
-        await db.execute(delete(Destination).where(Destination.name == "vvq destination"))
-        await db.execute(delete(MdmConnection).where(MdmConnection.name == "vvq connection"))
-        db.add(
-            MdmConnection(
-                name="vvq connection",
-                provider="jamf",
-                base_url="https://jamf.vvq.example.com",
-                credentials_encrypted=json.dumps({"clientId": "vvq-client-id", "clientSecret": CLIENT_SECRET}),
-                webhook_secret_encrypted=WEBHOOK_SECRET,
-                loonsecio_license_key_encrypted=LICENSE_KEY,
-            )
-        )
-        db.add(
-            Destination(
-                name="vvq destination",
-                type="splunk_hec",
-                url="https://splunk.vvq.example.com:8088/services/collector",
-                auth_type="splunk_hec",
-                auth_secret_encrypted=DESTINATION_SECRET,
-            )
-        )
-        await db.commit()
-        # Upserted, so a re-run replaces the previous run's row rather than tripping the
-        # one-per-provider constraint.
-        await save_config(
-            db,
-            Provider.anthropic,
-            host_reach=None,
-            base_url="https://api.anthropic.com",
-            model="claude-fable-5-1",
-            reasoning_effort=None,
-            api_key=AI_KEY,
-            clear_key=False,
-            updated_by="vvq@example.com",
-        )
+        await _remove_this_modules_rows(db)
+        await _write_this_modules_rows(db)
+
+    try:
+        yield
+    finally:
+        async with session_for_tenant(OPERATIONAL_TENANT_ID) as db:
+            await _remove_this_modules_rows(db)
 
 
 async def _row_as_text(table: str, name: str, key: str = "name") -> str:
@@ -173,3 +210,36 @@ async def test_a_saved_ai_key_is_a_fernet_token_this_key_can_read(stored: None) 
     token = json.loads(await _row_as_text("ai_provider_configs", "anthropic", "provider"))["api_key_encrypted"]
     assert token.startswith("k1:gAAAAA"), "not a k1 Fernet envelope: the column is storing something else"
     assert Fernet(get_encryption_key()).decrypt(token.removeprefix("k1:").encode()).decode() == AI_KEY
+
+
+async def test_the_cleanup_clears_a_leftover_delivery_before_the_destination(stored: None) -> None:
+    """The one claim that keeps this database re-usable (#514).
+
+    Seeds the state the previous run ends in — a delivery row pointing at this
+    module's destination, written by whichever fan-out pass ran while it existed — and
+    runs the cleanup the fixture runs on setup. If the deletes were in the other order
+    this raises `ForeignKeyViolationError` instead of returning.
+
+    It claims nothing about the suite as a whole: that a full run passes twice against
+    one database is shown by running it twice, and CONTRIBUTING.md now says it must.
+    """
+    from app.core.database import session_for_tenant
+    from app.core.outbox import enqueue_event
+    from app.core.tenancy import OPERATIONAL_TENANT_ID
+    from app.models.schema import Destination, EventOutbox, OutboxDelivery
+
+    async with session_for_tenant(OPERATIONAL_TENANT_ID) as db:
+        destination_id = (await db.execute(select(Destination.id).where(Destination.name == DESTINATION_NAME))).scalar_one()
+        event = await enqueue_event(db, "device.change", {"event": "device.change"})
+        db.add(OutboxDelivery(outbox_event_id=event.id, destination_id=destination_id))
+        await db.commit()
+        event_id = event.id
+
+        await _remove_this_modules_rows(db)
+
+        assert (await db.execute(select(Destination.id).where(Destination.name == DESTINATION_NAME))).first() is None
+
+        # Put the module's subject back rather than depending on running last, and take
+        # the event with us: this file leaves the database as it found it.
+        await db.execute(delete(EventOutbox).where(EventOutbox.id == event_id))
+        await _write_this_modules_rows(db)

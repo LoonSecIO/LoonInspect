@@ -30,7 +30,10 @@ Every PR must pass the same gates `main` enforces:
   `RUN_DB_TESTS=1`; the three-step local recipe (a throwaway Postgres, CI's role, the
   environment variables) is in the docstring of `backend/tests/conftest.py`, and
   `.github/workflows/ci.yml` is what it mirrors — the app must not connect as a
-  superuser or the row-level-security tests prove nothing.
+  superuser or the row-level-security tests prove nothing. The suite is re-runnable
+  against one database: a second full run over the rows the first left behind reports
+  the same counts, so a failure that appears only on the second run is a defect in the
+  suite rather than a reason to recreate the database (#514).
 - **Frontend** — `npx tsc -b --noEmit`, `npx eslint .`, `npm test` (vitest, node
   environment, over the pure modules), `npm run build` (Node 22, `npm ci`).
   `react-hooks/set-state-in-effect` is an error, and it follows a call in an effect body
