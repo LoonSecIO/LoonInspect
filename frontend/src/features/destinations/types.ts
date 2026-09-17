@@ -51,3 +51,13 @@ export interface UpdateDestinationInput {
   elasticIndex?: string | null;
   enabled?: boolean;
 }
+
+/** `GET /api/outbox` (#468). The three states are named once, in `app/schemas/outbox.py`, and
+ *  this is their wire shape. Ages are null when a set is empty — never 0, which would read as
+ *  "produced this second". */
+export interface OutboxDepth {
+  held: { events: number; oldestAgeSeconds: number | null; reason: "no_enabled_destination" | null };
+  pending: { deliveries: number; oldestAgeSeconds: number | null };
+  deadLettered: { deliveries: number; oldestExpiresAt: string | null };
+  retention: { eventRetentionDays: number; deadLetterRetentionDays: number; nextPurgeAt: string };
+}
