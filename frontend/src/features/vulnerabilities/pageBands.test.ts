@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AffectedRow, PostureRow } from "./pageBands";
-import { exploreByApp, planNumbers, readNumbers } from "./pageBands";
+import { agedList, exploreByApp, planNumbers, readNumbers } from "./pageBands";
 
 /** Roles as `backend/app/core/permissions.py` grants them, transcribed by hand the way
  *  `overviewPlan.test.ts` transcribes them: fixtures, not a drift guard. */
@@ -36,6 +36,14 @@ describe("exploreByApp", () => {
     const rows = ["i", "h", "g", "f", "e", "d", "c", "b", "a"].map((name) => affected(name, 5, 1));
     expect(exploreByApp(rows).map((chip) => chip.name)).toEqual(["a", "b", "c", "d", "e", "f", "g", "h"]);
     expect(exploreByApp([])).toEqual([]);
+  });
+});
+
+describe("agedList", () => {
+  // The defect: *see all* on Longest exposed, then a Popular chip — or **Back** onto one — left the
+  // heading and its *always the builds with findings* hint standing over `vuln=clean` rows.
+  it("is the aged list only where the words for it are true", () => {
+    expect([agedList(true, "age", "findings", null), agedList(true, "age", "clean", null), agedList(true, "age", "unknown_app", null), agedList(true, "age", "findings", "critical"), agedList(false, "age", "findings", null), agedList(true, "exposure", "findings", null)]).toEqual([true, false, false, false, false, false]);
   });
 });
 

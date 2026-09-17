@@ -1533,8 +1533,8 @@ Catalog tab carries. So a link somebody sent you works even while the entry is h
    says which of three things happened; read its sentence. *The longest-exposed list could not be
    read, so it is not shown.* → it is a **separate request** from the list above, and either can
    fail while the other answers; reload. *No build with findings here carries a publication date.*
-   → the band is **always** the builds with findings, whichever *Popular filter* governs the list
-   above (its hint says so), so under *Outside the corpus*, *No findings*, or a search matching
+   → the band is **always** the builds with findings, whichever *Popular filter* narrows the ranked
+   list above (its hint says so), so under *Outside the corpus*, *No findings*, or a search matching
    only such builds it is right to be empty — and the chips ride in the address, so clear them
    rather than reloading. That sentence with **no chip pressed and the search box empty**, or every
    row reading **—** under the age, is ours: every finding the corpus serves carries a publication

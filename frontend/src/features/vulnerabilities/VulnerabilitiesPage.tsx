@@ -7,7 +7,7 @@ import { LatestCell, PatchAnswerCell } from "@/features/catalog/PatchAnswerCell"
 import type { CatalogBand, CatalogEntry, CatalogListResponse, CatalogVulnFilter } from "@/features/catalog/types";
 import { AssessmentCell, CorpusBanner } from "@/features/vulnerabilities/AppAssessment";
 import type { AppChip, NumbersRead, PostureRow } from "@/features/vulnerabilities/pageBands";
-import { VULN_KEYS, exploreByApp, planNumbers, readNumbers } from "@/features/vulnerabilities/pageBands";
+import { VULN_KEYS, agedList, exploreByApp, planNumbers, readNumbers } from "@/features/vulnerabilities/pageBands";
 import { pageView, type Load } from "@/features/vulnerabilities/pageView";
 import { useLocale } from "@/i18n/LocaleContext";
 import type { Translations } from "@/i18n/en";
@@ -35,10 +35,8 @@ const TYPING_MS = 300;
 
 /** *Popular filters*: each chip is one whole URL state, so a filtered list is a link somebody can
  *  send. *Easily patchable* is #532's; `band` narrows inside `findings`, never beside it. */
-const POPULAR = [
-  { vuln: "kev", band: null, label: "filterKev" }, { vuln: "findings", band: "critical", label: "filterCritical" },
-  { vuln: "unknown_app", band: null, label: "stateUnknownApp" }, { vuln: "clean", band: null, label: "stateCoveredClean" }
-] as const;
+const POPULAR = [{ vuln: "kev", band: null, label: "filterKev" }, { vuln: "findings", band: "critical", label: "filterCritical" },
+  { vuln: "unknown_app", band: null, label: "stateUnknownApp" }, { vuln: "clean", band: null, label: "stateCoveredClean" }] as const;
 
 const FILTERS: CatalogVulnFilter[] = ["findings", "kev", "unknown_app", "clean"];
 const BANDS: CatalogBand[] = ["critical", "high", "medium", "low"];
@@ -85,6 +83,7 @@ export function VulnerabilitiesPage() {
   const [params, setParams] = useSearchParams();
   const vuln = FILTERS.find((value) => value === params.get("vuln")) ?? "findings";
   const band = BANDS.find((value) => value === params.get("band")) ?? null;
+  const byAge = agedList(expanded, order, vuln, band);
   const permissions = useAuthStore((state) => state.user?.permissions ?? NO_PERMISSIONS);
   const plansNumbers = useMemo(() => planNumbers(permissions), [permissions]);
   const [numbers, setNumbers] = useState<NumbersRead | null>(null);
@@ -95,17 +94,18 @@ export function VulnerabilitiesPage() {
   // the effect's whole dependency array — the frontend rule in CONTRIBUTING.md, and the
   // reason it is there (#479). From inside the effect's timer it would land a debounce late,
   // so the previous answer would paint as settled under the new term for all 300ms.
-  const [asked, setAsked] = useState({ term, vuln, band, order, expanded, page });
-  if (asked.term !== term || asked.vuln !== vuln || asked.band !== band || asked.order !== order || asked.expanded !== expanded || asked.page !== page) {
-    setAsked({ term, vuln, band, order, expanded, page });
+  const [asked, setAsked] = useState({ term, vuln, band, byAge, expanded, page });
+  if (asked.term !== term || asked.vuln !== vuln || asked.band !== band || asked.byAge !== byAge || asked.expanded !== expanded || asked.page !== page) {
+    setAsked({ term, vuln, band, byAge, expanded, page });
     setLoad("loading");
+    setOldest(null); setOldestFailed(false); // the band below re-reads with them, so its rows and its error line go too
   }
 
   useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(() => {
       const q = term.trim() || undefined;
-      listCatalog({ vuln, band: band ?? undefined, order: expanded ? order : "exposure", q, page: expanded ? page : 1, pageSize: expanded ? PAGE : TOP })
+      listCatalog({ vuln, band: band ?? undefined, order: byAge ? "age" : "exposure", q, page: expanded ? page : 1, pageSize: expanded ? PAGE : TOP })
         .then((response) => {
           if (cancelled) return;
           setAnswer(response);
@@ -130,7 +130,7 @@ export function VulnerabilitiesPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [term, vuln, band, order, expanded, page]);
+  }, [term, vuln, band, byAge, expanded, page]);
 
   useEffect(() => {
     if (!plansNumbers) return;
@@ -138,9 +138,7 @@ export function VulnerabilitiesPage() {
     apiRequest<{ items: PostureRow[] }>(`/posture?keys=${VULN_KEYS.join(",")}`)
       .then((tape) => !cancelled && setNumbers(readNumbers(tape.items)))
       .catch(() => !cancelled && setNumbersFailed(true));
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [plansNumbers]);
 
   const shown = pageView(load, answer);
@@ -152,7 +150,6 @@ export function VulnerabilitiesPage() {
   const status = load === "loading" ? copy.loading : load === "failed" ? copy.errorLoading : null;
   const statusClass = load === "failed" ? "text-destructive" : "text-muted-foreground";
   const oldestTotal = oldest?.total ?? 0;
-  const byAge = expanded && order === "age";
   // The band's three answers told apart — its own read failed, it has not come back, it came back
   // with nothing — because one blank box standing for all three is three different things.
   const oldestSays = load === "loading" ? copy.loading : oldestFailed ? copy.longestExposedFailed : oldest === null ? copy.loading : oldestTotal === 0 ? copy.longestExposedNone : null;
@@ -161,8 +158,7 @@ export function VulnerabilitiesPage() {
 
   function filterTo(next: CatalogVulnFilter | null, nextBand: CatalogBand | null) {
     // One chip is one whole URL state: pressing another replaces it rather than adding to it.
-    setParams(new URLSearchParams([...(next ? [["vuln", next]] : []), ...(nextBand ? [["band", nextBand]] : [])]));
-    setPage(1);
+    setParams(new URLSearchParams([...(next ? [["vuln", next]] : []), ...(nextBand ? [["band", nextBand]] : [])])); setPage(1);
   }
 
   return (
@@ -191,10 +187,9 @@ export function VulnerabilitiesPage() {
             }}
           />
 
-          {chips.length > 0 && <h2 className="text-lg font-medium">{copy.exploreByApp}</h2>}
-          <div className="flex flex-wrap gap-2">
-            {chips.map(({ name }) => <button key={name} type="button" className={chip(term === name)} onClick={() => { setTerm(term === name ? "" : name); setPage(1); }}>{name}</button>)}
-          </div>
+          {/* Heading and chips stand or fall together: no bordered empty row where a band was. */}
+          {chips.length > 0 && <><h2 className="text-lg font-medium">{copy.exploreByApp}</h2>
+            <div className="flex flex-wrap gap-2">{chips.map(({ name }) => <button key={name} type="button" className={chip(term === name)} onClick={() => { setTerm(term === name ? "" : name); setPage(1); }}>{name}</button>)}</div></>}
 
           <h2 className="text-lg font-medium">{copy.popularFilters}</h2>
           <div className="flex flex-wrap gap-2">
@@ -301,42 +296,35 @@ export function VulnerabilitiesPage() {
 
           {!expanded && (
             <>
-              <div className="flex items-baseline justify-between">
-                <h2 className="text-lg font-medium">{copy.longestExposed}</h2>
-                {oldestSays === null && oldestTotal > TOP && <button type="button" className="text-sm underline underline-offset-4" onClick={() => { filterTo(null, null); setOrder("age"); setExpanded(true); }}>{copy.seeAll(oldestTotal)}</button>}
-              </div>
+              <div className="flex items-baseline justify-between"><h2 className="text-lg font-medium">{copy.longestExposed}</h2>
+                {oldestSays === null && oldestTotal > TOP && <button type="button" className="text-sm underline underline-offset-4" onClick={() => { filterTo(null, null); setOrder("age"); setExpanded(true); }}>{copy.seeAll(oldestTotal)}</button>}</div>
               <p className="text-sm text-muted-foreground">{copy.longestExposedHint}</p>
               <ul className="divide-y rounded-lg border bg-card text-sm">
                 {oldestSays !== null && <li className="px-4 py-4 text-muted-foreground">{oldestSays}</li>}
                 {(oldestSays === null ? (oldest?.items ?? []) : []).map((entry) => (
                   <li key={entry.id} className="flex items-baseline justify-between gap-4 px-4 py-2">
                     <Link to={recordHref(entry)} className="font-medium hover:underline">{entry.name} {entry.version}</Link>
-                    <span className="shrink-0 tabular-nums text-muted-foreground">{exposedDays(entry, t)}</span>
-                  </li>
-                ))}
+                    <span className="shrink-0 tabular-nums text-muted-foreground">{exposedDays(entry, t)}</span></li>))}
               </ul>
             </>
           )}
 
-          {/* Planned against the permission its own source demands: a viewer sees no tile, not a 403. */}
+          {/* Planned against the permission its own source demands: a viewer sees no tile, not a 403.
+              Its own read, so its own word for being in flight — a heading over nothing is not one. */}
           {plansNumbers && (
             <section className="space-y-3 rounded-lg border bg-card p-4">
               <h2 className="text-lg font-medium">{copy.byTheNumbers}</h2>
               {numbersFailed && <p className="text-sm text-muted-foreground">{copy.numbersFailed}</p>}
-              {numbers?.capturedAt && (
-                <p className="text-sm text-muted-foreground">{copy.numbersAsOf(new Date(numbers.capturedAt).toLocaleDateString())}{numbers.runId ? ` · ${copy.numbersRun(numbers.runId)}` : ""}</p>
-              )}
+              {numbers === null && !numbersFailed && <p className="text-sm text-muted-foreground">{copy.loading}</p>}
+              {numbers?.capturedAt && <p className="text-sm text-muted-foreground">{copy.numbersAsOf(new Date(numbers.capturedAt).toLocaleDateString())}{numbers.runId ? ` · ${copy.numbersRun(numbers.runId)}` : ""}</p>}
               {numbers && (
                 <dl className="grid gap-4 sm:grid-cols-4">
                   {VULN_KEYS.map((key, index) => (
-                    <div key={key}>
-                      <dt className="text-xs text-muted-foreground">{labels[index]}</dt>
+                    <div key={key}><dt className="text-xs text-muted-foreground">{labels[index]}</dt>
                       {/* A key with no row prints a dash, never a zero (§4a, §7). */}
                       <dd className="text-2xl font-semibold tabular-nums">{numbers.present.find((row) => row.key === key)?.value.toLocaleString() ?? "—"}</dd>
-                    </div>
-                  ))}
-                </dl>
-              )}
+                    </div>))}
+                </dl>)}
               {numbers?.absent.length ? <p className="text-sm text-muted-foreground">{copy.numbersAbsence}</p> : null}
             </section>
           )}

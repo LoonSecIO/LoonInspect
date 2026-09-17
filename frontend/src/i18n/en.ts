@@ -1117,7 +1117,7 @@ export const en = {
     filterKev: "On CISA KEV",
     filterCritical: "Critical",
     longestExposed: "Longest exposed",
-    longestExposedHint: "The oldest publication date first: how long the fleet has carried the finding, which is an axis a fleet of Macs has and a cloud estate does not. Always the builds with findings, whichever chip governs the list above.",
+    longestExposedHint: "The oldest publication date first: how long the fleet has carried the finding, which is an axis a fleet of Macs has and a cloud estate does not. Always the builds with findings: a Popular filter chip narrows the ranked list, never this one.",
     longestExposedNone: "No build with findings here carries a publication date.",
     longestExposedFailed: "The longest-exposed list could not be read, so it is not shown. It is a separate request from the list above, which is why one can answer while the other fails; reload the page.",
     byTheNumbers: "By the numbers",

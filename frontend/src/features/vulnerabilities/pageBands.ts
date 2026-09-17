@@ -38,6 +38,12 @@ export function exploreByApp(rows: readonly AffectedRow[], limit = 8): AppChip[]
     .slice(0, limit);
 }
 
+/** Whether the list on screen IS *Longest exposed*: the age ordering and the words for it hold only
+ *  over the builds with findings, so any other filter — pressed, or reached with **Back**, which moves
+ *  the address without passing the chip handler — is *Most exposed* again. Derived and never stored,
+ *  so heading, hint and the `order` asked for cannot disagree about which list this is. */
+export const agedList = (expanded: boolean, order: string, vuln: string, band: string | null): boolean => expanded && order === "age" && vuln === "findings" && band === null;
+
 /** The four `vuln.*` keys of the nightly tape, in the order the foot prints them. Read, never
  *  written, and no key is minted here (`docs/posture-snapshot.md`, §7). */
 export const VULN_KEYS = ["vuln.apps_affected", "vuln.apps_kev_affected", "vuln.apps_unknown", "vuln.devices_affected"] as const;

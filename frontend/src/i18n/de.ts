@@ -997,7 +997,7 @@ export const de: Translations = {
     filterKev: "Auf CISA KEV",
     filterCritical: "Kritisch",
     longestExposed: "Am längsten exponiert",
-    longestExposedHint: "Das älteste Veröffentlichungsdatum zuerst: wie lange die Flotte den Fund schon trägt — eine Achse, die eine Mac-Flotte hat und eine Cloud-Umgebung nicht. Immer die Builds mit Funden, unabhängig davon, welcher Chip die Liste oben bestimmt.",
+    longestExposedHint: "Das älteste Veröffentlichungsdatum zuerst: wie lange die Flotte den Fund schon trägt — eine Achse, die eine Mac-Flotte hat und eine Cloud-Umgebung nicht. Immer die Builds mit Funden: Ein Chip unter „Häufige Filter“ schränkt die Rangliste ein, nie diese Liste.",
     longestExposedNone: "Kein Build mit Funden trägt hier ein Veröffentlichungsdatum.",
     longestExposedFailed: "Die Liste der am längsten exponierten Builds ließ sich nicht lesen und wird daher nicht gezeigt. Sie ist eine eigene Abfrage, unabhängig von der Liste darüber; laden Sie die Seite neu.",
     byTheNumbers: "In Zahlen",
