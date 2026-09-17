@@ -45,6 +45,7 @@ from app.api.settings import router as settings_router
 from app.api.smart_groups import router as smart_groups_router
 from app.api.system import router as system_router
 from app.api.tokens import router as tokens_router
+from app.api.vulnerabilities import router as vulnerabilities_router
 from app.api.webhooks import router as webhooks_router
 from app.catalog.index import rebuild_index
 from app.catalog.service import refresh_tenant
@@ -652,6 +653,7 @@ app.include_router(smart_groups_router)
 app.include_router(feature_flags_router)
 app.include_router(posture_router)
 app.include_router(evidence_router)
+app.include_router(vulnerabilities_router)
 
 
 @app.get("/openapi.json", include_in_schema=False)

@@ -1455,3 +1455,47 @@ inside the page); both need the **Auditor** role's `audit:read`.
 
 **U.** The catalogue refusal, or a contract version this build has no rules for. Report the sentence
 from the box, the build from Settings › Support, and `docker compose logs app --since 30m`.
+
+## 18. "Posture is not in my sidebar, or Vulnerabilities lists nothing"
+
+**Posture › Vulnerabilities follows the corpus.** The entry is listed once a vulnerability
+corpus is answering for your organization, and hidden until then — the data decides, not a
+switch. The **address is open either way**: `/posture/vulnerabilities` needs only the
+inventory permission every role holds, and with nothing answering it shows the corpus
+banner and its *Why this container says nothing* block, which is the same explanation the
+Catalog tab carries. So a link somebody sent you works even while the entry is hidden.
+
+1. **The entry is not there.** That is § 5 steps 1 and 2, unchanged and in that order: is
+   this organization's data-sharing tier **off** (Settings › Data Sharing), and is a
+   library installed (the banner, then the loader's log line)? Open
+   `/posture/vulnerabilities` directly — the banner on that page answers both questions in
+   words. Nothing is broken while it says so; it is what every container reads before its
+   first epoch.
+2. **You want it listed anyway — a lab, a demo, a first look.** Turn on the
+   **Posture › Vulnerabilities** flag on Settings › Feature Flags, which needs an
+   administrator. It lists the entry whether or not a corpus is answering; it does not make
+   anything answer, so the page still shows the banner and its *why* block until one does.
+3. **Someone turned that flag on and your session still hides it.** Each session reads the
+   flags and the corpus once, when it signs in. A change made in another browser, another
+   tab or by another person reaches yours at the next reload — ⌘R. Deliberate, and not a
+   fault; § 13 step 4 says the same of Settings › AI.
+4. **The page says *a corpus is loaded and nothing here has been judged against it yet*.**
+   Also not a fault, and not a fourth state: an epoch has arrived and this organization's
+   builds have not been joined to it yet, so every row would read *outside the corpus* and
+   a list of them would read as *no findings*. The words are the page's own — *loaded, not
+   yet judged against; answers arrive with the next sweep or the hourly refresh*. The
+   hourly catalog refresh closes it without any Mac checking in; **Refresh** on Devices ›
+   Applications › Catalog does it now. Still saying it more than two hours after the corpus
+   date moved, with the tier on, is reportable state **V**.
+5. **A filter is refused rather than answered.** Filtering by findings, KEV, band or
+   *outside the corpus* on an organization nothing answers for is refused in words —
+   *Nothing is answering for this organization, so a vulnerability filter has no rows to be
+   right about* — naming both causes and pointing at
+   [`vulnerabilities.md`](vulnerabilities.md) §8. It is refused rather than answered
+   empty on purpose: an empty list under *findings* reads as *nothing found*, which is the
+   one thing this product must never say about apps nobody looked at. Step 1 is the fix.
+
+**V.** The page says *loaded, not yet judged against* more than two hours after the corpus
+date moved, with the tier on and the hourly refresh running. Report the date the banner
+shows, what **Refresh** on the Catalog tab did, and `docker compose logs app --since 2h |
+grep -i "vulnerability library"`.

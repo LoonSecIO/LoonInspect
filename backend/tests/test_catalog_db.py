@@ -23,6 +23,21 @@ pytestmark = [
 FIXTURES = Path(__file__).parent / "fixtures" / "jamf"
 
 
+async def _list(db, **overrides):
+    """`GET /api/catalog` through its route function, with every parameter given by name.
+
+    The function is not a request, so a parameter left out arrives as FastAPI's `Query(...)`
+    sentinel rather than as its documented default — and since #529 one of them, `vuln`,
+    decides whether the read is refused at all. Shared with `test_vuln_answer_db.py`, which
+    exercises the filter itself, so the defaults live in one place.
+    """
+    from app.api.catalog import list_catalog
+
+    params = {"q": None, "jamf": "all", "installed_only": True, "app_hash": None}
+    params |= {"vuln": "all", "band": None, "order": "exposure", "page": 1, "page_size": 100}
+    return await list_catalog(db=db, **(params | overrides))
+
+
 @pytest_asyncio.fixture(loop_scope="session")
 async def indexed(db):
     from app.catalog.index import rebuild_index
@@ -124,7 +139,7 @@ async def _forget_fixture_apps(db, jamf: FakeJamf) -> None:
 
 
 async def test_list_and_lookup_after_a_sweep(db, jamf: FakeJamf, connection, indexed) -> None:
-    from app.api.catalog import _lookup, list_catalog
+    from app.api.catalog import _lookup
     from app.mdm.service import sync_connection
     from app.models.schema import Device, InstalledApp
 
@@ -138,7 +153,10 @@ async def test_list_and_lookup_after_a_sweep(db, jamf: FakeJamf, connection, ind
         await db.execute(select(InstalledApp).where(InstalledApp.device_id == real.id, InstalledApp.name == "Xcode.app"))
     ).scalar_one()
 
-    listing = await list_catalog(db=db, q="Xcode", jamf="all", installed_only=True, app_hash=None, page=1, page_size=50)
+    # Every parameter by name, including #529's three: this is the route function, not a
+    # request, so an omitted one arrives as FastAPI's `Query(...)` sentinel rather than its
+    # documented default — and `vuln` decides whether the read is refused at all.
+    listing = await _list(db, q="Xcode", page_size=50)
     (entry,) = [item for item in listing.items if item.version_hash == xcode.version_hash]
     assert entry.device_count >= 1 and entry.jamf_titles[0].name == "Apple Xcode" and entry.patch_state == "latest"
     assert entry.first_seen_at == entry.last_seen_at
@@ -146,14 +164,14 @@ async def test_list_and_lookup_after_a_sweep(db, jamf: FakeJamf, connection, ind
 
     # #299: one application's record, the counts scoped inside the join, and no summary
     # rather than a wrong one.
-    record = await list_catalog(db=db, q=None, jamf="all", installed_only=False, page=1, page_size=500, app_hash=xcode.app_hash)
+    record = await _list(db, installed_only=False, page_size=500, app_hash=xcode.app_hash)
     assert record.items and all(item.app_hash == xcode.app_hash for item in record.items)
     (scoped,) = [item for item in record.items if item.version_hash == xcode.version_hash]
     assert scoped.device_count == entry.device_count, "a scoped device count must equal the unscoped one for the same build"
     assert record.summary is None
     assert listing.summary is not None
 
-    unmatched = await list_catalog(db=db, q=None, jamf="unmatched", installed_only=True, app_hash=None, page=1, page_size=5000)
+    unmatched = await _list(db, jamf="unmatched", page_size=5000)
     assert unmatched.total >= 60  # the /System apps and the rest Jamf does not track
     assert all(item.jamf_title_ids is None for item in unmatched.items)
 

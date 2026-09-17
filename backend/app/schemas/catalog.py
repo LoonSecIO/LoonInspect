@@ -136,6 +136,12 @@ class CatalogListResponse(_CamelModel):
     # has, and counting `covered` / `unknown_app` / `off` across all of them is a scan of
     # the whole catalog per request. Those counts are #250's, off the join #248 stores.
     corpus_as_of: date | None = None
+    # Has ANY row of this tenant been judged by the epoch that is answering (#529)? One
+    # indexed `EXISTS`, and deliberately not a count — §4g forbids the fleet-wide tile and
+    # this is a boolean, not a number. `false` with a corpus loaded is the hour after an
+    # epoch moves and before the join runs: every row reads `unknown_app`, so a list is
+    # honest only as *loaded, not yet judged against* rather than as "0 with findings".
+    vuln_judged: bool = False
 
 
 class CatalogVersionOut(_CamelModel):

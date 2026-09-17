@@ -509,10 +509,14 @@ checking in. Every other key is the same value in both.
 | `GET /api/devices/{id}` | `apps[].vuln` — the block per installed app; `corpusAsOf` on the device |
 | `GET /api/catalog` | `items[].vuln` — the block per distinct build; `corpusAsOf` on the list response |
 | `GET\|POST /api/catalog/lookup` | **Nothing.** See below |
+| `GET /api/catalog?vuln=&band=&order=` | The stored answer as a `WHERE` (#529): `findings` \| `kev` \| `unknown_app` \| `clean`, a band, and the two orders. *Served*, never merely stored — a row judged by an epoch that has moved is `unknown_app` here exactly as it is in a cell — and a filter on an organization nothing answers for is a `409` naming both causes, never an empty list |
+| `GET /api/catalog` | `vulnJudged` (#529): has ANY row of this tenant been judged by the epoch answering now. One `EXISTS`, never a count |
+| `GET /api/vulnerabilities/status` | `corpusAsOf` alone (#529), under `vuln:read` — what the sidebar reads before any page is open |
 | Devices › Applications › **Catalog** | A **Vulnerabilities** column, and the corpus banner above it |
 | Devices › *hostname* (the device page, #300) | A **LoonInspect** column per installed app, and the same banner above it; #482 added the update line inside that column |
 | Devices › Applications › *appHash* (the application record, #299) | A **Vulnerabilities** column per carried build — legal there because each row is one build at `key_full` grain — and the banner; #482's update line likewise |
 | Devices › Applications › Jamf Patch › *title* | **Nothing** (#298). A title's version row carries no `key_full`, so there is no grain to answer at; the stub column that stood there (`C — H — M — L — Σ` beside coloured dots, under a tooltip naming an integration nobody can enable) was deleted rather than rewritten, per the #95 precedent |
+| **Posture › Vulnerabilities** (#529) | The fleet ranking: one row per build, most exposed first, with the corpus banner above it, a plain search over the catalog's `q`, and the same `AssessmentCell` — one rendering of the three states, handed the row so #482's update line prints. Its own two states before any row: nothing answering (the banner and its *why* block alone) and `vulnJudged` false (one sentence, no list) |
 
 **Where `off` goes (#298).** A terminal sentence is a dead end, and the obvious link — *turn on
 data sharing* — was a lie when it was ruled: `loaded_corpus()` took no argument and answered
@@ -566,13 +570,24 @@ in the type: `CatalogLookupOut.tenant` is the plain `CatalogEntryOut`, which has
 There is no `corpusAsOf` on the lookup either — it returns a bare list, and a stamp with
 nothing to stamp is noise.
 
-**Why the catalog tab and not a Vulnerabilities page.** The corpus is keyed on `key_full`
-— one answer per distinct build — which is exactly one row of the app catalog, so the
-column is an attribute of a row a person is already reading rather than a second place to
-go. A standalone page would have been a heading, one date and a link to that table: the
-"nav destination that does nothing" ruled against on
-[#95](https://github.com/LoonSecIO/LoonInspect/issues/95). It returns when it can show
-something the catalog cannot — the per-finding lifecycle records of §6, which are post-v0.
+**Why the catalog tab and not a Vulnerabilities page** — and what changed on 2026-09-17
+(#529). The corpus is keyed on `key_full`, one answer per distinct build, which is exactly
+one row of the app catalog, so the column is an attribute of a row a person is already
+reading rather than a second place to go. That stands, and the column has not moved. What
+was wrong was the *condition*: this paragraph said the page returns with the per-finding
+lifecycle records of §6, and a page turned out to be earned by something cheaper — a
+**fleet ranking**. The catalog sorts its vulnerability column client-side over the page in
+hand, so *show me the builds with findings* on a tenant of a few thousand builds was paging
+through all of them, and `GET /api/catalog` had no filter on the stored answer at all. A
+server-side filter and order is something the tab cannot be, not a heading and a link, so
+the "nav destination that does nothing" [#95](https://github.com/LoonSecIO/LoonInspect/issues/95)
+ruled against is still ruled against and this is not one.
+
+What did **not** change: the grain is still the build and never the CVE (the container
+holds an ordered id list and nothing per id, so nothing there prints a per-id attribute);
+the three states are rendered once, by `AssessmentCell`, on the page as on the tab; no
+fleet-wide count is taken per request (below); and the per-finding lifecycle records are
+still post-v0.
 
 **The three renderings, and why they cannot collapse.** `covered` with nothing found is
 green, says *no findings*, and carries the date it was checked against. `unknown_app` is

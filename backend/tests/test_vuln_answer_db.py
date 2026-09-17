@@ -53,6 +53,7 @@ from app.models.schema import (
     VulnLibraryRow,
     VulnLibraryTitle,
 )
+from tests.test_catalog_db import _list as _list_catalog
 from tests.test_vuln_library import (
     BUNDLE,
     CLEAN_BUILD,
@@ -1035,3 +1036,191 @@ async def test_a_row_with_no_target_key_says_nothing_rather_than_not_in_the_corp
     assert (copied.vuln_target_version, copied.vuln_target_assessment) == (None, None)
 
     assert await _update(db, device, WIRESHARK_BUILD) is None, "nothing looked up, so the cell prints no line at all"
+
+
+# --- the stored answer as a filter (#529) ------------------------------------------------
+
+# A second epoch, published so ONE import can answer every filter this endpoint has. The
+# shipped fixture epoch cannot: its Wireshark row is the only one carrying findings, is not
+# KEV-listed and has no critical band, so `kev`, `band=` and the two orders would each be an
+# assertion about a single row. Here the KEV row carries FEWER findings and a NEWER oldest
+# publication than the plain one, so `exposure` and `age` cannot both be right by accident.
+_KEV_COUNTS = {"total": 2, "kev": 1, "critical": 1, "high": 1, "medium": 0, "low": 0}
+_PLAIN_COUNTS = {"total": 5, "kev": 0, "critical": 0, "high": 5, "medium": 0, "low": 0}
+_NO_COUNTS = {"total": 0, "kev": 0, "critical": 0, "high": 0, "medium": 0, "low": 0}
+NEWER, OLDER = "2026-06-01T00:00:00Z", "2020-03-04T00:00:00Z"
+OURS = (WIRESHARK_BUILD, CLEAN_BUILD, STALE_UNASSESSED_BUILD, UNKNOWN_BUILD)
+
+
+def _dates(total: str | None, critical: str | None = None, high: str | None = None) -> dict:
+    """The format refuses a band whose date and count disagree about whether a finding
+    exists, so every band with a count above carries one here."""
+    return {"total": total, "critical": critical, "high": high, "medium": None, "low": None}
+
+
+async def _filtering(db, device) -> str:
+    """This fleet judged against that epoch, and the signature that is then answering."""
+    bundle, signature = _rewritten(
+        rows=[
+            _row(
+                key_full=WIRESHARK_BUILD,
+                ids=["CVE-2026-0001", "CVE-2026-0002"],
+                counts=_KEV_COUNTS,
+                oldest_published=_dates(NEWER, critical=NEWER, high=NEWER),
+            ),
+            _row(
+                key_full=STALE_UNASSESSED_BUILD,
+                ids=[f"CVE-2020-000{index}" for index in range(5)],
+                counts=_PLAIN_COUNTS,
+                oldest_published=_dates(OLDER, high=OLDER),
+            ),
+            _row(key_full=CLEAN_BUILD, ids=[], counts=_NO_COUNTS, oldest_published=_dates(None)),
+        ]
+    )
+    assert await load_epoch_if_new(db, _pointer(signature), transport=_serving(bundle)) is not None
+    await _judge(db, device)
+    return signature
+
+
+async def _list(db, **overrides):
+    """`GET /api/catalog` through its route function — the catalog suite's own helper, so the
+    defaults a direct call has to supply live in one place."""
+    return await _list_catalog(db, page_size=500, **overrides)
+
+
+def _ours(response) -> list[str]:
+    """The fixture's own builds, in the order the endpoint returned them. Membership rather
+    than the whole page, because a lived-in local database carries other suites' builds and
+    none of them is what these assertions are about."""
+    return [item.key_full for item in response.items if item.key_full in OURS]
+
+
+async def test_each_vuln_filter_selects_the_state_it_names(db, fleet) -> None:
+    """The four filters over one judged tenant, each against the state §4a names.
+
+    `clean` is the one that could not exist without ruling R-D: the clean fixture build has a
+    ROW with no findings, and the build with no row is `unknown_app` in the same breath.
+    """
+    _, device = fleet
+    await _filtering(db, device)
+
+    assert set(_ours(await _list(db, vuln="findings"))) == {WIRESHARK_BUILD, STALE_UNASSESSED_BUILD}
+    assert _ours(await _list(db, vuln="kev")) == [WIRESHARK_BUILD]
+    assert _ours(await _list(db, vuln="clean")) == [CLEAN_BUILD]
+    assert _ours(await _list(db, vuln="unknown_app")) == [UNKNOWN_BUILD]
+    # A band narrows within `covered`, and is not a fifth state: the critical band belongs to
+    # the KEV row alone, and the five-finding row is entirely high.
+    assert _ours(await _list(db, vuln="findings", band="critical")) == [WIRESHARK_BUILD]
+    assert set(_ours(await _list(db, vuln="findings", band="high"))) == {WIRESHARK_BUILD, STALE_UNASSESSED_BUILD}
+
+
+async def test_a_row_judged_by_an_epoch_that_moved_filters_as_unknown_app(db, fleet) -> None:
+    """SERVED, not stored — the rule `served()` is, held where a filter could quietly ignore
+    it. The row still carries `covered` and two findings; its signature is no longer the one
+    answering, so it is `unknown_app` to the filter exactly as it is to the cell, and it is
+    absent from `findings` rather than counted there."""
+    _, device = fleet
+    await _filtering(db, device)
+    await db.execute(
+        update(AppCatalogEntry).where(AppCatalogEntry.key_full == WIRESHARK_BUILD).values(vuln_signature="not-this-epoch")
+    )
+    await db.commit()
+
+    assert (await _entry(db, WIRESHARK_BUILD)).vuln_assessment == "covered"
+    assert _ours(await _list(db, vuln="findings")) == [STALE_UNASSESSED_BUILD]
+    assert set(_ours(await _list(db, vuln="unknown_app"))) == {WIRESHARK_BUILD, UNKNOWN_BUILD}
+
+
+async def test_a_stored_answer_that_will_not_parse_filters_as_unknown_app(db, fleet) -> None:
+    """The row `_unreadable` exists for, in a `WHERE`. It is served and `covered`, and its
+    counts are not a number — so there is nothing to be right about, and it lists where the
+    cell already puts it rather than being counted among the findings or among the clean.
+
+    The same row also proves why `((vuln_counts->>'total')::int)` is not in the index the
+    filter reads: an index over that expression refuses this write outright, which would turn
+    a named `unknown_app` into a 500 (see the migration `a7c21e9f4b83`).
+    """
+    _, device = fleet
+    await _filtering(db, device)
+    await db.execute(
+        update(AppCatalogEntry).where(AppCatalogEntry.key_full == WIRESHARK_BUILD).values(vuln_counts={"total": "two"})
+    )
+    await db.commit()
+
+    assert _ours(await _list(db, vuln="findings")) == [STALE_UNASSESSED_BUILD]
+    assert _ours(await _list(db, vuln="clean")) == [CLEAN_BUILD]
+    assert set(_ours(await _list(db, vuln="unknown_app"))) == {WIRESHARK_BUILD, UNKNOWN_BUILD}
+
+
+async def test_the_two_orders_rank_by_the_two_axes_a_mac_fleet_has(db, fleet) -> None:
+    """`exposure` is KEV first; `age` is the oldest publication first. The two rows disagree
+    on purpose — the KEV row has fewer findings and a newer oldest publication — so an
+    ordering that fell back to either would put them the other way round."""
+    _, device = fleet
+    await _filtering(db, device)
+
+    assert _ours(await _list(db, vuln="findings", order="exposure")) == [WIRESHARK_BUILD, STALE_UNASSESSED_BUILD]
+    assert _ours(await _list(db, vuln="findings", order="age")) == [STALE_UNASSESSED_BUILD, WIRESHARK_BUILD]
+    # `vuln=all` keeps the Catalog tab's own order, whatever `order` says.
+    by_devices = await _list(db, order="age")
+    assert [item.device_count for item in by_devices.items] == sorted(
+        (item.device_count for item in by_devices.items), reverse=True
+    )
+
+
+async def test_vuln_judged_says_whether_the_loaded_epoch_has_judged_anything_here(db, fleet) -> None:
+    """The hour after an epoch moves, before the join runs. The epoch is loaded and answering
+    — `corpusAsOf` is a date — and not one row has been judged against it, so every row reads
+    `unknown_app` and a list of them is honest only as *not yet judged*, never as *0 with
+    findings* (§4a)."""
+    _, device = fleet
+    bundle, signature = _rewritten(rows=[_row(key_full=WIRESHARK_BUILD)])
+    assert await load_epoch_if_new(db, _pointer(signature), transport=_serving(bundle)) is not None
+
+    before = await _list(db)
+    assert before.corpus_as_of is not None and before.vuln_judged is False
+
+    await _judge(db, device)
+    after = await _list(db)
+    assert after.vuln_judged is True
+
+
+async def test_a_vuln_filter_is_refused_where_nothing_answers(db, fleet) -> None:
+    """Refused, never empty. An empty list under `vuln=findings` reads as *nothing found*,
+    which is §4a's failure in a query string — so the filter is a `409` naming both of §8's
+    causes, and the unfiltered list still answers."""
+    from fastapi import HTTPException
+
+    from app.api.catalog import NO_ANSWER
+
+    _, device = fleet
+    await _filtering(db, device)
+    await _set_tier(db, "off")
+
+    for filtered in ({"vuln": "findings"}, {"vuln": "kev"}, {"band": "critical"}):
+        with pytest.raises(HTTPException) as refusal:
+            await _list(db, **filtered)
+        assert refusal.value.status_code == 409
+        assert refusal.value.detail == NO_ANSWER
+    assert "data sharing is off for this organization" in NO_ANSWER and "§8" in NO_ANSWER
+    # And the catalog itself is not refused: `off` is a state the page renders, not an error.
+    unfiltered = await _list(db)
+    assert unfiltered.corpus_as_of is None and unfiltered.vuln_judged is False
+    assert {item.vuln.assessment for item in unfiltered.items} == {"off"}
+
+
+async def test_the_status_endpoint_answers_the_same_date_the_rows_are_stamped_with(db, fleet) -> None:
+    """What the sidebar reads (#529). One fact, the same one `corpusAsOf` on the list is, so
+    an entry can never be listed by a corpus the rows are not answering from."""
+    from app.api.vulnerabilities import vulnerability_status
+
+    _, device = fleet
+    assert (await vulnerability_status(db)).corpus_as_of is None
+
+    await _filtering(db, device)
+    assert (await vulnerability_status(db)).corpus_as_of == (await _list(db)).corpus_as_of
+
+    # A tenant whose sharing is off reads `null`, with the very same epoch loaded — which is
+    # why a failed or `null` read may never be reported as "the corpus is off" anywhere.
+    await _set_tier(db, "off")
+    assert (await vulnerability_status(db)).corpus_as_of is None

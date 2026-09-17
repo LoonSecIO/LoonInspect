@@ -1,4 +1,4 @@
-import { Route, Routes } from "react-router";
+import { Navigate, Route, Routes } from "react-router";
 import { App } from "@/App";
 import { AccountsPage } from "@/features/accounts/AccountsPage";
 import { MyAccountPage } from "@/features/accounts/MyAccountPage";
@@ -26,6 +26,7 @@ import { DestinationsPage } from "@/features/destinations/DestinationsPage";
 import { JamfPatchPage } from "@/features/jamfPatch/JamfPatchPage";
 import { JamfPatchDetailPage } from "@/features/jamfPatch/JamfPatchDetailPage";
 import { CatalogPage } from "@/features/catalog/CatalogPage";
+import { VulnerabilitiesPage } from "@/features/vulnerabilities/VulnerabilitiesPage";
 import { SupportPage } from "@/features/support/SupportPage";
 import { NotFoundPage } from "@/features/errors/NotFoundPage";
 
@@ -148,17 +149,22 @@ export function AppRoutes() {
         <Route element={<RequirePermission permission={PERMISSIONS.DEVICE_READ} />}>
           <Route path="settings/support" element={<SupportPage />} />
         </Route>
-        {/* Still no /vulnerabilities, and #251 is the session that decided so rather
-            than deferring again. The corpus edge — covered / unknown_app / off,
-            dated by corpusAsOf — is now on Devices › Applications › Catalog, beside
-            the apps it is an answer about, because that tab's grain (one row per
-            distinct build) is exactly the grain the corpus is keyed on. A page here
-            would have been a heading, one date and a link to that table: the "nav
-            destination that does nothing" #95 ruled against, and it would have put
-            the honest sentence about what we do not know somewhere a person has to
-            go looking for it instead of where they are already reading. It comes
-            back when it can show something the Catalog tab cannot — the per-finding
-            lifecycle records, which are post-v0 (docs/vulnerabilities.md §6). */}
+        {/* The slot #95 reserved and #251 declined to fill, filled (#529). What it waited
+            for was never the per-finding lifecycle records but something the Catalog tab
+            cannot show, and this is it: a fleet ranking the Catalog can only sort over the
+            page in hand. The Catalog's own column stays where it is.
+
+            VULN_READ and NO RequireFlag, deliberately. The flag decides what is LISTED;
+            hidden from the nav means hidden, not refused, so a shared link opens for anyone
+            who may read inventory and renders the corpus banner and its *why* block when
+            nothing answers. Settings › AI above is the other shape — there the flag owns the
+            whole area and the route says so; here a route gate would refuse the very reader
+            the banner exists to explain things to. */}
+        <Route element={<RequirePermission permission={PERMISSIONS.VULN_READ} />}>
+          <Route path="posture/vulnerabilities" element={<VulnerabilitiesPage />} />
+          {/* The address #95 reserved keeps working, now that /posture is the prefix. */}
+          <Route path="vulnerabilities" element={<Navigate to="/posture/vulnerabilities" replace />} />
+        </Route>
         {/* Last child on purpose, and inside the shell rather than beside /login: a
             signed-out visitor keeps getting the same sign-in redirect for a typo as
             for a real page, so an unmatched path never reveals which paths exist.
