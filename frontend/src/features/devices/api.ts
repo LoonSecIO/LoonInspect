@@ -19,6 +19,7 @@ export function listDevices(filters: DeviceFilters): Promise<DeviceListResponse>
   if (filters.appHash) params.set("appHash", filters.appHash);
   if (filters.versionHash) params.set("versionHash", filters.versionHash);
   if (filters.includeDeparted) params.set("includeDeparted", "true");
+  if (filters.vuln) params.set("vuln", filters.vuln);
   params.set("page", String(filters.page ?? 1));
   params.set("pageSize", String(filters.pageSize ?? 50));
 

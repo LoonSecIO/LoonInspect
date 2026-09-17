@@ -53,6 +53,7 @@ from app.models.schema import (
     VulnLibraryRow,
     VulnLibraryTitle,
 )
+from app.schemas.devices import DeviceVulnAppsOut
 from tests.test_catalog_db import _list as _list_catalog
 from tests.test_vuln_library import (
     BUNDLE,
@@ -1224,3 +1225,145 @@ async def test_the_status_endpoint_answers_the_same_date_the_rows_are_stamped_wi
     # why a failed or `null` read may never be reported as "the corpus is off" anywhere.
     await _set_tier(db, "off")
     assert (await vulnerability_status(db)).corpus_as_of is None
+
+
+# --- the device list reads the copies (#535) ---------------------------------------------
+
+
+async def _devices(db, **overrides):
+    """`GET /api/devices` through its route function, with every parameter given by name —
+    `test_catalog_db._list`'s trap one endpoint over: a parameter left out arrives as
+    FastAPI's `Query(...)` sentinel rather than as its documented default."""
+    from app.api.devices import list_devices
+
+    params = {"q": None, "os_version": None, "os_version_operator": "eq", "site": None, "building": None}
+    params |= {"department": None, "managed": None, "supervised": None, "platform": None}
+    params |= {"last_check_in_after": None, "last_check_in_before": None, "last_inventory_after": None}
+    params |= {"last_inventory_before": None, "mdm_connection_id": None, "app_hash": None, "version_hash": None}
+    params |= {"ea": None, "vuln": None, "include_departed": False, "page": 1, "page_size": 200}
+    return await list_devices(db=db, **(params | overrides))
+
+
+def _listed(response, device) -> bool:
+    return any(item.id == device.id for item in response.items)
+
+
+def _apps_of(response, device):
+    return next(item.vuln_apps for item in response.items if item.id == device.id)
+
+
+async def test_the_filter_answers_with_the_macs_carrying_a_finding(db, fleet) -> None:
+    """The fixture Mac carries Wireshark 4.2.0 — seventeen findings, none KEV-listed — so it
+    is a carrier under `findings` and **not** under `kev`. A second Mac carrying only the
+    assessed-and-clean build is a carrier under neither: `covered` with zero is a clean bill,
+    and this is the filter that has to agree with the cell about it."""
+    connection, device = fleet
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    clean_mac = await _device(db, connection, "C02VULN0535", (APPS[1],))
+    await _judge(db, device)
+    await _judge(db, clean_mac)
+
+    findings = await _devices(db, vuln="findings")
+    assert _listed(findings, device) and not _listed(findings, clean_mac)
+    assert not _listed(await _devices(db, vuln="kev"), device)
+    # And the unfiltered list still answers for both, so the filter narrows rather than hides.
+    everyone = await _devices(db)
+    assert _listed(everyone, device) and _listed(everyone, clean_mac)
+
+
+async def test_a_copy_judged_by_an_epoch_that_moved_is_not_a_carrier(db, fleet) -> None:
+    """SERVED, not stored (§4f). The copy still says `covered` with seventeen findings; its
+    signature is no longer the epoch answering, so the Mac drops out of `findings` exactly as
+    the app drops out of *covered* on its own page — and the same app moves into the column's
+    *outside* count rather than vanishing from every number on the row."""
+    _, device = fleet
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    await _judge(db, device)
+    assert _apps_of(await _devices(db), device).with_findings == 1
+
+    await db.execute(
+        update(InstalledApp)
+        .where(InstalledApp.device_id == device.id, InstalledApp.key_full == WIRESHARK_BUILD)
+        .values(vuln_signature="not-this-epoch")
+    )
+    await db.commit()
+
+    assert (await _installed(db, device, WIRESHARK_BUILD)).vuln_assessment == "covered"
+    assert not _listed(await _devices(db, vuln="findings"), device)
+    assert _apps_of(await _devices(db), device) == DeviceVulnAppsOut(with_findings=0, on_kev=0, outside_corpus=3)
+
+
+async def test_the_column_counts_apps_and_names_the_unknowns_beside_them(db, fleet) -> None:
+    """Apps, never findings summed across them — the unknowns in the same breath, and the
+    whole column in one grouped read.
+
+    The fixture Mac carries four builds: Wireshark (seventeen findings, one app), the clean
+    build (`covered`, zero, counted nowhere), and two the epoch holds no row for. So the cell
+    reads *1 (0 KEV) · 2 outside*, and the seventeen appears nowhere on this row — it belongs
+    to that build's own cell on the Mac's page.
+
+    The statement count is asserted with them, on a page of four Macs, because a query per
+    row produces these same numbers and only the count tells the two apart.
+    """
+    connection, device = fleet
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    for index in range(3):
+        await _judge(db, await _device(db, connection, f"C02ROLL053{index}", APPS))
+    await _judge(db, device)
+
+    with _statements() as seen:
+        listed = await _devices(db)
+    assert len([statement for statement in seen if "installed_apps" in statement]) == 1
+    assert listed.corpus_as_of == TODAY
+    assert _apps_of(listed, device) == DeviceVulnAppsOut(with_findings=1, on_kev=0, outside_corpus=2)
+    assert sum(1 for item in listed.items if item.vuln_apps is not None) >= 4
+
+
+async def test_a_copy_that_will_not_parse_counts_as_outside_the_corpus(db, fleet) -> None:
+    """The row `_unreadable` exists for, in a `count(*) FILTER`. It is served and `covered`
+    and its counts are not a number, so there is nothing to be right about: it counts where
+    the cell already puts it rather than falling out of all three numbers, which is how a Mac
+    would quietly lose an app between the column and its own page. The corrupted answer
+    carries a perfectly good `kev: 1` on purpose — `total` decides readable, so the KEV count
+    does not report the row as half-assessed while the cell reads it as outside the corpus.
+
+    The same row is why `((vuln_counts->>'total')::int)` is not the index's predicate here:
+    that expression is evaluated on every write, and this write is the one it refuses.
+    """
+    _, device = fleet
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    await _judge(db, device)
+    await db.execute(
+        update(InstalledApp)
+        .where(InstalledApp.device_id == device.id, InstalledApp.key_full == WIRESHARK_BUILD)
+        .values(vuln_counts={"total": "seventeen", "kev": 1})
+    )
+    await db.commit()
+
+    assert not _listed(await _devices(db, vuln="findings"), device)
+    assert _apps_of(await _devices(db), device) == DeviceVulnAppsOut(with_findings=0, on_kev=0, outside_corpus=3)
+
+
+async def test_the_filter_is_refused_where_nothing_answers_and_the_column_is_not_offered(db, fleet) -> None:
+    """Refused, never empty — #529's sentence, on the second surface that asks the question.
+    The unfiltered list still answers: `off` is a state the page renders, with no
+    `corpusAsOf` and no rollup on any row, which is how the table knows to render no column
+    rather than a zero per Mac."""
+    from fastapi import HTTPException
+
+    from app.core.vuln_read import NO_ANSWER
+
+    _, device = fleet
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    await _judge(db, device)
+    await _set_tier(db, "off")
+
+    for filtered in ({"vuln": "findings"}, {"vuln": "kev"}):
+        with pytest.raises(HTTPException) as refusal:
+            await _devices(db, **filtered)
+        assert refusal.value.status_code == 409
+        assert refusal.value.detail == NO_ANSWER
+
+    unfiltered = await _devices(db)
+    assert unfiltered.corpus_as_of is None
+    assert _listed(unfiltered, device) and _apps_of(unfiltered, device) is None

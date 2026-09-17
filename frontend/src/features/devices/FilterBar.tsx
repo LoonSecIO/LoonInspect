@@ -3,8 +3,17 @@ import { useLocale } from "@/i18n/LocaleContext";
 
 interface FilterBarProps {
   filters: DeviceFilters;
+  /** The corpus answering for this organization, or null (#535). The chips are offered only
+   *  where there is something to select: under `off` the filter is refused, and a control
+   *  that can only produce a refusal is worse than no control. */
+  corpusAsOf: string | null;
   onChange: (filters: DeviceFilters) => void;
 }
+
+/** The two chips, and the one URL key they share. Mutually exclusive by construction: KEV
+ *  narrows *with findings* rather than being a second axis, so they are one value and not
+ *  two booleans that could ask for something the endpoint does not mean. */
+const VULN_CHIPS = ["findings", "kev"] as const;
 
 const inputClasses =
   "rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -19,7 +28,7 @@ function fromTriState(value: string): boolean | undefined {
   return value === "true";
 }
 
-export function FilterBar({ filters, onChange }: FilterBarProps) {
+export function FilterBar({ filters, corpusAsOf, onChange }: FilterBarProps) {
   const { t } = useLocale();
 
   function update(patch: Partial<DeviceFilters>) {
@@ -115,6 +124,26 @@ export function FilterBar({ filters, onChange }: FilterBarProps) {
           {t.devices.showDeparted}
         </label>
       </div>
+
+      {/* URL-carried like every control above, so a shared link asks the same question and
+          page 2 of it is still that question. Clicking the chip that is on clears it. */}
+      {corpusAsOf !== null && (
+        <div className="flex flex-wrap gap-2">
+          {VULN_CHIPS.map((value) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={filters.vuln === value}
+              className={`rounded-full border px-3 py-1 text-xs ${
+                filters.vuln === value ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+              }`}
+              onClick={() => update({ vuln: filters.vuln === value ? undefined : value })}
+            >
+              {value === "kev" ? t.devices.onKevChip : t.devices.withFindingsChip}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

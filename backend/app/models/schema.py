@@ -246,6 +246,23 @@ class DeviceExtensionAttribute(Base):
 class InstalledApp(Base):
     __tablename__ = "installed_apps"
 
+    __table_args__ = (
+        # `GET /api/devices?vuln=` asks which Macs carry a finding (#535) — a semi-join over
+        # the largest table in the schema. The key is the gate `vuln_answer.served` applies,
+        # `ix_app_catalog_vuln_served`'s sibling one grain down, with `device_id` leading
+        # because that is what the semi-join returns and what the page's rollup groups by.
+        # The counts stay out of the predicate for #529's measured reason, re-measured here:
+        # `((vuln_counts->>'total')::int)` is evaluated on every write, so a stored answer
+        # that will not parse stops being writable at all. The reader guards the cast
+        # instead (`vuln_answer.counted`); the migration carries the whole argument.
+        Index(
+            "ix_installed_apps_vuln_served",
+            "device_id",
+            "vuln_signature",
+            postgresql_where=text("vuln_assessment = 'covered'"),
+        ),
+    )
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     # device_id is the primary access path to this table — `process_sync` reads one

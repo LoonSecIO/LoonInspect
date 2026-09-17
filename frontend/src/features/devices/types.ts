@@ -1,4 +1,5 @@
 import type { CatalogTitleRef } from "@/features/catalog/types";
+import type { DeviceVulnRollup } from "@/features/vulnerabilities/deviceRollup";
 import type { AppUpdate, AppVulnerability } from "@/features/vulnerabilities/types";
 
 export interface Device {
@@ -26,6 +27,11 @@ export interface Device {
   department: string | null;
   /** The first clean census that did not name this Mac (#183): null means Jamf returned it, non-null starts the seven-day tail. */
   departedAt: string | null;
+  /** The list's per-Mac rollup (#535) — apps, never findings summed across them — counted
+   *  server-side over this Mac's own copies. Absent on the device detail response, which
+   *  computes the same three numbers from the app rows it already holds; null on the list
+   *  when nothing is answering, or when no apps are recorded for this Mac. */
+  vulnApps?: DeviceVulnRollup | null;
 }
 
 /** One installed app as `GET /api/devices/{id}` ships it: the row, the Jamf Patch answer
@@ -88,6 +94,10 @@ export interface DeviceListResponse {
   total: number;
   page: number;
   pageSize: number;
+  /** The corpus the `vulnApps` counts came from, on the response that carries them (#535).
+   *  `null` means nothing is answering, and the list renders no vulnerability column at all
+   *  rather than a zero per row. */
+  corpusAsOf: string | null;
 }
 
 export type VersionOperator = "eq" | "lt" | "lte" | "gt" | "gte" | "regex";
@@ -111,6 +121,9 @@ export interface DeviceFilters {
   versionHash?: string;
   /** Read back the Macs that left the fleet (#475). Off by default, as the API's default is. */
   includeDeparted?: boolean;
+  /** The two chips (#535): Macs carrying an app with findings, or one on CISA's KEV list.
+   *  Refused `409` where nothing is answering, never answered with an empty page. */
+  vuln?: "findings" | "kev";
   page?: number;
   pageSize?: number;
 }

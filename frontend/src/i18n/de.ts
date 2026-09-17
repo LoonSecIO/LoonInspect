@@ -688,6 +688,15 @@ export const de: Translations = {
     tailChip: "Verlässt die Flotte",
     leftChip: "Flotte verlassen",
     showDeparted: "Ausgeschiedene anzeigen", // nicht "Abgemeldete" — das ist #184s Stilllegung
+    // #535: Apps, nie über Apps summierte Funde. Die Unbekannten stehen als eigener String
+    // daneben und werden nie ohne die Zahl gedruckt — eine "0" allein wäre der Freispruch,
+    // den §4a verweigert.
+    tableAppsWithFindings: "Apps mit Funden",
+    appsWithFindings: (apps: number, kev: number) => `${apps} (${kev} KEV)`,
+    appsOutsideCorpus: (apps: number) => `· ${apps} außerhalb`,
+    noAppsRead: "Keine Apps gelesen",
+    withFindingsChip: "Mit Funden",
+    onKevChip: "Auf KEV",
     detail: {
       back: "Alle Geräte",
       subtitle: (serial: string, externalId: string) => `${serial} · Jamf-Computer ${externalId}`,
@@ -732,7 +741,10 @@ export const de: Translations = {
         colBundleId: "Bundle-ID",
         orderByPatch: "Nach Jamfs Patch-Status ordnen",
         empty: "Für diesen Mac wurden keine Anwendungen gemeldet",
-        noTitle: "Kein Jamf-Patch-Titel passt zu dieser App"
+        noTitle: "Kein Jamf-Patch-Titel passt zu dieser App",
+        // #535: dieser Mac in Apps, neben dem Banner. Alle drei Zahlen oder keine.
+        vulnRollup: (apps: number, kev: number, unknown: number) =>
+          `${apps} App${apps === 1 ? "" : "s"} mit Funden · ${kev} auf KEV · ${unknown} außerhalb des Korpus`
       },
       eas: {
         heading: "Erweiterungsattribute",

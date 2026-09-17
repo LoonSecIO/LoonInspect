@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
+import { ApiError } from "@/config/api";
 import { Button } from "@/components/ui/button";
 import { FilterBar } from "@/features/devices/FilterBar";
 import { lookupCatalog } from "@/features/catalog/api";
@@ -26,6 +27,7 @@ function filtersFromSearchParams(params: URLSearchParams): DeviceFilters {
     appHash: params.get("appHash") ?? undefined,
     versionHash: params.get("versionHash") ?? undefined,
     includeDeparted: includeDepartedFrom(params),
+    vuln: (params.get("vuln") as DeviceFilters["vuln"] | null) ?? undefined,
     page: params.get("page") ? Number(params.get("page")) : 1
   };
 }
@@ -50,6 +52,7 @@ function searchParamsFromFilters(filters: DeviceFilters): URLSearchParams {
   if (filters.appHash) params.set("appHash", filters.appHash);
   if (filters.versionHash) params.set("versionHash", filters.versionHash);
   if (filters.includeDeparted) params.set("includeDeparted", "true"); // shared links carry it (#475)
+  if (filters.vuln) params.set("vuln", filters.vuln); // the two chips are the URL (#535)
   if (filters.page && filters.page !== 1) params.set("page", String(filters.page));
   return params;
 }
@@ -61,6 +64,9 @@ export function DevicesPage() {
 
   const [devices, setDevices] = useState<Device[]>([]);
   const [total, setTotal] = useState(0);
+  // The stamp the counts came from (#535). Null is "nothing is answering", which is why
+  // there is no vulnerability column and no chips rather than a column full of zeros.
+  const [corpusAsOf, setCorpusAsOf] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const pageSize = 50;
@@ -91,9 +97,15 @@ export function DevicesPage() {
           if (cancelled) return;
           setDevices(response.items);
           setTotal(response.total);
+          setCorpusAsOf(response.corpusAsOf);
         })
-        .catch(() => {
-          if (!cancelled) setError(t.devices.errorLoading);
+        .catch((caught: unknown) => {
+          if (cancelled) return;
+          // A `vuln` filter on a tenant nothing answers for is refused rather than answered
+          // with an empty page (#535), and the refusal names both of its causes. Printing
+          // "Could not load devices" over it would throw those words away — a pasted link
+          // is exactly how someone arrives here.
+          setError(caught instanceof ApiError && caught.status === 409 && caught.detail ? caught.detail : t.devices.errorLoading);
         })
         .finally(() => {
           if (!cancelled) setLoading(false);
@@ -108,6 +120,9 @@ export function DevicesPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = filters.page ?? 1;
+  // Eight, or nine where a corpus answers: the empty and error rows span the table, and a
+  // hard-coded 8 beside a conditional column is how one of them stops spanning it.
+  const columns = corpusAsOf === null ? 8 : 9;
 
   function goToPage(next: number) {
     setSearchParams(searchParamsFromFilters({ ...filters, page: next }));
@@ -122,6 +137,7 @@ export function DevicesPage() {
 
       <FilterBar
         filters={filters}
+        corpusAsOf={corpusAsOf}
         onChange={(next) => setSearchParams(searchParamsFromFilters(next), { replace: true })}
       />
       {/* A saved search the filter bar has no control for (#109's stale tile) shows as a
@@ -164,27 +180,30 @@ export function DevicesPage() {
               <th className="px-4 py-2 font-medium">{t.devices.tableDepartment}</th>
               <th className="px-4 py-2 font-medium">{t.devices.tableManaged}</th>
               <th className="px-4 py-2 font-medium">{t.devices.tableSupervised}</th>
+              {/* No corpus, no column (#535): there is nothing to put in it, and a `0` per
+                  row would be a clean bill nobody looked for. */}
+              {corpusAsOf !== null && <th className="px-4 py-2 font-medium">{t.devices.tableAppsWithFindings}</th>}
               <th className="px-4 py-2 font-medium">{t.devices.tableLastCheckIn}</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={8}>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={columns}>
                   {t.devices.loading}
                 </td>
               </tr>
             )}
             {!loading && error && (
               <tr>
-                <td className="px-4 py-4 text-destructive" colSpan={8}>
+                <td className="px-4 py-4 text-destructive" colSpan={columns}>
                   {error}
                 </td>
               </tr>
             )}
             {!loading && !error && devices.length === 0 && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={8}>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={columns}>
                   {t.devices.empty}
                 </td>
               </tr>
@@ -211,6 +230,25 @@ export function DevicesPage() {
                 <td className="px-4 py-2">
                   {device.supervised === null ? "—" : device.supervised ? t.devices.yes : t.devices.no}
                 </td>
+                {corpusAsOf !== null && (
+                  <td className="px-4 py-2 whitespace-nowrap">
+                    {device.vulnApps ? (
+                      <>
+                        {/* The unknowns are printed beside the count, always: a Mac whose
+                            apps are all outside the corpus reads "0 · 12 outside", which is
+                            not a clean bill and does not look like one (§4a). */}
+                        <span className="tabular-nums">
+                          {t.devices.appsWithFindings(device.vulnApps.withFindings, device.vulnApps.onKev)}
+                        </span>{" "}
+                        <span className="text-xs text-muted-foreground">
+                          {t.devices.appsOutsideCorpus(device.vulnApps.outsideCorpus)}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">{t.devices.noAppsRead}</span>
+                    )}
+                  </td>
+                )}
                 <td className="px-4 py-2">
                   {device.lastCheckIn ? new Date(device.lastCheckIn).toLocaleString() : "—"}
                 </td>

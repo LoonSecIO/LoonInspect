@@ -7,7 +7,7 @@ from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import Integer, case, cast, distinct, func, or_, select
+from sqlalchemy import distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.catalog.index import lookup_versions
@@ -16,9 +16,9 @@ from app.core.auth import require
 from app.core.database import get_db
 from app.core.permissions import Permission
 from app.core.vuln import VulnCorpus
-from app.core.vuln_answer import served, stored_corpus
+from app.core.vuln_answer import counted, served, stored_corpus
 from app.core.vuln_library import earned_corpus, loaded_epoch_signature
-from app.core.vuln_read import assess, corpus_as_of, today, update_line
+from app.core.vuln_read import NO_ANSWER, assess, corpus_as_of, today, update_line
 from app.mdm.patch.requirements import version_tuple
 from app.models.schema import AppCatalogEntry, AppCatalogVersion, InstalledApp
 from app.schemas.catalog import (
@@ -35,28 +35,11 @@ from app.schemas.catalog import (
 
 router = APIRouter(prefix="/api/catalog", tags=["catalog"])
 
-# The refusal a vulnerability filter meets when nothing answers (#529), in
-# `app.api.evidence.NO_LEDGER`'s shape. An empty list under `vuln=findings` reads as
-# *nothing found* — §4a's failure written in a query string — so it is refused, and both
-# causes are named because the response cannot tell them apart and neither can we.
-NO_ANSWER = (
-    "Nothing is answering for this organization, so a vulnerability filter has no rows to be right about. Either no "
-    "corpus epoch is loaded in this container, or data sharing is off for this organization — a corpus answers only for "
-    "an organization that shares (docs/vulnerabilities.md §8). Drop the filter to list the catalog unfiltered."
-)
-
 
 def _counted(band: str):
-    """One count off the stored answer as an integer, or NULL where the row will not parse.
-
-    The guard is load-bearing. `vuln_answer._unreadable` exists because a stored answer CAN
-    be something other than the shape the library writes — a hand-edited row, a restored
-    backup — and the ruled behaviour is that it is named in the log and read as
-    `unknown_app`, never raised. A bare `::int` over the whole catalog would turn that one
-    row into a failed request for everybody, with a cast error and nobody's words.
-    """
-    value = AppCatalogEntry.vuln_counts[band]
-    return case((func.jsonb_typeof(value) == "number", cast(value.astext, Integer)))
+    """One count off the catalog row's stored answer — `vuln_answer.counted`, scoped to this
+    table. The guard on the cast, and why it is load-bearing, live there (#529, #535)."""
+    return counted(AppCatalogEntry.vuln_counts, band)
 
 
 def _device_counts(app_hash: str | None = None):

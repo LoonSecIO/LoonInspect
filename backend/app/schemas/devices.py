@@ -152,13 +152,46 @@ class DeviceDetailOut(DeviceOut):
     corpus_as_of: date | None = None
 
 
+class DeviceVulnAppsOut(BaseModel):
+    """One Mac's apps counted three ways (#535) — **apps, never findings summed across
+    them**: a Mac carrying two vulnerable builds is 2, and each build's own `counts.total`
+    stays in its own cell on the Mac's page. The three travel together and there is no shape
+    in which they do not: `with_findings` alone is what a Mac whose apps are all outside the
+    corpus would read as a clean bill, and `outside_corpus` beside it is what stops that
+    (§4a). `on_kev` is a subset of the first, counted the same way."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    with_findings: int
+    on_kev: int
+    outside_corpus: int
+
+
+class DeviceListItemOut(DeviceOut):
+    """A device as the LIST ships it.
+
+    `vuln_apps` is here rather than on `DeviceOut` so the detail response cannot carry it as
+    a null: the Mac's own page computes the same three numbers from the app rows it already
+    holds (§4g), and a null there would be a third thing for a reader to interpret. On the
+    list it is null in exactly two cases, both rendered as words and never as numbers:
+    nothing is answering for this organization, or this Mac has no apps recorded at all.
+    """
+
+    vuln_apps: DeviceVulnAppsOut | None = None
+
+
 class DeviceListResponse(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
-    items: list[DeviceOut]
+    items: list[DeviceListItemOut]
     total: int
     page: int
     page_size: int
+    # The corpus generation the counts above came from, on the response that carries them —
+    # the same rule `DeviceDetailOut` and `CatalogListResponse` follow, so a column can never
+    # be dated by a corpus the server answered from a different one. `null` is *nothing is
+    # answering*, and the list renders no column at all rather than a zero per row (#535).
+    corpus_as_of: date | None = None
 
 
 # --- the observation read (#368) -----------------------------------------------------------
