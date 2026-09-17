@@ -105,6 +105,16 @@ async def alone(fan_out_tenant):
     outlive this test. That is what used to make the suite single-use against a
     database (#514). Scoped to a tenant of its own, the only destinations in the sweep
     are the two this test creates and this fixture removes.
+
+    The three deletes below carry no `WHERE`, and what bounds them to this tenant is
+    the RLS policy, not the statement. That holds only because these tables are
+    `FORCE ROW LEVEL SECURITY` and not merely `ENABLE`: `looninspect_app` owns them
+    and runs the suite, and an owner is exempt from its own policies without FORCE.
+    Checked against the live schema rather than assumed — `relrowsecurity` and
+    `relforcerowsecurity` are both true for `destinations`, `event_outbox` and
+    `outbox_deliveries` — and kept that way by
+    tests/test_identity_resolution_db.py::test_the_index_tables_carry_no_row_level_security_and_nothing_else_does_not,
+    which fails the moment a table with a `tenant_id` has one flag and not the other.
     """
     from sqlalchemy import delete
 
