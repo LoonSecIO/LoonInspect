@@ -298,18 +298,24 @@ still writing a row at a time (`acf4b99`), the right one after the change (`7a95
 
 | what one pass costs at 40,000 | per row | in bulk |
 | --- | --- | --- |
-| duration, inside one transaction | 12.9 s | **3.9 s** |
-| `INSERT INTO event_outbox` statements | 40,000 | **40** |
+| duration, inside one transaction | **~12 s** (11.6–12.9, six runs) | **~4 s** (3.6–4.3, seven runs) |
+| `INSERT INTO event_outbox` statements | 40,000 — one per Mac | **40** — one per 1,000-Mac batch |
 | rows written | 40,000 | 40,000 |
 | `payload` bytes, summed `pg_column_size` | 20.3 MB (508 a row) | 20.3 MB (508 a row) |
 | `pg_locks` rows held at the peak | 32 | 32 |
 
+The durations are a shared laptop's and the ratio is the durable part of them: both columns
+threw the odd run at three to nine times their own median (36.9 s per row, 28.3 s in bulk)
+while other containers worked, and the statement counts never moved a digit.
+
 **This is fine, and four seconds is the number it is fine to.** The bytes were never the
-question and the locks are not either: 30 of those 32 are relation locks on the three tables
-and their indexes, one is the transaction id and one the virtual xid. Row locks live on the
-tuples, not in `pg_locks`, so 40,000 rows hold exactly what one row holds, and nothing waits
-on this pass unless it wants DDL on those tables. What cost was round trips — one per Mac,
-now one per 1,000-Mac batch (#524, ruled 2026-09-17).
+question and the locks are not either: 30 of those 32 are relation locks — the four tables
+the pass touches (`event_outbox`, `subject_departures`, `devices`, and `tenants` for the
+tenant foreign key), their indexes, and the outbox's id sequence — and the other two are the
+transaction id and the virtual xid. Row locks live on the tuples, not in `pg_locks`, so
+40,000 rows hold exactly what one row holds, and nothing waits on this pass unless it wants
+DDL on those tables. What cost was round trips — one per Mac, now one per 1,000-Mac batch
+(#524, ruled 2026-09-17).
 
 **Where it bites.** Nowhere a census can reach on its own: the breaker refuses to depart
 anybody when a clean census names fewer than half the present population, so one day's
