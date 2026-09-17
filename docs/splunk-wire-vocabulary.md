@@ -206,15 +206,13 @@ exactly as it does on `device.change`, and a departure carries **no `eventID`**:
 *pull* of that subject, and a departure has none.
 
 **A Mac is the one subject with a tail** ([#495](https://github.com/LoonSecIO/LoonInspect/issues/495),
-2026-09-16). `subjectKind: computer` emits `state: departed` with `noticeDay` 1..7 — **one per UTC day**,
-driven by the device census and by no timer, so a day with no clean census sends nothing, is never
-backfilled, and `noticeDay` may jump. The tail ends with a **guaranteed** terminal `state: removed` once the
-Mac has left the device population, on the wall clock **Devices** drops it on: it fires even when those seven
-days passed without one clean census, and never for a Mac the emitting census itself named. `deviceCount` is
-absent, the envelope's `host` **is** the hostname, and `deviceMeta` is the **whole block as the `Device` row
-last knew it**, degrading to the object block when that row is gone. A Mac's `subject.returned` is the
-family's one asymmetry: it carries `deviceMeta.eventID`, a pull that really happened, and after a
-re-enrolment `matchedBy: serialNumber` with `priorJamfProID`.
+2026-09-16). `subjectKind: computer` emits `state: departed`, `noticeDay` 1..7, **one per UTC day** — driven
+by the device census, never a timer: a day without a clean one sends nothing, is never backfilled, and
+`noticeDay` jumps. A **guaranteed** terminal `state: removed` closes the tail on the wall clock **Devices**
+drops it on, clean census or not, never for a Mac the emitting census named. `deviceCount` is absent, `host`
+**is** the hostname, and `deviceMeta` is the **whole block the `Device` row last knew**, degrading to the
+object block when that row is gone. A Mac's `subject.returned` is the family's one asymmetry:
+`deviceMeta.eventID`, a real pull, and after a re-enrolment `matchedBy: serialNumber` with `priorJamfProID`.
 
 ## 3. Why some wrapper keys are short and some are not
 
