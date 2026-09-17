@@ -589,7 +589,7 @@ _MATCHED_BY_ID_ONLY = "matched by Jamf id only: this sweep's sections carry no h
 def _latch_close_clause(latches_closed: int) -> str:
     """The sentence a closing latch goes quiet with — on EVERY line that closes one (#512).
 
-    A latch closing is a row an operator was watching stopping, and must never be something they
+    A latch closing is a row an operator was watching going quiet, and must never be something they
     infer from a number that moved. The close rides the terminal rather than the census, so a
     connection swept only by a selector reads it on the not-a-census line or nowhere. Path 16, step 5.
     """
