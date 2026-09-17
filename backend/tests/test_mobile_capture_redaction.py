@@ -5,6 +5,11 @@ public repository — there is no second chance to notice that a key held an ide
 identifier below is a *different* shape on purpose: an e-mail under an unread key would pass on the
 sweep alone and prove nothing about the key rule meant to catch it. Two keys no rule names are here
 because a first capture of an unread endpoint is exactly where one turns up.
+
+Two of the shapes are not identifiers at all. A password and an activation-lock bypass code match no
+sweep — a secret looks like nothing — so only a key rule can catch one, and `airPlayPassword` reached a
+written fixture in full before this test existed. The rest is the `held` list: what the scrub wrote out
+as the tenant wrote it, which is the only list "read it before committing it" can be read against.
 """
 
 from __future__ import annotations
@@ -19,11 +24,14 @@ SAMPLE = json.loads("""
   "id": "12", "name": "Kyle's iPad", "udid": "8A0F1C2D-1111-4222-8333-444455556666",
   "serialNumber": "DMPX1234ABCD", "wifiMacAddress": "AC:DE:48:00:11:22", "ipAddress": "198.51.100.7",
   "supervised": true, "enforceName": false, "batteryLevel": 88, "osVersion": "26.1.2",
+  "airPlayPassword": "Loon1nspect!2026",
   "location": {"username": "kpazandak", "realName": "Kyle Pazandak", "emailAddress": "kyle@loonsec.io",
                "phoneNumber": "+1-612-555-0123", "room": "Studio", "department": null,
                "latitude": 44.9778, "longitude": -93.265},
   "network": {"imei": "351234567890123", "iccid": "89012601234567890123", "homeCarrierNetwork": "Verizon"},
   "security": {"lostModeEnabled": true, "lostModePhone": "612-555-0100",
+               "activationLockBypassCode": "3CJH-XNMA-9K2P-LL41-QQ1Z-TT9W",
+               "passcodePresent": true, "passcodeLockGracePeriodEnforced": 300,
                "lostModeMessage": "Call Kyle Pazandak on 612-555-0100", "lostModeFootnote": "Property of Kyle Pazandak",
                "lostModeLocation": {"lostModeLocationLatitude": 44.9778, "lostModeLocationLongitude": -93.265}},
   "applications": [{"name": "Wireshark.app", "shortVersion": "2.6.6", "bundleId": "org.wireshark.Wireshark"}],
@@ -37,8 +45,18 @@ SAMPLE = json.loads("""
 IDENTIFIERS = (
     "Kyle's iPad|8A0F1C2D-1111-4222-8333-444455556666|DMPX1234ABCD|AC:DE:48:00:11:22|198.51.100.7|kpazandak|"
     "Kyle Pazandak|kyle@loonsec.io|612-555-0123|612-555-0100|555-0177|Studio|351234567890123|"
-    "89012601234567890123|44.9778|93.265"
+    "89012601234567890123|44.9778|93.265|Loon1nspect!2026|3CJH-XNMA-9K2P-LL41-QQ1Z-TT9W"
 )
+# The smart-group read is one of the three the capture makes, and the likeliest to be a Classic body:
+# its criteria hold whatever the tenant searched on, under a key that says only `value`.
+GROUP = json.loads("""
+{"mobile_device_group": {"id": 12, "name": "Kyle's iPads", "is_smart": true,
+  "criteria": [{"criterion": {"name": "Serial Number", "priority": 0, "search_type": "is",
+                              "value": "DMPX1234ABCD"}},
+               {"criterion": {"name": "Username", "priority": 1, "search_type": "is", "value": "kpazandak"}}],
+  "mobile_devices": [{"id": 3, "name": "Kyle's iPad", "serial_number": "DMPX1234ABCD",
+                      "udid": "8A0F1C2D-1111-4222-8333-444455556666", "username": "kpazandak"}]}}
+""")
 
 
 def test_no_identifier_survives() -> None:
@@ -61,6 +79,45 @@ def test_the_shapes_the_contract_reads_survive() -> None:
     # a coordinate is replaced in its own type, and the flag beside it is a shape, not an identity
     assert redacted["location"]["latitude"] == 0.0 and redacted["security"]["lostModeEnabled"] is True
     assert scrub.counts["uuid"] == 1  # the same UDID twice is one replacement
+
+
+def test_no_secret_reaches_the_fixture() -> None:
+    """A secret matches no sweep, so the key rule is the whole defence — and a flag beside it is a shape."""
+    redacted, _ = redact(SAMPLE)
+    assert redacted["airPlayPassword"] == "redacted-secret-1"
+    assert redacted["security"]["activationLockBypassCode"] == "redacted-secret-2"
+    assert redacted["security"]["passcodePresent"] is True
+    assert redacted["security"]["passcodeLockGracePeriodEnforced"] == 300
+
+
+def test_every_key_no_rule_names_is_held_for_a_human_to_read() -> None:
+    """`held` is the list the fixture is read against: every string written as the tenant wrote it,
+    under a key no rule named. A version, an enum and a Jamf id are not on it — nobody re-reads those."""
+    _, scrub = redact(SAMPLE)
+    assert scrub.held == {
+        "applications.name",
+        "applications.bundleId",
+        "extensionAttributes.name",
+        "network.homeCarrierNetwork",
+        "enrollmentNote",
+        "purchasingNote",
+    }
+
+
+def test_a_group_body_is_scrubbed_and_still_joins_to_the_device() -> None:
+    """One scrub for the whole trip, as the capture runs it: what the group searched on has to survive
+    as a join to the device record, or the fixture cannot show what a smart group actually selects."""
+    device, scrub = redact(SAMPLE)
+    group, _ = redact(GROUP, scrub)
+    written = json.dumps(group)
+    for identifier in ("Kyle's iPad", "Kyle's iPads", "DMPX1234ABCD", "kpazandak"):
+        assert identifier not in written, f"{identifier} reached the fixture"
+    inner = group["mobile_device_group"]
+    assert [criterion["criterion"]["name"] for criterion in inner["criteria"]] == ["Serial Number", "Username"]
+    assert inner["criteria"][0]["criterion"]["value"] == device["serialNumber"]
+    assert inner["criteria"][1]["criterion"]["value"] == device["location"]["username"]
+    assert inner["mobile_devices"][0]["udid"] == device["udid"]
+    assert inner["mobile_devices"][0]["name"] == device["name"]  # the same iPad, the same placeholder
 
 
 def test_joins_survive_and_unknown_keys_are_swept() -> None:
