@@ -258,9 +258,17 @@ export const de: Translations = {
     errorTesting: "Test konnte nicht ausgeführt werden. Das Ziel war gar nicht erreichbar.",
     pendingDeliveries: (count: number) => `${count} in Warteschlange`,
     failedDeliveries: (count: number) => `${count} aufgegeben`,
+    deadLetterExpiry: (when: string) => `ältestes verfällt am ${when}`,
     redrive: (count: number) => `${count} erneut senden`,
-    redriveConfirm: (count: number) =>
-      `${count} fehlgeschlagene ${count === 1 ? "Zustellung" : "Zustellungen"} erneut senden? Ereignisse, die das Ziel bereits erhalten hat, kommen erneut an.`,
+    redriveConfirm: (count: number, name: string, expires: string | null) => {
+      const letters = count === 1 ? "1 unzustellbare Zustellung" : `${count} unzustellbare Zustellungen`;
+      const deadline = !expires
+        ? ""
+        : count === 1
+          ? ` Sie verfällt am ${expires} – danach ist sie durch erneutes Senden nicht mehr erreichbar.`
+          : ` Die älteste verfällt am ${expires} – danach sind sie durch erneutes Senden nicht mehr erreichbar.`;
+      return `${letters} an ${name} erneut senden.${deadline} Ereignisse, die das Ziel bereits erhalten hat, kommen erneut an.`;
+    },
     redriveQueued: (count: number) => `${count} erneut zur Zustellung eingereiht`,
     errorRedriving: "Das erneute Senden konnte nicht eingereiht werden.",
     heldEvents: (count: number, expires: string) =>

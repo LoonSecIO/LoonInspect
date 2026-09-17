@@ -25,6 +25,13 @@ export interface Destination {
   /** Deliveries still queued or mid-retry, and deliveries that exhausted their retries. */
   pendingCount: number;
   failedCount: number;
+  /** `failedCount` is a lifetime count that a redrive zeroes; this is the same rows inside
+   *  the trailing 24 hours — the window the nightly `outbox.failed_24h` counts fleet-wide.
+   *  The pair is "has it ever failed" beside "is it failing now". */
+  failed24h: number;
+  /** When the oldest dead letter here stops being redrivable: its event is purged with it,
+   *  and the gap it left in the trail is permanent after that. Null when there are none. */
+  deadLetterOldestExpiresAt: string | null;
   lastSuccessAt: string | null;
   lastFailureAt: string | null;
   createdAt: string;

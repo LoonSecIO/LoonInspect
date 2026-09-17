@@ -127,3 +127,13 @@ def test_the_outbox_depth_answers_in_the_three_ruled_states() -> None:
         assert set(nested["properties"]) == keys, state
         if nullable is not None:
             assert {"type": "null"} in nested["properties"][nullable]["anyOf"], state
+
+
+def test_the_destination_row_names_the_deadline_and_the_window() -> None:
+    """#469, on the row rather than in the depth read above. `failed24h` is spelled out
+    because the camel-case generator would publish this one as `failed24H`, and the deadline
+    is nullable because a destination with no dead letters has no moment to name —
+    absent-not-zero, in the shape a date takes."""
+    properties = _spec()["components"]["schemas"]["DestinationOut"]["properties"]
+    assert {"failed24h", "deadLetterOldestExpiresAt"} <= set(properties), sorted(properties)
+    assert {"type": "null"} in properties["deadLetterOldestExpiresAt"]["anyOf"]

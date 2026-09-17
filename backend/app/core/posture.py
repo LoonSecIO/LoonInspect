@@ -357,6 +357,23 @@ def _outbox_pending_where():
     return or_(EventOutbox.fanned_out.is_(False), pending_delivery)
 
 
+def outbox_failed_window_where(until: datetime, hours: int = _WINDOW_HOURS):
+    """Delivery rows that entered `failed` — gave up after ten attempts, a dead letter —
+    inside the trailing window, timed by the last attempt.
+
+    `outbox.failed_24h`'s own predicate, named rather than inlined because the destination
+    row's `failed24h` (#469) is this same window scoped to one destination. Two spellings of
+    one window drift apart the first time either is touched, and the tape and the page then
+    disagree about what "failing now" means.
+    """
+    entered_failed_at = func.coalesce(OutboxDelivery.last_attempted_at, OutboxDelivery.created_at)
+    return and_(
+        OutboxDelivery.status == "failed",
+        entered_failed_at > until - timedelta(hours=hours),
+        entered_failed_at <= until,
+    )
+
+
 async def _count(db: AsyncSession, stmt) -> int:
     return int((await db.execute(stmt)).scalar_one())
 
@@ -708,16 +725,8 @@ async def _compute(db: AsyncSession, run_id: uuid.UUID, captured_at: datetime) -
     # outbox.* — pending is a nightly point-sample of a queue that drains continuously;
     # the caveat is part of the definition, not a footnote.
     values["outbox.pending"] = await _count(db, select(func.count()).select_from(EventOutbox).where(_outbox_pending_where()))
-    entered_failed_at = func.coalesce(OutboxDelivery.last_attempted_at, OutboxDelivery.created_at)
     values["outbox.failed_24h"] = await _count(
-        db,
-        select(func.count())
-        .select_from(OutboxDelivery)
-        .where(
-            OutboxDelivery.status == "failed",
-            entered_failed_at > window_start,
-            entered_failed_at <= captured_at,
-        ),
+        db, select(func.count()).select_from(OutboxDelivery).where(outbox_failed_window_where(captured_at))
     )
     oldest_pending = (
         await db.execute(select(func.min(EventOutbox.created_at)).where(_outbox_pending_where()))
