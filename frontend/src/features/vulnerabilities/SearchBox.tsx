@@ -170,6 +170,11 @@ export function SearchBox({ term, onTerm, onMode, onApply, shown }: SearchBoxPro
               onChange={(event) => {
                 setOn(event.target.checked);
                 writeLever(event.target.checked);
+                // Flipping it starts over: an answer describes a question this box is no
+                // longer asking, and off, what is in the box is about to be the search.
+                setResult(null);
+                setRefusal(null);
+                setApplied(false);
               }}
             />
             {copy.aiLever}
