@@ -1357,8 +1357,9 @@ history stay, and **Show departed** in the filter bar (`includeDeparted=true`) r
 5. **An alert closed itself, or the nightly numbers moved, and nobody touched anything.** A
    Mac leaving takes its open latches with it — the sweep is what closes a latch, and a Mac
    that left is never swept again, so one left open would read as *true of the fleet* for ever.
-   The census line says so: *…N open alert latches closed on Macs that left the fleet; nothing
-   was deleted*. **Nothing was** — `GET /api/alerts?open=false` lists the row with
+   The run says so on whichever line that sweep wrote — *device census: …*, or *device census not
+   taken…* when it was not a clean one: *…N open alert latches closed on Macs that left the fleet;
+   nothing was deleted*. **Nothing was** — `GET /api/alerts?open=false` lists the row with
    `closedReason: "device_departed"`, which is what tells it from an ordinary `app_gone` close,
    and the Mac's apps, observations and changes are all still there (closed rows then age out
    at 30 days, like run history). No `closedReason` at all means the row closed before
@@ -1368,8 +1369,11 @@ history stay, and **Show departed** in the filter bar (`includeDeparted=true`) r
    carries ([posture-snapshot.md](posture-snapshot.md), *Departed Macs*) — so a Mac's numbers
    leave on **day seven of its tail**, not the day you deleted it in Jamf, `devices.departed_24h`
    says how many left that night, and captures written before 2026-09-16 counted deleted Macs
-   and cannot be corrected. An open latch still sitting on a Mac that left *is* a fault: the
-   census has not run since it crossed day seven (step 1), and if a clean one has, state **T**.
+   and cannot be corrected. The close rides step 4's terminal: **the same sweep that sends
+   `state: removed` closes the latch**, clean census or scoped, so the two surfaces move together
+   and a connection swept only by a selector never ships a closed tail to a SIEM while the app
+   still lists the alert. An open latch still sitting on a Mac that left *is* a fault: no device
+   sweep has run since it crossed day seven (step 1), and if one has, state **T**.
 6. **You want it gone for good.** Nothing removes a Mac's history today — not this, not
    deleting the connection. Honouring a Jamf deletion as an erasure is a stated, deliberate
    deferral (v5); [`jamf-observations.md`](jamf-observations.md) §8 says what is held.
@@ -1377,7 +1381,7 @@ history stay, and **Show departed** in the filter bar (`includeDeparted=true`) r
 **T.** A finished, unselected, failure-free device sweep whose log has no *device census* line;
 a Mac Jamf returns on the sweep's own endpoint that still departs or stays departed; a census that
 departs a Mac and enqueues nothing for it (`eventsEnqueued: 0` beside `departed: 1`); or an open
-alert latch still on a Mac that left the fleet after a clean census has run since. Report the
+alert latch still on a Mac that left the fleet after any device sweep has run since. Report the
 run's `jobID` and its log, the census line if there is one, the Mac's Jamf id, the collection's
 **Selector** field, and `docker compose logs app --since 30m`.
 
