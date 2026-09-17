@@ -1,6 +1,7 @@
 import {
   AppWindow,
   Database,
+  FileCheck,
   Flag,
   FlaskConical,
   Gauge,
@@ -49,8 +50,8 @@ export interface NavItem {
    *  see `visibleNavigation`. */
   flag?: string;
   /** Listed only while the session found this data answering (#529). A per-item data gate,
-   *  never a section's: a section follows its children, and the next child under Posture
-   *  (#536's evidence report) is not governed by the corpus. */
+   *  never a section's: a section follows its children, and Compliance below — #536's evidence
+   *  report, read from this tenant's own ledger — is not governed by the corpus. */
   requires?: "corpus";
   children?: NavItem[];
 }
@@ -89,6 +90,15 @@ export const navigationItems: NavItem[] = [
         // knows to flip is a step 3.
         requires: "corpus",
         flag: "vulnerabilities"
+      },
+      // No `requires` and no flag (#536): the report reads this tenant's own observation ledger, so there is
+      // no corpus to wait on. `audit:read` is the endpoint's own permission and the route's gate (#301).
+      {
+        labelKey: "compliance",
+        icon: FileCheck,
+        to: "/posture/compliance",
+        end: false,
+        permission: PERMISSIONS.AUDIT_READ
       }
     ]
   },

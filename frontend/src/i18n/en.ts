@@ -220,6 +220,7 @@ export const en = {
     // #529. `Posture`, not `Risks`: risk is a judgement this product does not make.
     posture: "Posture",
     vulnerabilities: "Vulnerabilities",
+    compliance: "Compliance",
     settings: "Settings",
     connections: "Connections",
     featureFlags: "Feature Flags",
@@ -1026,6 +1027,62 @@ export const en = {
       shown === total ? `${total} row${total === 1 ? "" : "s"}` : `${shown} of ${total} rows`,
     tableVuln: "Vulnerabilities"
   },
+  // #536 — the evidence report on screen. NO FRAMEWORK IS NAMED IN THIS BLOCK, not as an example and not
+  // in a hint: `compliance.test.ts` greps it for the four words `test_evidence_report_db.py` refuses on
+  // the object. Everything else the page prints is the object's own words, never retyped here.
+  compliance: {
+    title: "Compliance evidence",
+    connection: "Connection",
+    start: "Window opens",
+    asOf: "Dated",
+    windowHint:
+      "Both dates blank covers the ninety days before this connection's last collection. Neither is clamped to the data: a window reaching past what was observed is answered with not-observed days rather than quietly trimmed.",
+    show: "Show report",
+    download: "Download",
+    asking: "Reading the observation ledger…",
+    noConnections:
+      "No connection to report on: the connections read back, and this tenant has none. One is added at Settings › Connections, and the report reads the observation ledger a device sweep on it writes.",
+    // The list needs connection:read and this page is gated audit:read, so a hand-built role holds one
+    // without the other and is refused here. Refused and broken get their own sentence because they have
+    // their own next check (docs/troubleshooting.md §17 step 9).
+    connectionsDenied:
+      "The connections could not be read: this account holds the audit:read that opened this page but not the connection:read the picker's list needs. The Auditor role holds both — check the role at Settings › Accounts.",
+    connectionsFailed:
+      "The connections could not be read, so this picker is empty for a reason that is not an empty tenant. Try again, and report it with the build from Settings › Support if it holds.",
+    failed: "The report could not be read. Try again, and report it with the build from Settings › Support if it holds.",
+    headConnection: "Connection",
+    headSource: "Read from",
+    headWindow: "Window",
+    headCatalogue: "Rule catalogue",
+    headContract: "Contract version",
+    headClock: "Clock",
+    headNotVisible: "Not visible from here",
+    catalogueAt: (version: number, rules: number) => `version ${version}, ${rules} rule${rules === 1 ? "" : "s"}`,
+    readThisFirst: "Read this first",
+    sumSaid:
+      "Met plus unmet plus not observed is the window, exactly — for one Mac under one rule. Every row below is above that grain, so its last figure is the window times the rows folded into it: once per Mac on a rule's row, and once per Mac per rule on the fleet's. They are Mac-days, not calendar days. Not observed is every stretch this report cannot answer for, and its pieces are named beside it rather than folded in; a rule nothing could be counted for is absent rather than a row of zeros.",
+    sumFault: (sum: number, window: number) =>
+      `The sum does not close: met plus unmet plus not observed is ${sum} seconds against a window of ${window}. That is a fault in the report rather than the rounding of the days below — this check reads the exact seconds. The figures are still drawn; report them with the connection and the window (troubleshooting.md §17 step 9).`,
+    byRule: "By rule",
+    byDevice: "By Mac",
+    // The printed page's own label for this bucket, verbatim: an auditor holding the file beside the
+    // screen reads one row, not two.
+    fleet: "Every rule, every Mac",
+    colRule: "Rule",
+    colMac: "Mac",
+    colMet: "Met",
+    colUnmet: "Unmet",
+    colNotObserved: "Not observed",
+    colOfWhich: "of which",
+    colTotal: "= the window × rows",
+    underOne: "under one reporting interval",
+    days: (days: number) => `${days} day${days === 1 ? "" : "s"}`,
+    parts: {
+      notReported: "not reported",
+      noObservation: "no observation",
+      departed: "departed"
+    }
+  },
   // #251 — the corpus's edge, in words. The three state labels are the wire's three
   // values (docs/vulnerabilities.md §4) in English, so a person reading a Splunk event
   // and a person reading this page are looking at the same fact. What must never happen
@@ -1363,10 +1420,9 @@ export const en = {
     reEmitConfirm: "Re-emit",
     reEmitError: "Could not start the re-emit.",
     // The evidence report (#473). Where an auditor already is: the connection is what the report is *of*,
-    // and this row is the only place that names one. The download is the whole feature — one file, opened
-    // in a browser, printed and filed — so there is no page to route to.
+    // and this row is the only place that names one. A link since #536 rather than a download — the report
+    // is a page now, Posture › Compliance, and Download is on it.
     evidenceReport: "Evidence report",
-    evidenceReportError: "Could not build the evidence report. Open the connection's run panel to see whether a device sweep has finished.",
     runProcessing: "Processing…",
     runJoined: "Already syncing — showing the run in progress.",
     runMoreDetails: "More details",
