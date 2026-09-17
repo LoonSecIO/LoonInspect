@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { ApiError, apiRequest } from "@/config/api";
 import { useAuthStore } from "@/features/auth/store";
 import { listCatalog } from "@/features/catalog/api";
@@ -7,6 +7,7 @@ import { LatestCell, PatchAnswerCell, Subject } from "@/features/catalog/PatchAn
 import type { CatalogBand, CatalogEntry, CatalogListResponse, CatalogVulnFilter } from "@/features/catalog/types";
 import { AssessmentCell, CorpusBanner } from "@/features/vulnerabilities/AppAssessment";
 import { closesCell, describeUpdate } from "@/features/vulnerabilities/appUpdate";
+import { findingIdIn, findingRoute } from "@/features/vulnerabilities/findingId";
 import type { AppChip, NumbersRead, PostureRow } from "@/features/vulnerabilities/pageBands";
 import { VULN_KEYS, agedList, emptySays, exploreByApp, payoffList, planNumbers, readNumbers } from "@/features/vulnerabilities/pageBands";
 import { pageView, type Load } from "@/features/vulnerabilities/pageView";
@@ -131,6 +132,7 @@ export function VulnerabilitiesPage() {
   // A plain text box over the catalog's own `q` (name, bundle id, version). An id-shaped
   // query is routed to the by-id page by #533 and the AI lever is #534 — said here rather
   // than drawn as a control with nothing behind it.
+  const navigate = useNavigate();
   const [term, setTerm] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [order, setOrder] = useState<"exposure" | "age">("exposure");
@@ -173,7 +175,8 @@ export function VulnerabilitiesPage() {
   useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(() => {
-      const q = term.trim() || undefined;
+      // An id was never a filter: as `q` it answers *no matches* for an id the fleet carries.
+      const q = findingIdIn(term) ? undefined : term.trim() || undefined;
       listCatalog({ vuln, band: band ?? undefined, jamf: jamf ?? undefined, order: byPayoff ? "payoff" : byAge ? "age" : "exposure", q, page: expanded ? page : 1, pageSize: expanded ? PAGE : TOP })
         .then((response) => {
           if (cancelled) return;
@@ -265,7 +268,13 @@ export function VulnerabilitiesPage() {
               setTerm(event.target.value);
               setPage(1);
             }}
+            // An id is a lookup, not a filter (#533) — on ENTER, the reader saying the id is
+            // finished; `findingRoute` holds why a keystroke must not do it.
+            onKeyDown={(event) => { const to = findingRoute(event.key, term); if (to) navigate(to); }}
           />
+          {/* Said where the typing is, because the lists below have gone back to unfiltered: no
+              build's name, bundle id or version contains a CVE id. */}
+          {findingIdIn(term) !== null && <p className="text-sm text-muted-foreground">{copy.searchIdHint}</p>}
 
           {/* Heading and chips stand or fall together: no bordered empty row where a band was. */}
           {chips.length > 0 && <><h2 className="text-lg font-medium">{copy.exploreByApp}</h2>

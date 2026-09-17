@@ -1164,7 +1164,19 @@ export const en = {
     numAppsUnknown: "Builds outside the corpus",
     numDevicesAffected: "Macs carrying one",
     numbersAbsence: "A key with no row that night did not apply and is never zero: these four are written only once a corpus has judged this organization, so a dash says the capture had nothing to say — not that the answer was none.",
-    numbersFailed: "The nightly capture could not be read, so these four numbers are not shown."
+    numbersFailed: "The nightly capture could not be read, so these four numbers are not shown.",
+    // #533 — one id, and the builds whose answer names it. Nothing per id: the container holds an
+    // ordered list and no band, date or KEV mark against one.
+    searchIdHint: "That is a finding id. Press Enter to look it up — the lists below search names, bundle ids and versions, which no id is.",
+    lookupIntro: "Builds on this fleet whose answer names this id — one row per build, not one per Mac.",
+    lookupLoading: "Looking this id up…",
+    lookupFailed: "Could not look this id up.",
+    lookupNvd: "Open this CVE at NVD",
+    lookupNvdNotice: "This product uses the NVD API but is not endorsed or certified by the NVD. The link opens in your browser; this container never calls NVD.",
+    lookupCapped: (builds: number) =>
+      builds === 1 ? "1 build carries more findings than its list names; an id past the cap is counted on that build and not found here."
+        : `${builds} builds carry more findings than their lists name; an id past the cap is counted on those builds and not found here.`,
+    lookupNothing: "No build's answer names this id here. That is not a statement that your fleet is clear of it: a capped list names fewer ids than its build carries, and a build outside the corpus was never assessed at all."
   },
   jamfPatch: {
     tabLabel: "Jamf Patch",
