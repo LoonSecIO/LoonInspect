@@ -20,6 +20,7 @@ import json
 import os
 import re
 import sys
+import textwrap
 from collections import Counter
 from datetime import UTC, datetime
 from typing import Any
@@ -51,9 +52,15 @@ READS = tuple(
 #
 # What the computer fixture scrubbed — names, usernames, serials, UDIDs, MACs, addresses, certificate
 # identities — plus what only mobile carries: the cellular identifiers, the Managed Apple ID, the
-# coordinates, and Lost Mode's phone, message and footnote. It over-redacts where it cannot judge (a
-# public CA's subject name, every EA value) and it sweeps: an identifier under a key this table never
-# heard of is replaced anyway, and the key printed.
+# coordinates, Lost Mode's phone, message and footnote, and the secrets a device record keeps (AirPlay's
+# password, the activation-lock bypass code — a secret is not an identifier, so no sweep can see one).
+# It over-redacts where it cannot judge (a public CA's subject name, every EA value, every smart-group
+# criterion value, every `name` a tenant rather than a vendor chose) and it sweeps: an identifier under
+# a key this table never heard of is replaced anyway.
+#
+# A table holds what somebody thought of, which is why the scrub also *holds*: every other string written
+# under a key no rule names is listed under the file it landed in. "Read every written file before
+# committing it" is only as good as the list it is read against, and that list is the last defence.
 
 _SWEEPS = (
     (re.compile(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}"), "uuid"),
@@ -62,27 +69,53 @@ _SWEEPS = (
     # Narrow enough to miss a timestamp, a version and an IMEI: a leading `+`, or 3-3-4 separated.
     (re.compile(r"\+\d[\d\s().-]{6,}\d|(?<![\d.-])(?:\(\d{3}\)\s?|\d{3}[\s.-])\d{3}[\s.-]\d{4}(?![\d-])"), "phone"),
 )
+# A written string nobody needs to read again: a small number, a version, a date, an enum token, a flag.
+# Bounded on purpose: a long run of digits is an ICCID or a phone number and a long mixed run of capitals
+# and digits is a serial — neither is trivial, and the held list is the only thing that will say so.
+# (An all-caps username such as KPAZANDAK is still indistinguishable from an enum token and stays off it.)
+_TRIVIAL = re.compile(r"\s*|-?\d[\d.]{0,7}|\d[\d.:+TZ -]*[:T-][\d.:+TZ -]*|[A-Z][A-Z_]*|[A-Z][A-Z0-9_]{0,7}|true|false|null")
 _TOKEN_RULES = (  # a substring of the key, lowercased and stripped of punctuation, most specific first
     "udid:uuid managementid:uuid serialnumber:serial macaddress:mac ipaddress:ipv4 ipv6:ipv6 ipv4:ipv4 "
     "email:email appleid:email username:user phonenumber:phone fingerprint:hex assettag:label "
-    "latitude:geo longitude:geo lostmodephone:phone lostmodemessage:label lostmodefootnote:label"
+    "latitude:geo longitude:geo lostmodephone:phone lostmodemessage:label lostmodefootnote:label "
+    # Jamf spells the PreStage a device enrolled through `enrollmentMethodPrestage.profileName` and
+    # `enrollmentMethod.objectName`, never `name`: a tenant-chosen name that a bare `name` rule never reaches.
+    "displayname:label profilename:label objectname:label "
+    # The secrets: AirPlay's password reached a fixture in full once, under a key the table did not name.
+    "password:secret passphrase:secret passcode:secret bypasscode:secret unlockcode:secret "
+    "recoverykey:secret privatekey:secret secret:secret token:secret credential:secret"
 )
 _KEY_RULES = (  # whole-key matches, for keys too short or too common to match on a substring
     "imei:digits meid:digits iccid:digits eid:digits phone:phone realname:person fullname:person "
-    "purchasingaccount:person purchasingcontact:person devicename:label displayname:label room:label "
+    "purchasingaccount:person purchasingcontact:person devicename:label room:label pin:secret "
     "building:label department:label position:label subjectname:label commonname:label issuer:label "
+    # An e-book's author and title are a person and a document the tenant loaded; a cellular line's `label`
+    # is what the device's own user typed on the iPhone ("Kyle Personal"), not a carrier's word.
+    "author:person title:label label:label "
     "ponumber:label applecareid:label softwareupdatedeviceid:label"
 )
 _BY_TOKEN = tuple(rule.split(":") for rule in _TOKEN_RULES.split())
 _BY_KEY = dict(rule.split(":") for rule in _KEY_RULES.split())
-# A bare `name` is the device's or an org unit's only under these parents; elsewhere it labels an
-# app, a group, a profile or a partition — shapes the contract reads, not identity.
-_NAME_PARENTS = frozenset({"", "results", "general", "site", "location", "userandlocation", "hardware"})
+# A bare `name` is the tenant's unless its parent says otherwise: an app, an e-book, a carrier and a
+# criterion field are named by a vendor or by Jamf, while a device, a group, a site and a profile are named
+# by whoever runs the tenant. An extension attribute is the one parent here whose `name` the tenant *does*
+# author, and it is kept anyway: that vocabulary is what the fixture exists to show, and it lands on the
+# held list, where the one person who can tell a carrier from a customer reads it before committing.
+# The allowlist this replaces ran the other way round, and "Kyle's iPad" under `mobile_devices[].name` in a
+# Classic group body was written out whole. A prestage name is not reached by any of this — Jamf spells it
+# `profileName` and `objectName`, which is why those are key rules above.
+_NAME_SHAPE_PARENTS = (  # the parents under which a `name` belongs to a vendor or to Jamf, not to the tenant
+    "applications application ebooks ebook extensionattributes criteria criterion servicesubscriptions"
+)
+_NAME_SHAPES = frozenset(_NAME_SHAPE_PARENTS.split())
+# An opaque value: what a smart-group criterion searches on, or what an EA holds, is whatever the tenant
+# put there — a username, a serial, a device name — and the key says so nowhere.
+_OPAQUE_VALUES = frozenset({"extensionattributes", "criteria", "criterion"})
 _PUNCTUATION = re.compile(r"[^a-z0-9]")  # the Classic API spells the same field `serial_number`
 _SHAPE_RULES = (  # kind → the placeholder it mints, keeping the shape a reader expects
     "uuid=A1B2C3D4-0000-4000-8000-{n:012X}|mac=02:00:00:00:00:{n:02X}|ipv4=203.0.113.{n}|ipv6=fe80::{n:x}|"
     "serial=LOONMOBILE{n:02d}|email=loonuser{n}@example.com|user=loonuser{n}|person=Loon User {n}|"
-    "phone=+1-555-01{n:02d}"
+    "phone=+1-555-01{n:02d}|secret=redacted-secret-{n}"
 )
 _SHAPES = dict(rule.split("=") for rule in _SHAPE_RULES.split("|"))
 
@@ -90,11 +123,11 @@ _SHAPES = dict(rule.split("=") for rule in _SHAPE_RULES.split("|"))
 def _kind(path: tuple[str, ...]) -> str | None:
     key = _PUNCTUATION.sub("", path[-1].lower())
     parent = _PUNCTUATION.sub("", path[-2].lower()) if len(path) > 1 else ""
-    # An EA named "Device Owner" holds a username, a person or a number; its key says so nowhere.
-    if parent == "extensionattributes" and key in ("value", "values"):
+    # An EA named "Device Owner" holds a username, a person or a number; a criterion's value likewise.
+    if parent in _OPAQUE_VALUES and key in ("value", "values"):
         return "label"
     if key == "name":
-        return "label" if parent in _NAME_PARENTS else None
+        return None if parent in _NAME_SHAPES else "label"
     if key in _BY_KEY:
         return _BY_KEY[key]
     return next((kind for token, kind in _BY_TOKEN if token in key), None)
@@ -114,20 +147,25 @@ class Scrub:
     device to user to group as the tenant did. Running it over its own output changes nothing."""
 
     def __init__(self) -> None:
-        self.seen: dict[tuple[str, Any], Any] = {}
+        self.seen: dict[Any, Any] = {}  # keyed on the value, not on (kind, value): see mint()
         self.counts: Counter[str] = Counter()
         self.swept: set[str] = set()
+        self.held: set[str] = set()  # written as the tenant wrote it, under a key no rule names
 
     def mint(self, kind: str, original: Any) -> Any:
         # Absent stays absent and a flag is a shape; everything else a rule names is replaced
         # whatever its type — a latitude is a float, and letting floats through was the leak.
         if original is None or original == "" or isinstance(original, bool):
             return original
-        if (kind, original) not in self.seen:
+        if kind == "secret" and not isinstance(original, str):
+            return original  # `passcodePresent` and a grace period in seconds are shapes, not secrets
+        if original not in self.seen:
             self.counts[kind] += 1
             placeholder = _placeholder(kind, self.counts[kind], original)
-            self.seen[(kind, original)] = self.seen[(kind, placeholder)] = placeholder
-        return self.seen[(kind, original)]
+            # One placeholder per value whichever rule mints it first: a serial read as a device field and
+            # again as a smart-group criterion has to land on the same string or the fixture stops joining.
+            self.seen[original] = self.seen[placeholder] = placeholder
+        return self.seen[original]
 
     def walk(self, value: Any, path: tuple[str, ...] = ()) -> Any:
         if isinstance(value, dict):
@@ -139,15 +177,18 @@ class Scrub:
             return self.mint(kind, value)
         if not isinstance(value, str):
             return value
+        where = ".".join(path) or "(root)"
         for pattern, sweep_kind in _SWEEPS:
             if pattern.search(value):
-                self.swept.add(".".join(path) or "(root)")
+                self.swept.add(where)
                 value = pattern.sub(lambda match, k=sweep_kind: str(self.mint(k, match.group(0))), value)
+        if not _TRIVIAL.fullmatch(value):
+            self.held.add(where)  # no rule named the key and no sweep explains what is left: a human reads it
         return value
 
 
 def redact(payload: Any, scrub: Scrub | None = None) -> tuple[Any, Scrub]:
-    """The redacted copy, and the scrub that made it: counts for the summary, swept keys for the finding."""
+    """The redacted copy, and the scrub that made it: counts for the summary, swept and held keys to read."""
     scrub = scrub or Scrub()
     return scrub.walk(payload), scrub
 
@@ -190,15 +231,22 @@ def _answer(http: httpx.Client, base: str, token: str, paths: str, params: dict 
 
 
 _RUN = Scrub()  # one scrub for the whole trip, so the two devices never redact to one UDID
+NOTES: list[str] = []  # what degraded quietly mid-run, repeated at the end where it is still on screen
+_HELD_TOTAL: set[str] = set()
 
 
 def _write(name: str, payload: Any) -> None:
     """Redact, then write: nothing else writes a fixture, so no unscrubbed byte reaches disk."""
+    _RUN.held = set()  # held is per file: the same key in a second file is a second tenant's words
     redacted, _ = redact(payload, _RUN)
     target = os.path.join(FIXTURES, name)
     with open(target, "w") as handle:
         handle.write(json.dumps(redacted, indent=2, ensure_ascii=False) + "\n")
     print(f"  wrote {name} ({os.path.getsize(target)} bytes)")
+    _HELD_TOTAL.update(_RUN.held)
+    if _RUN.held:
+        print(f"    {len(_RUN.held)} keys no rule names; their values are the tenant's own. Read them in {name}:")
+        print(textwrap.fill(", ".join(sorted(_RUN.held)), 118, initial_indent="      ", subsequent_indent="      "))
 
 
 def _flag(value: Any, wanted: str) -> bool | None:
@@ -218,17 +266,18 @@ def _privileges(rows: list[tuple[str, str, int, str]], version: str) -> None:
     """The ledger, merged with its own previous run: a read that was 403 before and answers now
     is a privilege that was *needed* — evidence the reference cannot give. No host in this file."""
     target = os.path.join(FIXTURES, "mobile_privileges.txt")
+    rows = list(dict.fromkeys(rows))  # `device detail` is one read asked once per device, not one read each
     before: dict[str, str] = {}
     if os.path.exists(target):
         with open(target) as handle:
-            before = {row[0]: row[2] for row in (line.split("\t") for line in handle) if len(row) > 2}
+            before = {f"{row[0]}\t{row[1]}": row[2] for row in (line.split("\t") for line in handle) if len(row) > 2}
     lines = [
         f"# The API Role privileges the mobile capture needed (#238). Jamf Pro {version}, {datetime.now(UTC).date()}.",
         "# read <TAB> path <TAB> status <TAB> privilege. 'needed' marks one that answered only once the privilege",
         "# was ticked between two runs — the reference is a claim; that is a fact.",
     ]
     for what, path, status, privilege in rows:
-        was = before.get(what, "")  # carried, not re-derived: a third run must not erase run two's evidence
+        was = before.get(f"{what}\t{path}", "")  # carried, not re-derived: run three must not erase run two
         needed = " (needed)" if status == 200 and (was.startswith("403") or "(needed)" in was) else ""
         note = privilege if status != 403 else f"{privilege} — 403: tick it in the API Role and run again"
         lines.append(f"{what}\t{path}\t{status}{needed}\t{note}")
@@ -237,11 +286,16 @@ def _privileges(rows: list[tuple[str, str, int, str]], version: str) -> None:
     print(f"  wrote mobile_privileges.txt ({len(rows)} reads)")
 
 
-def _devices(http: httpx.Client, base: str, token: str, body: Any, rows: list[tuple[str, str, int, str]]) -> list[str]:
-    """Every listed device's full detail (the first four; a demo tenant has two), named by supervision."""
+def _devices(
+    http: httpx.Client, base: str, token: str, body: Any, rows: list[tuple[str, str, int, str]]
+) -> tuple[list[str], str]:
+    """Every listed device's full detail (the first four; a demo tenant has two), named by supervision.
+    The second return is why nothing was captured — the three reasons are different instructions."""
     _write("mobile_devices_list_real.json", body)
+    listed = (body.get("results", []) if isinstance(body, dict) else [])[:4]
     written: list[str] = []
-    for device in (body.get("results", []) if isinstance(body, dict) else [])[:4]:
+    refused: list[str] = []
+    for device in listed:
         device_id = str(device.get("id", "")) if isinstance(device, dict) else ""
         if not device_id:
             continue
@@ -255,24 +309,47 @@ def _devices(http: httpx.Client, base: str, token: str, body: Any, rows: list[tu
         rows.append(("device detail", read, response.status_code, "Read Mobile Devices"))
         if response.status_code != 200:
             print(f"! device {device_id}: detail answered {response.status_code}")
+            refused.append(f"{device_id} → {response.status_code}")
             continue
         record = response.json()
         supervised = _flag(record, "supervised")
-        if supervised is None:
-            print(f"  device {device_id}: no `supervised` flag anywhere in the record — a finding for §4")
         name = "mobile_device_detail_unsupervised_real.json" if supervised is False else "mobile_device_detail_real.json"
+        if supervised is None:
+            NOTES.append(
+                f"device {device_id}: no `supervised` flag anywhere in the record, so {name} claims a side of the "
+                "pair the record itself does not state — a finding for §4, and a caveat for the commit message."
+            )
         if name in written:
-            print(f"  device {device_id}: that side of the supervised pair is already written; skipped")
+            NOTES.append(f"device {device_id}: {name} was already written by another device; this record was dropped.")
             continue
         _write(name, record)
         written.append(name)
-    return written
+    if written:
+        return written, ""
+    if not listed:
+        return [], (
+            "The tenant has no mobile device enrolled: the list read answered 200 with an empty page. Enrol an iPad — "
+            "supervised, and a second unsupervised if it is cheap — and run this again; docs/mobile-devices.md §4 "
+            "says why the pair is the fixture."
+        )
+    if not refused:
+        return [], (
+            f"{len(listed)} device(s) were listed and not one carried an `id` to read a detail with. The list page's "
+            "own shape is the finding; it is written to mobile_devices_list_real.json — read it."
+        )
+    return [], (
+        f"{len(listed)} device(s) are enrolled, but every /api/v2/mobile-devices/{{id}}/detail read failed "
+        f"({'; '.join(refused)}). The enrolment is not what is missing. A 403 wants 'Read Mobile Devices' ticked in "
+        "the API Role; a 404 means the detail path is spelled differently than the reference says — which is #238's "
+        "own premise — and mobile_privileges.txt records every spelling this run tried."
+    )
 
 
 def main() -> int:
     base, client_id, secret = _settings()
     rows: list[tuple[str, str, int, str]] = []
     captured: list[str] = []
+    why = "The device list read is the first thing this script does, and it did not run."
     with httpx.Client(timeout=30, headers={"Accept": "application/json"}) as http:
         token = _token(http, base, client_id, secret)
         answer = _get(http, base, token, "/api/v1/jamf-pro-version")
@@ -285,12 +362,23 @@ def main() -> int:
             if response is None:
                 rows.append((what, path, 404, f"{privilege} — every spelling 404s; the endpoint is elsewhere"))
                 print(f"! {what}: no candidate answered ({path})")
+                if what == "devices":
+                    why = (
+                        f"No mobile-device list endpoint answered: every candidate 404s ({path}). This says nothing "
+                        "about what is enrolled — the read that would have asked never reached Jamf."
+                    )
                 continue
             rows.append((what, path, response.status_code, privilege))
             if response.status_code != 200:
                 print(f"! {what}: {path} answered {response.status_code}; needs {privilege!r}")
+                if what == "devices":
+                    why = (
+                        f"The device list read was refused: {path} answered {response.status_code}. Tick "
+                        f"{privilege!r} in the API Role and run again — this says nothing about what is enrolled, "
+                        "and mobile_privileges.txt now names the privilege."
+                    )
             elif what == "devices":
-                captured = _devices(http, base, token, response.json(), rows)
+                captured, why = _devices(http, base, token, response.json(), rows)
             elif "collection" in what:
                 _write("mobile_inventory_collection_settings_real.json", response.json())
             else:
@@ -298,12 +386,14 @@ def main() -> int:
 
     _privileges(rows, version)
     if not captured:
-        sys.exit(
-            "No mobile device record was captured. Enrol an iPad — supervised, and a second unsupervised if it is "
-            "cheap — and run this again; docs/mobile-devices.md §4 says why the pair is the fixture."
-        )
-    unknown = f"; keys the table did not know: {', '.join(sorted(_RUN.swept))}" if _RUN.swept else ""
-    print(f"redacted: {', '.join(f'{k} ×{v}' for k, v in sorted(_RUN.counts.items())) or 'nothing'}{unknown}")
+        sys.stdout.flush()  # the reason is the last line the run says; a pipe must not reorder it above them
+        sys.exit(f"No mobile device record was captured. {why}")
+    swept = f"; swept out of keys no rule names: {', '.join(sorted(_RUN.swept))}" if _RUN.swept else ""
+    print(f"redacted: {', '.join(f'{k} ×{v}' for k, v in sorted(_RUN.counts.items())) or 'nothing'}{swept}")
+    if _HELD_TOTAL:
+        print(f"held: {len(_HELD_TOTAL)} keys no rule names, listed above under every file each one appeared in.")
+    for note in NOTES:
+        print(f"! {note}")
     print("Read every written file before committing it: this fixtures directory is public.")
     return 0
 

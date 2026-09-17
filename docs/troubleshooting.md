@@ -1399,17 +1399,27 @@ inside the page); both need the **Auditor** role's `audit:read`.
      ledger's last collection.
    - *The evidence report cannot be rendered: the baseline rule catalogue could not be read…* → the
      report refuses rather than printing part of a catalogue, because a rule that failed to load reads
-     exactly like a passing fleet. The sentence names the file it looked for. This is reportable state
-     **U** — nothing about the fleet is wrong.
+     exactly like a passing fleet. The sentence names the file it looked for, or the version it is at
+     when that is a version this build does not read. Both renderings refuse, the object and the page.
+     This is reportable state **U** — nothing about the fleet is wrong.
 2. **The page downloads, and says *No observation in this window*.** The window closes before this
    connection's first observation, or opens after its last. The connection is not broken and no Mac is
    named because none had been seen yet. Open the connection's run panel for the newest device sweep and
    read its finish time; ask again for a window that reaches it.
-3. **It says *Part of this window was not collected*.** A stretch inside the window where nothing
-   reported — the collector not running, not a fleet in a good state. Those days are counted as *no
-   observation* by Mac in the sum rather than folded into met or unmet. Find the stretch's dates in the
-   **Every interval** table, then read the runs for them. If the stretch is a scheduled sweep that did
-   not fire, that is §1 or §12; if it is a sweep that ran and failed, its run row says why.
+3. **It says *Some of this window has no observation behind it*.** Days the report holds no document
+   for, counted as *no observation* rather than folded into met or unmet. **Three different facts read
+   that way and the page cannot tell them apart**, so the box names all three and this step separates
+   them. Find the Mac and the dates in the **Every interval** table first — the stretch is a row of its
+   own, with its own start and end — then:
+   - The stretch runs from the window's **opening** to that Mac's first observation → the window opens
+     before the Mac was enrolled, or before this connection's ledger does. Expected on any window older
+     than the connection, which the button's default ninety days often is. Nothing to fix.
+   - The stretch runs from that Mac's **last** observation to the report's `asOf`, and other Macs kept
+     reporting through those dates → that Mac has gone quiet. The sweeps ran; this one did not answer.
+     §16 is a Mac that left the fleet; §1 is one the collection's **Selector** never asked about.
+   - The same dates are missing for **every** Mac → no device sweep ran on them. Open the connection's
+     run panel for those dates: a scheduled sweep that did not fire is §1 or §12, and one that ran and
+     failed has a run row that says why.
 4. **It says *This report is dated later than the last collection it could read*.** The tail between the
    last collection and `asOf` is counted as not observed rather than as the last known state carried
    forward — a Mac silent for three weeks is not a Mac that passed for three weeks. If a sweep should
@@ -1425,7 +1435,14 @@ inside the page); both need the **Auditor** role's `audit:read`.
    - No such sentence, and only *some* rows read `notReported` → those are fields the sweep's sections
      never collected, which is a fourth thing, not a failure. Widen the collection's sections (Settings ›
      Connections › Collections) and the next sweep answers them.
-7. **It printed badly.** Print from a browser to A4 portrait with headers and footers off; the page
+7. **The three-way sum reads more days than the window.** Not an error. The identity *met + unmet + not
+   observed = the window* holds for **one Mac under one rule**, and every row of that table is above
+   that grain, so each figure is the window multiplied by the rows folded into it: a rule's row counts
+   the window once per Mac, and the fleet's row once per Mac per rule. A forty-day window over five Macs
+   and ten rules is 200 on a rule's row and 2000 on the fleet's. The table's heading says **= the window
+   × rows** and the paragraph above it gives both multiples and the window's own length, so the
+   arithmetic can be checked on paper. The dates a *day* is counted under are in **Every interval**.
+8. **It printed badly.** Print from a browser to A4 portrait with headers and footers off; the page
    carries its own margins and repeats both the refusal line and each table's heading on every sheet.
    Nothing is fetched while it renders, so a machine with no network prints the same page. A digest that
    wraps across two lines is wrapped, never shortened — every character is there.

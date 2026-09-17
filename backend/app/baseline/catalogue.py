@@ -5,10 +5,16 @@ session is touched. The invariants — ids in order, every `field` still an allo
 rule on a scalar section, one `difference` per rule — are asserted in tests/test_baseline_rules.py, where drift in
 either file fails a build rather than a report.
 
-Where the file lives: `.dockerignore` excludes `docs` and `pyyaml` is in pyproject's `dev` group, so the container
-image carries neither, and the only caller today is the test suite. `CATALOGUE_PATHS` already looks beside the backend
-root — /app in the image — so the issue that first reads the catalogue at request time adds a COPY and a dependency
-move, and nothing else.
+Where the file lives: **the shipped image carries it**, and has since #472 made `app.baseline.report` read the
+catalogue at request time. Two lines put it there and both are load-bearing — `!docs/baseline-rules.yml` in
+`.dockerignore` and `COPY docs/baseline-rules.yml` in the Dockerfile (`CATALOGUE_PATHS` looks beside the backend
+root, which is /app there). Drop either and `GET /api/evidence/report` answers 503 in the image while the whole
+suite stays green, because the tests run off a checkout where `docs/` is always present. The `pyyaml` entry in
+pyproject's `[project].dependencies` declares the import rather than supplying it: `fastapi[standard]` already pulls
+`uvicorn[standard]`, which requires pyyaml, so moving it back to the `dev` group leaves the image working. Keep it
+anyway — a direct import names its own dependency — but do not count it as a thing this check defends.
+`.github/workflows/ci.yml`'s `Assert the image carries the baseline rule catalogue` step loads the catalogue inside
+the built image for exactly that reason: it is the only thing that bites when a COPY goes.
 """
 
 from __future__ import annotations
@@ -29,6 +35,11 @@ CATALOGUE_PATHS: tuple[Path, ...] = tuple(Path(__file__).resolve().parents[n] / 
 OPERATORS = frozenset({"equals", "in", "version_at_least"})
 MATCHES = frozenset({"exact", "partial"})
 PLACEHOLDERS = frozenset({"field", "value", "operand"})
+
+#: The catalogue version these readers are written against. A file at another version is refused rather than read
+#: on the assumption that the keys still mean what they meant: the vocabularies above are the version's, and a
+#: report built from half of a catalogue it did not understand prints as a passing fleet (#473).
+KNOWN_VERSION = 1
 
 
 class CatalogueError(RuntimeError):
@@ -99,14 +110,22 @@ def load_catalogue(path: Path | None = None) -> BaselineCatalogue:
         raise CatalogueError(
             "the baseline rule catalogue was not found. Looked for: "
             + ", ".join(str(candidate) for candidate in candidates)
-            + f". It ships as docs/{CATALOGUE_NAME} in the repository, and `.dockerignore` keeps `docs` out of the "
-            "image — a caller inside a container needs the file copied in first."
+            + f". It ships as docs/{CATALOGUE_NAME} in the repository and is copied into the image by the "
+            f"Dockerfile's `COPY docs/{CATALOGUE_NAME}`, which `.dockerignore` keeps an exception for. Inside a "
+            "container, that line or that exception was lost in a build; on a checkout, the file was moved or deleted."
         )
 
     document = yaml.safe_load(found.read_text())
     rules = document.get("rules") if isinstance(document, dict) else None
     if not isinstance(rules, list) or not rules or "version" not in document:
         raise CatalogueError(f"{found} is not a catalogue: it is a `version:` key and a non-empty `rules:` list")
+    if document["version"] != KNOWN_VERSION:
+        raise CatalogueError(
+            f"{found} is at version {document['version']!r} and this build reads version {KNOWN_VERSION}. The "
+            "operators, the MSCP match words and the `witnessed` placeholders are that version's vocabulary, so a "
+            "catalogue from another one is refused rather than read on the assumption that its keys still mean "
+            "what they meant. Use a build that reads this catalogue's version."
+        )
     return BaselineCatalogue(version=document["version"], rules=tuple(_rule(raw, i) for i, raw in enumerate(rules, 1)))
 
 

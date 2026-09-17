@@ -13,8 +13,7 @@ from typing import Any
 
 from app.baseline.page import (
     BUNDLE_ID,
-    COLLECTOR_GAP,
-    NO_LEDGER_SAID,
+    NOT_OBSERVED_PART,
     OLD_WINDOW,
     STALE_TAIL,
     UNKNOWN_CONTRACT,
@@ -139,6 +138,35 @@ def test_the_sum_and_the_zero_that_means_seen_once() -> None:
     assert "The application firewall is on" in page and "security.firewallEnabled" in page
 
 
+def test_the_sum_says_what_its_figures_are_multiples_of() -> None:
+    """The header names a 40-day window and the fleet row reads 80 days, because every bucket above the (device,
+    rule) grain is the window times the rows folded into it (docs/compliance-evidence.md §4). Under a bare "= the
+    window" heading that figure cannot be reconciled with the window six lines above it, and an archived document
+    whose sum cannot be checked reads as evasion — the wrong answer to the question #219 R5 sends this page to ask.
+    So the heading carries the multiple and the prose does the arithmetic on this report's own two numbers."""
+    report = _report()
+    report["devices"] = [*report["devices"], {"deviceID": "2", "name": "Mac 2"}]
+    both = {"seconds": 6912000, "days": 80}
+    report["totals"]["fleet"] = {"met": both, "unmet": {"seconds": 0}, "notObserved": {"seconds": 0}, "window": both}
+    page = _page(report)
+    assert "= the window × rows" in page and "= the window<" not in page, "the heading has to carry the multiple"
+    assert "for one Mac under one rule" in page, "the grain the identity actually holds at"
+    assert "the window (40 days, the one in the header) times the rows folded into it" in page
+    # Counted here, not described: two Macs and one rule, so the fleet's 80 is forty days twice, and checkable.
+    assert "This report holds 2 Macs and 1 rule, so a rule's row reads 40 days × 2 and the fleet's 40 days × 2 × 1." in page
+    assert "Mac-days, not calendar days" in page and ">80 days<" in page
+
+
+def test_a_window_that_opens_after_the_last_collection_still_says_how_old_it_is() -> None:
+    """Every row not observed and not one of them carrying a collection. Read from the rows alone, the one report
+    whose every day is unobserved is also the only one that never says when the last collection was; the ledger's
+    own last word is the fallback that closes that."""
+    report = _report()
+    report["rows"] = [{k: v for k, v in report["rows"][0].items() if not k.startswith("collected")}]
+    said = notices(report, heartbeat=datetime(2026, 2, 1, 12, 30, tzinfo=UTC), now=NOW)
+    assert STALE_TAIL.format(collected="2026-02-01 12:30 UTC", as_of="2026-04-10 00:00 UTC") in said
+
+
 def test_no_observation_in_the_window_is_said_rather_than_left_blank() -> None:
     """An empty table reads as "nothing to report", which is #150's rule: failure is not emptiness. This is also the
     shape an `asOf` earlier than the earliest observation produces."""
@@ -149,19 +177,27 @@ def test_no_observation_in_the_window_is_said_rather_than_left_blank() -> None:
     assert "No observation in this window." in _page(report)
 
 
-def test_a_connection_with_no_spans_at_all_says_so() -> None:
-    """Zero spans is a different fact from an empty window, and names a different next step: the ledger is written by
-    a device sweep and by nothing else."""
-    assert notices(_report(), heartbeat=None, now=NOW) == [NO_LEDGER_SAID]
-    assert "only a device sweep writes the ledger" in _page(heartbeat=None)
-
-
-def test_a_stretch_the_collector_missed_is_named_as_the_collector() -> None:
-    """A gap is the collector not running, not a fleet in a good state."""
+def test_days_with_no_observation_behind_them_name_all_three_facts_and_a_check_that_separates_them() -> None:
+    """The head before a Mac's first observation, the tail after its last and a day nobody swept are three facts
+    under one label, and the page holds only the label. Naming the third alone — "the collector not running" — is
+    the defect docs/diagnosability.md §2 rule 1 forbids and sends every reader to a run history with no missing run
+    in it, because the ninety-day default window reaches before the first observation on any young instance and one
+    quiet Mac contributes a tail. The figure says what it is counted in, too: it is a multiple of the window."""
     report = _report()
     report["totals"]["fleet"]["notObservedParts"] = {"noObservation": {"seconds": 864000, "days": 10}}
-    assert COLLECTOR_GAP.format(days="10 days") in notices(report, heartbeat=NOW, now=NOW)
-    assert "10 days of it read no observation" in _page(report)
+    said = notices(report, heartbeat=NOW, now=NOW)
+    assert NOT_OBSERVED_PART.format(days="10 days") in said
+    page = _page(report)
+    assert "10 days, counted once per Mac per rule" in page
+    # Apostrophe-free fragments: the box is escaped on the way in, so `Mac's` reads `Mac&#x27;s` in the document.
+    for state in ("the stretch before a Mac", "enrolled mid-window", "a Mac gone quiet", "dates on which no sweep ran"):
+        assert state in page, "a sentence that names one of three states hides the other two"
+    assert "the collector not running" not in page
+    assert "Every interval below" in page and "<h2>Every interval</h2>" in page
+    # And the sum's "of which" cell names the same part in the same words, not in the wire's. The wire key stays in
+    # the bundle, where a tool reads it; the cell is for the person filing the page.
+    assert "<td>no observation: 10 days</td>" in page and "<td>noObservation:" not in page
+    assert '"noObservation":' in page, "the object inside the page keeps the contract's key"
 
 
 def test_an_as_of_past_the_last_collection_names_the_tail() -> None:
