@@ -29,7 +29,7 @@ from sqlalchemy.dialects.postgresql import array
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.context import get_request_id
-from app.core.outbox import enqueue_event
+from app.core.outbox import enqueue_event, enqueue_events
 from app.core.runs import event_time, get_run, run_meta
 from app.core.wire import ENVELOPE, envelope, instance_label
 from app.core.wire_vocabulary import DEPARTURE_EVENT_TYPE, RETURNED_EVENT_TYPE
@@ -62,7 +62,9 @@ MATCHED_BY_ID = "jamfProID"
 # opens tens of thousands of Mac tails at once. `_open_macs` produces that set whole; `_emit_macs` and
 # `_emit_mac_returns` divide it here and nowhere else, so `_devices` is only ever handed a batch and no
 # id list can reach the database unbounded. A fifth caller crosses the seam by construction rather than
-# by remembering to write a fifth loop, which is the whole reason there is one.
+# by remembering to write a fifth loop, which is the whole reason there is one. It is now the unit of the
+# outbox WRITE as well (#524): a batch's events go in on one `enqueue_events`, so the same seam bounds both
+# the ids a statement binds and the round trips a mass deletion spends.
 _EMIT_BATCH = 1000
 _Row = TypeVar("_Row")
 
@@ -157,7 +159,10 @@ async def _emit_macs(
     db: AsyncSession, *, connection: MdmConnection, rows: list[SubjectDeparture], at: datetime, state: str
 ) -> None:
     """One departure event per Mac with the `Device` row's own identity: `deviceMeta` is that row's
-    whole block last known (4.2), `host` is the hostname (a Mac IS a host), `deviceCount` is absent."""
+    whole block last known (4.2), `host` is the hostname (a Mac IS a host), `deviceCount` is absent.
+
+    A batch is written in ONE `enqueue_events` (#524): same rows, same transaction, same single commit
+    in the caller — what goes is the round trip per Mac, not the row per Mac."""
     if not rows:
         return
     source = instance_label(connection.base_url)
@@ -166,22 +171,25 @@ async def _emit_macs(
         # the id the Mac came back as, leaving `prior_jamf_pro_id` to name and close the retired half on the wire.
         gone_ids = [row.prior_jamf_pro_id or row.subject_id for row in batch]
         devices = await _devices(db, connection.id, gone_ids)
+        bodies = []
         for row, gone in zip(batch, gone_ids, strict=True):
             device = devices.get(gone)
             hostname = device.hostname if device else None
-            body = _departure_body(
-                row,
-                label=hostname,
-                last_seen_at=device.last_seen_at if device else None,
-                device_count=None,
-                occurred_at=at,
-                source=source,
-                state=state,
-                notice_day=DEPARTURE_TAIL_DAYS if state == STATE_REMOVED else row.notice_day,
-                host=hostname,
-                device_meta=_mac_device_meta(device, subject_id=gone, pulled=False),
+            bodies.append(
+                _departure_body(
+                    row,
+                    label=hostname,
+                    last_seen_at=device.last_seen_at if device else None,
+                    device_count=None,
+                    occurred_at=at,
+                    source=source,
+                    state=state,
+                    notice_day=DEPARTURE_TAIL_DAYS if state == STATE_REMOVED else row.notice_day,
+                    host=hostname,
+                    device_meta=_mac_device_meta(device, subject_id=gone, pulled=False),
+                )
             )
-            await enqueue_event(db, DEPARTURE_EVENT_TYPE, body, request_id=get_request_id())
+        await enqueue_events(db, DEPARTURE_EVENT_TYPE, bodies, request_id=get_request_id())
 
 
 async def _emit_mac_returns(
@@ -194,20 +202,23 @@ async def _emit_mac_returns(
     source = instance_label(connection.base_url)
     for batch in _batches(rows):
         devices = await _devices(db, connection.id, [row.subject_id for row in batch])
+        bodies = []
         for row in batch:
             device = devices.get(row.subject_id)
             hostname = device.hostname if device else None
-            body = _returned_body(
-                row,
-                label=hostname,
-                occurred_at=at,
-                source=source,
-                host=hostname,
-                matched_by=row.matched_by or MATCHED_BY_ID,
-                prior_jamf_pro_id=row.prior_jamf_pro_id,
-                device_meta=_mac_device_meta(device, subject_id=row.subject_id, pulled=True),
+            bodies.append(
+                _returned_body(
+                    row,
+                    label=hostname,
+                    occurred_at=at,
+                    source=source,
+                    host=hostname,
+                    matched_by=row.matched_by or MATCHED_BY_ID,
+                    prior_jamf_pro_id=row.prior_jamf_pro_id,
+                    device_meta=_mac_device_meta(device, subject_id=row.subject_id, pulled=True),
+                )
             )
-            await enqueue_event(db, RETURNED_EVENT_TYPE, body, request_id=get_request_id())
+        await enqueue_events(db, RETURNED_EVENT_TYPE, bodies, request_id=get_request_id())
     return len(rows)
 
 
