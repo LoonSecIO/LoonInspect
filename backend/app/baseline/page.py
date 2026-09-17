@@ -207,6 +207,16 @@ def notices(report: dict[str, Any], *, heartbeat: datetime | None, now: datetime
     return said
 
 
+def with_read_this_first(report: dict[str, Any], *, heartbeat: datetime | None, now: datetime | None = None) -> dict:
+    """The object carrying its own caveats: `readThisFirst`, added to #472's artefact and read by every rendering
+    of it (#536). Additive under the contract's own discipline — keys are added, never moved — and the reason is
+    drift: a second surface that re-typed these sentences would be reworded alone one day. Mutates and returns the
+    same dict; `render_evidence_page` reads the key, so a caller that skipped this raises rather than printing a
+    page with no box on it."""
+    report["readThisFirst"] = notices(report, heartbeat=heartbeat, now=now)
+    return report
+
+
 def _header_html(report: dict[str, Any]) -> str:
     """The five header items of #472, in its order. `notVisible` is the one a later session trims for space. It does
     not get trimmed: a page of technical evidence with no framework claim on it is read as a framework claim by
@@ -315,14 +325,11 @@ def _row_html(row: dict[str, Any], names: dict[str, str]) -> list[str]:
     ]
 
 
-def render_evidence_page(report: dict[str, Any], *, heartbeat: datetime | None, now: datetime | None = None) -> str:
-    """The whole artefact as one file. `heartbeat` is the ledger's own clock, which the object does not carry and the
-    sentences need; `now` is injectable so the run-retention sentence is testable."""
+def render_evidence_page(report: dict[str, Any]) -> str:
+    """The whole artefact as one file, over an object `with_read_this_first` has already been through: the sentences
+    are the object's own key now, so what this page prints and what an archived bundle carries cannot differ."""
     names = {device["deviceID"]: device.get("name") or device["deviceID"] for device in report["devices"]}
-    said = "".join(
-        f'<div class="note"><b>Read this first</b>{_t(sentence)}</div>'
-        for sentence in notices(report, heartbeat=heartbeat, now=now)
-    )
+    said = "".join(f'<div class="note"><b>Read this first</b>{_t(sentence)}</div>' for sentence in report["readThisFirst"])
     headers = ("Mac", "Rule", "State", "Interval, device time (UTC)", "For", "Collected (UTC)", "What was read")
     window = report["header"]["method"]["window"]
     title = f"{TITLE} — {report['header']['method']['connection']['name']}, {str(window['start'])[:10]}"

@@ -1448,24 +1448,25 @@ run's `jobID` and its log, the census line if there is one, the Mac's Jamf id, t
 
 The report is a document a person files, so it never leaves a reader to infer why it is thin: every
 state below prints its own sentence in a **Read this first** box at the top of the page, above the sum.
-Read the box first, then the step here. **Settings › Connections → Evidence report** on the connection's
-row downloads it (`GET /api/evidence/report.html`, the same answer as `…/report` in JSON, which is also
-inside the page); both need the **Auditor** role's `audit:read`.
+Read the box first, then the step here. **Posture › Compliance** is the report on screen — pick the
+connection, set the window — and **Download** on that page takes the same answer as one file
+(`GET /api/evidence/report.html`, the object at `…/report` inside it). **Settings › Connections** keeps
+a link to that page on the connection's row. Both doors need the **Auditor** role's `audit:read`.
 
-1. **The download is refused outright.** Three refusals, each carrying its sentence in the red line
-   above the table:
+1. **The report is refused outright**, on screen or as a download. Three refusals, each carrying its
+   sentence in the red line where the report would be:
    - *This connection has no observations…* → the observation ledger is written by a **device sweep**
      and nothing else, so a connection that has only run catalog refreshes or webhook runs has none.
      §2 step 5 has the rest.
-   - *The report window is empty: `start` must be earlier than `asOf`.* → only reachable by calling the
-     endpoint with your own dates. The button asks for neither and gets the ninety days before the
-     ledger's last collection.
+   - *The report window is empty: `start` must be earlier than `asOf`.* → on Posture › Compliance,
+     **Window opens** is on or after **Dated**. Blank is the endpoint's default, not the epoch: **Dated**
+     is then the ledger's last collection and **Window opens** the ninety days the row's link asks for.
    - *The evidence report cannot be rendered: the baseline rule catalogue could not be read…* → the
      report refuses rather than printing part of a catalogue, because a rule that failed to load reads
      exactly like a passing fleet. The sentence names the file it looked for, or the version it is at
      when that is a version this build does not read. Both renderings refuse, the object and the page.
      This is reportable state **U** — nothing about the fleet is wrong.
-2. **The page downloads, and says *No observation in this window*.** The window closes before this
+2. **The report draws, and says *No observation in this window*.** The window closes before this
    connection's first observation, or opens after its last. The connection is not broken and no Mac is
    named because none had been seen yet. Open the connection's run panel for the newest device sweep and
    read its finish time; ask again for a window that reaches it.
@@ -1476,7 +1477,7 @@ inside the page); both need the **Auditor** role's `audit:read`.
    own, with its own start and end — then:
    - The stretch runs from the window's **opening** to that Mac's first observation → the window opens
      before the Mac was enrolled, or before this connection's ledger does. Expected on any window older
-     than the connection, which the button's default ninety days often is. Nothing to fix.
+     than the connection, which the default ninety days often is. Nothing to fix.
    - The stretch runs from that Mac's **last** observation to the report's `asOf`, and other Macs kept
      reporting through those dates → that Mac has gone quiet. The sweeps ran; this one did not answer.
      §16 is a Mac that left the fleet; §1 is one the collection's **Selector** never asked about.
@@ -1510,8 +1511,20 @@ inside the page); both need the **Auditor** role's `audit:read`.
    Nothing is fetched while it renders, so a machine with no network prints the same page. A digest that
    wraps across two lines is wrapped, never shortened — every character is there.
 
-**U.** The catalogue refusal, or a contract version this build has no rules for. Report the sentence
-from the box, the build from Settings › Support, and `docker compose logs app --since 30m`.
+9. **Posture › Compliance says the sum does not close, or has no connection to offer.** States the
+   download cannot reach, every one of them printed on the page rather than left out.
+   - *The sum does not close* → a fault, not a reading: the page checks *met + unmet + not observed = the
+     window* on the exact seconds before it draws the tables, and prints both figures it got. The days
+     round to two places and can land a hundredth either side (step 7); this check never reads them, so a
+     mismatch is the object disagreeing with itself. Report it as state **U** with the connection, the
+     window and those figures — Download takes the object it was computed from.
+   - *The connections could not be read…* → the picker reads `GET /api/mdm/connections`, which needs
+     `connection:read` beside the `audit:read` that opened the page. A **refused** read names that
+     permission — the **Auditor** role holds both, so check the role at Settings › Accounts; any other
+     failure sends you to Support. *No connection to report on* means the read worked and there is none.
+
+**U.** The catalogue refusal, a contract version this build has no rules for, or a sum that does not close.
+Report the sentence from the box, the build from Settings › Support, and `docker compose logs app --since 30m`.
 
 ## 18. "Posture is not in my sidebar, or Vulnerabilities lists nothing"
 

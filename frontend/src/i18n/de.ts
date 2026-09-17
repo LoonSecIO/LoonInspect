@@ -189,6 +189,7 @@ export const de: Translations = {
     smartGroupCost: "Gruppenkosten",
     posture: "Sicherheitslage",
     vulnerabilities: "Schwachstellen",
+    compliance: "Nachweise",
     settings: "Einstellungen",
     connections: "Verbindungen",
     featureFlags: "Feature-Flags",
@@ -933,6 +934,55 @@ export const de: Translations = {
       shown === total ? `${total} Zeile${total === 1 ? "" : "n"}` : `${shown} von ${total} Zeilen`,
     tableVuln: "Schwachstellen"
   },
+  // #536 — kein Rahmenwerk wird in diesem Block genannt; `compliance.test.ts` prüft das.
+  compliance: {
+    title: "Technischer Nachweis",
+    connection: "Verbindung",
+    start: "Zeitraum ab",
+    asOf: "Stand",
+    windowHint:
+      "Beide Daten leer bedeutet die neunzig Tage vor der letzten Erfassung dieser Verbindung. Kein Datum wird auf die Daten beschnitten: Ein Zeitraum, der über das Beobachtete hinausreicht, wird mit nicht beobachteten Tagen beantwortet, nicht stillschweigend gekürzt.",
+    show: "Bericht anzeigen",
+    download: "Herunterladen",
+    asking: "Beobachtungsjournal wird gelesen …",
+    noConnections:
+      "Keine Verbindung für einen Bericht: Die Verbindungen wurden gelesen, dieser Mandant hat keine. Eine wird unter Einstellungen › Verbindungen angelegt; der Bericht liest das Beobachtungsjournal, das eine Geräteerfassung darauf schreibt.",
+    connectionsDenied:
+      "Die Verbindungen konnten nicht gelesen werden: Dieses Konto hat das audit:read, mit dem diese Seite geöffnet wurde, aber nicht das connection:read, das die Liste der Auswahl braucht. Die Rolle Auditor hat beides — Rolle unter Einstellungen › Konten prüfen.",
+    connectionsFailed:
+      "Die Verbindungen konnten nicht gelesen werden; diese Auswahl ist also aus einem anderen Grund leer als einem leeren Mandanten. Erneut versuchen und, falls es bleibt, mit dem Build aus Einstellungen › Support melden.",
+    failed: "Der Bericht konnte nicht gelesen werden. Erneut versuchen und, falls es bleibt, mit dem Build aus Einstellungen › Support melden.",
+    headConnection: "Verbindung",
+    headSource: "Gelesen aus",
+    headWindow: "Zeitraum",
+    headCatalogue: "Regelkatalog",
+    headContract: "Vertragsversion",
+    headClock: "Uhr",
+    headNotVisible: "Von hier aus nicht sichtbar",
+    catalogueAt: (version: number, rules: number) => `Version ${version}, ${rules} Regel${rules === 1 ? "" : "n"}`,
+    readThisFirst: "Zuerst lesen",
+    sumSaid:
+      "Erfüllt plus nicht erfüllt plus nicht beobachtet ergibt genau den Zeitraum — für einen Mac unter einer Regel. Jede Zeile unten liegt über dieser Körnung, ihre letzte Zahl ist also der Zeitraum mal den darin zusammengefassten Zeilen: einmal je Mac in einer Regelzeile, einmal je Mac und Regel in der Flottenzeile. Es sind Mac-Tage, keine Kalendertage. Nicht beobachtet ist jede Strecke, die dieser Bericht nicht beantworten kann; ihre Teile stehen daneben, statt eingerechnet zu werden. Eine Regel, für die nichts gezählt werden konnte, fehlt hier, statt als Nullzeile zu erscheinen.",
+    sumFault: (sum: number, window: number) =>
+      `Die Summe geht nicht auf: Erfüllt plus nicht erfüllt plus nicht beobachtet ergibt ${sum} Sekunden gegenüber einem Zeitraum von ${window}. Das ist ein Fehler im Bericht und nicht die Rundung der Tage unten — diese Prüfung liest die exakten Sekunden. Die Zahlen werden trotzdem gezeigt; bitte mit Verbindung und Zeitraum melden (troubleshooting.md §17 Schritt 9).`,
+    byRule: "Nach Regel",
+    byDevice: "Nach Mac",
+    fleet: "Jede Regel, jeder Mac",
+    colRule: "Regel",
+    colMac: "Mac",
+    colMet: "Erfüllt",
+    colUnmet: "Nicht erfüllt",
+    colNotObserved: "Nicht beobachtet",
+    colOfWhich: "davon",
+    colTotal: "= Zeitraum × Zeilen",
+    underOne: "unter einem Meldeintervall",
+    days: (days: number) => `${days} Tag${days === 1 ? "" : "e"}`,
+    parts: {
+      notReported: "nicht gemeldet",
+      noObservation: "keine Beobachtung",
+      departed: "abgemeldet"
+    }
+  },
   vulnerabilities: {
     corpusHeading: (date: string) => `Schwachstellen-Korpus vom ${date}`,
     corpusHeadingNone: "Schwachstellen: nicht geprüft",
@@ -1239,8 +1289,6 @@ export const de: Translations = {
     reEmitConfirm: "Erneut senden",
     reEmitError: "Das erneute Senden konnte nicht gestartet werden.",
     evidenceReport: "Nachweisbericht",
-    evidenceReportError:
-      "Der Nachweisbericht konnte nicht erstellt werden. Öffnen Sie das Ausführungsprotokoll der Verbindung, um zu sehen, ob ein Geräte-Sweep abgeschlossen wurde.",
     runProcessing: "Wird verarbeitet…",
     runJoined: "Läuft bereits — der laufende Durchlauf wird angezeigt.",
     runMoreDetails: "Mehr Details",
