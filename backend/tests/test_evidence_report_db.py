@@ -242,3 +242,35 @@ async def test_the_endpoint_answers_an_auditor_and_nobody_else(ledger, accounts)
     finally:
         await auditor.aclose()
         await viewer.aclose()
+
+
+async def test_both_refusals_answer_with_their_sentence_rather_than_a_status(db, ledger, accounts, monkeypatch) -> None:
+    """The two states docs/troubleshooting.md §17 step 1 sends a reader to. A catalogue that will not load refuses
+    the whole report — a rule that failed to parse reads exactly like a passing fleet — and it refuses **both**
+    renderings, the object and the page, because the refusal sits in the assembly they share."""
+    from app.api.evidence import NO_LEDGER
+    from app.baseline.catalogue import CatalogueError
+    from app.models.schema import MdmConnection
+
+    def unreadable() -> None:
+        raise CatalogueError("docs/baseline-rules.yml is at version 9 and this build reads version 1.")
+
+    unswept = MdmConnection(name=f"unswept {uuidlib.uuid4().hex[:8]}", provider="jamf", base_url="https://unswept.test")
+    db.add(unswept)
+    await db.commit()
+    unswept_id, connection_id = unswept.id, ledger.id  # read before the rollback below expires them
+    auditor = await _signed_in(AUDITOR)
+    try:
+        refused = await auditor.get("/api/evidence/report.html", params={"connectionID": unswept_id})
+        assert (refused.status_code, refused.json()["detail"]) == (409, NO_LEDGER)
+        monkeypatch.setattr("app.baseline.report.catalogue", unreadable)
+        for route in ("/api/evidence/report", "/api/evidence/report.html"):
+            broke = await auditor.get(route, params={"connectionID": connection_id})
+            assert broke.status_code == 503, broke.text
+            assert "prints as a passing fleet" in broke.json()["detail"], "the refusal has to say why it refused"
+            assert "is at version 9" in broke.json()["detail"], "and which catalogue it could not read"
+    finally:
+        await auditor.aclose()
+        await db.rollback()
+        await db.execute(delete(MdmConnection).where(MdmConnection.id == unswept_id))
+        await db.commit()
