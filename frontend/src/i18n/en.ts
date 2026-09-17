@@ -1202,6 +1202,12 @@ export const en = {
     colCloses: "Closes",
     filterPatchable: "Easily patchable",
     filterNoFixPath: "No Jamf fix path",
+    // The chip's own empty state, and it is good news: this list is the builds with findings
+    // that no Patch title covers, so empty means every one of them has a fix path. It may not
+    // fall through to *no build the fleet carries has a finding* — a claim about the fleet,
+    // said under a list that narrowed it, which is false the moment a Patch title matched.
+    noFixPathNone:
+      "Every build with findings here is matched to a Jamf Patch title, so none is left without a fix path. This filter is empty, not the fleet: clear the chip for the builds with findings themselves.",
     // The version is in the row's own *Update to* column, so it is not repeated. Both
     // directions, for `updateCloses`'s reason; `net` carries the hint that says why it is
     // the difference of the totals and not of the lists.

@@ -44,6 +44,39 @@ export function exploreByApp(rows: readonly AffectedRow[], limit = 8): AppChip[]
  *  so heading, hint and the `order` asked for cannot disagree about which list this is. */
 export const agedList = (expanded: boolean, order: string, vuln: string, band: string | null): boolean => expanded && order === "age" && vuln === "findings" && band === null;
 
+/** Whether the list on screen IS *Easily patchable*: the ranking is the half that makes the filter
+ *  an answer, so the two are one state and not two. Read off the filter alone rather than off
+ *  `order=payoff` beside it — the chip still writes both, but an address typed or forwarded without
+ *  the order was headed *Most exposed* and then printed the band again below it, the same rows twice
+ *  under two headings. `agedList`'s instinct: heading, hint, columns and the order asked for cannot
+ *  disagree about which list this is, because one value decides all four. */
+export const payoffList = (vuln: string): boolean => vuln === "patchable";
+
+/** Which sentence an empty table says: one key of `t.vulnerabilities`, chosen from the WHOLE
+ *  narrowing and never from part of it. `docs/diagnosability.md` rule 1 — *no match for this
+ *  search*, *this filter has nothing* and *the fleet carries nothing* are different states, and one
+ *  blank standing for all of them has hidden the other two.
+ *
+ *  The defect this replaces: `jamf` arrived as a third narrowing dimension beside `vuln` and `band`
+ *  (#532) and was left out of the sentence, so *No Jamf fix path* on a fleet where every build with
+ *  findings HAS a Patch title printed *no build the fleet carries has a finding against it in this
+ *  corpus* — a fleet-wide claim, false, printed directly under *Most exposed* listing the builds it
+ *  denied. The good news the chip exists to surface read as the bad news it disproves.
+ *
+ *  So every narrowing answers for itself and only the unnarrowed list may speak for the fleet. The
+ *  search is asked first because it is the narrowing the reader performed last, and a chip's own
+ *  sentence is a claim about that chip's whole set — any further narrowing beside it and the honest
+ *  answer is *this filter*, not the claim. */
+export function emptySays(vuln: string, band: string | null, jamf: string | null, term: string): EmptySays {
+  const narrowed = vuln !== "findings" || band !== null || jamf !== null;
+  if (term.trim() !== "") return narrowed ? "noRows" : "noMatches";
+  if (jamf !== null) return vuln === "findings" && band === null ? "noFixPathNone" : "noRows";
+  if (vuln === "patchable" && band === null) return "easilyPatchableNone";
+  return narrowed ? "noRows" : "noFindings";
+}
+
+export type EmptySays = "noMatches" | "noRows" | "noFixPathNone" | "easilyPatchableNone" | "noFindings";
+
 /** The four `vuln.*` keys of the nightly tape, in the order the foot prints them. Read, never
  *  written, and no key is minted here (`docs/posture-snapshot.md`, §7). */
 export const VULN_KEYS = ["vuln.apps_affected", "vuln.apps_kev_affected", "vuln.apps_unknown", "vuln.devices_affected"] as const;

@@ -1074,6 +1074,10 @@ export const de: Translations = {
     colCloses: "Schließt",
     filterPatchable: "Leicht zu patchen",
     filterNoFixPath: "Kein Jamf-Fixpfad",
+    // Leer heißt hier: gute Nachricht. Nicht auf „Zu keinem Build in der Flotte …“ zurückfallen
+    // — das ist eine Aussage über die Flotte unter einer Liste, die sie eingeschränkt hat.
+    noFixPathNone:
+      "Zu jedem Build mit Funden gibt es hier einen passenden Jamf-Patch-Titel, keiner bleibt ohne Fixpfad. Dieser Filter ist leer, nicht die Flotte: Ohne den Chip erscheinen die Builds mit Funden selbst.",
     closesExact: (closes: number, opens: number) => `${closes} · öffnet ${opens}`,
     closesNet: (net: number) => `netto ${net} weniger`,
     byTheNumbers: "In Zahlen",
