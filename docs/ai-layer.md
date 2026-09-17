@@ -183,17 +183,27 @@ rendered as text. A serial in Search that the question never named is dropped (r
     - **It rides the `since` key the page already has** (#107, chipped in #443), so the readback
       names it, the chip clears it, and Postgres counts the rows the page will show.
     - **No end, so two-ended ranges stay unsupported.** `/api/changes` has no `until`, so what
-      decides the caveat is not the phrase alone but the words around it (`_ENDS`). A question that
-      named a second end — "since Monday **until** Friday", "this week **through** Wednesday", "in
-      the last 7 days but **before** yesterday" — or a phrase that is a whole day and so an end of
-      its own ("yesterday", "3 days ago"), is read as a start and guard rule 5 **keeps** the model's
-      *Cannot express a date range* over it. Only a phrase that names a start and nothing else ("in
-      the last 24 hours", "since yesterday", "since 3 days ago") expresses the question, and then
-      the caveat goes.
+      decides the caveat is not the phrase alone but whether the phrase read *every* date word in
+      the question. One that left a date word unread — "since Monday **until** Friday", "this week
+      **ending** Wednesday", "in the last 7 days but **before** yesterday" — or a phrase that is a
+      whole day and so an end of its own ("yesterday", "3 days ago"), is read as a start and guard
+      rule 5 **keeps** the model's *Cannot express a date range* over it. Only a phrase that names
+      a start and nothing else ("in the last 24 hours", "since yesterday", "since 3 days ago")
+      expresses the question, and the caveat goes. That test (`_unread_dates`) reads guard rule 5's
+      own `_RANGE_MARKERS`, not a list of end words: a list of end words is complete only against
+      the phrasings someone thought of, and the first one written here dropped the caveat off
+      "ending Wednesday", "as of Wednesday", "through the weekend" and "before the 3rd". Reading
+      rule 5's list adds no false positive rule 5 did not already make — a Mac called
+      `MONDAY-LAB-01` keeps the caveat, as it did before #444.
     - **An end or a *not* over the phrase sets no window.** "before this week", "until today",
       "except today", "not since Monday": read as a start, each would answer over exactly the span
-      the operator ruled out. Both readings err towards the answer the page gave before #444, since
-      a window nobody asked for hides rows and says only where it began.
+      the operator ruled out. *That* one is a word list (`_ENDS`), because it is a claim about what
+      the words did, not about what they left out — and "to" is kept out of it in front of a length
+      of time or a version number, so "narrow it **to the last 7 days**" is the start it plainly is
+      and "moved **to 153** in the last 7 days" is not a range. Both readings err towards the answer
+      the page gave before #444, since a window nobody asked for hides rows and says only where it
+      began; what says so on the page is the model's caveat, which rule 5 keeps precisely because
+      no start was set.
 
 **What it does.** The bar appears when the `ai_features` flag is on, AI-inference consent is on,
 and at least one provider is saved. `GET /api/changes/prompt` says which is missing, and Settings ›

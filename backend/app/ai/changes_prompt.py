@@ -547,9 +547,10 @@ def coerce(obj: Mapping[str, Any]) -> tuple[Filters, str | None, list[str]]:
 @dataclass(frozen=True)
 class Since:
     """A start the question asked for: the instant in UTC, and the words that set it. ``closed``
-    marks a question that named an end as well — "yesterday", "3 days ago", "since Monday until
-    Friday". The answer runs past that end, because the feed has no key for one, so the question's
-    date words are still beyond the controls and a caveat on them stands (guard rule 5)."""
+    marks a question whose date words run past that phrase — "since Monday **until Friday**" — or
+    a phrase that is a whole day, and so an end of its own ("yesterday", "3 days ago"). The answer
+    runs past that end, because the feed has no key for one, so those words are still beyond the
+    controls and a caveat on them stands (guard rule 5)."""
 
     at: datetime
     phrase: str
@@ -578,20 +579,26 @@ _SINCE_WEEKDAY = re.compile(rf"\bsince\s+({'|'.join(_WEEKDAYS)})\b", re.I)
 _THIS = re.compile(r"\bthis\s+(week|month|year)\b", re.I)
 # "yesterday" named an end there is none to set (`closed`); "since yesterday" did not.
 _DAY = re.compile(r"\b(since\s+)?(today|yesterday)\b", re.I)
-# A second end over a date, or an exclusion of one: "since Monday *until Friday*", "this week
-# *through Wednesday*", "*before* September", "*not* in the last 7 days". `/api/changes` filters
-# *observed at or after* and has no `until`, so neither is a start this can set. Where the words
-# sit over the phrase that matched ("before this week"), the phrase named the end and no window is
-# set at all; where they sit beside it, the start stands `closed`, and guard rule 5 keeps the
-# model's "Cannot express a date range" over the rows that run past the end the operator named.
+# An end over a date, or an exclusion of one, sitting *over* a phrase above: "*before* this week",
+# "*until* today", "*not* in the last 7 days". `/api/changes` filters *observed at or after* and
+# has no `until`, so read as a start each of those would answer over exactly the span the operator
+# ruled out; the phrase sets no window at all. That is the whole of this list's job. An end word
+# *beside* the phrase — "since Monday until Friday" — is not read here but by `_unread_dates`,
+# which asks the question this list cannot: did the phrase cover every date word, or not.
 # "may" is left out for the reason `_RANGE_MARKERS` leaves it out: it is a verb as often as a month.
 _MONTHS = "january|february|march|april|june|july|august|september|october|november|december"
+_LEAD_IN = r"(?:(?:in|on|over|within|during|from|since|the|a|an|its|last|this|next|past|end\s+of)\s+){0,3}"
+_A_DATE = (
+    rf"{_MONTHS}|{'|'.join(_WEEKDAYS)}|today|yesterday|tonight|midnight|noon|now|"
+    r"minutes?|hours?|days?|weeks?|months?|years?"
+)
 _ENDS = re.compile(
-    r"\b(?:until|till|thru|through|before|between|(?:up\s+)?to|not|never|except|excluding|"
-    r"besides|outside|other\s+than|apart\s+from)\s+"
-    r"(?:(?:in|on|over|within|during|from|since|the|a|an|its|last|this|next|past|end\s+of)\s+){0,3}"
-    rf"(?:\d+|{_MONTHS}|{'|'.join(_WEEKDAYS)}|today|yesterday|tonight|midnight|noon|now|"
-    r"minutes?|hours?|days?|weeks?|months?|years?)\b",
+    r"\b(?:until|till|thru|through|before|between|not|never|except|excluding|"
+    rf"besides|outside|other\s+than|apart\s+from)\s+{_LEAD_IN}(?:\d+(?:st|nd|rd|th)?|{_A_DATE})\b"
+    # "to" is the weak one, and the only one that reached a phrase it does not end: "narrow it *to
+    # the last 7 days*" is the start itself, and "moved *to 153*" is a version number. So "to" ends
+    # a range only over a date word, and never over the backward-looking phrase `_BACK` reads.
+    rf"|\b(?:up\s+)?to\s+(?!(?:the\s+)?(?:last|past|previous)\b){_LEAD_IN}(?:{_A_DATE})\b",
     re.I,
 )
 # A zone as `Intl.DateTimeFormat().resolvedOptions().timeZone` writes one, checked before
@@ -620,10 +627,12 @@ def resolve_since(question: str, now: datetime, zone: str | None = None) -> Sinc
     operator's day. Midnight is taken there — on the one day a year a zone has none, it lands an
     hour to one side, inside the day either way.
 
-    What the question said *around* the phrase decides whether it is a start at all (``_ENDS``):
-    words that name a second end leave the start ``closed``, and words that put an end or a "not"
-    over the phrase itself leave no window. Both err towards the answer the page gave before #444,
-    because a window the operator did not ask for hides rows and says only where it began."""
+    What the question said *around* the phrase decides how much of it the start expresses. Words
+    that put an end or a "not" over the phrase itself leave no window (``_ENDS``); a date word the
+    phrase did not cover leaves the start ``closed`` (``_unread_dates``, which reads guard rule 5's
+    own list, defined with the guards below — one list, so the two cannot drift). Both err towards
+    the answer the page gave before #444, because a window the operator did not ask for hides rows
+    and says only where it began."""
     text = sanitize_question(question)
     local = now.astimezone(_viewer_zone(zone))
     midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -632,7 +641,8 @@ def resolve_since(question: str, now: datetime, zone: str | None = None) -> Sinc
     def start(at: datetime, phrase: re.Match[str], closed: bool = False) -> Since | None:
         if any(lo <= phrase.start() < hi for lo, hi in ends):
             return None  # an end word or a "not" sits over this phrase: it named no start
-        return Since(at=at.astimezone(UTC), phrase=" ".join(phrase[0].split()), closed=closed or bool(ends))
+        closed = closed or _unread_dates(text, phrase.span())
+        return Since(at=at.astimezone(UTC), phrase=" ".join(phrase[0].split()), closed=closed)
 
     back = _BACK.search(text)
     if back:
@@ -714,6 +724,22 @@ _RANGE_MARKERS = re.compile(
     r"|(?<![a-z0-9])\d+\s*(?:" + _TIME_UNITS + r"|h|d|w|m)\b",
     re.I,
 )
+
+
+def _unread_dates(text: str, span: tuple[int, int]) -> bool:
+    """Did the phrase that set the start leave a date word of the question unread? "since Monday
+    **until Friday**", "this week **through Wednesday**", "in the last 7 days **ending yesterday**".
+
+    Read against `_RANGE_MARKERS` — the list rule 5 itself reads — rather than against a second list
+    of end words, because a list of end words is only ever as complete as the phrasings someone
+    thought of, and every one it misses drops the caveat off a two-ended question. This asks the
+    opposite question, which has an answer: what the start's own words did not say is still beyond
+    the controls, whatever word joined it on. A marker that straddles the phrase counts as outside.
+    """
+    lo, hi = span
+    return any(word.start() < lo or word.end() > hi for word in _RANGE_MARKERS.finditer(text))
+
+
 # Everything else the controls cannot do: or, negation, a value, a comparison between rows.
 _OTHER_MARKERS = re.compile(
     r"\b(or|either|nor|not|no|without|missing|except|excluding|lacking|never|none|"

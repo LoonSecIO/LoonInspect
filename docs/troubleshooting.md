@@ -981,13 +981,18 @@ writes one row to the disclosure log naming the destination and the one field th
 
    **A start it reads is not a range, and the page says so.** The feed shows everything observed
    at or after the start; there is no key for an end. So a question that named an end too — "since
-   Monday **until** Friday", "this week **through** Wednesday", "in the last 7 days but **before**
+   Monday **until** Friday", "this week **ending** Wednesday", "in the last 7 days but **before**
    yesterday" — gets its start and keeps the model's *Cannot express a date range* over it, because
-   the rows do run past the end you named. "Yesterday" and "3 days ago" name a whole day, which is
-   an end as well, so the caveat stands over those too; "since yesterday", "since 3 days ago" and
-   "in the last 24 hours" name only a start, and it goes. A question that put an end or a **not**
-   over the phrase itself — "before this week", "until today", "except today", "not since Monday" —
-   sets **no** window at all: read as a start it would answer over exactly the span you ruled out.
+   the rows do run past the end you named. The rule is whether the words that set the start account
+   for every date in your question: they do not in "this week **through the weekend**", so the
+   caveat stands there too. "Yesterday" and "3 days ago" name a whole day, which is an end as well,
+   so it stands over those; "since yesterday", "since 3 days ago" and "in the last 24 hours" name
+   only a start, and it goes. A question that put an end or a **not** over the phrase itself —
+   "before this week", "until today", "except today", "not since Monday" — sets **no** window at
+   all: read as a start it would answer over exactly the span you ruled out, so you get the answer
+   over the whole log with the model's *Cannot express a date range* still over it. If the start is
+   what you meant, drop the end word and ask again — "since Monday". There is no Since control on
+   the filter bar to set by hand: the key is set by a question, by the Overview link, or by the URL.
 
    **The time in the answer box.** *Observed 14/09/2026, 11:57:26* is the same value as the
    table's **Observed** column: Jamf's report time for that Mac, which is when its inventory
