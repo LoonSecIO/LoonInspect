@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AffectedRow, PostureRow } from "./pageBands";
-import { agedList, exploreByApp, planNumbers, readNumbers } from "./pageBands";
+import { agedList, emptySays, exploreByApp, payoffList, planNumbers, readNumbers } from "./pageBands";
 
 /** Roles as `backend/app/core/permissions.py` grants them, transcribed by hand the way
  *  `overviewPlan.test.ts` transcribes them: fixtures, not a drift guard. */
@@ -44,6 +44,44 @@ describe("agedList", () => {
   // heading and its *always the builds with findings* hint standing over `vuln=clean` rows.
   it("is the aged list only where the words for it are true", () => {
     expect([agedList(true, "age", "findings", null), agedList(true, "age", "clean", null), agedList(true, "age", "unknown_app", null), agedList(true, "age", "findings", "critical"), agedList(false, "age", "findings", null), agedList(true, "exposure", "findings", null)]).toEqual([true, false, false, false, false, false]);
+  });
+});
+
+describe("payoffList", () => {
+  // The defect: `?vuln=patchable` typed or forwarded without `order=payoff` was headed *Most
+  // exposed* and printed the *Easily patchable* band below it — one answer, twice, under two
+  // headings. The chip still writes the order; the page no longer needs it to know the list.
+  it("is the ranked list off the filter alone, and is no other list", () => {
+    expect([payoffList("patchable"), payoffList("findings"), payoffList("kev"), payoffList("clean"), payoffList("unknown_app")]).toEqual([true, false, false, false, false]);
+  });
+});
+
+describe("emptySays", () => {
+  // The defect this exists for. Pressing *No Jamf fix path* on a fleet where every build with
+  // findings HAS a Patch title left the table saying *no build the fleet carries has a finding
+  // against it in this corpus* — directly under *Most exposed* listing those builds. The chip is
+  // empty because the fix path is there, which is the good news the chip was added to surface.
+  it("does not let the fix-path chip speak for the fleet", () => {
+    expect(emptySays("findings", null, "unmatched", "")).toBe("noFixPathNone");
+    expect(emptySays("findings", null, null, "")).toBe("noFindings");
+  });
+
+  // A claim about every build with findings holds only where nothing else narrowed the set: a
+  // search, a band or another filter beside the chip and the honest sentence is *this filter*.
+  it("hands the chip's own sentence back the moment anything narrows it further", () => {
+    expect([emptySays("findings", null, "unmatched", "wireshark"), emptySays("findings", "critical", "unmatched", ""), emptySays("kev", null, "unmatched", "")]).toEqual(["noRows", "noRows", "noRows"]);
+  });
+
+  // #538's four routes, unmoved: the fleet sentence for the unnarrowed list, the search sentence
+  // for a search over it, and the filter sentence for every narrowing of it.
+  it("keeps the search, the filter and the fleet apart", () => {
+    expect([emptySays("findings", null, null, "wireshark"), emptySays("findings", null, null, "   "), emptySays("findings", "high", null, ""), emptySays("clean", null, null, ""), emptySays("unknown_app", null, null, "zoom")]).toEqual(["noMatches", "noFindings", "noRows", "noRows", "noRows"]);
+  });
+
+  // The ranked list is its own state too: expanded and empty it said *no build matches that
+  // filter*, when the band it came from had a sentence naming all three reasons (§18 step 8).
+  it("gives the ranked list the sentence its own band already had", () => {
+    expect([emptySays("patchable", null, null, ""), emptySays("patchable", null, null, "zoom")]).toEqual(["easilyPatchableNone", "noRows"]);
   });
 });
 

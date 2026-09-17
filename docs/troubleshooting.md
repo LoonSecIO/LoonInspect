@@ -1590,6 +1590,22 @@ Catalog tab carries. So a link somebody sent you works even while the entry is h
     it now. **The build reads *outside the corpus*.** The corpus holds no row for that exact build,
     so nothing was ever named for it — not a clean bill, and not a missing id. None of the three is
     a fault, and the page never says *not on your fleet* for any of them.
+11. ***No Jamf fix path* lists nothing.** Read the sentence, because that chip's empty state is
+    the **good** news it exists to look for: *every build with findings here is matched to a Jamf
+    Patch title, so none is left without a fix path*. The chip is the builds carrying findings
+    that **no** Patch title covers — findings with no managed remediation — so an empty list
+    means every one of them has a title to push, which is a fleet in better shape than the chip
+    was pressed to find. Nothing to repair, and nothing is hidden: clear the chip and *Most
+    exposed* lists those builds again with their counts. Two neighbours worth telling apart. With
+    a **search term or a band** beside the chip the sentence is the ordinary *no build in this
+    catalog matches that filter* instead, because a claim about every build with findings is not
+    one a narrowed set may make. And a build with **no findings** never appears here whatever its
+    title status — this is `findings` narrowed by the fix path, not a list of unmatched builds;
+    § 6 is where a title that should have matched and did not belongs. **If you are
+    reading *no build the fleet carries has a finding against it in this corpus* under this chip,
+    that is ours and not your fleet**: the chip shipped on 2026-09-17 saying the unnarrowed
+    list's sentence, which is false wherever *Most exposed* above it lists a build, and the
+    release that follows corrects it.
 
 **V.** The page says *loaded, not yet judged against* more than two hours after the corpus
 date moved, with the tier on and the hourly refresh running. Report the date the banner
