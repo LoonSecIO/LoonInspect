@@ -534,7 +534,20 @@ checking in. Every other key is the same value in both.
 | Devices › *hostname* (the device page, #300) | A **LoonInspect** column per installed app, and the same banner above it; #482 added the update line inside that column, #535 the rollup line beside the banner — this Mac in apps, the same three numbers the list's column prints, over the rows the page already holds |
 | Devices › Applications › *appHash* (the application record, #299) | A **Vulnerabilities** column per carried build — legal there because each row is one build at `key_full` grain — and the banner; #482's update line likewise |
 | Devices › Applications › Jamf Patch › *title* | **Nothing** (#298). A title's version row carries no `key_full`, so there is no grain to answer at; the stub column that stood there (`C — H — M — L — Σ` beside coloured dots, under a tooltip naming an integration nobody can enable) was deleted rather than rewritten, per the #95 precedent |
-| **Posture › Vulnerabilities** (#529, #538) | The fleet ranking: one row per build, most exposed first, with the corpus banner above it, a plain search over the catalog's `q`, and the same `AssessmentCell` — one rendering of the three states, handed the row so #482's update line prints. Its own two states before any row: nothing answering (the banner and its *why* block alone) and `vulnJudged` false (one sentence, no list). Seven bands (#538): the banner · the search box · **Explore by app**, chips grouped client-side from the rows in hand · **Popular filters**, `vuln` and `band` carried in the address · **Most exposed** · **Longest exposed** (`order=age`) · **By the numbers**, the tape's four `vuln.*` rows, planned against `audit:read` |
+| **Posture › Vulnerabilities** (#529, #538) | The fleet ranking: one row per build, most exposed first, with the corpus banner above it, a plain search over the catalog's `q`, and the same `AssessmentCell` — one rendering of the three states, handed the row so #482's update line prints. Its own two states before any row: nothing answering (the banner and its *why* block alone) and `vulnJudged` false (one sentence, no list). Eight bands (#538, #532): the banner · the search box · **Explore by app**, chips grouped client-side from the rows in hand · **Popular filters**, `vuln`, `band` and `jamf` carried in the address · **Most exposed** · **Easily patchable** (`vuln=patchable`, which carries its own `order=payoff`) · **Longest exposed** (`order=age`) · **By the numbers**, the tape's four `vuln.*` rows, planned against `audit:read` |
+
+**An empty list names the narrowing that emptied it (2026-09-17).** §4a's rule one row out:
+where a count of nought would be a lie about apps nobody assessed, a *no rows* sentence is a lie
+about the set it silently widens. So the sentence under an empty table is chosen from the **whole**
+address — every filter, the band, and the search — and **only the unnarrowed list may speak for the
+fleet**. The defect that fixed the rule in place: #532 added `jamf` as a third narrowing dimension
+and did not teach the sentence about it, so *No Jamf fix path* on a tenant whose builds all carry a
+Patch title printed *no build the fleet carries has a finding against it in this corpus* — directly
+beneath *Most exposed* listing those builds, and false in exactly the fleets the chip was pressed to
+praise. A narrowing's own sentence is a claim about that narrowing's whole set, so it is withdrawn
+the moment anything narrows it further. `frontend/src/features/vulnerabilities/pageBands.ts`
+(`emptySays`) is the one place that decides it, in the node lane rather than in a rendered page, and
+`docs/troubleshooting.md` §18 steps 7, 8 and 10 carry the operator's half.
 
 **Where `off` goes (#298).** A terminal sentence is a dead end, and the obvious link — *turn on
 data sharing* — was a lie when it was ruled: `loaded_corpus()` took no argument and answered

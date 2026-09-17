@@ -8,7 +8,7 @@ import type { CatalogBand, CatalogEntry, CatalogListResponse, CatalogVulnFilter 
 import { AssessmentCell, CorpusBanner } from "@/features/vulnerabilities/AppAssessment";
 import { closesCell, describeUpdate } from "@/features/vulnerabilities/appUpdate";
 import type { AppChip, NumbersRead, PostureRow } from "@/features/vulnerabilities/pageBands";
-import { VULN_KEYS, agedList, exploreByApp, planNumbers, readNumbers } from "@/features/vulnerabilities/pageBands";
+import { VULN_KEYS, agedList, emptySays, exploreByApp, payoffList, planNumbers, readNumbers } from "@/features/vulnerabilities/pageBands";
 import { pageView, type Load } from "@/features/vulnerabilities/pageView";
 import { useLocale } from "@/i18n/LocaleContext";
 import type { Translations } from "@/i18n/en";
@@ -73,6 +73,31 @@ function Bands({ entry, t }: { entry: CatalogEntry; t: Translations }) {
   return <span className="block text-xs text-muted-foreground">{shown.join(" · ")}</span>;
 }
 
+/** One row of *Most exposed* and *Longest exposed*: the count, the Macs, the age and the fix path.
+ *  Lifted out of the table body unchanged so the ranked list can put its own row in the same
+ *  `<tbody>` — both are six columns, and which one is drawn is `payoffList`'s single decision. */
+function ExposedRow({ entry, t }: { entry: CatalogEntry; t: Translations }) {
+  return (
+    <tr className="border-b align-top last:border-0">
+      <td className="px-4 py-2">
+        <Link to={recordHref(entry)} className="font-medium hover:underline">{entry.name} {entry.version}</Link>
+        <span className="block font-mono text-xs text-muted-foreground">{entry.bundleId}</span></td>
+      <td className="px-4 py-2">
+        {/* The ONE rendering of the three states here, handed the row so #482's update line
+            prints beside the count it is about. */}
+        <AssessmentCell vuln={entry.vuln} row={entry} t={t} />
+        <Bands entry={entry} t={t} /></td>
+      <td className="px-4 py-2 tabular-nums">{entry.vuln.assessment === "covered" && entry.vuln.counts.kev > 0 ? entry.vuln.counts.kev : "—"}</td>
+      <td className="px-4 py-2 tabular-nums">
+        <Link to={`/devices?versionHash=${entry.versionHash}`} className="hover:underline">{entry.deviceCount}</Link></td>
+      <td className="px-4 py-2 tabular-nums">{exposedDays(entry, t)}</td>
+      <td className="px-4 py-2">
+        <LatestCell answer={entry} t={t} />
+        <PatchAnswerCell answer={entry} t={t} /></td>
+    </tr>
+  );
+}
+
 /** One ranked row of *Easily patchable* (#532): what it carries, what it would become, and
  *  what that closes. The update line is the REFERENCE title's target and only it — the
  *  in-branch second line is #482's open cut, and `appUpdate.ts` says whose ruling it waits on.
@@ -122,9 +147,10 @@ export function VulnerabilitiesPage() {
   const band = BANDS.find((value) => value === params.get("band")) ?? null;
   const byAge = agedList(expanded, order, vuln, band);
   // #532's two chips, in the URL beside the other two so a ranked or unmatched list is a link
-  // somebody can send. `payoff` is the order the ranking is only meaningful under.
+  // somebody can send. The chip writes `order=payoff` and the filter carries its own ranking, so
+  // an address that lost the order on the way is still this list and not *Most exposed* twice.
   const jamf = params.get("jamf") === "unmatched" ? "unmatched" : null;
-  const byPayoff = params.get("order") === "payoff" && vuln === "patchable";
+  const byPayoff = payoffList(vuln);
   const permissions = useAuthStore((state) => state.user?.permissions ?? NO_PERMISSIONS);
   const plansNumbers = useMemo(() => planNumbers(permissions), [permissions]);
   const [numbers, setNumbers] = useState<NumbersRead | null>(null);
@@ -271,13 +297,17 @@ export function VulnerabilitiesPage() {
             <table className="w-full text-sm">
               <thead className="border-b bg-muted/30 text-left text-muted-foreground">
                 <tr>
-                  {[copy.colBuild, copy.colFindings, copy.colKev, copy.colMacs, copy.colOldest, copy.colFix].map(
-                    (label) => (
-                      <th key={label} className="px-4 py-2 font-medium">
-                        {label}
-                      </th>
-                    )
-                  )}
+                  {/* The ranked list keeps the two columns that make it an answer — what to
+                      update to, and what that closes — expanded exactly as in its section. Six
+                      either way, so the sentences below still span the table. */}
+                  {(byPayoff
+                    ? [copy.colBuild, copy.colFindings, copy.colMacs, copy.colUpdateTo, copy.colCloses, copy.colOldest]
+                    : [copy.colBuild, copy.colFindings, copy.colKev, copy.colMacs, copy.colOldest, copy.colFix]
+                  ).map((label) => (
+                    <th key={label} className="px-4 py-2 font-medium">
+                      {label}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -291,39 +321,15 @@ export function VulnerabilitiesPage() {
                 {shown.rows && rows.length === 0 && (
                   <tr>
                     <td className="px-4 py-4 text-muted-foreground" colSpan={6}>
-                      {vuln !== "findings" || band ? copy.noRows : term ? copy.noMatches : copy.noFindings}
+                      {/* Every narrowing in the address decides this sentence, not `vuln` and
+                          `band` alone: the list that speaks for the fleet is the unnarrowed one. */}
+                      {copy[emptySays(vuln, band, jamf, term)]}
                     </td>
                   </tr>
                 )}
-                {rows.map((entry) => (
-                  <tr key={entry.id} className="border-b align-top last:border-0">
-                    <td className="px-4 py-2">
-                      <Link to={recordHref(entry)} className="font-medium hover:underline">
-                        {entry.name} {entry.version}
-                      </Link>
-                      <span className="block font-mono text-xs text-muted-foreground">{entry.bundleId}</span>
-                    </td>
-                    <td className="px-4 py-2">
-                      {/* The ONE rendering of the three states here, handed the row so #482's
-                          update line prints beside the count it is about. */}
-                      <AssessmentCell vuln={entry.vuln} row={entry} t={t} />
-                      <Bands entry={entry} t={t} />
-                    </td>
-                    <td className="px-4 py-2 tabular-nums">
-                      {entry.vuln.assessment === "covered" && entry.vuln.counts.kev > 0 ? entry.vuln.counts.kev : "—"}
-                    </td>
-                    <td className="px-4 py-2 tabular-nums">
-                      <Link to={`/devices?versionHash=${entry.versionHash}`} className="hover:underline">
-                        {entry.deviceCount}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-2 tabular-nums">{exposedDays(entry, t)}</td>
-                    <td className="px-4 py-2">
-                      <LatestCell answer={entry} t={t} />
-                      <PatchAnswerCell answer={entry} t={t} />
-                    </td>
-                  </tr>
-                ))}
+                {rows.map((entry) =>
+                  byPayoff ? <PatchableRow key={entry.id} entry={entry} t={t} /> : <ExposedRow key={entry.id} entry={entry} t={t} />
+                )}
               </tbody>
             </table>
           </div>
