@@ -53,6 +53,12 @@
 # `webauthn`/`scim2-models` dependencies) while sitting entirely outside this
 # script's reach — a second storefront page, invisible to the machine. docs/
 # carries the same risk beyond these two and is still not covered.
+#
+# KNOWN_ISSUES.md is not scanned for markers either, and deliberately: its whole job is
+# to name limits, so it is the README's "What it does not do" section at page length,
+# and the guards below would find their words there in the honest sense. One row's
+# proof reads it instead — the retention enumeration, which README.md sends the reader
+# to, and which #490 found drifted in both files at once.
 
 set -uo pipefail
 # Deliberately not `set -e`: one failing row must not hide the other ten. Every
@@ -94,10 +100,15 @@ annotate() {
 
 # claim <kind> <id> <marker-ERE> <proof-command>
 claim() {
-  local kind=$1 id=$2 marker=$3 proof=$4 claimed=no backed=no
+  local kind=$1 id=$2 marker=$3 proof=$4 claimed=no backed=no detail
 
   grep -qiE -- "$marker" <<<"$SCANNED" && claimed=yes
-  eval "$proof" >/dev/null 2>&1 && backed=yes
+  # A proof's stdout is noise and its stderr is its reason, when it has one to give: a
+  # grep says nothing unless a file is missing, which is worth hearing, and a function
+  # proof with several conditions says which one failed, so the FAIL line names the
+  # finding rather than the function (docs/diagnosability.md).
+  detail=$(eval "$proof" 2>&1 >/dev/null) && backed=yes
+  detail=${detail//$'\n'/; }
 
   if [[ $claimed == no ]]; then
     if [[ $kind == anchor ]]; then
@@ -115,7 +126,7 @@ claim() {
     printf '  ok    %-13s claimed, and backed by: %s\n' "$id" "$proof"
     ((pass++))
   else
-    annotate "$id: README.md or backend/README.md claims this and nothing in the codebase backs it. The proof that found nothing was: $proof"
+    annotate "$id: README.md or backend/README.md claims this and nothing in the codebase backs it. The proof that found nothing was: $proof${detail:+ — it said: $detail}"
     ((failed++))
   fi
 }
@@ -139,6 +150,123 @@ readme_path_count_matches_troubleshooting() {
   counted=$(grep -cE '^## [0-9]+\. "' "$doc")
   written=$(grep -oiE "$PATH_COUNT_MARKER" "$README" | head -1 | tr '[:upper:]' '[:lower:]' | cut -d' ' -f1)
   [[ -n $written && ${words[counted]:-out-of-range} == "$written" ]]
+}
+
+# The retention sentence, which is a set rather than a count. README.md enumerates every
+# clock that deletes by age — "the machinery around that record, never the record" — and
+# KNOWN_ISSUES.md §1, the page that sentence sends the reader to, carries the same list.
+# It went false twice inside one pull request (#490): "the only three things this project
+# ever prunes" was four, then six, because the method behind the number
+# (`grep '^async def purge'`) could see a module-level purge function and nothing else —
+# not the share log's inline delete on every exchange, not the hourly session sweep. Both
+# files carry no numeral now, so the path-count shape (a written word against a counted
+# one) does not fit; what is left to hold is that the sentences and the code name the
+# same clocks, and the proof is set equality, in both directions.
+#
+# The code's side of the set is a token, `retention-clock: <name>`, on the line above
+# each statement that deletes by age (the audit log rotates rather than deletes, and its
+# token sits on the rotation). A token rather than a registry in core/config.py: a
+# registry the code does not read is a comment in a different file, further from the
+# statement it describes, and a registry the code does read turns the share log's 90
+# days and the session grace — constants on purpose — into settings, which is the knob
+# the alert-latch ruling refused (alerts/service.py, `purge_closed_alerts`). The token
+# sits on the delete, so whoever reads the delete reads the token, and whoever reads a
+# delete without one has a one-word question to ask.
+#
+# What makes the token mandatory rather than polite: every statement-level `delete(` and
+# `sa_delete(` under backend/app is inventoried, and one that is neither tokened nor in
+# RETENTION_NOT_A_CLOCK fails with the classification question. That list is #490's hand
+# classification — operator-initiated and replace-on-refresh deletes — keyed by file and
+# model, so a moved line does not fire and a new model does; an entry the code no longer
+# has fails too, so the list cannot rot into a waiver. A clock written in another shape
+# (a rotation, a raw SQL string, an ORM `db.delete` loop) is still on the reader.
+#
+# Not held: the durations. README.md gives them in days and KNOWN_ISSUES.md by setting
+# name, on purpose, and the drift that happened was in the list.
+RETENTION_TOKEN='retention-clock: '
+RETENTION_MARKER='What this project prunes|machinery around (that|the) record'
+
+# name|the words both sentences use for it. Matched inside each sentence's own paragraph,
+# so an "outbox" elsewhere in the README cannot stand in for the one in the list.
+RETENTION_CLOCKS=(
+  'outbox|\boutbox\b'
+  'runs|\bruns\b'
+  'alert-latches|alert latches'
+  'audit-log|audit log'
+  'share-log|share log'
+  'sessions|\bsessions\b'
+)
+
+# file:Model of every statement-level delete that is not a clock.
+RETENTION_NOT_A_CLOCK=(
+  # Operator-initiated: a person removed the connection, destination, role or config.
+  backend/app/api/accounts.py:AccountRole
+  backend/app/api/connections.py:Device
+  backend/app/api/connections.py:DeviceExtensionAttribute
+  backend/app/api/connections.py:InstalledApp
+  backend/app/api/connections.py:MdmSyncState
+  backend/app/api/destinations.py:OutboxDelivery
+  backend/app/core/ai_configs.py:AIProviderConfig
+  # Replace-on-refresh: the rows come straight back from the next read of the source.
+  backend/app/catalog/index.py:AppCatalogVersion
+  backend/app/catalog/service.py:AppCatalogTitleMatch
+  backend/app/core/vuln_library.py:VulnLibraryEpoch
+  backend/app/core/vuln_library.py:VulnLibraryRow
+  backend/app/core/vuln_library.py:VulnLibraryTitle
+  backend/app/mdm/org_units.py:JamfOrgUnit
+)
+
+# `comm` wants one line per item and an empty set as an empty stream, not a blank line.
+as_lines() { if [[ -n $1 ]]; then printf '%s\n' "$1"; fi; }
+
+readme_retention_clocks_match_code() {
+  local known=KNOWN_ISSUES.md readme_para known_para declared listed untokened row name words off
+  [[ -f $known ]] || { echo "no $known at $(pwd)" >&2; return 1; }
+
+  # Each file's sentence is the paragraph carrying the marker, and the words are looked
+  # for there and nowhere else.
+  readme_para=$(awk -v re="$RETENTION_MARKER" 'BEGIN { RS = "" } $0 ~ re { print; exit }' "$README")
+  known_para=$(
+    awk '/^## 1\. / { s = 1; next } s && /^## / { exit } s' "$known" |
+      awk -v re="$RETENTION_MARKER|ages out on a clock" 'BEGIN { RS = "" } $0 ~ re { print; exit }'
+  )
+  [[ -n $readme_para ]] || { echo "README.md has no paragraph matching /$RETENTION_MARKER/, so the sentence that armed this row cannot be found" >&2; return 1; }
+  [[ -n $known_para ]] || { echo "$known §1 has no paragraph saying what ages out on a clock; the README sends the reader there for it" >&2; return 1; }
+
+  # The clocks the code declares and the clocks this table knows are the same set.
+  declared=$(grep -rhoE --include='*.py' -- "${RETENTION_TOKEN}[a-z-]+" backend/app | sed "s/^$RETENTION_TOKEN//" | sort -u)
+  listed=$(printf '%s\n' "${RETENTION_CLOCKS[@]}" | cut -d'|' -f1 | sort -u)
+  off=$(comm -13 <(as_lines "$declared") <(as_lines "$listed") | head -1)
+  [[ -z $off ]] || { echo "no '${RETENTION_TOKEN}${off}' token under backend/app: the sentences name a clock the code no longer declares" >&2; return 1; }
+  off=$(comm -23 <(as_lines "$declared") <(as_lines "$listed") | head -1)
+  [[ -z $off ]] || { echo "the code declares '${RETENTION_TOKEN}${off}' and RETENTION_CLOCKS has no row for it: add the row, and the clock to both sentences" >&2; return 1; }
+
+  # Both sentences name every clock.
+  for row in "${RETENTION_CLOCKS[@]}"; do
+    name=${row%%|*} words=${row#*|}
+    grep -qiE -- "$words" <<<"$readme_para" || { echo "README.md's retention sentence no longer names the $name clock (nothing in its paragraph matches /$words/)" >&2; return 1; }
+    grep -qiE -- "$words" <<<"$known_para" || { echo "$known §1's retention sentence no longer names the $name clock (nothing in its paragraph matches /$words/)" >&2; return 1; }
+  done
+
+  # Every statement-level delete is tokened or classified, and the classification is
+  # current. A delete is tokened when the token is on its line or one of the three above.
+  untokened=$(
+    find backend/app -name '*.py' -print0 | xargs -0 awk -v token="$RETENTION_TOKEN" '
+      FNR == 1 { above1 = above2 = above3 = "" }
+      /(^|[^.A-Za-z0-9_])(sa_)?delete\([A-Za-z_]+/ && !/def (sa_)?delete\(/ && !/^[ \t]*#/ && !/`/ {
+        if (!index($0, token) && !index(above1, token) && !index(above2, token) && !index(above3, token)) {
+          match($0, /(sa_)?delete\([A-Za-z_]+/); s = substr($0, RSTART, RLENGTH); sub(/.*\(/, "", s)
+          print FILENAME ":" s
+        }
+      }
+      { above3 = above2; above2 = above1; above1 = $0 }
+    ' | sort -u
+  )
+  listed=$(printf '%s\n' "${RETENTION_NOT_A_CLOCK[@]}" | sort -u)
+  off=$(comm -23 <(as_lines "$untokened") <(as_lines "$listed") | head -1)
+  [[ -z $off ]] || { echo "$off is deleted with no '${RETENTION_TOKEN}<name>' token above it and no RETENTION_NOT_A_CLOCK entry: decide which it is" >&2; return 1; }
+  off=$(comm -13 <(as_lines "$untokened") <(as_lines "$listed") | head -1)
+  [[ -z $off ]] || { echo "RETENTION_NOT_A_CLOCK lists $off and no such delete exists now: remove the entry" >&2; return 1; }
 }
 
 # ---------------------------------------------------------------------------
@@ -231,6 +359,14 @@ claim guard hardened-base \
 claim guard path-count \
   "$PATH_COUNT_MARKER" \
   "readme_path_count_matches_troubleshooting"
+
+# A guard for the reason path-count is one: the mistake it catches only exists while the
+# sentence does. KNOWN_ISSUES.md §1 is read by the proof and not by the marker — if the
+# README stops enumerating the clocks there is no one-click contradiction left to hold,
+# and the §1 copy is on the reader like the rest of that file.
+claim guard retention \
+  "$RETENTION_MARKER" \
+  "readme_retention_clocks_match_code"
 
 # ---------------------------------------------------------------------------
 

@@ -151,6 +151,7 @@ def _build_audit_logger(tenant_key: str) -> logging.Logger:
         filename=str(path),
         when="midnight",
         utc=True,
+        # retention-clock: audit-log — named in README.md and KNOWN_ISSUES.md §1; check-readme-claims.sh reads this token.
         # backupCount *is* the retention policy: the handler drops the oldest file on
         # each rotation, so N daily files is a rolling N-day window with no cron job,
         # no cleanup task, and nothing to forget.

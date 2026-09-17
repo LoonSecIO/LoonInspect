@@ -135,5 +135,6 @@ async def require_ai(
     )
     # The same 90-day retention the exchange enforces, applied here too so a tenant
     # with community sharing off but AI on still keeps the log's pruning promise.
+    # retention-clock: share-log — named in README.md and KNOWN_ISSUES.md §1; check-readme-claims.sh reads this token.
     await db.execute(delete(ShareLog).where(ShareLog.occurred_at < now - _LOG_RETENTION))
     await db.commit()
