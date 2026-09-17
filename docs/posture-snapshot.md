@@ -439,7 +439,14 @@ words and `tests/test_posture_registry.py` refuses a sentence this document does
 per-entity grain ([data-access-grain.md](data-access-grain.md) §3), answering the auditor's
 question: the durable history of a fleet. `SYSTEM_READ` guards a different subject, this
 instance's own status; analyst, auditor and admin hold both, so the choice moves no access,
-it names the question. Still no pixels — what renders these rows is a separate conversation.
+it names the question.
+
+**Its first consumer, 2026-09-17 (#538).** Posture › Vulnerabilities reads the latest capture's
+four `vuln.*` keys into *By the numbers* at the foot of the page, dated with `capturedAt` and
+stamped with `fullSweepRunId`. It is the only reader, and the band is **planned** against
+`AUDIT_READ` rather than rendered into a `403` (`features/vulnerabilities/pageBands.ts`, after
+`overviewPlan.ts`): no band for an account without it, and a dash — never a zero — for a key with
+no row.
 
 ## The process line
 
