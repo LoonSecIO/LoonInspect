@@ -1102,6 +1102,9 @@ export const en = {
     // against it yet, so every row would read outside the corpus.
     notYetJudged:
       "A corpus is loaded and nothing here has been judged against it yet: loaded, not yet judged against; answers arrive with the next sweep or the hourly refresh.",
+    // Where a read in flight is said: in the table's body, under the search box that asked
+    // for it, never by taking that box away (#479).
+    loading: "Loading…",
     errorLoading: "Failed to load the vulnerability list.",
     noFindings: "No build the fleet carries has a finding against it in this corpus.",
     noMatches: "No build with findings matches that search.",

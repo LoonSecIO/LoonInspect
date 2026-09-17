@@ -983,6 +983,7 @@ export const de: Translations = {
     seeAll: (total: number) => `Alle ${total} anzeigen`,
     notYetJudged:
       "Ein Korpus ist geladen, und hier wurde noch nichts dagegen geprüft: geladen, aber noch nicht geprüft; Antworten kommen mit dem nächsten Durchlauf oder der stündlichen Aktualisierung.",
+    loading: "Wird geladen…",
     errorLoading: "Die Schwachstellenliste konnte nicht geladen werden.",
     noFindings: "Zu keinem Build in der Flotte hat dieser Korpus einen Fund.",
     noMatches: "Kein Build mit Funden passt zu dieser Suche.",
@@ -990,7 +991,9 @@ export const de: Translations = {
     colFindings: "Funde",
     colKev: "KEV",
     colMacs: "Macs",
-    colOldest: "Ältester Fund",
+    // Die Spalte nennt das Veröffentlichungsdatum des ältesten Funds, nicht den Fund selbst —
+    // wie `oldestPublished` weiter oben.
+    colOldest: "Ältester Fund veröffentlicht",
     colFix: "Behebung",
     bandCritical: "Krit",
     bandHigh: "Hoch",

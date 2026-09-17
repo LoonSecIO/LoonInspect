@@ -28,7 +28,7 @@ it("shows the chip as a person and never as the token", () => {
   const named = userChipLabel(TOKEN, { token: TOKEN, display: "Dana Okonkwo" }, words);
   const stale = userChipLabel(TOKEN, { token: TOKEN, display: null }, words);
   expect([named, stale]).toEqual(["Assigned user Dana Okonkwo", words.unresolved]);
-  // A rotated key, a link older than the stamp, or an echo still in flight: still no token shown.
+  // A token from another deployment or tenant, or an echo still in flight: still no token shown.
   for (const label of [named, stale, userChipLabel(TOKEN, null, words)]) expect(label).not.toContain(TOKEN);
   // Still text: quoted as typed, whether or not it resolved to one person.
   expect(userChipLabel("dana", null, words)).toBe("Assigned user matching “dana”");
