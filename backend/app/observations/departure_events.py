@@ -20,7 +20,9 @@ days have one producer; `emit_mac_removals` sends the terminal `state: removed` 
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
 from datetime import datetime
+from typing import TypeVar
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import array
@@ -53,6 +55,23 @@ STATE_DEPARTED = "departed"
 STATE_REMOVED = "removed"
 OBJECT_NOTICE_DAY = 1
 MATCHED_BY_ID = "jamfProID"
+
+# The pass's one batching seam (#513), the size and the reason `departure._returned_by_serial` already
+# batches at: asyncpg caps ONE statement at 32767 bind parameters and raises past it rather than
+# degrading, and a mass deletion — a Jamf Pro purge, a connection re-pointed at a smaller instance —
+# opens tens of thousands of Mac tails at once. `_open_macs` produces that set whole; `_emit_macs` and
+# `_emit_mac_returns` divide it here and nowhere else, so `_devices` is only ever handed a batch and no
+# id list can reach the database unbounded. A fifth caller crosses the seam by construction rather than
+# by remembering to write a fifth loop, which is the whole reason there is one.
+_EMIT_BATCH = 1000
+_Row = TypeVar("_Row")
+
+
+def _batches(rows: Sequence[_Row]) -> Iterator[Sequence[_Row]]:
+    """One pass's rows in `_EMIT_BATCH`-sized pieces, last one short. Empty in, nothing out."""
+    for start in range(0, len(rows), _EMIT_BATCH):
+        yield rows[start : start + _EMIT_BATCH]
+
 
 _MEMBERSHIPS = "group_memberships"
 _MEMBERSHIP_ENTRY = "group_membership"
@@ -141,27 +160,28 @@ async def _emit_macs(
     whole block last known (4.2), `host` is the hostname (a Mac IS a host), `deviceCount` is absent."""
     if not rows:
         return
-    # The id each row is GONE under, coalesced as `gone_for_good` does: a serial match re-keys `subject_id` to
-    # the id the Mac came back as, leaving `prior_jamf_pro_id` to name and close the retired half on the wire.
-    gone_ids = [row.prior_jamf_pro_id or row.subject_id for row in rows]
-    devices = await _devices(db, connection.id, gone_ids)
     source = instance_label(connection.base_url)
-    for row, gone in zip(rows, gone_ids, strict=True):
-        device = devices.get(gone)
-        hostname = device.hostname if device else None
-        body = _departure_body(
-            row,
-            label=hostname,
-            last_seen_at=device.last_seen_at if device else None,
-            device_count=None,
-            occurred_at=at,
-            source=source,
-            state=state,
-            notice_day=DEPARTURE_TAIL_DAYS if state == STATE_REMOVED else row.notice_day,
-            host=hostname,
-            device_meta=_mac_device_meta(device, subject_id=gone, pulled=False),
-        )
-        await enqueue_event(db, DEPARTURE_EVENT_TYPE, body, request_id=get_request_id())
+    for batch in _batches(rows):
+        # The id each row is GONE under, coalesced as `gone_for_good` does: a serial match re-keys `subject_id` to
+        # the id the Mac came back as, leaving `prior_jamf_pro_id` to name and close the retired half on the wire.
+        gone_ids = [row.prior_jamf_pro_id or row.subject_id for row in batch]
+        devices = await _devices(db, connection.id, gone_ids)
+        for row, gone in zip(batch, gone_ids, strict=True):
+            device = devices.get(gone)
+            hostname = device.hostname if device else None
+            body = _departure_body(
+                row,
+                label=hostname,
+                last_seen_at=device.last_seen_at if device else None,
+                device_count=None,
+                occurred_at=at,
+                source=source,
+                state=state,
+                notice_day=DEPARTURE_TAIL_DAYS if state == STATE_REMOVED else row.notice_day,
+                host=hostname,
+                device_meta=_mac_device_meta(device, subject_id=gone, pulled=False),
+            )
+            await enqueue_event(db, DEPARTURE_EVENT_TYPE, body, request_id=get_request_id())
 
 
 async def _emit_mac_returns(
@@ -171,22 +191,23 @@ async def _emit_mac_returns(
     joins a wipe-and-re-enrol to the departure it closes, and `deviceMeta` keeps its `eventID` — a real pull."""
     if not rows:
         return 0
-    devices = await _devices(db, connection.id, [row.subject_id for row in rows])
     source = instance_label(connection.base_url)
-    for row in rows:
-        device = devices.get(row.subject_id)
-        hostname = device.hostname if device else None
-        body = _returned_body(
-            row,
-            label=hostname,
-            occurred_at=at,
-            source=source,
-            host=hostname,
-            matched_by=row.matched_by or MATCHED_BY_ID,
-            prior_jamf_pro_id=row.prior_jamf_pro_id,
-            device_meta=_mac_device_meta(device, subject_id=row.subject_id, pulled=True),
-        )
-        await enqueue_event(db, RETURNED_EVENT_TYPE, body, request_id=get_request_id())
+    for batch in _batches(rows):
+        devices = await _devices(db, connection.id, [row.subject_id for row in batch])
+        for row in batch:
+            device = devices.get(row.subject_id)
+            hostname = device.hostname if device else None
+            body = _returned_body(
+                row,
+                label=hostname,
+                occurred_at=at,
+                source=source,
+                host=hostname,
+                matched_by=row.matched_by or MATCHED_BY_ID,
+                prior_jamf_pro_id=row.prior_jamf_pro_id,
+                device_meta=_mac_device_meta(device, subject_id=row.subject_id, pulled=True),
+            )
+            await enqueue_event(db, RETURNED_EVENT_TYPE, body, request_id=get_request_id())
     return len(rows)
 
 
@@ -300,8 +321,10 @@ def _mac_device_meta(device: Device | None, *, subject_id: str, pulled: bool) ->
     return meta
 
 
-async def _devices(db: AsyncSession, connection_id: int, ids: list[str]) -> dict[str, Device]:
-    """`external_id -> Device` for the Macs about to be named — one read per pass, not per Mac."""
+async def _devices(db: AsyncSession, connection_id: int, ids: Sequence[str]) -> dict[str, Device]:
+    """`external_id -> Device` for the Macs about to be named — one read per BATCH, not per Mac and not
+    per pass: every caller is inside `_batches`, so `ids` is at most `_EMIT_BATCH` long and this `IN (...)`
+    cannot reach asyncpg's bind cap however many Macs one deletion departed (#513)."""
     rows = await db.execute(select(Device).where(Device.mdm_connection_id == connection_id, Device.external_id.in_(ids)))
     return {device.external_id: device for device in rows.scalars().all()}
 
