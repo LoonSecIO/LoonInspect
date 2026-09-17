@@ -31,15 +31,19 @@ NO_OBSERVATION = (
     "is named below and the sum is empty. Check when the last device sweep ran — Settings › Connections, the run "
     "panel under the connection — and ask again for a window that reaches it."
 )
-NO_LEDGER_SAID = (
-    "No observation ledger for this connection. Nothing has ever been written for it, so there is nothing to report "
-    "on: only a device sweep writes the ledger, and a connection that has run only catalog refreshes or webhook runs "
-    "has none. Run a device sweep from Settings › Connections, then ask again."
-)
-COLLECTOR_GAP = (
-    "Part of this window was not collected. {days} of it read no observation — stretches where nothing reported at "
-    "all, which is the collector not running rather than a fleet in a good state. Read the run history for those "
-    "dates under Settings › Connections. The days are counted below by Mac rather than folded away."
+#: Three different facts wear this one label, so the sentence names all three rather than the alarming one alone
+#: (docs/diagnosability.md §2 rule 1). `noObservation` is a day we hold no document for, and `intervals._cover`
+#: produces it for the head before a Mac's first observation, for the tail after its last, and for dates nobody
+#: swept. The page cannot tell them apart from the object, and either a window reaching before the ledger opened or
+#: one quiet Mac is enough to print it — so naming only the collector sent every reader to a run history with no
+#: missing run in it. The next check has to be the one that separates the three.
+NOT_OBSERVED_PART = (
+    "Some of this window has no observation behind it: {days}, counted once per Mac per rule. Three different facts "
+    "read the same way and this page cannot tell them apart — the stretch before a Mac's first observation (one "
+    "enrolled mid-window, or a window opening before this connection's ledger does), the stretch after its last one "
+    "(a Mac gone quiet), and dates on which no sweep ran. The Macs and the dates are in Every interval below. The "
+    "run history under Settings › Connections separates them: a device sweep that finished while one Mac stayed "
+    "silent is that Mac; no sweep at all on those dates is this connection's schedule."
 )
 STALE_TAIL = (
     "This report is dated later than the last collection it could read. The newest collection is {collected} and the "
@@ -138,9 +142,30 @@ def _range(start: Any, end: Any) -> str:
 
 def _span_said(span: dict[str, Any]) -> str:
     """ "under one reporting interval", never "0 days": a zero meaning we saw it once must not wear the costume of a
-    zero meaning it never happened (#472 §4), least of all on a page someone files."""
+    zero meaning it never happened (#472 §4), least of all on a page someone files. It reads the same above the
+    (device, rule) grain, where the ambiguity is real rather than a wording choice: a Mac seen once holds a
+    zero-length interval — every span with one observation does (`app.baseline.intervals`) — so a zero bucket there
+    is *everything in it was instantaneous* as often as it is *nothing was in it*, and "none" is the false one on
+    the commoner of the two."""
     days = span.get("days")
     return f"{days:g} days" if days else "under one reporting interval"
+
+
+def _many(count: int, noun: str) -> str:
+    """A count with its noun agreeing. "1 rules" on a document someone archives is a seam a reader starts pulling."""
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+#: The three parts of `notObserved` in the words docs/compliance-evidence.md §3 gives them. The keys are the wire's,
+#: and the wire is not the vocabulary of the person who files this page: a cell reading `noObservation: 10 days`
+#: asks them to have read a contract to read a table.
+PARTS_SAID = {"notReported": "not reported", "noObservation": "no observation", "departed": "departed"}
+
+
+def _parts_said(total: dict[str, Any]) -> str:
+    """The "of which" cell: `notObserved` broken into its named pieces, so §3 survives the sum on paper too."""
+    parts = total.get("notObservedParts", {})
+    return " · ".join(f"{PARTS_SAID.get(key, key)}: {_span_said(span)}" for key, span in parts.items()) or "—"
 
 
 def _cell(value: Any, klass: str = "") -> str:
@@ -156,10 +181,10 @@ def _table(headers: tuple[str, ...], body: list[list[str]], klass: str = "") -> 
 def notices(report: dict[str, Any], *, heartbeat: datetime | None, now: datetime | None = None) -> list[str]:
     """What this report has to say about itself, before a reader infers it wrong. Each is a state an empty or ugly
     table would otherwise be read as — #150's rule, that failure is not emptiness, applied to a page someone files.
-    Derived from the object and the heartbeat alone, so the sentences are testable without a fleet."""
+    Derived from the object and the heartbeat alone, so the sentences are testable without a fleet. A connection with
+    no ledger at all has no sentence here: the endpoint refuses it at 409 with its own, and a second copy in a page
+    that is never rendered for it is a sentence nobody can reach."""
     window = report["header"]["method"]["window"]
-    if heartbeat is None:
-        return [NO_LEDGER_SAID]
     said: list[str] = []
     if not report["rows"]:
         said.append(NO_OBSERVATION.format(start=_when_said(window["start"]), as_of=_when_said(window["asOf"])))
@@ -168,8 +193,12 @@ def notices(report: dict[str, Any], *, heartbeat: datetime | None, now: datetime
         said.append(UNKNOWN_CONTRACT.format(seen=", ".join(unknown), known=CONTRACT_VERSION))
     gap = report["totals"].get("fleet", {}).get("notObservedParts", {}).get("noObservation")
     if gap and report["rows"]:
-        said.append(COLLECTOR_GAP.format(days=_span_said(gap)))
-    newest = max((row["collectedTo"] for row in report["rows"] if row.get("collectedTo")), default=None)
+        said.append(NOT_OBSERVED_PART.format(days=_span_said(gap)))
+    # The ledger's own last word is the fallback, not the first answer: the newest collection this report could READ
+    # is the newest one inside the window. Without the fallback a window opening after every observation — rows, all
+    # of them noObservation, none carrying a collection — is the one report that never says how old it is.
+    ledger_said = heartbeat.replace(microsecond=0).isoformat() if heartbeat else None
+    newest = max((row["collectedTo"] for row in report["rows"] if row.get("collectedTo")), default=ledger_said)
     if newest and str(window["asOf"]) > str(newest):
         said.append(STALE_TAIL.format(collected=_when_said(newest), as_of=_when_said(window["asOf"])))
     retention = settings.run_retention_days
@@ -201,9 +230,23 @@ def _header_html(report: dict[str, Any]) -> str:
     )
 
 
+def _window_said(window: dict[str, Any]) -> str:
+    """The window's own length. Every figure in the sum is a multiple of it, and a multiple whose multiplicand is
+    nowhere on the page cannot be checked by the reader an archived copy is built for."""
+    span = datetime.fromisoformat(str(window["asOf"])) - datetime.fromisoformat(str(window["start"]))
+    days = round(span.total_seconds() / 86400, 2)
+    return f"{days:g} days" if days else "under one day"
+
+
 def _totals_html(report: dict[str, Any]) -> str:
     """met + unmet + not observed = the window, where a reader cannot miss it, with `notReported` — a field the
-    aperture never collected — beside the third rather than inside it."""
+    aperture never collected — beside the third rather than inside it.
+
+    The identity holds at the (device, rule) grain, and every bucket printed here is above it: `window` is then the
+    report window **times the rows folded into that bucket** (docs/compliance-evidence.md §4), which is how a 40-day
+    header sits over a 2000-day fleet row. The heading and the prose both say so and both give the multiple. A
+    figure a reader cannot reconcile with the window named above it reads as evasion, which is the wrong answer to
+    the question #219 R5 sends this page to an assessor to ask."""
     titles = {rule["ruleID"]: rule["title"] for rule in report["rules"]}
     fleet = report["totals"].get("fleet")
     buckets = list(report["totals"]["byRule"].items()) + ([("Every rule, every Mac", fleet)] if fleet else [])
@@ -211,19 +254,30 @@ def _totals_html(report: dict[str, Any]) -> str:
         [
             _cell(titles.get(key, key)),
             *(_cell(_span_said(total[state]), "n") for state in ("met", "unmet", "notObserved")),
-            _cell(" · ".join(f"{k}: {_span_said(v)}" for k, v in total.get("notObservedParts", {}).items()) or "—"),
+            _cell(_parts_said(total)),
             _cell(_span_said(total["window"]), "n"),
         ]
         for key, total in buckets
     ]
-    said = (
-        "<p>Met plus unmet plus not observed is the window, exactly. Not observed is every stretch this report "
-        "cannot answer for, and its pieces are named beside it rather than folded in. A rule nothing could be "
-        "counted for is absent here rather than a row of zeros. The days below are each rounded to two places for "
-        "reading, so adding a column can land a hundredth either side of the window; the figures the identity holds "
-        "on are the seconds, in the bundle at the foot of this page.</p>"
+    macs, rules = len(report["devices"]), len(report["rules"])
+    window = _window_said(report["header"]["method"]["window"])
+    arithmetic = (
+        f" This report holds {_many(macs, 'Mac')} and {_many(rules, 'rule')}, so a rule's row reads {window} × "
+        f"{macs} and the fleet's {window} × {macs} × {rules}."
+        if buckets
+        else ""
     )
-    headers = ("Rule", "Met", "Unmet", "Not observed", "of which", "= the window")
+    said = (
+        f"<p>Met plus unmet plus not observed is the window, exactly — <b>for one Mac under one rule</b>. Every row "
+        f"below is above that grain, so its last figure is the window ({window}, the one in the header) times the "
+        f"rows folded into it: once per Mac on a rule's row, and once per Mac per rule on the fleet's.{arithmetic} "
+        f"They are Mac-days, not calendar days. Not observed is every stretch this report cannot answer for, and "
+        f"its pieces are named beside it rather than folded in. A rule nothing could be counted for is absent here "
+        f"rather than a row of zeros. The days are each rounded to two places for reading, so adding a column can "
+        f"land a hundredth either side of the window; the figures the identity holds on are the seconds, in the "
+        f"bundle at the foot of this page.</p>"
+    )
+    headers = ("Rule", "Met", "Unmet", "Not observed", "of which", "= the window × rows")
     return f"<h2>The three-way sum</h2>{said}{_table(headers, body, 'sum')}"
 
 

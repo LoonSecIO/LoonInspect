@@ -278,8 +278,7 @@ in [`splunk-setup.md`](splunk-setup.md) §6.
 
 - `subject.departure` and `subject.returned` — one string for both, `loon:departure`
   ([#179](https://github.com/LoonSecIO/LoonInspect/issues/179), 2026-09-16). `event=`
-  separates the two types at search time; the object subjects emit today and the Mac tail
-  is the follow-up.
+  separates them at search time; an object departs once, a Mac on a seven-day tail (#495).
 - `device.change` — its entity's string, `loon:jamf:mac:<wrapper>:change`, fifteen in all
   ([#243](https://github.com/LoonSecIO/LoonInspect/issues/243), stamped by
   [#223](https://github.com/LoonSecIO/LoonInspect/issues/223)). It went first because it was
