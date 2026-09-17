@@ -720,6 +720,103 @@ async def test_the_clock_runs_out_without_a_clean_census_and_the_mac_still_leave
     assert await _events(db, mark, "subject.departure") == [], "the terminal is emitted exactly once"
 
 
+async def _not_a_census_lines(db, connection_id: int) -> list:
+    """The *device census not taken…* lines, whole — message, fields and the run that wrote them."""
+    from app.models.schema import Run, RunLogLine
+
+    query = (
+        select(RunLogLine)
+        .join(Run, RunLogLine.run_id == Run.id)
+        .where(Run.mdm_connection_id == connection_id, RunLogLine.message.like("device census not taken%"))
+        .order_by(RunLogLine.id)
+    )
+    return list((await db.execute(query)).scalars().all())
+
+
+async def _scope_the_sweeps(db, connection_id: int, selector: str | None) -> None:
+    """Point this connection's collections at a slice of the fleet — or back at all of it."""
+    from app.models.schema import Collection
+
+    await db.execute(update(Collection).where(Collection.mdm_connection_id == connection_id).values(selector=selector))
+    await db.commit()
+
+
+async def test_a_scoped_sweep_closes_the_latch_with_the_terminal_it_sends(db, jamf: FakeJamf, connection, monkeypatch) -> None:
+    """#512, ruled 2026-09-17 (R10 option 1): one act, one guarantee. The terminal fires above the
+    census gate on the wall clock, and the latch close rides with it — so a connection whose sweeps
+    are all scoped, or all short a failed device, cannot ship `state: removed` to the SIEM while
+    `GET /api/alerts?open=true` goes on listing the Mac. Both dirty reasons run; the day-seven sweep
+    is the scoped one, and its own run-log line carries `latchesClosed` and says so in words."""
+    from app.alerts.service import CLOSED_DEVICE_DEPARTED, NEW_APP
+    from app.mdm import service
+    from app.models.schema import Alert, Device
+
+    selector = "general.remoteManagement.managed==true"
+    jamf.seed(1)
+    (clone,) = jamf._extra
+    assert (await service.sync_connection(db, connection)).ok
+    device = (
+        await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == clone["id"]))
+    ).scalar_one()
+    app = {"app_hash": "e" * 32, "app_name": "Wireshark", "bundle_id": "org.wireshark.Wireshark"}
+    db.add(Alert(kind=NEW_APP, level="high", device_id=device.id, opened_at=datetime.now(UTC) - timedelta(days=30), **app))
+    await db.commit()
+
+    async def latch() -> Alert:
+        return (await db.execute(select(Alert).where(Alert.device_id == device.id))).scalars().one()
+
+    # ONE clean census opens the tail. Every sweep after it is scoped or dirty — which on a
+    # selector-only schedule is the whole of the Mac's remaining life here.
+    jamf._extra = []
+    assert (await service.sync_connection(db, connection)).ok
+    (gone,) = await _departures(db, connection.id, COMPUTER)
+
+    await _scope_the_sweeps(db, connection.id, selector)
+    assert (await service.sync_connection(db, connection)).ok
+    assert (await latch()).closed_at is None, "mid-tail the Mac is still in the fleet, and so is its alert"
+
+    # The other way a sweep is not a census, on the same tail: a device Jamf returned that we
+    # failed to ingest. Nothing to close yet, and the branch still runs.
+    await _scope_the_sweeps(db, connection.id, None)
+    ingest = service.ingest_computer
+
+    async def one_bad_device(session, conn, raw, **kwargs):
+        if raw.get("id") == jamf.real["id"]:
+            raise RuntimeError("ingest failed for this device")
+        return await ingest(session, conn, raw, **kwargs)
+
+    monkeypatch.setattr(service, "ingest_computer", one_bad_device)
+    dirty = await service.sync_connection(db, connection)
+    assert dirty.ok and dirty.devices_failed == 1, dirty
+    monkeypatch.setattr(service, "ingest_computer", ingest)  # not undo(): the fake Jamf is patched in too
+    assert {line.fields["reason"] for line in await _not_a_census_lines(db, connection.id)} == {"selector", "device_failures"}
+    assert all(line.fields["latchesClosed"] == 0 for line in await _not_a_census_lines(db, connection.id))
+    assert (await latch()).closed_at is None, "a failed ingest is not day seven either"
+
+    # Day seven, and the only sweep that runs is scoped. One act: the terminal and the close.
+    await _scope_the_sweeps(db, connection.id, selector)
+    await _age(db, gone, 8)
+    mark = await _high_water(db)
+    assert (await service.sync_connection(db, connection)).ok
+    (terminal,) = await _events(db, mark, "subject.departure")
+    assert terminal.payload["state"] == "removed"
+
+    closed = await latch()
+    assert closed.closed_at is not None and closed.closed_reason == CLOSED_DEVICE_DEPARTED
+    line = (await _not_a_census_lines(db, connection.id))[-1]
+    assert closed.closed_run_id == line.run_id, "the sweep that sent the terminal is the one that stamped the close"
+    assert line.fields["latchesClosed"] == 1 and line.fields["macsRemoved"] == 1
+    # Said out loud on the line the operator reads, not left to a number that moved (path 16, step 5).
+    assert "open alert latch closed" in line.message and "nothing was deleted" in line.message
+
+    # Idempotent: the next scoped sweep finds nothing left to close and says nothing about it.
+    assert (await service.sync_connection(db, connection)).ok
+    lines = await _not_a_census_lines(db, connection.id)
+    assert (await latch()).closed_at == closed.closed_at
+    assert lines[-1].fields["latchesClosed"] == 0 and "alert latch" not in lines[-1].message
+    assert sum("alert latch" in row.message for row in lines) == 1
+
+
 async def test_a_returning_mac_carries_its_pull_and_the_id_it_departed_under(db, jamf: FakeJamf, connection) -> None:
     """4.6 for a Mac: `matchedBy` and `priorJamfProID` off the row #475 writes, and `deviceMeta`
     WITH `eventID` — the one asymmetry, because a return coincides with a real pull."""
