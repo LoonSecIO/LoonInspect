@@ -140,8 +140,8 @@ _DEVICE_META_SOURCES: tuple[tuple[str, str, str], ...] = (
     ("managed", "general", "remoteManagement.managed"),
     ("supervised", "general", "supervised"),
     ("enrolledAt", "general", "lastEnrolledDate"),
-    # The assigned person, in for now and to be tokenized (#446, Kyle 2026-09-15): a filter
-    # value travels in a URL, so this is the surface that issue exists for.
+    # The assigned person, in for now (Kyle 2026-09-15): what the chip and a typed `user=` filter
+    # read. A shared link carries `userToken` (#446), stamped below, never one of these.
     ("username", "user_and_location", "username"),
     ("realName", "user_and_location", "realname"),
     ("email", "user_and_location", "email"),
