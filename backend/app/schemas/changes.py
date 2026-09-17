@@ -43,7 +43,7 @@ class DeviceChangeOut(_Base):
 class UserFilterOut(_Base):
     """What a `user=` filter resolved to (#446): the `u_…` it should travel as — the one given,
     or the one person typed text matched — and the name for its chip, from a matched row's own
-    stamp. Null where nothing resolved it (a rotated key, rows older than the stamp)."""
+    stamp. Null where nothing resolved it (a token minted in another deployment or tenant)."""
 
     token: str | None
     display: str | None

@@ -36,7 +36,8 @@ export function userTokenRewrite(applied: string | undefined, resolved: UserFilt
 export interface UserChipWords { named: (name: string) => string; matching: (value: string) => string; unresolved: string }
 
 /** What the chip says — never the token, which names nobody a reader can recognise. One the
- *  server could not resolve (a rotated key, rows older than the stamp) reads as the page's words
+ *  server could not resolve (a token from another deployment or tenant, or the echo still in
+ *  flight) reads as the page's words
  *  for a person it cannot name, the empty table below saying the rest. */
 export function userChipLabel(applied: string, resolved: UserFilter | null | undefined, words: UserChipWords): string {
   if (!isToken(applied)) return words.matching(applied);
