@@ -478,8 +478,15 @@ describe("bannerKind — the handoff's showBanner states", () => {
     // Never the readback: that would say "Showing all changes" over a page that ran nothing.
     expect(bannerKind({ ...INVALID, filters: { ...NEW_INSTALLS } })).toBe("invalid");
     expect(bannerKind(INVALID, true)).toBe("invalid");
-    expect(en.changes.prompt.invalid).toBe("Invalid question — the Prompt bar can't answer it, so nothing was run.");
-    expect(de.changes.prompt.invalid).toBe(
+    // The noun is the caller's: the same sentence is said by the AI lever (#534), on a page
+    // with no Prompt bar on it.
+    expect(en.changes.prompt.invalid(en.changes.prompt.barName)).toBe(
+      "Invalid question — the Prompt bar can't answer it, so nothing was run."
+    );
+    expect(en.changes.prompt.invalid(en.vulnerabilities.aiLeverName)).toBe(
+      "Invalid question — the AI lever can't answer it, so nothing was run."
+    );
+    expect(de.changes.prompt.invalid(de.changes.prompt.barName)).toBe(
       "Ungültige Frage – die Prompt-Leiste kann sie nicht beantworten, daher wurde nichts ausgeführt."
     );
   });
@@ -808,10 +815,10 @@ describe("failureReason — a failed read, as the clause its sentence goes on fr
   const tp = en.changes.prompt;
 
   it("the Prompt bar's status read: what failed, then where to look", () => {
-    expect(tp.statusFailed(failureReason(new ApiError(500, null), tp))).toBe(
+    expect(tp.statusFailed(tp.barName, failureReason(new ApiError(500, null), tp))).toBe(
       "The Prompt bar could not check its settings: the server answered 500 without a reason. Check docker compose logs app."
     );
-    expect(tp.statusFailed(failureReason(new TypeError("Load failed"), tp))).toBe(
+    expect(tp.statusFailed(tp.barName, failureReason(new TypeError("Load failed"), tp))).toBe(
       "The Prompt bar could not check its settings: this server did not answer. Check docker compose logs app."
     );
   });
@@ -827,7 +834,7 @@ describe("failureReason — a failed read, as the clause its sentence goes on fr
 
   it("a body that arrived but was not the shape the read promises is unreadable, never 'did not answer'", () => {
     expect(failureReason(null, tp)).toBe("the server's answer could not be read");
-    expect(tp.statusFailed(failureReason(null, tp))).toBe(
+    expect(tp.statusFailed(tp.barName, failureReason(null, tp))).toBe(
       "The Prompt bar could not check its settings: the server's answer could not be read. Check docker compose logs app."
     );
   });

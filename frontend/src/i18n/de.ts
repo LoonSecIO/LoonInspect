@@ -1090,6 +1090,19 @@ export const de: Translations = {
     numbersAbsence: "Ein Schlüssel ohne Zeile galt in jener Nacht nicht und ist nie null: Diese vier werden erst geschrieben, wenn ein Korpus diese Organisation geprüft hat. Ein Strich sagt also, dass die Aufzeichnung nichts zu sagen hatte — nicht, dass die Antwort keine war.",
     numbersFailed: "Die nächtliche Aufzeichnung ließ sich nicht lesen; diese vier Zahlen werden daher nicht gezeigt.",
     searchIdHint: "Das ist eine Fund-ID. Drücken Sie die Eingabetaste, um sie nachzuschlagen — die Listen unten durchsuchen Namen, Bundle-IDs und Versionen, was keine ID ist.",
+    // #534 — der KI-Hebel am Suchfeld. Alles, was er mit der Prompt-Leiste teilt, steht in
+    // deren eigenen Worten (`changes.prompt`); hier steht nur, was dieser Seite gehört.
+    aiLever: "KI",
+    aiLeverName: "der KI-Hebel",
+    aiLabel: "Zu diesen Builds fragen",
+    aiPlaceholder: "Welche Apps stehen auf der CISA-KEV-Liste?",
+    aiHint:
+      "Ihre Frage geht an das hier gewählte Modell und setzt die Filter dieser Seite. Nichts über Ihre Macs verlässt den Pod, und jede Zahl unten wird hier gezählt, nicht vom Modell.",
+    aiForApp: (q: string) => `Apps, die zu „${q}“ passen`,
+    aiShowing: (what: string) => `Zeigt ${what}.`,
+    aiWouldShow: (what: string) => `Würde ${what} zeigen.`,
+    aiTotal: (total: number) => `${total} Build${total === 1 ? " passt" : "s passen"}.`,
+    aiNone: "Kein Build passt.",
     lookupIntro: "Builds auf dieser Flotte, deren Antwort diese ID nennt — eine Zeile pro Build, nicht pro Mac.",
     lookupLoading: "Diese ID wird nachgeschlagen…",
     lookupFailed: "Diese ID konnte nicht nachgeschlagen werden.",
@@ -1564,7 +1577,8 @@ export const de: Translations = {
       asking: (provider: string) => `Frage an ${provider}…`,
       unavailable: "KI-Suche nicht verfügbar – die Filter unten funktionieren weiterhin.",
       unparseable: "Das ließ sich nicht deuten – verwenden Sie die Filter direkt.",
-      invalid: "Ungültige Frage – die Prompt-Leiste kann sie nicht beantworten, daher wurde nichts ausgeführt.",
+      invalid: (bar: string) => `Ungültige Frage – ${bar} kann sie nicht beantworten, daher wurde nichts ausgeführt.`,
+      barName: "die Prompt-Leiste",
       closeAsAllowed: "So genau gefiltert, wie diese Bedienelemente es erlauben.",
       askFailed: "Die Frage hat diesen Server nicht erreicht. Prüfen Sie, ob LoonInspect läuft, und laden Sie die Seite neu.",
       askNoReason: (status: number) =>
@@ -1574,8 +1588,8 @@ export const de: Translations = {
       reasonStatus: (status: number) => `der Server hat mit ${status} ohne Begründung geantwortet`,
       reasonNoAnswer: "dieser Server hat nicht geantwortet",
       reasonUnreadable: "die Antwort des Servers ließ sich nicht lesen",
-      statusFailed: (reason: string) =>
-        `Die Prompt-Leiste konnte ihre Einstellungen nicht prüfen: ${reason}. Prüfen Sie docker compose logs app.`,
+      statusFailed: (bar: string, reason: string) =>
+        `${bar.charAt(0).toUpperCase()}${bar.slice(1)} konnte die eigenen Einstellungen nicht prüfen: ${reason}. Prüfen Sie docker compose logs app.`,
       staleReply:
         "Die Antwort kam, nachdem sich die Filter geändert hatten, und wurde deshalb nicht angewendet. Stellen Sie die Frage erneut, um sie anzuwenden.",
       proposalLead: (n: number) =>

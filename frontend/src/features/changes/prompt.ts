@@ -259,6 +259,17 @@ export function answerLines(summary: PromptSummary, strings: ChangesStrings): st
 
 export type BannerKind = "error" | "invalid" | "unparseable" | "proposal" | "unsupported" | "readback";
 
+/** What a banner is decided from, and all it is decided from. Structural because every AI
+ *  surface answers in this shape and the states must be told apart the same way on each: slot
+ *  2's lever (#534) passes its own result here rather than re-deriving the chain, which it got
+ *  backwards — and since a refusal always answers with no filters, every refusal read as
+ *  *could not interpret that*. */
+export interface BannerFrom {
+  outcome: PromptOutcome;
+  filters: unknown;
+  unsupported: string | null;
+}
+
 /**
  * Port of the handoff's `showBanner` states. `unsupported` is the important one: the
  * controls answered a narrower question than the one asked, and the banner says so
@@ -274,7 +285,7 @@ export type BannerKind = "error" | "invalid" | "unparseable" | "proposal" | "uns
  * ran, and the server's sentence says why; before this state, such text ran as the whole
  * log. A question asking for all changes is not invalid: it runs, every filter unset.
  */
-export function bannerKind(result: PromptResult, proposalApplied = false): BannerKind {
+export function bannerKind(result: BannerFrom, proposalApplied = false): BannerKind {
   if (result.outcome === "error") return "error";
   if (result.outcome === "invalid") return "invalid";
   if (result.outcome === "unparseable" || result.filters === null) return "unparseable";

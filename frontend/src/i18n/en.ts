@@ -1225,6 +1225,21 @@ export const en = {
     // #533 — one id, and the builds whose answer names it. Nothing per id: the container holds an
     // ordered list and no band, date or KEV mark against one.
     searchIdHint: "That is a finding id. Press Enter to look it up — the lists below search names, bundle ids and versions, which no id is.",
+    // #534 — the AI lever on the search box. Everything the lever shares with the Changes
+    // Prompt bar is said in `changes.prompt`'s own words, because the two bars fail the same
+    // ways for the same reasons; only what is this page's is here.
+    aiLever: "AI",
+    // The lever's noun, for the shared sentences that name whatever asked (`prompt.invalid`).
+    aiLeverName: "the AI lever",
+    aiLabel: "Ask about these builds",
+    aiPlaceholder: "Which apps are on CISA KEV?",
+    aiHint:
+      "Your question goes to the model picked here and sets this page's filters. Nothing about your Macs leaves with it, and every number below is counted here, not by the model.",
+    aiForApp: (q: string) => `apps matching “${q}”`,
+    aiShowing: (what: string) => `Showing ${what}.`,
+    aiWouldShow: (what: string) => `Would show ${what}.`,
+    aiTotal: (total: number) => `${total} build${total === 1 ? " matches" : "s match"}.`,
+    aiNone: "No build matches.",
     lookupIntro: "Builds on this fleet whose answer names this id — one row per build, not one per Mac.",
     lookupLoading: "Looking this id up…",
     lookupFailed: "Could not look this id up.",
@@ -1745,8 +1760,12 @@ export const en = {
       unavailable: "AI search unavailable — the filters below still work.",
       unparseable: "Could not interpret that — try the filters directly.",
       // A question the filters cannot answer: nothing ran, the filters are as they were.
-      // The server's sentence under it says why and what to ask instead.
-      invalid: "Invalid question — the Prompt bar can't answer it, so nothing was run.",
+      // The server's sentence under it says why and what to ask instead. It takes the noun
+      // for whatever asked, because the same sentence is said on a page that has no Prompt
+      // bar — the AI lever on Posture › Vulnerabilities (#534) — and naming the wrong
+      // control is telling the reader to look for something that is not there.
+      invalid: (bar: string) => `Invalid question — ${bar} can't answer it, so nothing was run.`,
+      barName: "the Prompt bar",
       closeAsAllowed: "Filtered as close as these controls allow.",
       // Only for a request that never reached the server. Something that answered without
       // a reason — a plain-text 500, a proxy's 502 — gets its status and the app's log.
@@ -1757,7 +1776,8 @@ export const en = {
       reasonStatus: (status: number) => `the server answered ${status} without a reason`,
       reasonNoAnswer: "this server did not answer",
       reasonUnreadable: "the server's answer could not be read",
-      statusFailed: (reason: string) => `The Prompt bar could not check its settings: ${reason}. Check docker compose logs app.`,
+      statusFailed: (bar: string, reason: string) =>
+        `${bar.charAt(0).toUpperCase()}${bar.slice(1)} could not check its settings: ${reason}. Check docker compose logs app.`,
       // The operator moved the filters by hand while the question was out; the answer
       // would have overwritten them, so it is not applied.
       staleReply: "The answer came back after the filters changed, so it was not applied. Ask again to apply it.",

@@ -259,6 +259,49 @@ replies.
   lists the families), so what remains of this deviation is the data block.
 - `unsupported` is model-written English, including on the German page.
 
+## Built (2026-09-17, #534): the AI lever on Posture › Vulnerabilities
+
+Slot 2, sentence-to-filter again, and slot 1's mechanism under slot 1's rulings — none of them
+re-argued. The difference is where it sits: not a second box above the filters, but a toggle
+labelled **AI** on the search box the page already has (Kyle, 2026-09-17: *"I would put a lever
+on the search box that says whether to use AI for the search or not"*). Off, the box searches
+names, bundle ids and versions, and an id shape routes to that id's own page (#533). The lever
+is drawn only where `GET /api/vulnerabilities/prompt` says the bar is available — the flag, the
+consent, a saved provider, in that order, read by slot 1's own `prompt_status` rather than a
+copy of it — and where it is not, there is no lever and no mention of one. Its last position is
+this viewer's `localStorage`, and a browser that has never seen it starts **off**.
+
+**What leaves the pod.** `POST /api/vulnerabilities/prompt`, under `vuln:read`: the static
+instructions in `backend/app/ai/vulnerabilities_prompt.py` and the sanitised question, nothing
+else. The sanitiser and the control-token strip (#435) are slot 1's functions, imported. The
+gate is `require_ai` with `query_text` as the one disclosed field, and one share-log row before
+the first byte. An id never leaves at all: the box routes it.
+
+**What comes back.** Five fields — `app`, `state`, `band`, `order`, `unsupported` — forced into
+the page's four filter keys (`q`, `vuln`, `band`, `order`) by the same parse/coerce/guard path.
+There is no *all* on this page, so *any* means `findings`, the page's own default. Four guards:
+a Search naming a filter or a kind of thing is dropped; so is one that IS a finding id, which
+the page never searches (`findingIdIn` routes it), so a count taken with it would not be the
+count of the list shown; a band beside a state with no findings is dropped; and the order is
+bound to the list in **both** directions — *Easily patchable* always takes `payoff`, because
+the page reads that ranking off the filter alone, and an order another list does not serve is
+read as *Most exposed*. The count is `GET /api/catalog` called with those very filters, so the
+number the box states is the number the list then shows. `unsupported` is the only
+model-written text, rendered as text.
+
+**The dispositions** are the three, unchanged: **applied** runs on Enter (ruling 2); **proposed**
+is one a repair widened, shown with its corrections and *Apply these filters*, running nothing
+until it is pressed (ruling 9); **invalid** is text the model judged not a question about this
+list and runs nothing (ruling 10), and its sentence names the device list, because a question
+about Macs, departments or sites is a real question about another page. The Model list is shown
+as slot 1 shows it (ruling 7).
+
+**Not measured against a live endpoint.** #534 asks for no live-provider test, so the
+instructions are held by a labelled held-out set — in vocabulary, widening, off topic,
+adversarial — in `backend/tests/test_vulnerabilities_prompt.py`, together with the drift pins
+that tie the vocabulary to `GET /api/catalog`'s Literals and to the page's own consts. That
+file is where a wording change is answered for.
+
 ## Built (2026-09-05, #319)
 
 What ships, where it lives, and what was proven against it.

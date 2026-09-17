@@ -71,7 +71,7 @@ export function PromptAnswer({ result, refusal, stale, applied, onApplyProposal 
           were. The lead says so; the server's sentence says why and what to ask. */}
       {kind === "invalid" && (
         <div role="status" className={mutedClasses}>
-          <p className="font-medium text-foreground">{tp.invalid}</p>
+          <p className="font-medium text-foreground">{tp.invalid(tp.barName)}</p>
           {result.error && <p>{result.error.message}</p>}
         </div>
       )}

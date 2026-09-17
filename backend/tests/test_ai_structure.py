@@ -236,13 +236,14 @@ def test_s2_every_module_that_dials_a_model_asks_the_gate() -> None:
 # --- S4. Text only, in the frontend ----------------------------------------------------------
 
 
-# Where model text is shown: the AI settings area, and the Changes page's Prompt bar and
-# the page that hosts it. Globbed, so the files are covered from the day they exist.
+# Where model text is shown: the AI settings area, and each slot's bar with the page that
+# hosts it — slot 1 on Changes, slot 2's AI lever on Vulnerabilities (#534). Globbed, so the
+# files are covered from the day they exist.
 def _rendering_files() -> list[Path]:
-    changes = _FEATURES / "changes"
     files = [path for path in (_FEATURES / "ai").rglob("*") if path.suffix in {".ts", ".tsx"}]
-    for pattern in ("[Pp]rompt*.ts", "[Pp]rompt*.tsx", "ChangesPage.tsx"):
-        files.extend(changes.glob(pattern))
+    for folder, page in ((_FEATURES / "changes", "ChangesPage.tsx"), (_FEATURES / "vulnerabilities", "VulnerabilitiesPage.tsx")):
+        for pattern in ("[Pp]rompt*.ts", "[Pp]rompt*.tsx", "SearchBox.tsx", page):
+            files.extend(folder.glob(pattern))
     return sorted(set(files))
 
 

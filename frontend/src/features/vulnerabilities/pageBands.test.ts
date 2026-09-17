@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AffectedRow, PostureRow } from "./pageBands";
-import { agedList, emptySays, exploreByApp, payoffList, planNumbers, readNumbers } from "./pageBands";
+import { agedList, emptySays, exploreByApp, listQuery, payoffList, planNumbers, readNumbers } from "./pageBands";
 
 /** Roles as `backend/app/core/permissions.py` grants them, transcribed by hand the way
  *  `overviewPlan.test.ts` transcribes them: fixtures, not a drift guard. */
@@ -56,32 +56,51 @@ describe("payoffList", () => {
   });
 });
 
+/** A search that ran, minted as the page mints it — the only way to hand `emptySays` one. */
+const q = (text: string) => listQuery(false, text, "");
+
 describe("emptySays", () => {
   // The defect this exists for. Pressing *No Jamf fix path* on a fleet where every build with
   // findings HAS a Patch title left the table saying *no build the fleet carries has a finding
   // against it in this corpus* — directly under *Most exposed* listing those builds. The chip is
   // empty because the fix path is there, which is the good news the chip was added to surface.
   it("does not let the fix-path chip speak for the fleet", () => {
-    expect(emptySays("findings", null, "unmatched", "")).toBe("noFixPathNone");
-    expect(emptySays("findings", null, null, "")).toBe("noFindings");
+    expect(emptySays("findings", null, "unmatched", q(""))).toBe("noFixPathNone");
+    expect(emptySays("findings", null, null, q(""))).toBe("noFindings");
   });
 
   // A claim about every build with findings holds only where nothing else narrowed the set: a
   // search, a band or another filter beside the chip and the honest sentence is *this filter*.
   it("hands the chip's own sentence back the moment anything narrows it further", () => {
-    expect([emptySays("findings", null, "unmatched", "wireshark"), emptySays("findings", "critical", "unmatched", ""), emptySays("kev", null, "unmatched", "")]).toEqual(["noRows", "noRows", "noRows"]);
+    expect([emptySays("findings", null, "unmatched", q("wireshark")), emptySays("findings", "critical", "unmatched", q("")), emptySays("kev", null, "unmatched", q(""))]).toEqual(["noRows", "noRows", "noRows"]);
   });
 
   // #538's four routes, unmoved: the fleet sentence for the unnarrowed list, the search sentence
   // for a search over it, and the filter sentence for every narrowing of it.
   it("keeps the search, the filter and the fleet apart", () => {
-    expect([emptySays("findings", null, null, "wireshark"), emptySays("findings", null, null, "   "), emptySays("findings", "high", null, ""), emptySays("clean", null, null, ""), emptySays("unknown_app", null, null, "zoom")]).toEqual(["noMatches", "noFindings", "noRows", "noRows", "noRows"]);
+    expect([emptySays("findings", null, null, q("wireshark")), emptySays("findings", null, null, q("   ")), emptySays("findings", "high", null, q("")), emptySays("clean", null, null, q("")), emptySays("unknown_app", null, null, q("zoom"))]).toEqual(["noMatches", "noFindings", "noRows", "noRows", "noRows"]);
   });
 
   // The ranked list is its own state too: expanded and empty it said *no build matches that
   // filter*, when the band it came from had a sentence naming all three reasons (§18 step 8).
   it("gives the ranked list the sentence its own band already had", () => {
-    expect([emptySays("patchable", null, null, ""), emptySays("patchable", null, null, "zoom")]).toEqual(["easilyPatchableNone", "noRows"]);
+    expect([emptySays("patchable", null, null, q("")), emptySays("patchable", null, null, q("zoom"))]).toEqual(["easilyPatchableNone", "noRows"]);
+  });
+
+  // The call site's own defect (#534): the sentence was chosen from the BOX while the lists asked
+  // with `listQuery`'s answer. Lever on, the box holds a question — so *do we have anything at
+  // all?* left standing over an applied `vuln=findings` printed *No build with findings matches
+  // that search* for a search that was never sent, and the fleet's own sentence was unreachable
+  // for every question the lever answers. Composed here as the page composes it, both ways.
+  it("answers for the search that ran, never for the question still in the box", () => {
+    const asked = (applied: string) => listQuery(true, "do we have anything at all?", applied);
+    expect(listQuery(false, "wireshark", "ignored")).toBe("wireshark");
+    expect([emptySays("findings", null, null, asked("")), emptySays("patchable", null, null, asked("")), emptySays("findings", null, null, asked("Wireshark"))])
+      .toEqual(["noFindings", "easilyPatchableNone", "noMatches"]);
+    // The same conflation the box could reach without the lever: an id is routed, never filtered
+    // by, so it is no more a search that ran than a question is.
+    expect([listQuery(false, "CVE-2024-1234", ""), emptySays("findings", null, null, listQuery(false, "CVE-2024-1234", ""))])
+      .toEqual(["", "noFindings"]);
   });
 });
 
