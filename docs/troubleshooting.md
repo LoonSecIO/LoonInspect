@@ -1145,7 +1145,7 @@ writes one row to the disclosure log naming the destination and the one field th
    Added, Removed or Updated.* Pick a Change from that section's side, or *Any change*. The bar
    never sets such a pair.
 
-5. **The AI lever is missing from the search box on Posture › Vulnerabilities**, or it calls a
+6. **The AI lever is missing from the search box on Posture › Vulnerabilities**, or it calls a
    question invalid. The lever is the toggle labelled **AI** beside that page's search box
    (#534): the same bar, the same three causes, a different surface. It is drawn only while all
    three of step 1's conditions hold, so read the same *Changes Prompt bar* line on Settings ›
