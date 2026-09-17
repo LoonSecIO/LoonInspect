@@ -25,8 +25,10 @@ import type { Translations } from "@/i18n/en";
  * Three states before a row is drawn, in this order: nothing answers (the `409` — the banner
  * and its *why* block alone, because an empty table under a filter reads as *nothing found*,
  * §4a); loaded but nothing judged against it yet (`vulnJudged` false — one sentence, no
- * list); judged — which is `pageView`, beside this file. Not here, none stubbed: Easily patchable
- * (#532), the by-id route (#533), the AI lever (#534); nothing counts the fleet per request (§4g).
+ * list); judged — which is `pageView`, beside this file. Then three ranked bands: most exposed,
+ * easily patchable (#532 — what an update would close, times the Macs it reaches) and longest
+ * exposed. Not here, none stubbed: the by-id route (#533), the AI lever (#534). Nothing counts
+ * the fleet per request and nothing sums a band (§4g).
  */
 
 const TOP = 10;
@@ -35,7 +37,7 @@ const PAGE = 50;
 const TYPING_MS = 300;
 
 /** *Popular filters*: each chip is one whole URL state, so a filtered list is a link somebody can
- *  send. *Easily patchable* is #532's; `band` narrows inside `findings`, never beside it. */
+ *  send. `band` narrows inside `findings`, never beside it. */
 const POPULAR = [{ vuln: "kev", band: null, jamf: null, label: "filterKev" }, { vuln: "findings", band: "critical", jamf: null, label: "filterCritical" },
   { vuln: "unknown_app", band: null, jamf: null, label: "stateUnknownApp" }, { vuln: "clean", band: null, jamf: null, label: "stateCoveredClean" },
   // #532: the ranked section as a chip, and its opposite. The fix path is the column a Mac
@@ -254,7 +256,7 @@ export function VulnerabilitiesPage() {
           </div>
 
           <div className="flex items-baseline justify-between">
-            <h2 className="text-lg font-medium">{byAge ? copy.longestExposed : copy.mostExposed}</h2>
+            <h2 className="text-lg font-medium">{byPayoff ? copy.easilyPatchable : byAge ? copy.longestExposed : copy.mostExposed}</h2>
             {/* Offered off a settled count only: mid-read the total belongs to the term
                 before this one, and a button is no place to print it. */}
             {!expanded && shown.rows && total > rows.length && (
@@ -263,7 +265,7 @@ export function VulnerabilitiesPage() {
               </button>
             )}
           </div>
-          <p className="text-sm text-muted-foreground">{byAge ? copy.longestExposedHint : copy.mostExposedHint}</p>
+          <p className="text-sm text-muted-foreground">{byPayoff ? copy.easilyPatchableHint : byAge ? copy.longestExposedHint : copy.mostExposedHint}</p>
 
           <div className="overflow-x-auto rounded-lg border bg-card">
             <table className="w-full text-sm">
@@ -350,6 +352,9 @@ export function VulnerabilitiesPage() {
 
           {!expanded && (
             <>
+              {/* Hidden while the chip above IS this list: the same ten rows under one heading twice
+                  reads as a fault. */}
+              {!byPayoff && (<>
               <div className="flex items-baseline justify-between"><h2 className="text-lg font-medium">{copy.easilyPatchable}</h2>
                 {patchableSays === null && patchableTotal > TOP && <button type="button" className="text-sm underline underline-offset-4" onClick={() => { filterTo("patchable", null); setExpanded(true); }}>{copy.seeAll(patchableTotal)}</button>}</div>
               <p className="text-sm text-muted-foreground">{copy.easilyPatchableHint}</p>
@@ -365,7 +370,7 @@ export function VulnerabilitiesPage() {
                       <PatchableRow key={entry.id} entry={entry} t={t} />))}
                   </tbody>
                 </table>
-              </div>
+              </div></>)}
 
               <div className="flex items-baseline justify-between"><h2 className="text-lg font-medium">{copy.longestExposed}</h2>
                 {oldestSays === null && oldestTotal > TOP && <button type="button" className="text-sm underline underline-offset-4" onClick={() => { filterTo(null, null); setOrder("age"); setExpanded(true); }}>{copy.seeAll(oldestTotal)}</button>}</div>
