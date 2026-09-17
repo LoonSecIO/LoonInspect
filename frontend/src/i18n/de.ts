@@ -1051,7 +1051,7 @@ export const de: Translations = {
     aiForApp: (q: string) => `Apps, die zu „${q}“ passen`,
     aiShowing: (what: string) => `Zeigt ${what}.`,
     aiWouldShow: (what: string) => `Würde ${what} zeigen.`,
-    aiTotal: (total: number) => `${total} Build${total === 1 ? "" : "s"} passen.`,
+    aiTotal: (total: number) => `${total} Build${total === 1 ? " passt" : "s passen"}.`,
     aiNone: "Kein Build passt.",
     lookupIntro: "Builds auf dieser Flotte, deren Antwort diese ID nennt — eine Zeile pro Build, nicht pro Mac.",
     lookupLoading: "Diese ID wird nachgeschlagen…",

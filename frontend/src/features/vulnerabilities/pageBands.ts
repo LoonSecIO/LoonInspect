@@ -1,4 +1,5 @@
 import { PERMISSIONS } from "@/features/auth/types";
+import { findingIdIn } from "@/features/vulnerabilities/findingId";
 import type { AppVulnerability } from "@/features/vulnerabilities/types";
 
 /** The decisions Posture › Vulnerabilities makes before drawing its extra bands (#538), as
@@ -66,16 +67,38 @@ export const payoffList = (vuln: string): boolean => vuln === "patchable";
  *  So every narrowing answers for itself and only the unnarrowed list may speak for the fleet. The
  *  search is asked first because it is the narrowing the reader performed last, and a chip's own
  *  sentence is a claim about that chip's whole set — any further narrowing beside it and the honest
- *  answer is *this filter*, not the claim. */
-export function emptySays(vuln: string, band: string | null, jamf: string | null, term: string): EmptySays {
+ *  answer is *this filter*, not the claim.
+ *
+ *  `search` is an `AppliedSearch` and not any string: the lane is node-only and cannot render
+ *  the call site, so the type holds what a test cannot reach. */
+export function emptySays(vuln: string, band: string | null, jamf: string | null, search: AppliedSearch): EmptySays {
   const narrowed = vuln !== "findings" || band !== null || jamf !== null;
-  if (term.trim() !== "") return narrowed ? "noRows" : "noMatches";
+  if (search.trim() !== "") return narrowed ? "noRows" : "noMatches";
   if (jamf !== null) return vuln === "findings" && band === null ? "noFixPathNone" : "noRows";
   if (vuln === "patchable" && band === null) return "easilyPatchableNone";
   return narrowed ? "noRows" : "noFindings";
 }
 
 export type EmptySays = "noMatches" | "noRows" | "noFixPathNone" | "easilyPatchableNone" | "noFindings";
+
+/** The `q` a request RAN with, as against the text sitting in the box. Only `listQuery` mints one,
+ *  so nothing can explain a list by a search that was never sent. */
+export type AppliedSearch = string & { readonly __applied: "search" };
+
+/** The one `q` the page asks with, so that everything explaining the result reads the same value.
+ *  Lever off, that is the box. Lever on, the box holds a QUESTION and the search is the applied
+ *  answer's `q` — usually none at all. An id is neither: it is routed on Enter (#533) and was
+ *  never a filter, so no request runs with one.
+ *
+ *  The defect (#534): the empty table chose its sentence from the BOX, so an applied
+ *  `vuln=findings` with *do we have anything at all?* still typed printed *No build with findings
+ *  matches that search* for a search that never ran, and the fleet's own sentence was unreachable
+ *  — the conflation `docs/diagnosability.md` rule 1 forbids. Two consumers deriving one value
+ *  separately is how that happened, so here it is derived once. */
+export function listQuery(asks: boolean, term: string, askedFor: string): AppliedSearch {
+  const value = asks ? askedFor : term;
+  return (findingIdIn(value) ? "" : value) as AppliedSearch;
+}
 
 /** The four `vuln.*` keys of the nightly tape, in the order the foot prints them. Read, never
  *  written, and no key is minted here (`docs/posture-snapshot.md`, §7). */

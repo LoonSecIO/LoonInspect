@@ -7,11 +7,10 @@ import { LatestCell, PatchAnswerCell, Subject } from "@/features/catalog/PatchAn
 import type { CatalogBand, CatalogEntry, CatalogListResponse, CatalogVulnFilter } from "@/features/catalog/types";
 import { AssessmentCell, CorpusBanner } from "@/features/vulnerabilities/AppAssessment";
 import { closesCell, describeUpdate } from "@/features/vulnerabilities/appUpdate";
-import { findingIdIn } from "@/features/vulnerabilities/findingId";
 import { leverParams, type VulnPromptFilters } from "@/features/vulnerabilities/prompt";
 import { SearchBox } from "@/features/vulnerabilities/SearchBox";
 import type { AppChip, NumbersRead, PostureRow } from "@/features/vulnerabilities/pageBands";
-import { VULN_KEYS, agedList, emptySays, exploreByApp, payoffList, planNumbers, readNumbers } from "@/features/vulnerabilities/pageBands";
+import { VULN_KEYS, agedList, emptySays, exploreByApp, listQuery, payoffList, planNumbers, readNumbers } from "@/features/vulnerabilities/pageBands";
 import { pageView, type Load } from "@/features/vulnerabilities/pageView";
 import { useLocale } from "@/i18n/LocaleContext";
 import type { Translations } from "@/i18n/en";
@@ -140,7 +139,7 @@ export function VulnerabilitiesPage() {
   // question, so it must never reach the lists as a search: `search` is the one `q` they read.
   const [asks, setAsks] = useState(false);
   const [askedFor, setAskedFor] = useState("");
-  const search = asks ? askedFor : term;
+  const search = listQuery(asks, term, askedFor);
   const [expanded, setExpanded] = useState(false);
   const [order, setOrder] = useState<"exposure" | "age">("exposure");
   const [page, setPage] = useState(1);
@@ -182,8 +181,9 @@ export function VulnerabilitiesPage() {
   useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(() => {
-      // An id was never a filter: as `q` it answers *no matches* for an id the fleet carries.
-      const q = findingIdIn(search) ? undefined : search.trim() || undefined;
+      // `search` is already the `q` a request may run with — `listQuery` drops an id, which was
+      // never a filter — so this is the blank-to-absent step and nothing else.
+      const q = search.trim() || undefined;
       listCatalog({ vuln, band: band ?? undefined, jamf: jamf ?? undefined, order: byPayoff ? "payoff" : byAge ? "age" : "exposure", q, page: expanded ? page : 1, pageSize: expanded ? PAGE : TOP })
         .then((response) => {
           if (cancelled) return;
@@ -284,7 +284,7 @@ export function VulnerabilitiesPage() {
       {shown.controls && (
         <>
           <SearchBox term={term} onTerm={(next) => { setTerm(next); setPage(1); }} onMode={onMode} onApply={onApply}
-            shown={{ vuln, band, order: byPayoff ? "payoff" : byAge ? "age" : "exposure" }} />
+            shown={{ vuln, band, jamf, order: byPayoff ? "payoff" : byAge ? "age" : "exposure" }} />
 
           {/* Heading and chips stand or fall together: no bordered empty row where a band was.
               Hidden while the box holds a question: a chip sets the search, and the search is
@@ -343,8 +343,10 @@ export function VulnerabilitiesPage() {
                   <tr>
                     <td className="px-4 py-4 text-muted-foreground" colSpan={6}>
                       {/* Every narrowing in the address decides this sentence, not `vuln` and
-                          `band` alone: the list that speaks for the fleet is the unnarrowed one. */}
-                      {copy[emptySays(vuln, band, jamf, term)]}
+                          `band` alone: the list that speaks for the fleet is the unnarrowed one.
+                          `search` and never `term` — `listQuery` says why, and `AppliedSearch`
+                          is why the box's own string no longer typechecks here. */}
+                      {copy[emptySays(vuln, band, jamf, search)]}
                     </td>
                   </tr>
                 )}

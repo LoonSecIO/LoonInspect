@@ -18,6 +18,8 @@ import {
   leverOrder,
   leverParams,
   leverReadback,
+  stillShows,
+  type LeverShown,
   type VulnPromptFilters,
   type VulnPromptResult
 } from "@/features/vulnerabilities/prompt";
@@ -77,6 +79,25 @@ describe("the order an answer is judged by", () => {
   it("is the answer's own everywhere else", () => {
     expect(leverOrder({ ...FILTERS, vuln: "findings", order: "age" })).toBe("age");
     expect(leverOrder({ ...FILTERS, vuln: "kev", order: "exposure" })).toBe("exposure");
+  });
+});
+
+describe("whether an applied answer still describes the page", () => {
+  const SHOWN: LeverShown = { vuln: "findings", band: null, jamf: null, order: "exposure" };
+
+  it("watches all three filter dimensions, so no chip moves the list behind the count", () => {
+    expect(stillShows(FILTERS, SHOWN)).toBe(true);
+    // The defect: `jamf` is not in the lever's vocabulary, so `leverParams` writes none and an
+    // applied answer is that chip OFF. Unwatched, *No Jamf fix path* narrowed the list without
+    // changing anything compared, and the Postgres count outlived the list it had described.
+    expect(stillShows(FILTERS, { ...SHOWN, jamf: "unmatched" })).toBe(false);
+    expect([stillShows(FILTERS, { ...SHOWN, vuln: "kev" }), stillShows(FILTERS, { ...SHOWN, band: "critical" }), stillShows(FILTERS, { ...SHOWN, order: "age" })])
+      .toEqual([false, false, false]);
+  });
+
+  it("judges the order the page will rank by, not the one the answer wrote", () => {
+    const patchable: VulnPromptFilters = { ...FILTERS, vuln: "patchable", order: "exposure" };
+    expect(stillShows(patchable, { vuln: "patchable", band: null, jamf: null, order: "payoff" })).toBe(true);
   });
 });
 

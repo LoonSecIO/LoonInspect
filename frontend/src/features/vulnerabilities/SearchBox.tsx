@@ -9,11 +9,12 @@ import {
   askLever,
   filtersOnArrival,
   getLeverStatus,
-  leverOrder,
   leverReadback,
   readLever,
   readLeverReply,
+  stillShows,
   writeLever,
+  type LeverShown,
   type VulnPromptFilters,
   type VulnPromptResult
 } from "@/features/vulnerabilities/prompt";
@@ -44,9 +45,8 @@ interface SearchBoxProps {
   onMode: (asks: boolean) => void;
   /** The page's whole filter state, as an applied or freshly-applied proposal sets it. */
   onApply: (filters: VulnPromptFilters) => void;
-  /** What the page shows now. An answer describes the filters it applied; once the page has
-   *  moved off them by hand it describes a list nobody is looking at, so it goes. */
-  shown: { vuln: string; band: string | null; order: string };
+  /** What the page shows now, whole: an answer that no longer describes it goes (`stillShows`). */
+  shown: LeverShown;
 }
 
 export function SearchBox({ term, onTerm, onMode, onApply, shown }: SearchBoxProps) {
@@ -133,9 +133,9 @@ export function SearchBox({ term, onTerm, onMode, onApply, shown }: SearchBoxPro
   }
 
   const at = result?.filters ?? null;
-  // Against the order the page WILL rank by, never the raw one (`leverOrder` says why).
-  const movedOn =
-    applied && at !== null && (at.vuln !== shown.vuln || at.band !== shown.band || leverOrder(at) !== shown.order);
+  // Asked of `stillShows`, which is pinned: all three filter dimensions and the order the page
+  // WILL rank by, never the raw one.
+  const movedOn = applied && at !== null && !stillShows(at, shown);
   // Slot 1's own chain (`bannerKind`), not a second reading of it: `invalid` is decided before
   // `filters === null`, and a refusal always arrives with no filters. This page shows no banner
   // for the three states that are an answer — its proposal, caveat and readback are below.

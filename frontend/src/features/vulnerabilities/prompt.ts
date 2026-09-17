@@ -161,6 +161,28 @@ export function leverOrder(filters: VulnPromptFilters): CatalogOrder {
   return payoffList(filters.vuln) ? "payoff" : filters.order;
 }
 
+/** What the page shows now: its three filter dimensions and the order, whole. */
+export interface LeverShown {
+  vuln: string;
+  band: string | null;
+  jamf: string | null;
+  order: string;
+}
+
+/** Whether an applied answer still describes what is on screen — the card's own condition, out
+ *  here where the node-only lane can hold it, because both defects found in review were decisions
+ *  like this one taken inline in a render.
+ *
+ *  All three dimensions, not two: `jamf` is not in the lever's vocabulary, so `leverParams` writes
+ *  none and an applied answer is always that chip OFF. Left out, pressing *No Jamf fix path* over
+ *  an applied `findings · Most exposed` moved nothing the card compared, and the count it had from
+ *  Postgres went on standing over the narrower list — a number outliving the list it described. */
+export function stillShows(filters: VulnPromptFilters, shown: LeverShown): boolean {
+  return (
+    filters.vuln === shown.vuln && filters.band === shown.band && shown.jamf === null && leverOrder(filters) === shown.order
+  );
+}
+
 /** The filters the lever applied, as the page's whole URL state — one chip is one whole URL
  *  (`filterTo`), so the lever sets one too, and a filtered list stays a link somebody can send.
  *  `q` is not a URL key on this page; the box holds it. Nor is `age`: the page reads that order

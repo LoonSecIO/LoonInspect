@@ -1181,7 +1181,7 @@ export const en = {
     aiForApp: (q: string) => `apps matching “${q}”`,
     aiShowing: (what: string) => `Showing ${what}.`,
     aiWouldShow: (what: string) => `Would show ${what}.`,
-    aiTotal: (total: number) => `${total} build${total === 1 ? "" : "s"} match.`,
+    aiTotal: (total: number) => `${total} build${total === 1 ? " matches" : "s match"}.`,
     aiNone: "No build matches.",
     lookupIntro: "Builds on this fleet whose answer names this id — one row per build, not one per Mac.",
     lookupLoading: "Looking this id up…",
