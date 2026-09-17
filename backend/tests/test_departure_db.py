@@ -854,7 +854,7 @@ async def test_an_emission_pass_over_a_mass_deletion_binds_its_ids_in_batches(db
         assert sorted(e.payload["deviceMeta"]["jamfProID"] for e in events) == sorted(ids), "no duplicates, no gaps"
         assert {e.payload["state"] for e in events} == {"removed"}
         assert {e.payload["subjectLabel"] for e in events} == {f"mac-{external_id}" for external_id in ids}
-        # The second bound #513 names, measured and filed rather than fixed here (#516): one outbox row
+        # The second bound #513 names, measured and filed rather than fixed here (#524): one outbox row
         # per Mac, every one of them inside the census's single transaction, with nothing capping the pass.
         assert len(events) == 2500
 
