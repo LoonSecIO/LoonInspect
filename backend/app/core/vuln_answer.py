@@ -174,6 +174,23 @@ class StoredAnswers:
         return self._answers.get(key_full)
 
 
+def served(assessment: object, signature: object, *, epoch: str | None):
+    """Is this stored answer the one the LOADED epoch produced — the whole of "served" (§4f).
+
+    One rule, one place. A row is `covered` only while it carries the signature of the epoch
+    that is answering now; an answer from an epoch that has moved reads `unknown_app` until
+    the next judge pass rewrites it, whatever its stored counts say.
+
+    Written as two comparisons joined with `&` so the SAME expression judges a row in Python
+    (two booleans) and a row in SQL (two column comparisons): `app.api.catalog`'s `vuln=`
+    filter IS this rule rather than a copy of it, which is what stops a filter and a cell
+    disagreeing about one build. In SQL, negate it with `.is_not(True)` and never with `~` —
+    an unassessed row's `vuln_assessment` is NULL, `NULL = 'covered'` is NULL, and `NOT NULL`
+    would drop the very rows `unknown_app` is asking for.
+    """
+    return (assessment == VULN_ASSESSMENT_COVERED) & (signature == epoch)
+
+
 def stored_corpus(corpus: VulnCorpus, rows: Iterable[HasStoredAnswer]) -> VulnCorpus:
     """The corpus a caller should hand `vuln_block` for THESE rows.
 
@@ -191,7 +208,7 @@ def stored_corpus(corpus: VulnCorpus, rows: Iterable[HasStoredAnswer]) -> VulnCo
     signature = loaded_epoch_signature()
     answers: dict[str, AssessedBuild] = {}
     for row in rows:
-        if row.vuln_assessment != VULN_ASSESSMENT_COVERED or row.vuln_signature != signature:
+        if not served(row.vuln_assessment, row.vuln_signature, epoch=signature):
             continue
         try:
             build = stored_build(row)
@@ -270,7 +287,7 @@ def update_effect(row: HasStoredAnswer, *, corpus: VulnCorpus) -> UpdateEffect |
     version = row.vuln_target_version
     if not version or version == row.version:
         return None
-    if row.vuln_assessment != VULN_ASSESSMENT_COVERED or row.vuln_signature != loaded_epoch_signature():
+    if not served(row.vuln_assessment, row.vuln_signature, epoch=loaded_epoch_signature()):
         return None
     if row.vuln_target_assessment != VULN_ASSESSMENT_COVERED:
         return UpdateEffect(version=version, assessment=None, closes=None, opens=None, net=None)

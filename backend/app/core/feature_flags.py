@@ -14,6 +14,14 @@ FEATURE_FLAG_REGISTRY: dict[str, dict[str, str]] = {
             "connection that has the Jamf Pro capability enabled."
         ),
     },
+    # The override on the data gate (#529), in `jamf_patch`'s voice: the entry follows the
+    # corpus, and this is what lists it anyway — a lab, a demo or a design partner ahead of
+    # its first epoch. It does not open the route, which is open either way, and it does not
+    # make anything answer: the page still reads the banner and its *why* block.
+    "vulnerabilities": {
+        "label": "Posture › Vulnerabilities",
+        "description": ("Show Posture › Vulnerabilities even before a vulnerability corpus is answering for this organization."),
+    },
     AI_FEATURES_FLAG: {
         "label": "AI features",
         "description": (

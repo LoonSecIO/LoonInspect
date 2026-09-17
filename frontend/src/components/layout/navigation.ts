@@ -13,6 +13,8 @@ import {
   Send,
   Settings,
   Share2,
+  ShieldAlert,
+  ShieldHalf,
   UserCircle,
   UserCog,
   type LucideIcon
@@ -33,6 +35,8 @@ import type { Translations } from "@/i18n/en";
 
 export type NavKey = keyof Translations["nav"];
 
+const EMPTY: ReadonlySet<string> = new Set();
+
 export interface NavItem {
   labelKey: NavKey;
   icon: LucideIcon;
@@ -40,8 +44,14 @@ export interface NavItem {
   end: boolean;
   /** Omitted where every role can see the page. */
   permission?: PermissionName;
-  /** Listed only while this feature flag is on (Settings › AI, #319). */
+  /** Listed only while this feature flag is on (Settings › AI, #319). Where `requires` is
+   *  declared too the flag is that requirement's OVERRIDE and not a second condition —
+   *  see `visibleNavigation`. */
   flag?: string;
+  /** Listed only while the session found this data answering (#529). A per-item data gate,
+   *  never a section's: a section follows its children, and the next child under Posture
+   *  (#536's evidence report) is not governed by the corpus. */
+  requires?: "corpus";
   children?: NavItem[];
 }
 
@@ -56,6 +66,30 @@ export const navigationItems: NavItem[] = [
       { labelKey: "applications", icon: AppWindow, to: "/devices/applications", end: false },
       { labelKey: "smartGroupCost", icon: Gauge, to: "/devices/groups/cost", end: false },
       { labelKey: "changes", icon: History, to: "/devices/changes", end: false }
+    ]
+  },
+  // Top-level, between Devices and Settings, and pointing at its own first child the way
+  // Settings points at Connections (#529). `Posture`, not `Risks`: risk is a judgement this
+  // product does not make — absent-not-zero counts, no ratios stored — and a section called
+  // Risks is where the first "risk score per Mac" request comes from.
+  {
+    labelKey: "posture",
+    icon: ShieldHalf,
+    to: "/posture/vulnerabilities",
+    end: false,
+    children: [
+      {
+        labelKey: "vulnerabilities",
+        icon: ShieldAlert,
+        to: "/posture/vulnerabilities",
+        end: false,
+        permission: PERMISSIONS.VULN_READ,
+        // The data decides, and the flag overrides it. Not a second switch beside
+        // data-sharing consent: consent is what earns the corpus, and a switch nobody
+        // knows to flip is a step 3.
+        requires: "corpus",
+        flag: "vulnerabilities"
+      }
     ]
   },
   {
@@ -148,6 +182,11 @@ export const navigationItems: NavItem[] = [
  * and a section whose own target was one of the hidden children is re-pointed at the
  * first child left standing.
  *
+ * `answering` is the third input (#529): the data requirements this session found
+ * satisfied. It defaults to the empty set, so a read that has not landed — or one that
+ * FAILED — hides the entries that need it, exactly as a failed flag read does, and is
+ * never reported anywhere as the data being "off".
+ *
  * `permissions` arrives from the server as plain strings and is read as such; the
  * constants in `PERMISSIONS` are what narrow it, so an unknown grant is ignored rather
  * than a type error. `undefined` is the pre-bootstrap state and sees the same tree as an
@@ -156,11 +195,19 @@ export const navigationItems: NavItem[] = [
  */
 export function visibleNavigation(
   permissions: Iterable<string> | undefined,
-  enabledFlags: ReadonlySet<string>
+  enabledFlags: ReadonlySet<string>,
+  answering: ReadonlySet<string> = EMPTY
 ): NavItem[] {
   const granted = new Set(permissions ?? []);
-  const allowed = (item: NavItem) =>
-    (!item.permission || granted.has(item.permission)) && (!item.flag || enabledFlags.has(item.flag));
+  const allowed = (item: NavItem) => {
+    if (item.permission && !granted.has(item.permission)) return false;
+    const flagOn = item.flag !== undefined && enabledFlags.has(item.flag);
+    // A `requires` entry is listed when the data answers **or** the flag overrides it. The
+    // flag is not a second condition: an entry that followed both would be hidden for
+    // everyone whose corpus answers and whose flag is off, which is every customer.
+    if (item.requires) return flagOn || answering.has(item.requires);
+    return item.flag === undefined || flagOn;
+  };
 
   return navigationItems.filter(allowed).flatMap((item) => {
     if (!item.children) return [item];

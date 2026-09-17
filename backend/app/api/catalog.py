@@ -6,8 +6,8 @@ from __future__ import annotations
 from datetime import date
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import distinct, func, or_, select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import Integer, case, cast, distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.catalog.index import lookup_versions
@@ -16,8 +16,8 @@ from app.core.auth import require
 from app.core.database import get_db
 from app.core.permissions import Permission
 from app.core.vuln import VulnCorpus
-from app.core.vuln_answer import stored_corpus
-from app.core.vuln_library import earned_corpus
+from app.core.vuln_answer import served, stored_corpus
+from app.core.vuln_library import earned_corpus, loaded_epoch_signature
 from app.core.vuln_read import assess, corpus_as_of, today, update_line
 from app.mdm.patch.requirements import version_tuple
 from app.models.schema import AppCatalogEntry, AppCatalogVersion, InstalledApp
@@ -34,6 +34,29 @@ from app.schemas.catalog import (
 )
 
 router = APIRouter(prefix="/api/catalog", tags=["catalog"])
+
+# The refusal a vulnerability filter meets when nothing answers (#529), in
+# `app.api.evidence.NO_LEDGER`'s shape. An empty list under `vuln=findings` reads as
+# *nothing found* — §4a's failure written in a query string — so it is refused, and both
+# causes are named because the response cannot tell them apart and neither can we.
+NO_ANSWER = (
+    "Nothing is answering for this organization, so a vulnerability filter has no rows to be right about. Either no "
+    "corpus epoch is loaded in this container, or data sharing is off for this organization — a corpus answers only for "
+    "an organization that shares (docs/vulnerabilities.md §8). Drop the filter to list the catalog unfiltered."
+)
+
+
+def _counted(band: str):
+    """One count off the stored answer as an integer, or NULL where the row will not parse.
+
+    The guard is load-bearing. `vuln_answer._unreadable` exists because a stored answer CAN
+    be something other than the shape the library writes — a hand-edited row, a restored
+    backup — and the ruled behaviour is that it is named in the log and read as
+    `unknown_app`, never raised. A bare `::int` over the whole catalog would turn that one
+    row into a failed request for everybody, with a cast error and nobody's words.
+    """
+    value = AppCatalogEntry.vuln_counts[band]
+    return case((func.jsonb_typeof(value) == "number", cast(value.astext, Integer)))
 
 
 def _device_counts(app_hash: str | None = None):
@@ -111,6 +134,12 @@ async def list_catalog(
     # a bundle ID under different names are two records and stay two. Served by
     # `ix_app_catalog_app`, and pushed inside the device counts too (see `_device_counts`).
     app_hash: str | None = Query(default=None, alias="appHash", max_length=32),
+    # The stored answer as a WHERE (#529). `unknown_app` is the ruled spelling (§4b) and is
+    # SERVED, not stored: a row judged by an epoch that has moved reads it whatever its
+    # counts say, which is `served()`'s rule and not a copy of it.
+    vuln: Literal["all", "findings", "kev", "unknown_app", "clean"] = Query(default="all"),
+    band: Literal["critical", "high", "medium", "low"] | None = Query(default=None),
+    order: Literal["exposure", "age"] = Query(default="exposure"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=100, ge=1, le=5000, alias="pageSize"),
 ) -> CatalogListResponse:
@@ -133,17 +162,53 @@ async def list_catalog(
             or_(AppCatalogEntry.name.ilike(like), AppCatalogEntry.bundle_id.ilike(like), AppCatalogEntry.version.ilike(like))
         )
 
+    # One corpus object for the whole response, so every row's `corpusAsOf`, the header
+    # stamp and the filter below are the same fact rather than three reads of a moving one.
+    corpus, as_of = await earned_corpus(db), today()
+    epoch = loaded_epoch_signature()
+    covered = served(AppCatalogEntry.vuln_assessment, AppCatalogEntry.vuln_signature, epoch=epoch)
+    total_findings, kev_findings = _counted("total"), _counted("kev")
+    filtered = vuln != "all" or band is not None
+    if filtered and corpus.as_of is None:
+        raise HTTPException(status_code=409, detail=NO_ANSWER)
+    if vuln == "findings":
+        stmt = stmt.where(covered, total_findings > 0)
+    elif vuln == "kev":
+        stmt = stmt.where(covered, kev_findings > 0)
+    elif vuln == "clean":
+        stmt = stmt.where(covered, total_findings == 0)
+    elif vuln == "unknown_app":
+        # `IS NOT TRUE`, never `NOT (…)`: an unassessed row's assessment is NULL, so the
+        # comparison is NULL and a plain negation would drop the rows being asked for. The
+        # second arm is the unreadable row — served, and with no number to be right about —
+        # which is `unknown_app` to the cell too (`vuln_answer._unreadable`).
+        stmt = stmt.where(or_(covered.is_not(True), total_findings.is_(None)))
+    if band is not None:
+        stmt = stmt.where(covered, _counted(band) > 0)
+
     total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
-    ordered = stmt.order_by(devices.desc(), AppCatalogEntry.name, AppCatalogEntry.version)
+    # The two axes a Mac fleet has that a cloud estate does not: how many Macs carry the
+    # build, and how long it has been exposed. Today's order stays where no vulnerability
+    # filter is in play, so the Catalog tab's own list is untouched.
+    if not filtered:
+        ordered = stmt.order_by(devices.desc(), AppCatalogEntry.name, AppCatalogEntry.version)
+    elif order == "age":
+        # The stamp is the format's own `YYYY-MM-DDTHH:MM:SSZ`, so text order IS date order.
+        ordered = stmt.order_by(AppCatalogEntry.vuln_oldest_published["total"].astext.asc().nulls_last(), devices.desc())
+    else:
+        ordered = stmt.order_by(
+            (kev_findings > 0).desc().nulls_last(),
+            devices.desc(),
+            total_findings.desc().nulls_last(),
+            AppCatalogEntry.name,
+            AppCatalogEntry.version,
+        )
     page_rows = (await db.execute(ordered.offset((page - 1) * page_size).limit(page_size))).all()
     entries = [row[0] for row in page_rows]
     refs = await _title_refs(db, entries)
-    # One corpus object for the whole response, so every row's `corpusAsOf` and the
-    # header stamp below are the same fact rather than two reads of a moving one. The
-    # answers themselves are the ones stored on these very rows (#381) — the join ran once
-    # per distinct build at judge time — so this reads no database and does no lookup;
+    # The answers themselves are the ones stored on these very rows (#381) — the join ran
+    # once per distinct build at judge time — so this reads no database and does no lookup;
     # under `NO_CORPUS` it does no per-row work at all.
-    corpus, as_of = await earned_corpus(db), today()
     stored = stored_corpus(corpus, entries)
     items = [
         _assessed_entry_out(entry, row[1], refs, corpus=stored, as_of=as_of)
@@ -171,6 +236,12 @@ async def list_catalog(
         summary = CatalogSummaryOut(
             entries=int(summary_row[0]), installed=int(summary_row[1]), matched=int(summary_row[2]), unmatched=int(summary_row[3])
         )
+    # Has ANY row of this tenant been judged by the epoch answering now? One indexed EXISTS
+    # and no count: an epoch that moved an hour ago leaves every row reading `unknown_app`,
+    # and a list that then says *0 with findings* is the picture §4a exists to prevent.
+    judged = False
+    if epoch is not None:
+        judged = bool((await db.execute(select(select(AppCatalogEntry.id).where(covered).exists()))).scalar())
     return CatalogListResponse(
         items=items,
         total=int(total),
@@ -178,6 +249,7 @@ async def list_catalog(
         page_size=page_size,
         summary=summary,
         corpus_as_of=corpus_as_of(corpus),
+        vuln_judged=judged,
     )
 
 

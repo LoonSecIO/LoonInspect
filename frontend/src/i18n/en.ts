@@ -217,6 +217,9 @@ export const en = {
     devices: "Devices",
     applications: "Applications",
     smartGroupCost: "Group cost",
+    // #529. `Posture`, not `Risks`: risk is a judgement this product does not make.
+    posture: "Posture",
+    vulnerabilities: "Vulnerabilities",
     settings: "Settings",
     connections: "Connections",
     featureFlags: "Feature Flags",
@@ -1071,7 +1074,38 @@ export const en = {
       "Data sharing is what earns one: an organization that shares receives the Jamf-derived corpus daily on the same exchange and answers from it, and an organization with sharing off reads not assessed even where the container holds a corpus. A licence key does not; nothing in this build reads one for vulnerability data.",
     whyWhenItShips:
       "Once a corpus is loaded and this organization's data sharing is on, every row moves to a dated answer — checked, or outside the corpus — and the absence stops being the whole story. Until then it is named rather than hidden.",
-    whyLink: "How the corpus and its tiers are designed (docs/vulnerabilities.md §8)"
+    whyLink: "How the corpus and its tiers are designed (docs/vulnerabilities.md §8)",
+    // #529 — the page. One row is one build, never one CVE: that is the grain the corpus
+    // is keyed on and the grain a Mac admin acts on, since you push an app update.
+    eyebrow: "Posture",
+    pageTitle: "Vulnerabilities",
+    pageDescription:
+      "Every build the fleet carries that the corpus has findings against, most exposed first: the ones on CISA KEV, then the ones on the most Macs. The answer is per build, not per Mac — every Mac carrying a build carries its findings.",
+    searchPlaceholder: "Search by app name, bundle ID or version",
+    mostExposed: "Most exposed",
+    mostExposedHint: "On CISA KEV first, then the most Macs, then the most findings.",
+    seeAll: (total: number) => `See all ${total}`,
+    // The hour after an epoch moves: it is answering, and nothing here has been judged
+    // against it yet, so every row would read outside the corpus.
+    notYetJudged:
+      "A corpus is loaded and nothing here has been judged against it yet: loaded, not yet judged against; answers arrive with the next sweep or the hourly refresh.",
+    errorLoading: "Failed to load the vulnerability list.",
+    noFindings: "No build the fleet carries has a finding against it in this corpus.",
+    noMatches: "No build with findings matches that search.",
+    colBuild: "Build",
+    colFindings: "Findings",
+    colKev: "KEV",
+    colMacs: "Macs",
+    colOldest: "Oldest published",
+    colFix: "Fix",
+    bandCritical: "Crit",
+    bandHigh: "High",
+    bandMedium: "Med",
+    bandLow: "Low",
+    days: (days: number) => `${days} day${days === 1 ? "" : "s"}`,
+    pageOf: (page: number, pages: number) => `Page ${page} of ${pages}`,
+    previous: "Previous",
+    next: "Next"
   },
   jamfPatch: {
     tabLabel: "Jamf Patch",

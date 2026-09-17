@@ -75,9 +75,20 @@ export interface CatalogListResponse {
   /** The corpus generation every `vuln` block on `items` came from. `null` means no corpus
    *  is loaded, which is why every row reads `off` — the page says that in words (#251). */
   corpusAsOf: string | null;
+  /** Whether ANY row of this tenant has been judged by the epoch that is answering (#529).
+   *  `false` with a corpus loaded is the hour after an epoch moves: every row reads
+   *  `unknown_app`, so a list of them is honest only as *not yet judged against*. */
+  vulnJudged: boolean;
 }
 
 export type CatalogJamfFilter = "all" | "matched" | "unmatched";
+
+/** The stored answer as a filter (#529). `unknown_app` is the ruled spelling (§4b) and is
+ *  SERVED: a row judged by an epoch that has moved reads it whatever its counts say. */
+export type CatalogVulnFilter = "all" | "findings" | "kev" | "unknown_app" | "clean";
+export type CatalogBand = "critical" | "high" | "medium" | "low";
+/** `exposure` is KEV first, then Macs, then findings; `age` is the oldest publication first. */
+export type CatalogOrder = "exposure" | "age";
 
 /** `GET /api/catalog/lookup` for one key: the tenant's row if the fleet has shown the app.
  *  Under `appHash` the row stands in for the newest version seen, which is why it carries
