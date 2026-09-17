@@ -22,6 +22,11 @@ from scripts.capture_jamf_mobile_device import redact
 SAMPLE = json.loads("""
 {
   "id": "12", "name": "Kyle's iPad", "udid": "8A0F1C2D-1111-4222-8333-444455556666",
+  "general": {"enrollmentMethodPrestage": {"id": "3", "profileName": "Kyle's iPad Prestage"},
+              "enrollmentMethod": {"id": "3", "objectName": "Kyle's iPad Prestage"}},
+  "ebooks": [{"title": "Loon Handbook", "author": "Kyle Pazandak", "version": "1.2", "kind": "IBOOK"}],
+  "serviceSubscriptions": [{"label": "Kyle Personal", "phoneNumber": "612-555-0123",
+                            "carrierSettingsVersion": "54.0"}],
   "serialNumber": "DMPX1234ABCD", "wifiMacAddress": "AC:DE:48:00:11:22", "ipAddress": "198.51.100.7",
   "supervised": true, "enforceName": false, "batteryLevel": 88, "osVersion": "26.1.2",
   "airPlayPassword": "Loon1nspect!2026",
@@ -45,7 +50,11 @@ SAMPLE = json.loads("""
 IDENTIFIERS = (
     "Kyle's iPad|8A0F1C2D-1111-4222-8333-444455556666|DMPX1234ABCD|AC:DE:48:00:11:22|198.51.100.7|kpazandak|"
     "Kyle Pazandak|kyle@loonsec.io|612-555-0123|612-555-0100|555-0177|Studio|351234567890123|"
-    "89012601234567890123|44.9778|93.265|Loon1nspect!2026|3CJH-XNMA-9K2P-LL41-QQ1Z-TT9W"
+    "89012601234567890123|44.9778|93.265|Loon1nspect!2026|3CJH-XNMA-9K2P-LL41-QQ1Z-TT9W|"
+    # Tenant-chosen names under keys that are not `name`: Jamf spells the PreStage `profileName` and
+    # `objectName`, an e-book carries the author and title the tenant loaded, and a cellular line's
+    # `label` is what the device's own user typed on the iPhone.
+    "Kyle's iPad Prestage|Loon Handbook|Kyle Personal"
 )
 # The smart-group read is one of the three the capture makes, and the likeliest to be a Classic body:
 # its criteria hold whatever the tenant searched on, under a key that says only `value`.
@@ -102,6 +111,27 @@ def test_every_key_no_rule_names_is_held_for_a_human_to_read() -> None:
         "enrollmentNote",
         "purchasingNote",
     }
+
+
+def test_an_identifier_shape_under_an_unread_key_is_held() -> None:
+    """The shapes no sweep can see. A bare serial, a bare phone number, an ICCID and an IMEI match none of
+    the four sweep patterns, so if `_TRIVIAL` calls them trivial they are written out whole and never named
+    — the held list is the only thing left that can say so. Beside them, what nobody re-reads stays off it."""
+    sample = {
+        "aKeyNoRuleNames": "DMPX1234ABCD",
+        "anotherKeyNoRuleNames": "6125550123",
+        "aThirdKeyNoRuleNames": "89012601234567890123",
+        "aFourthKeyNoRuleNames": "351234567890123",
+        "ownership": "INSTITUTIONAL",
+        "release": "26.1.2",
+        "lastInventoryUpdate": "2026-09-16T14:03:11.000+0000",
+        "managed": "true",
+        "gracePeriod": "300",
+    }
+    redacted, scrub = redact(sample)
+    assert redacted == sample  # no rule names these keys and no sweep matches: it is all written as it came
+    assert scrub.swept == set()
+    assert scrub.held == {"aKeyNoRuleNames", "anotherKeyNoRuleNames", "aThirdKeyNoRuleNames", "aFourthKeyNoRuleNames"}
 
 
 def test_a_group_body_is_scrubbed_and_still_joins_to_the_device() -> None:

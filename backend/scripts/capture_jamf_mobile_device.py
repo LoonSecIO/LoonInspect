@@ -69,13 +69,18 @@ _SWEEPS = (
     # Narrow enough to miss a timestamp, a version and an IMEI: a leading `+`, or 3-3-4 separated.
     (re.compile(r"\+\d[\d\s().-]{6,}\d|(?<![\d.-])(?:\(\d{3}\)\s?|\d{3}[\s.-])\d{3}[\s.-]\d{4}(?![\d-])"), "phone"),
 )
-# A written string nobody needs to read again: a number, a version, a date, an enum token, a flag.
-_TRIVIAL = re.compile(r"\s*|\d[\d.:+TZ -]*|[A-Z][A-Z0-9_]*|true|false|null")
+# A written string nobody needs to read again: a small number, a version, a date, an enum token, a flag.
+# Bounded on purpose: a long run of digits is an ICCID or a phone number and a long mixed run of capitals
+# and digits is a serial — neither is trivial, and the held list is the only thing that will say so.
+# (An all-caps username such as KPAZANDAK is still indistinguishable from an enum token and stays off it.)
+_TRIVIAL = re.compile(r"\s*|-?\d[\d.]{0,7}|\d[\d.:+TZ -]*[:T-][\d.:+TZ -]*|[A-Z][A-Z_]*|[A-Z][A-Z0-9_]{0,7}|true|false|null")
 _TOKEN_RULES = (  # a substring of the key, lowercased and stripped of punctuation, most specific first
     "udid:uuid managementid:uuid serialnumber:serial macaddress:mac ipaddress:ipv4 ipv6:ipv6 ipv4:ipv4 "
     "email:email appleid:email username:user phonenumber:phone fingerprint:hex assettag:label "
     "latitude:geo longitude:geo lostmodephone:phone lostmodemessage:label lostmodefootnote:label "
-    "displayname:label "
+    # Jamf spells the PreStage a device enrolled through `enrollmentMethodPrestage.profileName` and
+    # `enrollmentMethod.objectName`, never `name`: a tenant-chosen name that a bare `name` rule never reaches.
+    "displayname:label profilename:label objectname:label "
     # The secrets: AirPlay's password reached a fixture in full once, under a key the table did not name.
     "password:secret passphrase:secret passcode:secret bypasscode:secret unlockcode:secret "
     "recoverykey:secret privatekey:secret secret:secret token:secret credential:secret"
@@ -84,14 +89,21 @@ _KEY_RULES = (  # whole-key matches, for keys too short or too common to match o
     "imei:digits meid:digits iccid:digits eid:digits phone:phone realname:person fullname:person "
     "purchasingaccount:person purchasingcontact:person devicename:label room:label pin:secret "
     "building:label department:label position:label subjectname:label commonname:label issuer:label "
+    # An e-book's author and title are a person and a document the tenant loaded; a cellular line's `label`
+    # is what the device's own user typed on the iPhone ("Kyle Personal"), not a carrier's word.
+    "author:person title:label label:label "
     "ponumber:label applecareid:label softwareupdatedeviceid:label"
 )
 _BY_TOKEN = tuple(rule.split(":") for rule in _TOKEN_RULES.split())
 _BY_KEY = dict(rule.split(":") for rule in _KEY_RULES.split())
 # A bare `name` is the tenant's unless its parent says otherwise: an app, an e-book, a carrier and a
-# criterion field are named by a vendor or by Jamf, while a device, a group, a site, a prestage and a
-# profile are named by whoever runs the tenant. The allowlist this replaces ran the other way round, and
-# "Kyle's iPad" under `mobile_devices[].name` in a Classic group body was written out whole.
+# criterion field are named by a vendor or by Jamf, while a device, a group, a site and a profile are named
+# by whoever runs the tenant. An extension attribute is the one parent here whose `name` the tenant *does*
+# author, and it is kept anyway: that vocabulary is what the fixture exists to show, and it lands on the
+# held list, where the one person who can tell a carrier from a customer reads it before committing.
+# The allowlist this replaces ran the other way round, and "Kyle's iPad" under `mobile_devices[].name` in a
+# Classic group body was written out whole. A prestage name is not reached by any of this — Jamf spells it
+# `profileName` and `objectName`, which is why those are key rules above.
 _NAME_SHAPE_PARENTS = (  # the parents under which a `name` belongs to a vendor or to Jamf, not to the tenant
     "applications application ebooks ebook extensionattributes criteria criterion servicesubscriptions"
 )
@@ -220,20 +232,21 @@ def _answer(http: httpx.Client, base: str, token: str, paths: str, params: dict 
 
 _RUN = Scrub()  # one scrub for the whole trip, so the two devices never redact to one UDID
 NOTES: list[str] = []  # what degraded quietly mid-run, repeated at the end where it is still on screen
+_HELD_TOTAL: set[str] = set()
 
 
 def _write(name: str, payload: Any) -> None:
     """Redact, then write: nothing else writes a fixture, so no unscrubbed byte reaches disk."""
-    known = set(_RUN.held)
+    _RUN.held = set()  # held is per file: the same key in a second file is a second tenant's words
     redacted, _ = redact(payload, _RUN)
     target = os.path.join(FIXTURES, name)
     with open(target, "w") as handle:
         handle.write(json.dumps(redacted, indent=2, ensure_ascii=False) + "\n")
     print(f"  wrote {name} ({os.path.getsize(target)} bytes)")
-    held = sorted(_RUN.held - known)
-    if held:
-        print(f"    {len(held)} keys no rule names; their values are the tenant's own. Read them in {name}:")
-        print(textwrap.fill(", ".join(held), 118, initial_indent="      ", subsequent_indent="      "))
+    _HELD_TOTAL.update(_RUN.held)
+    if _RUN.held:
+        print(f"    {len(_RUN.held)} keys no rule names; their values are the tenant's own. Read them in {name}:")
+        print(textwrap.fill(", ".join(sorted(_RUN.held)), 118, initial_indent="      ", subsequent_indent="      "))
 
 
 def _flag(value: Any, wanted: str) -> bool | None:
@@ -377,8 +390,8 @@ def main() -> int:
         sys.exit(f"No mobile device record was captured. {why}")
     swept = f"; swept out of keys no rule names: {', '.join(sorted(_RUN.swept))}" if _RUN.swept else ""
     print(f"redacted: {', '.join(f'{k} ×{v}' for k, v in sorted(_RUN.counts.items())) or 'nothing'}{swept}")
-    if _RUN.held:
-        print(f"held: {len(_RUN.held)} keys no rule names, listed above under the file each one first appeared in.")
+    if _HELD_TOTAL:
+        print(f"held: {len(_HELD_TOTAL)} keys no rule names, listed above under every file each one appeared in.")
     for note in NOTES:
         print(f"! {note}")
     print("Read every written file before committing it: this fixtures directory is public.")

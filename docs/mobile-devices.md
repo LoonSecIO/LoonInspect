@@ -214,9 +214,10 @@ the privilege it wants; tick those, run again, and the ledger marks `needed` on 
 unverified, so each read tries candidates and records which answered, and credentials come from the
 environment only.
 
-When the run captures nothing its last line says which of the three it was — the device list read refused,
-the detail read refused, or nothing enrolled — so that first run with an empty role ends in the privilege to
-tick, not in an instruction to go and enrol an iPad that is already enrolled.
+When the run captures nothing its last line says which of the five it was — no list endpoint answered at all
+(every candidate spelling 404s), the list read was refused, nothing is enrolled, devices were listed with no
+`id` to read a detail with, or every detail read failed — so that first run with an empty role ends in the
+privilege to tick, not in an instruction to go and enrol an iPad that is already enrolled.
 
 **Read every written file before committing it**, against the list the run prints under each one: the keys no
 rule named, whose values are the tenant's own words. A scrub is a table of what somebody thought of, and no
