@@ -1121,7 +1121,27 @@ export const en = {
     days: (days: number) => `${days} day${days === 1 ? "" : "s"}`,
     pageOf: (page: number, pages: number) => `Page ${page} of ${pages}`,
     previous: "Previous",
-    next: "Next"
+    next: "Next",
+    // #538 — the rest of the format. Every number at the foot is a row the nightly capture
+    // wrote: nothing is counted per request (§4g) and no key is minted (posture-snapshot §7).
+    noRows: "No build in this catalog matches that filter.",
+    exploreByApp: "Explore by app",
+    popularFilters: "Popular filters",
+    filterKev: "On CISA KEV",
+    filterCritical: "Critical",
+    longestExposed: "Longest exposed",
+    longestExposedHint: "The oldest publication date first: how long the fleet has carried the finding, which is an axis a fleet of Macs has and a cloud estate does not. Always the builds with findings: a Popular filter chip narrows the ranked list, never this one.",
+    longestExposedNone: "No build with findings here carries a publication date.",
+    longestExposedFailed: "The longest-exposed list could not be read, so it is not shown. It is a separate request from the list above, which is why one can answer while the other fails; reload the page.",
+    byTheNumbers: "By the numbers",
+    numbersAsOf: (date: string) => `As of the capture of ${date}`,
+    numbersRun: (id: string) => `full sweep ${id}`,
+    numAppsAffected: "Builds with findings",
+    numAppsKev: "Builds on CISA KEV",
+    numAppsUnknown: "Builds outside the corpus",
+    numDevicesAffected: "Macs carrying one",
+    numbersAbsence: "A key with no row that night did not apply and is never zero: these four are written only once a corpus has judged this organization, so a dash says the capture had nothing to say — not that the answer was none.",
+    numbersFailed: "The nightly capture could not be read, so these four numbers are not shown."
   },
   jamfPatch: {
     tabLabel: "Jamf Patch",

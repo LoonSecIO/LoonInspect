@@ -168,17 +168,51 @@ def _token(tenant_id, **user_and_location) -> str | None:
 def test_the_person_leaves_as_a_token_stable_in_a_tenant_and_different_across_them(encryption_key: str) -> None:
     """The value that ends up in a shared URL. One person reads back as one token inside a tenant
     — so a link keeps filtering — and as another in the next tenant, so two feeds cannot be joined
-    on a person by whoever holds both URLs. Below: the same person with the address cased the
-    other way and the name re-spelled, the lower-cased email deciding it; the next tenant on the
-    same key material; another person; down the rule to the username and the real name; and no
-    tenant, whose unkeyed token would be the guessable hash this replaced."""
+    on a person by whoever holds both URLs. Below: the same person with the name re-spelled and
+    the address cased the other way, the username deciding it; the next tenant on the same key
+    material; another person; down the rule to the email and the real name; and no tenant, whose
+    unkeyed token would be the guessable hash this replaced."""
     person = _BODIES["user_and_location"]
     mine = _token(TENANT, **person)
     assert is_person_token(mine)
     assert _token(TENANT, **{**person, "realname": "K.P.", "email": "Kyle@Example.com"}) == mine
-    others = {_token(OTHER_TENANT, **person), _token(TENANT, username="ops"), _token(TENANT, realname="Kyle P")}
-    assert all(is_person_token(t) for t in others) and len(others | {mine}) == 4
+    others = {
+        _token(OTHER_TENANT, **person),
+        _token(TENANT, username="ops"),
+        _token(TENANT, email="kyle@example.com"),
+        _token(TENANT, realname="Kyle Pazandak"),
+    }
+    assert all(is_person_token(t) for t in others) and len(others | {mine}) == 5
     assert _token(None, **person) is None
+
+
+def test_the_username_is_the_key_and_the_rest_are_attributes_of_it(encryption_key: str) -> None:
+    """The rule itself (R15 option b, 2026-09-17): the `username` if there is one, else the
+    lower-cased `email`, else `realName`. In Jamf's User and Location section the username *is*
+    the assignment — real name, email, position and phone are what the directory lookup fills in
+    from it or an admin types — so an org with no directory integration has usernames and no
+    emails, and each answer is tagged with the field that gave it so two people cannot collide
+    across them."""
+    everything = _token(TENANT, username="kyle", realname="Kyle Pazandak", email="kyle@example.com")
+    by_email = _token(TENANT, username="", realname="Kyle Pazandak", email="Kyle@Example.com")
+    by_name = _token(TENANT, username="", realname="Kyle Pazandak", email="")
+    assert everything == _token(TENANT, username="kyle")
+    assert by_email == _token(TENANT, email="kyle@example.com")
+    assert by_name == _token(TENANT, realname="Kyle Pazandak")
+    # One person under three rules is three tokens: which field answered is part of the identity.
+    assert len({everything, by_email, by_name}) == 3
+
+
+def test_one_person_is_one_token_across_a_mac_with_an_email_and_a_mac_without(encryption_key: str) -> None:
+    """The case that moved the rule (#539's verifier). A directory lookup filled the email in on
+    one Mac's User and Location and an admin typed only the username on the other; email-first
+    read that as two people and split the feed in two, with nothing on screen saying so. The
+    username is on both, so it is one person and one token — and still not the same token in the
+    next tenant."""
+    filled_in = _token(TENANT, username="kyle", realname="Kyle Pazandak", email="kyle@example.com")
+    typed = _token(TENANT, username="kyle")
+    assert is_person_token(filled_in) and filled_in == typed
+    assert _token(OTHER_TENANT, username="kyle") != filled_in
 
 
 def test_nothing_crosses_from_the_stamp_into_the_wire(encryption_key: str) -> None:

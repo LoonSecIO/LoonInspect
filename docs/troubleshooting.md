@@ -1532,11 +1532,29 @@ Catalog tab carries. So a link somebody sent you works even while the entry is h
    organization, so a vulnerability filter has no rows to be right about*. **On the
    Vulnerabilities page you meet that refusal as the banner, not as that sentence**: the
    page asks for findings on every load, so a refused read leaves the corpus banner and its
-   *why* block standing alone — step 1's screen, reached by a different road. It is refused
-   rather than answered empty on purpose: an empty list under *findings* reads as *nothing
-   found*, which is the one thing this product must never say about apps nobody looked at.
-   Step 1 is the fix.
-6. **The Devices list prints that sentence where its Macs should be.**
+   *why* block standing alone — step 1's screen, reached by a different road. The words
+   themselves are for whoever reads the API or the access log — and for the Devices list,
+   which prints them (step 8). It is refused rather than answered empty on purpose: an
+   empty list under *findings* reads as *nothing found*, which is the one thing this product
+   must never say about apps nobody looked at. Step 1 is the fix.
+6. **The page ends with the lists: there is no *By the numbers* at the foot.** Not a fault.
+   Those four figures are rows of the nightly posture capture, which is read under
+   **audit:read** — a permission the viewer role does not hold — and the band is planned
+   against that permission rather than rendered into a refusal, so the account is shown every
+   list and no band. Sign in as a role that holds it (analyst, auditor, administrator) to see
+   them. A band that *is* there with a dash for a figure is a different thing, and the sentence
+   under it says so: that key wrote no row that night, which is never a zero.
+7. ***Longest exposed* is empty, or shows no age, while *Most exposed* lists builds.** The band
+   says which of three things happened; read its sentence. *The longest-exposed list could not be
+   read, so it is not shown.* → it is a **separate request** from the list above, and either can
+   fail while the other answers; reload. *No build with findings here carries a publication date.*
+   → the band is **always** the builds with findings, whichever *Popular filter* narrows the ranked
+   list above (its hint says so), so under *Outside the corpus*, *No findings*, or a search matching
+   only such builds it is right to be empty — and the chips ride in the address, so clear them
+   rather than reloading. That sentence with **no chip pressed and the search box empty**, or every
+   row reading **—** under the age, is ours: every finding the corpus serves carries a publication
+   date, so nothing about your fleet is wrong and nothing here will fix it: reportable state **W**.
+8. **The Devices list prints that sentence where its Macs should be.**
    `GET /api/devices?vuln=findings|kev` is the same refusal one grain up (#535), and it is
    reached the other way round — by a link somebody pasted, on an organization nothing
    answers for, rather than by opening a page — so the list prints the words themselves in
@@ -1551,3 +1569,8 @@ Catalog tab carries. So a link somebody sent you works even while the entry is h
 date moved, with the tier on and the hourly refresh running. Report the date the banner
 shows, what **Refresh** on the Catalog tab did, and `docker compose logs app --since 2h |
 grep -i "vulnerability library"`.
+
+**W.** *Longest exposed* says *no build with findings here carries a publication date*, or carries
+no age at all, while *Most exposed* lists builds with **no chip pressed and the search box empty**.
+Report the corpus date, one app name and version from *Most exposed*, and what that build's row
+says under **Oldest published**.

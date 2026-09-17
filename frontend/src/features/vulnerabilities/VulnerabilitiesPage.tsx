@@ -1,16 +1,20 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router";
-import { ApiError } from "@/config/api";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router";
+import { ApiError, apiRequest } from "@/config/api";
+import { useAuthStore } from "@/features/auth/store";
 import { listCatalog } from "@/features/catalog/api";
 import { LatestCell, PatchAnswerCell } from "@/features/catalog/PatchAnswerCell";
-import type { CatalogEntry, CatalogListResponse } from "@/features/catalog/types";
+import type { CatalogBand, CatalogEntry, CatalogListResponse, CatalogVulnFilter } from "@/features/catalog/types";
 import { AssessmentCell, CorpusBanner } from "@/features/vulnerabilities/AppAssessment";
+import type { AppChip, NumbersRead, PostureRow } from "@/features/vulnerabilities/pageBands";
+import { VULN_KEYS, agedList, exploreByApp, planNumbers, readNumbers } from "@/features/vulnerabilities/pageBands";
 import { pageView, type Load } from "@/features/vulnerabilities/pageView";
 import { useLocale } from "@/i18n/LocaleContext";
 import type { Translations } from "@/i18n/en";
 
 /**
- * Posture › Vulnerabilities — the fleet ranking the Catalog tab cannot show (#529).
+ * Posture › Vulnerabilities — the fleet ranking the Catalog tab cannot show (#529), in the
+ * format Kyle drew from Wiz's Vulnerability Database (#538) — three reads, each with words.
  *
  * The Catalog sorts its vulnerability column client-side over the page in hand; this list is
  * filtered and ordered by the server over every build the tenant has. One row is one BUILD
@@ -20,15 +24,30 @@ import type { Translations } from "@/i18n/en";
  * Three states before a row is drawn, in this order: nothing answers (the `409` — the banner
  * and its *why* block alone, because an empty table under a filter reads as *nothing found*,
  * §4a); loaded but nothing judged against it yet (`vulnJudged` false — one sentence, no
- * list); judged. Which of them is drawn is `pageView`, beside this file with the test that
- * holds it. Not here, each with its own issue and none stubbed: Easily patchable (#532),
- * the chips, Longest exposed and By the numbers (#538).
+ * list); judged — which is `pageView`, beside this file. Not here, none stubbed: Easily patchable
+ * (#532), the by-id route (#533), the AI lever (#534); nothing counts the fleet per request (§4g).
  */
 
 const TOP = 10;
 const PAGE = 50;
 /** One request per pause, not one per keystroke: the search is a server read. */
 const TYPING_MS = 300;
+
+/** *Popular filters*: each chip is one whole URL state, so a filtered list is a link somebody can
+ *  send. *Easily patchable* is #532's; `band` narrows inside `findings`, never beside it. */
+const POPULAR = [{ vuln: "kev", band: null, label: "filterKev" }, { vuln: "findings", band: "critical", label: "filterCritical" },
+  { vuln: "unknown_app", band: null, label: "stateUnknownApp" }, { vuln: "clean", band: null, label: "stateCoveredClean" }] as const;
+
+const FILTERS: CatalogVulnFilter[] = ["findings", "kev", "unknown_app", "clean"];
+const BANDS: CatalogBand[] = ["critical", "high", "medium", "low"];
+/** Stable across renders, so the permission selector does not re-run on every store write. */
+const NO_PERMISSIONS: string[] = [];
+
+const chip = (on: boolean) =>
+  `rounded-full border px-3 py-1 text-sm ${on ? "border-foreground bg-foreground text-background" : "hover:bg-muted"}`;
+const recordHref = (entry: CatalogEntry) => `/devices/applications/${encodeURIComponent(entry.appHash)}`;
+const exposedDays = (entry: CatalogEntry, t: Translations) =>
+  entry.vuln.assessment === "covered" && entry.vuln.daysOldestPublished.total !== null ? t.vulnerabilities.days(entry.vuln.daysOldestPublished.total) : "—";
 
 /** The four bands as small counts, reachable only inside the `covered` narrowing — there is
  *  no branch here in which an unassessed build contributes a zero (§4a). */
@@ -54,47 +73,73 @@ export function VulnerabilitiesPage() {
   // than drawn as a control with nothing behind it.
   const [term, setTerm] = useState("");
   const [expanded, setExpanded] = useState(false);
+  const [order, setOrder] = useState<"exposure" | "age">("exposure");
   const [page, setPage] = useState(1);
   const [answer, setAnswer] = useState<CatalogListResponse | null>(null);
   const [load, setLoad] = useState<Load>("loading");
+  const [oldest, setOldest] = useState<CatalogListResponse | null>(null);
+  const [oldestFailed, setOldestFailed] = useState(false);
+  const [chips, setChips] = useState<AppChip[]>([]);
+  const [params, setParams] = useSearchParams();
+  const vuln = FILTERS.find((value) => value === params.get("vuln")) ?? "findings";
+  const band = BANDS.find((value) => value === params.get("band")) ?? null;
+  const byAge = agedList(expanded, order, vuln, band);
+  const permissions = useAuthStore((state) => state.user?.permissions ?? NO_PERMISSIONS);
+  const plansNumbers = useMemo(() => planNumbers(permissions), [permissions]);
+  const [numbers, setNumbers] = useState<NumbersRead | null>(null);
+  const [numbersFailed, setNumbersFailed] = useState(false);
 
   // A moved input re-reads, and the page has to read as asking rather than leave the last
   // term's rows standing as this one's. Adjusted during the render that moved it, keyed on
   // the effect's whole dependency array — the frontend rule in CONTRIBUTING.md, and the
   // reason it is there (#479). From inside the effect's timer it would land a debounce late,
   // so the previous answer would paint as settled under the new term for all 300ms.
-  const [asked, setAsked] = useState({ term, expanded, page });
-  if (asked.term !== term || asked.expanded !== expanded || asked.page !== page) {
-    setAsked({ term, expanded, page });
+  const [asked, setAsked] = useState({ term, vuln, band, byAge, expanded, page });
+  if (asked.term !== term || asked.vuln !== vuln || asked.band !== band || asked.byAge !== byAge || asked.expanded !== expanded || asked.page !== page) {
+    setAsked({ term, vuln, band, byAge, expanded, page });
     setLoad("loading");
+    setOldest(null); setOldestFailed(false); // the band below re-reads with them, so its rows and its error line go too
   }
 
   useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(() => {
-      listCatalog({
-        vuln: "findings",
-        order: "exposure",
-        q: term.trim() || undefined,
-        page: expanded ? page : 1,
-        pageSize: expanded ? PAGE : TOP
-      })
+      const q = term.trim() || undefined;
+      listCatalog({ vuln, band: band ?? undefined, order: byAge ? "age" : "exposure", q, page: expanded ? page : 1, pageSize: expanded ? PAGE : TOP })
         .then((response) => {
           if (cancelled) return;
           setAnswer(response);
           setLoad("ready");
+          // From the rows in hand, and only while nothing is typed, so pressing one chip does not
+          // dissolve the row it came from (§4g: no tenant-wide aggregate).
+          if (!q) setChips(exploreByApp(response.items));
         })
         .catch((error: unknown) => {
           // The 409 is a STATE, never an error message: nothing is answering for this
           // organization, which the banner below says in words and names both causes for.
           if (!cancelled) setLoad(error instanceof ApiError && error.status === 409 ? "silent" : "failed");
         });
+      // Always `findings`: a build with no finding has no publication date to be oldest of.
+      if (expanded) return;
+      listCatalog({ vuln: "findings", order: "age", q, pageSize: TOP })
+        .then((response) => { if (!cancelled) { setOldest(response); setOldestFailed(false); } })
+        // Its own request, so its own failure — in words, because a blank box is three answers.
+        .catch(() => { if (!cancelled) { setOldest(null); setOldestFailed(true); } });
     }, TYPING_MS);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [term, expanded, page]);
+  }, [term, vuln, band, byAge, expanded, page]);
+
+  useEffect(() => {
+    if (!plansNumbers) return;
+    let cancelled = false;
+    apiRequest<{ items: PostureRow[] }>(`/posture?keys=${VULN_KEYS.join(",")}`)
+      .then((tape) => !cancelled && setNumbers(readNumbers(tape.items)))
+      .catch(() => !cancelled && setNumbersFailed(true));
+    return () => { cancelled = true; };
+  }, [plansNumbers]);
 
   const shown = pageView(load, answer);
   const rows = shown.rows && answer !== null ? answer.items : [];
@@ -104,6 +149,17 @@ export function VulnerabilitiesPage() {
   // the table's body while the table is up, on its own while there is no table yet.
   const status = load === "loading" ? copy.loading : load === "failed" ? copy.errorLoading : null;
   const statusClass = load === "failed" ? "text-destructive" : "text-muted-foreground";
+  const oldestTotal = oldest?.total ?? 0;
+  // The band's three answers told apart — its own read failed, it has not come back, it came back
+  // with nothing — because one blank box standing for all three is three different things.
+  const oldestSays = load === "loading" ? copy.loading : oldestFailed ? copy.longestExposedFailed : oldest === null ? copy.loading : oldestTotal === 0 ? copy.longestExposedNone : null;
+  // Parallel to `VULN_KEYS`, a fixed tuple in the order the foot prints.
+  const labels = [copy.numAppsAffected, copy.numAppsKev, copy.numAppsUnknown, copy.numDevicesAffected];
+
+  function filterTo(next: CatalogVulnFilter | null, nextBand: CatalogBand | null) {
+    // One chip is one whole URL state: pressing another replaces it rather than adding to it.
+    setParams(new URLSearchParams([...(next ? [["vuln", next]] : []), ...(nextBand ? [["band", nextBand]] : [])])); setPage(1);
+  }
 
   return (
     <section className="space-y-4">
@@ -131,8 +187,20 @@ export function VulnerabilitiesPage() {
             }}
           />
 
+          {/* Heading and chips stand or fall together: no bordered empty row where a band was. */}
+          {chips.length > 0 && <><h2 className="text-lg font-medium">{copy.exploreByApp}</h2>
+            <div className="flex flex-wrap gap-2">{chips.map(({ name }) => <button key={name} type="button" className={chip(term === name)} onClick={() => { setTerm(term === name ? "" : name); setPage(1); }}>{name}</button>)}</div></>}
+
+          <h2 className="text-lg font-medium">{copy.popularFilters}</h2>
+          <div className="flex flex-wrap gap-2">
+            {POPULAR.map((filter) => {
+              const on = filter.vuln === vuln && filter.band === band;
+              return <button key={filter.label} type="button" className={chip(on)} onClick={() => filterTo(on ? null : filter.vuln, on ? null : filter.band)}>{copy[filter.label]}</button>;
+            })}
+          </div>
+
           <div className="flex items-baseline justify-between">
-            <h2 className="text-lg font-medium">{copy.mostExposed}</h2>
+            <h2 className="text-lg font-medium">{byAge ? copy.longestExposed : copy.mostExposed}</h2>
             {/* Offered off a settled count only: mid-read the total belongs to the term
                 before this one, and a button is no place to print it. */}
             {!expanded && shown.rows && total > rows.length && (
@@ -141,7 +209,7 @@ export function VulnerabilitiesPage() {
               </button>
             )}
           </div>
-          <p className="text-sm text-muted-foreground">{copy.mostExposedHint}</p>
+          <p className="text-sm text-muted-foreground">{byAge ? copy.longestExposedHint : copy.mostExposedHint}</p>
 
           <div className="overflow-x-auto rounded-lg border bg-card">
             <table className="w-full text-sm">
@@ -167,14 +235,14 @@ export function VulnerabilitiesPage() {
                 {shown.rows && rows.length === 0 && (
                   <tr>
                     <td className="px-4 py-4 text-muted-foreground" colSpan={6}>
-                      {term ? copy.noMatches : copy.noFindings}
+                      {vuln !== "findings" || band ? copy.noRows : term ? copy.noMatches : copy.noFindings}
                     </td>
                   </tr>
                 )}
                 {rows.map((entry) => (
                   <tr key={entry.id} className="border-b align-top last:border-0">
                     <td className="px-4 py-2">
-                      <Link to={`/devices/applications/${encodeURIComponent(entry.appHash)}`} className="font-medium hover:underline">
+                      <Link to={recordHref(entry)} className="font-medium hover:underline">
                         {entry.name} {entry.version}
                       </Link>
                       <span className="block font-mono text-xs text-muted-foreground">{entry.bundleId}</span>
@@ -193,11 +261,7 @@ export function VulnerabilitiesPage() {
                         {entry.deviceCount}
                       </Link>
                     </td>
-                    <td className="px-4 py-2 tabular-nums">
-                      {entry.vuln.assessment === "covered" && entry.vuln.daysOldestPublished.total !== null
-                        ? copy.days(entry.vuln.daysOldestPublished.total)
-                        : "—"}
-                    </td>
+                    <td className="px-4 py-2 tabular-nums">{exposedDays(entry, t)}</td>
                     <td className="px-4 py-2">
                       <LatestCell answer={entry} t={t} />
                       <PatchAnswerCell answer={entry} t={t} />
@@ -228,6 +292,41 @@ export function VulnerabilitiesPage() {
                 {copy.next}
               </button>
             </div>
+          )}
+
+          {!expanded && (
+            <>
+              <div className="flex items-baseline justify-between"><h2 className="text-lg font-medium">{copy.longestExposed}</h2>
+                {oldestSays === null && oldestTotal > TOP && <button type="button" className="text-sm underline underline-offset-4" onClick={() => { filterTo(null, null); setOrder("age"); setExpanded(true); }}>{copy.seeAll(oldestTotal)}</button>}</div>
+              <p className="text-sm text-muted-foreground">{copy.longestExposedHint}</p>
+              <ul className="divide-y rounded-lg border bg-card text-sm">
+                {oldestSays !== null && <li className="px-4 py-4 text-muted-foreground">{oldestSays}</li>}
+                {(oldestSays === null ? (oldest?.items ?? []) : []).map((entry) => (
+                  <li key={entry.id} className="flex items-baseline justify-between gap-4 px-4 py-2">
+                    <Link to={recordHref(entry)} className="font-medium hover:underline">{entry.name} {entry.version}</Link>
+                    <span className="shrink-0 tabular-nums text-muted-foreground">{exposedDays(entry, t)}</span></li>))}
+              </ul>
+            </>
+          )}
+
+          {/* Planned against the permission its own source demands: a viewer sees no tile, not a 403.
+              Its own read, so its own word for being in flight — a heading over nothing is not one. */}
+          {plansNumbers && (
+            <section className="space-y-3 rounded-lg border bg-card p-4">
+              <h2 className="text-lg font-medium">{copy.byTheNumbers}</h2>
+              {numbersFailed && <p className="text-sm text-muted-foreground">{copy.numbersFailed}</p>}
+              {numbers === null && !numbersFailed && <p className="text-sm text-muted-foreground">{copy.loading}</p>}
+              {numbers?.capturedAt && <p className="text-sm text-muted-foreground">{copy.numbersAsOf(new Date(numbers.capturedAt).toLocaleDateString())}{numbers.runId ? ` · ${copy.numbersRun(numbers.runId)}` : ""}</p>}
+              {numbers && (
+                <dl className="grid gap-4 sm:grid-cols-4">
+                  {VULN_KEYS.map((key, index) => (
+                    <div key={key}><dt className="text-xs text-muted-foreground">{labels[index]}</dt>
+                      {/* A key with no row prints a dash, never a zero (§4a, §7). */}
+                      <dd className="text-2xl font-semibold tabular-nums">{numbers.present.find((row) => row.key === key)?.value.toLocaleString() ?? "—"}</dd>
+                    </div>))}
+                </dl>)}
+              {numbers?.absent.length ? <p className="text-sm text-muted-foreground">{copy.numbersAbsence}</p> : null}
+            </section>
           )}
         </>
       )}

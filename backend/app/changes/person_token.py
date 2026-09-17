@@ -28,16 +28,21 @@ TOKEN_CHARS = 16
 _TOKEN_ALPHABET = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
 _SEPARATOR = "\x1f"
 _INFO = b"looninspect/change-feed/person-token/v1/"
-_IDENTITY_FIELDS = ("email", "username", "realName")
+_IDENTITY_FIELDS = ("username", "email", "realName")
 
 
 def canonical_identity(stamp: Mapping[str, object]) -> str | None:
     """The one string standing for the person, or None when none is assigned.
 
-    **The rule: the lower-cased `email` if there is one, else `username`, else `realName`.** Email
-    first because an IdP owns it and it survives a rename, lower-cased because its case is not
-    significant and Jamf's copy and the IdP's disagree. All three NFC-normalised and stripped,
-    each tagged with the field that answered so two people cannot collide across them."""
+    **The rule: the `username` if there is one, else the lower-cased `email`, else `realName`**
+    (R15 option b, 2026-09-17). The username decides because in Jamf's User and Location section
+    the username *is* the assignment: real name, email, position and phone are attributes the
+    directory lookup fills in from it or an admin types, so an org with no directory integration
+    has usernames and no emails — and email-first made one such person two tokens across two Macs
+    with nothing on screen saying so. A username rename becomes a new token, which is the same
+    re-keying Jamf itself does. The email is still lower-cased, its case not being significant
+    where Jamf's copy and the IdP's disagree. All three NFC-normalised and stripped, each tagged
+    with the field that answered so two people cannot collide across them."""
     for field in _IDENTITY_FIELDS:
         value = stamp.get(field)
         if isinstance(value, str) and (name := unicodedata.normalize("NFC", value).strip().replace(_SEPARATOR, "")):
@@ -50,8 +55,10 @@ def person_token(stamp: Mapping[str, object], *, tenant_id: uuid.UUID | None) ->
 
     Keyed, not merely hashed, since a bare hash of a mail address falls to a name list: an HMAC
     under a key derived per call from `ENCRYPTION_KEY` for one tenant and never written down, so
-    there is no second secret and rotating that key changes every token. None with no person, and
-    none with no tenant to key it to — an unkeyed token is the guessable hash this replaced."""
+    there is no second secret. A row is stamped once and never rewritten, so rotating that key
+    changes only the tokens on rows written after it (#541): a link made before the rotation keeps
+    filtering over the rows from before it. None with no person, and none with no tenant to key it
+    to — an unkeyed token is the guessable hash this replaced."""
     identity = canonical_identity(stamp)
     if identity is None or tenant_id is None:
         return None
