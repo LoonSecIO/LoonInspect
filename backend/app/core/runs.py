@@ -1252,6 +1252,7 @@ async def purge_runs(db: AsyncSession, retention_days: int) -> int:
     carries a row per event per destination.
     """
     cutoff = _utcnow() - timedelta(days=retention_days)
+    # retention-clock: runs — named in README.md and KNOWN_ISSUES.md §1; check-readme-claims.sh reads this token.
     result = await db.execute(sa_delete(Run).where(Run.status != STATUS_RUNNING, Run.finished_at < cutoff))
     await db.commit()
     return result.rowcount or 0

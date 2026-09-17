@@ -1025,6 +1025,7 @@ async def purge_delivered_events(db: AsyncSession, retention_days: int, dead_let
         return 0
 
     for batch in _in_batches(purge_ids):
+        # retention-clock: outbox — named in README.md and KNOWN_ISSUES.md §1; check-readme-claims.sh reads this token.
         await db.execute(sa_delete(OutboxDelivery).where(OutboxDelivery.outbox_event_id.in_(batch)))
         await db.execute(sa_delete(EventOutbox).where(EventOutbox.id.in_(batch)))
     await db.commit()

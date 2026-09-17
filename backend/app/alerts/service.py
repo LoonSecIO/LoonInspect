@@ -247,6 +247,7 @@ async def purge_closed_alerts(db: AsyncSession, retention_days: int) -> int:
     on the pod is a knob an operator has to have an opinion about.
     """
     cutoff = _utcnow() - timedelta(days=retention_days)
+    # retention-clock: alert-latches — named in README.md and KNOWN_ISSUES.md §1; check-readme-claims.sh reads this token.
     result = await db.execute(sa_delete(Alert).where(Alert.closed_at.is_not(None), Alert.closed_at < cutoff))
     await db.commit()
     return result.rowcount or 0

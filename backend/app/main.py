@@ -241,6 +241,7 @@ async def hourly_session_cleanup() -> None:
 
     for tenant_id in await operational_tenant_ids():
         async with tenant_job(tenant_id) as db:
+            # retention-clock: sessions — named in README.md and KNOWN_ISSUES.md §1; check-readme-claims.sh reads this token.
             result = await db.execute(
                 delete(UserSession).where(
                     or_(

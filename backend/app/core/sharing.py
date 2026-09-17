@@ -530,6 +530,7 @@ async def run_exchange(
         pointer = apply_response(settings_row, response if isinstance(response, dict) else {})
 
     db.add(log)
+    # retention-clock: share-log — named in README.md and KNOWN_ISSUES.md §1; check-readme-claims.sh reads this token.
     await db.execute(delete(ShareLog).where(ShareLog.occurred_at < now - _LOG_RETENTION))
     await db.commit()
 
