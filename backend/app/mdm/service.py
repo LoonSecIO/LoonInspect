@@ -586,6 +586,19 @@ _MATCHED_BY_ID_AND_SERIAL = "matched by Jamf id, and by serial with UDID"
 _MATCHED_BY_ID_ONLY = "matched by Jamf id only: this sweep's sections carry no hardware, so no serial to match on"
 
 
+def _latch_close_clause(latches_closed: int) -> str:
+    """The sentence a closing latch goes quiet with — on EVERY line that closes one (#512).
+
+    A latch closing is a row an operator was watching stopping, and must never be something they
+    infer from a number that moved. The close rides the terminal rather than the census, so a
+    connection swept only by a selector reads it on the not-a-census line or nowhere. Path 16, step 5.
+    """
+    return (
+        f"{latches_closed} open alert {'latch' if latches_closed == 1 else 'latches'} closed on Macs "
+        f"that left the fleet; nothing was deleted — GET /api/alerts?open=false lists them"
+    )
+
+
 async def _reconcile_device_census(
     db: AsyncSession,
     connection: MdmConnection,
@@ -609,25 +622,34 @@ async def _reconcile_device_census(
     census with, so a Mac back under a new id is not recognised, and the line says which match it got
     — matching on less under the same sentence is rule 2.
 
-    This is also where a departed Mac's open alert latches are closed (#476), because it is the only
-    place that can be: `process_sync` runs against Macs a sweep returns, and a Mac that left the
-    fleet is never swept again, so its latch would stay open for ever.
+    This is also where a departed Mac's open alert latches are closed (#476) — on BOTH paths, beside
+    the terminal (#512) — because it is the only place that can be: `process_sync` runs against Macs
+    a sweep returns, and a Mac that left the fleet is never swept again, so its latch would stay open
+    for ever.
     """
     at = datetime.now(UTC)
     if selector is not None or devices_failed:
         # Above the gate deliberately (#179 4.5): the terminal is GUARANTEED and a tail runs out on
         # the wall clock, so a sweep too dirty to judge anybody still closes one. No census to contradict.
+        # The latch close rides with it (#512): one departure, one act, one guarantee.
         removed = await emit_mac_removals(db, connection=connection, at=at)
+        latches_closed = await close_departed_device_latches(
+            db, connection_id=connection.id, at=at, run_id=run.id if run is not None else None
+        )
         await db.commit()
         if run is not None:
+            line = "device census not taken; this sweep was not a clean one"
+            if latches_closed:
+                line += f". {_latch_close_clause(latches_closed)}"
             await run_log(
                 db,
                 run,
                 "info",
-                "device census not taken; this sweep was not a clean one",
+                line,
                 reason="selector" if selector is not None else "device_failures",
                 devicesFailed=devices_failed,
                 macsRemoved=removed,
+                latchesClosed=latches_closed,
             )
         return
     verdict = await reconcile_census(
@@ -649,9 +671,10 @@ async def _reconcile_device_census(
     # BELOW the census, not above it: a Mac this census named has closed its row and left the open set,
     # so the sweep that finds one back on the day its clock runs out does not also say it was removed.
     removed = await emit_mac_removals(db, connection=connection, at=at)
-    # The latch close is unconditional on the verdict (#476): a latch crosses day seven because of a
-    # departure recorded on an earlier night, so what tonight's census decided has no bearing on it. It
-    # is not unconditional on the CENSUS, as the terminal one line up is; #512 is that asymmetry.
+    # The latch close fires with the terminal one line up, on the wall clock, unconditional on the
+    # census as well as on the verdict (#512, ruled 2026-09-17): a latch crosses day seven on account
+    # of a departure an EARLIER clean census recorded, so tonight's sweep being scoped or dirty has no
+    # bearing on it. One departure, one act, one guarantee — which is why the branch above closes too.
     latches_closed = await close_departed_device_latches(
         db, connection_id=connection.id, at=at, run_id=run.id if run is not None else None
     )
@@ -673,13 +696,10 @@ async def _reconcile_device_census(
             f"{in_tail} in their seven-day tail, {left} left the fleet; "
             f"{_MATCHED_BY_ID_AND_SERIAL if observed_lineage is not None else _MATCHED_BY_ID_ONLY}"
         )
-    # On both lines, refusal included: a latch closing is a row an operator was watching going
-    # quiet, and must never be something they infer from a number that moved. Path 16, step 5.
+    # On both census lines, refusal included, and on the not-a-census line above: the same words
+    # wherever a latch closed, because the operator reads one of the three (`_latch_close_clause`).
     if latches_closed:
-        line += (
-            f". {latches_closed} open alert {'latch' if latches_closed == 1 else 'latches'} closed on Macs "
-            f"that left the fleet; nothing was deleted — GET /api/alerts?open=false lists them"
-        )
+        line += f". {_latch_close_clause(latches_closed)}"
     await run_log(
         db,
         run,

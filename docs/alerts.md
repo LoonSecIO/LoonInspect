@@ -212,9 +212,17 @@ principal holding one and not the other.
 **Ruled and built 2026-09-16 (#476).** `process_sync` opens and closes a latch, and it only
 ever runs against a Mac a sweep returns. A Mac Jamf deleted is never swept again — so its latch
 would stay open for ever, and `alerts.open` would go on counting something that is not true of
-the fleet, which is the one sentence §1 says that key means. So the census pass that already
-runs at a sweep's close (`_reconcile_device_census`) closes them, at the **terminal exit** — the
-end of #183's seven-day tail, not the first night the Mac was missed — with the census run id.
+the fleet, which is the one sentence §1 says that key means. So the pass that already runs at a
+sweep's close (`_reconcile_device_census`) closes them, at the **terminal exit** — the end of
+#183's seven-day tail, not the first night the Mac was missed — with that sweep's run id.
+
+**Amended 2026-09-17 (#512):** the close rides the **wire terminal**, not the census. #183's tail
+runs out on the wall clock, so `state: removed` goes out above the clean-census gate — and the
+latch close goes with it, on every device sweep, scoped by an RSQL selector or short a failed
+device alike. A latch crosses day seven on account of a departure an *earlier* clean census
+recorded, so tonight's sweep being scoped or dirty has no bearing on it; one departure, one act,
+one guarantee. A connection swept only by a selector would otherwise close the tail on the wire
+and leave the alert open in the app for ever.
 
 **Closed, never deleted, and nothing else is deleted either.** §6's rule holds; what differs is
 what *survives*. The app-gone close takes the `installed_apps` row with it, and this one takes
@@ -229,8 +237,9 @@ the row carries a **reason**, a closed vocabulary beside `KINDS`
 
 Null while a latch is open, and null on rows closed before 2026-09-16 — *no reason was
 recorded*, deliberately not back-filled into a claim nobody made. `GET /api/alerts?open=false`
-carries it as `closedReason`, and the census line says how many closed and that nothing was
-deleted, because a row an operator was watching going quiet must never be something they infer
+carries it as `closedReason`, and the sweep's run line says how many closed and that nothing was
+deleted — the census line, or the *device census not taken…* line when that sweep was not a clean
+one — because a row an operator was watching going quiet must never be something they infer
 ([troubleshooting.md](troubleshooting.md) §16). `purge_closed_alerts` covers both closes.
 
 ## 4. Cost
