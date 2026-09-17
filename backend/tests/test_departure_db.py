@@ -970,3 +970,111 @@ async def test_an_emission_pass_over_a_mass_deletion_binds_its_ids_in_batches(db
         # Thousands of pending rows left behind would be another suite's delivery pass, not this one's.
         await db.execute(delete(EventOutbox).where(EventOutbox.id > floor))
         await db.commit()
+
+
+# --- two rows, one id (#496) -----------------------------------------------------------------
+
+
+async def _enrolled(db, connection_id: int, subject_id: str, serial: str, udid: str, at: datetime) -> None:
+    """The ledger's half of an enrolment: one current computer span carrying both lineage keys (§3)."""
+    from app.models.schema import ObservationSpan
+
+    clocks = dict.fromkeys(("first_observed_at", "last_observed_at", "first_collected_at", "last_collected_at"), at)
+    digests = {"aperture_digest": "a", "head_digest": "h", "section_digests": {}, "contract_version": "v0"}
+    db.add(
+        ObservationSpan(
+            mdm_connection_id=connection_id,
+            subject_kind=COMPUTER,
+            subject_id=subject_id,
+            serial_number=serial,
+            udid=udid,
+            last_trigger="sweep",
+            **digests,
+            **clocks,
+        )
+    )
+    await db.commit()
+
+
+async def test_a_return_and_a_re_return_leave_two_rows_naming_one_id(db, connection) -> None:
+    """Kyle's R11 option b (#496, ruled 2026-09-17): a `subject_departures` row is ONE DEPARTURE, keyed
+    by the id it departed under — so after a return and a re-return two rows may name the same current
+    `subject_id`, and that is the shape rather than something to repair.
+
+    The sequence is PR #494's verifier's, walked through `reconcile_census` with a census lineage of
+    its own rather than through a sweep, because what is pinned is the reconciler's own arithmetic and
+    every step of it has to be read: the old id departs; the Mac comes back as a new id carrying the
+    same board, which re-keys that row and retires the old id; the new id departs in its turn; and then
+    Jamf hands the OLD id back while the new one is the one gone. Both rows end up naming the old id —
+    the first closed plain, the second retired under the new one — and every reader still keys by
+    `prior_jamf_pro_id or subject_id`, so each row answers for exactly one absence.
+    """
+    from app.observations.departure import gone_for_good, open_departures, reconcile_census
+
+    old, new, bystander = "77001", "77002", "77009"
+    board = (f"S{uuidlib.uuid4().hex[:8].upper()}", str(uuidlib.uuid4()).upper())
+    theirs = (f"S{uuidlib.uuid4().hex[:8].upper()}", str(uuidlib.uuid4()).upper())
+    day = [datetime(2026, 9, 17, 12, tzinfo=UTC) + timedelta(days=n) for n in range(9)]
+
+    async def census(named: dict[tuple[str, str], str], at: datetime):
+        """One clean census: what it named, and the board each of those carried — both halves of it."""
+        verdict = await reconcile_census(
+            db,
+            connection_id=connection.id,
+            subject_kind=COMPUTER,
+            observed_ids=list(named.values()),
+            at=at,
+            observed_lineage=named,
+        )
+        await db.commit()
+        return verdict
+
+    async def left(external_id: str, at: datetime) -> bool:
+        return await db.scalar(select(gone_for_good(connection.id, external_id, at=at)))
+
+    def shape(rows) -> list[tuple]:
+        return [(r.id, r.subject_id, r.prior_jamf_pro_id, r.matched_by, r.departed_at, r.returned_at) for r in rows]
+
+    await _enrolled(db, connection.id, old, *board, day[0])
+    await _enrolled(db, connection.id, bystander, *theirs, day[0])
+
+    # 1. Deleted in Jamf: the census names the rest of the fleet, and the old id departs.
+    assert [row.subject_id for row in (await census({theirs: bystander}, day[1])).departed] == [old]
+    (first,) = await _departures(db, connection.id, COMPUTER)
+    assert first.subject_id == old and first.prior_jamf_pro_id is None and first.returned_at is None
+
+    # 2. Re-enrolled: a new id carrying the same board closes that row by serial, and the close names —
+    #    and so retires — the id it departed under.
+    await _enrolled(db, connection.id, new, *board, day[2])
+    assert (await census({board: new, theirs: bystander}, day[2])).returned_by_serial == 1
+    (first,) = await _departures(db, connection.id, COMPUTER)
+    assert first.subject_id == new and first.prior_jamf_pro_id == old and first.matched_by == "serialNumber"
+
+    # 3. Now the new id departs in its turn. The retired old id is out of the population, so it opens no
+    #    second row of its own — one row per departure, and this is the second departure.
+    assert [row.subject_id for row in (await census({theirs: bystander}, day[3])).departed] == [new]
+    assert [row.prior_jamf_pro_id for row in await _departures(db, connection.id, COMPUTER)] == [old, None]
+
+    # 4. And Jamf hands the OLD id back, still carrying the board, while the new one is gone. The first
+    #    row becomes the plain return it should have been; the second closes by serial onto the old id.
+    verdict = await census({board: old, theirs: bystander}, day[4])
+    assert {row.matched_by for row in verdict.returned} == {"jamfProID", "serialNumber"}
+    first, second = await _departures(db, connection.id, COMPUTER)
+    assert first.subject_id == second.subject_id == old, "two rows, one current id — R11 b, and the whole point"
+    assert first.returned_at is not None and first.prior_jamf_pro_id is None and first.matched_by == "jamfProID"
+    assert second.returned_at is not None and second.prior_jamf_pro_id == new and second.matched_by == "serialNumber"
+
+    # Coherent because every reader keys by the id the row is gone under, never by `subject_id` alone:
+    # exactly one absence is open, it is the new id, and the Mac itself is listed under the old one.
+    listed = await open_departures(db, subject_kind=COMPUTER)
+    assert {name for (conn_id, name) in listed if conn_id == connection.id} == {new}
+    later = day[4] + timedelta(days=8)
+    assert await left(new, day[4]) is False, "in its tail on the day it came back under the other id"
+    assert await left(old, later) is False and await left(new, later) is True
+
+    # And it does not flap: four further censuses naming the old id move nothing at all.
+    state = shape((first, second))
+    for n in range(5, 9):
+        quiet = await census({board: old, theirs: bystander}, day[n])
+        assert quiet.departed == () and quiet.returned == (), f"census {n} moved a row"
+    assert shape(await _departures(db, connection.id, COMPUTER)) == state

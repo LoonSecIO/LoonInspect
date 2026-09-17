@@ -1338,7 +1338,9 @@ history stay, and **Show departed** in the filter bar (`includeDeparted=true`) r
    together** on the same connection, counted as *returned N (M by serial, under a new Jamf id)*.
    The old id is then **retired**: its row serves out the tail it started, chipped *Leaving the
    fleet* until day seven — one Mac under two rows for a week — unless a sweep names that old id
-   again, which puts it straight back. If yours is not in the count, read the census line's last
+   again, which puts it straight back. If Jamf later hands the **old** id back while the new one is
+   the one now gone, the Mac is listed under the old id and the new one serves out its tail — the
+   same picture mirrored, and nothing to fix. If yours is not in the count, read the census line's last
    clause. *…; matched by Jamf id, and by serial with UDID* → both keys were there, so compare them
    on its page against Jamf Pro's: one differs, and a **new UDID under the same serial is a
    logic-board repair**, a lineage event rather than a return. *…; matched by Jamf id only: this
