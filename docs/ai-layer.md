@@ -279,11 +279,15 @@ the first byte. An id never leaves at all: the box routes it.
 
 **What comes back.** Five fields — `app`, `state`, `band`, `order`, `unsupported` — forced into
 the page's four filter keys (`q`, `vuln`, `band`, `order`) by the same parse/coerce/guard path.
-There is no *all* on this page, so *any* means `findings`, the page's own default. Three guards:
-a Search naming a filter or a kind of thing is dropped; a band beside a state with no findings
-is dropped; and an order one of the page's lists does not serve is read as *Most exposed*. The
-count is `GET /api/catalog` called with those very filters, so the number the box states is the
-number the list then shows. `unsupported` is the only model-written text, rendered as text.
+There is no *all* on this page, so *any* means `findings`, the page's own default. Four guards:
+a Search naming a filter or a kind of thing is dropped; so is one that IS a finding id, which
+the page never searches (`findingIdIn` routes it), so a count taken with it would not be the
+count of the list shown; a band beside a state with no findings is dropped; and the order is
+bound to the list in **both** directions — *Easily patchable* always takes `payoff`, because
+the page reads that ranking off the filter alone, and an order another list does not serve is
+read as *Most exposed*. The count is `GET /api/catalog` called with those very filters, so the
+number the box states is the number the list then shows. `unsupported` is the only
+model-written text, rendered as text.
 
 **The dispositions** are the three, unchanged: **applied** runs on Enter (ruling 2); **proposed**
 is one a repair widened, shown with its corrections and *Apply these filters*, running nothing

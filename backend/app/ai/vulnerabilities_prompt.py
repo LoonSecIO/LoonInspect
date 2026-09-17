@@ -23,6 +23,7 @@ is where a wording change is answered for. Pure and stdlib-only, like slot 1 (S1
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -55,8 +56,12 @@ DEFAULT_STATE = "findings"
 BANDS: tuple[str, ...] = ("critical", "high", "medium", "low")
 ORDERS: tuple[str, ...] = ("exposure", "age", "payoff")
 DEFAULT_ORDER = "exposure"
-# `payoff` ranks what an update would close; only the easily-patchable list serves it.
+# `payoff` ranks what an update would close, and the filter and the ranking are ONE state: the
+# page reads the ranking off the filter alone (`payoffList`), so *Easily patchable* is always
+# ranked that way and no other list ever is. The pairing therefore binds in BOTH directions —
+# `payoff` only with `patchable`, and `patchable` only with `payoff`.
 PAYOFF_STATE = "patchable"
+PAYOFF_ORDER = "payoff"
 # A band counts findings, so beside a state that has none it matches no row at all.
 NO_BANDS = ("clean", "unknown_app")
 
@@ -87,6 +92,18 @@ _GENERIC = frozenset(
      "vulnerability", "vulnerabilities", "finding", "findings", "cve", "kev", "critical", "high", "medium",
      "low", "severity", "patch", "update", "mac", "macs", "device", "devices", "corpus"}
 )  # fmt: skip
+# A value that IS a finding id. The two namespaces §5 mints, mirroring `_ALLOWED_ID`
+# (`app.core.vuln`) term for term as the page's own `FINDING_ID` does — written out rather than
+# imported so this module stays stdlib-only (S1), and pinned to that regex's source by a test so
+# a widened namespace cannot drift away from it.
+_FINDING_ID = re.compile(r"^(CVE-\d{4}-\d{4,}|LoonVD-\d{4}-\d{6})$")
+
+
+def is_finding_id(value: str) -> bool:
+    """Whether a Search value is a finding id rather than an app. The page never searches one
+    (`findingIdIn`): an id routes to its own page and the lists run unfiltered."""
+    return _FINDING_ID.match(value.strip()) is not None
+
 
 # The instructions, static and versioned here (threat-model P2). Slot 1's measured shape — the
 # field block, the "CANNOT express" paragraph, the refusal paragraph, then examples — carrying
@@ -102,7 +119,7 @@ Fields:
   app    the name of ONE app, or its bundle id, or a version. null if the question does not name one.
   state  one of: any, findings, kev, unknown_app, clean, patchable. findings = builds the corpus has findings against; kev = builds with a finding on CISA KEV; unknown_app = builds the corpus does not know; clean = builds it knows and has no findings against; patchable = builds whose update closes more findings than it opens. any means findings.
   band   one of: any, critical, high, medium, low — the severity of the findings.
-  order  one of: exposure, age, payoff. exposure = CISA KEV first, then the most Macs; age = the oldest publication date first; payoff = what an update would close, times the Macs it reaches. Use payoff only with state patchable.
+  order  one of: exposure, age, payoff. exposure = CISA KEV first, then the most Macs; age = the oldest publication date first; payoff = what an update would close, times the Macs it reaches. payoff and state patchable always go together: use payoff with patchable and with nothing else.
   unsupported  null, OR a short sentence naming what these controls cannot express.
 
 The controls CANNOT express: OR between two things, negation ("not", "without"), date or time ranges, matching a version number, counting or comparing rows, one finding id, or anything about one Mac or one person. If the question needs any of those, set unsupported and still fill in the closest values you can.
@@ -165,60 +182,91 @@ def _band(value: Any, repairs: list[str]) -> str | None:
     return word
 
 
-def _order(value: Any, repairs: list[str]) -> str:
-    word = str(value if value is not None else DEFAULT_ORDER).strip().lower()
+def default_order(state: str) -> str:
+    """The order the page WILL rank this state by with nothing else said — `payoff` for the
+    easily-patchable list, which is ranked that way whatever the URL holds (`payoffList`), and
+    `exposure` for every other. A default read off the state rather than a constant, so a reply
+    that named a state and no order is not answered with an order the page then ignores."""
+    return PAYOFF_ORDER if state == PAYOFF_STATE else DEFAULT_ORDER
+
+
+def _order(value: Any, state: str, repairs: list[str]) -> str:
+    fallback = default_order(state)
+    word = str(value if value is not None else fallback).strip().lower()
     if word in ORDERS:
         return word
     # A model that answers every other field "any" answers this one "any" too. The page's
     # default is what that means, and saying so as a correction would be noise on a reply
     # that got nothing wrong.
     if word in _ANY:
-        return DEFAULT_ORDER
+        return fallback
     # An order decides which rows come first, never which rows match, so this neither widens
     # nor narrows the answer: it is a fix.
-    repairs.append(_fixes("The model named an order this page does not have, so the list is ordered by exposure."))
-    return DEFAULT_ORDER
+    repairs.append(_fixes(f"The model named an order this page does not have, so the list is ordered by {fallback}."))
+    return fallback
 
 
 def coerce(obj: Mapping[str, Any]) -> tuple[Filters, str | None, list[str]]:
     """Force a reply object into this page's vocabulary. Anything that is not a known value is
     dropped rather than passed through, and every drop is a repair."""
     repairs: list[str] = [*ignored_keys(obj, REPLY_KEYS)]
+    # In the order the repairs read, and `state` before `order` because the order a missing
+    # field means is the state's (`default_order`), not one constant for the whole page.
+    search = whitelisted_name(obj.get("app"), _SEARCH, repairs)
+    state = _state(obj.get("state"), repairs)
     filters: Filters = {
-        "q": whitelisted_name(obj.get("app"), _SEARCH, repairs),
-        "vuln": _state(obj.get("state"), repairs),
+        "q": search,
+        "vuln": state,
         "band": _band(obj.get("band"), repairs),
-        "order": _order(obj.get("order"), repairs),
+        "order": _order(obj.get("order"), state, repairs),
     }
     return filters, unsupported_note(obj.get("unsupported"), repairs), repairs
 
 
 def guard(filters: Mapping[str, str | None], repairs: list[str]) -> tuple[Filters, list[str]]:
-    """The three rules a closed vocabulary cannot enforce on its own, on copies:
+    """The four rules a closed vocabulary cannot enforce on its own, on copies:
 
     1. a Search naming a filter, a band or a kind of thing ("critical", "apps") is dropped: it
        matches no build's name, bundle id or version, so the list would read as *nothing found*
        for a question the page can answer;
-    2. a band beside *No findings* or *Outside the corpus* is dropped: a band counts findings
+    2. a Search that IS a finding id is dropped: the page never searches an id (`findingIdIn`
+       sends one to its own page and lists unfiltered), so an id left here would be counted by
+       `list_catalog` and then not used by the list — the box's number and the rows below it
+       disagreeing, which is the one thing this route exists to prevent;
+    3. a band beside *No findings* or *Outside the corpus* is dropped: a band counts findings
        and neither state has any, so the pair matches no row at all;
-    3. *payoff* without *Easily patchable*, and *age* beside anything but the plain list of
-       builds with findings, are read as *Most exposed*: each is an order one of this page's
-       lists serves and the page ignores anywhere else (`agedList`, `byPayoff`), so left as
-       given the readback would name a list nobody is looking at.
+    4. the order and the list are made one, in both directions. *Easily patchable* takes
+       `payoff`, because the page ranks that filter that way whatever the order says
+       (`payoffList` reads the filter ALONE); `payoff` elsewhere, and `age` beside anything but
+       the plain list of builds with findings, are read as *Most exposed* (`agedList`). Left as
+       given, either way round, the readback would name a list nobody is looking at — and an
+       applied answer whose order the page then overrode had its whole card judged stale.
 
-    None widens, so an answer carrying only these still runs on Enter (ruling 2): rule 1 drops
-    a value that matched nothing, and 2 and 3 undo a pair matching nothing and an order that
-    changes no row's membership.
+    None widens, so an answer carrying only these still runs on Enter (ruling 2): 1 and 2 drop a
+    value that matched nothing or was never searched, and 3 and 4 undo a pair matching nothing
+    and an order that changes no row's membership.
     """
     kept = dict(filters)
     search = kept.get("q")
-    if search and search.strip().lower() in _GENERIC:
+    if search and is_finding_id(search):
+        repairs.append(
+            _fixes(
+                f"Dropped “{search}” from {_SEARCH}: it is a finding id, and this list searches names, bundle ids "
+                "and versions. Type an id into the box on its own to open it."
+            )
+        )
+        kept["q"] = None
+    elif search and search.strip().lower() in _GENERIC:
         repairs.append(_fixes(f"Dropped “{search}” from {_SEARCH}: it names a filter or a kind of thing, not one app."))
         kept["q"] = None
     if kept.get("band") and kept.get("vuln") in NO_BANDS:
         repairs.append(_fixes("A severity counts findings, and this state has none; showing every severity."))
         kept["band"] = None
-    if kept.get("order") == "payoff" and kept.get("vuln") != PAYOFF_STATE:
+    if kept.get("vuln") == PAYOFF_STATE:
+        if kept.get("order") != PAYOFF_ORDER:
+            repairs.append(_fixes("The easily-patchable list is always ranked by what an update closes; ordering by payoff."))
+            kept["order"] = PAYOFF_ORDER
+    elif kept.get("order") == PAYOFF_ORDER:
         repairs.append(_fixes("Only the easily-patchable list is ranked by what an update closes; ordering by exposure."))
         kept["order"] = DEFAULT_ORDER
     elif kept.get("order") == "age" and (kept.get("vuln") != DEFAULT_STATE or kept.get("band")):

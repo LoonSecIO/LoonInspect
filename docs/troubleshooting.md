@@ -1155,7 +1155,8 @@ writes one row to the disclosure log naming the destination and the one field th
    where it starts, in every browser that has not turned it on — the box is the plain search it
    always was, and a finding id still routes on Enter.
 
-   *The model judged this not a question about the builds on this page …* means nothing ran and
+   An answer headed *Invalid question — the AI lever can't answer it, so nothing was run*, over
+   *The model judged this not a question about the builds on this page …*, means nothing ran and
    the filters are as they were. The lever sets this page's filters and nothing else, so a
    question about **Macs, departments or sites** is invalid here, and the sentence says where it
    is answered: the device list under **Devices**. This page answers per build, never per Mac.

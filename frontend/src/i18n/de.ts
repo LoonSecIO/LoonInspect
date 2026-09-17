@@ -1043,6 +1043,7 @@ export const de: Translations = {
     // #534 — der KI-Hebel am Suchfeld. Alles, was er mit der Prompt-Leiste teilt, steht in
     // deren eigenen Worten (`changes.prompt`); hier steht nur, was dieser Seite gehört.
     aiLever: "KI",
+    aiLeverName: "der KI-Hebel",
     aiLabel: "Zu diesen Builds fragen",
     aiPlaceholder: "Welche Apps stehen auf der CISA-KEV-Liste?",
     aiHint:
@@ -1528,7 +1529,8 @@ export const de: Translations = {
       asking: (provider: string) => `Frage an ${provider}…`,
       unavailable: "KI-Suche nicht verfügbar – die Filter unten funktionieren weiterhin.",
       unparseable: "Das ließ sich nicht deuten – verwenden Sie die Filter direkt.",
-      invalid: "Ungültige Frage – die Prompt-Leiste kann sie nicht beantworten, daher wurde nichts ausgeführt.",
+      invalid: (bar: string) => `Ungültige Frage – ${bar} kann sie nicht beantworten, daher wurde nichts ausgeführt.`,
+      barName: "die Prompt-Leiste",
       closeAsAllowed: "So genau gefiltert, wie diese Bedienelemente es erlauben.",
       askFailed: "Die Frage hat diesen Server nicht erreicht. Prüfen Sie, ob LoonInspect läuft, und laden Sie die Seite neu.",
       askNoReason: (status: number) =>

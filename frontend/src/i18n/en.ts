@@ -1172,6 +1172,8 @@ export const en = {
     // Prompt bar is said in `changes.prompt`'s own words, because the two bars fail the same
     // ways for the same reasons; only what is this page's is here.
     aiLever: "AI",
+    // The lever's noun, for the shared sentences that name whatever asked (`prompt.invalid`).
+    aiLeverName: "the AI lever",
     aiLabel: "Ask about these builds",
     aiPlaceholder: "Which apps are on CISA KEV?",
     aiHint:
@@ -1702,8 +1704,12 @@ export const en = {
       unavailable: "AI search unavailable — the filters below still work.",
       unparseable: "Could not interpret that — try the filters directly.",
       // A question the filters cannot answer: nothing ran, the filters are as they were.
-      // The server's sentence under it says why and what to ask instead.
-      invalid: "Invalid question — the Prompt bar can't answer it, so nothing was run.",
+      // The server's sentence under it says why and what to ask instead. It takes the noun
+      // for whatever asked, because the same sentence is said on a page that has no Prompt
+      // bar — the AI lever on Posture › Vulnerabilities (#534) — and naming the wrong
+      // control is telling the reader to look for something that is not there.
+      invalid: (bar: string) => `Invalid question — ${bar} can't answer it, so nothing was run.`,
+      barName: "the Prompt bar",
       closeAsAllowed: "Filtered as close as these controls allow.",
       // Only for a request that never reached the server. Something that answered without
       // a reason — a plain-text 500, a proxy's 502 — gets its status and the app's log.

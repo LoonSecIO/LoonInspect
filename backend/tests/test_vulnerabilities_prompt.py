@@ -23,6 +23,7 @@ from typing import Literal, get_args, get_origin, get_type_hints
 import pytest
 
 from app.ai import changes_prompt as slot_one
+from app.ai import vulnerabilities_prompt as slot_two
 from app.ai.vulnerabilities_prompt import (
     BANDS,
     DISCLOSED_FIELDS,
@@ -41,6 +42,7 @@ from app.api.vulnerabilities_prompt import sanitize_question
 
 _ROOT = Path(__file__).resolve().parents[2]
 PAGE_TSX = _ROOT / "frontend" / "src" / "features" / "vulnerabilities" / "VulnerabilitiesPage.tsx"
+_MODULE_SOURCE = (_ROOT / "backend" / "app" / "ai" / "vulnerabilities_prompt.py").read_text()
 
 
 def _literal(parameter: str) -> tuple[str, ...]:
@@ -118,6 +120,10 @@ HELD_OUT: list[tuple[str, str, str]] = [
     ("in-vocabulary", "what have we carried longest", _reply(app=None, state="findings", band="any", order="age")),
     ("in-vocabulary", "apps the corpus does not know", _reply(app=None, state="unknown_app", band="any", order="exposure")),
     ("in-vocabulary", "which builds are clean", _reply(app=None, state="clean", band="any", order="exposure")),
+    # A fix runs too (ruling 2): the easily-patchable list takes its own ranking whatever the
+    # model wrote, and a finding id is not a name this list searches.
+    ("in-vocabulary", "what is worth patching", _reply(app=None, state="patchable", band="any", order="exposure")),
+    ("in-vocabulary", "who carries CVE-2024-3400", _reply(app="CVE-2024-3400", state="findings", band="any", order="exposure")),
     # Widening — a repair searched wider than the model named, so a person applies it (ruling 9).
     ("widening", "what about Café Manager™", _reply(app="Café Manager™", state="findings", band="any", order="exposure")),
     ("widening", "show me the exploited ones", _reply(app=None, state="exploited", band="any", order="exposure")),
@@ -230,12 +236,81 @@ def test_payoff_is_only_the_easily_patchable_lists_order() -> None:
     assert interpret(_reply(state="patchable", order="payoff")).filters["order"] == "payoff"
 
 
+@pytest.mark.parametrize("order", ["exposure", "age", "any", "alphabetical", None])
+def test_the_easily_patchable_list_always_carries_its_own_ranking(order: str | None) -> None:
+    """The other half of the pair, and the one that was missing. The page reads the ranking off
+    the FILTER alone (`payoffList`), so an applied answer saying *patchable* and *exposure*
+    described a list the page never shows: the readback named *Most exposed* over rows ranked by
+    payoff, and the page having "moved on" from the order it was given hid the whole answer card
+    — readback, count and caveat — on the render after Enter."""
+    reading = interpret(_reply(state="patchable", order=order) if order else _reply(state="patchable"))
+    assert reading.filters["order"] == "payoff"
+    # A fix, never a widening: the order changes no row's membership, so it still runs on Enter.
+    assert reading.widened is False
+
+
+@pytest.mark.parametrize("order", ["any", None])
+def test_an_unsaid_order_beside_easily_patchable_is_payoff_with_no_correction(order: str | None) -> None:
+    """The common reply, and it got nothing wrong: `_order`'s default is the state's own."""
+    assert interpret(_reply(state="patchable", order=order) if order else _reply(state="patchable")).repairs == []
+
+
+def test_a_search_that_is_a_finding_id_is_dropped_and_still_runs() -> None:
+    """Left in, the count would be taken WITH the id and the list would then drop it
+    (`findingIdIn`), so the number the box states would not be the number the list shows."""
+    for value in ("CVE-2024-3400", " CVE-2024-3400 ", "LoonVD-2026-000123"):
+        reading = interpret(_reply(app=value, state="findings"))
+        assert (reading.filters["q"], reading.widened) == (None, False), value
+    # A name that merely holds an id is a name: the shape is the whole id or nothing. And the
+    # shape is `findingIdIn`'s exactly, case included — the page does NOT route a lower-case
+    # `cve-…`, so it searches one, so dropping it here would be the same disagreement the
+    # other way round.
+    assert interpret(_reply(app="CVE Manager", state="findings")).filters["q"] == "CVE Manager"
+    assert interpret(_reply(app="cve-2024-3400", state="findings")).filters["q"] == "cve-2024-3400"
+
+
+def test_the_finding_id_shape_is_the_one_shape_section_five_licenses() -> None:
+    """Written out rather than imported, so it is pinned to its source (`docs/vulnerabilities.md`
+    §5, "one shape … one validator"): widen a namespace there and this fails rather than drifts."""
+    source = (_ROOT / "backend" / "app" / "core" / "vuln.py").read_text()
+    match = re.search(r"_ALLOWED_ID = re\.compile\(r\"([^\"]+)\"\)", source)
+    assert match, "_ALLOWED_ID is no longer a literal regex in app/core/vuln.py; move this pin with it"
+    assert slot_two._FINDING_ID.pattern == match[1]
+
+
+def test_the_module_is_stdlib_only() -> None:
+    """Slot 1's pin (`test_changes_prompt.py`), because this module claims the same thing: no
+    database, no network, no ORM — the whole of S1's fence, held by imports rather than by care.
+    Slot 1 itself is the one exception, and it is stdlib-only under the same test."""
+    import sys
+
+    imported = {line.split()[1].split(".")[0] for line in _MODULE_SOURCE.splitlines() if line.startswith(("import ", "from "))}
+    assert imported <= set(sys.stdlib_module_names) | {"__future__", "app"}, imported
+    reached = re.findall(r"^from (app\.[\w.]+) import", _MODULE_SOURCE, re.MULTILINE)
+    assert reached == ["app.ai.changes_prompt"], f"only slot 1 is shared into this module: {reached}"
+
+
 def test_age_is_only_the_full_findings_lists_order() -> None:
     """The page reads `age` off its expanded list of findings alone (`agedList`), so an `age`
     beside anything else would name a list nobody is looking at."""
     assert interpret(_reply(state="kev", order="age")).filters["order"] == "exposure"
     assert interpret(_reply(state="findings", band="critical", order="age")).filters["order"] == "exposure"
     assert interpret(_reply(state="findings", order="age")).filters["order"] == "age"
+
+
+def test_every_refusal_answers_with_no_filters_and_no_count() -> None:
+    """The half of a coupling the page got wrong. The route answers `invalid` — and `error`, and
+    `unparseable` — with `filters: None` (`_answer`'s defaults), so a banner chain that asks
+    *were there filters?* before *was it refused?* can never reach the invalid state, and every
+    refusal reads as *could not interpret that*: the model reported as having failed when it
+    answered correctly and was understood. `bannerKind` reads the outcome first; this pins the
+    fact that makes reading it the other way round unreachable rather than merely unlikely."""
+    from app.ai.providers import Provider
+    from app.api.vulnerabilities_prompt import _answer
+
+    for outcome in ("invalid", "error", "unparseable"):
+        answer = _answer(outcome, Provider.apple_fm, "a-model", "127.0.0.1:1976", 7)
+        assert (answer.filters, answer.summary) == (None, None), outcome
 
 
 def test_the_lever_is_mounted_before_the_route_that_would_swallow_it() -> None:

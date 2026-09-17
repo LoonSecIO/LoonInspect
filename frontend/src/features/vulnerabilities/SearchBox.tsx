@@ -2,13 +2,14 @@ import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import type { Provider } from "@/features/ai/api";
-import { failureReason, isPromptStatus, MAX_QUESTION_CHARS, modelOptions, providerLabel, type AskSettled } from "@/features/changes/prompt";
+import { bannerKind, failureReason, isPromptStatus, MAX_QUESTION_CHARS, modelOptions, providerLabel, type AskSettled } from "@/features/changes/prompt";
 import type { PromptStatus } from "@/features/changes/types";
 import { findingIdIn, findingRoute } from "@/features/vulnerabilities/findingId";
 import {
   askLever,
   filtersOnArrival,
   getLeverStatus,
+  leverOrder,
   leverReadback,
   readLever,
   readLeverReply,
@@ -132,17 +133,15 @@ export function SearchBox({ term, onTerm, onMode, onApply, shown }: SearchBoxPro
   }
 
   const at = result?.filters ?? null;
-  const movedOn = applied && at !== null && (at.vuln !== shown.vuln || at.band !== shown.band || at.order !== shown.order);
+  // Against the order the page WILL rank by, never the raw one (`leverOrder` says why).
+  const movedOn =
+    applied && at !== null && (at.vuln !== shown.vuln || at.band !== shown.band || leverOrder(at) !== shown.order);
+  // Slot 1's own chain (`bannerKind`), not a second reading of it: `invalid` is decided before
+  // `filters === null`, and a refusal always arrives with no filters. This page shows no banner
+  // for the three states that are an answer — its proposal, caveat and readback are below.
+  const kind = result === null ? null : bannerKind(result, applied);
   const banner =
-    result === null
-      ? null
-      : result.outcome === "error"
-        ? tp.unavailable
-        : result.outcome === "unparseable" || result.filters === null
-          ? tp.unparseable
-          : result.outcome === "invalid"
-            ? tp.invalid
-            : null;
+    kind === "error" ? tp.unavailable : kind === "invalid" ? tp.invalid(copy.aiLeverName) : kind === "unparseable" ? tp.unparseable : null;
 
   return (
     <div className="space-y-2">

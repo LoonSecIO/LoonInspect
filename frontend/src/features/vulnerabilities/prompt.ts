@@ -2,6 +2,7 @@ import { apiRequest } from "@/config/api";
 import type { CatalogBand, CatalogOrder, CatalogVulnFilter } from "@/features/catalog/types";
 import { askFailureText, type AskSettled } from "@/features/changes/prompt";
 import type { PromptRequest, PromptStatus } from "@/features/changes/types";
+import { payoffList } from "@/features/vulnerabilities/pageBands";
 import type { Translations } from "@/i18n/en";
 
 /**
@@ -142,6 +143,22 @@ export function readLeverReply(
  *  that was not filters moves nothing at all. */
 export function filtersOnArrival(result: VulnPromptResult): VulnPromptFilters | null {
   return result.outcome === "applied" && result.filters ? result.filters : null;
+}
+
+/**
+ * The order the page will ACTUALLY rank an answer's filters by, which is not always the order
+ * the answer names: *Easily patchable* is ranked by payoff off the filter alone (`payoffList`),
+ * whatever the URL or the answer says. Asked through the page's own predicate rather than a
+ * second reading of it, so the two cannot drift.
+ *
+ * The defect it exists for: an applied `{vuln: "patchable", order: "exposure"}` — which any
+ * reply naming that state without writing `payoff` used to produce — read as *the page has
+ * moved off this answer* on the very next render, hiding the readback, the count and the
+ * caveat. The server now pairs the two (`guard` rule 4); this is the page's side of the same
+ * fact, so an answer from an older pod cannot blank the card either.
+ */
+export function leverOrder(filters: VulnPromptFilters): CatalogOrder {
+  return payoffList(filters.vuln) ? "payoff" : filters.order;
 }
 
 /** The filters the lever applied, as the page's whole URL state — one chip is one whole URL
