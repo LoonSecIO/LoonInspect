@@ -169,8 +169,9 @@ Two rules a consumer can rely on:
 
 **Not to be confused with the stamp on a change row.** `device_changes.device_meta` (#447) is
 the same move made for the same reason — write the device onto the row so a filter needs no
-join — and a different half of it: sixteen *attributes* (model, OS version, FileVault state,
-site, building, department, managed, supervised, enrolment, the assigned person) that exist only
+join — and a different half of it: seventeen *attributes* (model, OS version, FileVault state,
+site, building, department, managed, supervised, enrolment, the assigned person, and that person
+as a per-tenant token — what the feed's URL carries since #446) that exist only
 in this database and never on the wire. This block is *correlation*, it is frozen at the names
 below, and `managed` is the one name the two share, read from the same GENERAL field.
 `backend/tests/test_change_dimensions.py` holds the boundary.

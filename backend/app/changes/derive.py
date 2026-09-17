@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import uuid
 from collections.abc import AsyncIterator, Mapping
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -33,6 +34,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.changes.diff import Entry, EntryChange, FieldChange, diff_entries, diff_scalar
+from app.changes.person_token import person_token
 from app.changes.policy import (
     CHANGE_POLICY_VERSION,
     ENTRY_RULES_BY_KIND,
@@ -42,6 +44,7 @@ from app.changes.policy import (
     is_system_app,
 )
 from app.core.context import get_request_id
+from app.core.database import bound_tenant_id
 from app.core.outbox import enqueue_event
 from app.core.runs import event_time, get_run, pull_event_id, run_meta
 from app.core.wire import ENVELOPE, envelope, instance_label
@@ -93,8 +96,8 @@ _ID_SPACES: dict[str, str] = {SUBJECT_COMPUTER: COMPUTER_PLATFORM}
 # `ingest_computer` the derivation runs before `process_sync` updates it (#243), and a row that
 # says "MacBook Air" must mean what the Mac was when the change was observed.
 #
-# Sixteen keys of eighteen, the two held open as #189 held its thirteenth, so the next one costs
-# no migration. Spelled in this product's camelCase, not Jamf's section paths.
+# Seventeen keys of eighteen, the last held open as #189 held its thirteenth, so the next one
+# costs no migration. Spelled in this product's camelCase, not Jamf's section paths.
 DEVICE_META_KEYS: tuple[str, ...] = (
     "model",
     "modelIdentifier",
@@ -112,6 +115,10 @@ DEVICE_META_KEYS: tuple[str, ...] = (
     "realName",
     "email",
     "position",
+    # Derived, not read: the person as a keyed token, this being the dimension whose filter
+    # value travels in a URL (#446). The three names above stay on the row and the feed still
+    # matches them; a shared link carries only this.
+    "userToken",
 )
 DEVICE_META_MAX_KEYS = 18
 # (stamp key, contract section, path in that section's canonical body). The paths are the
@@ -260,7 +267,7 @@ def _at(body: object, path: str) -> object:
     return value
 
 
-def device_dimensions(observation: Observation) -> dict[str, object] | None:
+def device_dimensions(observation: Observation, *, tenant_id: uuid.UUID | None = None) -> dict[str, object] | None:
     """`DEVICE_META_KEYS` read out of this observation, for `device_changes.device_meta`.
 
     Null and empty values are dropped rather than stored, the rule the wire's block already
@@ -271,6 +278,10 @@ def device_dimensions(observation: Observation) -> dict[str, object] | None:
 
     None for a subject that is not a device: a smart group has no model and no department, and
     an invented one is worse than an absent one.
+
+    `userToken` is read out of no section: the person, keyed to `tenant_id` — the tenant whose
+    session is writing the row — so the dimension whose filter value ends up in a shared URL
+    travels as a token and not a name (#446). It drops with the person, and with no tenant.
     """
     if observation.subject_kind != SUBJECT_COMPUTER:
         return None
@@ -283,6 +294,9 @@ def device_dimensions(observation: Observation) -> dict[str, object] | None:
         if value is None or value == "":
             continue
         stamp[key] = value
+    token = person_token(stamp, tenant_id=tenant_id)
+    if token:
+        stamp["userToken"] = token
     return stamp or None
 
 
@@ -335,7 +349,7 @@ async def derive_and_record(
     # Once per boundary, not once per row: every change here was observed on the same pull of
     # the same Mac, so they carry the same stamp — and re-reading it per row would only invite
     # the copies to disagree, the same argument as the wire block above.
-    dimensions = device_dimensions(observation)
+    dimensions = device_dimensions(observation, tenant_id=bound_tenant_id(db))
 
     def _row(**kwargs) -> DeviceChange:
         return DeviceChange(

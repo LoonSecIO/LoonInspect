@@ -14,6 +14,7 @@ event body would be an addition to a frozen vocabulary that nobody ruled.
 
 from __future__ import annotations
 
+import uuid as uuidlib
 from datetime import UTC, datetime
 
 from app.changes.derive import (
@@ -22,6 +23,7 @@ from app.changes.derive import (
     DEVICE_META_MAX_KEYS,
     device_dimensions,
 )
+from app.changes.person_token import is_person_token
 from app.changes.policy import FIELD_RULES
 from app.mdm.jamf.contract import SUBJECT_COMPUTER, Observation, SectionContent
 
@@ -58,6 +60,9 @@ _BODIES: dict[str, dict] = {
 }
 
 
+TENANT, OTHER_TENANT = uuidlib.UUID(int=0x446A), uuidlib.UUID(int=0x446B)
+
+
 def _observation(subject_kind: str = SUBJECT_COMPUTER, **bodies: dict | None) -> Observation:
     """A pull as the ledger saw it. A section named with None is outside the aperture."""
     sections = {**_BODIES, **bodies}
@@ -73,8 +78,10 @@ def _observation(subject_kind: str = SUBJECT_COMPUTER, **bodies: dict | None) ->
     )
 
 
-def test_a_full_aperture_stamps_every_key() -> None:
-    assert device_dimensions(_observation()) == {
+def test_a_full_aperture_stamps_every_key(encryption_key: str) -> None:
+    stamp = device_dimensions(_observation(), tenant_id=TENANT)
+    assert is_person_token(stamp.pop("userToken"))
+    assert stamp == {
         "model": "Mac mini (2024) M4",
         "modelIdentifier": "Mac16,10",
         "appleSilicon": True,
@@ -95,10 +102,10 @@ def test_a_full_aperture_stamps_every_key() -> None:
 
 
 def test_the_keys_are_the_named_ones_and_the_cap_holds() -> None:
-    """Sixteen of eighteen, two held open as #189 held its thirteenth slot: a later key is a
-    parameter, not a migration, and the cap is what keeps "one more" from becoming a document."""
-    assert tuple(key for key, _, _ in _DEVICE_META_SOURCES) == DEVICE_META_KEYS
-    assert len(DEVICE_META_KEYS) == 16
+    """Seventeen of eighteen, the last held open as #189 held its thirteenth slot: a later key is
+    a parameter, not a migration. `userToken` is read out of no section — it is derived (#446)."""
+    assert (*(key for key, _, _ in _DEVICE_META_SOURCES), "userToken") == DEVICE_META_KEYS
+    assert len(DEVICE_META_KEYS) == 17
     assert len(DEVICE_META_KEYS) <= DEVICE_META_MAX_KEYS
     assert len(set(DEVICE_META_KEYS)) == len(DEVICE_META_KEYS)
 
@@ -111,7 +118,7 @@ def test_every_source_is_a_field_the_policy_tracks() -> None:
         assert (section, path) in tracked, (key, section, path)
 
 
-def test_nulls_and_empty_strings_are_dropped_not_stored() -> None:
+def test_nulls_and_empty_strings_are_dropped_not_stored(encryption_key: str) -> None:
     """Jamf sends "" for an unassigned user. Stored, it would match a filter for the empty
     string and read as a value on the page; the wire's block already drops nulls this way."""
     stamp = device_dimensions(
@@ -121,7 +128,8 @@ def test_nulls_and_empty_strings_are_dropped_not_stored() -> None:
         )
     )
     assert stamp is not None
-    assert "username" not in stamp and "realName" not in stamp and "email" not in stamp
+    # No assigned person, so no token either — an unassigned Mac is not one person everyone is.
+    assert not {"username", "realName", "email", "userToken"} & set(stamp)
     assert stamp["departmentId"] == "5"
     assert "managed" not in stamp
     # False is a value, not an absence: an unsupervised Mac is a thing to filter for.
@@ -131,7 +139,7 @@ def test_nulls_and_empty_strings_are_dropped_not_stored() -> None:
 def test_a_section_outside_the_aperture_drops_its_keys_together() -> None:
     """Absence of observation, not absence of the fact (#98). A webhook's narrow read can
     leave a row with a model and no department, and that is the honest stamp."""
-    stamp = device_dimensions(_observation(user_and_location=None, general=None))
+    stamp = device_dimensions(_observation(user_and_location=None, general=None), tenant_id=TENANT)
     assert stamp is not None
     assert set(stamp) == {"model", "modelIdentifier", "appleSilicon", "osVersion", "osBuild", "fileVault"}
 
@@ -152,7 +160,28 @@ def test_an_aperture_that_read_none_of_the_sections_stamps_nothing() -> None:
     assert device_dimensions(_observation(hardware=None, operating_system=None, user_and_location=None, general=None)) is None
 
 
-def test_nothing_crosses_from_the_stamp_into_the_wire() -> None:
+def _token(tenant_id, **user_and_location) -> str | None:
+    stamp = device_dimensions(_observation(user_and_location=user_and_location or None), tenant_id=tenant_id)
+    return (stamp or {}).get("userToken")
+
+
+def test_the_person_leaves_as_a_token_stable_in_a_tenant_and_different_across_them(encryption_key: str) -> None:
+    """The value that ends up in a shared URL. One person reads back as one token inside a tenant
+    — so a link keeps filtering — and as another in the next tenant, so two feeds cannot be joined
+    on a person by whoever holds both URLs. Below: the same person with the address cased the
+    other way and the name re-spelled, the lower-cased email deciding it; the next tenant on the
+    same key material; another person; down the rule to the username and the real name; and no
+    tenant, whose unkeyed token would be the guessable hash this replaced."""
+    person = _BODIES["user_and_location"]
+    mine = _token(TENANT, **person)
+    assert is_person_token(mine)
+    assert _token(TENANT, **{**person, "realname": "K.P.", "email": "Kyle@Example.com"}) == mine
+    others = {_token(OTHER_TENANT, **person), _token(TENANT, username="ops"), _token(TENANT, realname="Kyle P")}
+    assert all(is_person_token(t) for t in others) and len(others | {mine}) == 4
+    assert _token(None, **person) is None
+
+
+def test_nothing_crosses_from_the_stamp_into_the_wire(encryption_key: str) -> None:
     """The event body is an explicit dict (`_event_payload`) and the block inside it is frozen at
     #189's names, so a stamped key that crossed into it would be an addition to a frozen
     vocabulary nobody ruled (#188 clause 3).
@@ -165,4 +194,6 @@ def test_nothing_crosses_from_the_stamp_into_the_wire() -> None:
 
     meta = _change_device_meta(_observation())
     assert set(DEVICE_META_KEYS) & set(meta) == {"managed"}
-    assert meta["managed"] is device_dimensions(_observation())["managed"]
+    assert meta["managed"] is device_dimensions(_observation(), tenant_id=TENANT)["managed"]
+    # The token least of all: #446 is a filter surface, and the wire ships the names (#188).
+    assert "userToken" not in meta

@@ -43,6 +43,10 @@ BASE = datetime(2026, 8, 30, 12, 0, tzinfo=UTC)
 
 # Two stamps that differ in every key (app.changes.derive.DEVICE_META_KEYS), and the span two
 # rows of one observation share.
+# The tokens the derive path keys per tenant (app.changes.person_token), literal for the reason
+# the rest of the fixture is: the query is under test, not the derivation. The third is on no row.
+DANA_TOKEN, OPS_TOKEN, STRANGER_TOKEN = "u_DanaTokenAAAAAAX", "u_OpsTokenBBBBBBBX", "u_NobodyTokenCCCCX"
+
 AIR = {
     "model": "MacBook Air (M3, 2024)",
     "osVersion": "26.6.2",
@@ -52,6 +56,7 @@ AIR = {
     "username": "dana",
     "realName": "Dana Okonkwo",
     "email": "dana@example.com",
+    "userToken": DANA_TOKEN,
 }
 MINI = {
     "model": "Mac mini (2024) M4",
@@ -62,6 +67,7 @@ MINI = {
     "username": "ops",
     "realName": "Ops Service",
     "email": "ops@example.com",
+    "userToken": OPS_TOKEN,
 }
 WEBHOOK_SPAN = uuidlib.UUID("2f6c1e4a-7b93-4d21-9a05-6c1d8e3f4b77")
 
@@ -337,7 +343,9 @@ def feed(client, seeded):
     return _scoped
 
 
-EMPTY = {"items": [], "total": 0, "page": 1, "pageSize": 200}
+# `userFilter` is null unless a `user` filter was applied (#446) — "nothing was asked" rather
+# than "asked, and nothing resolved it", which is the pair of nulls inside it.
+EMPTY = {"items": [], "total": 0, "page": 1, "pageSize": 200, "userFilter": None}
 
 
 def _subjects(body: dict) -> set[str]:
@@ -683,11 +691,37 @@ async def test_each_stamped_dimension_narrows_the_feed(feed) -> None:
     assert _subjects(await feed("artifact=Wireshark&managed=false")) == {"102"}
     assert _subjects(await feed("artifact=Wireshark&managed=true")) == {"101"}
     assert _subjects(await feed("artifact=Wireshark&fileVault=NOT_ENCRYPTED")) == {"102"}
-    # Any of the three names the ledger holds for the assigned person (#446 will tokenize them).
+    # Any of the three names the ledger holds for the assigned person.
     assert _subjects(await feed("user=dana")) == {"101", "108"}
     assert _subjects(await feed("user=Okonkwo")) == {"101", "108"}
     assert _subjects(await feed("user=dana@example.com")) == {"101", "108"}
     assert _subjects(await feed("user=ops")) == {"102"}
+
+
+async def test_the_person_filters_as_a_token_and_the_response_says_who(feed) -> None:
+    """#446: the value a shared link carries, and the echo that lets a chip read as a person.
+
+    A `u_…` matches the row's own `userToken` exactly, reaching the Macs `user=dana` reaches and
+    naming nobody on the way, while typed text is untouched. Exact, not contains: one character
+    off finds nothing, and so does a token from before a key rotation — a stale link gets an empty
+    feed and a chip saying so, not a refusal. The echo costs no new table and no scan over
+    persons: typed text matching one person comes back as that person's token, which is how a
+    name stops travelling, and text matching two comes back as neither.
+    """
+    dana = {"token": DANA_TOKEN, "display": "Dana Okonkwo"}
+    assert _subjects(await feed(f"user={DANA_TOKEN}")) == {"101", "108"}
+    assert _subjects(await feed(f"user={OPS_TOKEN}")) == {"102"}
+    assert _subjects(await feed("user=dana")) == {"101", "108"}
+    # Not `EMPTY`: a `user` query carries a `userFilter` even when nothing matched. The third is
+    # a row with no stamp at all, out of reach of either shape.
+    for query in (f"user={DANA_TOKEN[:-1]}A", f"user={STRANGER_TOKEN}", "artifact=Slack&user=dana"):
+        assert (await feed(query))["total"] == 0
+    assert (await feed(f"user={DANA_TOKEN}"))["userFilter"] == dana
+    assert (await feed("user=Okonkwo"))["userFilter"] == dana
+    assert (await feed("user=ops"))["userFilter"] == {"token": OPS_TOKEN, "display": "Ops Service"}
+    assert (await feed("user=example.com"))["userFilter"] == {"token": None, "display": None}
+    assert (await feed(f"user={STRANGER_TOKEN}"))["userFilter"] == {"token": STRANGER_TOKEN, "display": None}
+    assert (await feed("artifact=Wireshark"))["userFilter"] is None
 
 
 async def test_dimensions_compose_with_each_other_and_with_the_rest(feed) -> None:
