@@ -615,19 +615,21 @@ def test_a_departure_carries_no_event_id_and_a_return_carries_the_pull_that_read
     Judged beside `_change_device_meta` because the two blocks must degrade the same way:
     this is the third producer of #189's block, and a third rule would be a third vocabulary.
     """
-    from app.observations.departure_events import _departure_device_meta
+    from app.observations.departure_events import _mac_device_meta, _object_device_meta
 
-    departed = _departure_device_meta("101", event_id=None)
+    departed = _object_device_meta("101")
     assert set(departed) == {"jobID", "trigger", "connectionID", "shortDate", "jamfProID", "schemaVersion"}
     assert "eventID" not in departed and "hostName" not in departed and "serialNumber" not in departed
     assert departed["jamfProID"] == "101"
     assert set(departed) < set(SHIPPED_ELEVEN), "a departure mints no name the block does not already have"
 
-    # The same block for an object's return: still no eventID, because nothing pulled it.
-    assert _departure_device_meta("101", event_id=None) == departed
-
-    # And the Mac's return, handed the id of the pull that read it — the same key the
-    # inventory family and `device.change` agree on, never a second spelling.
-    returned = _departure_device_meta("1743", event_id=pull_event_id(run.id, "macos", "1743"))
+    # A Mac takes the WHOLE block as its `Device` row last knew it (#495) and drops the same key
+    # for the same reason; its return keeps it, handed the id of the pull that read it — the same
+    # key the inventory family and `device.change` agree on, never a second spelling.
+    gone = _mac_device_meta(_device(), subject_id="1743", pulled=False)
+    returned = _mac_device_meta(_device(), subject_id="1743", pulled=True)
+    assert set(gone) == set(SHIPPED_ELEVEN) - {"eventID"}
+    assert set(returned) == set(SHIPPED_ELEVEN)
     assert returned["eventID"] == pull_event_id(run.id, "macos", "1743")
-    assert set(returned) <= set(SHIPPED_ELEVEN)
+    # A Mac whose Device row is gone degrades to the object block rather than inventing identity.
+    assert _mac_device_meta(None, subject_id="101", pulled=False) == departed
