@@ -160,6 +160,15 @@ event type Jamf sent (the webhook's own configuration), and the run log.
 Work from the app outward: was anything produced, was it queued, was it delivered, and
 did Splunk keep it.
 
+`GET /api/outbox` (`destination:read`) answers the middle of that in one read, in the
+three states an event can be in — **held** (produced, considered against no enabled
+destination, holding no delivery row at all), **pending** (a delivery still inside the
+retry envelope) and **dead-lettered** (a delivery that spent its ten attempts and waits
+for a redrive) — plus the two retention windows and the next purge, so each state's
+deadline is readable without the source. Ages are `null` when a set is empty, never `0`.
+Settings › Destinations reads it for the two sentences above the list and says plainly when
+that read fails, so a missing sentence there is never a silent zero.
+
 1. **Was anything produced?** `GET /api/runs?pageSize=5`: a `device_sweep` run with
    `status: succeeded` and `deviceCount` above zero. None → this is §1 or §2, not a
    delivery problem.
@@ -167,7 +176,13 @@ did Splunk keep it.
    `GET /api/destinations` → `enabled: true`. A stack with no enabled destination holds
    its events and delivers nothing — the setup stepper calls the destination step
    optional, and holding is the ruled behaviour ([`splunk-setup.md`](splunk-setup.md)).
-   Add or enable one; the held events fan out on the next tick.
+   `GET /api/outbox` says how many and for how long: `held.events` with
+   `held.reason: no_enabled_destination`, and `held.oldestAgeSeconds` against
+   `retention.eventRetentionDays` is what is left before the oldest is purged and that
+   part of the baseline is gone for good — Settings › Destinations prints it as a
+   sentence. Add or enable a destination; fan-out considers at most a thousand events a
+   tick, so a large backlog drains over several minutes — `held.events` falling while
+   `held.reason` is `null` is that drain, not a second fault.
 3. **Test it.** The Test button, or `POST /api/destinations/<id>/test`. Read
    `statusCode` and the error:
    - connection refused, timeout, name not resolved → the URL, the port, a firewall, or a
@@ -183,20 +198,31 @@ did Splunk keep it.
    - `failedCount` above zero → those deliveries gave up after ten attempts; `lastError`
      is why. Fix the cause (step 3), then **Redrive** returns them to the queue. Events
      that arrived after the fix flow on their own.
-   - `pendingCount` climbing and nothing delivered → the destination is accepting slowly
-     or the tick is behind; wait two ticks (a minute). Still climbing, and `lastError` is
-     still `null` → nothing was attempted, so read the container log:
-     `docker compose logs app --since 10m | grep "outbox tick failed"`. That line means the
-     tick gave up before it dialled, and it names what to check — usually a destination
+   - `pendingCount` climbing and nothing delivered → **ask first whether the queue is
+     moving at all**, without a shell: read `pending.oldestAgeSeconds` from
+     `GET /api/outbox` twice, a minute apart. **Falling** means the queue is draining and
+     only its head is old; `pendingCount` can climb at the same time, because new events
+     keep arriving, which is why the age is the sharper measure. **Rising by about the
+     seconds between the reads** means nothing left it — nothing was attempted. Only then
+     is a log worth reading, and two lines say which of the two reasons it is. The first is
+     a fault: `docker compose logs app --since 10m | grep "outbox tick failed"` — the tick
+     gave up before it dialled, and the line names what to check, usually a destination
      whose URL it refuses or whose stored secret this container cannot read (§4). Fix that,
-     and the next tick drains the queue. No such line and still climbing → reportable **D**.
-   - **More than one app process, and the queue is not draining.**
+     and the next tick drains the queue. The second is the next bullet. Still rising with
+     neither line → reportable **D**, once step 2's rows are *all* enabled: the age is
+     tenant-wide, and a destination disabled after its events fanned out holds them pending
+     until it is enabled again, pinning the age with no line in either log.
+     `deadLettered.oldestExpiresAt` is the instant the oldest dead letter stops being
+     redrivable, and `retention.nextPurgeAt` is when the purge that takes it runs.
+   - **More than one app process, and the queue is not draining.** The second reason a
+     tick attempts nothing, and usually not a fault at all.
      `docker compose logs app --since 10m | grep "outbox tick skipped"`. That line means
      the process printing it found another one already delivering for that organization
      and did nothing, which is correct: one process delivers at a time and the rest say
      so every tick ([`operations.md` §7](operations.md)). It is only a problem when
-     *every* process prints it and `pendingCount` still climbs — then the process holding
-     the lock is wedged rather than working. Restart the stack: the lock goes with its
+     *every* process prints it and the queue is still not moving — `pendingCount`
+     climbing and `pending.oldestAgeSeconds` rising with it. Then the process holding the
+     lock is wedged rather than working. Restart the stack: the lock goes with its
      connection, and the next tick takes it.
    - **How long has it been held?** The nightly tape is the only history of the held set:
      `GET /api/posture?keys=outbox.pending,outbox.failed_24h,outbox.oldest_pending_age_s&days=7`
@@ -228,7 +254,9 @@ did Splunk keep it.
    the type, the index is right, and the search is empty → reportable **E**.
 
 **D.** Deliveries stay pending across several ticks with no failures. Report the
-destination `id`, `pendingCount`, and `docker compose logs app --since 10m`.
+destination `id` and **both** `GET /api/outbox` bodies from step 4's two reads — the three
+numbers that describe the queue are `held.events`, `pending.deliveries` and
+`pending.oldestAgeSeconds`, and the pair is what says nothing is being attempted at all.
 **E.** Everything reports healthy and Splunk shows nothing. Report the destination `id`,
 the run `jobID`, the token's index settings, and the search you ran.
 
@@ -1307,14 +1335,14 @@ history stay, and **Show departed** in the filter bar (`includeDeparted=true`) r
    **hardware** nor **extension attributes** (which force it back in); add either. A serial is
    Apple's and an instance's view of it is not, so a Mac moved to a *different* Jamf Pro departs
    here and enrols as a new Mac.
-4. **Your SIEM saw nothing either way.** A Mac's departure and return are not on the wire
-   yet. `subject.departure` / `subject.returned` ship today for **objects** — a smart group or
-   an extension-attribute definition (path 15) — under the sourcetype `loon:departure`; the
-   Mac's own seven-day tail and its closing `state: removed` are built on this census and are
-   the follow-up to #179. Until then the run log above and
-   `GET /api/devices?includeDeparted=true` are where a departed Mac is visible, and a saved
-   search on `loon:departure` will correctly find no `subjectKind=computer` events. That is
-   not a delivery fault and not reportable.
+4. **Your SIEM saw nothing either way.** A Mac ships under the sourcetype `loon:departure`
+   ([`splunk-setup.md`](splunk-setup.md) §7), and the census line above counts what it sent:
+   `eventsEnqueued` the notices and returns, `macsRemoved` the tails it closed. A departed Mac sends
+   `state: departed`, `noticeDay` 1..7, **one per UTC day**: a day with no clean census is never
+   backfilled, so `noticeDay` jumps. After seven days one `state: removed` closes the tail, without
+   waiting for a clean census. A sweep that names the Mac sends `subject.returned` and no notice under
+   that id; a re-enrolment names a new one, so the retired id still closes and `priorJamfProID` joins
+   them. Counted here, absent in Splunk, is path 3 — both names must be in `subscribedEvents`; zero is **T**.
 5. **An alert closed itself, or the nightly numbers moved, and nobody touched anything.** A
    Mac leaving takes its open latches with it — the sweep is what closes a latch, and a Mac
    that left is never swept again, so one left open would read as *true of the fleet* for ever.
@@ -1336,7 +1364,8 @@ history stay, and **Show departed** in the filter bar (`includeDeparted=true`) r
    deferral (v5); [`jamf-observations.md`](jamf-observations.md) §8 says what is held.
 
 **T.** A finished, unselected, failure-free device sweep whose log has no *device census* line;
-a Mac Jamf returns on the sweep's own endpoint that still departs or stays departed; or an open
+a Mac Jamf returns on the sweep's own endpoint that still departs or stays departed; a census that
+departs a Mac and enqueues nothing for it (`eventsEnqueued: 0` beside `departed: 1`); or an open
 alert latch still on a Mac that left the fleet after a clean census has run since. Report the
 run's `jobID` and its log, the census line if there is one, the Mac's Jamf id, the collection's
 **Selector** field, and `docker compose logs app --since 30m`.

@@ -76,7 +76,7 @@ from app.models.schema import (
     Run,
 )
 from app.observations.departure import DEPARTURE_TAIL_DAYS, SKIP_COLLAPSED, gone_for_good, reconcile_census, tail_counts
-from app.observations.departure_events import emit_census_events
+from app.observations.departure_events import emit_census_events, emit_mac_notices, emit_mac_removals
 from app.observations.ledger import (
     RecordResult,
     current_span,
@@ -615,6 +615,10 @@ async def _reconcile_device_census(
     """
     at = datetime.now(UTC)
     if selector is not None or devices_failed:
+        # Above the gate deliberately (#179 4.5): the terminal is GUARANTEED and a tail runs out on
+        # the wall clock, so a sweep too dirty to judge anybody still closes one. No census to contradict.
+        removed = await emit_mac_removals(db, connection=connection, at=at)
+        await db.commit()
         if run is not None:
             await run_log(
                 db,
@@ -623,6 +627,7 @@ async def _reconcile_device_census(
                 "device census not taken; this sweep was not a clean one",
                 reason="selector" if selector is not None else "device_failures",
                 devicesFailed=devices_failed,
+                macsRemoved=removed,
             )
         return
     verdict = await reconcile_census(
@@ -634,15 +639,19 @@ async def _reconcile_device_census(
         census_run_id=run.id if run is not None else None,
         observed_lineage=observed_lineage,
     )
-    # No `emit_census_events` here yet, and the absence is deliberate rather than forgotten:
-    # a Mac's departure is not one event but a tail — `noticeDay` 1..7, one per UTC day, and a
-    # guaranteed terminal `state: removed` that must fire even when the clock runs out without
-    # a clean census (#179, 4.5). That needs a producer this function does not have, so it is
-    # #179's follow-up; the object half above emits today. Until then `loon:departure` carries
-    # no `subjectKind: computer` event, which docs/troubleshooting.md §16 tells an operator.
-    #
+    # The wire, inside this transaction so an event and the row it describes land together (#179, built
+    # by #495). Returns first: the census closes a returning Mac's row before the tail is walked.
+    emitted = await emit_census_events(db, connection=connection, verdict=verdict, at=at)
+    if not verdict.skipped:
+        # A notice asserts "still absent" and a census the breaker refused observed nothing to assert
+        # it from, so the tail pauses on a short read exactly as departing does. Returns do not.
+        emitted += await emit_mac_notices(db, connection=connection, at=at)
+    # BELOW the census, not above it: a Mac this census named has closed its row and left the open set,
+    # so the sweep that finds one back on the day its clock runs out does not also say it was removed.
+    removed = await emit_mac_removals(db, connection=connection, at=at)
     # The latch close is unconditional on the verdict (#476): a latch crosses day seven because of a
-    # departure recorded on an earlier night, so what tonight's census decided has no bearing on it.
+    # departure recorded on an earlier night, so what tonight's census decided has no bearing on it. It
+    # is not unconditional on the CENSUS, as the terminal one line up is; #512 is that asymmetry.
     latches_closed = await close_departed_device_latches(
         db, connection_id=connection.id, at=at, run_id=run.id if run is not None else None
     )
@@ -680,6 +689,9 @@ async def _reconcile_device_census(
         inTail=in_tail,
         leftTheFleet=left,
         latchesClosed=latches_closed,
+        # What went on the wire, so "my SIEM saw nothing" is answerable from the run (troubleshooting §16.4).
+        eventsEnqueued=emitted,
+        macsRemoved=removed,
         # The sentence says "seven-day"; the machine-readable number comes from the constant.
         tailDays=DEPARTURE_TAIL_DAYS,
     )

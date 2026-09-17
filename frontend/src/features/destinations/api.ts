@@ -1,5 +1,5 @@
 import { apiRequest } from "@/config/api";
-import type { CreateDestinationInput, Destination, UpdateDestinationInput } from "@/features/destinations/types";
+import type { CreateDestinationInput, Destination, OutboxDepth, UpdateDestinationInput } from "@/features/destinations/types";
 
 export function listDestinations(): Promise<Destination[]> {
   return apiRequest<Destination[]>("/destinations");
@@ -43,4 +43,10 @@ export function redriveDestination(id: number): Promise<DestinationRedriveResult
 
 export function deleteDestination(id: number): Promise<void> {
   return apiRequest<void>(`/destinations/${id}`, { method: "DELETE" });
+}
+
+/** Queue depth for the whole tenant (#468) — the one read that can see held events, which
+ *  have no delivery row for a destination row to count. */
+export function getOutbox(): Promise<OutboxDepth> {
+  return apiRequest<OutboxDepth>("/outbox");
 }

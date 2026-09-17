@@ -418,16 +418,20 @@ your destination spells out `subscribedEvents`, migration `bd51c7a9e402` added B
 `subject.departure` and `subject.returned` to it, because a list that received departures
 without returns would describe a fleet that only ever shrinks. To decline them, remove
 **both** from `subscribedEvents`; removing only one leaves exactly that half-open state.
-Pairing at search time is `departedAt`, which a return repeats verbatim:
+Pairing at search time is `departedAt`, which a return repeats verbatim, and the id — which a
+wipe-and-re-enrol does not, so the return names the one it departed under as `priorJamfProID`:
 
 ```
 index=<yours> sourcetype=loon:departure
-| stats values(event) as seen, min(_time) as first by deviceMeta.jamfProID, departedAt
+| eval subject=coalesce(priorJamfProID, 'deviceMeta.jamfProID')
+| stats values(event) as seen, values(state) as state, min(_time) as first by subject, departedAt
 | where mvcount(seen)=1 AND seen="subject.departure"
 ```
 
 That is every subject still gone. Swap the `where` for `mvcount(seen)=2` to list the ones
-that came back, and add `subjectKind=computer_group` to scope it to smart groups.
+that came back, and add `subjectKind=computer_group` to scope it to smart groups. A **Mac** departs
+on a tail — seven `state: departed` notices at most, which `values(event)` collapses into one bucket;
+`state=removed` asks which tails closed.
 
 ## 8. Prove it end to end
 

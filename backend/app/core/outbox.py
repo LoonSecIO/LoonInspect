@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.core.database import engine
 from app.core.egress import BlockedDestinationUrl, refuse_blocked_resolution
 from app.core.hec_fanout import fan_out
+from app.core.scheduling import Schedule, next_due
 from app.core.wire import ENVELOPE, hec_event
 from app.core.wire_vocabulary import (
     ASSERTION_EVENT_TYPES,
@@ -1028,3 +1029,23 @@ async def purge_delivered_events(db: AsyncSession, retention_days: int, dead_let
         await db.execute(sa_delete(EventOutbox).where(EventOutbox.id.in_(batch)))
     await db.commit()
     return len(purge_ids)
+
+
+# When `outbox_cleanup` runs, as wall-clock time in `sync_timezone` — the scheduler's own zone
+# (`main.py`). Beside the purge rather than only at the `CronTrigger`, because `GET /api/outbox`
+# publishes the next occurrence as a deadline and a deadline copied from a second literal drifts
+# away from the job that enforces it.
+PURGE_HOUR = 2
+PURGE_MINUTE = 45
+
+
+def next_purge_at(after: datetime) -> datetime:
+    """The next instant `purge_delivered_events` runs after `after`, in UTC. Through the
+    collection scheduler's own arithmetic so 02:45 stays 02:45 local across a DST change,
+    the one day a naive `+ 1 day` would report a deadline an hour from the truth."""
+    due = next_due(
+        Schedule(frequency="daily", timezone=settings.sync_timezone, at_hour=PURGE_HOUR, at_minute=PURGE_MINUTE),
+        after=after,
+    )
+    # `next_due` is None only for an event-driven schedule; "daily" always fires again.
+    return due if due is not None else after + timedelta(days=1)
