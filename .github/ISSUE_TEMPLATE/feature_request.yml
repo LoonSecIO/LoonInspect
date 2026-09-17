@@ -36,3 +36,5 @@ body:
       options:
         - label: I searched the open issues and this is not already filed or ruled out.
           required: true
+        - label: This issue carries a close-instead clause — a condition under which it should be closed rather than built (say what it is under *The shape you have in mind*). Checked, it goes to the maintainer for a ruling before anyone builds it.
+          required: false

@@ -1237,6 +1237,11 @@ export const en = {
     reEmitEveryDestination: "Every enabled destination",
     reEmitConfirm: "Re-emit",
     reEmitError: "Could not start the re-emit.",
+    // The evidence report (#473). Where an auditor already is: the connection is what the report is *of*,
+    // and this row is the only place that names one. The download is the whole feature — one file, opened
+    // in a browser, printed and filed — so there is no page to route to.
+    evidenceReport: "Evidence report",
+    evidenceReportError: "Could not build the evidence report. Open the connection's run panel to see whether a device sweep has finished.",
     runProcessing: "Processing…",
     runJoined: "Already syncing — showing the run in progress.",
     runMoreDetails: "More details",

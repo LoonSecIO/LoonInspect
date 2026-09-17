@@ -3,8 +3,9 @@ import { Button } from "@/components/ui/button";
 import { CollectionsPanel } from "@/features/mdm/CollectionsPanel";
 import { ConnectionForm } from "@/features/mdm/ConnectionForm";
 import { RunLogPanel } from "@/features/mdm/RunLogPanel";
-import { RefreshCw } from "lucide-react";
+import { FileText, RefreshCw } from "lucide-react";
 import { ApiError } from "@/config/api";
+import { env } from "@/config/env";
 import { useHasPermission } from "@/features/auth/store";
 import { PERMISSIONS } from "@/features/auth/types";
 import { listDestinations } from "@/features/destinations/api";
@@ -23,6 +24,9 @@ export function ConnectionsPage() {
   const canSync = useHasPermission(PERMISSIONS.DEVICE_SYNC);
   // The re-emit re-sends tenant data to a destination, so it is gated like the redrive.
   const canReEmit = useHasPermission(PERMISSIONS.DESTINATION_WRITE);
+  // The evidence report is served under AUDIT_READ, so the button matches the endpoint rather than
+  // offering a reader a click they would be refused (#301).
+  const canAudit = useHasPermission(PERMISSIONS.AUDIT_READ);
   const [connections, setConnections] = useState<MdmConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -106,6 +110,33 @@ export function ConnectionsPage() {
       );
     } finally {
       setSyncingId(null);
+    }
+  }
+
+  /** The evidence report (#473): one file, downloaded. A raw fetch rather than `apiRequest`, for the
+   *  reason Data sharing's share-log download gives — the endpoint answers HTML, not JSON — and the
+   *  server names the file, its window and `asOf` being what keeps two reports apart in a downloads
+   *  folder. A refusal carries its own sentence (no ledger yet, an empty window, an unreadable rule
+   *  catalogue); only a body-less failure falls back to the generic line. */
+  async function handleEvidenceReport(id: number) {
+    setSyncError(null);
+    try {
+      const url = `${env.apiBaseUrl}/evidence/report.html?connectionID=${id}`;
+      const response = await fetch(url, { credentials: "include" });
+      if (!response.ok) {
+        const refusal: unknown = await response.json().catch(() => null);
+        throw new Error(
+          refusal && typeof refusal === "object" && "detail" in refusal ? String(refusal.detail) : ""
+        );
+      }
+      const named = /filename="([^"]+)"/.exec(response.headers.get("content-disposition") ?? "");
+      const anchor = document.createElement("a");
+      anchor.href = URL.createObjectURL(await response.blob());
+      anchor.download = named ? named[1] : "evidence-report.html";
+      anchor.click();
+      URL.revokeObjectURL(anchor.href);
+    } catch (caught) {
+      setSyncError(caught instanceof Error && caught.message ? caught.message : t.settings.evidenceReportError);
     }
   }
 
@@ -308,6 +339,12 @@ export function ConnectionsPage() {
                           onClick={() => openReEmit(connection.id)}
                         >
                           {t.settings.reEmit}
+                        </Button>
+                      )}
+                      {canAudit && (
+                        <Button variant="outline" size="sm" onClick={() => handleEvidenceReport(connection.id)}>
+                          <FileText className="mr-1 h-3 w-3" />
+                          {t.settings.evidenceReport}
                         </Button>
                       )}
                       {canWrite && (
