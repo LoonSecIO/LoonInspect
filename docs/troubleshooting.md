@@ -1340,3 +1340,55 @@ a Mac Jamf returns on the sweep's own endpoint that still departs or stays depar
 alert latch still on a Mac that left the fleet after a clean census has run since. Report the
 run's `jobID` and its log, the census line if there is one, the Mac's Jamf id, the collection's
 **Selector** field, and `docker compose logs app --since 30m`.
+
+## 17. "The evidence report is empty, or every row says it was not reported"
+
+The report is a document a person files, so it never leaves a reader to infer why it is thin: every
+state below prints its own sentence in a **Read this first** box at the top of the page, above the sum.
+Read the box first, then the step here. **Settings › Connections → Evidence report** on the connection's
+row downloads it (`GET /api/evidence/report.html`, the same answer as `…/report` in JSON, which is also
+inside the page); both need the **Auditor** role's `audit:read`.
+
+1. **The download is refused outright.** Three refusals, each carrying its sentence in the red line
+   above the table:
+   - *This connection has no observations…* → the observation ledger is written by a **device sweep**
+     and nothing else, so a connection that has only run catalog refreshes or webhook runs has none.
+     §2 step 5 has the rest.
+   - *The report window is empty: `start` must be earlier than `asOf`.* → only reachable by calling the
+     endpoint with your own dates. The button asks for neither and gets the ninety days before the
+     ledger's last collection.
+   - *The evidence report cannot be rendered: the baseline rule catalogue could not be read…* → the
+     report refuses rather than printing part of a catalogue, because a rule that failed to load reads
+     exactly like a passing fleet. The sentence names the file it looked for. This is reportable state
+     **U** — nothing about the fleet is wrong.
+2. **The page downloads, and says *No observation in this window*.** The window closes before this
+   connection's first observation, or opens after its last. The connection is not broken and no Mac is
+   named because none had been seen yet. Open the connection's run panel for the newest device sweep and
+   read its finish time; ask again for a window that reaches it.
+3. **It says *Part of this window was not collected*.** A stretch inside the window where nothing
+   reported — the collector not running, not a fleet in a good state. Those days are counted as *no
+   observation* by Mac in the sum rather than folded into met or unmet. Find the stretch's dates in the
+   **Every interval** table, then read the runs for them. If the stretch is a scheduled sweep that did
+   not fire, that is §1 or §12; if it is a sweep that ran and failed, its run row says why.
+4. **It says *This report is dated later than the last collection it could read*.** The tail between the
+   last collection and `asOf` is counted as not observed rather than as the last known state carried
+   forward — a Mac silent for three weeks is not a Mac that passed for three weeks. If a sweep should
+   have run since the named time, that is the thing to check, not this page.
+5. **It says *The runs behind the oldest part of this window are gone*.** Expected, and the one sentence
+   here that reports a success. Runs are purged after `RUN_RETENTION_DAYS` (30) while the observation
+   ledger has no purge path at all, so a report covering last March is sound long after the run that
+   collected it stopped being listed. Nothing to fix: the evidence is the ledger, not the run row.
+6. **Every verdict reads `notReported`.** Two different causes, and the box says which.
+   - *…recorded under contract version X while this build's rules are written against v0* → the
+     observations were written by a different contract version, and a rule's field is a path into a
+     contract, so the rules are left unapplied rather than guessed at. Report the pair as state **U**.
+   - No such sentence, and only *some* rows read `notReported` → those are fields the sweep's sections
+     never collected, which is a fourth thing, not a failure. Widen the collection's sections (Settings ›
+     Connections › Collections) and the next sweep answers them.
+7. **It printed badly.** Print from a browser to A4 portrait with headers and footers off; the page
+   carries its own margins and repeats both the refusal line and each table's heading on every sheet.
+   Nothing is fetched while it renders, so a machine with no network prints the same page. A digest that
+   wraps across two lines is wrapped, never shortened — every character is there.
+
+**U.** The catalogue refusal, or a contract version this build has no rules for. Report the sentence
+from the box, the build from Settings › Support, and `docker compose logs app --since 30m`.
