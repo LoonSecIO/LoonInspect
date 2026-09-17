@@ -10,12 +10,13 @@ from __future__ import annotations
 import json
 import os
 import uuid as uuidlib
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, event, insert, select, update
 
 pytestmark = [
     pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
@@ -775,3 +776,100 @@ async def test_a_mac_this_sweep_names_after_its_deadline_is_not_told_it_was_remo
     assert await _events(db, mark, "subject.departure") == [], "this census named it; it never left"
     (back,) = await _events(db, mark, "subject.returned")
     assert back.payload["matchedBy"] == "jamfProID" and back.payload["departedAt"] == gone.departed_at.isoformat()
+
+
+# --- one pass over a mass deletion (#513) -----------------------------------------------------
+@contextmanager
+def _statements():
+    """Every statement the engine sends while the block runs, with how many parameters it bound.
+
+    The bind count is the point: asyncpg's protocol caps ONE statement at 32767 of them and raises
+    past it, so what a batching seam has to be proven on is the statements that actually went out,
+    not the count the pass returned."""
+    from app.core.database import engine
+
+    sent: list[tuple[str, int]] = []
+
+    def record(conn, cursor, statement, parameters, context, executemany) -> None:
+        sent.append((statement, len(parameters or ())))
+
+    event.listen(engine.sync_engine, "before_cursor_execute", record)
+    try:
+        yield sent
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", record)
+
+
+def _device_reads(sent: list[tuple[str, int]]) -> list[int]:
+    """The parameter count of each `devices` read the pass issued, in order — one per batch."""
+    return [binds for statement, binds in sent if "FROM devices" in statement and "external_id IN" in statement]
+
+
+async def _mass_deletion(db, connection, count: int) -> list[str]:
+    """`count` Macs whose tails are all open and all run out: a Jamf Pro purge, or a connection
+    re-pointed at a smaller instance, written straight in rather than swept in one Mac at a time."""
+    from app.models.schema import Device, SubjectDeparture
+
+    batch = uuidlib.uuid4().hex[:8]
+    ids = [f"{batch}-{n}" for n in range(count)]
+    common = {"mdm_connection_id": connection.id, "subject_kind": COMPUTER, "departed_at": datetime.now(UTC) - timedelta(days=8)}
+    await db.execute(
+        insert(Device),
+        [
+            {
+                "mdm_connection_id": connection.id,
+                "mdm_provider": "jamf",
+                "external_id": external_id,
+                "serial_number": f"S{external_id}",
+                "hostname": f"mac-{external_id}",
+            }
+            for external_id in ids
+        ],
+    )
+    await db.execute(insert(SubjectDeparture), [{**common, "subject_id": external_id} for external_id in ids])
+    await db.commit()
+    return ids
+
+
+async def test_an_emission_pass_over_a_mass_deletion_binds_its_ids_in_batches(db, connection) -> None:
+    """#513, proven rather than asserted: 2,500 open tails is three reads with a short one last, and every
+    Mac is named exactly once across them — the failure a botched seam makes is a device map that empties
+    after the first batch, which shows up as hostnames gone, not as a count that moved."""
+    from app.observations.departure_events import _EMIT_BATCH, emit_mac_removals
+
+    floor = await _high_water(db)
+    try:
+        ids = await _mass_deletion(db, connection, 2500)
+        mark = await _high_water(db)
+        with _statements() as sent:
+            assert await emit_mac_removals(db, connection=connection, at=datetime.now(UTC)) == len(ids)
+        await db.commit()
+
+        reads = _device_reads(sent)
+        assert len(reads) == 3, f"2,500 ids is three batched reads, not {len(reads)}"
+        assert max(reads) <= _EMIT_BATCH + 1, "a read bound more ids than the batch, so the seam was bypassed"
+        assert reads[-1] < reads[0], "the last batch of an uneven set is the short one"
+
+        events = await _events(db, mark, "subject.departure")
+        assert sorted(e.payload["deviceMeta"]["jamfProID"] for e in events) == sorted(ids), "no duplicates, no gaps"
+        assert {e.payload["state"] for e in events} == {"removed"}
+        assert {e.payload["subjectLabel"] for e in events} == {f"mac-{external_id}" for external_id in ids}
+        # The second bound #513 names, measured and filed rather than fixed here (#524): one outbox row
+        # per Mac, every one of them inside the census's single transaction, with nothing capping the pass.
+        assert len(events) == 2500
+
+        # The boundary itself, from both sides: exactly one batch, and one id past it.
+        for count, expected in ((_EMIT_BATCH, 1), (_EMIT_BATCH + 1, 2)):
+            ids = await _mass_deletion(db, connection, count)
+            mark = await _high_water(db)
+            with _statements() as sent:
+                assert await emit_mac_removals(db, connection=connection, at=datetime.now(UTC)) == count
+            await db.commit()
+            assert len(_device_reads(sent)) == expected, f"{count} ids is {expected} read(s)"
+            assert len(await _events(db, mark, "subject.departure")) == count
+    finally:
+        from app.models.schema import EventOutbox
+
+        # Thousands of pending rows left behind would be another suite's delivery pass, not this one's.
+        await db.execute(delete(EventOutbox).where(EventOutbox.id > floor))
+        await db.commit()
