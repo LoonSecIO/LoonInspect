@@ -38,6 +38,32 @@ export interface UpdateLine {
   net: number | null;
 }
 
+/** What the *Closes* column prints for one ranked row (#532) — #482's two renderings and no
+ *  third, over the line `describeUpdate` built. The row names the release in its own *Update
+ *  to* column, so the version is not repeated here.
+ *
+ *  `null` is the honest answer for a target the corpus holds no row for: the ranking excludes
+ *  those rows server-side, so it does not arrive, and if it ever did the cell would print
+ *  nothing rather than a number about a release nobody assessed (R-D). */
+export interface ClosesCell {
+  text: string;
+  /** Present on `net` alone: the sentence saying the difference is of the totals, not the
+   *  lists, because a set difference over a capped list under-reports. */
+  hint: string | null;
+}
+
+export function closesCell(
+  line: UpdateLine | undefined,
+  copy: { closesExact: (closes: number, opens: number) => string; closesNet: (net: number) => string; updateNetHint: string }
+): ClosesCell | null {
+  if (!line || line.unknown) return null;
+  // Exact says BOTH directions: the newer build can carry more, and a column headed *Closes*
+  // that printed only the closing half would sell every update on the page.
+  if (line.closes !== null && line.opens !== null) return { text: copy.closesExact(line.closes, line.opens), hint: null };
+  if (line.net !== null) return { text: copy.closesNet(line.net), hint: copy.updateNetHint };
+  return null;
+}
+
 export function describeUpdate(
   vuln: AppVulnerability,
   update: AppUpdate | null | undefined,

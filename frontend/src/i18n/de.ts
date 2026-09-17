@@ -1000,6 +1000,20 @@ export const de: Translations = {
     longestExposedHint: "Das älteste Veröffentlichungsdatum zuerst: wie lange die Flotte den Fund schon trägt — eine Achse, die eine Mac-Flotte hat und eine Cloud-Umgebung nicht. Immer die Builds mit Funden: Ein Chip unter „Häufige Filter“ schränkt die Rangliste ein, nie diese Liste.",
     longestExposedNone: "Kein Build mit Funden trägt hier ein Veröffentlichungsdatum.",
     longestExposedFailed: "Die Liste der am längsten exponierten Builds ließ sich nicht lesen und wird daher nicht gezeigt. Sie ist eine eigene Abfrage, unabhängig von der Liste darüber; laden Sie die Seite neu.",
+    // #532 — kein Gesamtwert über diese Zeilen: Jede Zeile nennt, was ihr eigenes Update
+    // schließt (§4g).
+    easilyPatchable: "Leicht zu patchen",
+    easilyPatchableHint:
+      "Updates, die mehr Funde schließen als sie öffnen — zuerst die, die die meisten Macs erreichen. Eine Version, deren Update mehr öffnen als schließen würde, steht hier gar nicht: Ein Update, das mehr kostet als es bringt, ist nicht das nächste, was man ausrollt.",
+    easilyPatchableNone:
+      "Keine Version hier hat ein Update, das mehr Funde schließt als es öffnet. Entweder wurde noch keine neuere Version gegen diesen Korpus geprüft, oder die neueren Versionen tragen mehr als die Versionen in der Flotte.",
+    easilyPatchableFailed: "Die Liste „Leicht zu patchen“ ließ sich nicht lesen und wird daher nicht gezeigt. Sie ist eine eigene Abfrage; laden Sie die Seite neu.",
+    colUpdateTo: "Update auf",
+    colCloses: "Schließt",
+    filterPatchable: "Leicht zu patchen",
+    filterNoFixPath: "Kein Jamf-Fixpfad",
+    closesExact: (closes: number, opens: number) => `${closes} · öffnet ${opens}`,
+    closesNet: (net: number) => `netto ${net} weniger`,
     byTheNumbers: "In Zahlen",
     numbersAsOf: (date: string) => `Stand der Aufzeichnung vom ${date}`,
     numbersRun: (id: string) => `Vollständiger Durchlauf ${id}`,

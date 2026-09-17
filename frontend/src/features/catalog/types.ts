@@ -84,11 +84,14 @@ export interface CatalogListResponse {
 export type CatalogJamfFilter = "all" | "matched" | "unmatched";
 
 /** The stored answer as a filter (#529). `unknown_app` is the ruled spelling (§4b) and is
- *  SERVED: a row judged by an epoch that has moved reads it whatever its counts say. */
-export type CatalogVulnFilter = "all" | "findings" | "kev" | "unknown_app" | "clean";
+ *  SERVED: a row judged by an epoch that has moved reads it whatever its counts say.
+ *  `patchable` is narrower still (#532): served, carrying findings, and with a target the
+ *  epoch holds a row for that closes more than it opens. */
+export type CatalogVulnFilter = "all" | "findings" | "kev" | "unknown_app" | "clean" | "patchable";
 export type CatalogBand = "critical" | "high" | "medium" | "low";
-/** `exposure` is KEV first, then Macs, then findings; `age` is the oldest publication first. */
-export type CatalogOrder = "exposure" | "age";
+/** `exposure` is KEV first, then Macs, then findings; `age` is the oldest publication first;
+ *  `payoff` is findings closed × Macs carrying the build (#532). */
+export type CatalogOrder = "exposure" | "age" | "payoff";
 
 /** `GET /api/catalog/lookup` for one key: the tenant's row if the fleet has shown the app.
  *  Under `appHash` the row stands in for the newest version seen, which is why it carries

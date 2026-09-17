@@ -1120,6 +1120,23 @@ export const en = {
     longestExposedHint: "The oldest publication date first: how long the fleet has carried the finding, which is an axis a fleet of Macs has and a cloud estate does not. Always the builds with findings: a Popular filter chip narrows the ranked list, never this one.",
     longestExposedNone: "No build with findings here carries a publication date.",
     longestExposedFailed: "The longest-exposed list could not be read, so it is not shown. It is a separate request from the list above, which is why one can answer while the other fails; reload the page.",
+    // #532 — the ranked fix path. No total is printed over these rows: each one prints what
+    // its own update closes, and a fleet closure figure is a posture key to rule (§4g, §7).
+    easilyPatchable: "Easily patchable",
+    easilyPatchableHint:
+      "Updates that close more findings than they open, the ones reaching the most Macs first. A build whose update would open more than it closes is not listed here at all, because an update that costs more than it buys is not the next thing to push.",
+    easilyPatchableNone:
+      "No build here has an update that closes more findings than it opens. Either no newer release has been judged against this corpus yet, or the newer releases carry more than the builds in the fleet.",
+    easilyPatchableFailed: "The easily-patchable list could not be read, so it is not shown. It is its own request; reload the page.",
+    colUpdateTo: "Update to",
+    colCloses: "Closes",
+    filterPatchable: "Easily patchable",
+    filterNoFixPath: "No Jamf fix path",
+    // The version is in the row's own *Update to* column, so it is not repeated. Both
+    // directions, for `updateCloses`'s reason; `net` carries the hint that says why it is
+    // the difference of the totals and not of the lists.
+    closesExact: (closes: number, opens: number) => `${closes} · opens ${opens}`,
+    closesNet: (net: number) => `net ${net} fewer`,
     byTheNumbers: "By the numbers",
     numbersAsOf: (date: string) => `As of the capture of ${date}`,
     numbersRun: (id: string) => `full sweep ${id}`,
