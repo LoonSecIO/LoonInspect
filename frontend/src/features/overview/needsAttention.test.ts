@@ -60,6 +60,8 @@ const destination = (over: Partial<Destination> = {}): Destination => ({
   lastError: null,
   pendingCount: 0,
   failedCount: 0,
+  failed24h: 0,
+  deadLetterOldestExpiresAt: null,
   lastSuccessAt: null,
   lastFailureAt: null,
   createdAt: ago(DAY),

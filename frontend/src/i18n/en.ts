@@ -288,12 +288,23 @@ export const en = {
     errorTesting: "Could not run the test. The app could not reach the destination at all.",
     pendingDeliveries: (count: number) => `${count} queued`,
     failedDeliveries: (count: number) => `${count} gave up`,
+    // The deadline the redrive is decided against (#469), beside the count it applies to:
+    // the oldest dead letter's event is purged one retention window after it was produced,
+    // and a redrive cannot reach what the purge took.
+    deadLetterExpiry: (when: string) => `oldest expires ${when}`,
     // The redrive (#91): a dead letter is a delivery that spent its ten attempts, and it
     // waits for an operator rather than for the next sweep. Re-sending is at-least-once,
     // and the confirm says so.
     redrive: (count: number) => `Redrive ${count}`,
-    redriveConfirm: (count: number) =>
-      `Re-send ${count} failed ${count === 1 ? "delivery" : "deliveries"}? Events the destination already received will arrive again.`,
+    redriveConfirm: (count: number, name: string, expires: string | null) => {
+      const letters = count === 1 ? "1 dead letter" : `${count} dead letters`;
+      const deadline = !expires
+        ? ""
+        : count === 1
+          ? ` It expires ${expires} — after that a redrive cannot reach it.`
+          : ` The oldest expires ${expires} — after that a redrive cannot reach them.`;
+      return `Redrive ${letters} to ${name}.${deadline} Events the destination already received will arrive again.`;
+    },
     redriveQueued: (count: number) => `${count} queued again for delivery`,
     errorRedriving: "Could not queue the redrive.",
     // Queue depth (#468), above the list and only when there is something to say. Held

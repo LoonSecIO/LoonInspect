@@ -101,7 +101,20 @@ class DestinationOut(_CamelModel):
     # operator needs is exactly the one the delivery loop already writes down.
     last_error: str | None = None
     pending_count: int = 0
+    # `failed_count` is the lifetime dead-letter count **and a redrive zeroes it**, so on its
+    # own it answers "has this destination ever failed" and "is it failing now" with one
+    # number. `failed24h` is the second question: the same rows inside the trailing 24 hours,
+    # from the predicate the posture recorder counts as `outbox.failed_24h` — one window, not
+    # two spellings of it. The alias is explicit because the camel-case generator spells this
+    # field `failed24H`, and the key it mirrors is `failed_24h`.
     failed_count: int = 0
+    failed_24h: int = Field(default=0, alias="failed24h")
+    # When the oldest dead letter here stops being redrivable: its event is kept for
+    # `dead_letter_retention_days` and then purged with the delivery, after which the gap it
+    # left in the trail is permanent (#91's remainder). Null when this destination has no dead
+    # letters — absent rather than a date for rows that do not exist. Fleet-wide, the same
+    # instant is `GET /api/outbox`'s `deadLettered.oldestExpiresAt`, from the same definition.
+    dead_letter_oldest_expires_at: datetime | None = None
     last_success_at: datetime | None
     last_failure_at: datetime | None
     created_at: datetime

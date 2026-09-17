@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import exists, func, select
@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import require
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.outbox import next_purge_at
+from app.core.outbox import dead_letter_expires_at, next_purge_at
 from app.core.permissions import Permission
 from app.models.schema import Destination, EventOutbox, OutboxDelivery
 from app.schemas.outbox import DeadLetteredDeliveries, HeldEvents, OutboxDepthOut, OutboxRetention, PendingDeliveries
@@ -54,10 +54,9 @@ async def outbox_depth(db: AsyncSession = Depends(get_db)) -> OutboxDepthOut:
 
     pending_count, pending_oldest = await _by_status(db, "pending")
     dead_count, dead_oldest = await _by_status(db, "failed")
-    # When `purge_delivered_events` stops protecting it: an event is kept while it is younger
-    # than the dead-letter window, so the oldest becomes purgeable one window after it was
-    # produced. `nextPurgeAt` is when the row actually goes.
-    expires = None if dead_oldest is None else dead_oldest + timedelta(days=settings.dead_letter_retention_days)
+    # When `purge_delivered_events` stops protecting it, from the one definition a destination
+    # row publishes too (#469). `nextPurgeAt` is when the row actually goes.
+    expires = None if dead_oldest is None else dead_letter_expires_at(dead_oldest)
     return OutboxDepthOut(
         held=HeldEvents(events=int(held_count), oldest_age_seconds=_age_seconds(held_oldest, now), reason=reason),
         pending=PendingDeliveries(deliveries=pending_count, oldest_age_seconds=_age_seconds(pending_oldest, now)),

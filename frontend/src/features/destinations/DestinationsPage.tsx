@@ -72,6 +72,11 @@ function formatDate(value: string | null): string {
   return value ? new Date(value).toLocaleString() : "—";
 }
 
+/** A deadline a month out is read as a day, not as a timestamp (#469). */
+function formatDay(value: string): string {
+  return new Date(value).toLocaleDateString();
+}
+
 /** `record` without `id`. The only way a test result leaves the map is one at a time —
  *  when its own destination is tested again or deleted. Never the whole map: one slot
  *  for the whole page is the defect this replaces (#305). */
@@ -554,7 +559,10 @@ export function DestinationsPage() {
                     <p className="mt-1 text-[11px] text-muted-foreground">
                       {[
                         destination.pendingCount > 0 ? t.destinations.pendingDeliveries(destination.pendingCount) : null,
-                        destination.failedCount > 0 ? t.destinations.failedDeliveries(destination.failedCount) : null
+                        destination.failedCount > 0 ? t.destinations.failedDeliveries(destination.failedCount) : null,
+                        destination.deadLetterOldestExpiresAt
+                          ? t.destinations.deadLetterExpiry(formatDay(destination.deadLetterOldestExpiresAt))
+                          : null
                       ]
                         .filter(Boolean)
                         .join(" · ")}
@@ -573,7 +581,11 @@ export function DestinationsPage() {
                       {pendingRedriveId === destination.id ? (
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-muted-foreground">
-                            {t.destinations.redriveConfirm(destination.failedCount)}
+                            {t.destinations.redriveConfirm(
+                              destination.failedCount,
+                              destination.name,
+                              destination.deadLetterOldestExpiresAt ? formatDay(destination.deadLetterOldestExpiresAt) : null
+                            )}
                           </span>
                           <Button
                             size="sm"

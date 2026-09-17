@@ -194,10 +194,21 @@ that read fails, so a missing sentence there is never a silent zero.
    - **400 from HEC** → usually the token's index (step 5) or the URL's path
      (`/services/collector/event`, [`splunk-setup.md`](splunk-setup.md) §3).
    - **200** → step 4.
-4. **Delivery health.** The destination row: `pendingCount`, `failedCount`, `lastError`.
+4. **Delivery health.** The destination row: `pendingCount`, `failedCount`, `failed24h`,
+   `deadLetterOldestExpiresAt`, `lastError`.
    - `failedCount` above zero → those deliveries gave up after ten attempts; `lastError`
      is why. Fix the cause (step 3), then **Redrive** returns them to the queue. Events
      that arrived after the fix flow on their own.
+   - **How long is left, and whether it is failing now.** `deadLetterOldestExpiresAt` is
+     the instant the oldest of those dead letters is purged with its event — after it, a
+     redrive cannot reach that one and the gap it left in the trail is permanent. Settings ›
+     Destinations prints it beside the count, the Redrive confirmation says it again before
+     you confirm, and `retention.nextPurgeAt` from `GET /api/outbox` is when the purge that
+     enforces it runs; `null` is "nothing is dead-lettered here", never a deadline that has
+     passed. `failedCount` is the lifetime count and a redrive zeroes it, so read `failed24h`
+     beside it — the same rows inside the trailing 24 hours, the window `outbox.failed_24h`
+     counts fleet-wide. A high `failedCount` with `failed24h: 0` is an outage already over,
+     and its dead letters are still worth redriving before the deadline.
    - `pendingCount` climbing and nothing delivered → **ask first whether the queue is
      moving at all**, without a shell: read `pending.oldestAgeSeconds` from
      `GET /api/outbox` twice, a minute apart. **Falling** means the queue is draining and

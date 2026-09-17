@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,9 +10,10 @@ from app.core.audit import AuditAction, audit
 from app.core.auth import require
 from app.core.database import get_db
 from app.core.egress import BlockedDestinationUrl, refuse_blocked_resolution
-from app.core.outbox import redrive_failed, send_test_event
+from app.core.outbox import dead_letter_expires_at, redrive_failed, send_test_event
 from app.core.permissions import Permission
-from app.models.schema import Destination, OutboxDelivery
+from app.core.posture import outbox_failed_window_where
+from app.models.schema import Destination, EventOutbox, OutboxDelivery
 from app.schemas.destinations import (
     DestinationCreate,
     DestinationOut,
@@ -30,21 +33,42 @@ async def _health(db: AsyncSession, destination_ids: list[int]) -> dict[int, dic
     Invalid token", "[SSL: CERTIFICATE_VERIFY_FAILED] self-signed certificate in
     certificate chain" — and until now no API read it, so the symptom an operator
     experienced was "Splunk is empty and the app says everything is fine".
+
+    The dead-letter deadline and the 24-hour window ride that first query rather than adding
+    one each: both are aggregates of the rows it already groups, and the group is split by
+    status, so the `failed` group carries them. The join is to the event because the deadline
+    is the *event's* age — the purge keeps the event, and the delivery goes with it. It drops
+    no delivery from the counts it already served: `outbox_event_id` is a non-null foreign key,
+    and the purge deletes deliveries before the events they hang off.
     """
     if not destination_ids:
         return {}
 
+    now = datetime.now(UTC)
     counts = await db.execute(
-        select(OutboxDelivery.destination_id, OutboxDelivery.status, func.count())
+        select(
+            OutboxDelivery.destination_id,
+            OutboxDelivery.status,
+            func.count(),
+            func.min(EventOutbox.created_at),
+            func.count().filter(outbox_failed_window_where(now)),
+        )
+        .join(EventOutbox, EventOutbox.id == OutboxDelivery.outbox_event_id)
         .where(OutboxDelivery.destination_id.in_(destination_ids))
         .group_by(OutboxDelivery.destination_id, OutboxDelivery.status)
     )
-    health: dict[int, dict] = {i: {"last_error": None, "pending_count": 0, "failed_count": 0} for i in destination_ids}
-    for destination_id, status_value, count in counts:
+    health: dict[int, dict] = {
+        i: {"last_error": None, "pending_count": 0, "failed_count": 0, "failed_24h": 0, "dead_letter_oldest_expires_at": None}
+        for i in destination_ids
+    }
+    for destination_id, status_value, count, oldest_produced_at, failed_in_window in counts:
         if status_value == "pending":
             health[destination_id]["pending_count"] = count
         elif status_value == "failed":
             health[destination_id]["failed_count"] = count
+            health[destination_id]["failed_24h"] = failed_in_window
+            # The oldest governs: its event is the first the purge stops protecting.
+            health[destination_id]["dead_letter_oldest_expires_at"] = dead_letter_expires_at(oldest_produced_at)
 
     # The most recent error per destination: one row each, newest attempt first.
     latest = await db.execute(
@@ -76,6 +100,8 @@ def _to_out(destination: Destination, health: dict | None = None) -> Destination
         last_error=(health or {}).get("last_error"),
         pending_count=(health or {}).get("pending_count", 0),
         failed_count=(health or {}).get("failed_count", 0),
+        failed_24h=(health or {}).get("failed_24h", 0),
+        dead_letter_oldest_expires_at=(health or {}).get("dead_letter_oldest_expires_at"),
         last_success_at=destination.last_success_at,
         last_failure_at=destination.last_failure_at,
         created_at=destination.created_at,

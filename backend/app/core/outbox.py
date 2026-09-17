@@ -1049,3 +1049,20 @@ def next_purge_at(after: datetime) -> datetime:
     )
     # `next_due` is None only for an event-driven schedule; "daily" always fires again.
     return due if due is not None else after + timedelta(days=1)
+
+
+def dead_letter_expires_at(produced_at: datetime) -> datetime:
+    """When a dead letter stops being redrivable — the instant `purge_delivered_events` stops
+    protecting it and the next purge takes it with its event.
+
+    Measured from the event because the event is what the purge measures: a dead-lettered
+    delivery keeps its event while the event is younger than `dead_letter_retention_days`,
+    and the two go together. After it, the gap that delivery left in the trail is permanent,
+    which is the failure #91 was opened about.
+
+    One definition for both reads that publish it — `GET /api/outbox`'s
+    `deadLettered.oldestExpiresAt` fleet-wide and a destination row's
+    `deadLetterOldestExpiresAt` (#469) — and `next_purge_at` is when the job that enforces it
+    runs.
+    """
+    return produced_at + timedelta(days=settings.dead_letter_retention_days)
