@@ -3,9 +3,10 @@ import { Link, useSearchParams } from "react-router";
 import { ApiError, apiRequest } from "@/config/api";
 import { useAuthStore } from "@/features/auth/store";
 import { listCatalog } from "@/features/catalog/api";
-import { LatestCell, PatchAnswerCell } from "@/features/catalog/PatchAnswerCell";
+import { LatestCell, PatchAnswerCell, Subject } from "@/features/catalog/PatchAnswerCell";
 import type { CatalogBand, CatalogEntry, CatalogListResponse, CatalogVulnFilter } from "@/features/catalog/types";
 import { AssessmentCell, CorpusBanner } from "@/features/vulnerabilities/AppAssessment";
+import { closesCell, describeUpdate } from "@/features/vulnerabilities/appUpdate";
 import type { AppChip, NumbersRead, PostureRow } from "@/features/vulnerabilities/pageBands";
 import { VULN_KEYS, agedList, exploreByApp, planNumbers, readNumbers } from "@/features/vulnerabilities/pageBands";
 import { pageView, type Load } from "@/features/vulnerabilities/pageView";
@@ -24,8 +25,10 @@ import type { Translations } from "@/i18n/en";
  * Three states before a row is drawn, in this order: nothing answers (the `409` — the banner
  * and its *why* block alone, because an empty table under a filter reads as *nothing found*,
  * §4a); loaded but nothing judged against it yet (`vulnJudged` false — one sentence, no
- * list); judged — which is `pageView`, beside this file. Not here, none stubbed: Easily patchable
- * (#532), the by-id route (#533), the AI lever (#534); nothing counts the fleet per request (§4g).
+ * list); judged — which is `pageView`, beside this file. Then three ranked bands: most exposed,
+ * easily patchable (#532 — what an update would close, times the Macs it reaches) and longest
+ * exposed. Not here, none stubbed: the by-id route (#533), the AI lever (#534). Nothing counts
+ * the fleet per request and nothing sums a band (§4g).
  */
 
 const TOP = 10;
@@ -34,11 +37,16 @@ const PAGE = 50;
 const TYPING_MS = 300;
 
 /** *Popular filters*: each chip is one whole URL state, so a filtered list is a link somebody can
- *  send. *Easily patchable* is #532's; `band` narrows inside `findings`, never beside it. */
-const POPULAR = [{ vuln: "kev", band: null, label: "filterKev" }, { vuln: "findings", band: "critical", label: "filterCritical" },
-  { vuln: "unknown_app", band: null, label: "stateUnknownApp" }, { vuln: "clean", band: null, label: "stateCoveredClean" }] as const;
+ *  send. `band` narrows inside `findings`, never beside it. */
+const POPULAR = [{ vuln: "kev", band: null, jamf: null, label: "filterKev" }, { vuln: "findings", band: "critical", jamf: null, label: "filterCritical" },
+  { vuln: "unknown_app", band: null, jamf: null, label: "stateUnknownApp" }, { vuln: "clean", band: null, jamf: null, label: "stateCoveredClean" },
+  // #532: the ranked section as a chip, and its opposite. The fix path is the column a Mac
+  // fleet has, so its ABSENCE is the fact worth a chip of its own — findings with no managed
+  // remediation, which is the Catalog's own `jamf=unmatched` narrowing `findings`.
+  { vuln: "patchable", band: null, jamf: null, label: "filterPatchable" },
+  { vuln: "findings", band: null, jamf: "unmatched", label: "filterNoFixPath" }] as const;
 
-const FILTERS: CatalogVulnFilter[] = ["findings", "kev", "unknown_app", "clean"];
+const FILTERS: CatalogVulnFilter[] = ["findings", "kev", "unknown_app", "clean", "patchable"];
 const BANDS: CatalogBand[] = ["critical", "high", "medium", "low"];
 /** Stable across renders, so the permission selector does not re-run on every store write. */
 const NO_PERMISSIONS: string[] = [];
@@ -65,6 +73,33 @@ function Bands({ entry, t }: { entry: CatalogEntry; t: Translations }) {
   return <span className="block text-xs text-muted-foreground">{shown.join(" · ")}</span>;
 }
 
+/** One ranked row of *Easily patchable* (#532): what it carries, what it would become, and
+ *  what that closes. The update line is the REFERENCE title's target and only it — the
+ *  in-branch second line is #482's open cut, and `appUpdate.ts` says whose ruling it waits on.
+ *
+ *  Nothing here sums anything (§4g): the section prints each row's own difference, and the
+ *  fleet's closure figure is a posture key to rule rather than an aggregate to compute. */
+function PatchableRow({ entry, t }: { entry: CatalogEntry; t: Translations }) {
+  const [line] = describeUpdate(entry.vuln, entry.vulnUpdate, entry);
+  const closes = closesCell(line, t.vulnerabilities);
+  return (
+    <tr className="border-b align-top last:border-0">
+      <td className="px-4 py-2">
+        <Link to={recordHref(entry)} className="font-medium hover:underline">{entry.name} {entry.version}</Link>
+        <span className="block font-mono text-xs text-muted-foreground">{entry.bundleId}</span></td>
+      {/* Reachable inside the `covered` narrowing alone: the filter serves no other state, and
+          the type still refuses to let one print a count (§4a). */}
+      <td className="px-4 py-2 tabular-nums">{entry.vuln.assessment === "covered" ? entry.vuln.counts.total : "—"}</td>
+      <td className="px-4 py-2 tabular-nums">
+        <Link to={`/devices?versionHash=${entry.versionHash}`} className="hover:underline">{entry.deviceCount}</Link></td>
+      <td className="px-4 py-2">{line ? line.version : "—"}
+        <Subject title={line?.subject ?? null} hint={t.catalog.latestSubjectHint} t={t} /></td>
+      <td className="px-4 py-2 tabular-nums" title={closes?.hint ?? undefined}>{closes ? closes.text : "—"}</td>
+      <td className="px-4 py-2 tabular-nums">{exposedDays(entry, t)}</td>
+    </tr>
+  );
+}
+
 export function VulnerabilitiesPage() {
   const { t } = useLocale();
   const copy = t.vulnerabilities;
@@ -79,11 +114,17 @@ export function VulnerabilitiesPage() {
   const [load, setLoad] = useState<Load>("loading");
   const [oldest, setOldest] = useState<CatalogListResponse | null>(null);
   const [oldestFailed, setOldestFailed] = useState(false);
+  const [patchable, setPatchable] = useState<CatalogListResponse | null>(null);
+  const [patchableFailed, setPatchableFailed] = useState(false);
   const [chips, setChips] = useState<AppChip[]>([]);
   const [params, setParams] = useSearchParams();
   const vuln = FILTERS.find((value) => value === params.get("vuln")) ?? "findings";
   const band = BANDS.find((value) => value === params.get("band")) ?? null;
   const byAge = agedList(expanded, order, vuln, band);
+  // #532's two chips, in the URL beside the other two so a ranked or unmatched list is a link
+  // somebody can send. `payoff` is the order the ranking is only meaningful under.
+  const jamf = params.get("jamf") === "unmatched" ? "unmatched" : null;
+  const byPayoff = params.get("order") === "payoff" && vuln === "patchable";
   const permissions = useAuthStore((state) => state.user?.permissions ?? NO_PERMISSIONS);
   const plansNumbers = useMemo(() => planNumbers(permissions), [permissions]);
   const [numbers, setNumbers] = useState<NumbersRead | null>(null);
@@ -94,18 +135,20 @@ export function VulnerabilitiesPage() {
   // the effect's whole dependency array — the frontend rule in CONTRIBUTING.md, and the
   // reason it is there (#479). From inside the effect's timer it would land a debounce late,
   // so the previous answer would paint as settled under the new term for all 300ms.
-  const [asked, setAsked] = useState({ term, vuln, band, byAge, expanded, page });
-  if (asked.term !== term || asked.vuln !== vuln || asked.band !== band || asked.byAge !== byAge || asked.expanded !== expanded || asked.page !== page) {
-    setAsked({ term, vuln, band, byAge, expanded, page });
+  const [asked, setAsked] = useState({ term, vuln, band, byAge, byPayoff, jamf, expanded, page });
+  if (asked.term !== term || asked.vuln !== vuln || asked.band !== band || asked.byAge !== byAge || asked.byPayoff !== byPayoff || asked.jamf !== jamf || asked.expanded !== expanded || asked.page !== page) {
+    setAsked({ term, vuln, band, byAge, byPayoff, jamf, expanded, page });
     setLoad("loading");
-    setOldest(null); setOldestFailed(false); // the band below re-reads with them, so its rows and its error line go too
+    // The two bands below re-read with it, so their rows and their error lines go too.
+    setOldest(null); setOldestFailed(false);
+    setPatchable(null); setPatchableFailed(false);
   }
 
   useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(() => {
       const q = term.trim() || undefined;
-      listCatalog({ vuln, band: band ?? undefined, order: byAge ? "age" : "exposure", q, page: expanded ? page : 1, pageSize: expanded ? PAGE : TOP })
+      listCatalog({ vuln, band: band ?? undefined, jamf: jamf ?? undefined, order: byPayoff ? "payoff" : byAge ? "age" : "exposure", q, page: expanded ? page : 1, pageSize: expanded ? PAGE : TOP })
         .then((response) => {
           if (cancelled) return;
           setAnswer(response);
@@ -125,12 +168,17 @@ export function VulnerabilitiesPage() {
         .then((response) => { if (!cancelled) { setOldest(response); setOldestFailed(false); } })
         // Its own request, so its own failure — in words, because a blank box is three answers.
         .catch(() => { if (!cancelled) { setOldest(null); setOldestFailed(true); } });
+      // And the ranked fix path (#532), always under its own order: the filter and the order
+      // are one answer, since *easily patchable* in exposure order is a list nobody asked for.
+      listCatalog({ vuln: "patchable", order: "payoff", q, pageSize: TOP })
+        .then((response) => { if (!cancelled) { setPatchable(response); setPatchableFailed(false); } })
+        .catch(() => { if (!cancelled) { setPatchable(null); setPatchableFailed(true); } });
     }, TYPING_MS);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [term, vuln, band, byAge, expanded, page]);
+  }, [term, vuln, band, byAge, byPayoff, jamf, expanded, page]);
 
   useEffect(() => {
     if (!plansNumbers) return;
@@ -153,12 +201,18 @@ export function VulnerabilitiesPage() {
   // The band's three answers told apart — its own read failed, it has not come back, it came back
   // with nothing — because one blank box standing for all three is three different things.
   const oldestSays = load === "loading" ? copy.loading : oldestFailed ? copy.longestExposedFailed : oldest === null ? copy.loading : oldestTotal === 0 ? copy.longestExposedNone : null;
+  const patchableTotal = patchable?.total ?? 0;
+  // The same three answers told apart for the ranked band, and the empty one is a statement:
+  // nothing here has an update that closes more than it opens (§18 says what to check).
+  const patchableSays = load === "loading" ? copy.loading : patchableFailed ? copy.easilyPatchableFailed : patchable === null ? copy.loading : patchableTotal === 0 ? copy.easilyPatchableNone : null;
   // Parallel to `VULN_KEYS`, a fixed tuple in the order the foot prints.
   const labels = [copy.numAppsAffected, copy.numAppsKev, copy.numAppsUnknown, copy.numDevicesAffected];
 
-  function filterTo(next: CatalogVulnFilter | null, nextBand: CatalogBand | null) {
+  function filterTo(next: CatalogVulnFilter | null, nextBand: CatalogBand | null, nextJamf: string | null = null) {
     // One chip is one whole URL state: pressing another replaces it rather than adding to it.
-    setParams(new URLSearchParams([...(next ? [["vuln", next]] : []), ...(nextBand ? [["band", nextBand]] : [])])); setPage(1);
+    // `patchable` carries its order, because the ranking is the half that makes it an answer.
+    setParams(new URLSearchParams([...(next ? [["vuln", next]] : []), ...(nextBand ? [["band", nextBand]] : []),
+      ...(nextJamf ? [["jamf", nextJamf]] : []), ...(next === "patchable" ? [["order", "payoff"]] : [])])); setPage(1);
   }
 
   return (
@@ -194,13 +248,15 @@ export function VulnerabilitiesPage() {
           <h2 className="text-lg font-medium">{copy.popularFilters}</h2>
           <div className="flex flex-wrap gap-2">
             {POPULAR.map((filter) => {
-              const on = filter.vuln === vuln && filter.band === band;
-              return <button key={filter.label} type="button" className={chip(on)} onClick={() => filterTo(on ? null : filter.vuln, on ? null : filter.band)}>{copy[filter.label]}</button>;
+              // All three dimensions, so *findings* and *findings with no fix path* are two
+              // chips and pressing one never lights the other.
+              const on = filter.vuln === vuln && filter.band === band && filter.jamf === jamf;
+              return <button key={filter.label} type="button" className={chip(on)} onClick={() => filterTo(on ? null : filter.vuln, on ? null : filter.band, on ? null : filter.jamf)}>{copy[filter.label]}</button>;
             })}
           </div>
 
           <div className="flex items-baseline justify-between">
-            <h2 className="text-lg font-medium">{byAge ? copy.longestExposed : copy.mostExposed}</h2>
+            <h2 className="text-lg font-medium">{byPayoff ? copy.easilyPatchable : byAge ? copy.longestExposed : copy.mostExposed}</h2>
             {/* Offered off a settled count only: mid-read the total belongs to the term
                 before this one, and a button is no place to print it. */}
             {!expanded && shown.rows && total > rows.length && (
@@ -209,7 +265,7 @@ export function VulnerabilitiesPage() {
               </button>
             )}
           </div>
-          <p className="text-sm text-muted-foreground">{byAge ? copy.longestExposedHint : copy.mostExposedHint}</p>
+          <p className="text-sm text-muted-foreground">{byPayoff ? copy.easilyPatchableHint : byAge ? copy.longestExposedHint : copy.mostExposedHint}</p>
 
           <div className="overflow-x-auto rounded-lg border bg-card">
             <table className="w-full text-sm">
@@ -296,6 +352,26 @@ export function VulnerabilitiesPage() {
 
           {!expanded && (
             <>
+              {/* Hidden while the chip above IS this list: the same ten rows under one heading twice
+                  reads as a fault. */}
+              {!byPayoff && (<>
+              <div className="flex items-baseline justify-between"><h2 className="text-lg font-medium">{copy.easilyPatchable}</h2>
+                {patchableSays === null && patchableTotal > TOP && <button type="button" className="text-sm underline underline-offset-4" onClick={() => { filterTo("patchable", null); setExpanded(true); }}>{copy.seeAll(patchableTotal)}</button>}</div>
+              <p className="text-sm text-muted-foreground">{copy.easilyPatchableHint}</p>
+              <div className="overflow-x-auto rounded-lg border bg-card">
+                <table className="w-full text-sm">
+                  <thead className="border-b bg-muted/30 text-left text-muted-foreground"><tr>
+                    {[copy.colBuild, copy.colFindings, copy.colMacs, copy.colUpdateTo, copy.colCloses, copy.colOldest].map((label) => (
+                      <th key={label} className="px-4 py-2 font-medium">{label}</th>))}
+                  </tr></thead>
+                  <tbody>
+                    {patchableSays !== null && <tr><td className="px-4 py-4 text-muted-foreground" colSpan={6}>{patchableSays}</td></tr>}
+                    {(patchableSays === null ? (patchable?.items ?? []) : []).map((entry) => (
+                      <PatchableRow key={entry.id} entry={entry} t={t} />))}
+                  </tbody>
+                </table>
+              </div></>)}
+
               <div className="flex items-baseline justify-between"><h2 className="text-lg font-medium">{copy.longestExposed}</h2>
                 {oldestSays === null && oldestTotal > TOP && <button type="button" className="text-sm underline underline-offset-4" onClick={() => { filterTo(null, null); setOrder("age"); setExpanded(true); }}>{copy.seeAll(oldestTotal)}</button>}</div>
               <p className="text-sm text-muted-foreground">{copy.longestExposedHint}</p>

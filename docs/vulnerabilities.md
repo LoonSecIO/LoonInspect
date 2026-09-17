@@ -484,6 +484,21 @@ only when NEITHER row is truncated, otherwise it is the difference of the uncapp
 served as `vulnUpdate` beside `vuln` on the two REST reads below, never inside the block
 and **never on the wire** (§6).
 
+**And the difference is also the sort** (#532, built 2026-09-17; half 2 of #428).
+`GET /api/catalog?vuln=patchable` serves the rows whose own answer is `covered` with
+findings, whose target is `covered` under the **same** `vuln_signature` — one row, one
+statement, one epoch, so the pair is never read across two — and whose **net**,
+`counts.total` less the target's, is greater than zero; `order=payoff` ranks them by net ×
+the Macs carrying the build, then net, then name. Net is the ranking key because it is the
+one number that is exact where both lists are exact and conservative where either is capped,
+which a recount of a capped list is not. **A build whose update opens more than it closes —
+the lab's own 4.2.0 at 17 findings to 4.6.8 at 94 — is excluded, not ranked last**: *easily
+patchable* is a claim about every row on the list, and a low rank still reads as *and then
+do this one*. A target the epoch holds no row for and a target nobody looked up are out for
+the same reason. §4g holds over the result unchanged: each row prints its own difference and
+nothing sums them, because a fleet closure figure is a posture key to rule (§7) and not a
+per-request aggregate.
+
 ### 4g. The same three words in front of a person
 
 Built 2026-09-03 (#251). `assessment` was ruled visible **on the wire and in the UI**, and

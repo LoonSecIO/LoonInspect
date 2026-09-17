@@ -36,10 +36,15 @@ from app.schemas.catalog import (
 router = APIRouter(prefix="/api/catalog", tags=["catalog"])
 
 
-def _counted(band: str):
-    """One count off the catalog row's stored answer — `vuln_answer.counted`, scoped to this
-    table. The guard on the cast, and why it is load-bearing, live there (#529, #535)."""
-    return counted(AppCatalogEntry.vuln_counts, band)
+def _counted(band: str, counts=AppCatalogEntry.vuln_counts):
+    """One count off a stored answer — `vuln_answer.counted`, scoped to this table. The guard
+    on the cast, and why it is load-bearing, live there (#529, #535).
+
+    `counts` is the build's own by default and the TARGET's for #532's difference, so both
+    sides of that subtraction are guarded by one rule rather than by two — and NULL on
+    either side, a row with no number to be right about, falls out of `> 0` on its own.
+    """
+    return counted(counts, band)
 
 
 def _device_counts(app_hash: str | None = None):
@@ -120,9 +125,11 @@ async def list_catalog(
     # The stored answer as a WHERE (#529). `unknown_app` is the ruled spelling (§4b) and is
     # SERVED, not stored: a row judged by an epoch that has moved reads it whatever its
     # counts say, which is `served()`'s rule and not a copy of it.
-    vuln: Literal["all", "findings", "kev", "unknown_app", "clean"] = Query(default="all"),
+    # `patchable` is #532's: served, with findings, and an update that closes more than it
+    # opens. Its rule is below, beside the order that ranks it.
+    vuln: Literal["all", "findings", "kev", "unknown_app", "clean", "patchable"] = Query(default="all"),
     band: Literal["critical", "high", "medium", "low"] | None = Query(default=None),
-    order: Literal["exposure", "age"] = Query(default="exposure"),
+    order: Literal["exposure", "age", "payoff"] = Query(default="exposure"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=100, ge=1, le=5000, alias="pageSize"),
 ) -> CatalogListResponse:
@@ -151,6 +158,13 @@ async def list_catalog(
     epoch = loaded_epoch_signature()
     covered = served(AppCatalogEntry.vuln_assessment, AppCatalogEntry.vuln_signature, epoch=epoch)
     total_findings, kev_findings = _counted("total"), _counted("kev")
+    # The target's answer, under the SAME rule and the SAME signature column: one row is
+    # judged by one statement, so the pair can never be read across two epochs (#482, §4f).
+    # And what updating would close, as a number the database can sort on — the uncapped
+    # totals, never the id lists, because a set difference over a capped list under-reports
+    # and would do so in the direction that flatters an upgrade.
+    target_covered = served(AppCatalogEntry.vuln_target_assessment, AppCatalogEntry.vuln_signature, epoch=epoch)
+    net_closed = total_findings - _counted("total", AppCatalogEntry.vuln_target_counts)
     filtered = vuln != "all" or band is not None
     if filtered and corpus.as_of is None:
         raise HTTPException(status_code=409, detail=NO_ANSWER)
@@ -166,6 +180,13 @@ async def list_catalog(
         # second arm is the unreadable row — served, and with no number to be right about —
         # which is `unknown_app` to the cell too (`vuln_answer._unreadable`).
         stmt = stmt.where(or_(covered.is_not(True), total_findings.is_(None)))
+    elif vuln == "patchable":
+        # Easily patchable (#532): findings this build carries, a target the epoch holds a
+        # row for, and an update that closes more than it opens. A build whose update opens
+        # MORE than it closes — the lab's Wireshark 4.2.0 at 17 findings to 4.6.8 at 94 —
+        # is left out rather than ranked last, because a low rank on this list still reads
+        # as *and then do this one*, and the list is a claim about every row on it.
+        stmt = stmt.where(covered, total_findings > 0, target_covered, net_closed > 0)
     if band is not None:
         stmt = stmt.where(covered, _counted(band) > 0)
 
@@ -178,6 +199,13 @@ async def list_catalog(
     elif order == "age":
         # The stamp is the format's own `YYYY-MM-DDTHH:MM:SSZ`, so text order IS date order.
         ordered = stmt.order_by(AppCatalogEntry.vuln_oldest_published["total"].astext.asc().nulls_last(), devices.desc())
+    elif order == "payoff":
+        # Findings closed, times the Macs carrying the build (#532): the third Mac-fleet axis, and
+        # the one that says what the next push buys. `nulls_last` because a row with no
+        # judged target has no payoff to compare — `vuln=patchable` serves none, and under
+        # any other filter such a row sorts after every row that has one rather than above
+        # them all, which is where DESC would put a NULL.
+        ordered = stmt.order_by((net_closed * devices).desc().nulls_last(), net_closed.desc().nulls_last(), AppCatalogEntry.name)
     else:
         ordered = stmt.order_by(
             (kev_findings > 0).desc().nulls_last(),

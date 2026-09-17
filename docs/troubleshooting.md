@@ -1534,7 +1534,7 @@ Catalog tab carries. So a link somebody sent you works even while the entry is h
    page asks for findings on every load, so a refused read leaves the corpus banner and its
    *why* block standing alone — step 1's screen, reached by a different road. The words
    themselves are for whoever reads the API or the access log — and for the Devices list,
-   which prints them (step 8). It is refused rather than answered empty on purpose: an
+   which prints them (step 9). It is refused rather than answered empty on purpose: an
    empty list under *findings* reads as *nothing found*, which is the one thing this product
    must never say about apps nobody looked at. Step 1 is the fix.
 6. **The page ends with the lists: there is no *By the numbers* at the foot.** Not a fault.
@@ -1554,7 +1554,20 @@ Catalog tab carries. So a link somebody sent you works even while the entry is h
    rather than reloading. That sentence with **no chip pressed and the search box empty**, or every
    row reading **—** under the age, is ours: every finding the corpus serves carries a publication
    date, so nothing about your fleet is wrong and nothing here will fix it: reportable state **W**.
-8. **The Devices list prints that sentence where its Macs should be.**
+8. ***Easily patchable* is empty though Jamf Patch lists newer versions.** Three causes, in this
+   order, and the first is the usual one. **The newer release has not been judged yet.** The
+   release Jamf names moves on the Jamf clock and the corpus answers on its own, so between the
+   two a build carries a newer version with no answer about it — and a build with nothing to
+   compare is not ranked. **Refresh** on Devices › Applications › Catalog does it now; the hourly
+   catalog refresh does it anyway. **The newer release is outside the corpus.** The corpus holds
+   no row for it, which the application record prints in the warning colour as *updating to X: not
+   in the corpus of …*; a release nobody assessed never counts as closing anything, so the build
+   waits here until the corpus covers it. Nothing to repair. **The update opens more than it
+   closes.** The newer build carries more findings than the one installed — the fleet's own
+   Wireshark did, 17 against 94 — and this section lists what an update would *close*, so such a
+   build is left off rather than ranked last. The application record's own line prints both
+   directions, and *Most exposed* still lists the build. None of the three is a fault.
+9. **The Devices list prints that sentence where its Macs should be.**
    `GET /api/devices?vuln=findings|kev` is the same refusal one grain up (#535), and it is
    reached the other way round — by a link somebody pasted, on an organization nothing
    answers for, rather than by opening a page — so the list prints the words themselves in

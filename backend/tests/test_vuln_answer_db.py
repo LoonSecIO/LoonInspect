@@ -1227,6 +1227,127 @@ async def test_the_status_endpoint_answers_the_same_date_the_rows_are_stamped_wi
     assert (await vulnerability_status(db)).corpus_as_of is None
 
 
+# --- easily patchable (#532) -------------------------------------------------------------
+
+# Two more builds of the same app, so the ranking has three rows to put in an order and no
+# simpler sort can produce it: 4.2.0 closes 17 on two Macs (34), 4.0.0 closes 30 on one (30),
+# 3.6.0 closes 1 on one (1). Ranking by the closure alone would lead with 4.0.0, and ranking
+# by Macs alone would tie the other two and break it on name and version — 3.6.0 first. Only
+# findings closed TIMES Macs gives the order below.
+WIRESHARK_OLDER = app_full_key("Wireshark.app", "org.wireshark.Wireshark", "4.0.0", None)
+WIRESHARK_OLDEST = app_full_key("Wireshark.app", "org.wireshark.Wireshark", "3.6.0", None)
+_OLDER_COUNTS = {"total": 30, "kev": 0, "critical": 0, "high": 30, "medium": 0, "low": 0}
+_TINY_COUNTS = {"total": 1, "kev": 0, "critical": 0, "high": 1, "medium": 0, "low": 0}
+# The epoch's clean row for the release Jamf calls latest: 17 findings become none, net 17.
+CLEAN_TARGET = {"ids": [], "counts": {"total": 0, "kev": 0, "critical": 0, "high": 0, "medium": 0, "low": 0}}
+MINE = (WIRESHARK_BUILD, WIRESHARK_OLDER, WIRESHARK_OLDEST)
+
+
+def _ranked(response) -> list[str]:
+    """This section's own builds, in the order the endpoint returned them — membership rather
+    than the whole page, for the reason `_ours` gives."""
+    return [item.version for item in response.items if item.key_full in MINE]
+
+
+async def test_easily_patchable_ranks_by_what_an_update_closes_times_the_macs_carrying_it(db, fleet) -> None:
+    """Three builds of one app, ranked 34, 30, 1 — an order neither of its two factors gives.
+
+    The ranking answers *which push buys the most*, so it is the closure multiplied by the
+    Macs that would receive it: closure alone leads with 4.0.0's thirty, and Macs alone ties
+    the single-Mac builds and breaks it on the version. Each row then carries its OWN
+    difference, and nothing on the response sums them (§4g).
+    """
+    connection, device = fleet
+    await _with_titles(db)
+    extra = [
+        _row(
+            key_full=WIRESHARK_OLDER,
+            ids=[f"CVE-2026-3{index:03d}" for index in range(30)],
+            counts=_OLDER_COUNTS,
+            oldest_published=_dated(_OLDER_COUNTS),
+        ),
+        _row(key_full=WIRESHARK_OLDEST, ids=["CVE-2026-3999"], counts=_TINY_COUNTS, oldest_published=_dated(_TINY_COUNTS)),
+    ]
+    await _epoch_with_target(db, CLEAN_TARGET, extra=extra)
+    second = await _device(
+        db,
+        connection,
+        "C02VULN0532",
+        tuple(("Wireshark.app", "org.wireshark.Wireshark", version) for version in ("4.2.0", "4.0.0", "3.6.0")),
+    )
+    await _judge(db, device)
+    await _judge(db, second)
+
+    listing = await _list(db, vuln="patchable", order="payoff")
+    assert _ranked(listing) == ["4.2.0", "4.0.0", "3.6.0"]
+    rows = {item.version: item for item in listing.items if item.key_full in MINE}
+    assert (rows["4.2.0"].device_count, rows["4.2.0"].vuln_update.closes) == (2, 17)
+    assert (rows["4.0.0"].device_count, rows["4.0.0"].vuln_update.closes) == (1, 30)
+
+
+async def test_an_update_that_opens_more_than_it_closes_is_left_off_rather_than_ranked_low(db, fleet) -> None:
+    """The lab's own case (#428): Wireshark 4.2.0 is 17 findings and 4.6.8 is 94.
+
+    *Easily patchable* is a claim about every row on the list, so a build the claim is false
+    of is excluded — a low rank still reads as *and then do this one*. The build is still on
+    the page under the filter that judges no update, which is what tells an exclusion from a
+    row nobody served.
+    """
+    _, device = fleet
+    await _with_titles(db)
+    await _epoch_with_target(
+        db, {"ids": THERE, "counts": {"total": 94, "kev": 0, "critical": 1, "high": 26, "medium": 66, "low": 1}}
+    )
+    await _judge(db, device)
+
+    assert (await _entry(db, WIRESHARK_BUILD)).vuln_target_counts["total"] == 94
+    assert _ranked(await _list(db, vuln="patchable", order="payoff")) == []
+    assert _ours(await _list(db, vuln="findings")) == [WIRESHARK_BUILD]
+
+
+async def test_a_target_with_no_row_and_one_judged_by_an_epoch_that_moved_are_both_out(db, fleet) -> None:
+    """Two absences and one rule: nothing beside a row may upgrade a missing one (R-D), and
+    an answer from an epoch that is no longer answering is not an answer (§4f).
+
+    The second half is the sharp one. The row ranks, the corpus moves under it — the same
+    corpus, a pass later — and nothing re-judges: the pair of answers now names an epoch that
+    is not the one answering, and a difference between two of its numbers is no safer than
+    either of them.
+    """
+    _, device = fleet
+    await _with_titles(db)
+    await _epoch_with_target(db, None)
+    await _judge(db, device)
+    assert (await _entry(db, WIRESHARK_BUILD)).vuln_target_assessment is None, "judged; the epoch holds no such row"
+    assert _ranked(await _list(db, vuln="patchable", order="payoff")) == []
+
+    await _epoch_with_target(db, CLEAN_TARGET)
+    await _judge(db, device)
+    assert _ranked(await _list(db, vuln="patchable", order="payoff")) == ["4.2.0"]
+
+    await _epoch_with_target(db, CLEAN_TARGET, extra=[_row(key_full=STALE_UNASSESSED_BUILD)])
+    assert _ranked(await _list(db, vuln="patchable", order="payoff")) == []
+
+
+async def test_easily_patchable_is_refused_where_nothing_answers(db, fleet) -> None:
+    """The new filter meets the same refusal as the four before it: an empty ranked list
+    would read as *nothing here is worth patching*, which is §4a's failure with a fix path
+    attached."""
+    from fastapi import HTTPException
+
+    from app.api.catalog import NO_ANSWER
+
+    _, device = fleet
+    await _with_titles(db)
+    await _epoch_with_target(db, CLEAN_TARGET)
+    await _judge(db, device)
+    await _set_tier(db, "off")
+
+    with pytest.raises(HTTPException) as refusal:
+        await _list(db, vuln="patchable", order="payoff")
+    assert refusal.value.status_code == 409 and refusal.value.detail == NO_ANSWER
+
+
 # --- the device list reads the copies (#535) ---------------------------------------------
 
 
