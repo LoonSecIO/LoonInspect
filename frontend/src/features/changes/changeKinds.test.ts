@@ -164,7 +164,10 @@ describe("isFiltered", () => {
     ["since", { since: "2026-09-01T00:00:00Z" }],
     ["connectionId", { connectionId: 1 }],
     ["subjectId", { subjectId: "42" }],
-    ["subjectKind", { subjectKind: "computer" }]
+    ["subjectKind", { subjectKind: "computer" }],
+    // The hidden dimensions (#447) narrow the feed too; found missing by the review of #539.
+    ["user (a token, #446)", { user: "u_7Qa1bZ2cD3eF4gH" }],
+    ["model (hidden, #447)", { model: "Air" }]
   ])("is true with %s set", (_key, filters) => {
     expect(isFiltered(filters)).toBe(true);
   });
@@ -183,6 +186,11 @@ describe("what an empty table says", () => {
     });
     expect(emptyTable({ since: "2026-09-14T00:00:00Z" }, 0, de.changes)).toEqual({
       lead: "Keine Änderungen entsprechen diesen Filtern.",
+      reason: null
+    });
+    // A stale person token (#446) is a filter nothing matches, not an empty log.
+    expect(emptyTable({ user: "u_7Qa1bZ2cD3eF4gH" }, 0, en.changes)).toEqual({
+      lead: "No changes match these filters.",
       reason: null
     });
   });

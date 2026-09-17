@@ -1064,16 +1064,21 @@ writes one row to the disclosure log naming the destination and the one field th
    anyone who can open the feed** — the rows still carry the names, which is where the chip gets
    one — so it is not secrecy from your own admins, it is the name not riding along in a link, a
    history or a chat log. It is **derived from `ENCRYPTION_KEY`** and scoped to one tenant, so it
-   means nothing in another deployment and every token changes when that key is rotated. **Splunk
+   means nothing in another deployment. A token is stamped on a row when the change is derived and
+   never rewritten, so rotating that key changes only the tokens on rows written after it: a link
+   made before the rotation keeps filtering to the right person over the rows from before it and
+   misses the rows observed after — never the wrong person. **Splunk
    is unaffected:** `loon:jamf:mac:userAndLocation` still ships `username`, `realname`, `email`
    and `position` under a frozen, additive-only vocabulary, so a saved search grouping by a person
    keeps working; to keep the person out, exclude the field at the destination.
 
    **A chip reading *Assigned user this link no longer names*** means the link carries a token no
-   row matches and the table beneath is empty. Two causes, no third: `ENCRYPTION_KEY` was rotated
-   since the link was made, so a link from before the rotation stops filtering rather than quietly
-   filtering to the wrong person; or the rows are older than the stamp, the bound every dimension
-   has. Press × on the chip to drop the filter, then find the person from a row.
+   row matches and the table beneath is empty — the chip also reads this for the moment the page
+   is still waiting for its answer. A token is keyed to this deployment's `ENCRYPTION_KEY` and to
+   one tenant, so the usual cause is a link made in another deployment or tenant, whose tokens
+   mean nothing here. Change rows are never pruned (README, *What this project prunes*), so a link
+   made here keeps resolving, and after a key rotation it keeps resolving over the rows from
+   before the rotation. Press × on the chip to drop the filter, then find the person from a row.
 
    **Asking about a department in the Prompt bar.** "What changed on Macs in Engineering :
    Product?" works when Jamf's catalog holds that department's name. The model tends to read a
