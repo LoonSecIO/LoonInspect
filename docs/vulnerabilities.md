@@ -507,13 +507,16 @@ checking in. Every other key is the same value in both.
 | Surface | What it gained |
 | --- | --- |
 | `GET /api/devices/{id}` | `apps[].vuln` — the block per installed app; `corpusAsOf` on the device |
+| `GET /api/devices` | `items[].vulnApps` (#535) — this Mac's apps counted three ways (with findings, on KEV, outside the corpus), in ONE grouped read bounded by the page's ids; `corpusAsOf` on the list response. **Apps, never findings summed across them**, and absent on every row where nothing answers |
+| `GET /api/devices?vuln=` | The stored answer as a `WHERE` one grain up (#535): `findings` \| `kev`, an `EXISTS` over that Mac's own copies. *Served* by the same rule the cell obeys, so a Mac drops out of the filter exactly as its app drops out of *covered* — and #529's `409` naming both causes where nothing answers, never an empty page |
 | `GET /api/catalog` | `items[].vuln` — the block per distinct build; `corpusAsOf` on the list response |
 | `GET\|POST /api/catalog/lookup` | **Nothing.** See below |
 | `GET /api/catalog?vuln=&band=&order=` | The stored answer as a `WHERE` (#529): `findings` \| `kev` \| `unknown_app` \| `clean`, a band, and the two orders. *Served*, never merely stored — a row judged by an epoch that has moved is `unknown_app` here exactly as it is in a cell — and a filter on an organization nothing answers for is a `409` naming both causes, never an empty list |
 | `GET /api/catalog` | `vulnJudged` (#529): has ANY row of this tenant been judged by the epoch answering now. One `EXISTS`, never a count |
 | `GET /api/vulnerabilities/status` | `corpusAsOf` alone (#529), under `vuln:read` — what the sidebar reads before any page is open |
+| **Devices** (the device list, #535) | An **Apps with findings** column — *n (k KEV) · m outside* — over `vulnApps` above, and the two URL-carried chips, *With findings* and *On KEV*, that are the filter above. No corpus, no column and no chips |
 | Devices › Applications › **Catalog** | A **Vulnerabilities** column, and the corpus banner above it |
-| Devices › *hostname* (the device page, #300) | A **LoonInspect** column per installed app, and the same banner above it; #482 added the update line inside that column |
+| Devices › *hostname* (the device page, #300) | A **LoonInspect** column per installed app, and the same banner above it; #482 added the update line inside that column, #535 the rollup line beside the banner — this Mac in apps, the same three numbers the list's column prints, over the rows the page already holds |
 | Devices › Applications › *appHash* (the application record, #299) | A **Vulnerabilities** column per carried build — legal there because each row is one build at `key_full` grain — and the banner; #482's update line likewise |
 | Devices › Applications › Jamf Patch › *title* | **Nothing** (#298). A title's version row carries no `key_full`, so there is no grain to answer at; the stub column that stood there (`C — H — M — L — Σ` beside coloured dots, under a tooltip naming an integration nobody can enable) was deleted rather than rewritten, per the #95 precedent |
 | **Posture › Vulnerabilities** (#529) | The fleet ranking: one row per build, most exposed first, with the corpus banner above it, a plain search over the catalog's `q`, and the same `AssessmentCell` — one rendering of the three states, handed the row so #482's update line prints. Its own two states before any row: nothing answering (the banner and its *why* block alone) and `vulnJudged` false (one sentence, no list) |
@@ -613,10 +616,10 @@ server answered from a different corpus. `null` means no corpus is loaded; the p
 that in a sentence and dates it with nothing.
 
 **What is deliberately not counted.** No fleet-wide "*n* covered / *m* unknown" tile. The
-per-request lookup is bounded by the rows in one response — one device's apps, or one page
-of distinct builds — and counting the three states across the whole tenant is a scan per
-request. Those counts are #250's, taken once a night off the stored join (§7), not once a
-request.
+per-request lookup is bounded by the rows in one response — one device's apps, one page of
+distinct builds, or one page of devices (#535) — and counting the three states across the
+whole tenant is a scan per request. Those counts are #250's, taken once a night off the
+stored join (§7), not once a request.
 
 ## 5. Three id namespaces, one shape
 

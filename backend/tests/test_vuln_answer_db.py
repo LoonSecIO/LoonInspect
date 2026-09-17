@@ -1271,6 +1271,29 @@ async def test_the_filter_answers_with_the_macs_carrying_a_finding(db, fleet) ->
     assert _listed(everyone, device) and _listed(everyone, clean_mac)
 
 
+async def test_the_kev_filter_answers_with_the_macs_carrying_a_kev_finding(db, fleet) -> None:
+    """*Which Macs carry a KEV finding* — the question the issue opens with, asserted
+    positively, and the one the shipped fixture epoch cannot ask: every row it publishes is
+    `kev: 0`, so `vuln=kev` there is a filter nothing can match and `on_kev` a number nothing
+    can raise. #529's second epoch is loaded for exactly that reason one grain down, so it is
+    loaded here: its Wireshark row is KEV-listed and its stale row carries five findings and
+    none, which makes `kev` narrower than `findings` rather than a synonym for it — a Mac
+    carrying only the plain row is a carrier under one and not the other, and the cell counts
+    the one KEV app beside the two with findings.
+    """
+    connection, device = fleet
+    plain_mac = await _device(db, connection, "C02KEV0535", (APPS[2],))
+    await _filtering(db, device)
+    await _judge(db, plain_mac)
+
+    kev = await _devices(db, vuln="kev")
+    assert _listed(kev, device) and not _listed(kev, plain_mac)
+    findings = await _devices(db, vuln="findings")
+    assert _listed(findings, device) and _listed(findings, plain_mac)
+    assert _apps_of(await _devices(db), device) == DeviceVulnAppsOut(with_findings=2, on_kev=1, outside_corpus=1)
+    assert _apps_of(await _devices(db), plain_mac) == DeviceVulnAppsOut(with_findings=1, on_kev=0, outside_corpus=0)
+
+
 async def test_a_copy_judged_by_an_epoch_that_moved_is_not_a_carrier(db, fleet) -> None:
     """SERVED, not stored (§4f). The copy still says `covered` with seventeen findings; its
     signature is no longer the epoch answering, so the Mac drops out of `findings` exactly as

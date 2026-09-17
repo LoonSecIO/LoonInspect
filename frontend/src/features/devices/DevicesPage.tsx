@@ -208,7 +208,10 @@ export function DevicesPage() {
                 </td>
               </tr>
             )}
-            {devices.map((device) => (
+            {/* Not under a refusal (#535). A `vuln` filter nothing can answer is a 409, and
+                the last page's Macs left standing beneath that sentence would read as the
+                answer to the question the server just declined to answer. */}
+            {!error && devices.map((device) => (
               <tr key={device.id} className="border-b last:border-0">
                 <td className="px-4 py-2">
                   <Link to={`/devices/${device.id}`} className="font-medium hover:underline">
