@@ -1270,6 +1270,11 @@ class SubjectDeparture(Base):
     # census population, so it opens no second row. Migration b7e3f1a9c4d2.
     matched_by: Mapped[str | None] = mapped_column(String(16), nullable=True)
     prior_jamf_pro_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # What the Mac tail has already SAID on the wire (#495, #179 4.5) — emission marks, not fleet state,
+    # which stays `left_the_fleet`. `notice_day` is the last `departed` notice out (0 before the first,
+    # never past seven), so the tail runs one per UTC day; `removed_notified_at` fires the terminal once.
+    notice_day: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"), default=0)
+    removed_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     census_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 

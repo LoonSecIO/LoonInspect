@@ -263,6 +263,12 @@ export const de: Translations = {
       `${count} fehlgeschlagene ${count === 1 ? "Zustellung" : "Zustellungen"} erneut senden? Ereignisse, die das Ziel bereits erhalten hat, kommen erneut an.`,
     redriveQueued: (count: number) => `${count} erneut zur Zustellung eingereiht`,
     errorRedriving: "Das erneute Senden konnte nicht eingereiht werden.",
+    heldEvents: (count: number, expires: string) =>
+      `${count === 1 ? "1 Ereignis" : `${count} Ereignisse`} zurückgehalten — kein aktives Ziel. Das älteste verfällt am ${expires}.`,
+    deadLetters: (count: number, days: number) =>
+      `${count} unzustellbar · ältestes verfällt ${days === 0 ? "heute" : `in ${days} ${days === 1 ? "Tag" : "Tagen"}`}`,
+    queueUnreadable:
+      "Die Warteschlangentiefe konnte nicht gelesen werden — die Zähler für zurückgehaltene und unzustellbare Ereignisse fehlen, sie sind nicht null. Neu laden oder GET /api/outbox direkt aufrufen.",
     loading: "Ziele werden geladen…",
     empty: "Noch keine Ziele konfiguriert.",
     errorLoading: "Ziele konnten nicht geladen werden.",

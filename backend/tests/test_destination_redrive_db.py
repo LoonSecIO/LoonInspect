@@ -157,3 +157,11 @@ async def test_a_redrive_needs_destination_write(viewer, dead_letters: int) -> N
 async def test_a_redrive_of_a_destination_that_is_not_there_is_a_404(admin) -> None:
     response = await admin.post("/api/destinations/987654321/redrive")
     assert response.status_code == 404, response.text
+
+
+async def test_queue_depth_is_gated_on_destination_read(admin, viewer) -> None:
+    """`GET /api/outbox` (#468) rides the same permission as delivery health, so it is
+    gated from the same pair of sessions. What it reports lives with the outbox passes,
+    in a tenant nothing else writes to."""
+    assert (await admin.get("/api/outbox")).status_code == 200
+    assert (await viewer.get("/api/outbox")).status_code == 403
