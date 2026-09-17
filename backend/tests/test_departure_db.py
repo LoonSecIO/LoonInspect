@@ -959,9 +959,16 @@ async def test_an_emission_pass_over_a_mass_deletion_binds_its_ids_in_batches(db
         assert sorted(e.payload["deviceMeta"]["jamfProID"] for e in events) == sorted(ids), "no duplicates, no gaps"
         assert {e.payload["state"] for e in events} == {"removed"}
         assert {e.payload["subjectLabel"] for e in events} == {f"mac-{external_id}" for external_id in ids}
-        # The second bound #513 names, measured and filed rather than fixed here (#524): one outbox row
-        # per Mac, every one of them inside the census's single transaction, with nothing capping the pass.
+        # #513's second bound, ruled and fixed here (#524): one outbox ROW per Mac still, inside the
+        # census's single transaction still, but written in one statement per batch. Three, not 2,500 —
+        # measured rather than asserted, because the number is SQLAlchemy's to choose: `add_all` plus one
+        # flush becomes insertmanyvalues, which pages at `insertmanyvalues_page_size` (1,000 on asyncpg,
+        # and 6 bound parameters a row leaves that page the binding constraint, not the 32767 cap). A
+        # release that repages would land here as 2 or 5, not as a silent return to a round trip per Mac.
         assert len(events) == 2500
+        inserts = _outbox_inserts(sent)
+        assert len(inserts) == 3, f"2,500 events is three multi-row INSERTs, not {len(inserts)}"
+        assert max(inserts) == _EMIT_BATCH * 6, "a full page binds six parameters per row"
 
         # The boundary itself, from both sides: exactly one batch, and one id past it.
         for count, expected in ((_EMIT_BATCH, 1), (_EMIT_BATCH + 1, 2)):
@@ -984,17 +991,21 @@ async def test_an_emission_pass_over_a_mass_deletion_binds_its_ids_in_batches(db
 _SCALE_MACS = 40000
 
 
-async def _locks_held(db) -> int:
-    """Rows in `pg_locks` for the session running the pass, read from a SECOND connection while
-    that session's transaction is still open. The peak is only askable there: a committed pass
-    holds nothing, so the footprint has to be counted while the thing is still standing."""
+async def _locks_held(db) -> list[tuple[str, int]]:
+    """`pg_locks` for the session running the pass, by lock type, read from a SECOND connection while
+    that session's transaction is still open. The peak is only askable there — a committed pass holds
+    nothing — and the TYPES are the answer to what it holds: row locks are on the tuples, not here, so
+    a pass that wrote 40,000 rows shows the same handful of relation locks one row would."""
     from sqlalchemy import func, text
 
     from app.core.database import engine
 
     pid = (await db.execute(select(func.pg_backend_pid()))).scalar_one()
     async with engine.connect() as watcher:
-        return (await watcher.execute(text("SELECT count(*) FROM pg_locks WHERE pid = :pid"), {"pid": pid})).scalar_one()
+        held = await watcher.execute(
+            text("SELECT locktype, count(*) FROM pg_locks WHERE pid = :pid GROUP BY locktype ORDER BY 2 DESC"), {"pid": pid}
+        )
+        return [(locktype, count) for locktype, count in held.all()]
 
 
 @pytest.mark.skipif(not os.environ.get("RUN_SCALE_TESTS"), reason="#524's 40,000-Mac measurement; set RUN_SCALE_TESTS=1")
@@ -1036,7 +1047,7 @@ async def test_one_emission_pass_over_forty_thousand_macs_is_measured(db, connec
             f"\n  INSERT statements {len(inserts):,} (largest bound {max(inserts):,} parameters)"
             f"\n  rows written      {written:,}"
             f"\n  payload bytes     {payload_bytes:,} ({payload_bytes / written:.0f} per row)"
-            f"\n  pg_locks at peak  {locks}"
+            f"\n  pg_locks at peak  {sum(count for _type, count in locks)} ({', '.join(f'{t} {n}' for t, n in locks)})"
         )
         assert written == _SCALE_MACS, "one row per Mac, which is what both shapes of this pass write"
     finally:

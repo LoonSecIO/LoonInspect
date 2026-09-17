@@ -148,6 +148,31 @@ async def enqueue_event(
     return event
 
 
+async def enqueue_events(
+    db: AsyncSession, event_type: str, payloads: Sequence[dict], *, request_id: str | None = None
+) -> list[EventOutbox]:
+    """`enqueue_event` for a batch of one type, under exactly the same contract: the caller
+    commits, and the rows must land in the same transaction as the state change that produced
+    them. Delivery is still the worker's, later, on its own schedule.
+
+    ONE flush per call rather than one per row (#524, ruled 2026-09-17). The cost that grows
+    with a mass deletion is round trips, not bytes — an emission pass over a purged fleet was
+    spending one on every Mac — and `add_all` plus a single flush lets SQLAlchemy send
+    multi-row INSERTs instead. Nothing about the rows changes: same events, same order, same
+    transaction, same single commit point in the caller.
+
+    Hand it a batch a statement can carry, not an unbounded pass: the Mac emitters call it
+    once per `_EMIT_BATCH` (1,000), and SQLAlchemy pages a larger list itself, but a caller
+    that builds one list per fleet has already paid for that list in memory.
+    """
+    events = [EventOutbox(event_type=event_type, payload=payload, request_id=request_id) for payload in payloads]
+    if not events:
+        return events
+    db.add_all(events)
+    await db.flush()
+    return events
+
+
 def _build_headers(destination: Destination) -> dict[str, str]:
     headers = {"Content-Type": "application/json"}
     secret = destination.auth_secret_encrypted  # decrypted transparently on read
