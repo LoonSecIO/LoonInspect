@@ -1529,13 +1529,23 @@ Catalog tab carries. So a link somebody sent you works even while the entry is h
    *outside the corpus* on an organization nothing answers for is refused: `409` from
    `GET /api/catalog?vuln=findings`, in words that name both causes and point at
    [`vulnerabilities.md`](vulnerabilities.md) §8 — *Nothing is answering for this
-   organization, so a vulnerability filter has no rows to be right about*. **On screen you
-   meet that refusal as the banner, not as that sentence**: the page asks for findings on
-   every load, so a refused read leaves the corpus banner and its *why* block standing
-   alone — step 1's screen, reached by a different road. The words themselves are for
-   whoever reads the API or the access log. It is refused rather than answered empty on
-   purpose: an empty list under *findings* reads as *nothing found*, which is the one thing
-   this product must never say about apps nobody looked at. Step 1 is the fix.
+   organization, so a vulnerability filter has no rows to be right about*. **On the
+   Vulnerabilities page you meet that refusal as the banner, not as that sentence**: the
+   page asks for findings on every load, so a refused read leaves the corpus banner and its
+   *why* block standing alone — step 1's screen, reached by a different road. It is refused
+   rather than answered empty on purpose: an empty list under *findings* reads as *nothing
+   found*, which is the one thing this product must never say about apps nobody looked at.
+   Step 1 is the fix.
+6. **The Devices list prints that sentence where its Macs should be.**
+   `GET /api/devices?vuln=findings|kev` is the same refusal one grain up (#535), and it is
+   reached the other way round — by a link somebody pasted, on an organization nothing
+   answers for, rather than by opening a page — so the list prints the words themselves in
+   place of its rows. Nothing beneath them counts anything: a refused question has no
+   total, so the count and the pager are gone rather than reading *0 devices total*. The
+   filter bar offers no *With findings* / *On KEV* chips here, because a corpus has to
+   answer before there is anything to select; what it does offer is **the one chip the link
+   carried, with an ×**. Click it and the list answers unfiltered, which is what the
+   sentence's own last clause tells you to do. Then step 1, for why nothing answers.
 
 **V.** The page says *loaded, not yet judged against* more than two hours after the corpus
 date moved, with the tier on and the hourly refresh running. Report the date the banner

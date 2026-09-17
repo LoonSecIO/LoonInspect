@@ -3,9 +3,10 @@ import { useLocale } from "@/i18n/LocaleContext";
 
 interface FilterBarProps {
   filters: DeviceFilters;
-  /** The corpus answering for this organization, or null (#535). The chips are offered only
-   *  where there is something to select: under `off` the filter is refused, and a control
-   *  that can only produce a refusal is worse than no control. */
+  /** The corpus answering for this organization, or null (#535). The two toggles are offered
+   *  only where there is something to select: under `off` the filter is refused, and a control
+   *  that can only produce a refusal is worse than no control. What is offered there instead
+   *  is the × on a filter a pasted link already carried — taking one off is always answerable. */
   corpusAsOf: string | null;
   onChange: (filters: DeviceFilters) => void;
 }
@@ -126,8 +127,17 @@ export function FilterBar({ filters, corpusAsOf, onChange }: FilterBarProps) {
       </div>
 
       {/* URL-carried like every control above, so a shared link asks the same question and
-          page 2 of it is still that question. Clicking the chip that is on clears it. */}
-      {corpusAsOf !== null && (
+          page 2 of it is still that question. Clicking the chip that is on clears it.
+
+          Where nothing answers there is nothing to select — but a pasted link still carries
+          the filter, and that is the one state the endpoint refuses (#535). So this branch
+          rather than none: not the two toggles, which could produce nothing but the same
+          refusal, but the one that is on, with an × that takes it off. Its sentence ends
+          "and this list answers unfiltered", and this is the control that follows it.
+
+          One conditional, not two gates in two files: a filter the page applies is never
+          one the page hides (#109), and that stays true by construction here. */}
+      {corpusAsOf !== null ? (
         <div className="flex flex-wrap gap-2">
           {VULN_CHIPS.map((value) => (
             <button
@@ -143,6 +153,20 @@ export function FilterBar({ filters, corpusAsOf, onChange }: FilterBarProps) {
             </button>
           ))}
         </div>
+      ) : (
+        filters.vuln && (
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-full border bg-muted px-3 py-1 text-xs"
+              onClick={() => update({ vuln: undefined })}
+            >
+              {filters.vuln === "kev" ? t.devices.onKevChip : t.devices.withFindingsChip}
+              <span aria-hidden="true">×</span>
+              <span className="sr-only">{t.devices.clearFilter}</span>
+            </button>
+          </div>
+        )
       )}
     </div>
   );

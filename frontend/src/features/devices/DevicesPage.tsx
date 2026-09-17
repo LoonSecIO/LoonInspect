@@ -9,6 +9,16 @@ import { departureState, includeDepartedFrom } from "@/features/devices/departur
 import type { Device, DeviceFilters, VersionOperator } from "@/features/devices/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
+/** `?vuln=` narrowed rather than cast (#535): the two values the endpoint accepts, and
+ *  nothing else. A cast seats a third value in a typed field, where the chip that clears it
+ *  would have to print one of the two labels over a value that is neither — and sends it to
+ *  a `422` this page has no words for. Something nobody can select and nobody can name is
+ *  not a filter, so the list answers unfiltered, which is what the unpressed chips say. */
+function vulnFilterFrom(params: URLSearchParams): DeviceFilters["vuln"] {
+  const value = params.get("vuln");
+  return value === "findings" || value === "kev" ? value : undefined;
+}
+
 function filtersFromSearchParams(params: URLSearchParams): DeviceFilters {
   const managed = params.get("managed");
   const supervised = params.get("supervised");
@@ -27,7 +37,7 @@ function filtersFromSearchParams(params: URLSearchParams): DeviceFilters {
     appHash: params.get("appHash") ?? undefined,
     versionHash: params.get("versionHash") ?? undefined,
     includeDeparted: includeDepartedFrom(params),
-    vuln: (params.get("vuln") as DeviceFilters["vuln"] | null) ?? undefined,
+    vuln: vulnFilterFrom(params),
     page: params.get("page") ? Number(params.get("page")) : 1
   };
 }
@@ -261,25 +271,34 @@ export function DevicesPage() {
         </table>
       </div>
 
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        {/* The count says which population it counts (#232): v0's devices are
-            computers, full stop, so the total is named next to what it is a total
-            of rather than left for someone to notice a Mac-sized number against an
-            iPad-sized fleet. */}
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-          <span>{t.devices.total(total)}</span>
-          <span className="text-xs">{t.common.computersOnlyScope}</span>
+      {/* Not under a refusal either (#535), for the reason the rows are not. `total` is
+          `0` until a response sets it, so a refused `vuln=kev` would print "0 devices
+          total" one line under the sentence refusing to answer that question — §4a's
+          reading printed as a number, on the screen built to prevent it — and after a load
+          that worked it would print the previous question's total instead, which is worse
+          for being plausible. The pager goes with it: `totalPages` counts the same absent
+          answer, and there are no rows to page through. */}
+      {!error && (
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          {/* The count says which population it counts (#232): v0's devices are
+              computers, full stop, so the total is named next to what it is a total
+              of rather than left for someone to notice a Mac-sized number against an
+              iPad-sized fleet. */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span>{t.devices.total(total)}</span>
+            <span className="text-xs">{t.common.computersOnlyScope}</span>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => goToPage(page - 1)}>
+              {t.devices.previous}
+            </Button>
+            <span className="self-center">{t.devices.pageOf(page, totalPages)}</span>
+            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => goToPage(page + 1)}>
+              {t.devices.next}
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => goToPage(page - 1)}>
-            {t.devices.previous}
-          </Button>
-          <span className="self-center">{t.devices.pageOf(page, totalPages)}</span>
-          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => goToPage(page + 1)}>
-            {t.devices.next}
-          </Button>
-        </div>
-      </div>
+      )}
     </section>
   );
 }
