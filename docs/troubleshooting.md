@@ -1447,7 +1447,7 @@ a link to that page on the connection's row. Both doors need the **Auditor** rol
      exactly like a passing fleet. The sentence names the file it looked for, or the version it is at
      when that is a version this build does not read. Both renderings refuse, the object and the page.
      This is reportable state **U** — nothing about the fleet is wrong.
-2. **The page downloads, and says *No observation in this window*.** The window closes before this
+2. **The report draws, and says *No observation in this window*.** The window closes before this
    connection's first observation, or opens after its last. The connection is not broken and no Mac is
    named because none had been seen yet. Open the connection's run panel for the newest device sweep and
    read its finish time; ask again for a window that reaches it.
@@ -1458,7 +1458,7 @@ a link to that page on the connection's row. Both doors need the **Auditor** rol
    own, with its own start and end — then:
    - The stretch runs from the window's **opening** to that Mac's first observation → the window opens
      before the Mac was enrolled, or before this connection's ledger does. Expected on any window older
-     than the connection, which the button's default ninety days often is. Nothing to fix.
+     than the connection, which the default ninety days often is. Nothing to fix.
    - The stretch runs from that Mac's **last** observation to the report's `asOf`, and other Macs kept
      reporting through those dates → that Mac has gone quiet. The sweeps ran; this one did not answer.
      §16 is a Mac that left the fleet; §1 is one the collection's **Selector** never asked about.
