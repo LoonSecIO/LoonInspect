@@ -815,10 +815,10 @@ describe("failureReason — a failed read, as the clause its sentence goes on fr
   const tp = en.changes.prompt;
 
   it("the Prompt bar's status read: what failed, then where to look", () => {
-    expect(tp.statusFailed(failureReason(new ApiError(500, null), tp))).toBe(
+    expect(tp.statusFailed(tp.barName, failureReason(new ApiError(500, null), tp))).toBe(
       "The Prompt bar could not check its settings: the server answered 500 without a reason. Check docker compose logs app."
     );
-    expect(tp.statusFailed(failureReason(new TypeError("Load failed"), tp))).toBe(
+    expect(tp.statusFailed(tp.barName, failureReason(new TypeError("Load failed"), tp))).toBe(
       "The Prompt bar could not check its settings: this server did not answer. Check docker compose logs app."
     );
   });
@@ -834,7 +834,7 @@ describe("failureReason — a failed read, as the clause its sentence goes on fr
 
   it("a body that arrived but was not the shape the read promises is unreadable, never 'did not answer'", () => {
     expect(failureReason(null, tp)).toBe("the server's answer could not be read");
-    expect(tp.statusFailed(failureReason(null, tp))).toBe(
+    expect(tp.statusFailed(tp.barName, failureReason(null, tp))).toBe(
       "The Prompt bar could not check its settings: the server's answer could not be read. Check docker compose logs app."
     );
   });

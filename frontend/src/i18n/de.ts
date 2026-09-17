@@ -1540,8 +1540,8 @@ export const de: Translations = {
       reasonStatus: (status: number) => `der Server hat mit ${status} ohne Begründung geantwortet`,
       reasonNoAnswer: "dieser Server hat nicht geantwortet",
       reasonUnreadable: "die Antwort des Servers ließ sich nicht lesen",
-      statusFailed: (reason: string) =>
-        `Die Prompt-Leiste konnte ihre Einstellungen nicht prüfen: ${reason}. Prüfen Sie docker compose logs app.`,
+      statusFailed: (bar: string, reason: string) =>
+        `${bar.charAt(0).toUpperCase()}${bar.slice(1)} konnte die eigenen Einstellungen nicht prüfen: ${reason}. Prüfen Sie docker compose logs app.`,
       staleReply:
         "Die Antwort kam, nachdem sich die Filter geändert hatten, und wurde deshalb nicht angewendet. Stellen Sie die Frage erneut, um sie anzuwenden.",
       proposalLead: (n: number) =>

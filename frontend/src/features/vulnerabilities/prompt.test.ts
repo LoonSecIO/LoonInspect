@@ -23,6 +23,7 @@ import {
   type VulnPromptFilters,
   type VulnPromptResult
 } from "@/features/vulnerabilities/prompt";
+import { de } from "@/i18n/de";
 import { en } from "@/i18n/en";
 
 const FILTERS: VulnPromptFilters = { q: null, vuln: "findings", band: null, order: "exposure" };
@@ -141,5 +142,17 @@ describe("a body that is not this answer is refused before anything reads it", (
     expect([...LEVER_BANDS]).toEqual(["critical", "high", "medium", "low"]);
     expect([...LEVER_ORDERS]).toEqual(["exposure", "age", "payoff"]);
     expect(Object.keys(FILTERS)).toEqual(["q", "vuln", "band", "order"]);
+  });
+});
+
+describe("the lever's words are its own (#534)", () => {
+  // A failure path ships with its words, and "the Prompt bar" is a control that is not on this
+  // page: the status sentence and the repairs name the lever, in both locales.
+  it("names the AI lever, never the Prompt bar, when its status read fails", () => {
+    for (const t of [en, de]) {
+      const sentence = t.changes.prompt.statusFailed(t.vulnerabilities.aiLeverName, "x");
+      expect(sentence.toLowerCase()).toContain(t.vulnerabilities.aiLeverName.toLowerCase());
+      expect(sentence).not.toMatch(/Prompt bar|Prompt-Leiste/);
+    }
   });
 });

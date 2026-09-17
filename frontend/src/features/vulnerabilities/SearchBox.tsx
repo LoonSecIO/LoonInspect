@@ -208,7 +208,7 @@ export function SearchBox({ term, onTerm, onMode, onApply, shown }: SearchBoxPro
         )}
       </form>
 
-      {statusFailure !== null && <p className="text-xs text-muted-foreground">{tp.statusFailed(failureReason(statusFailure.error, tp))}</p>}
+      {statusFailure !== null && <p className="text-xs text-muted-foreground">{tp.statusFailed(copy.aiLeverName, failureReason(statusFailure.error, tp))}</p>}
       {asks && <p className="text-xs text-muted-foreground">{copy.aiHint}</p>}
       {/* Said where the typing is, because the lists below have gone back to unfiltered: no
           build's name, bundle id or version contains a CVE id. */}

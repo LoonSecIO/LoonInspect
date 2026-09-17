@@ -324,3 +324,14 @@ def test_the_lever_is_mounted_before_the_route_that_would_swallow_it() -> None:
 def test_the_reply_keys_hold_no_count_no_date_and_no_id() -> None:
     """v-never, in one assertion: nothing the model may write is a number or an id."""
     assert REPLY_KEYS == ("app", "state", "band", "order", "unsupported")
+
+
+def test_a_repair_names_the_lever_and_never_the_prompt_bar() -> None:
+    """A repair is a sentence the reader acts on, so it names a control on the page they are on:
+    the ignored-key repair says *the AI lever* here and *the Prompt bar* only on Changes."""
+    result = slot_two.interpret(_reply(app=None, state="findings", band="any", order="exposure", risk="high"))
+    text = " ".join(str(repair) for repair in result.repairs)
+    assert "the AI lever" in text
+    assert "Prompt bar" not in text
+    slot_one_text = " ".join(str(repair) for repair in slot_one.ignored_keys({"risk": "high"}))
+    assert "the Prompt bar" in slot_one_text

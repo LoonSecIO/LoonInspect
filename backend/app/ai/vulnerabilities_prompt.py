@@ -74,6 +74,8 @@ NOT_ABOUT_VULNERABILITIES = "not_about_vulnerabilities"
 
 # The page's own word for the box a repair emptied.
 _SEARCH = "Search"
+# The noun the page uses for the thing that asked, in a repair the reader can act on (#534).
+_LEVER = "the AI lever"
 # The words a model writes for "no filter", read with no repair: the answer is no wider than
 # the one it meant. Slot 1's set, and its reason.
 _ANY = frozenset({"any", "all", "null", "none", "everything"})
@@ -209,7 +211,7 @@ def _order(value: Any, state: str, repairs: list[str]) -> str:
 def coerce(obj: Mapping[str, Any]) -> tuple[Filters, str | None, list[str]]:
     """Force a reply object into this page's vocabulary. Anything that is not a known value is
     dropped rather than passed through, and every drop is a repair."""
-    repairs: list[str] = [*ignored_keys(obj, REPLY_KEYS)]
+    repairs: list[str] = [*ignored_keys(obj, REPLY_KEYS, control=_LEVER)]
     # In the order the repairs read, and `state` before `order` because the order a missing
     # field means is the state's (`default_order`), not one constant for the whole page.
     search = whitelisted_name(obj.get("app"), _SEARCH, repairs)

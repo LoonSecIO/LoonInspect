@@ -1720,7 +1720,8 @@ export const en = {
       reasonStatus: (status: number) => `the server answered ${status} without a reason`,
       reasonNoAnswer: "this server did not answer",
       reasonUnreadable: "the server's answer could not be read",
-      statusFailed: (reason: string) => `The Prompt bar could not check its settings: ${reason}. Check docker compose logs app.`,
+      statusFailed: (bar: string, reason: string) =>
+        `${bar.charAt(0).toUpperCase()}${bar.slice(1)} could not check its settings: ${reason}. Check docker compose logs app.`,
       // The operator moved the filters by hand while the question was out; the answer
       // would have overwritten them, so it is not applied.
       staleReply: "The answer came back after the filters changed, so it was not applied. Ask again to apply it.",

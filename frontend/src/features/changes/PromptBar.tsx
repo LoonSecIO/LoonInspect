@@ -94,7 +94,7 @@ export function PromptBar({ filters, onApply, onUse, session = 0 }: PromptBarPro
   }, []);
 
   if (statusFailure !== null) {
-    return <p className="text-xs text-muted-foreground">{tp.statusFailed(failureReason(statusFailure.error, tp))}</p>;
+    return <p className="text-xs text-muted-foreground">{tp.statusFailed(tp.barName, failureReason(statusFailure.error, tp))}</p>;
   }
   if (!status?.available || provider === null) return null;
 

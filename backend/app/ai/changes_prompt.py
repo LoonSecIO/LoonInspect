@@ -403,8 +403,11 @@ def _fields(count: int) -> str:
     return f"{count} field{'' if count == 1 else 's'}"
 
 
-def ignored_keys(obj: Mapping[str, Any], keys: tuple[str, ...] = _REPLY_KEYS) -> list[Repair]:
+def ignored_keys(obj: Mapping[str, Any], keys: tuple[str, ...] = _REPLY_KEYS, *, control: str = "the Prompt bar") -> list[Repair]:
     """Counted, never named: a key is the model's own text, and the page has no use for it.
+
+    ``control`` is the noun the page uses for what asked — this bar by default, the AI lever on
+    Posture > Vulnerabilities (#534) -- so a repair names a control the reader can see.
 
     An ignored key that held a value widens the answer: ``{"app": "Wireshark"}`` is a name
     the controls never got. One that held nothing (null, an empty string, list or object)
@@ -421,9 +424,9 @@ def ignored_keys(obj: Mapping[str, Any], keys: tuple[str, ...] = _REPLY_KEYS) ->
     repairs: list[Repair] = []
     if held:
         what = "a value that may have been meant as a filter" if held == 1 else "values that may have been meant as filters"
-        repairs.append(_widens(f"Ignored {_fields(held)} the Prompt bar does not use, holding {what}."))
+        repairs.append(_widens(f"Ignored {_fields(held)} {control} does not use, holding {what}."))
     if empty:
-        repairs.append(_fixes(f"Ignored {_fields(empty)} the Prompt bar does not use, holding nothing."))
+        repairs.append(_fixes(f"Ignored {_fields(empty)} {control} does not use, holding nothing."))
     return repairs
 
 
