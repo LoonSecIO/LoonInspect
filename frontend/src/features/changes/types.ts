@@ -37,11 +37,19 @@ export interface DeviceChange {
   policyVersion: string;
 }
 
+/** What a `user=` filter resolved to (#446): the `u_…` the URL should carry, and the name for
+ *  its chip. Null where nothing resolved it (a rotated key, rows older than the stamp). */
+export interface UserFilter {
+  token: string | null;
+  display: string | null;
+}
+
 export interface DeviceChangeListResponse {
   items: DeviceChange[];
   total: number;
   page: number;
   pageSize: number;
+  userFilter?: UserFilter | null;
 }
 
 export interface ChangeFilters {
@@ -70,7 +78,8 @@ export interface ChangeFilters {
    *  the page: they arrive from a link, a click on a row, or the Prompt bar, and each shows as
    *  a removable chip while it is applied. `model` and `user` match anywhere in the value,
    *  `osVersion` is a prefix, and the rest are exact. A row derived before the stamp existed
-   *  carries none, so it matches none of them. */
+   *  carries none, so it matches none of them. `user` also takes a `u_…` token, matched exactly
+   *  on the row's `userToken`, and that is what a link carries (#446). */
   model?: string;
   osVersion?: string;
   fileVault?: string;

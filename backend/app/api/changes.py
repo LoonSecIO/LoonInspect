@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import ColumnElement, String, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.changes.person_token import is_person_token
 from app.changes.policy import CHANGE_POLICY_VERSION, LEVELS, EffectivePolicy, Overrides, levels_at_least
 from app.core.audit import AuditAction, audit
 from app.core.auth import Principal, current_principal, require
@@ -23,6 +24,7 @@ from app.schemas.changes import (
     KnownDepartment,
     KnownExtensionAttribute,
     KnownGroup,
+    UserFilterOut,
 )
 
 router = APIRouter(prefix="/api/changes", tags=["changes"])
@@ -88,10 +90,12 @@ _DIMENSION_MATCHES: dict[str, tuple[str, str]] = {
     "site": ("siteId", "is"),
     "department": ("departmentId", "is"),
     "managed": ("managed", "is"),
-    # Any of the three the ledger holds for the assigned person, because an operator asking
-    # for "the VP's Mac" has one of them to hand, not all three (#446 will tokenize them).
+    # Two shapes (#446). Typed text matches any of the three names, an operator asking for "the
+    # VP's Mac" having one to hand and not all three; a `u_…` token matches `userToken` exactly,
+    # and that is what a shared link carries, so a name never has to.
     "user": (("username", "realName", "email"), "contains"),
 }
+_USER_TOKEN_MATCH: tuple[tuple[str, ...], str] = (("userToken",), "is")
 
 
 def change_conditions(
@@ -168,9 +172,9 @@ def change_conditions(
     for name, value in dimensions.items():
         if not value:
             continue
-        keys, how = _DIMENSION_MATCHES[name]
-        keys = (keys,) if isinstance(keys, str) else keys
         needle = value.strip()
+        keys, how = _USER_TOKEN_MATCH if name == "user" and is_person_token(needle) else _DIMENSION_MATCHES[name]
+        keys = (keys,) if isinstance(keys, str) else keys
         matches = [
             DeviceChange.device_meta[key].astext.ilike(f"%{needle}%")
             if how == "contains"
@@ -217,6 +221,32 @@ def change_conditions(
             | DeviceChange.entry_identity["username"].astext.ilike(needle)
         )
     return conditions
+
+
+async def _resolve_user_filter(db: AsyncSession, conditions: list[ColumnElement[bool]], user: str) -> UserFilterOut:
+    """What the page needs to render a `user=` filter without putting a name in the URL (#446).
+
+    The people the matched rows name, bounded at two: one of them is a chip that can read as that
+    person, and for typed text it is also the token the page rewrites its own URL to. More than
+    one, or none, resolves nothing — and a `u_…` that matched nothing still echoes back, so the
+    page can tell a stale link from a filter it never applied. No new table, no scan over persons.
+    Grouped by the output alias because asyncpg binds a JSON path as a parameter, and two
+    renderings of one expression are two placeholders to Postgres (`_describe`).
+    """
+    token = DeviceChange.device_meta["userToken"].astext.label("user_token")
+    names = [func.max(DeviceChange.device_meta[key].astext) for key in ("realName", "username", "email")]
+    found = (
+        await db.execute(
+            select(token, *names)
+            .where(*conditions, DeviceChange.device_meta["userToken"].astext.isnot(None))
+            .group_by(text("user_token"))
+            .limit(2)
+        )
+    ).all()
+    if len(found) != 1:
+        return UserFilterOut(token=user if is_person_token(user) else None, display=None)
+    one, real_name, username, email = found[0]
+    return UserFilterOut(token=one, display=real_name or username or email)
 
 
 @router.get(
@@ -286,6 +316,11 @@ async def list_changes(
 
     The page has controls for none of the ten. They arrive from a link, from a click on a row,
     or from the Prompt bar, and every one of them shows as a chip while it is applied.
+
+    `user` takes two shapes (#446): typed text matches any of the three names, a `u_…` token
+    matches `userToken` exactly, and `userFilter` echoes what it resolved to — a name for the
+    chip, and for text naming one person, the token to rewrite the URL with. The wire is
+    unchanged (#188).
     """
     conditions = change_conditions(
         connection_id=connection_id,
@@ -324,7 +359,10 @@ async def list_changes(
         .scalars()
         .all()
     )
-    return DeviceChangeListResponse(items=[_to_out(r) for r in rows], total=total, page=page, page_size=page_size)
+    resolved = await _resolve_user_filter(db, conditions, user.strip()) if user and user.strip() else None
+    return DeviceChangeListResponse(
+        items=[_to_out(r) for r in rows], total=total, page=page, page_size=page_size, user_filter=resolved
+    )
 
 
 async def _policy_row(db: AsyncSession) -> ChangePolicy | None:

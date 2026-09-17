@@ -40,11 +40,22 @@ class DeviceChangeOut(_Base):
     policy_version: str
 
 
+class UserFilterOut(_Base):
+    """What a `user=` filter resolved to (#446): the `u_…` it should travel as — the one given,
+    or the one person typed text matched — and the name for its chip, from a matched row's own
+    stamp. Null where nothing resolved it (a rotated key, rows older than the stamp)."""
+
+    token: str | None
+    display: str | None
+
+
 class DeviceChangeListResponse(_Base):
     items: list[DeviceChangeOut]
     total: int
     page: int
     page_size: int
+    # Null unless a `user` filter is applied — not the same as the pair of nulls inside it.
+    user_filter: UserFilterOut | None = None
 
 
 class ChangePolicyUpdate(_Base):
