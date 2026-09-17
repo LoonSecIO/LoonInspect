@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import uuid as uuidlib
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -902,6 +903,13 @@ def _device_reads(sent: list[tuple[str, int]]) -> list[int]:
     return [binds for statement, binds in sent if "FROM devices" in statement and "external_id IN" in statement]
 
 
+def _outbox_inserts(sent: list[tuple[str, int]]) -> list[int]:
+    """The parameter count of each `event_outbox` INSERT the pass issued, in order. Their COUNT is
+    what #524 is about: the rows are one per Mac either way, and what a mass deletion costs is the
+    round trips they are written in."""
+    return [binds for statement, binds in sent if "INSERT INTO event_outbox" in statement]
+
+
 async def _mass_deletion(db, connection, count: int) -> list[str]:
     """`count` Macs whose tails are all open and all run out: a Jamf Pro purge, or a connection
     re-pointed at a smaller instance, written straight in rather than swept in one Mac at a time."""
@@ -968,6 +976,72 @@ async def test_an_emission_pass_over_a_mass_deletion_binds_its_ids_in_batches(db
         from app.models.schema import EventOutbox
 
         # Thousands of pending rows left behind would be another suite's delivery pass, not this one's.
+        await db.execute(delete(EventOutbox).where(EventOutbox.id > floor))
+        await db.commit()
+
+
+# --- the same pass at 40,000 (#524) -----------------------------------------------------------
+_SCALE_MACS = 40000
+
+
+async def _locks_held(db) -> int:
+    """Rows in `pg_locks` for the session running the pass, read from a SECOND connection while
+    that session's transaction is still open. The peak is only askable there: a committed pass
+    holds nothing, so the footprint has to be counted while the thing is still standing."""
+    from sqlalchemy import func, text
+
+    from app.core.database import engine
+
+    pid = (await db.execute(select(func.pg_backend_pid()))).scalar_one()
+    async with engine.connect() as watcher:
+        return (await watcher.execute(text("SELECT count(*) FROM pg_locks WHERE pid = :pid"), {"pid": pid})).scalar_one()
+
+
+@pytest.mark.skipif(not os.environ.get("RUN_SCALE_TESTS"), reason="#524's 40,000-Mac measurement; set RUN_SCALE_TESTS=1")
+async def test_one_emission_pass_over_forty_thousand_macs_is_measured(db, connection) -> None:
+    """#524's answer, run rather than estimated: ONE `emit_mac_removals` over 40,000 open tails
+    inside ONE transaction, with what it cost printed — duration, INSERT statements, rows, payload
+    bytes, and what the transaction held at its peak.
+
+    Skipped by default (`RUN_SCALE_TESTS=1`): it writes 40,000 outbox rows and takes minutes, which
+    is not something every `pytest -q` should pay. Run it with `-s` so the table is readable; the
+    numbers it printed are recorded in KNOWN_ISSUES.md §8 and on #524, with the stack and the sha.
+    """
+    from sqlalchemy import text
+
+    from app.observations.departure_events import emit_mac_removals
+
+    floor = await _high_water(db)
+    try:
+        ids = await _mass_deletion(db, connection, _SCALE_MACS)
+        mark = await _high_water(db)
+        with _statements() as sent:
+            started = time.perf_counter()
+            assert await emit_mac_removals(db, connection=connection, at=datetime.now(UTC)) == len(ids)
+            elapsed = time.perf_counter() - started
+        # Both readings BEFORE the commit, which is where the pass's cost lives.
+        locks = await _locks_held(db)
+        written, payload_bytes = (
+            await db.execute(
+                text("SELECT count(*), coalesce(sum(pg_column_size(payload)), 0) FROM event_outbox WHERE id > :mark"),
+                {"mark": mark},
+            )
+        ).one()
+        await db.commit()
+
+        inserts = _outbox_inserts(sent)
+        print(
+            f"\n#524 at {_SCALE_MACS:,} Macs, one transaction:"
+            f"\n  duration          {elapsed:.1f} s"
+            f"\n  INSERT statements {len(inserts):,} (largest bound {max(inserts):,} parameters)"
+            f"\n  rows written      {written:,}"
+            f"\n  payload bytes     {payload_bytes:,} ({payload_bytes / written:.0f} per row)"
+            f"\n  pg_locks at peak  {locks}"
+        )
+        assert written == _SCALE_MACS, "one row per Mac, which is what both shapes of this pass write"
+    finally:
+        from app.models.schema import EventOutbox
+
         await db.execute(delete(EventOutbox).where(EventOutbox.id > floor))
         await db.commit()
 
