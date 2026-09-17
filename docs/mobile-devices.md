@@ -211,6 +211,15 @@ Into `backend/tests/fixtures/jamf/` it writes `mobile_device_detail_real.json` a
 `mobile_privileges.txt` ledger. **Run it twice**: first with an API Role holding nothing, so each 403 names
 the privilege it wants; tick those, run again, and the ledger marks `needed` on every read that went
 403 → 200 — evidence `app.mdm.jamf.privileges` can carry rather than a name copied from a document. Paths are
-unverified, so each read tries candidates and records which answered; credentials come from the environment
-only; read every written file before committing — the scrub is a table, and a tenant can hold a key it has
-not heard of.
+unverified, so each read tries candidates and records which answered, and credentials come from the
+environment only.
+
+When the run captures nothing its last line says which of the three it was — the device list read refused,
+the detail read refused, or nothing enrolled — so that first run with an empty role ends in the privilege to
+tick, not in an instruction to go and enrol an iPad that is already enrolled.
+
+**Read every written file before committing it**, against the list the run prints under each one: the keys no
+rule named, whose values are the tenant's own words. A scrub is a table of what somebody thought of, and no
+table thought of `airPlayPassword` — the run replaces the identifiers and the secrets it knows, and names
+everything else it wrote out untouched, because that list is the last thing between a tenant's record and a
+public repository.
