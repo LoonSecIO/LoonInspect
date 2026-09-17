@@ -4,7 +4,8 @@ Limits this project knows about and has not fixed. Every number here was measure
 2026-09-01 against a throwaway `docker compose` stack built from `main` at `8af4375`
 (schema revision `d5b1e7c4a930`) on Postgres 17.11 — not estimated, and not carried over
 from an earlier version of this file. Where a figure is arithmetic on a measured
-constant rather than a direct observation, it says so.
+constant rather than a direct observation, it says so — and where a section was measured
+later, on a different stack, it names its own date and sha (§8).
 
 Operating procedures — backup, restore, upgrade, rollback — are in
 [docs/operations.md](docs/operations.md). Security reports go through
@@ -277,6 +278,45 @@ would run them.
 once per sweep and read by the endpoint, replacing the scan. It is what the tile is designed
 to read when any tenant approaches the design target; the rows it would need already exist
 per app on `installed_apps`, so it is a materialisation, not a redesign.
+
+## 8. A census's departure emission is one transaction, however many Macs departed
+
+**The limit.** The Mac emission pass writes one `event_outbox` row per departing Mac, and
+every one of them lands in the census's single transaction — #179's rule that an event and
+the departure row it describes commit together or neither does. Nothing caps the rows per
+transaction: `_open_macs` takes every open tail the connection has, with no `LIMIT`, so a
+Jamf Pro purge or a connection re-pointed at a smaller instance sizes the pass at the fleet.
+
+**Measured**, 2026-09-17, and not on the stack at the top of this file: one
+`emit_mac_removals` over 40,000 Macs whose seven-day tails had all run out, inside one
+transaction, against `loon-test-db` — a throwaway `postgres:17-alpine`, PostgreSQL 17.11 on
+Apple silicon. The rig is
+`backend/tests/test_departure_db.py::test_one_emission_pass_over_forty_thousand_macs_is_measured`,
+gated on `RUN_SCALE_TESTS=1`, so these are re-runnable rather than quoted. Both columns were
+taken on #524's branch off `main` at `7dd800b`: the left one with the rig in and the emitters
+still writing a row at a time (`acf4b99`), the right one after the change (`7a9561b`).
+
+| what one pass costs at 40,000 | per row | in bulk |
+| --- | --- | --- |
+| duration, inside one transaction | 12.9 s | **3.9 s** |
+| `INSERT INTO event_outbox` statements | 40,000 | **40** |
+| rows written | 40,000 | 40,000 |
+| `payload` bytes, summed `pg_column_size` | 20.3 MB (508 a row) | 20.3 MB (508 a row) |
+| `pg_locks` rows held at the peak | 32 | 32 |
+
+**This is fine, and four seconds is the number it is fine to.** The bytes were never the
+question and the locks are not either: 30 of those 32 are relation locks on the three tables
+and their indexes, one is the transaction id and one the virtual xid. Row locks live on the
+tuples, not in `pg_locks`, so 40,000 rows hold exactly what one row holds, and nothing waits
+on this pass unless it wants DDL on those tables. What cost was round trips — one per Mac,
+now one per 1,000-Mac batch (#524, ruled 2026-09-17).
+
+**Where it bites.** Nowhere a census can reach on its own: the breaker refuses to depart
+anybody when a clean census names fewer than half the present population, so one day's
+departures are under half the fleet, and 40,000 of them means a tenant of 80,000 Macs —
+twice the design target. At the design target a day's pass is under 20,000 and costs about
+half the table. The case that carries more than one day is a week of skipped or refused
+censuses followed by a clean one, which closes every cohort whose tail ran out meanwhile.
 
 ## Checked, and not an issue
 
