@@ -1039,7 +1039,7 @@ writes one row to the disclosure log naming the destination and the one field th
    for the ten filters added in #447 either. Every one that is on shows under the filters as a
    chip — *Observed since …*, *Found by a webhook*, *One observation*, *Moved to version 153*,
    *Model matching “Air”*, *OS version 26*, *FileVault: not encrypted*, *Jamf site 3*, *Jamf
-   department 5*, *Not managed by Jamf*, *Assigned user matching “dana”* — and a press clears it.
+   department 5*, *Not managed by Jamf*, *Assigned user Dana Okonkwo* — and a press clears it.
    Before this, a link's window narrowed the table with nothing on screen to say so.
 
    **Filtering by what the table does not show.** The feed can be filtered by the Mac as the
@@ -1054,7 +1054,31 @@ writes one row to the disclosure log naming the destination and the one field th
 
    They arrive three ways: a link, the Prompt bar (which reads a Search value the fleet has no
    device for as a model, an OS version, a department name or "unmanaged", and says so in its
-   corrections), and a click on a row's model, which is how the rest are discovered.
+   corrections), and a click on a row's model or on the person assigned to it, which is how the
+   rest are discovered.
+
+   **The assigned person travels as a token** (#446). A filter URL is what an operator pastes
+   into Slack, so `user=` reads `user=u_7Qa1bZ…` and not `user=Dana Okonkwo`. Typing a name still
+   works; when it belongs to exactly one person the page swaps it for that person's token before
+   you copy it, and the chip still reads *Assigned user Dana Okonkwo*. A token is **resolvable by
+   anyone who can open the feed** — the rows still carry the names, which is where the chip gets
+   one — so it is not secrecy from your own admins, it is the name not riding along in a link, a
+   history or a chat log. It is **derived from `ENCRYPTION_KEY`** and scoped to one tenant, so it
+   means nothing in another deployment. A token is stamped on a row when the change is derived and
+   never rewritten, so rotating that key changes only the tokens on rows written after it: a link
+   made before the rotation keeps filtering to the right person over the rows from before it and
+   misses the rows observed after — never the wrong person. **Splunk
+   is unaffected:** `loon:jamf:mac:userAndLocation` still ships `username`, `realname`, `email`
+   and `position` under a frozen, additive-only vocabulary, so a saved search grouping by a person
+   keeps working; to keep the person out, exclude the field at the destination.
+
+   **A chip reading *Assigned user this link no longer names*** means the link carries a token no
+   row matches and the table beneath is empty — the chip also reads this for the moment the page
+   is still waiting for its answer. A token is keyed to this deployment's `ENCRYPTION_KEY` and to
+   one tenant, so the usual cause is a link made in another deployment or tenant, whose tokens
+   mean nothing here. Change rows are never pruned (README, *What this project prunes*), so a link
+   made here keeps resolving, and after a key rotation it keeps resolving over the rows from
+   before the rotation. Press × on the chip to drop the filter, then find the person from a row.
 
    **Asking about a department in the Prompt bar.** "What changed on Macs in Engineering :
    Product?" works when Jamf's catalog holds that department's name. The model tends to read a

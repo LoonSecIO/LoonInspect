@@ -1431,7 +1431,11 @@ export const de: Translations = {
       departmentNamed: (name: string) => `Abteilung „${name}“`,
       managed: "Von Jamf verwaltet",
       unmanaged: "Nicht von Jamf verwaltet",
-      user: (value: string) => `Zugewiesene Person mit „${value}“`
+      person: {
+        named: (name: string) => `Zugewiesene Person ${name}`,
+        matching: (value: string) => `Zugewiesene Person mit „${value}“`,
+        unresolved: "Zugewiesene Person, die dieser Link nicht mehr benennt"
+      }
     },
     triggers: { sweep: "einen Durchlauf", manual: "einen manuellen Lauf", webhook: "einen Webhook" } as Record<string, string>,
     fileVaultStates: {

@@ -1512,7 +1512,12 @@ export const en = {
       departmentNamed: (name: string) => `Department “${name}”`,
       managed: "Managed by Jamf",
       unmanaged: "Not managed by Jamf",
-      user: (value: string) => `Assigned user matching “${value}”`
+      // A person filter reads as a person (#446); `unresolved` is a token nothing matched.
+      person: {
+        named: (name: string) => `Assigned user ${name}`,
+        matching: (value: string) => `Assigned user matching “${value}”`,
+        unresolved: "Assigned user this link no longer names"
+      }
     },
     // What started the observation a change was found in.
     triggers: { sweep: "a sweep", manual: "a manual run", webhook: "a webhook" } as Record<string, string>,

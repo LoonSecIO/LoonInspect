@@ -1,5 +1,5 @@
 import { canMatch, sectionShape } from "@/features/changes/render";
-import type { ChangeFilters, ChangeKind } from "@/features/changes/types";
+import { type ChangeFilters, type ChangeKind, HIDDEN_KEYS } from "@/features/changes/types";
 import type { Translations } from "@/i18n/en";
 
 /**
@@ -36,8 +36,11 @@ export function neverMatchesReason(
   return strings.neverMatches[shape](sectionName(section, strings));
 }
 
-/** Every key the page's URL can carry but the page number: the controls' own, and the
- *  ones only a link sets (a `since` window, a `minLevel` range, the device chip). */
+/** Every key the page's URL can carry but the page number: the controls' own, the ones only a
+ *  link sets (a `since` window, a `minLevel` range, the device chip), and the hidden dimensions
+ *  (#447) a link, a row or the Prompt bar applies. A table empty under one of those is a filtered
+ *  table, not an empty log — the same sentence #437 fixed for a mistyped name, missed for these
+ *  ten until the token chip of #446 made the state routine. */
 const FILTER_KEYS = [
   "q",
   "artifact",
@@ -48,7 +51,8 @@ const FILTER_KEYS = [
   "since",
   "connectionId",
   "subjectId",
-  "subjectKind"
+  "subjectKind",
+  ...HIDDEN_KEYS
 ] as const satisfies readonly (keyof ChangeFilters)[];
 
 /** Whether any filter narrows the feed. */

@@ -5,6 +5,7 @@ import { getChangePolicy, listChanges } from "@/features/changes/api";
 import { changeResetLine, emptyTable } from "@/features/changes/changeKinds";
 import { DiffCell } from "@/features/changes/DiffCell";
 import { PromptBar } from "@/features/changes/PromptBar";
+import { rowUserName, rowUserToken, userChipLabel, userTokenRewrite } from "@/features/changes/personToken";
 import { hasSomethingToClear } from "@/features/changes/prompt";
 import {
   artifactValueOf,
@@ -20,7 +21,7 @@ import {
   type LabelMap
 } from "@/features/changes/render";
 import { HIDDEN_KEYS } from "@/features/changes/types";
-import type { ChangeFilters, ChangeKind, ChangeLevel, DeviceChange } from "@/features/changes/types";
+import type { ChangeFilters, ChangeKind, ChangeLevel, DeviceChange, UserFilter } from "@/features/changes/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
 const inputClasses =
@@ -84,6 +85,9 @@ export function ChangesPage() {
   const filters = useMemo(() => filtersFromParams(searchParams), [searchParams]);
   const [rows, setRows] = useState<DeviceChange[]>([]);
   const [total, setTotal] = useState(0);
+  // What the applied `user` filter resolved to (#446): a name for its chip, and for typed text
+  // the token to put in the URL in its place.
+  const [userFilter, setUserFilter] = useState<UserFilter | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [draftQuery, setDraftQuery] = useState(filters.q ?? "");
@@ -163,6 +167,10 @@ export function ChangesPage() {
         if (cancelled) return;
         setRows(response.items);
         setTotal(response.total);
+        setUserFilter(response.userFilter ?? null);
+        // A typed name that found one person leaves the address bar before anyone copies it.
+        const rewritten = userTokenRewrite(filters.user, response.userFilter);
+        if (rewritten) setSearchParams(paramsFromFilters({ ...filters, user: rewritten }), { replace: true });
       })
       .catch(() => {
         if (!cancelled) setError(tc.errorLoading);
@@ -173,7 +181,7 @@ export function ChangesPage() {
     return () => {
       cancelled = true;
     };
-  }, [filters, reloadToken, tc.errorLoading]);
+  }, [filters, reloadToken, tc.errorLoading, setSearchParams]);
 
   function nextParams(next: Partial<ChangeFilters>): URLSearchParams {
     // Picking an exact level drops the range one. Arriving from the Overview feed puts
@@ -245,7 +253,8 @@ export function ChangesPage() {
       site: words.site,
       department: (value) => (departmentNames[value] ? words.departmentNamed(departmentNames[value]) : words.department(value)),
       managed: (value) => (value === "false" ? words.unmanaged : words.managed),
-      user: words.user
+      // Never the token itself, which names nobody a reader can recognise.
+      user: (value) => userChipLabel(value, userFilter, words.person)
     };
     const chips: { key: keyof ChangeFilters; label: string }[] = [];
     for (const key of ["since", ...HIDDEN_KEYS] as const) {
@@ -253,7 +262,7 @@ export function ChangesPage() {
       if (value) chips.push({ key, label: of[key]?.(value) ?? value });
     }
     return chips;
-  }, [filters, tc, departmentNames]);
+  }, [filters, tc, departmentNames, userFilter]);
 
   const sectionLabels = useMemo(
     () => ({
@@ -481,6 +490,17 @@ export function ChangesPage() {
                         onClick={() => update({ model: String(row.deviceMeta?.model) })}
                       >
                         {row.deviceMeta.model}
+                      </button>
+                    )}
+                    {/* Reads as a name, filters as a token (#446): the URL gets `rowUserToken`. */}
+                    {rowUserToken(row) && rowUserName(row) && (
+                      <button
+                        type="button"
+                        className="block text-left text-xs text-muted-foreground underline decoration-dotted underline-offset-4 hover:decoration-solid"
+                        title={tc.filterTo(rowUserName(row) as string)}
+                        onClick={() => update({ user: rowUserToken(row) })}
+                      >
+                        {rowUserName(row)}
                       </button>
                     )}
                   </td>
