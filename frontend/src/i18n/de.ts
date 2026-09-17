@@ -1034,7 +1034,19 @@ export const de: Translations = {
     numAppsUnknown: "Builds außerhalb des Korpus",
     numDevicesAffected: "Macs, die einen tragen",
     numbersAbsence: "Ein Schlüssel ohne Zeile galt in jener Nacht nicht und ist nie null: Diese vier werden erst geschrieben, wenn ein Korpus diese Organisation geprüft hat. Ein Strich sagt also, dass die Aufzeichnung nichts zu sagen hatte — nicht, dass die Antwort keine war.",
-    numbersFailed: "Die nächtliche Aufzeichnung ließ sich nicht lesen; diese vier Zahlen werden daher nicht gezeigt."
+    numbersFailed: "Die nächtliche Aufzeichnung ließ sich nicht lesen; diese vier Zahlen werden daher nicht gezeigt.",
+    lookupIntro: "Builds dieser Flotte, deren Antwort diese ID nennt — eine Zeile pro Build, nicht pro Mac.",
+    lookupLoading: "Diese ID wird nachgeschlagen…",
+    lookupFailed: "Diese ID konnte nicht nachgeschlagen werden.",
+    lookupNvd: "Diese CVE bei der NVD öffnen",
+    lookupNvdNotice:
+      "Dieses Produkt nutzt die NVD-API, wird von der NVD aber weder unterstützt noch zertifiziert. Der Link öffnet sich in Ihrem Browser; dieser Container ruft die NVD nie auf.",
+    lookupCapped: (builds: number) =>
+      builds === 1
+        ? "1 Build trägt mehr Funde, als seine Liste nennt; eine ID jenseits der Grenze wird dort mitgezählt und hier nicht gefunden."
+        : `${builds} Builds tragen mehr Funde, als ihre Listen nennen; eine ID jenseits der Grenze wird dort mitgezählt und hier nicht gefunden.`,
+    lookupNothing:
+      "Keine Antwort eines Builds nennt hier diese ID. Das ist keine Aussage darüber, dass Ihre Flotte frei davon wäre: Eine gekürzte Liste nennt weniger IDs, als ihr Build trägt, und ein Build außerhalb des Korpus wurde nie geprüft."
   },
   jamfPatch: {
     tabLabel: "Jamf Patch",

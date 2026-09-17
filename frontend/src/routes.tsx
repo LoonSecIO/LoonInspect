@@ -27,6 +27,7 @@ import { JamfPatchPage } from "@/features/jamfPatch/JamfPatchPage";
 import { JamfPatchDetailPage } from "@/features/jamfPatch/JamfPatchDetailPage";
 import { CatalogPage } from "@/features/catalog/CatalogPage";
 import { VulnerabilitiesPage } from "@/features/vulnerabilities/VulnerabilitiesPage";
+import { VulnerabilityLookupPage } from "@/features/vulnerabilities/VulnerabilityLookupPage";
 import { SupportPage } from "@/features/support/SupportPage";
 import { NotFoundPage } from "@/features/errors/NotFoundPage";
 
@@ -162,6 +163,10 @@ export function AppRoutes() {
             the banner exists to explain things to. */}
         <Route element={<RequirePermission permission={PERMISSIONS.VULN_READ} />}>
           <Route path="posture/vulnerabilities" element={<VulnerabilitiesPage />} />
+          {/* One finding id, and the builds whose answer names it (#533). Same permission, still
+              no flag: an id is a link somebody sends, and the page refuses the shape or names
+              why nothing answers rather than 404ing the reader who followed it. */}
+          <Route path="posture/vulnerabilities/:vulnID" element={<VulnerabilityLookupPage />} />
           {/* The address #95 reserved keeps working, now that /posture is the prefix. */}
           <Route path="vulnerabilities" element={<Navigate to="/posture/vulnerabilities" replace />} />
         </Route>

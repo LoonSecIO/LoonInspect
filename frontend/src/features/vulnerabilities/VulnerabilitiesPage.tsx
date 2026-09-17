@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { ApiError, apiRequest } from "@/config/api";
 import { useAuthStore } from "@/features/auth/store";
 import { listCatalog } from "@/features/catalog/api";
@@ -7,6 +7,7 @@ import { LatestCell, PatchAnswerCell, Subject } from "@/features/catalog/PatchAn
 import type { CatalogBand, CatalogEntry, CatalogListResponse, CatalogVulnFilter } from "@/features/catalog/types";
 import { AssessmentCell, CorpusBanner } from "@/features/vulnerabilities/AppAssessment";
 import { closesCell, describeUpdate } from "@/features/vulnerabilities/appUpdate";
+import { findingIdIn, findingPath } from "@/features/vulnerabilities/findingId";
 import type { AppChip, NumbersRead, PostureRow } from "@/features/vulnerabilities/pageBands";
 import { VULN_KEYS, agedList, exploreByApp, planNumbers, readNumbers } from "@/features/vulnerabilities/pageBands";
 import { pageView, type Load } from "@/features/vulnerabilities/pageView";
@@ -103,9 +104,10 @@ function PatchableRow({ entry, t }: { entry: CatalogEntry; t: Translations }) {
 export function VulnerabilitiesPage() {
   const { t } = useLocale();
   const copy = t.vulnerabilities;
-  // A plain text box over the catalog's own `q` (name, bundle id, version). An id-shaped
-  // query is routed to the by-id page by #533 and the AI lever is #534 — said here rather
-  // than drawn as a control with nothing behind it.
+  // A plain text box over the catalog's own `q` (name, bundle id, version), with one branch:
+  // an id-shaped query is a lookup and is routed to its own page (#533). The AI lever is
+  // #534 — said here rather than drawn as a control with nothing behind it.
+  const navigate = useNavigate();
   const [term, setTerm] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [order, setOrder] = useState<"exposure" | "age">("exposure");
@@ -236,6 +238,13 @@ export function VulnerabilitiesPage() {
             placeholder={copy.searchPlaceholder}
             value={term}
             onChange={(event) => {
+              // An id is a lookup, not a filter (#533): no build's name, bundle id or version
+              // contains a CVE id, so `q` would answer *no matches* for an id this fleet carries.
+              const id = findingIdIn(event.target.value);
+              if (id) {
+                navigate(findingPath(id));
+                return;
+              }
               setTerm(event.target.value);
               setPage(1);
             }}

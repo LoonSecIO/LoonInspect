@@ -1511,3 +1511,75 @@ async def test_the_filter_is_refused_where_nothing_answers_and_the_column_is_not
     unfiltered = await _devices(db)
     assert unfiltered.corpus_as_of is None
     assert _listed(unfiltered, device) and _apps_of(unfiltered, device) is None
+
+
+# --- the same lists, asked by id (#533) --------------------------------------------------
+
+FIXTURE_ID = "CVE-2025-1492"  # one of the 17 the fixture epoch names for Wireshark 4.2.0
+
+
+async def _lookup(db, vuln_id: str):
+    from app.api.vulnerabilities import lookup_vulnerability
+
+    return await lookup_vulnerability(vuln_id, db)
+
+
+async def test_an_id_answers_with_the_builds_whose_served_answer_names_it(db, fleet) -> None:
+    """One row per build, never per Mac, carrying that row's own block. An id of the same shape
+    that no row names is an empty answer rather than a 404: the shape and the tier are refused
+    first, so *nothing here* is a fact about this fleet."""
+    _, device = fleet
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    await _judge(db, device)
+
+    answer = await _lookup(db, FIXTURE_ID)
+    assert len(answer.builds) == 1
+    build = answer.builds[0]
+    assert (build.key_full, build.name, build.version, build.device_count) == (WIRESHARK_BUILD, "Wireshark.app", "4.2.0", 1)
+    assert build.vuln.assessment == "covered" and build.vuln.counts.total == 17
+    assert FIXTURE_ID in build.vuln.vuln_ids and answer.truncated_builds == 0
+    assert (await _lookup(db, "CVE-2024-0001")).builds == []
+
+
+async def test_the_shape_and_the_tier_are_refused_before_any_query(db, fleet) -> None:
+    """§5's one validator, not widened here: `LOCAL-` in its own reserved words, anything else
+    naming the two namespaces licensed. Then the tier — an empty answer for an organization
+    nothing answers for reads as *not on your fleet*, §4a's failure in a URL — in the sentence a
+    refused vulnerability filter already carries, because it is the same fact."""
+    from fastapi import HTTPException
+
+    from app.api.catalog import NO_ANSWER
+
+    _, device = fleet
+    with pytest.raises(HTTPException) as reserved:
+        await _lookup(db, "LOCAL-2026-000042")
+    assert reserved.value.status_code == 422 and "reserved LOCAL- namespace" in reserved.value.detail
+    with pytest.raises(HTTPException) as shape:
+        await _lookup(db, "GHSA-72mh-4hwj-fh5w")
+    assert shape.value.status_code == 422 and "LoonVD-YYYY-NNNNNN" in shape.value.detail
+
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    await _judge(db, device)
+    await _set_tier(db, "off")
+    with pytest.raises(HTTPException) as refused:
+        await _lookup(db, FIXTURE_ID)
+    assert (refused.value.status_code, refused.value.detail) == (409, NO_ANSWER)
+
+
+async def test_a_stale_row_is_not_searched_and_a_capped_list_is_counted(db, fleet) -> None:
+    """The two halves of the caveat a page prints. A row judged by an epoch that has moved is not
+    served, so its ids are not searched — the rule its own cell reads by (§4f). And a row whose
+    list was cut is counted, because that id is counted on that build and named nowhere (§4e)."""
+    _, device = fleet
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    await _judge(db, device)
+    await db.execute(update(AppCatalogEntry).where(AppCatalogEntry.key_full == CLEAN_BUILD).values(vuln_ids_truncated=True))
+    await db.commit()
+    assert (await _lookup(db, FIXTURE_ID)).truncated_builds == 1
+
+    await db.execute(
+        update(AppCatalogEntry).where(AppCatalogEntry.key_full == WIRESHARK_BUILD).values(vuln_signature="not-this-epoch")
+    )
+    await db.commit()
+    stale = await _lookup(db, FIXTURE_ID)
+    assert stale.builds == [] and stale.truncated_builds == 1
