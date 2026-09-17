@@ -1525,9 +1525,9 @@ async def _lookup(db, vuln_id: str):
 
 
 async def test_an_id_answers_with_the_builds_whose_served_answer_names_it(db, fleet) -> None:
-    """One row per build, never per Mac, carrying that row's own block. An id of the same shape
-    that no row names is an empty answer rather than a 404: the shape and the tier are refused
-    first, so *nothing here* is a fact about this fleet."""
+    """One row per build, never per Mac, carrying that row's own block. An id of the same shape that
+    no row names is an empty answer rather than a 404: the shape and the tier are refused first, so
+    *nothing here* is a fact about this fleet rather than a broken address."""
     _, device = fleet
     await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
     await _judge(db, device)
@@ -1542,10 +1542,10 @@ async def test_an_id_answers_with_the_builds_whose_served_answer_names_it(db, fl
 
 
 async def test_the_shape_and_the_tier_are_refused_before_any_query(db, fleet) -> None:
-    """§5's one validator, not widened here: `LOCAL-` in its own reserved words, anything else
-    naming the two namespaces licensed. Then the tier — an empty answer for an organization
-    nothing answers for reads as *not on your fleet*, §4a's failure in a URL — in the sentence a
-    refused vulnerability filter already carries, because it is the same fact."""
+    """§5's one validator, not widened here: `LOCAL-` in its own reserved words, anything else naming
+    the two namespaces licensed. Then the tier — an empty answer for an organization nothing answers
+    for reads as *not on your fleet*, §4a's failure in a URL — in the sentence a refused
+    vulnerability filter carries, because it is the same fact."""
     from fastapi import HTTPException
 
     from app.api.catalog import NO_ANSWER
@@ -1567,19 +1567,27 @@ async def test_the_shape_and_the_tier_are_refused_before_any_query(db, fleet) ->
 
 
 async def test_a_stale_row_is_not_searched_and_a_capped_list_is_counted(db, fleet) -> None:
-    """The two halves of the caveat a page prints. A row judged by an epoch that has moved is not
-    served, so its ids are not searched — the rule its own cell reads by (§4f). And a row whose
-    list was cut is counted, because that id is counted on that build and named nowhere (§4e)."""
+    """The two halves of the caveat a page prints, in the state a writer can actually reach: an epoch
+    that publishes Wireshark's row already cut (`truncated`, the flag §4e's cap shares with the
+    publisher). The ids the cut list names resolve, an id those same counts include and the list does
+    not name does not, and the count above the results is the only thing keeping *not found* from
+    reading as *not on your fleet*. Then the other half: a row judged by an epoch that has moved is
+    not served, so neither its ids nor its cut list is searched or counted."""
     _, device = fleet
-    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    counts = {"total": 17, "kev": 0, "critical": 0, "high": 9, "medium": 8, "low": 0}
+    cut_row = _row(key_full=WIRESHARK_BUILD, ids=HERE[:2], truncated=True, counts=counts, oldest_published=_dated(counts))
+    bundle, signature = _rewritten(rows=[cut_row])
+    assert await load_epoch_if_new(db, _pointer(signature), transport=_serving(bundle)) is not None
     await _judge(db, device)
-    await db.execute(update(AppCatalogEntry).where(AppCatalogEntry.key_full == CLEAN_BUILD).values(vuln_ids_truncated=True))
-    await db.commit()
-    assert (await _lookup(db, FIXTURE_ID)).truncated_builds == 1
+
+    named = await _lookup(db, HERE[0])
+    assert [build.key_full for build in named.builds] == [WIRESHARK_BUILD] and named.truncated_builds == 1
+    dropped = await _lookup(db, HERE[5])
+    assert dropped.builds == [] and dropped.truncated_builds == 1
 
     await db.execute(
         update(AppCatalogEntry).where(AppCatalogEntry.key_full == WIRESHARK_BUILD).values(vuln_signature="not-this-epoch")
     )
     await db.commit()
-    stale = await _lookup(db, FIXTURE_ID)
-    assert stale.builds == [] and stale.truncated_builds == 1
+    stale = await _lookup(db, HERE[0])
+    assert stale.builds == [] and stale.truncated_builds == 0

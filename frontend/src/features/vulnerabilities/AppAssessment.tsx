@@ -155,16 +155,8 @@ export function AssessmentCell({
             </span>
           )}
           <span className="block font-mono text-xs text-muted-foreground">
-            {/* Every named id is a lookup (#533). The ids past `IDS_SHOWN` stay a count and no
-                links: naming them is what the build's own row, not this cell, is for. */}
-            {named.map((id, index) => (
-              <span key={id}>
-                {index > 0 ? ", " : ""}
-                <Link className="hover:underline" to={findingPath(id)}>
-                  {id}
-                </Link>
-              </span>
-            ))}
+            {/* Every named id is a lookup (#533); the ids past `IDS_SHOWN` stay a count with no links. */}
+            {named.map((id, index) => <span key={id}>{index > 0 ? ", " : ""}<Link className="hover:underline" to={findingPath(id)}>{id}</Link></span>)}
             {rest > 0 ? ` ${copy.moreIds(rest)}` : ""}
             {/* The cap bit: the count above is every finding, the list below is not. */}
             {vulnIDsTruncated ? ` · ${copy.idsCapped}` : ""}

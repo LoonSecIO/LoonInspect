@@ -351,13 +351,12 @@ sorts after `low` — counted in `total`, never dropped.
 
 **And the list is searchable in the product** (#533). `GET /api/vulnerabilities/{vulnID}` and
 Posture › Vulnerabilities answer *is CVE-X on my fleet* from these same lists — the tenant's
-served rows whose `vulnIDs` contains the id, one row per build — so the question the summary
-tier answers in Splunk is answerable in-app too. **The cap is what bounds that answer**: an id
-past a row's cap is counted in `counts.total` and named nowhere, so no lookup can find it
-there. The response therefore carries `truncatedBuilds` — how many served rows were cut — and
-the page prints it beside every answer including an empty one, which is what keeps *nothing
-found* from reading as *not on your fleet*. Moving the cap is still free; this is one more
-thing `vulnIDsTruncated` makes safe.
+served rows a Mac carries whose `vulnIDs` contains the id, one row per build — so the question
+the summary tier answers in Splunk is answerable in-app too. **The cap is what bounds that
+answer**: an id past a row's cap is counted in `counts.total` and named nowhere, where no lookup
+can find it. So the response carries `truncatedBuilds`, how many of those rows were cut, and the
+page prints it beside every answer including an empty one — which is what keeps *nothing found*
+from reading as *not on your fleet*, and what keeps moving the cap free.
 
 ### 4f. The corpus interface: what `findings()` answers
 

@@ -19,7 +19,7 @@ served-ness comparisons are left to the heap rows containment has already narrow
 number of builds naming one id is small on any fleet, which is what makes that the cheap half.
 
 Revision ID: b8d4f1a6c2e7
-Revises: a7c21e9f4b83
+Revises: b6d2f4a9c3e7
 Create Date: 2026-09-17
 """
 
@@ -30,7 +30,7 @@ from typing import Sequence, Union
 from alembic import op
 
 revision: str = "b8d4f1a6c2e7"
-down_revision: Union[str, Sequence[str], None] = "a7c21e9f4b83"
+down_revision: Union[str, Sequence[str], None] = "b6d2f4a9c3e7"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

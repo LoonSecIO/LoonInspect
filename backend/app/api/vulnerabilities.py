@@ -53,16 +53,15 @@ async def vulnerability_status(db: AsyncSession = Depends(get_db)) -> VulnStatus
 class VulnLookupOut(BaseModel):
     """What one id answers with — and what it cannot answer for.
 
-    The builds are the Catalog list's own rows, `CatalogEntryAssessedOut`: **one per build,
-    never per Mac** — legal there and here because each row IS the build being answered about
-    (§4a) — carrying that row's `vuln` block, #482's `vulnUpdate` line, the device count and
-    the hashes a page links with. A narrower copy would be a second shape for one row.
+    The builds are the Catalog list's own rows, `CatalogEntryAssessedOut` — **one per build,
+    never per Mac**, since each row IS the build being answered about (§4a) — with that row's
+    `vuln` block, #482's `vulnUpdate` line, the device count and the hashes a page links with.
 
-    `truncatedBuilds` is the caveat carried rather than implied: a row's id list is capped
-    (`VULN_IDS_CAP`, §4e) and an id past that cap is counted in `counts.total` and named nowhere,
-    so no lookup can see it there. It counts every served row whose list was cut, not only the
-    rows below: those are exactly the ones that could not appear. A surface prints it beside an
-    empty answer too, which keeps *nothing found* from being read as *not on your fleet* (§4a).
+    `truncatedBuilds` is the caveat carried rather than implied: a capped id list (§4e) leaves an
+    id counted in `counts.total` and named nowhere, where no lookup can see it. It counts every
+    served row a Mac carries whose list was cut — not only the rows below, because those are
+    exactly the ones that could not appear — and a surface prints it beside an empty answer too,
+    so *nothing found* is never read as *not on your fleet* (§4a).
     """
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
@@ -78,13 +77,11 @@ class VulnLookupOut(BaseModel):
 async def lookup_vulnerability(vuln_id: str, db: AsyncSession = Depends(get_db)) -> VulnLookupOut:
     """The tenant's builds whose SERVED answer names this id (#533) — §4e's list asked the other
     way round, so *is CVE-X on my fleet* is answerable in the product and not only in Splunk.
-    Served is `vuln_answer.served` and nothing else: a row judged by an epoch that has moved
-    reads `unknown_app` whatever ids it stores, so it is not searched here either, and
-    `unknown_app` and `off` rows carry no ids at all (§4a, §4f).
-
-    Two refusals first, in this order. The shape is §5's one validator, which refuses `LOCAL-`
-    in its own words — nothing LoonInspect ships mints one, so no build can carry one — and
-    names the two licensed namespaces for anything else. Then the tier: an empty answer for an
+    Served is `vuln_answer.served` and nothing else: a row judged by an epoch that has moved reads
+    `unknown_app` whatever ids it stores, and `unknown_app` and `off` rows carry no ids at all
+    (§4a, §4f). Installed, too — see `carried` below. Two refusals come first, in this order: the
+    shape, by §5's one validator, which refuses `LOCAL-` in its own words and names the two
+    licensed namespaces for anything else; then the tier, since an empty answer for an
     organization nothing answers for reads as *nothing found*, so it meets the refusal a
     vulnerability filter meets, in its words."""
     try:
@@ -96,16 +93,24 @@ async def lookup_vulnerability(vuln_id: str, db: AsyncSession = Depends(get_db))
         raise HTTPException(status_code=409, detail=NO_ANSWER)
     covered = served(AppCatalogEntry.vuln_assessment, AppCatalogEntry.vuln_signature, epoch=loaded_epoch_signature())
     counts = _device_counts()
-    devices = func.coalesce(counts.c.devices, 0)
-    # `@>` — the containment `ix_app_catalog_vuln_ids` serves, so this is an index probe and
-    # not a walk of every build the fleet has ever shown.
+    devices = counts.c.devices
+    # A build a Mac carries NOW, the Catalog list's own `installedOnly` default: the table keeps a
+    # build after the last Mac drops it, and a row no Mac has is neither an answer to *is this on
+    # my fleet* nor something the caveat below should count. Then `@>` — the containment
+    # `ix_app_catalog_vuln_ids` serves, so this is an index probe and not a walk of every build.
+    carried = AppCatalogEntry.version_hash == counts.c.version_hash
     carrying = (
         select(AppCatalogEntry, devices.label("devices"))
-        .outerjoin(counts, counts.c.version_hash == AppCatalogEntry.version_hash)
+        .join(counts, carried)
         .where(covered, AppCatalogEntry.vuln_ids.contains([finding]))
         .order_by(devices.desc(), AppCatalogEntry.name, AppCatalogEntry.version)
     )
-    cut = select(func.count()).select_from(AppCatalogEntry).where(covered, AppCatalogEntry.vuln_ids_truncated.is_(True))
+    cut = (
+        select(func.count())
+        .select_from(AppCatalogEntry)
+        .join(counts, carried)
+        .where(covered, AppCatalogEntry.vuln_ids_truncated.is_(True))
+    )
     rows, truncated = (await db.execute(carrying)).all(), (await db.execute(cut)).scalar_one()
     entries = [row[0] for row in rows]
     refs, stored, as_of = await _title_refs(db, entries), stored_corpus(corpus, entries), today()
