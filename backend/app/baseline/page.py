@@ -273,7 +273,9 @@ def _totals_html(report: dict[str, Any]) -> str:
         f"rows folded into it: once per Mac on a rule's row, and once per Mac per rule on the fleet's.{arithmetic} "
         f"They are Mac-days, not calendar days. Not observed is every stretch this report cannot answer for, and "
         f"its pieces are named beside it rather than folded in. A rule nothing could be counted for is absent here "
-        f"rather than a row of zeros.</p>"
+        f"rather than a row of zeros. The days are each rounded to two places for reading, so adding a column can "
+        f"land a hundredth either side of the window; the figures the identity holds on are the seconds, in the "
+        f"bundle at the foot of this page.</p>"
     )
     headers = ("Rule", "Met", "Unmet", "Not observed", "of which", "= the window × rows")
     return f"<h2>The three-way sum</h2>{said}{_table(headers, body, 'sum')}"
