@@ -37,17 +37,26 @@ passes every tenancy test by bypassing the policies they exist to prove.
     ENCRYPTION_KEY="$(openssl rand -base64 32 | tr '+/' '-_')" \
     uv run --frozen pytest -q
 
-Two things that read like regressions and are not:
+One thing that reads like a regression and is not, and one that reads like a local
+mess and is a defect:
 
 - **Keep `ENCRYPTION_KEY` stable for the life of the database.** Connections and
   destinations written under one key fail to decrypt under another ("Failed to decrypt
   stored value") in files far from the one you changed. Put the key in your shell
-  once, or drop and recreate `looninspect_test` when you rotate it.
-- **A subset can poison the next full run.** The fixtures are get-or-create so a
-  re-run never trips a unique constraint, which also means rows outlive the run. When
-  a full run fails in a file you did not touch, `DROP DATABASE looninspect_test` and
-  `CREATE DATABASE looninspect_test OWNER looninspect_app` as `looninspect` first, then
-  look again.
+  once, or drop and recreate `looninspect_test` when you rotate it — a rotated key is
+  the one reason this database is ever worth recreating.
+- **Rows outlive the run, and the fixtures are written for that.** They are
+  get-or-create, so a re-run never trips a unique constraint, and a fixture that
+  deletes a row other rows can point at clears the referencing rows first — on setup
+  as well as teardown, so the next run tidies up after one that crashed before its own
+  (`tests/test_backup_secrecy_db.py`). That is the contract CONTRIBUTING.md states:
+  the suite is re-runnable against one database, and a second full run reports the
+  counts the first did. So a failure that appears only once the database holds a
+  previous run's rows is a defect in the suite, not a database to recreate — in #514 it
+  was five errors in fixture setup, in a file the change under review had never
+  touched, on a foreign key a leftover delivery row held. Read which constraint it
+  tripped and fix that fixture, or file it. Recreating the database buries the defect
+  and hands it to the next person.
 
 Without `uv` on the host, the application image carries it: put the database on a
 docker network instead of a host port, build the image (`docker build -t looninspect-app .`

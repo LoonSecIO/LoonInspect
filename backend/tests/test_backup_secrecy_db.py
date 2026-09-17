@@ -52,7 +52,7 @@ DESTINATION_NAME = "vvq destination"
 
 
 async def _remove_this_modules_rows(db) -> None:
-    """This module's connection and destination, and every row that references them.
+    """All three rows this module writes, and every row that references them.
 
     Deliveries before the destination they point at, and that order is the whole
     reason this is a function. `outbox_deliveries.destination_id` is the only foreign
@@ -63,16 +63,23 @@ async def _remove_this_modules_rows(db) -> None:
     single-use against a database (#514): run 1 passed, run 2 errored here in fixture
     setup, and the five errors read as a regression in whatever was under review.
 
+    The AI provider config is here for the docstring's sake rather than the foreign
+    key's — nothing references it, and `save_config` upserts on (tenant, provider), so
+    a re-run would replace it either way. Deleting it is what makes "leaves the
+    database as it found it" true of all three rows instead of two.
+
     Cheap enough to run on both ends. Setup covers the run that crashed before its
     teardown; teardown covers the ordinary case and leaves the database as it was
     found.
     """
-    from app.models.schema import Destination, MdmConnection, OutboxDelivery
+    from app.ai.providers import Provider
+    from app.models.schema import AIProviderConfig, Destination, MdmConnection, OutboxDelivery
 
     ours = select(Destination.id).where(Destination.name == DESTINATION_NAME)
     await db.execute(delete(OutboxDelivery).where(OutboxDelivery.destination_id.in_(ours)))
     await db.execute(delete(Destination).where(Destination.name == DESTINATION_NAME))
     await db.execute(delete(MdmConnection).where(MdmConnection.name == CONNECTION_NAME))
+    await db.execute(delete(AIProviderConfig).where(AIProviderConfig.provider == Provider.anthropic))
     await db.commit()
 
 
