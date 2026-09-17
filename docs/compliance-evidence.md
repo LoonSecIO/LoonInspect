@@ -83,12 +83,20 @@ exactly: adjacent intervals share a boundary, and a shared boundary floored move
 *duration* instead is the version that does not add up — the default window puts a fraction in `met` or `unmet` and
 its complement in the tail, and two truncations lose the second between them. Every composite figure in `totals` is
 therefore the sum of the printed figures under it, `notObserved` of its `notObservedParts` included: the identity
-holds on the page, not only on the floats behind it.
+holds on the `seconds` the artefact prints, not only on the floats behind them.
 
 **Duration is exact in `seconds`**, which the identity is asserted on; `days` is the reading figure derived from it,
 **absent** where it would round to zero, and `duration` then reads **"under one reporting interval"** rather than
 `0 days` (R5 5.4). A zero meaning "we saw it once" wearing the costume of a zero meaning "it never happened" is the
 defect [`diagnosability.md`](diagnosability.md) §1 forbids, and here it would be archived.
+
+**A `days` column need not add up, and that is rounding rather than a missing day.** Every figure above holds in
+`seconds`, which is exact; `days` is each of those seconds rounded to two places on its own, so three of them can land
+a hundredth either side of the fourth — `11.57 + 11.57 + 66.85` against a window of `90`, and the arithmetic runs over
+as readily as short. The page (§6) prints `days` and not `seconds`, so it is the one surface where the artefact can be
+added up and not come out. Building the composite `days` from the printed parts instead would close that column and
+open a worse hole — `window` reading `89.99` days beside a `seconds` of exactly ninety — so which figure gives way is
+#219's to rule, not a session's to pick.
 
 ## 5. The endpoint, and what is not here
 

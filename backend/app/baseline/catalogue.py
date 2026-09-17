@@ -5,10 +5,13 @@ session is touched. The invariants — ids in order, every `field` still an allo
 rule on a scalar section, one `difference` per rule — are asserted in tests/test_baseline_rules.py, where drift in
 either file fails a build rather than a report.
 
-Where the file lives: `.dockerignore` excludes `docs` and `pyyaml` is in pyproject's `dev` group, so the container
-image carries neither, and the only caller today is the test suite. `CATALOGUE_PATHS` already looks beside the backend
-root — /app in the image — so the issue that first reads the catalogue at request time adds a COPY and a dependency
-move, and nothing else.
+Where the file lives: **the shipped image carries it**, and has since #472 made `app.baseline.report` read the
+catalogue at request time. Three lines are load-bearing, none of them vestigial — `!docs/baseline-rules.yml` in
+`.dockerignore`, `COPY docs/baseline-rules.yml` in the Dockerfile (`CATALOGUE_PATHS` looks beside the backend root,
+which is /app there), and `pyyaml` in pyproject's `[project].dependencies` rather than the `dev` group. Drop any one
+of them and `GET /api/evidence/report` answers 503 in the image while the whole suite stays green, because the tests
+run off a checkout where `docs/` is always present and every dependency group is installed. The image smoke test in
+`.github/workflows/ci.yml` loads the catalogue for exactly that reason: it is the only thing that bites.
 """
 
 from __future__ import annotations
@@ -99,8 +102,9 @@ def load_catalogue(path: Path | None = None) -> BaselineCatalogue:
         raise CatalogueError(
             "the baseline rule catalogue was not found. Looked for: "
             + ", ".join(str(candidate) for candidate in candidates)
-            + f". It ships as docs/{CATALOGUE_NAME} in the repository, and `.dockerignore` keeps `docs` out of the "
-            "image — a caller inside a container needs the file copied in first."
+            + f". It ships as docs/{CATALOGUE_NAME} in the repository and is copied into the image by the "
+            f"Dockerfile's `COPY docs/{CATALOGUE_NAME}`, which `.dockerignore` keeps an exception for. Inside a "
+            "container, that line or that exception was lost in a build; on a checkout, the file was moved or deleted."
         )
 
     document = yaml.safe_load(found.read_text())

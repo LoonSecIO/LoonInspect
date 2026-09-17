@@ -185,6 +185,20 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # The evidence report reads docs/baseline-rules.yml at request time (#472), and the
+      # test suite cannot see that file go missing: the tests run off a checkout, where
+      # docs/ is always present and every dependency group is installed. Three lines put
+      # the catalogue in the image — the `!docs/baseline-rules.yml` exception in
+      # .dockerignore, the Dockerfile COPY, and pyyaml in [project].dependencies — and this
+      # is the only check that fails when one of them is dropped. `--no-dev` is half the
+      # point: it is what proves pyyaml is no longer in the dev group. Without this,
+      # GET /api/evidence/report 503s in the shipped image on a green build.
+      - name: Assert the image carries the baseline rule catalogue
+        run: |
+          docker run --rm looninspect:ci uv run --frozen --no-dev python -c \
+            "from app.baseline.catalogue import catalogue; c = catalogue(); print('catalogue v%s, %d rules' % (c.version, len(c.rules)))" \
+            || { echo "::error::the shipped image cannot read docs/baseline-rules.yml — check the Dockerfile COPY, the .dockerignore exception, and pyyaml in [project].dependencies"; exit 1; }
+
       # The image needs a database to reach `healthy` now, and this job runs it
       # standalone rather than through compose — so the database is stood up here
       # explicitly. Without it the app never finishes startup and the job fails on a

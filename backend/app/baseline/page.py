@@ -219,7 +219,9 @@ def _totals_html(report: dict[str, Any]) -> str:
     said = (
         "<p>Met plus unmet plus not observed is the window, exactly. Not observed is every stretch this report "
         "cannot answer for, and its pieces are named beside it rather than folded in. A rule nothing could be "
-        "counted for is absent here rather than a row of zeros.</p>"
+        "counted for is absent here rather than a row of zeros. The days below are each rounded to two places for "
+        "reading, so adding a column can land a hundredth either side of the window; the figures the identity holds "
+        "on are the seconds, in the bundle at the foot of this page.</p>"
     )
     headers = ("Rule", "Met", "Unmet", "Not observed", "of which", "= the window")
     return f"<h2>The three-way sum</h2>{said}{_table(headers, body, 'sum')}"
