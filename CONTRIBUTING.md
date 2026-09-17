@@ -38,7 +38,14 @@ Every PR must pass the same gates `main` enforces:
   reported at the call site, including ones that run after an `await`, so making the
   loader `async` does not satisfy the rule. Load data as a promise chain the effect
   starts, with every `setState` in a `.then` / `.catch` / `.finally` callback — the shape
-  in `frontend/src/features/tokens/ApiTokensPage.tsx` (#15).
+  in `frontend/src/features/tokens/ApiTokensPage.tsx` (#15). A read that can re-run — moved
+  filters, a reload token, a language switch, since the locale dictionary carries the error
+  sentence — turns `loading` back on and clears its error line **during the render that
+  moved the inputs**, React's "adjusting state when a prop changes", never from the effect:
+  from an effect the reset lands a render late and the previous answer paints one frame
+  looking settled. That guard compares the effect's **whole** dependency array, term for
+  term. A guard on a subset is a re-fetch that resets nothing, so a load that failed and
+  then succeeded paints its rows under the failure line it had already earned (#479).
 - **Image** — the multi-stage Docker build must complete.
 
 Lockfiles are part of the contract: `uv.lock` and `package-lock.json` must match

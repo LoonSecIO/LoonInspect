@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CollectionsPanel } from "@/features/mdm/CollectionsPanel";
 import { ConnectionForm } from "@/features/mdm/ConnectionForm";
@@ -52,21 +52,32 @@ export function ConnectionsPage() {
   /** The one read of the table, as a promise chain rather than `await`: the first read is
    *  started by the effect below, and an effect body is the one place React asks callers
    *  not to set state (#15). `loading` starts true; `refresh` turns it back on and clears
-   *  the error line, where a click is what asked for the re-read. */
-  function load(): Promise<void> {
-    return Promise.all([listConnections(), listSyncStatus()])
-      .then(([rows, statuses]) => {
-        setConnections(rows);
-        setSyncStatuses(Object.fromEntries(statuses.map((s) => [s.mdmConnectionId, s])));
-      })
-      .catch((caught: unknown) => {
-        // Without this, a failed load leaves connections empty and the table says
-        // "no connections yet" — failure must not read as emptiness. A 503 carries a
-        // sentence worth showing: the stored credentials cannot be read (#374).
-        setLoadError(caught instanceof ApiError && caught.status === 503 && caught.detail ? caught.detail : t.settings.errorLoading);
-      })
-      .finally(() => setLoading(false));
-  }
+   *  the error line, where a click is what asked for the re-read.
+   *
+   *  Held against the dictionary — the failure line is written in it — so a language switch
+   *  re-reads (#479); `live` is how the effect drops a read that switch superseded, leaving
+   *  the language just left unable to write the last word. A click's re-read is not the
+   *  effect's, is not what the switch replaces, and passes none. */
+  const load = useCallback(
+    (live: () => boolean = () => true): Promise<void> =>
+      Promise.all([listConnections(), listSyncStatus()])
+        .then(([rows, statuses]) => {
+          if (!live()) return;
+          setConnections(rows);
+          setSyncStatuses(Object.fromEntries(statuses.map((s) => [s.mdmConnectionId, s])));
+        })
+        .catch((caught: unknown) => {
+          // Without this, a failed load leaves connections empty and the table says
+          // "no connections yet" — failure must not read as emptiness. A 503 carries a
+          // sentence worth showing: the stored credentials cannot be read (#374).
+          if (!live()) return;
+          setLoadError(caught instanceof ApiError && caught.status === 503 && caught.detail ? caught.detail : t.settings.errorLoading);
+        })
+        .finally(() => {
+          if (live()) setLoading(false);
+        }),
+    [t]
+  );
 
   function refresh(): Promise<void> {
     setLoading(true);
@@ -74,9 +85,24 @@ export function ConnectionsPage() {
     return load();
   }
 
+  // A language switch re-runs the read below, and the page has to read as asking rather than
+  // leave the previous language's answer standing as this one's. Adjusted during the render
+  // that moved the locale, keyed on the effect's whole dependency array — the frontend rule
+  // in CONTRIBUTING.md, and the reason it is there (#479).
+  const [asked, setAsked] = useState({ load });
+  if (asked.load !== load) {
+    setAsked({ load });
+    setLoading(true);
+    setLoadError(null);
+  }
+
   useEffect(() => {
-    void load();
-  }, []);
+    let cancelled = false;
+    void load(() => !cancelled);
+    return () => {
+      cancelled = true;
+    };
+  }, [load]);
 
   // A manual sync runs in the background, so the only way to see it finish is to keep
   // asking. Polling stops as soon as nothing is in flight rather than running forever.
