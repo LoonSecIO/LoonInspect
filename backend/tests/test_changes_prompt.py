@@ -1098,6 +1098,15 @@ def test_the_phrase_table_resolves_a_start_against_the_clock_and_the_zone(questi
         "changes between Monday and Friday",
         "what changed last night",  # a phrase the list does not hold; a miss costs nothing
         "everything in the last 9999 years",  # before the year datetime counts from: no crash
+        "everything in the last 0 hours",  # a width of nothing is no window, not an empty one
+        # The phrase this list holds, with the question's own words over it: read as a start it
+        # would answer over exactly the span the operator ruled out.
+        "wireshark installs before this week",
+        "wireshark installs until today",
+        "wireshark installs except today",
+        "wireshark installs not since Monday",
+        "wireshark installs but not in the last 7 days",
+        "what changed other than yesterday",
     ],
 )
 def test_a_question_the_phrase_list_does_not_hold_sets_no_window(question):
@@ -1142,6 +1151,37 @@ def test_a_start_that_expresses_the_question_drops_the_caveat_and_a_closed_one_k
     assert expressed.unsupported is None and "the time it asked for is set in Since" in expressed.repairs[-1]
     closed = interpret("wireshark installs yesterday", reply, now=NOW, zone=CHICAGO)
     assert (closed.unsupported, closed.filters["since"]) == (caveat, wire_time(MIDNIGHT_15 - timedelta(days=1)))
+
+
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [
+        ("wireshark installs since Monday until Friday", MIDNIGHT_15 - timedelta(days=1)),
+        ("wireshark installs this week through Wednesday", MIDNIGHT_15 - timedelta(days=1)),
+        ("wireshark installs in the last 7 days but before yesterday", NOW - timedelta(days=7)),
+        ("wireshark installs from last week to yesterday", NOW - timedelta(weeks=1)),
+        # A count of units back names a day the way "yesterday" does, not a start; "since 3 days
+        # ago" names a start, and is the open form below.
+        ("wireshark installs 3 days ago", NOW - timedelta(days=3)),
+    ],
+)
+def test_a_question_that_named_an_end_too_keeps_its_start_closed(question, expected):
+    """The issue rules two-ended ranges out, and `/api/changes` has no `until`: the start is still
+    read, and `Since.closed` keeps the model's caveat over an answer that runs past the end the
+    operator named. Without this every one of these lost the caveat and showed rows past the end
+    under a chip stating only the start — the page's word for what it could not do, dropped."""
+    caveat = "Cannot express a date range — these filters match names, not timestamps."
+    reply = ADDED_WS.replace('"unsupported":null', f'"unsupported":"{caveat}"')
+    since = resolve_since(question, NOW, CHICAGO)
+    assert since is not None and since.closed, question
+    assert since.at == expected, question
+    assert interpret(question, reply, now=NOW, zone=CHICAGO).unsupported == caveat, question
+
+
+def test_since_a_count_of_units_ago_is_a_start_like_since_yesterday():
+    """The one opened form of the closed one above, and the pair `_DAY` already drew."""
+    open_start = resolve_since("wireshark installs since 3 days ago", NOW, CHICAGO)
+    assert (open_start.at, open_start.closed) == (NOW - timedelta(days=3), False)
 
 
 # --- the instructions ------------------------------------------------------------------------

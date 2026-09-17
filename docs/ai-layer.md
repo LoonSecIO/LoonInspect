@@ -112,7 +112,8 @@ rendered as text. A serial in Search that the question never named is dropped (r
       model gave a caveat on 9 of the 17, and 2 survive guard 5, which drops a caveat unless the
       question has an or, not, date, version or comparison word.
 
-11. **The answer box says when, and the bar claims no start** (2026-09-15, R1–R4 on #443). Kyle
+11. **The answer box says when, and the bar claims no start** (2026-09-15, R1–R4 on #443;
+    *the bar's half of that title is amended by ruling 13 — since #444 it does set a start*). Kyle
     asked "When was the last time someone installed wireshark". The filters came back right — name
     Wireshark, Applications, Added — and the page's first row was the answer, because the feed is
     ordered by observed time, newest first. Over it stood the model's *Cannot express 'when' —
@@ -181,9 +182,18 @@ rendered as text. A serial in Search that the question never named is dropped (r
       not hold sets no window, and the answer is what it was before.
     - **It rides the `since` key the page already has** (#107, chipped in #443), so the readback
       names it, the chip clears it, and Postgres counts the rows the page will show.
-    - **No end, so two-ended ranges stay unsupported.** `/api/changes` has no `until`. A phrase that
-      named one ("yesterday") is read as its start and guard rule 5 keeps the model's caveat over
-      it; an open phrase ("in the last 24 hours") expresses the question, and the caveat goes.
+    - **No end, so two-ended ranges stay unsupported.** `/api/changes` has no `until`, so what
+      decides the caveat is not the phrase alone but the words around it (`_ENDS`). A question that
+      named a second end — "since Monday **until** Friday", "this week **through** Wednesday", "in
+      the last 7 days but **before** yesterday" — or a phrase that is a whole day and so an end of
+      its own ("yesterday", "3 days ago"), is read as a start and guard rule 5 **keeps** the model's
+      *Cannot express a date range* over it. Only a phrase that names a start and nothing else ("in
+      the last 24 hours", "since yesterday", "since 3 days ago") expresses the question, and then
+      the caveat goes.
+    - **An end or a *not* over the phrase sets no window.** "before this week", "until today",
+      "except today", "not since Monday": read as a start, each would answer over exactly the span
+      the operator ruled out. Both readings err towards the answer the page gave before #444, since
+      a window nobody asked for hides rows and says only where it began.
 
 **What it does.** The bar appears when the `ai_features` flag is on, AI-inference consent is on,
 and at least one provider is saved. `GET /api/changes/prompt` says which is missing, and Settings ›

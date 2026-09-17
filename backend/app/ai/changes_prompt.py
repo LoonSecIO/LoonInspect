@@ -547,7 +547,8 @@ def coerce(obj: Mapping[str, Any]) -> tuple[Filters, str | None, list[str]]:
 @dataclass(frozen=True)
 class Since:
     """A start the question asked for: the instant in UTC, and the words that set it. ``closed``
-    marks a phrase that named an end as well — the answer runs past that end, so the question's
+    marks a question that named an end as well — "yesterday", "3 days ago", "since Monday until
+    Friday". The answer runs past that end, because the feed has no key for one, so the question's
     date words are still beyond the controls and a caveat on them stands (guard rule 5)."""
 
     at: datetime
@@ -565,8 +566,10 @@ _SINCE_UNITS: dict[str, timedelta] = {
 _UNIT_WORDS = "|".join(sorted(_SINCE_UNITS, key=len, reverse=True))
 _BACK = re.compile(
     r"\b(?:(?:in|over|within|during|from)\s+)?(?:the\s+)?(?:last|past|previous)\s+"
-    rf"(?:(\d{{1,4}})\s*)?({_UNIT_WORDS})s?\b"
-    rf"|\b(\d{{1,4}})\s*({_UNIT_WORDS})s?\s+ago\b",
+    rf"(?:(?P<n>\d{{1,4}})\s*)?(?P<unit>{_UNIT_WORDS})s?\b"
+    # "3 days ago" names that day, a closed interval, the way "yesterday" does; "since 3 days ago"
+    # names a start with nothing after it, the way "since yesterday" does.
+    rf"|\b(?P<open>(?:since|from)\s+)?(?P<n_ago>\d{{1,4}})\s*(?P<unit_ago>{_UNIT_WORDS})s?\s+ago\b",
     re.I,
 )
 _WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
@@ -575,6 +578,22 @@ _SINCE_WEEKDAY = re.compile(rf"\bsince\s+({'|'.join(_WEEKDAYS)})\b", re.I)
 _THIS = re.compile(r"\bthis\s+(week|month|year)\b", re.I)
 # "yesterday" named an end there is none to set (`closed`); "since yesterday" did not.
 _DAY = re.compile(r"\b(since\s+)?(today|yesterday)\b", re.I)
+# A second end over a date, or an exclusion of one: "since Monday *until Friday*", "this week
+# *through Wednesday*", "*before* September", "*not* in the last 7 days". `/api/changes` filters
+# *observed at or after* and has no `until`, so neither is a start this can set. Where the words
+# sit over the phrase that matched ("before this week"), the phrase named the end and no window is
+# set at all; where they sit beside it, the start stands `closed`, and guard rule 5 keeps the
+# model's "Cannot express a date range" over the rows that run past the end the operator named.
+# "may" is left out for the reason `_RANGE_MARKERS` leaves it out: it is a verb as often as a month.
+_MONTHS = "january|february|march|april|june|july|august|september|october|november|december"
+_ENDS = re.compile(
+    r"\b(?:until|till|thru|through|before|between|(?:up\s+)?to|not|never|except|excluding|"
+    r"besides|outside|other\s+than|apart\s+from)\s+"
+    r"(?:(?:in|on|over|within|during|from|since|the|a|an|its|last|this|next|past|end\s+of)\s+){0,3}"
+    rf"(?:\d+|{_MONTHS}|{'|'.join(_WEEKDAYS)}|today|yesterday|tonight|midnight|noon|now|"
+    r"minutes?|hours?|days?|weeks?|months?|years?)\b",
+    re.I,
+)
 # A zone as `Intl.DateTimeFormat().resolvedOptions().timeZone` writes one, checked before
 # `ZoneInfo` is handed browser-supplied text.
 _ZONE_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_+/-]{0,63}")
@@ -592,10 +611,6 @@ def _viewer_zone(name: str | None) -> tzinfo:
         return UTC
 
 
-def _since(at: datetime, phrase: str, closed: bool = False) -> Since:
-    return Since(at=at.astimezone(UTC), phrase=" ".join(phrase.split()), closed=closed)
-
-
 def resolve_since(question: str, now: datetime, zone: str | None = None) -> Since | None:
     """The start the question's own words ask for, resolved against ``now`` and the viewer's
     zone — or None, when they ask for none or ask for one this list does not hold.
@@ -603,32 +618,47 @@ def resolve_since(question: str, now: datetime, zone: str | None = None) -> Sinc
     ``now`` is the server's clock, because the model does not know today's date and one it invented
     would narrow an answer silently (ruling 11); the zone is the browser's, so "today" is the
     operator's day. Midnight is taken there — on the one day a year a zone has none, it lands an
-    hour to one side, inside the day either way."""
+    hour to one side, inside the day either way.
+
+    What the question said *around* the phrase decides whether it is a start at all (``_ENDS``):
+    words that name a second end leave the start ``closed``, and words that put an end or a "not"
+    over the phrase itself leave no window. Both err towards the answer the page gave before #444,
+    because a window the operator did not ask for hides rows and says only where it began."""
     text = sanitize_question(question)
     local = now.astimezone(_viewer_zone(zone))
     midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    ends = [end.span() for end in _ENDS.finditer(text)]
+
+    def start(at: datetime, phrase: re.Match[str], closed: bool = False) -> Since | None:
+        if any(lo <= phrase.start() < hi for lo, hi in ends):
+            return None  # an end word or a "not" sits over this phrase: it named no start
+        return Since(at=at.astimezone(UTC), phrase=" ".join(phrase[0].split()), closed=closed or bool(ends))
+
     back = _BACK.search(text)
     if back:
-        count, unit = (back[1], back[2]) if back[2] else (back[3], back[4])
+        count, unit = (back["n"], back["unit"]) if back["unit"] else (back["n_ago"], back["unit_ago"])
+        width = int(count or 1) * _SINCE_UNITS[unit.lower()]
         try:
-            return _since(now - int(count or 1) * _SINCE_UNITS[unit.lower()], back[0])
+            # "the last 0 days" is no window, and "the last 9999 years" predates the year datetime
+            # counts from. Neither is a start, and a phrase that sets none costs the answer nothing.
+            return start(now - width, back, closed=bool(back["unit_ago"]) and not back["open"]) if width else None
         except OverflowError:
-            return None  # "the last 9999 years" predates the year datetime counts from
+            return None
     weekday = _SINCE_WEEKDAY.search(text)
     if weekday:
         back_days = (local.weekday() - _WEEKDAYS.index(weekday[1].lower())) % 7
-        return _since(midnight - timedelta(days=back_days), weekday[0])
+        return start(midnight - timedelta(days=back_days), weekday)
     period = _THIS.search(text)
     if period:
         word = period[1].lower()
         if word == "week":
-            return _since(midnight - timedelta(days=local.weekday()), period[0])
-        return _since(midnight.replace(day=1) if word == "month" else midnight.replace(month=1, day=1), period[0])
+            return start(midnight - timedelta(days=local.weekday()), period)
+        return start(midnight.replace(day=1) if word == "month" else midnight.replace(month=1, day=1), period)
     day = _DAY.search(text)
     if day:
         if day[2].lower() == "today":
-            return _since(midnight, day[0])
-        return _since(midnight - timedelta(days=1), day[0], closed=not day[1])
+            return start(midnight, day)
+        return start(midnight - timedelta(days=1), day, closed=not day[1])
     return None
 
 
@@ -678,8 +708,7 @@ _TIME_UNITS = r"minute|minutes|hour|hours|day|days|week|weeks|month|months|year|
 # and "last night" match a word of their own.
 _RANGE_MARKERS = re.compile(
     r"\b(today|yesterday|tonight|night|nights|overnight|weekend|weekends|"
-    r"since|before|after|between|until|till|ago|" + _TIME_UNITS + "|"
-    r"january|february|march|april|june|july|august|september|october|november|december|"
+    r"since|before|after|between|until|till|ago|" + _TIME_UNITS + "|" + _MONTHS + "|"
     r"monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"
     # A number that is a length of time — "3 days", "24h" — which "chrome 153" is not.
     r"|(?<![a-z0-9])\d+\s*(?:" + _TIME_UNITS + r"|h|d|w|m)\b",
