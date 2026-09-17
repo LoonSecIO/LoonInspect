@@ -59,11 +59,9 @@ export function AppRoutes() {
         {/* No /devices/groups: it rendered rows a developer typed (#95), and what it
             promised already exists under a truer name — the groups the ledger holds are
             on the cost page below, and per-title devices-on-latest is on Devices ›
-            Applications › Jamf Patch, from real matching. It returns only once it can
-            show something those two cannot. /devices/compliance went the same day for
-            the same reason, and #95 ruled it returns when it can show something real: it
-            has, as Posture › Compliance below (#536), read from the observation ledger
-            and filed under /posture, a report over a window rather than a list of Macs. */}
+            Applications › Jamf Patch, from real matching. /devices/compliance went the
+            same day, and #95 ruled it returns when it can show something real: it has,
+            as Posture › Compliance below (#536), read from the observation ledger. */}
         <Route path="devices/groups/cost" element={<SmartGroupCostPage />} />
         <Route path="devices/changes" element={<ChangesPage />} />
         {/* Declared after the static /devices children on purpose: react-router ranks a

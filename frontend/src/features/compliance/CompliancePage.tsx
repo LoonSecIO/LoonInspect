@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/config/api";
-import { downloadEvidencePage, getEvidenceReport, sumFault, type EvidenceReport, type PartName, type ReportWindow, type Span, type Totals } from "@/features/compliance/api";
+import { downloadEvidencePage, getEvidenceReport, listFailure, sumFault, type EvidenceReport, type PartName, type ReportWindow, type Span, type Totals } from "@/features/compliance/api";
 import { listConnections } from "@/features/mdm/api";
 import type { MdmConnection } from "@/features/mdm/types";
 import type { Translations } from "@/i18n/en";
@@ -19,11 +19,9 @@ const when = (value: string) => `${value.slice(0, 16).replace("T", " ")} UTC`;
  * The evidence report where an auditor can be sent (#536), rather than only as a download. It renders
  * #472's object and **computes nothing the object does not carry**: the *Read this first* sentences are
  * the server's own `readThisFirst` key rather than a second copy that would drift from the printed page,
- * and the only arithmetic is `sumFault`, a check on the identity the object asserts. **No framework is
- * named on it** — `compliance.test.ts` greps this page's dictionary for the four words the backend
- * refuses on the object. The picker offers the connections this account may read; which of them the
- * ledger has a heartbeat for is the endpoint's own answer, so the rest are refused at 409 and that
- * sentence is **shown where the report would be**, never swallowed.
+ * and the only arithmetic is `sumFault`, a check on the identity the object asserts. The picker offers the
+ * connections this account may read; which of them the ledger has a heartbeat for is the endpoint's own
+ * answer, so the rest are refused at 409 and that sentence is **shown where the report would be**.
  */
 export function CompliancePage() {
   const { t } = useLocale();
@@ -33,8 +31,9 @@ export function CompliancePage() {
   const [params] = useSearchParams();
   const sent = Number(params.get("connectionID")) || null;
   const [connections, setConnections] = useState<MdmConnection[] | null>(null);
-  // A read that FAILED is not a tenant with no connections, and never reads as one (#150).
-  const [listFailed, setListFailed] = useState(false);
+  // A read that FAILED is not a tenant with no connections, and never reads as one (#150); refused and broken
+  // are told apart because they have different next checks (`listFailure`, docs/troubleshooting.md §17 step 9).
+  const [listFailed, setListFailed] = useState<"denied" | "error" | null>(null);
   const [chosen, setChosen] = useState<number | "">("");
   const [dates, setDates] = useState<ReportWindow>({ start: "", asOf: "" });
   // What was asked for, which is what the effect answers. Set by a click, never by the effect itself (#15).
@@ -62,7 +61,7 @@ export function CompliancePage() {
         const first = rows.find((row) => row.id === sent) ?? rows[0];
         if (first) { setChosen(first.id); setAsked({ id: first.id, dates: { start: "", asOf: "" } }); }
       })
-      .catch(() => void (cancelled || (setConnections([]), setListFailed(true))));
+      .catch((error: unknown) => void (cancelled || (setConnections([]), setListFailed(listFailure(error)))));
     return () => void (cancelled = true);
   }, [sent]);
 
@@ -109,9 +108,10 @@ export function CompliancePage() {
         </Button>
         <p className="w-full text-xs text-muted-foreground">{copy.windowHint}</p>
       </div>
-      {listFailed && <p className="text-sm text-destructive">{copy.connectionsFailed}</p>}
+      {listFailed && <p className="text-sm text-destructive">{listFailed === "denied" ? copy.connectionsDenied : copy.connectionsFailed}</p>}
       {connections?.length === 0 && !listFailed && <p className="text-sm">{copy.noConnections}</p>}
-      {downloadFailed !== null && <p className="text-sm text-destructive">{downloadFailed || copy.failed}</p>}
+      {/* Never twice: Download on an already-refused connection answers with the server's same sentence. */}
+      {downloadFailed !== null && downloadFailed !== refused && <p className="text-sm text-destructive">{downloadFailed || copy.failed}</p>}
       {refused !== null && <p className="text-sm text-destructive">{refused || copy.failed}</p>}
       {asking && <p className="text-sm text-muted-foreground">{copy.asking}</p>}
       {report && <Rendered report={report} copy={copy} />}

@@ -279,15 +279,14 @@ async def test_both_refusals_answer_with_their_sentence_rather_than_a_status(db,
 
 async def test_the_sentences_in_the_json_are_the_sentences_on_the_page(ledger, accounts) -> None:
     """One source for *Read this first* (#536): the object carries `readThisFirst` and the printable page prints
-    that key rather than a second copy. The drift this pins is the one nobody sees — a page reworded alone,
-    leaving an archived bundle stating the older caveat."""
+    that key rather than a second copy. The drift this pins is the one nobody sees — a page reworded alone."""
     auditor = await _signed_in(AUDITOR)
     try:
         asked = {"connectionID": ledger.id, "start": BASE.isoformat(), "asOf": AS_OF.isoformat()}
         said = (await auditor.get("/api/evidence/report", params=asked)).json()["readThisFirst"]
         page = (await auditor.get("/api/evidence/report.html", params=asked)).text
         # Older than the run horizon and ending after the last collection, so it has something to say: a report
-        # with nothing to say would pass the equality below without testing it.
+        # with nothing to say passes the equality below without testing it.
         assert len(said) >= 2, said
         assert [name for name in FRAMEWORKS if name in json.dumps(said).lower()] == []
         for sentence in said:

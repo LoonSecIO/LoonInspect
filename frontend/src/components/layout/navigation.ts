@@ -91,10 +91,8 @@ export const navigationItems: NavItem[] = [
         requires: "corpus",
         flag: "vulnerabilities"
       },
-      // No `requires` and no flag (#536): the evidence report reads this tenant's own observation ledger,
-      // so there is no corpus to wait on. `audit:read` is the endpoint's own permission and the route's
-      // gate, which keeps this off an account that would then be refused (#301) — and is what an auditor
-      // on a tenant with no corpus is left with, the section re-pointing here.
+      // No `requires` and no flag (#536): the report reads this tenant's own observation ledger, so there is
+      // no corpus to wait on. `audit:read` is the endpoint's own permission and the route's gate (#301).
       {
         labelKey: "compliance",
         icon: FileCheck,

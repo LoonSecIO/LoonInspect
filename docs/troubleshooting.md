@@ -1434,14 +1434,14 @@ connection, set the window — and **Download** on that page takes the same answ
 (`GET /api/evidence/report.html`, the object at `…/report` inside it). **Settings › Connections** keeps
 a link to that page on the connection's row. Both doors need the **Auditor** role's `audit:read`.
 
-1. **The download is refused outright.** Three refusals, each carrying its sentence in the red line
-   above the table:
+1. **The report is refused outright**, on screen or as a download. Three refusals, each carrying its
+   sentence in the red line where the report would be:
    - *This connection has no observations…* → the observation ledger is written by a **device sweep**
      and nothing else, so a connection that has only run catalog refreshes or webhook runs has none.
      §2 step 5 has the rest.
-   - *The report window is empty: `start` must be earlier than `asOf`.* → only reachable by calling the
-     endpoint with your own dates. The button asks for neither and gets the ninety days before the
-     ledger's last collection.
+   - *The report window is empty: `start` must be earlier than `asOf`.* → on Posture › Compliance,
+     **Window opens** is on or after **Dated**. Blank is the endpoint's default, not the epoch: **Dated**
+     is then the ledger's last collection and **Window opens** the ninety days the row's link asks for.
    - *The evidence report cannot be rendered: the baseline rule catalogue could not be read…* → the
      report refuses rather than printing part of a catalogue, because a rule that failed to load reads
      exactly like a passing fleet. The sentence names the file it looked for, or the version it is at
@@ -1492,15 +1492,17 @@ a link to that page on the connection's row. Both doors need the **Auditor** rol
    Nothing is fetched while it renders, so a machine with no network prints the same page. A digest that
    wraps across two lines is wrapped, never shortened — every character is there.
 
-9. **Posture › Compliance says the sum does not close, or lists no connection.** Two states the download
-   cannot reach, both printed on the page rather than left out.
+9. **Posture › Compliance says the sum does not close, or has no connection to offer.** States the
+   download cannot reach, every one of them printed on the page rather than left out.
    - *The sum does not close* → a fault, not a reading: the page checks *met + unmet + not observed = the
      window* on the exact seconds before it draws the tables, and prints both figures it got. The days
      round to two places and can land a hundredth either side (step 7); this check never reads them, so a
      mismatch is the object disagreeing with itself. Report it as state **U** with the connection, the
      window and those figures — Download takes the object it was computed from.
-   - *No connection to report on* → the picker lists the connections your account may read, which needs
-     `connection:read` beside `audit:read`. The **Auditor** role holds both; a hand-built role may not.
+   - *The connections could not be read…* → the picker reads `GET /api/mdm/connections`, which needs
+     `connection:read` beside the `audit:read` that opened the page. A **refused** read names that
+     permission — the **Auditor** role holds both, so check the role at Settings › Accounts; any other
+     failure sends you to Support. *No connection to report on* means the read worked and there is none.
 
 **U.** The catalogue refusal, a contract version this build has no rules for, or a sum that does not close.
 Report the sentence from the box, the build from Settings › Support, and `docker compose logs app --since 30m`.

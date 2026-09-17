@@ -211,8 +211,8 @@ def with_read_this_first(report: dict[str, Any], *, heartbeat: datetime | None, 
     """The object carrying its own caveats: `readThisFirst`, added to #472's artefact and read by every rendering
     of it (#536). Additive under the contract's own discipline — keys are added, never moved — and the reason is
     drift: a second surface that re-typed these sentences would be reworded alone one day. Mutates and returns the
-    same dict; `render_evidence_page` reads the key rather than recomputing, so a caller that skipped this step
-    raises rather than quietly printing a page with no box on it."""
+    same dict; `render_evidence_page` reads the key, so a caller that skipped this raises rather than printing a
+    page with no box on it."""
     report["readThisFirst"] = notices(report, heartbeat=heartbeat, now=now)
     return report
 

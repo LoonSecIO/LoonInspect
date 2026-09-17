@@ -1041,8 +1041,14 @@ export const en = {
     download: "Download",
     asking: "Reading the observation ledger…",
     noConnections:
-      "No connection to report on. This picker lists the connections your account may read, which needs connection:read beside audit:read; a tenant with no connection at all starts at Settings › Connections.",
-    connectionsFailed: "The connections could not be read, so this picker is empty for a reason that is not an empty tenant.",
+      "No connection to report on: the connections read back, and this tenant has none. One is added at Settings › Connections, and the report reads the observation ledger a device sweep on it writes.",
+    // The list needs connection:read and this page is gated audit:read, so a hand-built role holds one
+    // without the other and is refused here. Refused and broken get their own sentence because they have
+    // their own next check (docs/troubleshooting.md §17 step 9).
+    connectionsDenied:
+      "The connections could not be read: this account holds the audit:read that opened this page but not the connection:read the picker's list needs. The Auditor role holds both — check the role at Settings › Accounts.",
+    connectionsFailed:
+      "The connections could not be read, so this picker is empty for a reason that is not an empty tenant. Try again, and report it with the build from Settings › Support if it holds.",
     failed: "The report could not be read. Try again, and report it with the build from Settings › Support if it holds.",
     headConnection: "Connection",
     headSource: "Read from",
@@ -1059,7 +1065,9 @@ export const en = {
       `The sum does not close: met plus unmet plus not observed is ${sum} seconds against a window of ${window}. That is a fault in the report rather than the rounding of the days below — this check reads the exact seconds. The figures are still drawn; report them with the connection and the window (troubleshooting.md §17 step 9).`,
     byRule: "By rule",
     byDevice: "By Mac",
-    fleet: "The whole fleet",
+    // The printed page's own label for this bucket, verbatim: an auditor holding the file beside the
+    // screen reads one row, not two.
+    fleet: "Every rule, every Mac",
     colRule: "Rule",
     colMac: "Mac",
     colMet: "Met",
@@ -1406,8 +1414,8 @@ export const en = {
     reEmitConfirm: "Re-emit",
     reEmitError: "Could not start the re-emit.",
     // The evidence report (#473). Where an auditor already is: the connection is what the report is *of*,
-    // and this row is the only place that names one. The download is the whole feature — one file, opened
-    // in a browser, printed and filed — so there is no page to route to.
+    // and this row is the only place that names one. A link since #536 rather than a download — the report
+    // is a page now, Posture › Compliance, and Download is on it.
     evidenceReport: "Evidence report",
     runProcessing: "Processing…",
     runJoined: "Already syncing — showing the run in progress.",

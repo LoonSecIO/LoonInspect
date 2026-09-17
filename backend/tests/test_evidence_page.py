@@ -100,7 +100,7 @@ def test_the_document_carries_its_header_its_refusal_and_its_bundle() -> None:
     assert re.search(r'<table class="sheet"><thead><tr><th class="running">[^<]*record of technical state', page)
     assert ".sheet>thead,thead{display:table-header-group}" in page.replace("\n", "").replace("  ", "")
     # The bundle is the object this page was rendered from, `readThisFirst` and all: an archived copy carries the
-    # caveats it was read under rather than leaving them in the browser that fetched it (#536).
+    # caveats it was read under (#536).
     assert _bundle(page) == with_read_this_first(_report(), heartbeat=NOW, now=NOW)
 
 
