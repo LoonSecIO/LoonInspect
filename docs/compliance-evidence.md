@@ -38,6 +38,13 @@ plus `sectionDigest` and `contractVersion` where the span carried a digest for t
 **`sectionDigest`** lets a row say *this content hashes to this value under contract v0*, stronger than a printed
 number and free, the hash being on disk.
 
+**`readThisFirst`** is the ordered list of sentences this report has to say about itself — the **Read this first**
+boxes of §6, stepped through in [`troubleshooting.md`](troubleshooting.md) §17. Added by
+[#536](https://github.com/LoonSecIO/LoonInspect/issues/536), **additive in the strict sense**: nothing moved for it,
+and last year's archive has it absent rather than changed. One source, `app.baseline.page.notices`, and **every
+rendering prints that key** — including the bundle inside the download, which now carries the caveats it was read
+under rather than leaving them in the browser that fetched it.
+
 ## 2. The header, and the four words that must not appear on it
 
 Five things, in this order (R5 5.3): **`method`** (`statement`, `connection`, `source`, `catalogue` at its version,
@@ -107,7 +114,18 @@ at all (R5 5.5) — and `start` to a quarter before it. Neither is clamped to th
 was observed answers with not-observed days. A connection with no observations is refused (409) rather than answered
 with an empty document; [`troubleshooting.md`](troubleshooting.md) §2 step 5 has the words.
 
-## 6. The page
+## 6. The page, on screen and as a file
+
+**`/posture/compliance`** is where an auditor is sent ([#536](https://github.com/LoonSecIO/LoonInspect/issues/536)):
+the second child of Posture, gated `audit:read` in the sidebar and the route alike — the endpoint's own permission,
+whole-page, per [`data-access-grain.md`](data-access-grain.md). It picks a connection the account may read, takes
+`start` and `asOf` at §5's defaults, and **renders the object**: header, `readThisFirst` from the key, the three-way
+sum with its identity in words, `byRule` and `byDevice`. It computes nothing the object does not carry, and its one
+arithmetic is a check rather than a figure — `met + unmet + notObserved` against `window` on the exact seconds,
+**printed as a fault when it does not close**. A connection with no ledger is refused at 409 and that sentence is
+shown where the report would be. **Download** is on this page, and Settings › Connections keeps a link here on the
+connection's row rather than a second download. No framework is named on it either: a vitest greps the page's
+dictionary for the four words `backend/tests/test_evidence_report_db.py` refuses on the object (§2).
 
 `GET /api/evidence/report.html`, same permission and parameters, is the object as one **self-contained** HTML
 document: no CDN, no font, no stylesheet, because it will be opened a year from now on a machine that cannot reach

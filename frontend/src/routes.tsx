@@ -28,6 +28,7 @@ import { JamfPatchDetailPage } from "@/features/jamfPatch/JamfPatchDetailPage";
 import { CatalogPage } from "@/features/catalog/CatalogPage";
 import { VulnerabilitiesPage } from "@/features/vulnerabilities/VulnerabilitiesPage";
 import { VulnerabilityLookupPage } from "@/features/vulnerabilities/VulnerabilityLookupPage";
+import { CompliancePage } from "@/features/compliance/CompliancePage";
 import { SupportPage } from "@/features/support/SupportPage";
 import { NotFoundPage } from "@/features/errors/NotFoundPage";
 
@@ -55,12 +56,14 @@ export function AppRoutes() {
               names are two records. */}
           <Route path=":appHash" element={<ApplicationRecordPage />} />
         </Route>
-        {/* No /devices/groups and no /devices/compliance: both rendered rows a
-            developer typed (#95). What each promised already exists under a truer
-            name — the groups the ledger holds are on the cost page below, and
-            per-title devices-on-latest is on Devices › Applications › Jamf Patch,
-            from real matching. Either returns only once it can show something
-            those two cannot. */}
+        {/* No /devices/groups: it rendered rows a developer typed (#95), and what it
+            promised already exists under a truer name — the groups the ledger holds are
+            on the cost page below, and per-title devices-on-latest is on Devices ›
+            Applications › Jamf Patch, from real matching. It returns only once it can
+            show something those two cannot. /devices/compliance went the same day for
+            the same reason, and #95 ruled it returns when it can show something real: it
+            has, as Posture › Compliance below (#536), read from the observation ledger
+            and filed under /posture, a report over a window rather than a list of Macs. */}
         <Route path="devices/groups/cost" element={<SmartGroupCostPage />} />
         <Route path="devices/changes" element={<ChangesPage />} />
         {/* Declared after the static /devices children on purpose: react-router ranks a
@@ -169,6 +172,11 @@ export function AppRoutes() {
           <Route path="posture/vulnerabilities/:vulnID" element={<VulnerabilityLookupPage />} />
           {/* The address #95 reserved keeps working, now that /posture is the prefix. */}
           <Route path="vulnerabilities" element={<Navigate to="/posture/vulnerabilities" replace />} />
+        </Route>
+        {/* AUDIT_READ, the endpoint's own permission and the sidebar entry's (#536), whole-page per
+            docs/data-access-grain.md. No flag: nothing here waits on a corpus. */}
+        <Route element={<RequirePermission permission={PERMISSIONS.AUDIT_READ} />}>
+          <Route path="posture/compliance" element={<CompliancePage />} />
         </Route>
         {/* Last child on purpose, and inside the shell rather than beside /login: a
             signed-out visitor keeps getting the same sign-in redirect for a typo as

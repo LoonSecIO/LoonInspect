@@ -1429,9 +1429,10 @@ run's `jobID` and its log, the census line if there is one, the Mac's Jamf id, t
 
 The report is a document a person files, so it never leaves a reader to infer why it is thin: every
 state below prints its own sentence in a **Read this first** box at the top of the page, above the sum.
-Read the box first, then the step here. **Settings › Connections → Evidence report** on the connection's
-row downloads it (`GET /api/evidence/report.html`, the same answer as `…/report` in JSON, which is also
-inside the page); both need the **Auditor** role's `audit:read`.
+Read the box first, then the step here. **Posture › Compliance** is the report on screen — pick the
+connection, set the window — and **Download** on that page takes the same answer as one file
+(`GET /api/evidence/report.html`, the object at `…/report` inside it). **Settings › Connections** keeps
+a link to that page on the connection's row. Both doors need the **Auditor** role's `audit:read`.
 
 1. **The download is refused outright.** Three refusals, each carrying its sentence in the red line
    above the table:
@@ -1491,8 +1492,18 @@ inside the page); both need the **Auditor** role's `audit:read`.
    Nothing is fetched while it renders, so a machine with no network prints the same page. A digest that
    wraps across two lines is wrapped, never shortened — every character is there.
 
-**U.** The catalogue refusal, or a contract version this build has no rules for. Report the sentence
-from the box, the build from Settings › Support, and `docker compose logs app --since 30m`.
+9. **Posture › Compliance says the sum does not close, or lists no connection.** Two states the download
+   cannot reach, both printed on the page rather than left out.
+   - *The sum does not close* → a fault, not a reading: the page checks *met + unmet + not observed = the
+     window* on the exact seconds before it draws the tables, and prints both figures it got. The days
+     round to two places and can land a hundredth either side (step 7); this check never reads them, so a
+     mismatch is the object disagreeing with itself. Report it as state **U** with the connection, the
+     window and those figures — Download takes the object it was computed from.
+   - *No connection to report on* → the picker lists the connections your account may read, which needs
+     `connection:read` beside `audit:read`. The **Auditor** role holds both; a hand-built role may not.
+
+**U.** The catalogue refusal, a contract version this build has no rules for, or a sum that does not close.
+Report the sentence from the box, the build from Settings › Support, and `docker compose logs app --since 30m`.
 
 ## 18. "Posture is not in my sidebar, or Vulnerabilities lists nothing"
 

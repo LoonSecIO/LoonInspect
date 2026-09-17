@@ -10,6 +10,7 @@ import json
 import os
 import uuid as uuidlib
 from datetime import UTC, datetime, timedelta
+from html import escape
 
 import httpx
 import pytest
@@ -274,3 +275,25 @@ async def test_both_refusals_answer_with_their_sentence_rather_than_a_status(db,
         await db.rollback()
         await db.execute(delete(MdmConnection).where(MdmConnection.id == unswept_id))
         await db.commit()
+
+
+async def test_the_sentences_in_the_json_are_the_sentences_on_the_page(ledger, accounts) -> None:
+    """One source for *Read this first* (#536): the object carries `readThisFirst` and the printable page prints
+    that key rather than a second copy. The drift this pins is the one nobody sees — a page reworded alone,
+    leaving an archived bundle stating the older caveat."""
+    auditor = await _signed_in(AUDITOR)
+    try:
+        asked = {"connectionID": ledger.id, "start": BASE.isoformat(), "asOf": AS_OF.isoformat()}
+        said = (await auditor.get("/api/evidence/report", params=asked)).json()["readThisFirst"]
+        page = (await auditor.get("/api/evidence/report.html", params=asked)).text
+        # Older than the run horizon and ending after the last collection, so it has something to say: a report
+        # with nothing to say would pass the equality below without testing it.
+        assert len(said) >= 2, said
+        assert [name for name in FRAMEWORKS if name in json.dumps(said).lower()] == []
+        for sentence in said:
+            assert escape(sentence, quote=True) in page, f"the page does not print: {sentence}"
+        assert page.count("<b>Read this first</b>") == len(said), "the page prints a box the object does not carry"
+        inside = json.loads(page.split('id="evidence-bundle">')[1].split("</script>")[0].replace("\\u003c", "<"))
+        assert inside["readThisFirst"] == said, "the bundle inside the page and the JSON route disagree"
+    finally:
+        await auditor.aclose()

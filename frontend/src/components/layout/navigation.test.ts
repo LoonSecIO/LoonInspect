@@ -12,6 +12,8 @@ const EVERYTHING = Object.values(PERMISSIONS);
 
 /** The roles as `permissions.py` resolves them, reduced to what the tree reads. */
 const VIEWER = [PERMISSIONS.DEVICE_READ, PERMISSIONS.APP_READ, PERMISSIONS.VULN_READ];
+/** The Auditor, reduced the same way: the inventory floor plus the report's own `audit:read`. */
+const AUDITOR = [...VIEWER, PERMISSIONS.AUDIT_READ];
 
 const paths = (items: NavItem[]) => items.map((item) => item.to);
 const posture = (items: NavItem[]) => items.find((item) => item.labelKey === "posture");
@@ -122,6 +124,21 @@ describe("visibleNavigation", () => {
         "settings"
       ]);
     });
+  });
+
+  it("an auditor on a tenant with no corpus sees Posture \u203a Compliance alone", () => {
+    // The case #536 is for: nothing answering and the flag off, so Vulnerabilities is hidden and the
+    // section is not — it follows its children, and Compliance needs no corpus to answer for it.
+    const section = posture(visibleNavigation(AUDITOR, NO_FLAGS, SILENT));
+
+    expect(section?.children?.map((child) => child.labelKey)).toEqual(["compliance"]);
+    // And the section is re-pointed at it: its declared target is the child that went (#301).
+    expect(section?.to).toBe("/posture/compliance");
+    // `audit:read` is the gate, not the corpus: a viewer with both the flag and the data still lacks it.
+    expect(paths(visibleNavigation(VIEWER, VULN_ON, ANSWERING))).not.toContain("/posture/compliance");
+    // With both children visible it is second, in the order the tree declares.
+    const both = posture(visibleNavigation(EVERYTHING, NO_FLAGS, ANSWERING));
+    expect(both?.children?.map((child) => child.labelKey)).toEqual(["vulnerabilities", "compliance"]);
   });
 
   it("an unknown grant is ignored rather than trusted", () => {

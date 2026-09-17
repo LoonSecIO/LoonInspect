@@ -20,6 +20,7 @@ from app.baseline.page import (
     notices,
     page_filename,
     render_evidence_page,
+    with_read_this_first,
 )
 from app.baseline.report import REFUSAL
 
@@ -70,7 +71,8 @@ def _report(**over: Any) -> dict[str, Any]:
 
 
 def _page(report: dict[str, Any] | None = None, *, heartbeat: datetime | None = NOW) -> str:
-    return render_evidence_page(report or _report(), heartbeat=heartbeat, now=NOW)
+    """Through `with_read_this_first`, as the endpoint assembles it: the page prints the object's own key now."""
+    return render_evidence_page(with_read_this_first(report or _report(), heartbeat=heartbeat, now=NOW))
 
 
 def _bundle(page: str) -> dict[str, Any]:
@@ -97,7 +99,9 @@ def test_the_document_carries_its_header_its_refusal_and_its_bundle() -> None:
     # Chrome repeats at the top of every page without printing over the content.
     assert re.search(r'<table class="sheet"><thead><tr><th class="running">[^<]*record of technical state', page)
     assert ".sheet>thead,thead{display:table-header-group}" in page.replace("\n", "").replace("  ", "")
-    assert _bundle(page) == _report()
+    # The bundle is the object this page was rendered from, `readThisFirst` and all: an archived copy carries the
+    # caveats it was read under rather than leaving them in the browser that fetched it (#536).
+    assert _bundle(page) == with_read_this_first(_report(), heartbeat=NOW, now=NOW)
 
 
 def test_the_page_is_self_contained_and_leaves_no_request() -> None:
