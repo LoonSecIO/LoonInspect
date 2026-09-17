@@ -9,9 +9,11 @@ everything else, so `oldestAgeSeconds` against that window is the time left to a
 **pending** — a delivery row still inside the retry envelope, counted in rows rather than
 events: one event fanning out to three destinations has three retry histories.
 
-**dead-lettered** — a delivery row that spent all ten attempts and waits for a redrive.
-`oldestExpiresAt` is when the oldest stops being redrivable: its event is kept for
-`dead_letter_retention_days`, then purged, and the gap in the trail is permanent after that.
+**dead-lettered** — a delivery row that spent all ten attempts and waits for a redrive, and
+the orphan a deleted destination leaves behind: failed on the spot, attempts unspent, and on
+no destination row for anything else to count. `oldestExpiresAt` is when the oldest stops
+being redrivable: its event is kept for `dead_letter_retention_days`, then purged, and the
+gap in the trail is permanent after that.
 
 Tenant-wide, never a per-destination breakdown: those rows already are that, and a held event
 has none for them to count. The posture tape's `outbox.pending` unions held events with events

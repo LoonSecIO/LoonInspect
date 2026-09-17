@@ -209,9 +209,11 @@ that read fails, so a missing sentence there is never a silent zero.
      gave up before it dialled, and the line names what to check, usually a destination
      whose URL it refuses or whose stored secret this container cannot read (§4). Fix that,
      and the next tick drains the queue. The second is the next bullet. Still rising with
-     line → reportable **D**. `deadLettered.oldestExpiresAt` is the instant the oldest
-     dead letter stops being redrivable, and `retention.nextPurgeAt` is when the purge
-     that takes it runs.
+     neither line → reportable **D**, once step 2's rows are *all* enabled: the age is
+     tenant-wide, and a destination disabled after its events fanned out holds them pending
+     until it is enabled again, pinning the age with no line in either log.
+     `deadLettered.oldestExpiresAt` is the instant the oldest dead letter stops being
+     redrivable, and `retention.nextPurgeAt` is when the purge that takes it runs.
    - **More than one app process, and the queue is not draining.** The second reason a
      tick attempts nothing, and usually not a fault at all.
      `docker compose logs app --since 10m | grep "outbox tick skipped"`. That line means
