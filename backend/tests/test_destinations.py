@@ -14,6 +14,7 @@ import uuid as uuidlib
 from datetime import UTC, datetime
 
 import pytest
+import pytest_asyncio
 from pydantic import ValidationError
 
 
@@ -74,44 +75,95 @@ def test_unknown_event_type_is_rejected() -> None:
         DestinationCreate(name="siem", url="https://siem.example/hook", subscribed_events=["device.changed"])
 
 
+# A tenant of this file's own for the fan-out test, in the shape the other fan-out
+# files use (tests/test_outbox_passes_db.py, tests/test_hec_fanout_db.py).
+FAN_OUT_TENANT_ID = uuidlib.UUID("00000000-0000-0000-0000-000000000514")
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def fan_out_tenant() -> None:
+    from app.core.bootstrap import bootstrap_tenants
+    from app.core.database import init_db, unscoped_session
+    from app.models.schema import Tenant
+
+    await init_db()
+    async with unscoped_session() as db:
+        await bootstrap_tenants(db)
+        if await db.get(Tenant, FAN_OUT_TENANT_ID) is None:
+            db.add(Tenant(id=FAN_OUT_TENANT_ID, slug="destination-fan-out", name="Destination fan-out", kind="operational"))
+            await db.commit()
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def alone(fan_out_tenant):
+    """A session on that tenant, its outbox tables empty either side.
+
+    `fan_out_pending` is a whole-tenant sweep: every held event, to every enabled
+    destination the session can see. Called on the operational tenant it therefore
+    reaches destinations other files left behind — including the catch-all one in
+    tests/test_backup_secrecy_db.py — and writes delivery rows against them that
+    outlive this test. That is what used to make the suite single-use against a
+    database (#514). Scoped to a tenant of its own, the only destinations in the sweep
+    are the two this test creates and this fixture removes.
+
+    The three deletes below carry no `WHERE`, and what bounds them to this tenant is
+    the RLS policy, not the statement. That holds only because these tables are
+    `FORCE ROW LEVEL SECURITY` and not merely `ENABLE`: `looninspect_app` owns them
+    and runs the suite, and an owner is exempt from its own policies without FORCE.
+    Checked against the live schema rather than assumed — `relrowsecurity` and
+    `relforcerowsecurity` are both true for `destinations`, `event_outbox` and
+    `outbox_deliveries` — and kept that way by
+    tests/test_identity_resolution_db.py::test_the_index_tables_carry_no_row_level_security_and_nothing_else_does_not,
+    which fails the moment a table with a `tenant_id` has one flag and not the other.
+    """
+    from sqlalchemy import delete
+
+    from app.core.database import session_for_tenant
+    from app.models.schema import Destination, EventOutbox, OutboxDelivery
+
+    async def _clear(session) -> None:
+        await session.rollback()
+        await session.execute(delete(OutboxDelivery))
+        await session.execute(delete(EventOutbox))
+        await session.execute(delete(Destination))
+        await session.commit()
+
+    async with session_for_tenant(FAN_OUT_TENANT_ID) as session:
+        await _clear(session)
+        try:
+            yield session
+        finally:
+            await _clear(session)
+
+
 @pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1")
 @pytest.mark.asyncio(loop_scope="session")
-async def test_subscribed_destination_receives_device_change(db) -> None:
-    from sqlalchemy import delete, select
+async def test_subscribed_destination_receives_device_change(alone) -> None:
+    from sqlalchemy import select
 
     from app.changes.derive import EVENT_TYPE
     from app.core.outbox import enqueue_event, fan_out_pending
-    from app.models.schema import Destination, EventOutbox, OutboxDelivery
+    from app.models.schema import Destination, OutboxDelivery
 
+    # A session on a tenant holding nothing but the rows this test writes.
+    db = alone
     tag = uuidlib.uuid4().hex[:8]
     subscriber = Destination(name=f"changes siem {tag}", url="https://siem.example/hook", subscribed_events=[EVENT_TYPE])
     bystander = Destination(
         name=f"inventory only {tag}", url="https://other.example/hook", subscribed_events=["device.inventory.changed"]
     )
     db.add_all([subscriber, bystander])
-    event = await enqueue_event(db, EVENT_TYPE, {"event": EVENT_TYPE, "test": tag})
+    await enqueue_event(db, EVENT_TYPE, {"event": EVENT_TYPE, "test": tag})
     await db.commit()
-    # Plain ints: the rollback in the teardown expires the instances, and refreshing
-    # them there would be sync IO inside an async session.
-    subscriber_id, bystander_id, event_id = subscriber.id, bystander.id, event.id
+    subscriber_id, bystander_id = subscriber.id, bystander.id
 
-    try:
-        await fan_out_pending(db)
+    # Every row in the tenant, because every row in the tenant is this test's: the one
+    # event, and the one destination subscribed to its type.
+    assert await fan_out_pending(db) == 1
 
-        deliveries = (await db.execute(select(OutboxDelivery).where(OutboxDelivery.outbox_event_id == event_id))).scalars().all()
-        destination_ids = {d.destination_id for d in deliveries}
-        assert subscriber_id in destination_ids
-        assert bystander_id not in destination_ids
-    finally:
-        await db.rollback()
-        await db.execute(
-            delete(OutboxDelivery).where(
-                OutboxDelivery.destination_id.in_([subscriber_id, bystander_id]) | (OutboxDelivery.outbox_event_id == event_id)
-            )
-        )
-        await db.execute(delete(EventOutbox).where(EventOutbox.id == event_id))
-        await db.execute(delete(Destination).where(Destination.id.in_([subscriber_id, bystander_id])))
-        await db.commit()
+    delivered_to = {delivery.destination_id for delivery in (await db.execute(select(OutboxDelivery))).scalars()}
+    assert delivered_to == {subscriber_id}, "the destination subscribed by name, and nothing else in the tenant"
+    assert bystander_id not in delivered_to, "subscribed to another type, so no row"
 
 
 @pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1")

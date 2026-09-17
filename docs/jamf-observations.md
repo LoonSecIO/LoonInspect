@@ -417,9 +417,13 @@ view of it not. The close re-keys the row to the id the Mac came back under and 
 and `priorJamfProID` — which is also what **retires** that old id: out of the census population, or it
 departs again next census and closes again the pass after, forever, while its row serves out the tail
 it departed with and the Mac is listed under its new id. A census naming a retired id again takes the
-retirement back: Jamf handing a Mac over outranks what a serial match decided about it. A sweep with
-neither `hardware` nor `extension_attributes` in its sections has no serial to census with: the match
-is id-only, and the run's line says so.
+retirement back: Jamf handing a Mac over outranks what a serial match decided about it. **A row is
+one departure, keyed by the id it departed under**, so two rows may name the same current
+`subject_id` (#496, R11 b): hand the *old* id back while the id it came back under is itself gone,
+and that second row closes by serial onto the old id too — one row closed plain, one retired under
+the id that is now the absent one, each answering for exactly one absence because every reader keys
+by `prior_jamf_pro_id or subject_id`. A sweep with neither `hardware` nor `extension_attributes` in
+its sections has no serial to census with: the match is id-only, and the run's line says so.
 
 ### Managed → Unmanaged: the retirement workflow (reserved, not built)
 

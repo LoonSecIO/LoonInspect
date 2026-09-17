@@ -10,12 +10,13 @@ from __future__ import annotations
 import json
 import os
 import uuid as uuidlib
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, event, insert, select, update
 
 pytestmark = [
     pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
@@ -719,6 +720,103 @@ async def test_the_clock_runs_out_without_a_clean_census_and_the_mac_still_leave
     assert await _events(db, mark, "subject.departure") == [], "the terminal is emitted exactly once"
 
 
+async def _not_a_census_lines(db, connection_id: int) -> list:
+    """The *device census not taken…* lines, whole — message, fields and the run that wrote them."""
+    from app.models.schema import Run, RunLogLine
+
+    query = (
+        select(RunLogLine)
+        .join(Run, RunLogLine.run_id == Run.id)
+        .where(Run.mdm_connection_id == connection_id, RunLogLine.message.like("device census not taken%"))
+        .order_by(RunLogLine.id)
+    )
+    return list((await db.execute(query)).scalars().all())
+
+
+async def _scope_the_sweeps(db, connection_id: int, selector: str | None) -> None:
+    """Point this connection's collections at a slice of the fleet — or back at all of it."""
+    from app.models.schema import Collection
+
+    await db.execute(update(Collection).where(Collection.mdm_connection_id == connection_id).values(selector=selector))
+    await db.commit()
+
+
+async def test_a_scoped_sweep_closes_the_latch_with_the_terminal_it_sends(db, jamf: FakeJamf, connection, monkeypatch) -> None:
+    """#512, ruled 2026-09-17 (R10 option 1): one act, one guarantee. The terminal fires above the
+    census gate on the wall clock, and the latch close rides with it — so a connection whose sweeps
+    are all scoped, or all short a failed device, cannot ship `state: removed` to the SIEM while
+    `GET /api/alerts?open=true` goes on listing the Mac. Both dirty reasons run; the day-seven sweep
+    is the scoped one, and its own run-log line carries `latchesClosed` and says so in words."""
+    from app.alerts.service import CLOSED_DEVICE_DEPARTED, NEW_APP
+    from app.mdm import service
+    from app.models.schema import Alert, Device
+
+    selector = "general.remoteManagement.managed==true"
+    jamf.seed(1)
+    (clone,) = jamf._extra
+    assert (await service.sync_connection(db, connection)).ok
+    device = (
+        await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == clone["id"]))
+    ).scalar_one()
+    app = {"app_hash": "e" * 32, "app_name": "Wireshark", "bundle_id": "org.wireshark.Wireshark"}
+    db.add(Alert(kind=NEW_APP, level="high", device_id=device.id, opened_at=datetime.now(UTC) - timedelta(days=30), **app))
+    await db.commit()
+
+    async def latch() -> Alert:
+        return (await db.execute(select(Alert).where(Alert.device_id == device.id))).scalars().one()
+
+    # ONE clean census opens the tail. Every sweep after it is scoped or dirty — which on a
+    # selector-only schedule is the whole of the Mac's remaining life here.
+    jamf._extra = []
+    assert (await service.sync_connection(db, connection)).ok
+    (gone,) = await _departures(db, connection.id, COMPUTER)
+
+    await _scope_the_sweeps(db, connection.id, selector)
+    assert (await service.sync_connection(db, connection)).ok
+    assert (await latch()).closed_at is None, "mid-tail the Mac is still in the fleet, and so is its alert"
+
+    # The other way a sweep is not a census, on the same tail: a device Jamf returned that we
+    # failed to ingest. Nothing to close yet, and the branch still runs.
+    await _scope_the_sweeps(db, connection.id, None)
+    ingest = service.ingest_computer
+
+    async def one_bad_device(session, conn, raw, **kwargs):
+        if raw.get("id") == jamf.real["id"]:
+            raise RuntimeError("ingest failed for this device")
+        return await ingest(session, conn, raw, **kwargs)
+
+    monkeypatch.setattr(service, "ingest_computer", one_bad_device)
+    dirty = await service.sync_connection(db, connection)
+    assert dirty.ok and dirty.devices_failed == 1, dirty
+    monkeypatch.setattr(service, "ingest_computer", ingest)  # not undo(): the fake Jamf is patched in too
+    assert {line.fields["reason"] for line in await _not_a_census_lines(db, connection.id)} == {"selector", "device_failures"}
+    assert all(line.fields["latchesClosed"] == 0 for line in await _not_a_census_lines(db, connection.id))
+    assert (await latch()).closed_at is None, "a failed ingest is not day seven either"
+
+    # Day seven, and the only sweep that runs is scoped. One act: the terminal and the close.
+    await _scope_the_sweeps(db, connection.id, selector)
+    await _age(db, gone, 8)
+    mark = await _high_water(db)
+    assert (await service.sync_connection(db, connection)).ok
+    (terminal,) = await _events(db, mark, "subject.departure")
+    assert terminal.payload["state"] == "removed"
+
+    closed = await latch()
+    assert closed.closed_at is not None and closed.closed_reason == CLOSED_DEVICE_DEPARTED
+    line = (await _not_a_census_lines(db, connection.id))[-1]
+    assert closed.closed_run_id == line.run_id, "the sweep that sent the terminal is the one that stamped the close"
+    assert line.fields["latchesClosed"] == 1 and line.fields["macsRemoved"] == 1
+    # Said out loud on the line the operator reads, not left to a number that moved (path 16, step 5).
+    assert "open alert latch closed" in line.message and "nothing was deleted" in line.message
+
+    # Idempotent: the next scoped sweep finds nothing left to close and says nothing about it.
+    assert (await service.sync_connection(db, connection)).ok
+    lines = await _not_a_census_lines(db, connection.id)
+    assert (await latch()).closed_at == closed.closed_at
+    assert lines[-1].fields["latchesClosed"] == 0 and "alert latch" not in lines[-1].message
+    assert sum("alert latch" in row.message for row in lines) == 1
+
+
 async def test_a_returning_mac_carries_its_pull_and_the_id_it_departed_under(db, jamf: FakeJamf, connection) -> None:
     """4.6 for a Mac: `matchedBy` and `priorJamfProID` off the row #475 writes, and `deviceMeta`
     WITH `eventID` — the one asymmetry, because a return coincides with a real pull."""
@@ -775,3 +873,208 @@ async def test_a_mac_this_sweep_names_after_its_deadline_is_not_told_it_was_remo
     assert await _events(db, mark, "subject.departure") == [], "this census named it; it never left"
     (back,) = await _events(db, mark, "subject.returned")
     assert back.payload["matchedBy"] == "jamfProID" and back.payload["departedAt"] == gone.departed_at.isoformat()
+
+
+# --- one pass over a mass deletion (#513) -----------------------------------------------------
+@contextmanager
+def _statements():
+    """Every statement the engine sends while the block runs, with how many parameters it bound.
+
+    The bind count is the point: asyncpg's protocol caps ONE statement at 32767 of them and raises
+    past it, so what a batching seam has to be proven on is the statements that actually went out,
+    not the count the pass returned."""
+    from app.core.database import engine
+
+    sent: list[tuple[str, int]] = []
+
+    def record(conn, cursor, statement, parameters, context, executemany) -> None:
+        sent.append((statement, len(parameters or ())))
+
+    event.listen(engine.sync_engine, "before_cursor_execute", record)
+    try:
+        yield sent
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", record)
+
+
+def _device_reads(sent: list[tuple[str, int]]) -> list[int]:
+    """The parameter count of each `devices` read the pass issued, in order — one per batch."""
+    return [binds for statement, binds in sent if "FROM devices" in statement and "external_id IN" in statement]
+
+
+async def _mass_deletion(db, connection, count: int) -> list[str]:
+    """`count` Macs whose tails are all open and all run out: a Jamf Pro purge, or a connection
+    re-pointed at a smaller instance, written straight in rather than swept in one Mac at a time."""
+    from app.models.schema import Device, SubjectDeparture
+
+    batch = uuidlib.uuid4().hex[:8]
+    ids = [f"{batch}-{n}" for n in range(count)]
+    common = {"mdm_connection_id": connection.id, "subject_kind": COMPUTER, "departed_at": datetime.now(UTC) - timedelta(days=8)}
+    await db.execute(
+        insert(Device),
+        [
+            {
+                "mdm_connection_id": connection.id,
+                "mdm_provider": "jamf",
+                "external_id": external_id,
+                "serial_number": f"S{external_id}",
+                "hostname": f"mac-{external_id}",
+            }
+            for external_id in ids
+        ],
+    )
+    await db.execute(insert(SubjectDeparture), [{**common, "subject_id": external_id} for external_id in ids])
+    await db.commit()
+    return ids
+
+
+async def test_an_emission_pass_over_a_mass_deletion_binds_its_ids_in_batches(db, connection) -> None:
+    """#513, proven rather than asserted: 2,500 open tails is three reads with a short one last, and every
+    Mac is named exactly once across them — the failure a botched seam makes is a device map that empties
+    after the first batch, which shows up as hostnames gone, not as a count that moved."""
+    from app.observations.departure_events import _EMIT_BATCH, emit_mac_removals
+
+    floor = await _high_water(db)
+    try:
+        ids = await _mass_deletion(db, connection, 2500)
+        mark = await _high_water(db)
+        with _statements() as sent:
+            assert await emit_mac_removals(db, connection=connection, at=datetime.now(UTC)) == len(ids)
+        await db.commit()
+
+        reads = _device_reads(sent)
+        assert len(reads) == 3, f"2,500 ids is three batched reads, not {len(reads)}"
+        assert max(reads) <= _EMIT_BATCH + 1, "a read bound more ids than the batch, so the seam was bypassed"
+        assert reads[-1] < reads[0], "the last batch of an uneven set is the short one"
+
+        events = await _events(db, mark, "subject.departure")
+        assert sorted(e.payload["deviceMeta"]["jamfProID"] for e in events) == sorted(ids), "no duplicates, no gaps"
+        assert {e.payload["state"] for e in events} == {"removed"}
+        assert {e.payload["subjectLabel"] for e in events} == {f"mac-{external_id}" for external_id in ids}
+        # The second bound #513 names, measured and filed rather than fixed here (#524): one outbox row
+        # per Mac, every one of them inside the census's single transaction, with nothing capping the pass.
+        assert len(events) == 2500
+
+        # The boundary itself, from both sides: exactly one batch, and one id past it.
+        for count, expected in ((_EMIT_BATCH, 1), (_EMIT_BATCH + 1, 2)):
+            ids = await _mass_deletion(db, connection, count)
+            mark = await _high_water(db)
+            with _statements() as sent:
+                assert await emit_mac_removals(db, connection=connection, at=datetime.now(UTC)) == count
+            await db.commit()
+            assert len(_device_reads(sent)) == expected, f"{count} ids is {expected} read(s)"
+            assert len(await _events(db, mark, "subject.departure")) == count
+    finally:
+        from app.models.schema import EventOutbox
+
+        # Thousands of pending rows left behind would be another suite's delivery pass, not this one's.
+        await db.execute(delete(EventOutbox).where(EventOutbox.id > floor))
+        await db.commit()
+
+
+# --- two rows, one id (#496) -----------------------------------------------------------------
+
+
+async def _enrolled(db, connection_id: int, subject_id: str, serial: str, udid: str, at: datetime) -> None:
+    """The ledger's half of an enrolment: one current computer span carrying both lineage keys (§3)."""
+    from app.models.schema import ObservationSpan
+
+    clocks = dict.fromkeys(("first_observed_at", "last_observed_at", "first_collected_at", "last_collected_at"), at)
+    digests = {"aperture_digest": "a", "head_digest": "h", "section_digests": {}, "contract_version": "v0"}
+    db.add(
+        ObservationSpan(
+            mdm_connection_id=connection_id,
+            subject_kind=COMPUTER,
+            subject_id=subject_id,
+            serial_number=serial,
+            udid=udid,
+            last_trigger="sweep",
+            **digests,
+            **clocks,
+        )
+    )
+    await db.commit()
+
+
+async def test_a_return_and_a_re_return_leave_two_rows_naming_one_id(db, connection) -> None:
+    """Kyle's R11 option b (#496, ruled 2026-09-17): a `subject_departures` row is ONE DEPARTURE, keyed
+    by the id it departed under — so after a return and a re-return two rows may name the same current
+    `subject_id`, and that is the shape rather than something to repair.
+
+    The sequence is PR #494's verifier's, walked through `reconcile_census` with a census lineage of
+    its own rather than through a sweep, because what is pinned is the reconciler's own arithmetic and
+    every step of it has to be read: the old id departs; the Mac comes back as a new id carrying the
+    same board, which re-keys that row and retires the old id; the new id departs in its turn; and then
+    Jamf hands the OLD id back while the new one is the one gone. Both rows end up naming the old id —
+    the first closed plain, the second retired under the new one — and every reader still keys by
+    `prior_jamf_pro_id or subject_id`, so each row answers for exactly one absence.
+    """
+    from app.observations.departure import gone_for_good, open_departures, reconcile_census
+
+    old, new, bystander = "77001", "77002", "77009"
+    board = (f"S{uuidlib.uuid4().hex[:8].upper()}", str(uuidlib.uuid4()).upper())
+    theirs = (f"S{uuidlib.uuid4().hex[:8].upper()}", str(uuidlib.uuid4()).upper())
+    day = [datetime(2026, 9, 17, 12, tzinfo=UTC) + timedelta(days=n) for n in range(9)]
+
+    async def census(named: dict[tuple[str, str], str], at: datetime):
+        """One clean census: what it named, and the board each of those carried — both halves of it."""
+        verdict = await reconcile_census(
+            db,
+            connection_id=connection.id,
+            subject_kind=COMPUTER,
+            observed_ids=list(named.values()),
+            at=at,
+            observed_lineage=named,
+        )
+        await db.commit()
+        return verdict
+
+    async def left(external_id: str, at: datetime) -> bool:
+        return await db.scalar(select(gone_for_good(connection.id, external_id, at=at)))
+
+    def shape(rows) -> list[tuple]:
+        return [(r.id, r.subject_id, r.prior_jamf_pro_id, r.matched_by, r.departed_at, r.returned_at) for r in rows]
+
+    await _enrolled(db, connection.id, old, *board, day[0])
+    await _enrolled(db, connection.id, bystander, *theirs, day[0])
+
+    # 1. Deleted in Jamf: the census names the rest of the fleet, and the old id departs.
+    assert [row.subject_id for row in (await census({theirs: bystander}, day[1])).departed] == [old]
+    (first,) = await _departures(db, connection.id, COMPUTER)
+    assert first.subject_id == old and first.prior_jamf_pro_id is None and first.returned_at is None
+
+    # 2. Re-enrolled: a new id carrying the same board closes that row by serial, and the close names —
+    #    and so retires — the id it departed under.
+    await _enrolled(db, connection.id, new, *board, day[2])
+    assert (await census({board: new, theirs: bystander}, day[2])).returned_by_serial == 1
+    (first,) = await _departures(db, connection.id, COMPUTER)
+    assert first.subject_id == new and first.prior_jamf_pro_id == old and first.matched_by == "serialNumber"
+
+    # 3. Now the new id departs in its turn. The retired old id is out of the population, so it opens no
+    #    second row of its own — one row per departure, and this is the second departure.
+    assert [row.subject_id for row in (await census({theirs: bystander}, day[3])).departed] == [new]
+    assert [row.prior_jamf_pro_id for row in await _departures(db, connection.id, COMPUTER)] == [old, None]
+
+    # 4. And Jamf hands the OLD id back, still carrying the board, while the new one is gone. The first
+    #    row becomes the plain return it should have been; the second closes by serial onto the old id.
+    verdict = await census({board: old, theirs: bystander}, day[4])
+    assert {row.matched_by for row in verdict.returned} == {"jamfProID", "serialNumber"}
+    first, second = await _departures(db, connection.id, COMPUTER)
+    assert first.subject_id == second.subject_id == old, "two rows, one current id — R11 b, and the whole point"
+    assert first.returned_at is not None and first.prior_jamf_pro_id is None and first.matched_by == "jamfProID"
+    assert second.returned_at is not None and second.prior_jamf_pro_id == new and second.matched_by == "serialNumber"
+
+    # Coherent because every reader keys by the id the row is gone under, never by `subject_id` alone:
+    # exactly one absence is open, it is the new id, and the Mac itself is listed under the old one.
+    listed = await open_departures(db, subject_kind=COMPUTER)
+    assert {name for (conn_id, name) in listed if conn_id == connection.id} == {new}
+    later = day[4] + timedelta(days=8)
+    assert await left(new, day[4]) is False, "in its tail on the day it came back under the other id"
+    assert await left(old, later) is False and await left(new, later) is True
+
+    # And it does not flap: four further censuses naming the old id move nothing at all.
+    state = shape((first, second))
+    for n in range(5, 9):
+        quiet = await census({board: old, theirs: bystander}, day[n])
+        assert quiet.departed == () and quiet.returned == (), f"census {n} moved a row"
+    assert shape(await _departures(db, connection.id, COMPUTER)) == state

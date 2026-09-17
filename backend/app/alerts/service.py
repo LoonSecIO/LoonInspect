@@ -26,7 +26,8 @@ has to be maintained:
   designed to move 40k devices in ten minutes (cache, don't calculate).
 
 There is a **second close** (#476), the one exception to "the latch closes itself": a Mac that
-left the fleet is never swept again, so `close_departed_device_latches` closes it from the census.
+left the fleet is never swept again, so `close_departed_device_latches` closes it from the device
+sweep — beside the wire's terminal and on the same wall clock, clean census or not (#512).
 
 The kind vocabulary is CLOSED. A later kind is an entry in `KINDS`, an entry in
 `KIND_LEVELS`, and a row in docs/alerts.md — never a reshape of this module or the
@@ -223,6 +224,9 @@ async def close_departed_device_latches(db: AsyncSession, *, connection_id: int,
     Closed and never deleted, like every close here, and nothing else is deleted either, which is
     why the row carries `closed_reason`. Idempotent, so the count returned is the latches that
     crossed day seven tonight.
+
+    Called from **both** of `_reconcile_device_census`'s paths (#512): the close rides the wire's
+    terminal, which fires on the wall clock whether or not the sweep was a clean census.
     """
     departed = select(Device.id).where(
         Device.mdm_connection_id == connection_id,
