@@ -5,6 +5,7 @@ import { listCatalog } from "@/features/catalog/api";
 import { LatestCell, PatchAnswerCell } from "@/features/catalog/PatchAnswerCell";
 import type { CatalogEntry, CatalogListResponse } from "@/features/catalog/types";
 import { AssessmentCell, CorpusBanner } from "@/features/vulnerabilities/AppAssessment";
+import { pageView, type Load } from "@/features/vulnerabilities/pageView";
 import { useLocale } from "@/i18n/LocaleContext";
 import type { Translations } from "@/i18n/en";
 
@@ -19,7 +20,8 @@ import type { Translations } from "@/i18n/en";
  * Three states before a row is drawn, in this order: nothing answers (the `409` — the banner
  * and its *why* block alone, because an empty table under a filter reads as *nothing found*,
  * §4a); loaded but nothing judged against it yet (`vulnJudged` false — one sentence, no
- * list); judged. Not here, each with its own issue and none stubbed: Easily patchable (#532),
+ * list); judged. Which of them is drawn is `pageView`, beside this file with the test that
+ * holds it. Not here, each with its own issue and none stubbed: Easily patchable (#532),
  * the chips, Longest exposed and By the numbers (#538).
  */
 
@@ -27,8 +29,6 @@ const TOP = 10;
 const PAGE = 50;
 /** One request per pause, not one per keystroke: the search is a server read. */
 const TYPING_MS = 300;
-
-type Load = "loading" | "ready" | "silent" | "failed";
 
 /** The four bands as small counts, reachable only inside the `covered` narrowing — there is
  *  no branch here in which an unassessed build contributes a zero (§4a). */
@@ -58,10 +58,20 @@ export function VulnerabilitiesPage() {
   const [answer, setAnswer] = useState<CatalogListResponse | null>(null);
   const [load, setLoad] = useState<Load>("loading");
 
+  // A moved input re-reads, and the page has to read as asking rather than leave the last
+  // term's rows standing as this one's. Adjusted during the render that moved it, keyed on
+  // the effect's whole dependency array — the frontend rule in CONTRIBUTING.md, and the
+  // reason it is there (#479). From inside the effect's timer it would land a debounce late,
+  // so the previous answer would paint as settled under the new term for all 300ms.
+  const [asked, setAsked] = useState({ term, expanded, page });
+  if (asked.term !== term || asked.expanded !== expanded || asked.page !== page) {
+    setAsked({ term, expanded, page });
+    setLoad("loading");
+  }
+
   useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(() => {
-      setLoad("loading");
       listCatalog({
         vuln: "findings",
         order: "exposure",
@@ -86,10 +96,14 @@ export function VulnerabilitiesPage() {
     };
   }, [term, expanded, page]);
 
-  const judged = load === "ready" && answer !== null && answer.vulnJudged;
-  const rows = judged ? (answer?.items ?? []) : [];
+  const shown = pageView(load, answer);
+  const rows = shown.rows && answer !== null ? answer.items : [];
   const total = answer?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE));
+  // One line for what is happening, written once and placed where the reader is looking: in
+  // the table's body while the table is up, on its own while there is no table yet.
+  const status = load === "loading" ? copy.loading : load === "failed" ? copy.errorLoading : null;
+  const statusClass = load === "failed" ? "text-destructive" : "text-muted-foreground";
 
   return (
     <section className="space-y-4">
@@ -97,15 +111,15 @@ export function VulnerabilitiesPage() {
       <h1 className="text-2xl font-semibold">{copy.pageTitle}</h1>
       <p className="text-sm text-muted-foreground">{copy.pageDescription}</p>
 
-      {/* One date governs the page; `silent` has none to give. */}
-      <CorpusBanner corpusAsOf={load === "silent" ? null : (answer?.corpusAsOf ?? null)} t={t} />
+      {/* One date governs the page; `silent` has none to give, and until a read comes back
+          there is none to claim either — a banner drawn on `null` says *nothing is answering
+          for this organization*, which is not what a request in flight knows. */}
+      {shown.banner && <CorpusBanner corpusAsOf={load === "silent" ? null : (answer?.corpusAsOf ?? null)} t={t} />}
 
-      {load === "failed" && <p className="text-sm text-destructive">{copy.errorLoading}</p>}
-      {load === "ready" && answer !== null && !answer.vulnJudged && (
-        <p className="text-sm text-muted-foreground">{copy.notYetJudged}</p>
-      )}
+      {shown.notJudged && <p className="text-sm text-muted-foreground">{copy.notYetJudged}</p>}
+      {!shown.controls && status !== null && <p className={`text-sm ${statusClass}`}>{status}</p>}
 
-      {judged && (
+      {shown.controls && (
         <>
           <input
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -119,7 +133,9 @@ export function VulnerabilitiesPage() {
 
           <div className="flex items-baseline justify-between">
             <h2 className="text-lg font-medium">{copy.mostExposed}</h2>
-            {!expanded && total > rows.length && (
+            {/* Offered off a settled count only: mid-read the total belongs to the term
+                before this one, and a button is no place to print it. */}
+            {!expanded && shown.rows && total > rows.length && (
               <button type="button" className="text-sm underline underline-offset-4" onClick={() => setExpanded(true)}>
                 {copy.seeAll(total)}
               </button>
@@ -141,7 +157,14 @@ export function VulnerabilitiesPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.length === 0 && (
+                {status !== null && (
+                  <tr>
+                    <td className={`px-4 py-4 ${statusClass}`} colSpan={6}>
+                      {status}
+                    </td>
+                  </tr>
+                )}
+                {shown.rows && rows.length === 0 && (
                   <tr>
                     <td className="px-4 py-4 text-muted-foreground" colSpan={6}>
                       {term ? copy.noMatches : copy.noFindings}

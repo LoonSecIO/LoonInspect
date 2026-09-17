@@ -1512,12 +1512,16 @@ Catalog tab carries. So a link somebody sent you works even while the entry is h
    Applications › Catalog does it now. Still saying it more than two hours after the corpus
    date moved, with the tier on, is reportable state **V**.
 5. **A filter is refused rather than answered.** Filtering by findings, KEV, band or
-   *outside the corpus* on an organization nothing answers for is refused in words —
-   *Nothing is answering for this organization, so a vulnerability filter has no rows to be
-   right about* — naming both causes and pointing at
-   [`vulnerabilities.md`](vulnerabilities.md) §8. It is refused rather than answered
-   empty on purpose: an empty list under *findings* reads as *nothing found*, which is the
-   one thing this product must never say about apps nobody looked at. Step 1 is the fix.
+   *outside the corpus* on an organization nothing answers for is refused: `409` from
+   `GET /api/catalog?vuln=findings`, in words that name both causes and point at
+   [`vulnerabilities.md`](vulnerabilities.md) §8 — *Nothing is answering for this
+   organization, so a vulnerability filter has no rows to be right about*. **On screen you
+   meet that refusal as the banner, not as that sentence**: the page asks for findings on
+   every load, so a refused read leaves the corpus banner and its *why* block standing
+   alone — step 1's screen, reached by a different road. The words themselves are for
+   whoever reads the API or the access log. It is refused rather than answered empty on
+   purpose: an empty list under *findings* reads as *nothing found*, which is the one thing
+   this product must never say about apps nobody looked at. Step 1 is the fix.
 
 **V.** The page says *loaded, not yet judged against* more than two hours after the corpus
 date moved, with the tier on and the hourly refresh running. Report the date the banner

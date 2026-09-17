@@ -52,6 +52,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.changes.policy import NORMAL, levels_at_least
 from app.core.permissions import Role
 from app.core.runs import STATUS_FAILED, STATUS_SUCCEEDED, TRIGGER_SWEEP
+from app.core.vuln_answer import served
 from app.mdm.patch.matching import STATE_AHEAD, STATE_BEHIND, STATE_LATEST, STATE_UNKNOWN
 from app.models.schema import (
     Account,
@@ -470,11 +471,12 @@ async def _vuln_values(db: AsyncSession, at: datetime) -> dict[str, float]:
         return {}
 
     of_platform = AppCatalogEntry.platform == CAPTURE_PLATFORM
-    # `covered`, judged against the epoch that is answering. The signature is compared for
-    # equality and never ordered, the way it is everywhere else it appears: an answer from
-    # an epoch that no longer answers is not stale-but-usable, it is `unknown_app` until the
-    # next judge pass rewrites it, and the tape says what the wire said.
-    answered = and_(AppCatalogEntry.vuln_assessment == VULN_ASSESSMENT_COVERED, AppCatalogEntry.vuln_signature == epoch)
+    # `covered`, judged against the epoch that is answering — `served()`'s rule rather than a
+    # fourth hand-written copy of it, so the tape can never draw a line the wire does not: an
+    # answer from an epoch that no longer answers is not stale-but-usable, it is `unknown_app`
+    # until the next judge pass rewrites it. The epoch handed to it is the one read from the
+    # database above and never `loaded_epoch_signature()` — the docstring says why.
+    answered = served(AppCatalogEntry.vuln_assessment, AppCatalogEntry.vuln_signature, epoch=epoch)
     values: dict[str, float] = {}
     values["vuln.apps_affected"] = await _count(
         db,
