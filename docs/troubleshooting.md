@@ -1577,6 +1577,19 @@ Catalog tab carries. So a link somebody sent you works even while the entry is h
    answer before there is anything to select; what it does offer is **the one chip the link
    carried, with an ×**. Click it and the list answers unfiltered, which is what the
    sentence's own last clause tells you to do. Then step 1, for why nothing answers.
+10. **You looked up a finding id you know is on a Mac, and the page found nothing.** Type an id in
+    the search box and press Enter, or follow one from an app's row, and the page lists the builds
+    whose stored answer *names* it. Three things keep an id off those lists, in this order. **The
+    list it would be named on is capped.** A build's id list holds ~50, KEV first, while the count
+    beside it counts every finding ([`vulnerabilities.md`](vulnerabilities.md) §4e) — so an id past
+    the cap is counted on that build and named nowhere, where no lookup can see it. The page says
+    how many of your builds are capped above its results; a number there is the likeliest answer.
+    **The build's answer came from a corpus that has since moved.** A row judged by an epoch that is
+    no longer answering reads *outside the corpus* whatever ids it stores, so it is not searched;
+    the hourly catalog refresh rewrites it, and **Refresh** on Devices › Applications › Catalog does
+    it now. **The build reads *outside the corpus*.** The corpus holds no row for that exact build,
+    so nothing was ever named for it — not a clean bill, and not a missing id. None of the three is
+    a fault, and the page never says *not on your fleet* for any of them.
 
 **V.** The page says *loaded, not yet judged against* more than two hours after the corpus
 date moved, with the tier on and the hourly refresh running. Report the date the banner

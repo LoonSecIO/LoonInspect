@@ -349,6 +349,15 @@ contract leaves open are labelled as assumptions in the code: *recency* is read 
 most-recently-published first, and a finding the corpus carries with no severity score
 sorts after `low` — counted in `total`, never dropped.
 
+**And the list is searchable in the product** (#533). `GET /api/vulnerabilities/{vulnID}` and
+Posture › Vulnerabilities answer *is CVE-X on my fleet* from these same lists — the tenant's
+served rows a Mac carries whose `vulnIDs` contains the id, one row per build — so the question
+the summary tier answers in Splunk is answerable in-app too. **The cap is what bounds that
+answer**: an id past a row's cap is counted in `counts.total` and named nowhere, where no lookup
+can find it. So the response carries `truncatedBuilds`, how many of those rows were cut, and the
+page prints it beside every answer including an empty one — which is what keeps *nothing found*
+from reading as *not on your fleet*, and what keeps moving the cap free.
+
 ### 4f. The corpus interface: what `findings()` answers
 
 `VulnCorpus.findings(key_title=…, key_full=…)` (`app/core/vuln.py`) is three-valued, and

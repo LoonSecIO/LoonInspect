@@ -1,9 +1,11 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router";
 import { ExternalLink } from "@/components/ui/external-link";
 import type { Translations } from "@/i18n/en";
 import { Subject } from "@/features/catalog/PatchAnswerCell";
 import type { PatchAnswer } from "@/features/catalog/patchAnswer";
 import { describeUpdate, type UpdateLine } from "@/features/vulnerabilities/appUpdate";
+import { findingPath } from "@/features/vulnerabilities/findingId";
 import { assertExhaustive, formatCorpusDate, type AppUpdate, type AppVulnerability } from "@/features/vulnerabilities/types";
 
 // Fixed status colours, never themed, per the dataviz palette the catalog's patch-state
@@ -153,7 +155,8 @@ export function AssessmentCell({
             </span>
           )}
           <span className="block font-mono text-xs text-muted-foreground">
-            {named.join(", ")}
+            {/* Every named id is a lookup (#533); the ids past `IDS_SHOWN` stay a count with no links. */}
+            {named.map((id, index) => <span key={id}>{index > 0 ? ", " : ""}<Link className="hover:underline" to={findingPath(id)}>{id}</Link></span>)}
             {rest > 0 ? ` ${copy.moreIds(rest)}` : ""}
             {/* The cap bit: the count above is every finding, the list below is not. */}
             {vulnIDsTruncated ? ` · ${copy.idsCapped}` : ""}
