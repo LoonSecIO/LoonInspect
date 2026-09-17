@@ -112,7 +112,14 @@ The response is an attachment named `evidence-<connectionID>-<start>-to-<asOf>.h
 Print CSS is A4 portrait, table headings repeating, rows unbroken, and the **refusal on every sheet**. **No
 server-side PDF and no stub for one**: a rendering service is a font problem and a permanent maintenance surface
 bought on a guess, and whether a printed page is an acceptable artefact is a question the first assessor settles.
-The page also says what it cannot answer rather than printing a thin table and letting a reader infer — six
-sentences in `app.baseline.page`, stepped through in [`troubleshooting.md`](troubleshooting.md) §17.
+The page also says what it cannot answer rather than printing a thin table and letting a reader infer — five
+sentences in `app.baseline.page`, stepped through in [`troubleshooting.md`](troubleshooting.md) §17. A connection
+with no ledger at all has no sixth: the endpoint refuses it at 409 with its own words, so a page for it is never
+rendered. **`notObserved` is where several facts wear one label**, and the sentence about it names all three the
+page cannot tell apart — the head before a Mac's first observation, the tail after its last, and dates nobody swept
+— because naming the alarming one alone sends every reader to a run history with no missing run in it
+([`diagnosability.md`](diagnosability.md) §2 rule 1). §4's grain is on the page too: the sum's heading reads
+**= the window × rows** and the prose above it gives the window's own length and both multiples, so the reader who
+finds the third number can also check it.
 
 No posture keys: the report's own wait for #183's follow-up, as #219 ruled.

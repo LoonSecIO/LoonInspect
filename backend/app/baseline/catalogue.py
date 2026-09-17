@@ -30,6 +30,11 @@ OPERATORS = frozenset({"equals", "in", "version_at_least"})
 MATCHES = frozenset({"exact", "partial"})
 PLACEHOLDERS = frozenset({"field", "value", "operand"})
 
+#: The catalogue version these readers are written against. A file at another version is refused rather than read
+#: on the assumption that the keys still mean what they meant: the vocabularies above are the version's, and a
+#: report built from half of a catalogue it did not understand prints as a passing fleet (#473).
+KNOWN_VERSION = 1
+
 
 class CatalogueError(RuntimeError):
     """The catalogue could not be read, or is not shaped like a catalogue."""
@@ -107,6 +112,13 @@ def load_catalogue(path: Path | None = None) -> BaselineCatalogue:
     rules = document.get("rules") if isinstance(document, dict) else None
     if not isinstance(rules, list) or not rules or "version" not in document:
         raise CatalogueError(f"{found} is not a catalogue: it is a `version:` key and a non-empty `rules:` list")
+    if document["version"] != KNOWN_VERSION:
+        raise CatalogueError(
+            f"{found} is at version {document['version']!r} and this build reads version {KNOWN_VERSION}. The "
+            "operators, the MSCP match words and the `witnessed` placeholders are that version's vocabulary, so a "
+            "catalogue from another one is refused rather than read on the assumption that its keys still mean "
+            "what they meant. Use a build that reads this catalogue's version."
+        )
     return BaselineCatalogue(version=document["version"], rules=tuple(_rule(raw, i) for i, raw in enumerate(rules, 1)))
 
 

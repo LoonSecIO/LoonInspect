@@ -13,9 +13,19 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
-from app.baseline.catalogue import MATCHES, OPERATORS, PLACEHOLDERS, catalogue
+from app.baseline.catalogue import (
+    CATALOGUE_NAME,
+    KNOWN_VERSION,
+    MATCHES,
+    OPERATORS,
+    PLACEHOLDERS,
+    CatalogueError,
+    catalogue,
+    load_catalogue,
+)
 from app.mdm.jamf import contract
 
 CATALOGUE = Path(__file__).resolve().parents[2] / "docs" / "baseline-rules.yml"
@@ -44,6 +54,18 @@ def test_the_catalogue_is_v1_with_ten_rules_numbered_in_order() -> None:
     assert [rule.id for rule in loaded.rules] == [f"LI-{n:04d}" for n in range(1, 11)]
     assert {rule.predicate.operator for rule in loaded.rules} <= OPERATORS
     assert catalogue() is loaded, "parsed once; the rules are frozen, so the cache is shareable"
+    assert loaded.version == KNOWN_VERSION, "the shipped file is the version the readers are written against"
+
+
+def test_a_catalogue_at_another_version_is_refused_rather_than_read(tmp_path: Path) -> None:
+    """A version is a vocabulary — the operators, the MSCP match words and the `witnessed` placeholders are v1's.
+    Read on the assumption that another version's keys still mean what they meant, a catalogue half understood
+    prints as a passing fleet, so it is refused with the version it found in the sentence. The evidence report turns
+    that into its 503 (#473, docs/troubleshooting.md §17 step 1)."""
+    written = tmp_path / CATALOGUE_NAME
+    written.write_text(yaml.safe_dump({"version": 9, "rules": [{"id": "LI-0001"}]}))
+    with pytest.raises(CatalogueError, match="is at version 9 and this build reads version 1"):
+        load_catalogue(written)
 
 
 def test_every_field_resolves_in_the_contract_allowlist_for_its_own_scalar_section() -> None:
