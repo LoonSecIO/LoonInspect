@@ -35,8 +35,11 @@ backend/logs
 .claude
 **/.DS_Store
 
-# Docs and meta — not needed to build or run
+# Docs and meta — not needed to build or run. The one exception is the baseline rule catalogue: it is data the
+# evidence report reads at request time (#472), and it lives in docs/ because a register restated in prose
+# drifts from the register the code runs.
 docs
+!docs/baseline-rules.yml
 LICENSE
 README.md
 **/*.md

@@ -34,6 +34,7 @@ from app.api.collections import router as collections_router
 from app.api.connections import router as connections_router
 from app.api.destinations import router as destinations_router
 from app.api.devices import router as devices_router
+from app.api.evidence import router as evidence_router
 from app.api.feature_flags import router as feature_flags_router
 from app.api.jamf_patch import router as jamf_patch_router
 from app.api.posture import router as posture_router
@@ -647,6 +648,7 @@ app.include_router(jamf_patch_router)
 app.include_router(smart_groups_router)
 app.include_router(feature_flags_router)
 app.include_router(posture_router)
+app.include_router(evidence_router)
 
 
 @app.get("/openapi.json", include_in_schema=False)
