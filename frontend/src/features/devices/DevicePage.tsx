@@ -12,6 +12,7 @@ import { collectedNotOnPage } from "@/features/devices/ledgerSections";
 import { ObservationBlock } from "@/features/devices/ObservationBlock";
 import type { DeviceDetail, ExtensionAttribute } from "@/features/devices/types";
 import { AssessmentCell, CorpusBanner } from "@/features/vulnerabilities/AppAssessment";
+import { rollUpDeviceApps } from "@/features/vulnerabilities/deviceRollup";
 import { useLocale } from "@/i18n/LocaleContext";
 import type { Translations } from "@/i18n/en";
 
@@ -113,6 +114,10 @@ export function DevicePage() {
     return rows;
   }, [device?.apps, orderByPatch]);
 
+  // #535: the three numbers over the rows this page already holds — arithmetic, not a
+  // request — and null when nothing is answering, where the banner alone already speaks.
+  const vulnApps = useMemo(() => rollUpDeviceApps(device?.apps ?? []), [device?.apps]);
+
   const sectionLabels = useMemo(
     () => ({
       section: (name: string) => tc.sections[name] ?? name,
@@ -198,6 +203,14 @@ export function DevicePage() {
           </label>
         </div>
         <CorpusBanner corpusAsOf={device.corpusAsOf} t={t} />
+        {/* Beside the banner, because one date governs both: the Mac's own line, in apps.
+            Nothing at all under `off` — the banner has just said there is no corpus and no
+            date, and three zeros beneath it would be arguing with it. */}
+        {vulnApps && (
+          <p className="text-sm text-muted-foreground">
+            {td.apps.vulnRollup(vulnApps.withFindings, vulnApps.onKev, vulnApps.outsideCorpus)}
+          </p>
+        )}
         <div className="overflow-x-auto rounded-lg border bg-card">
           <table className="w-full text-sm">
             <thead className="border-b bg-muted/30 text-left text-muted-foreground">

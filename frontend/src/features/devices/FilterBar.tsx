@@ -3,8 +3,18 @@ import { useLocale } from "@/i18n/LocaleContext";
 
 interface FilterBarProps {
   filters: DeviceFilters;
+  /** The corpus answering for this organization, or null (#535). The two toggles are offered
+   *  only where there is something to select: under `off` the filter is refused, and a control
+   *  that can only produce a refusal is worse than no control. What is offered there instead
+   *  is the × on a filter a pasted link already carried — taking one off is always answerable. */
+  corpusAsOf: string | null;
   onChange: (filters: DeviceFilters) => void;
 }
+
+/** The two chips, and the one URL key they share. Mutually exclusive by construction: KEV
+ *  narrows *with findings* rather than being a second axis, so they are one value and not
+ *  two booleans that could ask for something the endpoint does not mean. */
+const VULN_CHIPS = ["findings", "kev"] as const;
 
 const inputClasses =
   "rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -19,7 +29,7 @@ function fromTriState(value: string): boolean | undefined {
   return value === "true";
 }
 
-export function FilterBar({ filters, onChange }: FilterBarProps) {
+export function FilterBar({ filters, corpusAsOf, onChange }: FilterBarProps) {
   const { t } = useLocale();
 
   function update(patch: Partial<DeviceFilters>) {
@@ -115,6 +125,49 @@ export function FilterBar({ filters, onChange }: FilterBarProps) {
           {t.devices.showDeparted}
         </label>
       </div>
+
+      {/* URL-carried like every control above, so a shared link asks the same question and
+          page 2 of it is still that question. Clicking the chip that is on clears it.
+
+          Where nothing answers there is nothing to select — but a pasted link still carries
+          the filter, and that is the one state the endpoint refuses (#535). So this branch
+          rather than none: not the two toggles, which could produce nothing but the same
+          refusal, but the one that is on, with an × that takes it off. Its sentence ends
+          "and this list answers unfiltered", and this is the control that follows it.
+
+          One conditional, not two gates in two files: a filter the page applies is never
+          one the page hides (#109), and that stays true by construction here. */}
+      {corpusAsOf !== null ? (
+        <div className="flex flex-wrap gap-2">
+          {VULN_CHIPS.map((value) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={filters.vuln === value}
+              className={`rounded-full border px-3 py-1 text-xs ${
+                filters.vuln === value ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+              }`}
+              onClick={() => update({ vuln: filters.vuln === value ? undefined : value })}
+            >
+              {value === "kev" ? t.devices.onKevChip : t.devices.withFindingsChip}
+            </button>
+          ))}
+        </div>
+      ) : (
+        filters.vuln && (
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-full border bg-muted px-3 py-1 text-xs"
+              onClick={() => update({ vuln: undefined })}
+            >
+              {filters.vuln === "kev" ? t.devices.onKevChip : t.devices.withFindingsChip}
+              <span aria-hidden="true">×</span>
+              <span className="sr-only">{t.devices.clearFilter}</span>
+            </button>
+          </div>
+        )
+      )}
     </div>
   );
 }

@@ -3,10 +3,10 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
-from typing import TypeVar
+from typing import Literal, TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import ColumnElement, func, or_, select, tuple_
+from sqlalchemy import ColumnElement, and_, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -15,9 +15,9 @@ from app.core.auth import require
 from app.core.database import get_db
 from app.core.permissions import Permission
 from app.core.vuln import VulnCorpus
-from app.core.vuln_answer import stored_corpus
-from app.core.vuln_library import earned_corpus
-from app.core.vuln_read import assess, corpus_as_of, today, update_line
+from app.core.vuln_answer import counted, served, stored_corpus
+from app.core.vuln_library import earned_corpus, loaded_epoch_signature
+from app.core.vuln_read import NO_ANSWER, assess, corpus_as_of, today, update_line
 from app.mdm.jamf.contract import SUBJECT_COMPUTER
 from app.mdm.org_units import BUILDING, DEPARTMENT, OrgUnitNames, ids_for_name, load_names, name_for
 from app.models.schema import Device, DeviceExtensionAttribute, InstalledApp
@@ -26,9 +26,11 @@ from app.observations.read import device_observation
 from app.schemas.catalog import CatalogTitleRef
 from app.schemas.devices import (
     DeviceDetailOut,
+    DeviceListItemOut,
     DeviceListResponse,
     DeviceObservationOut,
     DeviceOut,
+    DeviceVulnAppsOut,
     ExtensionAttributeFilter,
     VersionOperator,
 )
@@ -91,6 +93,51 @@ def _stamped(out: _DeviceOutT, device: Device, names: OrgUnitNames, departed: Ma
     )
 
 
+def _counted(band: str):
+    """One count off a device's own copy of the answer — `vuln_answer.counted`, scoped to
+    this table. NULL where the copy will not parse, which is the row the cell reads as
+    `unknown_app` rather than raising."""
+    return counted(InstalledApp.vuln_counts, band)
+
+
+async def _vuln_apps(db: AsyncSession, device_ids: Sequence[int], *, epoch: str | None) -> dict[int, DeviceVulnAppsOut]:
+    """Apps with findings, apps on KEV and apps outside the corpus — per device, in ONE
+    grouped read bounded by the page's ids (the `_device_counts` shape, `app.api.catalog`),
+    stamped onto the rows like the org-unit names and the departure census above. Never a
+    query per row and never a count over the tenant: the fleet-wide totals are the night's
+    tape (§4g, §7). **Apps, not findings** — two vulnerable builds is *2*, and a per-Mac sum
+    of `counts.total` is a number nobody ruled.
+
+    **The three buckets partition, and the unknowns are why.** *Served* is
+    `vuln_answer.served`, the rule the cell obeys, so a copy from an epoch that has moved is
+    outside the corpus here exactly as on the Mac's own page (§4f). The third count is
+    `IS NOT TRUE` over that rule — never `NOT (…)`, since an unassessed row's assessment is
+    NULL — widened by the copy whose counts will not parse. `total` decides readable, KEV
+    included: a corrupted answer can carry a good `kev: 1` beside a `total` that is not a
+    number, and counting it would report *0 with findings · 1 on KEV* for a row the cell
+    reads as outside the corpus. An app falling out of all three would be §4a's silent zero.
+    """
+    if not device_ids:
+        return {}
+    covered = served(InstalledApp.vuln_assessment, InstalledApp.vuln_signature, epoch=epoch)
+    total_findings = _counted("total")
+    readable, outside = and_(covered, total_findings.is_not(None)), or_(covered.is_not(True), total_findings.is_(None))
+    rows = await db.execute(
+        select(
+            InstalledApp.device_id,
+            func.count().filter(and_(readable, total_findings > 0)),
+            func.count().filter(and_(readable, _counted("kev") > 0)),
+            func.count().filter(outside),
+        )
+        .where(InstalledApp.device_id.in_(device_ids))
+        .group_by(InstalledApp.device_id)
+    )
+    return {
+        device_id: DeviceVulnAppsOut(with_findings=findings, on_kev=kev, outside_corpus=outside)
+        for device_id, findings, kev, outside in rows
+    }
+
+
 def _parse_version(value: str) -> tuple[int, ...]:
     return tuple(int(part) for part in re.findall(r"\d+", value))
 
@@ -140,6 +187,9 @@ async def list_devices(
     app_hash: str | None = Query(default=None, alias="appHash", max_length=32),
     version_hash: str | None = Query(default=None, alias="versionHash", max_length=32),
     ea: list[str] | None = Query(default=None, description="Repeated key:value extension-attribute filters"),
+    # Macs carrying at least one app with findings, or one on CISA's KEV list (#535). SERVED,
+    # not stored: a copy judged by an epoch that has moved is outside the corpus here too.
+    vuln: Literal["findings", "kev"] | None = Query(default=None),
     include_departed: bool = Query(
         default=False,
         alias="includeDeparted",
@@ -193,6 +243,27 @@ async def list_devices(
             carrying = carrying.where(InstalledApp.version_hash == version_hash)
         stmt = stmt.where(Device.id.in_(carrying))
 
+    # One corpus object for the whole response (#535): the gate this filter is refused by,
+    # the rule the rollup judges a copy against, and the stamp under the list — three reads
+    # of a moving fact would let a column disagree with the header above it.
+    corpus, epoch = await earned_corpus(db), loaded_epoch_signature()
+    if vuln is not None:
+        if corpus.as_of is None:
+            # Refused, never empty: an empty page under `vuln=kev` reads as *no Mac carries
+            # one*, which is §4a's failure written in a query string.
+            raise HTTPException(status_code=409, detail=NO_ANSWER)
+        # The carriers of a finding, in the idiom `versionHash` uses above — one semi-join
+        # over this Mac's own copies, served by `ix_installed_apps_vuln_served`. `kev` keeps
+        # the redundant `total > 0`: KEV findings are a subset, so it excludes nothing and
+        # one predicate serves both.
+        carrying = select(InstalledApp.device_id).where(
+            served(InstalledApp.vuln_assessment, InstalledApp.vuln_signature, epoch=epoch),
+            _counted("total") > 0,
+        )
+        if vuln == "kev":
+            carrying = carrying.where(_counted("kev") > 0)
+        stmt = stmt.where(Device.id.in_(carrying))
+
     for ea_filter in _parse_ea_filters(ea):
         # By definition id or by name (#197): the id is the identity a script can rely
         # on across a rename, the name is what a person types.
@@ -236,11 +307,21 @@ async def list_devices(
 
     names = await load_names(db)
     departed = await open_departures(db, subject_kind=SUBJECT_COMPUTER)
+    # Nothing answering, no column: the rollup is not computed, the rows carry no `vulnApps`
+    # and `corpusAsOf` is null, which is how the page knows there is no column to render
+    # rather than a row of zeros to explain away (§4a).
+    rollup = {} if corpus.as_of is None else await _vuln_apps(db, [device.id for device in devices], epoch=epoch)
     return DeviceListResponse(
-        items=[_stamped(DeviceOut.model_validate(device), device, names, departed) for device in devices],
+        items=[
+            _stamped(DeviceListItemOut.model_validate(device), device, names, departed).model_copy(
+                update={"vuln_apps": rollup.get(device.id)}
+            )
+            for device in devices
+        ],
         total=total,
         page=page,
         page_size=page_size,
+        corpus_as_of=corpus_as_of(corpus),
     )
 
 

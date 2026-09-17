@@ -551,6 +551,20 @@ and step 2 ends with how to tell that apart from a broken exchange.
    stop waiting, use Devices › Applications › **Catalog** › *Refresh* (step 3) — it
    re-matches every row, and the lines appear on the next page load.
 
+8. **The Devices list's *Apps with findings* column disagrees with the Mac's own page.**
+   The two numbers are read off the same rows — the copy of the answer that sits on that
+   Mac's own app rows ([`vulnerabilities.md`](vulnerabilities.md) §4f) — and both count
+   **apps**, never findings added up across them, so *1 (0 KEV) · 2 outside* in the column
+   and *1 app with findings · 0 on KEV · 2 outside the corpus* on the page are the same
+   sentence twice. A disagreement is therefore two reads taken at different moments rather
+   than two answers, and something moved between them: the hourly pass copied a build's
+   answer onto this Mac, or the Mac itself checked in. **Reload whichever page you opened
+   first.** If they still disagree, it is step 3's lag seen one surface over — the copies on
+   this Mac have not been rewritten yet — and it closes the same two ways: the hourly
+   refresh, which Devices › Applications › **Catalog** › *Refresh* runs now, or that Mac's
+   next check-in. A disagreement that survives both, on a reloaded page, is reportable
+   state **H**; include both numbers and the Mac's serial.
+
 **H.** A corpus has arrived on this container, this organization's tier is not `off`, and
 the pages still do not answer from it — either they say nothing is answering (grey,
 including an epoch the container holds and cannot read), or a *Refresh* leaves builds the
@@ -1515,13 +1529,14 @@ Catalog tab carries. So a link somebody sent you works even while the entry is h
    *outside the corpus* on an organization nothing answers for is refused: `409` from
    `GET /api/catalog?vuln=findings`, in words that name both causes and point at
    [`vulnerabilities.md`](vulnerabilities.md) §8 — *Nothing is answering for this
-   organization, so a vulnerability filter has no rows to be right about*. **On screen you
-   meet that refusal as the banner, not as that sentence**: the page asks for findings on
-   every load, so a refused read leaves the corpus banner and its *why* block standing
-   alone — step 1's screen, reached by a different road. The words themselves are for
-   whoever reads the API or the access log. It is refused rather than answered empty on
-   purpose: an empty list under *findings* reads as *nothing found*, which is the one thing
-   this product must never say about apps nobody looked at. Step 1 is the fix.
+   organization, so a vulnerability filter has no rows to be right about*. **On the
+   Vulnerabilities page you meet that refusal as the banner, not as that sentence**: the
+   page asks for findings on every load, so a refused read leaves the corpus banner and its
+   *why* block standing alone — step 1's screen, reached by a different road. The words
+   themselves are for whoever reads the API or the access log — and for the Devices list,
+   which prints them (step 9). It is refused rather than answered empty on purpose: an
+   empty list under *findings* reads as *nothing found*, which is the one thing this product
+   must never say about apps nobody looked at. Step 1 is the fix.
 6. **The page ends with the lists: there is no *By the numbers* at the foot.** Not a fault.
    Those four figures are rows of the nightly posture capture, which is read under
    **audit:read** — a permission the viewer role does not hold — and the band is planned
@@ -1552,6 +1567,16 @@ Catalog tab carries. So a link somebody sent you works even while the entry is h
    Wireshark did, 17 against 94 — and this section lists what an update would *close*, so such a
    build is left off rather than ranked last. The application record's own line prints both
    directions, and *Most exposed* still lists the build. None of the three is a fault.
+9. **The Devices list prints that sentence where its Macs should be.**
+   `GET /api/devices?vuln=findings|kev` is the same refusal one grain up (#535), and it is
+   reached the other way round — by a link somebody pasted, on an organization nothing
+   answers for, rather than by opening a page — so the list prints the words themselves in
+   place of its rows. Nothing beneath them counts anything: a refused question has no
+   total, so the count and the pager are gone rather than reading *0 devices total*. The
+   filter bar offers no *With findings* / *On KEV* chips here, because a corpus has to
+   answer before there is anything to select; what it does offer is **the one chip the link
+   carried, with an ×**. Click it and the list answers unfiltered, which is what the
+   sentence's own last clause tells you to do. Then step 1, for why nothing answers.
 
 **V.** The page says *loaded, not yet judged against* more than two hours after the corpus
 date moved, with the tier on and the hourly refresh running. Report the date the banner

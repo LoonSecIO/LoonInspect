@@ -66,6 +66,19 @@ from app.core.vuln_answer import HasStoredAnswer, update_effect
 from app.schemas.catalog import VulnUpdateOut
 from app.schemas.payload import VULN_ASSESSMENT_UNKNOWN_APP, VulnEnrichment
 
+# The refusal a vulnerability filter meets when nothing answers (#529), in
+# `app.api.evidence.NO_LEDGER`'s shape. An empty list under `vuln=findings` reads as
+# *nothing found* — §4a's failure written in a query string — so it is refused, and both
+# causes are named because the response cannot tell them apart and neither can we. Here
+# rather than on one endpoint (#535): the catalog list and the device list refuse the same
+# filter for the same reason, and a second copy of these words is how one of them ends up
+# naming the wrong list to drop the filter from — so the last sentence names neither.
+NO_ANSWER = (
+    "Nothing is answering for this organization, so a vulnerability filter has no rows to be right about. Either no "
+    "corpus epoch is loaded in this container, or data sharing is off for this organization — a corpus answers only for "
+    "an organization that shares (docs/vulnerabilities.md §8). Drop the filter and this list answers unfiltered."
+)
+
 
 class HasContentKeys(Protocol):
     """Anything carrying the v1 content-key pair — which is every row this product stores

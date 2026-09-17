@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
+import { ApiError } from "@/config/api";
 import { Button } from "@/components/ui/button";
 import { FilterBar } from "@/features/devices/FilterBar";
 import { lookupCatalog } from "@/features/catalog/api";
@@ -7,6 +8,16 @@ import { listDevices } from "@/features/devices/api";
 import { departureState, includeDepartedFrom } from "@/features/devices/departure";
 import type { Device, DeviceFilters, VersionOperator } from "@/features/devices/types";
 import { useLocale } from "@/i18n/LocaleContext";
+
+/** `?vuln=` narrowed rather than cast (#535): the two values the endpoint accepts, and
+ *  nothing else. A cast seats a third value in a typed field, where the chip that clears it
+ *  would have to print one of the two labels over a value that is neither — and sends it to
+ *  a `422` this page has no words for. Something nobody can select and nobody can name is
+ *  not a filter, so the list answers unfiltered, which is what the unpressed chips say. */
+function vulnFilterFrom(params: URLSearchParams): DeviceFilters["vuln"] {
+  const value = params.get("vuln");
+  return value === "findings" || value === "kev" ? value : undefined;
+}
 
 function filtersFromSearchParams(params: URLSearchParams): DeviceFilters {
   const managed = params.get("managed");
@@ -26,6 +37,7 @@ function filtersFromSearchParams(params: URLSearchParams): DeviceFilters {
     appHash: params.get("appHash") ?? undefined,
     versionHash: params.get("versionHash") ?? undefined,
     includeDeparted: includeDepartedFrom(params),
+    vuln: vulnFilterFrom(params),
     page: params.get("page") ? Number(params.get("page")) : 1
   };
 }
@@ -50,6 +62,7 @@ function searchParamsFromFilters(filters: DeviceFilters): URLSearchParams {
   if (filters.appHash) params.set("appHash", filters.appHash);
   if (filters.versionHash) params.set("versionHash", filters.versionHash);
   if (filters.includeDeparted) params.set("includeDeparted", "true"); // shared links carry it (#475)
+  if (filters.vuln) params.set("vuln", filters.vuln); // the two chips are the URL (#535)
   if (filters.page && filters.page !== 1) params.set("page", String(filters.page));
   return params;
 }
@@ -61,6 +74,9 @@ export function DevicesPage() {
 
   const [devices, setDevices] = useState<Device[]>([]);
   const [total, setTotal] = useState(0);
+  // The stamp the counts came from (#535). Null is "nothing is answering", which is why
+  // there is no vulnerability column and no chips rather than a column full of zeros.
+  const [corpusAsOf, setCorpusAsOf] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const pageSize = 50;
@@ -91,9 +107,15 @@ export function DevicesPage() {
           if (cancelled) return;
           setDevices(response.items);
           setTotal(response.total);
+          setCorpusAsOf(response.corpusAsOf);
         })
-        .catch(() => {
-          if (!cancelled) setError(t.devices.errorLoading);
+        .catch((caught: unknown) => {
+          if (cancelled) return;
+          // A `vuln` filter on a tenant nothing answers for is refused rather than answered
+          // with an empty page (#535), and the refusal names both of its causes. Printing
+          // "Could not load devices" over it would throw those words away — a pasted link
+          // is exactly how someone arrives here.
+          setError(caught instanceof ApiError && caught.status === 409 && caught.detail ? caught.detail : t.devices.errorLoading);
         })
         .finally(() => {
           if (!cancelled) setLoading(false);
@@ -108,6 +130,9 @@ export function DevicesPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = filters.page ?? 1;
+  // Eight, or nine where a corpus answers: the empty and error rows span the table, and a
+  // hard-coded 8 beside a conditional column is how one of them stops spanning it.
+  const columns = corpusAsOf === null ? 8 : 9;
 
   function goToPage(next: number) {
     setSearchParams(searchParamsFromFilters({ ...filters, page: next }));
@@ -122,6 +147,7 @@ export function DevicesPage() {
 
       <FilterBar
         filters={filters}
+        corpusAsOf={corpusAsOf}
         onChange={(next) => setSearchParams(searchParamsFromFilters(next), { replace: true })}
       />
       {/* A saved search the filter bar has no control for (#109's stale tile) shows as a
@@ -164,32 +190,38 @@ export function DevicesPage() {
               <th className="px-4 py-2 font-medium">{t.devices.tableDepartment}</th>
               <th className="px-4 py-2 font-medium">{t.devices.tableManaged}</th>
               <th className="px-4 py-2 font-medium">{t.devices.tableSupervised}</th>
+              {/* No corpus, no column (#535): there is nothing to put in it, and a `0` per
+                  row would be a clean bill nobody looked for. */}
+              {corpusAsOf !== null && <th className="px-4 py-2 font-medium">{t.devices.tableAppsWithFindings}</th>}
               <th className="px-4 py-2 font-medium">{t.devices.tableLastCheckIn}</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={8}>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={columns}>
                   {t.devices.loading}
                 </td>
               </tr>
             )}
             {!loading && error && (
               <tr>
-                <td className="px-4 py-4 text-destructive" colSpan={8}>
+                <td className="px-4 py-4 text-destructive" colSpan={columns}>
                   {error}
                 </td>
               </tr>
             )}
             {!loading && !error && devices.length === 0 && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={8}>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={columns}>
                   {t.devices.empty}
                 </td>
               </tr>
             )}
-            {devices.map((device) => (
+            {/* Not under a refusal (#535). A `vuln` filter nothing can answer is a 409, and
+                the last page's Macs left standing beneath that sentence would read as the
+                answer to the question the server just declined to answer. */}
+            {!error && devices.map((device) => (
               <tr key={device.id} className="border-b last:border-0">
                 <td className="px-4 py-2">
                   <Link to={`/devices/${device.id}`} className="font-medium hover:underline">
@@ -211,6 +243,25 @@ export function DevicesPage() {
                 <td className="px-4 py-2">
                   {device.supervised === null ? "—" : device.supervised ? t.devices.yes : t.devices.no}
                 </td>
+                {corpusAsOf !== null && (
+                  <td className="px-4 py-2 whitespace-nowrap">
+                    {device.vulnApps ? (
+                      <>
+                        {/* The unknowns are printed beside the count, always: a Mac whose
+                            apps are all outside the corpus reads "0 · 12 outside", which is
+                            not a clean bill and does not look like one (§4a). */}
+                        <span className="tabular-nums">
+                          {t.devices.appsWithFindings(device.vulnApps.withFindings, device.vulnApps.onKev)}
+                        </span>{" "}
+                        <span className="text-xs text-muted-foreground">
+                          {t.devices.appsOutsideCorpus(device.vulnApps.outsideCorpus)}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">{t.devices.noAppsRead}</span>
+                    )}
+                  </td>
+                )}
                 <td className="px-4 py-2">
                   {device.lastCheckIn ? new Date(device.lastCheckIn).toLocaleString() : "—"}
                 </td>
@@ -220,25 +271,34 @@ export function DevicesPage() {
         </table>
       </div>
 
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        {/* The count says which population it counts (#232): v0's devices are
-            computers, full stop, so the total is named next to what it is a total
-            of rather than left for someone to notice a Mac-sized number against an
-            iPad-sized fleet. */}
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-          <span>{t.devices.total(total)}</span>
-          <span className="text-xs">{t.common.computersOnlyScope}</span>
+      {/* Not under a refusal either (#535), for the reason the rows are not. `total` is
+          `0` until a response sets it, so a refused `vuln=kev` would print "0 devices
+          total" one line under the sentence refusing to answer that question — §4a's
+          reading printed as a number, on the screen built to prevent it — and after a load
+          that worked it would print the previous question's total instead, which is worse
+          for being plausible. The pager goes with it: `totalPages` counts the same absent
+          answer, and there are no rows to page through. */}
+      {!error && (
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          {/* The count says which population it counts (#232): v0's devices are
+              computers, full stop, so the total is named next to what it is a total
+              of rather than left for someone to notice a Mac-sized number against an
+              iPad-sized fleet. */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span>{t.devices.total(total)}</span>
+            <span className="text-xs">{t.common.computersOnlyScope}</span>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => goToPage(page - 1)}>
+              {t.devices.previous}
+            </Button>
+            <span className="self-center">{t.devices.pageOf(page, totalPages)}</span>
+            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => goToPage(page + 1)}>
+              {t.devices.next}
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => goToPage(page - 1)}>
-            {t.devices.previous}
-          </Button>
-          <span className="self-center">{t.devices.pageOf(page, totalPages)}</span>
-          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => goToPage(page + 1)}>
-            {t.devices.next}
-          </Button>
-        </div>
-      </div>
+      )}
     </section>
   );
 }

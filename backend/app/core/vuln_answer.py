@@ -47,6 +47,8 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Protocol
 
+from sqlalchemy import Integer, case, cast, func
+
 from app.core.vuln import AssessedBuild, VulnCorpus, VulnFinding
 from app.core.vuln_library import loaded_epoch_signature
 from app.schemas.payload import VULN_ASSESSMENT_COVERED, VULN_SEVERITY_BANDS
@@ -189,6 +191,24 @@ def served(assessment: object, signature: object, *, epoch: str | None):
     would drop the very rows `unknown_app` is asking for.
     """
     return (assessment == VULN_ASSESSMENT_COVERED) & (signature == epoch)
+
+
+def counted(counts: object, band: str):
+    """One count off a stored answer **in SQL**, as an integer, or NULL where the row will
+    not parse (#529, extended to `installed_apps` by #535).
+
+    The guard is load-bearing, and it is why this lives beside `served` rather than on one
+    endpoint. `_unreadable` above exists because a stored answer CAN be something other than
+    the shape the library writes — a hand-edited row, a restored backup — and the ruled
+    behaviour is that it is named in the log and read as `unknown_app`, never raised. A bare
+    `::int` in a `WHERE` turns that one row into a failed request for everybody, with a cast
+    error and nobody's words, and a second unguarded copy on a second endpoint is exactly
+    how that ships. `counts` is the JSONB column — `AppCatalogEntry.vuln_counts` or the
+    identical copy on `InstalledApp` — typed loosely so this module is still handed a
+    column rather than a model.
+    """
+    value = counts[band]  # type: ignore[index]
+    return case((func.jsonb_typeof(value) == "number", cast(value.astext, Integer)))
 
 
 def stored_corpus(corpus: VulnCorpus, rows: Iterable[HasStoredAnswer]) -> VulnCorpus:

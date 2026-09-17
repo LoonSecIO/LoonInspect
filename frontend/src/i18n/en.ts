@@ -769,6 +769,15 @@ export const en = {
     tailChip: "Leaving the fleet",
     leftChip: "Left the fleet",
     showDeparted: "Show departed",
+    // #535. Apps, never findings summed across them — the column header says which. The
+    // unknowns are a second string so they can be muted beside the count and never printed
+    // without it: "0" alone beside twelve unassessed apps is the clean bill §4a refuses.
+    tableAppsWithFindings: "Apps with findings",
+    appsWithFindings: (apps: number, kev: number) => `${apps} (${kev} KEV)`,
+    appsOutsideCorpus: (apps: number) => `· ${apps} outside`,
+    noAppsRead: "No apps read",
+    withFindingsChip: "With findings",
+    onKevChip: "On KEV",
     // The device page (#300). Every absence is a sentence about whose clock or whose
     // catalog is silent, never a dash: "Reported with no value" ≠ "no EAs" ≠ "not read".
     detail: {
@@ -815,7 +824,11 @@ export const en = {
         colBundleId: "Bundle ID",
         orderByPatch: "Order by Jamf's patch state",
         empty: "No applications reported for this Mac",
-        noTitle: "No Jamf Patch title matches this app"
+        noTitle: "No Jamf Patch title matches this app",
+        // #535: this Mac in apps, beside the banner. All three numbers or none — the third
+        // is what stops the first reading as a clean bill for a Mac nobody could assess.
+        vulnRollup: (apps: number, kev: number, unknown: number) =>
+          `${apps} app${apps === 1 ? "" : "s"} with findings · ${kev} on KEV · ${unknown} outside the corpus`
       },
       eas: {
         heading: "Extension attributes",
