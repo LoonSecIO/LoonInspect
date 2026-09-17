@@ -169,6 +169,11 @@ def _order(value: Any, repairs: list[str]) -> str:
     word = str(value if value is not None else DEFAULT_ORDER).strip().lower()
     if word in ORDERS:
         return word
+    # A model that answers every other field "any" answers this one "any" too. The page's
+    # default is what that means, and saying so as a correction would be noise on a reply
+    # that got nothing wrong.
+    if word in _ANY:
+        return DEFAULT_ORDER
     # An order decides which rows come first, never which rows match, so this neither widens
     # nor narrows the answer: it is a fix.
     repairs.append(_fixes("The model named an order this page does not have, so the list is ordered by exposure."))

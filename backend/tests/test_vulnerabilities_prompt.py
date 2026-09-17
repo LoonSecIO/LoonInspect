@@ -182,6 +182,9 @@ def test_an_order_this_page_does_not_have_is_exposure_and_still_runs() -> None:
     """An order decides which rows come first, never which rows match, so it cannot widen."""
     reading = interpret(_reply(state="kev", order="alphabetical"))
     assert (reading.filters["order"], reading.widened) == ("exposure", False)
+    # "any" is the word a model that answered every other field "any" writes here too: the
+    # page's default, with no correction to disclose.
+    assert interpret(_reply(state="kev", order="any")).repairs == []
 
 
 def test_a_name_the_whitelist_refuses_is_dropped_and_widens() -> None:
