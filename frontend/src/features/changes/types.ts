@@ -38,7 +38,7 @@ export interface DeviceChange {
 }
 
 /** What a `user=` filter resolved to (#446): the `u_…` the URL should carry, and the name for
- *  its chip. Null where nothing resolved it (a rotated key, rows older than the stamp). */
+ *  its chip. Null where nothing resolved it (a token minted in another deployment or tenant). */
 export interface UserFilter {
   token: string | null;
   display: string | null;
