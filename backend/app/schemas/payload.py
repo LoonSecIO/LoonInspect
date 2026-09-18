@@ -1,3 +1,14 @@
+"""The wire's models: what an MDM read normalizes to, and what a destination receives.
+
+Two shapes and the enrichment blocks between them — `NormalizedDevice` and `NormalizedApp`, which
+every provider's client must produce (app.mdm.jamf.client.normalize_computer today, an Addigy
+sibling next), and the `device.inventory` and `device.inventory.changed` events that
+app.mdm.service.process_sync enqueues. The rest of app.schemas shapes API responses; most of what is
+here is governed instead by docs/splunk-wire-vocabulary.md — additive-only, frozen in its casing,
+because a customer's saved searches name these keys. The envelope around them is app.core.wire, the
+snapshot assembly app.mdm.snapshot, and the carriage app.core.outbox.
+"""
+
 from __future__ import annotations
 
 from datetime import date, datetime

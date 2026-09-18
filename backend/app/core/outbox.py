@@ -1,3 +1,16 @@
+"""The outbox: the four stages between an event being produced and it leaving the process.
+
+**enqueue** (`enqueue_event`, `enqueue_events`) writes the row in the producer's own transaction, so
+"we recorded it" and "we will send it" commit together. **fan out** (`fan_out_pending`) is the only
+place that knows which destinations exist and what they subscribe to, and turns one event into a
+delivery row each. **deliver** (`deliver_pending`) posts what is due, backs off, and dead-letters
+after ten attempts; `redrive_failed` re-arms those. **purge** (`purge_delivered_events`) drops what
+is past its retention window. The three states a row sits in between — held, pending, dead-lettered
+— are named once in app.schemas.outbox and renamed nowhere. The per-destination request bodies are
+app.fanout and app.core.hec_fanout, the event vocabulary app.core.wire_vocabulary, and the ticks
+that call all four stages app.main.
+"""
+
 from __future__ import annotations
 
 import hashlib

@@ -1,3 +1,15 @@
+"""The gate on every request: who is asking, and what they are allowed to do.
+
+Owns the default-deny check each route inherits from app.main — the public-path allowlist, the
+session cookie and its CSRF pair, bearer API tokens, and `require(...)`, the dependency a route names
+its permissions with. It authenticates and scopes; it decides no policy. Passwords are hashed and
+secrets minted in app.core.security, permissions defined in app.core.permissions, token strings
+parsed in app.core.tokens, the tenant binding that row-level security reads set in
+app.core.database, and the sign-in and setup routes served by app.api.auth. The design is
+docs/auth-design.md; a path added to the allowlist here is the one edit in this file that can expose
+the API.
+"""
+
 from __future__ import annotations
 
 import logging
