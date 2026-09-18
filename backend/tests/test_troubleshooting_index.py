@@ -30,7 +30,7 @@ _PAGE_SENTENCES = (
     "No findings",
     "Outside the corpus",
     "Not assessed",
-    "A corpus is loaded and nothing here has been judged against it yet",
+    "apps are being judged against it",
     "Not judged yet",
     "not reported",
     "Deliveries are failing",

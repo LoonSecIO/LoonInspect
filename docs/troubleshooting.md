@@ -77,7 +77,7 @@ ticket names one, this says which path it came off.
 | **S** | §15 | A collapse line for an object that still exists in Jamf |
 | **T** | §16 | A finished device sweep whose log has no *device census* line |
 | **U** | §17 | The baseline rule catalogue will not load, or a sum does not close |
-| **V** | §18 | *Loaded, not yet judged against* more than two hours after the corpus moved |
+| **V** | §18 | *being judged against it* more than an hour after the corpus date moved |
 | **W** | §18 | *Longest exposed* is empty while *Most exposed* lists builds |
 
 ## 0. The four things you can read
@@ -129,7 +129,7 @@ words nobody sees.
 | *Vulnerability corpus as of …* above the Catalog, with a date | §5 step 5 |
 | *Vulnerabilities: not assessed* above the Catalog, with no date | §5 steps 1–2 |
 | A row reading *No findings*, *Outside the corpus* or *Not assessed* | §5 |
-| *A corpus is loaded and nothing here has been judged against it yet* | §18 step 4 |
+| *A corpus is loaded and … apps are being judged against it* | §18 step 4 |
 | An application record's *Judged* column reading *Not judged yet* | §5 step 3 |
 | An evidence row reading *not reported* | §17 |
 | Needs Attention saying *Deliveries are failing* | §3 |
