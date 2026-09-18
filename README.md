@@ -84,6 +84,12 @@ LoonInspect is designed around a **"Diff, Stream, Commit"** pipeline:
 3. **Analyze:** Diffs against the stored observation to determine what actually changed.
 4. **Stream:** Emits the delta to your SIEM for logging, compliance, and alerting.
 
+**The map is [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**: that path drawn end to end —
+the three triggers, the run row that *is* the mutex, the order a sweep reads Jamf in, what
+each pull costs, the provider seam a second MDM plugs into, and the life of one outbox
+event. Every document under `docs/` is indexed, with its status, in
+[docs/README.md](docs/README.md).
+
 Beneath the delta, every Jamf observation is also kept as a versioned, content-addressed
 record — what each device looked like each time it was read, and through what collector
 configuration — so history can be diffed without phantom changes when the shape evolves.
