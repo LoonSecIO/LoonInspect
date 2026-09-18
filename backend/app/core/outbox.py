@@ -701,8 +701,10 @@ async def _attempt_hec_delivery(
     re-sends both. That is the outbox's existing at-least-once story one level down — a
     device's sub-events duplicate together, and the dedup key on a fan-out sourcetype is
     the pull plus the item (`deviceMeta.eventID` with the item's own identity), never
-    `deviceMeta.eventID` alone (docs/splunk-setup.md §7). Redrive of a dead-lettered
-    delivery is #91, not built.
+    `deviceMeta.eventID` alone (docs/splunk-setup.md §7). A dead-lettered delivery is
+    recoverable: `redrive_failed` below (#91) puts its attempts back to zero, due now, with
+    the last error kept, and only until the event's expiry — `POST
+    /api/destinations/{id}/redrive` and the Redrive button; docs/troubleshooting.md §3 walks it.
     """
     headers = _build_headers(destination)
     bodies = hec_request_bodies(event.payload, max_bytes=settings.splunk_hec_max_request_bytes)

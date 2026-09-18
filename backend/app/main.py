@@ -319,7 +319,8 @@ async def run_cleanup() -> None:
     """Purges finished runs and their log lines past retention, and closed alerts with
     them.
 
-    Follows `audit_retention_days` rather than the outbox's seven: the run log is what
+    Follows `run_retention_days` (`RUN_RETENTION_DAYS`, default 30) — the run log's own clock, not
+    the audit log's `audit_retention_days` and not the outbox's seven: the run log is what
     someone opens to answer "did this run last month", so a week cannot serve its own
     purpose. Runs alongside the other purges rather than at startup, so a long-lived
     process still prunes.
