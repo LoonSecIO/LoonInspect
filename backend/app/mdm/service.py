@@ -520,17 +520,20 @@ async def _observe_groups(
     # default 25 passes a day, asking per object was 7,500 selects a day for objects that
     # rarely move. `ingest_computer` already hands `record_observation` the span it loaded;
     # a census can load them all at once because it names every subject of the kind.
+    # `take` is what keeps a list that names one group twice — an offset-paginated read of
+    # a tenant being edited — reading as it did before the batch: see `CensusSpans`.
     spans = await current_spans(db, connection_id=connection.id, subject_kind=SUBJECT_COMPUTER_GROUP)
     for raw_group in raw_groups:
         observation = canonicalize_smart_group(raw_group)
+        current, current_loaded = spans.take(observation.subject_id)
         result = await record_observation(
             db,
             connection_id=connection.id,
             observation=observation,
             aperture_digest=aperture_digest,
             trigger=trigger,
-            current=spans.get(observation.subject_id),
-            current_loaded=True,
+            current=current,
+            current_loaded=current_loaded,
         )
         if result.outcome == "changed":
             await derive_and_record(db, connection=connection, observation=observation, result=result, trigger=trigger)
@@ -767,14 +770,15 @@ async def _observe_extension_attribute_definitions(
     observed: list[str] = []
     for raw_definition in definitions:
         observation = canonicalize_extension_attribute_definition(raw_definition)
+        current, current_loaded = spans.take(observation.subject_id)
         result = await record_observation(
             db,
             connection_id=connection.id,
             observation=observation,
             aperture_digest=aperture_digest,
             trigger=trigger,
-            current=spans.get(observation.subject_id),
-            current_loaded=True,
+            current=current,
+            current_loaded=current_loaded,
         )
         outcomes[f"ea_definition_{result.outcome}"] += 1
         observed.append(observation.subject_id)

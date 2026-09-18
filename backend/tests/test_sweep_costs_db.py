@@ -17,7 +17,9 @@ produce them expensively:
    ledger for the current span once per object. A tenant with 300 groups paid 300
    selects on every one of the day's 25 passes, for objects that rarely move. Each
    census now loads its kind's current spans in one select and hands each observation
-   its own.
+   its own. A read loaded before the loop cannot see what the loop writes, so the last
+   test here pins the one case where that matters: a census that names the same new
+   subject twice has to finish, the way the per-object read let it.
 
 Counting statements rather than timing them: a statement count is the same on a
 laptop and in CI, and "zero writes on a repeat" is a fact a stopwatch cannot state.
@@ -346,6 +348,69 @@ async def test_the_batched_span_still_tells_an_object_that_moved_from_one_that_d
     )
     assert [row.is_current for row in history] == [False, True]
     assert history[1].previous_id == history[0].id
+
+
+async def test_a_census_that_names_one_new_subject_twice_still_completes(db, jamf: FakeJamf, connection) -> None:
+    """The duplicate a batched read has to survive, on the pass where it hurts most: the
+    subject is new, so the map read before the loop has no span for it either time.
+
+    Both endpoints are offset-paginated over a live tenant and neither dedupes, so one
+    object listed on two pages is the ordinary hazard, not a contrivance. Handing the
+    same `None` out twice would take `record_observation`'s `new` branch twice and the
+    second insert would violate `uq_observation_spans_current_subject`, which
+    `run_jamf_catalog` catches as a failed pass — losing the groups, the definitions, the
+    org units and the departure reconciliation with it. `CensusSpans.take` answers
+    `current_loaded=False` on the repeat instead, so the second read finds the row the
+    first one wrote, exactly as the per-object read did before #569.
+    """
+    from app.mdm.service import run_jamf_catalog
+    from app.models.schema import ObservationSpan
+
+    jamf.smart_groups.extend(_group(index) for index in range(1, 4))
+    jamf.smart_groups.append(jamf.smart_groups[-1])
+    jamf.extension_attribute_definitions.extend(_definition(index) for index in range(1, 3))
+    jamf.extension_attribute_definitions.append(jamf.extension_attribute_definitions[-1])
+
+    with statements() as seen:
+        result = await run_jamf_catalog(db, connection, trigger="manual")
+    assert result.ok, result.error
+    # One group and one definition listed twice: the second sighting reads as `unchanged`
+    # against the span the first one opened — the outcome the per-object read gave, on the
+    # fixture's one base group and three base definitions plus what this test added.
+    assert result.observations["group_new"] == 4
+    assert result.observations["group_unchanged"] == 1
+    assert result.observations["ea_definition_new"] == 5
+    assert result.observations["ea_definition_unchanged"] == 1
+
+    # The win is intact: the duplicate buys back one per-object read, and one only.
+    assert len(span_census_reads(seen)) == 2, span_census_reads(seen)
+    assert len(span_reads_by_subject(seen)) == 2, span_reads_by_subject(seen)
+
+    current = (
+        (
+            await db.execute(
+                select(ObservationSpan.subject_id).where(
+                    ObservationSpan.mdm_connection_id == connection.id,
+                    ObservationSpan.subject_kind == "computer_group",
+                    ObservationSpan.is_current.is_(True),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert sorted(current) == sorted(set(current)), "the duplicate minted a second current span"
+
+
+async def test_the_batch_read_refuses_the_kind_that_is_streamed(db, connection) -> None:
+    """40k device spans are what the sweep's paging exists to avoid holding at once, so
+    the device kind is refused rather than merely discouraged — before a second MDM's
+    catalog pass copies the seam and reaches for it."""
+    from app.mdm.jamf.contract import SUBJECT_COMPUTER
+    from app.observations.ledger import current_spans
+
+    with pytest.raises(ValueError, match="streamed"):
+        await current_spans(db, connection_id=connection.id, subject_kind=SUBJECT_COMPUTER)
 
 
 # --- the measurement -----------------------------------------------------------------
