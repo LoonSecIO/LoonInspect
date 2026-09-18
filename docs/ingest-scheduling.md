@@ -128,7 +128,7 @@ weekly). That covers the real request — "sweep my fleet at 2am my time, unmana
 devices on Sundays" — and is a closed set that can be validated and rendered.
 
 Timezone belongs on the profile row. `sync_timezone` is currently a single global
-setting, and the scheduler object itself is constructed with it (`main.py:54`), so an
+setting, and the scheduler object itself is constructed with it (`scheduler = AsyncIOScheduler(...)` in `backend/app/main.py`), so an
 MSP with customers in New York and Los Angeles cannot express two 2ams three hours
 apart. §5's due-check design removes that limitation for free, because "is this due?"
 is evaluated per row in that row's zone.
@@ -263,13 +263,13 @@ mutex does not ship.**
 ## 5. Execution: a due-check tick, not registered jobs
 
 The obvious implementation registers one APScheduler job per profile. It would work
-today, because `serve.py:71` runs a single uvicorn process with no `workers`. It should
+today, because `serve.py` runs a single uvicorn process with no `workers`. It should
 still be rejected.
 
 Two things break at the second process, which is the direction #31 already describes as
 "actively wrong with more than one worker or during a rolling restart":
 
-- The scheduler is a module-level in-memory `AsyncIOScheduler` (`main.py:54`). N
+- The scheduler is a module-level in-memory `AsyncIOScheduler` (`scheduler = AsyncIOScheduler(...)` in `backend/app/main.py`). N
   processes means N copies of every job, so every profile runs N times.
 - A `PATCH` changing a schedule can only mutate the scheduler object *in the process
   that served the request*. Other processes keep the old schedule until restart — a
@@ -280,9 +280,14 @@ each, and runs it.** Schedule changes become an ordinary row write. No live sche
 mutation, no cross-process coordination, identical behaviour on one process or six.
 
 The reason this fits *here* specifically is that it composes with #31 rather than
-duplicating it: the partial unique index of §4.1 **is** the claim. Two processes racing
-for the same due profile both insert; one wins, the other takes the integrity error and
-moves on. Correct distributed scheduling falls out of work that is already a V0 blocker.
+duplicating it. The claim is one conditional `UPDATE … WHERE next_due_at <= now()
+RETURNING` per due row (`claim_due` in `backend/app/mdm/collections.py`): two processes
+racing for the same due row both issue it, one changes the row and runs, the other
+changes nothing and moves on — no insert, no integrity error. The partial unique index of
+§4.1 is the *run* lock the claimed work then takes; a claim whose run is already held is
+left unclaimed rather than advanced. Correct distributed scheduling falls out of work that
+is already a V0 blocker. (Corrected 2026-09-18, #559: this paragraph described the run
+lock as the claim.)
 
 The cost is granularity bounded by the tick interval. For a nightly fleet sweep, nobody
 cares.
