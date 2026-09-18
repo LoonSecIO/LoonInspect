@@ -104,6 +104,28 @@ async def current_span(db: AsyncSession, *, connection_id: int, subject_kind: st
     return result.scalar_one_or_none()
 
 
+async def current_spans(db: AsyncSession, *, connection_id: int, subject_kind: str) -> dict[str, ObservationSpan]:
+    """Every current span of one subject kind, keyed by subject id: one select for a whole
+    census rather than one per object (#569).
+
+    For the catalog kinds, whose censuses are tens to hundreds of objects read whole on
+    every pass — smart groups, extension-attribute definitions, and whatever a second
+    MDM's catalog pass takes a census of. Not for computers: a fleet is streamed a page at
+    a time, and `ingest_computer` reads one span per device on purpose.
+
+    A subject the map does not name has no current span, which is what a per-object miss
+    meant: hand `record_observation` that `None` and it reads the subject as `new`.
+    """
+    result = await db.execute(
+        select(ObservationSpan).where(
+            ObservationSpan.mdm_connection_id == connection_id,
+            ObservationSpan.subject_kind == subject_kind,
+            ObservationSpan.is_current.is_(True),
+        )
+    )
+    return {span.subject_id: span for span in result.scalars().all()}
+
+
 def is_stale(current: ObservationSpan | None, observed_at: datetime) -> bool:
     """Strictly older than what the current span has already seen. Equal is allowed —
     the same reportDate through a different aperture is a legitimate new head."""

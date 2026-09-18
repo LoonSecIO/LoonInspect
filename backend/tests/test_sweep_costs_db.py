@@ -1,8 +1,8 @@
-"""Two per-device costs on the sweep's hot path, pinned by statement count (#142).
+"""Three per-object costs on the sweep's hot path, pinned by statement count (#142, #569).
 
-Both were modest at hundreds of devices and wrong at the 40k design target, and neither
-shows up in a functional test because both produce the right rows — they just produce
-them expensively:
+All three were modest at hundreds of objects and wrong at the design target, and none
+shows up in a functional test because all three produce the right rows — they just
+produce them expensively:
 
 1. `record_device_apps` asked the database whether the Jamf Patch catalog had moved
    (`SELECT count(*), max(synced_at) FROM jamf_patch_titles`) once per device with
@@ -13,6 +13,11 @@ them expensively:
    that covered the section — DELETE, flush, INSERT — including a repeat observation
    that changed nothing. It now diffs against the rows it already loaded, and a repeat
    sweep writes no EA row at all.
+3. The catalog censuses — smart groups, extension-attribute definitions — asked the
+   ledger for the current span once per object. A tenant with 300 groups paid 300
+   selects on every one of the day's 25 passes, for objects that rarely move. Each
+   census now loads its kind's current spans in one select and hands each observation
+   its own.
 
 Counting statements rather than timing them: a statement count is the same on a
 laptop and in CI, and "zero writes on a repeat" is a fact a stopwatch cannot state.
@@ -236,6 +241,111 @@ async def test_only_the_extension_attributes_that_moved_are_written(db, jamf: Fa
     assert after[added_key][2] == ["new"]
     untouched = set(before) - {changed_key, gone_key}
     assert {key: after[key] for key in untouched} == {key: before[key] for key in untouched}
+
+
+# --- the catalog censuses' per-object span read ----------------------------------------
+
+
+def _group(index: int) -> dict:
+    return {"id": str(100 + index), "name": f"Rollout wave {index}", "siteId": "-1", "criteria": []}
+
+
+def _definition(index: int) -> dict:
+    return {
+        "id": str(200 + index),
+        "name": f"Census probe {index}",
+        "description": "",
+        "dataType": "STRING",
+        "enabled": True,
+        "inventoryDisplayType": "GENERAL",
+        "inputType": {"type": "SCRIPT", "script": "#!/bin/sh"},
+    }
+
+
+def span_reads_by_subject(seen: list[str]) -> list[str]:
+    """SELECTs that fetch ONE span by its subject id — what each census ran once per
+    object. A sweep still runs one per device on purpose, so this is only nil for a
+    catalog-only pass."""
+    return [s for s in seen if "FROM observation_spans" in s and "observation_spans.subject_id = " in s]
+
+
+def span_census_reads(seen: list[str]) -> list[str]:
+    """SELECTs that fetch every current span of one kind, whole rows, in one statement.
+    `head_digest` in the select list is what tells this apart from `reconcile_census`'s
+    id-only read of the same rows; the absent `subject_id = ` is what tells it from the
+    per-object read above."""
+    return [
+        s
+        for s in seen
+        if "FROM observation_spans" in s and "observation_spans.head_digest" in s and "observation_spans.subject_id = " not in s
+    ]
+
+
+async def test_a_catalog_pass_reads_the_spans_once_per_kind_not_once_per_object(db, jamf: FakeJamf, connection) -> None:
+    """Twelve groups and eleven definitions: two census reads and no per-object read at
+    all — on the pass that mints the spans and on the pass that finds them unchanged.
+    Before #569 this pass cost twenty-three single-subject selects, both times."""
+    from app.mdm.service import run_jamf_catalog
+
+    jamf.smart_groups.extend(_group(index) for index in range(1, 12))
+    jamf.extension_attribute_definitions.extend(_definition(index) for index in range(1, 9))
+
+    with statements() as minting:
+        first = await run_jamf_catalog(db, connection, trigger="manual")
+    assert first.ok and first.group_count == 12, first
+    assert first.observations["group_new"] == 12
+    assert first.observations["ea_definition_new"] == 11
+    assert len(span_census_reads(minting)) == 2, span_census_reads(minting)
+    assert span_reads_by_subject(minting) == []
+
+    with statements() as repeat:
+        second = await run_jamf_catalog(db, connection, trigger="manual")
+    assert second.ok, second
+    # The outcome is the proof the cheap read found the same spans the dear one did: a
+    # preloaded span that missed its subject would read as `new` and mint a second span.
+    assert second.observations["group_unchanged"] == 12
+    assert second.observations["ea_definition_unchanged"] == 11
+    assert len(span_census_reads(repeat)) == 2, span_census_reads(repeat)
+    assert span_reads_by_subject(repeat) == []
+
+
+async def test_the_batched_span_still_tells_an_object_that_moved_from_one_that_did_not(db, jamf: FakeJamf, connection) -> None:
+    """One group's criteria edited and one definition disabled between two passes: one
+    `changed` each, every other object `unchanged`, and the new spans point back at the
+    ones the batch loaded."""
+    from app.mdm.service import run_jamf_catalog
+    from app.models.schema import ObservationSpan
+
+    jamf.smart_groups.extend(_group(index) for index in range(1, 12))
+    jamf.extension_attribute_definitions.extend(_definition(index) for index in range(1, 9))
+    assert (await run_jamf_catalog(db, connection, trigger="manual")).ok
+
+    jamf.smart_group_criteria = [{"name": "Managed", "priority": 0, "andOr": "and", "searchType": "is not", "value": "Managed"}]
+    jamf.extension_attribute_definitions[0]["enabled"] = False
+
+    with statements() as seen:
+        moved = await run_jamf_catalog(db, connection, trigger="manual")
+    assert moved.ok, moved
+    assert moved.observations["group_changed"] == 1 and moved.observations["group_unchanged"] == 11
+    assert moved.observations["ea_definition_changed"] == 1 and moved.observations["ea_definition_unchanged"] == 10
+    assert len(span_census_reads(seen)) == 2, span_census_reads(seen)
+    assert span_reads_by_subject(seen) == []
+
+    # A closed span and a current one that names it: the batch handed `record_observation`
+    # the row it closes, not a copy of it.
+    history = (
+        (
+            await db.execute(
+                select(ObservationSpan)
+                .where(ObservationSpan.mdm_connection_id == connection.id, ObservationSpan.subject_id == "1")
+                .order_by(ObservationSpan.first_observed_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [row.is_current for row in history] == [False, True]
+    assert history[1].previous_id == history[0].id
 
 
 # --- the measurement -----------------------------------------------------------------

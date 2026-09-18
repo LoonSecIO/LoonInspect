@@ -92,6 +92,7 @@ from app.observations.departure_events import emit_census_events, emit_mac_notic
 from app.observations.ledger import (
     RecordResult,
     current_span,
+    current_spans,
     ensure_aperture,
     is_stale,
     record_observation,
@@ -514,7 +515,13 @@ async def _observe_groups(
     with no groups — the breaker in `reconcile_census` is what keeps that from reading as
     every group departing at once."""
     observed: list[str] = []
-    for raw_group in await client.fetch_smart_groups(http):
+    raw_groups = await client.fetch_smart_groups(http)
+    # One select for the whole census, not one per group (#569): at 300 groups and the
+    # default 25 passes a day, asking per object was 7,500 selects a day for objects that
+    # rarely move. `ingest_computer` already hands `record_observation` the span it loaded;
+    # a census can load them all at once because it names every subject of the kind.
+    spans = await current_spans(db, connection_id=connection.id, subject_kind=SUBJECT_COMPUTER_GROUP)
+    for raw_group in raw_groups:
         observation = canonicalize_smart_group(raw_group)
         result = await record_observation(
             db,
@@ -522,6 +529,8 @@ async def _observe_groups(
             observation=observation,
             aperture_digest=aperture_digest,
             trigger=trigger,
+            current=spans.get(observation.subject_id),
+            current_loaded=True,
         )
         if result.outcome == "changed":
             await derive_and_record(db, connection=connection, observation=observation, result=result, trigger=trigger)
@@ -753,6 +762,8 @@ async def _observe_extension_attribute_definitions(
     definitions = await client.fetch_computer_extension_attributes(http)
     if definitions is None:
         return None
+    # The same one-select-per-census seam as `_observe_groups` (#569), for the same reason.
+    spans = await current_spans(db, connection_id=connection.id, subject_kind=SUBJECT_EXTENSION_ATTRIBUTE_DEFINITION)
     observed: list[str] = []
     for raw_definition in definitions:
         observation = canonicalize_extension_attribute_definition(raw_definition)
@@ -762,6 +773,8 @@ async def _observe_extension_attribute_definitions(
             observation=observation,
             aperture_digest=aperture_digest,
             trigger=trigger,
+            current=spans.get(observation.subject_id),
+            current_loaded=True,
         )
         outcomes[f"ea_definition_{result.outcome}"] += 1
         observed.append(observation.subject_id)
