@@ -447,12 +447,19 @@ and step 2 ends with how to tell that apart from a broken exchange.
    library line beside them.
 3. **A date is on the banner, and every app under it says *outside the corpus*.** Not the
    same fault as grey, and usually not a fault at all. The container stores each build's
-   answer beside the build and re-judges when a new corpus arrives, so in the minutes after
-   a new corpus lands — before that pass runs — apps read **outside the corpus** rather than
-   keeping yesterday's numbers under today's date. That is deliberate: a count from one
-   corpus shown under another's date is a wrong answer that looks right, and this one
-   corrects itself. It clears on its own within the hour (the patch-catalog job re-judges
-   every organization hourly), and sooner for a Mac that checks in — that Mac. A build one
+   answer beside the build and re-judges when a new corpus arrives: the exchange that
+   imports a corpus runs that pass for every organization on the box before it returns
+   (#554), so on the ordinary day the pass is seconds behind the corpus line in step 2.
+   `docker compose logs app | grep "re-judged after import"` shows it — one
+   `vulnerability answers re-judged after import` line per organization, carrying `builds`
+   and `apps`. In those seconds, and for as long as that line is missing, apps read
+   **outside the corpus** rather than keeping yesterday's numbers under today's date. That
+   is deliberate: a count from one corpus shown under another's date is a wrong answer that
+   looks right, and this one corrects itself. A line reading
+   `vulnerability answers NOT re-judged after import` names an organization whose pass
+   failed, with the reason after it; that organization clears within the hour (the
+   patch-catalog job re-judges every organization hourly), and sooner for a Mac that checks
+   in — that Mac. A build one
    Mac's check-in judged does not answer on the others until the hourly pass copies it
    across, which that pass does every run. Two ways to stop waiting:
    - `docker compose logs app --since 2h | grep "vulnerability answers refreshed"` — the
@@ -1551,14 +1558,17 @@ Catalog tab carries. So a link somebody sent you works even while the entry is h
    flags and the corpus once, when it signs in. A change made in another browser, another
    tab or by another person reaches yours at the next reload — ⌘R. Deliberate, and not a
    fault; § 13 step 4 says the same of Settings › AI.
-4. **The page says *a corpus is loaded and nothing here has been judged against it yet*.**
-   Also not a fault, and not a fourth state: an epoch has arrived and this organization's
-   builds have not been joined to it yet, so every row would read *outside the corpus* and
-   a list of them would read as *no findings*. The words are the page's own — *loaded, not
-   yet judged against; answers arrive with the next sweep or the hourly refresh*. The
-   hourly catalog refresh closes it without any Mac checking in; **Refresh** on Devices ›
-   Applications › Catalog does it now. Still saying it more than two hours after the corpus
-   date moved, with the tier on, is reportable state **V**.
+4. **The page says *a corpus is loaded and this organization's apps are being judged
+   against it*.** Also not a fault, and not a fourth state: an epoch has arrived and this
+   organization's builds have not been joined to it yet, so every row would read *outside
+   the corpus* and a list of them would read as *no findings*. The words are the page's own
+   — *that happens the moment a corpus arrives, and the hourly refresh is the backstop* —
+   and since #554 they are true for seconds: the exchange that imports the epoch runs the
+   join itself, for every organization, and the log shows `vulnerability answers re-judged
+   after import` right after the corpus line (§5 step 3). The hourly catalog refresh closes
+   it without any Mac checking in if that pass failed; **Refresh** on Devices › Applications
+   › Catalog does it now. Still saying it more than an hour after the corpus date moved,
+   with the tier on, is reportable state **V**.
 5. **A filter is refused rather than answered.** Filtering by findings, KEV, band or
    *outside the corpus* on an organization nothing answers for is refused: `409` from
    `GET /api/catalog?vuln=findings`, in words that name both causes and point at
@@ -1641,10 +1651,11 @@ Catalog tab carries. So a link somebody sent you works even while the entry is h
     list's sentence, which is false wherever *Most exposed* above it lists a build, and the
     release that follows corrects it.
 
-**V.** The page says *loaded, not yet judged against* more than two hours after the corpus
-date moved, with the tier on and the hourly refresh running. Report the date the banner
-shows, what **Refresh** on the Catalog tab did, and `docker compose logs app --since 2h |
-grep -i "vulnerability library"`.
+**V.** The page says *being judged against it* more than an hour after the corpus date
+moved, with the tier on and the hourly refresh running. Report the date the banner shows,
+what **Refresh** on the Catalog tab did, and `docker compose logs app --since 2h |
+grep -iE "vulnerability library|re-judged after import"` — the second pattern is the line
+the import writes per organization, or the `NOT re-judged` line naming why it did not.
 
 **W.** *Longest exposed* says *no build with findings here carries a publication date*, or carries
 no age at all, while *Most exposed* lists builds with **no chip pressed and the search box empty**.

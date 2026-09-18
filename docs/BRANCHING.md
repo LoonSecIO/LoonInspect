@@ -1,6 +1,6 @@
 # LoonInspect Branching Strategy
 
-**Status:** Draft v1 · **Owner:** @kylepazandak · **Applies to:** `LoonSecIO/LoonInspect`
+**Status:** v1, enforcement partial (2026-09-18) · **Owner:** @kylepazandak · **Applies to:** `LoonSecIO/LoonInspect`
 
 This document defines how work enters `main`. It is written to be read by three
 audiences: contributors deciding how to start a piece of work, reviewers deciding
@@ -9,9 +9,13 @@ enforce both. Every rule is therefore stated as a numbered **control** with an
 explicit validation method, so it can be lifted into a PR check without
 reinterpretation.
 
-Controls marked `proposed` are agreed policy but not yet mechanically enforced.
-Nothing in this document is enforced by tooling today; see
-[Enforcement roadmap](#enforcement-roadmap) for the honest current state.
+Controls marked `proposed` are agreed policy but not yet mechanically enforced. Some
+are enforced today: the `Policy` job (`.github/scripts/check_policy.py`, reading
+`docs/controls.yml`) checks the branch and title grammar, the PR body check fails a
+body without its Validation section or its `posture_snapshot` line, and the merge
+gate is the ruleset. Which control is which is recorded in
+[Enforcement roadmap](#enforcement-roadmap); read that section as the current state,
+not this paragraph.
 
 ---
 
