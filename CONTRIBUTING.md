@@ -96,6 +96,16 @@ failure path ships with its words and its step-through in the same pull request 
 [docs/troubleshooting.md](docs/troubleshooting.md) is where the path lands. A diagnostic
 that would need the reader to open source code is a defect to file, not a line to write.
 
+And one for the prose inside the code: a comment block or docstring longer than ten lines
+opens with a line saying what the thing is — which job it belongs to, which path runs it,
+which caller it serves — and the reasoning follows. This is placement, not pruning. The
+history in those blocks has earned its lines; what costs a reader is a lede that never
+arrives, so a grep for the fleet sweep's concurrency limit reads sixteen lines about the
+patch catalog's first sync before learning it landed in the wrong job (#561, the rule's
+first application). That first line is also what will tell a reader which vertical they
+are in once a second one sits beside Jamf. Not retroactive: it applies to a block the
+moment that block is next edited.
+
 ## License
 
 Apache-2.0. By contributing you agree your contributions are licensed under the same
