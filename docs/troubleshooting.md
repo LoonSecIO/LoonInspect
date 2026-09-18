@@ -9,6 +9,75 @@ it was filed.
 Each path is ordered — *check this; if X, then that* — and ends in a fix or in a **named,
 reportable state**. When you reach a reportable state, §8 says what to include.
 
+**The paths**, in the order they were written rather than in order of likelihood — §8 and
+§9 are about the paths themselves and sit where they landed, and §9 ends by saying so.
+
+- **§0** [The four things you can read](#0-the-four-things-you-can-read)
+  - [What the page says, and which path answers it](#what-the-page-says-and-which-path-answers-it)
+- **§1** ["Test connection is green, and the first run swept zero
+  devices"](#1-test-connection-is-green-and-the-first-run-swept-zero-devices)
+- **§2** ["A run reports 0 devices"](#2-a-run-reports-0-devices)
+- **§3** ["Events are not arriving in Splunk" (or any
+  destination)](#3-events-are-not-arriving-in-splunk-or-any-destination)
+- **§4** ["It will not start" (or it starts, and every connection is
+  unreadable)](#4-it-will-not-start-or-it-starts-and-every-connection-is-unreadable)
+- **§5** ["Applications say *not assessed*, or the vulnerability date is
+  old"](#5-applications-say-not-assessed-or-the-vulnerability-date-is-old)
+- **§6** ["The Jamf Patch table is empty, or it stopped
+  refreshing"](#6-the-jamf-patch-table-is-empty-or-it-stopped-refreshing)
+- **§7** ["Jamf Pro webhooks are not arriving"](#7-jamf-pro-webhooks-are-not-arriving)
+- **§8** [When a path ends in "report"](#8-when-a-path-ends-in-report)
+- **§9** [What this document deliberately does not
+  contain](#9-what-this-document-deliberately-does-not-contain)
+- **§10** ["The update notice never appears, or names a release I do not
+  have"](#10-the-update-notice-never-appears-or-names-a-release-i-do-not-have)
+- **§11** ["The Prompt bar is missing, or it answers *AI search
+  unavailable*"](#11-the-prompt-bar-is-missing-or-it-answers-ai-search-unavailable)
+- **§12** ["Every sweep for one connection fails at once, and the run says the stored
+  credential has no clientId"](#12-every-sweep-for-one-connection-fails-at-once-and-the-run-says-the-stored-credential-has-no-clientid)
+- **§13** ["Settings › AI is missing, or says AI features are
+  off"](#13-settings--ai-is-missing-or-says-ai-features-are-off)
+- **§14** ["Settings › AI has no Apple Foundation Models
+  card"](#14-settings--ai-has-no-apple-foundation-models-card)
+- **§15** ["I deleted a smart group and the Changes page says
+  nothing"](#15-i-deleted-a-smart-group-and-the-changes-page-says-nothing)
+- **§16** ["A Mac I deleted in Jamf is still listed, or a Mac vanished from the
+  list"](#16-a-mac-i-deleted-in-jamf-is-still-listed-or-a-mac-vanished-from-the-list)
+- **§17** ["The evidence report is empty, or every row says it was not
+  reported"](#17-the-evidence-report-is-empty-or-every-row-says-it-was-not-reported)
+- **§18** ["Posture is not in my sidebar, or Vulnerabilities lists
+  nothing"](#18-posture-is-not-in-my-sidebar-or-vulnerabilities-lists-nothing)
+
+**The reportable states**, lettered in the order they were written, so they do not run in
+section order and never will — code, tests and the README cite them where they are. When a
+ticket names one, this says which path it came off.
+
+| State | Path | What it names |
+| --- | --- | --- |
+| **A** | §1 | A device sweep failed with an error that is not 401 or 403 |
+| **B** | §1 | A sweep succeeded with zero devices while Jamf lists computers |
+| **C** | §2 | Webhook runs for inventory events process zero devices |
+| **D** | §3 | Deliveries stay pending across several ticks with no failures |
+| **E** | §3 | Everything reports healthy and the destination shows nothing |
+| **F** | §4 | Startup migration failed |
+| **G** | §4 | Something is still unreadable after the key and its key id are ruled out |
+| **H** | §5 | A corpus arrived, the tier is not `off`, and the pages do not answer from it |
+| **I** | §5 | The published corpus is refused, unreachable, or unchanging |
+| **J** | §6 | A refresh reporting no error leaves the Jamf Patch table empty |
+| **K** | §0 | Occasional `502`s from the proxy in front while the app is healthy |
+| **L** | §7 | Jamf Pro's callbacks never produce a request line |
+| **M** | §5 | The exchange reads `failed` for a reason on the collector's side |
+| **N** | §10 | The update notice names a release this build does contain |
+| **O** | §11 | The Prompt bar reads *shown* and stays missing after a reload |
+| **P** | §12 | A connection's row says nothing while every one of its runs fails |
+| **Q** | §13 | **AI features** reads **On** and Settings › AI still refuses |
+| **R** | §14 | *Where this container runs* names a runtime the machine is not |
+| **S** | §15 | A collapse line for an object that still exists in Jamf |
+| **T** | §16 | A finished device sweep whose log has no *device census* line |
+| **U** | §17 | The baseline rule catalogue will not load, or a sum does not close |
+| **V** | §18 | *Loaded, not yet judged against* more than two hours after the corpus moved |
+| **W** | §18 | *Longest exposed* is empty while *Most exposed* lists builds |
+
 ## 0. The four things you can read
 
 **The app.** Settings › Connections shows every connection with its last sync; **Sync
@@ -45,6 +114,27 @@ tried again, and what to check.
 `group definitions observed`, `run finished`, and warnings such as `throttled by Jamf;
 backed off and continued` or `extension attribute definitions not readable; census
 skipped`. It is the panel under the connection's row, or `GET /api/runs/{jobId}/log`.
+
+### What the page says, and which path answers it
+
+Most of the time the screen has already named the path. Every sentence below is the page's
+own, as `frontend/src/i18n/en.ts` has it, and `backend/tests/test_troubleshooting_index.py`
+holds this table to that file — so a reworded page cannot leave the runbook routing by
+words nobody sees.
+
+| What the page says | Which path |
+| --- | --- |
+| *Vulnerability corpus as of …* above the Catalog, with a date | §5 step 5 |
+| *Vulnerabilities: not assessed* above the Catalog, with no date | §5 steps 1–2 |
+| A row reading *No findings*, *Outside the corpus* or *Not assessed* | §5 |
+| *A corpus is loaded and nothing here has been judged against it yet* | §18 step 4 |
+| The Catalog's *Judged* column reading *Not judged yet* | §18 step 4 |
+| An evidence row reading *not reported* | §17 |
+| Needs Attention saying *Deliveries are failing* | §3 |
+| A connection reading *Last sync failed* — 401, 403, or another error | §1 step 2 |
+| *AI search unavailable — the filters below still work.* | §11 step 2 |
+| *No Jamf Patch titles synced yet.* | §6 |
+| *… is available, and this build does not contain it.* — the update notice | §10 |
 
 ### The front page is not the same for every role
 
@@ -169,6 +259,25 @@ deadline is readable without the source. Ages are `null` when a set is empty, ne
 Settings › Destinations reads it for the two sentences above the list and says plainly when
 that read fails, so a missing sentence there is never a silent zero.
 
+**The three ways this goes quiet, and the one read that separates them.** None of them
+fails, none of them writes a log line, and no destination row counts any of them, because
+in each case there is no delivery row to count.
+
+- **No enabled destination.** The event is produced and held, considered against nothing:
+  `held.events` with `held.reason: no_enabled_destination` (step 2).
+- **The type is not subscribed.** A destination is enabled and its `subscribedEvents` omits
+  the type, so fan-out considers the event, writes no delivery and marks it done. It is in
+  **none** of the three states — a run that produced events with an empty queue behind it
+  is this, not a drain (step 5).
+- **The destination was disabled after its events fanned out.** The deliveries exist and
+  stay pending with nothing attempting them, so `pending.oldestAgeSeconds` climbs with no
+  line in either log (step 4).
+
+`GET /api/outbox` is the read that tells them apart, and Settings › Destinations says the
+same in sentences — including when the read itself fails: *Could not read the queue depth —
+the held and dead-letter counts are missing, not zero. Reload, or call GET /api/outbox
+directly.*
+
 1. **Was anything produced?** `GET /api/runs?pageSize=5`: a `device_sweep` run with
    `status: succeeded` and `deviceCount` above zero. None → this is §1 or §2, not a
    delivery problem.
@@ -194,11 +303,25 @@ that read fails, so a missing sentence there is never a silent zero.
    - **400 from HEC** → usually the token's index (step 5) or the URL's path
      (`/services/collector/event`, [`splunk-setup.md`](splunk-setup.md) §3).
    - **200** → step 4.
+   The two answers are the product's own words, and the page and the API word them
+   differently: the page says *Delivered — the destination accepted a test event.*, the
+   API's `detail` says *Delivered. The destination accepted a test event.* A refusal reads
+   *Test delivery refused: <detail>*, where a destination that gave no detail leaves
+   *Delivery failed with no detail from the destination.*; a request that came back with no
+   status reads *No HTTP status — the request failed before the destination answered.*; and
+   one that never left reads *Could not run the test. The app could not reach the
+   destination at all.*
 4. **Delivery health.** The destination row: `pendingCount`, `failedCount`, `failed24h`,
    `deadLetterOldestExpiresAt`, `lastError`.
    - `failedCount` above zero → those deliveries gave up after ten attempts; `lastError`
      is why. Fix the cause (step 3), then **Redrive** returns them to the queue. Events
      that arrived after the fix flow on their own.
+   - **The ladder, stated once.** A failed delivery waits 30 s × 2ⁿ before the next
+     attempt, capped at an hour, and gives up after ten: **≈ 4 h 03 m** from the first
+     failure to the dead letter. A destination refusing everything therefore shows *queued*
+     climbing for four hours before *gave up* moves at all, and a queue older than that with
+     nothing dead-lettered is not backing off — nothing is attempting it, which is the
+     bullet below.
    - **How long is left, and whether it is failing now.** `deadLetterOldestExpiresAt` is
      the instant the oldest of those dead letters is purged with its event — after it, a
      redrive cannot reach that one and the gap it left in the trail is permanent. Settings ›
@@ -219,7 +342,13 @@ that read fails, so a missing sentence there is never a silent zero.
      a fault: `docker compose logs app --since 10m | grep "outbox tick failed"` — the tick
      gave up before it dialled, and the line names what to check, usually a destination
      whose URL it refuses or whose stored secret this container cannot read (§4). Fix that,
-     and the next tick drains the queue. The second is the next bullet. Still rising with
+     and the next tick drains the queue. **Before reporting anything, rule the scheduler
+     out**: a container started with `SCHEDULER_ENABLED=false` is web-only — it serves the
+     pages and the API and runs no ticks at all, so nothing is ever attempted and neither
+     line is ever written. `docker compose logs app | grep "scheduler started"` prints one
+     line per process that runs them, and no line at all is the answer, a setting rather
+     than a fault ([`operations.md` §7](operations.md)). The second reason is the next
+     bullet. Still rising with
      neither line → reportable **D**, once step 2's rows are *all* enabled: the age is
      tenant-wide, and a destination disabled after its events fanned out holds them pending
      until it is enabled again, pinning the age with no line in either log.
@@ -833,6 +962,10 @@ beside the wrong `ENCRYPTION_KEY`, a Haiku session with only this document, the 
 became a filed defect — the failure reached the operator as a raw traceback and a bare
 `500`, not as a sentence ([`diagnosability.md`](diagnosability.md) rule 3) — and #374
 closed it the same day: a `503` whose `detail` is the sentence, shown on the page.
+
+**The paths continue at §10.** This section and §8 are about the paths rather than
+about a symptom, and they sit here because this is where they were written; nine more
+paths follow.
 
 ## 10. "The update notice never appears, or names a release I do not have"
 
