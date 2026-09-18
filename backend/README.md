@@ -28,11 +28,19 @@ backend/
 └── app/
     ├── main.py            # FastAPI initialization and scheduler
     ├── api/                # HTTP Routers (UI endpoints, Webhook receivers)
-    ├── core/               # DB setup, environment config, content hashing, and SIEM streaming
+    ├── core/               # DB setup, environment config, content hashing, the run object, the outbox, the exchange
     ├── models/             # SQLAlchemy Database schemas (MdmConnection, Device, InstalledApp)
     ├── schemas/            # Pydantic validation schemas (JSON payload validation)
+    ├── observations/       # The content-addressed observation ledger, the census and departures
+    ├── changes/            # The change engine: diff two observations, policy levels, change rows and events
+    ├── catalog/            # The tenant's app catalog: each distinct build judged once (patch title, vulnerability epoch)
+    ├── fanout/             # One inventory snapshot fanned out into per-item records for destinations
+    ├── alerts/             # The NEW-app latches an admin sees on the Overview
+    ├── baseline/           # Compliance baseline rules (docs/baseline-rules.yml) and the evidence report
+    ├── ai/                 # The AI layer: providers, the bounded adapter door, the two prompt slots
     └── mdm/                # Jamf sync and diff logic
         ├── factory.py      # Builds a JamfClient from a connection's stored credentials
+        ├── collections.py  # What to read and when: the rows the minute tick claims
         ├── service.py      # Orchestrates one connection's sync: diffs inventory, then hands off to core's hashing and streaming
         ├── jamf/           # Jamf API client and payload normalizers
         └── patch/          # Jamf Patch title matching

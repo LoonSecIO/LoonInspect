@@ -48,7 +48,9 @@ APP_NAME_FROM_JAMF = "jamf"
 APP_NAME_FROM_KILL_APPS = "kill_apps"
 APP_NAME_UNNAMED = "unnamed"
 
-# How many title definitions may be in flight at once. A fresh container has no rows, so
+# The public Jamf Patch catalog job's fan-out, not the fleet sweep's: the sweep's limit is
+# `_CONCURRENCY = 4` in app/mdm/jamf/client.py. Here, how many title definitions may be in
+# flight at once. A fresh container has no rows, so
 # every title in the catalog is "changed" — 1,554 of them on 2026-09-10 — and the bare
 # `asyncio.gather` this replaced handed all 1,554 to the client in one breath. It never
 # opened 1,554 sockets: `jamf_api_source` builds its client with no `limits=`, so httpx's

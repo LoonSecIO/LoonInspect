@@ -330,6 +330,13 @@ ignores it, which is the same clause every other field of this response lives un
   every row must be one the wire model would accept. A refusal imports nothing, leaves the
   previous epoch answering, and says so in a line an operator can read
   ([`troubleshooting.md`](troubleshooting.md) §5).
+- **The join follows the import.** A new epoch is followed, in the same exchange and
+  before it returns, by the re-judge of every organization on the box (#554): a stored
+  answer keeps the stamp of the epoch that judged it and is never served under a newer
+  epoch's date, so without this pass every page read *not yet judged* until the hourly
+  refresh. It runs one statement per organization, logs one line per organization, and
+  never fails the exchange — a failure is a logged sentence and the hourly refresh is the
+  backstop ([`vulnerabilities.md`](vulnerabilities.md) §4f).
 - **Nothing about a fleet leaves in this half.** The corpus is published complete and the
   join is local, so no app, hash, or count is sent in order to receive it — the request
   body above is the whole of what goes up, unchanged.

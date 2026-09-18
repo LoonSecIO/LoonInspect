@@ -29,12 +29,14 @@ process.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid as uuidlib
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, date, datetime
 
+import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy import delete, event, select, update
@@ -448,6 +450,124 @@ async def test_a_new_epoch_re_judges_distinct_builds_not_devices(db, fleet) -> N
     assert len(moved) == 3
     assert {(row.vuln_assessment, row.vuln_signature) for row in moved} == {("covered", signature)}
     assert (await _block(db, device, STALE_UNASSESSED_BUILD)).counts.total == 1
+
+
+async def _columns(db, key_full: str) -> tuple[str | None, str | None]:
+    """A catalog row's stored answer as the database holds it — columns, not the entity, for
+    the reason `_stored` gives: the re-judge under test runs in ANOTHER session, so the
+    identity map's cached instance would answer with the values it had before it."""
+    row = (
+        await db.execute(
+            select(AppCatalogEntry.vuln_assessment, AppCatalogEntry.vuln_signature).where(AppCatalogEntry.key_full == key_full)
+        )
+    ).one()
+    return row[0], row[1]
+
+
+def _exchange_serving(bundle: bytes, signature: str):
+    """One transport for both halves of the exchange: the POST answers with a pointer at
+    `signature`, the GET serves `bundle` — the shape a signed link on the exchange has."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(200, content=bundle)
+        return httpx.Response(
+            200,
+            json={"contract": "v1", "corpus": {"signature": signature, "asof": "2026-09-10T20:00:00Z", "url": CORPUS_URL}},
+        )
+
+    return httpx.MockTransport(handler)
+
+
+async def test_the_exchange_re_judges_every_organization_the_moment_a_new_epoch_lands(db, fleet, monkeypatch) -> None:
+    """#554. The hour between an import and the hourly pass — every stored answer stamped
+    with the previous epoch, none of them served, the Vulnerabilities page reading *not yet
+    judged* — is closed by the exchange itself: the join follows the import, in the same
+    conversation, with no refresh, no Refresh button and no Mac checking in.
+
+    Measured before the fix on a live pod, thirty minutes after an import: 128 catalog rows
+    and 158 device rows still stamped with the previous epoch, eight apps with findings
+    among them, and `GET /api/catalog?vuln=findings` answering `total 0`.
+    """
+    from app.core import sharing
+    from app.core.config import settings as app_settings
+    from app.core.sharing import run_exchange
+    from app.models.schema import ShareLog
+
+    _, device = fleet
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    await _judge(db, device)
+    assert await _columns(db, WIRESHARK_BUILD) == ("covered", SIGNATURE)
+
+    # A second epoch carrying ONE row, for the build the first did not assess — the same
+    # move `test_a_new_epoch_re_judges_distinct_builds_not_devices` makes, arriving the
+    # way a real one does: named by the exchange's reply.
+    smaller, signature = _rewritten(rows=[_row(key_full=STALE_UNASSESSED_BUILD)])
+    monkeypatch.setattr(sharing, "_RETRY_DELAYS", (0, 0, 0))
+    monkeypatch.setattr(app_settings, "community_sharing", True)
+    try:
+        log = await run_exchange(db, transport=_exchange_serving(smaller, signature))
+    finally:
+        await db.execute(delete(ShareLog).where(ShareLog.tier != "ai"))
+        await db.commit()
+
+    assert log.outcome == "sent"
+    # Judged by the new epoch, catalog row and device copy both, and nothing else ran.
+    assert await _columns(db, STALE_UNASSESSED_BUILD) == ("covered", signature)
+    assert await _stored(db, device, STALE_UNASSESSED_BUILD) == ("covered", signature)
+    # Wireshark's row is gone from the new epoch: its answer went back rather than lingering
+    # under the new date, which is the rule the stamp holds and the reason the pass is the
+    # repair rather than serving the old answers.
+    assert await _columns(db, WIRESHARK_BUILD) == (None, signature)
+    # And the page's own question — has anything here been judged by the epoch answering
+    # now? — is yes, with no hourly job between the import and the read.
+    listed = await _list(db)
+    assert listed.vuln_judged is True
+
+
+async def test_a_re_judge_that_fails_is_a_logged_sentence_and_never_the_exchanges_failure(db, fleet, monkeypatch, caplog) -> None:
+    """The day's share-log row is durable and the epoch is installed before the join runs;
+    a join that fails for one organization is that organization's hour, not a failed
+    exchange — the hourly refresh runs the same two statements. What it owes is the
+    sentence: which organization, and the two repairs (docs/diagnosability.md rule 3)."""
+    from app.catalog import service as catalog_service
+    from app.core import sharing
+    from app.core.config import settings as app_settings
+    from app.core.sharing import run_exchange
+    from app.core.vuln_library import stored_signature
+    from app.models.schema import ShareLog
+
+    _, device = fleet
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    await _judge(db, device)
+    smaller, signature = _rewritten(rows=[_row(key_full=STALE_UNASSESSED_BUILD)])
+
+    async def broken(db, *, now=None):
+        raise RuntimeError("the join broke")
+
+    monkeypatch.setattr(catalog_service, "rejudge_epoch", broken)
+    monkeypatch.setattr(sharing, "_RETRY_DELAYS", (0, 0, 0))
+    monkeypatch.setattr(app_settings, "community_sharing", True)
+    caplog.set_level(logging.INFO, logger="app.catalog.service")
+    try:
+        log = await run_exchange(db, transport=_exchange_serving(smaller, signature))
+    finally:
+        await db.execute(delete(ShareLog).where(ShareLog.tier != "ai"))
+        await db.commit()
+
+    assert log.outcome == "sent", "a failed join must not re-send the day's snapshot"
+    assert await stored_signature(db) == signature, "the import stood"
+    # One line per organization on the box — the test database holds however many operational
+    # tenants other suites left behind — and every one of them names the two repairs.
+    failures = [record for record in caplog.records if catalog_service.REJUDGE_AFTER_IMPORT_FAILED in record.getMessage()]
+    assert failures, [record.getMessage() for record in caplog.records]
+    assert str(OPERATIONAL_TENANT_ID) in {record.tenant_id for record in failures}
+    for record in failures:
+        sentence = record.getMessage()
+        assert "hourly" in sentence and "Refresh" in sentence and "troubleshooting.md" in sentence, sentence
+    # The window is open, exactly as before #554 — and named rather than hidden.
+    assert await _columns(db, WIRESHARK_BUILD) == ("covered", SIGNATURE)
+    assert (await _list(db)).vuln_judged is False
 
 
 async def test_the_answer_is_on_the_rows_the_snapshot_is_built_from_before_any_commit(db, fleet) -> None:
