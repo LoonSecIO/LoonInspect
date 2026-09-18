@@ -1,0 +1,94 @@
+"""The docs index against the directory it indexes (#562).
+
+`docs/README.md` is the only map of `docs/` there is, and an index nobody checks is worse
+than none: a reader trusts it, so a document missing from it is invisible rather than
+merely unlisted. Two assertions, both cheap. A new document must be listed — which is the
+moment its author decides which class it belongs to and what its status is — and every
+link the index carries must resolve, so a renamed or deleted file cannot leave a dead row
+behind.
+
+A listing is a link, not a mention: prose naming a file in passing is not an index entry,
+and the regex below only accepts the Markdown link form the tables use.
+
+The last two assertions guard the drawn figures against one failure: a statement the source
+declares and the picture does not draw, with no parse error to catch. Mermaid reads `;` as a
+statement separator, so one inside a label turns the rest of the sentence into orphan states;
+and a node whose self-loop is declared twice keeps only the last label — measured on Figure 2
+under mermaid 11.16.1, two `PENDING --> PENDING` lines drew one edge and the retry vanished.
+(`A --> B` twice is safe, and 12.0.0 draws both loops; GitHub's version is not ours to pin.)
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+DOCS = Path(__file__).resolve().parents[2] / "docs"
+INDEX = DOCS / "README.md"
+INDEXED_SUFFIXES = {".md", ".yml"}
+
+# The target of a relative Markdown link, stripped of any anchor. Absolute URLs are
+# somebody else's to keep alive.
+_LINK = re.compile(r"\]\((?!https?://|mailto:)([^)#\s]+)")
+
+# The body of a ```mermaid fenced block, and one relation inside it: `SRC --> DST`,
+# `SRC -.-> DST` or `SRC <--> DST`, with an optional |edge label| between.
+_FIGURE = re.compile(r"^```mermaid\n(.*?)^```", re.DOTALL | re.MULTILINE)
+_RELATION = re.compile(r"^\s*([\w.-]+)\s*<?-[.-]*->\s*(?:\|[^|]*\|\s*)?([\w.-]+)", re.MULTILINE)
+
+
+def _linked() -> set[str]:
+    return set(_LINK.findall(INDEX.read_text(encoding="utf-8")))
+
+
+def _documents() -> list[str]:
+    return sorted(path.name for path in DOCS.iterdir() if path.suffix in INDEXED_SUFFIXES and path.name != INDEX.name)
+
+
+def test_index_exists() -> None:
+    assert INDEX.is_file(), f"{INDEX} is the index the two tests below read; without it they pass vacuously"
+
+
+def test_every_document_is_listed() -> None:
+    linked = _linked()
+    missing = [name for name in _documents() if name not in linked]
+    assert not missing, (
+        f"docs/ holds {', '.join(missing)}, and docs/README.md links to none of them. "
+        "Every document needs a row there — reference, design record, runbook or plan — with its own dated status."
+    )
+
+
+def test_every_listed_path_exists() -> None:
+    absent = sorted(link for link in _linked() if not (DOCS / link).exists())
+    assert not absent, (
+        f"docs/README.md links to {', '.join(absent)}, which does not exist. "
+        "Fix the link, or drop the row if the document is gone."
+    )
+
+
+def test_no_mermaid_figure_hides_a_statement_separator() -> None:
+    split = [
+        f"{path.name}: {line.strip()}"
+        for path in sorted(DOCS.glob("*.md"))
+        for figure in _FIGURE.findall(path.read_text(encoding="utf-8"))
+        for line in figure.splitlines()
+        if ";" in line
+    ]
+    assert not split, (
+        "A Mermaid figure carries a ';', which Mermaid reads as the end of the statement, "
+        "not as punctuation — the rest of the line becomes orphan nodes and no parse error is "
+        f"raised, so the diagram renders wrong and looks fine in review. Use '·' or a comma: {split}"
+    )
+
+
+def test_no_mermaid_figure_declares_one_self_loop_twice() -> None:
+    doubled = []
+    for path in sorted(DOCS.glob("*.md")):
+        for figure in _FIGURE.findall(path.read_text(encoding="utf-8")):
+            loops = [source for source, target in _RELATION.findall(figure) if source == target]
+            doubled += sorted(f"{path.name}: {name} --> {name}" for name in set(loops) if loops.count(name) > 1)
+    assert not doubled, (
+        "A Mermaid figure declares one state's self-loop twice; a renderer keeps only the last "
+        "label, dropping the earlier one with no parse error, so the figure looks fine in review "
+        f"while saying less than its source. Give each cause its own state or a note: {doubled}"
+    )
