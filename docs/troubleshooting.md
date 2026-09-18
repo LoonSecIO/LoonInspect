@@ -9,8 +9,10 @@ it was filed.
 Each path is ordered — *check this; if X, then that* — and ends in a fix or in a **named,
 reportable state**. When you reach a reportable state, §8 says what to include.
 
-**The paths**, in the order they were written rather than in order of likelihood — §8 and
-§9 are about the paths themselves and sit where they landed, and §9 ends by saying so.
+**What is in here.** The paths run §1–§7 and §10–§18, in the order they were written
+rather than in order of likelihood. §0 is what you can read before you start; §8 and §9 are
+about the paths rather than about a symptom, and they sit mid-file because that is where
+they were written — §9 ends by saying the paths continue at §10.
 
 - **§0** [The four things you can read](#0-the-four-things-you-can-read)
   - [What the page says, and which path answers it](#what-the-page-says-and-which-path-answers-it)
