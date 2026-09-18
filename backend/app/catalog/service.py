@@ -59,6 +59,7 @@ from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.content_keys import app_full_key
+from app.core.tenant_jobs import operational_tenant_ids, tenant_job
 from app.core.vuln_answer import VULN_ANSWER_COLUMNS
 from app.core.vuln_library import loaded_epoch_signature, read_tenant_tier
 from app.mdm.patch.matching import CATALOG_PROBE_INTERVAL, Catalog, TitleMatch, load_catalog, match_app, summarize
@@ -543,3 +544,74 @@ async def refresh_tenant(db: AsyncSession, *, force: bool = False, now: datetime
     if judged:
         logger.info("app catalog refreshed", extra={"rows": judged, "signature": signature})
     return judged
+
+
+# --- the pass that follows an import (#554) ---------------------------------------------
+#
+# Every stored answer is stamped with the epoch that judged it and is not served under a
+# newer one (§4f): that is the rule that keeps one epoch's counts from appearing under
+# another's date. Its cost, until this landed, was an hour of *not yet judged* on the
+# Vulnerabilities page after every corpus arrival — the import replaced the library and
+# nothing re-judged until the hourly refresh, so the findings sat in the database, stamped
+# with the previous epoch, and no page served them. The corpus arrives daily, so that was a
+# daily blank hour, on every organization of a box at once. The pass below is the repair:
+# the epoch half of `refresh_tenant`, once per organization, run by the exchange the moment
+# it has installed a new epoch.
+
+REJUDGED_AFTER_IMPORT = "vulnerability answers re-judged after import"
+REJUDGE_AFTER_IMPORT_FAILED = "vulnerability answers NOT re-judged after import"
+
+
+async def rejudge_epoch(db: AsyncSession, *, now: datetime | None = None) -> tuple[int, int]:
+    """The epoch half of `refresh_tenant`, on its own: this tenant's rows whose answer came
+    from a different epoch, re-judged by one statement, and the copies on `installed_apps`
+    refreshed by one more. Returns (builds re-judged, app rows copied).
+
+    Nothing here touches the Jamf half. A corpus that moved is not a catalog that moved
+    (§4f, two clocks), and the title re-match is the pass whose cost grows with the tenant.
+    """
+    now = now or datetime.now(UTC)
+    # The tenant's tier, once, before the join — the same fail-closed gate `refresh_tenant`
+    # reads first: `loaded_epoch_signature()` answers "no epoch" for a tenant whose tier was
+    # never read, and the join would then clear every answer instead of writing one.
+    await read_tenant_tier(db)
+    rejudged = await judge_vuln(db, None, now=now)
+    copied = await copy_vuln_answers(db)
+    return rejudged, copied
+
+
+async def rejudge_every_tenant(epoch_id: str) -> None:
+    """Every operational tenant, the moment a new epoch is installed (#554).
+
+    The library is one global set of tables and the answers are per tenant, so the exchange
+    that imports an epoch for the box — run for one tenant, in that tenant's session — owes
+    a pass to every other tenant too. One session each, the two statements, one commit; and
+    the same enumeration the scheduler's jobs use, so a tenant this pass could reach and
+    did not is a tenant the hourly refresh could not reach either.
+
+    **It never raises into the exchange.** The day's share-log row is durable and the epoch
+    is installed before this runs; a join that fails for one tenant is that tenant's
+    problem for an hour — the hourly refresh runs the same two statements, and *Refresh* on
+    the Catalog tab runs them now — and the sentence below says exactly that. Turning it
+    into a failed exchange would re-send the day's snapshot for a fault the snapshot had no
+    part in.
+    """
+    for tenant_id in await operational_tenant_ids():
+        try:
+            async with tenant_job(tenant_id) as db:
+                rejudged, copied = await rejudge_epoch(db)
+                await db.commit()
+        except Exception:
+            logger.exception(
+                "%s for one organization, so its apps read outside the corpus of epoch %s until the hourly "
+                "refresh repairs them; Devices › Applications › Catalog › Refresh does it now "
+                "(docs/troubleshooting.md §5 step 3)",
+                REJUDGE_AFTER_IMPORT_FAILED,
+                epoch_id,
+                extra={"tenant_id": str(tenant_id), "epoch_id": epoch_id},
+            )
+            continue
+        logger.info(
+            REJUDGED_AFTER_IMPORT,
+            extra={"tenant_id": str(tenant_id), "epoch_id": epoch_id, "builds": rejudged, "apps": copied},
+        )
