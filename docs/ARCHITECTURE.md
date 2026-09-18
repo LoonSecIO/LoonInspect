@@ -136,7 +136,7 @@ jobs fire in `SYNC_TIMEZONE`, not UTC.
 | `sharing_exchange_tick` | every 5 min | Sends at most once per tenant per day, at a minute of day derived from its submission UUID. |
 | `hourly_jamf_patch_sync` | hourly, :00 | Pulls the global Jamf Patch catalog, rebuilds the lookup, then re-judges every tenant's app catalog. |
 | `hourly_session_cleanup` | hourly, :30 | Deletes sessions a day past expiry or revocation. |
-| `outbox_cleanup` | daily, 02:45 | Purges events whose deliveries are all terminal and past retention. |
+| `outbox_cleanup` | daily, 02:45 | Purges events past retention, held ones included — age is the candidate test, and a delivery still pending or a dead letter inside its own window is what holds an event back. |
 | `run_cleanup` | daily, 02:50 | Purges finished runs, their log lines and closed alert latches past `run_retention_days`. |
 
 ## 5. What a pull costs Jamf
