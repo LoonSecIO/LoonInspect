@@ -1,3 +1,17 @@
+"""The Jamf transport: every HTTP call to a Jamf Pro tenant, and the raw record it hands back.
+
+Owns the sign-in exchange, the paged reads (computers, smart groups, extension-attribute definitions,
+departments and buildings), the throttle and retry behaviour, and `normalize_computer`, which turns
+one raw record into the provider-neutral device of app.schemas.payload. Jamf-specific — what an
+Addigy sibling writes for itself — is the OAuth token exchange, the `/api/v1` and `/api/v2` paths,
+the RSQL selector, the section names of app.mdm.jamf.contract, and `parse_webhook_event`.
+Provider-neutral in substance, and what that sibling should lift rather than reinvent: the adaptive
+concurrency wave (`AdaptiveConcurrency`, `ThrottleCounters`), the transient-status retry ladder with
+its capped Retry-After, the resend on a pooled connection the tenant dropped, and taking a token's
+lifetime from the token response rather than from a constant. Nothing here touches the database; the
+caller is app.mdm.service.
+"""
+
 from __future__ import annotations
 
 import asyncio
