@@ -94,7 +94,13 @@ def test_every_reportable_state_is_indexed_at_the_path_it_lives_in() -> None:
     written = set(re.findall(r"^\*\*([A-Z])\.\*\* ", _DOC, re.M))
 
     assert set(indexed) == written, "a reportable state is written without an index row, or indexed without being written"
-    assert set(indexed) == {chr(code) for code in range(ord("A"), ord("W") + 1)}, "the reportable states are no longer A-W"
+    # A contiguous run from A, not a pin on W: the letters are handed out in writing order,
+    # so the next path to land takes the next letter, and the Addigy sibling is about two
+    # weeks out. What must never happen is a gap or a letter used twice — a ticket naming
+    # **X** has to reach exactly one paragraph — and that is what this holds.
+    assert sorted(indexed) == [chr(ord("A") + offset) for offset in range(len(indexed))], (
+        "the reportable states are no longer one unbroken run from A"
+    )
 
     paths = _paths()
     for letter, number in sorted(indexed.items()):
@@ -111,3 +117,24 @@ def test_every_sentence_the_routing_table_quotes_is_one_the_page_says() -> None:
     for sentence in _PAGE_SENTENCES:
         assert sentence in _EN_TS, f"the page no longer says {sentence!r}, so §0's table quotes nothing"
         assert sentence in table, f"§0's table does not quote {sentence!r}"
+
+
+def test_the_routing_table_quotes_nothing_the_page_does_not_say() -> None:
+    """The test above is pinned in one direction only: every sentence *this file* names is in
+    `en.ts` and in the table. It cannot see a row added later, and a row quoting words nobody
+    says routes an operator by a sentence they will never find on their screen. This runs the
+    other way — every italic quotation in the table is `en.ts` text, with the parts an `…`
+    stands in for elided."""
+    table = _DOC.split(_TABLE, 1)[1].split("\n### ", 1)[0]
+    rows = [line for line in table.splitlines() if line.startswith("| ") and not line.startswith("| --")]
+
+    quoted = [
+        fragment.strip()
+        for row in rows
+        for quotation in re.findall(r"(?<!\*)\*([^*]+)\*(?!\*)", row.split("|")[1])
+        for fragment in quotation.split("…")
+        if fragment.strip()
+    ]
+    assert len(quoted) >= len(_PAGE_SENTENCES), "§0's table quotes fewer sentences than this file names — the rows moved"
+    for fragment in quoted:
+        assert fragment in _EN_TS, f"§0's table quotes {fragment!r}, and the page does not say it"

@@ -262,8 +262,9 @@ Settings › Destinations reads it for the two sentences above the list and says
 that read fails, so a missing sentence there is never a silent zero.
 
 **The three ways this goes quiet, and the one read that separates them.** None of them
-fails, none of them writes a log line, and no destination row counts any of them, because
-in each case there is no delivery row to count.
+fails and none of them writes a log line. The first two leave no delivery row at all, so no
+destination row counts them; the third leaves rows that are counted and never attempted, so
+its destination's row reads `N queued` and climbing while nothing moves.
 
 - **No enabled destination.** The event is produced and held, considered against nothing:
   `held.events` with `held.reason: no_enabled_destination` (step 2).
@@ -272,8 +273,9 @@ in each case there is no delivery row to count.
   **none** of the three states — a run that produced events with an empty queue behind it
   is this, not a drain (step 5).
 - **The destination was disabled after its events fanned out.** The deliveries exist and
-  stay pending with nothing attempting them, so `pending.oldestAgeSeconds` climbs with no
-  line in either log (step 4).
+  stay pending with nothing attempting them, so `pending.oldestAgeSeconds` climbs and the
+  disabled destination's own row goes on counting them — the delivery counts are not
+  filtered by `enabled` — with no line in either log (step 4).
 
 `GET /api/outbox` is the read that tells them apart, and Settings › Destinations says the
 same in sentences — including when the read itself fails: *Could not read the queue depth —
@@ -296,8 +298,9 @@ directly.*
    `held.reason` is `null` is that drain, not a second fault.
 3. **Test it.** The Test button, or `POST /api/destinations/<id>/test`.
 
-   **The words it answers in, whichever bullet below you land on.** The two answers are the
-   product's own words, and the page and the API word them differently: the page says
+   **The words it answers in, whichever bullet below you land on.** Every sentence here is
+   the product's own. A delivery that succeeded is worded two ways, and which one you are
+   holding says where it came from: the page says
    *Delivered — the destination accepted a test event.*, the API's `detail` says
    *Delivered. The destination accepted a test event.* A refusal reads
    *Test delivery refused: `<detail>`*, where a destination that gave no detail leaves
