@@ -31,6 +31,7 @@ import httpx
 from sqlalchemy import delete, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.catalog.service import rejudge_every_tenant
 from app.core.config import settings as app_settings
 from app.core.content_keys import hw_key, os_key
 from app.core.tenancy import get_tenant_id
@@ -541,7 +542,15 @@ async def run_exchange(
     # keeps answering and tomorrow's exchange tries again. An unmoved signature does not
     # download at all, which is what makes this affordable daily.
     if pointer is not None:
-        await load_epoch_if_new(db, pointer, transport=transport)
+        library = await load_epoch_if_new(db, pointer, transport=transport)
+        if library is not None:
+            # The join follows the import (#554). Every stored answer on this box is
+            # stamped with the epoch that judged it and is not served under a newer one, so
+            # a new epoch with no re-judge behind it was an hour of *not yet judged* on the
+            # Vulnerabilities page of every organization — the hourly refresh being the only
+            # pass that ran. One pass per organization, here, before the exchange is done;
+            # it logs one line each and never raises.
+            await rejudge_every_tenant(library.epoch_id)
     return log
 
 
