@@ -1155,10 +1155,12 @@ export const en = {
     mostExposed: "Most exposed",
     mostExposedHint: "On CISA KEV first, then the most Macs, then the most findings.",
     seeAll: (total: number) => `See all ${total}`,
-    // The hour after an epoch moves: it is answering, and nothing here has been judged
-    // against it yet, so every row would read outside the corpus.
+    // The moments after an epoch moves (#554): it is answering, nothing here has been
+    // judged against it yet, and the exchange that imported it is running that join for
+    // every organization before it returns — seconds of truth on the ordinary day, with
+    // the hourly refresh as the backstop if that pass failed.
     notYetJudged:
-      "A corpus is loaded and nothing here has been judged against it yet: loaded, not yet judged against; answers arrive with the next sweep or the hourly refresh.",
+      "A corpus is loaded and this organization's apps are being judged against it — that happens the moment a corpus arrives, and the hourly refresh is the backstop. Still here after an hour? Devices › Applications › Catalog › Refresh runs it now.",
     // Where a read in flight is said: in the table's body, under the search box that asked
     // for it, never by taking that box away (#479).
     loading: "Loading…",

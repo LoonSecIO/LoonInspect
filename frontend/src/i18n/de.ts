@@ -1032,7 +1032,7 @@ export const de: Translations = {
     mostExposedHint: "Zuerst CISA KEV, dann die meisten Macs, dann die meisten Funde.",
     seeAll: (total: number) => `Alle ${total} anzeigen`,
     notYetJudged:
-      "Ein Korpus ist geladen, und hier wurde noch nichts dagegen geprüft: geladen, aber noch nicht geprüft; Antworten kommen mit dem nächsten Durchlauf oder der stündlichen Aktualisierung.",
+      "Ein Korpus ist geladen, und die Apps dieser Organisation werden gerade dagegen geprüft — das geschieht in dem Moment, in dem ein Korpus eintrifft; die stündliche Aktualisierung ist die Rückfallebene. Nach einer Stunde immer noch hier? Geräte › Anwendungen › Katalog › Aktualisieren führt sie jetzt aus.",
     loading: "Wird geladen…",
     errorLoading: "Die Schwachstellenliste konnte nicht geladen werden.",
     noFindings: "Zu keinem Build in der Flotte hat dieser Korpus einen Fund.",

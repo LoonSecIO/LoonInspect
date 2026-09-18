@@ -13,8 +13,6 @@ app.core.middleware.
 from __future__ import annotations
 
 import logging
-import uuid
-from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate
@@ -31,7 +29,6 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from sqlalchemy import delete, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.alerts.service import purge_closed_alerts
 from app.api.accounts import router as accounts_router
@@ -66,21 +63,22 @@ from app.core.audit import configure_audit_logging
 from app.core.auth import authenticate
 from app.core.bootstrap import bootstrap_accounts, bootstrap_tenants, migrate_legacy_siem_webhook
 from app.core.config import settings
-from app.core.context import SYSTEM, reset_actor, set_actor, system_actor_for
+from app.core.context import SYSTEM, reset_actor, set_actor
 from app.core.crypto import StoredValueUnreadable, validate_encryption_key
-from app.core.database import init_db, session_for_tenant, unscoped_session
+from app.core.database import init_db, unscoped_session
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware, content_security_policy_mode
 from app.core.outbox import PURGE_HOUR, PURGE_MINUTE, deliver_pending, fan_out_pending, outbox_tick_lock, purge_delivered_events
 from app.core.runs import purge_runs
 from app.core.sharing import exchange_due, exchange_lock, run_exchange
-from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
+from app.core.tenancy import OPERATIONAL_TENANT_ID
+from app.core.tenant_jobs import operational_tenant_ids, tenant_job
 from app.core.vuln_library import refresh_from_db
 from app.mdm.collections import tick_tenant
 from app.mdm.factory import keep_sign_in
 from app.mdm.jamf.sign_in import MODE_NO_CACHE, MODE_PERPETUAL, SIGN_INS
 from app.mdm.patch.jamf_catalog import JamfPatchCatalogUnconfigured, sync_catalog
-from app.models.schema import MdmConnection, Tenant, UserSession
+from app.models.schema import MdmConnection, UserSession
 
 # Before anything else in the process emits a line, so migration output and startup
 # failures are formatted the same way as request logs rather than escaping as plain
@@ -90,38 +88,6 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler(timezone=settings.sync_timezone)
-
-
-async def operational_tenant_ids() -> list[uuid.UUID]:
-    """Every tenant a background job has work to do for.
-
-    Scheduler jobs have no request to inherit a tenant from, and row-level security
-    gives them no way to sweep all tenants in one query — which is the point, not a
-    limitation to work around. They enumerate here and then do one tenant's work per
-    session, so a job that forgets to is a job that fails rather than one that
-    quietly crosses a boundary.
-    """
-    async with unscoped_session() as db:
-        result = await db.execute(select(Tenant.id).where(Tenant.kind == "operational").order_by(Tenant.slug))
-        return list(result.scalars().all())
-
-
-@asynccontextmanager
-async def tenant_job(tenant_id: uuid.UUID) -> AsyncGenerator[AsyncSession, None]:
-    """One tenant's slice of a scheduler job.
-
-    Establishes both halves of the job's identity: the system actor, since there is no
-    requesting user to attribute the work to, and the tenant, which the session then
-    pushes into the Postgres GUC that every RLS policy reads.
-    """
-    actor_token = set_actor(system_actor_for(tenant_id))
-    tenant_token = set_tenant_id(tenant_id)
-    try:
-        async with session_for_tenant(tenant_id) as db:
-            yield db
-    finally:
-        reset_tenant_id(tenant_token)
-        reset_actor(actor_token)
 
 
 async def sign_in_tick() -> None:
