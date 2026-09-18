@@ -1,3 +1,15 @@
+"""The process: the FastAPI app, what runs at startup, what runs on a timer, what wraps a request.
+
+Assembly, not behaviour. The lifespan applies migrations, bootstraps tenants and loads the
+vulnerability library before the first request is served; the scheduler declares the ticks — sign-in,
+collections, patch sync, sharing exchange, outbox, session and run cleanup — whose work lives in
+app.core and app.mdm. Middleware order is decided here and is load-bearing, and so is the global
+`Depends(authenticate)` that makes the API default-deny: a router mounted below inherits it, and
+opening a route up means editing the allowlist in app.core.auth. Route logic is app.api.*, the
+schedule arithmetic app.core.scheduling, and the headers, request context and logging
+app.core.middleware.
+"""
+
 from __future__ import annotations
 
 import logging
