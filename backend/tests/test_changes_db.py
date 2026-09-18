@@ -4,8 +4,9 @@ the policy keeps — against a real Postgres and the fake Jamf tenant.
 What it pins: the OS update collapses Apple system-app bumps into one count; a user app
 update is one `updated`; a new local admin and a firewall flip are `high`; a group joined
 carries the two-cause flag; a low field (purchasing) is not logged by default but is
-under the "everything" preset; one `device.change` outbox event per row; the legacy
-inventory event still flows. Gated on RUN_DB_TESTS.
+under the "everything" preset; one `device.change` outbox event per row, written in one
+batched INSERT per subject (#568); the legacy inventory event still flows. Gated on
+RUN_DB_TESTS.
 """
 
 from __future__ import annotations
@@ -13,17 +14,19 @@ from __future__ import annotations
 import json
 import os
 import uuid as uuidlib
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, event, func, select
 
 from app.core.outbox import _build_body
 from app.core.runs import pull_event_id
 from app.core.wire import ENVELOPE, instance_label
-from app.core.wire_vocabulary import SECTION_WRAPPERS
+from app.core.wire_vocabulary import CHANGE_EVENT_TYPE, SECTION_WRAPPERS
 from tests.jamf_fake import HOST, FakeJamf
 
 pytestmark = [
@@ -295,3 +298,152 @@ async def test_high_only_preset_drops_inventory_changes(db, connection, jamf: Fa
     assert any(r.field == "firewallEnabled" for r in rows)
     assert any(r.entry_kind == "local_user_account" for r in rows)
     assert not any(r.entry_kind == "group_membership" for r in rows)
+
+
+# --- one batched write per subject (#568) ---------------------------------------------
+
+
+@contextmanager
+def _statements() -> Iterator[list[tuple[str, tuple]]]:
+    """Every statement the engine sends while the block runs, with the parameters it bound.
+
+    The parameters are the point. Every `event_outbox` INSERT reads alike as SQL — the inventory
+    families write to the same table on the same pull — so what tells a batch from a round trip per
+    row is how many `device.change` rows one statement carried, and that is only in the binds."""
+    from app.core.database import engine
+
+    sent: list[tuple[str, tuple]] = []
+
+    def record(conn, cursor, statement, parameters, context, executemany) -> None:
+        sent.append((statement, tuple(parameters or ())))
+
+    event.listen(engine.sync_engine, "before_cursor_execute", record)
+    try:
+        yield sent
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", record)
+
+
+def _change_event_inserts(sent: list[tuple[str, tuple]]) -> list[int]:
+    """How many `device.change` rows each `event_outbox` INSERT carried, in order — counting only the
+    statements that carried any. The inventory and run families write to the same table on the same
+    pull, one row at a time, and they are not what this measures."""
+    carried = (binds.count(CHANGE_EVENT_TYPE) for statement, binds in sent if "INSERT INTO event_outbox" in statement)
+    return [count for count in carried if count]
+
+
+async def _high_water(db) -> int:
+    from app.models.schema import EventOutbox
+
+    return (await db.execute(select(func.max(EventOutbox.id)))).scalar() or 0
+
+
+async def _change_events(db, floor: int) -> list:
+    from app.models.schema import EventOutbox
+
+    rows = await db.execute(
+        select(EventOutbox).where(EventOutbox.id > floor, EventOutbox.event_type == CHANGE_EVENT_TYPE).order_by(EventOutbox.id)
+    )
+    return list(rows.scalars().all())
+
+
+def _install_apps(jamf: FakeJamf, count: int) -> None:
+    """`count` third-party apps arriving on the reference Mac at once — a new hire's first afternoon,
+    or a Self Service bundle. Nothing else about the record moves, so every row this derives is one
+    of these, and the count of rows is the count of apps."""
+    jamf.real["applications"].extend(
+        {
+            "name": f"Loon Fixture {n}.app",
+            "path": f"/Applications/Loon Fixture {n}.app",
+            "version": "1.0",
+            "cfBundleShortVersionString": "1.0",
+            "cfBundleVersion": "1",
+            "macAppStore": False,
+            "sizeMegabytes": 1,
+            "bundleId": f"io.loonsec.fixture{n}",
+            "updateAvailable": False,
+            "externalVersionId": "0",
+        }
+        for n in range(count)
+    )
+
+
+async def test_a_subjects_change_events_go_in_on_one_insert(db, connection, jamf: FakeJamf) -> None:
+    """#568: a Mac that installed 64 apps writes 64 change events in ONE INSERT, not 64 of them.
+
+    The rows are unchanged — one outbox event per kept change row, as they always were. What goes is
+    the round trip each one cost inside that device's transaction, which fell on exactly the devices
+    with the most to say. Sixty-four is well under the 1,000-row page `add_all` plus one flush becomes,
+    so one statement is the whole batch here; the page boundary itself is `test_departure_db`'s (#524)."""
+    from app.mdm.service import ingest_webhook, sync_connection
+    from app.models.schema import EventOutbox
+
+    installed = 64
+    assert (await sync_connection(db, connection)).ok
+    real_id = jamf.real["id"]
+    _install_apps(jamf, installed)
+
+    floor = await _high_water(db)
+    try:
+        with _statements() as sent:
+            result = await ingest_webhook(
+                db, connection, {"webhook": {"webhookEvent": "ComputerInventoryCompleted"}, "event": {"jssID": real_id}}
+            )
+        assert result is not None and result.outcome == "changed"
+        rows = await _rows(db, connection.id, real_id)
+        assert len(rows) == installed, "the fixture moved: these are meant to be the only changes in the pull"
+
+        assert _change_event_inserts(sent) == [installed], "64 change events is one batched INSERT, not one per row"
+        assert len(await _change_events(db, floor)) == installed, "cheaper, not fewer: every kept row still has its event"
+    finally:
+        await db.execute(delete(EventOutbox).where(EventOutbox.id > floor))
+        await db.commit()
+
+
+async def test_the_batched_events_are_what_the_per_row_path_wrote(db, connection, jamf: FakeJamf, monkeypatch) -> None:
+    """A change of writer, not of content. The producer hands one list of payloads; the batched twin
+    and the `enqueue_event` loop it replaced are run against that same list, and the rows they leave
+    are compared type for type, payload for payload, in order. A batching seam that reordered or
+    dropped a payload would pass every count in the suite and be invisible until a customer's search
+    came back short."""
+    from app.changes import derive
+    from app.core.outbox import enqueue_event, enqueue_events
+    from app.mdm.service import ingest_webhook, sync_connection
+    from app.models.schema import EventOutbox
+
+    handed: list[tuple[str, list[dict], str | None]] = []
+
+    async def spy(session, event_type, payloads, *, request_id=None):
+        handed.append((event_type, list(payloads), request_id))
+        return await enqueue_events(session, event_type, payloads, request_id=request_id)
+
+    monkeypatch.setattr(derive, "enqueue_events", spy)
+    assert (await sync_connection(db, connection)).ok
+    real_id = jamf.real["id"]
+    _install_apps(jamf, 8)
+
+    floor = await _high_water(db)
+    try:
+        result = await ingest_webhook(
+            db, connection, {"webhook": {"webhookEvent": "ComputerInventoryCompleted"}, "event": {"jssID": real_id}}
+        )
+        assert result is not None and result.outcome == "changed"
+        await db.commit()
+        assert len(handed) == 1, "one call per subject, whatever it derived"
+        event_type, payloads, request_id = handed[0]
+        assert event_type == CHANGE_EVENT_TYPE and len(payloads) == 8
+
+        batched = await _change_events(db, floor)
+        assert [e.payload for e in batched] == payloads, "same payloads, same order as the producer built them"
+
+        mark = await _high_water(db)
+        for payload in payloads:
+            await enqueue_event(db, event_type, payload, request_id=request_id)
+        await db.commit()
+        per_row = await _change_events(db, mark)
+        assert [(e.event_type, e.payload, e.request_id) for e in batched] == [
+            (e.event_type, e.payload, e.request_id) for e in per_row
+        ]
+    finally:
+        await db.execute(delete(EventOutbox).where(EventOutbox.id > floor))
+        await db.commit()
