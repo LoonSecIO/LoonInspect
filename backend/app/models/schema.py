@@ -1,3 +1,14 @@
+"""Every table LoonInspect has, as SQLAlchemy models on one declarative Base.
+
+The declarative half of the database and nothing else: columns, constraints, indexes and
+relationships, no queries and no rules about when a row may change. What this file says is not
+what a database has — `backend/migrations/versions` is the DDL of record, and `migrations/env.py`
+imports this module only so autogenerate has a `Base.metadata` to compare against. The engine,
+the session, the tenant binding and the row-level security those rest on are app.core.database;
+the shapes the API and the wire speak are app.schemas, deliberately separate models rather than
+these ones serialized.
+"""
+
 from __future__ import annotations
 
 import uuid

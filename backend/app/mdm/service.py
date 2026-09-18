@@ -1,3 +1,15 @@
+"""Ingest: an MDM read in; the observation ledger, the current-state rows and the wire events out.
+
+Sweep, manual run and webhook all land here, and `ingest_computer` is the one door they share, so
+app.observations.ledger and the device and app tables can never disagree about what was seen. The
+Jamf half — what an Addigy sibling replaces rather than reuses — is `run_jamf`, `run_jamf_catalog`,
+`_sync_jamf`, `ingest_webhook` and `webhook_scope`: Jamf's sections, its RSQL selector and its
+webhook shapes, reached through app.mdm.jamf.client. The half that sibling reuses as it stands is
+`process_sync`, `ingest_computer`, `apply_hashes` and `sweep_failures_allowed`, which take the
+normalized device of app.schemas.payload and never ask who read it. The schedule is
+app.core.scheduling, the run mutex app.core.runs, and the diffing app.changes.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -80,6 +92,7 @@ from app.observations.departure_events import emit_census_events, emit_mac_notic
 from app.observations.ledger import (
     RecordResult,
     current_span,
+    current_spans,
     ensure_aperture,
     is_stale,
     record_observation,
@@ -502,14 +515,25 @@ async def _observe_groups(
     with no groups — the breaker in `reconcile_census` is what keeps that from reading as
     every group departing at once."""
     observed: list[str] = []
-    for raw_group in await client.fetch_smart_groups(http):
+    raw_groups = await client.fetch_smart_groups(http)
+    # One select for the whole census, not one per group (#569): at 300 groups and the
+    # default 25 passes a day, asking per object was 7,500 selects a day for objects that
+    # rarely move. `ingest_computer` already hands `record_observation` the span it loaded;
+    # a census can load them all at once because it names every subject of the kind.
+    # `take` is what keeps a list that names one group twice — an offset-paginated read of
+    # a tenant being edited — reading as it did before the batch: see `CensusSpans`.
+    spans = await current_spans(db, connection_id=connection.id, subject_kind=SUBJECT_COMPUTER_GROUP)
+    for raw_group in raw_groups:
         observation = canonicalize_smart_group(raw_group)
+        current, current_loaded = spans.take(observation.subject_id)
         result = await record_observation(
             db,
             connection_id=connection.id,
             observation=observation,
             aperture_digest=aperture_digest,
             trigger=trigger,
+            current=current,
+            current_loaded=current_loaded,
         )
         if result.outcome == "changed":
             await derive_and_record(db, connection=connection, observation=observation, result=result, trigger=trigger)
@@ -741,15 +765,20 @@ async def _observe_extension_attribute_definitions(
     definitions = await client.fetch_computer_extension_attributes(http)
     if definitions is None:
         return None
+    # The same one-select-per-census seam as `_observe_groups` (#569), for the same reason.
+    spans = await current_spans(db, connection_id=connection.id, subject_kind=SUBJECT_EXTENSION_ATTRIBUTE_DEFINITION)
     observed: list[str] = []
     for raw_definition in definitions:
         observation = canonicalize_extension_attribute_definition(raw_definition)
+        current, current_loaded = spans.take(observation.subject_id)
         result = await record_observation(
             db,
             connection_id=connection.id,
             observation=observation,
             aperture_digest=aperture_digest,
             trigger=trigger,
+            current=current,
+            current_loaded=current_loaded,
         )
         outcomes[f"ea_definition_{result.outcome}"] += 1
         observed.append(observation.subject_id)
@@ -816,6 +845,14 @@ async def _sync_jamf(
     include_catalog: bool = True,
     run: Run | None = None,
 ) -> ConnectionSyncResult:
+    """The streaming device loop: one Jamf sweep, paged through and committed device by device.
+
+    Captures the read aperture, reads the org-unit catalogs and — unless the collection asked for
+    devices only — the group and extension-attribute definitions, then streams `iter_computers`
+    into `ingest_computer` one record at a time. A 40,000-device tenant is therefore never held in
+    memory, and a failure on device 30,000 leaves 29,999 recorded. Failures are absorbed up to
+    `sweep_failures_allowed` and then stop the sweep with `SweepFailureThresholdExceeded`.
+    """
     outcomes: Counter[str] = Counter()
     device_count = 0
     devices_processed = 0

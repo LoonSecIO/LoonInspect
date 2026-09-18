@@ -460,6 +460,16 @@ under that epoch's `corpusAsOf`**: it reads `unknown_app` until the next pass re
 because counts from one epoch under another's date is precisely the silent staleness the
 stamp exists to prevent.
 
+**And the next pass is the import itself** (#554, 2026-09-18). The exchange that installs
+a new epoch runs the epoch half of the refresh — `judge_vuln(None)` and the copy, one
+statement each — for every operational organization on the box before it returns, so the
+window in which every row reads `unknown_app` is the seconds the join takes rather than
+the hour to the next refresh. Until that landed, every corpus arrival blanked the
+Vulnerabilities page until the hourly job: the answers were stored, stamped with the
+previous epoch, and nothing served them. The hourly refresh stays as the backstop, and a
+re-judge that fails for one organization is one logged line naming the repair
+(`vulnerability answers NOT re-judged after import`), never a failed exchange.
+
 **The copy reaches every device, not just the one that judged.** The build is judged once;
 the copy onto `installed_apps` is what a page and an event actually read, and it has two
 writers. A device's own sync copies onto its rows — including a build another Mac's sweep

@@ -1,3 +1,16 @@
+"""The outbox: the four stages between an event being produced and it leaving the process.
+
+**enqueue** (`enqueue_event`, `enqueue_events`) writes the row in the producer's own transaction, so
+"we recorded it" and "we will send it" commit together. **fan out** (`fan_out_pending`) is the only
+place that knows which destinations exist and what they subscribe to, and turns one event into a
+delivery row each. **deliver** (`deliver_pending`) posts what is due, backs off, and dead-letters
+after ten attempts; `redrive_failed` re-arms those. **purge** (`purge_delivered_events`) drops what
+is past its retention window. The three states a row sits in between — held, pending, dead-lettered
+— are named once in app.schemas.outbox and renamed nowhere. The per-destination request bodies are
+app.fanout and app.core.hec_fanout, the event vocabulary app.core.wire_vocabulary, and the ticks
+that call all four stages app.main.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -688,8 +701,10 @@ async def _attempt_hec_delivery(
     re-sends both. That is the outbox's existing at-least-once story one level down — a
     device's sub-events duplicate together, and the dedup key on a fan-out sourcetype is
     the pull plus the item (`deviceMeta.eventID` with the item's own identity), never
-    `deviceMeta.eventID` alone (docs/splunk-setup.md §7). Redrive of a dead-lettered
-    delivery is #91, not built.
+    `deviceMeta.eventID` alone (docs/splunk-setup.md §7). A dead-lettered delivery is
+    recoverable: `redrive_failed` below (#91) puts its attempts back to zero, due now, with
+    the last error kept, and only until the event's expiry — `POST
+    /api/destinations/{id}/redrive` and the Redrive button; docs/troubleshooting.md §3 walks it.
     """
     headers = _build_headers(destination)
     bodies = hec_request_bodies(event.payload, max_bytes=settings.splunk_hec_max_request_bytes)

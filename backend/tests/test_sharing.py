@@ -377,6 +377,23 @@ def test_every_failure_shape_has_its_line_in_the_step_through(endpoint) -> None:
         assert words in step, f"troubleshooting.md §5 step 6 has no line for: {sentence}"
 
 
+def test_the_re_judge_after_import_has_its_lines_in_the_step_through() -> None:
+    """#554, under the same rule 4: the pass that follows an import writes one of two
+    sentences per organization, and both are looked for in troubleshooting.md §5 step 3 —
+    the step an operator reads when every app says *outside the corpus* under a fresh date.
+    """
+    from pathlib import Path
+
+    from app.catalog.service import REJUDGE_AFTER_IMPORT_FAILED, REJUDGED_AFTER_IMPORT
+
+    document = (Path(__file__).resolve().parents[2] / "docs" / "troubleshooting.md").read_text()
+    marker = "3. **A date is on the banner, and every app under it says *outside the corpus*.**"
+    assert marker in document
+    step = document.split(marker, 1)[1].split("\n4. **", 1)[0]
+    for words in (REJUDGED_AFTER_IMPORT, REJUDGE_AFTER_IMPORT_FAILED):
+        assert words in step, f"troubleshooting.md §5 step 3 has no line for: {words}"
+
+
 # --- the exchange lock (#408) -----------------------------------------------------
 
 
