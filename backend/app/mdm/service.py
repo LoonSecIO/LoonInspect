@@ -1,3 +1,15 @@
+"""Ingest: an MDM read in; the observation ledger, the current-state rows and the wire events out.
+
+Sweep, manual run and webhook all land here, and `ingest_computer` is the one door they share, so
+app.observations.ledger and the device and app tables can never disagree about what was seen. The
+Jamf half — what an Addigy sibling replaces rather than reuses — is `run_jamf`, `run_jamf_catalog`,
+`_sync_jamf`, `ingest_webhook` and `webhook_scope`: Jamf's sections, its RSQL selector and its
+webhook shapes, reached through app.mdm.jamf.client. The half that sibling reuses as it stands is
+`process_sync`, `ingest_computer`, `apply_hashes` and `sweep_failures_allowed`, which take the
+normalized device of app.schemas.payload and never ask who read it. The schedule is
+app.core.scheduling, the run mutex app.core.runs, and the diffing app.changes.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -816,6 +828,14 @@ async def _sync_jamf(
     include_catalog: bool = True,
     run: Run | None = None,
 ) -> ConnectionSyncResult:
+    """The streaming device loop: one Jamf sweep, paged through and committed device by device.
+
+    Captures the read aperture, reads the org-unit catalogs and — unless the collection asked for
+    devices only — the group and extension-attribute definitions, then streams `iter_computers`
+    into `ingest_computer` one record at a time. A 40,000-device tenant is therefore never held in
+    memory, and a failure on device 30,000 leaves 29,999 recorded. Failures are absorbed up to
+    `sweep_failures_allowed` and then stop the sweep with `SweepFailureThresholdExceeded`.
+    """
     outcomes: Counter[str] = Counter()
     device_count = 0
     devices_processed = 0
