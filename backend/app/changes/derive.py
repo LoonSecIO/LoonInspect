@@ -45,7 +45,7 @@ from app.changes.policy import (
 )
 from app.core.context import get_request_id
 from app.core.database import bound_tenant_id
-from app.core.outbox import enqueue_event
+from app.core.outbox import enqueue_events
 from app.core.runs import event_time, get_run, pull_event_id, run_meta
 from app.core.wire import ENVELOPE, envelope, instance_label
 from app.core.wire_vocabulary import CHANGE_EVENT_TYPE
@@ -466,8 +466,17 @@ async def derive_and_record(
     # describes the same device on the same pull, so the block is the same object for all
     # of them and re-deriving it per row would only invite the copies to disagree.
     device_meta = _change_device_meta(observation)
-    for row in rows:
-        await enqueue_event(db, EVENT_TYPE, _event_payload(row, connection, device_meta), request_id=get_request_id())
+    # One batched write, not a round trip per row (#568). A Mac that installed 250 apps derived 250
+    # events and paid an INSERT and a flush on each, inside that device's own transaction, while the
+    # quiet device paid nothing — the cost fell on exactly the devices with the most to say. The
+    # batched twin `enqueue_events` (#524, written for the departure pass's mass deletion) sends them
+    # as multi-row INSERTs under the same contract, and nothing about the rows moves: same types, same
+    # payloads, same order, same transaction, same request id. The list is one subject's kept changes,
+    # already in memory as `rows`, so it is a batch a statement can carry rather than an unbounded pass.
+    # A sibling vertical derives its changes through this same function, so it inherits the batching.
+    await enqueue_events(
+        db, EVENT_TYPE, [_event_payload(row, connection, device_meta) for row in rows], request_id=get_request_id()
+    )
     if rows:
         logger.info(
             "changes recorded",

@@ -1,3 +1,13 @@
+"""The MDM connection's HTTP surface: create, test, read, edit, sync, re-emit, delete.
+
+Owns what an operator may do to a connection row and the refusals that go with it — a base URL that
+resolves somewhere it may not (app.core.egress), credentials that must be re-entered before that URL
+moves, a sync already running (app.core.runs). The work itself is elsewhere: the sweep is
+app.mdm.service, what to collect and when is app.api.collections over app.mdm.collections, and the
+request and response shapes are app.schemas.connections. The provider enum holds one value today
+(#79); a second MDM adds its credential schema and its test call behind this seam, not another router.
+"""
+
 from __future__ import annotations
 
 import json
