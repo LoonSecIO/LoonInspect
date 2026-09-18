@@ -101,27 +101,32 @@ stateDiagram-v2
   direction LR
   [*] --> HELD : enqueue_event, inside the device's transaction
   HELD --> HELD : silent — no enabled destination yet, so nothing was considered
-  HELD --> GONE : silent — not subscribed, so no row is ever made · either held case ages out at day 7
+  HELD --> CONSIDERED : silent — fanned out against a destination not subscribed to the type, so no row is ever made
   HELD --> PENDING : fan_out_pending — one row per enabled, subscribed destination
   PENDING --> PENDING : failed attempt — backoff 60 s, doubling, capped at 1 h
-  PENDING --> PENDING : silent — destination disabled after fan-out · no attempt, no error, no log line
   PENDING --> DELIVERED : the destination answered 2xx
   PENDING --> DEAD_LETTERED : attempt 10, about 4 h 03 m after the first
   DEAD_LETTERED --> PENDING : Redrive — attempts to 0, due now
+  CONSIDERED --> GONE : purge, day 7
+  HELD --> GONE : purge, day 7 — age, not fan-out state, is the candidate test
   DELIVERED --> GONE : purge, day 7
   DEAD_LETTERED --> GONE : purge, day 30, after which Redrive has nothing to return
   GONE --> [*]
+  note right of PENDING : silent stall — a destination disabled after fan-out leaves its row pending, no attempt, no error, no log line, until it is re-enabled
 ```
 
-Three of those transitions are silent by design, and each is a support question:
-`fan_out_pending` **holds** rather than burns an event when no destination is enabled yet
-(the setup stepper calls that step optional); a destination that exists but is not
-subscribed to the type correctly produces **no delivery row at all**; and a destination
-disabled between fan-out and delivery leaves its row **pending with no error and no log
-line**, so it resumes if re-enabled. Neither held case is held for ever: age, not fan-out
-state, is the purge's candidate test, so an event that never earned a delivery row ages out
-on the same clock as a delivered one. The clocks are `event_outbox_retention_days` (7) and
-`dead_letter_retention_days` (30) — see `purge_delivered_events` and `redrive_failed`.
+Three of those are silent by design, and only the first is **held**. With no enabled
+destination `fan_out_pending` returns before it reads a single event, `fanned_out` stays
+false, and the ordinary pass delivers the backlog the moment a destination is added — the
+setup stepper calls that step optional, so a whole baseline sweep normally lands this way.
+The second is not held but **considered**: a destination that exists and is not subscribed to
+the type marks the event `fanned_out` with **no delivery row at all**, and nothing revisits a
+considered event, so subscribing afterwards will not deliver it — which is why adding a
+destination replays one backlog and not another. The third is neither: a destination disabled
+between fan-out and delivery leaves its row **pending with no error and no log line**, and it
+resumes if re-enabled. Both undelivered cases age out on a delivered event's clock: age, not
+fan-out state, is the purge's candidate test. The clocks are `event_outbox_retention_days` (7)
+and `dead_letter_retention_days` (30) — see `fan_out_pending` and `purge_delivered_events`.
 
 ## 4. The scheduler: eight jobs
 

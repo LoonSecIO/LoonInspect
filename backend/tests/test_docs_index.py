@@ -10,10 +10,12 @@ behind.
 A listing is a link, not a mention: prose naming a file in passing is not an index entry,
 and the regex below only accepts the Markdown link form the tables use.
 
-The third assertion guards the drawn figures. Mermaid reads `;` as a statement separator,
-so one inside a label does not fail — it silently ends the statement early and turns the
-rest of the sentence into orphan states. There is no parse error to catch, only a diagram
-that renders wrong, which is why this is a test and not a review note.
+The last two assertions guard the drawn figures against one failure: a statement the source
+declares and the picture does not draw, with no parse error to catch. Mermaid reads `;` as a
+statement separator, so one inside a label turns the rest of the sentence into orphan states;
+and a node whose self-loop is declared twice keeps only the last label — measured on Figure 2
+under mermaid 11.16.1, two `PENDING --> PENDING` lines drew one edge and the retry vanished.
+(`A --> B` twice is safe, and 12.0.0 draws both loops; GitHub's version is not ours to pin.)
 """
 
 from __future__ import annotations
@@ -29,8 +31,10 @@ INDEXED_SUFFIXES = {".md", ".yml"}
 # somebody else's to keep alive.
 _LINK = re.compile(r"\]\((?!https?://|mailto:)([^)#\s]+)")
 
-# The body of a ```mermaid fenced block.
+# The body of a ```mermaid fenced block, and one relation inside it: `SRC --> DST`,
+# `SRC -.-> DST` or `SRC <--> DST`, with an optional |edge label| between.
 _FIGURE = re.compile(r"^```mermaid\n(.*?)^```", re.DOTALL | re.MULTILINE)
+_RELATION = re.compile(r"^\s*([\w.-]+)\s*<?-[.-]*->\s*(?:\|[^|]*\|\s*)?([\w.-]+)", re.MULTILINE)
 
 
 def _linked() -> set[str]:
@@ -74,4 +78,17 @@ def test_no_mermaid_figure_hides_a_statement_separator() -> None:
         "A Mermaid figure carries a ';', which Mermaid reads as the end of the statement, "
         "not as punctuation — the rest of the line becomes orphan nodes and no parse error is "
         f"raised, so the diagram renders wrong and looks fine in review. Use '·' or a comma: {split}"
+    )
+
+
+def test_no_mermaid_figure_declares_one_self_loop_twice() -> None:
+    doubled = []
+    for path in sorted(DOCS.glob("*.md")):
+        for figure in _FIGURE.findall(path.read_text(encoding="utf-8")):
+            loops = [source for source, target in _RELATION.findall(figure) if source == target]
+            doubled += sorted(f"{path.name}: {name} --> {name}" for name in set(loops) if loops.count(name) > 1)
+    assert not doubled, (
+        "A Mermaid figure declares one state's self-loop twice; a renderer keeps only the last "
+        "label, dropping the earlier one with no parse error, so the figure looks fine in review "
+        f"while saying less than its source. Give each cause its own state or a note: {doubled}"
     )
