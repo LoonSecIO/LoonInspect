@@ -9,6 +9,11 @@ behind.
 
 A listing is a link, not a mention: prose naming a file in passing is not an index entry,
 and the regex below only accepts the Markdown link form the tables use.
+
+The third assertion guards the drawn figures. Mermaid reads `;` as a statement separator,
+so one inside a label does not fail — it silently ends the statement early and turns the
+rest of the sentence into orphan states. There is no parse error to catch, only a diagram
+that renders wrong, which is why this is a test and not a review note.
 """
 
 from __future__ import annotations
@@ -23,6 +28,9 @@ INDEXED_SUFFIXES = {".md", ".yml"}
 # The target of a relative Markdown link, stripped of any anchor. Absolute URLs are
 # somebody else's to keep alive.
 _LINK = re.compile(r"\]\((?!https?://|mailto:)([^)#\s]+)")
+
+# The body of a ```mermaid fenced block.
+_FIGURE = re.compile(r"^```mermaid\n(.*?)^```", re.DOTALL | re.MULTILINE)
 
 
 def _linked() -> set[str]:
@@ -51,4 +59,19 @@ def test_every_listed_path_exists() -> None:
     assert not absent, (
         f"docs/README.md links to {', '.join(absent)}, which does not exist. "
         "Fix the link, or drop the row if the document is gone."
+    )
+
+
+def test_no_mermaid_figure_hides_a_statement_separator() -> None:
+    split = [
+        f"{path.name}: {line.strip()}"
+        for path in sorted(DOCS.glob("*.md"))
+        for figure in _FIGURE.findall(path.read_text(encoding="utf-8"))
+        for line in figure.splitlines()
+        if ";" in line
+    ]
+    assert not split, (
+        "A Mermaid figure carries a ';', which Mermaid reads as the end of the statement, "
+        "not as punctuation — the rest of the line becomes orphan nodes and no parse error is "
+        f"raised, so the diagram renders wrong and looks fine in review. Use '·' or a comma: {split}"
     )

@@ -100,11 +100,11 @@ which every organization's stored answers are re-judged against the new epoch �
 stateDiagram-v2
   direction LR
   [*] --> HELD : enqueue_event, inside the device's transaction
-  HELD --> HELD : silent — no enabled destination, so nothing was considered
-  HELD --> GONE : silent — no destination subscribed, so no row is ever made; ages out at day 7
+  HELD --> HELD : silent — no enabled destination yet, so nothing was considered
+  HELD --> GONE : silent — not subscribed, so no row is ever made · either held case ages out at day 7
   HELD --> PENDING : fan_out_pending — one row per enabled, subscribed destination
   PENDING --> PENDING : failed attempt — backoff 60 s, doubling, capped at 1 h
-  PENDING --> PENDING : silent — destination disabled after fan-out; no attempt, no error, no log line
+  PENDING --> PENDING : silent — destination disabled after fan-out · no attempt, no error, no log line
   PENDING --> DELIVERED : the destination answered 2xx
   PENDING --> DEAD_LETTERED : attempt 10, about 4 h 03 m after the first
   DEAD_LETTERED --> PENDING : Redrive — attempts to 0, due now
@@ -118,7 +118,9 @@ Three of those transitions are silent by design, and each is a support question:
 (the setup stepper calls that step optional); a destination that exists but is not
 subscribed to the type correctly produces **no delivery row at all**; and a destination
 disabled between fan-out and delivery leaves its row **pending with no error and no log
-line**, so it resumes if re-enabled. The clocks are `event_outbox_retention_days` (7) and
+line**, so it resumes if re-enabled. Neither held case is held for ever: age, not fan-out
+state, is the purge's candidate test, so an event that never earned a delivery row ages out
+on the same clock as a delivered one. The clocks are `event_outbox_retention_days` (7) and
 `dead_letter_retention_days` (30) — see `purge_delivered_events` and `redrive_failed`.
 
 ## 4. The scheduler: eight jobs
@@ -158,9 +160,10 @@ The right-hand column prices one device sweep of a 1,000-Mac tenant with 60 smar
 Three of those seventy requests carry the devices. The fleet is the cheap axis: the same
 sweep over 40,000 Macs is 100 inventory pages and 167 requests, because everything above
 the last line is paid once. What the sweep is not is the bill. The **hourly catalog
-collection** repeats the eight lines above the devices — `6 + G` reads an hour, 66 at 60
-groups, about 1,600 a day against one sweep's 70, which is roughly 96 % of the day's Jamf
-API traffic. A **webhook costs 3 GETs**: the two aperture reads and one
+collection** (`run_jamf_catalog`) repeats the seven *read* lines above the devices — not
+the token — which is `6 + G` reads an hour, 66 at 60 groups, about 1,600 a day against one
+sweep's 70, and so roughly 96 % of the day's Jamf API traffic.
+A **webhook costs 3 GETs**: the two aperture reads and one
 `GET /api/v4/computers-inventory-detail/{id}`. A `ComputerCheckIn` costs nothing at all —
 it is dropped by name before a client is even built.
 
