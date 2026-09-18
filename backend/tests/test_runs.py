@@ -667,14 +667,14 @@ async def test_a_sweep_stamps_its_job_id_on_the_events_it_produces(db, connectio
     event it enqueues carries the run's identity so a search can collect everything one
     pull produced."""
     from app.core.runs import TRIGGER_MANUAL
-    from app.mdm.collections import ensure_default_collections, list_collections, run_collection
+    from app.mdm.collections import ensure_default_collections, list_collections, run_one_collection
     from app.models.schema import EventOutbox, Run
 
     await ensure_default_collections(db, connection)
     await db.commit()
     sweep = next(row for row in await list_collections(db, connection.id) if row.kind == "device_sweep")
 
-    result = await run_collection(db, sweep, trigger=TRIGGER_MANUAL)
+    result = await run_one_collection(db, sweep, trigger=TRIGGER_MANUAL)
     assert result.ok and result.device_count > 0
 
     run = (
@@ -768,7 +768,7 @@ async def test_a_sweep_stamps_its_job_id_on_the_events_it_produces(db, connectio
 
     # And the second run of the same connection and class is a delta, not another
     # baseline — the distinction the contract's `run_type` was carrying.
-    second = await run_collection(db, sweep, trigger=TRIGGER_MANUAL)
+    second = await run_one_collection(db, sweep, trigger=TRIGGER_MANUAL)
     assert second.ok
     latest = (
         (await db.execute(select(Run).where(Run.mdm_connection_id == connection.id).order_by(Run.started_at.desc()).limit(1)))
@@ -783,13 +783,13 @@ async def test_a_sweep_stamps_its_job_id_on_the_events_it_produces(db, connectio
 
 async def test_the_run_log_is_scoped_by_job_id_and_paged_by_cursor(db, connection, jamf: FakeJamf) -> None:
     from app.core.runs import TRIGGER_MANUAL
-    from app.mdm.collections import ensure_default_collections, list_collections, run_collection
+    from app.mdm.collections import ensure_default_collections, list_collections, run_one_collection
     from app.models.schema import Run, RunLogLine
 
     await ensure_default_collections(db, connection)
     await db.commit()
     sweep = next(row for row in await list_collections(db, connection.id) if row.kind == "device_sweep")
-    await run_collection(db, sweep, trigger=TRIGGER_MANUAL)
+    await run_one_collection(db, sweep, trigger=TRIGGER_MANUAL)
 
     run = (
         (await db.execute(select(Run).where(Run.mdm_connection_id == connection.id).order_by(Run.started_at.desc()).limit(1)))

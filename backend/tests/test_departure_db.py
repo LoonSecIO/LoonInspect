@@ -220,10 +220,12 @@ async def test_a_scoped_sweep_and_one_device_failure_depart_nobody(db, jamf: Fak
     from app.mdm import service
 
     jamf.seed(1)
-    assert (await service.run_jamf(db, connection, trigger="sweep")).ok
+    assert (await service.sweep_jamf_connection(db, connection, trigger="sweep")).ok
     jamf._extra = []  # deleted in Jamf, and about to be unprovable twice over
 
-    scoped = await service.run_jamf(db, connection, trigger="sweep", selector="general.remoteManagement.managed==true")
+    scoped = await service.sweep_jamf_connection(
+        db, connection, trigger="sweep", selector="general.remoteManagement.managed==true"
+    )
     assert scoped.ok, scoped
     assert await _departures(db, connection.id, COMPUTER) == [], "a scoped sweep is not a census"
 
@@ -235,7 +237,7 @@ async def test_a_scoped_sweep_and_one_device_failure_depart_nobody(db, jamf: Fak
         return await ingest(session, conn, raw, **kwargs)
 
     monkeypatch.setattr(service, "ingest_computer", one_bad_device)
-    dirty = await service.run_jamf(db, connection, trigger="sweep")
+    dirty = await service.sweep_jamf_connection(db, connection, trigger="sweep")
     assert dirty.ok and dirty.devices_failed == 1, dirty
     assert await _departures(db, connection.id, COMPUTER) == [], "one failed device, and nobody departs"
 
@@ -705,19 +707,19 @@ async def test_the_clock_runs_out_without_a_clean_census_and_the_mac_still_leave
 
     scoped = {"trigger": "sweep", "selector": "general.remoteManagement.managed==true"}
     jamf.seed(1)
-    assert (await service.run_jamf(db, connection, trigger="sweep")).ok
+    assert (await service.sweep_jamf_connection(db, connection, trigger="sweep")).ok
     jamf._extra = []
-    assert (await service.run_jamf(db, connection, trigger="sweep")).ok
+    assert (await service.sweep_jamf_connection(db, connection, trigger="sweep")).ok
     (gone,) = await _departures(db, connection.id, COMPUTER)
     await _age(db, gone, 8)
 
     mark = await _high_water(db)
-    assert (await service.run_jamf(db, connection, **scoped)).ok
+    assert (await service.sweep_jamf_connection(db, connection, **scoped)).ok
     (terminal,) = await _events(db, mark, "subject.departure")
     assert terminal.payload["state"] == "removed", "a sweep that judges nobody still closes an expired tail"
 
     mark = await _high_water(db)
-    assert (await service.run_jamf(db, connection, **scoped)).ok
+    assert (await service.sweep_jamf_connection(db, connection, **scoped)).ok
     assert await _events(db, mark, "subject.departure") == [], "the terminal is emitted exactly once"
 
 

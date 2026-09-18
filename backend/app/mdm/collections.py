@@ -39,9 +39,9 @@ from app.mdm.jamf.contract import V0_SECTIONS
 from app.mdm.service import (
     TRIGGER_SWEEP,
     ConnectionSyncResult,
-    run_jamf,
     run_jamf_catalog,
     set_sync_status,
+    sweep_jamf_connection,
     sync_result_kwargs,
 )
 from app.models.schema import Collection, MdmConnection, Run
@@ -162,7 +162,7 @@ async def ensure_default_collections(db: AsyncSession, connection: MdmConnection
 LOCK_CLASS_FOR_KIND = {KIND_DEVICE_SWEEP: LOCK_DEVICE_SWEEP, KIND_CATALOG: LOCK_CATALOG}
 
 
-async def run_collection(
+async def run_one_collection(
     db: AsyncSession,
     collection: Collection,
     *,
@@ -229,7 +229,7 @@ async def run_collection(
         try:
             if collection.kind == KIND_DEVICE_SWEEP:
                 await set_sync_status(db, connection, SyncStatus.syncing)
-                result = await run_jamf(
+                result = await sweep_jamf_connection(
                     db,
                     connection,
                     trigger=trigger,
@@ -269,7 +269,7 @@ async def run_collection(
             return ConnectionSyncResult(connection_id=connection_id, ok=False, error=str(exc), collection_id=collection_id)
 
         if not result.ok:
-            # A failure result means the handler inside run_jamf / run_jamf_catalog
+            # A failure result means the handler inside sweep_jamf_connection / run_jamf_catalog
             # rolled the session back, which expired every ORM instance in it (#125).
             # Reload the two this frame keeps using — writing the collection's
             # accounting and finishing the run both read them — or the bookkeeping
@@ -317,7 +317,7 @@ async def run_collection(
     return result
 
 
-async def run_connection(
+async def run_enabled_collections(
     db: AsyncSession, connection: MdmConnection, *, trigger: str, run: Run | None = None
 ) -> ConnectionSyncResult:
     """The connection-level "run now": every enabled device sweep the connection has,
@@ -334,7 +334,7 @@ async def run_connection(
         logger.info("connection has no enabled device sweep", extra={"connection_id": connection.id})
         return ConnectionSyncResult(connection_id=connection.id, skipped=True)
 
-    results = [await run_collection(db, row, trigger=trigger, run=run) for row in sweeps]
+    results = [await run_one_collection(db, row, trigger=trigger, run=run) for row in sweeps]
     observations: dict[str, int] = {}
     for result in results:
         for key, value in result.observations.items():
@@ -466,7 +466,7 @@ async def tick_tenant(db: AsyncSession, now: datetime | None = None) -> list[Con
                 },
             )
             continue
-        results.append(await run_collection(db, collection, trigger=TRIGGER_SWEEP, due_at=due_at))
+        results.append(await run_one_collection(db, collection, trigger=TRIGGER_SWEEP, due_at=due_at))
     return results
 
 

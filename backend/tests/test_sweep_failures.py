@@ -134,7 +134,7 @@ async def test_one_dead_device_does_not_kill_the_sweep(db, jamf: FakeJamf, conne
     row, in the log with the device's identity, and on the wire."""
     from app.core.runs import TRIGGER_MANUAL
     from app.mdm import service
-    from app.mdm.collections import run_collection
+    from app.mdm.collections import run_one_collection
     from app.models.schema import Device, RunLogLine
 
     jamf.seed(3)  # five devices in all
@@ -152,7 +152,7 @@ async def test_one_dead_device_does_not_kill_the_sweep(db, jamf: FakeJamf, conne
 
     monkeypatch.setattr(service, "ingest_computer", failing_second_device)
     sweep = await _sweep_collection(db, connection)
-    result = await run_collection(db, sweep, trigger=TRIGGER_MANUAL)
+    result = await run_one_collection(db, sweep, trigger=TRIGGER_MANUAL)
 
     assert result.ok is True
     assert result.device_count == 5
@@ -237,7 +237,7 @@ async def test_failures_past_the_threshold_fail_the_run_and_stop_it(db, jamf: Fa
     from app.core.config import settings
     from app.core.runs import TRIGGER_MANUAL
     from app.mdm import service
-    from app.mdm.collections import run_collection
+    from app.mdm.collections import run_one_collection
 
     # The floor lowered so the test doesn't need 26 devices; the percent term is 0 at
     # this fleet size, so the tolerance is exactly 1.
@@ -251,7 +251,7 @@ async def test_failures_past_the_threshold_fail_the_run_and_stop_it(db, jamf: Fa
 
     monkeypatch.setattr(service, "ingest_computer", every_device_fails)
     sweep = await _sweep_collection(db, connection)
-    result = await run_collection(db, sweep, trigger=TRIGGER_MANUAL)
+    result = await run_one_collection(db, sweep, trigger=TRIGGER_MANUAL)
 
     # Failure one is within tolerance, failure two crosses it — and nothing after it
     # was attempted.
@@ -309,7 +309,7 @@ async def test_a_reclaim_still_aborts_the_run_and_is_not_a_device_failure(db, ja
     reclaim's verdict untouched, and nothing on the wire."""
     from app.core.runs import TRIGGER_MANUAL, get_run
     from app.mdm import service
-    from app.mdm.collections import run_collection
+    from app.mdm.collections import run_one_collection
     from app.models.schema import Run
 
     jamf.seed(3)  # five devices in all
@@ -337,7 +337,7 @@ async def test_a_reclaim_still_aborts_the_run_and_is_not_a_device_failure(db, ja
 
     monkeypatch.setattr(service, "ingest_computer", reclaimed_under_device_two)
     sweep = await _sweep_collection(db, connection)
-    result = await run_collection(db, sweep, trigger=TRIGGER_MANUAL)
+    result = await run_one_collection(db, sweep, trigger=TRIGGER_MANUAL)
 
     assert result.ok is False
     assert result.error and "reclaimed" in result.error
@@ -419,11 +419,11 @@ async def test_a_webhook_ingest_emits_run_completed(db, jamf: FakeJamf, connecti
 
 
 async def test_a_failing_tier_read_is_reported_as_a_failed_sweep(db, jamf: FakeJamf, connection, monkeypatch) -> None:
-    """`run_jamf`'s first I/O is inside the guard that makes its docstring true (#248).
+    """`sweep_jamf_connection`'s first I/O is inside the guard that makes its docstring true (#248).
 
     The corpus gate's tier read (`app.core.vuln_library.read_tenant_tier`) is a database
     read, and it runs before anything else in the sweep. Outside the `try` it was the one
-    way this function could raise: `run_connection` catches only `RunReclaimed`, so the
+    way this function could raise: `run_enabled_collections` catches only `RunReclaimed`, so the
     exception would reach `collections_tick`'s blanket handler, abandon every other
     collection due for this tenant on that tick, and leave the claimed run row to the
     reclaim — the exact outcome "reports a failure rather than raising" exists to prevent.
@@ -435,7 +435,7 @@ async def test_a_failing_tier_read_is_reported_as_a_failed_sweep(db, jamf: FakeJ
     """
     from app.core.runs import TRIGGER_MANUAL
     from app.mdm import service
-    from app.mdm.collections import run_collection
+    from app.mdm.collections import run_one_collection
     from app.models.schema import MdmSyncState
 
     async def tier_read_dies(db_) -> str:
@@ -445,7 +445,7 @@ async def test_a_failing_tier_read_is_reported_as_a_failed_sweep(db, jamf: FakeJ
     monkeypatch.setattr(service, "read_tenant_tier", tier_read_dies)
     sweep = await _sweep_collection(db, connection)
 
-    result = await run_collection(db, sweep, trigger=TRIGGER_MANUAL)
+    result = await run_one_collection(db, sweep, trigger=TRIGGER_MANUAL)
 
     assert result.ok is False
     assert result.error and "division by zero" in result.error

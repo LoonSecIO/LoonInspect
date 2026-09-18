@@ -18,7 +18,7 @@ from app.mdm.collections import (
     apply_schedule,
     list_all_collections,
     list_collections,
-    run_collection,
+    run_one_collection,
     schedule_of,
 )
 from app.mdm.jamf.contract import EXTENSION_ATTRIBUTE_CARRIERS, SECTIONS, with_extension_attribute_carriers
@@ -105,7 +105,7 @@ def _validate_scope(collection: Collection) -> None:
         # Asking for extension attributes reads the five sections they are displayed
         # under (#197). Applied at save so the row, the editor and the aperture all show
         # the set that is actually fetched, rather than a picker that silently narrows
-        # EAs; run_jamf and webhook_scope apply the same closure for rows that predate it.
+        # EAs; sweep_jamf_connection and webhook_scope apply the same closure for rows that predate it.
         collection.sections = list(with_extension_attribute_carriers(sections))
     if collection.kind == KIND_CATALOG:
         collection.sections = []
@@ -329,7 +329,7 @@ async def _run_collection_task(collection_id: int, actor: Actor, tenant_id: uuid
             collection = await db.get(Collection, collection_id)
             if collection is None:
                 return
-            await run_collection(db, collection, trigger=TRIGGER_MANUAL)
+            await run_one_collection(db, collection, trigger=TRIGGER_MANUAL)
     finally:
         reset_tenant_id(tenant_token)
         reset_actor(token)

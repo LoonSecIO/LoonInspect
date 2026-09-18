@@ -12,7 +12,7 @@ had a test:
    finishes `failed` with the error recorded, exactly one run.failed goes to the
    wire (#103), one run.completed carrying `status: "failed"` goes with it (#224),
    and the route answers 502.
-2. `run_jamf`'s generic except: set_sync_status and the log extras read the expired
+2. `sweep_jamf_connection`'s generic except: set_sync_status and the log extras read the expired
    connection, so the sync status stayed stuck 'syncing' and collections_tick's
    blanket handler ate the crash. Pinned: the status reaches a terminal 'failed'
    and the failure is logged with the right connection id.
@@ -212,14 +212,14 @@ async def test_webhook_fetch_5xx_fails_the_run_and_answers_502(db, jamf: FakeJam
 
 
 async def test_generic_sweep_failure_lands_a_terminal_sync_status(db, jamf: FakeJamf, connection, monkeypatch, caplog) -> None:
-    """run_jamf's generic except (#125): a mid-transaction failure outside the
+    """sweep_jamf_connection's generic except (#125): a mid-transaction failure outside the
     per-device isolation — forced the way test_sweep_failures forces one, so the
     handler's rollback is load-bearing. The sync status must reach 'failed' rather
-    than stick at the 'syncing' run_collection published, the run must close
+    than stick at the 'syncing' run_one_collection published, the run must close
     `failed` with one run.failed, and the log line must carry the connection id."""
     from app.core.runs import TRIGGER_MANUAL
     from app.mdm import service
-    from app.mdm.collections import ensure_default_collections, list_collections, run_collection
+    from app.mdm.collections import ensure_default_collections, list_collections, run_one_collection
     from app.models.schema import MdmSyncState
 
     connection_id = connection.id
@@ -235,7 +235,7 @@ async def test_generic_sweep_failure_lands_a_terminal_sync_status(db, jamf: Fake
     sweep = next(row for row in await list_collections(db, connection_id) if row.kind == "device_sweep")
 
     with caplog.at_level(logging.ERROR, logger="app.mdm.service"):
-        result = await run_collection(db, sweep, trigger=TRIGGER_MANUAL)
+        result = await run_one_collection(db, sweep, trigger=TRIGGER_MANUAL)
 
     assert result.ok is False
     assert result.connection_id == connection_id
@@ -268,7 +268,7 @@ async def test_generic_catalog_failure_is_logged_with_the_connection_id(
     what read the connection, and both must carry its id after the rollback."""
     from app.core.runs import TRIGGER_MANUAL
     from app.mdm import service
-    from app.mdm.collections import ensure_default_collections, list_collections, run_collection
+    from app.mdm.collections import ensure_default_collections, list_collections, run_one_collection
 
     connection_id = connection.id
 
@@ -281,7 +281,7 @@ async def test_generic_catalog_failure_is_logged_with_the_connection_id(
     catalog = next(row for row in await list_collections(db, connection_id) if row.kind == "catalog")
 
     with caplog.at_level(logging.ERROR, logger="app.mdm.service"):
-        result = await run_collection(db, catalog, trigger=TRIGGER_MANUAL)
+        result = await run_one_collection(db, catalog, trigger=TRIGGER_MANUAL)
 
     assert result.ok is False
     assert result.connection_id == connection_id
