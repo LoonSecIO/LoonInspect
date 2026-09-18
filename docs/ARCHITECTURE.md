@@ -25,7 +25,7 @@ a second MDM plugs into.
    also carries the `jobID` stamped on every event of the pull, the time window that
    becomes `_time`, and the log an operator reads; a process that dies is reclaimed by
    heartbeat, not at startup ([`runs.md`](runs.md), `app.core.runs`).
-5. **The sweep reads in a fixed order** (`app.mdm.service._sync_jamf`): the aperture —
+5. **The sweep reads in a fixed order** (`app.mdm.service._stream_jamf_fleet`): the aperture —
    Jamf's version and its inventory-collection settings — then departments and buildings,
    then smart groups with one detail read each, then extension-attribute definitions, then
    `computers-inventory` in pages of 400 with at most four in flight. Names before ids and
@@ -146,7 +146,7 @@ jobs fire in `SYNC_TIMEZONE`, not UTC.
 
 ## 5. What a pull costs Jamf
 
-The order below is the order the code issues them (`_sync_jamf`, `app.mdm.jamf.client`).
+The order below is the order the code issues them (`_stream_jamf_fleet`, `app.mdm.jamf.client`).
 The right-hand column prices one device sweep of a 1,000-Mac tenant with 60 smart groups.
 
 | Call | Once per | Count |
@@ -205,7 +205,7 @@ Addigy Mac becomes an observation span, a change row, a catalog answer and the s
 `device.inventory` on the wire as a Jamf Mac, under the same run, the same mutex, the same
 outbox and the same posture keys. Two facts worth holding before that work starts. First,
 the seam does not fall on a module boundary in one place: `app/mdm/service.py` holds
-`run_jamf` and `_sync_jamf` (Jamf's) beside `ingest_computer` and `process_sync`
+`sweep_jamf_connection` and `_stream_jamf_fleet` (Jamf's) beside `ingest_computer` and `process_sync`
 (everyone's), so the split there is by function, not by file. Second, a `Device` is found
 by connection, platform and external id together — never by an id assumed unique across
 providers.

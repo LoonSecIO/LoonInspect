@@ -674,7 +674,7 @@ async def _run_connection_sync(connection_id: int, actor: Actor, tenant_id: uuid
                     result = await sync_connection(db, connection, trigger=TRIGGER_MANUAL, run=run)
                 except RunReclaimed:
                     # Already handled where it was detected: the reclaim closed the
-                    # run, run_collection recorded the abort on the collection row,
+                    # run, run_one_collection recorded the abort on the collection row,
                     # and any remaining sweeps were abandoned with it. Nothing to
                     # finish — the row's verdict is the reclaim's — and nothing to
                     # re-raise: a reclaimed run is an understood outcome, not a crash

@@ -120,7 +120,7 @@ async def test_run_connection_runs_the_sweeps_and_records_outcomes(db, connectio
 
 
 async def test_a_narrowed_sweep_reaches_jamf_and_the_aperture(db, connection, jamf: FakeJamf) -> None:
-    from app.mdm.collections import apply_schedule, run_collection
+    from app.mdm.collections import apply_schedule, run_one_collection
     from app.models.schema import Collection, ObservationAperture, ObservationSpan
 
     narrowed = Collection(
@@ -140,7 +140,7 @@ async def test_a_narrowed_sweep_reaches_jamf_and_the_aperture(db, connection, ja
     db.add(narrowed)
     await db.commit()
 
-    result = await run_collection(db, narrowed, trigger="manual")
+    result = await run_one_collection(db, narrowed, trigger="manual")
     assert result.ok and result.collection_id == narrowed.id
 
     # The selector was pushed into Jamf's query, not applied after the fetch, and only
@@ -300,7 +300,7 @@ async def test_a_sweep_that_asks_for_eas_reads_the_sections_they_are_displayed_u
     saved before the rule was — still fetches the five carriers, records them in the
     aperture, and lands the purchasing-displayed EA in the current-state rows with the
     section it came from."""
-    from app.mdm.collections import apply_schedule, run_collection
+    from app.mdm.collections import apply_schedule, run_one_collection
     from app.models.schema import Collection, Device, DeviceExtensionAttribute, ObservationAperture
 
     narrowed = Collection(
@@ -319,7 +319,7 @@ async def test_a_sweep_that_asks_for_eas_reads_the_sections_they_are_displayed_u
     db.add(narrowed)
     await db.commit()
 
-    result = await run_collection(db, narrowed, trigger="manual")
+    result = await run_one_collection(db, narrowed, trigger="manual")
     assert result.ok and result.collection_id == narrowed.id
 
     closed = "GENERAL,HARDWARE,OPERATING_SYSTEM,USER_AND_LOCATION,PURCHASING,APPLICATIONS,EXTENSION_ATTRIBUTES"
@@ -420,11 +420,11 @@ async def sweep(db, connection):
 
 
 async def test_a_successful_sweep_marks_the_attempt_and_the_success_together(db, sweep, jamf: FakeJamf) -> None:
-    from app.mdm.collections import run_collection
+    from app.mdm.collections import run_one_collection
 
     assert sweep.last_success_at is None  # never run
 
-    assert (await run_collection(db, sweep, trigger="manual")).ok
+    assert (await run_one_collection(db, sweep, trigger="manual")).ok
     await db.refresh(sweep)
 
     assert sweep.last_run_status == "ok"
@@ -444,10 +444,10 @@ async def test_a_failed_sweep_moves_the_attempt_and_leaves_the_success_standing(
     call a fleet fresh at the exact moment it stopped being collected.
     """
     from app.mdm import collections as collections_module
-    from app.mdm.collections import run_collection
+    from app.mdm.collections import run_one_collection
     from app.mdm.service import ConnectionSyncResult
 
-    assert (await run_collection(db, sweep, trigger="manual")).ok
+    assert (await run_one_collection(db, sweep, trigger="manual")).ok
     await db.refresh(sweep)
     succeeded_at = sweep.last_success_at
     assert succeeded_at is not None
@@ -455,8 +455,8 @@ async def test_a_failed_sweep_moves_the_attempt_and_leaves_the_success_standing(
     async def _refused(_db, connection, **kwargs) -> ConnectionSyncResult:
         return ConnectionSyncResult(connection_id=connection.id, ok=False, error="Jamf refused the inventory read")
 
-    monkeypatch.setattr(collections_module, "run_jamf", _refused)
-    assert not (await run_collection(db, sweep, trigger="sweep")).ok
+    monkeypatch.setattr(collections_module, "sweep_jamf_connection", _refused)
+    assert not (await run_one_collection(db, sweep, trigger="sweep")).ok
     await db.refresh(sweep)
 
     assert sweep.last_run_status == "failed"
@@ -472,7 +472,7 @@ async def test_a_reclaimed_finish_does_not_leave_a_success_mark_behind(
     be forced back with it — otherwise the collection claims a success the run history
     says never happened."""
     from app.mdm import collections as collections_module
-    from app.mdm.collections import run_collection
+    from app.mdm.collections import run_one_collection
 
     real_finish = collections_module.finish
 
@@ -481,7 +481,7 @@ async def test_a_reclaimed_finish_does_not_leave_a_success_mark_behind(
         return False
 
     monkeypatch.setattr(collections_module, "finish", _finished_but_reclaimed)
-    await run_collection(db, sweep, trigger="manual")
+    await run_one_collection(db, sweep, trigger="manual")
     await db.refresh(sweep)
 
     assert sweep.last_run_status == "failed"
@@ -495,9 +495,9 @@ async def test_a_reclaim_mid_flight_leaves_an_earlier_success_alone(
     earlier real success is still a true statement about when this data was current."""
     from app.core.runs import RunReclaimed
     from app.mdm import collections as collections_module
-    from app.mdm.collections import run_collection
+    from app.mdm.collections import run_one_collection
 
-    assert (await run_collection(db, sweep, trigger="manual")).ok
+    assert (await run_one_collection(db, sweep, trigger="manual")).ok
     await db.refresh(sweep)
     succeeded_at = sweep.last_success_at
     assert succeeded_at is not None
@@ -505,8 +505,8 @@ async def test_a_reclaim_mid_flight_leaves_an_earlier_success_alone(
     async def _reclaimed(*args, **kwargs):
         raise RunReclaimed("reclaimed mid-flight")
 
-    monkeypatch.setattr(collections_module, "run_jamf", _reclaimed)
-    assert not (await run_collection(db, sweep, trigger="sweep")).ok
+    monkeypatch.setattr(collections_module, "sweep_jamf_connection", _reclaimed)
+    assert not (await run_one_collection(db, sweep, trigger="sweep")).ok
     await db.refresh(sweep)
 
     assert sweep.last_run_status == "failed"
@@ -515,7 +515,7 @@ async def test_a_reclaim_mid_flight_leaves_an_earlier_success_alone(
 
 # --- The process dies: the reclaim is the collection's fifth writer -------------------
 #
-# Every test above drives an outcome through a live `run_collection` frame, which is
+# Every test above drives an outcome through a live `run_one_collection` frame, which is
 # exactly why this defect survived them. `last_run_status` had four writers and all four
 # sat inside that frame; when the frame's process goes — a deploy, an OOM kill, a node
 # eviction at 03:12 — the reclaim fails the RUN and, before this, left the COLLECTION
@@ -539,18 +539,18 @@ async def _kill_the_process(db, run_id) -> None:
 async def test_a_reclaim_marks_the_collection_the_dead_run_was_serving(db, connection, sweep, jamf: FakeJamf) -> None:
     """The sweep that was killed at 03:12 does not still read `ok` at 08:00."""
     from app.core.runs import LOCK_DEVICE_SWEEP, TRIGGER_SWEEP, acquire
-    from app.mdm.collections import run_collection
+    from app.mdm.collections import run_one_collection
 
     # Yesterday's sweep succeeded, so the row carries the reassuring cache this defect
     # was hiding behind.
-    assert (await run_collection(db, sweep, trigger="sweep")).ok
+    assert (await run_one_collection(db, sweep, trigger="sweep")).ok
     await db.refresh(sweep)
     assert sweep.last_run_status == "ok"
     succeeded_at = sweep.last_success_at
     assert succeeded_at is not None
 
     # Tonight's sweep takes the lock for this collection and its process is killed
-    # mid-flight. No `run_collection` frame ever finishes; nothing writes the row.
+    # mid-flight. No `run_one_collection` frame ever finishes; nothing writes the row.
     dead = await acquire(
         db,
         connection,
@@ -588,7 +588,7 @@ async def test_a_reclaim_leaves_a_collection_that_recorded_its_own_outcome_alone
     the reclaim does.
     """
     from app.core.runs import LOCK_DEVICE_SWEEP, TRIGGER_MANUAL, acquire
-    from app.mdm.collections import run_collection
+    from app.mdm.collections import run_one_collection
 
     held = await acquire(
         db,
@@ -599,7 +599,7 @@ async def test_a_reclaim_leaves_a_collection_that_recorded_its_own_outcome_alone
     )
     assert held.started
     # The collection completes inside the handed-in run…
-    assert (await run_collection(db, sweep, trigger="manual", run=held.run)).ok
+    assert (await run_one_collection(db, sweep, trigger="manual", run=held.run)).ok
     await db.refresh(sweep)
     succeeded_at = sweep.last_success_at
     assert sweep.last_run_status == "ok" and succeeded_at is not None
@@ -727,7 +727,7 @@ async def test_a_failed_mark_does_not_orphan_the_lock_it_just_freed(
     still *use* it, and that is not a small gap. It reads every collection back through
     `db.refresh`, which un-expires the instance before the assertion looks at it, and it
     substitutes a stand-in for the mark, so no real `update(Collection)` ever runs.
-    `run_collection` — the scheduled tick's caller, the unattended path this whole
+    `run_one_collection` — the scheduled tick's caller, the unattended path this whole
     mechanism exists for — does neither: it holds the `Collection` the tick handed it
     across `acquire()` and reads `collection.id` straight off it on the next line.
 
@@ -762,7 +762,7 @@ async def test_a_failed_mark_does_not_orphan_the_lock_it_just_freed(
         acquire,
     )
     from app.core.tenancy import OPERATIONAL_TENANT_ID
-    from app.mdm.collections import apply_schedule, run_collection
+    from app.mdm.collections import apply_schedule, run_one_collection
     from app.models.schema import Collection, Run
 
     catalog = Collection(
@@ -810,7 +810,7 @@ async def test_a_failed_mark_does_not_orphan_the_lock_it_just_freed(
     raised: Exception | None = None
     result = None
     try:
-        result = await run_collection(db, sweep, trigger="sweep")
+        result = await run_one_collection(db, sweep, trigger="sweep")
     except Exception as exc:
         raised = exc
 
@@ -828,9 +828,9 @@ async def test_a_failed_mark_does_not_orphan_the_lock_it_just_freed(
 
     assert orphaned == [], (
         f"the acquisition took the freed lock and walked away from it: {orphaned} left running, "
-        f"because run_collection raised {type(raised).__name__ if raised is not None else 'nothing'}: {raised}"
+        f"because run_one_collection raised {type(raised).__name__ if raised is not None else 'nothing'}: {raised}"
     )
-    assert raised is None, f"run_collection raised {type(raised).__name__}: {raised}"
+    assert raised is None, f"run_one_collection raised {type(raised).__name__}: {raised}"
     assert result is not None and result.ok
 
     # And the sweep that did run recorded its own outcome over the dropped stamp, which
@@ -849,7 +849,7 @@ async def test_a_reclaimed_collection_that_then_succeeds_reads_ok(db, connection
 
     This is the other end of the fix above, and the reason `synchronize_session=False`
     could not stand on its own. Both writes land on one `Collection` instance that
-    `run_collection` is holding: the reclaim's, through the session and behind the
+    `run_one_collection` is holding: the reclaim's, through the session and behind the
     instance's back, and the frame's own, through the instance. With the UPDATE no longer
     synchronising and nothing reading the row back, the instance keeps its pre-mark `ok`,
     so `collection.last_run_status = "ok"` at the end of a successful sweep is not a
@@ -864,10 +864,10 @@ async def test_a_reclaimed_collection_that_then_succeeds_reads_ok(db, connection
     from app.core.database import session_for_tenant
     from app.core.runs import LOCK_DEVICE_SWEEP, TRIGGER_SWEEP, acquire
     from app.core.tenancy import OPERATIONAL_TENANT_ID
-    from app.mdm.collections import run_collection
+    from app.mdm.collections import run_one_collection
     from app.models.schema import Collection
 
-    assert (await run_collection(db, sweep, trigger="sweep")).ok
+    assert (await run_one_collection(db, sweep, trigger="sweep")).ok
     await db.refresh(sweep)
     assert sweep.last_run_status == "ok"
 
@@ -876,7 +876,7 @@ async def test_a_reclaimed_collection_that_then_succeeds_reads_ok(db, connection
     await _kill_the_process(db, dead.run.id)
 
     # One call: the reclaim that stamps `failed`, and the sweep that supersedes it.
-    assert (await run_collection(db, sweep, trigger="sweep")).ok
+    assert (await run_one_collection(db, sweep, trigger="sweep")).ok
 
     async with session_for_tenant(OPERATIONAL_TENANT_ID) as witness:
         row = (await witness.execute(select(Collection).where(Collection.id == sweep.id))).scalar_one()

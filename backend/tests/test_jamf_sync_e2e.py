@@ -1,6 +1,6 @@
 """The Jamf ingest paths, end to end, against a real Postgres and a mocked Jamf Pro.
 
-`app.mdm.service._sync_jamf` and `ingest_webhook` are where the ledger, the
+`app.mdm.service._stream_jamf_fleet` and `ingest_webhook` are where the ledger, the
 current-state tables, and the outbox meet. No unit test sees that seam, so this one
 drives the whole thing: OAuth, aperture reads, inventory paging, smart groups, the
 webhook's fetch-by-id — all answered by an httpx.MockTransport standing in for a tenant,

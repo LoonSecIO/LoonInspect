@@ -571,7 +571,7 @@ def with_extension_attribute_carriers(sections: Iterable[str]) -> tuple[str, ...
 
     Applied wherever an aperture is built from a collection: at save
     (app.api.collections._validate_scope), at the top of a sweep
-    (app.mdm.service.run_jamf) and on the webhook path (app.mdm.service.webhook_scope),
+    (app.mdm.service.sweep_jamf_connection) and on the webhook path (app.mdm.service.webhook_scope),
     so a row saved before this rule behaves like one saved after it. Idempotent,
     order-preserving, a no-op without EAs, and it never drops a name it does not know:
     canonicalize_computer is the place an unknown section is refused.

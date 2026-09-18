@@ -2,8 +2,8 @@
 
 Sweep, manual run and webhook all land here, and `ingest_computer` is the one door they share, so
 app.observations.ledger and the device and app tables can never disagree about what was seen. The
-Jamf half — what an Addigy sibling replaces rather than reuses — is `run_jamf`, `run_jamf_catalog`,
-`_sync_jamf`, `ingest_webhook` and `webhook_scope`: Jamf's sections, its RSQL selector and its
+Jamf half — what an Addigy sibling replaces rather than reuses — is `sweep_jamf_connection`, `run_jamf_catalog`,
+`_stream_jamf_fleet`, `ingest_webhook` and `webhook_scope`: Jamf's sections, its RSQL selector and its
 webhook shapes, reached through app.mdm.jamf.client. The half that sibling reuses as it stands is
 `process_sync`, `ingest_computer`, `apply_hashes` and `sweep_failures_allowed`, which take the
 normalized device of app.schemas.payload and never ask who read it. The schedule is
@@ -251,9 +251,9 @@ async def sync_connection(
     rather than raising — an expired credential on one Jamf tenant must not abort a
     sweep across several.
     """
-    from app.mdm.collections import run_connection  # local: collections imports this module
+    from app.mdm.collections import run_enabled_collections  # local: collections imports this module
 
-    return await run_connection(db, connection, trigger=trigger, run=run)
+    return await run_enabled_collections(db, connection, trigger=trigger, run=run)
 
 
 async def capture_aperture(
@@ -282,7 +282,7 @@ async def capture_aperture(
     )
 
 
-async def run_jamf(
+async def sweep_jamf_connection(
     db: AsyncSession,
     connection: MdmConnection,
     *,
@@ -319,12 +319,12 @@ async def run_jamf(
         # **Inside the guard, because it is a database read.** It is this function's first
         # I/O, and the docstring above is a contract: a failure here has to come back as a
         # failed sweep on this connection, not as an exception unwinding through
-        # `run_connection` (which catches only `RunReclaimed`) into `collections_tick`'s
+        # `run_enabled_collections` (which catches only `RunReclaimed`) into `collections_tick`'s
         # blanket handler, abandoning the rest of that tenant's due collections and leaving
         # the claimed run row to the reclaim.
         await read_tenant_tier(db)
         client = get_mdm_client(connection)
-        result = await _sync_jamf(
+        result = await _stream_jamf_fleet(
             db,
             connection,
             client,
@@ -341,7 +341,7 @@ async def run_jamf(
         # already closed the run, and a fresh acquisition may be sweeping this
         # connection right now — stamping `failed` on its sync state here would be the
         # reclaimed process narrating someone else's run. The run's owner stops the
-        # rest of the work (app.mdm.collections.run_collection).
+        # rest of the work (app.mdm.collections.run_one_collection).
         raise
     except CredentialUnusable as exc:
         # The stored credential is not a credential (#393). Its own clause, above the
@@ -434,7 +434,7 @@ async def run_jamf_catalog(
     """The catalog class on its own: smart-group definitions with criteria, no devices.
     Tens to hundreds of small reads, so it can run far more often than a sweep and
     timestamp a criteria edit finer than the sweep would."""
-    # Same discipline as run_jamf (#125): captured before the handler's rollback can
+    # Same discipline as sweep_jamf_connection (#125): captured before the handler's rollback can
     # expire the instance, because an expired read under asyncio raises MissingGreenlet.
     connection_id = connection.id
     try:
@@ -467,10 +467,10 @@ async def run_jamf_catalog(
                 await _log_definition_census(db, run, definitions)
                 await _log_org_units(db, run, org_units)
     except RunReclaimed:
-        # Same as run_jamf: the reclaim already closed the run; its owner stops the work.
+        # Same as sweep_jamf_connection: the reclaim already closed the run; its owner stops the work.
         raise
     except CredentialUnusable as exc:
-        # Same refusal as run_jamf's, and it has to be here too: the catalog class keeps
+        # Same refusal as sweep_jamf_connection's, and it has to be here too: the catalog class keeps
         # its own cadence between sweeps, so leaving it to the generic handler would put
         # the pydantic report back into `runs.error` on every catalog tick (#393).
         await db.rollback()
@@ -832,7 +832,7 @@ async def _refresh_org_units(
     return counts
 
 
-async def _sync_jamf(
+async def _stream_jamf_fleet(
     db: AsyncSession,
     connection: MdmConnection,
     client: JamfClient,
@@ -1265,7 +1265,7 @@ async def webhook_scope(db: AsyncSession, connection: MdmConnection) -> tuple[tu
     collection = result.scalars().first()
     if collection is None or not collection.sections:
         return tuple(V0_SECTIONS), ()
-    # Closed for the same reason run_jamf closes the sweep's (#197).
+    # Closed for the same reason sweep_jamf_connection closes the sweep's (#197).
     return (
         with_extension_attribute_carriers(collection.sections),
         tuple(collection.quarantined_extension_attributes or ()),
@@ -1636,7 +1636,7 @@ async def process_sync(
         # The one place the container's corpus reaches the wire (#249). `NO_CORPUS` until
         # an epoch is loaded AND this tenant's tier earns it — both decided inside
         # `loaded_corpus()` and neither costing a query here: the tier was read once at the
-        # top of this sweep (`run_jamf`) or of this webhook (`ingest_webhook`), which is why
+        # top of this sweep (`sweep_jamf_connection`) or of this webhook (`ingest_webhook`), which is why
         # this stays a dictionary lookup on a path that runs once per device.
         #
         # And the answers themselves come off `current_rows` (#381), which `copy_answer`

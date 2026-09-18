@@ -91,7 +91,7 @@ import { UPDATES_HREF } from "@/features/system/updateStatus";
  * So the failed-run row is composed from `collection.lastRunStatus` / `lastRunAt`
  * instead: latest-fields on the tenant-wide collections list this panel already fetches,
  * bounded by nothing, one per collection rather than one per event, and written **only**
- * by `run_collection` — the webhook path never touches them, so the flood cannot reach
+ * by `run_one_collection` — the webhook path never touches them, so the flood cannot reach
  * this check by construction rather than by a bigger `limit`.
  *
  * `/api/runs/summary` (#105) was the other candidate and was rejected here. Its

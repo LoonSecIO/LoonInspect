@@ -618,7 +618,7 @@ async def _mark_collections_reclaimed(db: AsyncSession, reclaimed, *, error: str
     """Carry each reclaimed run's verdict onto the collection row it served.
 
     `collections.last_run_status` is a cache of the newest thing that happened to a
-    collection, and every writer of it lives inside `run_collection` — inside the frame
+    collection, and every writer of it lives inside `run_one_collection` — inside the frame
     doing the work. A deploy, an OOM kill or a node eviction at 03:12 takes that frame
     with it, so the four in-process writers cover every outcome a run can *report* and
     none of the ways a run can stop reporting. This is the fifth writer, and the only one
@@ -628,7 +628,7 @@ async def _mark_collections_reclaimed(db: AsyncSession, reclaimed, *, error: str
     here is best-effort by design (`_emit_after_release`): the lock must be freed even if
     the run log and the wire event cannot be written. This is not in that class. The
     collection's cached outcome and the run's verdict are one statement about one event —
-    `run_collection` commits them together for exactly that reason, and its `closed is
+    `run_one_collection` commits them together for exactly that reason, and its `closed is
     False` branch says it out loud: "this row's cached outcome must not disagree with the
     history it summarizes." Split across two transactions they can disagree, and if the
     second one fails they disagree *permanently*: the run is no longer `running`, so no
@@ -666,7 +666,7 @@ async def _mark_collections_reclaimed(db: AsyncSession, reclaimed, *, error: str
     raises `MissingGreenlet` rather than lazily reloading. So a batch that marked one
     collection and then failed on the next handed the failure back to the caller anyway,
     by a different door: `acquire` returns normally and the lock genuinely is free, but
-    `run_collection` — the scheduled tick, the unattended path — reads `collection.id` off
+    `run_one_collection` — the scheduled tick, the unattended path — reads `collection.id` off
     the instance the tick handed it (`app.mdm.collections`, one line after the
     acquisition) and raises there, *after* `acquire` has committed a fresh `running` run.
     An orphaned `device_sweep` lock, held until the next `run_stale_after_seconds` reclaim
@@ -683,7 +683,7 @@ async def _mark_collections_reclaimed(db: AsyncSession, reclaimed, *, error: str
     a rollback can no longer turn that into an expiry. Both halves are load-bearing, and
     the first without the second is a worse bug than the one it fixes: with the
     synchronisation simply off, the caller's instance keeps its pre-mark values, so when
-    `run_collection` finishes a *successful* sweep and assigns `last_run_status = "ok"`
+    `run_one_collection` finishes a *successful* sweep and assigns `last_run_status = "ok"`
     over a stale in-memory `"ok"`, the ORM sees no change and leaves the column at the
     mark's `"failed"`. Same day, same connection: the panel would print a permanent alarm
     over a collection that had just succeeded — #106's blind panel again, pointing the
@@ -721,7 +721,7 @@ async def _mark_collections_reclaimed(db: AsyncSession, reclaimed, *, error: str
     is no single collection to attribute its death to, and marking all of them would
     overwrite the ones that finished. That gap is real and left open on purpose — the
     scheduled tick, which is the unattended path and the one the panel exists for, always
-    passes `collection_id` (`app.mdm.collections.run_collection`).
+    passes `collection_id` (`app.mdm.collections.run_one_collection`).
     """
     for row in reclaimed:
         if row.collection_id is None:
@@ -740,7 +740,7 @@ async def _mark_collections_reclaimed(db: AsyncSession, reclaimed, *, error: str
             )
             .values(
                 last_run_at=row.started_at,
-                # The same word `run_collection` writes on every other failure, so the
+                # The same word `run_one_collection` writes on every other failure, so the
                 # panel and the collections list need no second vocabulary.
                 last_run_status="failed",
                 last_run_summary={
@@ -764,7 +764,7 @@ async def _resync_marked_collections(db: AsyncSession, collection_ids: list[int]
 
     `populate_existing` is the point of it. Without that the ORM returns the instance the
     session already has and leaves its loaded attributes alone, which is precisely the
-    stale copy that must not survive: `run_collection` holds one across `acquire`, and an
+    stale copy that must not survive: `run_one_collection` holds one across `acquire`, and an
     instance still reading `last_run_status == "ok"` makes its own later assignment of
     `"ok"` a no-op, leaving the row on the mark's `"failed"` for as long as that session
     lives. Overwriting rather than merging is safe here because nothing in this path has
