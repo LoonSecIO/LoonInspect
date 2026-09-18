@@ -130,7 +130,7 @@ words nobody sees.
 | *Vulnerabilities: not assessed* above the Catalog, with no date | §5 steps 1–2 |
 | A row reading *No findings*, *Outside the corpus* or *Not assessed* | §5 |
 | *A corpus is loaded and nothing here has been judged against it yet* | §18 step 4 |
-| The Catalog's *Judged* column reading *Not judged yet* | §18 step 4 |
+| An application record's *Judged* column reading *Not judged yet* | §5 step 3 |
 | An evidence row reading *not reported* | §17 |
 | Needs Attention saying *Deliveries are failing* | §3 |
 | A connection reading *Last sync failed* — 401, 403, or another error | §1 step 2 |
@@ -294,8 +294,19 @@ directly.*
    sentence. Add or enable a destination; fan-out considers at most a thousand events a
    tick, so a large backlog drains over several minutes — `held.events` falling while
    `held.reason` is `null` is that drain, not a second fault.
-3. **Test it.** The Test button, or `POST /api/destinations/<id>/test`. Read
-   `statusCode` and the error:
+3. **Test it.** The Test button, or `POST /api/destinations/<id>/test`.
+
+   **The words it answers in, whichever bullet below you land on.** The two answers are the
+   product's own words, and the page and the API word them differently: the page says
+   *Delivered — the destination accepted a test event.*, the API's `detail` says
+   *Delivered. The destination accepted a test event.* A refusal reads
+   *Test delivery refused: `<detail>`*, where a destination that gave no detail leaves
+   *Delivery failed with no detail from the destination.*; a request that came back with no
+   status reads *No HTTP status — the request failed before the destination answered.*; and
+   one that never left reads *Could not run the test. The app could not reach the
+   destination at all.*
+
+   Then read `statusCode` and the error:
    - connection refused, timeout, name not resolved → the URL, the port, a firewall, or a
      TLS certificate the container does not trust. `https://` with a private CA needs the
      CA in the container ([`splunk-setup.md`](splunk-setup.md) §5); plain `http://` needs
@@ -305,14 +316,6 @@ directly.*
    - **400 from HEC** → usually the token's index (step 5) or the URL's path
      (`/services/collector/event`, [`splunk-setup.md`](splunk-setup.md) §3).
    - **200** → step 4.
-   The two answers are the product's own words, and the page and the API word them
-   differently: the page says *Delivered — the destination accepted a test event.*, the
-   API's `detail` says *Delivered. The destination accepted a test event.* A refusal reads
-   *Test delivery refused: <detail>*, where a destination that gave no detail leaves
-   *Delivery failed with no detail from the destination.*; a request that came back with no
-   status reads *No HTTP status — the request failed before the destination answered.*; and
-   one that never left reads *Could not run the test. The app could not reach the
-   destination at all.*
 4. **Delivery health.** The destination row: `pendingCount`, `failedCount`, `failed24h`,
    `deadLetterOldestExpiresAt`, `lastError`.
    - `failedCount` above zero → those deliveries gave up after ten attempts; `lastError`
@@ -349,11 +352,11 @@ directly.*
      pages and the API and runs no ticks at all, so nothing is ever attempted and neither
      line is ever written. `docker compose logs app | grep "scheduler started"` prints one
      line per process that runs them, and no line at all is the answer, a setting rather
-     than a fault ([`operations.md` §7](operations.md)). The second reason is the next
-     bullet. Still rising with
-     neither line → reportable **D**, once step 2's rows are *all* enabled: the age is
-     tenant-wide, and a destination disabled after its events fanned out holds them pending
-     until it is enabled again, pinning the age with no line in either log.
+     than a fault ([`operations.md` §7](operations.md#7-more-than-one-app-process)). The
+     second reason is the next bullet. Still rising with neither line → reportable **D**,
+     once step 2's rows are *all* enabled: the age is tenant-wide, and a destination
+     disabled after its events fanned out holds them pending until it is enabled again,
+     pinning the age with no line in either log.
      `deadLettered.oldestExpiresAt` is the instant the oldest dead letter stops being
      redrivable, and `retention.nextPurgeAt` is when the purge that takes it runs.
    - **More than one app process, and the queue is not draining.** The second reason a
@@ -361,11 +364,11 @@ directly.*
      `docker compose logs app --since 10m | grep "outbox tick skipped"`. That line means
      the process printing it found another one already delivering for that organization
      and did nothing, which is correct: one process delivers at a time and the rest say
-     so every tick ([`operations.md` §7](operations.md)). It is only a problem when
-     *every* process prints it and the queue is still not moving — `pendingCount`
-     climbing and `pending.oldestAgeSeconds` rising with it. Then the process holding the
-     lock is wedged rather than working. Restart the stack: the lock goes with its
-     connection, and the next tick takes it.
+     so every tick ([`operations.md` §7](operations.md#7-more-than-one-app-process)). It is
+     only a problem when *every* process prints it and the queue is still not moving —
+     `pendingCount` climbing and `pending.oldestAgeSeconds` rising with it. Then the process
+     holding the lock is wedged rather than working. Restart the stack: the lock goes with
+     its connection, and the next tick takes it.
    - **How long has it been held?** The nightly tape is the only history of the held set:
      `GET /api/posture?keys=outbox.pending,outbox.failed_24h,outbox.oldest_pending_age_s&days=7`
      is one row per key per night it was captured. `outbox.oldest_pending_age_s` **missing

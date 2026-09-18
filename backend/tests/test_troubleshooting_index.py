@@ -73,6 +73,19 @@ def test_the_index_names_every_path_and_links_to_its_heading() -> None:
         assert anchor == _slug(f"{number}. {title}"), f"§{number}'s link does not reach its own heading"
 
 
+def test_the_indexs_one_sub_entry_reaches_the_routing_table() -> None:
+    """The index's only sub-entry is §0's routing table, and it is the one link the test above
+    does not reach — that one matches `- **§N**` rows only. A `###` reworded without its entry
+    leaves the front door's single deep link scrolling nowhere, silently."""
+    entry = re.search(r"^  - \[(.+?)\]\(#([^)]+)\)", _index(), re.M | re.S)
+    assert entry, "the index has lost its sub-entry for §0's routing table"
+
+    title, anchor = re.sub(r"\s+", " ", entry.group(1)), entry.group(2)
+    assert f"\n{_TABLE}\n" in _DOC, "§0's routing table heading has been reworded"
+    assert title == _TABLE.removeprefix("### "), f"the sub-entry does not say what its heading says: {title!r}"
+    assert anchor == _slug(title), "the sub-entry's link does not reach its own heading"
+
+
 def test_every_reportable_state_is_indexed_at_the_path_it_lives_in() -> None:
     """The letters were assigned in writing order, so they do not run in section order — K is
     in §0 and M in §5 — and the index is the only thing mapping one to the other. It is also
