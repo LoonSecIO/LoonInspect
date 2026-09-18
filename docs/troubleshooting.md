@@ -498,7 +498,9 @@ and step 2 ends with how to tell that apart from a broken exchange.
    ```
 
    The collector answers that with `400 {"error": "unsupported contract"}`; any other
-   answer is not the collector.
+   answer is not the collector. The address at the end of the command is the default: a
+   pod whose template set `SHARING_ENDPOINT` probes that value instead, whole — the
+   container posts to it exactly as set and adds no path.
    - `The collector at api.loonsec.io answered 403 Forbidden: {"message":"Missing
      Authentication Token"}` → nothing at that address takes exchanges yet. Until
      LoonSec's production cutover this is what every instance on the default endpoint

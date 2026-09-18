@@ -249,10 +249,19 @@ with empty arrays is a valid peer, and the container treats absent capabilities 
 "nothing today," never as an error.
 
 ```
-POST {sharing_endpoint}/v1/exchange          default https://api.loonsec.io/v1/exchange
+POST {SHARING_ENDPOINT}                      default https://api.loonsec.io/v1/exchange
 Content-Type: application/json
 User-Agent: LoonSecIO/<build-version> exchange
 ```
+
+`SHARING_ENDPOINT` is the whole address, path included: the container posts to it exactly
+as set and appends nothing, so a value that stops at the host posts to that host's root,
+not to a collector. The default is the production collector. The shipped
+`docker-compose.yml` does not pass the variable through; a hosted pod sets it through
+its `SharingEndpoint` template parameter, which accepts only
+`https://<host>/v1/exchange`. Every share-log row records the address the run used, and a
+failed exchange's reason names its host ([`troubleshooting.md`](troubleshooting.md) §5,
+step 6).
 
 The product token is `LoonSecIO`, not `LoonInspect`: every outbound call this
 container makes — the exchange, the update check, Jamf, the patch catalogue — is
