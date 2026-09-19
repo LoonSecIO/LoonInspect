@@ -153,6 +153,32 @@ def _destination_schemes() -> tuple[str, ...]:
     return ("https", "http") if settings.allow_insecure_destination_url else ("https",)
 
 
+# What an operator reads in `lastError`, and from the Test button, when a stored
+# destination is still `http://` and the flag is off (#581). Quoted verbatim in
+# docs/troubleshooting.md §3 step 3, because that is where the sentence sends them.
+INSECURE_DESTINATION_AT_DELIVERY = (
+    "url is http:// and ALLOW_INSECURE_DESTINATION_URL is not set on this container, so this delivery would put "
+    "the destination's credential on the wire in clear. Edit the destination to https://, or set "
+    "ALLOW_INSECURE_DESTINATION_URL=true for a lab SIEM without TLS."
+)
+
+
+def refuse_insecure_destination_scheme(url: str) -> None:
+    """The plaintext opt-in, asked again at delivery (#581).
+
+    `validate_destination_url` reads `_destination_schemes()` when the row is written;
+    this asks the same function on the wire, which is the only place a row saved while
+    the flag was true can be refused. The flag is a property of the process, not of the
+    row, so the answer genuinely changes between the save and the delivery — the flag
+    unset again, or a second container that never had it, are the ordinary ways.
+
+    Only `http` is judged. Every other scheme is refused at the write and has no
+    transport in httpx anyway, so this setting would be the wrong diagnosis for it.
+    """
+    if urlsplit(url).scheme == "http" and "http" not in _destination_schemes():
+        raise BlockedDestinationUrl(INSECURE_DESTINATION_AT_DELIVERY)
+
+
 def _refuse_blocked_host(host: str, *, field: str, refusal: type[ValueError]) -> None:
     """The host rules shared by both sinks: a loopback name is as good as the literal,
     and a literal is judged here, exhaustively, so the resolver is never asked about

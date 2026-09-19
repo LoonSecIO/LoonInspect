@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import engine
-from app.core.egress import BlockedDestinationUrl, refuse_blocked_resolution
+from app.core.egress import BlockedDestinationUrl, refuse_blocked_resolution, refuse_insecure_destination_scheme
 from app.core.hec_fanout import fan_out
 from app.core.scheduling import Schedule, next_due
 from app.core.wire import ENVELOPE, hec_event
@@ -519,7 +519,7 @@ async def _attempt_elastic_delivery(
 
 
 async def blocked_delivery_reason(destination: Destination) -> str | None:
-    """Why this destination may not be dialled right now, or None (#131).
+    """Why this destination may not be dialled right now, or None (#131, #581).
 
     The write-time rule in `app.schemas.destinations` binds new rows; this is the check
     on the row as it stands at delivery, which is the only place a row stored before the
@@ -527,9 +527,18 @@ async def blocked_delivery_reason(destination: Destination) -> str | None:
     refused. Literals are judged too, for the same reason. Fails open on a resolver that
     does not answer, as the write-time pass does: an air-gapped SIEM is a supported
     destination, and a dead resolver must not turn into a dead outbox.
+
+    Two questions, in this order: where the URL points, then whether it may be dialled in
+    clear. Both are read from settings and DNS at call time rather than remembered from
+    the write, because both answers move under a row that never changed —
+    `ALLOW_INSECURE_DESTINATION_URL` is the process's, not the row's, so a destination
+    saved while it was true is delivered by a container that may not have it (#581). A
+    blocked host wins when both apply: the address is the graver fault, and it is the one
+    that stays wrong after the flag is set.
     """
     try:
         await refuse_blocked_resolution(destination.url, field="url", refusal=BlockedDestinationUrl, judge_literals=True)
+        refuse_insecure_destination_scheme(destination.url)
     except BlockedDestinationUrl as exc:
         return str(exc)[:500]
     return None
@@ -870,7 +879,8 @@ async def deliver_pending(db: AsyncSession) -> None:
             if destination.id in blocked:
                 # Counted as a failed attempt, with the reason on the row the
                 # Destinations page reads, and never dialled: it backs off and
-                # dead-letters like any other refusal, and the fix is the URL.
+                # dead-letters like any other refusal, and the fix is the URL or the
+                # setting the reason names — after either, Redrive returns these.
                 ok, error = False, blocked[destination.id]
             else:
                 ok, error = await _attempt_delivery(client, destination, event)
