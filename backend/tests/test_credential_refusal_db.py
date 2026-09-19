@@ -106,9 +106,9 @@ async def _run_failed_events_of(db, connection_id: int) -> list:
 
 async def _sweep(db, connection):
     from app.core.runs import TRIGGER_SWEEP
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
-    return await sync_connection(db, connection, trigger=TRIGGER_SWEEP)
+    return await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
 
 
 async def test_sweep_refuses_with_a_sentence_not_a_traceback(db, no_credential) -> None:

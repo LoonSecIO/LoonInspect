@@ -326,7 +326,10 @@ async def run_enabled_collections(
 
     One run covers all of them when the caller supplies it, which is what run-now does:
     the jobID it handed the browser has to name the whole action, and the panel polling
-    that id has to keep showing progress across the second sweep."""
+    that id has to keep showing progress across the second sweep.
+
+    Reports a connection-level failure rather than raising — an expired credential on
+    one Jamf tenant must not abort a sweep across several."""
     await ensure_default_collections(db, connection)
     await db.commit()
     sweeps = [row for row in await list_collections(db, connection.id) if row.kind == KIND_DEVICE_SWEEP and row.enabled]

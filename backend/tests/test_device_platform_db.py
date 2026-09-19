@@ -28,6 +28,7 @@ pytestmark = [
     pytest.mark.asyncio(loop_scope="session"),
 ]
 
+from app.core.runs import TRIGGER_SWEEP  # noqa: E402
 from tests.jamf_fake import HOST, FakeJamf  # noqa: E402
 
 ADMIN = ("platform-admin@example.com", "platform-admin-password")
@@ -110,11 +111,11 @@ async def _app_names(db, device_id: int) -> set[str]:
 
 
 async def test_two_platforms_share_an_external_id_without_sharing_a_row(db, jamf: FakeJamf, connection, monkeypatch) -> None:
+    from app.mdm.collections import run_enabled_collections
     from app.mdm.jamf import client as jamf_client
-    from app.mdm.service import sync_connection
 
     # One sweep as the computer client: every row is a Mac, stamped by the client.
-    first = await sync_connection(db, connection)
+    first = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert first.ok and first.device_count == 2, first
     synthetic_id = jamf.synthetic["id"]
     macs = await _rows(db, connection.id, synthetic_id)
@@ -126,7 +127,7 @@ async def test_two_platforms_share_an_external_id_without_sharing_a_row(db, jamf
     # The same records, read by a client that declares another platform: a second row
     # per device, not a rewrite of the first.
     monkeypatch.setattr(jamf_client, "COMPUTER_PLATFORM", "ios")
-    second = await sync_connection(db, connection)
+    second = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert second.ok and second.device_count == 2, second
     both = await _rows(db, connection.id, synthetic_id)
     assert set(both) == {"macos", "ios"}
@@ -136,16 +137,16 @@ async def test_two_platforms_share_an_external_id_without_sharing_a_row(db, jamf
 
     # Change the record and read it as the other platform again: only that row moves.
     jamf.synthetic["applications"].append({"name": "Only On The iPad", "bundleId": "com.example.ipad", "version": "1.0"})
-    third = await sync_connection(db, connection)
+    third = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert third.ok, third
     assert "Only On The iPad" in await _app_names(db, both["ios"])
     assert await _app_names(db, mac_id) == mac_apps, "the Mac's app rows did not move"
 
 
 async def test_the_list_filters_by_platform_and_the_row_carries_it(db, jamf: FakeJamf, connection, client) -> None:
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     macs = await client.get(f"/api/devices?platform=macos&mdmConnectionId={connection.id}")
     assert macs.status_code == 200, macs.text
     assert macs.json()["total"] == 2 and all(item["platform"] == "macos" for item in macs.json()["items"])

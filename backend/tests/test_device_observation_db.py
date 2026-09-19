@@ -15,6 +15,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import delete, select
 
+from app.core.runs import TRIGGER_SWEEP
 from tests.jamf_fake import HOST, FakeJamf
 
 pytestmark = [
@@ -84,10 +85,10 @@ async def test_after_a_sweep_every_section_carries_a_state_and_the_lists_their_e
     admin, db, jamf: FakeJamf, connection
 ) -> None:
     from app.core.wire_vocabulary import SECTION_WRAPPERS
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
     from app.models.schema import Device
 
-    result = await sync_connection(db, connection)
+    result = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert result.ok
     device = (
         await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == jamf.real["id"]))

@@ -28,7 +28,7 @@ them the same expansion under a record shape — and their golden is
 tests/test_record_fanout.py, which also pins the two walks against each other so this
 suite's fixture stays the single source of the count.
 
-The database lane — the real fixture through `sync_connection`, both worker passes and a
+The database lane — the real fixture through `run_enabled_collections`, both worker passes and a
 mocked HEC — is `tests/test_hec_fanout_db.py`.
 """
 

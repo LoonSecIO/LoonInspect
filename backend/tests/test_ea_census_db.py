@@ -23,6 +23,7 @@ pytestmark = [
     pytest.mark.asyncio(loop_scope="session"),
 ]
 
+from app.core.runs import TRIGGER_SWEEP  # noqa: E402
 from tests.jamf_fake import HOST, FakeJamf  # noqa: E402
 
 KIND = "extension_attribute_definition"
@@ -79,9 +80,9 @@ async def _definition_spans(db, connection_id: int) -> dict[str, list]:
 
 
 async def test_a_sweep_records_every_definition_as_a_subject(db, jamf: FakeJamf, connection) -> None:
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
-    result = await sync_connection(db, connection)
+    result = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert result.ok, result
     assert result.observations["ea_definition_new"] == 3
     spans = await _definition_spans(db, connection.id)
@@ -93,7 +94,7 @@ async def test_a_sweep_records_every_definition_as_a_subject(db, jamf: FakeJamf,
     # The same census again is unchanged for every definition — a definition carries no
     # observed-at of its own, so a later read of identical content extends the span the
     # way a group's does — and opens nothing.
-    again = await sync_connection(db, connection)
+    again = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert again.ok and again.observations.get("ea_definition_new") is None
     assert again.observations.get("ea_definition_unchanged") == 3
     assert all(len(history) == 1 for history in (await _definition_spans(db, connection.id)).values())
@@ -109,15 +110,15 @@ async def test_the_catalog_class_takes_the_census_too(db, jamf: FakeJamf, connec
 
 
 async def test_a_change_to_meaning_opens_a_span_and_a_rename_does_not(db, jamf: FakeJamf, connection) -> None:
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     battery = next(d for d in jamf.extension_attribute_definitions if d["id"] == "5")
     battery["name"] = "Battery Cycles"
-    renamed = await sync_connection(db, connection)
+    renamed = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert renamed.ok and renamed.observations.get("ea_definition_changed") is None
     battery["enabled"] = False
-    disabled = await sync_connection(db, connection)
+    disabled = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert disabled.ok and disabled.observations.get("ea_definition_changed") == 1
     spans = await _definition_spans(db, connection.id)
     assert len(spans["5"]) == 2 and len(spans["12"]) == 1
@@ -127,10 +128,10 @@ async def test_a_change_to_meaning_opens_a_span_and_a_rename_does_not(db, jamf: 
 async def test_a_refused_read_skips_the_census_rather_than_reading_it_as_empty(db, jamf: FakeJamf, connection) -> None:
     """The guard #181's circuit breaker stands on: None, never an empty list, so nothing
     downstream can take "not allowed to look" for "every definition departed at once"."""
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
     jamf.extension_attribute_definitions = None
-    result = await sync_connection(db, connection)
+    result = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert result.ok and result.device_count == 2, result
     assert not any(key.startswith("ea_definition_") for key in result.observations)
     assert await _definition_spans(db, connection.id) == {}

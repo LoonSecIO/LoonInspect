@@ -239,22 +239,6 @@ async def set_sync_status(db: AsyncSession, connection: MdmConnection, status: S
     await db.commit()
 
 
-async def sync_connection(
-    db: AsyncSession, connection: MdmConnection, *, trigger: str = TRIGGER_SWEEP, run: Run | None = None
-) -> ConnectionSyncResult:
-    """Pull inventory for a single connection.
-
-    What to pull and how is a property of the connection's collections, not of the
-    connection; the connection-level entry point runs every enabled device sweep it
-    has (creating the defaults if none exist yet). Reports a connection-level failure
-    rather than raising — an expired credential on one Jamf tenant must not abort a
-    sweep across several.
-    """
-    from app.mdm.collections import run_enabled_collections  # local: collections imports this module
-
-    return await run_enabled_collections(db, connection, trigger=trigger, run=run)
-
-
 async def capture_aperture(
     client: JamfClient,
     http: httpx.AsyncClient,
@@ -296,8 +280,8 @@ async def sweep_jamf_connection(
 ) -> ConnectionSyncResult:
     """One device sweep of a Jamf connection, as a collection describes it.
 
-    Like sync_connection, this reports a failure rather than raising: the tick runs
-    many collections in turn and one expired credential must not abort the rest.
+    Reports a failure rather than raising: the tick runs many collections in turn and
+    one expired credential must not abort the rest.
     """
     quarantine = tuple(quarantined_extension_attributes)
     # Asking for EAs means reading the sections they are displayed under (#197). Closed
