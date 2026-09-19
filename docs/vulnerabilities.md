@@ -765,6 +765,18 @@ event per finding needs uncapped ids and per-CVE attributes, and an epoch row to
 ≤ 50 plus aggregates, by design (§4f). That is an upstream ask — to LoonInspect_Support,
 and to LoonVD behind it — and not a LoonInspect change.
 
+**Built: the store, ahead of the events** ([#590](https://github.com/LoonSecIO/LoonInspect/issues/590),
+2026-09-19, on [#589](https://github.com/LoonSecIO/LoonInspect/issues/589)'s rulings).
+`device_findings` holds one row per (tenant, device, carrier title, finding id), opened when
+a Mac's stored answer first carries the id and closed with the reason it stopped —
+`build_changed`, `app_removed`, `corpus_withdrawn` — so *since when* and *last detected* have
+a home. The carrier is the **title**, so a bump still carrying the id keeps the row and its
+clock; a row opened from a truncated list is `capped` and never closes by absence from one;
+`corpus_withdrawn` reads *no longer in the corpus*, never *fixed*, which is the tombstone rule
+above. This ruling's per-device grain and change-only discipline, at the capped grain
+buildable today; the read path, the page and three `vuln.*` posture keys are
+[#591](https://github.com/LoonSecIO/LoonInspect/issues/591).
+
 `fixed_in` stays **off the wire** (ruled 2026-08-25). Fix-version data lives in the Jamf
 Patch and `app_catalog` tables, in-app only: correctable there, and it avoids a
 `patch{}`-versus-corpus contradiction landing in a customer's SIEM. `patch{}`'s latest
@@ -906,4 +918,4 @@ block each other.
 | `vuln{}` populated on the app sub-event; `assessment` stops being a constant `off`. Also needs the fan-out ([#242](https://github.com/LoonSecIO/LoonInspect/issues/242)) | [#249](https://github.com/LoonSecIO/LoonInspect/issues/249) | **Built 2026-09-03.** `app/core/vuln.py`, `VulnEnrichment` in `app/schemas/payload.py`, the sentinel in `app/core/hec_fanout.py`, pinned in `backend/tests/test_vuln_block.py` |
 | The four `vuln.*` posture keys go ACTIVE, under §7's no-zero rule | [#250](https://github.com/LoonSecIO/LoonInspect/issues/250) | **Built 2026-09-11.** §7. Four bounded queries over the stored answers in `app/core/posture.py` (`_vuln_values`, `VULN_KEYS`), `RESERVED_KEYS` now empty; the no-rows rule pinned in `backend/tests/test_posture_db.py` and against the fixture epoch in `backend/tests/test_vuln_answer_db.py` |
 | The corpus's edge made visible in the UI — `assessment`, `corpusAsOf`, three empty states | [#251](https://github.com/LoonSecIO/LoonInspect/issues/251) | **Built 2026-09-03.** §4g. `app/core/vuln_read.py` over the same seam, `vuln` + `corpusAsOf` on the device and catalog responses, the Catalog tab's column and banner; pinned in `backend/tests/test_vuln_read.py` and `frontend/src/features/vulnerabilities/noCollapse.ts` |
-| The lifecycle fan-out under `loon:jamf:mac:app:vuln`, and `LOCAL-` ids behind their reservation | [#429](https://github.com/LoonSecIO/LoonInspect/issues/429), post-v0 (§5, §6) | Named, not built. The string stays minted with no writer. **Ruled 2026-09-16: per device, on change only, behind a switch off by default.** Waiting on uncapped ids and per-id attributes from the corpus (LoonInspect_Support / LoonVD) |
+| The lifecycle fan-out under `loon:jamf:mac:app:vuln`, and `LOCAL-` ids behind their reservation | [#429](https://github.com/LoonSecIO/LoonInspect/issues/429), post-v0 (§5, §6) | Events named, not built; the string stays minted with no writer. **Ruled 2026-09-16: per device, on change only, behind a switch off by default.** **The store under them IS built** (#590, 2026-09-19, §6): `device_findings` and its transition diff in `app/core/findings.py`, migration `c5a2e9b71f34`. The events still wait on uncapped ids and per-id attributes from the corpus (LoonInspect_Support / LoonVD) |

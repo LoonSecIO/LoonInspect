@@ -31,6 +31,7 @@ from app.changes.derive import collecting_departures, derive_and_record
 from app.core.config import settings
 from app.core.content_keys import app_bundle_key, app_full_key, app_title_key
 from app.core.context import get_request_id
+from app.core.findings import reconcile_device_findings
 from app.core.hashing import compute_app_hash, compute_version_hash
 from app.core.outbox import enqueue_event
 from app.core.runs import (
@@ -1383,6 +1384,18 @@ async def process_sync(
             current_rows=current_rows,
             device_is_new=device_is_new,
             run_id=run.id if run else None,
+        )
+        # The finding ledger (#590), after the answer copy and BECAUSE of it: the ids it diffs
+        # are `installed_apps.vuln_ids`, which `record_device_apps` made current two statements
+        # up (#381) — hung off the app diff above, it would read the previous epoch's answer on
+        # every device whose build this pass judged. Same transaction and aperture guard as the
+        # latch; the clock is `app.changes.derive`'s.
+        await reconcile_device_findings(
+            db,
+            device=existing,
+            rows=current_rows,
+            observed_at=observation.observed_at or datetime.now(UTC),
+            device_is_new=device_is_new,
         )
 
     # Built once and read by both events: the root `jobID` on each is the same string
