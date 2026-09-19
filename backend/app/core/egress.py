@@ -18,6 +18,9 @@ link-local (169.254.169.254 on AWS/Azure/GCP, and the ECS task credential endpoi
 169.254.170.2 — the reason this is HIGH on a pod rather than a lab curiosity), and the
 unspecified/multicast/reserved space.
 
+Destinations have separate transport and host choices: local exceptions and an optional
+exact deployment allowlist. These do not change the MDM rules described above.
+
 Rejected: an allowlist of `*.jamfcloud.com`. It is the tightest rule available and it
 would refuse every on-premises Jamf Pro in existence, which is most of the ones this
 product is bought for.
@@ -149,62 +152,87 @@ UNPARSEABLE_URL = "check the host and the port, which is a number after the host
 MAX_DESTINATION_URL_LENGTH = 1024
 
 
-def _destination_schemes() -> tuple[str, ...]:
-    return ("https", "http") if settings.allow_insecure_destination_url else ("https",)
+def _destination_schemes(allow_insecure: bool | None = None) -> tuple[str, ...]:
+    allowed = settings.allow_insecure_destination_url if allow_insecure is None else allow_insecure
+    return ("https", "http") if allowed else ("https",)
 
 
-# What an operator reads in `lastError`, and from the Test button, when a stored
-# destination is still `http://` and the flag is off (#581). Quoted verbatim in
-# docs/troubleshooting.md §3 step 3, because that is where the sentence sends them.
+# Shared save/delivery refusal: the operator can resolve it in the destination editor.
+# docs/troubleshooting.md §3 explains both the explicit and inherited choices.
 INSECURE_DESTINATION_AT_DELIVERY = (
-    "url is http:// and ALLOW_INSECURE_DESTINATION_URL is not set on this container, so this delivery would put "
-    "the destination's credential on the wire in clear. Edit the destination to https://, or set "
-    "ALLOW_INSECURE_DESTINATION_URL=true for a lab SIEM without TLS."
+    "url is http:// and this destination does not allow unencrypted delivery. Credentials and events would "
+    "travel in clear. Edit the destination to https://, or choose Allow HTTP for a lab SIEM without TLS. "
+    "Inherited destinations use ALLOW_INSECURE_DESTINATION_URL on the delivering container."
 )
 
 
-def refuse_insecure_destination_scheme(url: str) -> None:
-    """The plaintext opt-in, asked again at delivery (#581).
-
-    `validate_destination_url` reads `_destination_schemes()` when the row is written;
-    this asks the same function on the wire, which is the only place a row saved while
-    the flag was true can be refused. The flag is a property of the process, not of the
-    row, so the answer genuinely changes between the save and the delivery — the flag
-    unset again, or a second container that never had it, are the ordinary ways.
-
-    Only `http` is judged. Every other scheme is refused at the write and has no
-    transport in httpx anyway, so this setting would be the wrong diagnosis for it.
-    """
-    if urlsplit(url).scheme == "http" and "http" not in _destination_schemes():
+def refuse_insecure_destination_scheme(url: str, *, allow_insecure: bool | None = None) -> None:
+    """Check the saved transport choice at delivery; null inherits the legacy setting."""
+    if urlsplit(url).scheme == "http" and "http" not in _destination_schemes(allow_insecure):
         raise BlockedDestinationUrl(INSECURE_DESTINATION_AT_DELIVERY)
 
 
-def _refuse_blocked_host(host: str, *, field: str, refusal: type[ValueError]) -> None:
+def _refuse_blocked_host(
+    host: str,
+    *,
+    field: str,
+    refusal: type[ValueError],
+    reason_for: Callable[[_IpAddress], str | None] = blocked_address_reason,
+) -> None:
     """The host rules shared by both sinks: a loopback name is as good as the literal,
     and a literal is judged here, exhaustively, so the resolver is never asked about
     one."""
     # RFC 6761 reserves these for the loopback interface, so the name is as good as the
     # literal and refusing it by name makes the answer deterministic when the container
     # has no resolver to ask.
-    if host == "localhost" or host.endswith(".localhost"):
+    if (host == "localhost" or host.endswith(".localhost")) and reason_for(ipaddress.ip_address("127.0.0.1")):
         raise refusal(f"{field} may not point at {host}: that is a loopback name")
 
     literal = _as_ip(host)
     if literal is not None:
-        reason = blocked_address_reason(literal)
+        reason = reason_for(literal)
         if reason is not None:
             raise refusal(f"{field} may not point at {host}: that is {reason}")
 
 
-def validate_destination_url(value: str) -> str:
+def _destination_address_policy(host: str) -> Callable[[_IpAddress], str | None]:
+    """Restrict external hosts; internal names and the named loopbacks are built-in exceptions."""
+    host = host.lower().rstrip(".")
+    literal = _as_ip(host)
+    if literal is not None:
+        host = str(literal)
+    local = host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".internal")
+    allowed = settings.destination_allowed_hosts
+    if allowed and host not in allowed and not local:
+        raise BlockedDestinationUrl(
+            "url host is not in DESTINATION_ALLOWED_HOSTS. Ask the deployment administrator to add the exact host."
+        )
+    if local or host in allowed:
+        return lambda address: None if _unwrap(address).is_loopback else blocked_address_reason(address)
+    return blocked_address_reason
+
+
+async def refuse_destination_resolution(url: str) -> None:
+    """Apply the deployment host policy and DNS safety at save and every delivery."""
+    host = urlsplit(url).hostname
+    if not host:
+        raise BlockedDestinationUrl("url must name a host")
+    await refuse_blocked_resolution(
+        url,
+        field="url",
+        refusal=BlockedDestinationUrl,
+        judge_literals=True,
+        reason_for=_destination_address_policy(host),
+    )
+
+
+def validate_destination_url(value: str, *, allow_insecure: bool | None = None) -> str:
     """The destination URL as it should be stored, or BlockedDestinationUrl naming what
     is wrong with it.
 
-    The same rule as `validate_mdm_base_url` with two differences the sink earns. The
-    plaintext opt-in is its own setting, `ALLOW_INSECURE_DESTINATION_URL`: a lab HEC
-    with TLS off is a real configuration (docs/splunk-setup.md), and it must be a choice
-    an operator makes rather than a refusal they discover. And a query string is
-    allowed: webhook receivers routinely carry a token or a source id there, and the
+    The destination's transport choice overrides the legacy deployment flag. Host
+    policy permits built-in local names and supports an exact deployment allowlist.
+    A query string is allowed: webhook receivers carry tokens or source ids there, and the
     outbox POSTs the URL exactly as entered. A fragment is still refused — httpx drops
     it silently, which would store a URL that is not the one delivered to.
 
@@ -223,12 +251,9 @@ def validate_destination_url(value: str) -> str:
     except ValueError as exc:
         raise BlockedDestinationUrl(f"url is not a URL this server can parse: {UNPARSEABLE_URL}") from exc
 
-    if parsed.scheme not in _destination_schemes():
+    if parsed.scheme not in _destination_schemes(allow_insecure):
         if parsed.scheme == "http":
-            raise BlockedDestinationUrl(
-                "url must use https: every delivery carries this destination's credential. Set "
-                "ALLOW_INSECURE_DESTINATION_URL=true to accept plain http for a lab SIEM without TLS."
-            )
+            raise BlockedDestinationUrl(INSECURE_DESTINATION_AT_DELIVERY)
         raise BlockedDestinationUrl(f"url must be an absolute https:// URL, not {parsed.scheme or 'a bare hostname'!r}")
 
     if parsed.username or parsed.password:
@@ -239,7 +264,7 @@ def validate_destination_url(value: str) -> str:
     host = parsed.hostname
     if not host:
         raise BlockedDestinationUrl("url must name a host")
-    _refuse_blocked_host(host, field="url", refusal=BlockedDestinationUrl)
+    _refuse_blocked_host(host, field="url", refusal=BlockedDestinationUrl, reason_for=_destination_address_policy(host))
     return url
 
 
@@ -321,7 +346,7 @@ async def refuse_blocked_resolution(
         return
     if _as_ip(host) is not None or host == "localhost" or host.endswith(".localhost"):
         if judge_literals:
-            _refuse_blocked_host(host, field=field, refusal=refusal)
+            _refuse_blocked_host(host, field=field, refusal=refusal, reason_for=reason_for)
         return  # otherwise a literal was already judged, exhaustively, by the schema
 
     loop = asyncio.get_running_loop()

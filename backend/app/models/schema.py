@@ -1120,6 +1120,8 @@ class Destination(Base):
     # "generic_webhook" | "splunk_hec" | "elastic" | "runreveal"
     type: Mapped[str] = mapped_column(String(32), default="generic_webhook")
     url: Mapped[str] = mapped_column(String(1024))
+    # Null preserves the deployment default; an explicit choice wins on every worker.
+    allow_insecure_http: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     # none | bearer | header | splunk_hec | elastic_api_key. "header" covers anything
     # behind an API gateway or a vendor's own REST ingestion (e.g. Snowpipe) that

@@ -233,11 +233,12 @@ shell as a misleading `200`.
 
 ### 5. Point it at Splunk
 
-Destination URLs must be `https` — every delivery carries the destination's own
-credential. `ALLOW_INSECURE_DESTINATION_URL=true` accepts plain `http` for a lab SIEM
-without TLS; nothing accepts a loopback or link-local address, or a hostname that
-resolves to one, which are refused when saved and again at delivery
-(`docs/splunk-setup.md`).
+Destination URLs default to HTTPS in the UI. A trusted lab SIEM without TLS can use
+**Allow HTTP (lab only)** per destination, with a warning that credentials and events
+travel unencrypted. Existing configurations can inherit `ALLOW_INSECURE_DESTINATION_URL`.
+`*.internal`, `localhost`, `127.0.0.1`, and `::1` are permitted hosts; a deployment can
+restrict other hosts with `DESTINATION_ALLOWED_HOSTS`. Link-local metadata addresses
+remain blocked. See [`docs/splunk-setup.md`](docs/splunk-setup.md) for the policy and setup.
 
 The onboarding stepper's third step is "Send it to Splunk", and there is more to it than
 a URL: HEC ships disabled, the "Secret" field means the HEC token, the index comes from
