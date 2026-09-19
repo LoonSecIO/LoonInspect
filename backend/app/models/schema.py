@@ -1826,6 +1826,50 @@ class Alert(Base):
     closed_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
+# --- The finding ledger ---------------------------------------------------------------
+
+
+class DeviceFinding(Base):
+    """One finding on one Mac, held as an interval: when this pod first detected it, and when
+    it stopped (#590, ruled in #589; docs/vulnerabilities.md §6). Written only by
+    `app.core.findings`; migration `c5a2e9b71f34` carries the argument for every column.
+
+    The carrier is the **title**, never the build, so a bump still carrying the id keeps the
+    row and its clock, and one CVE reaching one Mac through two carriers is two rows. **An
+    open row means "still detected as of that Mac's last observation"** — nothing is written
+    while a finding merely persists, so `last_observed_at` is NULL while open and stamped at
+    close. Both clocks are Jamf's inventory clock, collection time as the fallback, as on
+    `device_changes`; `capped` is the truncation guard; `first_seen_basis` says whether the
+    opening clock was measured or reconstructed; a withdrawn id reads `corpus_withdrawn`,
+    never *fixed* (§6's tombstone rule)."""
+
+    __tablename__ = "device_findings"
+    __table_args__ = (
+        # The grain, enforced — and deliberately NOT partial on `resolved_at IS NULL` the way
+        # `uq_alerts_open` is: a finding that comes back is the SAME finding returning to a Mac
+        # that never replaced the app, so the reopen keeps the row and its clock rather than
+        # minting a second, which is also what lets one upsert both open and reopen.
+        UniqueConstraint("device_id", "carrier_key", "finding_id", name="uq_device_finding"),
+        # "Which Macs carry CVE-X, and which still do" (#591) — the one read that does not
+        # start from a device. `resolved_at` last, so the open set is a prefix.
+        Index("ix_device_findings_finding", "tenant_id", "finding_id", "resolved_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
+    carrier_key: Mapped[str] = mapped_column(String(67))
+    finding_id: Mapped[str] = mapped_column(String(32))
+    build_key_full: Mapped[str] = mapped_column(String(67))
+
+    first_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    capped: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    first_seen_basis: Mapped[str] = mapped_column(String(16))
+
+
 # --- The posture snapshot -------------------------------------------------------------
 
 
