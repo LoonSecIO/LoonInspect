@@ -51,6 +51,7 @@ pytestmark = [
     pytest.mark.asyncio(loop_scope="session"),
 ]
 
+from app.core.runs import TRIGGER_SWEEP  # noqa: E402
 from tests.jamf_fake import HOST, FakeJamf  # noqa: E402
 
 ADMIN = ("e2e-devices-admin@build.example.com", "e2e-devices-admin-password")
@@ -125,7 +126,8 @@ async def _count(db, statement) -> int:
 
 
 async def test_sweep_then_repeat_then_webhook(db, jamf: FakeJamf, connection) -> None:
-    from app.mdm.service import ingest_webhook, sync_connection
+    from app.mdm.collections import run_enabled_collections
+    from app.mdm.service import ingest_webhook
     from app.models.schema import Device, EventOutbox, InstalledApp, ObservationSpan
 
     real_id, synthetic_id = jamf.real["id"], jamf.synthetic["id"]
@@ -134,7 +136,7 @@ async def test_sweep_then_repeat_then_webhook(db, jamf: FakeJamf, connection) ->
     snapshots_before = await _count(db, snapshot_events)
 
     # 1. First sweep: every device is new, the group definition is observed, state tables filled.
-    first = await sync_connection(db, connection)
+    first = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert first.ok and first.device_count == 2, first
     assert first.observations == {"new": 2, "group_new": 1, "ea_definition_new": 3}
     assert first.group_count == 1
@@ -181,7 +183,7 @@ async def test_sweep_then_repeat_then_webhook(db, jamf: FakeJamf, connection) ->
     #    (#241). The group has no device time, so every run is a fresh observation of it:
     #    unchanged, count +1.
     events_before = await _count(db, changed_events)
-    second = await sync_connection(db, connection)
+    second = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert second.observations == {"repeat": 2, "group_unchanged": 1, "ea_definition_unchanged": 3}
     assert await _count(db, changed_events) == events_before
     assert await _count(db, snapshot_events) == snapshots_before + 4
@@ -275,10 +277,10 @@ async def test_an_app_that_never_changes_still_gains_the_bundle_key(db, jamf: Fa
     Simulates the upgrade the only honest way: sweep, blank the column the way the
     migration leaves it, then sweep again on a record where NOTHING changed.
     """
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
     from app.models.schema import Device, InstalledApp
 
-    first = await sync_connection(db, connection)
+    first = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert first.ok
     real_device = (
         await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == jamf.real["id"]))
@@ -295,7 +297,7 @@ async def test_an_app_that_never_changes_still_gains_the_bundle_key(db, jamf: Fa
     # Not one app moved — `reportDate` is untouched, so this is the "repeat" pass, the
     # cheapest thing a sweep can be and the one that writes nothing about the device. It
     # still restamps, and every row comes back with the key it had.
-    second = await sync_connection(db, connection)
+    second = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert second.observations["repeat"] == 2, second.observations
     assert {row.version_hash: row.key_bundle for row in (await db.execute(rows)).scalars()} == stamped
 
@@ -306,11 +308,12 @@ async def test_a_stale_observation_enqueues_no_snapshot_and_no_delta(db, jamf: F
     before `process_sync` runs, so it opens no span, touches no row and enqueues NOTHING —
     not a snapshot, not a delta, not a change. A stale webhook that produced a
     `device.inventory` would assert the device IS what it was, dated after the truth."""
-    from app.mdm.service import ingest_webhook, sync_connection
+    from app.mdm.collections import run_enabled_collections
+    from app.mdm.service import ingest_webhook
     from app.models.schema import Device, EventOutbox, InstalledApp, ObservationSpan
 
     real_id = jamf.real["id"]
-    first = await sync_connection(db, connection)
+    first = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert first.ok and first.device_count == 2
     device_events = (
         select(func.count())
@@ -351,14 +354,14 @@ async def test_narrow_webhook_scope_never_wipes_apps(db, jamf: FakeJamf, connect
 
     The detail endpoint returns every section regardless, so this also pins that the
     guard keys off the *requested* sections, not the response shape."""
-    from app.mdm.collections import list_collections
-    from app.mdm.service import ingest_webhook, sync_connection
+    from app.mdm.collections import list_collections, run_enabled_collections
+    from app.mdm.service import ingest_webhook
     from app.models.schema import Device, DeviceChange, EventOutbox, InstalledApp
 
     real_id = jamf.real["id"]
     changed_events = select(func.count()).select_from(EventOutbox).where(EventOutbox.event_type == "device.inventory.changed")
 
-    first = await sync_connection(db, connection)
+    first = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert first.ok and first.device_count == 2
     real_device = (
         await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == real_id))
@@ -410,7 +413,7 @@ async def test_narrow_webhook_scope_never_wipes_apps(db, jamf: FakeJamf, connect
     # The following full sweep re-widens the aperture. The apps it reads are the ones
     # the rows already hold, so nothing is added, removed, or minted as a change — and
     # the snapshot is whole again, all fourteen wrappers, `app` at the count the rows hold.
-    second = await sync_connection(db, connection)
+    second = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert second.ok and second.observations.get("changed") == 1
     assert await _count(db, real_apps) == apps_before
     assert await _count(db, changed_events) == events_before
@@ -437,11 +440,12 @@ async def test_narrow_webhook_scope_never_wipes_apps(db, jamf: FakeJamf, connect
 async def test_a_full_scope_read_of_zero_apps_still_wipes(db, jamf: FakeJamf, connection) -> None:
     """The other half of the ruling: [] is a real read of a device with no apps, and
     still diffs to removals — the guard must not swallow genuine loss."""
-    from app.mdm.service import ingest_webhook, sync_connection
+    from app.mdm.collections import run_enabled_collections
+    from app.mdm.service import ingest_webhook
     from app.models.schema import Device, EventOutbox, InstalledApp
 
     real_id = jamf.real["id"]
-    first = await sync_connection(db, connection)
+    first = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert first.ok
     real_device = (
         await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == real_id))
@@ -490,12 +494,12 @@ async def test_narrow_scope_leaves_scalars_and_eas_untouched(db, jamf: FakeJamf,
     the EA section) must not blank the device row's scalars or wipe its extension-
     attribute rows. The detail endpoint still returns every section, so this pins —
     like its #93 sibling — that the guard keys off the request, not the response."""
-    from app.mdm.collections import list_collections
-    from app.mdm.service import ingest_webhook, sync_connection
+    from app.mdm.collections import list_collections, run_enabled_collections
+    from app.mdm.service import ingest_webhook
     from app.models.schema import Device, DeviceExtensionAttribute
 
     real_id = jamf.real["id"]
-    first = await sync_connection(db, connection)
+    first = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert first.ok
     real_device = (
         await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == real_id))
@@ -542,7 +546,7 @@ async def test_narrow_scope_leaves_scalars_and_eas_untouched(db, jamf: FakeJamf,
     assert {(ea.definition_id, tuple(ea.values)) for ea in (await db.execute(ea_rows)).scalars()} == eas_before
 
     # Any full-aperture read heals: the next sweep reads everything and writes it.
-    second = await sync_connection(db, connection)
+    second = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert second.ok
     await db.refresh(real_device)
     assert real_device.hostname == "renamed while unwatched"
@@ -555,11 +559,12 @@ async def test_narrow_scope_leaves_scalars_and_eas_untouched(db, jamf: FakeJamf,
 async def test_a_full_scope_read_of_genuinely_empty_values_still_writes(db, jamf: FakeJamf, connection) -> None:
     """The guard's other edge, mirroring the applications pair: a full-aperture read
     that carries empty values is a real observation, and writes."""
-    from app.mdm.service import ingest_webhook, sync_connection
+    from app.mdm.collections import run_enabled_collections
+    from app.mdm.service import ingest_webhook
     from app.models.schema import Device, DeviceExtensionAttribute
 
     real_id = jamf.real["id"]
-    first = await sync_connection(db, connection)
+    first = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert first.ok
     real_device = (
         await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == real_id))
@@ -597,11 +602,11 @@ async def test_webhook_without_a_computer_is_ignored(db, jamf: FakeJamf, connect
 
 
 async def test_page_size_flows_and_throttling_lands_on_the_run(db, jamf: FakeJamf, connection) -> None:
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
     from app.models.schema import Run
 
     # Null on the connection means the default on the wire.
-    first = await sync_connection(db, connection)
+    first = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert first.ok
     assert jamf.page_sizes and all(size == 400 for size in jamf.page_sizes)
 
@@ -610,7 +615,7 @@ async def test_page_size_flows_and_throttling_lands_on_the_run(db, jamf: FakeJam
     connection.sweep_page_size = 137
     await db.commit()
     jamf.transient.append(("/api/v4/computers-inventory", 429, {"Retry-After": "0"}))
-    second = await sync_connection(db, connection)
+    second = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert second.ok
     assert 137 in jamf.page_sizes
     assert second.observations.get("throttled_429") == 1
@@ -637,7 +642,7 @@ async def test_page_size_flows_and_throttling_lands_on_the_run(db, jamf: FakeJam
     assert sweep_row is not None
     sweep_row.page_size = 250
     await db.commit()
-    third = await sync_connection(db, connection)
+    third = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert third.ok
     assert 250 in jamf.page_sizes
 
@@ -744,11 +749,12 @@ async def test_department_and_building_ids_resolve_to_names_and_filter(
     all three are asserted here: the id reaches the row, the id gets a name from Jamf's
     own catalog, and the filter takes the name a person would type.
     """
+    from app.mdm.collections import run_enabled_collections
     from app.mdm.org_units import BUILDING, DEPARTMENT, ids_for_name
-    from app.mdm.service import run_jamf_catalog, sync_connection
+    from app.mdm.service import run_jamf_catalog
     from app.models.schema import Device, JamfOrgUnit
 
-    result = await sync_connection(db, connection)
+    result = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert result.ok and result.device_count == 2, result
     assert "GET /api/v1/departments" in jamf.requests and "GET /api/v1/buildings" in jamf.requests
 
