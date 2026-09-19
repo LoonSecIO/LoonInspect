@@ -104,7 +104,14 @@ export function listQuery(asks: boolean, term: string, askedFor: string): Applie
  *  written, and no key is minted here (`docs/posture-snapshot.md`, §7). */
 export const VULN_KEYS = ["vuln.apps_affected", "vuln.apps_kev_affected", "vuln.apps_unknown", "vuln.devices_affected"] as const;
 
-export type VulnKey = (typeof VULN_KEYS)[number];
+/** The finding ledger's three (#591), their own tuple for the reason the recorder keeps them in one:
+ *  they are absent for a DIFFERENT reason than the four — those while nothing has judged this
+ *  organization, these while the ledger holds no row. The band's dash means either. */
+export const FINDING_KEYS = ["vuln.findings_open", "vuln.findings_new_24h", "vuln.findings_resolved_24h"] as const;
+/** What *By the numbers* asks for and prints, in that order. */
+export const NUMBER_KEYS = [...VULN_KEYS, ...FINDING_KEYS] as const;
+
+export type VulnKey = (typeof NUMBER_KEYS)[number];
 
 /** One row of `GET /api/posture`; `fullSweepRunId` is null once the run is purged at 30 days. */
 export interface PostureRow {
@@ -132,11 +139,12 @@ export interface NumbersRead {
   absent: VulnKey[];
 }
 
-/** The latest capture's four rows, read as rows (#470). A key with no row is *absent*, a statement
- *  about that night and not the number nought: nothing here defaults, sums or fills a gap. The four
- *  are written only once a corpus has judged the tenant, so an empty read is an ordinary first. */
+/** The latest capture's rows, read as rows (#470). A key with no row is *absent*, a statement about
+ *  that night and not the number nought: nothing here defaults, sums or fills a gap. The four are
+ *  written only once a corpus has judged the organization and the three only once its finding ledger
+ *  holds a row, so an empty read — and a partial one — is an ordinary first. */
 export function readNumbers(rows: readonly PostureRow[]): NumbersRead {
-  const found = VULN_KEYS.map((key) => ({ key, row: rows.find((row) => row.key === key) ?? null }));
+  const found = NUMBER_KEYS.map((key) => ({ key, row: rows.find((row) => row.key === key) ?? null }));
   const stamp = found.find((entry) => entry.row !== null)?.row ?? null;
   return {
     capturedAt: stamp?.capturedAt ?? null,

@@ -1828,6 +1828,20 @@ Catalog tab carries. So a link somebody sent you works even while the entry is h
     that is ours and not your fleet**: the chip shipped on 2026-09-17 saying the unnarrowed
     list's sentence, which is false wherever *Most exposed* above it lists a build, and the
     release that follows corrects it.
+12. ***Seen here* is younger than *Oldest published*, or is a dash.** Younger is the design, and
+    usually much younger: the two columns are two clocks. **Oldest published** counts from the day
+    the world published the finding; **Seen here** from the first time *this container* saw it on
+    one of your Macs, so on a fleet you connected last month a build reads *900 days* beside *20
+    days* and both are right — only the second is about your exposure here. A **dash** is an
+    absence and never a zero, with two checks behind it. **No Mac carrying that
+    build has been inventoried since findings started being kept** — nothing is recorded for a Mac
+    until its next sweep, and never retroactively, so read its **Last inventory** (§ 2 is where a
+    Mac that stopped reporting belongs). **The id is past that build's cap** —
+    a list holds ~50 while the count counts every finding (step 10), so an id nobody named is an id
+    nothing can record, which the Lookup page words as *Not tracked by id here* and not as *no
+    Macs*. Neither is a fault; a dash beside a findings count on a build whose Macs were all
+    inventoried since this container was updated is neither, and is ours — report the app and
+    version, its findings count, and one carrying Mac's **Last inventory**.
 
 **V.** The page says *being judged against it* more than an hour after the corpus date
 moved, with the tier on and the hourly refresh running. Report the date the banner shows,

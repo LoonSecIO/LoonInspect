@@ -1,6 +1,6 @@
 # The posture snapshot
 
-Status: **implemented (#102, 2026-08-29)** · 34 keys, last activated 2026-09-16
+Status: **implemented (#102, 2026-08-29)** · 37 keys, last activated 2026-09-19
 (`devices.departed_24h`, #476) · 0 reserved · Target: V0
 
 The nightly tape of fleet posture. One table, `posture_snapshot(tenant_id, metric_key,
@@ -63,7 +63,7 @@ computers only ([mobile-devices.md](mobile-devices.md)) and every device the rec
 counts is a Mac by construction.
 
 The column exists because the guardrails above leave no way to add it later. Eighteen of
-the 34 active keys count a *different population* the first night a sweep observes more
+the 37 active keys count a *different population* the first night a sweep observes more
 than Macs — the five `devices.*`, the five `catalog.*`, `apps.distinct`,
 `changes.notable_24h`, the two `alerts.*` and the four `vuln.*` — and at that point both
 available moves destroy something.
@@ -405,6 +405,9 @@ keys a denominator `catalog.installed` no longer matches.
 | `vuln.apps_kev_affected` | ACTIVE | The same population with `counts.kev > 0` — carrying a KEV-listed vulnerability. A subset of `apps_affected`. Same build grain and same `catalog.installed` cut, so a build only a deactivated connection's Mac carries is counted here and in no device under `devices_affected`. **No row while the tenant has never been judged.** | `app_catalog` ⋈ `installed_apps` |
 | `vuln.apps_unknown` | ACTIVE | Installed builds the corpus cannot assess (`unknown_app` — a ruled wire value, deliberately snake_case): no row in the epoch, or an answer from an epoch that is no longer answering. Same build grain and same `catalog.installed` cut, deactivated connections included. Equals `catalog.installed` on a night when nothing answered. **No row while the tenant has never been judged.** | `app_catalog` ⋈ `installed_apps` |
 | `vuln.devices_affected` | ACTIVE | Distinct devices on active connections carrying at least one build `apps_affected` counted. Folded through the catalog row, not the device's copy, so a copy lagging its device's sync cannot make the two disagree about a build — the copy-lag axis only. On the population axis they differ by design: this is the active-connection device cut every `devices.*` key draws, while the app keys are `catalog.installed`'s any-device-row cut, so a build only a deactivated connection's Mac carries is counted there and nowhere here. **No row while the tenant has never been judged.** | `installed_apps` ⋈ `app_catalog` ⋈ `devices` |
+| `vuln.findings_open` | ACTIVE | Open `device_findings` rows — one per (Mac, carrier title, finding id) still detected as of that Mac's last observation (#590, [`vulnerabilities.md`](vulnerabilities.md) §6), never as of the capture. Findings and not devices or builds: one Mac carrying one id through Safari and through the OS is two. No device cut and no departure cut — `device_departed` has no writer yet, so a Mac deleted in Jamf keeps its open rows here, bounded by its last observation and never read as fixed. **No row while the tenant has never been judged, or while its finding ledger holds no row at all.** | `device_findings` |
+| `vuln.findings_new_24h` | ACTIVE | Ledger rows whose `first_observed_at` falls in the trailing 24h — findings this pod saw on a Mac for the first time. Includes rows a backfill reconstructed (`first_seen_basis = backfill`), which date to the change log and not to the night, so the first nights after the ledger lands read low rather than as a spike. A reopened row keeps its original clock and is counted in neither direction. **No row while the tenant has never been judged, or while its finding ledger holds no row at all.** | `device_findings` |
+| `vuln.findings_resolved_24h` | ACTIVE | Ledger rows closed in the trailing 24h, by `resolved_at`, whatever the reason — including `corpus_withdrawn`, which is *the epoch stopped listing it* and never *it was fixed* (#589 ruling 4). Not a remediation count: read it beside `findings_open`, and the reason on the row itself. **No row while the tenant has never been judged, or while its finding ledger holds no row at all.** | `device_findings` |
 
 ## The reader
 
@@ -442,7 +445,7 @@ instance's own status; analyst, auditor and admin hold both, so the choice moves
 it names the question.
 
 **Its first consumer, 2026-09-17 (#538).** Posture › Vulnerabilities reads the latest capture's
-four `vuln.*` keys into *By the numbers* at the foot of the page, dated with `capturedAt` and
+seven `vuln.*` keys into *By the numbers* at the foot of the page, dated with `capturedAt` and
 stamped with `fullSweepRunId`. It is the only reader, and the band is **planned** against
 `AUDIT_READ` rather than rendered into a `403` (`features/vulnerabilities/pageBands.ts`, after
 `overviewPlan.ts`): no band for an account without it, and a dash — never a zero — for a key with

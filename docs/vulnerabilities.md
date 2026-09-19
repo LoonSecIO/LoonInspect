@@ -320,6 +320,17 @@ retry-stability, which is what the clause above exists for.
 **No sentinel arithmetic changes.** Both clocks floor at zero and both leave `None` for
 *never*; only the basis differs.
 
+**The reserved sibling now exists — on the page, not on the wire** (#591, over #590's ledger).
+*Seen here* sits beside *Oldest published* on Posture › Vulnerabilities and reads days since the
+oldest **open** `device_findings` row on that build; the Lookup page reads the same store per id,
+as first and last detected. `published` is the world's clock, `seen here` **this pod's first
+observation of the finding on a Mac**, bounded by the tenant's own history — which is the point: a
+tenant thirty days old reads 900 in one column and at most 30 in the other, and the pair keeps the
+first from being read as exposure. It stays off the wire because
+`daysOldestDetected` is a frozen-vocabulary amendment under #188's procedure, and because an event
+is a historical record while this is a store's state. **Absent is not zero here either:** a build
+with no ledger row prints a dash (`troubleshooting.md` § 18 step 12).
+
 ### 4e. `vulnIDs`, and the name that was rejected
 
 Ruled 2026-09-02. `cve_l` was named when the list held CVEs; under the ruled namespaces

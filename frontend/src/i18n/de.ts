@@ -1044,6 +1044,7 @@ export const de: Translations = {
     // Die Spalte nennt das Veröffentlichungsdatum des ältesten Funds, nicht den Fund selbst —
     // wie `oldestPublished` weiter oben.
     colOldest: "Ältester Fund veröffentlicht",
+    colSeenHere: "Hier gesehen seit",  // #591: zwei Uhren — Welt-Uhr oben, Container-Uhr hier.
     colFix: "Behebung",
     bandCritical: "Krit",
     bandHigh: "Hoch",
@@ -1087,8 +1088,12 @@ export const de: Translations = {
     numAppsKev: "Builds auf CISA KEV",
     numAppsUnknown: "Builds außerhalb des Korpus",
     numDevicesAffected: "Macs, die einen tragen",
-    numbersAbsence: "Ein Schlüssel ohne Zeile galt in jener Nacht nicht und ist nie null: Diese vier werden erst geschrieben, wenn ein Korpus diese Organisation geprüft hat. Ein Strich sagt also, dass die Aufzeichnung nichts zu sagen hatte — nicht, dass die Antwort keine war.",
-    numbersFailed: "Die nächtliche Aufzeichnung ließ sich nicht lesen; diese vier Zahlen werden daher nicht gezeigt.",
+    // #591: Funde und nicht Macs — ein Mac mit einer ID über zwei Apps sind zwei Funde.
+    numFindingsOpen: "Offene Funde",
+    numFindingsNew: "In 24 h eröffnet",
+    numFindingsResolved: "In 24 h geschlossen",
+    numbersAbsence: "Ein Schlüssel ohne Zeile galt in jener Nacht nicht und ist nie null: Die vier Build-Zahlen werden erst geschrieben, wenn ein Korpus diese Organisation geprüft hat, die drei Fund-Zahlen erst, wenn ein Mac seit Anlage des Fundregisters erfasst wurde. Ein Strich sagt also, dass die Aufzeichnung nichts zu sagen hatte — nicht, dass die Antwort keine war.",
+    numbersFailed: "Die nächtliche Aufzeichnung ließ sich nicht lesen; diese Zahlen werden daher nicht gezeigt.",
     searchIdHint: "Das ist eine Fund-ID. Drücken Sie die Eingabetaste, um sie nachzuschlagen — die Listen unten durchsuchen Namen, Bundle-IDs und Versionen, was keine ID ist.",
     // #534 — der KI-Hebel am Suchfeld. Alles, was er mit der Prompt-Leiste teilt, steht in
     // deren eigenen Worten (`changes.prompt`); hier steht nur, was dieser Seite gehört.
@@ -1111,6 +1116,12 @@ export const de: Translations = {
     lookupCapped: (builds: number) =>
       builds === 1 ? "1 Build trägt mehr Funde, als seine Liste nennt; eine ID jenseits der Grenze wird dort mitgezählt und hier nicht gefunden."
         : `${builds} Builds tragen mehr Funde, als ihre Listen nennen; eine ID jenseits der Grenze wird dort mitgezählt und hier nicht gefunden.`,
+    // #591 — die beiden Uhren des Fundregisters. ZUERST: wann dieser Container die ID erstmals auf
+    // einem Mac sah; ZULETZT: Stand der letzten Beobachtung des Macs. `detectedNone` ist die Abwesenheit.
+    detected: (first: string, last: string) => `Hier erstmals erfasst am ${first} · zuletzt erfasst am ${last}.`,
+    detectedMacs: (open: number, ever: number) =>
+      `${open} Mac${open === 1 ? "" : "s"} tragen sie noch, von ${ever} jemals — Stand der letzten Beobachtung des jeweiligen Macs, nicht von jetzt.`,
+    detectedNone: "Hier nicht per ID nachgehalten. Nichts hat diese ID auf einem Mac erfasst, es gibt also keine erste oder letzte Erfassung zu zeigen — was nicht dasselbe ist wie keine Macs: Ein Mac, der seit Anlage des Fundregisters nicht inventarisiert wurde, hat noch nichts erfasst, und eine ID jenseits der Listengrenze eines Builds wird nie erfasst.",
     lookupNothing: "Keine Antwort eines Builds nennt hier diese ID. Das ist keine Aussage darüber, dass Ihre Flotte frei davon wäre: Eine gekürzte Liste nennt weniger IDs, als ihr Build trägt, und ein Build außerhalb des Korpus wurde nie geprüft."
   },
   jamfPatch: {

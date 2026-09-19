@@ -43,7 +43,7 @@ per row, over the rows one response already carries: one device's ~100 apps, or 
 tenant's distinct app versions on the catalog page (a few thousand at most — distinct
 builds, never installs, so the number does not grow with the fleet). Under `NO_CORPUS` it
 is one `is None` per response and no per-row work at all. That is inside "cache, don't
-calculate" — nothing here reads the database, and nothing here walks devices.
+calculate": no database and no walk of devices, bar the two ledger readers at the foot.
 
 #381 (built 2026-09-11) is what fills it. The join is stored **per distinct build** on
 `app_catalog` — never per device, which is the grain ruling R-D forbids and the reason a
@@ -53,16 +53,27 @@ calculate" — nothing here reads the database, and nothing here walks devices.
 the caller loaded, read rather than derived. The seam did not move and the REST shape did
 not move; only where the answer comes from did. Do not reach for a per-device lookup here
 — there is no per-device answer to look up.
+
+**The exception, and its rule** (#591). The finding ledger (`device_findings`, #590) is a store,
+not a derivation: *when did this pod first see CVE-X, and does it still* is not computable from
+the rows a response carries at any price. So the two readers at the foot do read the database, and
+that is the whole of it: **one statement per id looked up, one grouped statement per page of
+builds**, never one per row — the paragraph above, applied to a table.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Protocol
 
+from sqlalchemy import case, distinct, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.vuln import VulnCorpus, vuln_block
 from app.core.vuln_answer import HasStoredAnswer, update_effect
+from app.models.schema import Device, DeviceFinding
 from app.schemas.catalog import VulnUpdateOut
 from app.schemas.payload import VULN_ASSESSMENT_UNKNOWN_APP, VulnEnrichment
 
@@ -84,7 +95,7 @@ class HasContentKeys(Protocol):
     """Anything carrying the v1 content-key pair — which is every row this product stores
     about an installed app: `InstalledApp` and `AppCatalogEntry` both materialize them
     (`app.core.content_keys`, stamped at device process). Typed as a protocol rather than
-    a union of the two models so this module imports no ORM."""
+    a union of the two models: the ledger readers below are this module's only models import."""
 
     key_title: str
     key_full: str
@@ -144,3 +155,53 @@ def update_line(row: HasStoredAnswer, *, corpus: VulnCorpus) -> VulnUpdateOut | 
         opens=effect.opens,
         net=effect.net,
     )
+
+
+@dataclass(frozen=True)
+class FindingDetection:
+    """One id's interval over the tenant's whole ledger (#591). `last_detected_at` is the maximum of
+    two clocks, because an open row and a closed one know different things: an open row is *still
+    detected as of that Mac's last observation* (nothing is written while it stays open, §6), so
+    `last_seen_at` answers for it; a closed row carries its own close."""
+
+    first_detected_at: datetime
+    last_detected_at: datetime | None
+    devices_open: int
+    devices_ever: int
+
+
+async def detection(db: AsyncSession, finding_id: str) -> FindingDetection | None:
+    """The ledger's answer for one id, in ONE statement, or `None` where it holds no row for it.
+
+    `None` is the case a surface must word rather than fill: the ledger starts the day it lands, so
+    an id nothing has recorded is *not tracked by id here* and never *0 Macs* — a Mac unswept since
+    #590 has no row, nor has an id beyond a build's cap (§4e). §4a one grain further in, hence an
+    option rather than four zeros nothing could tell from a clear fleet."""
+    open_row = DeviceFinding.resolved_at.is_(None)
+    seen = case((open_row, Device.last_seen_at), else_=DeviceFinding.last_observed_at)
+    macs = func.count(distinct(DeviceFinding.device_id))
+    query = (
+        select(func.min(DeviceFinding.first_observed_at), func.max(seen), macs.filter(open_row), macs)
+        .select_from(DeviceFinding)
+        .join(Device, Device.id == DeviceFinding.device_id)
+        .where(DeviceFinding.finding_id == finding_id)
+    )
+    first, last, still_open, ever = (await db.execute(query)).one()
+    return None if first is None else FindingDetection(first, last, int(still_open), int(ever))
+
+
+async def seen_here_days(db: AsyncSession, builds: Sequence[str], *, as_of: date) -> dict[str, int]:
+    """*Seen here* for a page of builds: days since the oldest OPEN row on each, keyed by `key_full`.
+    **One grouped statement for the page**, never one per row (cache, don't calculate) — the whole
+    reason this takes the page's builds rather than a build. A build with no open row is absent from
+    the mapping and the surface prints a dash, not a zero: *published* is the world's clock and
+    always has a date, while this is **this pod's first observation, bounded by the tenant's own
+    history** (§4d). Floored at zero as the wire's is."""
+    if not builds:
+        return {}
+    query = (
+        select(DeviceFinding.build_key_full, func.min(DeviceFinding.first_observed_at))
+        .where(DeviceFinding.resolved_at.is_(None), DeviceFinding.build_key_full.in_(set(builds)))
+        .group_by(DeviceFinding.build_key_full)
+    )
+    return {build: max((as_of - at.astimezone(UTC).date()).days, 0) for build, at in (await db.execute(query)).all()}

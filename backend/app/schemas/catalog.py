@@ -108,6 +108,11 @@ class CatalogEntryAssessedOut(CatalogEntryOut):
     # never a zero, which would read as "this update changes nothing" for a row nobody
     # answered. The list endpoint fills it; the Catalog page does not render it yet.
     vuln_update: VulnUpdateOut | None = None
+    # #591: *Seen here* — days since the oldest OPEN finding-ledger row on this exact build (#590),
+    # on the read path's clock. §4d's second clock: `daysOldestPublished` is the world's, this is
+    # **this pod's first observation**, bounded by the tenant's own history. `null` where the ledger
+    # holds no open row — a Mac not swept since it landed, or nothing detected — so a page dashes.
+    seen_here_days: int | None = None
 
 
 class CatalogSummaryOut(_CamelModel):

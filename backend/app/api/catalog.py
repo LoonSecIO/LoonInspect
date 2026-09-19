@@ -3,6 +3,7 @@ the local lookup by the hashes every installed app carries. See docs/app-catalog
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date
 from typing import Literal
 
@@ -18,7 +19,7 @@ from app.core.permissions import Permission
 from app.core.vuln import VulnCorpus
 from app.core.vuln_answer import counted, served, stored_corpus
 from app.core.vuln_library import earned_corpus, loaded_epoch_signature
-from app.core.vuln_read import NO_ANSWER, assess, corpus_as_of, today, update_line
+from app.core.vuln_read import NO_ANSWER, assess, corpus_as_of, seen_here_days, today, update_line
 from app.mdm.patch.requirements import version_tuple
 from app.models.schema import AppCatalogEntry, AppCatalogVersion, InstalledApp
 from app.schemas.catalog import (
@@ -93,6 +94,7 @@ def _assessed_entry_out(
     *,
     corpus: VulnCorpus,
     as_of: date,
+    seen_here: Mapping[str, int] | None = None,
 ) -> CatalogEntryAssessedOut:
     """The same row, plus the corpus's answer for **this exact build** (#251).
 
@@ -109,6 +111,10 @@ def _assessed_entry_out(
     # the same seam. The Catalog page does not paint it yet; the application record reads
     # this endpoint scoped to one `appHash` and does.
     out.vuln_update = update_line(entry, corpus=corpus)
+    # *Seen here* (#591), from the ONE grouped ledger query the caller ran for the whole page:
+    # a `.get` and not a query, so no row here can grow a statement of its own. Absent where
+    # the ledger holds no open row for the build — a dash on the page, and never a zero.
+    out.seen_here_days = (seen_here or {}).get(entry.key_full)
     return out
 
 
@@ -221,8 +227,11 @@ async def list_catalog(
     # once per distinct build at judge time — so this reads no database and does no lookup;
     # under `NO_CORPUS` it does no per-row work at all.
     stored = stored_corpus(corpus, entries)
+    # One grouped ledger read for the page's builds (#591) — the rule `vuln_read` states: never
+    # one per row. It runs whatever the filter is, because *Seen here* is a column of both lists.
+    seen_here = await seen_here_days(db, [entry.key_full for entry in entries], as_of=as_of)
     items = [
-        _assessed_entry_out(entry, row[1], refs, corpus=stored, as_of=as_of)
+        _assessed_entry_out(entry, row[1], refs, corpus=stored, as_of=as_of, seen_here=seen_here)
         for entry, row in zip(entries, page_rows, strict=True)
     ]
 

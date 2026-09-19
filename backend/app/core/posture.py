@@ -63,6 +63,7 @@ from app.models.schema import (
     AppCatalogTitleMatch,
     Device,
     DeviceChange,
+    DeviceFinding,
     EventOutbox,
     InstalledApp,
     MdmConnection,
@@ -111,7 +112,14 @@ VULN_KEYS: tuple[str, ...] = (
     "vuln.devices_affected",
 )
 
-# Definitions v1 — the 34 active keys, in the order their rows are written. The names
+# The finding ledger's three, activated 2026-09-19 (#591) over the store #590 landed. Their own
+# family because their gate is their own: the four wait on the corpus having judged this tenant,
+# these on `device_findings` holding a row at all — a tenant judged for months whose Macs have not
+# been swept since has nothing to count, and a zero would date its exposure to a store that was not
+# keeping it. Findings, never devices (#589 ruling 1).
+FINDING_KEYS: tuple[str, ...] = ("vuln.findings_open", "vuln.findings_new_24h", "vuln.findings_resolved_24h")
+
+# Definitions v1 — the 37 active keys, in the order their rows are written. The names
 # are the contract: a definition change mints a new key, so a name in this tuple means
 # exactly what docs/posture-snapshot.md says it means, forever.
 #
@@ -159,6 +167,8 @@ ACTIVE_KEYS: tuple[str, ...] = (
     "tokens.active",
     # Last, and conditional: these four are absent on a tenant the corpus has never judged.
     *VULN_KEYS,
+    # And these three while its finding ledger holds no row — one gate further in.
+    *FINDING_KEYS,
 )
 
 # The population a capture counted (#230). v0 reads computers only
@@ -234,6 +244,9 @@ KEY_DEFINITIONS: dict[str, str] = {
     "vuln.apps_kev_affected": "The same population with `counts.kev > 0` — carrying a KEV-listed vulnerability.",
     "vuln.apps_unknown": "Installed builds the corpus cannot assess (`unknown_app` — a ruled wire value, deliberately…",
     "vuln.devices_affected": "Distinct devices on active connections carrying at least one build `apps_affected` counted.",
+    "vuln.findings_open": "Open `device_findings` rows — one per (Mac, carrier title, finding id) still detected as of that…",
+    "vuln.findings_new_24h": "Ledger rows whose `first_observed_at` falls in the trailing 24h — findings this pod saw on a Mac…",
+    "vuln.findings_resolved_24h": "Ledger rows closed in the trailing 24h, by `resolved_at`, whatever the reason — including…",
 }
 
 
@@ -520,6 +533,21 @@ async def _vuln_values(db: AsyncSession, at: datetime) -> dict[str, float]:
         )
         .where(MdmConnection.is_active.is_(True), _in_the_fleet(at), of_platform, answered, _findings("total") > 0),
     )
+
+    # The ledger's three (#591). Its own gate, one EXISTS: a tenant whose Macs have not been swept
+    # since `device_findings` landed holds no row, and the keys are absent rather than nought. No
+    # device join and no departure cut, deliberately: `device_departed` has no writer yet (#590),
+    # so a Mac deleted in Jamf keeps its open rows, and hiding them here would make this key
+    # disagree with the page counting the same rows. The doc rows say so.
+    if (await db.execute(select(DeviceFinding.id).limit(1))).first() is not None:
+        window = at - timedelta(hours=_WINDOW_HOURS)
+        counted = select(
+            func.count().filter(DeviceFinding.resolved_at.is_(None)),
+            func.count().filter(DeviceFinding.first_observed_at >= window),
+            func.count().filter(DeviceFinding.resolved_at >= window),
+        ).select_from(DeviceFinding)
+        # Zipped onto FINDING_KEYS, so the tuple's order and the family's are one fact.
+        values.update(zip(FINDING_KEYS, (int(n) for n in (await db.execute(counted)).one()), strict=True))
     return values
 
 

@@ -1,4 +1,5 @@
-"""The finding ledger: #590's seven facts, plus the marker and the collapse (ruled in #589).
+"""The finding ledger: #590's seven facts, the marker and the collapse (ruled in #589), and the
+read path #591 puts on top of them.
 
 Driven through `reconcile_device_findings` over hand-written stored answers rather than a sweep,
 because those columns are exactly what the ledger reads — the ones `record_device_apps` makes
@@ -7,7 +8,7 @@ current (#381) — so an epoch and a Jamf fake would slow the suite without movi
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 import pytest_asyncio
@@ -17,6 +18,7 @@ from app.core.content_keys import app_full_key, app_title_key
 from app.core.findings import BASIS_BACKFILL, BASIS_OBSERVED, RESOLVED_BUILD_CHANGED, RESOLVED_CORPUS_WITHDRAWN
 from app.core.findings import reconcile_device_findings as reconcile
 from app.core.hashing import compute_app_hash, compute_version_hash
+from app.core.vuln_read import detection, seen_here_days
 from app.models.schema import Device, DeviceChange, DeviceFinding, InstalledApp
 from tests.test_sweep_costs_db import connection, statements  # noqa: F401 — the fixture and the instrument
 
@@ -158,3 +160,33 @@ async def test_a_backfill_takes_the_change_log_arrival_then_the_first_observatio
     await _sync(db, mac, [_app(WIRESHARK, "4.2.0", [CVE]), _app(SAFARI, "18.0", [OTHER, CVE])], DAY3)
     row = (await _ledger(db, mac))[(app_title_key(*SAFARI), CVE)]
     assert (row.first_observed_at, row.first_seen_basis) == (DAY3, BASIS_OBSERVED)
+
+
+async def test_the_read_path_answers_absence_never_zero_and_the_macs_own_clock(db, mac) -> None:
+    """#591's read path, in the states a surface must tell apart. No row for the id — a Mac never
+    swept since the ledger landed, or an id past a build's cap — answers `None`, worded as *not
+    tracked by id*; four zeros could not be told from a fleet clear of it (§4a). A row that IS
+    there reads *as of that Mac's last observation* while open (§6), its own close after."""
+    build = app_full_key(*WIRESHARK, "4.2.0", None)
+    assert await detection(db, CVE) is None and await seen_here_days(db, [build], as_of=DAY3.date()) == {}
+    mac.last_seen_at = DAY3
+    # OTHER is named by the truncated list; CVE is one of the ids the cap dropped, so nothing can
+    # record it and the ledger's silence about it says nothing about the fleet.
+    await _sync(db, mac, [_app(WIRESHARK, "4.2.0", [OTHER], truncated=True)], DAY1, new=True)
+    assert await detection(db, CVE) is None
+    found = await detection(db, OTHER)
+    assert (found.first_detected_at, found.last_detected_at, found.devices_open, found.devices_ever) == (DAY1, DAY3, 1, 1)
+    await _sync(db, mac, [_app(WIRESHARK, "4.6.0", [])], DAY2)  # the build moved, so the row closes
+    closed = await detection(db, OTHER)
+    assert (closed.last_detected_at, closed.devices_open, closed.devices_ever) == (DAY2, 0, 1)
+
+
+async def test_seen_here_counts_from_the_read_paths_today_in_one_grouped_statement(db, mac) -> None:
+    """The day count is the `as_of` it is handed — `vuln_read.today()` at the seam, never the wall
+    clock — and a page of builds costs ONE statement, not one per row (cache, don't calculate)."""
+    await _sync(db, mac, [_app(WIRESHARK, "4.2.0", [CVE]), _app(SAFARI, "18.0", [OTHER])], DAY1, new=True)
+    builds = [app_full_key(*WIRESHARK, "4.2.0", None), app_full_key(*SAFARI, "18.0", None)]
+    with statements() as seen:
+        days = await seen_here_days(db, builds, as_of=date(2026, 9, 11))
+    assert days == dict.fromkeys(builds, 10), "ten days after DAY1, on the clock the caller passed"
+    assert len([one for one in seen if "device_findings" in one]) == 1

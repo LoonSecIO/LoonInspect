@@ -13,7 +13,7 @@ Deliberately not a second gate: `corpus_as_of(await earned_corpus(db))` is the s
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
@@ -28,7 +28,7 @@ from app.core.permissions import Permission
 from app.core.vuln import validate_finding_id
 from app.core.vuln_answer import served, stored_corpus
 from app.core.vuln_library import earned_corpus, loaded_epoch_signature
-from app.core.vuln_read import corpus_as_of, today
+from app.core.vuln_read import corpus_as_of, detection, today
 from app.models.schema import AppCatalogEntry
 from app.schemas.catalog import CatalogEntryAssessedOut
 
@@ -50,6 +50,20 @@ async def vulnerability_status(db: AsyncSession = Depends(get_db)) -> VulnStatus
     return VulnStatusOut(corpus_as_of=corpus_as_of(await earned_corpus(db)))
 
 
+class FindingDetectedOut(BaseModel):
+    """When this pod first and last saw the id on a Mac, and on how many (#591, over #590's ledger).
+    One object rather than four loose keys, so its absence is **one** absence. `lastDetectedAt` is
+    *as of last observation*, never as of now — an open row only says the finding was there when
+    that Mac was last seen (§6), so a dark Mac's finding ages with the Mac, and the page says so."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, from_attributes=True)
+
+    first_detected_at: datetime
+    last_detected_at: datetime | None
+    devices_open: int
+    devices_ever: int
+
+
 class VulnLookupOut(BaseModel):
     """What one id answers with — and what it cannot answer for.
 
@@ -69,6 +83,11 @@ class VulnLookupOut(BaseModel):
     corpus_as_of: date
     builds: list[CatalogEntryAssessedOut]
     truncated_builds: int
+    # `null` while the ledger holds no row for this id — **absent, never four zeros** (§4a). Null
+    # beside a non-empty `builds` is legible, not broken: the corpus says which builds carry the id
+    # now and the ledger since when this pod saw it, and a Mac unswept since #590 answers only the
+    # first.
+    detected: FindingDetectedOut | None = None
 
 
 # After `/status` on purpose: FastAPI matches in declaration order, and a dynamic segment above
@@ -115,4 +134,8 @@ async def lookup_vulnerability(vuln_id: str, db: AsyncSession = Depends(get_db))
     entries = [row[0] for row in rows]
     refs, stored, as_of = await _title_refs(db, entries), stored_corpus(corpus, entries), today()
     builds = [_assessed_entry_out(entry, count, refs, corpus=stored, as_of=as_of) for entry, count in rows]
-    return VulnLookupOut(corpus_as_of=corpus.as_of, builds=builds, truncated_builds=int(truncated))
+    # One ledger statement for the whole response: this id's own interval. The builds below carry
+    # no *Seen here* — that column is the list's, and nothing on this page draws it yet (#591).
+    found = await detection(db, finding)
+    detected = FindingDetectedOut.model_validate(found) if found is not None else None
+    return VulnLookupOut(corpus_as_of=corpus.as_of, builds=builds, truncated_builds=int(truncated), detected=detected)
