@@ -203,7 +203,7 @@ async def five_families(db, jamf: FakeJamf, connection):
     vocabulary under test.
     """
     from app.core.runs import LOCK_CATALOG, TRIGGER_SWEEP, acquire, finish
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
     from app.models.schema import EventOutbox
 
     # Two smart groups before the baseline, one of them deleted before the judged sweep:
@@ -214,7 +214,7 @@ async def five_families(db, jamf: FakeJamf, connection):
 
     # The baseline. A first observation is not a change, so this sweep's events are not
     # what we judge — it exists to give the second sweep something to diff against.
-    baseline = await sync_connection(db, connection)
+    baseline = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert baseline.ok, baseline
 
     high_water = (await db.execute(select(func.coalesce(func.max(EventOutbox.id), 0)))).scalar_one()
@@ -224,7 +224,7 @@ async def five_families(db, jamf: FakeJamf, connection):
     # row, and the run.completed that closes over all of them.
     _second_inventory(jamf)
     jamf.smart_groups = [group for group in jamf.smart_groups if group["id"] != "907"]
-    sweep = await sync_connection(db, connection)
+    sweep = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert sweep.ok, sweep
 
     # A failed run is the only producer of run.failed. Under the catalog lock class on

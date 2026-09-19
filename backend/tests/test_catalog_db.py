@@ -13,6 +13,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import delete, select
 
+from app.core.runs import TRIGGER_SWEEP
 from tests.jamf_fake import HOST, FakeJamf
 
 pytestmark = [
@@ -140,11 +141,11 @@ async def _forget_fixture_apps(db, jamf: FakeJamf) -> None:
 
 async def test_list_and_lookup_after_a_sweep(db, jamf: FakeJamf, connection, indexed) -> None:
     from app.api.catalog import _lookup
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
     from app.models.schema import Device, InstalledApp
 
     await _forget_fixture_apps(db, jamf)
-    result = await sync_connection(db, connection)
+    result = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert result.ok
     real = (
         await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == jamf.real["id"]))
@@ -194,11 +195,11 @@ async def test_the_device_read_and_the_applications_list_carry_the_patch_answer(
     """
     from app.api.applications import list_applications
     from app.api.devices import get_device
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
     from app.models.schema import Device
 
     await _forget_fixture_apps(db, jamf)
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     real = (
         await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == jamf.real["id"]))
     ).scalar_one()

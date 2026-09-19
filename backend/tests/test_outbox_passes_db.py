@@ -62,6 +62,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import delete, func, select
 
+from app.core.runs import TRIGGER_SWEEP
 from tests.jamf_fake import HOST, FakeJamf
 
 # One event loop for the whole module: app.core.database's engine is created at import
@@ -555,20 +556,20 @@ async def test_a_sync_enqueues_one_snapshot_per_device_per_pass_and_a_delta_only
     ~30 KB every time. That is the storage story #241 measured and the retention
     question #91 carries; this test is the alarm on the count.
     """
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
     from app.models.schema import EventOutbox
 
     async def _by_type() -> dict[str, int]:
         rows = await db.execute(select(EventOutbox.event_type, func.count()).group_by(EventOutbox.event_type))
         return dict(rows.all())
 
-    first = await sync_connection(db, connection)
+    first = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert first.ok
     # Two computers in the fake tenant, both seen for the first time, both with apps: a
     # snapshot and a delta each, and nothing else but the sweep's own completion event.
     assert await _by_type() == {"device.inventory": 2, "device.inventory.changed": 2, "run.completed": 1}
 
-    second = await sync_connection(db, connection)
+    second = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert second.ok
     # The snapshot shape, in one line: the second sweep of an unchanged fleet adds one
     # snapshot per device and its run event, and not one delta.

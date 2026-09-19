@@ -15,6 +15,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import delete, func, select
 
+from app.core.runs import TRIGGER_SWEEP
 from tests.jamf_fake import HOST, FakeJamf
 
 pytestmark = [
@@ -111,12 +112,12 @@ async def test_a_second_platform_gets_its_own_rows_and_no_jamf_answer(
 ) -> None:
     """#236: a universal app is one hash and two catalog rows, and the row that is not a Mac
     considers no titles — Jamf Patch is macOS-only — while the Mac's row keeps its answer."""
+    from app.mdm.collections import run_enabled_collections
     from app.mdm.jamf import client as jamf_client
-    from app.mdm.service import sync_connection
     from app.models.schema import AppCatalogEntry, Device, InstalledApp
 
     await _forget_fixture_apps(db, jamf)
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     real = (
         await db.execute(
             select(Device).where(
@@ -137,7 +138,7 @@ async def test_a_second_platform_gets_its_own_rows_and_no_jamf_answer(
 
     # The same records read by a client that declares another platform.
     monkeypatch.setattr(jamf_client, "COMPUTER_PLATFORM", "ios")
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     ios_row = (
         await db.execute(
             select(AppCatalogEntry).where(AppCatalogEntry.platform == "ios", AppCatalogEntry.version_hash == xcode_hash)
@@ -175,10 +176,10 @@ async def test_the_coverage_endpoint_reads_the_recorders_own_definition(db, jamf
 
     from app.api.jamf_patch import coverage
     from app.core.posture import patch_pair_counts
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
     await _forget_fixture_apps(db, jamf)
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     served = await coverage(db=db)
     total, on_latest = await patch_pair_counts(db, at=datetime.now(UTC))
     assert (served.pairs_total, served.pairs_on_latest) == (total, on_latest)
@@ -188,11 +189,11 @@ async def test_the_coverage_endpoint_reads_the_recorders_own_definition(db, jamf
 async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connection, catalog_rows) -> None:
     from app.api.jamf_patch import title_device_counts, title_version_counts
     from app.catalog.service import refresh_tenant
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
     from app.models.schema import AppCatalogEntry, AppCatalogTitleMatch, Device, InstalledApp
 
     await _forget_fixture_apps(db, jamf)
-    result = await sync_connection(db, connection)
+    result = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert result.ok and result.device_count == 2, result
 
     real = (
@@ -289,7 +290,7 @@ async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connec
     # the copies on the app rows are not re-stamped, rows are not duplicated or re-judged.
     first_seen, last_seen = xcode_entry.first_seen_at, xcode_entry.last_seen_at
     checked = xcode.last_patch_check_at
-    await sync_connection(db, connection)
+    await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     await db.refresh(xcode_entry)
     await db.refresh(xcode)
     assert xcode_entry.first_seen_at == first_seen and xcode_entry.last_seen_at == last_seen
@@ -310,7 +311,7 @@ async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connec
 
     xcode_entry.last_seen_at = last_seen - LAST_SEEN_GRANULARITY - timedelta(seconds=1)
     await db.commit()
-    await sync_connection(db, connection)
+    await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     await db.refresh(xcode_entry)
     assert xcode_entry.last_seen_at > last_seen - timedelta(seconds=1) and xcode_entry.first_seen_at == first_seen
 

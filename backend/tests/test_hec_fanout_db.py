@@ -1,4 +1,4 @@
-"""The Splunk HEC fan-out through the real path (#242): the real fixture, `sync_connection`,
+"""The Splunk HEC fan-out through the real path (#242): the real fixture, `run_enabled_collections`,
 both worker passes, and a mocked HEC. Gated on RUN_DB_TESTS.
 
 `tests/test_hec_fanout.py` pins the expansion over the builder's own payload; this file
@@ -24,6 +24,7 @@ import pytest_asyncio
 from sqlalchemy import delete, select
 
 from app.core.outbox import TEST_EVENT_TYPE, deliver_pending, fan_out_pending, hec_events, send_test_event
+from app.core.runs import TRIGGER_SWEEP
 from app.core.wire import ENVELOPE
 from app.core.wire_vocabulary import ASSERTION_SOURCETYPE, DELTA_SOURCETYPE, SUB_EVENT_KEYS, registry_rows
 from app.fanout import record_events
@@ -165,14 +166,14 @@ async def test_one_snapshot_delivery_is_one_request_of_n_sub_events_on_the_real_
     and `run.completed` under `loon:run`. The webhook receives the same five rows in five
     requests — since #306 the two snapshots as arrays of the same fanned-out items, the
     other three whole. Every delivery row is `delivered` after one attempt."""
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
     from app.models.schema import EventOutbox, OutboxDelivery
 
     splunk, webhook = _splunk_destination(), _webhook_destination()
     db.add_all([splunk, webhook])
     await db.commit()
 
-    result = await sync_connection(db, connection)
+    result = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert result.ok and result.device_count == 2, result
     # Installed AFTER the sync: the mock replaces `httpx.AsyncClient` for the whole
     # process, and the fake Jamf tenant is an `httpx.AsyncClient` too.

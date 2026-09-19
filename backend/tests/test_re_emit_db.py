@@ -15,6 +15,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import delete, func, select, update
 
+from app.core.runs import TRIGGER_SWEEP
 from tests.jamf_fake import HOST, FakeJamf
 
 pytestmark = [
@@ -167,12 +168,12 @@ async def test_a_re_emit_says_what_the_sweep_said_under_its_own_run(db, jamf: Fa
     from app.core.outbox import fan_out_pending
     from app.core.runs import COMPARISON_RE_EMIT, LOCK_RE_EMIT, RUN_COMPLETED_EVENT, TRIGGER_MANUAL, acquire, entered, finish
     from app.core.wire import ENVELOPE
+    from app.mdm.collections import run_enabled_collections
     from app.mdm.reemit import re_emit_connection
-    from app.mdm.service import sync_connection
     from app.models.schema import EventOutbox, OutboxDelivery
 
     before_sweep = await _max_event_id(db)
-    result = await sync_connection(db, connection)
+    result = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert result.ok
     swept = await _snapshots_after(db, connection.id, before_sweep)
     assert len(swept) >= 2, "the fake tenant is two devices"

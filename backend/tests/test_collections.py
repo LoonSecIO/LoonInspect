@@ -21,6 +21,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import delete, select
 
+from app.core.runs import TRIGGER_SWEEP
 from tests.jamf_fake import HOST, FakeJamf
 
 pytestmark = [
@@ -104,10 +105,9 @@ async def test_defaults_are_real_rows_and_idempotent(db, connection) -> None:
 
 
 async def test_run_connection_runs_the_sweeps_and_records_outcomes(db, connection, jamf: FakeJamf) -> None:
-    from app.mdm.collections import list_collections
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import list_collections, run_enabled_collections
 
-    result = await sync_connection(db, connection)
+    result = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert result.ok and result.device_count == 2
     assert result.observations == {"new": 2, "group_new": 1, "ea_definition_new": 3}
 
