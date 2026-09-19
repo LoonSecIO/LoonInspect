@@ -188,3 +188,38 @@ async def test_security_delivery_to_a_row_that_resolves_somewhere_blocked_is_ref
             await db.execute(delete(EventOutbox).where(EventOutbox.id == event_id))
             await db.execute(delete(Destination).where(Destination.id == destination_id))
             await db.commit()
+
+
+async def test_security_the_test_button_names_the_setting_when_plain_http_is_no_longer_allowed(
+    client, resolver, monkeypatch
+) -> None:
+    """SECURITY: the defect #581 names, end to end. A lab destination saved while
+    ALLOW_INSECURE_DESTINATION_URL was set, then tested by a container without it: the
+    Test button is the surface an operator reaches for, and it has to carry the whole
+    sentence — which setting, and both fixes — without opening the connection."""
+    from app.core import outbox
+    from app.core.config import settings
+
+    resolver["lab-splunk.example.com"] = "203.0.113.10"
+    monkeypatch.setattr(settings, "allow_insecure_destination_url", True)
+    url = "http://lab-splunk.example.com:8088/services/collector"
+    created = await client.post("/api/destinations", json=_payload(url=url))
+    assert created.status_code == 201, created.text
+    destination_id = created.json()["id"]
+    monkeypatch.setattr(settings, "allow_insecure_destination_url", False)
+
+    class _NeverDials(httpx.AsyncClient):
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("a destination refused at delivery must not be dialled")
+
+    try:
+        monkeypatch.setattr(outbox.httpx, "AsyncClient", _NeverDials)
+        response = await client.post(f"/api/destinations/{destination_id}/test")
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["ok"] is False and body["statusCode"] is None
+        assert "ALLOW_INSECURE_DESTINATION_URL" in body["detail"], body["detail"]
+        assert "https://" in body["detail"], "the sentence names the other fix too: edit the destination"
+    finally:
+        monkeypatch.undo()
+        await _delete(client, destination_id)
