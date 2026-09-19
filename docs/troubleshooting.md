@@ -217,6 +217,9 @@ sweeps nothing ([README §3](../README.md)).
    `GET /api/runs/<jobId>`, its lines at `/log`, and **Recent runs** on the front page is
    showing the same one. The zero you are chasing may be that run's, and it began before
    the change you just made; wait for it to finish and Run now again.
+   If a manually triggered connection sync or re-emit fails, its run closes as `failed`
+   with the original error and releases the lock immediately. Read that error, correct
+   the cause, and retry; there is no heartbeat-staleness wait for a handled failure.
 
 **A.** A device sweep failed with an error that is not 401 or 403. Report the run's
 `jobID`, its `error`, and the panel's lines.

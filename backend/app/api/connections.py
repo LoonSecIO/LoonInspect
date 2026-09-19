@@ -691,7 +691,11 @@ async def _run_connection_sync(connection_id: int, actor: Actor, tenant_id: uuid
                     # stale — recoverable, but five minutes of silence for something
                     # already known to be over.
                     await db.rollback()
-                    await finish(db, run, ok=False, error=str(exc))
+                    # Rollback expires run, including its id. Reload by the job id
+                    # already passed to this worker before finish reads ORM state.
+                    reloaded = await db.get(Run, job_id)
+                    if reloaded is not None:
+                        await finish(db, reloaded, ok=False, error=str(exc))
                     raise
                 await finish(db, run, **sync_result_kwargs(result))
     finally:
@@ -907,7 +911,11 @@ async def _run_connection_re_emit(
                     return
                 except Exception as exc:
                     await db.rollback()
-                    await finish(db, run, ok=False, error=str(exc))
+                    # Rollback expires run, including its id. Reload by the job id
+                    # already passed to this worker before finish reads ORM state.
+                    reloaded = await db.get(Run, job_id)
+                    if reloaded is not None:
+                        await finish(db, reloaded, ok=False, error=str(exc))
                     raise
                 await finish(
                     db,
