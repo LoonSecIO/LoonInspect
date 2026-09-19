@@ -24,7 +24,7 @@ import pytest_asyncio
 from sqlalchemy import delete, event, func, select
 
 from app.core.outbox import _build_body
-from app.core.runs import pull_event_id
+from app.core.runs import TRIGGER_SWEEP, pull_event_id
 from app.core.wire import ENVELOPE, instance_label
 from app.core.wire_vocabulary import CHANGE_EVENT_TYPE, SECTION_WRAPPERS
 from tests.jamf_fake import HOST, FakeJamf
@@ -130,10 +130,11 @@ async def _rows(db, connection_id: int, subject_id: str):
 
 
 async def test_changes_are_derived_under_the_default_policy(db, connection, jamf: FakeJamf) -> None:
-    from app.mdm.service import ingest_webhook, sync_connection
+    from app.mdm.collections import run_enabled_collections
+    from app.mdm.service import ingest_webhook
     from app.models.schema import Device, EventOutbox
 
-    first = await sync_connection(db, connection)
+    first = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert first.ok and first.observations.get("new") == 2
     real_id = jamf.real["id"]
     assert await _rows(db, connection.id, real_id) == []  # a first observation is a baseline, not a change
@@ -252,13 +253,14 @@ async def test_changes_are_derived_under_the_default_policy(db, connection, jamf
 
 
 async def test_everything_preset_logs_low_fields_and_system_apps(db, connection, jamf: FakeJamf) -> None:
-    from app.mdm.service import ingest_webhook, sync_connection
+    from app.mdm.collections import run_enabled_collections
+    from app.mdm.service import ingest_webhook
     from app.models.schema import ChangePolicy
 
     db.add(ChangePolicy(version="v0", overrides={"minimumLevel": "low", "systemAppsIndividually": True}))
     await db.commit()
 
-    await sync_connection(db, connection)
+    await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     real_id = jamf.real["id"]
     jamf.real["groupMemberships"] = [g for g in jamf.real["groupMemberships"] if g["groupId"] != "1"]
     _second_inventory(jamf)
@@ -280,13 +282,14 @@ async def test_everything_preset_logs_low_fields_and_system_apps(db, connection,
 
 
 async def test_high_only_preset_drops_inventory_changes(db, connection, jamf: FakeJamf) -> None:
-    from app.mdm.service import ingest_webhook, sync_connection
+    from app.mdm.collections import run_enabled_collections
+    from app.mdm.service import ingest_webhook
     from app.models.schema import ChangePolicy
 
     db.add(ChangePolicy(version="v0", overrides={"minimumLevel": "high"}))
     await db.commit()
 
-    await sync_connection(db, connection)
+    await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     real_id = jamf.real["id"]
     jamf.real["groupMemberships"] = [g for g in jamf.real["groupMemberships"] if g["groupId"] != "1"]
     _second_inventory(jamf)
@@ -375,11 +378,12 @@ async def test_a_subjects_change_events_go_in_on_one_insert(db, connection, jamf
     the round trip each one cost inside that device's transaction, which fell on exactly the devices
     with the most to say. Sixty-four is well under the 1,000-row page `add_all` plus one flush becomes,
     so one statement is the whole batch here; the page boundary itself is `test_departure_db`'s (#524)."""
-    from app.mdm.service import ingest_webhook, sync_connection
+    from app.mdm.collections import run_enabled_collections
+    from app.mdm.service import ingest_webhook
     from app.models.schema import EventOutbox
 
     installed = 64
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     real_id = jamf.real["id"]
     _install_apps(jamf, installed)
 
@@ -408,7 +412,8 @@ async def test_the_batched_events_are_what_the_per_row_path_wrote(db, connection
     came back short."""
     from app.changes import derive
     from app.core.outbox import enqueue_event, enqueue_events
-    from app.mdm.service import ingest_webhook, sync_connection
+    from app.mdm.collections import run_enabled_collections
+    from app.mdm.service import ingest_webhook
     from app.models.schema import EventOutbox
 
     handed: list[tuple[str, list[dict], str | None]] = []
@@ -418,7 +423,7 @@ async def test_the_batched_events_are_what_the_per_row_path_wrote(db, connection
         return await enqueue_events(session, event_type, payloads, request_id=request_id)
 
     monkeypatch.setattr(derive, "enqueue_events", spy)
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     real_id = jamf.real["id"]
     _install_apps(jamf, 8)
 

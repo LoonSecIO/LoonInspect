@@ -24,6 +24,7 @@ pytestmark = [
     pytest.mark.asyncio(loop_scope="session"),
 ]
 
+from app.core.runs import TRIGGER_SWEEP  # noqa: E402
 from tests.jamf_fake import HOST, FakeJamf  # noqa: E402
 
 GROUP = "computer_group"
@@ -83,11 +84,12 @@ def _group(index: int) -> dict:
 
 
 async def test_a_deleted_group_departs_once_and_returns_when_it_is_named_again(db, jamf: FakeJamf, connection) -> None:
-    from app.mdm.service import run_jamf_catalog, sync_connection
+    from app.mdm.collections import run_enabled_collections
+    from app.mdm.service import run_jamf_catalog
     from app.models.schema import ObservationSpan
 
     jamf.smart_groups.append(_group(1))
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     assert await _departures(db, connection.id, GROUP) == []
 
     # Deleted in Jamf: absent from the next census, gone — and its span is untouched.
@@ -123,17 +125,17 @@ async def test_a_deleted_group_departs_once_and_returns_when_it_is_named_again(d
 
 
 async def test_a_deleted_definition_departs_and_a_refused_read_departs_nobody(db, jamf: FakeJamf, connection) -> None:
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     jamf.extension_attribute_definitions = [d for d in jamf.extension_attribute_definitions if d["id"] != "12"]
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (gone,) = await _departures(db, connection.id, DEFINITION)
     assert gone.subject_id == "12"
 
     # Not allowed to look is not "everything departed": the open row stays as it was.
     jamf.extension_attribute_definitions = None
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     rows = await _departures(db, connection.id, DEFINITION)
     assert [row.subject_id for row in rows] == ["12"] and rows[0].returned_at is None
 
@@ -141,41 +143,42 @@ async def test_a_deleted_definition_departs_and_a_refused_read_departs_nobody(db
 async def test_an_empty_census_departs_nobody(db, jamf: FakeJamf, connection) -> None:
     """`fetch_smart_groups` answers an empty list for a lost privilege as well as for a
     tenant with no groups; the zero rule is what keeps that from departing every group."""
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     jamf.smart_groups = []
-    result = await sync_connection(db, connection)
+    result = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert result.ok and result.observations.get("group_new") is None
     assert await _departures(db, connection.id, GROUP) == []
 
 
 async def test_a_collapsed_census_departs_nobody_but_a_real_deletion_still_does(db, jamf: FakeJamf, connection) -> None:
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
     from app.observations.departure import COLLAPSE_RATIO, MIN_POPULATION_FOR_COLLAPSE
 
     jamf.smart_groups = [_group(i) for i in range(MIN_POPULATION_FOR_COLLAPSE + 2)]
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     population = len(jamf.smart_groups)
 
     # Fewer than half named: refused, and nobody departs.
     jamf.smart_groups = jamf.smart_groups[: int(population * COLLAPSE_RATIO) - 1]
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     assert await _departures(db, connection.id, GROUP) == []
 
     # All but one named: one real deletion, and it departs.
     jamf.smart_groups = [_group(i) for i in range(1, population)]
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (gone,) = await _departures(db, connection.id, GROUP)
     assert gone.subject_id == _group(0)["id"]
 
 
 async def test_the_cost_page_says_which_group_is_gone(db, jamf: FakeJamf, connection) -> None:
     from app.api.smart_groups import smart_group_cost
-    from app.mdm.service import run_jamf_catalog, sync_connection
+    from app.mdm.collections import run_enabled_collections
+    from app.mdm.service import run_jamf_catalog
 
     jamf.smart_groups.append(_group(7))
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     jamf.smart_groups = [group for group in jamf.smart_groups if group["id"] != "107"]
     assert (await run_jamf_catalog(db, connection, trigger="manual")).ok
 
@@ -191,22 +194,22 @@ async def test_the_cost_page_says_which_group_is_gone(db, jamf: FakeJamf, connec
 async def test_a_deleted_mac_departs_on_a_clean_census_and_a_return_closes_the_row(db, jamf: FakeJamf, connection) -> None:
     """The sweep is the heartbeat: a census closes a sweep that succeeded, carried no
     selector and lost no device, and a Mac it did not name is gone."""
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
     jamf.seed(1)
     (clone,) = jamf._extra
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     assert await _departures(db, connection.id, COMPUTER) == []
 
     jamf._extra = []
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (gone,) = await _departures(db, connection.id, COMPUTER)
     assert gone.subject_id == clone["id"] and gone.returned_at is None and gone.departed_at is not None
 
     # Re-enrolled under the same Jamf id inside the tail: named again, so the row closes
     # and the Mac was never out of the fleet.
     jamf._extra = [clone]
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (returned,) = await _departures(db, connection.id, COMPUTER)
     assert returned.returned_at is not None
     # Recognised as itself, so there is no other id to name (#475).
@@ -245,10 +248,10 @@ async def test_a_scoped_sweep_and_one_device_failure_depart_nobody(db, jamf: Fak
 async def test_a_stale_read_stamps_presence_and_keeps_the_mac_in_the_census(db, jamf: FakeJamf, connection) -> None:
     """Rider 3: the monotonic guard is about content, not existence. A read Jamf answered
     marks the Mac present even when the ledger refuses what it says."""
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
     from app.models.schema import Device, ObservationSpan
 
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     external_id = jamf.real["id"]
     mine = (ObservationSpan.mdm_connection_id == connection.id, ObservationSpan.subject_id == external_id)
     device = (
@@ -261,7 +264,7 @@ async def test_a_stale_read_stamps_presence_and_keeps_the_mac_in_the_census(db, 
     device.last_seen_at = datetime(2020, 1, 1, tzinfo=UTC)
     await db.commit()
 
-    result = await sync_connection(db, connection)
+    result = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert result.ok and result.observations.get("stale") == 1, result.observations
     await db.refresh(device)
     assert device.last_seen_at > datetime(2020, 1, 2, tzinfo=UTC), "the read reached us, so the Mac is here"
@@ -270,19 +273,19 @@ async def test_a_stale_read_stamps_presence_and_keeps_the_mac_in_the_census(db, 
 
 async def test_the_breaker_refuses_a_collapsed_device_census(db, jamf: FakeJamf, connection) -> None:
     """The module's breaker, over Macs: a sweep that paged short cannot depart a fleet."""
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
     from app.observations.departure import COLLAPSE_RATIO, MIN_POPULATION_FOR_COLLAPSE
 
     jamf.seed(MIN_POPULATION_FOR_COLLAPSE - 2)  # the two fixture records round out the population
     clones = list(jamf._extra)
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
 
     jamf._extra = clones[: int(MIN_POPULATION_FOR_COLLAPSE * COLLAPSE_RATIO) - 3]
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     assert await _departures(db, connection.id, COMPUTER) == [], "fewer than half named is a short read, not a mass deletion"
 
     jamf._extra = clones[1:]
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (gone,) = await _departures(db, connection.id, COMPUTER)
     assert gone.subject_id == clones[0]["id"]
 
@@ -321,19 +324,19 @@ def _re_enrolled(clone: dict) -> dict:
 async def test_a_mac_back_under_a_new_jamf_id_closes_its_departure_by_serial(db, jamf: FakeJamf, connection) -> None:
     """Kyle's R3: re-enrolment is the ordinary way a Mac returns, and it always brings a new
     computer id — matched on that alone the row never closes and the Mac leaves from a desk."""
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
     jamf.seed(1)
     (clone,) = jamf._extra
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     jamf._extra = []
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (gone,) = await _departures(db, connection.id, COMPUTER)
     assert gone.returned_at is None and gone.matched_by is None
 
     reborn = _re_enrolled(clone)
     jamf._extra = [reborn]
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     await db.refresh(gone)
     assert gone.returned_at is not None, "same serial, same UDID, same connection is the same Mac"
     # Re-keyed to the life it came back under, naming — and retiring — the id it departed under.
@@ -344,7 +347,7 @@ async def test_a_mac_back_under_a_new_jamf_id_closes_its_departure_by_serial(db,
     # And the dead id stays dead: nothing in the ledger closes its span, so a population still counting
     # it would depart it again next census and close it again the pass after, forever.
     for _ in range(3):
-        assert (await sync_connection(db, connection)).ok
+        assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (still,) = await _departures(db, connection.id, COMPUTER)
     assert still.id == gone.id and still.returned_at is not None, "one departure, closed, and no second"
     assert clone["id"] in await _in_the_fleet(db, connection.id, still.departed_at), "in its tail, not erased"
@@ -354,7 +357,7 @@ async def test_a_mac_back_under_a_new_jamf_id_closes_its_departure_by_serial(db,
     # one serial on two records — strands a live Mac outside the fleet under a page saying it is back.
     jamf._extra = [clone, reborn]
     for _ in range(2):
-        assert (await sync_connection(db, connection)).ok
+        assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (back,) = await _departures(db, connection.id, COMPUTER)
     assert back.subject_id == clone["id"] and back.prior_jamf_pro_id is None and back.matched_by == "jamfProID"
     assert {clone["id"], reborn["id"]} <= await _in_the_fleet(db, connection.id, back.departed_at + timedelta(days=8))
@@ -363,18 +366,18 @@ async def test_a_mac_back_under_a_new_jamf_id_closes_its_departure_by_serial(db,
 async def test_a_board_swap_keeps_the_serial_and_is_not_a_return(db, jamf: FakeJamf, connection) -> None:
     """The two hardware keys fail in different directions (§3): a logic-board repair keeps the serial
     and *changes* the UDID, so same serial under a new UDID is a lineage event, not this Mac back."""
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
     jamf.seed(1)
     (clone,) = jamf._extra
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     jamf._extra = []
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (gone,) = await _departures(db, connection.id, COMPUTER)
 
     swapped = _re_enrolled(clone) | {"udid": str(uuidlib.uuid4()).upper()}
     jamf._extra = [swapped]
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     await db.refresh(gone)
     assert gone.returned_at is None and gone.matched_by is None, "a new board is not a return"
     assert any("0 by serial, under a new Jamf id" in line for line in await _census_lines(db, connection.id))
@@ -384,21 +387,22 @@ async def test_a_census_without_hardware_matches_on_the_id_alone_and_says_which(
     """The aperture caveat: no `hardware` is no serial to census with, so a re-enrolled Mac is not
     recognised and the line says so, never the healthy sentence over a narrower match (rule 2)."""
     from app.mdm import census, service
+    from app.mdm.collections import run_enabled_collections
     from app.models.schema import Collection
 
     jamf.seed(1)
     (clone,) = jamf._extra
-    assert (await service.sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     narrow = [s for s in service.V0_SECTIONS if s not in {"hardware", "extension_attributes"}]
     await db.execute(update(Collection).where(Collection.mdm_connection_id == connection.id).values(sections=narrow))
     await db.commit()
 
     jamf._extra = []
-    assert (await service.sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (gone,) = await _departures(db, connection.id, COMPUTER)
 
     jamf._extra = [_re_enrolled(clone)]
-    assert (await service.sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     await db.refresh(gone)
     assert gone.returned_at is None, "no serial in this census, so nothing to recognise it by"
     lines = await _census_lines(db, connection.id)
@@ -410,14 +414,14 @@ async def test_a_census_without_hardware_matches_on_the_id_alone_and_says_which(
 
 async def test_a_serial_carried_by_another_connection_closes_nothing(db, jamf: FakeJamf, connection) -> None:
     """Two Jamf Pro servers hand out the same small computer ids, so the lookup is connection-scoped."""
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
     from app.models.schema import MdmConnection, ObservationSpan
     from app.observations.departure import reconcile_census
 
     jamf.seed(1)
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     jamf._extra = []
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (gone,) = await _departures(db, connection.id, COMPUTER)
 
     other = MdmConnection(name=f"other {uuidlib.uuid4().hex[:8]}", provider="jamf", base_url=HOST, credentials_encrypted="{}")
@@ -478,14 +482,14 @@ async def test_a_departed_group_emits_the_ruled_body_and_a_return_closes_it_on_d
     from app.core.outbox import _build_body
     from app.core.wire import ENVELOPE
     from app.core.wire_vocabulary import DEPARTURE_SOURCETYPE, ordered_event_keys
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
     jamf.smart_groups.append(_group(1))
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     mark = await _high_water(db)
 
     jamf.smart_groups = [group for group in jamf.smart_groups if group["id"] != "1"]
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (event,) = await _events(db, mark, "subject.departure")
     body = event.payload
 
@@ -531,7 +535,7 @@ async def test_a_departed_group_emits_the_ruled_body_and_a_return_closes_it_on_d
     # pairing is exact under repetition rather than "the most recent open departure".
     mark = await _high_water(db)
     jamf.smart_groups.append({"id": "1", "name": "All Managed Clients", "siteId": "-1"})
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (back,) = await _events(db, mark, "subject.returned")
     assert back.payload["departedAt"] == body["departedAt"]
     assert back.payload["absentForDays"] == 0 and back.payload["matchedBy"] == "jamfProID"
@@ -551,12 +555,12 @@ async def test_a_departed_group_emits_the_ruled_body_and_a_return_closes_it_on_d
 async def test_a_departed_definition_emits_the_same_body_with_its_own_device_count(db, jamf: FakeJamf, connection) -> None:
     """4.4: identical shape, only `subjectKind` differs — and `deviceCount` is one indexed
     COUNT over the per-device EA rows rather than a second derivation of the group read."""
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     mark = await _high_water(db)
     jamf.extension_attribute_definitions = [d for d in jamf.extension_attribute_definitions if d["id"] != "12"]
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
 
     (event,) = await _events(db, mark, "subject.departure")
     body = event.payload
@@ -573,13 +577,13 @@ async def test_a_departed_definition_emits_the_same_body_with_its_own_device_cou
 async def test_a_refused_census_emits_nothing_at_all(db, jamf: FakeJamf, connection) -> None:
     """The breaker's own guarantee, carried onto the wire: a census that departs nobody must
     not enqueue anything either, or "every group departed at once" arrives at the SIEM."""
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     mark = await _high_water(db)
     jamf.smart_groups = []
     jamf.extension_attribute_definitions = None
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     assert await _events(db, mark, "subject.departure") == []
     # Both types, not just the one the breaker withholds. A census that names nobody closes no
     # return either, so "nothing at all" is the whole claim — note that a COLLAPSED census is
@@ -599,12 +603,12 @@ async def test_a_departed_macs_open_latch_closes_at_the_terminal_exit(db, jamf: 
     closes at the **terminal exit** and not on the first missed census; it deletes nothing; and
     it stamps a **reason**, the only thing telling this close from an uninstall afterwards."""
     from app.alerts.service import CLOSED_DEVICE_DEPARTED, NEW_APP
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
     from app.models.schema import Alert, Device, InstalledApp, SubjectDeparture
 
     jamf.seed(1)
     (clone,) = jamf._extra
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     device = (
         await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == clone["id"]))
     ).scalar_one()
@@ -620,7 +624,7 @@ async def test_a_departed_macs_open_latch_closes_at_the_terminal_exit(db, jamf: 
     # Missed by one clean census: the tail starts and nothing closes — a Mac in its tail is
     # still in the fleet, and an alert about it is still true of the fleet.
     jamf._extra = []
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (gone,) = await _departures(db, connection.id, COMPUTER)
     assert (await latch()).closed_at is None, "a latch closing on day one would be the tail said twice"
 
@@ -629,7 +633,7 @@ async def test_a_departed_macs_open_latch_closes_at_the_terminal_exit(db, jamf: 
         update(SubjectDeparture).where(SubjectDeparture.id == gone.id).values(departed_at=datetime.now(UTC) - timedelta(days=8))
     )
     await db.commit()
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
 
     closed = await latch()
     assert closed.closed_at is not None and closed.closed_reason == CLOSED_DEVICE_DEPARTED
@@ -642,7 +646,7 @@ async def test_a_departed_macs_open_latch_closes_at_the_terminal_exit(db, jamf: 
     assert any("alert latch" in line and "nothing was deleted" in line for line in await _census_lines(db, connection.id))
 
     # Idempotent: the next census finds nothing left to close and says nothing about it.
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     assert (await latch()).closed_at == closed.closed_at
     assert sum("alert latch" in line for line in await _census_lines(db, connection.id)) == 1
 
@@ -657,18 +661,18 @@ async def _age(db, row, days: int) -> None:
 async def test_a_departed_mac_notices_once_a_day_and_the_tail_closes_with_removed(db, jamf: FakeJamf, connection) -> None:
     """4.5 on the rows the outbox holds: `noticeDay` one per UTC day, capped, then the terminal."""
     from app.core.wire import ENVELOPE
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
     from app.models.schema import Device
     from app.observations.departure import DEPARTURE_TAIL_DAYS
 
     jamf.seed(1)
     (clone,) = jamf._extra
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     hostname = await db.scalar(select(Device.hostname).filter_by(mdm_connection_id=connection.id, external_id=clone["id"]))
     mark = await _high_water(db)
 
     jamf._extra = []
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (event,) = await _events(db, mark, "subject.departure")
     body = event.payload
     assert body["subjectKind"] == COMPUTER and body["state"] == "departed" and body["noticeDay"] == 1
@@ -681,13 +685,13 @@ async def test_a_departed_mac_notices_once_a_day_and_the_tail_closes_with_remove
     # The same UTC day, a second census: still day one, so nothing goes out — a fifteen-minute
     # schedule must not send ninety-six notices about one Mac.
     mark = await _high_water(db)
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     assert await _events(db, mark, "subject.departure") == []
 
     # Three quiet days are not backfilled: the next census emits the day it is actually on.
     (gone,) = await _departures(db, connection.id, COMPUTER)
     await _age(db, gone, 3)
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (fourth,) = await _events(db, mark, "subject.departure")
     assert fourth.payload["state"] == "departed" and fourth.payload["noticeDay"] == 4
 
@@ -695,7 +699,7 @@ async def test_a_departed_mac_notices_once_a_day_and_the_tail_closes_with_remove
     mark = await _high_water(db)
     await _age(db, gone, DEPARTURE_TAIL_DAYS)
     for _ in range(2):
-        assert (await sync_connection(db, connection)).ok
+        assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (terminal,) = await _events(db, mark, "subject.departure")
     assert terminal.payload["state"] == "removed" and terminal.payload["noticeDay"] == DEPARTURE_TAIL_DAYS
     assert "eventID" not in terminal.payload["deviceMeta"]
@@ -752,12 +756,13 @@ async def test_a_scoped_sweep_closes_the_latch_with_the_terminal_it_sends(db, ja
     is the scoped one, and its own run-log line carries `latchesClosed` and says so in words."""
     from app.alerts.service import CLOSED_DEVICE_DEPARTED, NEW_APP
     from app.mdm import service
+    from app.mdm.collections import run_enabled_collections
     from app.models.schema import Alert, Device
 
     selector = "general.remoteManagement.managed==true"
     jamf.seed(1)
     (clone,) = jamf._extra
-    assert (await service.sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     device = (
         await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == clone["id"]))
     ).scalar_one()
@@ -771,11 +776,11 @@ async def test_a_scoped_sweep_closes_the_latch_with_the_terminal_it_sends(db, ja
     # ONE clean census opens the tail. Every sweep after it is scoped or dirty — which on a
     # selector-only schedule is the whole of the Mac's remaining life here.
     jamf._extra = []
-    assert (await service.sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (gone,) = await _departures(db, connection.id, COMPUTER)
 
     await _scope_the_sweeps(db, connection.id, selector)
-    assert (await service.sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     assert (await latch()).closed_at is None, "mid-tail the Mac is still in the fleet, and so is its alert"
 
     # The other way a sweep is not a census, on the same tail: a device Jamf returned that we
@@ -789,7 +794,7 @@ async def test_a_scoped_sweep_closes_the_latch_with_the_terminal_it_sends(db, ja
         return await ingest(session, conn, raw, **kwargs)
 
     monkeypatch.setattr(service, "ingest_computer", one_bad_device)
-    dirty = await service.sync_connection(db, connection)
+    dirty = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert dirty.ok and dirty.devices_failed == 1, dirty
     monkeypatch.setattr(service, "ingest_computer", ingest)  # not undo(): the fake Jamf is patched in too
     assert {line.fields["reason"] for line in await _not_a_census_lines(db, connection.id)} == {"selector", "device_failures"}
@@ -800,7 +805,7 @@ async def test_a_scoped_sweep_closes_the_latch_with_the_terminal_it_sends(db, ja
     await _scope_the_sweeps(db, connection.id, selector)
     await _age(db, gone, 8)
     mark = await _high_water(db)
-    assert (await service.sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (terminal,) = await _events(db, mark, "subject.departure")
     assert terminal.payload["state"] == "removed"
 
@@ -813,7 +818,7 @@ async def test_a_scoped_sweep_closes_the_latch_with_the_terminal_it_sends(db, ja
     assert "open alert latch closed" in line.message and "nothing was deleted" in line.message
 
     # Idempotent: the next scoped sweep finds nothing left to close and says nothing about it.
-    assert (await service.sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     lines = await _not_a_census_lines(db, connection.id)
     assert (await latch()).closed_at == closed.closed_at
     assert lines[-1].fields["latchesClosed"] == 0 and "alert latch" not in lines[-1].message
@@ -824,21 +829,21 @@ async def test_a_returning_mac_carries_its_pull_and_the_id_it_departed_under(db,
     """4.6 for a Mac: `matchedBy` and `priorJamfProID` off the row #475 writes, and `deviceMeta`
     WITH `eventID` — the one asymmetry, because a return coincides with a real pull."""
     from app.core.runs import pull_event_id
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
     from app.models.schema import Device
 
     jamf.seed(1)
     (clone,) = jamf._extra
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     jamf._extra = []
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (departed,) = await _departures(db, connection.id, COMPUTER)
     await _age(db, departed, 3)  # mid-tail, so an unsuppressed notice for the retired half would go out here
 
     mark = await _high_water(db)
     reborn = _re_enrolled(clone)
     jamf._extra = [reborn]
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (back,) = await _events(db, mark, "subject.returned")
     (row,) = await _departures(db, connection.id, COMPUTER)
     assert await _events(db, mark, "subject.departure") == [], "returned and still-absent must not go out together"
@@ -853,7 +858,7 @@ async def test_a_returning_mac_carries_its_pull_and_the_id_it_departed_under(db,
     # half close too — under the id the departure went out with, not the one it came back as.
     await _age(db, row, 8)
     mark = await _high_water(db)
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (terminal,) = await _events(db, mark, "subject.departure")
     assert terminal.payload["state"] == "removed" and terminal.payload["deviceMeta"]["jamfProID"] == clone["id"]
 
@@ -861,18 +866,18 @@ async def test_a_returning_mac_carries_its_pull_and_the_id_it_departed_under(db,
 async def test_a_mac_this_sweep_names_after_its_deadline_is_not_told_it_was_removed(db, jamf: FakeJamf, connection) -> None:
     """The terminal belongs to the population, not to the clock alone: the sweep that first runs after the
     seven days may name the Mac, and a `removed` beside its own `subject.returned` asserts what that census disproves."""
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
     jamf.seed(1)
     (clone,) = jamf._extra
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     jamf._extra = []
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     (gone,) = await _departures(db, connection.id, COMPUTER)
     await _age(db, gone, 8)
 
     mark, jamf._extra = await _high_water(db), [clone]
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     assert await _events(db, mark, "subject.departure") == [], "this census named it; it never left"
     (back,) = await _events(db, mark, "subject.returned")
     assert back.payload["matchedBy"] == "jamfProID" and back.payload["departedAt"] == gone.departed_at.isoformat()
