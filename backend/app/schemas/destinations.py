@@ -10,12 +10,12 @@ from pydantic.alias_generators import to_camel
 from app.core.egress import validate_destination_url
 from app.core.outbox import KNOWN_EVENT_TYPES
 
-# Where this server will deliver events holding the destination's credential, checked
-# where the column is *set* rather than in the routes: the outbox reads `url` from the
-# row on every tick without asking a route (#131, app.core.egress). DestinationOut keeps
-# a bare `str` — a row stored before the rule must still be readable, and delivery is
-# where such a row is refused.
-DestinationUrl = Annotated[str, Field(min_length=1, max_length=1024), AfterValidator(validate_destination_url)]
+# Validate syntax and host policy on both writes. Transport is checked against the
+# create payload or the PATCH merged with its stored row; output remains readable
+# when a deployment policy changes and delivery starts refusing an existing row.
+DestinationUrl = Annotated[
+    str, Field(min_length=1, max_length=1024), AfterValidator(lambda value: validate_destination_url(value, allow_insecure=True))
+]
 
 # Literals rather than a runtime membership test, so the four working values reach the
 # OpenAPI schema. A bare `str` published nothing, and an API-driven caller reading the
@@ -85,6 +85,9 @@ class DestinationOut(_CamelModel):
     name: str
     type: str
     url: str
+    allow_insecure_http: bool | None = Field(
+        default=None, description="True allows HTTP, false requires HTTPS, null inherits the deployment default."
+    )
     auth_type: str
     auth_header_name: str | None
     # Elastic only; null everywhere else, and null on an Elastic destination means
@@ -146,6 +149,9 @@ class DestinationCreate(_CamelModel):
     name: str = Field(min_length=1, max_length=255)
     type: DestinationType = "generic_webhook"
     url: DestinationUrl
+    allow_insecure_http: bool | None = Field(
+        default=None, description="True allows HTTP, false requires HTTPS, null inherits the deployment default."
+    )
     # Omit and it is derived from `type`; every type but generic_webhook has exactly
     # one right answer.
     auth_type: AuthType | None = None
@@ -157,6 +163,7 @@ class DestinationCreate(_CamelModel):
 
     @model_validator(mode="after")
     def _validate(self) -> DestinationCreate:
+        self.url = validate_destination_url(self.url, allow_insecure=self.allow_insecure_http)
         self.auth_type = resolve_auth_type(self.type, self.auth_type)
         if self.auth_type == "header" and not self.auth_header_name:
             raise ValueError("authHeaderName is required when authType is 'header'")
@@ -170,6 +177,9 @@ class DestinationCreate(_CamelModel):
 class DestinationUpdate(_CamelModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     url: DestinationUrl | None = None
+    allow_insecure_http: bool | None = Field(
+        default=None, description="True allows HTTP, false requires HTTPS, null inherits the deployment default."
+    )
     # `type` is immutable after creation, so whether this is legal depends on the
     # stored type — checked in api/destinations.py, which knows it.
     auth_type: AuthType | None = None

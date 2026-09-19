@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import engine
-from app.core.egress import BlockedDestinationUrl, refuse_blocked_resolution, refuse_insecure_destination_scheme
+from app.core.egress import BlockedDestinationUrl, refuse_destination_resolution, refuse_insecure_destination_scheme
 from app.core.hec_fanout import fan_out
 from app.core.scheduling import Schedule, next_due
 from app.core.wire import ENVELOPE, hec_event
@@ -538,17 +538,12 @@ async def blocked_delivery_reason(destination: Destination) -> str | None:
     does not answer, as the write-time pass does: an air-gapped SIEM is a supported
     destination, and a dead resolver must not turn into a dead outbox.
 
-    Two questions, in this order: where the URL points, then whether it may be dialled in
-    clear. Both are read from settings and DNS at call time rather than remembered from
-    the write, because both answers move under a row that never changed —
-    `ALLOW_INSECURE_DESTINATION_URL` is the process's, not the row's, so a destination
-    saved while it was true is delivered by a container that may not have it (#581). A
-    blocked host wins when both apply: the address is the graver fault, and it is the one
-    that stays wrong after the flag is set.
+    Host safety is checked first, then the saved transport choice. Null inherits the
+    container's legacy flag; explicit true or false is consistent across workers.
     """
     try:
-        await refuse_blocked_resolution(destination.url, field="url", refusal=BlockedDestinationUrl, judge_literals=True)
-        refuse_insecure_destination_scheme(destination.url)
+        await refuse_destination_resolution(destination.url)
+        refuse_insecure_destination_scheme(destination.url, allow_insecure=destination.allow_insecure_http)
     except BlockedDestinationUrl as exc:
         return str(exc)[:500]
     return None

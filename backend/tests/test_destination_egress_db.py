@@ -124,7 +124,7 @@ async def test_a_legitimate_destination_still_saves_and_cannot_be_moved_somewher
     assert created.status_code == 201, created.text
     destination_id = created.json()["id"]
     try:
-        for blocked in (METADATA_URL, "https://metadata.attacker.example/hook", "https://127.0.0.1:8088/x"):
+        for blocked in (METADATA_URL, "https://metadata.attacker.example/hook", "https://127.0.0.2:8088/x"):
             moved = await client.patch(f"/api/destinations/{destination_id}", json={"url": blocked})
             assert moved.status_code == 422, moved.text
         kept = next(row for row in (await client.get("/api/destinations")).json() if row["id"] == destination_id)
@@ -222,4 +222,56 @@ async def test_security_the_test_button_names_the_setting_when_plain_http_is_no_
         assert "https://" in body["detail"], "the sentence names the other fix too: edit the destination"
     finally:
         monkeypatch.undo()
+        await _delete(client, destination_id)
+
+
+async def test_transport_choice_round_trips_and_patch_uses_stored_policy(client, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "allow_insecure_destination_url", False)
+    response = await client.post("/api/destinations", json=_payload(url="http://siem.example.com/hook", allowInsecureHttp=True))
+    assert response.status_code == 201, response.text
+    destination_id = response.json()["id"]
+    path = f"/api/destinations/{destination_id}"
+    try:
+        assert response.json()["allowInsecureHttp"] is True
+        response = await client.patch(path, json={"url": "http://siem.example.com/other"})
+        assert response.status_code == 200, response.text
+        assert response.json()["allowInsecureHttp"] is True
+        # Reject changing only the policy if the stored URL would become invalid.
+        response = await client.patch(path, json={"allowInsecureHttp": False})
+        assert response.status_code == 422
+        response = await client.patch(path, json={"url": "https://siem.example.com/hook", "allowInsecureHttp": False})
+        assert response.status_code == 200, response.text
+        monkeypatch.setattr(settings, "allow_insecure_destination_url", True)
+        response = await client.patch(path, json={"url": "http://siem.example.com/hook"})
+        assert response.status_code == 422
+        response = await client.patch(path, json={"allowInsecureHttp": None, "url": "http://siem.example.com/hook"})
+        assert response.status_code == 200, response.text
+        assert response.json()["allowInsecureHttp"] is None
+        rows = (await client.get("/api/destinations")).json()
+        assert next(row for row in rows if row["id"] == destination_id)["allowInsecureHttp"] is None
+    finally:
+        await _delete(client, destination_id)
+
+
+async def test_host_allowlist_applies_to_create_and_patch(client, resolver, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "destination_allowed_hosts", ["siem.example.com"])
+    resolver["host.docker.internal"] = "127.0.0.1"
+    response = await client.post(
+        "/api/destinations", json=_payload(url="http://host.docker.internal:8088/hook", allowInsecureHttp=True)
+    )
+    assert response.status_code == 201, response.text
+    destination_id = response.json()["id"]
+    try:
+        response = await client.patch(f"/api/destinations/{destination_id}", json={"url": "https://other.example.com"})
+        assert response.status_code == 422
+        assert "DESTINATION_ALLOWED_HOSTS" in response.text
+        resolver["host.docker.internal"] = "169.254.169.254"
+        response = await client.post(f"/api/destinations/{destination_id}/test")
+        assert response.json()["ok"] is False
+        assert "link-local" in response.json()["detail"]
+    finally:
         await _delete(client, destination_id)

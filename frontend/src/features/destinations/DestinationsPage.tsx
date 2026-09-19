@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/config/api";
@@ -18,12 +19,20 @@ import { deadLetterDaysLeft, heldExpiresAt } from "@/features/destinations/queue
 import type { AuthType, Destination, DestinationType, OutboxDepth } from "@/features/destinations/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
+function focusEditor(node: HTMLFormElement | null) {
+  if (node) {
+    node.scrollIntoView({ block: "start" });
+    node.querySelector<HTMLInputElement>("#destName")?.focus({ preventScroll: true });
+  }
+}
+
 type FormMode = "closed" | "create" | number;
 
 interface FormState {
   name: string;
   type: DestinationType;
   url: string;
+  allowInsecureHttp: boolean | null;
   authType: AuthType;
   authHeaderName: string;
   authSecret: string;
@@ -35,6 +44,7 @@ const EMPTY_FORM: FormState = {
   name: "",
   type: "generic_webhook",
   url: "",
+  allowInsecureHttp: false,
   authType: "none",
   authHeaderName: "",
   authSecret: "",
@@ -155,6 +165,9 @@ export function DestinationsPage() {
 
   const [formMode, setFormMode] = useState<FormMode>("closed");
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [editorVisit, setEditorVisit] = useState(0);
+  const [showHttpInfo, setShowHttpInfo] = useState(false);
+  const isHttp = /^http:/i.test(form.url.trim());
   const [submitting, setSubmitting] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
   // The redrive asks first, like the delete: it re-sends tenant data to a destination,
@@ -225,15 +238,22 @@ export function DestinationsPage() {
   }, [load]);
 
   function openCreate() {
+    setError(null);
+    setShowHttpInfo(false);
+    setEditorVisit((current) => current + 1);
     setForm(EMPTY_FORM);
     setFormMode("create");
   }
 
   function openEdit(destination: Destination) {
+    setError(null);
+    setShowHttpInfo(false);
+    setEditorVisit((current) => current + 1);
     setForm({
       name: destination.name,
       type: destination.type,
       url: destination.url,
+      allowInsecureHttp: destination.allowInsecureHttp,
       // A preset's auth convention is fixed; editing a generic webhook's auth type
       // is the only case the selector matters for. See the type-change handler below.
       authType: FIXED_AUTH[destination.type] ?? destination.authType,
@@ -265,6 +285,7 @@ export function DestinationsPage() {
         name: form.name,
         type: form.type,
         url: form.url,
+        allowInsecureHttp: form.allowInsecureHttp,
         authType: form.authType,
         authHeaderName: form.authType === "header" ? form.authHeaderName : null,
         authSecret: form.authSecret || undefined,
@@ -374,7 +395,12 @@ export function DestinationsPage() {
       )}
 
       {canWrite && formMode !== "closed" && (
-        <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border bg-card p-4">
+        <form
+          key={editorVisit}
+          ref={focusEditor}
+          onSubmit={handleSubmit}
+          className="scroll-mt-24 space-y-4 rounded-lg border bg-card p-4"
+        >
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <label htmlFor="destName" className="text-sm font-medium">
@@ -393,6 +419,7 @@ export function DestinationsPage() {
               </label>
               <select
                 id="destType"
+                disabled={formMode !== "create"}
                 value={form.type}
                 onChange={(event) => handleTypeChange(event.target.value as DestinationType)}
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
@@ -409,18 +436,64 @@ export function DestinationsPage() {
             <label htmlFor="destUrl" className="text-sm font-medium">
               {t.destinations.url}
             </label>
-            <Input
-              id="destUrl"
-              type="url"
-              required
-              placeholder={URL_PLACEHOLDERS[form.type]}
-              value={form.url}
-              onChange={(event) => setForm((current) => ({ ...current, url: event.target.value }))}
-            />
+            <div className="relative">
+              <Input
+                id="destUrl"
+                className={isHttp ? "border-amber-500/60 bg-amber-500/10 pr-10" : undefined}
+                aria-describedby={isHttp && showHttpInfo ? "destHttpInfo" : undefined}
+                type="url"
+                required
+                placeholder={URL_PLACEHOLDERS[form.type]}
+                value={form.url}
+                onChange={(event) => setForm((current) => ({ ...current, url: event.target.value }))}
+              />
+              {isHttp && (
+                <button
+                  type="button"
+                  className="absolute right-3 top-2.5 text-amber-700 dark:text-amber-400"
+                  aria-label={t.destinations.httpInfoLabel}
+                  aria-expanded={showHttpInfo}
+                  aria-controls="destHttpInfo"
+                  onClick={() => setShowHttpInfo((current) => !current)}
+                >
+                  <Info className="h-5 w-5" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+            {isHttp && showHttpInfo && (
+              <p id="destHttpInfo" className="text-sm text-amber-700 dark:text-amber-400">{t.destinations.httpInfo}</p>
+            )}
             {form.type === "splunk_hec" && <p className="text-xs text-muted-foreground">{t.destinations.urlHintSplunk}</p>}
             {form.type === "elastic" && <p className="text-xs text-muted-foreground">{t.destinations.urlHintElastic}</p>}
             {form.type === "runreveal" && (
               <p className="text-xs text-muted-foreground">{t.destinations.urlHintRunReveal}</p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="destTransport" className="text-sm font-medium">
+              {t.destinations.transport}
+            </label>
+            <select
+              id="destTransport"
+              value={form.allowInsecureHttp === null ? "inherit" : String(form.allowInsecureHttp)}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  allowInsecureHttp: event.target.value === "inherit" ? null : event.target.value === "true"
+                }))
+              }
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="false">{t.destinations.requireHttps}</option>
+              <option value="true">{t.destinations.allowHttp}</option>
+              <option value="inherit">{t.destinations.inheritTransport}</option>
+            </select>
+            {form.allowInsecureHttp === true && (
+              <p role="note" className="text-sm text-amber-700 dark:text-amber-400">{t.destinations.httpWarning}</p>
+            )}
+            {form.allowInsecureHttp === null && (
+              <p className="text-xs text-muted-foreground">{t.destinations.inheritHint}</p>
             )}
           </div>
 
@@ -558,6 +631,9 @@ export function DestinationsPage() {
                 <td className="px-4 py-3">{typeLabel(destination.type)}</td>
                 <td className="max-w-xs truncate px-4 py-3 font-mono text-xs text-muted-foreground" title={destination.url}>
                   {destination.url}
+                  {destination.url.toLowerCase().startsWith("http:") && (
+                    <p className="mt-1 text-amber-700 dark:text-amber-400">{t.destinations.httpLabel}</p>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <span

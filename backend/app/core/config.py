@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ipaddress
+import re
 from typing import Literal
 
 from pydantic import field_validator
@@ -208,11 +210,31 @@ class Settings(BaseSettings):
     # app.core.egress.
     allow_insecure_mdm_base_url: bool = False
 
-    # The same opt-in for a destination URL (#131): every delivery carries that
-    # destination's own credential, so plain http is refused unless an operator says a
-    # lab SIEM without TLS is what they have (docs/splunk-setup.md). Loopback, link-local
-    # and the rest of app.core.egress's refused space stay refused either way.
+    # Legacy destination transport default. A saved per-destination choice takes
+    # precedence. Host permissions are separate; HTTP still exposes credentials.
     allow_insecure_destination_url: bool = False
+    # JSON array of exact hosts/IPs. Empty preserves the existing host policy.
+    destination_allowed_hosts: list[str] = []
+
+    @field_validator("destination_allowed_hosts")
+    @classmethod
+    def _validate_destination_hosts(cls, values: list[str]) -> list[str]:
+        result = []
+        for value in values:
+            host = value.strip().lower().rstrip(".")
+            try:
+                host = str(ipaddress.ip_address(host))
+            except ValueError:
+                if (
+                    not host
+                    or len(host) > 253
+                    or any(not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) for label in host.split("."))
+                ):
+                    raise ValueError(
+                        "DESTINATION_ALLOWED_HOSTS requires exact hostnames or IPs, without URLs, ports or wildcards"
+                    ) from None
+            result.append(host)
+        return result
 
     # Marks the session cookie Secure. On by default because the alternative fails
     # silently in the dangerous direction. Browsers refuse Secure cookies over plain

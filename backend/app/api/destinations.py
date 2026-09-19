@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import AuditAction, audit
 from app.core.auth import require
 from app.core.database import get_db
-from app.core.egress import BlockedDestinationUrl, refuse_blocked_resolution
+from app.core.egress import BlockedDestinationUrl, refuse_destination_resolution, validate_destination_url
 from app.core.outbox import dead_letter_expires_at, redrive_failed, send_test_event
 from app.core.permissions import Permission
 from app.core.posture import outbox_failed_window_where
@@ -91,6 +91,7 @@ def _to_out(destination: Destination, health: dict | None = None) -> Destination
         name=destination.name,
         type=destination.type,
         url=destination.url,
+        allow_insecure_http=destination.allow_insecure_http,
         auth_type=destination.auth_type,
         auth_header_name=destination.auth_header_name,
         elastic_index=destination.elastic_index,
@@ -116,7 +117,7 @@ async def _refuse_blocked_destination(url: str) -> None:
     column — and again by the outbox at delivery, which is what covers a row stored
     before the rule."""
     try:
-        await refuse_blocked_resolution(url, field="url", refusal=BlockedDestinationUrl)
+        await refuse_destination_resolution(url)
     except BlockedDestinationUrl as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
@@ -148,6 +149,7 @@ async def create_destination(payload: DestinationCreate, db: AsyncSession = Depe
         name=payload.name,
         type=payload.type,
         url=payload.url,
+        allow_insecure_http=payload.allow_insecure_http,
         auth_type=payload.auth_type,
         auth_header_name=payload.auth_header_name,
         auth_secret_encrypted=payload.auth_secret,
@@ -190,8 +192,19 @@ async def update_destination(
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
-    if "url" in data:
-        await _refuse_blocked_destination(data["url"])
+    if "url" in data or "allow_insecure_http" in data:
+        try:
+            url = validate_destination_url(
+                data.get("url", destination.url) or "",
+                allow_insecure=data.get("allow_insecure_http", destination.allow_insecure_http),
+            )
+        except BlockedDestinationUrl as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        await _refuse_blocked_destination(url)
+        if "url" in data:
+            data["url"] = url
+    if "allow_insecure_http" in data:
+        destination.allow_insecure_http = data["allow_insecure_http"]
 
     if "name" in data:
         destination.name = data["name"]

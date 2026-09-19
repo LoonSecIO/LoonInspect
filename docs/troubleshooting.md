@@ -324,19 +324,24 @@ directly.*
    - connection refused, timeout, name not resolved → the URL, the port, a firewall, or a
      TLS certificate the container does not trust. `https://` with a private CA needs the
      CA in the container ([`splunk-setup.md`](splunk-setup.md) §5). Fix, test again.
-   - **plain `http://`, with no status code** → `ALLOW_INSECURE_DESTINATION_URL` is read
-     twice: once when the destination is **saved**, and again at **every delivery**, from
-     the container doing the delivering. So an `http` destination saved while it was set
-     stops delivering the moment it is unset, or on a container that never had it — and
-     nothing was dialled. The test's `detail` and the destination's `lastError` both read:
-
-     > url is http:// and ALLOW_INSECURE_DESTINATION_URL is not set on this container, so
-     > this delivery would put the destination's credential on the wire in clear. Edit the
-     > destination to https://, or set ALLOW_INSECURE_DESTINATION_URL=true for a lab SIEM
-     > without TLS.
-
-     Either fix ends it. The refusals in between are ordinary failed attempts, so they
-     climb the ladder and dead-letter; **Redrive** (step 4) returns them afterwards.
+   - **plain `http://`, with no status code** → Edit the destination and choose HTTPS,
+     or **Allow HTTP (lab only)** under Transport security for a trusted lab SIEM. The
+     orange URL field's info button explains that credentials and events are unencrypted.
+     **Use deployment default (legacy)** still reads `ALLOW_INSECURE_DESTINATION_URL`
+     on each delivering container; an explicit choice avoids differences between workers.
+     Test again after saving. Refused attempts can dead-letter; **Redrive** (step 4)
+     returns them after the fix.
+   - **host is not in `DESTINATION_ALLOWED_HOSTS`** → the deployment administrator must
+     add the exact hostname or IP to that JSON array and recreate every delivering
+     container. No scheme, port, path, or wildcard belongs in an entry. `*.internal`,
+     `localhost`, `127.0.0.1`, and `::1` are built-in exceptions. A list entry permits
+     loopback resolution but never link-local metadata addresses. See
+     [`splunk-setup.md`](splunk-setup.md) §3 for the configuration example.
+   - **`host.docker.internal` fails** → read the reason before changing its name. An HTTP
+     refusal needs Allow HTTP; a connection refusal needs the receiver's listening port
+     and Docker host reachability checked. A blocked resolved address needs DNS checked.
+     `localhost` inside Docker is the app container, not the host SIEM. Link-local
+     addresses remain blocked even for internal names.
    - **401 / 403** → the token or auth header is wrong. Edit the destination, re-enter the
      secret, test again.
    - **400 from HEC** → usually the token's index (step 5) or the URL's path
