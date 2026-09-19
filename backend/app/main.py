@@ -291,9 +291,12 @@ async def outbox_worker_tick() -> None:
 
 
 async def outbox_cleanup() -> None:
-    """Purges outbox events whose deliveries are all terminal and past retention.
-    Without this the table grows without bound now that events are continuous rather
-    than nightly-batched."""
+    """Purge outbox events past age-based retention, including held events with no deliveries.
+
+    A pending delivery protects its event regardless of age; a dead letter protects
+    its event within `dead_letter_retention_days`. Held events otherwise expire on
+    `event_outbox_retention_days`, so a pod without destinations cannot grow forever.
+    """
     for tenant_id in await operational_tenant_ids():
         async with tenant_job(tenant_id) as db:
             try:
