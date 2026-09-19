@@ -228,9 +228,9 @@ async def list_catalog(
     stored = stored_corpus(corpus, entries)
     # One grouped ledger read for the page's builds (#591) — the rule `vuln_read` states: never one per row — and only
     # where a surface draws the number: every vulnerability-narrowed list (the Vulnerabilities page asks with one of the
-    # five filters, never `all`) and one application's own record. The Catalog tab's list is every build the tenant has,
-    # with no vulnerability column at all, and pays nothing while the index named in #591's Risk is still a follow-up. A
-    # skipped read leaves the field unset, which is not the ledger saying *no row*: nothing renders the difference.
+    # five filters, never `all`), and one application's record, which draws it the moment the held sibling line lands and
+    # would dash silently if this gate forgot it. The Catalog tab's list is every build the tenant has with no
+    # vulnerability column, and pays nothing while the index named in #591's Risk is still a follow-up.
     draws_seen_here = filtered or app_hash is not None
     seen_here = await seen_here_days(db, [entry.key_full for entry in entries], as_of=as_of) if draws_seen_here else None
     items = [

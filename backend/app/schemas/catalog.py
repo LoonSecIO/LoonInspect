@@ -123,9 +123,9 @@ class CatalogEntryAssessedOut(CatalogEntryOut):
     # #591: *Seen here* — days since the oldest OPEN finding-ledger row on this exact build (#590), on the read path's
     # clock. §4d's second clock: `daysOldestPublished` is the world's, this is **this pod's first observation**, bounded
     # by the tenant's own history. `null` where the ledger holds no open row — a Mac not swept since it landed, or
-    # nothing detected — so a page dashes. Filled by the requests whose surface draws it: a vulnerability-narrowed list
-    # and one application's record. The unnarrowed list and the lookup leave it unset rather than read the ledger for a
-    # column they do not print, and nothing renders the difference.
+    # nothing detected — so a page dashes. Filled by the requests whose surface draws it: a vulnerability-narrowed list,
+    # and the `appHash` record, whose sibling line is held rather than gone. The unnarrowed list and the lookup leave it
+    # unset rather than read the ledger for a column they do not print, and nothing renders the difference.
     seen_here_days: int | None = None
 
 
