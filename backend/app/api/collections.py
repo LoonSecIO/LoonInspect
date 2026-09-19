@@ -336,6 +336,11 @@ async def _run_collection_task(collection_id: int, actor: Actor, tenant_id: uuid
     what `run_enabled_collections` does. Here there is exactly one, so every path out
     ends at `finish`, or the run row sits `running` and holds the connection's lock until
     the reclaim frees it five minutes later.
+
+    **The failure path reloads the run before it closes it**, and the reload is load-
+    bearing — see the comment on it. Success does not need one only because the session
+    factory is `expire_on_commit=False` (`app.core.database`); `rollback()` expires
+    regardless of that setting, which is what makes the two paths differ.
     """
     token = set_actor(actor)
     tenant_token = set_tenant_id(tenant_id)
@@ -360,8 +365,24 @@ async def _run_collection_task(collection_id: int, actor: Actor, tenant_id: uuid
                     )
                     return
                 except Exception as exc:
+                    # The lock is this run row, and an unhandled failure that left it
+                    # `running` would block the connection until the heartbeat went stale
+                    # — five minutes of silence for something already known to be over,
+                    # with the cause of death nowhere on the row.
+                    #
+                    # The rollback is what makes the reload necessary. It is needed — the
+                    # exception may have left a half-written transaction, and `finish`
+                    # must not commit that — but `Session.rollback()` expires every
+                    # instance in the session, including `run`, and reading an expired
+                    # attribute under asyncio raises `MissingGreenlet` instead of lazily
+                    # refreshing. Handing the expired `run` straight to `finish` therefore
+                    # crashed on its own `Run.id == run.id`, and the UPDATE that releases
+                    # the lock never ran. `db.get` is awaited, so the refresh is legal;
+                    # `job_id` is this frame's own argument and no attribute of anything.
                     await db.rollback()
-                    await finish(db, run, ok=False, error=str(exc))
+                    reloaded = await db.get(Run, job_id)
+                    if reloaded is not None:
+                        await finish(db, reloaded, ok=False, error=str(exc))
                     raise
                 await finish(db, run, **sync_result_kwargs(result))
     finally:

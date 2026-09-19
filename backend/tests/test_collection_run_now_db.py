@@ -126,6 +126,50 @@ async def test_a_free_lock_starts_a_run_and_the_task_closes_it(admin, db, jamf: 
     assert collection.last_run_summary["jobId"] == body["jobId"]
 
 
+async def test_a_run_that_raises_is_closed_failed_and_frees_the_lock(
+    admin, db, collections, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The failure path, which is the one that costs something when it is wrong.
+
+    The handler rolls the session back before it finishes the run — it has to, since the
+    exception may have left a half-written transaction — and a rollback expires every ORM
+    instance in the session. So the run the request handed the task cannot be the object
+    `finish` is given: reading `run.id` off it fires a lazy load outside the greenlet and
+    raises, the UPDATE never runs, and the row sits `running` with the cause of death
+    nowhere on it until the reclaim frees the lock five minutes later.
+
+    Asserted on the row and on the lock, not on the exception: the operator's question is
+    "can I run this again, and does the row say why the last one died?"."""
+    from app.core.runs import LOCK_DEVICE_SWEEP, STATUS_FAILED, active_run
+    from app.models.schema import Run
+
+    connection, sweep_id, _ = collections
+    boom = "jamf exploded mid-sweep"
+
+    async def explode(*args, **kwargs):
+        raise RuntimeError(boom)
+
+    monkeypatch.setattr("app.api.collections.run_one_collection", explode)
+
+    # The task re-raises after closing the run, and a background task's exception comes
+    # back out of the ASGI transport — the 202 was already sent. That is the shape the
+    # connection-level sync has too; what matters below is what it left behind.
+    with pytest.raises(RuntimeError, match=boom):
+        await admin.post(f"/api/mdm/collections/{sweep_id}/run")
+
+    await db.rollback()
+    run = (
+        (await db.execute(select(Run).where(Run.collection_id == sweep_id).order_by(Run.started_at.desc()).limit(1)))
+        .scalars()
+        .first()
+    )
+    assert run is not None, "the request acquired a run before it handed the task the job"
+    assert run.status == STATUS_FAILED, f"the run was left {run.status}: the lock is held until the reclaim"
+    assert run.error == boom, "the row carries the cause; the request log is not where an operator looks"
+    assert run.finished_at is not None
+    assert await active_run(db, connection.id, LOCK_DEVICE_SWEEP) is None, "the lock is free for the next run"
+
+
 async def test_a_held_lock_answers_with_the_holder_and_queues_nothing(admin, db, collections) -> None:
     """No `jamf` fixture here on purpose: a second run would have to reach Jamf, and
     there is nothing for it to reach."""
