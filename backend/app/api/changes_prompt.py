@@ -458,6 +458,7 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     request = CompletionRequest(
+        serial=provider is Provider.apple_fm,
         base_url=base_url,
         model=model,
         prompt=question,

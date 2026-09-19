@@ -45,6 +45,7 @@ from app.api.destinations import router as destinations_router
 from app.api.devices import router as devices_router
 from app.api.evidence import router as evidence_router
 from app.api.feature_flags import router as feature_flags_router
+from app.api.inventory_summaries import router as inventory_summaries_router
 from app.api.jamf_patch import router as jamf_patch_router
 from app.api.outbox import router as outbox_router
 from app.api.posture import router as posture_router
@@ -79,6 +80,7 @@ from app.mdm.factory import keep_sign_in
 from app.mdm.jamf.sign_in import MODE_NO_CACHE, MODE_PERPETUAL, SIGN_INS
 from app.mdm.patch.jamf_catalog import JamfPatchCatalogUnconfigured, sync_catalog
 from app.models.schema import MdmConnection, UserSession
+from app.summaries.service import tick as inventory_summary_tick
 
 # Before anything else in the process emits a line, so migration output and startup
 # failures are formatted the same way as request logs rather than escaping as plain
@@ -468,6 +470,7 @@ async def lifespan(app: FastAPI):
             id="sharing_exchange_tick",
             replace_existing=True,
         )
+        scheduler.add_job(inventory_summary_tick, IntervalTrigger(seconds=5), id="inventory_summary_tick", replace_existing=True)
         scheduler.add_job(
             outbox_worker_tick,
             IntervalTrigger(seconds=30),
@@ -628,6 +631,7 @@ app.include_router(outbox_router)
 app.include_router(system_router)
 app.include_router(settings_router)
 app.include_router(ai_router)
+app.include_router(inventory_summaries_router)
 app.include_router(devices_router)
 app.include_router(applications_router)
 app.include_router(catalog_router)

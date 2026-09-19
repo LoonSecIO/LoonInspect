@@ -68,6 +68,8 @@ class CompletionRequest:
     base_url: str
     model: str
     prompt: str
+    serial: bool = False
+    minimum_interval: float = 0
     api_key: str | None = None
     # OpenAI's ``reasoning_effort``; sent only when set, because a server that does
     # not know the field may refuse the whole request rather than ignore it.
@@ -382,7 +384,35 @@ def _json_or_raise(reply: _Reply) -> Any:
         ) from exc
 
 
+_serial_slots: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+_serial_last: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
+
+async def _serial_complete(wire, req, transport, timeout_seconds):
+    loop = asyncio.get_running_loop()
+    lock = _serial_slots.setdefault(loop, asyncio.Lock())
+    async with lock:
+        await asyncio.sleep(max(0, _serial_last.get(loop, 0) + req.minimum_interval - loop.time()))
+        try:
+            return await _complete_unmetered(wire, req, transport=transport, timeout_seconds=timeout_seconds)
+        finally:
+            _serial_last[loop] = loop.time()
+
+
 async def complete(
+    wire: Wire, req: CompletionRequest, *, transport=None, timeout_seconds=DEFAULT_TIMEOUT_SECONDS
+) -> CompletionResult:
+    """Share one Apple FM lane with interactive calls; timeout includes the meter wait."""
+    try:
+        async with asyncio.timeout(timeout_seconds):
+            if req.serial:
+                return await _serial_complete(wire, req, transport, timeout_seconds)
+            return await _complete_unmetered(wire, req, transport=transport, timeout_seconds=timeout_seconds)
+    except TimeoutError as exc:
+        raise AdapterError("timeout", f"no complete reply within {timeout_seconds:g} s") from exc
+
+
+async def _complete_unmetered(
     wire: Wire,
     req: CompletionRequest,
     *,

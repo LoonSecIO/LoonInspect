@@ -77,6 +77,7 @@ KNOWN_EVENT_TYPES = frozenset(
     {
         "device.inventory",
         "device.inventory.changed",
+        "device.inventory.summary",
         "device.change",
         "run.completed",
         "run.failed",
@@ -237,6 +238,8 @@ def _single_event_sourcetype(payload: Mapping[str, object]) -> str | None:
     event = payload.get("event")
     if event in ASSERTION_EVENT_TYPES:
         return ASSERTION_SOURCETYPE
+    if event == "device.inventory.summary":
+        return "loon:inventory:summary"
     if event == "device.inventory.changed":
         return DELTA_SOURCETYPE
     if event in DEPARTURE_EVENT_TYPES:

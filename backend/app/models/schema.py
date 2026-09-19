@@ -1907,3 +1907,54 @@ class PostureSnapshot(Base):
     full_sweep_run_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("runs.id", ondelete="SET NULL"), nullable=True, index=True
     )
+
+
+class InventorySummarySettings(Base):
+    """Inventory's explicit provider choice, independent of interactive AI (#594)."""
+
+    __tablename__ = "inventory_summary_settings"
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    provider: Mapped[str] = mapped_column(String(32), default="apple_fm")
+    preprompt: Mapped[str] = mapped_column(String(500), default="")
+    enabled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    interval_seconds: Mapped[int] = mapped_column(Integer, default=2)
+
+
+class InventorySummaryState(Base):
+    """Last compared allowed facts per source device; no vulnerability lifecycle claim."""
+
+    __tablename__ = "inventory_summary_states"
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(primary_key=True)
+    device_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    facts: Mapped[dict] = mapped_column(JSONB)
+    source_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class InventorySummaryJob(Base):
+    """A source-correlated summary with fixed expiry and an independent delivery event."""
+
+    __tablename__ = "inventory_summary_jobs"
+    __table_args__ = (
+        Index("ix_summary_pending", "tenant_id", "status", "created_at"),
+        Index("ix_summary_cache", "tenant_id", "cache_key", "status"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    source_id: Mapped[int] = mapped_column(Integer, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    source_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    provider: Mapped[str] = mapped_column(String(32))
+    config_key: Mapped[str] = mapped_column(String(64))
+    cache_key: Mapped[str] = mapped_column(String(64))
+    evidence: Mapped[dict] = mapped_column(JSONB)
+    correlation: Mapped[dict] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    overloads: Mapped[int] = mapped_column(Integer, default=0)

@@ -475,3 +475,14 @@ issue rather than living on as a footnote.
 | --- | --- |
 | The three enrichment strings — `loon:jamf:mac:app:patch`, `:vuln`, `:alert` — are minted with no writer, because an enrichment rides inline on the app sub-event under its own key (§2). `:vuln` is reserved for the lifecycle records of [`vulnerabilities.md`](vulnerabilities.md) §6; `:patch` and `:alert` name shapes nothing produces. `patch{}` and `vuln{}` themselves ship on every app sub-event since #241/#242, and both have since been populated **without stamping anything** — [#249](https://github.com/LoonSecIO/LoonInspect/issues/249) for `vuln{}` (2026-09-03) and [#311](https://github.com/LoonSecIO/LoonInspect/issues/311) for `patch.jamfPatch{}` (2026-09-04): each is an inline enrichment on `loon:jamf:mac:app`, because taking the compound for either would force `loon:jamf:mac:app:patch:vuln` on an app carrying both blocks, and a `props.conf` stanza takes no wildcards. Thirty-two strings are stamped since #179 minted `loon:departure` on 2026-09-16, and neither enrichment moved the registry | post-v0 (`vulnerabilities.md` §10) |
 | `alert` is still minted with no writer. #101 shipped the alerts table and the Needs Attention rows (2026-09-04) with **nothing on the wire** — but it wrote the block's shape down rather than leaving it to be invented under deadline: always present, `{"open": false}` or `{"open": true, "kinds": ["new_app"]}`, graded by the change log's `level`. The shape and the closed kind vocabulary are [`alerts.md`](alerts.md) §8 and §2; emitting them later is additive under clause 1, and clause 2 will freeze them the day they first ship | [#101](https://github.com/LoonSecIO/LoonInspect/issues/101) |
+
+## Inventory summary enrichment (#594, additive)
+
+`device.inventory.summary` is a separate optional family with Splunk sourcetype
+`loon:inventory:summary`. It does not change or delay `device.inventory` or `device.change`.
+The detailed contract, fields, statuses, bounds and subscription behavior are in
+[inventory-summaries.md](inventory-summaries.md). `deviceMeta` is copied without adding keys.
+`summaryID` identifies the enrichment; `sourceEventID` names the source outbox record.
+HEC `time` / body `occurredAt` remain the source event's time. `generatedAt`, `queuedAt`
+and `expiresAt` expose delay; `_indextime` remains arrival time. Model prose is advisory;
+`evidence` is code-derived. Explicit destination subscriptions must opt into the new name.

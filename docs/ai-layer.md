@@ -667,3 +667,10 @@ sentence in the 2026-09-17 announcement (ruled 2026-08-31).
 - **R3 (deferred; the test box persists nothing) — where the config lives.** Settings row + admin UI (recommended, matches "admin-
   configured URL") vs. env only. Env keeps a kill-switch either way.
 - **R4 (deferred) — first surface.** Changes feed (recommended; doctrine's #1) vs. the devices list.
+
+## Inventory summary extension (#594, maintainer requested 2026-09-19)
+
+The earlier exclusion of per-device inference is superseded for the explicit opt-in
+asynchronous summary described in [inventory-summaries.md](inventory-summaries.md).
+The ingestion transaction still never calls a model. Compact code-derived facts feed
+advisory prose; the separate SIEM enrichment preserves code-derived evidence and source time.
