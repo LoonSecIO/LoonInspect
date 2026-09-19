@@ -19,4 +19,5 @@
     stored === "dark" ||
     (stored !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
   document.documentElement.classList.toggle("dark", dark);
+  document.documentElement.dataset.loonTheme = dark ? "dark" : "light";
 })();

@@ -117,6 +117,8 @@ export const de: Translations = {
     opensInNewTab: "(wird in einem neuen Tab geöffnet)"
   },
   auth: {
+    brandWelcome: "Ihre Flotte hat eine Geschichte.",
+    brandDescription: "Machen Sie dort weiter, wo Sie aufgehört haben. Sehen Sie, was sich auf Ihren verwalteten Macs geändert hat.",
     versionLabel: "Version",
     loading: "Wird geladen…",
     loginTitle: "Anmelden",

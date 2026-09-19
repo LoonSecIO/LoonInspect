@@ -141,6 +141,8 @@ export const en = {
     opensInNewTab: "(opens in a new tab)"
   },
   auth: {
+    brandWelcome: "Your fleet has a history.",
+    brandDescription: "Pick up where you left off. See what changed on the Macs you manage.",
     versionLabel: "Version",
     loading: "Loading…",
     loginTitle: "Sign in",

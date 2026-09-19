@@ -1,6 +1,6 @@
 import { LogOut, Moon, Sun } from "lucide-react";
 import { useNavigate } from "react-router";
-import { LoonLogo } from "@/components/icons/LoonLogo";
+import { BrandIdentity } from "@/components/layout/BrandIdentity";
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { SidebarModeSwitcher } from "@/components/layout/SidebarModeSwitcher";
@@ -22,8 +22,8 @@ export function Navbar() {
   }
 
   return (
-    <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
-      <div className="flex h-14 items-center justify-between px-6">
+    <header className="app-navbar sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
+      <div className="app-navbar-inner">
         <div className="flex items-center gap-3">
           <MobileNav />
           {/* Below `md` the sidebar is display: none whatever its mode, so a switcher
@@ -31,13 +31,10 @@ export function Navbar() {
           <div className="hidden md:block">
             <SidebarModeSwitcher />
           </div>
-          <div className="flex items-center gap-2 font-semibold">
-            <LoonLogo className="h-5 w-5 text-foreground" />
-            <span>LoonInspect</span>
-          </div>
+          <BrandIdentity />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           {/* Nothing on a single-tenant pod; a select past one membership (#36). */}
           <TenantSwitcher />
           <LanguageSwitcher />

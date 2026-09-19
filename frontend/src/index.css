@@ -1,118 +1,109 @@
 @import "tailwindcss";
+@import "./fonts.css";
+@import "./brand/tokens.css";
 
-/* Tailwind v4 compiles `dark:` to the OS media query by default, but the theme
-   toggle (src/hooks/useTheme.ts) works by setting the `.dark` class on <html>.
-   Re-point the variant at that class so `dark:` utilities and the CSS-variable
-   tokens below always agree on which theme is active. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-@theme {
-  --color-background: hsl(var(--background));
-  --color-foreground: hsl(var(--foreground));
-
-  --color-card: hsl(var(--card));
-  --color-card-foreground: hsl(var(--card-foreground));
-
-  --color-popover: hsl(var(--popover));
-  --color-popover-foreground: hsl(var(--popover-foreground));
-
-  --color-primary: hsl(var(--primary));
-  --color-primary-foreground: hsl(var(--primary-foreground));
-
-  --color-secondary: hsl(var(--secondary));
-  --color-secondary-foreground: hsl(var(--secondary-foreground));
-
-  --color-muted: hsl(var(--muted));
-  --color-muted-foreground: hsl(var(--muted-foreground));
-
-  --color-accent: hsl(var(--accent));
-  --color-accent-foreground: hsl(var(--accent-foreground));
-
-  --color-destructive: hsl(var(--destructive));
-  --color-destructive-foreground: hsl(var(--destructive-foreground));
-
-  --color-border: hsl(var(--border));
-  --color-input: hsl(var(--input));
-  --color-ring: hsl(var(--ring));
-
-  --radius-lg: var(--radius);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-sm: calc(var(--radius) - 4px);
+/* Adapt the pinned LoonSec semantic tokens to the application's existing utilities. */
+@theme inline {
+  --color-background: var(--loon-surface);
+  --color-foreground: var(--loon-text);
+  --color-card: var(--loon-surface-raised);
+  --color-card-foreground: var(--loon-text);
+  --color-popover: var(--loon-surface-raised);
+  --color-popover-foreground: var(--loon-text);
+  --color-primary: var(--loon-action);
+  --color-primary-foreground: var(--loon-action-text);
+  --color-secondary: var(--app-wash);
+  --color-secondary-foreground: var(--loon-text);
+  --color-muted: var(--app-wash);
+  --color-muted-foreground: var(--loon-text-secondary);
+  --color-accent: var(--app-wash);
+  --color-accent-foreground: var(--loon-text);
+  --color-destructive: var(--loon-danger);
+  --color-destructive-foreground: var(--loon-danger-surface);
+  --color-border: var(--app-rule);
+  --color-input: var(--loon-border);
+  --color-ring: var(--loon-focus);
+  --radius-lg: var(--loon-radius-panel);
+  --radius-md: var(--loon-radius-control);
+  --radius-sm: var(--loon-radius-badge);
+  --font-sans: var(--loon-font-body);
+  --font-mono: var(--loon-font-mono);
 }
 
 :root {
-  --radius: 0.75rem;
-
-  --background: 0 0% 100%;
-  --foreground: 222.2 84% 4.9%;
-
-  --card: 0 0% 100%;
-  --card-foreground: 222.2 84% 4.9%;
-
-  --popover: 0 0% 100%;
-  --popover-foreground: 222.2 84% 4.9%;
-
-  --primary: 221.2 83.2% 53.3%;
-  --primary-foreground: 210 40% 98%;
-
-  --secondary: 210 40% 96.1%;
-  --secondary-foreground: 222.2 47.4% 11.2%;
-
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
-
-  --accent: 210 40% 96.1%;
-  --accent-foreground: 222.2 47.4% 11.2%;
-
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
-
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 221.2 83.2% 53.3%;
+  color-scheme: light;
+  --app-wash: color-mix(in srgb, var(--loon-text) 5%, var(--loon-surface));
+  --app-rule: color-mix(in srgb, var(--loon-text) 18%, var(--loon-surface));
 }
-
-.dark {
-  --background: 222.2 84% 4.9%;
-  --foreground: 210 40% 98%;
-
-  --card: 222.2 84% 4.9%;
-  --card-foreground: 210 40% 98%;
-
-  --popover: 222.2 84% 4.9%;
-  --popover-foreground: 210 40% 98%;
-
-  --primary: 217.2 91.2% 59.8%;
-  --primary-foreground: 222.2 47.4% 11.2%;
-
-  --secondary: 217.2 32.6% 17.5%;
-  --secondary-foreground: 210 40% 98%;
-
-  --muted: 217.2 32.6% 17.5%;
-  --muted-foreground: 215 20.2% 65.1%;
-
-  --accent: 217.2 32.6% 17.5%;
-  --accent-foreground: 210 40% 98%;
-
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 210 40% 98%;
-
-  --border: 217.2 32.6% 17.5%;
-  --input: 217.2 32.6% 17.5%;
-  --ring: 224.3 76.3% 48%;
-}
-
-* {
-  border-color: hsl(var(--border));
-}
-
+.dark { color-scheme: dark; }
+/* Native feature forms also need the essential-control boundary token. */
+@layer base { input, select, textarea { border-color: var(--loon-border); } }
+@layer base { * { border-color: var(--app-rule); } }
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
-  font-family:
-    "Geist Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+  background: var(--loon-surface);
+  color: var(--loon-text);
+  font-family: var(--loon-font-body);
+}
+@layer base {
+  h1, h2, h3 { font-family: var(--loon-font-display); font-stretch: 85%; }
+  h1 { letter-spacing: -.025em; }
+  button, input, select, textarea { accent-color: var(--loon-action); }
+  :focus-visible { outline: 3px solid var(--loon-focus); outline-offset: 3px; }
+}
+
+/* Shared chrome stays quiet; only the current location receives sunlight yellow. */
+.app-navbar { border-top: 3px solid var(--loon-brand-sun); }
+.app-navbar-inner { min-height: 65px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 24px; }
+.app-brand { display: inline-flex; align-items: center; gap: 8px; font-family: var(--loon-font-display); font-size: 23px; font-weight: 850; font-stretch: 80%; letter-spacing: -.025em; white-space: nowrap; }
+.app-brand img { width: 32px; height: 32px; margin: 8px; }
+.app-brand .brand-dark { display: none; }
+.dark .app-brand .brand-light { display: none; }
+.dark .app-brand .brand-dark { display: block; }
+.app-brand-word { color: var(--loon-action); }
+.app-nav-surface {
+  background: var(--loon-navigation);
+  color: var(--loon-navigation-text);
+  --app-rule: color-mix(in srgb, var(--loon-navigation-text) 25%, var(--loon-navigation));
+  --loon-text-secondary: var(--loon-navigation-text);
+  --loon-focus: var(--loon-brand-sun);
+}
+.app-sidebar { flex-shrink: 0; }
+.app-nav-link { color: var(--loon-navigation-text); }
+.app-nav-link:hover { background: color-mix(in srgb, var(--loon-navigation-text) 10%, var(--loon-navigation)); }
+.app-nav-link[aria-current="page"] { background: var(--loon-selected); color: var(--loon-selected-text); }
+.app-nav-group + .app-nav-group { margin-top: 12px; }
+.app-nav-children { margin-top: 4px; border-left: 1px solid var(--app-rule); margin-left: 18px; padding-left: 8px; }
+.app-nav-children .app-nav-link { font-size: 12px; padding-block: 7px; }
+.app-main { padding: 28px 32px 48px; }
+.app-main h1 { font-size: clamp(1.75rem, 2.8vw, 2.5rem); font-weight: 800; line-height: 1.15; }
+.app-main h2 { font-weight: 700; }
+.app-main table { font-variant-numeric: tabular-nums; }
+.app-main thead { background: var(--app-wash); }
+.app-main th { color: var(--loon-text-secondary); font-weight: 600; }
+.app-main tbody tr:hover { background: var(--app-wash); }
+
+/* Artwork belongs at the entrance, never behind operational facts or errors. */
+.login-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 400px); align-items: center; gap: 72px; width: min(1080px, 100%); margin: auto; padding: 48px 32px; }
+.login-welcome h2 { font-size: clamp(2.5rem, 5vw, 4rem); font-weight: 850; line-height: 1.03; letter-spacing: -.025em; }
+.login-welcome p { color: var(--loon-text-secondary); margin-top: 20px; max-width: 38ch; }
+.login-welcome img { width: 100%; margin-top: 28px; border-radius: var(--loon-radius-panel); }
+.login-form-panel { width: 100%; }
+@media(max-width: 767px) {
+  .app-navbar-inner { padding: 8px 12px; gap: 8px; }
+  .app-main { padding: 24px 16px 40px; }
+  .app-brand { font-size: 21px; }
+  .login-layout { display: block; max-width: 440px; padding: 32px 16px; }
+  .login-welcome { display: none; }
+}
+@media(pointer: coarse) {
+  .app-navbar button, .app-nav-surface button, .app-nav-link { min-height: 44px; }
+  .app-navbar button { min-width: 44px; }
+}
+@media(prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0s !important; animation-duration: 0s !important; }
 }
