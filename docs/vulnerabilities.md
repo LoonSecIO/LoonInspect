@@ -767,14 +767,13 @@ and to LoonVD behind it — and not a LoonInspect change.
 
 **Built: the store, ahead of the events** ([#590](https://github.com/LoonSecIO/LoonInspect/issues/590),
 2026-09-19, on [#589](https://github.com/LoonSecIO/LoonInspect/issues/589)'s rulings).
-`device_findings` holds one row per (tenant, device, carrier title, finding id), opened when
-a Mac's stored answer first carries the id and closed with the reason it stopped —
-`build_changed`, `app_removed`, `corpus_withdrawn` — so *since when* and *last detected* have
-a home. The carrier is the **title**, so a bump still carrying the id keeps the row and its
-clock; a row opened from a truncated list is `capped` and never closes by absence from one;
-`corpus_withdrawn` reads *no longer in the corpus*, never *fixed*, which is the tombstone rule
-above. This ruling's per-device grain and change-only discipline, at the capped grain
-buildable today; the read path, the page and three `vuln.*` posture keys are
+`device_findings` holds one row per (tenant, device, carrier title, finding id), opened when a
+Mac's stored answer first carries the id and closed with the reason it stopped —
+`build_changed`, `app_removed`, `corpus_withdrawn` — so *since when* and *last detected* have a
+home. The carrier is the **title**, so a bump still carrying the id keeps the row and its clock;
+a row opened from a truncated list is `capped` and never closes by absence from one;
+`corpus_withdrawn` reads *no longer in the corpus*, never *fixed*, the tombstone rule above. The
+read path, the page and three `vuln.*` posture keys are
 [#591](https://github.com/LoonSecIO/LoonInspect/issues/591).
 
 `fixed_in` stays **off the wire** (ruled 2026-08-25). Fix-version data lives in the Jamf
