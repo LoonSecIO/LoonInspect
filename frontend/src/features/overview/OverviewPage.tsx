@@ -1,3 +1,4 @@
+import { InventorySummaryMetrics } from "@/features/ai/InventorySummaries";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { useAuthStore, useHasPermission } from "@/features/auth/store";
@@ -304,7 +305,12 @@ export function OverviewPage() {
     // The stepper only ever wanted the boolean; the rows are held for the strip, and
     // `null` — no permission to read them — stays `null` rather than collapsing to false.
     const destinationAdded = destinations === null ? null : destinations.length > 0;
-    return <SetupStepper connected={connected} synced={synced} destinationAdded={destinationAdded} />;
+    return (
+      <div className="space-y-6">
+        <SetupStepper connected={connected} synced={synced} destinationAdded={destinationAdded} />
+        <InventorySummaryMetrics />
+      </div>
+    );
   }
 
   return (
@@ -319,6 +325,7 @@ export function OverviewPage() {
       {connectionStatuses !== null || stripFailed ? (
         <StatusStrip statuses={connectionStatuses ?? []} destinations={destinations} failed={stripFailed} />
       ) : null}
+      <InventorySummaryMetrics />
       <BaselineLine run={settledBaseline} />
       {/* The changes feed (#107) — the centerpiece. It is given the baseline so it can
           tell "nothing to compare against yet" from "measured, and quiet", which are

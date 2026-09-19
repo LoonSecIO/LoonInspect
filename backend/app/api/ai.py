@@ -323,6 +323,7 @@ async def test_endpoint(payload: AITestIn, db: AsyncSession = Depends(get_db)) -
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     request = CompletionRequest(
+        serial=payload.provider is Provider.apple_fm,
         base_url=base_url,
         model=payload.model,
         prompt=payload.prompt,

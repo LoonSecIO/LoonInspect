@@ -52,6 +52,8 @@ PRODUCER = "loon"
 # docs/splunk-event-shaping.md — augmentations are namespaced, not flattened into Jamf's
 # native fields.
 ASSERTION_SOURCETYPE = f"{PRODUCER}:run"
+INVENTORY_SUMMARY_EVENT_TYPE = "device.inventory.summary"
+INVENTORY_SUMMARY_SOURCETYPE = f"{PRODUCER}:inventory:summary"
 
 # The two event types that string carries — stamped since #242 (2026-09-03), in the same
 # change as the section tree (#81's close-out: "`loon:run` on the run family in the same
