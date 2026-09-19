@@ -12,8 +12,9 @@ app.core.middleware.
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate
 from pathlib import Path
@@ -45,6 +46,7 @@ from app.api.destinations import router as destinations_router
 from app.api.devices import router as devices_router
 from app.api.evidence import router as evidence_router
 from app.api.feature_flags import router as feature_flags_router
+from app.api.inventory_summaries import router as inventory_summaries_router
 from app.api.jamf_patch import router as jamf_patch_router
 from app.api.outbox import router as outbox_router
 from app.api.posture import router as posture_router
@@ -79,6 +81,7 @@ from app.mdm.factory import keep_sign_in
 from app.mdm.jamf.sign_in import MODE_NO_CACHE, MODE_PERPETUAL, SIGN_INS
 from app.mdm.patch.jamf_catalog import JamfPatchCatalogUnconfigured, sync_catalog
 from app.models.schema import MdmConnection, UserSession
+from app.summaries.service import run_worker as inventory_summary_worker
 
 # Before anything else in the process emits a line, so migration output and startup
 # failures are formatted the same way as request logs rather than escaping as plain
@@ -434,6 +437,7 @@ async def lifespan(app: FastAPI):
     # constantly rather than only at startup, and which cannot mistake a live run on
     # another process for a dead one.
 
+    summary_task = None
     if settings.scheduler_enabled:
         scheduler.add_job(
             collections_tick,
@@ -490,6 +494,7 @@ async def lifespan(app: FastAPI):
             replace_existing=True,
         )
         scheduler.start()
+        summary_task = asyncio.create_task(inventory_summary_worker(), name="inventory_summaries")
         logger.info(
             "scheduler started",
             extra={
@@ -499,6 +504,11 @@ async def lifespan(app: FastAPI):
         )
 
     yield
+
+    if summary_task is not None:
+        summary_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await summary_task
 
     if scheduler.running:
         scheduler.shutdown()
@@ -628,6 +638,7 @@ app.include_router(outbox_router)
 app.include_router(system_router)
 app.include_router(settings_router)
 app.include_router(ai_router)
+app.include_router(inventory_summaries_router)
 app.include_router(devices_router)
 app.include_router(applications_router)
 app.include_router(catalog_router)

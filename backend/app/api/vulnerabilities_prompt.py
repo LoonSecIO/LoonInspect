@@ -171,6 +171,7 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> VulnProm
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     request = CompletionRequest(
+        serial=provider is Provider.apple_fm,
         base_url=base_url, model=model, prompt=question, system=SYSTEM_INSTRUCTION, api_key=api_key,
         # Never for Apple, whatever the row holds: `fm serve` answers 400 to any effort on its
         # system model, and a row saved before Save refused one would fail every question.

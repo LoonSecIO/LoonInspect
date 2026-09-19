@@ -1,3 +1,4 @@
+import { InventorySummarySettings } from "@/features/ai/InventorySummaries";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
@@ -451,6 +452,8 @@ export function AISettingsPage() {
           </div>
         </div>
       </div>
+
+      <InventorySummarySettings />
 
       {detection && (
         <div className="rounded-lg border bg-card p-4">

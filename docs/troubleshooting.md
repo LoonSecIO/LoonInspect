@@ -1856,3 +1856,15 @@ the import writes per organization, or the `NOT re-judged` line naming why it di
 no age at all, while *Most exposed* lists builds with **no chip pressed and the search box empty**.
 Report the corpus date, one app name and version from *Most exposed*, and what that build's row
 says under **Oldest published**.
+
+## Inventory AI summaries
+
+Inventory delivery does not wait for its summary. For absent or late summaries, provider
+selection, one-hour expiry, overload/capacity logs, and Splunk time correlation, follow
+[inventory summary troubleshooting](inventory-summaries.md#metrics-and-diagnostics).
+`No updates` means a comparable observation changed none of the declared evidence scope;
+it never substitutes for an expired job or incomplete observation.
+
+Only meaningful completed/cached changes produce a SIEM summary event. No-update, baseline,
+incomplete and drop outcomes are local counters/state. Open Overview’s diagnostic reasons for
+the next check; unexpected-error container logs carry safe exception types and stack locations.
