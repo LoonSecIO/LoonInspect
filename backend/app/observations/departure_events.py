@@ -1,7 +1,7 @@
 """Departure on the wire (#179, ruled 2026-09-16): `subject.departure`, `subject.returned`.
 
 `app.observations.departure` derives the fact and writes the `subject_departures` row; this
-is the other half of that seam. Called from `mdm.service._reconcile_departures` BEFORE its
+is the other half of that seam. Called from `mdm.census._reconcile_departures` BEFORE its
 commit, which is why the census hands over the ROWS and not the counts — the outbox row and
 the departure row are one transaction or neither happens.
 
