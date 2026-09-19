@@ -1031,6 +1031,7 @@ async def purge_delivered_events(db: AsyncSession, retention_days: int, dead_let
     nobody fixes would otherwise pin its events for ever. `None` means the ordinary
     window, which is what a caller that has not thought about dead letters gets.
 
+    The function name predates the held-events fix: it purges held events too.
     Age, not fan-out state, is the candidate test. An event held by `fan_out_pending`
     because no destination was enabled yet has no delivery rows at all, so the
     still-pending guard below cannot see it and a `fanned_out` filter here would keep it

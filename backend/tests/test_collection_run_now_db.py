@@ -232,3 +232,50 @@ async def test_a_webhook_collection_is_still_refused(admin, db, collections) -> 
     assert refused.status_code == 409, refused.text
     assert "event-driven" in refused.json()["detail"]
     assert await _runs_on(db, connection.id) == before
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "worker", "lock_class"),
+    [
+        ("sync", "run_enabled_collections", "device_sweep"),
+        ("re-emit", "re_emit_connection", "re_emit"),
+    ],
+)
+async def test_connection_failure_rolls_back_work_closes_run_and_allows_retry(
+    admin, db, collections, monkeypatch: pytest.MonkeyPatch, endpoint: str, worker: str, lock_class: str
+) -> None:
+    """Both connection workers must release their run after rollback (#588)."""
+    from sqlalchemy import update
+
+    from app.core.runs import STATUS_FAILED, active_run
+    from app.models.schema import MdmConnection, Run
+
+    connection, _, _ = collections
+    connection_id, original_name = connection.id, connection.name
+    boom = f"synthetic {endpoint} failure"
+
+    async def explode(work_db, work_connection, **kwargs):
+        # A flushed write proves finish does not accidentally commit partial work.
+        await work_db.execute(update(MdmConnection).where(MdmConnection.id == work_connection.id).values(name="uncommitted work"))
+        raise RuntimeError(boom)
+
+    monkeypatch.setattr(f"app.api.connections.{worker}", explode)
+    seen = set()
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match=boom):
+            await admin.post(f"/api/mdm/connections/{connection_id}/{endpoint}")
+        await db.rollback()
+        runs = (
+            (await db.execute(select(Run).where(Run.mdm_connection_id == connection_id, Run.lock_class == lock_class)))
+            .scalars()
+            .all()
+        )
+        new_runs = [run for run in runs if run.id not in seen]
+        assert len(new_runs) == 1, "retry must acquire a new run rather than join the failed one"
+        run = new_runs[0]
+        seen.add(run.id)
+        assert run.status == STATUS_FAILED
+        assert run.error == boom
+        assert run.finished_at is not None
+        assert await active_run(db, connection_id, lock_class) is None
+        assert await db.scalar(select(MdmConnection.name).where(MdmConnection.id == connection_id)) == original_name
