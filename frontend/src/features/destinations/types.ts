@@ -6,6 +6,7 @@ export interface Destination {
   name: string;
   type: DestinationType;
   url: string;
+  allowInsecureHttp: boolean | null;
   authType: AuthType;
   authHeaderName: string | null;
   /** Elastic only: the index (or data stream) the bulk POST targets. Null means the
@@ -42,6 +43,7 @@ export interface CreateDestinationInput {
   name: string;
   type: DestinationType;
   url: string;
+  allowInsecureHttp: boolean | null;
   authType: AuthType;
   authHeaderName?: string | null;
   authSecret?: string | null;
@@ -52,6 +54,7 @@ export interface CreateDestinationInput {
 export interface UpdateDestinationInput {
   name?: string;
   url?: string;
+  allowInsecureHttp?: boolean | null;
   authType?: AuthType;
   authHeaderName?: string | null;
   authSecret?: string | null;

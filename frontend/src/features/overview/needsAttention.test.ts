@@ -51,6 +51,7 @@ const destination = (over: Partial<Destination> = {}): Destination => ({
   name: "Splunk",
   type: "splunk_hec",
   url: "https://splunk.example:8088/services/collector",
+  allowInsecureHttp: null,
   authType: "splunk_hec",
   authHeaderName: null,
   elasticIndex: null,

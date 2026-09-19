@@ -71,17 +71,38 @@ does not. `/services/collector/event` is the same endpoint spelled out, and also
 **Splunk Cloud** terminates HEC on its own hostname and on 443, not 8088. Copy the URL
 from your stack.
 
-**It has to be `https`.** Every delivery carries the HEC token, so a plain-`http` URL is
-refused when the destination is saved. A lab Splunk with HEC's TLS off is a real
-configuration, and it is a choice rather than a surprise: set
-`ALLOW_INSECURE_DESTINATION_URL=true` and the `http` URL saves. Keep it set on every
-container that delivers, not only the one the URL was typed into: the setting is read
-again at each delivery, and without it the `http` destination stops delivering with the
-reason on its row ([`troubleshooting.md`](troubleshooting.md) §3). What no setting allows is
-a loopback or link-local address — `127.0.0.1`, `localhost`, `169.254.169.254` — or a
-hostname that resolves to one; those are refused at save and again at every delivery,
-with the reason on the destination row. Inside the container `localhost` is the
-container anyway, which is why the section above says `host.docker.internal`.
+**Prefer `https`.** Every delivery carries the HEC token. In **Settings → Destinations**,
+choose **Require HTTPS**, or **Allow HTTP (lab only)** for a trusted lab SIEM without TLS.
+HTTP sends both credentials and events unencrypted; its URL field is tinted orange and
+its info button explains the risk. The saved choice applies to Test and automatic delivery
+on every worker. New destinations in the UI default to Require HTTPS. Existing destinations
+and API callers that omit `allowInsecureHttp` retain **Use deployment default (legacy)**:
+`ALLOW_INSECURE_DESTINATION_URL` on each delivering container. An explicit true or false
+wins over that flag. Changing an HTTP destination to Require HTTPS also requires changing
+its URL to `https://` in the same save.
+
+**Host policy is separate from transport.** `*.internal` (including `host.docker.internal`),
+`localhost`, `127.0.0.1`, and IPv6 loopback `::1` are built-in host exceptions. They still
+need Allow HTTP to use unencrypted delivery. IPv6 URLs use brackets: `http://[::1]:8088/services/collector`.
+Inside Docker, localhost and loopback mean the app container; `host.docker.internal` reaches
+the Docker host. A private `.internal` name does not make its traffic encrypted.
+
+To restrict other hosts, set a JSON array in the deployment environment, for example:
+
+```dotenv
+DESTINATION_ALLOWED_HOSTS=["splunk.example.com","10.0.5.20"]
+```
+
+Recreate every app/worker container after changing it. Entries are exact hostnames or IPs,
+case-insensitive, without schemes, ports, paths, or wildcards; an entry does not include
+its subdomains. The four built-in exceptions above remain available even with a list set.
+An empty list preserves the existing public/private host policy. Explicitly listed hosts
+may resolve to loopback. Link-local (including cloud metadata), unspecified, multicast, and
+reserved addresses stay refused, even for listed or internal names. The list and resolved
+addresses are checked at save and again on every Test/delivery. Redirects are not followed.
+This application check does not replace a network firewall: DNS is resolved again by the
+HTTP client, so it is not protection against DNS rebinding.
+
 
 ### When LoonInspect runs in Docker and Splunk does not
 
