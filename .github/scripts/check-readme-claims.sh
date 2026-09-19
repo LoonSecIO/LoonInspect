@@ -196,6 +196,7 @@ RETENTION_CLOCKS=(
   'audit-log|audit log'
   'share-log|share log'
   'sessions|\bsessions\b'
+  'summary-jobs|summary jobs'
 )
 
 # file:Model of every statement-level delete that is not a clock.

@@ -327,3 +327,23 @@ async def test_openai_compatible_uses_the_same_compact_evidence(summary_db):
     assert job.status == "completed" and len(calls) == 1
     assert len(calls[0].content) < 4000
     assert "deviceMeta" not in calls[0].content.decode()
+
+
+async def test_receipt_retention_runs_while_summaries_are_disabled(summary_db):
+    from app.models.schema import EventOutbox, InventorySummarySettings
+    from app.models.schema import InventorySummaryJob as Job
+    from app.summaries.service import collect, now
+
+    db, _ = summary_db
+    source = await emit(db, snapshot())
+    await collect(db)
+    job = await db.scalar(select(Job).where(Job.source_id == source))
+    job.created_at = now() - timedelta(days=9)
+    original = await db.get(EventOutbox, source)
+    original.created_at = job.created_at
+    settings = await db.scalar(select(InventorySummarySettings))
+    settings.enabled = False
+    await db.commit()
+    await collect(db)
+    assert await db.scalar(select(Job.id).where(Job.source_id == source)) is None
+    assert await db.get(EventOutbox, source), "summary retention must not delete source inventory"

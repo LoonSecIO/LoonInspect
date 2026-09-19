@@ -79,6 +79,8 @@ Statuses include completed, cached, no_updates, baseline, incomplete, dropped an
 webhook clock. `queuedAt`, `generatedAt` and `expiresAt` show the actual delay. Splunk `_indextime`
 remains actual index arrival time. Late summaries do not rewrite the original event: searches must
 allow late arrival or correlate by `deviceMeta.eventID` / `sourceEventID`, rather than assuming order.
+Deduplicate this family by `summaryID`; the copied `deviceMeta.eventID` identifies the source
+observation and is a correlation key, not a unique summary ID.
 Destinations with default subscriptions receive the new family; explicit subscription lists must
 add `device.inventory.summary`. Source event delivery and summary delivery are independent.
 

@@ -80,12 +80,16 @@ async def finish(db, job, status, summary=None, reason=None):
 
 async def collect(db):
     settings = await db.scalar(select(Settings).with_for_update(skip_locked=True))
-    if not settings or not settings.enabled or not await ai_features_enabled(db):
+    if not settings:
+        return
+    # Retain receipts beyond the intake lookback, including while inference is disabled.
+    # retention-clock: summary-jobs — README.md and KNOWN_ISSUES.md name this clock.
+    await db.execute(delete(Job).where(Job.created_at < now() - timedelta(days=8), Job.status.in_(TERMINAL)))
+    if not settings.enabled or not await ai_features_enabled(db):
+        await db.commit()
         return
     config = await saved_config(db, Provider(settings.provider))
     key = config_key(settings, config)
-    # Retain receipts at least as long as the intake lookback to avoid reprocessing.
-    await db.execute(delete(Job).where(Job.created_at < now() - timedelta(days=8), Job.status.in_(TERMINAL)))
     events = (
         await db.scalars(
             select(EventOutbox)
