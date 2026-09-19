@@ -10,7 +10,7 @@ import { closesCell, describeUpdate } from "@/features/vulnerabilities/appUpdate
 import { leverParams, type VulnPromptFilters } from "@/features/vulnerabilities/prompt";
 import { SearchBox } from "@/features/vulnerabilities/SearchBox";
 import type { AppChip, NumbersRead, PostureRow } from "@/features/vulnerabilities/pageBands";
-import { VULN_KEYS, agedList, emptySays, exploreByApp, listQuery, payoffList, planNumbers, readNumbers } from "@/features/vulnerabilities/pageBands";
+import { NUMBER_KEYS, VULN_KEYS, agedList, emptySays, exploreByApp, listQuery, payoffList, planNumbers, readNumbers } from "@/features/vulnerabilities/pageBands";
 import { pageView, type Load } from "@/features/vulnerabilities/pageView";
 import { useLocale } from "@/i18n/LocaleContext";
 import type { Translations } from "@/i18n/en";
@@ -59,6 +59,11 @@ const chip = (on: boolean) =>
 const recordHref = (entry: CatalogEntry) => `/devices/applications/${encodeURIComponent(entry.appHash)}`;
 const exposedDays = (entry: CatalogEntry, t: Translations) =>
   entry.vuln.assessment === "covered" && entry.vuln.daysOldestPublished.total !== null ? t.vulnerabilities.days(entry.vuln.daysOldestPublished.total) : "—";
+/** *Seen here* (#591) — the other clock: days since this pod's oldest OPEN ledger row on the build, counted on the
+ *  server; a dash where there is none, which is not 0 and is § 18's own step. NOT narrowed to `covered` as `exposedDays`
+ *  is — the server answers from the ledger, not from the block on the row. */
+const seenHere = (entry: CatalogEntry, t: Translations) =>
+  entry.seenHereDays == null ? "—" : t.vulnerabilities.days(entry.seenHereDays);
 
 /** The four bands as small counts, reachable only inside the `covered` narrowing — there is
  *  no branch here in which an unassessed build contributes a zero (§4a). */
@@ -94,6 +99,7 @@ function ExposedRow({ entry, t }: { entry: CatalogEntry; t: Translations }) {
       <td className="px-4 py-2 tabular-nums">
         <Link to={`/devices?versionHash=${entry.versionHash}`} className="hover:underline">{entry.deviceCount}</Link></td>
       <td className="px-4 py-2 tabular-nums">{exposedDays(entry, t)}</td>
+      <td className="px-4 py-2 tabular-nums">{seenHere(entry, t)}</td>
       <td className="px-4 py-2">
         <LatestCell answer={entry} t={t} />
         <PatchAnswerCell answer={entry} t={t} /></td>
@@ -124,6 +130,7 @@ function PatchableRow({ entry, t }: { entry: CatalogEntry; t: Translations }) {
         <Subject title={line?.subject ?? null} hint={t.catalog.latestSubjectHint} t={t} /></td>
       <td className="px-4 py-2 tabular-nums" title={closes?.hint ?? undefined}>{closes ? closes.text : "—"}</td>
       <td className="px-4 py-2 tabular-nums">{exposedDays(entry, t)}</td>
+      <td className="px-4 py-2 tabular-nums">{seenHere(entry, t)}</td>
     </tr>
   );
 }
@@ -219,7 +226,7 @@ export function VulnerabilitiesPage() {
   useEffect(() => {
     if (!plansNumbers) return;
     let cancelled = false;
-    apiRequest<{ items: PostureRow[] }>(`/posture?keys=${VULN_KEYS.join(",")}`)
+    apiRequest<{ items: PostureRow[] }>(`/posture?keys=${NUMBER_KEYS.join(",")}`)
       .then((tape) => !cancelled && setNumbers(readNumbers(tape.items)))
       .catch(() => !cancelled && setNumbersFailed(true));
     return () => { cancelled = true; };
@@ -241,8 +248,8 @@ export function VulnerabilitiesPage() {
   // The same three answers told apart for the ranked band, and the empty one is a statement:
   // nothing here has an update that closes more than it opens (§18 says what to check).
   const patchableSays = load === "loading" ? copy.loading : patchableFailed ? copy.easilyPatchableFailed : patchable === null ? copy.loading : patchableTotal === 0 ? copy.easilyPatchableNone : null;
-  // Parallel to `VULN_KEYS`, a fixed tuple in the order the foot prints.
-  const labels = [copy.numAppsAffected, copy.numAppsKev, copy.numAppsUnknown, copy.numDevicesAffected];
+  // Parallel to `NUMBER_KEYS`, a fixed tuple in the order the foot prints.
+  const labels = [copy.numAppsAffected, copy.numAppsKev, copy.numAppsUnknown, copy.numDevicesAffected, copy.numFindingsOpen, copy.numFindingsNew, copy.numFindingsResolved];
 
   // The lever's own two moves, stable across renders because `SearchBox` announces its mode
   // from an effect. An answer is one whole URL state, as a Popular filter chip is: it replaces
@@ -319,11 +326,11 @@ export function VulnerabilitiesPage() {
               <thead className="border-b bg-muted/30 text-left text-muted-foreground">
                 <tr>
                   {/* The ranked list keeps the two columns that make it an answer — what to
-                      update to, and what that closes — expanded exactly as in its section. Six
-                      either way, so the sentences below still span the table. */}
+                      update to, and what that closes — expanded exactly as in its section. Seven
+                      either way since #591, so the sentences below still span the table. */}
                   {(byPayoff
-                    ? [copy.colBuild, copy.colFindings, copy.colMacs, copy.colUpdateTo, copy.colCloses, copy.colOldest]
-                    : [copy.colBuild, copy.colFindings, copy.colKev, copy.colMacs, copy.colOldest, copy.colFix]
+                    ? [copy.colBuild, copy.colFindings, copy.colMacs, copy.colUpdateTo, copy.colCloses, copy.colOldest, copy.colSeenHere]
+                    : [copy.colBuild, copy.colFindings, copy.colKev, copy.colMacs, copy.colOldest, copy.colSeenHere, copy.colFix]
                   ).map((label) => (
                     <th key={label} className="px-4 py-2 font-medium">
                       {label}
@@ -334,14 +341,14 @@ export function VulnerabilitiesPage() {
               <tbody>
                 {status !== null && (
                   <tr>
-                    <td className={`px-4 py-4 ${statusClass}`} colSpan={6}>
+                    <td className={`px-4 py-4 ${statusClass}`} colSpan={7}>
                       {status}
                     </td>
                   </tr>
                 )}
                 {shown.rows && rows.length === 0 && (
                   <tr>
-                    <td className="px-4 py-4 text-muted-foreground" colSpan={6}>
+                    <td className="px-4 py-4 text-muted-foreground" colSpan={7}>
                       {/* Every narrowing in the address decides this sentence, not `vuln` and
                           `band` alone: the list that speaks for the fleet is the unnarrowed one.
                           `search` and never `term` — `listQuery` says why, and `AppliedSearch`
@@ -390,11 +397,11 @@ export function VulnerabilitiesPage() {
               <div className="overflow-x-auto rounded-lg border bg-card">
                 <table className="w-full text-sm">
                   <thead className="border-b bg-muted/30 text-left text-muted-foreground"><tr>
-                    {[copy.colBuild, copy.colFindings, copy.colMacs, copy.colUpdateTo, copy.colCloses, copy.colOldest].map((label) => (
+                    {[copy.colBuild, copy.colFindings, copy.colMacs, copy.colUpdateTo, copy.colCloses, copy.colOldest, copy.colSeenHere].map((label) => (
                       <th key={label} className="px-4 py-2 font-medium">{label}</th>))}
                   </tr></thead>
                   <tbody>
-                    {patchableSays !== null && <tr><td className="px-4 py-4 text-muted-foreground" colSpan={6}>{patchableSays}</td></tr>}
+                    {patchableSays !== null && <tr><td className="px-4 py-4 text-muted-foreground" colSpan={7}>{patchableSays}</td></tr>}
                     {(patchableSays === null ? (patchable?.items ?? []) : []).map((entry) => (
                       <PatchableRow key={entry.id} entry={entry} t={t} />))}
                   </tbody>
@@ -422,10 +429,12 @@ export function VulnerabilitiesPage() {
               {numbersFailed && <p className="text-sm text-muted-foreground">{copy.numbersFailed}</p>}
               {numbers === null && !numbersFailed && <p className="text-sm text-muted-foreground">{copy.loading}</p>}
               {numbers?.capturedAt && <p className="text-sm text-muted-foreground">{copy.numbersAsOf(new Date(numbers.capturedAt).toLocaleDateString())}{numbers.runId ? ` · ${copy.numbersRun(numbers.runId)}` : ""}</p>}
+              {/* Four columns, seven keys: the ledger's three are absent for their own reason, so they open a row. */}
               {numbers && (
                 <dl className="grid gap-4 sm:grid-cols-4">
-                  {VULN_KEYS.map((key, index) => (
-                    <div key={key}><dt className="text-xs text-muted-foreground">{labels[index]}</dt>
+                  {NUMBER_KEYS.map((key, index) => (
+                    <div key={key} className={index === VULN_KEYS.length ? "sm:col-start-1" : undefined}>
+                      <dt className="text-xs text-muted-foreground">{labels[index]}</dt>
                       {/* A key with no row prints a dash, never a zero (§4a, §7). */}
                       <dd className="text-2xl font-semibold tabular-nums">{numbers.present.find((row) => row.key === key)?.value.toLocaleString() ?? "—"}</dd>
                     </div>))}

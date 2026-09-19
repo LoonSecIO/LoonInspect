@@ -50,13 +50,12 @@ def _key67() -> str:
 def _unassessed_keys() -> set[str]:
     """Every active key a capture writes for a tenant the corpus has never judged.
 
-    Which is every key but the four `vuln.*` ones (#250). Absence there is the ruled
-    statement — "nothing has been assessed here" — and it is a different statement from
-    four zeros, so a capture on an unassessed fleet is 29 rows and not 33.
+    Which is every key but the four `vuln.*` ones (#250) and #591's three finding keys. Absence in both families is a
+    ruled statement — "nothing has been assessed here", "nothing has been recorded here" — and neither is a zero.
     """
-    from app.core.posture import ACTIVE_KEYS, VULN_KEYS
+    from app.core.posture import ACTIVE_KEYS, FINDING_KEYS, VULN_KEYS
 
-    return set(ACTIVE_KEYS) - set(VULN_KEYS)
+    return set(ACTIVE_KEYS) - set(VULN_KEYS) - set(FINDING_KEYS)
 
 
 @pytest_asyncio.fixture(loop_scope="session")
@@ -910,7 +909,7 @@ async def test_a_never_assessed_tenant_writes_no_vuln_rows(db, fleet) -> None:
     does. The first capture here is short four keys forever — nothing backfills it — and
     the capture after the gate opens carries them.
     """
-    from app.core.posture import VULN_KEYS, record_full_sweep_snapshot
+    from app.core.posture import FINDING_KEYS, VULN_KEYS, record_full_sweep_snapshot
 
     await _seed_fleet(db, fleet)
     unassessed_run = await _run(db, fleet)
@@ -933,6 +932,9 @@ async def test_a_never_assessed_tenant_writes_no_vuln_rows(db, fleet) -> None:
 
     assert set(VULN_KEYS) <= set(assessed), "the keys activate the night the join first judges this tenant"
     assert assessed["vuln.apps_affected"] == 0  # assessed and clean IS a zero, and is written as one
+    # #591's three do NOT activate with them: judged is not the same fact as recorded, and this fleet's Macs have not
+    # been swept since the finding ledger landed, so it holds no row.
+    assert not set(FINDING_KEYS) & set(assessed), "a judged tenant with no ledger row records nothing about findings"
     # And the earlier capture stays as it was: history not recorded is never backfilled.
     assert not set(VULN_KEYS) & set(await _capture(db, unassessed_run.id))
 
@@ -1277,3 +1279,30 @@ async def test_a_name_the_tape_cannot_answer_is_refused_by_name(auditor, tape) -
     registry = (await auditor.get("/api/posture/registry")).json()
     assert [key["key"] for key in registry["keys"]] == [*ACTIVE_KEYS, *RESERVED_KEYS]
     assert all(key["definition"] for key in registry["keys"]) and "never zero" in registry["absence"]
+
+
+async def test_the_finding_keys_count_the_ledger_and_wait_for_it(db, fleet) -> None:
+    """#591. The three activate on the ledger holding a row — one gate further in than the four — and count FINDINGS:
+    one Mac carrying one id through two carriers is two rows (#589 ruling 1). The windows are `first_observed_at` and
+    `resolved_at` against the capture's trailing 24h, so a row opened last week and closed tonight lands in
+    `resolved_24h` alone."""
+    from app.core.posture import FINDING_KEYS, record_full_sweep_snapshot
+    from app.models.schema import DeviceFinding
+
+    await _seed_fleet(db, fleet)
+    signature = await _epoch(db, fleet)
+    macs = await _macs(db, fleet)
+    await _build(db, fleet, "ledger", answer="covered", counts=_counts(1, 0), signature=signature, devices=[macs[0]])
+    week, fresh = _now() - timedelta(days=7), _now() - timedelta(hours=2)
+    keys = {"device_id": macs[0].id, "finding_id": "CVE-2026-9591", "first_seen_basis": "observed"}
+    shut = {"resolved_at": fresh, "resolved_reason": "build_changed", "last_observed_at": fresh}
+    rows = [("v1:safari", week, {}), ("v1:macos", fresh, {}), ("v1:gone", week, shut)]
+    db.add_all(DeviceFinding(carrier_key=c, first_observed_at=at, build_key_full=_key67(), **keys, **r) for c, at, r in rows)
+    await db.commit()
+    run = await _run(db, fleet)
+    await record_full_sweep_snapshot(db, run_id=run.id)
+    captured = await _capture(db, run.id)
+
+    assert set(FINDING_KEYS) <= set(captured), "a row in the ledger opens the gate"
+    # One id, two carriers, and the closed row counts in neither of the open figures.
+    assert [captured[key] for key in FINDING_KEYS] == [2, 1, 1]

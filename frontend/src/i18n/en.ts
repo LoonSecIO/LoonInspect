@@ -1172,6 +1172,7 @@ export const en = {
     colKev: "KEV",
     colMacs: "Macs",
     colOldest: "Oldest published",
+    colSeenHere: "Seen here",  // #591: two clocks — what the world has known, what this pod has seen.
     colFix: "Fix",
     bandCritical: "Crit",
     bandHigh: "High",
@@ -1222,8 +1223,12 @@ export const en = {
     numAppsKev: "Builds on CISA KEV",
     numAppsUnknown: "Builds outside the corpus",
     numDevicesAffected: "Macs carrying one",
-    numbersAbsence: "A key with no row that night did not apply and is never zero: these four are written only once a corpus has judged this organization, so a dash says the capture had nothing to say — not that the answer was none.",
-    numbersFailed: "The nightly capture could not be read, so these four numbers are not shown.",
+    // #591, off the finding ledger. Findings and not Macs: one Mac carrying one id through two apps is two findings.
+    numFindingsOpen: "Findings open",
+    numFindingsNew: "Opened in 24h",
+    numFindingsResolved: "Closed in 24h",
+    numbersAbsence: "A key with no row that night did not apply and is never zero: the four build figures are written only once a corpus has judged this organization, and the three finding figures only once a Mac has been swept since the finding ledger landed — so a dash says the capture had nothing to say, not that the answer was none.",
+    numbersFailed: "The nightly capture could not be read, so these numbers are not shown.",
     // #533 — one id, and the builds whose answer names it. Nothing per id: the container holds an
     // ordered list and no band, date or KEV mark against one.
     searchIdHint: "That is a finding id. Press Enter to look it up — the lists below search names, bundle ids and versions, which no id is.",
@@ -1250,6 +1255,13 @@ export const en = {
     lookupCapped: (builds: number) =>
       builds === 1 ? "1 build carries more findings than its list names; an id past the cap is counted on that build and not found here."
         : `${builds} builds carry more findings than their lists name; an id past the cap is counted on those builds and not found here.`,
+    // #591 — the ledger's two clocks: FIRST is when this pod first saw the id on a Mac (bounded by this organization's
+    // own history, never the CVE's publication date), LAST is as of each Mac's last observation, since an open finding
+    // is written once. `detectedNone` is the absence.
+    detected: (first: string, last: string) => `First detected here ${first} · last detected ${last}.`,
+    detectedMacs: (open: number, ever: number) =>
+      `${open === 1 ? "1 Mac still carries it" : `${open} Macs still carry it`} of ${ever} that ever did — as of each Mac's last observation, not as of now.`,
+    detectedNone: "Not tracked by id here. Nothing has recorded this id on a Mac, so there is no first or last detection to show — which is not the same as no Macs: a Mac not inventoried since this container started keeping findings has nothing recorded yet, and an id past a build's cap is never recorded at all.",
     lookupNothing: "No build's answer names this id here. That is not a statement that your fleet is clear of it: a capped list names fewer ids than its build carries, and a build outside the corpus was never assessed at all."
   },
   jamfPatch: {

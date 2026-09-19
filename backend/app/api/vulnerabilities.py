@@ -28,9 +28,9 @@ from app.core.permissions import Permission
 from app.core.vuln import validate_finding_id
 from app.core.vuln_answer import served, stored_corpus
 from app.core.vuln_library import earned_corpus, loaded_epoch_signature
-from app.core.vuln_read import corpus_as_of, today
+from app.core.vuln_read import corpus_as_of, detection, today
 from app.models.schema import AppCatalogEntry
-from app.schemas.catalog import CatalogEntryAssessedOut
+from app.schemas.catalog import CatalogEntryAssessedOut, FindingDetectedOut
 
 router = APIRouter(prefix="/api/vulnerabilities", tags=["vulnerabilities"])
 
@@ -69,6 +69,10 @@ class VulnLookupOut(BaseModel):
     corpus_as_of: date
     builds: list[CatalogEntryAssessedOut]
     truncated_builds: int
+    # `null` while the ledger holds no row for this id — **absent, never four zeros** (§4a). Null
+    # beside a non-empty `builds` is legible, not broken: the corpus says which builds carry the id
+    # now, the ledger since when this pod saw it, and a Mac unswept since #590 answers only the first.
+    detected: FindingDetectedOut | None = None
 
 
 # After `/status` on purpose: FastAPI matches in declaration order, and a dynamic segment above
@@ -115,4 +119,7 @@ async def lookup_vulnerability(vuln_id: str, db: AsyncSession = Depends(get_db))
     entries = [row[0] for row in rows]
     refs, stored, as_of = await _title_refs(db, entries), stored_corpus(corpus, entries), today()
     builds = [_assessed_entry_out(entry, count, refs, corpus=stored, as_of=as_of) for entry, count in rows]
-    return VulnLookupOut(corpus_as_of=corpus.as_of, builds=builds, truncated_builds=int(truncated))
+    # One ledger statement for the whole response: this id's own interval. The builds below carry no *Seen here* —
+    # that column is the narrowed list's, and nothing on this page draws it yet (#591).
+    detected = await detection(db, finding)
+    return VulnLookupOut(corpus_as_of=corpus.as_of, builds=builds, truncated_builds=int(truncated), detected=detected)

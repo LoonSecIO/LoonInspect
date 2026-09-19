@@ -7,7 +7,8 @@ import { agedList, emptySays, exploreByApp, listQuery, payoffList, planNumbers, 
 const VIEWER = ["device:read", "app:read", "vuln:read"];
 const ANALYST = [...VIEWER, "connection:read", "audit:read", "destination:read"];
 const NO_DAYS = { total: null, severity: { critical: null, high: null, medium: null, low: null } };
-const KEYS = ["vuln.apps_affected", "vuln.apps_kev_affected", "vuln.apps_unknown", "vuln.devices_affected"];
+const KEYS = ["vuln.apps_affected", "vuln.apps_kev_affected", "vuln.apps_unknown", "vuln.devices_affected",
+  "vuln.findings_open", "vuln.findings_new_24h", "vuln.findings_resolved_24h"];  // #591 added the last three
 
 function affected(name: string, deviceCount: number, total: number): AffectedRow {
   const counts = { total, kev: 0, severity: { critical: 0, high: 0, medium: 0, low: 0 } };
@@ -117,18 +118,18 @@ describe("readNumbers", () => {
     const read = readNumbers([captured("vuln.devices_affected", 37), captured("vuln.apps_affected", 12)]);
     expect([read.capturedAt, read.runId]).toEqual(["2026-09-17T04:00:00Z", "run-1"]);
     expect(read.present).toEqual([{ key: "vuln.apps_affected", value: 12 }, { key: "vuln.devices_affected", value: 37 }]);
-    expect(read.absent).toEqual(["vuln.apps_kev_affected", "vuln.apps_unknown"]);
+    expect(read.absent).toEqual(["vuln.apps_kev_affected", "vuln.apps_unknown", ...KEYS.slice(4)]);
   });
 
-  // The tape writes none of the four until a corpus has judged the tenant, so an empty capture is
-  // the ordinary first answer: the page prints the absence sentence, and nothing fills it with 0.
-  it("answers an empty capture with four absences and not one zero", () => {
+  // The tape writes none of the four until a corpus has judged the tenant and none of the three
+  // until the finding ledger holds a row, so an empty capture is the ordinary first answer.
+  it("answers an empty capture with seven absences and not one zero", () => {
     expect(readNumbers([])).toEqual({ capturedAt: null, runId: null, present: [], absent: KEYS });
   });
 
   it("keeps a real zero apart from an absence, and survives a purged run", () => {
     const read = readNumbers([captured("vuln.apps_kev_affected", 0, null)]);
     expect(read.present).toEqual([{ key: "vuln.apps_kev_affected", value: 0 }]);
-    expect([read.runId, read.absent.length]).toEqual([null, 3]);
+    expect([read.runId, read.absent.length]).toEqual([null, KEYS.length - 1]);
   });
 });
