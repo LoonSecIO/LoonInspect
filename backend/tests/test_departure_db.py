@@ -30,7 +30,7 @@ GROUP = "computer_group"
 DEFINITION = "extension_attribute_definition"
 COMPUTER = "computer"
 _ROOT = Path(__file__).resolve().parents[2]
-_BOTH = ((_ROOT / "backend/app/mdm/service.py").read_text(), (_ROOT / "docs/troubleshooting.md").read_text())
+_BOTH = ((_ROOT / "backend/app/mdm/census.py").read_text(), (_ROOT / "docs/troubleshooting.md").read_text())
 
 
 @pytest_asyncio.fixture(loop_scope="session")
@@ -383,7 +383,7 @@ async def test_a_board_swap_keeps_the_serial_and_is_not_a_return(db, jamf: FakeJ
 async def test_a_census_without_hardware_matches_on_the_id_alone_and_says_which(db, jamf: FakeJamf, connection) -> None:
     """The aperture caveat: no `hardware` is no serial to census with, so a re-enrolled Mac is not
     recognised and the line says so, never the healthy sentence over a narrower match (rule 2)."""
-    from app.mdm import service
+    from app.mdm import census, service
     from app.models.schema import Collection
 
     jamf.seed(1)
@@ -402,9 +402,9 @@ async def test_a_census_without_hardware_matches_on_the_id_alone_and_says_which(
     await db.refresh(gone)
     assert gone.returned_at is None, "no serial in this census, so nothing to recognise it by"
     lines = await _census_lines(db, connection.id)
-    assert any(service._MATCHED_BY_ID_ONLY in line for line in lines), lines
+    assert any(census._MATCHED_BY_ID_ONLY in line for line in lines), lines
     # Path 16 quotes both (the second to its colon, where the doc wraps): reword one and this fails.
-    for phrase in (service._MATCHED_BY_ID_AND_SERIAL, service._MATCHED_BY_ID_ONLY.split(":")[0]):
+    for phrase in (census._MATCHED_BY_ID_AND_SERIAL, census._MATCHED_BY_ID_ONLY.split(":")[0]):
         assert all(phrase in text for text in _BOTH), phrase
 
 

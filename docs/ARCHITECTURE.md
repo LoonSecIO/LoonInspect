@@ -193,7 +193,8 @@ default `DEFAULT_SWEEP_PAGE_SIZE` = 400) is the admin's knob; the width is the m
 the run object (`app/core/runs.py`), the observation ledger (`app/observations/*`), change
 derivation (`app/changes/*`), catalog judging (`app/catalog/*`), the outbox and its four
 destination types (`app/core/outbox.py`, `app/fanout/*`), the posture tape
-(`app/core/posture.py`), `ingest_computer` and `process_sync`, the census and departures.
+(`app/core/posture.py`), `ingest_computer` and `process_sync`, the census and departures
+(`app/mdm/census.py`).
 
 **Addigy, in about two weeks.** What a sibling vertical adds is the left edge of Figure 1
 and nothing to the right of `ingest_computer`: a client with its own auth, paging and
