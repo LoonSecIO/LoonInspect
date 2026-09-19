@@ -55,9 +55,9 @@ def test_the_vuln_keys_are_active_and_named_as_their_own_family() -> None:
         "vuln.apps_unknown",
         "vuln.devices_affected",
     }
-    # #591's three are a SECOND family, not four more of the first: they are absent for a different
-    # reason — the ledger holding no row, not nothing having judged this tenant — and a test
-    # asserting "these are absent" has to say which absence it means.
+    # #591's three are a SECOND family, not four more of the first: they are absent for a different reason — the
+    # ledger holding no row, not nothing having judged this tenant — and a test asserting "these are absent" has to
+    # say which absence it means.
     assert set(FINDING_KEYS) == {"vuln.findings_open", "vuln.findings_new_24h", "vuln.findings_resolved_24h"}
     assert set(VULN_KEYS) <= set(ACTIVE_KEYS) and set(FINDING_KEYS) <= set(ACTIVE_KEYS)
     assert not set(FINDING_KEYS) & set(VULN_KEYS)
@@ -145,8 +145,8 @@ def test_the_no_rows_rule_is_written_down_beside_the_four_keys() -> None:
     prose = " ".join(doc.replace("*", "").split())
 
     assert "no rows, not zeros" in prose, "the activation rule must be stated in the doc, in the contract's own words"
-    # #591's three carry the rule in their own cells too: a reader of `findings_open` must not
-    # have to read `apps_affected` to interpret a gap.
+    # #591's three carry the rule in their own cells too: a reader of `findings_open` must not have to read
+    # `apps_affected` to interpret a gap.
     for key in (*VULN_KEYS, *FINDING_KEYS):
         rows = [line for line in doc.splitlines() if line.startswith(f"| `{key}` | ACTIVE |")]
         assert len(rows) == 1, f"{key} must carry exactly one ACTIVE row of its own"

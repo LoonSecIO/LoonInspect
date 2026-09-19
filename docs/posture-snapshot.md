@@ -1,7 +1,7 @@
 # The posture snapshot
 
 Status: **implemented (#102, 2026-08-29)** · 37 keys, last activated 2026-09-19
-(`devices.departed_24h`, #476) · 0 reserved · Target: V0
+(the three `vuln.findings_*`, #591) · 0 reserved · Target: V0
 
 The nightly tape of fleet posture. One table, `posture_snapshot(tenant_id, metric_key,
 platform, value, captured_at, full_sweep_run_id)` — one row per metric per capture per
@@ -62,11 +62,12 @@ wrote them observed, and the row says so.** `platform` is stamped by
 computers only ([mobile-devices.md](mobile-devices.md)) and every device the recorder
 counts is a Mac by construction.
 
-The column exists because the guardrails above leave no way to add it later. Eighteen of
+The column exists because the guardrails above leave no way to add it later. Twenty-one of
 the 37 active keys count a *different population* the first night a sweep observes more
 than Macs — the five `devices.*`, the five `catalog.*`, `apps.distinct`,
-`changes.notable_24h`, the two `alerts.*` and the four `vuln.*` — and at that point both
-available moves destroy something.
+`changes.notable_24h`, the two `alerts.*` and all seven `vuln.*`, the three `findings_*`
+included (the ledger takes a row from whatever device a sweep reconciles, and no device join
+narrows it) — and at that point both available moves destroy something.
 Redefining `devices.total` in place to mean "Macs and iPads" is forbidden by
 *definitions immutable per key*, and silent besides: no error, no migration, just a
 series that stops meaning what its own history means. Minting `devices.macos.total` and
@@ -106,7 +107,7 @@ The rules the column carries:
   same rule: it has no population until it has rows, and its tape starts under the
   platform its first capture observed. The four `vuln.*` keys are the live case — their
   first row for a tenant is written the night the corpus join first judges it, under that
-  night's platform.
+  night's platform — and #591's three `findings_*` the night its ledger first holds a row.
 
 ### Departed Macs
 

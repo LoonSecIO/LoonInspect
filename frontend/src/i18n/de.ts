@@ -1116,11 +1116,11 @@ export const de: Translations = {
     lookupCapped: (builds: number) =>
       builds === 1 ? "1 Build trägt mehr Funde, als seine Liste nennt; eine ID jenseits der Grenze wird dort mitgezählt und hier nicht gefunden."
         : `${builds} Builds tragen mehr Funde, als ihre Listen nennen; eine ID jenseits der Grenze wird dort mitgezählt und hier nicht gefunden.`,
-    // #591 — die beiden Uhren des Fundregisters. ZUERST: wann dieser Container die ID erstmals auf
-    // einem Mac sah; ZULETZT: Stand der letzten Beobachtung des Macs. `detectedNone` ist die Abwesenheit.
+    // #591 — die beiden Uhren des Fundregisters. ZUERST: wann dieser Container die ID erstmals auf einem Mac sah;
+    // ZULETZT: Stand der letzten Beobachtung des Macs. `detectedNone` ist die Abwesenheit.
     detected: (first: string, last: string) => `Hier erstmals erfasst am ${first} · zuletzt erfasst am ${last}.`,
     detectedMacs: (open: number, ever: number) =>
-      `${open} Mac${open === 1 ? "" : "s"} tragen sie noch, von ${ever} jemals — Stand der letzten Beobachtung des jeweiligen Macs, nicht von jetzt.`,
+      `${open === 1 ? "1 Mac trägt sie noch" : `${open} Macs tragen sie noch`}, von ${ever} jemals — Stand der letzten Beobachtung des jeweiligen Macs, nicht von jetzt.`,
     detectedNone: "Hier nicht per ID nachgehalten. Nichts hat diese ID auf einem Mac erfasst, es gibt also keine erste oder letzte Erfassung zu zeigen — was nicht dasselbe ist wie keine Macs: Ein Mac, der seit Anlage des Fundregisters nicht inventarisiert wurde, hat noch nichts erfasst, und eine ID jenseits der Listengrenze eines Builds wird nie erfasst.",
     lookupNothing: "Keine Antwort eines Builds nennt hier diese ID. Das ist keine Aussage darüber, dass Ihre Flotte frei davon wäre: Eine gekürzte Liste nennt weniger IDs, als ihr Build trägt, und ein Build außerhalb des Korpus wurde nie geprüft."
   },

@@ -54,9 +54,9 @@ export interface CatalogEntry {
    *  `null` whenever there is nothing to say — not `covered`, no target judged, or this
    *  build already IS the target — and never a zero. */
   vulnUpdate: AppUpdate | null;
-  /** *Seen here* (#591): days since the oldest OPEN finding-ledger row on this build — §4d's second
-   *  clock, this pod's first observation as against the world's publication date. `null` where the
-   *  ledger holds no open row, which a surface prints as a dash and never as 0. */
+  /** *Seen here* (#591): days since the oldest OPEN finding-ledger row on this build — §4d's second clock, this pod's
+   *  first observation as against the world's publication date. `null` where the ledger holds no open row, which a
+   *  surface prints as a dash and never as 0, and `undefined` on a response whose list does not draw the column. */
   seenHereDays?: number | null;
 }
 

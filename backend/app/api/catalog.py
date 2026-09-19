@@ -111,9 +111,8 @@ def _assessed_entry_out(
     # the same seam. The Catalog page does not paint it yet; the application record reads
     # this endpoint scoped to one `appHash` and does.
     out.vuln_update = update_line(entry, corpus=corpus)
-    # *Seen here* (#591), from the ONE grouped ledger query the caller ran for the whole page:
-    # a `.get` and not a query, so no row here can grow a statement of its own. Absent where
-    # the ledger holds no open row for the build — a dash on the page, and never a zero.
+    # *Seen here* (#591), from the ONE grouped ledger query the caller ran for the whole page: a `.get` and not a
+    # query, so no row grows a statement of its own. Absent where the ledger holds no open row for the build — a dash.
     out.seen_here_days = (seen_here or {}).get(entry.key_full)
     return out
 
@@ -227,9 +226,13 @@ async def list_catalog(
     # once per distinct build at judge time — so this reads no database and does no lookup;
     # under `NO_CORPUS` it does no per-row work at all.
     stored = stored_corpus(corpus, entries)
-    # One grouped ledger read for the page's builds (#591) — the rule `vuln_read` states: never
-    # one per row. It runs whatever the filter is, because *Seen here* is a column of both lists.
-    seen_here = await seen_here_days(db, [entry.key_full for entry in entries], as_of=as_of)
+    # One grouped ledger read for the page's builds (#591) — the rule `vuln_read` states: never one per row — and only
+    # where a surface draws the number: every vulnerability-narrowed list (the Vulnerabilities page asks with one of the
+    # five filters, never `all`) and one application's own record. The Catalog tab's list is every build the tenant has,
+    # with no vulnerability column at all, and pays nothing while the index named in #591's Risk is still a follow-up. A
+    # skipped read leaves the field unset, which is not the ledger saying *no row*: nothing renders the difference.
+    draws_seen_here = filtered or app_hash is not None
+    seen_here = await seen_here_days(db, [entry.key_full for entry in entries], as_of=as_of) if draws_seen_here else None
     items = [
         _assessed_entry_out(entry, row[1], refs, corpus=stored, as_of=as_of, seen_here=seen_here)
         for entry, row in zip(entries, page_rows, strict=True)

@@ -112,11 +112,10 @@ VULN_KEYS: tuple[str, ...] = (
     "vuln.devices_affected",
 )
 
-# The finding ledger's three, activated 2026-09-19 (#591) over the store #590 landed. Their own
-# family because their gate is their own: the four wait on the corpus having judged this tenant,
-# these on `device_findings` holding a row at all — a tenant judged for months whose Macs have not
-# been swept since has nothing to count, and a zero would date its exposure to a store that was not
-# keeping it. Findings, never devices (#589 ruling 1).
+# The finding ledger's three, activated 2026-09-19 (#591) over the store #590 landed. Their own family because their
+# gate is their own: the four wait on the corpus having judged this tenant, these on `device_findings` holding a row at
+# all — a tenant judged for months whose Macs have not been swept since has nothing to count, and a zero would date its
+# exposure to a store that was not keeping it. Findings, never devices (#589 ruling 1).
 FINDING_KEYS: tuple[str, ...] = ("vuln.findings_open", "vuln.findings_new_24h", "vuln.findings_resolved_24h")
 
 # Definitions v1 — the 37 active keys, in the order their rows are written. The names
@@ -534,11 +533,10 @@ async def _vuln_values(db: AsyncSession, at: datetime) -> dict[str, float]:
         .where(MdmConnection.is_active.is_(True), _in_the_fleet(at), of_platform, answered, _findings("total") > 0),
     )
 
-    # The ledger's three (#591). Its own gate, one EXISTS: a tenant whose Macs have not been swept
-    # since `device_findings` landed holds no row, and the keys are absent rather than nought. No
-    # device join and no departure cut, deliberately: `device_departed` has no writer yet (#590),
-    # so a Mac deleted in Jamf keeps its open rows, and hiding them here would make this key
-    # disagree with the page counting the same rows. The doc rows say so.
+    # The ledger's three (#591). Its own gate, one EXISTS: a tenant whose Macs have not been swept since
+    # `device_findings` landed holds no row, and the keys are absent rather than nought. No device join and no departure
+    # cut, deliberately: `device_departed` has no writer yet (#590), so a Mac deleted in Jamf keeps its open rows, and
+    # hiding them here would make this key disagree with the page counting the same rows. The doc rows say so.
     if (await db.execute(select(DeviceFinding.id).limit(1))).first() is not None:
         window = at - timedelta(hours=_WINDOW_HOURS)
         counted = select(

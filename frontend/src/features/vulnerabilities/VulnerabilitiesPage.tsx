@@ -10,7 +10,7 @@ import { closesCell, describeUpdate } from "@/features/vulnerabilities/appUpdate
 import { leverParams, type VulnPromptFilters } from "@/features/vulnerabilities/prompt";
 import { SearchBox } from "@/features/vulnerabilities/SearchBox";
 import type { AppChip, NumbersRead, PostureRow } from "@/features/vulnerabilities/pageBands";
-import { NUMBER_KEYS, agedList, emptySays, exploreByApp, listQuery, payoffList, planNumbers, readNumbers } from "@/features/vulnerabilities/pageBands";
+import { NUMBER_KEYS, VULN_KEYS, agedList, emptySays, exploreByApp, listQuery, payoffList, planNumbers, readNumbers } from "@/features/vulnerabilities/pageBands";
 import { pageView, type Load } from "@/features/vulnerabilities/pageView";
 import { useLocale } from "@/i18n/LocaleContext";
 import type { Translations } from "@/i18n/en";
@@ -59,9 +59,9 @@ const chip = (on: boolean) =>
 const recordHref = (entry: CatalogEntry) => `/devices/applications/${encodeURIComponent(entry.appHash)}`;
 const exposedDays = (entry: CatalogEntry, t: Translations) =>
   entry.vuln.assessment === "covered" && entry.vuln.daysOldestPublished.total !== null ? t.vulnerabilities.days(entry.vuln.daysOldestPublished.total) : "—";
-/** *Seen here* (#591) — the other clock: days since this pod's oldest OPEN ledger row on the build,
- *  counted on the server; a dash where there is none, which is not 0 and is § 18's own step. NOT
- *  narrowed to `covered` as `exposedDays` is — the server answers from the ledger, not the block. */
+/** *Seen here* (#591) — the other clock: days since this pod's oldest OPEN ledger row on the build, counted on the
+ *  server; a dash where there is none, which is not 0 and is § 18's own step. NOT narrowed to `covered` as `exposedDays`
+ *  is — the server answers from the ledger, not from the block on the row. */
 const seenHere = (entry: CatalogEntry, t: Translations) =>
   entry.seenHereDays == null ? "—" : t.vulnerabilities.days(entry.seenHereDays);
 
@@ -249,8 +249,7 @@ export function VulnerabilitiesPage() {
   // nothing here has an update that closes more than it opens (§18 says what to check).
   const patchableSays = load === "loading" ? copy.loading : patchableFailed ? copy.easilyPatchableFailed : patchable === null ? copy.loading : patchableTotal === 0 ? copy.easilyPatchableNone : null;
   // Parallel to `NUMBER_KEYS`, a fixed tuple in the order the foot prints.
-  const labels = [copy.numAppsAffected, copy.numAppsKev, copy.numAppsUnknown, copy.numDevicesAffected,
-    copy.numFindingsOpen, copy.numFindingsNew, copy.numFindingsResolved];
+  const labels = [copy.numAppsAffected, copy.numAppsKev, copy.numAppsUnknown, copy.numDevicesAffected, copy.numFindingsOpen, copy.numFindingsNew, copy.numFindingsResolved];
 
   // The lever's own two moves, stable across renders because `SearchBox` announces its mode
   // from an effect. An answer is one whole URL state, as a Popular filter chip is: it replaces
@@ -430,10 +429,12 @@ export function VulnerabilitiesPage() {
               {numbersFailed && <p className="text-sm text-muted-foreground">{copy.numbersFailed}</p>}
               {numbers === null && !numbersFailed && <p className="text-sm text-muted-foreground">{copy.loading}</p>}
               {numbers?.capturedAt && <p className="text-sm text-muted-foreground">{copy.numbersAsOf(new Date(numbers.capturedAt).toLocaleDateString())}{numbers.runId ? ` · ${copy.numbersRun(numbers.runId)}` : ""}</p>}
+              {/* Four columns, seven keys: the ledger's three are absent for their own reason, so they open a row. */}
               {numbers && (
                 <dl className="grid gap-4 sm:grid-cols-4">
                   {NUMBER_KEYS.map((key, index) => (
-                    <div key={key}><dt className="text-xs text-muted-foreground">{labels[index]}</dt>
+                    <div key={key} className={index === VULN_KEYS.length ? "sm:col-start-1" : undefined}>
+                      <dt className="text-xs text-muted-foreground">{labels[index]}</dt>
                       {/* A key with no row prints a dash, never a zero (§4a, §7). */}
                       <dd className="text-2xl font-semibold tabular-nums">{numbers.present.find((row) => row.key === key)?.value.toLocaleString() ?? "—"}</dd>
                     </div>))}

@@ -39,6 +39,18 @@ class VulnUpdateOut(_CamelModel):
     net: int | None = None
 
 
+class FindingDetectedOut(_CamelModel):
+    """When this pod first and last saw one finding id on a Mac, and on how many (#591, over #590's ledger). One object
+    rather than four loose keys, so its absence is **one** absence. `lastDetectedAt` maximizes the two clocks a row can
+    carry — the Mac's own `last_seen_at` while the row is open (§6 writes nothing while it stays open), the row's
+    `last_observed_at` once it closes — so it is *as of last observation* and never as of now."""
+
+    first_detected_at: datetime
+    last_detected_at: datetime | None
+    devices_open: int
+    devices_ever: int
+
+
 class CatalogEntryOut(_CamelModel):
     """One row of the tenant app catalog: a distinct (name, bundle ID, version) the fleet has
     shown, when it was first and last seen, how many devices carry it now, and Jamf's answer."""
@@ -108,10 +120,12 @@ class CatalogEntryAssessedOut(CatalogEntryOut):
     # never a zero, which would read as "this update changes nothing" for a row nobody
     # answered. The list endpoint fills it; the Catalog page does not render it yet.
     vuln_update: VulnUpdateOut | None = None
-    # #591: *Seen here* — days since the oldest OPEN finding-ledger row on this exact build (#590),
-    # on the read path's clock. §4d's second clock: `daysOldestPublished` is the world's, this is
-    # **this pod's first observation**, bounded by the tenant's own history. `null` where the ledger
-    # holds no open row — a Mac not swept since it landed, or nothing detected — so a page dashes.
+    # #591: *Seen here* — days since the oldest OPEN finding-ledger row on this exact build (#590), on the read path's
+    # clock. §4d's second clock: `daysOldestPublished` is the world's, this is **this pod's first observation**, bounded
+    # by the tenant's own history. `null` where the ledger holds no open row — a Mac not swept since it landed, or
+    # nothing detected — so a page dashes. Filled by the requests whose surface draws it: a vulnerability-narrowed list
+    # and one application's record. The unnarrowed list and the lookup leave it unset rather than read the ledger for a
+    # column they do not print, and nothing renders the difference.
     seen_here_days: int | None = None
 
 

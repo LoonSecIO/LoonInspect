@@ -1,5 +1,4 @@
-"""The finding ledger: #590's seven facts, the marker and the collapse (ruled in #589), and the
-read path #591 puts on top of them.
+"""The finding ledger: #590's seven facts, the marker and the collapse (#589), and #591's read path.
 
 Driven through `reconcile_device_findings` over hand-written stored answers rather than a sweep,
 because those columns are exactly what the ledger reads — the ones `record_device_apps` makes
@@ -163,15 +162,14 @@ async def test_a_backfill_takes_the_change_log_arrival_then_the_first_observatio
 
 
 async def test_the_read_path_answers_absence_never_zero_and_the_macs_own_clock(db, mac) -> None:
-    """#591's read path, in the states a surface must tell apart. No row for the id — a Mac never
-    swept since the ledger landed, or an id past a build's cap — answers `None`, worded as *not
-    tracked by id*; four zeros could not be told from a fleet clear of it (§4a). A row that IS
-    there reads *as of that Mac's last observation* while open (§6), its own close after."""
+    """#591's read path, in the states a surface must tell apart. No row for the id — a Mac never swept since the
+    ledger landed, or an id past a build's cap — answers `None`, worded as *not tracked by id*; four zeros could not be
+    told from a fleet clear of it (§4a). A row that IS there reads *as of that Mac's last observation* while open (§6),
+    and its own close after."""
     build = app_full_key(*WIRESHARK, "4.2.0", None)
     assert await detection(db, CVE) is None and await seen_here_days(db, [build], as_of=DAY3.date()) == {}
     mac.last_seen_at = DAY3
-    # OTHER is named by the truncated list; CVE is one of the ids the cap dropped, so nothing can
-    # record it and the ledger's silence about it says nothing about the fleet.
+    # OTHER is named by the truncated list; CVE is an id the cap dropped, so nothing can record it.
     await _sync(db, mac, [_app(WIRESHARK, "4.2.0", [OTHER], truncated=True)], DAY1, new=True)
     assert await detection(db, CVE) is None
     found = await detection(db, OTHER)
@@ -182,8 +180,8 @@ async def test_the_read_path_answers_absence_never_zero_and_the_macs_own_clock(d
 
 
 async def test_seen_here_counts_from_the_read_paths_today_in_one_grouped_statement(db, mac) -> None:
-    """The day count is the `as_of` it is handed — `vuln_read.today()` at the seam, never the wall
-    clock — and a page of builds costs ONE statement, not one per row (cache, don't calculate)."""
+    """The day count is the `as_of` it is handed — `vuln_read.today()` at the seam, never the wall clock — and a page
+    of builds costs ONE statement, not one per row (cache, don't calculate)."""
     await _sync(db, mac, [_app(WIRESHARK, "4.2.0", [CVE]), _app(SAFARI, "18.0", [OTHER])], DAY1, new=True)
     builds = [app_full_key(*WIRESHARK, "4.2.0", None), app_full_key(*SAFARI, "18.0", None)]
     with statements() as seen:

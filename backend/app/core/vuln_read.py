@@ -54,17 +54,15 @@ the caller loaded, read rather than derived. The seam did not move and the REST 
 not move; only where the answer comes from did. Do not reach for a per-device lookup here
 — there is no per-device answer to look up.
 
-**The exception, and its rule** (#591). The finding ledger (`device_findings`, #590) is a store,
-not a derivation: *when did this pod first see CVE-X, and does it still* is not computable from
-the rows a response carries at any price. So the two readers at the foot do read the database, and
-that is the whole of it: **one statement per id looked up, one grouped statement per page of
-builds**, never one per row — the paragraph above, applied to a table.
+**The exception, and its rule** (#591). The finding ledger (`device_findings`, #590) is a store:
+*when did this pod first see CVE-X, and does it still* is not computable from the rows a response
+carries at any price. So the two readers at the foot read the database — **one statement per id,
+one grouped statement per page of builds**, never one per row — and that is the whole of it.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Protocol
 
@@ -74,7 +72,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.vuln import VulnCorpus, vuln_block
 from app.core.vuln_answer import HasStoredAnswer, update_effect
 from app.models.schema import Device, DeviceFinding
-from app.schemas.catalog import VulnUpdateOut
+from app.schemas.catalog import FindingDetectedOut, VulnUpdateOut
 from app.schemas.payload import VULN_ASSESSMENT_UNKNOWN_APP, VulnEnrichment
 
 # The refusal a vulnerability filter meets when nothing answers (#529), in
@@ -157,26 +155,12 @@ def update_line(row: HasStoredAnswer, *, corpus: VulnCorpus) -> VulnUpdateOut | 
     )
 
 
-@dataclass(frozen=True)
-class FindingDetection:
-    """One id's interval over the tenant's whole ledger (#591). `last_detected_at` is the maximum of
-    two clocks, because an open row and a closed one know different things: an open row is *still
-    detected as of that Mac's last observation* (nothing is written while it stays open, §6), so
-    `last_seen_at` answers for it; a closed row carries its own close."""
-
-    first_detected_at: datetime
-    last_detected_at: datetime | None
-    devices_open: int
-    devices_ever: int
-
-
-async def detection(db: AsyncSession, finding_id: str) -> FindingDetection | None:
+async def detection(db: AsyncSession, finding_id: str) -> FindingDetectedOut | None:
     """The ledger's answer for one id, in ONE statement, or `None` where it holds no row for it.
 
-    `None` is the case a surface must word rather than fill: the ledger starts the day it lands, so
-    an id nothing has recorded is *not tracked by id here* and never *0 Macs* — a Mac unswept since
-    #590 has no row, nor has an id beyond a build's cap (§4e). §4a one grain further in, hence an
-    option rather than four zeros nothing could tell from a clear fleet."""
+    `None` is the case a surface must word rather than fill (§4a one grain in): the ledger starts the day it lands, so
+    an id nothing has recorded is *not tracked by id here* and never *0 Macs* — a Mac unswept since #590 has no row,
+    nor has an id beyond a build's cap (§4e)."""
     open_row = DeviceFinding.resolved_at.is_(None)
     seen = case((open_row, Device.last_seen_at), else_=DeviceFinding.last_observed_at)
     macs = func.count(distinct(DeviceFinding.device_id))
@@ -186,17 +170,18 @@ async def detection(db: AsyncSession, finding_id: str) -> FindingDetection | Non
         .join(Device, Device.id == DeviceFinding.device_id)
         .where(DeviceFinding.finding_id == finding_id)
     )
-    first, last, still_open, ever = (await db.execute(query)).one()
-    return None if first is None else FindingDetection(first, last, int(still_open), int(ever))
+    first, last, open_now, ever = (await db.execute(query)).one()
+    if first is None:
+        return None
+    return FindingDetectedOut(first_detected_at=first, last_detected_at=last, devices_open=int(open_now), devices_ever=int(ever))
 
 
 async def seen_here_days(db: AsyncSession, builds: Sequence[str], *, as_of: date) -> dict[str, int]:
-    """*Seen here* for a page of builds: days since the oldest OPEN row on each, keyed by `key_full`.
-    **One grouped statement for the page**, never one per row (cache, don't calculate) — the whole
-    reason this takes the page's builds rather than a build. A build with no open row is absent from
-    the mapping and the surface prints a dash, not a zero: *published* is the world's clock and
-    always has a date, while this is **this pod's first observation, bounded by the tenant's own
-    history** (§4d). Floored at zero as the wire's is."""
+    """*Seen here* for a page of builds: days since the oldest OPEN row on each, keyed by `key_full`. **One grouped
+    statement for the page**, never one per row (cache, don't calculate) — the whole reason this takes the page's builds
+    rather than a build. A build with no open row is absent from the mapping and the surface prints a dash, not a zero:
+    *published* is the world's clock, this is **this pod's first observation, bounded by the tenant's own history**
+    (§4d). Floored at zero."""
     if not builds:
         return {}
     query = (

@@ -15,6 +15,7 @@ from sqlalchemy import delete, select
 
 from app.core.runs import TRIGGER_SWEEP
 from tests.jamf_fake import HOST, FakeJamf
+from tests.test_sweep_costs_db import statements  # the statement recorder, not a fixture
 
 pytestmark = [
     pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
@@ -157,7 +158,11 @@ async def test_list_and_lookup_after_a_sweep(db, jamf: FakeJamf, connection, ind
     # Every parameter by name, including #529's three: this is the route function, not a
     # request, so an omitted one arrives as FastAPI's `Query(...)` sentinel rather than its
     # documented default — and `vuln` decides whether the read is refused at all.
-    listing = await _list(db, q="Xcode", page_size=50)
+    # #591's ledger read runs where a surface draws *Seen here* and nowhere else: this list is the Catalog tab's own,
+    # with no vulnerability column, so it must not touch `device_findings`; the record below does, in one statement.
+    with statements() as unfiltered:
+        listing = await _list(db, q="Xcode", page_size=50)
+    assert not [one for one in unfiltered if "device_findings" in one], "the Catalog tab pays nothing for a column it omits"
     (entry,) = [item for item in listing.items if item.version_hash == xcode.version_hash]
     assert entry.device_count >= 1 and entry.jamf_titles[0].name == "Apple Xcode" and entry.patch_state == "latest"
     assert entry.first_seen_at == entry.last_seen_at
@@ -165,7 +170,9 @@ async def test_list_and_lookup_after_a_sweep(db, jamf: FakeJamf, connection, ind
 
     # #299: one application's record, the counts scoped inside the join, and no summary
     # rather than a wrong one.
-    record = await _list(db, installed_only=False, page_size=500, app_hash=xcode.app_hash)
+    with statements() as scoped_reads:
+        record = await _list(db, installed_only=False, page_size=500, app_hash=xcode.app_hash)
+    assert len([one for one in scoped_reads if "device_findings" in one]) == 1, "one grouped ledger read, never one per row"
     assert record.items and all(item.app_hash == xcode.app_hash for item in record.items)
     (scoped,) = [item for item in record.items if item.version_hash == xcode.version_hash]
     assert scoped.device_count == entry.device_count, "a scoped device count must equal the unscoped one for the same build"
