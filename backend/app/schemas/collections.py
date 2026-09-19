@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from enum import StrEnum
 
@@ -128,7 +129,15 @@ class CollectionSummaryOut(_Base):
 
 class CollectionRunResult(_Base):
     collection_id: int
-    status: str  # queued | skipped
+    status: str  # queued | running
+    # The run to poll: GET /api/runs/{jobId} and /api/runs/{jobId}/log. Always a run —
+    # the one this request started, or the one already holding the connection (#582).
+    job_id: uuid.UUID
+    # False when a run of this class already held the connection and this request joined
+    # it rather than starting one. Nothing is queued behind that holder, so the panel has
+    # to say "already running" rather than imply the click caused what it is now watching
+    # — the same distinction `MdmSyncTriggerResult` carries for the connection-level sync.
+    started: bool = True
 
 
 class SectionInfo(_Base):

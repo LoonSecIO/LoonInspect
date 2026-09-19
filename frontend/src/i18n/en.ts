@@ -1514,6 +1514,10 @@ export const en = {
     runNow: "Run now",
     runQueued: "Queued",
     runError: "Could not start the run.",
+    // A click that joined a run already in flight, not a refusal: the job id is the one
+    // to watch, and nothing was queued behind it (#582).
+    runAlreadyRunning: (jobId: string) =>
+      `Already running on this connection — job ${jobId}. Nothing was queued behind it; Recent runs on the front page shows that job.`,
     edit: "Edit",
     delete: "Delete",
     deleteConfirm: (name: string) => `Delete collection "${name}"?`,

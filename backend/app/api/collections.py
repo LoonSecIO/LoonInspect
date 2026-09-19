@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, datetime
 
@@ -12,9 +13,11 @@ from app.core.auth import Principal, current_principal, require
 from app.core.context import Actor, reset_actor, set_actor
 from app.core.database import get_db, session_for_tenant
 from app.core.permissions import Permission
+from app.core.runs import RunReclaimed, acquire, entered, finish
 from app.core.scheduling import KIND_CATALOG, KIND_DEVICE_SWEEP, KIND_WEBHOOK, ScheduleError, stale_after
 from app.core.tenancy import reset_tenant_id, set_tenant_id
 from app.mdm.collections import (
+    LOCK_CLASS_FOR_KIND,
     apply_schedule,
     list_all_collections,
     list_collections,
@@ -22,8 +25,8 @@ from app.mdm.collections import (
     schedule_of,
 )
 from app.mdm.jamf.contract import EXTENSION_ATTRIBUTE_CARRIERS, SECTIONS, with_extension_attribute_carriers
-from app.mdm.service import TRIGGER_MANUAL
-from app.models.schema import Collection, MdmConnection, MdmSyncState
+from app.mdm.service import TRIGGER_MANUAL, sync_result_kwargs
+from app.models.schema import Collection, MdmConnection, Run
 from app.schemas.collections import (
     CollectionCreate,
     CollectionOut,
@@ -32,7 +35,9 @@ from app.schemas.collections import (
     CollectionUpdate,
     SectionInfo,
 )
-from app.schemas.payload import MdmProvider, SyncStatus
+from app.schemas.payload import MdmProvider
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/mdm", tags=["collections"])
 
@@ -319,17 +324,46 @@ async def delete_collection(collection_id: int, db: AsyncSession = Depends(get_d
     )
 
 
-async def _run_collection_task(collection_id: int, actor: Actor, tenant_id: uuid.UUID) -> None:
-    """Background worker for a manual run — same shape as the connection-level one:
-    re-establishes the actor and the tenant, because the request's context is gone."""
+async def _run_collection_task(collection_id: int, actor: Actor, tenant_id: uuid.UUID, job_id: uuid.UUID) -> None:
+    """Background worker for a manual run — same shape as `_run_connection_sync` in
+    `app.api.connections`: re-establishes the actor and the tenant, because the request's
+    context is gone, and takes the run the request already acquired rather than acquiring
+    one of its own.
+
+    **Closing that run is this frame's job** (#582). `run_one_collection` finishes only a
+    run it acquired itself (`owned`); a handed-in one it leaves open, because the caller
+    that acquired it may have more collections to run under the same jobID — which is
+    what `run_enabled_collections` does. Here there is exactly one, so every path out
+    ends at `finish`, or the run row sits `running` and holds the connection's lock until
+    the reclaim frees it five minutes later.
+    """
     token = set_actor(actor)
     tenant_token = set_tenant_id(tenant_id)
     try:
         async with session_for_tenant(tenant_id) as db:
             collection = await db.get(Collection, collection_id)
-            if collection is None:
+            run = await db.get(Run, job_id)
+            if collection is None or run is None:
                 return
-            await run_one_collection(db, collection, trigger=TRIGGER_MANUAL)
+            async with entered(run):
+                try:
+                    result = await run_one_collection(db, collection, trigger=TRIGGER_MANUAL, run=run)
+                except RunReclaimed:
+                    # Already handled where it was detected: the reclaim closed the run
+                    # and freed the lock, and `run_one_collection` recorded the abort on
+                    # the collection row. Nothing to finish — the row's verdict is the
+                    # reclaim's — and nothing to re-raise.
+                    await db.rollback()
+                    logger.warning(
+                        "manual collection run aborted: its run was reclaimed mid-flight",
+                        extra={"collection_id": collection_id, "job_id": str(job_id)},
+                    )
+                    return
+                except Exception as exc:
+                    await db.rollback()
+                    await finish(db, run, ok=False, error=str(exc))
+                    raise
+                await finish(db, run, **sync_result_kwargs(result))
     finally:
         reset_tenant_id(tenant_token)
         reset_actor(token)
@@ -348,7 +382,22 @@ async def run_collection_now(
     db: AsyncSession = Depends(get_db),
 ) -> CollectionRunResult:
     """Run one collection now. 202 and a background task, like the connection-level
-    sync: a sweep can outlive any sensible request timeout."""
+    sync: a sweep can outlive any sensible request timeout.
+
+    **The lock is taken here, in the request** (#582), the way `POST /connections/{id}/
+    sync` and `/re-emit` take it. The run row is the mutex (#31, #94). Reading
+    `mdm_sync_state.status` instead put the decision on two surfaces: that row is a
+    mirror the sweep writes and clears on finish, so after a crash it reads `syncing`
+    until the reclaim and refuses a sync that is not running, and it says nothing at all
+    about a catalog run — while the acquisition that actually decides happened later, in
+    the background task, long after the operator had been told *queued*.
+
+    **Contention answers 202, not 409**, for the reason the connection-level sync does
+    (docs/ingest-scheduling.md §4.2): a click during a sweep means "is this collecting?",
+    and the running job's id answers that better than an error. `started` says which
+    happened, and nothing is queued behind the holder — a run this request did not start
+    is a run it must not promise.
+    """
     row = await _collection_or_404(collection_id, db)
     if row.kind == KIND_WEBHOOK:
         raise HTTPException(status_code=409, detail="A webhook collection is event-driven and cannot be run")
@@ -356,10 +405,16 @@ async def run_collection_now(
     if not connection.is_active:
         raise HTTPException(status_code=409, detail="Connection is not active")
 
-    if row.kind == KIND_DEVICE_SWEEP:
-        state = await db.get(MdmSyncState, connection.id)
-        if state is not None and state.status == SyncStatus.syncing.value:
-            raise HTTPException(status_code=409, detail="A sync is already running for this connection")
+    acquisition = await acquire(
+        db,
+        connection,
+        trigger=TRIGGER_MANUAL,
+        lock_class=LOCK_CLASS_FOR_KIND[row.kind],
+        collection_id=row.id,
+        actor_label=principal.account.email,
+    )
+    if not acquisition.started:
+        return CollectionRunResult(collection_id=row.id, job_id=acquisition.run.id, status="running", started=False)
 
     audit(
         AuditAction.COLLECTION_RUN_TRIGGERED,
@@ -368,11 +423,13 @@ async def run_collection_now(
         name=row.name,
         kind=row.kind,
         connection_id=connection.id,
+        job_id=str(acquisition.run.id),
     )
     background_tasks.add_task(
         _run_collection_task,
         row.id,
         Actor(type="account", id=principal.account.id, label=principal.account.email, tenant_id=principal.tenant_id),
         principal.tenant_id,
+        acquisition.run.id,
     )
-    return CollectionRunResult(collection_id=row.id, status="queued")
+    return CollectionRunResult(collection_id=row.id, job_id=acquisition.run.id, status="queued", started=True)
