@@ -335,20 +335,24 @@ async def _run_collection_task(collection_id: int, actor: Actor, tenant_id: uuid
     that acquired it may have more collections to run under the same jobID — which is
     what `run_enabled_collections` does. Here there is exactly one, so every path out
     ends at `finish`, or the run row sits `running` and holds the connection's lock until
-    the reclaim frees it five minutes later.
-
-    **The failure path reloads the run before it closes it**, and the reload is load-
-    bearing — see the comment on it. Success does not need one only because the session
-    factory is `expire_on_commit=False` (`app.core.database`); `rollback()` expires
-    regardless of that setting, which is what makes the two paths differ.
+    the reclaim frees it five minutes later. The reload on the failure path is part of
+    keeping that true, and is load-bearing — see the comment on it.
     """
     token = set_actor(actor)
     tenant_token = set_tenant_id(tenant_id)
     try:
         async with session_for_tenant(tenant_id) as db:
-            collection = await db.get(Collection, collection_id)
             run = await db.get(Run, job_id)
-            if collection is None or run is None:
+            if run is None:
+                return  # nothing acquired, or retention took the row: no lock to release
+            collection = await db.get(Collection, collection_id)
+            if collection is None:
+                # Deleted between the 202 and this task. `Run.collection_id` is ON DELETE
+                # SET NULL (`app.models.schema`), so the run row outlives its collection
+                # and is still holding the lock; returning would strand it. Only possible
+                # since #582 — before it the task acquired its own run, so a vanished
+                # collection acquired nothing.
+                await finish(db, run, ok=False, error="the collection was deleted before its run could start")
                 return
             async with entered(run):
                 try:
@@ -365,20 +369,18 @@ async def _run_collection_task(collection_id: int, actor: Actor, tenant_id: uuid
                     )
                     return
                 except Exception as exc:
-                    # The lock is this run row, and an unhandled failure that left it
-                    # `running` would block the connection until the heartbeat went stale
-                    # — five minutes of silence for something already known to be over,
-                    # with the cause of death nowhere on the row.
-                    #
-                    # The rollback is what makes the reload necessary. It is needed — the
-                    # exception may have left a half-written transaction, and `finish`
-                    # must not commit that — but `Session.rollback()` expires every
-                    # instance in the session, including `run`, and reading an expired
-                    # attribute under asyncio raises `MissingGreenlet` instead of lazily
-                    # refreshing. Handing the expired `run` straight to `finish` therefore
-                    # crashed on its own `Run.id == run.id`, and the UPDATE that releases
-                    # the lock never ran. `db.get` is awaited, so the refresh is legal;
-                    # `job_id` is this frame's own argument and no attribute of anything.
+                    # The lock is this run row; left `running` it blocks the connection
+                    # until the heartbeat goes stale, with the cause of death nowhere on
+                    # the row. The rollback is needed — the exception may have left a
+                    # half-written transaction, and `finish` must not commit it — and it
+                    # is also what makes the reload necessary: `Session.rollback()`
+                    # expires every instance, `run` included, and reading an expired
+                    # attribute under asyncio raises `MissingGreenlet` rather than lazily
+                    # refreshing. Handing the expired `run` to `finish` therefore crashed
+                    # on its own `Run.id == run.id` and never ran the UPDATE. `db.get` is
+                    # awaited, so its refresh is legal; `job_id` is this frame's argument
+                    # and no attribute of anything. Success needs none of this only
+                    # because the session factory is `expire_on_commit=False`.
                     await db.rollback()
                     reloaded = await db.get(Run, job_id)
                     if reloaded is not None:

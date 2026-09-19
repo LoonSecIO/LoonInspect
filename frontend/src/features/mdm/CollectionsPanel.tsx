@@ -70,13 +70,10 @@ export function CollectionsPanel({ connection, onConnectionChanged }: Collection
   const [error, setError] = useState<string | null>(null);
   // Run now that joined a run already in flight (#582). Not an error, and not styled as
   // one: nothing went wrong, and nothing was queued behind the run it names.
-  //
-  // It is an answer to one click, and it is cleared by the next action the panel takes —
-  // the same life `error` has, a few lines up — and by unmounting, since the panel is
-  // keyed on the connection (ConnectionsPage). It is deliberately not kept true by
-  // polling the job it names: that job finishes, and a second run poller beside
-  // `useRunLog` (the only one in the app, #31/#104) costs more than the staleness. The
-  // sentence points at Recent runs for the live view, and the next Run now replaces it.
+  // An answer to one click, cleared by the next action the panel takes — the same life
+  // `error` has. Deliberately not kept true by polling the job it names: `useRunLog` is
+  // the only run poller in the app (#31, #104) and a second one costs more than the
+  // staleness, so the sentence points at Recent runs for the live view instead.
   const [notice, setNotice] = useState<string | null>(null);
 
   /** The one read of this connection's collections, as a promise chain rather than
