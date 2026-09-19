@@ -1,12 +1,9 @@
 """The finding ledger's transition diff (#590, ruled in #589; docs/vulnerabilities.md §6).
 
-`device_findings` holds one row per (tenant, device, carrier title, finding id), open while
-the finding is still detected; migration `c5a2e9b71f34` carries the argument for its shape,
-and this module is its only writer. S is read off the stored answer — the ids on the device's
-own `installed_apps` rows, made current one statement earlier by `record_device_apps` (#381)
-— so a reconcile costs one SELECT and no corpus lookup, an epoch that re-judged a build
-reaches the ledger on that device's next sweep rather than at import, and an unchanged sweep
-writes nothing at all (ruling 3), its diff running in memory."""
+One row per (tenant, device, carrier title, finding id), open while the finding is still detected,
+diffed from `installed_apps.vuln_ids` as `record_device_apps` (#381) made them one statement earlier
+— so a reconcile costs one SELECT, an epoch re-judge reaches a device on its next sweep and never at
+import, and an unchanged sweep writes nothing (ruling 3). Its migration, `c5a2e9b71f34`, argues it."""
 
 from __future__ import annotations
 
@@ -31,16 +28,15 @@ RESOLVED_BUILD_CHANGED, RESOLVED_APP_REMOVED = "build_changed", "app_removed"
 RESOLVED_DEVICE_DEPARTED, RESOLVED_CORPUS_WITHDRAWN = "device_departed", "corpus_withdrawn"
 RESOLVED_REASONS = (RESOLVED_BUILD_CHANGED, RESOLVED_APP_REMOVED, RESOLVED_DEVICE_DEPARTED, RESOLVED_CORPUS_WITHDRAWN)
 
-# Whether `first_observed_at` was measured or reconstructed, so no reader confuses them.
-BASIS_OBSERVED, BASIS_BACKFILL = "observed", "backfill"
+BASIS_OBSERVED, BASIS_BACKFILL = "observed", "backfill"  # measured, or reconstructed
 
 _KEY = ("device_id", "carrier_key", "finding_id")  # the grain: the upsert's conflict target
 
 # What to look at next, per reason, logged with the close (docs/troubleshooting.md §5.9).
 NEXT_CHECK: Mapping[str, str] = {
     RESOLVED_CORPUS_WITHDRAWN: (
-        "the corpus epoch this container has loaded no longer lists them for a build the Mac still carries, "
-        "which is not the same as fixed — check which epoch is loaded (the date on Devices › Applications › Catalog)"
+        "the corpus epoch this container has loaded no longer lists them for a build the Mac still carries, which is "
+        "not the same as fixed — check the epoch loaded and that the tier is still on (Devices › Applications › Catalog)"
     ),
     RESOLVED_BUILD_CHANGED: "the Mac moved to a build that does not carry them — check the build on the Mac",
     RESOLVED_APP_REMOVED: "the app carrying them is no longer installed on the Mac",
@@ -51,8 +47,9 @@ NEXT_CHECK: Mapping[str, str] = {
 def detected(rows: Iterable[InstalledApp]) -> dict[tuple[str, str], tuple[str, bool]]:
     """S — every (carrier title, finding id) this device's answers assert now, with the build
     carrying it and whether that build's list was truncated. `covered` rows with a non-empty
-    list only (`unknown_app` is an absent answer, not a clean bill, §4a); the epoch signature
-    is not re-checked, because re-gating here would close a ledger on a tier gone off."""
+    list only (`unknown_app` is an absent answer, not a clean bill, §4a). The epoch signature is not
+    re-checked, for churn and not for safety, and that buys the ledger no independence from the
+    corpus: `c5a2e9b71f34`, "what happens when the corpus stops answering"."""
     found: dict[tuple[str, str], tuple[str, bool]] = {}
     for row in rows:
         if row.vuln_assessment != VULN_ASSESSMENT_COVERED or not row.vuln_ids:
@@ -61,34 +58,39 @@ def detected(rows: Iterable[InstalledApp]) -> dict[tuple[str, str], tuple[str, b
             try:
                 validate_finding_id(finding_id)
             except ValueError as exc:
-                # Refused as `VulnFinding` refuses it, but named rather than raised: an id the
-                # epoch import should have caught must not fail every device sync on the box.
-                message = "the stored answer for %s carries an id the finding ledger refuses, so no row is opened: %s"
+                # Named, never raised: an id the import should have caught must not fail every sync.
+                message = "the stored answer for %s carries an id the finding ledger refuses, so no row is opened: %s — "
+                message += "the id came from the loaded corpus epoch, not Jamf; check which epoch (troubleshooting §5)"
                 logger.warning(message, row.key_full, exc, extra={"state": "finding_id_refused", "key_full": row.key_full})
                 continue
-            found[(row.key_title, finding_id)] = (row.key_full, bool(row.vuln_ids_truncated))
+            # Two rows can share a title and both carry the id, but the ledger row is ONE: the build
+            # recorded is the lowest `key_full`, never whichever came last, and `capped` is the OR
+            # over the carriers (migration `c5a2e9b71f34`, "one title, two rows").
+            key = (row.key_title, finding_id)
+            build, capped = found.get(key, (row.key_full, False))
+            found[key] = (min(build, row.key_full), capped or bool(row.vuln_ids_truncated))
     return found
 
 
 async def reconcile_device_findings(
     db: AsyncSession, *, device: Device, rows: Sequence[InstalledApp], observed_at: datetime, device_is_new: bool = False
 ) -> Mapping[str, int]:
-    """This device's ledger, brought level with the answers on `rows`; returns what it closed,
-    by reason. Commits nothing. `observed_at` is the observation's inventory clock, collection
-    time as its fallback — what `device_changes` is stamped with (ruling 2)."""
+    """This device's ledger, brought level with the answers on `rows`; returns what it closed, by
+    reason. Commits nothing. `observed_at` is the observation's inventory clock, collection time as
+    its fallback — what `device_changes` is stamped with (ruling 2)."""
     now = detected(rows)
-    # `populate_existing`: the upsert is Core, so a row this session holds would otherwise
-    # come back from the identity map with its pre-reopen attributes.
+    # `populate_existing`: the upsert is Core, so the identity map's copy would be pre-reopen.
     mine = select(DeviceFinding).where(DeviceFinding.device_id == device.id).execution_options(populate_existing=True)
     held = (await db.execute(mine)).scalars().all()
     by_key = {(row.carrier_key, row.finding_id): row for row in held}
 
-    # The backfill (ruling 5), lazily on the first reconcile rather than as a migration data
-    # step, which would block boot on a 40k-device walk.
-    basis, arrivals = BASIS_OBSERVED, {}
-    if now and not held and not device_is_new:
-        basis = BASIS_BACKFILL
-        arrivals = await backfill_clocks(db, device=device, rows=rows)
+    # The backfill (ruling 5), lazily on a device's FIRST reconcile — a migration data step would
+    # block boot on a 40k-device walk. The marker is on the DEVICE and never the presence of rows,
+    # which a Mac reconciled and found clean does not have: migration `c5a2e9b71f34`.
+    first_ever = device.findings_reconciled_at is None
+    reconstruct = bool(now) and first_ever and not device_is_new
+    arrivals = await backfill_clocks(db, device=device, rows=rows) if reconstruct else {}
+    basis = BASIS_BACKFILL if reconstruct else BASIS_OBSERVED
 
     upserts: list[dict] = []
     for (carrier, finding_id), (build, capped) in sorted(now.items()):
@@ -98,8 +100,7 @@ async def reconcile_device_findings(
         elif row.resolved_at is None and (row.build_key_full, row.capped) == (build, capped):
             continue  # open, and nothing moved: the sweep that writes nothing
         else:
-            # A reopen — the same finding back on a Mac that never replaced the app — or a
-            # build that bumped and still carries the id. Either way the row keeps its clock.
+            # A reopen, or a build that bumped and still carries the id: the row keeps its clock.
             first, mark = row.first_observed_at, row.first_seen_basis
         key = {"device_id": device.id, "carrier_key": carrier, "finding_id": finding_id}
         clock = {"first_observed_at": first, "first_seen_basis": mark}
@@ -125,32 +126,30 @@ async def reconcile_device_findings(
         closing.setdefault(reason, []).append(row.id)
 
     if upserts:
-        # One statement for opens, reopens and refreshes, and ON CONFLICT rather than `db.add`
-        # for the alert latch's reason: webhook ingests never take the sweep lock, so two
-        # passes over one device can race one key. `first_observed_at` is not in the update
-        # set, so a row's clock survives its reopen (ruling 1).
+        # One statement for opens, reopens and refreshes, ON CONFLICT rather than `db.add` for the
+        # alert latch's reason: two passes over one device can race a key, webhook ingests never
+        # taking the sweep lock. `first_observed_at` is not in the set, so a clock survives a reopen.
         statement = pg_insert(DeviceFinding.__table__).values(upserts)
         moved = {"build_key_full": statement.excluded.build_key_full, "capped": statement.excluded.capped}
         reopen = {"resolved_at": None, "resolved_reason": None, "last_observed_at": None}
         await db.execute(statement.on_conflict_do_update(index_elements=list(_KEY), set_={**moved, **reopen}))
     for reason, ids in closing.items():
-        # `last_observed_at` is this observation's clock: nothing is written while a row is
-        # open, so the close knows only that it was there before and is not now — an upper
-        # bound by one inventory interval, which over-states exposure rather than a fix.
+        # `last_observed_at` is this observation's clock: nothing is written while a row is open, so a
+        # close knows only that it was there before and is not now — high by one inventory interval.
         values = {"resolved_at": observed_at, "resolved_reason": reason, "last_observed_at": observed_at}
         await db.execute(sa_update(DeviceFinding).where(DeviceFinding.id.in_(ids)).values(**values))
         line = "%d finding(s) on %s now read resolved (%s): %s (docs/troubleshooting.md §5 step 9)"
         marks = {"state": f"findings_{reason}", "device_id": device.id, "reason": reason, "findings": len(ids)}
         logger.info(line, len(ids), device.hostname, reason, NEXT_CHECK[reason], extra=marks)
+    if first_ever:  # once per device ever, so an unchanged sweep still issues no ledger statement
+        device.findings_reconciled_at = observed_at
     return {reason: len(ids) for reason, ids in closing.items()}
 
 
 async def backfill_clocks(db: AsyncSession, *, device: Device, rows: Sequence[InstalledApp]) -> Mapping[str, datetime]:
-    """When each build this Mac carries arrived on it, from the change log — ruling 5's clock,
-    bounded by the tenant's own history by construction, which is the point of preferring it to
-    the migration's own date. One query, once per device ever, and the LATEST arrival of that
-    build. A build with no arrival row takes the clock of the reconcile that opens it,
-    `backfill` either way, so neither reads as a measurement."""
+    """When each build this Mac carries arrived on it, from the change log — ruling 5's clock, bounded
+    by the tenant's own history by construction. One query, once per device ever, and the LATEST
+    arrival; a build with no arrival row takes the opening reconcile's clock, `backfill` either way."""
     wanted = {(row.name, row.bundle_id, row.version): row.key_full for row in rows}
     columns = select(DeviceChange.entry_identity, DeviceChange.new_value, DeviceChange.observed_at)
     mine = (DeviceChange.mdm_connection_id == device.mdm_connection_id, DeviceChange.subject_id == device.external_id)

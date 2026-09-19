@@ -31,6 +31,29 @@ last_observed_at)` rather than a column read. `capped` is the cap's guard (a row
 from a truncated list never closes by absence from one), and `first_seen_basis` says
 whether the opening clock was measured or reconstructed.
 
+**One title, two rows.** A Mac can carry two `installed_apps` rows under one `key_title` —
+two copies of one application at different versions, which is the shape `ENTRY_RULES` models
+by putting `path` in its identity — and the corpus can list the same id against both builds.
+The ledger row is still one, because the carrier is the title, so `app.core.findings.detected`
+has to choose which build it records. It takes the lowest `key_full` and ORs the two `capped`
+flags rather than letting the last row win: `Device.apps` carries no `order_by`, the rows are
+UPDATEd on every sweep (the `key_bundle` restamp, the answer copy, `last_patch_check_at`), so
+heap order churns, and "whichever came last" would mean an UPDATE on every sweep for those
+Macs, a `build_key_full` that flips under #591's reader, and a ruling-3 violation nobody would
+see because both spellings produce correct-looking rows.
+
+**What happens when the corpus stops answering.** `app.core.findings.detected` reads the
+stored answer and does NOT re-check `vuln_signature` against the loaded epoch the way
+`vuln_answer.served` does. The reason is churn, not safety: between an epoch landing and the
+judge pass that rewrites a build's row, the stored answer names an epoch that has moved, and
+re-gating would close and reopen a ledger row for a fact about this container rather than
+about the Mac. It buys no independence from the corpus, and the honest statement of that is
+here rather than in a comment: a tenant whose tier flips to `off`, or a container that loses
+its epoch, has `judge_vuln` clear the answer columns themselves, and each Mac's next sweep
+then closes its open rows `corpus_withdrawn`. That is #590's letter — a build no longer
+assessed closes that way — it is reversible, since a reopen keeps the row's original clock,
+and `docs/troubleshooting.md` §5 step 9 sends the operator to the epoch and the tier first.
+
 Two indexes and no more. `(tenant_id, finding_id, resolved_at)` is the per-CVE read — the
 only one that does not start from a device — with `resolved_at` last so the open set is a
 prefix of it. `(device_id)` is the reconcile's own SELECT and the CASCADE. Both are write
@@ -42,6 +65,20 @@ their build, and that is built — in `app.core.findings.backfill_clocks`, lazil
 device's first reconcile — rather than here: migrations run in-process at startup, and
 walking 40k devices' change logs inside the operator's upgrade would block boot for the
 whole box. The deviation is recorded on #589.
+
+**Which is why this migration also puts one column on `devices`.** A lazy backfill has to
+know whether a Mac has ever been reconciled, and the ledger's own rows cannot tell it: a Mac
+reconciled under an epoch that listed nothing for its builds has no rows, and so is
+indistinguishable from one this store has never seen. Read that way the backfill never stops
+firing — months and years after this ships, every time such a Mac acquires its FIRST finding,
+the row opens on the change log's arrival of a build the Mac has carried since June. That is
+ruling 2 inverted, 110 days of "exposure" to a CVE an epoch added today, and `first_seen_basis
+= backfill` does not cover it: that marker means *reconstructed at this store's install
+moment*, one-time and bounded by the fleet's history, and nothing distinguishes an install-time
+row from one minted in 2027. So `devices.findings_reconciled_at` is stamped once, on a Mac's
+first reconcile, whether or not that reconcile found anything, and the backfill reads it
+instead. Nullable with no default and no backfill, which is instant on any fleet size: every
+existing Mac reads NULL, takes the backfill it is owed on its next sweep, and is marked.
 
 Revision ID: c5a2e9b71f34
 Revises: b8d4f1a6c2e7
@@ -100,7 +137,11 @@ def upgrade() -> None:
     op.execute("ALTER TABLE device_findings ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE device_findings FORCE ROW LEVEL SECURITY")
     op.execute(f"CREATE POLICY tenant_isolation ON device_findings USING ({_PREDICATE}) WITH CHECK ({_PREDICATE})")
+    # The lazy backfill's marker — see above. `ADD COLUMN … NULL` with no default rewrites no
+    # row, so this costs the same on a 40-device pod and a 40k-device one.
+    op.add_column("devices", sa.Column("findings_reconciled_at", sa.DateTime(timezone=True), nullable=True))
 
 
 def downgrade() -> None:
+    op.drop_column("devices", "findings_reconciled_at")
     op.drop_table("device_findings")

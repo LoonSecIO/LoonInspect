@@ -1,10 +1,8 @@
-"""The finding ledger: the seven facts #590 asks for (ruled in #589).
+"""The finding ledger: #590's seven facts, plus the marker and the collapse (ruled in #589).
 
-Driven through `reconcile_device_findings` over hand-written stored answers rather than a
-sweep, because those columns are exactly what the ledger reads — the ones
-`record_device_apps` makes current (#381) — so an epoch, a corpus and a Jamf fake would slow
-the suite without moving an assertion. The app rows are transient: the diff reads their
-attributes, never their identity. Gated on RUN_DB_TESTS like every DB suite."""
+Driven through `reconcile_device_findings` over hand-written stored answers rather than a sweep,
+because those columns are exactly what the ledger reads — the ones `record_device_apps` makes
+current (#381) — so an epoch and a Jamf fake would slow the suite without moving an assertion."""
 
 from __future__ import annotations
 
@@ -36,8 +34,8 @@ JAMF_ID = "4242"
 
 @pytest_asyncio.fixture(loop_scope="session")
 async def mac(db, connection):  # noqa: F811 — pytest reads the imported fixture by name
-    """One Mac under `test_sweep_costs_db`'s connection fixture, which deletes the fleet — and
-    with it, by CASCADE, this Mac's ledger rows and this connection's change log."""
+    """One Mac under `test_sweep_costs_db`'s connection fixture, which deletes the fleet — and with it,
+    by CASCADE, this Mac's ledger rows and this connection's change log."""
     mine = {"mdm_connection_id": connection.id, "mdm_provider": "jamf", "external_id": JAMF_ID, "hostname": "ledger.host"}
     db.add(device := Device(serial_number="C02LEDGER01", **mine))
     await db.commit()
@@ -45,8 +43,7 @@ async def mac(db, connection):  # noqa: F811 — pytest reads the imported fixtu
 
 
 def _app(identity: tuple[str, str], version: str, ids: list[str], *, truncated: bool = False) -> InstalledApp:
-    # One app row with a stored answer, keyed through `content_keys` rather than by literal.
-    name, bundle = identity
+    name, bundle = identity  # one app row with a stored answer, keyed through `content_keys`
     hashes = {"app_hash": compute_app_hash(name, bundle), "version_hash": compute_version_hash(name, bundle, version, None)}
     keys = {"key_title": app_title_key(name, bundle), "key_full": app_full_key(name, bundle, version, None)}
     answer = {"vuln_assessment": "covered", "vuln_ids": list(ids), "vuln_ids_truncated": truncated}
@@ -59,8 +56,8 @@ async def _sync(db, device: Device, apps: list[InstalledApp], at: datetime, *, n
 
 
 async def _ledger(db, device: Device) -> dict[tuple[str, str], DeviceFinding]:
-    # This Mac's rows by (carrier, id). `populate_existing` because the upsert is Core: a
-    # cached instance would otherwise still carry the attributes it had before a reopen.
+    # By (carrier, id); `populate_existing` because the upsert is Core and a cached instance
+    # would still carry the attributes it had before a reopen.
     mine = select(DeviceFinding).where(DeviceFinding.device_id == device.id).execution_options(populate_existing=True)
     return {(row.carrier_key, row.finding_id): row for row in (await db.execute(mine)).scalars().all()}
 
@@ -94,7 +91,7 @@ async def test_a_bump_without_the_id_closes_build_changed_and_a_regression_reope
 
 
 async def test_one_finding_on_two_carriers_is_two_rows(db, mac) -> None:
-    # #589's pair is Safari and macOS; the OS is not a carrier here yet, so two app carriers.
+    # #589's pair is Safari and macOS; the OS is not a carrier yet, so two app carriers.
     await _sync(db, mac, [_app(SAFARI, "18.0", [CVE]), _app(WIRESHARK, "4.2.0", [CVE])], DAY1)
     rows = await _ledger(db, mac)
     assert sorted(rows) == sorted([(app_title_key(*SAFARI), CVE), (app_title_key(*WIRESHARK), CVE)])
@@ -106,15 +103,13 @@ async def test_a_capped_build_never_closes_a_row_by_absence(db, mac) -> None:
     await _sync(db, mac, [_app(WIRESHARK, "4.2.0", [OTHER], truncated=True)], DAY2)
     row = (await _ledger(db, mac))[(app_title_key(*WIRESHARK), CVE)]
     assert row.resolved_at is None and row.capped
-    # It closes when the BUILD moves — a fact about the Mac, not about the list.
-    await _sync(db, mac, [_app(WIRESHARK, "4.6.0", [OTHER])], DAY3)
+    await _sync(db, mac, [_app(WIRESHARK, "4.6.0", [OTHER])], DAY3)  # it closes when the BUILD moves
     assert (await _ledger(db, mac))[(app_title_key(*WIRESHARK), CVE)].resolved_reason == RESOLVED_BUILD_CHANGED
 
 
 async def test_an_epoch_withdrawal_closes_corpus_withdrawn_not_build_changed(db, mac) -> None:
     await _sync(db, mac, [_app(WIRESHARK, "4.2.0", [CVE, OTHER])], DAY1)
-    # The same build, re-judged under an epoch that no longer lists one of the two.
-    await _sync(db, mac, [_app(WIRESHARK, "4.2.0", [OTHER])], DAY2)
+    await _sync(db, mac, [_app(WIRESHARK, "4.2.0", [OTHER])], DAY2)  # re-judged, one of the two gone
     rows = await _ledger(db, mac)
     assert rows[(app_title_key(*WIRESHARK), CVE)].resolved_reason == RESOLVED_CORPUS_WITHDRAWN
     assert rows[(app_title_key(*WIRESHARK), OTHER)].resolved_at is None
@@ -125,8 +120,30 @@ async def test_a_sweep_in_which_nothing_moved_issues_no_ledger_statement(db, mac
     await _sync(db, mac, apps, DAY1)
     with statements() as seen:
         await _sync(db, mac, apps, DAY2)
-    writes = [s for s in seen if "device_findings" in s and not s.lstrip().upper().startswith("SELECT")]
-    assert writes == [], writes
+    assert [s for s in seen if "device_findings" in s and not s.lstrip().upper().startswith("SELECT")] == []
+
+
+async def test_two_builds_of_one_title_carrying_one_id_collapse_the_same_way_every_sweep(db, mac) -> None:
+    # Two copies of one app at different versions, the id on both: one row (the carrier is the
+    # title), and an answer that does not follow `installed_apps` order, which churns.
+    copies = [_app(WIRESHARK, "4.2.0", [CVE]), _app(WIRESHARK, "4.6.0", [CVE])]
+    await _sync(db, mac, copies, DAY1)
+    with statements() as seen:
+        await _sync(db, mac, list(reversed(copies)), DAY2)
+    assert [s for s in seen if "device_findings" in s and not s.lstrip().upper().startswith("SELECT")] == [], "no write"
+    (row,) = (await _ledger(db, mac)).values()
+    assert row.build_key_full == min(app_full_key(*WIRESHARK, v, None) for v in ("4.2.0", "4.6.0"))
+
+
+async def test_a_clean_reconcile_is_remembered_so_a_later_finding_is_not_backfilled(db, mac) -> None:
+    # Carried since DAY1, reconciled on DAY2 under an epoch that listed nothing for it: no rows, so
+    # their absence cannot say whether this Mac was ever seen. DAY3's epoch adds one to that build.
+    db.add(_arrival(mac, WIRESHARK, "4.6.0", at=DAY1))
+    await db.commit()
+    await _sync(db, mac, [_app(WIRESHARK, "4.6.0", [])], DAY2)
+    await _sync(db, mac, [_app(WIRESHARK, "4.6.0", [CVE])], DAY3)
+    (row,) = (await _ledger(db, mac)).values()
+    assert (row.first_observed_at, row.first_seen_basis) == (DAY3, BASIS_OBSERVED)
 
 
 async def test_a_backfill_takes_the_change_log_arrival_then_the_first_observation(db, mac) -> None:
@@ -136,10 +153,8 @@ async def test_a_backfill_takes_the_change_log_arrival_then_the_first_observatio
     rows = await _ledger(db, mac)
     wireshark = rows[(app_title_key(*WIRESHARK), CVE)]
     assert (wireshark.first_observed_at, wireshark.first_seen_basis) == (DAY1, BASIS_BACKFILL)
-    # No arrival row for Safari, so the reconcile's own clock — marked `backfill` either way.
-    safari = rows[(app_title_key(*SAFARI), OTHER)]
+    safari = rows[(app_title_key(*SAFARI), OTHER)]  # no arrival row, so the reconcile's own clock
     assert (safari.first_observed_at, safari.first_seen_basis) == (DAY2, BASIS_BACKFILL)
-    # And thereafter the observation's own clock, on its own basis.
     await _sync(db, mac, [_app(WIRESHARK, "4.2.0", [CVE]), _app(SAFARI, "18.0", [OTHER, CVE])], DAY3)
     row = (await _ledger(db, mac))[(app_title_key(*SAFARI), CVE)]
     assert (row.first_observed_at, row.first_seen_basis) == (DAY3, BASIS_OBSERVED)

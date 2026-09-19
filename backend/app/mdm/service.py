@@ -1385,11 +1385,9 @@ async def process_sync(
             device_is_new=device_is_new,
             run_id=run.id if run else None,
         )
-        # The finding ledger (#590), after the answer copy and BECAUSE of it: the ids it diffs
-        # are `installed_apps.vuln_ids`, which `record_device_apps` made current two statements
-        # up (#381) — hung off the app diff above, it would read the previous epoch's answer on
-        # every device whose build this pass judged. Same transaction and aperture guard as the
-        # latch; the clock is `app.changes.derive`'s.
+        # The finding ledger (#590), after the answer copy and BECAUSE of it: the ids it diffs are
+        # `installed_apps.vuln_ids`, which `record_device_apps` made current two statements up
+        # (#381). Same transaction and aperture guard as the latch; the clock is the observation's.
         await reconcile_device_findings(
             db,
             device=existing,

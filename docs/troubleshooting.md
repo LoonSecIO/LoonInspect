@@ -731,22 +731,19 @@ and step 2 ends with how to tell that apart from a broken exchange.
    next check-in. A disagreement that survives both, on a reloaded page, is reportable
    state **H**; include both numbers and the Mac's serial.
 
-9. **A finding stopped being counted for a Mac that still has the app.** Each finding is
-   kept as a row with the date it was first detected, and every one that stops carries the
-   reason it stopped — the sync line says which, and what to check next: `3 finding(s) on
-   mac-014 now read resolved (corpus_withdrawn): the corpus epoch this container has loaded
-   no longer lists them for a build the Mac still carries, which is not the same as fixed —
-   check which epoch is loaded (the date on Devices › Applications › Catalog)`. The others
-   are `build_changed`, the Mac having moved to a build without them (check the version on
-   the Mac), and `app_removed`. One Mac's rows, by serial:
+9. **A finding stopped being counted for a Mac that still has the app.** Each finding is kept as
+   a row with the date it was first detected, and every one that stops names its reason and the
+   next check: `3 finding(s) on mac-014 now read resolved (corpus_withdrawn): the corpus epoch
+   this container has loaded no longer lists them for a build the Mac still carries, which is not
+   the same as fixed — check the epoch loaded and that the tier is still on (Devices ›
+   Applications › Catalog)`. The others are `build_changed` (check the build on the Mac) and
+   `app_removed`. A withdrawal is not a fix, and a later epoch reopens the row on its first date
+   — Jamf's inventory clock, never the CVE's publication. One Mac's rows, by serial:
    ```bash
    docker compose exec -T db psql -U looninspect -d looninspect -c \
      "SELECT carrier_key, finding_id, first_observed_at, resolved_at, resolved_reason FROM device_findings
         WHERE device_id = (SELECT id FROM devices WHERE serial_number = 'C02XXXXXXXXX');"
    ```
-   `first_observed_at` is Jamf's inventory clock — when this container could first have
-   known, never when the CVE was published. `corpus_withdrawn` is not a fix: the corpus
-   moved, and a later epoch can open the same row again.
 
 **H.** A corpus has arrived on this container, this organization's tier is not `off`, and
 the pages still do not answer from it — either they say nothing is answering (grey,

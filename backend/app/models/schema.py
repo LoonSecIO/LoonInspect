@@ -211,6 +211,9 @@ class Device(Base):
     # at read time.
     building_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     department_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # The finding ledger's "this Mac has been reconciled at least once" (#590), stamped once and never
+    # rewritten, because a Mac reconciled and found clean has no rows to say so (c5a2e9b71f34).
+    findings_reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     connection: Mapped[MdmConnection | None] = relationship(back_populates="devices")
     apps: Mapped[list[InstalledApp]] = relationship(back_populates="device", cascade="all, delete-orphan")
@@ -1830,28 +1833,17 @@ class Alert(Base):
 
 
 class DeviceFinding(Base):
-    """One finding on one Mac, held as an interval: when this pod first detected it, and when
-    it stopped (#590, ruled in #589; docs/vulnerabilities.md §6). Written only by
-    `app.core.findings`; migration `c5a2e9b71f34` carries the argument for every column.
-
-    The carrier is the **title**, never the build, so a bump still carrying the id keeps the
-    row and its clock, and one CVE reaching one Mac through two carriers is two rows. **An
-    open row means "still detected as of that Mac's last observation"** — nothing is written
-    while a finding merely persists, so `last_observed_at` is NULL while open and stamped at
-    close. Both clocks are Jamf's inventory clock, collection time as the fallback, as on
-    `device_changes`; `capped` is the truncation guard; `first_seen_basis` says whether the
-    opening clock was measured or reconstructed; a withdrawn id reads `corpus_withdrawn`,
-    never *fixed* (§6's tombstone rule)."""
+    """One finding on one Mac as an interval: when this pod first detected it, and when it stopped
+    (#590, ruled in #589; §6). Written only by `app.core.findings`, argued in `c5a2e9b71f34`. The
+    carrier is the **title**, never the build, and an **open row means "still detected as of that
+    Mac's last observation"**, so `last_observed_at` is NULL until the close."""
 
     __tablename__ = "device_findings"
     __table_args__ = (
-        # The grain, enforced — and deliberately NOT partial on `resolved_at IS NULL` the way
-        # `uq_alerts_open` is: a finding that comes back is the SAME finding returning to a Mac
-        # that never replaced the app, so the reopen keeps the row and its clock rather than
-        # minting a second, which is also what lets one upsert both open and reopen.
+        # The grain — NOT partial on `resolved_at IS NULL` the way `uq_alerts_open` is: a finding
+        # that comes back is the SAME one, so the reopen keeps the row and its clock.
         UniqueConstraint("device_id", "carrier_key", "finding_id", name="uq_device_finding"),
-        # "Which Macs carry CVE-X, and which still do" (#591) — the one read that does not
-        # start from a device. `resolved_at` last, so the open set is a prefix.
+        # "Which Macs carry CVE-X, and which still do" (#591), `resolved_at` last so open is a prefix.
         Index("ix_device_findings_finding", "tenant_id", "finding_id", "resolved_at"),
     )
 
