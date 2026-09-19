@@ -12,8 +12,9 @@ app.core.middleware.
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate
 from pathlib import Path
@@ -80,7 +81,7 @@ from app.mdm.factory import keep_sign_in
 from app.mdm.jamf.sign_in import MODE_NO_CACHE, MODE_PERPETUAL, SIGN_INS
 from app.mdm.patch.jamf_catalog import JamfPatchCatalogUnconfigured, sync_catalog
 from app.models.schema import MdmConnection, UserSession
-from app.summaries.service import tick as inventory_summary_tick
+from app.summaries.service import run_worker as inventory_summary_worker
 
 # Before anything else in the process emits a line, so migration output and startup
 # failures are formatted the same way as request logs rather than escaping as plain
@@ -436,6 +437,7 @@ async def lifespan(app: FastAPI):
     # constantly rather than only at startup, and which cannot mistake a live run on
     # another process for a dead one.
 
+    summary_task = None
     if settings.scheduler_enabled:
         scheduler.add_job(
             collections_tick,
@@ -470,7 +472,6 @@ async def lifespan(app: FastAPI):
             id="sharing_exchange_tick",
             replace_existing=True,
         )
-        scheduler.add_job(inventory_summary_tick, IntervalTrigger(seconds=5), id="inventory_summary_tick", replace_existing=True)
         scheduler.add_job(
             outbox_worker_tick,
             IntervalTrigger(seconds=30),
@@ -493,6 +494,7 @@ async def lifespan(app: FastAPI):
             replace_existing=True,
         )
         scheduler.start()
+        summary_task = asyncio.create_task(inventory_summary_worker(), name="inventory_summaries")
         logger.info(
             "scheduler started",
             extra={
@@ -502,6 +504,11 @@ async def lifespan(app: FastAPI):
         )
 
     yield
+
+    if summary_task is not None:
+        summary_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await summary_task
 
     if scheduler.running:
         scheduler.shutdown()

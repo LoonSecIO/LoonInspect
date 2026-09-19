@@ -423,7 +423,6 @@ export function AISettingsPage() {
 
       {/* The two switches, both default off. The flag lives on its own page; the
           consent is toggled here because it has no other surface yet. */}
-      <InventorySummarySettings />
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-lg border bg-card p-4">
           <p className="text-sm font-medium">{t.ai.flagLabel}</p>
@@ -453,6 +452,8 @@ export function AISettingsPage() {
           </div>
         </div>
       </div>
+
+      <InventorySummarySettings />
 
       {detection && (
         <div className="rounded-lg border bg-card p-4">

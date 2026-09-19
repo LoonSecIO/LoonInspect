@@ -41,6 +41,8 @@ from app.core.wire_vocabulary import (
     DEPARTURE_EVENT_TYPE,
     DEPARTURE_EVENT_TYPES,
     DEPARTURE_SOURCETYPE,
+    INVENTORY_SUMMARY_EVENT_TYPE,
+    INVENTORY_SUMMARY_SOURCETYPE,
     RETURNED_EVENT_TYPE,
     change_sourcetype,
     ordered_event_keys,
@@ -77,12 +79,14 @@ KNOWN_EVENT_TYPES = frozenset(
     {
         "device.inventory",
         "device.inventory.changed",
-        "device.inventory.summary",
+        INVENTORY_SUMMARY_EVENT_TYPE,
         "device.change",
         "run.completed",
         "run.failed",
         DEPARTURE_EVENT_TYPE,
         RETURNED_EVENT_TYPE,
+        INVENTORY_SUMMARY_EVENT_TYPE,
+        INVENTORY_SUMMARY_SOURCETYPE,
     }
 )
 
@@ -210,7 +214,7 @@ def _single_event_sourcetype(payload: Mapping[str, object]) -> str | None:
 
     Decided by `app.core.wire_vocabulary` and stamped here — #222's rule, "`sourcetype`
     comes from `app.core.wire_vocabulary` and nowhere else" — on the `splunk_hec`
-    destination type only. Three single-event families carry one:
+    destination type only. These single-event families carry one:
 
     * `device.change` — `loon:jamf:mac:<wrapper>:change` (#243, stamped by #223). It was
       never blocked on the fan-out: it is already at sub-event grain, one event per kept
@@ -228,6 +232,9 @@ def _single_event_sourcetype(payload: Mapping[str, object]) -> str | None:
       time: two sourcetypes for one shape would be two stanzas to keep in step. The no-vendor
       assertion form again — a departure is derived from an absence, not read off a Jamf object.
 
+    * `device.inventory.summary` — `INVENTORY_SUMMARY_SOURCETYPE` (#594), a derived
+      change briefing. Its source observation time is preserved.
+
     Only `destination.test` carries none — it is meant to be identifiable rather than
     routed, and lands under the sourcetype the operator set on the HEC input, exactly as
     every event did before any string was stamped.
@@ -238,8 +245,8 @@ def _single_event_sourcetype(payload: Mapping[str, object]) -> str | None:
     event = payload.get("event")
     if event in ASSERTION_EVENT_TYPES:
         return ASSERTION_SOURCETYPE
-    if event == "device.inventory.summary":
-        return "loon:inventory:summary"
+    if event == INVENTORY_SUMMARY_EVENT_TYPE:
+        return INVENTORY_SUMMARY_SOURCETYPE
     if event == "device.inventory.changed":
         return DELTA_SOURCETYPE
     if event in DEPARTURE_EVENT_TYPES:

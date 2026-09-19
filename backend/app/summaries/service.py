@@ -7,25 +7,31 @@ import logging
 import time
 from datetime import UTC, datetime, timedelta
 
+from fastapi import HTTPException
 from sqlalchemy import delete, exists, func, select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import aliased
 
 from app.ai.adapters import AdapterError, CompletionRequest, complete
 from app.ai.providers import HostReach, Provider
 from app.api.ai import judged_endpoint
-from app.core.ai import AIRefused, ai_features_enabled, require_ai
+from app.core.ai import AIFeaturesDisabled, AIRefused, ai_features_enabled, require_ai
 from app.core.ai_configs import get_config, saved_config
 from app.core.auth import as_utc
 from app.core.outbox import enqueue_event
 from app.core.tenant_jobs import operational_tenant_ids, tenant_job
 from app.core.wire import ENVELOPE
-from app.models.schema import EventOutbox
+from app.core.wire_vocabulary import INVENTORY_SUMMARY_EVENT_TYPE
+from app.models.schema import EventOutbox, FeatureFlag
 from app.models.schema import InventorySummaryJob as Job
+from app.models.schema import InventorySummaryMetric as Metric
 from app.models.schema import InventorySummarySettings as Settings
 from app.models.schema import InventorySummaryState as State
-from app.summaries.evidence import PROMPT_VERSION, SYSTEM, checked_reply, compact, compare, digest, prompt
+from app.summaries.diagnostics import REASONS, safe_exception
+from app.summaries.evidence import PROMPT_VERSION, SYSTEM, InvalidSummary, checked_reply, compact, compare, digest, prompt
 
 logger = logging.getLogger(__name__)
-EVENT = "device.inventory.summary"
+EVENT = INVENTORY_SUMMARY_EVENT_TYPE
 TTL = timedelta(hours=1)
 MAX_PENDING = 1000
 TERMINAL = ("completed", "cached", "no_updates", "baseline", "incomplete", "dropped", "failed")
@@ -39,42 +45,69 @@ def config_key(settings, config):
     return digest([settings.provider, settings.preprompt, str(config.updated_at) if config else None, PROMPT_VERSION])
 
 
-async def finish(db, job, status, summary=None, reason=None):
-    """Persist the result and its separate SIEM event atomically, without touching source delivery."""
-    job.status, job.summary, job.reason, job.finished_at = status, summary, reason, now()
-    if status in ("dropped", "failed"):
-        logger.warning(
-            "inventory summary dropped",
-            extra={
-                "summary_id": str(job.id),
-                "source_event_id": job.source_id,
-                "reason": reason,
-                "age_seconds": (now() - as_utc(job.created_at)).total_seconds(),
-            },
+def bucket(moment):
+    return as_utc(moment).replace(second=0, microsecond=0)
+
+
+async def count_outcome(db, provider, status, *, reason=None, at=None):
+    statement = insert(Metric).values(
+        provider=provider, bucket_at=bucket(at or now()), status=status, reason=reason or "none", count=1
+    )
+    await db.execute(
+        statement.on_conflict_do_update(
+            index_elements=["tenant_id", "provider", "bucket_at", "status", "reason"],
+            set_={"count": Metric.count + 1},
         )
-    body = {
-        "event": EVENT,
-        "summaryID": str(job.id),
-        "sourceEventID": job.source_id,
-        "occurredAt": job.source_at.isoformat(),
-        "generatedAt": job.finished_at.isoformat(),
-        "queuedAt": job.created_at.isoformat(),
-        "expiresAt": job.expires_at.isoformat(),
-        "deviceMeta": job.correlation["deviceMeta"],
-        "summaryStatus": status,
-        "summaryProvider": job.provider,
-        "promptVersion": PROMPT_VERSION,
-        "shortSummary": summary,
-        "reason": reason,
-        "evidence": job.evidence,
-        "advisory": True,
-        "corpusAsOf": job.correlation.get("corpusAsOf", []),
-        "evidenceScope": ["applications", "os_version_build", "selected_security_fields"],
-        ENVELOPE: job.correlation.get(ENVELOPE, {}),
-    }
-    # Reuse source HEC time, never generation time. Arrival remains Splunk _indextime.
-    body[ENVELOPE] = {**body[ENVELOPE], "time": job.source_at.timestamp()}
-    await enqueue_event(db, EVENT, body)
+    )
+
+
+def log_drop(source_id, reason, **extra):
+    logger.warning(
+        "inventory summary not produced; " + REASONS[reason], extra={"source_event_id": source_id, "reason": reason, **extra}
+    )
+
+
+async def finish(db, job, status, summary=None, reason=None):
+    """Persist outcome; emit only successful briefings of meaningful changes."""
+    job.status, job.summary, job.reason, job.finished_at = status, summary, reason, now()
+    meta = job.correlation["deviceMeta"]
+    state = await db.get(State, (job.tenant_id, digest([meta["connectionID"], meta["jamfProID"]])))
+    if state and state.source_id == job.source_id:
+        state.summary_status, state.short_summary = status, summary
+    await count_outcome(db, job.provider, status, reason=reason, at=job.created_at)
+    if status in ("dropped", "failed"):
+        log_drop(job.source_id, reason, summary_id=str(job.id), age_seconds=(now() - as_utc(job.created_at)).total_seconds())
+    if status in ("completed", "cached") and job.evidence["kind"] == "changed":
+        body = {
+            "event": EVENT,
+            "summaryID": str(job.id),
+            "sourceEventID": job.source_id,
+            "occurredAt": job.source_at.isoformat(),
+            "sourceEnqueuedAt": job.correlation["sourceEnqueuedAt"],
+            "generatedAt": job.finished_at.isoformat(),
+            "queuedAt": job.created_at.isoformat(),
+            "expiresAt": job.expires_at.isoformat(),
+            "deviceMeta": job.correlation["deviceMeta"],
+            "summaryStatus": status,
+            "summaryProvider": job.provider,
+            "promptVersion": PROMPT_VERSION,
+            "shortSummary": summary,
+            "evidence": job.evidence,
+            "advisory": True,
+            "corpusAsOf": job.correlation.get("corpusAsOf", []),
+            "evidenceScope": ["applications", "os_version_build", "disk_encryption", "selected_security_fields"],
+            ENVELOPE: {**job.correlation.get(ENVELOPE, {}), "time": job.source_at.timestamp()},
+        }
+
+        # Optional values are absent, recursively, under the frozen wire convention.
+        def present(value):
+            if isinstance(value, dict):
+                return {k: present(v) for k, v in value.items() if v is not None}
+            if isinstance(value, list):
+                return [present(v) for v in value]
+            return value
+
+        await enqueue_event(db, EVENT, present(body))
     await db.commit()
 
 
@@ -82,14 +115,15 @@ async def collect(db):
     settings = await db.scalar(select(Settings).with_for_update(skip_locked=True))
     if not settings:
         return
-    # Retain receipts beyond the intake lookback, including while inference is disabled.
-    # retention-clock: summary-jobs — README.md and KNOWN_ISSUES.md name this clock.
+    # retention-clock: summary-jobs — receipts/cache expire even while AI is disabled.
     await db.execute(delete(Job).where(Job.created_at < now() - timedelta(days=8), Job.status.in_(TERMINAL)))
+    # retention-clock: summary-metrics — minute counters cover the 24-hour dashboard.
+    await db.execute(delete(Metric).where(Metric.bucket_at < now() - timedelta(hours=25)))
     if not settings.enabled or not await ai_features_enabled(db):
         await db.commit()
         return
-    config = await saved_config(db, Provider(settings.provider))
-    key = config_key(settings, config)
+    # A per-event receipt marker survives out-of-order transaction commits. An integer
+    # high-water mark would silently skip a lower ID committed after a higher one.
     events = (
         await db.scalars(
             select(EventOutbox)
@@ -97,74 +131,105 @@ async def collect(db):
                 EventOutbox.event_type == "device.inventory",
                 EventOutbox.created_at >= settings.enabled_at,
                 EventOutbox.created_at >= now() - timedelta(days=7),
-                ~exists(select(Job.id).where(Job.source_id == EventOutbox.id)),
+                EventOutbox.summary_collected_at.is_(None),
             )
-            .order_by(EventOutbox.id)
+            .order_by(EventOutbox.created_at, EventOutbox.id)
             .limit(500)
         )
     ).all()
-    pending = await db.scalar(select(func.count()).select_from(Job).where(Job.status.in_(("pending", "processing"))))
     for event in events:
+        await db.refresh(event, with_for_update=True)
+        if event.summary_collected_at is not None:
+            continue
+        clock = now()
+        event.summary_collected_at = clock
         payload = event.payload
-        meta = payload.get("deviceMeta", {})
-        # Without stable source identity, don't accidentally compare two devices.
-        if not meta.get("connectionID") or not meta.get("jamfProID"):
-            continue
-        device_key = digest([meta["connectionID"], meta["jamfProID"]])
-        source_at = datetime.fromisoformat(payload["occurredAt"].replace("Z", "+00:00"))
-        state = await db.get(State, (event.tenant_id, device_key))
-        current = compact(payload)
-        evidence = compare(state.facts if state else None, current)
-        job = Job(
-            source_id=event.id,
-            created_at=event.created_at,
-            expires_at=as_utc(event.created_at) + TTL,
-            source_at=source_at,
-            provider=settings.provider,
-            config_key=key,
-            cache_key=digest([key, evidence]),
-            evidence=evidence,
-            correlation={
-                "deviceMeta": meta,
-                ENVELOPE: payload.get(ENVELOPE, {}),
-                "corpusAsOf": sorted(
-                    {
-                        item.get("vuln", {}).get("corpusAsOf")
-                        for item in (payload.get("app") or [])
-                        if item.get("vuln", {}).get("corpusAsOf")
+        meta = payload.get("deviceMeta") or {}
+        try:
+            if not meta.get("connectionID") or not meta.get("jamfProID"):
+                raise ValueError("identity")
+            source_at = datetime.fromisoformat(payload["occurredAt"].replace("Z", "+00:00"))
+            if source_at.tzinfo is None:
+                raise ValueError("timezone")
+            current = compact(payload)
+        except (ValueError, KeyError, TypeError, AttributeError):
+            log_drop(event.id, "invalid_observation")
+            await count_outcome(db, settings.provider, "dropped", reason="invalid_observation")
+        else:
+            device_key = digest([meta["connectionID"], meta["jamfProID"]])
+            state = await db.get(State, (event.tenant_id, device_key))
+            if state and source_at < as_utc(state.source_at):
+                log_drop(event.id, "stale_observation")
+                await count_outcome(db, settings.provider, "dropped", reason="stale_observation")
+            else:
+                evidence = compare(state.facts if state else None, current)
+                if state:
+                    state.facts = {
+                        **state.facts,
+                        **{
+                            section: values if section == "apps" else {**state.facts.get(section, {}), **values}
+                            for section, values in current.items()
+                        },
                     }
-                ),
-            },
-            status="pending",
-        )
-        db.add(job)
-        await db.flush()
-        if state and source_at < as_utc(state.source_at):
-            await finish(db, job, "dropped", reason="stale_observation")
-            await db.refresh(settings, with_for_update=True)
-            if not settings.enabled:
-                break
-            continue
-        if state:
-            state.facts = {**state.facts, **current}
-            state.source_at = source_at
-        else:
-            db.add(State(device_key=device_key, facts=current, source_at=source_at))
-        # Commit the state and receipt together before another intake can see this event.
-        if job.expires_at <= now():
-            await finish(db, job, "dropped", reason="expired")
-        elif evidence["kind"] == "unchanged":
-            await finish(db, job, "no_updates", "No updates")
-        elif evidence["kind"] in ("baseline", "incomplete"):
-            await finish(
-                db, job, evidence["kind"], "Baseline recorded" if evidence["kind"] == "baseline" else "Incomplete observation"
-            )
-        elif pending >= MAX_PENDING:
-            await finish(db, job, "dropped", reason="capacity")
-        else:
-            pending += 1
-            await db.commit()
-        # finish commits; reacquire the settings lock before continuing intake.
+                    state.source_at = source_at
+                else:
+                    state = State(device_key=device_key, facts=current, source_at=source_at)
+                    db.add(state)
+                state.source_id = event.id
+                kind = evidence["kind"]
+                if kind != "changed":
+                    status = "no_updates" if kind == "unchanged" else kind
+                    state.summary_status = status
+                    state.short_summary = "No updates" if status == "no_updates" else None
+                    await count_outcome(db, settings.provider, status)
+                elif as_utc(event.created_at) + TTL <= clock:
+                    state.summary_status, state.short_summary = "dropped", None
+                    log_drop(event.id, "expired")
+                    await count_outcome(db, settings.provider, "dropped", reason="expired")
+                else:
+                    config = await saved_config(db, Provider(settings.provider))
+                    key = config_key(settings, config)
+                    cache_key = digest([key, evidence])
+                    cached = await db.scalar(
+                        select(Job.summary).where(Job.cache_key == cache_key, Job.status == "completed").limit(1)
+                    )
+                    pending = await db.scalar(
+                        select(func.count()).select_from(Job).where(Job.status.in_(("pending", "processing")))
+                    )
+                    if not cached and pending >= MAX_PENDING:
+                        state.summary_status, state.short_summary = "dropped", None
+                        log_drop(event.id, "capacity")
+                        await count_outcome(db, settings.provider, "dropped", reason="capacity")
+                    else:
+                        job = Job(
+                            source_id=event.id,
+                            created_at=clock,
+                            expires_at=as_utc(event.created_at) + TTL,
+                            source_at=source_at,
+                            provider=settings.provider,
+                            config_key=key,
+                            cache_key=cache_key,
+                            evidence=evidence,
+                            correlation={
+                                "deviceMeta": meta,
+                                "sourceEnqueuedAt": as_utc(event.created_at).isoformat(),
+                                ENVELOPE: payload.get(ENVELOPE, {}),
+                                "corpusAsOf": sorted(
+                                    {
+                                        item.get("vuln", {}).get("corpusAsOf")
+                                        for item in (payload.get("app") or [])
+                                        if item.get("vuln", {}).get("corpusAsOf")
+                                    }
+                                ),
+                            },
+                            status="pending",
+                        )
+                        db.add(job)
+                        state.summary_status, state.short_summary = "pending", None
+                        if cached:
+                            await db.flush()
+                            await finish(db, job, "cached", cached)
+        await db.commit()
         await db.refresh(settings, with_for_update=True)
         if not settings.enabled:
             break
@@ -176,38 +241,37 @@ async def work_one(tenant_id, *, transport=None):
         clock = now()
         settings = await db.scalar(select(Settings).with_for_update())
         if not settings:
-            return
+            return False
         # An abandoned lease can be retried after two minutes; its original TTL stands.
+        twin = aliased(Job)
+        competing = exists(
+            select(twin.id).where(
+                twin.id != Job.id, twin.cache_key == Job.cache_key, twin.status == "processing", twin.next_attempt_at > clock
+            )
+        )
         job = await db.scalar(
             select(Job)
-            .where(Job.status.in_(("pending", "processing")), Job.next_attempt_at <= clock)
+            .where(Job.status.in_(("pending", "processing")), Job.next_attempt_at <= clock, ~competing)
             .order_by(Job.created_at)
             .with_for_update(skip_locked=True)
             .limit(1)
         )
         if not job:
-            return
+            return False
         if as_utc(job.expires_at) <= clock:
             await finish(db, job, "dropped", reason="expired")
-            return
+            return True
         if not settings.enabled or not await ai_features_enabled(db):
             await finish(db, job, "dropped", reason="disabled")
-            return
+            return True
         config = await get_config(db, Provider(settings.provider))
         if not config or config_key(settings, config) != job.config_key:
             await finish(db, job, "dropped", reason="configuration_changed")
-            return
+            return True
         cached = await db.scalar(select(Job.summary).where(Job.cache_key == job.cache_key, Job.status == "completed").limit(1))
         if cached:
             await finish(db, job, "cached", cached)
-            return
-        competing = await db.scalar(
-            select(Job.id)
-            .where(Job.id != job.id, Job.cache_key == job.cache_key, Job.status == "processing", Job.next_attempt_at > clock)
-            .limit(1)
-        )
-        if competing:
-            return
+            return True
         job.status = "processing"
         job.attempts += 1
         job.next_attempt_at = clock + timedelta(minutes=2)
@@ -240,6 +304,7 @@ async def work_one(tenant_id, *, transport=None):
                 temperature=0,
                 reasoning_effort=None if provider is Provider.apple_fm else config.reasoning_effort,
                 serial=provider is Provider.apple_fm,
+                background=True,
                 minimum_interval=settings.interval_seconds if provider is Provider.apple_fm else 0,
             )
             result = await complete(
@@ -253,37 +318,61 @@ async def work_one(tenant_id, *, transport=None):
             from app.core.sharing import get_or_create_settings
 
             consent = await get_or_create_settings(db)
-            if (
-                not consent.ai_inference
-                or not settings.enabled
-                or config_key(settings, latest) != job.config_key
-                or not await ai_features_enabled(db)
-            ):
+            await db.refresh(consent)
+            flag_on = await db.scalar(select(FeatureFlag.enabled).where(FeatureFlag.key == "ai_features"))
+            if not consent.ai_inference:
+                await finish(db, job, "dropped", reason="consent_missing")
+            elif not settings.enabled or not flag_on:
+                await finish(db, job, "dropped", reason="disabled")
+            elif config_key(settings, latest) != job.config_key:
                 await finish(db, job, "dropped", reason="configuration_changed")
             elif now() >= as_utc(job.expires_at):
                 await finish(db, job, "dropped", reason="expired")
             else:
                 await finish(db, job, "completed", answer)
-        except AIRefused:
-            await finish(db, job, "dropped", reason="consent_missing")
+        except InvalidSummary as exc:
+            await finish(db, job, "failed", reason=str(exc))
+        except HTTPException as exc:
+            logger.warning(
+                "inventory summary endpoint refused; " + REASONS["endpoint_refused"],
+                extra={"summary_id": str(job_id), "http_status": exc.status_code},
+            )
+            await finish(db, job, "failed", reason="endpoint_refused")
+        except AIRefused as exc:
+            await finish(db, job, "dropped", reason="disabled" if isinstance(exc, AIFeaturesDisabled) else "consent_missing")
         except AdapterError as exc:
             reason = "overload" if exc.status == 429 else exc.kind
             job.reason = reason
             job.overloads += int(reason == "overload")
             job.latency_ms = int((time.monotonic() - start) * 1000)
-            logger.warning("inventory summary attempt failed", extra={"summary_id": str(job.id), "reason": reason})
+            logger.warning(
+                "inventory summary attempt failed; " + REASONS[reason], extra={"summary_id": str(job.id), "reason": reason}
+            )
             if job.attempts < 3 and (exc.status == 429 or exc.kind in ("timeout", "unreachable")):
                 job.status = "pending"
                 job.next_attempt_at = now() + timedelta(seconds=30 * job.attempts)
                 await db.commit()
             else:
                 await finish(db, job, "failed", reason=reason)
-        except Exception:
+        except Exception as exc:
             # Never expose upstream content/keys through an error string or exception log.
+            logger.error(
+                "inventory summary failed; " + REASONS["internal_error"], extra={"summary_id": str(job_id), **safe_exception(exc)}
+            )
             await db.rollback()
             job = await db.get(Job, job_id)
             if job:
-                await finish(db, job, "failed", reason="invalid_or_unavailable")
+                await finish(db, job, "failed", reason="internal_error")
+
+        return True
+
+
+async def drain(tenant, *, transport=None, max_jobs=1000):
+    """Drain local completions without spending a five-second slot on each cache hit."""
+    deadline = time.monotonic() + 30
+    for _ in range(max_jobs):
+        if time.monotonic() >= deadline or not await work_one(tenant, transport=transport):
+            break
 
 
 async def tick():
@@ -291,6 +380,19 @@ async def tick():
         try:
             async with tenant_job(tenant) as db:
                 await collect(db)
-            await asyncio.gather(work_one(tenant), work_one(tenant))
-        except Exception:
-            logger.error("inventory summary worker failed; inventory delivery is independent", extra={"tenant_id": str(tenant)})
+            await asyncio.gather(drain(tenant), drain(tenant))
+        except Exception as exc:
+            logger.error(
+                "inventory summary worker failed; " + REASONS["internal_error"],
+                extra={"tenant_id": str(tenant), **safe_exception(exc)},
+            )
+
+
+async def run_worker():
+    """Wait after completion, so slow inference cannot produce scheduler overlap warnings."""
+    while True:
+        try:
+            await tick()
+        except Exception as exc:
+            logger.error("inventory summary scheduling failed; " + REASONS["internal_error"], extra=safe_exception(exc))
+        await asyncio.sleep(5)

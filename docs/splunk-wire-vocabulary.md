@@ -163,13 +163,13 @@ section tree, because the "shape about to change" reason that held the tree back
 applied to a run event. `ASSERTION_EVENT_TYPES` names the two, and `app/core/runs.py`
 reads its event-type constants from there so the string and the producer cannot drift.
 
-**Thirty-two strings are stamped, and every one comes from this module** (#222's
+**Thirty-three strings are stamped, and every one comes from this module** (#222's
 acceptance, closed by #242): the fourteen section strings on the fan-out, `loon:run` on
 the run family, the fifteen `:change` strings on the change family,
 `loon:inventory:changed` on the delta family
 ([#277](https://github.com/LoonSecIO/LoonInspect/issues/277), 2026-09-03, stamped the day
 before the flip), and `loon:departure` on the departure family described next
-([#179](https://github.com/LoonSecIO/LoonInspect/issues/179), 2026-09-16). The count moves
+([#179](https://github.com/LoonSecIO/LoonInspect/issues/179), 2026-09-16). The summary family adds `loon:inventory:summary` (#594). The departure count moved
 by one and not by two because that family's **two event types share the one string** — the
 number to count is stanzas, not types, and [`splunk-setup.md`](splunk-setup.md) §6 counts
 the stanzas. Still under the HEC input's own default: only the test event, which is
@@ -473,16 +473,28 @@ issue rather than living on as a footnote.
 
 | Consequence | Issue |
 | --- | --- |
-| The three enrichment strings — `loon:jamf:mac:app:patch`, `:vuln`, `:alert` — are minted with no writer, because an enrichment rides inline on the app sub-event under its own key (§2). `:vuln` is reserved for the lifecycle records of [`vulnerabilities.md`](vulnerabilities.md) §6; `:patch` and `:alert` name shapes nothing produces. `patch{}` and `vuln{}` themselves ship on every app sub-event since #241/#242, and both have since been populated **without stamping anything** — [#249](https://github.com/LoonSecIO/LoonInspect/issues/249) for `vuln{}` (2026-09-03) and [#311](https://github.com/LoonSecIO/LoonInspect/issues/311) for `patch.jamfPatch{}` (2026-09-04): each is an inline enrichment on `loon:jamf:mac:app`, because taking the compound for either would force `loon:jamf:mac:app:patch:vuln` on an app carrying both blocks, and a `props.conf` stanza takes no wildcards. Thirty-two strings are stamped since #179 minted `loon:departure` on 2026-09-16, and neither enrichment moved the registry | post-v0 (`vulnerabilities.md` §10) |
+| The three enrichment strings — `loon:jamf:mac:app:patch`, `:vuln`, `:alert` — are minted with no writer, because an enrichment rides inline on the app sub-event under its own key (§2). `:vuln` is reserved for the lifecycle records of [`vulnerabilities.md`](vulnerabilities.md) §6; `:patch` and `:alert` name shapes nothing produces. `patch{}` and `vuln{}` themselves ship on every app sub-event since #241/#242, and both have since been populated **without stamping anything** — [#249](https://github.com/LoonSecIO/LoonInspect/issues/249) for `vuln{}` (2026-09-03) and [#311](https://github.com/LoonSecIO/LoonInspect/issues/311) for `patch.jamfPatch{}` (2026-09-04): each is an inline enrichment on `loon:jamf:mac:app`, because taking the compound for either would force `loon:jamf:mac:app:patch:vuln` on an app carrying both blocks, and a `props.conf` stanza takes no wildcards. Thirty-three strings are stamped with #594 adding `loon:inventory:summary` after #179 minted `loon:departure` on 2026-09-16, and neither enrichment moved the registry | post-v0 (`vulnerabilities.md` §10) |
 | `alert` is still minted with no writer. #101 shipped the alerts table and the Needs Attention rows (2026-09-04) with **nothing on the wire** — but it wrote the block's shape down rather than leaving it to be invented under deadline: always present, `{"open": false}` or `{"open": true, "kinds": ["new_app"]}`, graded by the change log's `level`. The shape and the closed kind vocabulary are [`alerts.md`](alerts.md) §8 and §2; emitting them later is additive under clause 1, and clause 2 will freeze them the day they first ship | [#101](https://github.com/LoonSecIO/LoonInspect/issues/101) |
 
-## Inventory summary enrichment (#594, additive)
 
-`device.inventory.summary` is a separate optional family with Splunk sourcetype
-`loon:inventory:summary`. It does not change or delay `device.inventory` or `device.change`.
-The detailed contract, fields, statuses, bounds and subscription behavior are in
-[inventory-summaries.md](inventory-summaries.md). `deviceMeta` is copied without adding keys.
-`summaryID` identifies the enrichment; `sourceEventID` names the source outbox record.
-HEC `time` / body `occurredAt` remain the source event's time. `generatedAt`, `queuedAt`
-and `expiresAt` expose delay; `_indextime` remains arrival time. Model prose is advisory;
-`evidence` is code-derived. Explicit destination subscriptions must opt into the new name.
+## Inventory summaries (#594, additive amendment pending review)
+
+| Event family | Stamped sourcetype | Registry constant |
+| --- | --- | --- |
+| `device.inventory.summary` | `loon:inventory:summary` | `INVENTORY_SUMMARY_SOURCETYPE` |
+
+The thirty-third stamped string is minted in `app/core/wire_vocabulary.py`; the producer
+reads `INVENTORY_SUMMARY_EVENT_TYPE` from the same module. It is LoonInspect's derived
+briefing rather than a Jamf wrapper. It never changes an existing inventory event.
+
+Kyle ruled on review: **emit meaningful changes only**. Only `completed` and `cached`
+briefings of changed evidence emit this family. `No updates`, baseline, incomplete,
+dropped and failed outcomes remain local state/counters/logs, not SIEM receipt events.
+Optional values are absent, recursively, never JSON null. New vocabulary is proposed
+in this unmerged PR; the additive-only rule applies once it ships.
+
+The complete field/type/absence contract, including every nested `evidence` key, is
+[Inventory summary wire contract](inventory-summaries.md#wire-contract). CVE identifiers
+use the frozen `vulnIDs` spelling and the truncation flag `vulnIDsTruncated`.
+HEC `time` equals the source observation time; `queuedAt` is actual job creation time,
+`sourceEnqueuedAt` is the source outbox enqueue time, and `generatedAt` is completion.

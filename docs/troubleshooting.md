@@ -1844,6 +1844,10 @@ says under **Oldest published**.
 
 Inventory delivery does not wait for its summary. For absent or late summaries, provider
 selection, one-hour expiry, overload/capacity logs, and Splunk time correlation, follow
-[inventory summary troubleshooting](inventory-summaries.md#overview-metrics-and-troubleshooting).
+[inventory summary troubleshooting](inventory-summaries.md#metrics-and-diagnostics).
 `No updates` means a comparable observation changed none of the declared evidence scope;
 it never substitutes for an expired job or incomplete observation.
+
+Only meaningful completed/cached changes produce a SIEM summary event. No-update, baseline,
+incomplete and drop outcomes are local counters/state. Open Overview’s diagnostic reasons for
+the next check; unexpected-error container logs carry safe exception types and stack locations.

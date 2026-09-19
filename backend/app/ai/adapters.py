@@ -37,6 +37,7 @@ import asyncio
 import json
 import logging
 import weakref
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 
@@ -69,6 +70,7 @@ class CompletionRequest:
     model: str
     prompt: str
     serial: bool = False
+    background: bool = False
     minimum_interval: float = 0
     api_key: str | None = None
     # OpenAI's ``reasoning_effort``; sent only when set, because a server that does
@@ -384,19 +386,52 @@ def _json_or_raise(reply: _Reply) -> Any:
         ) from exc
 
 
+class _SerialLane:
+    def __init__(self):
+        self.condition = asyncio.Condition()
+        self.busy = False
+        self.interactive_waiters = 0
+        self.last_finished = 0.0
+
+    async def acquire(self, req):
+        loop = asyncio.get_running_loop()
+        async with self.condition:
+            if not req.background:
+                self.interactive_waiters += 1
+            try:
+                while True:
+                    pause = max(0, self.last_finished + req.minimum_interval - loop.time())
+                    if not self.busy and (not req.background or not self.interactive_waiters) and pause == 0:
+                        self.busy = True
+                        return
+                    # Waiting for a background pause does not occupy the lane. An
+                    # interactive call may overtake it, but never interrupts an active call.
+                    delay = pause if pause and not self.busy else None
+                    with suppress(TimeoutError):
+                        await asyncio.wait_for(self.condition.wait(), timeout=delay)
+            finally:
+                if not req.background:
+                    self.interactive_waiters -= 1
+                self.condition.notify_all()
+
+    async def release(self):
+        async with self.condition:
+            self.busy = False
+            self.last_finished = asyncio.get_running_loop().time()
+            self.condition.notify_all()
+
+
 _serial_slots: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
-_serial_last: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
 async def _serial_complete(wire, req, transport, timeout_seconds):
     loop = asyncio.get_running_loop()
-    lock = _serial_slots.setdefault(loop, asyncio.Lock())
-    async with lock:
-        await asyncio.sleep(max(0, _serial_last.get(loop, 0) + req.minimum_interval - loop.time()))
-        try:
-            return await _complete_unmetered(wire, req, transport=transport, timeout_seconds=timeout_seconds)
-        finally:
-            _serial_last[loop] = loop.time()
+    lane = _serial_slots.setdefault(loop, _SerialLane())
+    await lane.acquire(req)
+    try:
+        return await _complete_unmetered(wire, req, transport=transport, timeout_seconds=timeout_seconds)
+    finally:
+        await lane.release()
 
 
 async def complete(

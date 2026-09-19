@@ -5,7 +5,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
 revision = "c594a1b2c3d4"
-down_revision = "b8d4f1a6c2e7"
+down_revision = "e1c7a4d9b520"
 branch_labels = None
 depends_on = None
 
@@ -22,6 +22,8 @@ def tenant(primary=False):
 
 
 def upgrade():
+    op.add_column("event_outbox", sa.Column("summary_collected_at", sa.DateTime(timezone=True), server_default=sa.text("NULL")))
+    op.create_index("ix_summary_intake", "event_outbox", ["tenant_id", "created_at", "id"], postgresql_where=sa.text("event_type = 'device.inventory' AND summary_collected_at IS NULL"))
     op.create_table(
         "inventory_summary_settings",
         tenant(True),
@@ -37,6 +39,18 @@ def upgrade():
         sa.Column("device_key", sa.String(64), primary_key=True),
         sa.Column("facts", pg.JSONB(), nullable=False),
         sa.Column("source_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("source_id", sa.Integer(), nullable=False),
+        sa.Column("summary_status", sa.String(24), nullable=False),
+        sa.Column("short_summary", sa.Text()),
+    )
+    op.create_table(
+        "inventory_summary_metrics",
+        tenant(True),
+        sa.Column("provider", sa.String(32), primary_key=True),
+        sa.Column("bucket_at", sa.DateTime(timezone=True), primary_key=True),
+        sa.Column("status", sa.String(24), primary_key=True),
+        sa.Column("reason", sa.String(64), primary_key=True),
+        sa.Column("count", sa.Integer(), nullable=False),
     )
     op.create_table(
         "inventory_summary_jobs",
@@ -63,7 +77,8 @@ def upgrade():
     op.create_index("ix_inventory_summary_jobs_tenant_id", "inventory_summary_jobs", ["tenant_id"])
     op.create_index("ix_summary_pending", "inventory_summary_jobs", ["tenant_id", "status", "created_at"])
     op.create_index("ix_summary_cache", "inventory_summary_jobs", ["tenant_id", "cache_key", "status"])
-    for table in ("inventory_summary_settings", "inventory_summary_states", "inventory_summary_jobs"):
+    op.create_index("ix_summary_metrics_window", "inventory_summary_jobs", ["tenant_id", "provider", "created_at"])
+    for table in ("inventory_summary_settings", "inventory_summary_states", "inventory_summary_jobs", "inventory_summary_metrics"):
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
         op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
         predicate = "tenant_id = current_setting('looninspect.tenant_id')::uuid"
@@ -71,5 +86,7 @@ def upgrade():
 
 
 def downgrade():
-    for table in ("inventory_summary_jobs", "inventory_summary_states", "inventory_summary_settings"):
+    op.drop_index("ix_summary_intake", table_name="event_outbox")
+    op.drop_column("event_outbox", "summary_collected_at")
+    for table in ("inventory_summary_metrics", "inventory_summary_jobs", "inventory_summary_states", "inventory_summary_settings"):
         op.drop_table(table)

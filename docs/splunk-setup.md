@@ -210,13 +210,14 @@ the input's for that event.
 - `subject.departure` and `subject.returned` both arrive under `loon:departure` — one
   stanza for two types, with `event=` telling them apart
   ([#179](https://github.com/LoonSecIO/LoonInspect/issues/179), 2026-09-16).
+- Meaningful inventory briefings arrive under `loon:inventory:summary`, independently of source delivery.
 - Only the test event sends none and arrives under whichever sourcetype **you** set on
   the input (§2), and a string once minted is a permanent stanza, so none was invented in
   passing.
 
 The stanza below keys on the input's name and so covers the test event only; the same
-three lines belong under each of the thirty-two minted strings, and the section after it
-says how to avoid writing them thirty-two times. It assumes you called the input
+three lines belong under each of the thirty-three minted strings, and the section after it
+says how to avoid writing them thirty-three times. It assumes you called the input
 `loon:inspect`, so substitute your own.
 
 ```ini
@@ -254,10 +255,10 @@ TRUNCATE = 0
 they live in different places in a distributed deployment. Handing the whole stanza over
 is fine — each line is inert where it does not apply.
 
-**The thirty-three-stanza question.** `[<sourcetype>]` accepts no wildcards, so covering
+**The thirty-four-stanza question.** `[<sourcetype>]` accepts no wildcards, so covering
 every minted string the same way means repeating these three lines under each of the
-fourteen section strings, `loon:run`, `loon:inventory:changed`, `loon:departure`, and the
-fifteen `loon:jamf:mac:*:change` strings — thirty-two, plus the input's own stanza above.
+fourteen section strings, `loon:run`, `loon:inventory:changed`, `loon:departure`, `loon:inventory:summary`, and the
+fifteen `loon:jamf:mac:*:change` strings — thirty-three, plus the input's own stanza above.
 `loon:departure` is one stanza and not two: both departure event types arrive under it.
 Two ways out, in order of preference:
 
@@ -268,7 +269,7 @@ Two ways out, in order of preference:
 2. **Check whether you need `KV_MODE` at all.** Splunk's default search-time extraction
    already reads pure-JSON events on recent versions; the line above is belt-and-braces.
    If `deviceMeta.serialNumber` resolves in a search against an unconfigured sourcetype on
-   your version, the thirty-two stanzas are a convenience, not a requirement.
+   your version, the thirty-three stanzas are a convenience, not a requirement.
 
 Neither claim has been tested against a real Splunk here, which is exactly why the count
 is written down rather than glossed: it is the argument for shipping a LoonInspect TA, and

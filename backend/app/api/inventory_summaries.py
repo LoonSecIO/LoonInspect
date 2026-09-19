@@ -18,8 +18,10 @@ from app.core.database import get_db
 from app.core.permissions import Permission
 from app.core.sharing import get_or_create_settings
 from app.models.schema import InventorySummaryJob as Job
+from app.models.schema import InventorySummaryMetric as Metric
 from app.models.schema import InventorySummarySettings as Settings
-from app.summaries.service import now
+from app.summaries.diagnostics import REASONS
+from app.summaries.service import bucket, now
 
 router = APIRouter(prefix="/api/inventory-summaries", tags=["inventory summaries"])
 
@@ -64,11 +66,26 @@ async def save(payload: Options, db: AsyncSession = Depends(get_db)):
 @router.get("/metrics", dependencies=[Depends(require(Permission.SYSTEM_READ))])
 async def metrics(db: AsyncSession = Depends(get_db)):
     settings = await db.scalar(select(Settings))
-    cutoff = now() - timedelta(hours=24)
-    scope = [Job.created_at >= cutoff]
-    if settings:
-        scope.append(Job.provider == settings.provider)
-    counts = dict((await db.execute(select(Job.status, func.count()).where(*scope).group_by(Job.status))).all())
+    cutoff = bucket(now() - timedelta(hours=24))
+    provider = settings.provider if settings else "apple_fm"
+    scope = [Job.created_at >= cutoff, Job.provider == provider]
+    counters = [Metric.bucket_at >= cutoff, Metric.provider == provider]
+    counts = dict(
+        (await db.execute(select(Metric.status, func.sum(Metric.count)).where(*counters).group_by(Metric.status))).all()
+    )
+    for status, count in (
+        await db.execute(
+            select(Job.status, func.count()).where(*scope, Job.status.in_(("pending", "processing"))).group_by(Job.status)
+        )
+    ).all():
+        counts[status] = count
+    reasons = dict(
+        (
+            await db.execute(
+                select(Metric.reason, func.sum(Metric.count)).where(*counters, Metric.reason != "none").group_by(Metric.reason)
+            )
+        ).all()
+    )
     attempts, average = (
         await db.execute(select(func.coalesce(func.sum(Job.attempts), 0), func.avg(Job.latency_ms)).where(*scope))
     ).one()
@@ -81,6 +98,10 @@ async def metrics(db: AsyncSession = Depends(get_db)):
     drops = counts.get("dropped", 0) + counts.get("failed", 0)
     total = sum(counts.values())
     return {
+        "reasons": [
+            {"reason": reason, "count": count, "nextCheck": REASONS.get(reason, REASONS["internal_error"])}
+            for reason, count in reasons.items()
+        ],
         "enabled": bool(settings and settings.enabled),
         "provider": settings.provider if settings else None,
         "windowHours": 24,

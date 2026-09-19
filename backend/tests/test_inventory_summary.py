@@ -20,7 +20,8 @@ def snapshot(ids=None, version="1", total=1):
                 },
             }
         ],
-        "security": {"fileVault2Enabled": True},
+        "diskEncryption": {"fileVault2Enabled": True},
+        "security": {"sipStatus": "ENABLED"},
         "operatingSystem": {"version": "15", "build": "A"},
     }
 
@@ -44,7 +45,7 @@ def test_no_changes_and_no_private_identity_in_prompt():
 
 
 def test_missing_app_section_never_becomes_removal_or_no_updates():
-    evidence = compare(compact(snapshot()), compact({"security": {"fileVault2Enabled": True}}))
+    evidence = compare(compact(snapshot()), compact({"security": {"sipStatus": "ENABLED"}}))
     assert evidence["kind"] == "incomplete"
     assert evidence["changes"] == []
 
@@ -58,9 +59,9 @@ def test_capped_answer_cannot_resolve_an_id_by_absence():
 
 def test_security_change_is_code_computed():
     new = snapshot()
-    new["security"]["fileVault2Enabled"] = False
+    new["diskEncryption"]["fileVault2Enabled"] = False
     evidence = compare(compact(snapshot()), compact(new))
-    assert evidence["changes"] == [{"section": "security", "field": "fileVault2Enabled", "before": True, "after": False}]
+    assert evidence["changes"] == [{"section": "diskEncryption", "field": "fileVault2Enabled", "before": True, "after": False}]
 
 
 def test_prompt_has_a_fixed_budget_and_discloses_omission():
@@ -140,3 +141,118 @@ def test_settings_reject_unbounded_or_unknown_inputs(options):
 
     with pytest.raises(ValidationError):
         Options(**options)
+
+
+def test_filevault_change_from_real_jamf_contract_fixture():
+    import json
+    from pathlib import Path
+
+    from tests.test_inventory_snapshot import _snapshot
+
+    raw = json.loads((Path(__file__).parent / "fixtures/jamf/computer_inventory_detail.json").read_text())
+    before = compact(_snapshot(raw))
+    raw["diskEncryption"]["fileVault2Enabled"] = False
+    evidence = compare(before, compact(_snapshot(raw)))
+    assert evidence["kind"] == "changed"
+    assert {"section": "diskEncryption", "field": "fileVault2Enabled", "before": True, "after": False} in evidence["changes"]
+    assert "diskEncryption.fileVault2Enabled: True -> False" in evidence["facts"]
+    without = _snapshot(raw)
+    without.pop("diskEncryption")
+    assert "diskEncryption" in compare(before, compact(without))["missingSections"]
+
+
+def test_partial_first_observation_then_full_snapshot_is_baseline_not_ai_work():
+    partial = compact({"security": {"sipStatus": "ENABLED"}})
+    assert compare(partial, compact(snapshot()))["kind"] == "baseline"
+
+
+def test_name_only_change_is_not_a_vulnerability_assessment_change():
+    updated = snapshot()
+    updated["app"][0]["app"]["name"] = "Chrome Enterprise"
+    assert compare(compact(snapshot()), compact(updated))["changes"][0]["reason"] == "metadata_changed"
+
+
+@pytest.mark.asyncio
+async def test_interactive_fm_overtakes_queued_background_work():
+    import asyncio
+
+    import httpx
+
+    from app.ai.adapters import CompletionRequest, complete
+    from app.ai.providers import Wire
+
+    started, release = asyncio.Event(), asyncio.Event()
+    order = []
+
+    async def respond(request):
+        import json
+
+        label = json.loads(request.content)["messages"][-1]["content"]
+        order.append(label)
+        if label == "active":
+            started.set()
+            await release.wait()
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+    def call(label, background):
+        return complete(
+            Wire.openai_chat,
+            CompletionRequest(base_url="http://fm.example/v1", model="system", prompt=label, serial=True, background=background),
+            transport=httpx.MockTransport(respond),
+        )
+
+    active = asyncio.create_task(call("active", True))
+    await started.wait()
+    queued = asyncio.create_task(call("background", True))
+    interactive = asyncio.create_task(call("interactive", False))
+    await asyncio.sleep(0)
+    release.set()
+    await asyncio.gather(active, queued, interactive)
+    assert order == ["active", "interactive", "background"]
+
+
+def test_migration_graph_has_one_head():
+    from pathlib import Path
+
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    root = Path(__file__).resolve().parents[1]
+    config = Config(str(root / "alembic.ini"))
+    config.set_main_option("script_location", str(root / "migrations"))
+    assert len(ScriptDirectory.from_config(config).get_heads()) == 1
+
+
+def test_missing_known_filevault_field_is_incomplete_and_new_field_is_baseline():
+    old = compact(snapshot())
+    partial = snapshot()
+    partial["diskEncryption"] = {}
+    evidence = compare(old, compact(partial))
+    assert evidence["kind"] == "incomplete"
+    assert "diskEncryption" in evidence["missingSections"]
+    assert compare(compact(partial), old)["kind"] == "baseline"
+
+
+@pytest.mark.asyncio
+async def test_slow_worker_is_not_restarted_while_tick_is_active(monkeypatch):
+    import asyncio
+
+    from app.summaries import service
+
+    active = asyncio.Event()
+    calls = 0
+
+    async def blocked_tick():
+        nonlocal calls
+        calls += 1
+        active.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(service, "tick", blocked_tick)
+    task = asyncio.create_task(service.run_worker())
+    await active.wait()
+    await asyncio.sleep(0.02)
+    assert calls == 1
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task

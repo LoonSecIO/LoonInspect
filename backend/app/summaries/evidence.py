@@ -39,16 +39,19 @@ def compact(payload: dict) -> dict:
                 "version": clean(app.get("version", "")),
                 "assessment": vuln.get("assessment", "off"),
                 "counts": vuln.get("counts"),
-                "ids": sorted(set(vuln.get("vulnIDs") or [])),
-                "capped": bool(vuln.get("vulnIDsTruncated")),
+                "vulnIDs": sorted(set(vuln.get("vulnIDs") or [])),
+                "vulnIDsTruncated": bool(vuln.get("vulnIDsTruncated")),
             }
         result["apps"] = apps
     for section, fields in {
         "operatingSystem": ("version", "build"),
-        "security": ("fileVault2Enabled", "sipStatus", "gatekeeperStatus", "firewallEnabled"),
+        "diskEncryption": ("fileVault2Enabled",),
+        "security": ("sipStatus", "gatekeeperStatus", "firewallEnabled"),
     }.items():
         if isinstance(payload.get(section), dict):
-            result[section] = {k: payload[section][k] for k in fields if k in payload[section]}
+            result[section] = {
+                k: payload[section][k] for k in fields if k in payload[section] and payload[section][k] is not None
+            }
     return result
 
 
@@ -85,14 +88,26 @@ def compare(previous: dict | None, current: dict) -> dict:
             for key in sorted((set(values) | set(before)) - paired):
                 old, new = before.get(key), values.get(key)
                 if old != new:
-                    reason = "installed" if old is None else "removed" if new is None else "assessment_changed"
+                    reason = (
+                        "installed"
+                        if old is None
+                        else "removed"
+                        if new is None
+                        else (
+                            "assessment_changed"
+                            if any(old[k] != new[k] for k in ("assessment", "counts", "vulnIDs", "vulnIDsTruncated"))
+                            else "metadata_changed"
+                        )
+                    )
                     transitions.append((key, old, new, reason))
             for key, old, new, reason in transitions:
                 change = {"section": "apps", "key": key, "reason": reason, "before": old, "after": new}
                 if old and new and old["assessment"] == new["assessment"] == "covered":
-                    change["newlyListedIDs"] = sorted(set(new["ids"]) - set(old["ids"]))
+                    change["newlyListedIDs"] = sorted(set(new["vulnIDs"]) - set(old["vulnIDs"]))
                     # Absence from capped answers is never resolution evidence.
-                    change["noLongerListedIDs"] = [] if new["capped"] else sorted(set(old["ids"]) - set(new["ids"]))
+                    change["noLongerListedIDs"] = (
+                        [] if new["vulnIDsTruncated"] else sorted(set(old["vulnIDs"]) - set(new["vulnIDs"]))
+                    )
                 changes.append(change)
                 app = new or old
                 line = f"App: {app['name']} {app['version']}; {reason.replace('_', ' ')}."
@@ -115,7 +130,7 @@ def compare(previous: dict | None, current: dict) -> dict:
                             )
                         if old and change.get("newlyListedIDs"):
                             line += f" Newly listed: {len(change['newlyListedIDs'])}."
-                        if new["capped"]:
+                        if new["vulnIDsTruncated"]:
                             line += " ID list incomplete."
                     else:
                         line += " Vulnerability assessment unavailable."
@@ -123,12 +138,21 @@ def compare(previous: dict | None, current: dict) -> dict:
         else:
             for key, new in values.items():
                 old = previous[section].get(key)
-                if old != new:
+                if key not in previous[section]:
+                    changes.append({"section": section, "field": key, "reason": "newly_observed", "after": new})
+                    lines.append(f"{section}.{key}: newly observed.")
+                elif old != new:
                     changes.append({"section": section, "field": key, "before": old, "after": new})
                     lines.append(f"{section}.{key}: {clean(old)} -> {clean(new)}.")
     # Missing sections must not become a claim that the entire device is unchanged.
-    incomplete = (set(previous) | {"apps", "security", "operatingSystem"}) - set(current)
-    kind = "changed" if changes else "incomplete" if incomplete else "unchanged"
+    incomplete = (set(previous) | {"apps", "security", "operatingSystem", "diskEncryption"}) - set(current)
+    incomplete.update(
+        section
+        for section in current
+        if section != "apps" and section in previous and set(previous[section]) - set(current[section])
+    )
+    meaningful = [change for change in changes if change.get("reason") != "newly_observed"]
+    kind = "changed" if meaningful else "baseline" if changes else "incomplete" if incomplete else "unchanged"
     kept = []
     length = 0
     for line in lines:
@@ -151,13 +175,17 @@ def prompt(evidence: dict, preference: str) -> str:
     return f"Preferences (tone/emphasis only): {preference}\nFacts:\n{evidence['facts']}{suffix}"
 
 
+class InvalidSummary(ValueError):
+    """A bounded operator reason, never upstream content."""
+
+
 def checked_reply(content: str, facts: str) -> str:
     answer = content.strip()
     if answer.lower().rstrip(".") in {"no updates", "no changes"}:
-        raise ValueError("unsupported_no_change")
+        raise InvalidSummary("unsupported_no_change")
     if not answer or len(answer) > 700 or any(c in answer for c in "<>\n"):
-        raise ValueError("invalid_summary")
+        raise InvalidSummary("invalid_summary")
     # Novel numbers are refused; semantic accuracy still needs provider evaluations.
     if set(re.findall(r"\d+(?:\.\d+)*", answer)) - set(re.findall(r"\d+(?:\.\d+)*", facts)):
-        raise ValueError("unsupported_number")
+        raise InvalidSummary("unsupported_number")
     return answer

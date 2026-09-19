@@ -103,7 +103,7 @@ for an event whose delivery dead-lettered), finished runs and the closed alert l
 that ride the same `run_retention_days` (30 days), the audit log (30 days, by daily file
 rotation), the share log of what left the box for community sharing or AI (90 days,
 pruned on write), terminal inventory summary jobs and cached prose (8 days, including
-while summaries are disabled), and expired or revoked sessions (hourly, a day after they die). See
+while summaries are disabled), summary metric counters (25 hours), and expired or revoked sessions (hourly, a day after they die). See
 [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for what that means at scale.
 
 ---
