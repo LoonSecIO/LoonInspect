@@ -1,0 +1,64 @@
+/* Generated from tokens/design.json; do not edit. */
+:root {
+  --loon-brand-paper: #F6F2E7;
+  --loon-brand-paper-deep: #EFE9DA;
+  --loon-brand-ink: #12212E;
+  --loon-brand-lake: #173A52;
+  --loon-brand-lake-deep: #0C1E2C;
+  --loon-brand-pine: #1F4A3A;
+  --loon-brand-pine-light: #2E6650;
+  --loon-brand-eye: #C6342A;
+  --loon-brand-sun: #EFC15A;
+  --loon-brand-mist: #A7C3CE;
+  --loon-space-1: 4px;
+  --loon-space-2: 8px;
+  --loon-space-3: 12px;
+  --loon-space-4: 16px;
+  --loon-space-6: 24px;
+  --loon-space-8: 32px;
+  --loon-space-12: 48px;
+  --loon-radius-control: 6px;
+  --loon-radius-panel: 10px;
+  --loon-radius-badge: 4px;
+  --loon-font-display: Archivo, sans-serif;
+  --loon-font-body: 'Public Sans', system-ui, sans-serif;
+  --loon-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --loon-surface: #F6F2E7;
+  --loon-surface-raised: #FCFAF4;
+  --loon-text: #12212E;
+  --loon-text-secondary: #4D6373;
+  --loon-border: #708593;
+  --loon-navigation: #173A52;
+  --loon-navigation-text: #F6F2E7;
+  --loon-selected: #EFC15A;
+  --loon-selected-text: #12212E;
+  --loon-action: #1F4A3A;
+  --loon-action-text: #F6F2E7;
+  --loon-danger: #A82B24;
+  --loon-danger-surface: #F6E5DE;
+  --loon-success: #224D3A;
+  --loon-success-surface: #E4EBDF;
+  --loon-warning: #70430D;
+  --loon-warning-surface: #F3E6C7;
+  --loon-focus: #C6342A;
+}
+[data-loon-theme="dark"] {
+  --loon-surface: #0C1E2C;
+  --loon-surface-raised: #122B3A;
+  --loon-text: #F6F2E7;
+  --loon-text-secondary: #B0C5CE;
+  --loon-border: #8195A3;
+  --loon-navigation: #173A52;
+  --loon-navigation-text: #F6F2E7;
+  --loon-selected: #EFC15A;
+  --loon-selected-text: #12212E;
+  --loon-action: #B5D2B8;
+  --loon-action-text: #12212E;
+  --loon-danger: #FFB4A9;
+  --loon-danger-surface: #4B2C30;
+  --loon-success: #C5DEC5;
+  --loon-success-surface: #234338;
+  --loon-warning: #F0CD82;
+  --loon-warning-surface: #443A27;
+  --loon-focus: #EFC15A;
+}

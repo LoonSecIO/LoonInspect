@@ -4,10 +4,6 @@ import { BrowserRouter } from "react-router";
 import { AppRoutes } from "@/routes";
 import { AppProviders } from "@/providers/AppProviders";
 import { ErrorBoundary } from "@/features/errors/ErrorBoundary";
-import "@fontsource/geist-sans/400.css";
-import "@fontsource/geist-sans/500.css";
-import "@fontsource/geist-sans/600.css";
-import "@fontsource/geist-sans/700.css";
 import "@/index.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

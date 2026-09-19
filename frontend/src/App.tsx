@@ -10,14 +10,14 @@ export function App() {
   const location = useLocation();
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="flex min-h-screen flex-col bg-background text-foreground">
       {/* One resolution of the nav tree for both of its renderings: the sidebar, and
           the drawer the navbar opens below `md` (#141). */}
       <NavigationProvider>
         <Navbar />
         <UpdateBanner />
 
-        <div className="flex">
+        <div className="flex flex-1">
           <Sidebar />
 
           <MainContainer>

@@ -18,8 +18,8 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "hidden min-h-[calc(100vh-3.5rem)] flex-col border-r bg-muted/30 p-4 md:flex",
-        collapsed ? "w-16" : "w-64"
+        "app-sidebar app-nav-surface hidden flex-col border-r p-3 md:flex",
+        collapsed ? "w-16" : "w-60"
       )}
     >
       <NavTree items={items} collapsed={collapsed} />

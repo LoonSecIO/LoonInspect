@@ -13,7 +13,7 @@ import { useLocale } from "@/i18n/LocaleContext";
 const SIDEBAR_RETURNS = "(min-width: 48rem)";
 
 const buttonClasses =
-  "flex h-9 w-9 items-center justify-center rounded-md border border-input bg-background hover:bg-accent";
+  "flex h-9 w-9 items-center justify-center rounded-md border border-input bg-background text-foreground hover:bg-accent";
 
 /**
  * The navigation below `md` (#141): a menu button in the navbar and the same tree the
@@ -32,6 +32,7 @@ export function MobileNav() {
   const [open, setOpen] = useState(false);
   const openButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
+  const drawer = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -44,6 +45,21 @@ export function MobileNav() {
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
+      if (event.key === "Tab") {
+        const controls = drawer.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled])'
+        );
+        if (!controls?.length) return;
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
     };
     const sidebarReturns = window.matchMedia(SIDEBAR_RETURNS);
     const onViewportChange = (event: MediaQueryListEvent) => {
@@ -81,11 +97,12 @@ export function MobileNav() {
           <div className="fixed inset-0 z-50 md:hidden">
             <div className="absolute inset-0 bg-black/50" aria-hidden="true" onClick={close} />
             <div
+              ref={drawer}
               id="mobile-navigation"
               role="dialog"
               aria-modal="true"
               aria-label={t.common.menu}
-              className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col overflow-y-auto border-r bg-background p-4 shadow-lg"
+              className="app-nav-surface absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col overflow-y-auto border-r p-4 shadow-lg"
             >
               <div className="mb-3 flex items-center justify-between">
                 <span className="font-semibold">{t.common.menu}</span>

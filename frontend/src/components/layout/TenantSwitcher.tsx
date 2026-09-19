@@ -36,10 +36,10 @@ export function TenantSwitcher() {
   }
 
   return (
-    <label className="flex items-center gap-2 text-sm">
+    <label className="flex min-w-0 max-w-full items-center gap-2 text-sm">
       <span className="sr-only">{t.common.actingTenant}</span>
       <select
-        className={`h-9 rounded-md border border-input bg-background px-2 text-sm ${failed ? "border-destructive" : ""}`}
+        className={`h-9 max-w-full rounded-md border border-input bg-background px-2 text-sm ${failed ? "border-destructive" : ""}`}
         value={current.id}
         disabled={switching}
         title={failed ? t.common.switchTenantFailed : t.common.actingTenant}

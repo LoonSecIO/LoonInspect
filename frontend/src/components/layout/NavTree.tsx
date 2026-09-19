@@ -5,11 +5,7 @@ import { useLocale } from "@/i18n/LocaleContext";
 import { cn } from "@/lib/utils";
 
 const linkClasses =
-  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors";
-const linkStateClasses = (isActive: boolean) =>
-  isActive
-    ? "bg-accent text-accent-foreground"
-    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground";
+  "app-nav-link flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors";
 
 interface NavTreeProps {
   items: NavItem[];
@@ -45,15 +41,16 @@ export function NavTree({ items, collapsed = false, onNavigate }: NavTreeProps) 
         const badge = item.labelKey === "overview" && attentionCount > 0 ? attentionCount : null;
 
         return (
-          <div key={item.labelKey}>
+          <div className="app-nav-group" key={item.labelKey}>
             <NavLink
               to={item.to}
               end={item.end}
               title={collapsed ? t.nav[item.labelKey] : undefined}
+              aria-label={collapsed
+                ? `${t.nav[item.labelKey]}${badge !== null ? `, ${t.overview.attention.badge(badge)}` : ""}`
+                : undefined}
               onClick={onNavigate}
-              className={({ isActive }) =>
-                cn(linkClasses, linkStateClasses(isActive), collapsed && "justify-center px-2")
-              }
+              className={cn(linkClasses, collapsed && "justify-center px-2")}
             >
               <Icon className="h-4 w-4 shrink-0" />
               {!collapsed && t.nav[item.labelKey]}
@@ -75,7 +72,7 @@ export function NavTree({ items, collapsed = false, onNavigate }: NavTreeProps) 
               )}
             </NavLink>
             {!collapsed && item.children && (
-              <div className="ml-4 mt-1 space-y-1 border-l pl-3">
+              <div className="app-nav-children space-y-1">
                 {item.children.map((child) => {
                   const ChildIcon = child.icon;
 
@@ -85,7 +82,7 @@ export function NavTree({ items, collapsed = false, onNavigate }: NavTreeProps) 
                       to={child.to}
                       end={child.end}
                       onClick={onNavigate}
-                      className={({ isActive }) => cn(linkClasses, linkStateClasses(isActive))}
+                      className={linkClasses}
                     >
                       <ChildIcon className="h-4 w-4 shrink-0" />
                       {t.nav[child.labelKey]}
