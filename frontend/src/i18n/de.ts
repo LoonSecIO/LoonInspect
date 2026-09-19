@@ -1361,6 +1361,8 @@ export const de: Translations = {
     runNow: "Jetzt ausführen",
     runQueued: "Eingereiht",
     runError: "Der Lauf konnte nicht gestartet werden.",
+    runAlreadyRunning: (jobId: string) =>
+      `Auf dieser Verbindung läuft bereits ein Durchlauf — Job ${jobId}. Es wurde nichts dahinter eingereiht; „Letzte Läufe“ auf der Startseite zeigt diesen Job.`,
     edit: "Bearbeiten",
     delete: "Löschen",
     deleteConfirm: (name: string) => `Sammlung „${name}“ löschen?`,

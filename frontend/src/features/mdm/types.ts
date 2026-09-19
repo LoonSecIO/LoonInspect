@@ -289,4 +289,9 @@ export interface SectionInfo {
 export interface CollectionRunResult {
   collectionId: number;
   status: string;
+  /** The run this answer names: the one it started, or the one already in flight. */
+  jobId: string;
+  /** False when a run of this class already held the connection and this click joined it
+   *  rather than starting one. Nothing was queued behind that run (#582). */
+  started: boolean;
 }

@@ -125,7 +125,9 @@ export function deleteCollection(id: number): Promise<void> {
   return apiRequest<void>(`/mdm/collections/${id}`, { method: "DELETE" });
 }
 
-/** 202 as soon as the run is queued; the collection's lastRun* fields carry the outcome. */
+/** 202 either way: `started: true` with the run it just took, or `started: false` with the
+ *  run already holding this connection, which nothing is queued behind (#582). The
+ *  collection's lastRun* fields carry the outcome. */
 export function runCollection(id: number): Promise<CollectionRunResult> {
   return apiRequest<CollectionRunResult>(`/mdm/collections/${id}/run`, { method: "POST" });
 }

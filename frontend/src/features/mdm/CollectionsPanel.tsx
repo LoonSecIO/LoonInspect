@@ -68,6 +68,13 @@ export function CollectionsPanel({ connection, onConnectionChanged }: Collection
   const [busyId, setBusyId] = useState<number | null>(null);
   const [queuedId, setQueuedId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Run now that joined a run already in flight (#582). Not an error, and not styled as
+  // one: nothing went wrong, and nothing was queued behind the run it names.
+  // An answer to one click, cleared by the next action the panel takes — the same life
+  // `error` has. Deliberately not kept true by polling the job it names: `useRunLog` is
+  // the only run poller in the app (#31, #104) and a second one costs more than the
+  // staleness, so the sentence points at Recent runs for the live view instead.
+  const [notice, setNotice] = useState<string | null>(null);
 
   /** The one read of this connection's collections, as a promise chain rather than
    *  `await`: the first read is started by the effect below, and an effect body is the
@@ -108,9 +115,15 @@ export function CollectionsPanel({ connection, onConnectionChanged }: Collection
   async function handleRun(id: number) {
     setBusyId(id);
     setError(null);
+    setNotice(null);
     try {
-      await runCollection(id);
-      setQueuedId(id);
+      const triggered = await runCollection(id);
+      // A run of this class already holds the connection: this click joined it instead of
+      // starting a second pull against the same Jamf server, and queued nothing behind
+      // it. Say so, with the job to watch — the row's lastRun fields are not going to
+      // change on account of this click.
+      if (triggered.started) setQueuedId(id);
+      else setNotice(tc.runAlreadyRunning(triggered.jobId));
     } catch (caught) {
       setError(caught instanceof ApiError && caught.detail ? caught.detail : tc.runError);
     } finally {
@@ -121,6 +134,7 @@ export function CollectionsPanel({ connection, onConnectionChanged }: Collection
   async function handleToggle(row: Collection) {
     setBusyId(row.id);
     setError(null);
+    setNotice(null);
     try {
       await updateCollection(row.id, { enabled: !row.enabled });
       await refresh();
@@ -133,6 +147,7 @@ export function CollectionsPanel({ connection, onConnectionChanged }: Collection
 
   async function handleDelete(id: number) {
     setBusyId(id);
+    setNotice(null);
     try {
       await deleteCollection(id);
       setPendingDeleteId(null);
@@ -205,6 +220,12 @@ export function CollectionsPanel({ connection, onConnectionChanged }: Collection
       {error && (
         <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
           {error}
+        </p>
+      )}
+
+      {notice && (
+        <p role="status" className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          {notice}
         </p>
       )}
 

@@ -209,6 +209,14 @@ sweeps nothing ([README §3](../README.md)).
    LoonInspect collects computers only ([`mobile-devices.md`](mobile-devices.md)); a tenant
    of iPads sweeps zero Macs, correctly. If Jamf lists computers and the sweep still
    reports none → reportable state **B**.
+6. **Whenever a step above says Run now, and the answer is *already running*.** The
+   collection list says it in words with a job id, and the answer carries `started: false`
+   with that `jobId`. It is not a refusal and not a queue: a run of that kind was already
+   in flight on this connection, so the click joined it rather than starting a second pull
+   against the same Jamf server, and nothing is waiting behind it. Read the job it names —
+   `GET /api/runs/<jobId>`, its lines at `/log`, and **Recent runs** on the front page is
+   showing the same one. The zero you are chasing may be that run's, and it began before
+   the change you just made; wait for it to finish and Run now again.
 
 **A.** A device sweep failed with an error that is not 401 or 403. Report the run's
 `jobID`, its `error`, and the panel's lines.
