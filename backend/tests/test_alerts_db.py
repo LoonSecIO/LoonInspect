@@ -25,6 +25,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import delete, select, update
 
+from app.core.runs import TRIGGER_SWEEP
 from tests.jamf_fake import HOST, FakeJamf
 
 pytestmark = [
@@ -259,9 +260,9 @@ async def test_the_latch_opens_stays_open_and_closes_itself(db, connection, jamf
     `alerts.opened_24h` counts rows that have since closed, so a delete here would
     silently redefine that key.
     """
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
-    first = await sync_connection(db, connection)
+    first = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert first.ok
     assert await _alerts(db, connection.id) == [], "a device's first inventory is a baseline, not 83 installs"
 
@@ -303,9 +304,9 @@ async def test_the_latch_opens_stays_open_and_closes_itself(db, connection, jamf
 async def test_a_reinstall_after_a_close_opens_a_second_row(db, connection, jamf: FakeJamf) -> None:
     """Accepted churn, no cooldown (2026-08-29). The partial unique index is on
     `closed_at IS NULL` precisely so the second open is legal rather than a violation."""
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
-    await sync_connection(db, connection)
+    await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     for minute, act in ((6, _install), (7, _uninstall), (8, _install)):
         _at(jamf, minute)
         act(jamf)
@@ -320,10 +321,10 @@ async def test_a_version_bump_opens_nothing(db, connection, jamf: FakeJamf) -> N
     """The silent-new-version ruling end to end. Slack updating rewrites the device's
     whole `version_hash` set — the inventory delta reports a removal and an addition —
     and the latch, keyed on `app_hash`, sees nothing move."""
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
     from app.models.schema import InstalledApp
 
-    await sync_connection(db, connection)
+    await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert await _alerts(db, connection.id) == []
 
     _at(jamf, 5)
@@ -347,9 +348,10 @@ async def test_a_read_outside_the_aperture_opens_and_closes_nothing(db, connecti
     The sharp half is the close: the record here no longer carries Nmap at all, and
     a latch that closed on that would be closing on an absence nobody looked for.
     """
-    from app.mdm.service import ingest_computer, sync_connection
+    from app.mdm.collections import run_enabled_collections
+    from app.mdm.service import ingest_computer
 
-    await sync_connection(db, connection)
+    await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     _at(jamf, 10)
     _install(jamf)
     await _webhook(db, connection, jamf)
@@ -380,10 +382,10 @@ async def test_an_open_latch_cannot_be_opened_twice(db, connection, jamf: FakeJa
     bypass the inference and raise on flush instead.
     """
     from app.alerts.service import sync_new_app_latches
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
     from app.models.schema import Device, InstalledApp
 
-    await sync_connection(db, connection)
+    await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     device = (
         await db.execute(select(Device).where(Device.mdm_connection_id == connection.id, Device.external_id == jamf.real["id"]))
     ).scalar_one()
@@ -409,10 +411,10 @@ async def test_an_open_latch_cannot_be_opened_twice(db, connection, jamf: FakeJa
 async def test_deleting_a_device_takes_its_latches_with_it(db, connection, jamf: FakeJamf) -> None:
     """CASCADE, not SET NULL: a device that is gone has no fleet state left to assert,
     and an alert about a Mac nobody can name is not evidence of anything."""
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
     from app.models.schema import Alert, Device, DeviceExtensionAttribute, InstalledApp
 
-    await sync_connection(db, connection)
+    await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     _at(jamf, 20)
     _install(jamf)
     await _webhook(db, connection, jamf)
@@ -436,10 +438,10 @@ async def test_closed_latches_age_out_and_open_ones_never_do(db, connection, jam
     `alerts.opened_24h` — so they age out here, and an open latch is never eligible
     however long it has been true."""
     from app.alerts.service import purge_closed_alerts
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
     from app.models.schema import Alert
 
-    await sync_connection(db, connection)
+    await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     _at(jamf, 30)
     _install(jamf)
     await _webhook(db, connection, jamf)
@@ -465,9 +467,9 @@ async def test_a_viewer_can_read_the_open_latches(db, connection, jamf: FakeJamf
     own is a decision worth a test rather than a comment. The active-connection scoping is
     the same population rule the posture keys count over.
     """
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
-    await sync_connection(db, connection)
+    await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     _at(jamf, 40)
     _install(jamf)
     await _webhook(db, connection, jamf)

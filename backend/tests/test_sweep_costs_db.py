@@ -50,6 +50,7 @@ pytestmark = [
     pytest.mark.asyncio(loop_scope="session"),
 ]
 
+from app.core.runs import TRIGGER_SWEEP  # noqa: E402
 from tests.jamf_fake import HOST, FakeJamf  # noqa: E402
 
 
@@ -140,14 +141,14 @@ async def _ea_rows(db, connection_id: int) -> dict[tuple[int, str], tuple[int, s
 async def test_the_catalog_is_probed_once_per_sweep_not_once_per_device(db, jamf: FakeJamf, connection) -> None:
     """Eight devices, every one carrying apps: one signature check, not eight. The
     first device after a cold cache pays it; the rest trust the cache for the interval."""
+    from app.mdm.collections import run_enabled_collections
     from app.mdm.patch.matching import reset_catalog_cache
-    from app.mdm.service import sync_connection
     from app.models.schema import Device, InstalledApp
 
     jamf.seed(6)
     reset_catalog_cache()
     with statements() as seen:
-        result = await sync_connection(db, connection)
+        result = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert result.ok and result.device_count == 8, result
 
     assert len(catalog_probes(seen)) == 1, catalog_probes(seen)
@@ -170,21 +171,21 @@ async def test_the_catalog_is_probed_once_per_sweep_not_once_per_device(db, jamf
 async def test_a_cold_cache_is_probed_and_a_reset_forces_the_next_probe(db, jamf: FakeJamf, connection) -> None:
     """The interval is a trust window, not a blindfold: `reset_catalog_cache` — what the
     in-process catalog writers call — makes the very next device pay the probe again."""
+    from app.mdm.collections import run_enabled_collections
     from app.mdm.patch.matching import reset_catalog_cache
-    from app.mdm.service import sync_connection
 
     reset_catalog_cache()
     with statements() as first:
-        await sync_connection(db, connection)
+        await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert len(catalog_probes(first)) == 1
 
     with statements() as warm:
-        await sync_connection(db, connection)
+        await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert catalog_probes(warm) == [], "a warm cache inside the interval is trusted"
 
     reset_catalog_cache()
     with statements() as after_reset:
-        await sync_connection(db, connection)
+        await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert len(catalog_probes(after_reset)) == 1
 
 
@@ -192,15 +193,15 @@ async def test_a_cold_cache_is_probed_and_a_reset_forces_the_next_probe(db, jamf
 
 
 async def test_a_repeat_sweep_writes_no_extension_attribute_row(db, jamf: FakeJamf, connection) -> None:
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
-    first = await sync_connection(db, connection)
+    first = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert first.ok and first.device_count == 2, first
     before = await _ea_rows(db, connection.id)
     assert before, "the fixture records carry extension attributes"
 
     with statements() as seen:
-        second = await sync_connection(db, connection)
+        second = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert second.ok and second.device_count == 2, second
 
     assert ea_writes(seen) == {"INSERT": 0, "UPDATE": 0, "DELETE": 0}
@@ -211,9 +212,9 @@ async def test_a_repeat_sweep_writes_no_extension_attribute_row(db, jamf: FakeJa
 async def test_only_the_extension_attributes_that_moved_are_written(db, jamf: FakeJamf, connection) -> None:
     """One value changed, one definition gone, one new: one UPDATE, one DELETE, one INSERT,
     and every other row — on this device and the other one — keeps its id."""
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
-    await sync_connection(db, connection)
+    await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     before = await _ea_rows(db, connection.id)
 
     top_level = jamf.synthetic["extensionAttributes"]
@@ -227,7 +228,7 @@ async def test_only_the_extension_attributes_that_moved_are_written(db, jamf: Fa
     top_level.append(added)
 
     with statements() as seen:
-        result = await sync_connection(db, connection)
+        result = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert result.ok, result
     assert ea_writes(seen) == {"INSERT": 1, "UPDATE": 1, "DELETE": 1}
 
@@ -421,8 +422,8 @@ async def test_bench_sweep_costs(db, jamf: FakeJamf, connection) -> None:
     """Not a test: the FakeJamf harness driven at a chosen fleet size, printing what each
     sweep cost. Run with `-s` to see it. The clones carry the synthetic record's twelve
     apps and seven extension attributes each."""
+    from app.mdm.collections import run_enabled_collections
     from app.mdm.patch.matching import reset_catalog_cache
-    from app.mdm.service import sync_connection
 
     fleet = int(os.environ["LOON_BENCH_DEVICES"])
     jamf.seed(max(fleet - 2, 0))
@@ -430,7 +431,7 @@ async def test_bench_sweep_costs(db, jamf: FakeJamf, connection) -> None:
     for label in ("first sweep", "repeat sweep"):
         with statements() as seen:
             started = time.perf_counter()
-            result = await sync_connection(db, connection)
+            result = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
             elapsed = time.perf_counter() - started
         assert result.ok, result
         writes = ea_writes(seen)
