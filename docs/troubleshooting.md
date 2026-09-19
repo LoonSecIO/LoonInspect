@@ -320,8 +320,20 @@ directly.*
    Then read `statusCode` and the error:
    - connection refused, timeout, name not resolved → the URL, the port, a firewall, or a
      TLS certificate the container does not trust. `https://` with a private CA needs the
-     CA in the container ([`splunk-setup.md`](splunk-setup.md) §5); plain `http://` needs
-     `ALLOW_INSECURE_DESTINATION_URL=true` and is for a lab. Fix, test again.
+     CA in the container ([`splunk-setup.md`](splunk-setup.md) §5). Fix, test again.
+   - **plain `http://`, with no status code** → `ALLOW_INSECURE_DESTINATION_URL` is read
+     twice: once when the destination is **saved**, and again at **every delivery**, from
+     the container doing the delivering. So an `http` destination saved while it was set
+     stops delivering the moment it is unset, or on a container that never had it — and
+     nothing was dialled. The test's `detail` and the destination's `lastError` both read:
+
+     > url is http:// and ALLOW_INSECURE_DESTINATION_URL is not set on this container, so
+     > this delivery would put the destination's credential on the wire in clear. Edit the
+     > destination to https://, or set ALLOW_INSECURE_DESTINATION_URL=true for a lab SIEM
+     > without TLS.
+
+     Either fix ends it. The refusals in between are ordinary failed attempts, so they
+     climb the ladder and dead-letter; **Redrive** (step 4) returns them afterwards.
    - **401 / 403** → the token or auth header is wrong. Edit the destination, re-enter the
      secret, test again.
    - **400 from HEC** → usually the token's index (step 5) or the URL's path

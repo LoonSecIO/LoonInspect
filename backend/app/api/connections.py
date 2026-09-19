@@ -41,7 +41,7 @@ from app.core.runs import (
     finish,
 )
 from app.core.tenancy import reset_tenant_id, set_tenant_id
-from app.mdm.collections import ensure_default_collections
+from app.mdm.collections import ensure_default_collections, run_enabled_collections
 from app.mdm.credentials import (
     CREDENTIAL_SCHEMAS,
     credential_fingerprint,
@@ -52,7 +52,7 @@ from app.mdm.credentials import (
 from app.mdm.jamf.client import JamfClient
 from app.mdm.jamf.sign_in import SIGN_INS
 from app.mdm.reemit import re_emit_connection
-from app.mdm.service import set_sync_status, sync_connection, sync_result_kwargs
+from app.mdm.service import set_sync_status, sync_result_kwargs
 from app.models.schema import (
     Destination,
     Device,
@@ -671,7 +671,7 @@ async def _run_connection_sync(connection_id: int, actor: Actor, tenant_id: uuid
                 return
             async with entered(run):
                 try:
-                    result = await sync_connection(db, connection, trigger=TRIGGER_MANUAL, run=run)
+                    result = await run_enabled_collections(db, connection, trigger=TRIGGER_MANUAL, run=run)
                 except RunReclaimed:
                     # Already handled where it was detected: the reclaim closed the
                     # run, run_one_collection recorded the abort on the collection row,

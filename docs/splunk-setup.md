@@ -74,7 +74,10 @@ from your stack.
 **It has to be `https`.** Every delivery carries the HEC token, so a plain-`http` URL is
 refused when the destination is saved. A lab Splunk with HEC's TLS off is a real
 configuration, and it is a choice rather than a surprise: set
-`ALLOW_INSECURE_DESTINATION_URL=true` and the `http` URL saves. What no setting allows is
+`ALLOW_INSECURE_DESTINATION_URL=true` and the `http` URL saves. Keep it set on every
+container that delivers, not only the one the URL was typed into: the setting is read
+again at each delivery, and without it the `http` destination stops delivering with the
+reason on its row ([`troubleshooting.md`](troubleshooting.md) §3). What no setting allows is
 a loopback or link-local address — `127.0.0.1`, `localhost`, `169.254.169.254` — or a
 hostname that resolves to one; those are refused at save and again at every delivery,
 with the reason on the destination row. Inside the container `localhost` is the

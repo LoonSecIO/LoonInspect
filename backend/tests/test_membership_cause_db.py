@@ -32,6 +32,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import delete, select
 
+from app.core.runs import TRIGGER_SWEEP
 from tests.jamf_fake import HOST, FakeJamf
 
 pytestmark = [
@@ -102,14 +103,14 @@ async def _membership_rows(db, connection_id: int, subject_id: str) -> list:
 
 
 async def test_a_membership_moved_by_a_criteria_edit_says_so_and_drift_does_not(db, connection, jamf: FakeJamf) -> None:
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
     real_id = jamf.real["id"]
     # Baseline: the Mac is not in the group. Jamf's reportDate a minute ago — before the
     # group definition this sweep will observe.
     jamf.real["groupMemberships"] = [g for g in jamf.real["groupMemberships"] if g["groupId"] != GROUP]
     _report(jamf, datetime.now(UTC) - timedelta(minutes=1))
-    first = await sync_connection(db, connection)
+    first = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert first.ok and first.group_count == 1
     assert await _membership_rows(db, connection.id, real_id) == []
 
@@ -122,7 +123,7 @@ async def test_a_membership_moved_by_a_criteria_edit_says_so_and_drift_does_not(
     ]
     jamf.real["groupMemberships"].append({"groupId": GROUP, "groupName": "All Managed Clients", "smartGroup": True})
     _report(jamf, datetime.now(UTC) + timedelta(seconds=10))
-    second = await sync_connection(db, connection)
+    second = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert second.ok and second.observations.get("group_changed") == 1
 
     (joined,) = await _membership_rows(db, connection.id, real_id)
@@ -133,7 +134,7 @@ async def test_a_membership_moved_by_a_criteria_edit_says_so_and_drift_does_not(
     # Nothing moves but the Mac: it leaves the group under the same definition.
     jamf.real["groupMemberships"] = [g for g in jamf.real["groupMemberships"] if g["groupId"] != GROUP]
     _report(jamf, datetime.now(UTC) + timedelta(seconds=20))
-    third = await sync_connection(db, connection)
+    third = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
     assert third.ok and third.observations.get("group_changed") is None
 
     joined, left = await _membership_rows(db, connection.id, real_id)
@@ -148,10 +149,10 @@ async def test_the_sweep_observes_the_definitions_before_the_first_device(db, co
     """The order itself, read off the fake tenant's request log: the smart-group reads
     come before the first inventory page. A future reordering that put them back after
     the loop would pass the test above only by luck of the fixture's clocks."""
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
     _report(jamf, datetime.now(UTC) - timedelta(minutes=1))
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     paths = list(jamf.requests)
     first_group_read = next(i for i, path in enumerate(paths) if "smart-groups" in path)
     first_inventory_read = next(i for i, path in enumerate(paths) if "computers-inventory" in path)
@@ -204,17 +205,17 @@ def _delete_group(jamf: FakeJamf, group_id: str) -> None:
 
 
 async def test_a_deleted_group_costs_one_line_and_no_notable_rows(db, connection, jamf: FakeJamf) -> None:
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
     jamf.smart_groups.append(FALCON)
     jamf.real["groupMemberships"].append({"groupId": "17", "groupName": "Falcon Installed", "smartGroup": True})
     _report(jamf, datetime.now(UTC) - timedelta(minutes=1))
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
     notable_before = _notable(await _change_rows(db, connection.id))
 
     _delete_group(jamf, "17")
     _report(jamf, datetime.now(UTC) + timedelta(seconds=10))
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
 
     rows = await _change_rows(db, connection.id)
     assert [r for r in rows if (r.entry_identity or {}).get("groupId") == "17"] == [], "level low is off by default"
@@ -228,17 +229,17 @@ async def test_a_deleted_group_costs_one_line_and_no_notable_rows(db, connection
 
 
 async def test_a_deleted_group_departed_it_never_says_the_device_drifted(db, connection, jamf: FakeJamf) -> None:
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
     await _everything(db)
     jamf.smart_groups.append(FALCON)
     jamf.real["groupMemberships"].append({"groupId": "17", "groupName": "Falcon Installed", "smartGroup": True})
     _report(jamf, datetime.now(UTC) - timedelta(minutes=1))
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
 
     _delete_group(jamf, "17")
     _report(jamf, datetime.now(UTC) + timedelta(seconds=10))
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
 
     rows = [r for r in await _change_rows(db, connection.id) if (r.entry_identity or {}).get("groupId") == "17"]
     assert len(rows) == 2, "one per member"
@@ -254,18 +255,18 @@ async def test_a_deleted_group_departed_it_never_says_the_device_drifted(db, con
 
 
 async def test_a_deleted_extension_attribute_definition_collapses_the_same_way(db, connection, jamf: FakeJamf) -> None:
-    from app.mdm.service import sync_connection
+    from app.mdm.collections import run_enabled_collections
 
     await _everything(db)
     _report(jamf, datetime.now(UTC) - timedelta(minutes=1))
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
 
     jamf.extension_attribute_definitions = [d for d in jamf.extension_attribute_definitions if d["id"] != EA]
     jamf.synthetic["general"]["extensionAttributes"] = [
         ea for ea in jamf.synthetic["general"]["extensionAttributes"] if ea["definitionId"] != EA
     ]
     _report(jamf, datetime.now(UTC) + timedelta(seconds=10))
-    assert (await sync_connection(db, connection)).ok
+    assert (await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)).ok
 
     (row,) = [r for r in await _change_rows(db, connection.id) if (r.entry_identity or {}).get("definitionId") == EA]
     assert row.entry_kind == "extension_attribute" and row.change == "removed" and row.level == "low"

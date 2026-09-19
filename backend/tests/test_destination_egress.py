@@ -187,6 +187,41 @@ async def test_a_hostname_that_moved_to_the_metadata_address_is_refused_at_deliv
     assert await blocked_delivery_reason(_destination("https://siem.example.com/hook")) is None
 
 
+async def test_security_plain_http_is_refused_at_delivery_and_not_only_at_the_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SECURITY: the setting belongs to the process, not to the row (#581). A destination
+    saved while it was true is delivered by a container that may not have it — before
+    this, that row kept POSTing its credential in clear for ever."""
+    monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", _resolves_to("203.0.113.10"))
+    lab = _destination("http://siem.example.com:8088/services/collector")
+
+    reason = await blocked_delivery_reason(lab)
+    assert reason is not None
+    assert "ALLOW_INSECURE_DESTINATION_URL" in reason, reason
+    assert "https://" in reason, "the sentence names the other fix too: edit the destination"
+    assert await blocked_delivery_reason(_destination("https://siem.example.com/hook")) is None
+
+    monkeypatch.setattr(settings, "allow_insecure_destination_url", True)
+    assert await blocked_delivery_reason(lab) is None
+    assert await blocked_delivery_reason(_destination("https://siem.example.com/hook")) is None
+
+
+async def test_a_blocked_host_keeps_its_own_sentence_when_the_scheme_is_refused_too(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both rules refuse `http://127.0.0.1`. The address is the graver fault and the one
+    still wrong after the flag is set, so it is the sentence the operator reads."""
+
+    async def _explodes(host, port, **kwargs):
+        raise AssertionError(f"resolved {host}, which is a literal")
+
+    monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", _explodes)
+    reason = await blocked_delivery_reason(_destination("http://127.0.0.1:8088/services/collector")) or ""
+    assert "loopback" in reason, reason
+    assert "ALLOW_INSECURE_DESTINATION_URL" not in reason, "the plaintext sentence must not displace the address one"
+
+
 async def test_security_the_test_button_refuses_a_blocked_destination_without_dialling(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
