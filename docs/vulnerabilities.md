@@ -779,12 +779,23 @@ and to LoonVD behind it — and not a LoonInspect change.
 2026-09-19, on [#589](https://github.com/LoonSecIO/LoonInspect/issues/589)'s rulings).
 `device_findings` holds one row per (tenant, device, carrier title, finding id), opened when a
 Mac's stored answer first carries the id and closed with the reason it stopped —
-`build_changed`, `app_removed`, `corpus_withdrawn` — so *since when* and *last detected* have a
-home. The carrier is the **title**, so a bump still carrying the id keeps the row and its clock;
+`build_changed`, `app_removed`, `corpus_withdrawn`, `device_departed` — so *since when* and
+*last detected* have a home. The carrier is the **title**, so a bump still carrying the id
+keeps the row and its clock;
 a row opened from a truncated list is `capped` and never closes by absence from one;
 `corpus_withdrawn` reads *no longer in the corpus*, never *fixed*, the tombstone rule above. The
 read path, the page and three `vuln.*` posture keys are
 [#591](https://github.com/LoonSecIO/LoonInspect/issues/591).
+
+**Finding-store departure closure (#607).** A Mac’s open findings close with
+`device_departed` when its established seven-day departure tail expires, alongside its
+alert latches. Both census paths do this, including scoped or incomplete sweeps that
+cannot establish new departures. `resolved_at` records the closure; `last_observed_at`
+retains `devices.last_seen_at` (including an unknown timestamp), never the departure
+clock. Departure does not mean fixed. Closed rows remain available for investigation,
+and a returning observation can reopen the same finding on its original first clock.
+The existing `vuln.findings_open` and `vuln.findings_resolved_24h` keys reflect the close;
+no finding lifecycle event is added to the wire.
 
 `fixed_in` stays **off the wire** (ruled 2026-08-25). Fix-version data lives in the Jamf
 Patch and `app_catalog` tables, in-app only: correctable there, and it avoids a

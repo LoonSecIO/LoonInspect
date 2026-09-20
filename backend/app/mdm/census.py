@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.alerts.service import close_departed_device_latches
 from app.changes.derive import CollapsedDeparture
+from app.core.findings import close_departed_device_findings
 from app.core.runs import log as run_log
 from app.mdm.jamf.contract import SUBJECT_COMPUTER, SUBJECT_COMPUTER_GROUP, SUBJECT_EXTENSION_ATTRIBUTE_DEFINITION
 from app.models.schema import MdmConnection, Run
@@ -112,6 +113,13 @@ def _latch_close_clause(latches_closed: int) -> str:
     )
 
 
+def _finding_close_clause(count: int) -> str:
+    return (
+        f"{count} open finding(s) closed on Macs that left the fleet; this does not mean fixed — "
+        "last detected remains the Mac's last observation (troubleshooting §5 step 9)"
+    )
+
+
 async def _reconcile_device_census(
     db: AsyncSession,
     connection: MdmConnection,
@@ -122,7 +130,9 @@ async def _reconcile_device_census(
     selector: str | None,
     devices_failed: int,
 ) -> None:
-    """A deleted Mac leaves in seven days (#183) — and only ONE clean census may say so. Clean is
+    """Reconcile device departures, terminal events, alerts and findings for a sweep.
+
+    A deleted Mac leaves in seven days (#183) — and only ONE clean census may say so. Clean is
     all three, each ruling out a way of departing a Mac that is still there: the sweep reached this
     line, so it succeeded; it carried no RSQL `selector`, because a scoped sweep says nothing about
     the Macs it never asked for; and no device failed, because a device Jamf *did* return but whose
@@ -135,7 +145,7 @@ async def _reconcile_device_census(
     census with, so a Mac back under a new id is not recognised, and the line says which match it got
     — matching on less under the same sentence is rule 2.
 
-    This is also where a departed Mac's open alert latches are closed (#476) — on BOTH paths, beside
+    This is also where a departed Mac's open alert latches and findings are closed (#476, #607) — on BOTH paths, beside
     the terminal (#512) — because it is the only place that can be: `process_sync` runs against Macs
     a sweep returns, and a Mac that left the fleet is never swept again, so its latch would stay open
     for ever.
@@ -149,11 +159,14 @@ async def _reconcile_device_census(
         latches_closed = await close_departed_device_latches(
             db, connection_id=connection.id, at=at, run_id=run.id if run is not None else None
         )
+        findings_closed = await close_departed_device_findings(db, connection_id=connection.id, at=at)
         await db.commit()
         if run is not None:
             line = "device census not taken; this sweep was not a clean one"
             if latches_closed:
                 line += f". {_latch_close_clause(latches_closed)}"
+            if findings_closed:
+                line += f". {_finding_close_clause(findings_closed)}"
             await run_log(
                 db,
                 run,
@@ -163,6 +176,7 @@ async def _reconcile_device_census(
                 devicesFailed=devices_failed,
                 macsRemoved=removed,
                 latchesClosed=latches_closed,
+                findingsClosed=findings_closed,
             )
         return
     verdict = await reconcile_census(
@@ -191,6 +205,7 @@ async def _reconcile_device_census(
     latches_closed = await close_departed_device_latches(
         db, connection_id=connection.id, at=at, run_id=run.id if run is not None else None
     )
+    findings_closed = await close_departed_device_findings(db, connection_id=connection.id, at=at)
     await db.commit()
     if run is None:
         return
@@ -213,6 +228,8 @@ async def _reconcile_device_census(
     # wherever a latch closed, because the operator reads one of the three (`_latch_close_clause`).
     if latches_closed:
         line += f". {_latch_close_clause(latches_closed)}"
+    if findings_closed:
+        line += f". {_finding_close_clause(findings_closed)}"
     await run_log(
         db,
         run,
@@ -222,6 +239,7 @@ async def _reconcile_device_census(
         inTail=in_tail,
         leftTheFleet=left,
         latchesClosed=latches_closed,
+        findingsClosed=findings_closed,
         # What went on the wire, so "my SIEM saw nothing" is answerable from the run (troubleshooting §16.4).
         eventsEnqueued=emitted,
         macsRemoved=removed,
