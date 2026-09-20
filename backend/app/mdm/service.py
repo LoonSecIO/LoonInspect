@@ -1443,7 +1443,10 @@ async def process_sync(
     )
     payload = snapshot.to_payload()
     payload[ENVELOPE] = dict(hints)
-    await enqueue_event(db, snapshot.event, payload, request_id=get_request_id())
+    source_event = await enqueue_event(db, snapshot.event, payload, request_id=get_request_id())
+    from app.observations.history_capture import capture
+
+    await capture(db, device=existing, event=source_event)
 
     if not added and not removed_rows:
         await db.commit()

@@ -1,4 +1,6 @@
+import { historyEnglish } from "@/features/devices/historyCopy";
 export const en = {
+  deviceHistory: historyEnglish,
   system: {
     // #407: a published release this build does not contain — never a merge to main.
     updateAvailable: (tag: string) => `LoonInspect ${tag} is available`,
@@ -794,7 +796,13 @@ export const en = {
     // catalog is silent, never a dash: "Reported with no value" ≠ "no EAs" ≠ "not read".
     detail: {
       back: "All devices",
-      subtitle: (serial: string, externalId: string) => `${serial} · Jamf computer ${externalId}`,
+      jamfComputer: (externalId: string) => `Jamf computer ${externalId}`,
+      updateDevice: "Update this device",
+      updating: "Updating from Jamf…",
+      updateHint: "Read this computer’s latest saved inventory from Jamf.",
+      updateSucceeded: "Updated from Jamf. Inventory, history, and changes have been refreshed.",
+      updateStale: "Jamf returned older inventory. The newer saved inventory has been kept.",
+      updateFailed: "Could not confirm the device update. Reload this page to check, or try again.",
       loading: "Loading device…",
       notFound: "No device has this id.",
       errorLoading: "Could not load this device.",
@@ -846,6 +854,9 @@ export const en = {
         heading: "Extension attributes",
         count: (n: number) => `${n} reported`,
         colDefinition: "Definition",
+        noMatches: "No attributes match this filter.",
+        filter: "Filter attributes by name, ID, or value…",
+        columns: "Columns",
         colValues: "Values",
         colSource: "Source",
         colEnabled: "Enabled in Jamf",

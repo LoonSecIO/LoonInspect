@@ -32,6 +32,10 @@ export function getDevice(id: number): Promise<DeviceDetail> {
   return apiRequest<DeviceDetail>(`/devices/${id}`);
 }
 
+export function refreshDevice(id: number): Promise<{ jobId: string; outcome: string }> {
+  return apiRequest(`/devices/${id}/refresh`, { method: "POST" });
+}
+
 /** What the ledger holds for one Mac, by section, with the four-state vocabulary (#368).
  *  Lazy on the page: requested when its block scrolls into view. */
 export function getDeviceObservation(id: number): Promise<DeviceObservation> {

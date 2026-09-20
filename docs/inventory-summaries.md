@@ -171,3 +171,11 @@ queued time and reason. Original inventory still delivers if a summary fails. Re
 | `internal_error` | The summary worker encountered an unexpected error. Check the exception type and stack locations in container logs and report the summary ID. |
 
 posture_snapshot: none
+
+## Device history integration (#605)
+
+The device-history card retains a summary outcome on its exact source-correlated historical point.
+This does not extend queue/cache TTL, generate a model call, or add a wire event. Unchanged sweeps
+still produce no extra summary jobs; they also do not create a history point when inventory and
+assessment evidence match the last recorded point. See [Device history](device-history.md) for
+historical count semantics, retention and the optional upgrade import.

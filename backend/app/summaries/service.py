@@ -27,6 +27,7 @@ from app.models.schema import InventorySummaryJob as Job
 from app.models.schema import InventorySummaryMetric as Metric
 from app.models.schema import InventorySummarySettings as Settings
 from app.models.schema import InventorySummaryState as State
+from app.observations.history_capture import retain_summary
 from app.summaries.diagnostics import REASONS, safe_exception
 from app.summaries.evidence import PROMPT_VERSION, SYSTEM, InvalidSummary, checked_reply, compact, compare, digest, prompt
 
@@ -74,6 +75,7 @@ async def finish(db, job, status, summary=None, reason=None):
     state = await db.get(State, (job.tenant_id, digest([meta["connectionID"], meta["jamfProID"]])))
     if state and state.source_id == job.source_id:
         state.summary_status, state.short_summary = status, summary
+    await retain_summary(db, job.source_id, status, summary, job.provider, reason)
     await count_outcome(db, job.provider, status, reason=reason, at=job.created_at)
     if status in ("dropped", "failed"):
         log_drop(job.source_id, reason, summary_id=str(job.id), age_seconds=(now() - as_utc(job.created_at)).total_seconds())
@@ -143,6 +145,7 @@ async def collect(db):
             continue
         clock = now()
         event.summary_collected_at = clock
+        state = None
         payload = event.payload
         meta = payload.get("deviceMeta") or {}
         try:
@@ -229,6 +232,8 @@ async def collect(db):
                         if cached:
                             await db.flush()
                             await finish(db, job, "cached", cached)
+        if state and state.source_id == event.id:
+            await retain_summary(db, event.id, state.summary_status, state.short_summary, settings.provider)
         await db.commit()
         await db.refresh(settings, with_for_update=True)
         if not settings.enabled:

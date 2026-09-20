@@ -83,6 +83,7 @@ export interface ExtensionAttribute {
 }
 
 export interface DeviceDetail extends Device {
+  jamfUrl: string | null;
   apps: InstalledApp[];
   extensionAttributes: ExtensionAttribute[];
   /** The corpus generation every `vuln` block came from; null means no corpus is loaded. */

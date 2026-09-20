@@ -1987,3 +1987,31 @@ class InventorySummaryJob(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     overloads: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class DeviceHistoryPoint(Base):
+    """A recorded inventory state and its contemporaneous assessment, retained with the ledger (#605)."""
+
+    __tablename__ = "device_history_points"
+    __table_args__ = (Index("ix_device_history_order", "tenant_id", "device_id", "collected_at", "id"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"))
+    span_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("observation_spans.id", ondelete="CASCADE"), index=True)
+    source_id: Mapped[int] = mapped_column(Integer, unique=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    assessment: Mapped[dict] = mapped_column(JSONB)
+    summary_status: Mapped[str] = mapped_column(String(24), default="unavailable")
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    summary_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class DeviceHistoryPreference(Base):
+    """Up to twenty slots belonging to an account in its acting tenant, never to its email address."""
+
+    __tablename__ = "device_history_preferences"
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(primary_key=True)
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True)
+    slots: Mapped[list] = mapped_column(JSONB)

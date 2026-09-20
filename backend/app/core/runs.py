@@ -82,6 +82,8 @@ LOCK_WEBHOOK = "webhook"
 # the hours a 40,000-device re-send takes to enqueue. Two re-emits of one connection do
 # serialize — the second joins the first, as run-now joins a sweep.
 LOCK_RE_EMIT = "re_emit"
+# A targeted manual read is not evidence of a completed fleet sweep.
+LOCK_DEVICE_REFRESH = "device_refresh"
 
 STATUS_RUNNING = "running"
 STATUS_SUCCEEDED = "succeeded"
@@ -98,10 +100,9 @@ STATUS_FAILED = "failed"
 # because an hourly catalog refresh would satisfy the absence search the nightly sweep
 # was supposed to answer, and a catalog pull has no device count worth reporting. One
 # consequence of the widening: "is the fleet fully inventoried" is now
-# `trigger=sweep OR trigger=manual`, not a bare `event=run.completed` — a busy tenant's
-# webhooks emit this event too, and would silence a naive absence search on a night the
-# actual sweep never closed. Payload is snake_case, matching the envelope convention and
-# staying out of the way of the pending casing ruling (#90).
+# `lockClass=device_sweep`, not a bare `event=run.completed`: webhooks and targeted
+# manual refreshes also close runs, but neither proves the fleet was scanned. Older
+# records without lockClass predate targeted refreshes and keep their previous meaning.
 #
 # The literal lives in `app.core.wire_vocabulary`, beside the `loon:run` sourcetype this
 # family is delivered under (#242): the module that mints the string and the module that
@@ -111,7 +112,7 @@ RUN_COMPLETED_EVENT = RUN_COMPLETED_EVENT_TYPE
 
 # Lock classes whose closed run also gets a run.completed. LOCK_CATALOG is the one
 # exclusion left standing after #224 — see RUN_COMPLETED_EVENT above.
-RUN_COMPLETED_LOCK_CLASSES = frozenset({LOCK_DEVICE_SWEEP, LOCK_WEBHOOK, LOCK_RE_EMIT})
+RUN_COMPLETED_LOCK_CLASSES = frozenset({LOCK_DEVICE_SWEEP, LOCK_WEBHOOK, LOCK_RE_EMIT, LOCK_DEVICE_REFRESH})
 
 # Emitted the moment any run reaches `failed` — every trigger and every lock class,
 # wider than run.completed's scope (#103): run.completed excludes LOCK_CATALOG even
@@ -388,6 +389,7 @@ async def _enqueue_run_completed(
     run_id: uuid.UUID,
     connection_id: int,
     trigger: str,
+    lock_class: str,
     comparison: str,
     closed_at: datetime,
     status: str,
@@ -397,11 +399,9 @@ async def _enqueue_run_completed(
 ) -> None:
     """The run.completed event (#92), added to the caller's open transaction.
 
-    Lifted out of `finish` so both closing events are built by a named builder and handed
-    to the same best-effort emitter below, rather than one being a builder and the other
-    twenty-eight inline lines. Not a shape change: every key, every value and every
-    comment below is the payload `finish` built before the lift (#212's casing included), and the tests assert
-    the set of keys exactly.
+    Both closing events use named builders and the same best-effort emitter below.
+    lockClass distinguishes a targeted manual refresh from a full device sweep; the
+    existing fields keep their meaning and the tests assert the complete key set.
     """
     # Both halves, not just `source` (#287). `run.failed` has carried `connectionName`
     # since it was written; this path read it from the same helper on every closed run and
@@ -424,6 +424,7 @@ async def _enqueue_run_completed(
             # it, which is why this needed no new ruling on a name.
             "connectionName": connection_name,
             "trigger": trigger,
+            "lockClass": lock_class,
             "comparison": comparison,
             # The run's window end — the same instant the row's window_end was
             # just stamped with, so the event and the row tell one time.
@@ -1166,6 +1167,7 @@ async def finish(
                 run_id=row.id,
                 connection_id=row.mdm_connection_id,
                 trigger=row.trigger,
+                lock_class=row.lock_class,
                 comparison=row.comparison,
                 closed_at=now,
                 status=status,

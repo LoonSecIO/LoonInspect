@@ -1,6 +1,8 @@
+import { historyGerman } from "@/features/devices/historyCopy";
 import type { Translations } from "@/i18n/en";
 
 export const de: Translations = {
+  deviceHistory: historyGerman,
   system: {
     updateAvailable: (tag: string) => `LoonInspect ${tag} ist verfügbar`,
     updateAvailableUntagged: "Ein neueres Release von LoonInspect ist verfügbar",
@@ -711,7 +713,13 @@ export const de: Translations = {
     onKevChip: "Auf KEV",
     detail: {
       back: "Alle Geräte",
-      subtitle: (serial: string, externalId: string) => `${serial} · Jamf-Computer ${externalId}`,
+      jamfComputer: (externalId: string) => `Jamf-Computer ${externalId}`,
+      updateDevice: "Dieses Gerät aktualisieren",
+      updating: "Wird aus Jamf aktualisiert…",
+      updateHint: "Das zuletzt in Jamf gespeicherte Inventar dieses Computers abrufen.",
+      updateSucceeded: "Aus Jamf aktualisiert. Inventar, Verlauf und Änderungen wurden neu geladen.",
+      updateStale: "Jamf lieferte älteres Inventar. Das neuere gespeicherte Inventar wurde beibehalten.",
+      updateFailed: "Die Geräteaktualisierung konnte nicht bestätigt werden. Seite zur Prüfung neu laden oder erneut versuchen.",
       loading: "Gerät wird geladen…",
       notFound: "Kein Gerät hat diese ID.",
       errorLoading: "Dieses Gerät konnte nicht geladen werden.",
@@ -762,6 +770,9 @@ export const de: Translations = {
         heading: "Erweiterungsattribute",
         count: (n: number) => `${n} gemeldet`,
         colDefinition: "Definition",
+        noMatches: "Keine Attribute entsprechen diesem Filter.",
+        filter: "Attribute nach Name, ID oder Wert filtern…",
+        columns: "Spalten",
         colValues: "Werte",
         colSource: "Quelle",
         colEnabled: "In Jamf aktiviert",

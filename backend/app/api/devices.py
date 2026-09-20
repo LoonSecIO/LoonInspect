@@ -4,6 +4,7 @@ import re
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Literal, TypeVar
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import ColumnElement, and_, func, or_, select, tuple_
@@ -11,16 +12,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.catalog.service import title_names
-from app.core.auth import require
+from app.core.audit import AuditAction, audit
+from app.core.auth import Principal, current_principal, require
 from app.core.database import get_db
+from app.core.egress import BlockedBaseUrl, validate_mdm_base_url
 from app.core.permissions import Permission
 from app.core.vuln import VulnCorpus
 from app.core.vuln_answer import counted, served, stored_corpus
 from app.core.vuln_library import earned_corpus, loaded_epoch_signature
 from app.core.vuln_read import NO_ANSWER, assess, corpus_as_of, today, update_line
+from app.mdm.device_refresh import DeviceRefreshError, refresh_device
 from app.mdm.jamf.contract import SUBJECT_COMPUTER
 from app.mdm.org_units import BUILDING, DEPARTMENT, OrgUnitNames, ids_for_name, load_names, name_for
-from app.models.schema import Device, DeviceExtensionAttribute, InstalledApp
+from app.models.schema import Device, DeviceExtensionAttribute, InstalledApp, MdmConnection
 from app.observations.departure import gone_for_good, open_departures
 from app.observations.read import device_observation
 from app.schemas.catalog import CatalogTitleRef
@@ -45,6 +49,36 @@ router = APIRouter(
 )
 
 _DeviceOutT = TypeVar("_DeviceOutT", bound=DeviceOut)
+
+
+def jamf_computer_url(base_url: str | None, external_id: str) -> str | None:
+    """A record link from the device's own connection, never a credential-bearing URL."""
+    if not base_url or not external_id:
+        return None
+    try:
+        base = validate_mdm_base_url(base_url).rstrip("/")
+    except BlockedBaseUrl:
+        return None
+    return f"{base}/computers.html?{urlencode({'id': external_id, 'o': 'r'})}"
+
+
+@router.post("/{device_id}/refresh", dependencies=[Depends(require(Permission.DEVICE_SYNC))])
+async def update_device_from_jamf(
+    device_id: int, principal: Principal = Depends(current_principal), db: AsyncSession = Depends(get_db)
+) -> dict:
+    device = await db.get(Device, device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if device.mdm_provider != "jamf" or device.platform != "macos" or device.mdm_connection_id is None:
+        raise HTTPException(status_code=409, detail="This device has no supported Jamf connection.")
+    connection = await db.get(MdmConnection, device.mdm_connection_id)
+    if connection is None or not connection.is_active:
+        raise HTTPException(status_code=409, detail="The Jamf connection is unavailable or inactive.")
+    audit(AuditAction.DEVICE_REFRESH_REQUESTED, target_type="device", target_id=device_id, connection_id=connection.id)
+    try:
+        return await refresh_device(db, connection, device.external_id, actor_label=principal.account.email)
+    except DeviceRefreshError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
 
 
 def _parse_ea_filters(ea: list[str] | None) -> list[ExtensionAttributeFilter]:
@@ -418,6 +452,9 @@ async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> Devi
         raise HTTPException(status_code=404, detail="Device not found")
     departed = await open_departures(db, subject_kind=SUBJECT_COMPUTER)
     detail = _stamped(DeviceDetailOut.model_validate(device), device, await load_names(db), departed)
+    base_url = await db.scalar(select(MdmConnection.base_url).where(MdmConnection.id == device.mdm_connection_id))
+    if device.mdm_provider == "jamf" and device.platform == "macos":
+        detail.jamf_url = jamf_computer_url(base_url, device.external_id)
     # One read of this tenant's data-sharing tier for the whole response, not one per app:
     # the corpus a tenant has earned is a per-tenant fact and the gate reads it here
     # (#248, docs/vulnerabilities.md §8).

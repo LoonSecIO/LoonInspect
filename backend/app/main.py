@@ -43,6 +43,7 @@ from app.api.changes_prompt import router as changes_prompt_router
 from app.api.collections import router as collections_router
 from app.api.connections import router as connections_router
 from app.api.destinations import router as destinations_router
+from app.api.device_history import router as device_history_router
 from app.api.devices import router as devices_router
 from app.api.evidence import router as evidence_router
 from app.api.feature_flags import router as feature_flags_router
@@ -639,6 +640,7 @@ app.include_router(system_router)
 app.include_router(settings_router)
 app.include_router(ai_router)
 app.include_router(inventory_summaries_router)
+app.include_router(device_history_router)
 app.include_router(devices_router)
 app.include_router(applications_router)
 app.include_router(catalog_router)

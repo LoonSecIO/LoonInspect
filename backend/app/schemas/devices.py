@@ -140,6 +140,7 @@ class DeviceOut(BaseModel):
 
 
 class DeviceDetailOut(DeviceOut):
+    jamf_url: str | None = None
     apps: list[InstalledAppOut] = []
     extension_attributes: list[ExtensionAttributeOut] = []
     # #251: the corpus generation every `vuln` block below came from, so a header can
