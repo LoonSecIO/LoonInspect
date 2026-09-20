@@ -325,6 +325,19 @@ twice the design target. At the design target a day's pass is under 20,000 and c
 half the table. The case that carries more than one day is a week of skipped or refused
 censuses followed by a clean one, which closes every cohort whose tail ran out meanwhile.
 
+## 9. Development corpus retention has no pruning yet (#621)
+
+The default-off `VULN_RELEASE_RETENTION` storage foundation retains each distinct imported
+corpus projection when enabled. There is no cleanup schedule yet; database and backup
+size therefore grow with retained releases. Even while disabled, the additive migration
+keeps one copy of the installed projection. Leave continued retention disabled in
+production until tenant selection and safe pruning are implemented. Turning it off does
+not delete retained data. No production corpus-size or retention-growth figure has been
+measured for this feature; do not infer one from the small test fixture.
+
+This does not yet change expiry behavior, consent gates or which corpus answers a tenant.
+See [the foundation boundary](docs/vulnerability-service-v2.md#11-storage-foundation-621-first-slice).
+
 ## Checked, and not an issue
 
 Recorded because "we looked" is worth more on an inspection day than silence, and

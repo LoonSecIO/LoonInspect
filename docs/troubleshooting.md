@@ -573,6 +573,14 @@ and step 2 ends with how to tell that apart from a broken exchange.
    - `the corpus is published as format 'epoch/2' and this container reads 'epoch/1';
      update the container` → exactly what it says: the published format moved ahead of
      this build. Settings › Support shows the build; upgrade the image.
+   - `vulnerability library could not be stored; this process keeps its previously loaded answer`
+     → the database rejected the import transaction. Check `docker compose logs db`,
+     database availability and available volume space, then use Settings → Data Sharing →
+     **Send now** to retry. The exchange log may say sent: that proves the upload succeeded,
+     not that corpus storage did. If testing `VULN_RELEASE_RETENTION=true` (#621), retained
+     releases also consume space and do not yet prune. Leave that development setting off
+     in production; turning it off stops accumulation but does not reclaim retained rows.
+     Do not delete the active library or evidence to make an update appear successful.
    - `the stored vulnerability library could not be read (epoch 0002): …` → this
      container holds an epoch it can no longer read. **It is written once, at startup, and
      never again** — `--since 48h` will not find it on a container that has been up

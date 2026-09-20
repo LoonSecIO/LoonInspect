@@ -729,6 +729,50 @@ class VulnLibraryTitle(Base):
     versions_compiled: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class VulnCorpusRelease(Base):
+    """Retained normalized corpus, keyed by manifest digest (#621), not a tenant grant.
+
+    Like the active library, these global reference tables contain no tenant inventory.
+    They retain the client-readable projection, not original manifest/bundle bytes or
+    unknown future objects. Acquisition/selection is a separate follow-up to #621.
+    """
+
+    __tablename__ = "vuln_corpus_releases"
+
+    signature: Mapped[str] = mapped_column(String(64), primary_key=True)
+    epoch_id: Mapped[str] = mapped_column(String(32))
+    asof: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    loaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    manifest: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    row_count: Mapped[int] = mapped_column(Integer)
+    title_count: Mapped[int] = mapped_column(Integer)
+
+
+class VulnCorpusReleaseRow(Base):
+    """An assessed build in one retained release; absence remains unknown, never clean."""
+
+    __tablename__ = "vuln_corpus_release_rows"
+
+    signature: Mapped[str] = mapped_column(ForeignKey("vuln_corpus_releases.signature", ondelete="RESTRICT"), primary_key=True)
+    key_full: Mapped[str] = mapped_column(String(67), primary_key=True)
+    ids: Mapped[list] = mapped_column(JSONB)
+    truncated: Mapped[bool] = mapped_column(Boolean)
+    counts: Mapped[dict] = mapped_column(JSONB)
+    oldest_published: Mapped[dict] = mapped_column(JSONB)
+
+
+class VulnCorpusReleaseTitle(Base):
+    """Retained title coverage keyed by release and title ID; repeated title hashes survive."""
+
+    __tablename__ = "vuln_corpus_release_titles"
+
+    signature: Mapped[str] = mapped_column(ForeignKey("vuln_corpus_releases.signature", ondelete="RESTRICT"), primary_key=True)
+    title_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    key_title: Mapped[str] = mapped_column(String(67))
+    catalog_last_modified: Mapped[str] = mapped_column(String(64))
+    versions_compiled: Mapped[int] = mapped_column(Integer)
+
+
 class DataSharingSettings(Base):
     """One row per tenant: the community data-sharing consent state
     (docs/data-sharing.md). Created lazily on first access; an absent row means an

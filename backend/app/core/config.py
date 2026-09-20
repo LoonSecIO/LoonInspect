@@ -126,6 +126,11 @@ class Settings(BaseSettings):
     # and the UI shows the override as the reason the control is locked.
     community_sharing: bool = True
 
+    # #621's storage foundation only. Keep accumulation off until tenant selection and
+    # safe pruning ship; enabling this retains each imported projection without expiry.
+    # This neither changes consent nor grants access to a retained release.
+    vuln_release_retention: bool = False
+
     # Daily check of this build against the latest published release, so the UI can say
     # when one is available (#407). UPDATE_CHECK=false turns the outbound call off
     # entirely (see issue #43), and Settings > Support then says so.
