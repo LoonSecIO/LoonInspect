@@ -57,9 +57,13 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
 import httpx
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, insert, literal, select, text
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.egress import BlockedCorpusUrl, corpus_url_for_log, validate_corpus_url
 from app.core.tenancy import get_tenant_id
 from app.core.user_agent import build_user_agent
@@ -73,7 +77,15 @@ from app.core.vuln import (
     install_tenant_tier,
     loaded_corpus,
 )
-from app.models.schema import DataSharingSettings, VulnLibraryEpoch, VulnLibraryRow, VulnLibraryTitle
+from app.models.schema import (
+    DataSharingSettings,
+    VulnCorpusRelease,
+    VulnCorpusReleaseRow,
+    VulnCorpusReleaseTitle,
+    VulnLibraryEpoch,
+    VulnLibraryRow,
+    VulnLibraryTitle,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -670,6 +682,39 @@ async def stored_signature(db: AsyncSession) -> str | None:
     return (await db.execute(select(VulnLibraryEpoch.signature))).scalar_one_or_none()
 
 
+async def retain_current_release(db: AsyncSession, *, manifest: Mapping[str, object] | None = None) -> None:
+    """Copy the active projection once, inside the importer's transaction (#621).
+
+    The digest insert serializes duplicate retention; no upsert rewrites old evidence.
+    Caller serializes active-library replacement and owns commit/rollback. All rows are
+    copied in SQL, avoiding a second Python copy of the whole corpus. The archive is
+    reference data, never proof that any tenant acquired this release.
+    """
+    fields = ("signature", "epoch_id", "asof", "loaded_at", "row_count", "title_count")
+    statement = (
+        pg_insert(VulnCorpusRelease)
+        .from_select(
+            (*fields, "manifest"),
+            select(*(getattr(VulnLibraryEpoch, name) for name in fields), literal(manifest, type_=JSONB)),
+        )
+        .on_conflict_do_nothing(index_elements=["signature"])
+        .returning(VulnCorpusRelease.signature)
+    )
+    signature = (await db.execute(statement)).scalar_one_or_none()
+    if signature is None:
+        return
+    for source, target in ((VulnLibraryRow, VulnCorpusReleaseRow), (VulnLibraryTitle, VulnCorpusReleaseTitle)):
+        fields = tuple(column.name for column in source.__table__.columns)
+        await db.execute(
+            insert(target).from_select(
+                ("signature", *fields),
+                select(VulnLibraryEpoch.signature, *(getattr(source, name) for name in fields))
+                .select_from(source)
+                .join(VulnLibraryEpoch, VulnLibraryEpoch.signature == signature),
+            )
+        )
+
+
 async def store_epoch(db: AsyncSession, epoch: Epoch) -> VulnLibrary:
     """Replace the library with this epoch, in one transaction, and answer with it.
 
@@ -679,6 +724,11 @@ async def store_epoch(db: AsyncSession, epoch: Epoch) -> VulnLibrary:
     dates itself from — is written last, so a crash between the rows and the stamp leaves
     a container that re-imports rather than one that claims an epoch it does not hold.
     """
+    # Serialize replacements even with retention disabled: an enabled peer must not
+    # snapshot a library another process is replacing. Transaction-scoped, never a lease.
+    await db.execute(text("SELECT pg_advisory_xact_lock(621, 1)"))
+    if settings.vuln_release_retention:
+        await retain_current_release(db)
     loaded_at = datetime.now(UTC)
     await db.execute(delete(VulnLibraryRow))
     await db.execute(delete(VulnLibraryTitle))
@@ -721,6 +771,9 @@ async def store_epoch(db: AsyncSession, epoch: Epoch) -> VulnLibrary:
             title_count=len(epoch.titles),
         )
     )
+    if settings.vuln_release_retention:
+        await db.flush()
+        await retain_current_release(db, manifest=epoch.manifest)
     await db.commit()
     return VulnLibrary(
         epoch_id=epoch.epoch_id,
@@ -840,6 +893,15 @@ async def load_epoch_if_new(
             exc,
             f"the epoch it had ({current[:12]}…)" if current else "nothing, so every app reads assessment: off",
             extra={"state": exc.state, "corpus_url": corpus_url_for_log(pointer.url)},
+        )
+        return None
+    except SQLAlchemyError:
+        await db.rollback()
+        logger.warning(
+            "vulnerability library could not be stored; this process keeps its previously loaded answer. "
+            "Check database availability and free storage, then retry Send now "
+            "(docs/troubleshooting.md §5)",
+            extra={"state": "epoch_store_failed"},
         )
         return None
     install_corpus(LibraryCorpus(library))
