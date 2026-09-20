@@ -1,6 +1,6 @@
 import type { CatalogTitleRef } from "@/features/catalog/types";
 import type { DeviceVulnRollup } from "@/features/vulnerabilities/deviceRollup";
-import type { AppUpdate, AppVulnerability } from "@/features/vulnerabilities/types";
+import type { AppTitleUpdate, AppUpdate, AppVulnerability } from "@/features/vulnerabilities/types";
 
 export interface Device {
   id: number;
@@ -69,6 +69,7 @@ export interface InstalledApp {
    *  `null` whenever there is nothing to say — not `covered`, no target judged, or this
    *  build already IS the target — and never a zero. */
   vulnUpdate: AppUpdate | null;
+  vulnUpdates?: AppTitleUpdate[];
 }
 
 /** An extension attribute as the device last reported it (#197): keyed by Jamf's

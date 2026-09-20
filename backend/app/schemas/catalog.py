@@ -39,6 +39,11 @@ class VulnUpdateOut(_CamelModel):
     net: int | None = None
 
 
+class VulnTitleUpdateOut(VulnUpdateOut):
+    title_id: str
+    title_name: str
+
+
 class FindingDetectedOut(_CamelModel):
     """When this pod first and last saw one finding id on a Mac, and on how many (#591, over #590's ledger). One object
     rather than four loose keys, so its absence is **one** absence. `lastDetectedAt` maximizes the two clocks a row can
@@ -120,6 +125,7 @@ class CatalogEntryAssessedOut(CatalogEntryOut):
     # never a zero, which would read as "this update changes nothing" for a row nobody
     # answered. The list endpoint fills it; the Catalog page does not render it yet.
     vuln_update: VulnUpdateOut | None = None
+    vuln_updates: list[VulnTitleUpdateOut] = Field(default_factory=list)
     # #591: *Seen here* — days since the oldest OPEN finding-ledger row on this exact build (#590), on the read path's
     # clock. §4d's second clock: `daysOldestPublished` is the world's, this is **this pod's first observation**, bounded
     # by the tenant's own history. `null` where the ledger holds no open row — a Mac not swept since it landed, or

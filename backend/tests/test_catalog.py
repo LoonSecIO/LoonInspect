@@ -114,6 +114,6 @@ class TestSignature:
     def test_signature_names_count_and_newest_sync(self) -> None:
         from datetime import datetime
 
-        assert catalog_signature(Catalog([], signature=(0, None))) == "0:"
+        assert catalog_signature(Catalog([], signature=(0, None))) == "titles-v2:0:"
         stamp = datetime(2026, 8, 22, 17, 0, tzinfo=UTC)
-        assert catalog_signature(Catalog([], signature=(1549, stamp))) == "1549:2026-08-22T17:00:00+00:00"
+        assert catalog_signature(Catalog([], signature=(1549, stamp))) == "titles-v2:1549:2026-08-22T17:00:00+00:00"

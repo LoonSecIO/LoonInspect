@@ -76,10 +76,10 @@ LAST_SEEN_GRANULARITY = timedelta(minutes=15)
 
 
 def catalog_signature(catalog: Catalog) -> str:
-    """What a row was judged against: the catalog's row count and newest `synced_at`."""
+    """The match shape and catalog revision; v2 re-matches existing rows for per-title targets (#526)."""
     count, newest = (*catalog.signature, None, None)[:2]
     stamp = newest.isoformat() if isinstance(newest, datetime) else ""
-    return f"{count or 0}:{stamp}"
+    return f"titles-v2:{count or 0}:{stamp}"
 
 
 def _released_at(matches: Sequence[TitleMatch]) -> datetime | None:
@@ -245,6 +245,43 @@ async def judge_vuln(db: AsyncSession, entries: Sequence[AppCatalogEntry] | None
     # must not try: `fetch` would issue a second SELECT. The instances that need the new
     # values get them from RETURNING below, as committed values — so `copy_answer` copies
     # what the database now holds, and nothing is marked dirty for a redundant flush.
+    # A data-modifying CTE keeps each title's answer and the parent build on the same epoch
+    # in ONE SQL statement. Both scopes see the pre-update snapshot, including the stale signature.
+    match = AppCatalogTitleMatch
+    if epoch is None:
+        titles = (
+            update(match)
+            .where(match.app_catalog_id.in_(select(AppCatalogEntry.id).where(scope)))
+            .values(**dict.fromkeys([name for name in VULN_ANSWER_COLUMNS if name.startswith("vuln_target_")], None))
+        )
+    else:
+        target_rows = (
+            select(
+                match.id.label("id"),
+                case((match.vuln_target_key.is_not(None), match.latest_version), else_=null()).label("version"),
+                VulnLibraryRow.key_full.is_not(None).label("covered"),
+                VulnLibraryRow.counts,
+                VulnLibraryRow.ids,
+                VulnLibraryRow.truncated,
+            )
+            .select_from(match)
+            .join(AppCatalogEntry, AppCatalogEntry.id == match.app_catalog_id)
+            .outerjoin(VulnLibraryRow, VulnLibraryRow.key_full == match.vuln_target_key)
+            .where(scope)
+            .subquery()
+        )
+        titles = (
+            update(match)
+            .where(match.id == target_rows.c.id)
+            .values(
+                vuln_target_version=target_rows.c.version,
+                vuln_target_assessment=case((target_rows.c.covered, VULN_ASSESSMENT_COVERED), else_=null()),
+                vuln_target_counts=target_rows.c.counts,
+                vuln_target_ids=target_rows.c.ids,
+                vuln_target_ids_truncated=target_rows.c.truncated,
+            )
+        )
+    stmt = stmt.add_cte(titles.returning(match.id).cte("judged_title_targets"))
     stmt = stmt.execution_options(synchronize_session=False)
     if entries is None:
         return int((await db.execute(stmt)).rowcount)
@@ -324,6 +361,9 @@ async def evaluate_entries(db: AsyncSession, entries: Sequence[AppCatalogEntry],
                     installed_version=match.installed_version,
                     installed_released_at=match.installed_released_at,
                     latest_version=match.latest_version,
+                    vuln_target_key=app_full_key(entry.name, entry.bundle_id, match.latest_version, None)
+                    if match.latest_version
+                    else None,
                     latest_released_at=match.latest_released_at,
                     first_newer_released_at=match.first_newer_released_at,
                     releases_missed=match.releases_missed,
