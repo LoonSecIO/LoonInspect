@@ -53,18 +53,27 @@ import logging
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import case, delete, null, select, update
+from sqlalchemy import and_, case, delete, null, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import set_committed_value
 
+from app.core.config import settings
 from app.core.content_keys import app_full_key
 from app.core.tenant_jobs import operational_tenant_ids, tenant_job
 from app.core.vuln_answer import VULN_ANSWER_COLUMNS
 from app.core.vuln_library import loaded_epoch_signature, read_tenant_tier
 from app.mdm.patch.matching import CATALOG_PROBE_INTERVAL, Catalog, TitleMatch, load_catalog, match_app, summarize
 from app.mdm.patch.requirements import Facts, jamf_platform_name
-from app.models.schema import AppCatalogEntry, AppCatalogTitleMatch, Device, InstalledApp, JamfPatchTitle, VulnLibraryRow
+from app.models.schema import (
+    AppCatalogEntry,
+    AppCatalogTitleMatch,
+    Device,
+    InstalledApp,
+    JamfPatchTitle,
+    VulnCorpusReleaseRow,
+    VulnLibraryRow,
+)
 from app.schemas.payload import VULN_ASSESSMENT_COVERED
 
 logger = logging.getLogger(__name__)
@@ -130,7 +139,9 @@ def _apply_summary(entry: AppCatalogEntry, matches: Sequence[TitleMatch], *, now
     entry.vuln_target_key = app_full_key(entry.name, entry.bundle_id, summary.latest_version, None)
 
 
-async def judge_vuln(db: AsyncSession, entries: Sequence[AppCatalogEntry] | None, *, now: datetime) -> int:
+async def judge_vuln(
+    db: AsyncSession, entries: Sequence[AppCatalogEntry] | None, *, now: datetime, release: str | None = None
+) -> int:
     """The local join (#381): the loaded epoch's answer for a build, onto the catalog row.
 
     **One statement, whatever the scope.** `entries` names the rows to judge — the ones a
@@ -155,6 +166,11 @@ async def judge_vuln(db: AsyncSession, entries: Sequence[AppCatalogEntry] | None
     scope — the epoch's own pass — does filter on the signature, which is where the cost
     that grows with the fleet actually lives.
 
+    With tenant selection enabled, the writer first locks the tenant and refreshes its
+    selection. Both installed and target joins use retained rows constrained by digest.
+    Only the selection transaction passes `release` explicitly, after checking acquisition.
+    The following gate description applies to the default legacy path.
+
     **Which epoch, and the gate.** `loaded_epoch_signature()` costs no query and already
     applies #281 Option A's per-tenant gate, so a tenant whose data-sharing tier is `off`
     judges to `None` and carries no corpus-derived columns at all — the library's rows are
@@ -164,7 +180,17 @@ async def judge_vuln(db: AsyncSession, entries: Sequence[AppCatalogEntry] | None
 
     Returns the number of catalog rows whose answer was written.
     """
-    epoch = loaded_epoch_signature()
+    if settings.vuln_tenant_selection:
+        from app.core.vuln_selection import lock_assessment
+
+        await lock_assessment(db)
+    epoch = release if release is not None else loaded_epoch_signature()
+    row_type = VulnCorpusReleaseRow if settings.vuln_tenant_selection or release is not None else VulnLibraryRow
+
+    def matching(row, key):
+        match = row.key_full == key
+        return and_(match, row.signature == epoch) if row_type is VulnCorpusReleaseRow else match
+
     if entries is not None:
         if not entries:
             return 0
@@ -188,7 +214,7 @@ async def judge_vuln(db: AsyncSession, entries: Sequence[AppCatalogEntry] | None
         # primary key, one equality per row against `vuln_target_key`. Outer for the reason
         # the first is — a target the new epoch dropped must stop reading `covered` — and in
         # THIS statement so the two answers on a row can never come from two epochs.
-        target = aliased(VulnLibraryRow)
+        target = aliased(row_type)
         # `vuln_target_version` is the record of WHICH release this pass looked up, so it may
         # only be written where a lookup happened — hence the `case` rather than the column.
         # The two clocks make the difference a real state and not a theoretical one: the key
@@ -204,11 +230,11 @@ async def judge_vuln(db: AsyncSession, entries: Sequence[AppCatalogEntry] | None
         joined = (
             select(
                 AppCatalogEntry.id.label("id"),
-                VulnLibraryRow.key_full.is_not(None).label("covered"),
-                VulnLibraryRow.counts.label("counts"),
-                VulnLibraryRow.oldest_published.label("oldest_published"),
-                VulnLibraryRow.ids.label("ids"),
-                VulnLibraryRow.truncated.label("truncated"),
+                row_type.key_full.is_not(None).label("covered"),
+                row_type.counts.label("counts"),
+                row_type.oldest_published.label("oldest_published"),
+                row_type.ids.label("ids"),
+                row_type.truncated.label("truncated"),
                 case((AppCatalogEntry.vuln_target_key.is_not(None), AppCatalogEntry.latest_version), else_=null()).label(
                     "target_version"
                 ),
@@ -218,8 +244,8 @@ async def judge_vuln(db: AsyncSession, entries: Sequence[AppCatalogEntry] | None
                 target.truncated.label("target_truncated"),
             )
             .select_from(AppCatalogEntry)
-            .outerjoin(VulnLibraryRow, VulnLibraryRow.key_full == AppCatalogEntry.key_full)
-            .outerjoin(target, target.key_full == AppCatalogEntry.vuln_target_key)
+            .outerjoin(row_type, matching(row_type, AppCatalogEntry.key_full))
+            .outerjoin(target, matching(target, AppCatalogEntry.vuln_target_key))
             .where(scope)
             .subquery()
         )
@@ -259,14 +285,14 @@ async def judge_vuln(db: AsyncSession, entries: Sequence[AppCatalogEntry] | None
             select(
                 match.id.label("id"),
                 case((match.vuln_target_key.is_not(None), match.latest_version), else_=null()).label("version"),
-                VulnLibraryRow.key_full.is_not(None).label("covered"),
-                VulnLibraryRow.counts,
-                VulnLibraryRow.ids,
-                VulnLibraryRow.truncated,
+                row_type.key_full.is_not(None).label("covered"),
+                row_type.counts,
+                row_type.ids,
+                row_type.truncated,
             )
             .select_from(match)
             .join(AppCatalogEntry, AppCatalogEntry.id == match.app_catalog_id)
-            .outerjoin(VulnLibraryRow, VulnLibraryRow.key_full == match.vuln_target_key)
+            .outerjoin(row_type, matching(row_type, match.vuln_target_key))
             .where(scope)
             .subquery()
         )
@@ -450,6 +476,10 @@ async def record_device_apps(db: AsyncSession, device: Device, *, now: datetime 
     granularity), rows the current catalog has not judged are judged, and app rows that are new,
     whose row's answer moved, or whose stored corpus epoch is not the one their catalog row
     now carries get their copy. Returns the rows judged."""
+    if settings.vuln_tenant_selection:
+        from app.core.vuln_selection import prepare_assessment
+
+        await prepare_assessment(db)
     rows = (await db.execute(select(InstalledApp).where(InstalledApp.device_id == device.id))).scalars().all()
     if not rows:
         return 0
@@ -543,6 +573,10 @@ async def refresh_tenant(db: AsyncSession, *, force: bool = False, now: datetime
     # `loaded_epoch_signature()` reads below, and the gate is fail-closed: without this the
     # pass would judge every row to "no epoch" and clear answers the sweep had just written.
     await read_tenant_tier(db)
+    if settings.vuln_tenant_selection:
+        from app.core.vuln_selection import prepare_assessment
+
+        await prepare_assessment(db)
     catalog = await load_catalog(db)
     signature = catalog_signature(catalog)
     stmt = select(AppCatalogEntry)
@@ -615,6 +649,10 @@ async def rejudge_epoch(db: AsyncSession, *, now: datetime | None = None) -> tup
     # reads first: `loaded_epoch_signature()` answers "no epoch" for a tenant whose tier was
     # never read, and the join would then clear every answer instead of writing one.
     await read_tenant_tier(db)
+    if settings.vuln_tenant_selection:
+        from app.core.vuln_selection import prepare_assessment
+
+        await prepare_assessment(db)
     rejudged = await judge_vuln(db, None, now=now)
     copied = await copy_vuln_answers(db)
     return rejudged, copied

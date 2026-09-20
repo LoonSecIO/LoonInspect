@@ -416,6 +416,10 @@ async def _vuln_values(db: AsyncSession, at: datetime) -> dict[str, float]:
     rediscovered. The keys activate the night the join first runs for this tenant, and
     their tape starts then.
 
+    In the opt-in tenant-selection path the epoch is this tenant's selected digest,
+    read directly from PostgreSQL. Populations, key meanings and the ever-judged guard
+    are unchanged. The singleton and tier descriptions below cover the legacy path.
+
     **Two database facts open the gate, and nothing else.** The container holds an epoch
     (`vuln_library_epoch`), and at least one of this tenant's catalog rows carries a stored
     answer (`vuln_signature` not null) — *ever judged*, never *judged against tonight's
@@ -469,7 +473,14 @@ async def _vuln_values(db: AsyncSession, at: datetime) -> dict[str, float]:
     `catalog.installed` no longer matches. The **departure** cut is the one line all four
     draw together (#476): a Mac that left the fleet carries no build in any of them.
     """
-    epoch = (await db.execute(select(VulnLibraryEpoch.signature).limit(1))).scalars().first()
+    from app.core.config import settings
+
+    if settings.vuln_tenant_selection:
+        from app.core.vuln_selection import selected_signature
+
+        epoch = await selected_signature(db)
+    else:
+        epoch = (await db.execute(select(VulnLibraryEpoch.signature).limit(1))).scalars().first()
     if epoch is None:
         return {}
     # Has the join ever run for THIS tenant? One row is the whole question, so it is asked

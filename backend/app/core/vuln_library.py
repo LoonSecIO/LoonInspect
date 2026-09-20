@@ -727,7 +727,7 @@ async def store_epoch(db: AsyncSession, epoch: Epoch) -> VulnLibrary:
     # Serialize replacements even with retention disabled: an enabled peer must not
     # snapshot a library another process is replacing. Transaction-scoped, never a lease.
     await db.execute(text("SELECT pg_advisory_xact_lock(621, 1)"))
-    if settings.vuln_release_retention:
+    if settings.vuln_release_retention or settings.vuln_tenant_selection:
         await retain_current_release(db)
     loaded_at = datetime.now(UTC)
     await db.execute(delete(VulnLibraryRow))
@@ -771,7 +771,7 @@ async def store_epoch(db: AsyncSession, epoch: Epoch) -> VulnLibrary:
             title_count=len(epoch.titles),
         )
     )
-    if settings.vuln_release_retention:
+    if settings.vuln_release_retention or settings.vuln_tenant_selection:
         await db.flush()
         await retain_current_release(db, manifest=epoch.manifest)
     await db.commit()
@@ -879,10 +879,19 @@ async def load_epoch_if_new(
     a crash loop.
     """
     current = await stored_signature(db)
-    if current == pointer.signature:
-        logger.debug("vulnerability library unchanged (signature %s…)", pointer.signature[:12])
-        return None
     try:
+        if current == pointer.signature:
+            if settings.vuln_tenant_selection:
+                # The flag may have been enabled after a legacy import. Freeze and
+                # retain that already-verified projection before granting its delivery.
+                await db.execute(text("SELECT pg_advisory_xact_lock(621, 1)"))
+                current = await stored_signature(db)
+                if current == pointer.signature:
+                    await retain_current_release(db)
+                await db.commit()
+            if current == pointer.signature:
+                logger.debug("vulnerability library unchanged (signature %s…)", pointer.signature[:12])
+                return None
         data = await download_bundle(pointer.url, transport=transport)
         epoch = read_bundle(data, signature=pointer.signature)
         library = await store_epoch(db, epoch)
@@ -944,7 +953,10 @@ def _ignored_clause(ignored: Sequence[str]) -> str:
 
 
 async def read_tenant_tier(db: AsyncSession) -> str:
-    """Read the acting tenant's data-sharing tier and put it behind `loaded_corpus()`.
+    """Refresh the acting unit of work's consent and (when enabled) selected-release context.
+
+    The tenant-selection path reads the committed selected release independently of this
+    tier; the remaining description is the default legacy serving contract.
 
     **Once per unit of work, and never per device or per app.** One sweep run, one
     re-emit, one API response, one exchange: the tier is a per-tenant row, the answer is
@@ -974,6 +986,10 @@ async def read_tenant_tier(db: AsyncSession) -> str:
         await db.execute(select(DataSharingSettings.tier).where(DataSharingSettings.tenant_id == tenant_id))
     ).scalar_one_or_none() or TIER_OFF
     install_tenant_tier(tenant_id, tier)
+    if settings.vuln_tenant_selection:
+        from app.core.vuln_selection import load_selected_corpus
+
+        await load_selected_corpus(db)
     return tier
 
 

@@ -1,5 +1,6 @@
-"""`vuln{}` on the app sub-event — the corpus seam, the summary block, and the sentinel
-(#249; the contract is `docs/vulnerabilities.md` §3 and §4).
+"""The vulnerability corpus seam, summary block and sentinel on the app sub-event.
+
+The `vuln{}` contract is #249 and `docs/vulnerabilities.md` §3 and §4.
 
 Three things live here and nothing else:
 
@@ -41,10 +42,12 @@ from __future__ import annotations
 import re
 import uuid
 from collections.abc import Mapping, Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import date
 from typing import Protocol, runtime_checkable
 
+from app.core.config import settings
 from app.core.tenancy import get_tenant_id
 from app.schemas.payload import (
     VULN_ASSESSMENT_COVERED,
@@ -318,8 +321,21 @@ def install_corpus(corpus: VulnCorpus | None) -> None:
     _INSTALLED = corpus
 
 
+# Unit-of-work state, never a process-wide tenant cache. A task cannot publish an
+# uncommitted selection into another request, and tenant switches fail closed.
+_SELECTED: ContextVar[tuple[uuid.UUID, VulnCorpus] | None] = ContextVar("selected_corpus", default=None)
+
+
+def install_selected_corpus(tenant: uuid.UUID, corpus: VulnCorpus) -> None:
+    _SELECTED.set((tenant, corpus))
+
+
 def loaded_corpus() -> VulnCorpus:
     """The corpus the **acting tenant** has earned — the single place that decides.
+
+    With the development-only tenant-selection flag, this reads the acting task's
+    selected release, refreshed from PostgreSQL at each unit of work. Consent does
+    not revoke an acquired release. Outside that flag, the legacy contract follows.
 
     #281's Option A, ruled 2026-09-03, put the tier gate here, and 2026-09-11 says what
     "here" has to mean on a pod with more than one tenant (docs/vulnerabilities.md §8).
@@ -350,6 +366,9 @@ def loaded_corpus() -> VulnCorpus:
     A function rather than a module constant so the swap is one assignment and so a test
     can pass its own corpus without reaching for a global.
     """
+    if settings.vuln_tenant_selection:
+        selected = _SELECTED.get()
+        return selected[1] if selected is not None and selected[0] == get_tenant_id() else NO_CORPUS
     if _INSTALLED is None:
         return NO_CORPUS
     tenant_id = get_tenant_id()

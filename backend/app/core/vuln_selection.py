@@ -1,8 +1,8 @@
-"""Tenant corpus acquisition and transactional selection primitives for #621.
+"""Tenant acquisition, assessment and selection for the opt-in #621 serving path.
 
-No shipped route or scheduler calls these yet: authorization/delivery and release-scoped
-judging must be wired before serving switches from the legacy singleton. Physical corpus
-possession never implies a tenant grant, and these helpers never change sharing consent.
+Physical possession never implies a grant. Delivery records acquisition only for the
+recipient; every answer writer serializes with selection and uses retained release rows.
+These helpers never change sharing consent and do not verify paid entitlements.
 """
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ async def select_after_assessment(
     """
     tenant = _tenant(db)
     async with db.begin_nested():
-        await db.execute(select(Tenant.id).where(Tenant.id == tenant).with_for_update())
+        await db.execute(select(Tenant.id).where(Tenant.id == tenant).with_for_update(key_share=True))
         acquired = await db.scalar(
             select(VulnCorpusAcquisition.signature).where(
                 VulnCorpusAcquisition.tenant_id == tenant, VulnCorpusAcquisition.signature == signature
@@ -100,3 +100,76 @@ async def select_after_assessment(
             )
         )
     return True
+
+
+async def load_selected_corpus(db: AsyncSession) -> None:
+    """Bind the selected release's metadata to this task, without loading corpus rows.
+
+    Serving uses stored assessment columns; only the signature and as-of date belong
+    in memory. No fallback to global possession, consent or a previous task's state.
+    """
+    from app.core.vuln import NO_CORPUS, install_selected_corpus
+    from app.core.vuln_library import LibraryCorpus, VulnLibrary
+
+    tenant = _tenant(db)
+    install_selected_corpus(tenant, NO_CORPUS)
+    signature = await selected_signature(db)
+    if signature is None:
+        return
+    release = await db.get(VulnCorpusRelease, signature)
+    if release is None:
+        raise CorpusSelectionRefused("The selected intelligence is missing. Restore the database backup and contact support.")
+    install_selected_corpus(
+        tenant,
+        LibraryCorpus(
+            VulnLibrary(
+                epoch_id=release.epoch_id,
+                signature=release.signature,
+                as_of=release.asof.date(),
+                asof_at=release.asof,
+                loaded_at=release.loaded_at,
+                rows={},
+                titles={},
+            )
+        ),
+    )
+
+
+async def lock_assessment(db: AsyncSession) -> None:
+    """Serialize a tenant's answer writers with selection, then read committed selection."""
+    tenant = _tenant(db)
+    # NO KEY UPDATE serializes writers without conflicting with tenant foreign-key
+    # checks taken by inventory inserts earlier in the same transaction.
+    await db.execute(select(Tenant.id).where(Tenant.id == tenant).with_for_update(key_share=True))
+    await load_selected_corpus(db)
+
+
+async def assess_and_select(db: AsyncSession, signature: str) -> bool:
+    """Run the real catalog join and installed copies before advancing the pointer.
+
+    No process cache is published. The caller owns commit; its next unit of work reads
+    the committed pointer. Retained rows and acquisition are checked by the selection
+    primitive, which also serializes this transaction against ordinary answer writers.
+    """
+    from app.catalog.service import copy_vuln_answers, judge_vuln
+
+    async def assess(session: AsyncSession, release: str) -> None:
+        await judge_vuln(session, None, now=datetime.now(UTC), release=release)
+        await copy_vuln_answers(session)
+
+    return await select_after_assessment(db, signature, assess=assess)
+
+
+async def prepare_assessment(db: AsyncSession) -> None:
+    """Bootstrap migration-granted intelligence on the first real assessment, under lock."""
+    await lock_assessment(db)
+    if await selected_signature(db) is None:
+        signature = await db.scalar(
+            select(VulnCorpusAcquisition.signature)
+            .where(VulnCorpusAcquisition.tenant_id == _tenant(db))
+            .order_by(VulnCorpusAcquisition.acquired_at.desc(), VulnCorpusAcquisition.signature)
+            .limit(1)
+        )
+        if signature is not None:
+            await assess_and_select(db, signature)
+            await load_selected_corpus(db)
