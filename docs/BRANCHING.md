@@ -40,6 +40,56 @@ single pull request are the primary source of that ambiguity, so the strategy
 optimises for making each branch's state unambiguous and short-lived rather than
 for elaborate integration topology.
 
+### 1.1 Release planning: milestones, labels, and tags
+
+GitHub milestones name intended releases, such as `v2.0.0`. Assign each scoped
+implementation issue to its intended milestone; larger workstreams can have a tracking
+issue linking their smaller implementation issues. A milestone is a scope target, not
+a release date, a branch, or permission to implement an unresolved design. Close it
+when its required work is complete or explicitly deferred and the release is published.
+
+Labels describe the kind or planning status of work. **`future` means “Planned,
+unscheduled. Don't build yet; preserve the path to implementation.”** It names an
+intention, not a delivery commitment. Consider the documented constraints when editing
+related code, without adding speculative abstractions. The label was renamed from `v5`
+on 2026-09-20; old issue comments using `v5` mean this same deferred status, never a
+version-five release. When work is explicitly selected for implementation, remove
+`future`, record its bounded scope, and assign the release milestone. For a broad design
+record such as #303, create a scoped implementation issue rather than treating every
+idea in the record as committed work.
+
+Legacy `v0`, `post-v0`, and `v1` labels describe earlier planning phases; they do not
+assign a release. Use milestones for that. Historical document and schema version
+numbers likewise do not identify product releases.
+
+**Tags identify shipped code.** Create a `vMAJOR.MINOR.PATCH` tag at the tested commit
+when cutting a release, then publish the GitHub Release with validation and known
+limitations. Do not create a future release tag for planning or move a published tag.
+`v1.0.0` is the first stable release. Runtime date-plus-SHA build stamps identify the
+image and its source; they are not release assignments. The current update checker
+compares commit ancestry against the latest published stable release, not against the
+build date or every merge to `main`.
+
+Milestones do not change the trunk-based model. Work for v2 enters `main` through
+small, independently releasable changes; unfinished behavior must remain inaccessible
+and inactive, and migrations must still be safe for every release containing them.
+A feature flag does not make a breaking schema change safe. There is no standing v2
+branch or maintenance branch. If a release needs a different branching approach,
+record a maintainer ruling under §9 first.
+
+Bug fixes can ship as `v1.0.x` without waiting for the v2 milestone. Compatible user-facing
+features use a minor release such as `v1.1.0`; milestone membership does not determine
+whether a change is a patch. Review the whole candidate commit, including already-merged
+work, before tagging it: a milestone is not a filter that removes other changes from
+`main`. Keep changes safe to ship incrementally instead of merging incomplete work
+and assuming a later patch release can omit it.
+
+The [v2.0.0 milestone](https://github.com/LoonSecIO/LoonInspect/milestone/1) tracks
+contribute-or-pay vulnerability access, bounded MFA, supported external PostgreSQL,
+and the update lifecycle. Scrubber #617 and #618 are independent v1.x work, not v2
+release requirements. The GitHub milestone's assigned issues are the live scope;
+its description alone does not assign or complete any work.
+
 ## 2. Branch naming
 
 All branch names are lowercase and match:
@@ -613,7 +663,10 @@ gates none.
 What is enforced today: everything in steps 1 to 3, the policy workflow gating on the
 next re-run. What remains `proposed` is step 4 onward.
 
-### 8.2 The release schedule
+### 8.2 The pre-launch release schedule (historical)
+
+The schedule below records the original publication plan; it is not a recurring release
+calendar. v1.0.0 was published on 2026-09-20. Post-launch planning follows §1.1.
 
 Four phases, of which only the last has a fixed date:
 
@@ -791,3 +844,5 @@ Appended 2026-09-05, immediately before the flip to public:
 | v1.11 | 2026-09-05 | Flip to public: BR-06, BR-07, MG-02, MG-03, PR-07, AG-03 `active`; CM-03 fully active; §8.1 and §8.3 in the past tense; §10 corrected — the branch deletes are still owed |
 | v1.12 | 2026-09-07 | PR-02 `block` and `active`: the pull request template and the `PR body` check (§6.3, §7); its context added to `main.json`, gating on the next `apply-repo-config.sh` run (§8.1); the template's last checkbox records PR-08's read |
 | v1.13 | 2026-09-10 | Step 3 done (#19): BR-01, BR-02, BR-05, CM-01, CM-04 and CM-03's path half `block` and `active`, BR-03, CM-02, PR-01 `warn` and `active`, all in the `Policy` check reading the new `controls.yml` register (§7, §8); `dependabot/` exempt from BR-01 and CM-01 by ruling; the `Policy` context added to `main.json` |
+
+| v1.14 | 2026-09-20 | Release planning in §1.1: milestones, immutable release tags, `future` replacing `v5`, and independent v1.x releases; §8.2 marked historical. |

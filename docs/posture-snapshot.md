@@ -118,7 +118,7 @@ Jamf has deleted leaves the counted population at the end of #183's seven-day ta
 on the first night it is missed, and never on a dirty or scoped sweep, because the
 evidence is one clean census. Its `devices` row, its observation spans and its change
 history all **stay**; erasing them is
-[#180](https://github.com/LoonSecIO/LoonInspect/issues/180) and v5.
+[#180](https://github.com/LoonSecIO/LoonInspect/issues/180) and `future`.
 
 **One predicate, twenty keys.** The exclusion is not a `devices.*` rule. It reaches every
 key that counts a Mac, and every key that counts what was installed on one. It is
@@ -196,7 +196,7 @@ staleness keys — a device that has never checked in is the worst staleness the
 
 | Key | Status | Definition | Source |
 | --- | --- | --- | --- |
-| `devices.total` | ACTIVE | Device rows across active connections that the last clean census still observed. A Mac Jamf deleted leaves this count at the end of #183's seven-day tail and keeps its row, spans and change history — erasure is #180 (v5). | `devices` ⋈ `mdm_connections.is_active` |
+| `devices.total` | ACTIVE | Device rows across active connections that the last clean census still observed. A Mac Jamf deleted leaves this count at the end of #183's seven-day tail and keeps its row, spans and change history — erasure is #180 (`future`). | `devices` ⋈ `mdm_connections.is_active` |
 | `devices.stale_checkin_7d` | ACTIVE | `last_check_in` older than capture − 168h, NULLs included, over that same population: active connections, still observed by the last clean census. | `devices` |
 | `devices.unmanaged` | ACTIVE | `managed = false`, over that same population: active connections, still observed by the last clean census. | `devices` |
 | `devices.stale_inventory_7d` | ACTIVE | `last_inventory_at` older than capture − 168h, NULLs included, over that same population: active connections, still observed by the last clean census. | `devices` |

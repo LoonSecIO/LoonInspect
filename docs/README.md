@@ -15,7 +15,7 @@ ends with a reading order through the rest.
 | Document | Status | What it holds |
 | --- | --- | --- |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | map, 2026-09-18 (#562) | The whole data path in two figures, the scheduler, what a pull costs Jamf, the provider seam, the glossary. |
-| [`BRANCHING.md`](BRANCHING.md) | Draft v1 | How work enters `main`: branch names, commit subjects, the control register CI enforces. |
+| [`BRANCHING.md`](BRANCHING.md) | v1, enforcement partial | How work enters `main`: release milestones and labels (§1.1), branch names, commit subjects, and the control register CI enforces. |
 | [`alerts.md`](alerts.md) | v0, 2026-09-04 (#101) | Latches the product holds open while something is true, and what closes them. |
 | [`app-catalog.md`](app-catalog.md) | v0, 2026-08-22 (#67) | The tenant's distinct apps, first and last seen, and what Jamf says about each. |
 | [`baseline-rules.yml`](baseline-rules.yml) | catalogue v1, 2026-09-16 (#463) | The macOS baseline rule vocabulary the evidence report is printed from. Code reads this file. |

@@ -401,7 +401,7 @@ The consequence is the **seven-day tail**: an open row *is* the tail, and seven 
 the page it is about (#475): the device page says *Not returned by Jamf since ⟨date⟩; leaves the fleet
 on ⟨date⟩* — displayed, never recomputed as a decision — the Devices row carries a chip, and **Show
 departed** in the filter bar is the visible control over `includeDeparted`. **Held**: the
-device row, its spans, its sections and its whole change history; erasure is deferred to #180 (v5),
+device row, its spans, its sections and its whole change history; erasure is deferred to #180 (`future`),
 and this stamp is what that pass selects on. **Moved by ruling** (#135, 2026-09-16, R1 a): the `devices.*` posture keys — and every key that counts a
 Mac or its installed apps — exclude a Mac that has left the fleet; PR #462 reserves `devices.departed_24h`
 and the predicate lands with #476, so captures before it still count a deleted Mac. The daily "device is gone"
