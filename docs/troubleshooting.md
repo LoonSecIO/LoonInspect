@@ -747,7 +747,14 @@ and step 2 ends with how to tell that apart from a broken exchange.
    this container has loaded no longer lists them for a build the Mac still carries, which is not
    the same as fixed — check the epoch loaded and that the tier is still on (Devices ›
    Applications › Catalog)`. The others are `build_changed` (check the build on the Mac) and
-   `app_removed`. A withdrawal is not a fix, and a later epoch reopens the row on its first date
+   `app_removed`. `device_departed` means the Mac’s seven-day departure period ended,
+   not that the vulnerability was fixed. In Connections, expand the sweep’s run log:
+   its census line reports how many findings closed on Macs that left the fleet and
+   explains that last detected remains the Mac’s last observation. A scoped or incomplete
+   sweep can finish an already established departure period; it cannot establish a new
+   departure. If unexpected, check the Mac’s presence in Jamf and run an unscoped device
+   sweep; a returning observation can reopen its findings. A withdrawal is not a fix, and a
+   later epoch reopens the row on its first date
    — Jamf's inventory clock, never the CVE's publication. One Mac's rows, by serial:
    ```bash
    docker compose exec -T db psql -U looninspect -d looninspect -c \

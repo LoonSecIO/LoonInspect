@@ -19,11 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.vuln import validate_finding_id
 from app.mdm.jamf.contract import SUBJECT_COMPUTER
 from app.models.schema import Device, DeviceChange, DeviceFinding, InstalledApp
+from app.observations.departure import gone_for_good
 from app.schemas.payload import VULN_ASSESSMENT_COVERED
 
 logger = logging.getLogger(__name__)
 
-# Ruling 4 in full. `device_departed` is reserved: its writer, at the census, is a follow-up.
+# Ruling 4 in full; the census closes departed devices after their seven-day tail (#607).
 RESOLVED_BUILD_CHANGED, RESOLVED_APP_REMOVED = "build_changed", "app_removed"
 RESOLVED_DEVICE_DEPARTED, RESOLVED_CORPUS_WITHDRAWN = "device_departed", "corpus_withdrawn"
 RESOLVED_REASONS = (RESOLVED_BUILD_CHANGED, RESOLVED_APP_REMOVED, RESOLVED_DEVICE_DEPARTED, RESOLVED_CORPUS_WITHDRAWN)
@@ -162,3 +163,25 @@ async def backfill_clocks(db: AsyncSession, *, device: Device, rows: Sequence[In
         if build is not None:
             arrivals[build] = observed
     return arrivals
+
+
+async def close_departed_device_findings(db: AsyncSession, *, connection_id: int, at: datetime) -> int:
+    """Close findings when Macs leave the fleet after their departure tail (#607).
+
+    Both census paths call this beside the alert close, in the same transaction. An incomplete
+    sweep cannot establish a departure, but can finish a tail an earlier clean census established.
+    Departure is not an observation: retain the device's last detection clock, including an
+    unknown clock, and use `at` only for resolution. Closed rows are never rewritten or deleted.
+    """
+    result = await db.execute(
+        sa_update(DeviceFinding)
+        .where(
+            DeviceFinding.resolved_at.is_(None),
+            DeviceFinding.device_id == Device.id,
+            Device.mdm_connection_id == connection_id,
+            gone_for_good(Device.mdm_connection_id, Device.external_id, at=at),
+        )
+        .values(resolved_at=at, resolved_reason=RESOLVED_DEVICE_DEPARTED, last_observed_at=Device.last_seen_at)
+        .execution_options(synchronize_session=False)
+    )
+    return result.rowcount or 0
