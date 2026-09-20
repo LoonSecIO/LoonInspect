@@ -729,7 +729,9 @@ export const de: Translations = {
         checkIn: "Jamf hat den Mac zuletzt gehört",
         checkInNone: "Jamf hat von diesem Mac noch nichts gehört",
         seen: "LoonInspect hat ihn zuletzt gelesen",
-        seenNone: "LoonInspect hat diesen Mac noch nicht gelesen"
+        seenNone: "LoonInspect hat diesen Mac noch nicht gelesen",
+        findings: "Befunde erstmals geprüft",
+        findingsNone: "LoonInspect hat die Befunde dieses Macs noch nicht geprüft"
       },
       departure: {
         inTail: (since: string, leaves: string) => `Seit ${since} nicht mehr von Jamf zurückgegeben; verlässt die Flotte am ${leaves}.`,

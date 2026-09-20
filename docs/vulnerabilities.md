@@ -787,6 +787,11 @@ a row opened from a truncated list is `capped` and never closes by absence from 
 read path, the page and three `vuln.*` posture keys are
 [#591](https://github.com/LoonSecIO/LoonInspect/issues/591).
 
+**The first-check marker (#599).** The device page shows **Findings first checked** from
+`GET /api/devices/{id}`'s `findingsReconciledAt`. Null is worded explicitly as not checked.
+The timestamp is stamped once even for a clean check with no finding rows; it is not a
+CVE's first-detected date. This distinguishes unchecked history from a recorded clean result.
+
 **Initial backfill (#608).** On an existing Mac's first finding reconcile, a build's
 latest arrival in the change log supplies its first-observed clock. Without an arrival,
 the fallback is the earliest recorded device observation across all its spans; with

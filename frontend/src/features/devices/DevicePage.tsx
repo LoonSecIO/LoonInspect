@@ -249,13 +249,14 @@ function DevicePageContent() {
 
       <DepartureNote departedAt={device.departedAt} td={td} />
 
-      {/* Three clocks, each labelled with whose clock it is. Stale data misread as current
+      {/* Four clocks, each labelled with whose clock it is. Stale data misread as current
           is the fastest route to a wrong conclusion, so this is the first band. A null
           renders its sentence, never a dash. */}
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Clock label={td.clocks.inventory} value={formatInstant(device.lastInventoryAt)} none={td.clocks.inventoryNone} />
         <Clock label={td.clocks.checkIn} value={formatInstant(device.lastCheckIn)} none={td.clocks.checkInNone} />
         <Clock label={td.clocks.seen} value={formatInstant(device.lastSeenAt)} none={td.clocks.seenNone} />
+        <Clock label={td.clocks.findings} value={formatInstant(device.findingsReconciledAt)} none={td.clocks.findingsNone} />
       </div>
 
       {/* "Recorded", not "changed": the policy filters at write time, so a digest can move

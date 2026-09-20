@@ -83,6 +83,7 @@ export interface ExtensionAttribute {
 }
 
 export interface DeviceDetail extends Device {
+  findingsReconciledAt: string | null;
   jamfUrl: string | null;
   apps: InstalledApp[];
   extensionAttributes: ExtensionAttribute[];
