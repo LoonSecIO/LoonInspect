@@ -1858,6 +1858,13 @@ class DeviceFinding(Base):
         UniqueConstraint("device_id", "carrier_key", "finding_id", name="uq_device_finding"),
         # "Which Macs carry CVE-X, and which still do" (#591), `resolved_at` last so open is a prefix.
         Index("ix_device_findings_finding", "tenant_id", "finding_id", "resolved_at"),
+        Index(
+            "ix_device_findings_open_build",
+            "tenant_id",
+            "build_key_full",
+            postgresql_where=text("resolved_at IS NULL"),
+            postgresql_include=["first_observed_at"],
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

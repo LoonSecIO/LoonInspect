@@ -230,7 +230,7 @@ async def list_catalog(
     # where a surface draws the number: every vulnerability-narrowed list (the Vulnerabilities page asks with one of the
     # five filters, never `all`), and one application's record, which draws it the moment the held sibling line lands and
     # would dash silently if this gate forgot it. The Catalog tab's list is every build the tenant has with no
-    # vulnerability column, and pays nothing while the index named in #591's Risk is still a follow-up.
+    # vulnerability column, so it skips this read even with the open-build index in place (#600).
     draws_seen_here = filtered or app_hash is not None
     seen_here = await seen_here_days(db, [entry.key_full for entry in entries], as_of=as_of) if draws_seen_here else None
     items = [
