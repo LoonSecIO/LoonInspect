@@ -11,6 +11,12 @@ never attributable — and the patching and vulnerability feeds are built from t
 Sharing and the feeds are two halves of the same exchange: the daily upload *is* the
 feed query, one conversation per tenant per day.
 
+> **v2 decision, not yet implemented (2026-09-20):**
+> [The contribute-or-pay design](vulnerability-service-v2.md) separates consent from
+> update entitlement, retains use of acquired intelligence after expiry, pauses
+> automatic reveals and adds explicit application submissions. The coupling and
+> five-submitter rationale below describe the earlier contract, not v2 policy.
+
 ## Why sharing is coupled to the feeds
 
 If contribution were anonymous *and* the feeds were server-gated to contributors, the
@@ -132,6 +138,12 @@ file paths (macOS paths embed user names), extension attributes, connection name
 tenant names, e-mail addresses, or anything from the accounts, audit, or credential
 tables. The ingest endpoint's side of the bargain: source IPs are not persisted.
 
+**v2 supersedes the reveal policy below:** automatic plaintext reveals are paused
+until the policy is validated. Five UUIDs prove neither independent organizations
+nor safe disclosure; explicit submissions have their own permission
+([v2 design §7](vulnerability-service-v2.md#7-deliberate-submission-and-correction)).
+The following remains the historical protocol description.
+
 **Reveals.** Plaintext (app_name, bundle_id, and that title's version tuples) is sent
 only when the server explicitly asks for a specific `app.title` key, only if the
 tenant's tier permits it, and the server's published rule is to ask only for titles
@@ -161,6 +173,10 @@ pseudonymous, not anonymous — submissions from one tenant are linkable to each
 and the disclosure page says exactly that.
 
 ## Consent
+
+For v2, this enum governs **uploads only**, not intelligence access. The receives
+column below describes the existing implementation. See
+[v2 state and ownership](vulnerability-service-v2.md#3-ownership-and-state).
 
 Three tiers, one enum, tenant-scoped in the schema from day one (V0's single
 operational tenant renders it as one switch):
