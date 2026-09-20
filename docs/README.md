@@ -37,6 +37,7 @@ ends with a reading order through the rest.
 
 | Document | Status | What it records |
 | --- | --- | --- |
+| [`device-history.md`](device-history.md) | built, 2026-09-20 (#605) | Device timeline, six personal tenant-scoped values, retained assessments and AI summaries. |
 | [`inventory-summaries.md`](inventory-summaries.md) | built (#594) | Opt-in compact inventory briefings, evidence, metering and SIEM delivery. |
 | [`ai-layer.md`](ai-layer.md) | built 2026-09-05 (#319), plan beyond it | The AI test box as shipped, and the road it sits on. |
 | [`ai-threat-model.md`](ai-threat-model.md) | review of 2026-09-05, findings closed in #323 | The fleet as untrusted input: the attack surface, the principles, the tests that hold them. |
