@@ -46,6 +46,7 @@ export function DataSharingPage() {
   const [candidates, setCandidates] = useState<ExclusionCandidates | null>(null);
   const [candidatesError, setCandidatesError] = useState<string | null>(null);
   const [rankingStatus, setRankingStatus] = useState<ExclusionRankingStatus | null>(null);
+  const [rankingStatusError, setRankingStatusError] = useState<string | null>(null);
   const [rankingProvider, setRankingProvider] = useState<RankingProvider | "">("");
   const [ranking, setRanking] = useState<ExclusionRanking | null>(null);
   const [rankingBusy, setRankingBusy] = useState(false);
@@ -53,7 +54,9 @@ export function DataSharingPage() {
   const candidateRevision = useRef(0);
 
   useEffect(() => {
-    getExclusionRankingStatus().then(setRankingStatus).catch(() => setRankingError(t.system.sharing.rankingStatusFailed));
+    getExclusionRankingStatus()
+      .then((status) => { setRankingStatus(status); setRankingStatusError(null); })
+      .catch(() => { setRankingStatus(null); setRankingStatusError(t.system.sharing.rankingStatusFailed); });
   }, [t.system.sharing.rankingStatusFailed]);
 
   function invalidateRanking() {
@@ -435,6 +438,7 @@ export function DataSharingPage() {
                 </label>
               </div>
             )}
+            {canWrite && rankingStatusError && <p role="alert" className="text-xs text-destructive">{rankingStatusError}</p>}
             {rankingError && <p role="alert" className="text-xs text-destructive">{rankingError}</p>}
             {ranking && <p className="text-xs text-muted-foreground">{t.system.sharing.rankingResult(ranking.model, ranking.destination)}</p>}
             {candidates.groups.length === 0 ? (
