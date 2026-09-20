@@ -20,6 +20,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     Numeric,
@@ -771,6 +772,39 @@ class VulnCorpusReleaseTitle(Base):
     key_title: Mapped[str] = mapped_column(String(67))
     catalog_last_modified: Mapped[str] = mapped_column(String(64))
     versions_compiled: Mapped[int] = mapped_column(Integer)
+
+
+class VulnCorpusAcquisition(Base):
+    """A tenant's acquired release, independent of ongoing upload consent (#621)."""
+
+    __tablename__ = "vuln_corpus_acquisitions"
+    __table_args__ = (
+        CheckConstraint("basis IN ('legacy_consent', 'delivery')", name="ck_vuln_acquisition_basis"),
+        Index("ix_vuln_acquisitions_signature", "signature"),
+    )
+
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(primary_key=True)
+    signature: Mapped[str] = mapped_column(ForeignKey("vuln_corpus_releases.signature", ondelete="RESTRICT"), primary_key=True)
+    acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
+    basis: Mapped[str] = mapped_column(String(20))
+
+
+class VulnCorpusSelection(Base):
+    """One selected release per tenant; its composite FK requires that tenant's acquisition."""
+
+    __tablename__ = "vuln_corpus_selections"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "signature"],
+            ["vuln_corpus_acquisitions.tenant_id", "vuln_corpus_acquisitions.signature"],
+            ondelete="RESTRICT",
+            name="fk_vuln_selection_acquisition",
+        ),
+    )
+
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(primary_key=True)
+    signature: Mapped[str] = mapped_column(String(64))
+    selected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
 
 
 class DataSharingSettings(Base):

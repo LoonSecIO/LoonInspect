@@ -57,7 +57,7 @@ ends with a reading order through the rest.
 
 | Document | Status | What it says |
 | --- | --- | --- |
-| [`vulnerability-service-v2.md`](vulnerability-service-v2.md) | scope agreed; storage foundation in progress (#621) | Contribute-or-pay access, retained tenant corpora, explicit submissions, ownership and release gates. |
+| [`vulnerability-service-v2.md`](vulnerability-service-v2.md) | scope agreed; acquisition/selection foundation in progress (#621) | Contribute-or-pay access, retained tenant corpora, explicit submissions, ownership and release gates. |
 | [`mobile-devices.md`](mobile-devices.md) | scope ruled, 2026-09-01 | v0 is computers only; what mobile would add, and where the boundary is drawn. |
 | [`v-never.md`](v-never.md) | standing | Capabilities this product will not grow, with the reason attached. |
 
