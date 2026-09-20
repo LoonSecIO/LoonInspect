@@ -140,6 +140,7 @@ class DeviceOut(BaseModel):
 
 
 class DeviceDetailOut(DeviceOut):
+    findings_reconciled_at: datetime | None = None
     jamf_url: str | None = None
     apps: list[InstalledAppOut] = []
     extension_attributes: list[ExtensionAttributeOut] = []

@@ -812,7 +812,9 @@ export const en = {
         checkIn: "Jamf last heard from the Mac",
         checkInNone: "Jamf has not heard from this Mac",
         seen: "LoonInspect last read it",
-        seenNone: "LoonInspect has not read this Mac yet"
+        seenNone: "LoonInspect has not read this Mac yet",
+        findings: "Findings first checked",
+        findingsNone: "LoonInspect has not checked findings for this Mac yet"
       },
       departure: {
         inTail: (since: string, leaves: string) => `Not returned by Jamf since ${since}; leaves the fleet on ${leaves}.`,

@@ -741,7 +741,8 @@ and step 2 ends with how to tell that apart from a broken exchange.
    next check-in. A disagreement that survives both, on a reloaded page, is reportable
    state **H**; include both numbers and the Mac's serial.
 
-9. **A finding stopped being counted for a Mac that still has the app.** Each finding is kept as
+9. **A finding stopped being counted for a Mac that still has the app.** If no finding was ever
+   recorded, check **Findings first checked** on the device page first (§ 18 step 12). Each finding is kept as
    a row with the date it was first detected, and every one that stops names its reason and the
    next check: `3 finding(s) on mac-014 now read resolved (corpus_withdrawn): the corpus epoch
    this container has loaded no longer lists them for a build the Mac still carries, which is not
@@ -1852,18 +1853,20 @@ Catalog tab carries. So a link somebody sent you works even while the entry is h
     otherwise the date of that check.
     These dates estimate history rather than prove when a finding was first detected;
     later findings use their own observation and existing dates are not rewritten.
-    A **dash** is an absence and never a zero, with two checks behind it. **No Mac carrying
-    that build has been read since findings started being kept** — nothing is recorded for
-    a Mac until its own next sweep, when the initial history is reconstructed. Open one
-    that carries the build and read the third of its three clocks, **LoonInspect last read it**. The other two are Jamf's own, and a fresh *Inventory
-    reported by Jamf* beside a stale third is precisely this case: the sweep stopped, not the Mac
-    (§ 2 for a run that reports nothing, § 12 for one connection whose sweeps all fail at once).
+    A **dash** is an absence and never a zero, with two checks behind it. **Findings have
+    never been checked for a Mac carrying this build.** Open its device page and read
+    **Findings first checked**: a sentence saying findings have not been checked confirms
+    this state. A timestamp means its first check completed, even if it found no findings;
+    it is not the first detected date of a CVE and does not move on subsequent sweeps.
+    Run a device sweep to record the initial check (§ 2 for a run that reports nothing,
+    § 12 for one connection whose sweeps all fail). A recent **LoonInspect last read it**
+    timestamp alone does not prove findings were checked.
     **The id is past that build's cap** — a list holds ~50 while the count counts every finding
     (step 10), so an id nobody named is an id nothing can record, which the Lookup page words as
     *Not tracked by id here* and not as *no Macs*. Neither is a fault; a dash beside a findings
-    count on a build whose carrying Macs all say **LoonInspect last read it** since this container
-    was updated is neither, and is ours — report the app and version, its findings count, and that
-    Mac's three clocks.
+    count on a build whose carrying Macs all have a **Findings first checked** timestamp
+    is neither, and is ours — report the app and version, its findings count, and the
+    Mac's four clocks.
 
 **V.** The page says *being judged against it* more than an hour after the corpus date
 moved, with the tier on and the hourly refresh running. Report the date the banner shows,
