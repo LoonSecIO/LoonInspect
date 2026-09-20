@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PatchAnswer } from "@/features/catalog/patchAnswer";
 import { closesCell, describeUpdate } from "./appUpdate";
-import type { AppUpdate, AppVulnerability } from "./types";
+import type { AppTitleUpdate, AppUpdate, AppVulnerability } from "./types";
 import { en } from "@/i18n/en";
 
 /** Wireshark 4.2.0 on the real record: two titles, so the answer has a subject to name
@@ -50,19 +50,23 @@ describe("describeUpdate", () => {
     });
   });
 
-  it("builds exactly one line, the reference title's target, and none for the in-branch title", () => {
-    // The name says what is asserted — a SINGULAR target — because this pins the CUT and
-    // not the rule. #482 states "one line per named title"; that rule is NOT implemented,
-    // and a test carrying its name while asserting its absence is worse than the absence.
-    // Wireshark 4.2.0 matches two titles; "Wireshark 4.2" names 4.2.14, which is the
-    // update most admins would actually push, and nothing here says a word about it.
-    // Building it needs a stored answer per `app_catalog_title_matches` row — a new shape,
-    // not a clause — so the cut is raised on the PR and the ruling asked on #482 rather
-    // than smuggled. When the second target lands, this test is replaced by the rule's own.
-    const lines = describeUpdate(COVERED, EXACT, WIRESHARK);
-    expect(lines).toHaveLength(1);
-    expect(lines.map((line) => line.version)).toEqual(["4.6.8"]);
-    expect(lines.some((line) => line.subject?.id === "5F6")).toBe(false);
+  it("renders each named title's target, preserving unknown and net answers", () => {
+    const titles: AppTitleUpdate[] = [
+      { ...EXACT, titleId: "612", titleName: "Wireshark" },
+      { version: "4.2.14", assessment: "unknown_app", closes: null, opens: null, net: null,
+        titleId: "5F6", titleName: "Wireshark 4.2" }
+    ];
+    const lines = describeUpdate(COVERED, EXACT, WIRESHARK, titles);
+    expect(lines.map((line) => [line.subject?.name, line.version])).toEqual([
+      ["Wireshark", "4.6.8"], ["Wireshark 4.2", "4.2.14"]
+    ]);
+    expect(lines[1]).toMatchObject({ unknown: true, closes: null, opens: null, net: null });
+    const capped = describeUpdate(COVERED, EXACT, WIRESHARK, [
+      { ...titles[1], assessment: "covered", net: 7 }
+    ]);
+    expect(capped[0]).toMatchObject({ unknown: false, closes: null, opens: null, net: 7 });
+    expect(describeUpdate({ assessment: "off" }, EXACT, WIRESHARK, titles)).toEqual([]);
+    expect(describeUpdate({ assessment: "unknown_app", corpusAsOf: "2026-09-13" }, EXACT, WIRESHARK, titles)).toEqual([]);
   });
 
   it("names no subject when one title matched — it is the subject, and the titles line says so", () => {

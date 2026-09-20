@@ -20,6 +20,7 @@ from app.core.vuln import VulnCorpus
 from app.core.vuln_answer import counted, served, stored_corpus
 from app.core.vuln_library import earned_corpus, loaded_epoch_signature
 from app.core.vuln_read import NO_ANSWER, assess, corpus_as_of, seen_here_days, today, update_line
+from app.core.vuln_targets import load_title_updates
 from app.mdm.patch.requirements import version_tuple
 from app.models.schema import AppCatalogEntry, AppCatalogVersion, InstalledApp
 from app.schemas.catalog import (
@@ -32,6 +33,7 @@ from app.schemas.catalog import (
     CatalogSummaryOut,
     CatalogTitleRef,
     CatalogVersionOut,
+    VulnTitleUpdateOut,
 )
 
 router = APIRouter(prefix="/api/catalog", tags=["catalog"])
@@ -95,6 +97,7 @@ def _assessed_entry_out(
     corpus: VulnCorpus,
     as_of: date,
     seen_here: Mapping[str, int] | None = None,
+    updates: list[VulnTitleUpdateOut] | None = None,
 ) -> CatalogEntryAssessedOut:
     """The same row, plus the corpus's answer for **this exact build** (#251).
 
@@ -111,6 +114,7 @@ def _assessed_entry_out(
     # the same seam. The Catalog page does not paint it yet; the application record reads
     # this endpoint scoped to one `appHash` and does.
     out.vuln_update = update_line(entry, corpus=corpus)
+    out.vuln_updates = updates or []
     # *Seen here* (#591), from the ONE grouped ledger query the caller ran for the whole page: a `.get` and not a
     # query, so no row grows a statement of its own. Absent where the ledger holds no open row for the build — a dash.
     out.seen_here_days = (seen_here or {}).get(entry.key_full)
@@ -233,8 +237,17 @@ async def list_catalog(
     # vulnerability column, so it skips this read even with the open-build index in place (#600).
     draws_seen_here = filtered or app_hash is not None
     seen_here = await seen_here_days(db, [entry.key_full for entry in entries], as_of=as_of) if draws_seen_here else None
+    targets = await load_title_updates(db, entries, corpus=stored) if app_hash is not None else {}
     items = [
-        _assessed_entry_out(entry, row[1], refs, corpus=stored, as_of=as_of, seen_here=seen_here)
+        _assessed_entry_out(
+            entry,
+            row[1],
+            refs,
+            corpus=stored,
+            as_of=as_of,
+            seen_here=seen_here,
+            updates=targets.get((entry.platform, entry.version_hash)),
+        )
         for entry, row in zip(entries, page_rows, strict=True)
     ]
 

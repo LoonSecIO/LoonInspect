@@ -21,13 +21,14 @@ from app.core.vuln import VulnCorpus
 from app.core.vuln_answer import counted, served, stored_corpus
 from app.core.vuln_library import earned_corpus, loaded_epoch_signature
 from app.core.vuln_read import NO_ANSWER, assess, corpus_as_of, today, update_line
+from app.core.vuln_targets import load_title_updates
 from app.mdm.device_refresh import DeviceRefreshError, refresh_device
 from app.mdm.jamf.contract import SUBJECT_COMPUTER
 from app.mdm.org_units import BUILDING, DEPARTMENT, OrgUnitNames, ids_for_name, load_names, name_for
 from app.models.schema import Device, DeviceExtensionAttribute, InstalledApp, MdmConnection
 from app.observations.departure import gone_for_good, open_departures
 from app.observations.read import device_observation
-from app.schemas.catalog import CatalogTitleRef
+from app.schemas.catalog import CatalogTitleRef, VulnTitleUpdateOut
 from app.schemas.devices import (
     DeviceDetailOut,
     DeviceListItemOut,
@@ -359,7 +360,13 @@ async def list_devices(
     )
 
 
-def _assessed(out: DeviceDetailOut, rows: Sequence[InstalledApp], *, corpus: VulnCorpus) -> DeviceDetailOut:
+def _assessed(
+    out: DeviceDetailOut,
+    rows: Sequence[InstalledApp],
+    *,
+    corpus: VulnCorpus,
+    title_updates: Mapping[tuple[str, str], list[VulnTitleUpdateOut]] | None = None,
+) -> DeviceDetailOut:
     """LoonInspect's own answer for each of this device's apps, and the stamp it came from
     (#251, `docs/vulnerabilities.md` §4a).
 
@@ -394,6 +401,7 @@ def _assessed(out: DeviceDetailOut, rows: Sequence[InstalledApp], *, corpus: Vul
                         "vuln": assess(stored, by_id[app.id], as_of=as_of),
                         # And what updating would do to it (#482), off the same row.
                         "vuln_update": update_line(by_id[app.id], corpus=stored),
+                        "vuln_updates": (title_updates or {}).get((out.platform, app.version_hash), []),
                     }
                 )
                 for app in out.apps
@@ -458,7 +466,9 @@ async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> Devi
     # One read of this tenant's data-sharing tier for the whole response, not one per app:
     # the corpus a tenant has earned is a per-tenant fact and the gate reads it here
     # (#248, docs/vulnerabilities.md §8).
-    assessed = _assessed(detail, device.apps, corpus=await earned_corpus(db))
+    corpus = await earned_corpus(db)
+    targets = await load_title_updates(db, device.apps, corpus=corpus, platform=device.platform)
+    assessed = _assessed(detail, device.apps, corpus=corpus, title_updates=targets)
     # One read of the global catalog for every title this Mac's apps matched (#313): the
     # names a person can read, beside the ids the rows store.
     return _titled(assessed, await title_names(db, (title_id for app in device.apps for title_id in (app.jamf_title_ids or []))))

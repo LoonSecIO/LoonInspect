@@ -70,7 +70,7 @@ from sqlalchemy import case, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.vuln import VulnCorpus, vuln_block
-from app.core.vuln_answer import HasStoredAnswer, update_effect
+from app.core.vuln_answer import HasStoredAnswer, HasStoredTarget, update_effect
 from app.models.schema import Device, DeviceFinding
 from app.schemas.catalog import FindingDetectedOut, VulnUpdateOut
 from app.schemas.payload import VULN_ASSESSMENT_UNKNOWN_APP, VulnEnrichment
@@ -134,7 +134,7 @@ def assess_all(corpus: VulnCorpus, rows: Iterable[HasContentKeys], *, as_of: dat
     return [assess(corpus, row, as_of=as_of) for row in rows]
 
 
-def update_line(row: HasStoredAnswer, *, corpus: VulnCorpus) -> VulnUpdateOut | None:
+def update_line(row: HasStoredAnswer, *, corpus: VulnCorpus, target: HasStoredTarget | None = None) -> VulnUpdateOut | None:
     """One row's *what updating would fix*, for a reader (#482), or `None` for nothing to
     say — which becomes an absent field rather than a zero, because `closes: 0` on a row
     nobody answered is §4a's failure a release along.
@@ -143,7 +143,7 @@ def update_line(row: HasStoredAnswer, *, corpus: VulnCorpus) -> VulnUpdateOut | 
     columns the caller already loaded and this is the REST dress for it. No lookup, no
     database, and no fleet-wide count — §4g's "none per request" is what half 2 must face.
     """
-    effect = update_effect(row, corpus=corpus)
+    effect = update_effect(row, corpus=corpus, target=target)
     if effect is None:
         return None
     return VulnUpdateOut(

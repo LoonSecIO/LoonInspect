@@ -610,6 +610,13 @@ class AppCatalogTitleMatch(Base):
     # surfaces read it here.
     releases_missed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    # Each named title's target, judged with the parent build (#526).
+    vuln_target_key: Mapped[str | None] = mapped_column(String(67), nullable=True)
+    vuln_target_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    vuln_target_assessment: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    vuln_target_counts: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    vuln_target_ids: Mapped[list | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    vuln_target_ids_truncated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
 
 class AppCatalogVersion(Base):

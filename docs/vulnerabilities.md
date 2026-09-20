@@ -510,8 +510,23 @@ Every rule above applies unchanged one row out: a target with no row is `unknown
 gains nothing; and the difference is **exact** — a set difference of the two id lists —
 only when NEITHER row is truncated, otherwise it is the difference of the uncapped
 `counts.total` and is labelled `net`, because recounting a capped list under-reports. It is
-served as `vulnUpdate` beside `vuln` on the two REST reads below, never inside the block
-and **never on the wire** (§6).
+served as `vulnUpdate` beside `vuln`, never inside the block and **never on the wire** (§6).
+
+**Each matched title has its own target** (#526). A build matching both Wireshark and
+Wireshark 4.2 stores a target key and the five answer columns on each
+`app_catalog_title_matches` row. Matching sets those keys on the Jamf clock. The judge
+updates them in a data-modifying CTE in the same statement as the parent build, so their
+answers share its corpus epoch. The same no-key/no-version guard applies during rollout;
+the versioned matching signature populates keys on the next normal catalog refresh or
+device sweep, without a startup fleet rewrite.
+
+Device detail apps and application-record builds expose `vulnUpdates`: one named line per
+title whose target was looked up, reference title first. Each line carries `titleId`,
+`titleName`, and the same update-effect fields as `vulnUpdate`. Reads batch these stored
+answers and gate them on the current corpus and a covered source build. A missing target
+is unknown, and capped IDs yield a net difference, independently for each title. The
+legacy singular `vulnUpdate` remains the reference-target answer used by ranking and
+existing clients. Neither field changes emitted events or posture keys.
 
 **And the difference is also the sort** (#532, built 2026-09-17; half 2 of #428).
 `GET /api/catalog?vuln=patchable` serves the rows whose own answer is `covered` with
@@ -560,8 +575,8 @@ checking in. Every other key is the same value in both.
 | `GET /api/vulnerabilities/status` | `corpusAsOf` alone (#529), under `vuln:read` — what the sidebar reads before any page is open |
 | **Devices** (the device list, #535) | An **Apps with findings** column — *n (k KEV) · m outside* — over `vulnApps` above, and the two URL-carried chips, *With findings* and *On KEV*, that are the filter above. No corpus, no column and no chips |
 | Devices › Applications › **Catalog** | A **Vulnerabilities** column, and the corpus banner above it |
-| Devices › *hostname* (the device page, #300) | A **LoonInspect** column per installed app, and the same banner above it; #482 added the update line inside that column, #535 the rollup line beside the banner — this Mac in apps, the same three numbers the list's column prints, over the rows the page already holds |
-| Devices › Applications › *appHash* (the application record, #299) | A **Vulnerabilities** column per carried build — legal there because each row is one build at `key_full` grain — and the banner; #482's update line likewise |
+| Devices › *hostname* (the device page, #300) | A **LoonInspect** column per installed app, and the same banner above it; #526 prints an update line per named title inside that column, #535 the rollup line beside the banner — this Mac in apps, the same three numbers the list's column prints, over the rows the page already holds |
+| Devices › Applications › *appHash* (the application record, #299) | A **Vulnerabilities** column per carried build — legal there because each row is one build at `key_full` grain — and the banner; #526's per-title update lines likewise |
 | Devices › Applications › Jamf Patch › *title* | **Nothing** (#298). A title's version row carries no `key_full`, so there is no grain to answer at; the stub column that stood there (`C — H — M — L — Σ` beside coloured dots, under a tooltip naming an integration nobody can enable) was deleted rather than rewritten, per the #95 precedent |
 | **Posture › Vulnerabilities** (#529, #538) | The fleet ranking: one row per build, most exposed first, with the corpus banner above it, a plain search over the catalog's `q`, and the same `AssessmentCell` — one rendering of the three states, handed the row so #482's update line prints. Its own two states before any row: nothing answering (the banner and its *why* block alone) and `vulnJudged` false (one sentence, no list). Eight bands (#538, #532): the banner · the search box · **Explore by app**, chips grouped client-side from the rows in hand · **Popular filters**, `vuln`, `band` and `jamf` carried in the address · **Most exposed** · **Easily patchable** (`vuln=patchable`, which carries its own `order=payoff`) · **Longest exposed** (`order=age`) · **By the numbers**, the tape's four `vuln.*` rows, planned against `audit:read` |
 

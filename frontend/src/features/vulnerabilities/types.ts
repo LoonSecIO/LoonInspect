@@ -104,3 +104,8 @@ export function formatCorpusDate(value: string): string {
   if (!year || !month || !day) return value;
   return new Date(year, month - 1, day).toLocaleDateString();
 }
+
+export interface AppTitleUpdate extends AppUpdate {
+  titleId: string;
+  titleName: string;
+}

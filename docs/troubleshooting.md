@@ -704,12 +704,13 @@ and step 2 ends with how to tell that apart from a broken exchange.
 
 7. **A build says how many findings it has, and the line beside it says *updating to
    …: not in the corpus of …*.** That line is the answer for the release **Jamf calls
-   latest**, not for the build you are looking at, and it means the corpus holds no row
+   latest for the named title**, not for the build you are looking at, and it means the corpus holds no row
    for that release — nobody assessed it. It is deliberately not rendered as *closes all
    of them*: an update whose target nobody looked at buys an unknown, not a clean bill,
    and a missing row is never upgraded into one. Nothing is broken and there is nothing
    to fix in the container. Two things tell the ordinary reading from a fault:
-   - the release named is the one the **Latest** column names, and is usually newer than
+   - each line names its own title and latest release; the reference title comes first.
+     An in-branch title can name a different release. The release is often newer than
      anything the corpus has had time to assess — the corpus is dated on the banner, and
      a release published after that date cannot be in it. Wait for the corpus to move;
    - if the release is *older* than the banner's date and the same line survives a
@@ -722,7 +723,7 @@ and step 2 ends with how to tell that apart from a broken exchange.
    already on the latest release, and a build Jamf lists no title for all show nothing. So
    does **every** build for a while after the upgrade that added this line: the lookup is
    set up when the row is re-matched against the Jamf catalog, which happens on its own the
-   next time that catalog moves. A release nobody looked up is never dressed as one the
+   next normal catalog refresh or device sweep. A release nobody looked up is never dressed as one the
    corpus has no row for, so the absence is the honest state and not a silent failure. To
    stop waiting, use Devices › Applications › **Catalog** › *Refresh* (step 3) — it
    re-matches every row, and the lines appear on the next page load.

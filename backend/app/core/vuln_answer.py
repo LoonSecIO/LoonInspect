@@ -84,6 +84,14 @@ VULN_ANSWER_COLUMNS: tuple[str, ...] = (
 )
 
 
+class HasStoredTarget(Protocol):
+    vuln_target_version: str | None
+    vuln_target_assessment: str | None
+    vuln_target_counts: dict | None
+    vuln_target_ids: list | None
+    vuln_target_ids_truncated: bool | None
+
+
 class HasStoredAnswer(Protocol):
     """Anything carrying the stored answer — `AppCatalogEntry` and `InstalledApp`, which
     carry identical copies of it. A protocol rather than a union of the two models so this
@@ -288,7 +296,7 @@ def _total(counts: Mapping[str, object] | None) -> int | None:
     return value if isinstance(value, int) else None
 
 
-def update_effect(row: HasStoredAnswer, *, corpus: VulnCorpus) -> UpdateEffect | None:
+def update_effect(row: HasStoredAnswer, *, corpus: VulnCorpus, target: HasStoredTarget | None = None) -> UpdateEffect | None:
     """One row's `UpdateEffect`, or `None` when there is nothing to say — which is the
     common case, and every arm of it is deliberate:
 
@@ -304,19 +312,20 @@ def update_effect(row: HasStoredAnswer, *, corpus: VulnCorpus) -> UpdateEffect |
     """
     if corpus.as_of is None:
         return None
-    version = row.vuln_target_version
+    target = target if target is not None else row
+    version = target.vuln_target_version
     if not version or version == row.version:
         return None
     if not served(row.vuln_assessment, row.vuln_signature, epoch=loaded_epoch_signature()):
         return None
-    if row.vuln_target_assessment != VULN_ASSESSMENT_COVERED:
+    if target.vuln_target_assessment != VULN_ASSESSMENT_COVERED:
         return UpdateEffect(version=version, assessment=None, closes=None, opens=None, net=None)
-    if row.vuln_ids_truncated or row.vuln_target_ids_truncated:
-        here, there = _total(row.vuln_counts), _total(row.vuln_target_counts)
+    if row.vuln_ids_truncated or target.vuln_target_ids_truncated:
+        here, there = _total(row.vuln_counts), _total(target.vuln_target_counts)
         if here is None or there is None:  # pragma: no cover - a hand-edited row; say nothing
             return None
         return UpdateEffect(version=version, assessment=VULN_ASSESSMENT_COVERED, closes=None, opens=None, net=here - there)
-    mine, theirs = set(row.vuln_ids or ()), set(row.vuln_target_ids or ())
+    mine, theirs = set(row.vuln_ids or ()), set(target.vuln_target_ids or ())
     return UpdateEffect(
         version=version,
         assessment=VULN_ASSESSMENT_COVERED,

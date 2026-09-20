@@ -383,7 +383,7 @@ async def test_a_device_page_with_250_apps_issues_no_per_app_lookup(db, fleet) -
     statements, and neither grows with the app count: the answers are columns the response
     already selected, so there is nothing left to look up.
 
-    `len(issued) < 10` is the load-bearing assertion here; keep it. The `vuln_library_rows`
+    `len(issued) <= 10` bounds the whole response, including #526's one batch title-target read. The `vuln_library_rows`
     one below it is a guard rail, not a property — the in-memory lookup this replaced never
     named that table either, so it would have passed before #381 as well. The assertion that
     actually pins "the corpus is never asked on the read path" lives in `test_vuln_read.py`
@@ -401,7 +401,8 @@ async def test_a_device_page_with_250_apps_issues_no_per_app_lookup(db, fleet) -
         detail = await get_device(big.id, db)
     assert len(detail.apps) == 254
     # Well under one per app, and flat: the page's cost is its own selects, not the corpus.
-    assert len(issued) < 10, issued
+    assert len(issued) <= 10, issued
+    assert sum("app_catalog_title_matches" in sql for sql in issued) == 1
     assert not any("vuln_library_rows" in statement for statement in issued)
     covered = [app for app in detail.apps if app.vuln.assessment == "covered"]
     assert len(covered) == 2  # Wireshark and the clean fixture; the 250 are in no epoch
@@ -1711,3 +1712,127 @@ async def test_a_stale_row_is_not_searched_and_a_capped_list_is_counted(db, flee
     await db.commit()
     stale = await _lookup(db, HERE[0])
     assert stale.builds == [] and stale.truncated_builds == 0
+
+
+async def test_each_title_has_its_own_stored_target_and_both_rest_reads_name_it(db, fleet) -> None:
+    """One covered target and one absent target survive storage, batching and both REST reads."""
+    from app.api.devices import get_device
+    from app.catalog.service import judge_vuln
+    from app.core.vuln_targets import load_title_updates
+    from app.mdm.patch.matching import reset_catalog_cache
+    from app.models.schema import AppCatalogTitleMatch
+
+    _, device = fleet
+    await _with_titles(db)
+    reference = await db.get(JamfPatchTitle, TARGET_TITLE_ID)
+    branch_id = "LOON526"
+    db.add(
+        JamfPatchTitle(
+            id=branch_id,
+            name="Wireshark 4.2",
+            current_version="4.2.14",
+            last_modified="2026-08-13T09:34:31Z",
+            patches=[
+                {"version": "4.2.14", "releaseDate": "2026-08-12T19:18:22Z"},
+                {"version": "4.2.0", "releaseDate": "2024-01-03T18:00:00Z"},
+            ],
+            requirements=reference.requirements,
+            extension_attributes=[],
+        )
+    )
+    await db.commit()
+    reset_catalog_cache()
+    try:
+        await _epoch_with_target(db, CLEAN_TARGET)
+        await _judge(db, device)
+        entry = await _entry(db, WIRESHARK_BUILD)
+        with _statements() as issued:
+            await judge_vuln(db, [entry], now=NOW)
+        issued = [sql for sql in issued if "set_config" not in sql]
+        assert len(issued) == 1 and "judged_title_targets" in issued[0]
+        stored = (
+            (await db.execute(select(AppCatalogTitleMatch).where(AppCatalogTitleMatch.app_catalog_id == entry.id)))
+            .scalars()
+            .all()
+        )
+        targets = {row.title_id: row for row in stored}
+        assert targets[branch_id].vuln_target_key == app_full_key(entry.name, entry.bundle_id, "4.2.14", None)
+        assert targets[branch_id].vuln_target_version == "4.2.14"
+        assert targets[branch_id].vuln_target_assessment is None
+        assert targets[TARGET_TITLE_ID].vuln_target_assessment == "covered"
+        detail = await get_device(device.id, db)
+        app = next(app for app in detail.apps if app.version_hash == entry.version_hash)
+        assert app.vuln_updates[0].title_id == entry.reference_title_id
+        # Global catalog fixtures from other suites can add matches; assert our two titles.
+        lines = [line for line in app.vuln_updates if line.title_id in {TARGET_TITLE_ID, branch_id}]
+        assert [line.title_id for line in lines] == [TARGET_TITLE_ID, branch_id]
+        assert [line.title_name for line in lines] == ["Wireshark", "Wireshark 4.2"]
+        assert (lines[0].closes, lines[0].opens, lines[0].net) == (17, 0, None)
+        assert lines[1].assessment == "unknown_app"
+        assert (lines[1].closes, lines[1].opens, lines[1].net) == (None, None, None)
+        assert app.vuln_update.version == lines[0].version
+        page = await _list(db, app_hash=entry.app_hash)
+        assert next(row for row in page.items if row.key_full == WIRESHARK_BUILD).vuln_updates == app.vuln_updates
+
+        # Resolve names at read time, like the existing title list; never print an unnamed line.
+        await db.execute(update(JamfPatchTitle).where(JamfPatchTitle.id == branch_id).values(name=""))
+        named = await load_title_updates(db, [entry], corpus=loaded_corpus())
+        assert all(line.title_id != branch_id for line in named[(entry.platform, entry.version_hash)])
+
+        # Changing only the corpus re-judges every title in the same single statement.
+        await _epoch_with_target(
+            db,
+            {
+                "ids": THERE[:50],
+                "truncated": True,
+                "counts": {"total": 94, "kev": 0, "critical": 1, "high": 26, "medium": 66, "low": 1},
+            },
+        )
+        assert await load_title_updates(db, [entry], corpus=loaded_corpus()) == {}
+        with _statements() as issued:
+            await judge_vuln(db, None, now=NOW)
+        issued = [sql for sql in issued if "set_config" not in sql]
+        assert len(issued) == 1 and "judged_title_targets" in issued[0]
+        await db.refresh(entry)
+        updates = await load_title_updates(db, [entry], corpus=loaded_corpus())
+        assert updates[(entry.platform, entry.version_hash)][0].net == -77
+
+        # No lookup during rollout means no version and no line, even with a real latest version.
+        await db.execute(
+            update(AppCatalogTitleMatch).where(AppCatalogTitleMatch.app_catalog_id == entry.id).values(vuln_target_key=None)
+        )
+        await judge_vuln(db, [entry], now=NOW)
+        assert await load_title_updates(db, [entry], corpus=loaded_corpus()) == {}
+        versions = (
+            (
+                await db.execute(
+                    select(AppCatalogTitleMatch.vuln_target_version).where(AppCatalogTitleMatch.app_catalog_id == entry.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(versions) >= 2 and all(version is None for version in versions)
+
+        # A tier change clears title answers together with the parent and suppresses reads.
+        await _set_tier(db, "off")
+        with _statements() as issued:
+            await judge_vuln(db, None, now=NOW)
+        issued = [sql for sql in issued if "set_config" not in sql]
+        assert len(issued) == 1
+        assert await load_title_updates(db, [entry], corpus=loaded_corpus()) == {}
+        cleared = (
+            await db.execute(
+                select(
+                    AppCatalogTitleMatch.vuln_target_counts,
+                    AppCatalogTitleMatch.vuln_target_ids,
+                    AppCatalogTitleMatch.vuln_target_assessment,
+                ).where(AppCatalogTitleMatch.app_catalog_id == entry.id)
+            )
+        ).all()
+        assert all(tuple(row) == (None, None, None) for row in cleared)
+    finally:
+        await db.rollback()
+        await db.execute(delete(JamfPatchTitle).where(JamfPatchTitle.id == branch_id))
+        await db.commit()
+        reset_catalog_cache()

@@ -6,7 +6,7 @@ import { Subject } from "@/features/catalog/PatchAnswerCell";
 import type { PatchAnswer } from "@/features/catalog/patchAnswer";
 import { describeUpdate, type UpdateLine } from "@/features/vulnerabilities/appUpdate";
 import { findingPath } from "@/features/vulnerabilities/findingId";
-import { assertExhaustive, formatCorpusDate, type AppUpdate, type AppVulnerability } from "@/features/vulnerabilities/types";
+import { assertExhaustive, formatCorpusDate, type AppTitleUpdate, type AppUpdate, type AppVulnerability } from "@/features/vulnerabilities/types";
 
 // Fixed status colours, never themed, per the dataviz palette the catalog's patch-state
 // column already uses: good / warning / critical / neutral. `unknown_app` is the warning
@@ -32,7 +32,7 @@ function Label({ color, children }: { color: string | null; children: ReactNode 
 /**
  * What an update would do to these findings, beside them (#482) — in the same cell as the
  * count it is about, each line naming the title that names its release. `describeUpdate`
- * builds one line today and says there whose ruling the second is waiting on.
+ * uses the stored per-title list, with the singular answer as a rollout fallback (#526).
  *
  * Three renderings and no fourth. **Exact** is a difference of the two id lists and says
  * both directions, because the newer build can carry more — the lab found Wireshark 4.2.0
@@ -49,7 +49,7 @@ function UpdateLines({ lines, corpusAsOf, t }: { lines: UpdateLine[]; corpusAsOf
   return (
     <>
       {lines.map((line) => (
-        <span key={line.version} className="block text-xs">
+        <span key={`${line.subject?.id ?? "reference"}:${line.version}`} className="block text-xs">
           {line.unknown ? (
             <Label color={WARNING}>
               <span className="text-muted-foreground">{copy.updateUnknown(line.version, formatCorpusDate(corpusAsOf))}</span>
@@ -93,10 +93,10 @@ export function AssessmentCell({
   /** The row this cell is about, when the surface wants the update line too (#482). Legal
    *  only where each row is one build at `key_full` grain — the device page's apps and the
    *  application record's builds. The catalog passes nothing and paints nothing new. */
-  row?: (PatchAnswer & { vulnUpdate: AppUpdate | null }) | null;
+  row?: (PatchAnswer & { vulnUpdate: AppUpdate | null; vulnUpdates?: AppTitleUpdate[] }) | null;
 }) {
   const copy = t.vulnerabilities;
-  const updates = row ? describeUpdate(vuln, row.vulnUpdate, row) : [];
+  const updates = row ? describeUpdate(vuln, row.vulnUpdate, row, row.vulnUpdates) : [];
 
   switch (vuln.assessment) {
     case "off":

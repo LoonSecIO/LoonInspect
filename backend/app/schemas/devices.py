@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 from pydantic.alias_generators import to_camel
 
-from app.schemas.catalog import CatalogTitleRef, VulnUpdateOut
+from app.schemas.catalog import CatalogTitleRef, VulnTitleUpdateOut, VulnUpdateOut
 from app.schemas.payload import MdmProvider, VulnEnrichment
 
 
@@ -97,6 +97,7 @@ class InstalledAppOut(BaseModel):
     # `covered`, no target has been judged for this row, or this build already IS the
     # target — and never a zero. REST only: nothing new goes on the wire (§6).
     vuln_update: VulnUpdateOut | None = None
+    vuln_updates: list[VulnTitleUpdateOut] = []
 
     @computed_field
     @property
