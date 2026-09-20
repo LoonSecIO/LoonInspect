@@ -1,4 +1,6 @@
+import { historyEnglish } from "@/features/devices/historyCopy";
 export const en = {
+  deviceHistory: historyEnglish,
   system: {
     // #407: a published release this build does not contain — never a merge to main.
     updateAvailable: (tag: string) => `LoonInspect ${tag} is available`,

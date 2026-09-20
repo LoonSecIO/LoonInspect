@@ -9,6 +9,7 @@ import type { DeviceChange } from "@/features/changes/types";
 import { getDevice } from "@/features/devices/api";
 import { departureState, leavesTheFleetAt } from "@/features/devices/departure";
 import { collectedNotOnPage } from "@/features/devices/ledgerSections";
+import { DeviceHistoryCard } from "@/features/devices/DeviceHistoryCard";
 import { ObservationBlock } from "@/features/devices/ObservationBlock";
 import type { DeviceDetail, ExtensionAttribute } from "@/features/devices/types";
 import { AssessmentCell, CorpusBanner } from "@/features/vulnerabilities/AppAssessment";
@@ -190,6 +191,9 @@ export function DevicePage() {
               : td.noRecordedChange}
       </p>
 
+      <DeviceHistoryCard deviceId={device.id} />
+
+      <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">{t.deviceHistory.latestInventory}</p>
       <Placement device={device} td={td} t={t} />
 
       <section className="space-y-3">

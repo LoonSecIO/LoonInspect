@@ -1,6 +1,8 @@
+import { historyGerman } from "@/features/devices/historyCopy";
 import type { Translations } from "@/i18n/en";
 
 export const de: Translations = {
+  deviceHistory: historyGerman,
   system: {
     updateAvailable: (tag: string) => `LoonInspect ${tag} ist verfügbar`,
     updateAvailableUntagged: "Ein neueres Release von LoonInspect ist verfügbar",

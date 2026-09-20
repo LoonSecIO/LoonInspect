@@ -1,0 +1,142 @@
+export const historyEnglish = {
+  heading: "Device history",
+  eyebrow: "Recorded over time",
+  latest: "Latest",
+  historical: "Historical",
+  latestInventory: "Latest inventory",
+  customize: "Customize",
+  cancel: "Cancel",
+  save: "Save layout",
+  saving: "Saving…",
+  add: "Add value",
+  remove: "Remove",
+  search: "Search tracked values…",
+  observed: "Observed",
+  collected: "Collected",
+  newer: "← Newer",
+  older: "Older →",
+  recordedStates: "Recorded states",
+  timeline: "Select a recorded observation",
+  loading: "Reading device history…",
+  empty: "No observations have been recorded for this device yet.",
+  error: "Device history could not be loaded.",
+  retry: "Retry",
+  saveError:
+    "Layout could not be saved. Check the Change Log policy and try again.",
+  personal: "Your layout · shared across devices in this tenant.",
+  policy:
+    "Up to six values from the enabled Change Log fields. Application and finding counts require application additions and removals to be tracked.",
+  yes: "Enabled",
+  no: "Disabled",
+  whatMoved: "What moved",
+  baseline:
+    "First recorded state. Baseline established; there is no earlier observation to compare.",
+  noSelectedChanges:
+    "No comparable changes in the selected values. The recorded change log may contain other changes.",
+  advisory: "AI summary · advisory",
+  evidence: "View recorded changes for this observation →",
+  noAssessment:
+    "Historical vulnerability assessment was not recorded for this observation.",
+  coverage: (covered: number, outside: number, corpus: string) =>
+    `${covered} assessed app builds · ${outside} without assessment · corpus ${corpus}. Findings count app-build/CVE pairs; the same CVE on different builds counts separately.`,
+  defaults: {
+    "operating_system.version": "Operating system",
+    "applications.count": "Applications",
+    "findings.total": "Open vulnerability findings",
+    "findings.critical": "Critical findings",
+    "disk_encryption.fileVault2Enabled": "FileVault",
+    "security.firewallEnabled": "Firewall",
+  } as Record<string, string>,
+  states: {
+    disabled: "Disabled in Change Log",
+    not_observed: "Not observed",
+    outside_aperture: "Not collected in this observation",
+    empty: "Not present",
+    not_recorded: "Not recorded",
+  } as Record<string, string>,
+  summaries: {
+    baseline: "AI comparison baseline established.",
+    no_updates: "No updates in the completed AI comparison.",
+    incomplete: "AI comparison is incomplete; some sections were not observed.",
+    pending: "AI summary pending.",
+    processing: "AI summary is being generated.",
+    disabled: "AI inventory summaries are disabled.",
+    dropped:
+      "No AI summary was produced for this observation. Check Inventory AI diagnostics on Overview.",
+    failed: "AI summary failed. Check Inventory AI diagnostics on Overview.",
+    unavailable: "No retained AI summary is linked to this observation.",
+  } as Record<string, string>,
+};
+
+export const historyGerman: typeof historyEnglish = {
+  heading: "Geräteverlauf",
+  eyebrow: "Im Zeitverlauf erfasst",
+  latest: "Neuester Stand",
+  historical: "Historisch",
+  latestInventory: "Aktuelles Inventar",
+  customize: "Anpassen",
+  cancel: "Abbrechen",
+  save: "Ansicht speichern",
+  saving: "Wird gespeichert…",
+  add: "Wert hinzufügen",
+  remove: "Entfernen",
+  search: "Erfasste Werte suchen…",
+  observed: "Beobachtet",
+  collected: "Abgerufen",
+  newer: "← Neuer",
+  older: "Älter →",
+  recordedStates: "Erfasste Zustände",
+  timeline: "Eine erfasste Beobachtung auswählen",
+  loading: "Geräteverlauf wird geladen…",
+  empty: "Für dieses Gerät wurden noch keine Beobachtungen erfasst.",
+  error: "Der Geräteverlauf konnte nicht geladen werden.",
+  retry: "Erneut versuchen",
+  saveError:
+    "Ansicht konnte nicht gespeichert werden. Änderungsprotokoll-Einstellungen prüfen und erneut versuchen.",
+  personal: "Ihre Ansicht · für alle Geräte dieses Mandanten.",
+  policy:
+    "Bis zu sechs Werte aus den aktivierten Änderungsprotokoll-Feldern. App- und Schwachstellenzahlen erfordern die Erfassung hinzugefügter und entfernter Apps.",
+  yes: "Aktiviert",
+  no: "Deaktiviert",
+  whatMoved: "Was sich geändert hat",
+  baseline:
+    "Erster erfasster Zustand. Ausgangsbasis gespeichert; es gibt keine frühere Beobachtung zum Vergleich.",
+  noSelectedChanges:
+    "Keine vergleichbaren Änderungen der gewählten Werte. Das Änderungsprotokoll kann weitere Änderungen enthalten.",
+  advisory: "KI-Zusammenfassung · unverbindlich",
+  evidence: "Erfasste Änderungen dieser Beobachtung anzeigen →",
+  noAssessment:
+    "Für diese Beobachtung wurde keine historische Schwachstellenbewertung erfasst.",
+  coverage: (covered, outside, corpus) =>
+    `${covered} bewertete App-Builds · ${outside} ohne Bewertung · Korpus ${corpus}. Gezählt werden App-Build/CVE-Paare; dieselbe CVE auf verschiedenen Builds zählt mehrfach.`,
+  defaults: {
+    "operating_system.version": "Betriebssystem",
+    "applications.count": "Anwendungen",
+    "findings.total": "Offene Schwachstellen",
+    "findings.critical": "Kritische Schwachstellen",
+    "disk_encryption.fileVault2Enabled": "FileVault",
+    "security.firewallEnabled": "Firewall",
+  },
+  states: {
+    disabled: "Im Änderungsprotokoll deaktiviert",
+    not_observed: "Nicht beobachtet",
+    outside_aperture: "In dieser Beobachtung nicht erfasst",
+    empty: "Nicht vorhanden",
+    not_recorded: "Nicht aufgezeichnet",
+  },
+  summaries: {
+    baseline: "Ausgangsbasis für den KI-Vergleich erstellt.",
+    no_updates: "Keine Aktualisierungen im abgeschlossenen KI-Vergleich.",
+    incomplete:
+      "KI-Vergleich unvollständig; einige Abschnitte wurden nicht beobachtet.",
+    pending: "KI-Zusammenfassung ausstehend.",
+    processing: "KI-Zusammenfassung wird erstellt.",
+    disabled: "KI-Inventarzusammenfassungen sind deaktiviert.",
+    dropped:
+      "Für diese Beobachtung wurde keine KI-Zusammenfassung erstellt. Diagnose unter Inventar-KI auf der Übersicht prüfen.",
+    failed:
+      "KI-Zusammenfassung fehlgeschlagen. Diagnose unter Inventar-KI auf der Übersicht prüfen.",
+    unavailable:
+      "Keine gespeicherte KI-Zusammenfassung ist mit dieser Beobachtung verknüpft.",
+  },
+};

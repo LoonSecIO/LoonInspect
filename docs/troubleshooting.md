@@ -1873,3 +1873,23 @@ it never substitutes for an expired job or incomplete observation.
 Only meaningful completed/cached changes produce a SIEM summary event. No-update, baseline,
 incomplete and drop outcomes are local counters/state. Open Overview’s diagnostic reasons for
 the next check; unexpected-error container logs carry safe exception types and stack locations.
+
+## Device history does not show a value or summary
+
+On the device page, check the selected observation and its collection time. “Not observed” means
+that field was missing; “Not collected in this observation” means the recorded collection did not
+include its section. “Disabled in Change Log” is a display-policy choice: enable that field in
+Settings → Change Log or replace the slot. Layouts are personal to the active tenant.
+
+“Not recorded” for historical findings means no assessment evidence was retained at that point.
+It does not mean zero findings. New ingestion records it automatically; the optional retained-event
+import in [Device history](device-history.md) can recover receipts still held by the pod.
+
+An unavailable AI summary may predate source-correlated history or have lost its source before
+upgrade. The card never generates a replacement on read. For pending, dropped or failed summaries,
+check Overview → Inventory AI diagnostics, then Settings → AI provider test, master flag, and
+inference consent. The deterministic values and recorded-change link remain usable if AI fails.
+
+If loading fails, use Retry; if saving fails, recheck the Change Log policy and sign-in membership,
+then reopen Customize. Inspect the API response status and application logs if it persists. Do not
+paste inventory bodies, credentials, or generated summaries into a public support issue.
