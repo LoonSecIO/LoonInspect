@@ -6,6 +6,13 @@ Ruled on [#113](https://github.com/LoonSecIO/LoonInspect/issues/113): the corpus
 delivery of the corpus re-ruled 2026-09-10 (§2) · Wire keys obey the frozen vocabulary in
 [`docs/splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md)
 
+> **v2 decision, not yet implemented (2026-09-20):**
+> [The contribute-or-pay design](vulnerability-service-v2.md) supersedes the access
+> and tier rulings in §8: equal core intelligence through contribution or payment,
+> independent consent, and continued use of acquired intelligence after expiry.
+> It also replaces the singleton epoch with tenant-selected releases. Existing
+> implementation descriptions below remain accurate until those issues ship.
+
 This document exists because the vulnerability design lived in a session record and two
 issue comments, and a contract that lives only in a session record is one that gets
 re-argued by whoever builds it. Everything below is a decision with an argument.
@@ -871,6 +878,13 @@ which a reserved key with no rows behind it is allowed exactly once
 standing rule holds: a definition change mints a new key and retires the old.
 
 ## 8. Tiers
+
+**Historical ruling, superseded for v2:** the table and consent gate below explain
+the current implementation, not the next commercial contract.
+[The v2 decision record](vulnerability-service-v2.md#2-current-implementation-and-superseded-decisions)
+replaces paid-exclusive core intelligence and tier-off disabling of held assessments.
+Local assessed-build coverage requires no inventory upload. Full lifecycle fan-out
+remains future work, not a v2 paid benefit promised by this table.
 
 Ruled 2026-08-25, against Fleet Device Management's precedent of giving the summary away
 free. **LoonInspect does not copy that** — too much value is packed into the summary
