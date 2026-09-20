@@ -2009,7 +2009,7 @@ class DeviceHistoryPoint(Base):
 
 
 class DeviceHistoryPreference(Base):
-    """Six slots belonging to an account in its acting tenant, never to its email address."""
+    """Up to twenty slots belonging to an account in its acting tenant, never to its email address."""
 
     __tablename__ = "device_history_preferences"
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(primary_key=True)

@@ -60,3 +60,22 @@ def test_absence_zero_false_and_multiversion_remain_distinct():
         c for c in choices_for(docs, EffectivePolicy(), 1).values() if c.get("kind") == "application" and c["field"] == "version"
     )
     assert value_for(choice, docs, [], None, 1)["value"] == ["1", "2"]
+
+
+def test_extension_attribute_selection_survives_rename_and_shows_first_value():
+    policy = EffectivePolicy()
+    docs = {"extension_attributes": [{"definitionId": "42", "_label": "Old name", "values": ["first", "second"]}]}
+    choice = next(c for c in choices_for(docs, policy, 7).values() if c.get("kind") == "extension_attribute")
+    docs["extension_attributes"][0]["_label"] = "New name"
+    renamed = choices_for(docs, policy, 7)[choice["key"]]
+    assert renamed["name"] == "New name" and renamed["identity"] == {"definitionId": "42"}
+    assert value_for(renamed, docs, [], None, 7)["value"] == "first"
+    other = next(c for c in choices_for(docs, policy, 8).values() if c.get("kind") == "extension_attribute")
+    assert other["key"] != choice["key"]
+
+
+def test_last_check_in_uses_only_the_recorded_clock():
+    choice = choices_for({}, EffectivePolicy(), 1)["observation.lastCheckIn"]
+    assert choice["enabled"]
+    assert value_for(choice, {}, [], None, 1)["state"] == "not_recorded"
+    assert value_for(choice, {}, [], {"lastCheckIn": "2026-09-20T12:00:00Z"}, 1)["value"] == "2026-09-20T12:00:00Z"

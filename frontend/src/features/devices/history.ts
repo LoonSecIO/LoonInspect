@@ -16,6 +16,11 @@ export interface HistoryChoice {
   section: string;
   field: string;
   enabled: boolean;
+  kind?: string;
+  name?: string;
+  identity?: Record<string, unknown>;
+  preview?: Record<string, unknown>;
+  sample?: HistoryValue;
 }
 export interface HistoryValue {
   state: string;

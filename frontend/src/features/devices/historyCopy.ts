@@ -10,7 +10,14 @@ export const historyEnglish = {
   saving: "Saving…",
   add: "Add value",
   remove: "Remove",
+  addOrReplace: "Add or replace a value",
+  replace: "Replace:",
+  atLimit: "20 values selected. Choose a value to replace, or remove one.",
   search: "Search tracked values…",
+  noMatches: "No matching values available to add.",
+  attributeName: "Name",
+  attributeValue: "Value",
+  attributeId: "ID",
   observed: "Observed",
   collected: "Collected",
   newer: "← Newer",
@@ -25,7 +32,7 @@ export const historyEnglish = {
     "Layout could not be saved. Check the Change Log policy and try again.",
   personal: "Your layout · shared across devices in this tenant.",
   policy:
-    "Up to six values from the enabled Change Log fields. Application and finding counts require application additions and removals to be tracked.",
+    "Choose up to 20 values. Inventory values follow the enabled Change Log fields; Last check-in is recorded observation context. Application and finding counts require application additions and removals to be tracked.",
   yes: "Enabled",
   no: "Disabled",
   whatMoved: "What moved",
@@ -40,6 +47,7 @@ export const historyEnglish = {
   coverage: (covered: number, outside: number, corpus: string) =>
     `${covered} assessed app builds · ${outside} without assessment · corpus ${corpus}. Findings count app-build/CVE pairs; the same CVE on different builds counts separately.`,
   defaults: {
+    "observation.lastCheckIn": "Last check-in",
     "operating_system.version": "Operating system",
     "applications.count": "Applications",
     "findings.total": "Open vulnerability findings",
@@ -80,7 +88,15 @@ export const historyGerman: typeof historyEnglish = {
   saving: "Wird gespeichert…",
   add: "Wert hinzufügen",
   remove: "Entfernen",
+  addOrReplace: "Wert hinzufügen oder ersetzen",
+  replace: "Ersetzen:",
+  atLimit:
+    "20 Werte ausgewählt. Einen Wert zum Ersetzen auswählen oder entfernen.",
   search: "Erfasste Werte suchen…",
+  noMatches: "Keine passenden Werte zum Hinzufügen verfügbar.",
+  attributeName: "Name",
+  attributeValue: "Wert",
+  attributeId: "ID",
   observed: "Beobachtet",
   collected: "Abgerufen",
   newer: "← Neuer",
@@ -95,7 +111,7 @@ export const historyGerman: typeof historyEnglish = {
     "Ansicht konnte nicht gespeichert werden. Änderungsprotokoll-Einstellungen prüfen und erneut versuchen.",
   personal: "Ihre Ansicht · für alle Geräte dieses Mandanten.",
   policy:
-    "Bis zu sechs Werte aus den aktivierten Änderungsprotokoll-Feldern. App- und Schwachstellenzahlen erfordern die Erfassung hinzugefügter und entfernter Apps.",
+    "Bis zu 20 Werte auswählen. Inventarwerte folgen den aktivierten Änderungsprotokoll-Feldern; der letzte Check-in gehört zum erfassten Beobachtungskontext. App- und Schwachstellenzahlen erfordern die Erfassung hinzugefügter und entfernter Apps.",
   yes: "Aktiviert",
   no: "Deaktiviert",
   whatMoved: "Was sich geändert hat",
@@ -110,6 +126,7 @@ export const historyGerman: typeof historyEnglish = {
   coverage: (covered, outside, corpus) =>
     `${covered} bewertete App-Builds · ${outside} ohne Bewertung · Korpus ${corpus}. Gezählt werden App-Build/CVE-Paare; dieselbe CVE auf verschiedenen Builds zählt mehrfach.`,
   defaults: {
+    "observation.lastCheckIn": "Letzter Check-in",
     "operating_system.version": "Betriebssystem",
     "applications.count": "Anwendungen",
     "findings.total": "Offene Schwachstellen",

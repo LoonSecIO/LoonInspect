@@ -2,11 +2,25 @@
 
 The card at `/devices/{id}` reads recorded inventory states and comparisons. Its six defaults
 are OS version/build, installed applications, open findings, critical findings, FileVault,
-and firewall. The date and “What moved” panel sit outside the six customizable slots.
+and firewall. The date and “What moved” panel sit outside the customizable values.
+
+The “Jamf computer” label opens the source record in a new tab, using this device's
+connection URL and Jamf ID. “Update this device” requires `device:sync` and reads just
+that computer's latest saved inventory from Jamf. It does not send a command to the Mac.
+The card, current inventory, and change log reload after the read; AI summaries follow
+the normal asynchronous pipeline. An unchanged read adds no artificial history point.
+
+Targeted reads use the enabled webhook collection's sections and EA quarantine, or the
+full contract when no such scope is configured, matching the existing single-device
+webhook path. The operation has a 60-second bound and its own `device_refresh` run class.
+Only one manual device refresh runs per connection at a time; another request gets a
+busy response and can be retried. It neither advances the last full-sweep stamp nor
+marks other devices departed. The normal monotonic guard retains newer saved inventory
+if Jamf supplies an older observation.
 
 ## Selection and policy
 
-“Customize” saves up to six ordered values per **acting tenant and account ID**. The layout
+“Customize” saves up to 20 ordered values per **acting tenant and account ID**. The layout
 follows that user across devices in that tenant. It is never keyed by email or copied into
 another tenant. Switching account, tenant, or device remounts the card and cancels obsolete
 read callbacks; the API rechecks membership and `device:read` through normal authentication.
@@ -15,6 +29,17 @@ Saved preferences are tenant-RLS protected and deleted when their account is del
 The picker reads the effective Change Log policy. It includes scalar fields and fields of
 entries present in the selected/latest inventory, including a named application's version.
 System apps honor the individual-system-app switch; muted groups and EAs are ineligible.
+Last check-in is additionally available as observation context. New receipts retain the
+clock known at collection; older receipts without it say “Not recorded.” Quiet sweeps do
+not rewrite an earlier point's clock or create a point just because a heartbeat moved.
+Adding clock retention creates one new point on the next read when an older point lacks it.
+The six initial choices remain defaults; users can save up to 20. Search stays active at
+the limit so a value can be found before choosing which existing slot to replace.
+Extension attributes are keyed by connection and definition ID, display their current
+name, and show `values[0]`. A rename changes the label without changing the saved selection.
+The main extension-attribute table filters by name, ID, and first value, with optional
+source and enabled columns. Customize shows name, immutable ID, and first value together
+before adding the selection. “What the ledger holds” is collapsed until opened.
 Application counts and finding metrics require both application-addition and removal tracking.
 Counts include all installed applications, including system apps; suppressing individual system
 app change events does not redefine the inventory count. OS build is included with version
@@ -58,7 +83,7 @@ replace an earlier point's summary with a later observation's “No updates.”
 
 ## Retention and upgrading
 
-Migration `d605a1b2c3d4` adds history points and preferences with FORCE RLS. No wire event changes.
+Migration `d605a1b2c3d4` adds history points and preferences with FORCE RLS. Device event shapes are unchanged; `run.completed` adds `lockClass` to distinguish targeted refreshes.
 Points have the same retention horizon as their referenced inventory spans and cascade with
 span/device deletion. Summary text is retained on the point after the eight-day job cache expires;
 no extra raw inventory or unbounded AI evidence body is copied. This is deliberate historical

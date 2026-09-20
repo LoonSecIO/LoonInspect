@@ -498,3 +498,14 @@ The complete field/type/absence contract, including every nested `evidence` key,
 use the frozen `vulnIDs` spelling and the truncation flag `vulnIDsTruncated`.
 HEC `time` equals the source observation time; `queuedAt` is actual job creation time,
 `sourceEnqueuedAt` is the source outbox enqueue time, and `generatedAt` is completion.
+
+### Targeted device refresh runs (#605)
+
+Added 2026-09-20: `run.completed` now carries `lockClass`, the same string used by
+the runs API (`device_sweep`, `webhook`, `re_emit`, or `device_refresh`). Existing
+fields retain their names, types, and meaning. `device_refresh` is one computer read
+from Jamf by “Update this device”, with `trigger=manual`; it is not a fleet census.
+Full-sweep monitoring must filter `lockClass=device_sweep` on new events, rather
+than treating every manual completion as a fleet scan. Older events lacking this
+field retain their prior meaning. The targeted read uses the usual inventory,
+change, summary, and run-failure families; no device-event shape changes.

@@ -9,7 +9,7 @@ it was filed.
 Each path is ordered — *check this; if X, then that* — and ends in a fix or in a **named,
 reportable state**. When you reach a reportable state, §8 says what to include.
 
-**What is in here.** The paths run §1–§7 and §10–§18, in the order they were written
+**What is in here.** The paths run §1–§7 and §10–§19, in the order they were written
 rather than in order of likelihood. §0 is what you can read before you start; §8 and §9 are
 about the paths rather than about a symptom, and they sit mid-file because that is where
 they were written — §9 ends by saying the paths continue at §10.
@@ -49,6 +49,8 @@ they were written — §9 ends by saying the paths continue at §10.
   reported"](#17-the-evidence-report-is-empty-or-every-row-says-it-was-not-reported)
 - **§18** ["Posture is not in my sidebar, or Vulnerabilities lists
   nothing"](#18-posture-is-not-in-my-sidebar-or-vulnerabilities-lists-nothing)
+
+- **§19** [Device-page update from Jamf](#19-device-page-update-from-jamf)
 
 **The reportable states**, lettered in the order they were written, so they do not run in
 section order and never will — code, tests and the README cite them where they are. When a
@@ -1893,3 +1895,14 @@ inference consent. The deterministic values and recorded-change link remain usab
 If loading fails, use Retry; if saving fails, recheck the Change Log policy and sign-in membership,
 then reopen Customize. Inspect the API response status and application logs if it persists. Do not
 paste inventory bodies, credentials, or generated summaries into a public support issue.
+
+## 19. Device-page update from Jamf
+
+“Update this device” reads the computer already stored in Jamf; it does not ask the Mac
+to collect inventory. If the inventory date stays unchanged after success, check that
+computer's record through the adjacent Jamf link. “Another device update is running”
+means a targeted read already holds this connection; retry when it finishes. A timeout,
+missing Jamf computer, or connection failure keeps the saved inventory and gives a
+visible error. Check Settings › Connections for activity and credential status, then
+retry. The run log records the failed `device_refresh` attempt. A missing button means
+the account lacks `device:sync` or the device has no supported Jamf connection.

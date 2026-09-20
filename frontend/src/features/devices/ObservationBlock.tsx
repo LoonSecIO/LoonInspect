@@ -33,6 +33,17 @@ function entryLabel(entry: ObservedEntry): string {
  */
 export function ObservationBlock({ deviceId }: { deviceId: number }) {
   const { t } = useLocale();
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <details className="rounded-lg border bg-card px-4 py-3" onToggle={(event) => setRevealed(event.currentTarget.open)}>
+      <summary className="cursor-pointer text-sm font-medium">{t.devices.detail.observation.heading}</summary>
+      {revealed && <div className="mt-4"><ObservationContents deviceId={deviceId} /></div>}
+    </details>
+  );
+}
+
+function ObservationContents({ deviceId }: { deviceId: number }) {
+  const { t } = useLocale();
   const to = t.devices.detail.observation;
   const tc = t.changes;
   const sentinel = useRef<HTMLElement>(null);
@@ -153,6 +164,11 @@ export function ObservationBlock({ deviceId }: { deviceId: number }) {
                         {shown.map((entry, index) => (
                           <li key={`${entry.kind}-${index}`} className="truncate text-xs" title={JSON.stringify(entry.body)}>
                             {entryLabel(entry)}
+                            {entry.kind === "extension_attribute" && (
+                              <span className="ml-2 font-mono text-muted-foreground">
+                                ID {String(entry.body.definitionId)} · {scalar(Array.isArray(entry.body.values) ? entry.body.values[0] : null)}
+                              </span>
+                            )}
                           </li>
                         ))}
                       </ul>

@@ -51,10 +51,12 @@ async def capture(db, *, device, event):
     )
     if span is None:
         return
-    return await capture_at(db, device=device, event=event, span=span, observed_at=span.last_observed_at)
+    return await capture_at(
+        db, device=device, event=event, span=span, observed_at=span.last_observed_at, last_check_in=device.last_check_in
+    )
 
 
-async def capture_at(db, *, device, event, span, observed_at):
+async def capture_at(db, *, device, event, span, observed_at, last_check_in=None):
     if await db.scalar(select(DeviceHistoryPoint.id).where(DeviceHistoryPoint.source_id == event.id)):
         return None
     assessment = assessment_totals(event.payload)
@@ -65,8 +67,16 @@ async def capture_at(db, *, device, event, span, observed_at):
         .order_by(DeviceHistoryPoint.collected_at.desc(), DeviceHistoryPoint.id.desc())
         .limit(1)
     )
-    if prior and prior.span_id == span.id and prior.assessment == assessment:
+    prior_evidence = {k: v for k, v in prior.assessment.items() if k != "lastCheckIn"} if prior else None
+    if (
+        prior
+        and prior.span_id == span.id
+        and prior_evidence == assessment
+        and (not last_check_in or "lastCheckIn" in prior.assessment)
+    ):
         return  # Quiet sweeps do not create another historical receipt.
+    if last_check_in:
+        assessment["lastCheckIn"] = last_check_in.isoformat()
     point = DeviceHistoryPoint(
         device_id=device.id,
         span_id=span.id,

@@ -38,6 +38,7 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<string[]>([]);
   const [search, setSearch] = useState("");
+  const [replaceKey, setReplaceKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [retry, setRetry] = useState(0);
@@ -79,8 +80,12 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
   const detail = result?.value;
   const latest = page === 1 && selected === list?.value?.items[0]?.id;
   const date = (value: string) => new Date(value).toLocaleString(locale);
-  const valueText = (v: { state: string; value: unknown }) =>
-    formatHistoryValue(v, copy.states, copy.yes, copy.no);
+  const valueText = (v: { state: string; value: unknown; key?: string }) =>
+    v.key === "observation.lastCheckIn" &&
+    v.state === "present" &&
+    typeof v.value === "string"
+      ? date(v.value)
+      : formatHistoryValue(v, copy.states, copy.yes, copy.no);
   const label = (v: {
     key: string;
     label: string;
@@ -104,6 +109,25 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
     }
   };
   const changes = detail?.values.filter((v) => changedValue(v, v.before)) ?? [];
+  const available =
+    detail?.choices.filter(
+      (c) =>
+        c.enabled &&
+        !draft.includes(c.key) &&
+        `${label(c)} ${Object.values(c.identity ?? {}).join(" ")} ${c.sample ? valueText({ ...c.sample, key: c.key }) : ""}`
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+    ) ?? [];
+  const selectValue = (key: string) => {
+    setDraft((d) =>
+      replaceKey
+        ? d.map((existing) => (existing === replaceKey ? key : existing))
+        : d.length < 20
+          ? [...d, key]
+          : d,
+    );
+    setReplaceKey("");
+  };
   const summary = detail?.summary;
   const summaryText =
     summary && (summary.status === "completed" || summary.status === "cached")
@@ -144,6 +168,7 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
               setDraft(detail?.values.map((v) => v.key) ?? []);
               setEditing(!editing);
               setSearch("");
+              setReplaceKey("");
               setSaveError(false);
             }}
           >
@@ -275,9 +300,10 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
                               type="button"
                               disabled={saving}
                               className="underline"
-                              onClick={() =>
-                                setDraft((d) => d.filter((k) => k !== key))
-                              }
+                              onClick={() => {
+                                setDraft((d) => d.filter((k) => k !== key));
+                                if (replaceKey === key) setReplaceKey("");
+                              }}
                             >
                               {copy.remove}
                             </button>
@@ -288,7 +314,7 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
                     <label className="block text-sm">
                       {copy.add}{" "}
                       <span className="text-muted-foreground">
-                        ({draft.length}/6)
+                        ({draft.length}/20)
                       </span>
                       <input
                         type="search"
@@ -296,33 +322,137 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
                         onChange={(e) => setSearch(e.target.value)}
                         placeholder={copy.search}
                         className="mt-2 w-full rounded border bg-background px-3 py-2"
-                        disabled={saving || draft.length >= 6}
+                        disabled={saving}
                       />
                     </label>
-                    {draft.length < 6 && (
+                    <label className="block text-sm">
+                      {copy.addOrReplace}
+                      <select
+                        className="ml-2 max-w-full rounded border bg-background p-2"
+                        value={replaceKey}
+                        disabled={saving}
+                        onChange={(event) => setReplaceKey(event.target.value)}
+                      >
+                        <option value="">{copy.add}</option>
+                        {draft.map((key) => {
+                          const choice =
+                            detail.choices.find((c) => c.key === key) ??
+                            detail.values.find((c) => c.key === key);
+                          return (
+                            <option key={key} value={key}>
+                              {copy.replace} {choice ? label(choice) : key}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </label>
+                    {draft.length >= 20 && !replaceKey && (
+                      <p
+                        role="status"
+                        className="text-sm text-muted-foreground"
+                      >
+                        {copy.atLimit}
+                      </p>
+                    )}
+                    {available.some(
+                      (c) => c.section !== "extension_attributes",
+                    ) && (
                       <ul className="max-h-52 overflow-y-auto rounded border">
-                        {detail.choices
-                          .filter(
-                            (c) =>
-                              c.enabled &&
-                              !draft.includes(c.key) &&
-                              label(c)
-                                .toLowerCase()
-                                .includes(search.toLowerCase()),
-                          )
+                        {available
+                          .filter((c) => c.section !== "extension_attributes")
                           .map((c) => (
                             <li key={c.key}>
                               <button
                                 type="button"
-                                disabled={saving}
-                                className="w-full px-3 py-2 text-left text-sm hover:bg-muted"
-                                onClick={() => setDraft((d) => [...d, c.key])}
+                                disabled={
+                                  saving || (draft.length >= 20 && !replaceKey)
+                                }
+                                className="w-full px-3 py-2 text-left text-sm hover:bg-muted disabled:opacity-50"
+                                onClick={() => selectValue(c.key)}
                               >
                                 {label(c)}
+                                {c.identity?.definitionId !== undefined && (
+                                  <span className="ml-2 font-mono text-xs text-muted-foreground">
+                                    ID {String(c.identity.definitionId)}
+                                  </span>
+                                )}
+                                {c.sample && (
+                                  <span className="block text-xs text-muted-foreground">
+                                    {valueText({ ...c.sample, key: c.key })}
+                                  </span>
+                                )}
                               </button>
                             </li>
                           ))}
                       </ul>
+                    )}
+                    {available.some(
+                      (c) => c.section === "extension_attributes",
+                    ) && (
+                      <div className="max-h-52 overflow-auto rounded border">
+                        <table
+                          className="w-full text-left text-sm"
+                          aria-label={t.changes.sections.extension_attributes}
+                        >
+                          <thead className="bg-muted/40">
+                            <tr>
+                              <th className="px-3 py-2">
+                                {copy.attributeName}
+                              </th>
+                              <th className="px-3 py-2">{copy.attributeId}</th>
+                              <th className="px-3 py-2">
+                                {copy.attributeValue}
+                              </th>
+                              <th className="px-3 py-2">
+                                <span className="sr-only">
+                                  {copy.addOrReplace}
+                                </span>
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {available
+                              .filter(
+                                (c) => c.section === "extension_attributes",
+                              )
+                              .map((c) => (
+                                <tr key={c.key} className="border-t">
+                                  <td className="px-3 py-2">
+                                    {c.name ?? c.label}
+                                  </td>
+                                  <td className="px-3 py-2 font-mono">
+                                    {String(c.identity?.definitionId ?? "—")}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    {c.sample ? valueText(c.sample) : "—"}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <button
+                                      type="button"
+                                      className="underline disabled:opacity-50"
+                                      disabled={
+                                        saving ||
+                                        (draft.length >= 20 && !replaceKey)
+                                      }
+                                      aria-label={`${replaceKey ? copy.replace : copy.add} ${c.name ?? c.label}`}
+                                      onClick={() => selectValue(c.key)}
+                                    >
+                                      {replaceKey ? copy.replace : copy.add}
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    {available.length === 0 && (
+                      <p
+                        role="status"
+                        className="text-sm text-muted-foreground"
+                      >
+                        {copy.noMatches}
+                      </p>
                     )}
                     {saveError && (
                       <p role="alert" className="text-sm text-destructive">
@@ -368,13 +498,16 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
                         </dd>
                       </div>
                     ))}
-                    {detail.values.length < 6 && (
+                    {detail.values.length < 20 && (
                       <div className="pt-3">
                         <button
                           type="button"
                           className="text-sm underline"
                           onClick={() => {
                             setDraft(detail.values.map((v) => v.key));
+                            setSearch("");
+                            setReplaceKey("");
+                            setSaveError(false);
                             setEditing(true);
                           }}
                         >

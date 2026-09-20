@@ -1,4 +1,4 @@
-"""Bounded device history and six user/tenant slots; this read never invokes inference (#605)."""
+"""Bounded device history and up to twenty user/tenant slots; this read never invokes inference (#605)."""
 
 import uuid
 
@@ -32,7 +32,7 @@ DEFAULTS = [
 
 
 class Selection(BaseModel):
-    slots: list[str] = Field(max_length=6)
+    slots: list[str] = Field(max_length=20)
     point: str | None = Field(default=None, max_length=40)
 
 
@@ -103,6 +103,8 @@ def path_value(body, path):
 
 
 def eligible(choice, policy):
+    if choice["key"] == "observation.lastCheckIn":
+        return True  # Observation context requested explicitly; not a change-log event.
     kind = choice.get("kind")
     if kind:
         if kind == "application" and choice.get("system") and not policy.system_apps_individually:
@@ -119,6 +121,12 @@ def eligible(choice, policy):
 
 def choices_for(docs, policy, connection_id):
     choices = {}
+    choices["observation.lastCheckIn"] = {
+        "key": "observation.lastCheckIn",
+        "label": "Last check-in",
+        "section": "general",
+        "field": "lastCheckIn",
+    }
     for rule in FIELD_RULES:
         if rule.section == "definition":
             continue
@@ -146,6 +154,8 @@ def choices_for(docs, policy, connection_id):
                     "identity": identity,
                     "connectionId": connection,
                     "system": is_system_app(body),
+                    "preview": {k: v for k, v in body.items() if k != "_label"},
+                    "name": label,
                 }
     choices["operating_system.version"]["includeBuild"] = policy.field_enabled("operating_system", "build")
     return {key: {**c, "enabled": eligible(c, policy)} for key, c in choices.items()}
@@ -155,6 +165,9 @@ def value_for(choice, docs, aperture, assessment, connection_id):
     if not choice["enabled"]:
         return {"state": "disabled", "value": None}
     section, key = choice["section"], choice["key"]
+    if key == "observation.lastCheckIn":
+        value = assessment.get("lastCheckIn") if assessment else None
+        return {"state": "present" if value else "not_recorded", "value": value}
     if section not in docs:
         return {"state": "not_observed" if section in aperture else "outside_aperture", "value": None}
     if key.startswith("findings."):
@@ -170,6 +183,8 @@ def value_for(choice, docs, aperture, assessment, connection_id):
             return {"state": "empty", "value": None}
         values = [path_value(body, choice["field"]) for body in matches]
         value = values[0] if len(values) == 1 else values
+        if choice.get("kind") == "extension_attribute" and isinstance(value, list):
+            value = value[0] if value else ""
     else:
         value = path_value(docs[section], choice["field"])
         if key == "operating_system.version" and choice.get("includeBuild") and value is not None:
@@ -273,7 +288,13 @@ async def detail(
         "observedAt": row["observed_at"],
         "collectedAt": row["collected_at"],
         "values": values,
-        "choices": list(options.values()),
+        "choices": [
+            {
+                **choice,
+                "sample": value_for(choice, docs, aperture, recorded.assessment if recorded else None, device.mdm_connection_id),
+            }
+            for choice in options.values()
+        ],
         "baseline": prior_key is None,
         "assessment": recorded.assessment if recorded else None,
         "summary": {
@@ -300,9 +321,9 @@ async def save_preferences(
     for key in body.slots:
         choice = choices.get(key)
         if choice and choice["enabled"]:
-            chosen.append(choice)
+            chosen.append({k: v for k, v in choice.items() if k != "preview"})
         elif key in existing:  # A disabled or absent saved slot may remain while another slot is edited.
-            chosen.append(existing[key])
+            chosen.append({k: v for k, v in existing[key].items() if k != "preview"})
         else:
             raise HTTPException(422, "This value is not available under the current Change Log policy")
     statement = insert(Preference).values(account_id=principal.account.id, slots=chosen)

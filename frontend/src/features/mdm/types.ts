@@ -122,7 +122,7 @@ export interface Run {
   collectionId: number | null;
   trigger: "sweep" | "manual" | "webhook";
   comparison: "baseline" | "delta";
-  lockClass: "device_sweep" | "catalog" | "webhook";
+  lockClass: "device_sweep" | "catalog" | "webhook" | "re_emit" | "device_refresh";
   status: RunStatus;
   windowStart: string;
   windowEnd: string | null;

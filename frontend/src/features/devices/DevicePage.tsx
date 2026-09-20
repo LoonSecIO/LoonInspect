@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
+import { ExternalLink } from "@/components/ui/external-link";
+import { Button } from "@/components/ui/button";
+import { useAuthStore, useHasPermission } from "@/features/auth/store";
+import { PERMISSIONS } from "@/features/auth/types";
 import { ApiError } from "@/config/api";
 import { PatchAnswerCell } from "@/features/catalog/PatchAnswerCell";
 import { DiffCell } from "@/features/changes/DiffCell";
 import { getChangePolicy, listChanges } from "@/features/changes/api";
 import { detailText, diffLines, labelsFromPolicy, whatOf, type LabelMap } from "@/features/changes/render";
 import type { DeviceChange } from "@/features/changes/types";
-import { getDevice } from "@/features/devices/api";
+import { getDevice, refreshDevice } from "@/features/devices/api";
 import { departureState, leavesTheFleetAt } from "@/features/devices/departure";
 import { collectedNotOnPage } from "@/features/devices/ledgerSections";
 import { DeviceHistoryCard } from "@/features/devices/DeviceHistoryCard";
@@ -33,46 +37,81 @@ function formatInstant(value: string | null): string | null {
 }
 
 /**
- * One device, in full (#300): everything `GET /api/devices/{id}` already returned to
- * nobody. Zero backend files — the page reads what shipped, and says in words what it
- * does not have rather than showing a dash for it.
+ * One device, with current inventory, history and a targeted refresh from Jamf.
  *
  * Fetch state is keyed by what was asked for, and set only inside promise callbacks, so a
  * change of `:deviceId` reads as loading without a synchronous set-state in an effect.
  */
 export function DevicePage() {
+  const user = useAuthStore((state) => state.user);
+  const { deviceId } = useParams<{ deviceId: string }>();
+  return (
+    <DevicePageContent key={`${user?.tenant?.id}:${user?.id}:${deviceId}`} />
+  );
+}
+
+function DevicePageContent() {
   const { t } = useLocale();
   const td = t.devices.detail;
   const tc = t.changes;
   const { deviceId } = useParams<{ deviceId: string }>();
 
+  const canSync = useHasPermission(PERMISSIONS.DEVICE_SYNC);
+  const [revision, setRevision] = useState(0);
+  const [updating, setUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [updateOutcome, setUpdateOutcome] = useState<string | null>(null);
+  const readKey = `${deviceId}:${revision}`;
+
   const [loaded, setLoaded] = useState<{ id: string; result: Result<DeviceDetail> } | null>(null);
   const [changesLoaded, setChangesLoaded] = useState<{ key: string; result: Result<DeviceChange[]> } | null>(null);
   const [labels, setLabels] = useState<LabelMap>({});
   const [orderByPatch, setOrderByPatch] = useState(false);
+  const [eaFilter, setEaFilter] = useState("");
+  const [eaColumns, setEaColumns] = useState({ id: true, source: false, enabled: false });
 
   useEffect(() => {
     if (!deviceId) return;
     let cancelled = false;
     getDevice(Number(deviceId))
       .then((device) => {
-        if (!cancelled) setLoaded({ id: deviceId, result: { state: "ready", value: device } });
+        if (!cancelled) setLoaded({ id: readKey, result: { state: "ready", value: device } });
       })
       .catch((error: unknown) => {
         if (cancelled) return;
         const notFound = error instanceof ApiError && error.status === 404;
-        setLoaded({ id: deviceId, result: { state: "failed", notFound } });
+        setLoaded({ id: readKey, result: { state: "failed", notFound } });
       });
     return () => {
       cancelled = true;
     };
-  }, [deviceId]);
+  }, [deviceId, readKey]);
 
-  const current = loaded && loaded.id === deviceId ? loaded.result : null;
+  const current = loaded && loaded.id === readKey ? loaded.result : null;
   const device = current?.state === "ready" ? current.value : null;
   const connectionId = device?.mdmConnectionId ?? null;
   const externalId = device?.externalId ?? null;
-  const changesKey = connectionId === null || externalId === null ? null : `${connectionId}:${externalId}`;
+  const changesKey = connectionId === null || externalId === null ? null : `${connectionId}:${externalId}:${revision}`;
+
+  async function updateDevice() {
+    if (!device || updating) return;
+    setUpdating(true);
+    setUpdateError(null);
+    setUpdateOutcome(null);
+    try {
+      const result = await refreshDevice(device.id);
+      setUpdateOutcome(result.outcome);
+      setRevision((value) => value + 1);
+    } catch (error) {
+      setUpdateError(
+        error instanceof ApiError && error.detail
+          ? error.detail
+          : td.updateFailed,
+      );
+    } finally {
+      setUpdating(false);
+    }
+  }
 
   useEffect(() => {
     if (changesKey === null || connectionId === null || externalId === null) return;
@@ -144,6 +183,10 @@ export function DevicePage() {
     );
   }
 
+  const filteredAttributes = device.extensionAttributes.filter((ea) =>
+    `${ea.name ?? ""} ${ea.definitionId} ${ea.values[0] ?? ""}`.toLowerCase().includes(eaFilter.toLowerCase())
+  );
+  const eaColumnCount = 2 + Object.values(eaColumns).filter(Boolean).length;
   const changes = changesLoaded && changesLoaded.key === changesKey ? changesLoaded.result : null;
   const changeRows = changes?.state === "ready" ? changes.value : [];
   const latestChange = changeRows[0] ?? null;
@@ -165,7 +208,43 @@ export function DevicePage() {
           </Link>
         </p>
         <h1 className="text-3xl font-bold tracking-tight">{device.hostname}</h1>
-        <p className="mt-1 font-mono text-sm text-muted-foreground">{td.subtitle(device.serialNumber, device.externalId)}</p>
+        <p className="mt-1 font-mono text-sm text-muted-foreground">
+          {device.serialNumber} ·{" "}
+          {device.jamfUrl ? (
+            <ExternalLink href={device.jamfUrl}>
+              {td.jamfComputer(device.externalId)}
+            </ExternalLink>
+          ) : (
+            td.jamfComputer(device.externalId)
+          )}
+        </p>
+        {canSync &&
+          device.mdmProvider === "jamf" &&
+          device.mdmConnectionId !== null &&
+          device.platform === "macos" && (
+            <div className="mt-3 space-y-2">
+              <Button
+                variant="outline"
+                disabled={updating}
+                onClick={() => void updateDevice()}
+              >
+                {updating ? td.updating : td.updateDevice}
+              </Button>
+              <p className="text-xs text-muted-foreground">{td.updateHint}</p>
+              {updateError && (
+                <p role="alert" className="text-sm text-destructive">
+                  {updateError}
+                </p>
+              )}
+              {updateOutcome && (
+                <p role="status" className="text-sm text-muted-foreground">
+                  {updateOutcome === "stale"
+                    ? td.updateStale
+                    : td.updateSucceeded}
+                </p>
+              )}
+            </div>
+          )}
       </div>
 
       <DepartureNote departedAt={device.departedAt} td={td} />
@@ -191,7 +270,7 @@ export function DevicePage() {
               : td.noRecordedChange}
       </p>
 
-      <DeviceHistoryCard deviceId={device.id} />
+      <DeviceHistoryCard key={revision} deviceId={device.id} />
 
       <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">{t.deviceHistory.latestInventory}</p>
       <Placement device={device} td={td} t={t} />
@@ -266,26 +345,42 @@ export function DevicePage() {
           {td.eas.heading}{" "}
           <span className="text-sm font-normal text-muted-foreground">{td.eas.count(device.extensionAttributes.length)}</span>
         </h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <input type="search" value={eaFilter} onChange={(event) => setEaFilter(event.target.value)}
+            aria-label={td.eas.filter} placeholder={td.eas.filter} className="min-w-0 rounded border bg-background px-3 py-2 text-sm" />
+          <details className="text-sm">
+            <summary className="cursor-pointer">{td.eas.columns}</summary>
+            <div className="flex flex-wrap gap-3 py-2">
+              {([['id', 'ID'], ['source', td.eas.colSource], ['enabled', td.eas.colEnabled]] as const).map(([key, label]) => (
+                <label key={key} className="flex items-center gap-1">
+                  <input type="checkbox" checked={eaColumns[key]} onChange={(event) => setEaColumns((held) => ({...held, [key]: event.target.checked}))} />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </details>
+        </div>
         <div className="overflow-x-auto rounded-lg border bg-card">
-          <table className="w-full text-sm">
+          <table aria-label={td.eas.heading} className="w-full text-sm">
             <thead className="border-b bg-muted/30 text-left text-muted-foreground">
               <tr>
                 <th className="px-4 py-2 font-medium">{td.eas.colDefinition}</th>
                 <th className="px-4 py-2 font-medium">{td.eas.colValues}</th>
-                <th className="px-4 py-2 font-medium">{td.eas.colSource}</th>
-                <th className="px-4 py-2 font-medium">{td.eas.colEnabled}</th>
+                {eaColumns.id && <th className="px-4 py-2 font-medium">ID</th>}
+                {eaColumns.source && <th className="px-4 py-2 font-medium">{td.eas.colSource}</th>}
+                {eaColumns.enabled && <th className="px-4 py-2 font-medium">{td.eas.colEnabled}</th>}
               </tr>
             </thead>
             <tbody>
-              {device.extensionAttributes.length === 0 && (
+              {filteredAttributes.length === 0 && (
                 <tr>
-                  <td className="px-4 py-4 text-muted-foreground" colSpan={4}>
-                    {td.eas.empty}
+                  <td className="px-4 py-4 text-muted-foreground" colSpan={eaColumnCount}>
+                    {eaFilter ? td.eas.noMatches : td.eas.empty}
                   </td>
                 </tr>
               )}
-              {device.extensionAttributes.map((ea) => (
-                <ExtensionAttributeRow key={`${ea.definitionId}:${ea.source}`} ea={ea} td={td} />
+              {filteredAttributes.map((ea) => (
+                <ExtensionAttributeRow key={`${ea.definitionId}:${ea.source}`} ea={ea} td={td} columns={eaColumns} />
               ))}
             </tbody>
           </table>
@@ -374,7 +469,7 @@ export function DevicePage() {
       </section>
 
       {/* What the ledger holds, section by section, lazily (#368). */}
-      <ObservationBlock deviceId={device.id} />
+      <ObservationBlock key={revision} deviceId={device.id} />
 
       {/* Named from the wire's own registry (`ledgerSections.ts` mirrors `SECTION_WRAPPERS`,
           pinned by a backend test), so this list and the Splunk event enumerate identically.
@@ -453,7 +548,7 @@ function Placement({ device, td, t }: { device: DeviceDetail; td: Translations["
   );
 }
 
-function ExtensionAttributeRow({ ea, td }: { ea: ExtensionAttribute; td: Translations["devices"]["detail"] }) {
+function ExtensionAttributeRow({ ea, td, columns }: { ea: ExtensionAttribute; td: Translations["devices"]["detail"]; columns: { id: boolean; source: boolean; enabled: boolean } }) {
   return (
     <tr className="border-b align-top last:border-0">
       <td className="px-4 py-2">
@@ -461,10 +556,11 @@ function ExtensionAttributeRow({ ea, td }: { ea: ExtensionAttribute; td: Transla
         {ea.name === null && <span className="ml-1 text-xs text-muted-foreground">({td.eas.noName})</span>}
       </td>
       <td className="px-4 py-2 break-words">
-        {ea.values.length === 0 ? <span className="text-muted-foreground">{td.eas.noValue}</span> : ea.values.join(", ")}
+        {ea.values.length === 0 ? <span className="text-muted-foreground">{td.eas.noValue}</span> : ea.values[0]}
       </td>
-      <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{ea.source}</td>
-      <td className="px-4 py-2">
+      {columns.id && <td className="px-4 py-2 font-mono text-xs">{ea.definitionId}</td>}
+      {columns.source && <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{ea.source}</td>}
+      {columns.enabled && <td className="px-4 py-2">
         {ea.enabled === false ? (
           <span className="text-destructive">{td.eas.disabled}</span>
         ) : ea.enabled === true ? (
@@ -472,7 +568,7 @@ function ExtensionAttributeRow({ ea, td }: { ea: ExtensionAttribute; td: Transla
         ) : (
           <span className="text-muted-foreground">{td.eas.unknownEnabled}</span>
         )}
-      </td>
+      </td>}
     </tr>
   );
 }

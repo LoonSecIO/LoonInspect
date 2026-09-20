@@ -66,6 +66,23 @@ async def test_live_ingest_timeline_preferences_and_source_receipts(admin, db, c
         await db.commit()
 
 
+async def test_twenty_slots_can_be_saved_but_twenty_one_are_refused(admin, db, connection, jamf):
+    from app.models.schema import DeviceHistoryPreference as Pref
+
+    device = await ingest(db, connection, jamf)
+    url = f"/api/devices/{device.id}/history"
+    key = (await admin.get(url)).json()["items"][0]["id"]
+    detail = (await admin.get(url + "/point", params={"point": key})).json()
+    choices = [c["key"] for c in detail["choices"] if c["enabled"]]
+    try:
+        assert (await admin.put(url + "/preferences", json={"point": key, "slots": choices[:20]})).status_code == 200
+        assert len((await admin.get(url + "/point", params={"point": key})).json()["values"]) == 20
+        assert (await admin.put(url + "/preferences", json={"point": key, "slots": choices[:21]})).status_code == 422
+    finally:
+        await db.execute(delete(Pref))
+        await db.commit()
+
+
 async def test_legacy_states_and_pagination_do_not_invent_assessments(admin, db, connection, jamf):
     from app.models.schema import DeviceHistoryPoint as Point
     from app.models.schema import ObservationSpan as Span
@@ -152,7 +169,8 @@ async def test_retained_import_is_idempotent_and_uses_stored_counts(admin, db, c
     await db.commit()
     await import_retained(db)
     imported = await db.scalar(select(Point).where(Point.source_id == source_id))
-    assert imported and imported.assessment == original
+    assert imported and imported.assessment == {k: v for k, v in original.items() if k != "lastCheckIn"}
+    assert "lastCheckIn" not in imported.assessment, "The event did not retain this clock; never backfill today's value."
     before = await db.scalar(select(func.count()).select_from(Point))
     await import_retained(db)
     assert await db.scalar(select(func.count()).select_from(Point)) == before
