@@ -16,7 +16,9 @@ from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.vuln import validate_finding_id
+from app.core.vuln_library import loaded_epoch_signature
 from app.mdm.jamf.contract import SUBJECT_COMPUTER
 from app.models.schema import Device, DeviceChange, DeviceFinding, InstalledApp, ObservationSpan
 from app.observations.departure import gone_for_good
@@ -49,10 +51,15 @@ def detected(rows: Iterable[InstalledApp]) -> dict[tuple[str, str], tuple[str, b
     """S — every (carrier title, finding id) this device's answers assert now, with the build
     carrying it and whether that build's list was truncated. `covered` rows with a non-empty
     list only (`unknown_app` is an absent answer, not a clean bill, §4a). The epoch signature is not
-    re-checked, for churn and not for safety, and that buys the ledger no independence from the
-    corpus: `e1c7a4d9b520`, "what happens when the corpus stops answering"."""
+    re-checked in the legacy path, for churn and not for safety. The tenant-selection path
+    requires the selected signature and does not close held findings on lost coverage or a
+    newly truncated list; neither absence proves a withdrawal."""
     found: dict[tuple[str, str], tuple[str, bool]] = {}
     for row in rows:
+        if settings.vuln_tenant_selection and (
+            loaded_epoch_signature() is None or row.vuln_signature != loaded_epoch_signature()
+        ):
+            continue
         if row.vuln_assessment != VULN_ASSESSMENT_COVERED or not row.vuln_ids:
             continue
         for finding_id in row.vuln_ids:
@@ -123,6 +130,16 @@ async def reconcile_device_findings(
         elif row.capped:
             continue  # the build is still here and the list is the cap's; absence proves nothing
         else:
+            if settings.vuln_tenant_selection:
+                current = [app for app in rows if app.key_full == row.build_key_full]
+                if not current or any(
+                    app.vuln_assessment != VULN_ASSESSMENT_COVERED
+                    or app.vuln_ids_truncated
+                    or app.vuln_signature != loaded_epoch_signature()
+                    or loaded_epoch_signature() is None
+                    for app in current
+                ):
+                    continue  # Lost coverage or an incomplete list is not a withdrawn finding.
             reason = RESOLVED_CORPUS_WITHDRAWN
         closing.setdefault(reason, []).append(row.id)
 

@@ -130,6 +130,8 @@ class Settings(BaseSettings):
     # safe pruning ship; enabling this retains each imported projection without expiry.
     # This neither changes consent nor grants access to a retained release.
     vuln_release_retention: bool = False
+    # Dormant v2 serving path; enable only for development until #621 is complete.
+    vuln_tenant_selection: bool = False
 
     # Daily check of this build against the latest published release, so the UI can say
     # when one is available (#407). UPDATE_CHECK=false turns the outbound call off

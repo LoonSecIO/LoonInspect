@@ -789,6 +789,28 @@ production cutover. Report the reason printed under *Last exchange* (the same se
 the `error` field of that row in the share-log download), when it started, the probe's
 answer from step 6, and the build (Settings › Support).
 
+### Development preview: tenant-selected intelligence (#621)
+
+This applies only when `VULN_TENANT_SELECTION=true`; leave it off in production until
+historical evidence and safe pruning are complete. All workers must use the same setting.
+
+- **“Intelligence update could not be assessed; this organization's previous answers
+  remain selected.”** In `docker compose logs app`, inspect the accompanying database
+  error. Check database connectivity and free storage, then use **Settings › Data Sharing
+  › Send now** to retry. The accepted contribution receipt is already saved. The prior
+  selected corpus and its date keep answering; a newer download alone does not select it.
+- **No assessment after enabling the preview:** use **Devices › Applications › Catalog
+  › Refresh** to assess a migration-granted release. If this organization had no grant,
+  use its permitted contribution exchange first. Another organization's download does
+  not grant access. Do not enable sharing on behalf of an opted-out organization.
+- **A date stays old after sharing is turned off:** expected in this preview. The held
+  release still assesses local inventory and displays its original date; no new delivery
+  is implied. An older feed, missing coverage or incomplete IDs do not prove remediation.
+- **Missing selected intelligence or repeated organization-context refusal:** stop the
+  affected operation, preserve the logs, and contact support. Restore a known complete
+  database backup if reference data was removed; do not delete pointers or substitute
+  another organization's grant. No automatic pruning is enabled in this preview.
+
 ## 6. "The Jamf Patch table is empty, or it stopped refreshing"
 
 The patch catalog is the list of titles every Applications surface is matched against. It

@@ -534,6 +534,9 @@ async def run_exchange(
     # retention-clock: share-log — named in README.md and KNOWN_ISSUES.md §1; check-readme-claims.sh reads this token.
     await db.execute(delete(ShareLog).where(ShareLog.occurred_at < now - _LOG_RETENTION))
     await db.commit()
+    # Delivery/assessment may roll back their later transaction. Keep the durable
+    # receipt readable by Send now even when rollback expires the session's objects.
+    db.expunge(log)
 
     # The corpus channel, after the day's row is durable and in its own transaction
     # (#248). Deliberately last and deliberately separate: a download and a whole-library
@@ -543,7 +546,26 @@ async def run_exchange(
     # download at all, which is what makes this affordable daily.
     if pointer is not None:
         library = await load_epoch_if_new(db, pointer, transport=transport)
-        if library is not None:
+        if app_settings.vuln_tenant_selection:
+            from app.core.vuln_selection import assess_and_select, record_acquisition
+            from app.models.schema import VulnCorpusRelease
+
+            # A successful response authorizes this tenant, even when another tenant
+            # already downloaded these bytes. A refused/absent release grants nothing.
+            if await db.get(VulnCorpusRelease, pointer.signature) is not None:
+                try:
+                    await record_acquisition(db, pointer.signature)
+                    await db.commit()
+                    await assess_and_select(db, pointer.signature)
+                    await db.commit()
+                except Exception:
+                    await db.rollback()
+                    logger.exception(
+                        "Intelligence update could not be assessed; this organization's previous answers remain selected. "
+                        "Check database availability and free storage, then retry Send now "
+                        "(docs/troubleshooting.md §5)."
+                    )
+        elif library is not None:
             # The join follows the import (#554). Every stored answer on this box is
             # stamped with the epoch that judged it and is not served under a newer one, so
             # a new epoch with no re-judge behind it was an hour of *not yet judged* on the
