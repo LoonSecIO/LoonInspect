@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, RefreshCw, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PERMISSIONS } from "@/features/auth/types";
@@ -6,6 +6,11 @@ import { useHasPermission } from "@/features/auth/store";
 import {
   getDataSharing,
   getExclusionCandidates,
+  getExclusionRankingStatus,
+  rankExclusionCandidates,
+  type ExclusionRanking,
+  type ExclusionRankingStatus,
+  type RankingProvider,
   previewExchange,
   resetSubmissionUuid,
   sendExchangeNow,
@@ -40,15 +45,57 @@ export function DataSharingPage() {
   // matches (#483). Three states, never one: counting, counted, and could-not-count.
   const [candidates, setCandidates] = useState<ExclusionCandidates | null>(null);
   const [candidatesError, setCandidatesError] = useState<string | null>(null);
+  const [rankingStatus, setRankingStatus] = useState<ExclusionRankingStatus | null>(null);
+  const [rankingStatusError, setRankingStatusError] = useState<string | null>(null);
+  const [rankingProvider, setRankingProvider] = useState<RankingProvider | "">("");
+  const [ranking, setRanking] = useState<ExclusionRanking | null>(null);
+  const [rankingBusy, setRankingBusy] = useState(false);
+  const [rankingError, setRankingError] = useState<string | null>(null);
+  const candidateRevision = useRef(0);
+
+  useEffect(() => {
+    getExclusionRankingStatus()
+      .then((status) => { setRankingStatus(status); setRankingStatusError(null); })
+      .catch(() => { setRankingStatus(null); setRankingStatusError(t.system.sharing.rankingStatusFailed); });
+  }, [t.system.sharing.rankingStatusFailed]);
+
+  function invalidateRanking() {
+    candidateRevision.current += 1;
+    setRanking(null);
+    setRankingError(null);
+  }
+
+  async function handleRanking() {
+    const provider = rankingProvider || rankingStatus?.providers[0]?.provider;
+    if (!provider) return;
+    const revision = ++candidateRevision.current;
+    setRankingBusy(true);
+    setRankingError(null);
+    try {
+      const result = await rankExclusionCandidates(provider, draftGlobs());
+      if (candidateRevision.current !== revision) return;
+      setCandidates(result.candidates);
+      setCandidatesError(null);
+      setRanking(result);
+    } catch (caught) {
+      if (candidateRevision.current !== revision) return;
+      setRankingError(caught instanceof ApiError && caught.detail ? caught.detail : t.system.sharing.rankingFailed);
+    } finally {
+      setRankingBusy(false);
+    }
+  }
 
   /** #150's rule, on this panel: a read that failed must not render as a build without a
    *  panel, nor as a first load still in flight. It says so instead — and says it under
    *  the textarea, because the panel is an aid to the box, never a reason to block it. */
   function refreshCandidates(globs: string[]) {
+    invalidateRanking();
+    const revision = candidateRevision.current;
     setCandidatesError(null);
     getExclusionCandidates(globs)
-      .then(setCandidates)
+      .then((result) => { if (candidateRevision.current === revision) setCandidates(result); })
       .catch(() => {
+        if (candidateRevision.current !== revision) return;
         // The stale counts go with it. A count of the box as it was two edits ago is a
         // wrong answer where "could not be loaded" is a true one.
         setCandidates(null);
@@ -74,6 +121,7 @@ export function DataSharingPage() {
   /** Accepting a suggestion is the same audited PUT a hand-typed glob takes — no second
    *  write path, and the audit record cannot tell the two apart. */
   async function addGlob(glob: string) {
+    invalidateRanking();
     const next = draftGlobs().includes(glob) ? draftGlobs() : [...draftGlobs(), glob];
     setGlobsDraft(next.join("\n"));
     await apply({ excludeGlobs: next });
@@ -330,7 +378,7 @@ export function DataSharingPage() {
           className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs"
           value={globsDraft}
           disabled={locked}
-          onChange={(event) => setGlobsDraft(event.target.value)}
+          onChange={(event) => { invalidateRanking(); setGlobsDraft(event.target.value); }}
           onBlur={() => {
             void apply({ excludeGlobs: draftGlobs() });
             refreshCandidates(draftGlobs());
@@ -370,6 +418,29 @@ export function DataSharingPage() {
             )}
             <h3 className="text-sm font-medium">{t.system.sharing.candidatesHeading}</h3>
             <p className="text-xs text-muted-foreground">{t.system.sharing.candidatesHelp}</p>
+            {canWrite && rankingStatus?.reason === "local_endpoint_required" && (
+              <p className="text-xs text-muted-foreground">{t.system.sharing.rankingLocalRequired}</p>
+            )}
+            {canWrite && rankingStatus?.available && candidates.groups.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">{t.system.sharing.rankingDisclosure}</p>
+                <label className="flex flex-wrap items-center gap-2 text-xs">
+                  {t.system.sharing.rankingEndpoint}
+                  <select className="rounded border bg-background p-1" value={rankingProvider || rankingStatus.providers[0]?.provider}
+                    onChange={(event) => { invalidateRanking(); setRankingProvider(event.target.value as RankingProvider); }} disabled={rankingBusy}>
+                    {rankingStatus.providers.map((provider) => (
+                      <option key={provider.provider} value={provider.provider}>{provider.model} · {provider.destination}</option>
+                    ))}
+                  </select>
+                  <Button type="button" size="sm" variant="outline" onClick={() => void handleRanking()} disabled={rankingBusy}>
+                    {rankingBusy ? t.system.sharing.rankingBusy : t.system.sharing.rankingButton}
+                  </Button>
+                </label>
+              </div>
+            )}
+            {canWrite && rankingStatusError && <p role="alert" className="text-xs text-destructive">{rankingStatusError}</p>}
+            {rankingError && <p role="alert" className="text-xs text-destructive">{rankingError}</p>}
+            {ranking && <p className="text-xs text-muted-foreground">{t.system.sharing.rankingResult(ranking.model, ranking.destination)}</p>}
             {candidates.groups.length === 0 ? (
               <p className="text-xs text-muted-foreground">
                 {t.system.sharing.candidatesNone(candidates.catalogTitles, candidates.libraryTitles)}
@@ -382,6 +453,9 @@ export function DataSharingPage() {
                     <span className="text-muted-foreground">
                       {t.system.sharing.groupSummary(group.appCount, group.deviceCount)}
                     </span>
+                    {ranking?.assessments.filter((assessment) => assessment.prefix === group.prefix).map((assessment) => (
+                      <span key={assessment.prefix} className="text-muted-foreground">{t.system.sharing.rankingLabels[assessment.classification]}</span>
+                    ))}
                     {group.excluded && (
                       <span className="text-muted-foreground">{t.system.sharing.groupCovered}</span>
                     )}

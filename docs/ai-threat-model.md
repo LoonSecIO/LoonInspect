@@ -228,3 +228,18 @@ read as true or not, and the page answers it with its own sentence, so `unsuppor
 only model-written text on the page. A question that talks the model out of refusing gets what
 it got before, the closest filters; one that talks it into refusing gets nothing run. Neither
 reaches a row the filters could not.
+
+
+## Exclusion ranking boundary (#409, 2026-09-20)
+
+This slot sends inventory labels to a local model. Its builder applies the existing model
+control-token sanitizer, per-field limits with visible truncation, a fixed field allowlist,
+and a total byte cap; static instructions and JSON data stay separate (P2/P3).
+`test_exclusion_ranking.py` exercises hostile labels, malformed and invented outputs,
+DNS failures and mixed public/private answers, and IP pinning with preserved TLS identity.
+The endpoint gate and committed field disclosure precede the call; the adapter remains
+the only bounded HTTP door. The Data Sharing renderer is included in S4's text-only scan.
+Database tests verify permissions, both switches, local-only endpoints, disclosure before
+sending, and no change to saved exclusions. Model influence is limited to an explicitly
+labelled ordering and classification of code-built candidates; applying an exclusion still
+requires a separate operator action through the existing audited PUT.

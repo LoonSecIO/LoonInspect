@@ -112,6 +112,9 @@ def inference_blocked_reason(address: _IpAddress) -> str | None:
     `http://127.0.0.1:11434/v1`, and refusing that helps no one. Link-local stays
     refused: nothing legitimate serves chat completions at 169.254.169.254.
     """
+    # IPv6 ::1 is also classified as reserved; explicit inference loopback permission wins.
+    if _unwrap(address).is_loopback:
+        return None
     return _blocked_reason(address, allow_loopback=True)
 
 

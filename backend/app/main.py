@@ -46,6 +46,7 @@ from app.api.destinations import router as destinations_router
 from app.api.device_history import router as device_history_router
 from app.api.devices import router as devices_router
 from app.api.evidence import router as evidence_router
+from app.api.exclusion_ranking import router as exclusion_ranking_router
 from app.api.feature_flags import router as feature_flags_router
 from app.api.inventory_summaries import router as inventory_summaries_router
 from app.api.jamf_patch import router as jamf_patch_router
@@ -652,6 +653,7 @@ app.include_router(evidence_router)
 # Before the router that owns `/api/vulnerabilities/{vuln_id}`: FastAPI matches in
 # declaration order, and that dynamic segment would otherwise swallow GET /prompt as an id.
 app.include_router(vulnerabilities_prompt_router)
+app.include_router(exclusion_ranking_router)
 app.include_router(vulnerabilities_router)
 
 

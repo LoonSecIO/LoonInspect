@@ -70,6 +70,15 @@ export const de: Translations = {
         count === 1
           ? "1 weiteres Muster im Feld wird hier nicht gezählt."
           : `${count} weitere Muster im Feld werden hier nicht gezählt.`,
+      rankingStatusFailed: "Die Verfügbarkeit der KI-Sortierung konnte nicht geprüft werden. Seite neu laden; die Kandidatenliste ohne KI funktioniert weiterhin.",
+      rankingButton: "Mit lokaler KI sortieren",
+      rankingBusy: "Wird eingeordnet…",
+      rankingEndpoint: "Lokaler Endpunkt",
+      rankingDisclosure: "Sendet Kandidatenpräfixe, bis zu drei App-Namen und Bundle-IDs je Gruppe sowie App-/Geräteanzahlen an den ausgewählten lokalen Endpunkt. Maximal 12 Gruppen; lange Bezeichnungen werden gekürzt. Nur KI-Einschätzungen — jedes Muster vor dem Hinzufügen prüfen. Die Sortierung speichert nichts.",
+      rankingLocalRequired: "Die KI-Sortierung benötigt einen lokalen Apple-Foundation-Models- oder OpenAI-kompatiblen Endpunkt. Unter Einstellungen › KI speichern; gehostete Endpunkte dürfen diese Kandidaten nicht erhalten.",
+      rankingFailed: "Die Sortierung ist fehlgeschlagen. Erneut versuchen oder die Kandidatenliste verwenden; gespeicherte Ausschlüsse bleiben unverändert.",
+      rankingResult: (model: string, destination: string) => `KI-Einschätzungen von ${model} · ${destination}. Vermutlich interne Gruppen zuerst; alle Kandidaten bleiben verfügbar.`,
+      rankingLabels: { likely_in_house: "KI-Einschätzung: vermutlich intern", uncertain: "KI-Einschätzung: unklar", likely_public: "KI-Einschätzung: vermutlich öffentliche Software" },
       candidatesHeading: "Kandidaten",
       candidatesHelp:
         "Titel, die keine öffentliche Quelle auf diesem Container kennt: kein Jamf-Patch-Titel passt auf einen ihrer Builds, und die Schwachstellen-Bibliothek nennt keinen von ihnen. Unbekannt heißt nicht Ihre — der lange Schwanz einer Flotte ist meist öffentliche Software, von der der Katalog nie gehört hat. Lesen Sie dies als Vorauswahl, nicht als Antwort. Nichts wird ausgeschlossen, bevor Sie ein Muster hinzufügen und es gespeichert ist.",
