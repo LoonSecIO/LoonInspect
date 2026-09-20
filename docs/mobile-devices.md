@@ -1,6 +1,6 @@
 # Mobile devices, and the computers-only boundary
 
-Status: **scope ruled (Kyle, 2026-09-01)** · v0 target: **computers only** · Mobile target: **v1 / v5**
+Status: **scope ruled (Kyle, 2026-09-01)** · v0 target: **computers only** · v1.0.0: **computers only** · Mobile: **future**, unscheduled ([#616](https://github.com/LoonSecIO/LoonInspect/issues/616))
 
 A Jamf Pro tenant manages computers *and* mobile devices. v0 reads computers only, and this
 document is the boundary written down: what v0 collects, what it does not, and — the reason

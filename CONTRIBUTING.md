@@ -1,6 +1,6 @@
 # Contributing
 
-LoonInspect is young and moving fast toward a stable v1. Contributions are welcome,
+LoonInspect has shipped v1.0.0 and continues to evolve. Contributions are welcome,
 with two things worth knowing up front.
 
 ## Open an issue first
@@ -20,6 +20,14 @@ An issue that names a condition under which it should be **closed rather than bu
 checkbox — is a ruling for the maintainer before it is a build, whatever label it carries.
 Agent sessions route such issues to a ruling first (the 2026-09-16 case: #245 was built and
 then had to be judged after the fact).
+
+## Planning releases
+
+Use GitHub milestones for intended releases and `future` for planned but unscheduled
+work. The former `v5` label was renamed to `future`; it never meant a fifth release.
+Read [the release planning policy](docs/BRANCHING.md#11-release-planning-milestones-labels-and-tags)
+before assigning work or cutting a tag. A milestone does not change the requirement
+that every merge keep `main` releasable.
 
 ## What CI expects
 

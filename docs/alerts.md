@@ -226,7 +226,7 @@ and leave the alert open in the app for ever.
 
 **Closed, never deleted, and nothing else is deleted either.** §6's rule holds; what differs is
 what *survives*. The app-gone close takes the `installed_apps` row with it, and this one takes
-nothing — the Mac's apps, spans and change history all stay (erasure is #180, v5). That is why
+nothing — the Mac's apps, spans and change history all stay (erasure is #180, `future`). That is why
 the row carries a **reason**, a closed vocabulary beside `KINDS`
 (`app.alerts.service.CLOSE_REASONS`, migration `c3f8a1d7e964`):
 

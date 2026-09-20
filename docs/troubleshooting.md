@@ -1650,7 +1650,7 @@ history stay, and **Show departed** in the filter bar (`includeDeparted=true`) r
    sweep has run since it crossed day seven (step 1), and if one has, state **T**.
 6. **You want it gone for good.** Nothing removes a Mac's history today — not this, not
    deleting the connection. Honouring a Jamf deletion as an erasure is a stated, deliberate
-   deferral (v5); [`jamf-observations.md`](jamf-observations.md) §8 says what is held.
+   deferral (`future`); [`jamf-observations.md`](jamf-observations.md) §8 says what is held.
 
 **T.** A finished, unselected, failure-free device sweep whose log has no *device census* line;
 a Mac Jamf returns on the sweep's own endpoint that still departs or stays departed; a census that
