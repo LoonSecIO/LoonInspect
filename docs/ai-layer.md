@@ -674,3 +674,41 @@ The earlier exclusion of per-device inference is superseded for the explicit opt
 asynchronous summary described in [inventory-summaries.md](inventory-summaries.md).
 The ingestion transaction still never calls a model. Compact code-derived facts feed
 advisory prose; the separate SIEM enrichment preserves code-derived evidence and source time.
+
+
+## Local exclusion ranking (#409)
+
+The maintainer requested implementation on 2026-09-20, ending #409's earlier deferral.
+Settings › Data Sharing offers **Rank with local AI** when the master AI flag, inference
+consent, and a saved local endpoint are available. The operator selects the endpoint;
+Apple FM and OpenAI-compatible servers are supported. Hosted providers are refused even
+with a saved key. Every resolved address must be loopback, RFC 1918, or IPv6 unique-local;
+resolution fails closed. The adapter connects to the checked IP, retaining the original
+HTTP Host and TLS server name, without environment proxies or redirects.
+
+Code builds the same candidate list as #483. The prompt includes at most 12 groups and
+three apps per group: prefixes, app names, bundle IDs, and code-derived app/device counts.
+Labels pass the control-token sanitizer, carry a visible truncation marker at their field
+limit, and fit a 16,000-byte total budget. No hostname, serial, glob, saved exclusion,
+credential, or free-form operator instruction enters the prompt. Static system instructions
+are separate from the JSON data. Calls have a 30-second wall clock and 768 reply tokens.
+
+The model returns only candidate indices and one of `likely_in_house`, `uncertain`, or
+`likely_public`. Duplicate, missing, invented indices or extra fields refuse the whole
+answer. Code orders these classifications, preserving the original order within each;
+counts and exclusion suggestions still come from the inventory query. Every candidate
+stays visible. The labels say **AI estimate**, never ownership as a fact. Classification
+quality is not guaranteed: review the actual names and pattern reach before adding one.
+Ranking never saves exclusions; **Add** still uses the existing audited settings PUT.
+Editing or refreshing the candidate list discards an outstanding or displayed ranking.
+
+`require_ai` commits `exclusion_ranking` disclosure before sending, naming
+`candidate_prefixes`, `app_names`, `bundle_ids`, `device_counts`, and `app_counts` only.
+The local audit action `ai.exclusion-ranking.sent` records outcome, destination, latency,
+and error kind, never input labels or the model reply. Classifications are not persisted
+and never enter snapshots, posture, or SIEM events. No schema migration is required.
+
+Validation included a local Apple FM smoke check with invented examples only: Contoso
+staff/onboarding tools → `likely_in_house`, Thunderbird → `likely_public`, and a generic
+Widget → `uncertain`. This checks request/response usefulness on three examples, not a
+classification accuracy claim or a substitute for operator review.

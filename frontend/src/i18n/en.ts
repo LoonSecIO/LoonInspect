@@ -81,6 +81,15 @@ export const en = {
         count === 1
           ? "1 more pattern in the box is not counted here."
           : `${count} more patterns in the box are not counted here.`,
+      rankingStatusFailed: "AI ranking availability could not be checked. Reload the page; the non-AI candidate list still works.",
+      rankingButton: "Rank with local AI",
+      rankingBusy: "Ranking…",
+      rankingEndpoint: "Local endpoint",
+      rankingDisclosure: "Sends candidate prefixes, up to three app names and bundle IDs per group, and app/device counts to the selected local endpoint. Up to 12 groups; long labels are truncated. AI estimates only — review every pattern before adding it. Nothing is saved by ranking.",
+      rankingLocalRequired: "AI ranking needs a local Apple Foundation Models or OpenAI-compatible endpoint. Save one in Settings › AI; hosted endpoints cannot receive these candidates.",
+      rankingFailed: "Ranking could not be completed. Retry or use the candidate list; saved exclusions are unchanged.",
+      rankingResult: (model: string, destination: string) => `AI estimates from ${model} · ${destination}. Likely in-house groups first; all candidates remain available.`,
+      rankingLabels: { likely_in_house: "AI estimate: likely in-house", uncertain: "AI estimate: uncertain", likely_public: "AI estimate: likely public software" },
       candidatesHeading: "Candidates",
       candidatesHelp:
         "Titles no public source on this container knows: no Jamf Patch title matches any of their builds, and the vulnerability library names none of them. Unknown is not the same as yours — most of a fleet's long tail is public software the catalog never heard of — so read this as a shortlist, not an answer. Nothing is excluded until you add a pattern and it saves.",

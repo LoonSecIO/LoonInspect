@@ -157,3 +157,25 @@ export function getExclusionCandidates(globs: string[]): Promise<ExclusionCandid
   const query = (globs.length ? globs : [""]).map((g) => `glob=${encodeURIComponent(g)}`).join("&");
   return apiRequest<ExclusionCandidates>(`/system/data-sharing/exclusion-candidates?${query}`);
 }
+
+export type ExclusionClassification = "likely_in_house" | "uncertain" | "likely_public";
+export type RankingProvider = "apple_fm" | "openai_compatible";
+export interface ExclusionRankingStatus {
+  available: boolean;
+  reason: "flag_off" | "consent_off" | "local_endpoint_required" | null;
+  providers: { provider: RankingProvider; model: string; destination: string }[];
+}
+export interface ExclusionRanking {
+  candidates: ExclusionCandidates;
+  assessments: { prefix: string; classification: ExclusionClassification }[];
+  destination: string;
+  model: string;
+}
+export function getExclusionRankingStatus(): Promise<ExclusionRankingStatus> {
+  return apiRequest<ExclusionRankingStatus>("/system/data-sharing/exclusion-ranking");
+}
+export function rankExclusionCandidates(provider: RankingProvider, globs: string[]): Promise<ExclusionRanking> {
+  return apiRequest<ExclusionRanking>("/system/data-sharing/exclusion-ranking", {
+    method: "POST", json: { provider, globs }
+  });
+}

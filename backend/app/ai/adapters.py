@@ -82,6 +82,8 @@ class CompletionRequest:
     host_header: str | None = None
     # Our static instructions, never a fleet value: a system message, or Anthropic's top-level field.
     system: str | None = None
+    # Local-only slots pin a previously checked address, preserving Host and TLS identity.
+    connect_ip: str | None = None
 
 
 @dataclass(frozen=True)
@@ -311,14 +313,23 @@ async def _request(
     json_body: dict[str, Any] | None = None,
     transport: httpx.AsyncBaseTransport | None,
     timeout_seconds: float,
+    connect_ip: str | None = None,
 ) -> _Reply:
     """One exchange with a caller-chosen server, bounded four ways (module docstring)."""
     limits = httpx.Timeout(_READ_TIMEOUT_SECONDS, connect=_CONNECT_TIMEOUT_SECONDS)
+    extensions = {}
+    if connect_ip is not None:
+        original = httpx.URL(url)
+        headers = {"Host": original.netloc.decode(), **headers}
+        extensions["sni_hostname"] = original.host
+        url = str(original.copy_with(host=connect_ip))
     try:
         async with asyncio.timeout(timeout_seconds):
             async with _wire_slots():
-                async with httpx.AsyncClient(timeout=limits, transport=transport, follow_redirects=False) as client:
-                    async with client.stream(method, url, headers=headers, json=json_body) as response:
+                async with httpx.AsyncClient(
+                    timeout=limits, transport=transport, follow_redirects=False, trust_env=connect_ip is None
+                ) as client:
+                    async with client.stream(method, url, headers=headers, json=json_body, extensions=extensions) as response:
                         chunks: list[bytes] = []
                         size = 0
                         async for chunk in response.aiter_bytes():
@@ -457,7 +468,15 @@ async def _complete_unmetered(
     """One prompt, one reply, one of five failures. ``transport`` exists so a test can
     stand in for the server, the way ``app.core.sharing.post_exchange`` allows."""
     url, headers, body = build_request(wire, req)
-    reply = await _request("POST", url, headers=headers, json_body=body, transport=transport, timeout_seconds=timeout_seconds)
+    reply = await _request(
+        "POST",
+        url,
+        headers=headers,
+        json_body=body,
+        transport=transport,
+        timeout_seconds=timeout_seconds,
+        connect_ip=req.connect_ip,
+    )
     logger.info("ai wire: %s POST %s -> %s", wire.value, httpx.URL(url).host, reply.status)
     return parse_response(wire, _json_or_raise(reply))
 

@@ -882,6 +882,18 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
      request to `/api/system/data-sharing/exclusion-candidates` and the reason it ended;
      reload the page to ask again.
 
+   **Local AI ranking is absent or fails (#409).** The non-AI list above remains usable.
+   Ranking appears for administrators when AI features and AI-inference consent are on
+   and a saved Apple FM or OpenAI-compatible endpoint resolves entirely to local/private
+   addresses. Save and test that endpoint under Settings › AI, then reload Data Sharing.
+   Hosted endpoints, failed DNS, and mixed public/private DNS answers are refused before
+   inventory is sent. The selector names the endpoint and model before the request.
+   A connection error or malformed classification leaves exclusions unchanged; retry or
+   use the existing candidates directly. The share log records `exclusion_ranking` and
+   field names before sending; the audit log records `ai.exclusion-ranking.sent` with
+   `ranked`, `unparseable`, or `error`. Neither log stores candidate labels or model text.
+   An **AI estimate** is a suggestion, not proof that an app belongs to your organization.
+
 5. **A title's app name reads *name from the patch definition*, or *No app name*.** Both
    lines are the page saying where the name under the title came from; neither is a fault
    and neither needs anything from you. Jamf publishes no app name on 513 of its 1,553

@@ -244,6 +244,7 @@ def _rendering_files() -> list[Path]:
     for folder, page in ((_FEATURES / "changes", "ChangesPage.tsx"), (_FEATURES / "vulnerabilities", "VulnerabilitiesPage.tsx")):
         for pattern in ("[Pp]rompt*.ts", "[Pp]rompt*.tsx", "SearchBox.tsx", page):
             files.extend(folder.glob(pattern))
+    files.append(_FEATURES / "system" / "DataSharingPage.tsx")
     return sorted(set(files))
 
 
