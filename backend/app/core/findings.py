@@ -11,14 +11,14 @@ import logging
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.vuln import validate_finding_id
 from app.mdm.jamf.contract import SUBJECT_COMPUTER
-from app.models.schema import Device, DeviceChange, DeviceFinding, InstalledApp
+from app.models.schema import Device, DeviceChange, DeviceFinding, InstalledApp, ObservationSpan
 from app.observations.departure import gone_for_good
 from app.schemas.payload import VULN_ASSESSMENT_COVERED
 
@@ -148,9 +148,12 @@ async def reconcile_device_findings(
 
 
 async def backfill_clocks(db: AsyncSession, *, device: Device, rows: Sequence[InstalledApp]) -> Mapping[str, datetime]:
-    """When each build this Mac carries arrived on it, from the change log — ruling 5's clock, bounded
-    by the tenant's own history by construction. One query, once per device ever, and the LATEST
-    arrival; a build with no arrival row takes the opening reconcile's clock, `backfill` either way."""
+    """Reconstruct this Mac's initial finding clocks from its recorded history (#589, #608).
+
+    Prefer the latest build arrival in the change log. For builds without one, a single additional
+    query reads the earliest device observation across all spans. With neither history, the caller
+    uses the opening reconcile's clock. Only the first reconcile backfills; existing rows stay put.
+    """
     wanted = {(row.name, row.bundle_id, row.version): row.key_full for row in rows}
     columns = select(DeviceChange.entry_identity, DeviceChange.new_value, DeviceChange.observed_at)
     mine = (DeviceChange.mdm_connection_id == device.mdm_connection_id, DeviceChange.subject_id == device.external_id)
@@ -162,6 +165,17 @@ async def backfill_clocks(db: AsyncSession, *, device: Device, rows: Sequence[In
         build = wanted.get(((identity or {}).get("name"), (identity or {}).get("bundleId"), (value or {}).get("version")))
         if build is not None:
             arrivals[build] = observed
+    missing = set(wanted.values()) - arrivals.keys()
+    if missing:
+        first_observed = await db.scalar(
+            select(func.min(ObservationSpan.first_observed_at)).where(
+                ObservationSpan.mdm_connection_id == device.mdm_connection_id,
+                ObservationSpan.subject_kind == SUBJECT_COMPUTER,
+                ObservationSpan.subject_id == device.external_id,
+            )
+        )
+        if first_observed is not None:
+            arrivals.update(dict.fromkeys(missing, first_observed))
     return arrivals
 
 

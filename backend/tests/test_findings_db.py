@@ -147,7 +147,7 @@ async def test_a_clean_reconcile_is_remembered_so_a_later_finding_is_not_backfil
     assert (row.first_observed_at, row.first_seen_basis) == (DAY3, BASIS_OBSERVED)
 
 
-async def test_a_backfill_takes_the_change_log_arrival_then_the_first_observation(db, mac) -> None:
+async def test_a_backfill_without_observation_history_uses_arrival_then_reconcile_clock(db, mac) -> None:
     db.add(_arrival(mac, WIRESHARK, "4.2.0", at=DAY1))
     await db.commit()
     await _sync(db, mac, [_app(WIRESHARK, "4.2.0", [CVE]), _app(SAFARI, "18.0", [OTHER])], DAY2)

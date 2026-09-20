@@ -787,6 +787,15 @@ a row opened from a truncated list is `capped` and never closes by absence from 
 read path, the page and three `vuln.*` posture keys are
 [#591](https://github.com/LoonSecIO/LoonInspect/issues/591).
 
+**Initial backfill (#608).** On an existing Mac's first finding reconcile, a build's
+latest arrival in the change log supplies its first-observed clock. Without an arrival,
+the fallback is the earliest recorded device observation across all its spans; with
+neither history, the opening reconcile supplies the clock. These reconstructed rows
+remain marked `first_seen_basis = backfill`. The fallback adds at most one observation
+query per initial backfill and none when all build arrivals are known. The device's
+one-time reconcile marker prevents later findings from being backdated, even if the
+first reconcile found no findings. Existing finding clocks are not rewritten.
+
 **Finding-store departure closure (#607).** A Mac’s open findings close with
 `device_departed` when its established seven-day departure tail expires, alongside its
 alert latches. Both census paths do this, including scoped or incomplete sweeps that
