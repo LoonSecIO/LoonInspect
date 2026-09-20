@@ -245,19 +245,20 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
                     disabled={saving}
                     className="relative flex w-full flex-col items-center gap-2 px-2 text-xs"
                     aria-pressed={selected === p.id}
-                    aria-label={`${copy.observed}: ${date(p.observedAt)} · ${copy.collected}: ${date(p.collectedAt)}`}
-                    title={`${copy.observed}: ${date(p.observedAt)} · ${copy.collected}: ${date(p.collectedAt)}`}
+                    aria-label={`${copy.observed}: ${date(p.observedAt)} · ${p.kind === "assessment" ? copy.evaluated : copy.collected}: ${date(p.collectedAt)}`}
+                    title={`${copy.observed}: ${date(p.observedAt)} · ${p.kind === "assessment" ? copy.evaluated : copy.collected}: ${date(p.collectedAt)}`}
                     onClick={() => choose(p.id)}
                   >
                     <span
                       className={`z-10 block h-6 w-6 rounded-full border-2 ${selected === p.id ? "border-primary bg-primary" : "border-muted-foreground bg-card"}`}
                     />
                     <span className="whitespace-nowrap font-mono text-muted-foreground">
-                      {new Date(p.observedAt).toLocaleDateString(locale, {
+                      {new Date(p.kind === "assessment" ? p.collectedAt : p.observedAt).toLocaleDateString(locale, {
                         month: "short",
                         day: "numeric",
                       })}
                     </span>
+                    {p.kind === "assessment" && <span>{copy.evaluated}</span>}
                   </button>
                 </li>
               ))}
@@ -276,9 +277,12 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
                     </time>
                   </span>
                   <span>
-                    {copy.collected}: {date(detail.collectedAt)}
+                    {detail.kind === "assessment" ? copy.evaluated : copy.collected}: {date(detail.collectedAt)}
                   </span>
                 </div>
+                {detail.kind === "assessment" && (
+                  <p className="text-sm text-muted-foreground">{copy.assessmentOnly}</p>
+                )}
                 {editing ? (
                   <div className="space-y-3 rounded border border-dashed p-4">
                     <p className="text-sm">{copy.personal}</p>
@@ -517,6 +521,25 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
                     )}
                   </dl>
                 )}
+                {detail.assessment?.vulnerabilityEvidence && (
+                  <details className="rounded border p-3 text-xs">
+                    <summary className="cursor-pointer">{copy.assessmentEvidence}</summary>
+                    <p className="my-2 break-all font-mono">
+                      {copy.release}: {detail.assessment.vulnerabilityEvidence.releaseDigest}
+                    </p>
+                    <ul className="space-y-2">
+                      {detail.assessment.vulnerabilityEvidence.builds.map((build) => (
+                        <li key={build.keyFull}>
+                          <span className="font-medium">{build.name} · {build.version}</span>
+                          {" · "}{build.counts ? copy.findingCount(build.counts.total) : copy.unknownBuild}
+                          {build.idsTruncated && <> · {copy.incompleteIds}</>}
+                          {" · "}{copy.evaluated}: {build.evaluatedAt ? date(build.evaluatedAt) : copy.states.not_recorded}
+                          {build.ids?.length ? <p className="mt-1 break-words font-mono">{build.ids.join(", ")}</p> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
                 {detail.values.some((v) => v.key.startsWith("findings.")) && (
                   <p className="text-xs text-muted-foreground">
                     {detail.assessment
@@ -558,12 +581,12 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
                           : "OpenAI-compatible"}
                       </p>
                     </>
-                  ) : (
+                  ) : detail.kind !== "assessment" ? (
                     <p className="text-xs text-muted-foreground">
                       {copy.summaries[summary?.status ?? "unavailable"] ??
                         copy.summaries.unavailable}
                     </p>
-                  )}
+                  ) : null}
                   <Link
                     className="inline-block text-xs underline underline-offset-4"
                     to={`/devices/changes?${new URLSearchParams({ spanId: detail.spanId })}`}

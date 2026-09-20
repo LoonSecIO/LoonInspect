@@ -144,7 +144,7 @@ async def lock_assessment(db: AsyncSession) -> None:
     await load_selected_corpus(db)
 
 
-async def assess_and_select(db: AsyncSession, signature: str) -> bool:
+async def assess_and_select(db: AsyncSession, signature: str, *, capture_history: bool = True) -> bool:
     """Run the real catalog join and installed copies before advancing the pointer.
 
     No process cache is published. The caller owns commit; its next unit of work reads
@@ -156,6 +156,10 @@ async def assess_and_select(db: AsyncSession, signature: str) -> bool:
     async def assess(session: AsyncSession, release: str) -> None:
         await judge_vuln(session, None, now=datetime.now(UTC), release=release)
         await copy_vuln_answers(session)
+        if capture_history:
+            from app.observations.assessment_evidence import capture_release_transition
+
+            await capture_release_transition(session, release)
 
     return await select_after_assessment(db, signature, assess=assess)
 
@@ -171,5 +175,7 @@ async def prepare_assessment(db: AsyncSession) -> None:
             .limit(1)
         )
         if signature is not None:
-            await assess_and_select(db, signature)
+            # Inventory may already be changing in this transaction. Its capture hook
+            # records the completed baseline, rather than a half-processed observation.
+            await assess_and_select(db, signature, capture_history=False)
             await load_selected_corpus(db)

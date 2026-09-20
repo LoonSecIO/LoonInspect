@@ -4,7 +4,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import String, cast, exists, literal, select, union_all
+from sqlalchemy import String, case, cast, exists, literal, select, union_all
 from sqlalchemy.dialects.postgresql import insert
 
 from app.changes.derive import load_policy
@@ -55,9 +55,14 @@ def points_query(device):
         Span.id.label("span_id"),
         Span.first_observed_at.label("observed_at"),
         Span.first_collected_at.label("collected_at"),
+        literal("inventory").label("kind"),
     ).where(*scope, ~exists(select(Point.id).where(Point.span_id == Span.id)))
     recorded = select(
-        (literal("p:") + cast(Point.id, String)).label("key"), Point.span_id, Point.observed_at, Point.collected_at
+        (literal("p:") + cast(Point.id, String)).label("key"),
+        Point.span_id,
+        Point.observed_at,
+        Point.collected_at,
+        case((Point.source_id.is_(None), "assessment"), else_="inventory").label("kind"),
     ).where(Point.device_id == device.id)
     return union_all(legacy, recorded).subquery()
 
@@ -210,7 +215,10 @@ async def history(device_id: int, page: int = Query(1, ge=1), db=Depends(get_db)
         .all()
     )
     return {
-        "items": [{"id": r["key"], "observedAt": r["observed_at"], "collectedAt": r["collected_at"]} for r in rows[:12]],
+        "items": [
+            {"id": r["key"], "observedAt": r["observed_at"], "collectedAt": r["collected_at"], "kind": r["kind"]}
+            for r in rows[:12]
+        ],
         "hasMore": len(rows) > 12,
         "page": page,
     }
@@ -284,6 +292,7 @@ async def detail(
         status = "disabled"
     return {
         "id": point,
+        "kind": row["kind"],
         "spanId": str(span.id),
         "observedAt": row["observed_at"],
         "collectedAt": row["collected_at"],
