@@ -337,8 +337,13 @@ rollback and cleanup at 100–10,000 devices with 100 apps each and a 10,000-bui
 At 10,000 devices (one million installs), measured selections/rollback took 49–58 seconds
 and three transitions retained about 500 MB of assessment JSON alone. These are local
 samples, not production capacity guarantees.
-First-pass latency varies; concurrent ingest/readers, larger corpus diversity, long ID
-arrays, WAL and backup duration remain unmeasured at scale. Assessment holds a tenant lock
+A later 1,000-device run took 144 seconds on first selection, 141 seconds of which were
+in the installed-app bulk copy; subsequent transitions took about five seconds. A later
+run with explicit planner-statistics refresh took four seconds, but cache/table state
+also changed, so the cause is not isolated. No production query tuning is implied.
+Concurrent ingest, HTTP readers, re-emission and posture capture now have deterministic
+correctness regressions; concurrent latency, larger corpus diversity, long ID arrays,
+WAL and backup duration remain unmeasured at scale. Assessment holds a tenant lock
 until its transaction commits, so a long update can delay another writer for that tenant.
 
 Corpus cleanup preserves historical assertions: the 30-day policy does **not** bound

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.catalog.index import lookup_versions
 from app.catalog.service import refresh_tenant, title_names
 from app.core.auth import require
-from app.core.database import get_db
+from app.core.database import get_db, get_vuln_read_db
 from app.core.permissions import Permission
 from app.core.vuln import VulnCorpus
 from app.core.vuln_answer import counted, served, stored_corpus
@@ -123,7 +123,7 @@ def _assessed_entry_out(
 
 @router.get("", response_model=CatalogListResponse, dependencies=[Depends(require(Permission.APP_READ))])
 async def list_catalog(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_vuln_read_db),
     q: str | None = Query(default=None, max_length=255),
     jamf: Literal["all", "matched", "unmatched"] = Query(default="all"),
     installed_only: bool = Query(default=True, alias="installedOnly"),

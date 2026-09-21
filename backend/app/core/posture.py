@@ -476,8 +476,11 @@ async def _vuln_values(db: AsyncSession, at: datetime) -> dict[str, float]:
     from app.core.config import settings
 
     if settings.vuln_tenant_selection:
-        from app.core.vuln_selection import selected_signature
+        from app.core.vuln_selection import lock_assessment, selected_signature
 
+        # This capture writes historical counts: keep all four vulnerability metrics
+        # on one release until the caller commits the snapshot.
+        await lock_assessment(db)
         epoch = await selected_signature(db)
     else:
         epoch = (await db.execute(select(VulnLibraryEpoch.signature).limit(1))).scalars().first()

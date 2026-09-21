@@ -865,6 +865,12 @@ async def ingest_computer(
     is older than what the ledger already holds for the device, neither layer is
     written. Otherwise the ledger write and process_sync's updates commit together.
     """
+    if settings.vuln_tenant_selection:
+        from app.core.vuln_selection import lock_assessment
+
+        # Take the tenant lock before observation/current-state writes. Reassessment
+        # takes it before updating installed apps; the reverse order can deadlock.
+        await lock_assessment(db)
     observation = canonicalize_computer(raw, sections, quarantined_extension_attributes=quarantined_extension_attributes)
     current = await current_span(
         db,
