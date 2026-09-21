@@ -792,7 +792,7 @@ answer from step 6, and the build (Settings › Support).
 ### Development preview: tenant-selected intelligence (#621)
 
 This applies only when `VULN_TENANT_SELECTION=true`; leave it off in production until
-safe pruning and release validation are complete. All workers must use the same setting.
+retention policy and release validation are complete. All workers must use the same setting.
 
 - **“Intelligence update could not be assessed; this organization's previous answers
   remain selected.”** In `docker compose logs app`, inspect the accompanying database
@@ -825,6 +825,38 @@ unrecorded rather than being reconstructed using today's feed.
 A downgrade message saying **“Assessment history exists … downgrade would lose evidence”**
 is deliberate. Keep the schema or restore a complete pre-upgrade backup. Do not delete
 history to make the downgrade succeed.
+
+### Manual cleanup of unacquired intelligence
+
+Cleanup is optional and never scheduled. It preserves the active library, all acquired
+releases (including rollback options), selections and historical evidence. Commercial
+expiry or disabling sharing does not make a tenant's releases eligible for cleanup.
+
+1. Choose a past cutoff with an explicit timezone. It means **first loaded locally before
+   this time**, not the intelligence source date. Preview from the deployed app image:
+
+   ```bash
+   docker compose exec app uv run --frozen --no-sync --no-dev python -m app.core.vuln_pruning --before 2026-09-01T00:00:00Z
+   ```
+
+2. Read the examined, protected and eligible counts. **Preview only; nothing deleted**
+   means no cleanup was applied. Zero eligible releases can mean every old release is
+   active or acquired; it does not indicate a broken command. The preview takes the
+   corpus import lock but changes no data. Acquisitions can change eligibility afterward.
+3. To remove eligible releases, rerun the command with `--apply`. The command checks
+   protection again and commits all deletions together. No database-owner or RLS bypass
+   privilege is needed beyond the application's normal database role. Run during a quiet
+   period: cleanup waits up to five seconds for database locks and holds the import lock
+   until it finishes; total cleanup duration has not been benchmarked.
+4. **Corpus cleanup failed:** check database connectivity and the configured role's
+   permissions, wait for imports or assessments to finish, and retry the preview. A
+   database error rolls back the cleanup transaction. If the connection was lost during
+   commit, rerun the preview to establish what remains before retrying `--apply`.
+5. If storage keeps growing despite successful cleanup, acquired releases may account for
+   it. Do not delete grants or selected releases to force space reclamation. This command
+   only removes orphaned projections; bounded retention of acquired rollback releases
+   needs a separate policy decision. Logical deletion does not promise an immediate
+   reduction in the database's filesystem size.
 
 ## 6. "The Jamf Patch table is empty, or it stopped refreshing"
 
