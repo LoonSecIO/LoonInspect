@@ -370,7 +370,9 @@ async def download_bundle(url: str, *, transport: httpx.AsyncBaseTransport | Non
     except BlockedCorpusUrl as exc:
         raise CorpusRefused("download_failed", f"the corpus link redirected somewhere this container refuses: {exc}") from exc
     except (httpx.HTTPError, ValueError) as exc:
-        raise CorpusRefused("download_failed", f"the corpus download did not complete: {exc}") from exc
+        # HTTP errors can include the complete presigned URL. Keep only a safe category.
+        reason = f"HTTP {exc.response.status_code}" if isinstance(exc, httpx.HTTPStatusError) else type(exc).__name__
+        raise CorpusRefused("download_failed", f"the corpus download did not complete ({reason})") from None
     return data
 
 

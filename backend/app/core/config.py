@@ -105,6 +105,10 @@ class Settings(BaseSettings):
 
     # Where the daily exchange posts. The default is the production collector; tests
     # and the future api.loonsec.io consolidation point it elsewhere.
+    # Default-off v2 paid client; tenant selection and retention must also be enabled.
+    intelligence_access: bool = False
+    intelligence_endpoint: str = "https://api.loonsec.io"
+
     sharing_endpoint: str = "https://api.loonsec.io/v1/exchange"
 
     # Where the Jamf patch catalog is pulled from (app.mdm.patch.jamf_catalog). The

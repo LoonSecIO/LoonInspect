@@ -509,3 +509,11 @@ Full-sweep monitoring must filter `lockClass=device_sweep` on new events, rather
 than treating every manual completion as a fleet scan. Older events lacking this
 field retain their prior meaning. The targeted read uses the usual inventory,
 change, summary, and run-failure families; no device-event shape changes.
+
+### Paid-access administrator audit actions (#622)
+
+The audit vocabulary adds `intelligence.activated`,
+`intelligence.credential.rotated` and `intelligence.disconnected`, each with
+`target_type: intelligence`. These record successful local administrator changes
+without activation secrets, bearer credentials or capability URLs. No inventory
+envelope, assessment vocabulary or posture key is redefined.

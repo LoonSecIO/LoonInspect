@@ -67,6 +67,10 @@ class AuditAction(StrEnum):
 
     FEATURE_FLAG_UPDATED = "feature-flag.updated"
 
+    INTELLIGENCE_ACTIVATED = "intelligence.activated"
+    INTELLIGENCE_ROTATED = "intelligence.credential.rotated"
+    INTELLIGENCE_DISCONNECTED = "intelligence.disconnected"
+
     SHARING_SETTINGS_UPDATED = "sharing.settings.updated"
     # The AI test box (#319): who sent a prompt where, and how it went. Never the
     # prompt, never the key.

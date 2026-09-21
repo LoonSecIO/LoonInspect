@@ -2047,3 +2047,61 @@ missing Jamf computer, or connection failure keeps the saved inventory and gives
 visible error. Check Settings › Connections for activity and credential status, then
 retry. The run log records the failed `device_refresh` attempt. A missing button means
 the account lacks `device:sync` or the device has no supported Jamf connection.
+
+## Paid intelligence preview (#622)
+
+Settings > Data sharing > Intelligence access separates paid update access from
+upload consent. Activation and rotation are explicit administrator actions; no MDM
+connection license is transmitted, and activation never enables inventory sharing.
+
+- The panel appears only with `INTELLIGENCE_ACCESS=true`,
+  `VULN_RELEASE_RETENTION=true` and `VULN_TENANT_SELECTION=true`. All remain off by
+  default. Enable only for a reviewed pilot after Support's deployed IAM/privacy
+  checks; this is not a v1.x rollout instruction. Configure `INTELLIGENCE_ENDPOINT`
+  as the trusted HTTPS service origin, without a path, credentials or query. The
+  default is `https://api.loonsec.io`; use the operator-confirmed staging/production
+  origin during Support's domain transition. Endpoint redirects are refused.
+- **Activation:** enter the one-time `loon_act_` secret from support. It is sent
+  only with protocol/client version, not inventory or submission identity. The
+  returned paid credential is encrypted using this instance's `ENCRYPTION_KEY` and
+  never returned to the browser. A successful activation immediately attempts a
+  refresh. A lost response can consume the activation without saving its result;
+  obtain a new activation from support rather than repeatedly reusing it.
+- **Rotate credential:** explicitly replaces the saved bearer. A failed replacement
+  preserves the prior local credential, but a lost service response may mean it was
+  retired remotely; ask support for recovery. No automatic rotation is scheduled.
+- **Refresh:** requests only a paid bearer, protocol/client version and stable
+  channel, then downloads/verifies the signed corpus. No contribution UUID, fleet
+  count or MDM field is sent. Scheduled attempts occur at most once per day per
+  tenant while configured; Refresh now retries explicitly. `COMMUNITY_SHARING=false`
+  does not disable paid refresh. `INTELLIGENCE_ACCESS=false` stops paid requests.
+  Keep tenant selection enabled to continue serving acquired paid intelligence;
+  disabling `VULN_TENANT_SELECTION` restores the legacy consent gate and is not
+  the paid-pilot network stop switch.
+- **Expired/revoked/invalid credential:** new updates stop. Contact support about
+  renewal, extension or replacement; local selection, assessments and historical
+  evidence are not deleted. The next refresh observes renewal; do not toggle consent
+  to recover paid access. Last reported access is cached service state, not a
+  continuously verified entitlement.
+- **Service unavailable/invalid reply:** check service configuration and network,
+  then retry. This does not mean expiry, revocation or zero vulnerabilities. Error
+  text never quotes upstream bodies or bearer/capability values.
+- **Download/assessment failed:** check database availability and free storage,
+  then Refresh now. Last completed paid refresh advances only after acquisition
+  and assessment/selection succeed. Previous selections survive failed imports.
+- **Stop paid updates locally:** removes the saved credential and prevents new paid
+  requests. It does not cancel the purchase or erase held intelligence. A request
+  already in flight can finish. Reactivation requires support's activation secret.
+
+The panel distinguishes last attempt, completed paid refresh, selected corpus and
+publisher source timestamp. A recent download is not proof of fresh upstream data;
+unknown applications are not clean and stale findings do not become resolved. The
+existing vulnerability/coverage views retain their assessed-build denominator.
+Never include activation inputs, request headers or signed download URLs in support
+bundles. Losing `ENCRYPTION_KEY` also loses access to saved paid credentials; preserve
+it with the backup as described in operations.md.
+
+Contribution receipt opt-in, withdrawal/re-consent sequencing, migration notice and
+deployed privacy verification remain separate #622/#10 release gates. This preview
+continues legacy contribution exchanges and never opts them into receipts. Both
+routes may deliver the same corpus without sharing their request identities.

@@ -48,6 +48,7 @@ from app.api.devices import router as devices_router
 from app.api.evidence import router as evidence_router
 from app.api.exclusion_ranking import router as exclusion_ranking_router
 from app.api.feature_flags import router as feature_flags_router
+from app.api.intelligence import router as intelligence_router
 from app.api.inventory_summaries import router as inventory_summaries_router
 from app.api.jamf_patch import router as jamf_patch_router
 from app.api.outbox import router as outbox_router
@@ -215,6 +216,19 @@ async def sharing_exchange_tick() -> None:
                 # A failure here must never take the scheduler down with it; the
                 # share log carries the per-attempt record.
                 logger.exception("sharing exchange tick failed", extra={"tenant_id": str(tenant_id)})
+                await db.rollback()
+            try:
+                from app.core.intelligence import refresh as refresh_intelligence
+
+                await refresh_intelligence(db, scheduled=True)
+            except Exception:
+                # Unknown exceptions must not expose paid request details in a traceback.
+                await db.rollback()
+                logger.error(
+                    "Paid intelligence refresh could not complete. Check database availability and service configuration "
+                    "(docs/troubleshooting.md: Paid intelligence preview).",
+                    extra={"tenant_id": str(tenant_id)},
+                )
 
 
 async def hourly_session_cleanup() -> None:
@@ -654,6 +668,7 @@ app.include_router(evidence_router)
 # declaration order, and that dynamic segment would otherwise swallow GET /prompt as an id.
 app.include_router(vulnerabilities_prompt_router)
 app.include_router(exclusion_ranking_router)
+app.include_router(intelligence_router)
 app.include_router(vulnerabilities_router)
 
 

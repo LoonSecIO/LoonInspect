@@ -827,6 +827,10 @@ class DataSharingSettings(Base):
 
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(primary_key=True)
 
+    # Paid delivery is independent of tier. Never read connection license fields.
+    intelligence_credential: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
+    intelligence_status: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+
     # off | keys | reveal — app.schemas.system.SharingTier is the source of truth.
     #
     # Default "off", and it used to be "reveal". The wizard's pre-checked box is still

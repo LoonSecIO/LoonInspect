@@ -1,3 +1,4 @@
+import { IntelligenceAccess } from "@/features/system/IntelligenceAccess";
 import { useEffect, useRef, useState } from "react";
 import { Download, RefreshCw, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -235,6 +236,8 @@ export function DataSharingPage() {
         <h1 className="text-2xl font-bold tracking-tight">{t.nav.dataSharing}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{t.system.sharing.pageDescription}</p>
       </div>
+
+      <IntelligenceAccess canWrite={canWrite} />
 
       {settings.envDisabled && (
         <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
