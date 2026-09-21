@@ -799,6 +799,17 @@ release validation is complete. All workers must use the same setting.
   error. Check database connectivity and free storage, then use **Settings › Data Sharing
   › Send now** to retry. The accepted contribution receipt is already saved. The prior
   selected corpus and its date keep answering; a newer download alone does not select it.
+- **Inventory, re-emission or posture capture waits during an update:** the preview
+  serializes these writers with corpus assessment for the organization. Let the current
+  update finish and check database activity, free storage and the container logs if it
+  stalls. Local tests have observed a 144-second first assessment at 1,000 synthetic
+  devices, mostly in the installed-app copy statement; see the
+  [validation record](vulnerability-scale-validation.md#concurrent-correctness-and-latency-follow-up).
+  This is not an expected production duration or a timeout recommendation. Avoid repeated
+  manual refreshes while diagnosing a slow pass. Read-only vulnerability pages keep one
+  committed answer/date snapshot per request; reloading after a successful update shows
+  the new release. A re-emit can cross releases between batches, but each event's date
+  must agree with its answers. Report mixed pairs with the build and operation time.
 - **No assessment after enabling the preview:** use **Devices › Applications › Catalog
   › Refresh** to assess a migration-granted release. If this organization had no grant,
   use its permitted contribution exchange first. Another organization's download does
