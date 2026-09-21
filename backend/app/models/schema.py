@@ -2090,7 +2090,8 @@ class DeviceHistoryPoint(Base):
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     device_id: Mapped[int] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"))
     span_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("observation_spans.id", ondelete="CASCADE"), index=True)
-    source_id: Mapped[int] = mapped_column(Integer, unique=True)
+    # NULL is an assessment of held inventory, not a fabricated new source event.
+    source_id: Mapped[int | None] = mapped_column(Integer, unique=True, nullable=True)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     assessment: Mapped[dict] = mapped_column(JSONB)

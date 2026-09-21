@@ -1,6 +1,7 @@
 import { apiRequest } from "@/config/api";
 
 export interface HistoryPoint {
+  kind?: "inventory" | "assessment";
   id: string;
   observedAt: string;
   collectedAt: string;
@@ -37,6 +38,20 @@ export interface HistoryDetail extends HistoryPoint {
     covered: number;
     outside: number;
     corpus: string[];
+    vulnerabilityEvidence?: {
+      releaseDigest: string;
+      corpusAsOf: string;
+      builds: {
+        keyFull: string;
+        name: string;
+        version: string;
+        assessment: "covered" | "unknown_app";
+        counts: { total: number } | null;
+        ids: string[] | null;
+        idsTruncated: boolean | null;
+        evaluatedAt: string | null;
+      }[];
+    };
   } | null;
   summary: {
     status: string;

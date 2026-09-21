@@ -108,3 +108,32 @@ removing this feature's saved history/preferences. Reverting the application ima
 the additive tables in place. Back up the database before deployment; do not reset its volumes.
 
 posture_snapshot: none
+
+## Tenant-selected assessment evidence (#621 preview)
+
+With `VULN_TENANT_SELECTION=true`, new inventory history points also retain per-build
+answers: content keys and reported version, release digest/as-of, evaluation clock,
+uncapped counts, the supplied IDs and their truncation flag, and publication-date
+aggregates. The device observation clock remains on the history point. Old points are
+not rewritten or evaluated against today's corpus; the retained-event importer never
+attaches current provenance to a historical receipt.
+
+A release change appends an **assessment** point against the last recorded application
+observation. It is not a new inventory observation, an AI summary or a remediation claim.
+It has no source event ID. The history view labels its assessment time separately and
+exposes the saved evidence. Correction and rollback append new assertions; earlier ones
+remain readable. Missing coverage keeps counts absent, and a truncated list stays marked
+incomplete. A device with no recorded application observation receives no invented point.
+
+Selection, current answers and their history entries commit together. If evidence cannot
+be saved, the new release is not selected. Repeating the selection, refreshing only an
+evaluation clock, and unchanged sweeps do not add another receipt. Release transitions
+process up to 100 devices per batch in the transaction; this is a memory bound, not a
+large-fleet performance claim. Tenant isolation and existing observation/device deletion
+policies apply to these same history rows. They retain their evidence independently of
+later corpus cleanup; they do not pin whole corpus bytes forever.
+
+Migration `c621f4a8e902` permits a null source ID and changes no existing row. Downgrade
+refuses while assessment-only points exist, rather than deleting evidence. Keep the
+schema or restore a complete pre-upgrade backup; do not remove history to force a downgrade.
+The preview remains disabled by default pending safe pruning and release validation.

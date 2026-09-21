@@ -792,7 +792,7 @@ answer from step 6, and the build (Settings › Support).
 ### Development preview: tenant-selected intelligence (#621)
 
 This applies only when `VULN_TENANT_SELECTION=true`; leave it off in production until
-historical evidence and safe pruning are complete. All workers must use the same setting.
+safe pruning and release validation are complete. All workers must use the same setting.
 
 - **“Intelligence update could not be assessed; this organization's previous answers
   remain selected.”** In `docker compose logs app`, inspect the accompanying database
@@ -810,6 +810,21 @@ historical evidence and safe pruning are complete. All workers must use the same
   affected operation, preserve the logs, and contact support. Restore a known complete
   database backup if reference data was removed; do not delete pointers or substitute
   another organization's grant. No automatic pruning is enabled in this preview.
+
+Assessment-only entries in **Devices › Device history** keep the last inventory observation
+time and show a separate assessment time. They do not mean the device checked in again
+or a finding was remediated. Expand **Recorded assessment evidence** for the release and
+per-build counts/clocks; incomplete ID lists are explicitly marked.
+
+If an intelligence update fails while saving assessment history, check the container log
+and database connectivity/free storage, then retry **Send now**. History and answers roll
+back together with selection; the previous release keeps answering. An unchanged sweep
+should not add another identical assessment. Older observations without provenance remain
+unrecorded rather than being reconstructed using today's feed.
+
+A downgrade message saying **“Assessment history exists … downgrade would lose evidence”**
+is deliberate. Keep the schema or restore a complete pre-upgrade backup. Do not delete
+history to make the downgrade succeed.
 
 ## 6. "The Jamf Patch table is empty, or it stopped refreshing"
 

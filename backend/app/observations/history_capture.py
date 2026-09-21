@@ -2,6 +2,7 @@
 
 from sqlalchemy import select, update
 
+from app.core.config import settings
 from app.models.schema import DeviceHistoryPoint, ObservationSpan
 from app.summaries.evidence import compact, digest
 
@@ -51,27 +52,45 @@ async def capture(db, *, device, event):
     )
     if span is None:
         return
+    evidence = None
+    if settings.vuln_tenant_selection and "app" in event.payload and "applications" in span.section_digests:
+        from app.core.vuln_selection import selected_signature
+        from app.observations.assessment_evidence import build_evidence
+
+        signature = await selected_signature(db)
+        if signature is not None:
+            evidence = (await build_evidence(db, [device.id], signature))[device.id]
     return await capture_at(
-        db, device=device, event=event, span=span, observed_at=span.last_observed_at, last_check_in=device.last_check_in
+        db,
+        device=device,
+        event=event,
+        span=span,
+        observed_at=span.last_observed_at,
+        last_check_in=device.last_check_in,
+        evidence=evidence,
     )
 
 
-async def capture_at(db, *, device, event, span, observed_at, last_check_in=None):
+async def capture_at(db, *, device, event, span, observed_at, last_check_in=None, evidence=None):
     if await db.scalar(select(DeviceHistoryPoint.id).where(DeviceHistoryPoint.source_id == event.id)):
         return None
     assessment = assessment_totals(event.payload)
     assessment["evidenceDigest"] = digest(compact(event.payload))
+    if evidence is not None:
+        assessment["vulnerabilityEvidence"] = evidence
     prior = await db.scalar(
         select(DeviceHistoryPoint)
         .where(DeviceHistoryPoint.device_id == device.id, DeviceHistoryPoint.collected_at <= event.created_at)
         .order_by(DeviceHistoryPoint.collected_at.desc(), DeviceHistoryPoint.id.desc())
         .limit(1)
     )
-    prior_evidence = {k: v for k, v in prior.assessment.items() if k != "lastCheckIn"} if prior else None
+    from app.observations.assessment_evidence import comparable
+
+    prior_evidence = comparable(prior.assessment) if prior else None
     if (
         prior
         and prior.span_id == span.id
-        and prior_evidence == assessment
+        and prior_evidence == comparable(assessment)
         and (not last_check_in or "lastCheckIn" in prior.assessment)
     ):
         return  # Quiet sweeps do not create another historical receipt.
@@ -91,6 +110,8 @@ async def capture_at(db, *, device, event, span, observed_at, last_check_in=None
 
 
 async def retain_summary(db, source_id, status, summary=None, provider=None, reason=None):
+    if source_id is None:
+        return  # A reassessment has no inventory source or corresponding AI summary.
     # Exact source receipt, never nearest timestamp: sweep time and inventory time differ.
     await db.execute(
         update(DeviceHistoryPoint)
