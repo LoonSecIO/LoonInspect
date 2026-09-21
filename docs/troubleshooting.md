@@ -792,7 +792,7 @@ answer from step 6, and the build (Settings › Support).
 ### Development preview: tenant-selected intelligence (#621)
 
 This applies only when `VULN_TENANT_SELECTION=true`; leave it off in production until
-retention policy and release validation are complete. All workers must use the same setting.
+release validation is complete. All workers must use the same setting.
 
 - **“Intelligence update could not be assessed; this organization's previous answers
   remain selected.”** In `docker compose logs app`, inspect the accompanying database
@@ -852,11 +852,29 @@ expiry or disabling sharing does not make a tenant's releases eligible for clean
    permissions, wait for imports or assessments to finish, and retry the preview. A
    database error rolls back the cleanup transaction. If the connection was lost during
    commit, rerun the preview to establish what remains before retrying `--apply`.
-5. If storage keeps growing despite successful cleanup, acquired releases may account for
-   it. Do not delete grants or selected releases to force space reclamation. This command
-   only removes orphaned projections; bounded retention of acquired rollback releases
-   needs a separate policy decision. Logical deletion does not promise an immediate
-   reduction in the database's filesystem size.
+5. For the agreed **30-day acquisition policy**, add `--retire-acquisitions` to the preview,
+   inspect its additional acquisition counts, then add `--apply` to perform it. Without
+   this extra flag the command continues to remove only orphans. All workers must be on
+   the new version before retirement. Example preview:
+
+   ```bash
+   docker compose exec app uv run --frozen --no-sync --no-dev python -m app.core.vuln_pruning --before 2026-09-01T00:00:00Z --retire-acquisitions
+   ```
+
+   Only acquisitions older than **both 30 days and the supplied cutoff** can be retired.
+   Current and immediately previous selected releases remain protected, even after expiry
+   or consent withdrawal. The active global library also stays. Acquisitions and orphaned
+   bytes are cleaned in one transaction; historical assessments are not deleted.
+6. **An old acquisition stays protected:** its tenant may still need the current or previous
+   selection. An upgraded selection with no recorded previous digest conservatively keeps
+   all acquisitions until a successful transition records the pair; nothing is guessed from
+   download order. A first-ever selection uses that same conservative rule. Another tenant
+   may also still need the shared bytes after your tenant's acquisition is retired.
+7. **A retired release cannot be selected:** complete a new authorized delivery before
+   using it again. Shared local storage is not a grant. Historical assessment evidence still
+   shows what that release reported, but it cannot reassess new inventory without the corpus.
+   If a failed cleanup or lost connection makes the result uncertain, preview again before
+   retrying. Logical deletion does not promise an immediate reduction in database file size.
 
 ## 6. "The Jamf Patch table is empty, or it stopped refreshing"
 

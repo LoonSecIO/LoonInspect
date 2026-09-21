@@ -85,7 +85,7 @@ async def test_only_existing_contributors_acquire_current_projection_without_inv
                 sync.execute(text("SELECT set_config('looninspect.tenant_id', :tenant, true)"), {"tenant": str(tenant)})
                 grants = sync.execute(select(VulnCorpusAcquisition.signature, VulnCorpusAcquisition.basis)).all()
                 assert grants == ([(current, "legacy_consent")] if installed and tier in ("keys", "reveal") else [])
-                assert sync.execute(select(VulnCorpusSelection)).first() is None
+                assert sync.execute(select(VulnCorpusSelection.signature)).first() is None
                 assert sync.scalar(select(DataSharingSettings.tier)) == tier
             if installed:
                 assert set(sync.execute(select(VulnCorpusRelease.signature)).scalars()) == {SIGNATURE, current}
