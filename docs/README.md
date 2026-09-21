@@ -57,10 +57,13 @@ ends with a reading order through the rest.
 
 | Document | Status | What it says |
 | --- | --- | --- |
-| [`vulnerability-service-v2.md`](vulnerability-service-v2.md) | default-off preview; 30-day rollback retention (#621) | Contribute-or-pay access, retained tenant corpora, explicit submissions, ownership and release gates. |
+| [`vulnerability-service-v2.md`](vulnerability-service-v2.md) | default-off preview; local scale baseline (#621) | Contribute-or-pay access, retained tenant corpora, explicit submissions, ownership and release gates. |
 | [`mobile-devices.md`](mobile-devices.md) | scope ruled, 2026-09-01 | v0 is computers only; what mobile would add, and where the boundary is drawn. |
 | [`v-never.md`](v-never.md) | standing | Capabilities this product will not grow, with the reason attached. |
 
 `README.md` — this index — is the only file in `docs/` not listed above.
 `backend/tests/test_docs_index.py` fails if a document is added without a line here, or if
 a line here points at a file that does not exist.
+
+The [tenant corpus scale record](vulnerability-scale-validation.md) documents the synthetic
+#621 measurements, reproduction commands and remaining production-validation limits.
