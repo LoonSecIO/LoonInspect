@@ -800,10 +800,17 @@ class VulnCorpusSelection(Base):
             ondelete="RESTRICT",
             name="fk_vuln_selection_acquisition",
         ),
+        ForeignKeyConstraint(
+            ["tenant_id", "previous_signature"],
+            ["vuln_corpus_acquisitions.tenant_id", "vuln_corpus_acquisitions.signature"],
+            ondelete="RESTRICT",
+            name="fk_vuln_previous_acquisition",
+        ),
     )
 
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(primary_key=True)
     signature: Mapped[str] = mapped_column(String(64))
+    previous_signature: Mapped[str | None] = mapped_column(String(64), nullable=True)
     selected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
 
 

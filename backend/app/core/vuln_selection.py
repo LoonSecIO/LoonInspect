@@ -42,6 +42,7 @@ async def record_acquisition(db: AsyncSession, signature: str) -> bool:
     never discovered as a grant by a read path.
     """
     tenant = _tenant(db)
+    await db.execute(select(Tenant.id).where(Tenant.id == tenant).with_for_update(key_share=True))
     if await db.scalar(select(VulnCorpusRelease.signature).where(VulnCorpusRelease.signature == signature)) is None:
         raise CorpusSelectionRefused(
             "The requested corpus release has not been retained. Check corpus storage and retry the download before selecting it."
@@ -88,15 +89,22 @@ async def select_after_assessment(
                 "This organization has not acquired the requested corpus release. Check its update access and "
                 "complete delivery before selecting the release."
             )
-        if await selected_signature(db) == signature:
+        previous = await selected_signature(db)
+        if previous == signature:
             return False
         await assess(db, signature)
         await db.flush()
-        statement = insert(VulnCorpusSelection).values(tenant_id=tenant, signature=signature, selected_at=datetime.now(UTC))
+        statement = insert(VulnCorpusSelection).values(
+            tenant_id=tenant, signature=signature, previous_signature=previous, selected_at=datetime.now(UTC)
+        )
         await db.execute(
             statement.on_conflict_do_update(
                 index_elements=["tenant_id"],
-                set_={"signature": statement.excluded.signature, "selected_at": statement.excluded.selected_at},
+                set_={
+                    "signature": statement.excluded.signature,
+                    "previous_signature": statement.excluded.previous_signature,
+                    "selected_at": statement.excluded.selected_at,
+                },
             )
         )
     return True

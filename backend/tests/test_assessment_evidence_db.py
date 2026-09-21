@@ -283,3 +283,32 @@ async def test_no_application_observation_means_no_fabricated_assessment_point(d
     await capture_release_transition(db, SIGNATURE)
     assert len(await points(db, observed.id)) == 1
     await db.rollback()
+
+
+async def test_retiring_old_acquisition_preserves_its_historical_assertion(db, observed):
+    from datetime import timedelta
+
+    from sqlalchemy import update
+
+    from app.core.vuln_pruning import prune_releases
+    from app.models.schema import VulnCorpusAcquisition, VulnCorpusRelease
+
+    device_id = observed.id
+    (first,) = await points(db, device_id)
+    original = deepcopy(first.assessment)
+    for stamp in ("2026-09-11T20:00:00Z", "2026-09-12T20:00:00Z"):
+        bundle, signature = _rewritten(rows=[], manifest={"asof": stamp})
+        await load_epoch_if_new(db, _pointer(signature), transport=_serving(bundle))
+        await record_acquisition(db, signature)
+        await assess_and_select(db, signature)
+        await db.commit()
+    await db.execute(update(VulnCorpusAcquisition).values(acquired_at=datetime.now(UTC) - timedelta(days=60)))
+    await db.commit()
+    result = await prune_releases(db, before=datetime.now(UTC), apply=True, retire_acquisitions=True)
+    await db.commit()
+    assert result["deleted"] == result["acquisitionsRetired"] == 1
+    db.expire_all()
+    assert await db.get(VulnCorpusRelease, SIGNATURE) is None
+    saved = await points(db, device_id)
+    assert len(saved) == 3 and saved[0].assessment == original
+    assert saved[0].assessment["vulnerabilityEvidence"]["releaseDigest"] == SIGNATURE

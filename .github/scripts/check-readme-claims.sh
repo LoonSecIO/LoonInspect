@@ -213,6 +213,7 @@ RETENTION_NOT_A_CLOCK=(
   # Explicit CLI cleanup only: model iterates orphan corpus rows, titles and releases.
   # No scheduled age policy; an operator supplies the cutoff and --apply.
   backend/app/core/vuln_pruning.py:model
+  backend/app/core/vuln_pruning.py:VulnCorpusAcquisition
   # Replace-on-refresh: the rows come straight back from the next read of the source.
   backend/app/catalog/index.py:AppCatalogVersion
   backend/app/catalog/service.py:AppCatalogTitleMatch
