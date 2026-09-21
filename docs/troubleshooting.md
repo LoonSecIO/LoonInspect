@@ -459,6 +459,13 @@ the run `jobID`, the token's index settings, and the search you ran.
      (`keep_alive_timeout_seconds` is `KEEP_ALIVE_TIMEOUT_SECONDS`) and the one after says
      what it accepts and why. Correct it where it is set — for the shipped stack, the
      `.env` beside `docker-compose.yml` — then `docker compose up -d`.
+   - upgrading through `e621c4a8b903` and startup takes longer → this migration builds
+     the installed-app tenant/device index before removing the older tenant-only index.
+     It blocks writes during the transactional build, even with the vulnerability
+     preview off. Schedule a maintenance window and allow space for both indexes during
+     replacement. Check `docker compose logs db` for storage errors or lock waits; let
+     the build finish rather than repeatedly restarting it. If it fails, keep the logs
+     and follow the migration-failure step below; do not remove indexes by hand.
    - an Alembic error → the migration on startup failed. Do not downgrade by hand
      ([`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) §6); reportable **F**.
 3. **Healthy, signed in, and Settings › Connections says it could not load.**

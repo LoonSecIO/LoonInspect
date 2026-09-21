@@ -262,6 +262,9 @@ class InstalledApp(Base):
     __tablename__ = "installed_apps"
 
     __table_args__ = (
+        # Match tenant RLS and device lookups together. Separate indexes can rebuild
+        # the whole tenant bitmap per device when planner row estimates are low (#621).
+        Index("ix_installed_apps_tenant_device", "tenant_id", "device_id"),
         # `GET /api/devices?vuln=` asks which Macs carry a finding (#535) — a semi-join over
         # the largest table in the schema. The key is the gate `vuln_answer.served` applies,
         # `ix_app_catalog_vuln_served`'s sibling one grain down, with `device_id` leading
@@ -279,7 +282,7 @@ class InstalledApp(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column()
     # device_id is the primary access path to this table — `process_sync` reads one
     # device's apps twice per device — and it is the largest table in the schema at
     # ~100 rows per device. Without the index that read is a parallel seq scan over
