@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.context import get_request_id
 from app.core.outbox import enqueue_event
 from app.core.runs import RunReclaimed, beat, event_time
@@ -149,7 +150,10 @@ async def re_emit_connection(
 
     Commits per batch, so a re-emit of a large fleet is visible in the outbox while it is
     still enqueueing rather than landing as one transaction hours later; the run's
-    heartbeat rides the same cadence, and a reclaim mid-flight stops the loop (`beat`
+    heartbeat rides the same cadence, including batches with skipped devices. In the
+    tenant-selection preview, each batch holds the assessment lock so its release date
+    and answers agree; ingest and selection can proceed between batches. A reclaim
+    mid-flight stops the loop (`beat`
     raises `RunReclaimed`), which propagates — the caller closes nothing over a verdict
     the reclaim already wrote.
     """
@@ -162,13 +166,27 @@ async def re_emit_connection(
     await run_log(
         db, run, "info", "re-emit started", devices=len(device_ids), destinationID=destination_id, comparison=run.comparison
     )
-    corpus = await earned_corpus(db)
+    corpus = None
     title_names = cached_title_names()
     title_detection = cached_title_detection()
     source = instance_label(connection.base_url)
     processed = skipped = failed = 0
 
     for index, device_id in enumerate(device_ids, start=1):
+        if index > 1 and (index - 1) % _BATCH == 0:
+            await db.commit()
+            await beat(db, run)
+            await run_log(
+                db, run, "info", "re-emit progress", enqueued=processed, skipped=skipped, failed=failed, of=len(device_ids)
+            )
+        if index == 1 or (settings.vuln_tenant_selection and (index - 1) % _BATCH == 0):
+            if settings.vuln_tenant_selection:
+                from app.core.vuln_selection import lock_assessment
+
+                # Outbox writes share this transaction: serialize each batch with
+                # assessment, then reload metadata after every batch commit.
+                await lock_assessment(db)
+            corpus = await earned_corpus(db)
         device = await db.get(Device, device_id)
         if device is None:
             skipped += 1
@@ -197,7 +215,7 @@ async def re_emit_connection(
                 occurred_at=occurred_at,
                 device_meta=_device_meta(device),
                 # The answers stored on this device's own rows (#381). The gate above is
-                # read once for the whole run; this is a dictionary over the rows just
+                # read per batch in the preview (once per run otherwise), over the rows just
                 # loaded, so a re-emit of forty thousand devices still derives nothing per
                 # device and asks the corpus nothing per app.
                 corpus=stored_corpus(corpus, apps),
@@ -213,12 +231,6 @@ async def re_emit_connection(
         except Exception:
             failed += 1
             logger.exception("re-emit: device skipped", extra={"device_id": device_id, "run_id": str(run.id)})
-        if index % _BATCH == 0:
-            await db.commit()
-            await beat(db, run)
-            await run_log(
-                db, run, "info", "re-emit progress", enqueued=processed, skipped=skipped, failed=failed, of=len(device_ids)
-            )
 
     await db.commit()
     await run_log(db, run, "info", "re-emit finished", enqueued=processed, skipped=skipped, failed=failed, of=len(device_ids))

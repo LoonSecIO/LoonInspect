@@ -9,6 +9,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from fastapi import Depends
 from sqlalchemy import event, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -129,6 +130,20 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     session = _session_factory(info={"tenant_id": str(tenant_id)} if tenant_id else None)
     async with session:
         yield session
+
+
+async def get_vuln_read_db(db: AsyncSession = Depends(get_db)) -> AsyncGenerator[AsyncSession, None]:
+    """Snapshot for authenticated read-only vulnerability routes in the v2 preview.
+
+    Authentication uses the ordinary session and may persist last-seen bookkeeping.
+    Finish that transaction before starting the route's repeatable read on the same
+    pooled session: metadata, filters, totals and rows then see one committed release
+    without blocking its writer or borrowing a second connection per request.
+    """
+    if settings.vuln_tenant_selection:
+        await db.commit()
+        await db.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+    yield db
 
 
 async def ping() -> None:

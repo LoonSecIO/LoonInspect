@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.catalog.service import title_names
 from app.core.audit import AuditAction, audit
 from app.core.auth import Principal, current_principal, require
-from app.core.database import get_db
+from app.core.database import get_db, get_vuln_read_db
 from app.core.egress import BlockedBaseUrl, validate_mdm_base_url
 from app.core.permissions import Permission
 from app.core.vuln import VulnCorpus
@@ -204,7 +204,7 @@ def _version_matches(device_version: str | None, operator: VersionOperator, valu
 
 @router.get("", response_model=DeviceListResponse)
 async def list_devices(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_vuln_read_db),
     q: str | None = Query(default=None),
     os_version: str | None = Query(default=None, alias="osVersion"),
     os_version_operator: VersionOperator = Query(default=VersionOperator.eq, alias="osVersionOperator"),
@@ -451,7 +451,7 @@ async def get_device_observation(device_id: int, db: AsyncSession = Depends(get_
 
 
 @router.get("/{device_id}", response_model=DeviceDetailOut)
-async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> DeviceDetailOut:
+async def get_device(device_id: int, db: AsyncSession = Depends(get_vuln_read_db)) -> DeviceDetailOut:
     result = await db.execute(
         select(Device).where(Device.id == device_id).options(selectinload(Device.apps), selectinload(Device.extension_attributes))
     )
