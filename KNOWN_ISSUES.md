@@ -340,7 +340,14 @@ samples, not production capacity guarantees.
 A later 1,000-device run took 144 seconds on first selection, 141 seconds of which were
 in the installed-app bulk copy; subsequent transitions took about five seconds. A later
 run with explicit planner-statistics refresh took four seconds, but cache/table state
-also changed, so the cause is not isolated. No production query tuning is implied.
+also changed, so the cause is not isolated. A later execution-plan investigation found
+repeated tenant-index bitmap scans. Replacing the tenant-only installed-app index with
+`(tenant_id, device_id)` reduced fresh 1,000-device selections from 24.9/39.0 seconds to
+5.3/6.0 seconds in local samples. The exact 144-second case remains unproven. The index
+migration blocks writes during its build and needs an upgrade maintenance window and
+space for both indexes during replacement; it runs even when the preview is off.
+A fresh million-install diagnostic run with the replacement still took 65–83 seconds
+per transition. Other planner estimates remain poor; this is not a general latency fix.
 Concurrent ingest, HTTP readers, re-emission and posture capture now have deterministic
 correctness regressions; concurrent latency, larger corpus diversity, long ID arrays,
 WAL and backup duration remain unmeasured at scale. Assessment holds a tenant lock

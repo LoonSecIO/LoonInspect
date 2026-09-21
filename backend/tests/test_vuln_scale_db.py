@@ -151,12 +151,12 @@ async def test_synthetic_assessment_rollback_cleanup(db, observed):
 
     try:
         keys = await measure("seed", seed)
+        # Verify the fixture without timing a separate join-planning exercise.
+        # The production assessment and evidence queries below remain unchanged.
+        seeded_ids = list(await db.scalars(select(Device.id).where(Device.mdm_connection_id == connection_id)))
+        assert len(seeded_ids) == devices
         assert (
-            await db.scalar(
-                select(func.count())
-                .select_from(InstalledApp)
-                .where(InstalledApp.device_id.in_(select(Device.id).where(Device.mdm_connection_id == connection_id)))
-            )
+            await db.scalar(select(func.count()).select_from(InstalledApp).where(InstalledApp.device_id.in_(seeded_ids)))
             == devices * 100
         )
         # 90 covered builds per device and ten unknown; the remaining corpus is unused.
@@ -206,6 +206,9 @@ async def test_synthetic_assessment_rollback_cleanup(db, observed):
         assert await db.scalar(select(func.count()).select_from(DeviceHistoryPoint)) == baseline + devices * 3
         peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         report["python_peak_rss_mib"] = round(peak / (1024**2 if sys.platform == "darwin" else 1024), 1)
+        report["tenant_device_index_bytes_after_cleanup"] = await db.scalar(
+            text("SELECT pg_relation_size(to_regclass('ix_installed_apps_tenant_device'))")
+        )
         print("VULN_SCALE_RESULT=" + json.dumps(report, sort_keys=True))
     finally:
         await db.rollback()
