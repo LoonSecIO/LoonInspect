@@ -325,18 +325,26 @@ twice the design target. At the design target a day's pass is under 20,000 and c
 half the table. The case that carries more than one day is a week of skipped or refused
 censuses followed by a clean one, which closes every cohort whose tail ran out meanwhile.
 
-## 9. Development corpus retention has no pruning yet (#621)
+## 9. Tenant corpus updates retain growing evidence and need production validation (#621)
 
-The default-off `VULN_RELEASE_RETENTION` storage foundation retains each distinct imported
-corpus projection when enabled. There is no cleanup schedule yet; database and backup
-size therefore grow with retained releases. Even while disabled, the additive migration
-keeps one copy of the installed projection. Leave continued retention disabled in
-production until tenant selection and safe pruning are implemented. Turning it off does
-not delete retained data. No production corpus-size or retention-growth figure has been
-measured for this feature; do not infer one from the small test fixture.
+The default-off v2 preview now supports tenant-selected intelligence, historical evidence,
+rollback pairs and manual cleanup. Current and previous selected releases stay protected;
+additional acquisitions may be retired after 30 days. There is no automatic cleanup, and
+turning the feature off does not delete data. Production activation remains pending.
 
-This does not yet change expiry behavior, consent gates or which corpus answers a tenant.
-See [the foundation boundary](docs/vulnerability-service-v2.md#11-storage-foundation-621-first-slice).
+The [synthetic scale record](docs/vulnerability-scale-validation.md) measures reassessment,
+rollback and cleanup at 100–10,000 devices with 100 apps each and a 10,000-build corpus.
+At 10,000 devices (one million installs), measured selections/rollback took 49–58 seconds
+and three transitions retained about 500 MB of assessment JSON alone. These are local
+samples, not production capacity guarantees.
+First-pass latency varies; concurrent ingest/readers, larger corpus diversity, long ID
+arrays, WAL and backup duration remain unmeasured at scale. Assessment holds a tenant lock
+until its transaction commits, so a long update can delay another writer for that tenant.
+
+Corpus cleanup preserves historical assertions: the 30-day policy does **not** bound
+history storage. A new selected release records provenance even when its answers did not
+change. Size evidence separately from retained corpus bytes, including indexes and backups;
+do not infer fleet data expiry from payment expiry or corpus retention.
 
 ## Checked, and not an issue
 
