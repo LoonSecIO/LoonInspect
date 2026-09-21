@@ -10,11 +10,12 @@ import json
 import os
 import resource
 import sys
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from time import perf_counter
 
 import pytest
-from sqlalchemy import delete, func, insert, select, true, update
+from sqlalchemy import delete, event, func, insert, select, text, true, update
 
 from app.catalog.service import record_device_apps
 from app.core.content_keys import app_full_key, app_title_key
@@ -26,7 +27,7 @@ from app.models.schema import AppCatalogEntry, Device, DeviceHistoryPoint, Insta
 from app.observations.assessment_evidence import capture_release_transition
 from tests.test_assessment_evidence_db import observed  # noqa: F401
 from tests.test_device_observation_db import connection  # noqa: F401
-from tests.test_vuln_answer_db import NOW, _statements, acting_tenant, fleet  # noqa: F401
+from tests.test_vuln_answer_db import NOW, acting_tenant, fleet  # noqa: F401
 from tests.test_vuln_library import _rewritten, _row
 from tests.test_vuln_library_db import _pointer, _serving, empty, foreign_tenant  # noqa: F401
 from tests.test_vuln_retention_db import retained  # noqa: F401
@@ -34,6 +35,28 @@ from tests.test_vuln_selected_serving_db import selected  # noqa: F401
 from tests.test_vuln_selection_db import pytestmark
 
 pytestmark = [*pytestmark, pytest.mark.skipif(os.environ.get("RUN_VULN_SCALE") != "1", reason="opt-in scale measurement")]
+
+
+@contextmanager
+def _sql_timings():
+    """Synthetic benchmark timings include cursor execution and transport, not ORM work."""
+    from app.core.database import engine
+
+    timings = []
+
+    def before(conn, cursor, statement, parameters, context, executemany):
+        context._scale_started = perf_counter()
+
+    def after(conn, cursor, statement, parameters, context, executemany):
+        timings.append((" ".join(statement.split())[:120], perf_counter() - context._scale_started))
+
+    event.listen(engine.sync_engine, "before_cursor_execute", before)
+    event.listen(engine.sync_engine, "after_cursor_execute", after)
+    try:
+        yield timings
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", before)
+        event.remove(engine.sync_engine, "after_cursor_execute", after)
 
 
 async def test_synthetic_assessment_rollback_cleanup(db, observed):
@@ -45,10 +68,19 @@ async def test_synthetic_assessment_rollback_cleanup(db, observed):
 
     async def measure(name, operation):
         start = perf_counter()
-        with _statements() as statements:
+        with _sql_timings() as statements:
             result = await operation()
             await db.commit()
-        report["phases"][name] = {"seconds": round(perf_counter() - start, 3), "sql_statements": len(statements)}
+        report["phases"][name] = {
+            "seconds": round(perf_counter() - start, 3),
+            "sql_statements": len(statements),
+            "cursor_seconds": round(sum(elapsed for _, elapsed in statements), 3),
+            "slowest_statements": [
+                {"sql_prefix": sql, "seconds": round(elapsed, 3)}
+                for sql, elapsed in sorted(statements, key=lambda item: item[1], reverse=True)[:3]
+            ],
+        }
+        print("VULN_SCALE_PHASE=" + json.dumps({"phase": name, **report["phases"][name]}, sort_keys=True), flush=True)
         return result
 
     async def seed():
@@ -142,6 +174,12 @@ async def test_synthetic_assessment_rollback_cleanup(db, observed):
         # Keep B active globally so the unused release is genuinely collectible.
         bundle, signature = releases[1]
         await load_epoch_if_new(db, _pointer(signature), transport=_serving(bundle))
+        report["analyze_before_selection"] = os.environ.get("VULN_SCALE_ANALYZE") == "1"
+        if report["analyze_before_selection"]:
+            # Diagnostic comparison only, outside the timed assessment. Production
+            # must not depend on this test's manual planner-statistics maintenance.
+            await db.execute(text("ANALYZE installed_apps, devices, app_catalog"))
+            await db.commit()
         baseline = await db.scalar(select(func.count()).select_from(DeviceHistoryPoint))
         for label, index in (("select_a", 0), ("select_b", 1), ("rollback_a", 0)):
             await measure(label, lambda i=index: assess_and_select(db, releases[i][1]))
