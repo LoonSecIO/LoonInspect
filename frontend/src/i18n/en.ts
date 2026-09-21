@@ -1,6 +1,20 @@
 import { historyEnglish } from "@/features/devices/historyCopy";
 export const en = {
   deviceHistory: historyEnglish,
+  intelligence: {
+    title: "Intelligence access", description: "Paid access works without sharing inventory. Activation never changes your sharing choice.",
+    state: "Last reported access", credential: "Stored credential", present: "Present (redacted)", none: "Not available",
+    until: "Updates authorized until", attempt: "Last update attempt", refresh: "Last completed paid refresh",
+    source: "Selected source as of", selected: "Selected corpus", activation: "One-time activation secret",
+    activate: "Activate and refresh", refreshNow: "Refresh now", rotate: "Rotate credential", disconnect: "Stop paid updates locally",
+    freshness: "A recent refresh does not prove the publisher's data is current. Unknown applications are not clean; held assessments remain usable when updates stop.",
+    disclosure: "Activation sends only the activation secret and protocol/client version. Refresh sends the paid bearer credential (hidden here), protocol/client version and stable channel. No inventory, counts, submission UUID or MDM license is sent. The service sees network connection metadata.",
+    recovery: "Stopping locally keeps downloaded intelligence and does not cancel your purchase. A lost activation or rotation response may require a new activation from support.",
+    loadFailed: "Intelligence access could not be loaded. Reload or contact support.", failed: "The access operation failed. Retry or contact support.",
+    states: { not_activated: "Not activated", paid: "Paid", trial: "Trial", cancelled: "Cancelled; paid term remains",
+      grace: "Renewal grace", extended: "Staff extension", expired: "Expired", revoked: "Revoked",
+      credential_invalid: "Credential invalid or retired", disconnected: "Paid updates stopped locally", unknown: "Unknown" }
+  },
   system: {
     // #407: a published release this build does not contain — never a merge to main.
     updateAvailable: (tag: string) => `LoonInspect ${tag} is available`,
@@ -9,16 +23,9 @@ export const en = {
     updateHowTo: "how to update",
     dismissUpdate: "Dismiss update notice",
     sharing: {
-      // Present tense for what is true now. Amended 2026-09-11 (#248): one thing does now
-      // flow back — the vulnerability corpus, on this same daily exchange and only to an
-      // organization that shares — so the old "nothing flows back in this build" is gone.
-      // The feeds themselves are still described as what they would be made from, and the
-      // corpus is named by where it is read so the two are visibly different nouns rather
-      // than the same one contradicting itself two sentences apart. The gate is per
-      // organization, not per instance: a container may hold a corpus that does not
-      // answer here (docs/vulnerabilities.md §8).
+      // Sharing describes uploads; paid intelligence is a separate opt-in surface (#622).
       pageDescription:
-        "The patching and vulnerability feeds LoonInspect is building would be made from anonymous community inventory. No feed ships yet. What does come back on the same daily exchange is the vulnerability corpus — the lookup table behind Devices › Applications › Catalog, and only for an organization that shares — and nothing else returns to this instance. What this instance contributes, and whether it contributes at all, is controlled here.",
+        "These controls govern community inventory contributions. A consenting exchange may return vulnerability intelligence. Paid intelligence access, when enabled below, is separate and does not require sharing.",
       envLocked:
         "COMMUNITY_SHARING=false is set in the environment — the .env file beside docker-compose.yml. Nothing is shared while it is set, whatever is chosen below. A choice made here is recorded and takes effect once that line is removed and the container restarted (docker compose up -d).",
       readOnlyRole:
@@ -27,20 +34,20 @@ export const en = {
       tierHeading: "Participation",
       tierReveal: "Share, and reveal common titles (recommended)",
       tierRevealHelp:
-        "Daily anonymous inventory keys with install counts. App names are revealed only when LoonSec asks about a title seen at 5 or more independent contributors — internal, company-specific apps are never revealed.",
+        "Daily pseudonymous inventory keys and install counts. This tier can answer requests for plaintext app names; use exclusions to protect internal applications. Automatic reveal requests remain paused in the v2 service.",
       tierKeys: "Share keys only",
       tierKeysHelp:
         "Daily anonymous inventory keys with install counts. Never answers requests for app names — contributes prevalence signal only.",
       tierOff: "Off",
       tierOffHelp:
-        "Nothing is shared, and this instance will not receive the community-built patching and vulnerability feeds when they ship.",
+        "Stops community inventory uploads. Paid access, when enabled, is managed separately above.",
       disclosureHeading: "What is shared",
       disclosureShared:
         "Shared daily, per tenant: content-hash keys of installed applications with install counts, OS version-and-build tuples, hardware model-and-architecture tuples, the pseudonymous submission ID below, and this container's build version. Counts are summed across devices before anything leaves — never per-device rows.",
       disclosureNever:
         "Never shared: device identifiers, serial numbers, hostnames, user names, file paths, extension attributes, connection or tenant names, accounts, credentials, or audit history. LoonSec does not store source IP addresses on this path.",
       disclosureReveals:
-        "App names cross the wire only when this instance answers an explicit request for a title already seen at 5+ independent contributors ('reveal' tier only). That threshold is LoonSec's published rule; it cannot be verified from this side, which is why the keys-only tier exists.",
+        "The reveal tier can send app names in response to service requests. The proposed five-contributor threshold is not a proven privacy safeguard or proof of independent customers. Use keys-only sharing and exclusions when names must stay private.",
       disclosurePseudonym:
         "Submissions are pseudonymous, not anonymous: snapshots from this tenant are linkable to each other through the submission ID (that is how re-submissions replace older ones instead of double-counting). The ID is random, tied to nothing, and resettable below.",
       previewHeading: "Exactly what would be sent",

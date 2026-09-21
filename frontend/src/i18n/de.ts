@@ -3,6 +3,20 @@ import type { Translations } from "@/i18n/en";
 
 export const de: Translations = {
   deviceHistory: historyGerman,
+  intelligence: {
+    title: "Zugang zu Sicherheitsinformationen", description: "Bezahlter Zugang funktioniert ohne Inventarfreigabe. Die Aktivierung ändert Ihre Freigabeentscheidung nicht.",
+    state: "Zuletzt gemeldeter Zugang", credential: "Gespeicherter Zugangsschlüssel", present: "Vorhanden (ausgeblendet)", none: "Nicht verfügbar",
+    until: "Updates autorisiert bis", attempt: "Letzter Updateversuch", refresh: "Letzte abgeschlossene bezahlte Aktualisierung",
+    source: "Stand der ausgewählten Quelle", selected: "Ausgewählter Korpus", activation: "Einmaliger Aktivierungsschlüssel",
+    activate: "Aktivieren und aktualisieren", refreshNow: "Jetzt aktualisieren", rotate: "Zugangsschlüssel erneuern", disconnect: "Bezahlte Updates lokal stoppen",
+    freshness: "Eine aktuelle Übertragung belegt nicht die Aktualität der Quelldaten. Unbekannte Anwendungen sind nicht sicher; gespeicherte Bewertungen bleiben nach Updateende nutzbar.",
+    disclosure: "Die Aktivierung sendet nur den Aktivierungsschlüssel und die Protokoll-/Clientversion. Updates senden den bezahlten Zugangsschlüssel (hier ausgeblendet), Versionen und den stabilen Kanal. Kein Inventar, keine Anzahlen, Freigabe-UUID oder MDM-Lizenz wird gesendet. Der Dienst sieht Netzwerk-Verbindungsmetadaten.",
+    recovery: "Lokales Stoppen behält heruntergeladene Informationen und kündigt den Kauf nicht. Bei verlorener Aktivierungs- oder Erneuerungsantwort kann eine neue Aktivierung durch den Support nötig sein.",
+    loadFailed: "Der Zugang konnte nicht geladen werden. Neu laden oder Support kontaktieren.", failed: "Der Vorgang ist fehlgeschlagen. Erneut versuchen oder Support kontaktieren.",
+    states: { not_activated: "Nicht aktiviert", paid: "Bezahlt", trial: "Testzeitraum", cancelled: "Gekündigt; bezahlte Laufzeit besteht",
+      grace: "Verlängerungsfrist", extended: "Manuelle Verlängerung", expired: "Abgelaufen", revoked: "Widerrufen",
+      credential_invalid: "Zugangsschlüssel ungültig oder ersetzt", disconnected: "Bezahlte Updates lokal gestoppt", unknown: "Unbekannt" }
+  },
   system: {
     updateAvailable: (tag: string) => `LoonInspect ${tag} ist verfügbar`,
     updateAvailableUntagged: "Ein neueres Release von LoonInspect ist verfügbar",
@@ -11,7 +25,7 @@ export const de: Translations = {
     dismissUpdate: "Update-Hinweis ausblenden",
     sharing: {
       pageDescription:
-        "Die Patch- und Schwachstellen-Feeds, die LoonInspect aufbaut, würden aus anonymem Community-Inventar entstehen. Noch erscheint keiner. Was über denselben täglichen Austausch zurückkommt, ist der Schwachstellen-Korpus — die Nachschlagetabelle hinter Geräte › Anwendungen › Katalog, und nur für eine Organisation, die teilt; sonst kommt nichts an diese Instanz zurück. Was diese Instanz beiträgt und ob überhaupt, wird hier festgelegt.",
+        "Diese Einstellungen steuern Beiträge aus dem Community-Inventar. Ein freigegebener Austausch kann Sicherheitsinformationen liefern. Bezahlter Zugang ist, sofern unten aktiviert, unabhängig und erfordert keine Inventarfreigabe.",
       envLocked:
         "COMMUNITY_SHARING=false ist in der Umgebung gesetzt — in der Datei .env neben docker-compose.yml. Solange es gesetzt ist, wird nichts geteilt, unabhängig von der Auswahl unten. Eine hier getroffene Wahl wird gespeichert und greift, sobald die Zeile entfernt und der Container neu gestartet wurde (docker compose up -d).",
       readOnlyRole:
@@ -20,20 +34,20 @@ export const de: Translations = {
       tierHeading: "Teilnahme",
       tierReveal: "Teilen und verbreitete Titel offenlegen (empfohlen)",
       tierRevealHelp:
-        "Täglich anonyme Inventarschlüssel mit Installationszahlen. App-Namen werden nur offengelegt, wenn LoonSec nach einem Titel fragt, der bei mindestens 5 unabhängigen Teilnehmern vorkommt — interne, firmenspezifische Apps werden nie offengelegt.",
+        "Täglich pseudonyme Inventarschlüssel und Installationszahlen. Diese Stufe kann Anfragen nach App-Namen im Klartext beantworten; schützen Sie interne Anwendungen durch Ausschlüsse. Automatische Anfragen bleiben im v2-Dienst pausiert.",
       tierKeys: "Nur Schlüssel teilen",
       tierKeysHelp:
         "Täglich anonyme Inventarschlüssel mit Installationszahlen. Anfragen nach App-Namen werden nie beantwortet — es wird ausschließlich Verbreitungssignal beigetragen.",
       tierOff: "Aus",
       tierOffHelp:
-        "Es wird nichts geteilt, und diese Instanz wird die aus der Community aufgebauten Patch- und Schwachstellen-Feeds nicht erhalten, wenn sie erscheinen.",
+        "Stoppt Community-Inventarübertragungen. Bezahlter Zugang wird, sofern aktiviert, oben separat verwaltet.",
       disclosureHeading: "Was geteilt wird",
       disclosureShared:
         "Täglich pro Tenant geteilt: Content-Hash-Schlüssel installierter Anwendungen mit Installationszahlen, Tupel aus OS-Version und Build, Tupel aus Hardware-Modell und Architektur, die pseudonyme Übermittlungs-ID unten und die Build-Version dieses Containers. Zahlen werden vor dem Versand über Geräte summiert — nie einzelne Gerätezeilen.",
       disclosureNever:
         "Nie geteilt: Gerätekennungen, Seriennummern, Hostnamen, Benutzernamen, Dateipfade, Extension Attributes, Verbindungs- oder Tenant-Namen, Konten, Zugangsdaten oder Audit-Historie. LoonSec speichert auf diesem Pfad keine Quell-IP-Adressen.",
       disclosureReveals:
-        "App-Namen verlassen diese Instanz nur als Antwort auf eine ausdrückliche Anfrage zu einem Titel, der bereits bei 5+ unabhängigen Teilnehmern vorkommt (nur Stufe „Offenlegen“). Diese Schwelle ist LoonSecs veröffentlichte Regel; sie ist von dieser Seite aus nicht überprüfbar — dafür gibt es die Nur-Schlüssel-Stufe.",
+        "Die Offenlegungsstufe kann App-Namen auf Dienstanfrage senden. Die vorgeschlagene Schwelle von fünf Beitragenden ist kein nachgewiesener Datenschutz und kein Beleg unabhängiger Kunden. Nutzen Sie ausschließlich Schlüssel und Ausschlüsse, wenn Namen privat bleiben müssen.",
       disclosurePseudonym:
         "Übermittlungen sind pseudonym, nicht anonym: Snapshots dieses Tenants sind über die Übermittlungs-ID miteinander verknüpfbar (so ersetzen erneute Übermittlungen ältere, statt doppelt gezählt zu werden). Die ID ist zufällig, an nichts gebunden und unten zurücksetzbar.",
       previewHeading: "Genau das, was gesendet würde",

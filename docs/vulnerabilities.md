@@ -984,3 +984,14 @@ block each other.
 | The four `vuln.*` posture keys go ACTIVE, under §7's no-zero rule | [#250](https://github.com/LoonSecIO/LoonInspect/issues/250) | **Built 2026-09-11.** §7. Four bounded queries over the stored answers in `app/core/posture.py` (`_vuln_values`, `VULN_KEYS`), `RESERVED_KEYS` now empty; the no-rows rule pinned in `backend/tests/test_posture_db.py` and against the fixture epoch in `backend/tests/test_vuln_answer_db.py` |
 | The corpus's edge made visible in the UI — `assessment`, `corpusAsOf`, three empty states | [#251](https://github.com/LoonSecIO/LoonInspect/issues/251) | **Built 2026-09-03.** §4g. `app/core/vuln_read.py` over the same seam, `vuln` + `corpusAsOf` on the device and catalog responses, the Catalog tab's column and banner; pinned in `backend/tests/test_vuln_read.py` and `frontend/src/features/vulnerabilities/noCollapse.ts` |
 | The lifecycle fan-out under `loon:jamf:mac:app:vuln`, and `LOCAL-` ids behind their reservation | [#429](https://github.com/LoonSecIO/LoonInspect/issues/429), post-v0 (§5, §6) | Events named, not built; the string stays minted with no writer. **Ruled 2026-09-16: per device, on change only, behind a switch off by default.** **The store under them IS built** (#590, 2026-09-19, §6): `device_findings` and its transition diff in `app/core/findings.py`, migration `c5a2e9b71f34`. The events still wait on uncapped ids and per-id attributes from the corpus (LoonInspect_Support / LoonVD) |
+
+### Paid client preview (#622)
+
+The separate default-off paid client acquires and selects releases through the
+#621 tenant path. It never derives authorization from upload consent or per-MDM
+license fields. Expired paid access stops new delivery, not local assessment of a
+release already acquired by that tenant. Settings > Data sharing now includes
+activation, refresh, credential rotation and local disconnect when the pilot
+flags are enabled. The [operator steps](troubleshooting.md#paid-intelligence-preview-622)
+explain source freshness versus refresh success and the remaining receipt/privacy
+release gates. Default v1.x consent gating is unchanged outside these flags.
