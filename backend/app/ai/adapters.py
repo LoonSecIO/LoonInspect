@@ -325,26 +325,28 @@ async def _request(
         url = str(original.copy_with(host=connect_ip))
     try:
         async with asyncio.timeout(timeout_seconds):
-            async with _wire_slots():
-                async with httpx.AsyncClient(
+            async with (
+                _wire_slots(),
+                httpx.AsyncClient(
                     timeout=limits, transport=transport, follow_redirects=False, trust_env=connect_ip is None
-                ) as client:
-                    async with client.stream(method, url, headers=headers, json=json_body, extensions=extensions) as response:
-                        chunks: list[bytes] = []
-                        size = 0
-                        async for chunk in response.aiter_bytes():
-                            size += len(chunk)
-                            if size > MAX_RESPONSE_BYTES:
-                                raise AdapterError(
-                                    "too_large",
-                                    f"the reply exceeded {MAX_RESPONSE_BYTES // 1024} KiB and was cut off",
-                                )
-                            chunks.append(chunk)
-                        return _Reply(
-                            status=response.status_code,
-                            content_type=response.headers.get("content-type", ""),
-                            body=b"".join(chunks),
+                ) as client,
+                client.stream(method, url, headers=headers, json=json_body, extensions=extensions) as response,
+            ):
+                chunks: list[bytes] = []
+                size = 0
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > MAX_RESPONSE_BYTES:
+                        raise AdapterError(
+                            "too_large",
+                            f"the reply exceeded {MAX_RESPONSE_BYTES // 1024} KiB and was cut off",
                         )
+                    chunks.append(chunk)
+                return _Reply(
+                    status=response.status_code,
+                    content_type=response.headers.get("content-type", ""),
+                    body=b"".join(chunks),
+                )
     except TimeoutError as exc:
         raise AdapterError("timeout", f"no complete reply within {timeout_seconds:g} s") from exc
     except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout) as exc:
