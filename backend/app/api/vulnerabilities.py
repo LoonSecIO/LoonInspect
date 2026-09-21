@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.catalog import NO_ANSWER, _assessed_entry_out, _device_counts, _title_refs
 from app.core.auth import require
-from app.core.database import get_db
+from app.core.database import get_vuln_read_db
 from app.core.permissions import Permission
 from app.core.vuln import validate_finding_id
 from app.core.vuln_answer import served, stored_corpus
@@ -46,7 +46,7 @@ class VulnStatusOut(BaseModel):
 
 
 @router.get("/status", response_model=VulnStatusOut, dependencies=[Depends(require(Permission.VULN_READ))])
-async def vulnerability_status(db: AsyncSession = Depends(get_db)) -> VulnStatusOut:
+async def vulnerability_status(db: AsyncSession = Depends(get_vuln_read_db)) -> VulnStatusOut:
     return VulnStatusOut(corpus_as_of=corpus_as_of(await earned_corpus(db)))
 
 
@@ -78,7 +78,7 @@ class VulnLookupOut(BaseModel):
 # After `/status` on purpose: FastAPI matches in declaration order, and a dynamic segment above
 # it would swallow "status" as an id — and then refuse it as a shape.
 @router.get("/{vuln_id}", response_model=VulnLookupOut, dependencies=[Depends(require(Permission.VULN_READ))])
-async def lookup_vulnerability(vuln_id: str, db: AsyncSession = Depends(get_db)) -> VulnLookupOut:
+async def lookup_vulnerability(vuln_id: str, db: AsyncSession = Depends(get_vuln_read_db)) -> VulnLookupOut:
     """The tenant's builds whose SERVED answer names this id (#533) — §4e's list asked the other
     way round, so *is CVE-X on my fleet* is answerable in the product and not only in Splunk.
     Served is `vuln_answer.served` and nothing else: a row judged by an epoch that has moved reads

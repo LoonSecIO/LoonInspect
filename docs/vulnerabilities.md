@@ -6,12 +6,14 @@ Ruled on [#113](https://github.com/LoonSecIO/LoonInspect/issues/113): the corpus
 delivery of the corpus re-ruled 2026-09-10 (§2) · Wire keys obey the frozen vocabulary in
 [`docs/splunk-wire-vocabulary.md`](splunk-wire-vocabulary.md)
 
-> **v2 decision, not yet implemented (2026-09-20):**
+> **v2 design and default-off development preview (2026-09-20):**
 > [The contribute-or-pay design](vulnerability-service-v2.md) supersedes the access
 > and tier rulings in §8: equal core intelligence through contribution or payment,
 > independent consent, and continued use of acquired intelligence after expiry.
 > It also replaces the singleton epoch with tenant-selected releases. Existing
-> implementation descriptions below remain accurate until those issues ship.
+> implementation descriptions below describe the default path. The `VULN_TENANT_SELECTION`
+> preview implements retained selections and evidence; its concurrency behavior and
+> remaining activation gate are recorded in [the validation record](vulnerability-scale-validation.md).
 
 This document exists because the vulnerability design lived in a session record and two
 issue comments, and a contract that lives only in a session record is one that gets
