@@ -32,6 +32,7 @@ from sqlalchemy import delete, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.catalog.service import rejudge_every_tenant
+from app.core import participation
 from app.core.config import settings as app_settings
 from app.core.content_keys import hw_key, os_key
 from app.core.tenancy import get_tenant_id
@@ -493,8 +494,25 @@ async def run_exchange(
         await db.commit()
         return skipped
 
+    if participation.pending(settings_row) and not await participation.withdraw(db, transport=transport):
+        # Serialize withdrawal before re-consent (Support's participation contract): an
+        # upload now would earn a receipt the late withdrawal could still cancel. Logged
+        # as a failed attempt, so the share log says why nothing left the box today.
+        held = ShareLog(
+            occurred_at=now,
+            tier=settings_row.tier,
+            trigger=trigger,
+            endpoint=app_settings.sharing_endpoint,
+            outcome="failed",
+            error=participation.HELD,
+        )
+        db.add(held)
+        await db.commit()
+        return held
+
     request_body = await build_exchange_request(db, settings_row)
     request_body["reveals"] = await build_reveals(db, settings_row)
+    participation.opt_in(settings_row, request_body)
 
     pointer: CorpusPointer | None = None
     log = ShareLog(
@@ -529,6 +547,10 @@ async def run_exchange(
         log.reveals_shed = result.reveals_shed
         log.reveal_requests = response.get("reveal_requests") if isinstance(response, dict) else None
         pointer = apply_response(settings_row, response if isinstance(response, dict) else {})
+        asked = request_body.get("participation_receipt") is True
+        if asked or (settings_row.tier == "off" and settings_row.participation_receipt is not None):
+            # Before the day's commit, so the receipt and the row that earned it land together.
+            await participation.after_exchange(db, participation.parse(response) if asked else None)
 
     db.add(log)
     # retention-clock: share-log — named in README.md and KNOWN_ISSUES.md §1; check-readme-claims.sh reads this token.

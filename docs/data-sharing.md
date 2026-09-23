@@ -306,8 +306,9 @@ thing that distinguishes an exchange from an update check.
       "bundle_id": "com.vendor.tool",
       "versions": [ { "version": "88", "short_version": "2.4.1", "count": 31 }, … ]
     }
-  ]
-}
+  ],
+  "participation_receipt": true           // ONLY with the v2 receipt preview on (#622);
+}                                         //   absent otherwise, never false
 ```
 
 ```jsonc
@@ -321,8 +322,11 @@ thing that distinguishes an exchange from an update check.
     "url": "https://…/epoch-0001.tar.gz?…" // a signed link; never stored, never logged
   },
   "verdicts": [ … ],                       // post-V0; schema settles with the feed work
-  "revoke": false                          // true = server-side kill switch: stop
-}                                          //   sharing until an admin re-consents
+  "revoke": false,                         // true = server-side kill switch: stop
+                                           //   sharing until an admin re-consents
+  "participation": { "receipt": "loon_rcpt_…", "accepted_at": "…", "updates_until": "…" }
+}                                          // only when asked (#622); stored encrypted,
+                                           //   never logged — see Contribution receipts
 ```
 
 ### The corpus channel
@@ -471,7 +475,8 @@ around them.
 Every exchange writes one tenant-scoped row recording **exactly what left the box**:
 timestamp, tier, what started it (`scheduled`, or `manual` for a [Send now](#send-now)),
 endpoint, outcome (sent / failed / skipped-by-env), the request payload
-the run assembled (verbatim JSON — this is the point; reveals especially), the
+the run assembled (verbatim JSON — this is the point; reveals especially; a failed row
+with no payload is an upload held back until a receipt withdrawal is acknowledged), the
 `revealsShed` marker below, the response's request list, and on a failure the reason,
 as a sentence naming the host and what it answered. Rows older than 90 days are
 pruned on write.
@@ -538,5 +543,29 @@ withdrawal of upload consent preserve acquired intelligence and assessment evide
 The paid wire sends only an activation secret or bearer, protocol/client version
 and stable channel. Existing per-MDM license values are never transmitted. See
 [troubleshooting](troubleshooting.md#paid-intelligence-preview-622) for the explicit
-pilot flags, credential recovery and status meanings. Contribution receipts remain
-disabled in the client until their withdrawal/re-consent integration is complete.
+pilot flags, credential recovery and status meanings.
+
+### Contribution receipts (v2, #622)
+
+A consenting exchange can earn a receipt from Support's participation contract. The
+receipt is proof of an accepted contribution that the service can honour for 30 days
+without another upload. The preview is default-off. It needs `CONTRIBUTION_RECEIPTS=true`
+plus the two v2 corpus flags, an HTTPS `SHARING_ENDPOINT`, and receipts enabled on the
+service. With it on:
+
+- The request gains the literal `"participation_receipt": true`, and the share log shows
+  it.
+- The returned receipt is stored encrypted on the consent row. It never goes into the
+  share log, a log line or the browser. The Data sharing status reports only its
+  presence and dates, under `participation`.
+- Turning sharing off, or resetting the submission UUID, stops uploads immediately and
+  withdraws the receipt at the service within a scheduler tick.
+- Re-consent waits for that withdrawal to be acknowledged: the next upload is held (a
+  failed share-log row with no payload) until it is. A late withdrawal therefore cannot
+  cancel the receipt a new contribution earns.
+
+The receipt links to this instance's submission UUID, never to a paid account. It is
+not anonymity. Withdrawal ends receipt eligibility; it does not erase snapshots the
+service already holds. Using a receipt for a download without an upload is the next
+slice, so this build only earns, keeps and withdraws receipts. The step-through is
+[troubleshooting](troubleshooting.md#contribution-receipts-622).

@@ -210,6 +210,13 @@ async def sharing_exchange_tick() -> None:
             continue
         async with lock, tenant_job(tenant_id) as db:
             try:
+                # A withdrawal waits on no schedule and on no consent: it is how consent
+                # that already ended reaches the service (#622). run_exchange also tries
+                # it first, before any upload.
+                from app.core import participation
+
+                if await participation.withdrawal_due(db):
+                    await participation.withdraw(db)
                 if await exchange_due(db):
                     await run_exchange(db)
             except Exception:

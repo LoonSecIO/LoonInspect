@@ -108,6 +108,9 @@ class Settings(BaseSettings):
     # Default-off v2 paid client; tenant selection and retention must also be enabled.
     intelligence_access: bool = False
     intelligence_endpoint: str = "https://api.loonsec.io"
+    # Default-off v2 contribution receipts (#622): a consenting exchange asks for a receipt
+    # and withdraws it when consent ends. Needs the same two corpus flags as paid access.
+    contribution_receipts: bool = False
 
     sharing_endpoint: str = "https://api.loonsec.io/v1/exchange"
 
