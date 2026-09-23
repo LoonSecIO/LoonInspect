@@ -1,5 +1,5 @@
-import { IntelligenceAccess } from "@/features/system/IntelligenceAccess";
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router";
 import { Download, RefreshCw, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PERMISSIONS } from "@/features/auth/types";
@@ -25,12 +25,14 @@ import { endpointHost, sendNowAvailability } from "@/features/system/sendNow";
 import { ApiError } from "@/config/api";
 import { env } from "@/config/env";
 import { useLocale } from "@/i18n/LocaleContext";
+import { useIntelligenceStore } from "@/features/system/intelligenceStore";
 
 const TIERS: SharingTier[] = ["reveal", "keys", "off"];
 
 export function DataSharingPage() {
   const { t } = useLocale();
   const canWrite = useHasPermission(PERMISSIONS.SYSTEM_WRITE);
+  const intelligenceOffered = useIntelligenceStore((state) => state.enabled);
 
   const [settings, setSettings] = useState<DataSharingSettings | null>(null);
   const [globsDraft, setGlobsDraft] = useState("");
@@ -237,7 +239,15 @@ export function DataSharingPage() {
         <p className="mt-1 text-sm text-muted-foreground">{t.system.sharing.pageDescription}</p>
       </div>
 
-      <IntelligenceAccess canWrite={canWrite} />
+      {/* Paid access moved to its own page (#622): sharing describes uploads only. */}
+      {intelligenceOffered && (
+        <p className="text-sm">
+          {t.intelligence.movedPointer}{" "}
+          <Link to="/settings/intelligence-access" className="underline underline-offset-4">
+            {t.nav.intelligenceAccess}
+          </Link>
+        </p>
+      )}
 
       {settings.envDisabled && (
         <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">

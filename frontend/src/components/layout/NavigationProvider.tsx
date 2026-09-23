@@ -3,6 +3,8 @@ import { visibleNavigation } from "@/components/layout/navigation";
 import { NavigationContext } from "@/components/layout/useNavigation";
 import { useAuthStore } from "@/features/auth/store";
 import { useFeatureFlagStore } from "@/features/settings/flagStore";
+import { PERMISSIONS } from "@/features/auth/types";
+import { useIntelligenceStore } from "@/features/system/intelligenceStore";
 import { useCorpusStore } from "@/features/vulnerabilities/corpusStore";
 
 /**
@@ -24,13 +26,21 @@ export function NavigationProvider({ children }: PropsWithChildren) {
 
   const enabledFlags = useFeatureFlagStore((state) => state.enabled);
   const load = useFeatureFlagStore((state) => state.load);
-  const answering = useCorpusStore((state) => state.answering);
+  const corpus = useCorpusStore((state) => state.answering);
   const loadCorpus = useCorpusStore((state) => state.load);
+  const intelligence = useIntelligenceStore((state) => state.answering);
+  const loadIntelligence = useIntelligenceStore((state) => state.load);
+  // Only an account that may read the answer asks the question (#622).
+  const readsSystem = permissions?.includes(PERMISSIONS.SYSTEM_READ) ?? false;
   useEffect(() => {
     void load();
     void loadCorpus();
   }, [load, loadCorpus]);
+  useEffect(() => {
+    if (readsSystem) void loadIntelligence();
+  }, [readsSystem, loadIntelligence]);
 
+  const answering = useMemo(() => new Set([...corpus, ...intelligence]), [corpus, intelligence]);
   const items = useMemo(
     () => visibleNavigation(permissions, enabledFlags, answering),
     [permissions, enabledFlags, answering]

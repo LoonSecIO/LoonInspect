@@ -15,6 +15,7 @@ import {
   Settings,
   Share2,
   ShieldAlert,
+  ShieldCheck,
   ShieldHalf,
   UserCircle,
   UserCog,
@@ -52,7 +53,7 @@ export interface NavItem {
   /** Listed only while the session found this data answering (#529). A per-item data gate,
    *  never a section's: a section follows its children, and Compliance below — #536's evidence
    *  report, read from this tenant's own ledger — is not governed by the corpus. */
-  requires?: "corpus";
+  requires?: "corpus" | "intelligenceAccess";
   children?: NavItem[];
 }
 
@@ -142,6 +143,17 @@ export const navigationItems: NavItem[] = [
         to: "/settings/data-sharing",
         end: false,
         permission: PERMISSIONS.SYSTEM_READ
+      },
+      // Listed only where the instance offers it (#622): the rollout switches are
+      // deployment configuration, never a customer toggle, so the entry follows their
+      // verdict as read by `intelligenceStore`, and a failed read hides it.
+      {
+        labelKey: "intelligenceAccess",
+        icon: ShieldCheck,
+        to: "/settings/intelligence-access",
+        end: false,
+        permission: PERMISSIONS.SYSTEM_READ,
+        requires: "intelligenceAccess"
       },
       // Flag-gated as well as permission-gated: no top-level /ai exists, and this entry
       // appears only once the `ai_features` switch is on (#319). It is judged against the

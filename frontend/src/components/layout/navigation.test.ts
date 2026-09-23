@@ -140,6 +140,23 @@ describe("visibleNavigation", () => {
     expect(both?.children?.map((child) => child.labelKey)).toEqual(["vulnerabilities", "compliance"]);
   });
 
+  describe("Settings › Intelligence Access (#622)", () => {
+    /** What `intelligenceStore` hands the tree when the instance offers the preview. */
+    const OFFERED: ReadonlySet<string> = new Set(["intelligenceAccess"]);
+
+    it("is listed only where the instance offers it, right after Data Sharing", () => {
+      expect(settingsChildren(visibleNavigation(EVERYTHING, NO_FLAGS))).not.toContain("intelligenceAccess");
+      const children = settingsChildren(visibleNavigation(EVERYTHING, NO_FLAGS, OFFERED)) ?? [];
+      expect(children[children.indexOf("dataSharing") + 1]).toBe("intelligenceAccess");
+    });
+
+    it("still needs SYSTEM_READ, and no feature flag can list it", () => {
+      expect(settingsChildren(visibleNavigation(VIEWER, NO_FLAGS, OFFERED))).not.toContain("intelligenceAccess");
+      const flagged: ReadonlySet<string> = new Set(["intelligenceAccess"]);
+      expect(settingsChildren(visibleNavigation(EVERYTHING, flagged, SILENT))).not.toContain("intelligenceAccess");
+    });
+  });
+
   it("an unknown grant is ignored rather than trusted", () => {
     const items = visibleNavigation(["connection:read ", "CONNECTION:READ", "everything"], NO_FLAGS);
     expect(settingsChildren(items)).toEqual(["myAccount"]);

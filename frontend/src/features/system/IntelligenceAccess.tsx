@@ -45,13 +45,14 @@ export function IntelligenceAccess({ canWrite }: { canWrite: boolean }) {
       setBusy(false);
     }
   }
-  // A failed read is visible; a disabled preview adds no v1 product control.
+  // A failed read is visible. A disabled preview adds no product control: its page says
+  // why in one sentence rather than drawing an empty panel (#622).
   if (!access) return error ? <p role="alert">{error}</p> : null;
-  if (!access.enabled) return null;
+  if (!access.enabled) return <p className="text-sm text-muted-foreground">{copy.notEnabled}</p>;
   const displayTime = (value: string | null) => value ? new Date(value).toLocaleString() : copy.none;
   const state = copy.states[access.state as keyof typeof copy.states] ?? copy.states.unknown;
-  return <section className="space-y-3 rounded-md border p-4" aria-label={copy.title}>
-    <h2 className="font-semibold">{copy.title}</h2>
+  return <section className="space-y-3 rounded-md border p-4" aria-label={copy.paidTitle}>
+    <h2 className="font-semibold">{copy.paidTitle}</h2>
     <p className="text-sm text-muted-foreground">{copy.description}</p>
     <dl className="grid grid-cols-2 gap-2 text-sm">
       <dt>{copy.state}</dt><dd>{state}</dd>
