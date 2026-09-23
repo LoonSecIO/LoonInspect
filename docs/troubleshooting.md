@@ -2118,8 +2118,7 @@ preview. It needs all of:
 - a `SHARING_ENDPOINT` over HTTPS;
 - receipts enabled on the service.
 
-This build earns, stores and withdraws receipts. Redeeming one for a download comes in
-the next slice.
+This build earns, stores, redeems and withdraws receipts.
 
 - **What leaves.** The exchange body gains `"participation_receipt": true`, which the
   share log shows. The receipt the service returns is stored encrypted under
@@ -2145,6 +2144,27 @@ the next slice.
   - **HTTP 400:** this build is out of date.
 
   Send now retries the withdrawal immediately and uploads once it is acknowledged.
+- **Fetching without an upload.** A day's upload can fail, its answer can name no corpus,
+  or the corpus it named can go unacquired. When that happens, the scheduler redeems the
+  receipt within a tick. It sends only the receipt and the contract version: no
+  inventory, no submission UUID, no paid credential. The corpus then arrives through the
+  exchange's own import and selection path.
+  - A failed redemption is retried hourly, and never after the receipt's fixed 30-day
+    deadline.
+  - It never runs while sharing is off, `COMMUNITY_SHARING=false`, or a withdrawal is
+    waiting.
+  - The status shows `lastRedeemedAt` and `retryAfter`.
+  - `contribution receipt could not fetch the corpus` in the container log carries the
+    same reasons as the withdrawal (HTTP 503, 404 or a bare 403, "Could not reach", 400)
+    and changes nothing held.
+- **`contribution receipt dropped`:** the service no longer honours the receipt. The
+  reason is one of:
+  - `unknown` (HTTP 401);
+  - `expired`: the 30-day deadline passed;
+  - `withdrawn`: another copy of this instance withdrew, for example a restored backup.
+
+  Local consent is unchanged, and the next accepted exchange earns a new receipt. Held
+  intelligence stays usable.
 - **`contribution receipt ignored` in the container log:** an accepted exchange carried a
   receipt block that does not match the contract. The exchange still counted, and any
   receipt already held stays in use. Report it to support if it repeats.
