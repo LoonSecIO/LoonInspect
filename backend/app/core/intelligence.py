@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 
@@ -18,6 +19,8 @@ from app.core.vuln_selection import assess_and_select, record_acquisition
 from app.models.schema import DataSharingSettings, VulnCorpusRelease, VulnCorpusSelection
 
 STATES = {"paid", "trial", "cancelled", "grace", "extended"}
+
+logger = logging.getLogger(__name__)
 
 
 class AccessFailure(ValueError):
@@ -57,6 +60,87 @@ def timestamp(value) -> datetime:
     return result.astimezone(UTC)
 
 
+def refusal(path: str, code: int, raw: bytes) -> AccessFailure:
+    """Name the likely cause of a non-200 answer from its status alone.
+
+    Upstream text is never quoted (see `AccessFailure`); the configured origin is ours to
+    repeat. The service issues a credential only with a 200, so a refusal in the 4xx range,
+    or a 503 in its own JSON shape, left an activation secret unused. Anything else - a
+    gateway 5xx, a timeout - may have come after the service finished, which is the one
+    case where an activation or rotation can be spent without this instance learning it.
+    """
+    origin = settings.intelligence_endpoint.rstrip("/")
+    try:
+        body = json.loads(raw)
+    except ValueError:
+        body = None
+    unused = " The activation secret was not used." if path == "activate" else ""
+    if path == "activate":
+        spent = (
+            " If the service finished the activation first, the secret is spent: when a retry is refused, "
+            "ask support for recovery."
+        )
+    elif path == "rotate":
+        spent = (
+            " If the service finished the rotation first, the previous credential is retired: when refresh then "
+            "fails, ask support for recovery."
+        )
+    else:
+        spent = ""
+    if code == 401:
+        if path == "activate":
+            return AccessFailure(
+                "invalid_activation",
+                "The intelligence service did not accept this activation secret (HTTP 401). It may be mistyped, "
+                "already used, expired or revoked; ask support for a new one.",
+            )
+        return AccessFailure("credential_invalid", "Credential is invalid or retired. Ask support for a new activation.")
+    if code == 403:
+        if not isinstance(body, dict) or "state" not in body:
+            # The service's own refusals always carry a state. A bare 403 is whatever else
+            # answers at that address - the 2024 gateway behind the baked default answers
+            # every path with "Missing Authentication Token".
+            return AccessFailure(
+                "configuration_error",
+                f"{origin} refused the request without an intelligence-service answer (HTTP 403), so "
+                f"INTELLIGENCE_ENDPOINT probably names something else. Set it to the origin support confirmed.{unused}",
+            )
+        if body["state"] not in {"expired", "revoked"}:
+            raise ValueError("unknown refusal")
+        return AccessFailure(
+            body["state"], "New updates stopped. Contact support to renew access; held intelligence remains usable."
+        )
+    if code == 404:
+        return AccessFailure(
+            "configuration_error",
+            f"No paid-access service answers at {origin} (HTTP 404). Check INTELLIGENCE_ENDPOINT: it takes the "
+            f"service origin only, with no path, and support confirms which origin is live.{unused}",
+        )
+    if code == 400:
+        return AccessFailure(
+            "rejected",
+            "The intelligence service rejected the request as outside its contract (HTTP 400). Check that this "
+            f"LoonInspect build is current, then contact support.{unused}",
+        )
+    if code == 409:
+        return AccessFailure(
+            "unavailable",
+            f"The entitlement changed while the service answered (HTTP 409). Retry; if it repeats, contact support.{unused}",
+        )
+    if code == 503 and isinstance(body, dict):
+        return AccessFailure(
+            "unavailable",
+            "The intelligence service is not serving paid access right now (HTTP 503): its preview may be switched "
+            "off, or its entitlement store or corpus is unavailable. This is not an expiry. Retry later or contact "
+            f"support; held intelligence remains usable.{unused}",
+        )
+    return AccessFailure(
+        "unavailable",
+        f"The intelligence service answered HTTP {code}. Retry later or contact support; held intelligence "
+        f"remains usable.{spent}",
+    )
+
+
 async def request(
     path: str, *, credential: str | None = None, activation: str | None = None, transport: httpx.AsyncBaseTransport | None = None
 ) -> dict:
@@ -78,22 +162,8 @@ async def request(
                 raw.extend(chunk)
                 if len(raw) > 65536:
                     raise ValueError("oversized reply")
-            if response.status_code == 401:
-                raise AccessFailure("credential_invalid", "Credential is invalid or retired. Ask support for a new activation.")
-            if response.status_code == 403:
-                failure = json.loads(raw)
-                state = failure.get("state") if isinstance(failure, dict) else None
-                if state not in {"expired", "revoked"}:
-                    raise ValueError("unknown refusal")
-                raise AccessFailure(
-                    state, "New updates stopped. Contact support to renew access; held intelligence remains usable."
-                )
             if response.status_code != 200:
-                raise AccessFailure(
-                    "unavailable",
-                    "Intelligence service could not complete the request. Retry or contact support; "
-                    "a lost activation or rotation response may need a new activation.",
-                )
+                raise refusal(path, response.status_code, bytes(raw))
             result = json.loads(raw)
         if not isinstance(result, dict) or result.get("contract") != "v2" or result.get("state") not in STATES:
             raise ValueError("invalid response")
@@ -108,8 +178,9 @@ async def request(
     except httpx.HTTPError:
         raise AccessFailure(
             "unavailable",
-            "Intelligence service is unreachable. Check network access and retry; "
-            "held intelligence remains usable. Lost activation/rotation responses need support recovery.",
+            f"Could not reach the intelligence service at {settings.intelligence_endpoint.rstrip('/')}. Check DNS, "
+            "network access and INTELLIGENCE_ENDPOINT, then retry; held intelligence remains usable. "
+            "Lost activation/rotation responses need support recovery.",
         ) from None
     except (ValueError, TypeError) as exc:
         if isinstance(exc, AccessFailure):
@@ -170,6 +241,10 @@ async def activate(
             transport=transport,
         )
     except AccessFailure as exc:
+        logger.warning(
+            "paid intelligence request failed",
+            extra={"operation": "rotate" if rotate else "activate", "reason": exc.state, "detail": str(exc)},
+        )
         record(row, error=str(exc))  # A failed replacement must not revoke an existing working credential.
         await db.commit()
         return await status(db)
@@ -195,6 +270,10 @@ async def refresh(db: AsyncSession, *, scheduled: bool = False, transport: httpx
     try:
         answer = await request("intelligence", credential=credential, transport=transport)
     except AccessFailure as exc:
+        logger.warning(
+            "paid intelligence request failed",
+            extra={"operation": "refresh", "scheduled": scheduled, "reason": exc.state, "detail": str(exc)},
+        )
         # Outage is a separate error, never a fabricated expiry/revocation.
         fields = {"error": str(exc)}
         if exc.state in {"expired", "revoked", "credential_invalid"}:
@@ -208,20 +287,36 @@ async def refresh(db: AsyncSession, *, scheduled: bool = False, transport: httpx
     try:
         await load_epoch_if_new(db, pointer, transport=transport)
         if await db.get(VulnCorpusRelease, pointer.signature) is None:
-            raise AccessFailure("download_failed", "The corpus could not be verified or stored. Check storage and retry refresh.")
+            # load_epoch_if_new never raises: it has already logged why, as a "vulnerability
+            # library" warning (docs/troubleshooting.md §5).
+            raise AccessFailure(
+                "download_failed",
+                "The paid corpus could not be downloaded, verified or stored. The container log's "
+                '"vulnerability library" warning just before this names why (docs/troubleshooting.md §5); '
+                "fix that, then Refresh now. The previous selection remains usable.",
+            )
         await record_acquisition(db, pointer.signature)
         await db.commit()
         await assess_and_select(db, pointer.signature)
         await db.commit()
-    except Exception:
+    except Exception as exc:
         await db.rollback()
-        # Import/assessment errors may carry URLs or SQL parameters. Never persist or echo them.
-        row = await locked_settings(db)
-        record(
-            row,
-            error="The intelligence update could not be assessed. Check database availability and storage, then retry; "
-            "the previous selection remains usable.",
+        # Import/assessment errors may carry URLs or SQL parameters. Never persist or echo them;
+        # only this module's own AccessFailure sentences are safe to repeat.
+        if isinstance(exc, AccessFailure):
+            reason, error = exc.state, str(exc)
+        else:
+            reason = "assessment_failed"
+            error = (
+                "The intelligence update could not be assessed. Check database availability and storage, then retry; "
+                "the previous selection remains usable."
+            )
+        logger.warning(
+            "paid intelligence update not applied",
+            extra={"reason": reason, "error_type": type(exc).__name__, "detail": error},
         )
+        row = await locked_settings(db)
+        record(row, error=error)
         await db.commit()
     else:
         row = await locked_settings(db)

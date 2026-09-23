@@ -1,6 +1,7 @@
 """Paid activation and acquired intelligence under real forced PostgreSQL RLS."""
 
 import json
+import logging
 import os
 
 import httpx
@@ -111,8 +112,22 @@ async def test_corrupt_download_never_acquires_a_release(db, paid):
             lambda request: httpx.Response(200, content=b"broken") if request.method == "GET" else service(request)
         ),
     )
-    assert result["selectedCorpus"] is None and result["lastRefreshAt"] is None and result["error"]
+    assert result["selectedCorpus"] is None and result["lastRefreshAt"] is None
+    # The specific sentence survives the refresh's catch-all, pointing at the corpus log line.
+    assert "could not be downloaded, verified or stored" in result["error"]
     assert (await db.execute(select(VulnCorpusAcquisition))).scalars().all() == []
+
+
+async def test_refused_activation_is_shown_and_logged_without_the_secret(db, paid, caplog):
+    with caplog.at_level(logging.WARNING, logger="app.core.intelligence"):
+        failed = await intelligence.activate(
+            db, ACT, transport=httpx.MockTransport(lambda _: httpx.Response(404, json={"message": "Not Found"}))
+        )
+    assert failed["credentialPresent"] is False and failed["state"] == "not_activated"
+    assert "HTTP 404" in failed["error"] and "INTELLIGENCE_ENDPOINT" in failed["error"] and "not used" in failed["error"]
+    logged = [r for r in caplog.records if r.getMessage() == "paid intelligence request failed"]
+    assert len(logged) == 1 and logged[0].operation == "activate" and logged[0].reason == "configuration_error"
+    assert ACT not in caplog.text and ACT not in json.dumps(failed)
 
 
 async def test_rotation_replaces_secret_and_disconnect_preserves_selection(db, paid):
