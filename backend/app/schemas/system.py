@@ -56,6 +56,10 @@ class ParticipationOut(BaseModel):
     withdrawal_requested_at: str | None = None
     last_withdrawal_attempt_at: str | None = None
     withdrawn_at: str | None = None
+    # The redemption half (#641): when the receipt last fetched the corpus without an
+    # upload, and when the next attempt is due. Declared here, or the model drops them.
+    last_redeemed_at: str | None = None
+    retry_after: str | None = None
     error: str | None = None
 
 

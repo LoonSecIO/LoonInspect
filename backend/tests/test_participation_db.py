@@ -293,6 +293,7 @@ async def _earned_then_failed(db, service: Service) -> None:
 
 
 async def test_a_failed_upload_is_fetched_with_the_receipt_alone(db, receipts, delivery):
+    from app.api.system import get_data_sharing
     from app.core import participation
     from app.core.sharing import deliver_corpus
     from app.models.schema import VulnCorpusAcquisition
@@ -302,6 +303,8 @@ async def test_a_failed_upload_is_fetched_with_the_receipt_alone(db, receipts, d
     row = await held(db)
     assert row.participation_status["retry_reason"] == "upload_failed"
     assert await participation.redemption_due(db)
+    shown = (await get_data_sharing(db)).model_dump(mode="json", by_alias=True)["participation"]
+    assert shown["retryAfter"] and shown["lastRedeemedAt"] is None
 
     pointer = await participation.redeem(db, transport=httpx.MockTransport(service))
     assert pointer is not None and pointer.signature == SIGNATURE
@@ -316,6 +319,8 @@ async def test_a_failed_upload_is_fetched_with_the_receipt_alone(db, receipts, d
     row = await held(db)
     assert "retry_after" not in row.participation_status and row.participation_status["last_redeemed_at"]
     assert not await participation.redemption_due(db)
+    shown = (await get_data_sharing(db)).model_dump(mode="json", by_alias=True)["participation"]
+    assert shown["lastRedeemedAt"] and shown["retryAfter"] is None
 
 
 async def test_no_redemption_while_consent_is_off_a_withdrawal_waits_or_the_kill_switch_is_on(db, receipts, monkeypatch):
