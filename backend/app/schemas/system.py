@@ -42,6 +42,23 @@ class SharingTier(StrEnum):
     reveal = "reveal"
 
 
+class ParticipationOut(BaseModel):
+    """What the Data sharing page may know about the contribution receipt (#622)."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    enabled: bool
+    receipt_present: bool
+    # none | contributing | withdrawal_pending | withdrawn | ended
+    state: str
+    accepted_at: str | None = None
+    updates_until: str | None = None
+    withdrawal_requested_at: str | None = None
+    last_withdrawal_attempt_at: str | None = None
+    withdrawn_at: str | None = None
+    error: str | None = None
+
+
 class DataSharingOut(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
@@ -63,6 +80,9 @@ class DataSharingOut(BaseModel):
     # Why that last exchange failed, in the sentence the share-log row carries (#408).
     # Before, the page said "(failed)" and the reason lived only in the NDJSON download.
     last_exchange_error: str | None = None
+    # Contribution receipts (#622): presence, dates and the withdrawal's progress, never the
+    # receipt itself. Absent capability reads as state "none".
+    participation: ParticipationOut | None = None
 
 
 class ShareLogEntryOut(BaseModel):

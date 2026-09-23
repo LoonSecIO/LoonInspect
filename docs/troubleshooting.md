@@ -2101,7 +2101,54 @@ Never include activation inputs, request headers or signed download URLs in supp
 bundles. Losing `ENCRYPTION_KEY` also loses access to saved paid credentials; preserve
 it with the backup as described in operations.md.
 
-Contribution receipt opt-in, withdrawal/re-consent sequencing, migration notice and
-deployed privacy verification remain separate #622/#10 release gates. This preview
-continues legacy contribution exchanges and never opts them into receipts. Both
-routes may deliver the same corpus without sharing their request identities.
+The contribution receipt preview is separate (next section). The paid preview never opts an
+exchange into receipts, and contributor migration and deployed privacy verification remain
+#622/#10 release gates. Both routes may deliver the same corpus without sharing their
+request identities.
+
+## Contribution receipts (#622)
+
+A consenting exchange can earn a **contribution receipt**. For 30 days after the
+contribution the service accepted, the receipt lets the service deliver the corpus
+without another upload (Support's participation contract). This is a default-off
+preview. It needs all of:
+
+- `CONTRIBUTION_RECEIPTS=true`, together with `VULN_TENANT_SELECTION=true` and
+  `VULN_RELEASE_RETENTION=true`;
+- a `SHARING_ENDPOINT` over HTTPS;
+- receipts enabled on the service.
+
+This build earns, stores and withdraws receipts. Redeeming one for a download comes in
+the next slice.
+
+- **What leaves.** The exchange body gains `"participation_receipt": true`, which the
+  share log shows. The receipt the service returns is stored encrypted under
+  `ENCRYPTION_KEY` on the consent row. It never appears in the share log, a log line, a
+  support bundle or the browser. `GET /api/system/data-sharing` reports its presence,
+  dates and withdrawal progress under `participation`.
+- **Turning sharing off, or resetting the submission UUID,** stops uploads at once and
+  marks the receipt `withdrawal_pending`. The scheduler sends the withdrawal within one
+  tick, then retries every ten minutes until the service acknowledges it. `withdrawn`
+  means the service invalidated every receipt this identity earned. `ended` means the
+  receipt had already expired or was unknown to the service, so nothing was left to
+  withdraw.
+- **"Upload held: sharing was switched off earlier…"** appears as a failed share-log row
+  with no payload; nothing left the box. Sharing was turned back on before the service
+  acknowledged the earlier withdrawal. The withdrawal must land first, or it could cancel
+  the receipt the new upload earns. The status's `participation.error`, and the container
+  log's `contribution withdrawal not acknowledged` line, give the reason:
+  - **HTTP 503:** the service's receipt preview is off or its store is unavailable. Retry
+    later.
+  - **HTTP 404 or a bare 403:** no receipt service answers at the address that issued
+    the receipt. Contact support if that service moved.
+  - **"Could not reach":** a DNS or network problem.
+  - **HTTP 400:** this build is out of date.
+
+  Send now retries the withdrawal immediately and uploads once it is acknowledged.
+- **`contribution receipt ignored` in the container log:** an accepted exchange carried a
+  receipt block that does not match the contract. The exchange still counted, and any
+  receipt already held stays in use. Report it to support if it repeats.
+- The receipt is linkable to this instance's submission UUID, never to a paid account,
+  and it is not anonymity. Withdrawal ends receipt eligibility; it does not erase
+  snapshots the service already holds. A download link issued before the withdrawal stays
+  usable for up to 15 minutes.
