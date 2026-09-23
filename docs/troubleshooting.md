@@ -2078,7 +2078,8 @@ connection license is transmitted, and activation never enables inventory sharin
   Keep tenant selection enabled to continue serving acquired paid intelligence;
   disabling `VULN_TENANT_SELECTION` restores the legacy consent gate and is not
   the paid-pilot network stop switch.
-- **Expired/revoked/invalid credential:** new updates stop. Contact support about
+- **Expired/revoked/invalid credential:** new updates stop. A revoke clears the
+  "updates authorized until" date, because the service revokes without one. Contact support about
   renewal, extension or replacement; local selection, assessments and historical
   evidence are not deleted. The next refresh observes renewal; do not toggle consent
   to recover paid access. Last reported access is cached service state, not a
@@ -2093,6 +2094,13 @@ connection license is transmitted, and activation never enables inventory sharin
 - **"The intelligence service did not accept this activation secret (HTTP 401)":**
   the secret was mistyped (copy the whole `loon_act_` value), already activated once,
   expired unused, or revoked. Ask support for a new one; nothing was saved locally.
+  When the sentence ends "Current paid access is unchanged", this instance was already
+  activated: usually a second Activate with a secret the first one spent. The panel's
+  state still says what access is in force; Refresh now clears the message.
+- **"Paste only the one-time activation secret from support…":** what was entered is
+  not the 52-character value that begins `loon_act_`, so nothing was sent and nothing
+  was spent. Paste only that value from support's file. Surrounding quotes and spaces
+  are removed automatically.
 - **"… not serving paid access right now (HTTP 503)":** the service cannot answer
   for paid access. Its preview may be switched off, or its entitlement store or corpus
   may be unavailable. This is not an expiry or revocation. Retry later; contact

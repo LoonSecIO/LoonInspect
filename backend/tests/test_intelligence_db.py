@@ -80,6 +80,8 @@ async def test_expiry_and_outage_keep_selected_intelligence(db, paid, code, stat
         db, transport=httpx.MockTransport(lambda _: httpx.Response(code, json={"state": state, "error": KEY}))
     )
     assert failed["state"] == state
+    # A revoke has no end date; a remembered one would read as a live term.
+    assert (failed["updatesUntil"] is None) == (state == "revoked")
     assert failed["selectedCorpus"] == SIGNATURE and failed["lastRefreshAt"]
     assert failed["error"] and KEY not in failed["error"]
     assert (await earned_corpus(db)) is not NO_CORPUS
@@ -90,6 +92,24 @@ async def test_failed_activation_replacement_keeps_working_credential(db, paid):
     failed = await intelligence.activate(db, ACT, transport=httpx.MockTransport(lambda _: httpx.Response(401)))
     row = await get_or_create_settings(db)
     assert row.intelligence_credential == KEY and failed["state"] == "paid" and row.tier == "off"
+    assert failed["error"].endswith("Current paid access is unchanged.")
+
+
+async def test_a_quoted_or_padded_secret_is_cleaned_and_a_malformed_one_never_sent(db, paid):
+    def clean_only(request):
+        assert json.loads(request.content)["activation_secret"] == ACT
+        return service(request)
+
+    activated = await intelligence.activate(db, f' "{ACT}"\n', transport=httpx.MockTransport(clean_only))
+    assert activated["credentialPresent"] and not activated["error"]
+
+    def never(_):
+        pytest.fail("a malformed secret must not be sent")
+
+    with pytest.raises(intelligence.AccessFailure) as refused:
+        await intelligence.activate(db, "loon_act_too_short", transport=httpx.MockTransport(never))
+    assert refused.value.state == "invalid_activation"
+    assert "52 characters beginning loon_act_" in str(refused.value) and "Nothing was sent" in str(refused.value)
 
 
 async def test_daily_scheduler_and_disabled_preview_never_send_inventory(db, paid, monkeypatch):

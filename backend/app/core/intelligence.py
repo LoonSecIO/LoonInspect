@@ -231,8 +231,16 @@ async def activate(
         )
     if rotate and not row.intelligence_credential:
         raise AccessFailure("not_activated", "Activate paid access before rotating a credential.")
+    if activation is not None:
+        # Copied out of support's file or a message, a secret often arrives wrapped in
+        # quotes or trailing whitespace; its own alphabet has neither, so shed them.
+        activation = activation.strip().strip("\"'")
     if not rotate and (not activation or not activation.startswith("loon_act_") or len(activation) != 52):
-        raise AccessFailure("invalid_activation", "Enter the one-time activation secret supplied by support.")
+        raise AccessFailure(
+            "invalid_activation",
+            "Paste only the one-time activation secret from support: 52 characters beginning loon_act_, without "
+            "quotes or spaces. Nothing was sent.",
+        )
     try:
         answer = await request(
             "rotate" if rotate else "activate",
@@ -245,7 +253,12 @@ async def activate(
             "paid intelligence request failed",
             extra={"operation": "rotate" if rotate else "activate", "reason": exc.state, "detail": str(exc)},
         )
-        record(row, error=str(exc))  # A failed replacement must not revoke an existing working credential.
+        message = str(exc)
+        if row.intelligence_credential and not rotate:
+            # Seen on the first dev walk: a second Activate with a spent secret read like an
+            # outage while access was fine. Say which access is still in force.
+            message += " Current paid access is unchanged."
+        record(row, error=message)  # A failed replacement must not revoke an existing working credential.
         await db.commit()
         return await status(db)
     row.intelligence_credential = answer["credential"]
@@ -278,6 +291,9 @@ async def refresh(db: AsyncSession, *, scheduled: bool = False, transport: httpx
         fields = {"error": str(exc)}
         if exc.state in {"expired", "revoked", "credential_invalid"}:
             fields["state"] = exc.state
+        if exc.state == "revoked":
+            # The service revokes with no end date; a remembered one would read as a live term.
+            fields["updates_until"] = None
         record(row, **fields)
         await db.commit()
         return await status(db)
