@@ -200,22 +200,9 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
           <p className="text-sm text-muted-foreground">{copy.empty}</p>
         ) : (
           <>
+            {/* The line below reads oldest to newest, left to right, so the control on the
+                left pages toward older states and the one on the right toward newer (#618). */}
             <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-              <button
-                type="button"
-                disabled={page === 1 || saving}
-                className="underline disabled:opacity-40"
-                onClick={() => {
-                  setTimeline(null);
-                  setRevision((r) => r + 1);
-                  setPage((p) => p - 1);
-                  setSelection(null);
-                  setEditing(false);
-                }}
-              >
-                {copy.newer}
-              </button>
-              <span>{copy.recordedStates}</span>
               <button
                 type="button"
                 disabled={!list.value.hasMore || saving}
@@ -229,6 +216,21 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
                 }}
               >
                 {copy.older}
+              </button>
+              <span>{copy.recordedStates}</span>
+              <button
+                type="button"
+                disabled={page === 1 || saving}
+                className="underline disabled:opacity-40"
+                onClick={() => {
+                  setTimeline(null);
+                  setRevision((r) => r + 1);
+                  setPage((p) => p - 1);
+                  setSelection(null);
+                  setEditing(false);
+                }}
+              >
+                {copy.newer}
               </button>
             </div>
             <ol
