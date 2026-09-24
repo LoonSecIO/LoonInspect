@@ -2,9 +2,11 @@ import { describe, expect, it, vi, afterEach } from "vitest";
 import { apiRequest } from "@/config/api";
 import {
   changedValue,
+  dotLabel,
   formatHistoryValue,
   loadHistoryPoint,
   saveHistorySlots,
+  type HistoryPoint,
 } from "./history";
 import { historyEnglish as copy, historyGerman } from "./historyCopy";
 vi.mock("@/config/api", () => ({ apiRequest: vi.fn() }));
@@ -53,5 +55,25 @@ describe("localized history states", () => {
       expect(c.older.startsWith("←")).toBe(true);
       expect(c.newer.endsWith("→")).toBe(true);
     }
+  });
+});
+describe("timeline dot labels (#645)", () => {
+  it("dates every dot by when the state was recorded, so the line never runs backwards", () => {
+    // Device 1 on the demo pod, 2026-09-24: five states share one report time and two assessment
+    // points sit between them; labelled by the report time the newest dot read "Sep 18" to the
+    // right of "Sep 23". Noon UTC keeps the calendar day the same in any test zone.
+    const observed = "2026-09-18T12:00:00Z";
+    const newestFirst: HistoryPoint[] = [
+      { id: "p:1", kind: "inventory", observedAt: observed, collectedAt: "2026-09-24T12:00:00Z" },
+      { id: "p:2", kind: "assessment", observedAt: observed, collectedAt: "2026-09-23T12:00:00Z" },
+      { id: "p:3", kind: "assessment", observedAt: observed, collectedAt: "2026-09-21T12:00:00Z" },
+      { id: "p:4", kind: "inventory", observedAt: observed, collectedAt: "2026-09-21T12:00:00Z" },
+      { id: "p:5", kind: "inventory", observedAt: observed, collectedAt: "2026-09-19T12:00:00Z" },
+      { id: "p:6", observedAt: "2026-09-11T12:00:00Z", collectedAt: "2026-09-14T12:00:00Z" },
+    ];
+    const leftToRight = [...newestFirst].reverse().map((p) => dotLabel(p, "en-US"));
+    expect(leftToRight).toEqual(["Sep 14", "Sep 19", "Sep 21", "Sep 21", "Sep 23", "Sep 24"]);
+    // The label reads one clock only: an inventory point is not dated by its report time.
+    expect(dotLabel({ collectedAt: "2026-09-24T12:00:00Z" }, "en-US")).toBe("Sep 24");
   });
 });
