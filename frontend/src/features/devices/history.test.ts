@@ -47,4 +47,11 @@ describe("localized history states", () => {
     );
     expect(historyGerman.personal).toContain("Mandanten");
   });
+  it("points the paging controls the way the timeline reads (#618)", () => {
+    // Oldest on the left, newest on the right: Older pages left, Newer pages right.
+    for (const c of [copy, historyGerman]) {
+      expect(c.older.startsWith("←")).toBe(true);
+      expect(c.newer.endsWith("→")).toBe(true);
+    }
+  });
 });

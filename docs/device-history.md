@@ -56,7 +56,8 @@ versus outside-collection states; today's collection settings do not rewrite old
 The timeline is paginated at twelve recorded states, ordered by inventory observation time,
 collection time, then stable point ID. It does not pretend every sweep is a new inventory state.
 Latest means the newest recorded state, not a fresh observation of a silent device. Both clocks
-are displayed. Existing inventory tables below the card are labeled latest inventory.
+are displayed. The line runs oldest to newest, left to right; *← Older* pages toward earlier
+states and *Newer →* back toward Latest (#618). Existing inventory tables below the card are labeled latest inventory.
 
 Old spans remain readable without new storage. Going forward, ingestion adds a small
 `device_history_points` row when the span or compact assessment evidence changes; identical
