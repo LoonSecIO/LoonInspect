@@ -260,14 +260,16 @@ function DevicePageContent() {
       </div>
 
       {/* "Recorded", not "changed": the policy filters at write time, so a digest can move
-          with no row behind it, and the page must not claim a precision it does not have. */}
+          with no row behind it, and the page must not claim a precision it does not have.
+          Dated by when it was recorded (#645): the Mac's report clock does not move when
+          Jamf's record changes without a new inventory report. */}
       <p className="text-sm text-muted-foreground" title={td.recordedNote}>
         {changes === null && changesKey !== null
           ? td.changes.loading
           : changes?.state === "failed"
             ? td.changes.errorLoading
             : latestChange
-              ? td.lastRecordedChange(new Date(latestChange.observedAt).toLocaleString(), tc.levels[latestChange.level] ?? latestChange.level)
+              ? td.lastRecordedChange(new Date(latestChange.collectedAt).toLocaleString(), tc.levels[latestChange.level] ?? latestChange.level)
               : td.noRecordedChange}
       </p>
 
@@ -405,7 +407,9 @@ function DevicePageContent() {
             <table className="w-full text-sm">
               <thead className="border-b bg-muted/30 text-left text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-2 font-medium">{tc.colWhen}</th>
+                  {/* The collection clock, not the Changes page's Observed (#645): a row is dated by
+                      when this pod recorded it; the Mac's report time rides the cell's tooltip. */}
+                  <th className="px-4 py-2 font-medium">{td.changes.colCollected}</th>
                   <th className="px-4 py-2 font-medium">{tc.colWhat}</th>
                   <th className="px-4 py-2 font-medium">{tc.colChange}</th>
                   <th className="px-4 py-2 font-medium">{tc.colWhatChanged}</th>
@@ -439,8 +443,11 @@ function DevicePageContent() {
                   const detail = detailText(row, tc);
                   return (
                     <tr key={row.id} className="border-b align-top last:border-0">
-                      <td className="whitespace-nowrap px-4 py-2 text-xs text-muted-foreground">
-                        {new Date(row.observedAt).toLocaleString()}
+                      <td
+                        className="whitespace-nowrap px-4 py-2 text-xs text-muted-foreground"
+                        title={td.changes.observedTitle(new Date(row.observedAt).toLocaleString())}
+                      >
+                        {new Date(row.collectedAt).toLocaleString()}
                       </td>
                       <td className="px-4 py-2">
                         <div className="text-xs text-muted-foreground">{what.head}</div>

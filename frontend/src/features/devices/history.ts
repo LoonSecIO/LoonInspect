@@ -76,6 +76,14 @@ export const saveHistorySlots = (
     json: { point, slots },
   });
 
+/** The date under a timeline dot: when LoonInspect recorded the state, for every kind of point.
+ *  The Mac's own report time (`observedAt`) stays in the dot's tooltip and the state's header.
+ *  It does not move when Jamf's record changes without a new inventory report, so a line
+ *  labelled by it repeats itself and runs backwards at an assessment point (#645). */
+export function dotLabel(point: Pick<HistoryPoint, "collectedAt">, locale: string): string {
+  return new Date(point.collectedAt).toLocaleDateString(locale, { month: "short", day: "numeric" });
+}
+
 export function changedValue(
   value: HistoryValue,
   before: HistoryValue | null,

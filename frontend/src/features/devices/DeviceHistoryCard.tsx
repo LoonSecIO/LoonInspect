@@ -4,6 +4,7 @@ import { useAuthStore } from "@/features/auth/store";
 import { useLocale } from "@/i18n/LocaleContext";
 import {
   changedValue,
+  dotLabel,
   formatHistoryValue,
   loadHistory,
   loadHistoryPoint,
@@ -255,10 +256,7 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
                       className={`z-10 block h-6 w-6 rounded-full border-2 ${selected === p.id ? "border-primary bg-primary" : "border-muted-foreground bg-card"}`}
                     />
                     <span className="whitespace-nowrap font-mono text-muted-foreground">
-                      {new Date(p.kind === "assessment" ? p.collectedAt : p.observedAt).toLocaleDateString(locale, {
-                        month: "short",
-                        day: "numeric",
-                      })}
+                      {dotLabel(p, locale)}
                     </span>
                     {p.kind === "assessment" && <span>{copy.evaluated}</span>}
                   </button>

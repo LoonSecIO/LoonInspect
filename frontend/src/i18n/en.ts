@@ -887,7 +887,11 @@ export const en = {
       },
       changes: {
         heading: "Recent changes",
-        caption: "Every recorded change, including levels muted on the fleet feed.",
+        caption:
+          "Every recorded change, including levels muted on the fleet feed, dated by when LoonInspect collected it. The Mac's own report time is in each row's tooltip and in the Observed column of the Changes page.",
+        // #645: the row's date is the collection clock; the report clock stays one hover away.
+        colCollected: "Collected",
+        observedTitle: (when: string) => `Observed (the Mac's report time in Jamf): ${when}`,
         all: "All changes on this Mac",
         loading: "Loading changes…",
         errorLoading: "Could not load the changes for this Mac.",

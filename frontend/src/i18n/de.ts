@@ -810,7 +810,10 @@ export const de: Translations = {
       },
       changes: {
         heading: "Letzte Änderungen",
-        caption: "Jede aufgezeichnete Änderung, auch die im Flotten-Feed stummgeschalteten Stufen.",
+        caption:
+          "Jede aufgezeichnete Änderung, auch die im Flotten-Feed stummgeschalteten Stufen, datiert nach dem Abruf durch LoonInspect. Die Berichtszeit des Mac steht im Tooltip jeder Zeile und in der Spalte „Beobachtet“ der Änderungsseite.",
+        colCollected: "Abgerufen",
+        observedTitle: (when: string) => `Beobachtet (Berichtszeit des Mac in Jamf): ${when}`,
         all: "Alle Änderungen auf diesem Mac",
         loading: "Änderungen werden geladen…",
         errorLoading: "Die Änderungen dieses Macs konnten nicht geladen werden.",

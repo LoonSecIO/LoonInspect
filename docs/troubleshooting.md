@@ -2024,6 +2024,16 @@ that field was missing; “Not collected in this observation” means the record
 include its section. “Disabled in Change Log” is a display-policy choice: enable that field in
 Settings → Change Log or replace the slot. Layouts are personal to the active tenant.
 
+**The newest state is dated today, but its Observed clock is days old.** Not a fault. A dot, the
+*Last recorded change* line and the Recent changes table carry the collection clock, when
+LoonInspect recorded the state; *Observed* is the Mac's own report time in Jamf. The two part when
+Jamf's record changes without the Mac submitting inventory: an extension attribute edited in Jamf,
+a field Jamf fills on the server, or an intelligence reassessment (*Assessed*). Read the top band:
+if *Inventory reported by Jamf* has not moved for days while *Jamf last heard from the Mac* has,
+the Mac checks in but does not submit inventory, which is its Jamf inventory-update policy and
+not this pod. The Changes page dates rows by the report time (its *Observed* column); this page
+dates them by collection. The same change carries both, and its row's tooltip names the other.
+
 “Not recorded” for historical findings means no assessment evidence was retained at that point.
 It does not mean zero findings. New ingestion records it automatically; the optional retained-event
 import in [Device history](device-history.md) can recover receipts still held by the pod.
