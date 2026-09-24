@@ -1983,7 +1983,10 @@ Catalog tab carries. So a link somebody sent you works even while the entry is h
     never been checked for a Mac carrying this build.** Open its device page and read
     **Findings first checked**: a sentence saying findings have not been checked confirms
     this state. A timestamp means its first check completed, even if it found no findings;
-    it is not the first detected date of a CVE and does not move on subsequent sweeps.
+    it is not the first detected date of a CVE and does not move on subsequent sweeps. It is
+    the pod's clock at that check, not the Mac's report time: a marker earlier than the day
+    this pod's finding ledger first ran (a pod upgraded across #597 before #646) was copied
+    from the report time at the first check and is not rewritten.
     Run a device sweep to record the initial check (§ 2 for a run that reports nothing,
     § 12 for one connection whose sweeps all fail). A recent **LoonInspect last read it**
     timestamp alone does not prove findings were checked.
