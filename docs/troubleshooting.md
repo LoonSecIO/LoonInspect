@@ -673,7 +673,7 @@ and step 2 ends with how to tell that apart from a broken exchange.
    succeeding, step 2's log lines say why; if they say `updated` with an unmoved date, the
    published corpus itself has not moved, which is reportable state **I**.
 6. **Settings › Data Sharing says the last exchange *failed*.** The reason is printed
-   beneath *Last exchange*. It names the host the container dialled — `api.loonsec.io`
+   beneath *Last exchange*. It names the host the container dialled — `api.next.loonsec.io`
    unless a hosted pod's template set `SHARING_ENDPOINT` — and ends with how many times
    the run tried. **Send now**, in the same page's *Exactly what would be sent* box, runs
    an exchange on demand and shows the row it wrote, so each check below can be proved
@@ -683,7 +683,7 @@ and step 2 ends with how to tell that apart from a broken exchange.
    ```bash
    docker compose exec app python -c 'import sys, urllib.request as u, urllib.error as e
    try: print(u.urlopen(u.Request(sys.argv[1], b"{}", {"Content-Type": "application/json"}), timeout=10).status)
-   except e.HTTPError as x: print(x.code, x.read().decode()[:200])' https://api.loonsec.io/v1/exchange
+   except e.HTTPError as x: print(x.code, x.read().decode()[:200])' https://api.next.loonsec.io/v1/exchange
    ```
 
    The collector answers that with `400 {"error": "unsupported contract"}`; any other
@@ -691,12 +691,14 @@ and step 2 ends with how to tell that apart from a broken exchange.
    pod whose template set `SHARING_ENDPOINT` probes that value instead, whole — the
    container posts to it exactly as set and adds no path.
    - `The collector at api.loonsec.io answered 403 Forbidden: {"message":"Missing
-     Authentication Token"}` → nothing at that address takes exchanges yet. Until
-     LoonSec's production cutover this is what every instance on the default endpoint
-     reads, and it is expected: nothing is lost, because each day's snapshot replaces the
-     last in full, and the first exchange after the cutover reads `sent`. After the
-     cutover the same line is reportable state **M**. From any other host, a `403` or
-     `404` means there is no collector at that path: check the pod's `SHARING_ENDPOINT`.
+     Authentication Token"}` → that name is not the collector yet: until LoonSec reclaims
+     it, an older account's API answers there. An image built before 2026-09-25, whose
+     default was that name, or a `SHARING_ENDPOINT` set to it, reads this on every
+     exchange. Set `SHARING_ENDPOINT` to `https://api.next.loonsec.io/v1/exchange` or
+     update the image. Nothing is lost: each day's snapshot replaces the last in full, and
+     the first exchange at the right address reads `sent`. From `api.next.loonsec.io` the
+     same line is reportable state **M**. From any other host, a `403` or `404` means
+     there is no collector at that path: check the pod's `SHARING_ENDPOINT`.
    - `Could not connect to <host>: …` → the container could not reach the host at all,
      and the text after the colon says how. `Name or service not known` is DNS — `docker
      compose exec app getent hosts <host>` prints nothing when the container cannot
@@ -791,8 +793,8 @@ describes, and a `null` there with the tier on is the defect. A `null` with the 
 **I.** The published corpus is refused, unreachable, or unchanging. Report the exact log
 line (it names the epoch and the state), the build, and roughly when it started.
 **M.** The exchange reads `failed` for a reason on the collector's side: a `400` or `413`,
-a `429` or `5xx` for more than a day, or a `403`/`404` from `api.loonsec.io` after the
-production cutover. Report the reason printed under *Last exchange* (the same sentence is
+a `429` or `5xx` for more than a day, or a `403`/`404` from `api.next.loonsec.io`, the
+production collector. Report the reason printed under *Last exchange* (the same sentence is
 the `error` field of that row in the share-log download), when it started, the probe's
 answer from step 6, and the build (Settings › Support).
 
@@ -2072,8 +2074,10 @@ connection license is transmitted, and activation never enables inventory sharin
   default. Enable only for a reviewed pilot after Support's deployed IAM/privacy
   checks; this is not a v1.x rollout instruction. Configure `INTELLIGENCE_ENDPOINT`
   as the trusted HTTPS service origin, without a path, credentials or query. The
-  default is `https://api.loonsec.io`; use the operator-confirmed staging/production
-  origin during Support's domain transition. Endpoint redirects are refused.
+  default is `https://api.next.loonsec.io`, the production service on its interim
+  name; set the operator-confirmed staging origin for a pilot against staging.
+  `https://api.loonsec.io` is not yet that service and answers `403` until the name is
+  reclaimed. Endpoint redirects are refused.
 - **Activation:** enter the one-time `loon_act_` secret from support. It is sent
   only with protocol/client version, not inventory or submission identity. The
   returned paid credential is encrypted using this instance's `ENCRYPTION_KEY` and

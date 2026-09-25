@@ -47,7 +47,7 @@ Parameters:
 
   SharingEndpoint:
     Type: String
-    Default: https://api.loonsec.io/v1/exchange
+    Default: https://api.next.loonsec.io/v1/exchange
     AllowedPattern: ^https://[A-Za-z0-9.-]+/v1/exchange$
     Description: >-
       SHARING_ENDPOINT — where the container's daily data-sharing exchange posts
