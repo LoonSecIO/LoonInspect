@@ -32,6 +32,9 @@ export interface HistoryDetail extends HistoryPoint {
   values: (HistoryChoice & HistoryValue & { before: HistoryValue | null })[];
   choices: HistoryChoice[];
   baseline: boolean;
+  /** Ledger sections this observation moved, against the span before it (#644). Absent on
+   *  a backend that predates it. */
+  recordedSections?: string[];
   assessment: {
     total: number | null;
     critical: number | null;
@@ -82,6 +85,16 @@ export const saveHistorySlots = (
  *  labelled by it repeats itself and runs backwards at an assessment point (#645). */
 export function dotLabel(point: Pick<HistoryPoint, "collectedAt">, locale: string): string {
   return new Date(point.collectedAt).toLocaleDateString(locale, { month: "short", day: "numeric" });
+}
+
+/** The recorded sections in the operator's words, in the registry's order, for the line under
+ *  an AI outcome that covered none of them (#644). Unknown names stay as they are rather than
+ *  vanish: a fifteenth wire section is still a section that moved. */
+export function recordedSectionLabels(
+  sections: string[] | undefined,
+  labels: Record<string, string>,
+): string {
+  return (sections ?? []).map((section) => labels[section] ?? section).join(", ");
 }
 
 export function changedValue(

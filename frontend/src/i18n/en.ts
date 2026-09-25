@@ -1932,8 +1932,8 @@ export const en = {
   ai: {
     inventorySummary: {
       "title": "Inventory summaries",
-      "description": "Only meaningful changes send a separate SIEM briefing. No changes means “No updates” locally, with no AI call or extra SIEM event. Pending summaries expire after one hour.",
-      "disclosure": "The selected saved endpoint receives app names, versions, finding counts, selected posture changes and your preference. Device identity and CVE lists remain in deterministic evidence. Enable the flag and consent above before enabling summaries.",
+      "description": "Only meaningful changes send a separate SIEM briefing: apps and their findings, OS version and build, FileVault, SIP, Gatekeeper, the firewall, and the extension attributes the Change Log records. No changes means “No updates” locally, with no AI call or extra SIEM event. Pending summaries expire after one hour.",
+      "disclosure": "The selected saved endpoint receives app names, versions, finding counts, selected posture changes, the names and values of extension attributes that changed, and your preference. Mute a definition in Settings → Change Log to keep its values off the endpoint. Device identity and CVE lists remain in deterministic evidence. Enable the flag and consent above before enabling summaries.",
       "enable": "Enable inventory summaries",
       "provider": "Inventory summary provider",
       "compatible": "OpenAI-compatible",

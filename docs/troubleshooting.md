@@ -2014,7 +2014,20 @@ Inventory delivery does not wait for its summary. For absent or late summaries, 
 selection, one-hour expiry, overload/capacity logs, and Splunk time correlation, follow
 [inventory summary troubleshooting](inventory-summaries.md#metrics-and-diagnostics).
 `No updates` means a comparable observation changed none of the declared evidence scope;
-it never substitutes for an expired job or incomplete observation.
+it never substitutes for an expired job or incomplete observation. The scope is apps and their
+findings, OS version and build, FileVault, SIP, Gatekeeper, the firewall, and extension attribute
+values (#644). The device-history card names it in the sentence, and adds which ledger sections
+the observation did record changes in.
+
+**An extension attribute changed, but the AI says “No updates”.** Three checks, in order. First,
+Settings → Change Log: the definition is muted, or the current level does not log extension
+attribute updates — the summary follows exactly that policy, and a muted definition is never
+evidence. Second, the collection's quarantine (Settings → Connections → the collection): a
+quarantined definition never reaches the snapshot. Third, the point before it: the first
+observation of a device after the upgrade to #644, or after a definition is created, reads
+“AI comparison baseline established” — there was no earlier value to compare — and the change
+is briefed from the next observation on. If the card reads “baseline” on every observation,
+the section is dropping out of the aperture between reads; the Changes page shows which.
 
 Only meaningful completed/cached changes produce a SIEM summary event. No-update, baseline,
 incomplete and drop outcomes are local counters/state. Open Overview’s diagnostic reasons for

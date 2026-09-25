@@ -75,7 +75,10 @@ async def capture_at(db, *, device, event, span, observed_at, last_check_in=None
     if await db.scalar(select(DeviceHistoryPoint.id).where(DeviceHistoryPoint.source_id == event.id)):
         return None
     assessment = assessment_totals(event.payload)
-    assessment["evidenceDigest"] = digest(compact(event.payload))
+    # Without the extension attributes (#644): the span already keys on that section, so a
+    # value change opens a point through the span, and a digest that widened on upgrade would
+    # open one new point per device on the first quiet sweep after it.
+    assessment["evidenceDigest"] = digest(compact(event.payload, extension_attributes=False))
     if evidence is not None:
         assessment["vulnerabilityEvidence"] = evidence
     prior = await db.scalar(

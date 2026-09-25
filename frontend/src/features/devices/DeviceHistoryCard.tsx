@@ -8,6 +8,7 @@ import {
   formatHistoryValue,
   loadHistory,
   loadHistoryPoint,
+  recordedSectionLabels,
   saveHistorySlots,
   type HistoryDetail,
   type HistoryPage,
@@ -23,6 +24,7 @@ export function DeviceHistoryCard({ deviceId }: { deviceId: number }) {
 function HistoryCard({ deviceId }: { deviceId: number }) {
   const { t, locale } = useLocale();
   const copy = t.deviceHistory;
+  const sectionLabels = t.changes.sections;
   const [page, setPage] = useState(1);
   const [selection, setSelection] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
@@ -585,6 +587,17 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
                     <p className="text-xs text-muted-foreground">
                       {copy.summaries[summary?.status ?? "unavailable"] ??
                         copy.summaries.unavailable}
+                      {detail.recordedSections?.length ? (
+                        <>
+                          {" "}
+                          {copy.recordedSections(
+                            recordedSectionLabels(
+                              detail.recordedSections,
+                              sectionLabels,
+                            ),
+                          )}
+                        </>
+                      ) : null}
                     </p>
                   ) : null}
                   <Link

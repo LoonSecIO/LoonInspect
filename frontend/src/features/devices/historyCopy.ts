@@ -48,6 +48,8 @@ export const historyEnglish = {
   noSelectedChanges:
     "No comparable changes in the selected values. The recorded change log may contain other changes.",
   advisory: "AI summary · advisory",
+  recordedSections: (sections: string) =>
+    `This observation recorded changes in: ${sections}.`,
   evidence: "View recorded changes for this observation →",
   noAssessment:
     "Historical vulnerability assessment was not recorded for this observation.",
@@ -71,7 +73,8 @@ export const historyEnglish = {
   } as Record<string, string>,
   summaries: {
     baseline: "AI comparison baseline established.",
-    no_updates: "No updates in the completed AI comparison.",
+    no_updates:
+      "No updates in what the AI compares: apps and their findings, OS version and build, FileVault, SIP, Gatekeeper, the firewall, and extension attributes the Change Log records.",
     incomplete: "AI comparison is incomplete; some sections were not observed.",
     pending: "AI summary pending.",
     processing: "AI summary is being generated.",
@@ -134,6 +137,8 @@ export const historyGerman: typeof historyEnglish = {
   noSelectedChanges:
     "Keine vergleichbaren Änderungen der gewählten Werte. Das Änderungsprotokoll kann weitere Änderungen enthalten.",
   advisory: "KI-Zusammenfassung · unverbindlich",
+  recordedSections: (sections) =>
+    `Diese Beobachtung hat Änderungen erfasst in: ${sections}.`,
   evidence: "Erfasste Änderungen dieser Beobachtung anzeigen →",
   noAssessment:
     "Für diese Beobachtung wurde keine historische Schwachstellenbewertung erfasst.",
@@ -157,7 +162,8 @@ export const historyGerman: typeof historyEnglish = {
   },
   summaries: {
     baseline: "Ausgangsbasis für den KI-Vergleich erstellt.",
-    no_updates: "Keine Aktualisierungen im abgeschlossenen KI-Vergleich.",
+    no_updates:
+      "Keine Aktualisierungen in dem, was die KI vergleicht: Apps und ihre Befunde, Betriebssystemversion und Build, FileVault, SIP, Gatekeeper, Firewall und die Erweiterungsattribute, die das Änderungsprotokoll erfasst.",
     incomplete:
       "KI-Vergleich unvollständig; einige Abschnitte wurden nicht beobachtet.",
     pending: "KI-Zusammenfassung ausstehend.",
