@@ -20,6 +20,7 @@ import { ChangeTrackingPage } from "@/features/changes/ChangeTrackingPage";
 import { ConnectionsPage } from "@/features/mdm/ConnectionsPage";
 import { FeatureFlagsPage } from "@/features/settings/FeatureFlagsPage";
 import { DataSharingPage } from "@/features/system/DataSharingPage";
+import { IntelligenceAccessPage } from "@/features/system/IntelligenceAccessPage";
 import { AISettingsPage } from "@/features/ai/AISettingsPage";
 import { ApiTokensPage } from "@/features/tokens/ApiTokensPage";
 import { DestinationsPage } from "@/features/destinations/DestinationsPage";
@@ -90,6 +91,7 @@ export function AppRoutes() {
             page itself hides its write controls without SYSTEM_WRITE. */}
         <Route element={<RequirePermission permission={PERMISSIONS.SYSTEM_READ} />}>
           <Route path="settings/data-sharing" element={<DataSharingPage />} />
+          <Route path="settings/intelligence-access" element={<IntelligenceAccessPage />} />
         </Route>
         {/* SYSTEM_READ like data-sharing: the page reads the switches and the
             provider table for anyone with it, and hides Send without SYSTEM_WRITE,

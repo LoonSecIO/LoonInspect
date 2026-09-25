@@ -5,6 +5,10 @@ export const de: Translations = {
   deviceHistory: historyGerman,
   intelligence: {
     title: "Zugang zu Sicherheitsinformationen", description: "Bezahlter Zugang funktioniert ohne Inventarfreigabe. Die Aktivierung ändert Ihre Freigabeentscheidung nicht.",
+    pageDescription: "Wie diese Instanz Sicherheitsinformationen aktuell hält. Bezahlter Zugang und Community-Freigabe sind getrennte Wege; keiner schaltet den anderen ein oder aus, und gespeicherte Informationen bleiben nach Updateende nutzbar.",
+    paidTitle: "Bezahlter Zugang",
+    notEnabled: "Der Zugang zu Sicherheitsinformationen ist in der Konfiguration dieser Instanz nicht aktiviert.",
+    movedPointer: "Der bezahlte Zugang hat eine eigene Seite:",
     state: "Zuletzt gemeldeter Zugang", credential: "Gespeicherter Zugangsschlüssel", present: "Vorhanden (ausgeblendet)", none: "Nicht verfügbar",
     until: "Updates autorisiert bis", attempt: "Letzter Updateversuch", refresh: "Letzte abgeschlossene bezahlte Aktualisierung",
     source: "Stand der ausgewählten Quelle", selected: "Ausgewählter Korpus", activation: "Einmaliger Aktivierungsschlüssel",
@@ -25,7 +29,7 @@ export const de: Translations = {
     dismissUpdate: "Update-Hinweis ausblenden",
     sharing: {
       pageDescription:
-        "Diese Einstellungen steuern Beiträge aus dem Community-Inventar. Ein freigegebener Austausch kann Sicherheitsinformationen liefern. Bezahlter Zugang ist, sofern unten aktiviert, unabhängig und erfordert keine Inventarfreigabe.",
+        "Diese Einstellungen steuern Beiträge aus dem Community-Inventar. Ein freigegebener Austausch kann Sicherheitsinformationen liefern. Bezahlter Zugang ist, sofern aktiviert, unabhängig, hat eine eigene Seite und erfordert keine Inventarfreigabe.",
       envLocked:
         "COMMUNITY_SHARING=false ist in der Umgebung gesetzt — in der Datei .env neben docker-compose.yml. Solange es gesetzt ist, wird nichts geteilt, unabhängig von der Auswahl unten. Eine hier getroffene Wahl wird gespeichert und greift, sobald die Zeile entfernt und der Container neu gestartet wurde (docker compose up -d).",
       readOnlyRole:
@@ -221,6 +225,7 @@ export const de: Translations = {
     connections: "Verbindungen",
     featureFlags: "Feature-Flags",
     dataSharing: "Datenfreigabe",
+    intelligenceAccess: "Informationszugang",
     ai: "KI",
     apiTokens: "API-Token",
     accounts: "Konten",

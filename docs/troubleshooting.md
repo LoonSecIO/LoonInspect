@@ -2078,8 +2078,9 @@ the account lacks `device:sync` or the device has no supported Jamf connection.
 
 ## Paid intelligence preview (#622)
 
-Settings > Data sharing > Intelligence access separates paid update access from
-upload consent. Activation and rotation are explicit administrator actions; no MDM
+Settings > Intelligence Access separates paid update access from upload consent. The
+entry is listed only where the instance offers the preview (and only for accounts that
+can read system settings); Data sharing links to it. Activation and rotation are explicit administrator actions; no MDM
 connection license is transmitted, and activation never enables inventory sharing.
 
 - The panel appears only with `INTELLIGENCE_ACCESS=true`,

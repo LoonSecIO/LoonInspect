@@ -3,6 +3,10 @@ export const en = {
   deviceHistory: historyEnglish,
   intelligence: {
     title: "Intelligence access", description: "Paid access works without sharing inventory. Activation never changes your sharing choice.",
+    pageDescription: "How this instance keeps vulnerability intelligence current. Paid access and community sharing are separate routes; neither turns the other on or off, and held intelligence stays usable when updates stop.",
+    paidTitle: "Paid access",
+    notEnabled: "Intelligence access is not enabled in this instance's configuration.",
+    movedPointer: "Paid intelligence access has its own page:",
     state: "Last reported access", credential: "Stored credential", present: "Present (redacted)", none: "Not available",
     until: "Updates authorized until", attempt: "Last update attempt", refresh: "Last completed paid refresh",
     source: "Selected source as of", selected: "Selected corpus", activation: "One-time activation secret",
@@ -25,7 +29,7 @@ export const en = {
     sharing: {
       // Sharing describes uploads; paid intelligence is a separate opt-in surface (#622).
       pageDescription:
-        "These controls govern community inventory contributions. A consenting exchange may return vulnerability intelligence. Paid intelligence access, when enabled below, is separate and does not require sharing.",
+        "These controls govern community inventory contributions. A consenting exchange may return vulnerability intelligence. Paid intelligence access, where enabled, is separate, has its own page, and does not require sharing.",
       envLocked:
         "COMMUNITY_SHARING=false is set in the environment — the .env file beside docker-compose.yml. Nothing is shared while it is set, whatever is chosen below. A choice made here is recorded and takes effect once that line is removed and the container restarted (docker compose up -d).",
       readOnlyRole:
@@ -245,6 +249,7 @@ export const en = {
     connections: "Connections",
     featureFlags: "Feature Flags",
     dataSharing: "Data Sharing",
+    intelligenceAccess: "Intelligence Access",
     ai: "AI",
     apiTokens: "API Tokens",
     accounts: "Accounts",
