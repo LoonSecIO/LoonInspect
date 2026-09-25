@@ -113,9 +113,11 @@ class Settings(BaseSettings):
     # and withdraws it when consent ends. Needs the same two corpus flags as paid access.
     contribution_receipts: bool = False
 
-    # Where the daily exchange posts. The default is the production collector; tests
-    # and the future api.loonsec.io consolidation point it elsewhere.
-    sharing_endpoint: str = "https://api.loonsec.io/v1/exchange"
+    # Where the daily exchange posts. The default is the production collector on its interim
+    # estate name (ruled 2026-09-25 with the origin above; the 2026-09-18 ruling had kept the
+    # reclaimed-later name here). Tests and hosted pods point it elsewhere; a pod on the old
+    # default reads `403 Missing Authentication Token` from an older account, not a collector.
+    sharing_endpoint: str = "https://api.next.loonsec.io/v1/exchange"
 
     # Where the Jamf patch catalog is pulled from (app.mdm.patch.jamf_catalog). The
     # default is Jamf's public patch server, unchanged from the module constant this

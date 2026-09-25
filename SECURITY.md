@@ -23,7 +23,7 @@ ask not to be.
 
 - This repository: the application image (FastAPI backend, React frontend), the
   bundled Postgres configuration, and the deployment templates under `ops/`.
-- The hosted LoonSec services (`api.loonsec.io`, `*.pods.loonsec.io`): report through
+- The hosted LoonSec services (`api.next.loonsec.io`, `api.loonsec.io`, `*.pods.loonsec.io`): report through
   the same channel; it is the same maintainer.
 
 Out of scope: vulnerabilities in Jamf Pro, Splunk, or other third-party systems
