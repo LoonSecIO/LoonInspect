@@ -2108,17 +2108,59 @@ connection license is transmitted, and activation never enables inventory sharin
   Keep tenant selection enabled to continue serving acquired paid intelligence;
   disabling `VULN_TENANT_SELECTION` restores the legacy consent gate and is not
   the paid-pilot network stop switch.
-- **Expired/revoked/invalid credential:** new updates stop. Contact support about
+- **Expired/revoked/invalid credential:** new updates stop. A revoke clears the
+  "updates authorized until" date, because the service revokes without one. Contact support about
   renewal, extension or replacement; local selection, assessments and historical
   evidence are not deleted. The next refresh observes renewal; do not toggle consent
   to recover paid access. Last reported access is cached service state, not a
   continuously verified entitlement.
-- **Service unavailable/invalid reply:** check service configuration and network,
-  then retry. This does not mean expiry, revocation or zero vulnerabilities. Error
-  text never quotes upstream bodies or bearer/capability values.
-- **Download/assessment failed:** check database availability and free storage,
-  then Refresh now. Last completed paid refresh advances only after acquisition
-  and assessment/selection succeed. Previous selections survive failed imports.
+- **"No paid-access service answers at … (HTTP 404)" or "… refused the request
+  without an intelligence-service answer (HTTP 403)":** `INTELLIGENCE_ENDPOINT`
+  names an address that does not serve the paid routes. A path may be included, the
+  origin mistyped, or the service there not yet deployed with them. An image from before
+  2026-09-25 defaulted to `https://api.loonsec.io`, which answers every path with 403
+  until that name is reclaimed. Set the origin support confirmed (origin only, no path),
+  recreate the container, then activate or Refresh now. An activation secret refused
+  this way was not used.
+- **"The intelligence service did not accept this activation secret (HTTP 401)":**
+  the secret was mistyped (copy the whole `loon_act_` value), already activated once,
+  expired unused, or revoked. Ask support for a new one; nothing was saved locally.
+  When the sentence ends "Current paid access is unchanged", this instance was already
+  activated: usually a second Activate with a secret the first one spent. The panel's
+  state still says what access is in force; Refresh now clears the message.
+- **"Paste only the one-time activation secret from support…":** what was entered is
+  not the 52-character value that begins `loon_act_`, so nothing was sent and nothing
+  was spent. Paste only that value from support's file. Surrounding quotes and spaces
+  are removed automatically.
+- **"… not serving paid access right now (HTTP 503)":** the service cannot answer
+  for paid access. Its preview may be switched off, or its entitlement store or corpus
+  may be unavailable. This is not an expiry or revocation. Retry later; contact
+  support if it persists. An activation secret refused this way was not used.
+- **"… rejected the request as outside its contract (HTTP 400)":** this build and the
+  service disagree about the v2 request. Update LoonInspect, then contact support if
+  it repeats.
+- **"The entitlement changed while the service answered (HTTP 409)":** a staff change
+  or a concurrent rotation raced the request. Retry.
+- **"The intelligence service answered HTTP 5xx" (any other code) or "Could not reach
+  the intelligence service at …":** a gateway failure, timeout, DNS or network
+  problem. Check DNS and outbound HTTPS to the named origin, then retry. If the failed
+  request was an activation or rotation, the service may have finished it before the
+  reply was lost: when a retried activation is then refused with HTTP 401, ask support
+  for recovery instead of trying again.
+- **"Intelligence service returned an invalid reply":** the answer did not match the
+  v2 contract. Retry, and report it to support if it repeats. None of these failures
+  means expiry, revocation or zero vulnerabilities.
+- Each failure above also writes `paid intelligence request failed` to the container
+  log (`docker compose logs app`), with `operation` (`activate`, `rotate` or
+  `refresh`), `reason` and the same sentence. Error text never quotes upstream bodies
+  or bearer/capability values.
+- **"The paid corpus could not be downloaded, verified or stored":** the container
+  log's `vulnerability library` warning just before it names why (§5). Fix that, then
+  Refresh now. **"The intelligence update could not be assessed":** check database
+  availability and free storage, then Refresh now; the log line `paid intelligence
+  update not applied` names the error type. Last completed paid refresh advances only
+  after acquisition and assessment/selection succeed. Previous selections survive
+  failed imports.
 - **Stop paid updates locally:** removes the saved credential and prevents new paid
   requests. It does not cancel the purchase or erase held intelligence. A request
   already in flight can finish. Reactivation requires support's activation secret.

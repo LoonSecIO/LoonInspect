@@ -48,7 +48,7 @@ async def test_refresh_has_only_reviewed_fields_and_never_follows_redirects(monk
 @pytest.mark.parametrize(
     "code,body,expected",
     [
-        (401, {"error": KEY}, "credential_invalid"),
+        (401, {"error": KEY}, "invalid_activation"),
         (403, {"state": "expired", "error": KEY}, "expired"),
         (403, {"state": "revoked"}, "revoked"),
         (403, {"state": KEY}, "invalid_response"),
@@ -65,6 +65,70 @@ async def test_failure_text_never_echoes_service_secrets(code, body, expected):
         )
     assert error.value.state == expected
     assert KEY not in str(error.value) and ACT not in str(error.value)
+
+
+ORIGIN = "https://service.example"
+UNUSED = "The activation secret was not used."
+
+
+@pytest.mark.parametrize(
+    "code,body,state,says",
+    [
+        # A route nobody serves at that origin: the configuration, not the service.
+        (404, {"message": "Not Found"}, "configuration_error", ["HTTP 404", ORIGIN, "INTELLIGENCE_ENDPOINT", UNUSED]),
+        # Something else answering, such as the 2024 gateway behind the baked default.
+        (403, {"message": "Missing Authentication Token"}, "configuration_error", ["HTTP 403", ORIGIN, UNUSED]),
+        (403, b"<html>denied</html>", "configuration_error", ["INTELLIGENCE_ENDPOINT", UNUSED]),
+        (401, {"error": KEY}, "invalid_activation", ["HTTP 401", "mistyped, already used, expired or revoked"]),
+        (400, {"error": KEY}, "rejected", ["HTTP 400", "build is current", UNUSED]),
+        (409, {"error": KEY}, "unavailable", ["HTTP 409", "Retry", UNUSED]),
+        # The service's own 503 (preview off, store or corpus unavailable) came before redemption.
+        (503, {"error": KEY}, "unavailable", ["HTTP 503", "switched off", "not an expiry", UNUSED]),
+        # A gateway 5xx may follow a finished activation: never promise the secret is unused.
+        (504, b"", "unavailable", ["HTTP 504", "the secret is spent"]),
+    ],
+)
+@pytest.mark.asyncio
+async def test_activation_refusals_name_their_cause(monkeypatch, code, body, state, says):
+    monkeypatch.setattr(intelligence.settings, "intelligence_endpoint", ORIGIN)
+    reply = httpx.Response(code, json=body) if isinstance(body, dict) else httpx.Response(code, content=body)
+    with pytest.raises(intelligence.AccessFailure) as error:
+        await intelligence.request("activate", activation=ACT, transport=httpx.MockTransport(lambda _: reply))
+    assert error.value.state == state
+    for phrase in says:
+        assert phrase in str(error.value), (phrase, str(error.value))
+    if code == 504:
+        assert UNUSED not in str(error.value)
+    assert KEY not in str(error.value) and ACT not in str(error.value) and "Missing Authentication" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "code,state",
+    [(401, "credential_invalid"), (404, "configuration_error"), (503, "unavailable"), (502, "unavailable")],
+)
+@pytest.mark.asyncio
+async def test_refresh_refusals_never_mention_an_activation_secret(monkeypatch, code, state):
+    monkeypatch.setattr(intelligence.settings, "intelligence_endpoint", ORIGIN)
+    with pytest.raises(intelligence.AccessFailure) as error:
+        await intelligence.request(
+            "intelligence", credential=KEY, transport=httpx.MockTransport(lambda _: httpx.Response(code, json={}))
+        )
+    assert error.value.state == state
+    assert "activation secret" not in str(error.value) and KEY not in str(error.value)
+
+
+@pytest.mark.asyncio
+async def test_unreachable_service_names_the_configured_origin(monkeypatch):
+    monkeypatch.setattr(intelligence.settings, "intelligence_endpoint", ORIGIN)
+
+    def refuse(request):
+        raise httpx.ConnectError("name resolution failed", request=request)
+
+    with pytest.raises(intelligence.AccessFailure) as error:
+        await intelligence.request("intelligence", credential=KEY, transport=httpx.MockTransport(refuse))
+    assert error.value.state == "unavailable"
+    assert ORIGIN in str(error.value) and "INTELLIGENCE_ENDPOINT" in str(error.value)
+    assert "name resolution" not in str(error.value)
 
 
 @pytest.mark.parametrize(
