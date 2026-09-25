@@ -256,3 +256,86 @@ async def test_slow_worker_is_not_restarted_while_tick_is_active(monkeypatch):
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+# --- extension attributes (#644) --------------------------------------------------------------
+
+
+def with_ea(payload, *entries):
+    """The snapshot plus its `ea` section: `(definitionId, name, values)` per entry."""
+    return {
+        **payload,
+        "ea": [{"ea": {"definitionId": d, "name": n, "values": list(v), "source": "general"}} for d, n, v in entries],
+    }
+
+
+def test_extension_attribute_value_change_is_evidence_and_names_the_attribute():
+    before = compact(with_ea(snapshot(), ("1", "Device Security EA", [])))
+    after = compact(with_ea(snapshot(), ("1", "Device Security EA", ["Some<b>Value"])))
+    evidence = compare(before, after)
+    assert evidence["kind"] == "changed"
+    assert evidence["changes"] == [
+        {"section": "extensionAttributes", "field": "1", "name": "Device Security EA", "before": [], "after": ["Some b Value"]}
+    ]
+    assert evidence["facts"] == "Extension attribute Device Security EA: (empty) -> Some b Value."
+    assert evidence["missingSections"] == []
+
+
+def test_first_sight_of_a_definition_or_of_the_section_is_baseline_not_a_briefing():
+    # The section itself newly observed — every device after the upgrade — extends the baseline.
+    evidence = compare(compact(snapshot()), compact(with_ea(snapshot(), ("1", "Device Security EA", ["x"]))))
+    assert evidence["kind"] == "baseline"
+    assert evidence["changes"] == [{"section": "extensionAttributes", "reason": "newly_observed"}]
+    # One definition newly observed — an admin created it — is that definition's baseline.
+    before = compact(with_ea(snapshot(), ("1", "Device Security EA", ["x"])))
+    after = compact(with_ea(snapshot(), ("1", "Device Security EA", ["x"]), ("2", "Is a Test Device", ["yes"])))
+    evidence = compare(before, after)
+    assert evidence["kind"] == "baseline"
+    assert evidence["changes"] == [
+        {"section": "extensionAttributes", "field": "2", "name": "Is a Test Device", "reason": "newly_observed", "after": ["yes"]}
+    ]
+    assert evidence["facts"] == "Extension attribute Is a Test Device: newly observed."
+
+
+def test_a_definition_no_longer_reported_or_renamed_is_neither_a_change_nor_a_gap():
+    before = compact(with_ea(snapshot(), ("1", "Device Security EA", ["x"]), ("2", "Is a Test Device", ["yes"])))
+    gone = compact(with_ea(snapshot(), ("1", "Device Security EA", ["x"])))
+    assert compare(before, gone)["kind"] == "unchanged"
+    assert compare(before, gone)["missingSections"] == []
+    renamed = compact(with_ea(snapshot(), ("1", "Security posture", ["x"]), ("2", "Is a Test Device", ["yes"])))
+    assert compare(before, renamed)["kind"] == "unchanged"
+    # The current name labels the line when the values do move.
+    moved = compact(with_ea(snapshot(), ("1", "Security posture", ["y"]), ("2", "Is a Test Device", ["yes"])))
+    assert compare(before, moved)["facts"] == "Extension attribute Security posture: x -> y."
+
+
+def test_the_gate_admits_by_definition_id_and_a_refused_section_is_observed_not_missing():
+    payload = with_ea(snapshot(), ("1", "Device Security EA", ["x"]), ("9", "Battery Cycle Count", ["241"]))
+    gated = compact(payload, extension_attributes=lambda definition_id: definition_id != "9")
+    assert list(gated["extensionAttributes"]) == ["1"]
+    # Everything refused: the section is present and empty, so a previous state that held the
+    # definitions compares as unchanged — never as incomplete, and never as a briefing.
+    muted = compact(payload, extension_attributes=lambda _definition_id: False)
+    assert muted["extensionAttributes"] == {}
+    evidence = compare(compact(payload), muted)
+    assert (evidence["kind"], evidence["missingSections"]) == ("unchanged", [])
+    # The history digest leaves the section out, so it neither widens on upgrade nor moves
+    # with a value the span already keys on.
+    assert "extensionAttributes" not in compact(payload, extension_attributes=False)
+    assert compact(payload, extension_attributes=False) == compact(snapshot())
+    # A snapshot without the section, whichever gate: absent, and so still unknown to compare.
+    assert "extensionAttributes" not in compact(snapshot())
+
+
+def test_a_snapshot_that_dropped_the_section_from_its_aperture_is_incomplete():
+    before = compact(with_ea(snapshot(), ("1", "Device Security EA", ["x"])))
+    evidence = compare(before, compact(snapshot()))
+    assert evidence["kind"] == "incomplete"
+    assert evidence["missingSections"] == ["extensionAttributes"]
+
+
+def test_a_reply_may_repeat_an_extension_attribute_value_but_not_invent_a_number():
+    facts = "Extension attribute Battery Cycle Count: 241 -> 242."
+    assert checked_reply("Battery Cycle Count moved from 241 to 242.", facts) == "Battery Cycle Count moved from 241 to 242."
+    with pytest.raises(Exception, match="unsupported_number"):
+        checked_reply("Battery Cycle Count reached 250.", facts)

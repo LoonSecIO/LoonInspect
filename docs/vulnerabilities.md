@@ -813,8 +813,11 @@ read path, the page and three `vuln.*` posture keys are
 
 **The first-check marker (#599).** The device page shows **Findings first checked** from
 `GET /api/devices/{id}`'s `findingsReconciledAt`. Null is worded explicitly as not checked.
-The timestamp is stamped once even for a clean check with no finding rows; it is not a
-CVE's first-detected date. This distinguishes unchecked history from a recorded clean result.
+The timestamp is the pod's own clock at that first check (#646), stamped once even for a clean
+check with no finding rows; it is neither a CVE's first-detected date nor the Mac's report time.
+This distinguishes unchecked history from a recorded clean result. A pod that upgraded across
+#597 before #646 stamped its existing markers from the Mac's report time at the first check, so
+they can read earlier than the day the ledger first ran there; they are not rewritten.
 
 **Initial backfill (#608).** On an existing Mac's first finding reconcile, a build's
 latest arrival in the change log supplies its first-observed clock. Without an arrival,

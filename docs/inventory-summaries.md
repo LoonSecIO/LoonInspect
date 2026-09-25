@@ -10,11 +10,27 @@ is selected automatically. Settings and metrics have English and German presenta
 
 Code compares committed inventory, never calling a model from ingestion or waiting for SIEM
 source delivery. It compares app versions and available vulnerability assessments, OS version/build,
-`diskEncryption.fileVault2Enabled`, and security SIP/Gatekeeper/firewall. Corpus-only CVE changes
-and severity-count changes with unchanged CVE IDs trigger work on the next inventory observation.
-Missing sections are unknown, never removals. A first partial snapshot establishes a partial baseline;
-a later newly observed section extends that baseline without AI unless an already observed value
-also changed. A name-only app change is `metadata_changed`, not `assessment_changed`.
+`diskEncryption.fileVault2Enabled`, security SIP/Gatekeeper/firewall, and extension attribute values
+(#644). Corpus-only CVE changes and severity-count changes with unchanged CVE IDs trigger work on the
+next inventory observation. Missing sections are unknown, never removals. A first partial snapshot
+establishes a partial baseline; a later newly observed section extends that baseline without AI unless
+an already observed value also changed. A name-only app change is `metadata_changed`, not
+`assessment_changed`.
+
+**Extension attributes (#644).** A definition is compared by its `definitionId`, on its `values`
+only; the name is a label the admin can change in Jamf and is never a change of the device. The
+Change Log policy is the gate, and the only one: a definition muted under Settings → Change Log, or
+one the current level would not log as updated, is not evidence, so no job and no model call. A
+quarantined definition (`docs/jamf-observations.md` §7) never reaches the snapshot at all. The
+first sight of a definition is that definition's baseline, not a briefing: an admin who creates an
+EA reaches every device on its next report, and forty thousand baselines cost nothing. A definition
+the device stops reporting is dropped from the state silently — deleted, muted or quarantined, it
+is neither a change of the device nor a gap in the observation. **Values reach the provider.**
+The names and values of changed definitions are fact lines, bounded and stripped of markup like
+app names; they are fleet data and untrusted input under
+[`ai-threat-model.md`](ai-threat-model.md) P1. Mute a definition whose values carry a person's
+name or address before enabling summaries. On upgrade, the first observation of each device
+extends its baseline with the section; value changes are briefed from the second observation on.
 
 **Kyle's review ruling: emit meaningful changes only.** Comparable unchanged observations retain
 exactly `No updates` in per-device summary state, with zero AI calls, zero summary job rows and zero
@@ -103,7 +119,7 @@ for independent review; once shipped it follows the frozen additive-only contrac
 | `shortSummary` | Validated advisory string, always present on emitted briefings. |
 | `advisory` | Boolean, always true. |
 | `corpusAsOf` | Array of available corpus timestamp strings; empty if unavailable. |
-| `evidenceScope` | Array of strings: `applications`, `os_version_build`, `disk_encryption`, `selected_security_fields`. |
+| `evidenceScope` | Array of strings: `applications`, `os_version_build`, `disk_encryption`, `selected_security_fields`, `extension_attributes` (the last added by #644, additively). |
 | `evidence` | Object defined below. |
 
 Every `evidence` key:
@@ -116,8 +132,9 @@ Every `evidence` key:
 | `omitted` | Integer count of fact lines omitted from that string; full changes remain in `changes`. |
 | `missingSections` | Array of section names absent from this observation. |
 
-Each change has `section` (`apps`, `operatingSystem`, `diskEncryption`, or `security`). A newly
-observed section has `reason: newly_observed` and no fabricated prior values. An app change has
+Each change has `section` (`apps`, `operatingSystem`, `diskEncryption`, `security`, or
+`extensionAttributes`). A newly observed section has `reason: newly_observed` and no fabricated
+prior values. An app change has
 `key` (internal app identity/version correlation string), `reason` (`installed`, `removed`,
 `version_changed`, `assessment_changed`, `metadata_changed`), and available `before`/`after` objects.
 Installed apps omit `before`; removed apps omit `after`. Each app object has `name` and `version`
@@ -130,6 +147,12 @@ A truncated current list forces `noLongerListedIDs` empty.
 Other section changes have `field`, and available `before`/`after` native scalar values. The fields
 are OS `version`/`build`, encryption `fileVault2Enabled`, and security `sipStatus`, `gatekeeperStatus`,
 `firewallEnabled`. Absent keys mean unavailable; zero and false remain explicit values.
+
+An `extensionAttributes` change (#644) has `field` (the Jamf `definitionId` as a string), `name`
+(the definition's current name, a label), and `before`/`after` string arrays of the values — a
+multi-value definition reports every element, an unanswered one an empty array. A definition seen
+for the first time has `reason: newly_observed`, `after` and no `before`. The fact line reads
+`Extension attribute <name>: <old> -> <new>.`, with `(empty)` for no value.
 
 The private outbox envelope is stripped at delivery. HEC `time` backdates the summary to its source;
 Splunk `_indextime` remains arrival time. Searches must allow late arrival. Default subscriptions
@@ -179,3 +202,9 @@ This does not extend queue/cache TTL, generate a model call, or add a wire event
 still produce no extra summary jobs; they also do not create a history point when inventory and
 assessment evidence match the last recorded point. See [Device history](device-history.md) for
 historical count semantics, retention and the optional upgrade import.
+
+The card's `No updates` sentence names what the comparison covers, and the point carries the
+ledger sections the observation moved (`recordedSections`, against the span before it), so an
+observation the AI had nothing to say about still says what it recorded (#644). The history
+point's quiet-sweep digest deliberately leaves extension attributes out: the span already keys
+on that section, and a digest that widened on upgrade would open one new point per device.

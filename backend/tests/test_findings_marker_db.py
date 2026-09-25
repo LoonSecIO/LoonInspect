@@ -22,11 +22,27 @@ async def test_device_detail_distinguishes_unchecked_from_clean_and_preserves_fi
     response = await admin.get(url)
     assert response.status_code == 200
     assert response.json()["findingsReconciledAt"] is None
-    first = datetime(2026, 9, 20, 12, tzinfo=UTC)
-    await reconcile_device_findings(db, device=mac, rows=[], observed_at=first)
+    # The Mac last reported a day before the pod looked (#646): the marker is the look, not the report.
+    reported = datetime(2026, 9, 20, 12, tzinfo=UTC)
+    checked = datetime(2026, 9, 21, 12, tzinfo=UTC)
+    await reconcile_device_findings(db, device=mac, rows=[], observed_at=reported, checked_at=checked)
     await db.commit()
-    await reconcile_device_findings(db, device=mac, rows=[], observed_at=first + timedelta(days=1))
+    await reconcile_device_findings(
+        db, device=mac, rows=[], observed_at=reported + timedelta(days=2), checked_at=checked + timedelta(days=2)
+    )
     await db.commit()
     response = await admin.get(url)
     assert response.status_code == 200
-    assert datetime.fromisoformat(response.json()["findingsReconciledAt"]) == first
+    marker = datetime.fromisoformat(response.json()["findingsReconciledAt"])
+    assert marker == checked
+    assert marker != reported
+
+
+async def test_first_check_marker_defaults_to_the_pod_clock(db, mac):
+    reported = datetime(2026, 9, 18, 22, 34, 19, tzinfo=UTC)  # the demo pod's Mac, #646
+    before = datetime.now(UTC)
+    await reconcile_device_findings(db, device=mac, rows=[], observed_at=reported)
+    await db.commit()
+    assert mac.findings_reconciled_at is not None
+    assert before <= mac.findings_reconciled_at <= datetime.now(UTC)
+    assert mac.findings_reconciled_at != reported

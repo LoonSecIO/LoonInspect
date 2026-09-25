@@ -673,7 +673,7 @@ and step 2 ends with how to tell that apart from a broken exchange.
    succeeding, step 2's log lines say why; if they say `updated` with an unmoved date, the
    published corpus itself has not moved, which is reportable state **I**.
 6. **Settings › Data Sharing says the last exchange *failed*.** The reason is printed
-   beneath *Last exchange*. It names the host the container dialled — `api.loonsec.io`
+   beneath *Last exchange*. It names the host the container dialled — `api.next.loonsec.io`
    unless a hosted pod's template set `SHARING_ENDPOINT` — and ends with how many times
    the run tried. **Send now**, in the same page's *Exactly what would be sent* box, runs
    an exchange on demand and shows the row it wrote, so each check below can be proved
@@ -683,7 +683,7 @@ and step 2 ends with how to tell that apart from a broken exchange.
    ```bash
    docker compose exec app python -c 'import sys, urllib.request as u, urllib.error as e
    try: print(u.urlopen(u.Request(sys.argv[1], b"{}", {"Content-Type": "application/json"}), timeout=10).status)
-   except e.HTTPError as x: print(x.code, x.read().decode()[:200])' https://api.loonsec.io/v1/exchange
+   except e.HTTPError as x: print(x.code, x.read().decode()[:200])' https://api.next.loonsec.io/v1/exchange
    ```
 
    The collector answers that with `400 {"error": "unsupported contract"}`; any other
@@ -691,12 +691,14 @@ and step 2 ends with how to tell that apart from a broken exchange.
    pod whose template set `SHARING_ENDPOINT` probes that value instead, whole — the
    container posts to it exactly as set and adds no path.
    - `The collector at api.loonsec.io answered 403 Forbidden: {"message":"Missing
-     Authentication Token"}` → nothing at that address takes exchanges yet. Until
-     LoonSec's production cutover this is what every instance on the default endpoint
-     reads, and it is expected: nothing is lost, because each day's snapshot replaces the
-     last in full, and the first exchange after the cutover reads `sent`. After the
-     cutover the same line is reportable state **M**. From any other host, a `403` or
-     `404` means there is no collector at that path: check the pod's `SHARING_ENDPOINT`.
+     Authentication Token"}` → that name is not the collector yet: until LoonSec reclaims
+     it, an older account's API answers there. An image built before 2026-09-25, whose
+     default was that name, or a `SHARING_ENDPOINT` set to it, reads this on every
+     exchange. Set `SHARING_ENDPOINT` to `https://api.next.loonsec.io/v1/exchange` or
+     update the image. Nothing is lost: each day's snapshot replaces the last in full, and
+     the first exchange at the right address reads `sent`. From `api.next.loonsec.io` the
+     same line is reportable state **M**. From any other host, a `403` or `404` means
+     there is no collector at that path: check the pod's `SHARING_ENDPOINT`.
    - `Could not connect to <host>: …` → the container could not reach the host at all,
      and the text after the colon says how. `Name or service not known` is DNS — `docker
      compose exec app getent hosts <host>` prints nothing when the container cannot
@@ -791,8 +793,8 @@ describes, and a `null` there with the tier on is the defect. A `null` with the 
 **I.** The published corpus is refused, unreachable, or unchanging. Report the exact log
 line (it names the epoch and the state), the build, and roughly when it started.
 **M.** The exchange reads `failed` for a reason on the collector's side: a `400` or `413`,
-a `429` or `5xx` for more than a day, or a `403`/`404` from `api.loonsec.io` after the
-production cutover. Report the reason printed under *Last exchange* (the same sentence is
+a `429` or `5xx` for more than a day, or a `403`/`404` from `api.next.loonsec.io`, the
+production collector. Report the reason printed under *Last exchange* (the same sentence is
 the `error` field of that row in the share-log download), when it started, the probe's
 answer from step 6, and the build (Settings › Support).
 
@@ -1983,7 +1985,10 @@ Catalog tab carries. So a link somebody sent you works even while the entry is h
     never been checked for a Mac carrying this build.** Open its device page and read
     **Findings first checked**: a sentence saying findings have not been checked confirms
     this state. A timestamp means its first check completed, even if it found no findings;
-    it is not the first detected date of a CVE and does not move on subsequent sweeps.
+    it is not the first detected date of a CVE and does not move on subsequent sweeps. It is
+    the pod's clock at that check, not the Mac's report time: a marker earlier than the day
+    this pod's finding ledger first ran (a pod upgraded across #597 before #646) was copied
+    from the report time at the first check and is not rewritten.
     Run a device sweep to record the initial check (§ 2 for a run that reports nothing,
     § 12 for one connection whose sweeps all fail). A recent **LoonInspect last read it**
     timestamp alone does not prove findings were checked.
@@ -2011,7 +2016,20 @@ Inventory delivery does not wait for its summary. For absent or late summaries, 
 selection, one-hour expiry, overload/capacity logs, and Splunk time correlation, follow
 [inventory summary troubleshooting](inventory-summaries.md#metrics-and-diagnostics).
 `No updates` means a comparable observation changed none of the declared evidence scope;
-it never substitutes for an expired job or incomplete observation.
+it never substitutes for an expired job or incomplete observation. The scope is apps and their
+findings, OS version and build, FileVault, SIP, Gatekeeper, the firewall, and extension attribute
+values (#644). The device-history card names it in the sentence, and adds which ledger sections
+the observation did record changes in.
+
+**An extension attribute changed, but the AI says “No updates”.** Three checks, in order. First,
+Settings → Change Log: the definition is muted, or the current level does not log extension
+attribute updates — the summary follows exactly that policy, and a muted definition is never
+evidence. Second, the collection's quarantine (Settings → Connections → the collection): a
+quarantined definition never reaches the snapshot. Third, the point before it: the first
+observation of a device after the upgrade to #644, or after a definition is created, reads
+“AI comparison baseline established” — there was no earlier value to compare — and the change
+is briefed from the next observation on. If the card reads “baseline” on every observation,
+the section is dropping out of the aperture between reads; the Changes page shows which.
 
 Only meaningful completed/cached changes produce a SIEM summary event. No-update, baseline,
 incomplete and drop outcomes are local counters/state. Open Overview’s diagnostic reasons for
@@ -2023,6 +2041,16 @@ On the device page, check the selected observation and its collection time. “N
 that field was missing; “Not collected in this observation” means the recorded collection did not
 include its section. “Disabled in Change Log” is a display-policy choice: enable that field in
 Settings → Change Log or replace the slot. Layouts are personal to the active tenant.
+
+**The newest state is dated today, but its Observed clock is days old.** Not a fault. A dot, the
+*Last recorded change* line and the Recent changes table carry the collection clock, when
+LoonInspect recorded the state; *Observed* is the Mac's own report time in Jamf. The two part when
+Jamf's record changes without the Mac submitting inventory: an extension attribute edited in Jamf,
+a field Jamf fills on the server, or an intelligence reassessment (*Assessed*). Read the top band:
+if *Inventory reported by Jamf* has not moved for days while *Jamf last heard from the Mac* has,
+the Mac checks in but does not submit inventory, which is its Jamf inventory-update policy and
+not this pod. The Changes page dates rows by the report time (its *Observed* column); this page
+dates them by collection. The same change carries both, and its row's tooltip names the other.
 
 “Not recorded” for historical findings means no assessment evidence was retained at that point.
 It does not mean zero findings. New ingestion records it automatically; the optional retained-event
@@ -2059,8 +2087,10 @@ connection license is transmitted, and activation never enables inventory sharin
   default. Enable only for a reviewed pilot after Support's deployed IAM/privacy
   checks; this is not a v1.x rollout instruction. Configure `INTELLIGENCE_ENDPOINT`
   as the trusted HTTPS service origin, without a path, credentials or query. The
-  default is `https://api.loonsec.io`; use the operator-confirmed staging/production
-  origin during Support's domain transition. Endpoint redirects are refused.
+  default is `https://api.next.loonsec.io`, the production service on its interim
+  name; set the operator-confirmed staging origin for a pilot against staging.
+  `https://api.loonsec.io` is not yet that service and answers `403` until the name is
+  reclaimed. Endpoint redirects are refused.
 - **Activation:** enter the one-time `loon_act_` secret from support. It is sent
   only with protocol/client version, not inventory or submission identity. The
   returned paid credential is encrypted using this instance's `ENCRYPTION_KEY` and

@@ -99,3 +99,11 @@ async def test_failed_corpus_download_does_not_expose_capability():
         await download_bundle(url, transport=httpx.MockTransport(lambda _: httpx.Response(403)))
     assert "must-not-appear" not in str(failure.value)
     assert "HTTP 403" in str(failure.value)
+
+
+def test_default_origin_is_production_on_its_interim_name():
+    # Ruled 2026-09-25 (#622): api.loonsec.io still answers 403 from an older account, so the
+    # baked default must be the service that exists. Read off the field, not the environment.
+    from app.core.config import Settings
+
+    assert Settings.model_fields["intelligence_endpoint"].default == "https://api.next.loonsec.io"

@@ -26,7 +26,7 @@ describe("sendNowAvailability", () => {
 
 describe("endpointHost", () => {
   it("names the host of the endpoint the row was sent to", () => {
-    expect(endpointHost("https://api.loonsec.io/v1/exchange")).toBe("api.loonsec.io");
+    expect(endpointHost("https://api.next.loonsec.io/v1/exchange")).toBe("api.next.loonsec.io");
     expect(endpointHost("https://api.staging.next.loonsec.io/v1/exchange")).toBe("api.staging.next.loonsec.io");
   });
 

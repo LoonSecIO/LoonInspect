@@ -67,7 +67,8 @@ async def test_initial_backfill_prefers_build_arrival_then_earliest_device_obser
     wireshark, safari = rows[(app_title_key(*WIRESHARK), CVE)], rows[(app_title_key(*SAFARI), OTHER)]
     assert (wireshark.first_observed_at, wireshark.first_seen_basis) == (DAY2, BASIS_BACKFILL)
     assert (safari.first_observed_at, safari.first_seen_basis) == (DAY1, BASIS_BACKFILL)
-    assert mac.findings_reconciled_at == DAY3
+    # The marker is the pod's clock at this first check, never the observation's DAY3 (#646).
+    assert mac.findings_reconciled_at is not None and mac.findings_reconciled_at != DAY3
     # More history arriving later cannot rewrite existing findings or backdate a newly reported id.
     db.add(span(mac, DAY1 - timedelta(days=30)))
     await db.commit()
