@@ -265,7 +265,7 @@ with empty arrays is a valid peer, and the container treats absent capabilities 
 "nothing today," never as an error.
 
 ```
-POST {SHARING_ENDPOINT}                      default https://api.loonsec.io/v1/exchange
+POST {SHARING_ENDPOINT}                      default https://api.next.loonsec.io/v1/exchange
 Content-Type: application/json
 User-Agent: LoonSecIO/<build-version> exchange
 ```
