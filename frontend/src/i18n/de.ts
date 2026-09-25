@@ -1736,8 +1736,8 @@ export const de: Translations = {
   ai: {
     inventorySummary: {
       "title": "Inventar-Zusammenfassungen",
-      "description": "Nur relevante Änderungen senden eine separate SIEM-Zusammenfassung. Ohne Änderungen wird lokal „No updates“ gespeichert, ohne KI-Aufruf oder zusätzliches SIEM-Ereignis. Ausstehende Zusammenfassungen verfallen nach einer Stunde.",
-      "disclosure": "Der ausgewählte gespeicherte Endpunkt erhält App-Namen, Versionen, Befundzahlen, ausgewählte Sicherheitsänderungen und Ihre Vorgabe. Geräteidentität und CVE-Listen bleiben in den deterministischen Nachweisen. Aktivieren Sie zuvor oben die KI-Funktion und die Einwilligung.",
+      "description": "Nur relevante Änderungen senden eine separate SIEM-Zusammenfassung: Apps und ihre Befunde, Betriebssystemversion und Build, FileVault, SIP, Gatekeeper, Firewall und die Erweiterungsattribute, die das Änderungsprotokoll erfasst. Ohne Änderungen wird lokal „No updates“ gespeichert, ohne KI-Aufruf oder zusätzliches SIEM-Ereignis. Ausstehende Zusammenfassungen verfallen nach einer Stunde.",
+      "disclosure": "Der ausgewählte gespeicherte Endpunkt erhält App-Namen, Versionen, Befundzahlen, ausgewählte Sicherheitsänderungen, Namen und Werte geänderter Erweiterungsattribute und Ihre Vorgabe. Stummgeschaltete Definitionen unter Einstellungen → Änderungsprotokoll bleiben dem Endpunkt fern. Geräteidentität und CVE-Listen bleiben in den deterministischen Nachweisen. Aktivieren Sie zuvor oben die KI-Funktion und die Einwilligung.",
       "enable": "Inventar-Zusammenfassungen aktivieren",
       "provider": "Anbieter für Inventar-Zusammenfassungen",
       "compatible": "OpenAI-kompatibel",

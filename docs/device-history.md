@@ -87,7 +87,11 @@ A first state is a baseline, never “No updates”; an unchanged selected subse
 the whole inventory was unchanged. AI summaries are copied only for the exact source outbox ID
 and displayed as advisory. Reads never invoke inference. AI disabled, pending, incomplete, failed,
 dropped and unavailable outcomes have separate wording. Repeated quiet observations do not
-replace an earlier point's summary with a later observation's “No updates.”
+replace an earlier point's summary with a later observation's “No updates.” “No updates” names
+what the AI compares — apps and their findings, OS version and build, FileVault, SIP, Gatekeeper,
+the firewall, and the extension attributes the Change Log records — and the card adds the ledger
+sections the observation itself recorded changes in, read off the span chain (#644), so a change
+outside that scope never reads as nothing having changed.
 
 ## Retention and upgrading
 

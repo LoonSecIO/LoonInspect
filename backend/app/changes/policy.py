@@ -485,6 +485,16 @@ class EffectivePolicy:
     def extension_attribute_muted(self, definition_id: str) -> bool:
         return str(definition_id) in self.overrides.muted_extension_attributes
 
+    def extension_attribute_summarised(self, definition_id: str) -> bool:
+        """Whether a value change of this definition is evidence for the inventory summary
+        (#644): the two gates the change log already applies to it — the `values` update rule
+        at the current level, and the per-definition mute — so the AI never briefs on an
+        attribute the operator told the log to keep quiet about, and there is no third place
+        to configure one."""
+        return self.entry_enabled("extension_attribute", "updated", "values") and not self.extension_attribute_muted(
+            definition_id
+        )
+
     @property
     def system_apps_individually(self) -> bool:
         return self.overrides.system_apps_individually

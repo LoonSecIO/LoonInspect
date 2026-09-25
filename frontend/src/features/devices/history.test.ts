@@ -5,6 +5,7 @@ import {
   dotLabel,
   formatHistoryValue,
   loadHistoryPoint,
+  recordedSectionLabels,
   saveHistorySlots,
   type HistoryPoint,
 } from "./history";
@@ -76,4 +77,19 @@ describe("timeline dot labels (#645)", () => {
     // The label reads one clock only: an inventory point is not dated by its report time.
     expect(dotLabel({ collectedAt: "2026-09-24T12:00:00Z" }, "en-US")).toBe("Sep 24");
   });
+});
+
+it("names the recorded sections in the operator's words and keeps an unknown one", () => {
+  const labels = { extension_attributes: "Extension attributes", general: "General" };
+  expect(recordedSectionLabels(["extension_attributes", "general"], labels)).toBe(
+    "Extension attributes, General",
+  );
+  expect(recordedSectionLabels(["certificates"], labels)).toBe("certificates");
+  expect(recordedSectionLabels(undefined, labels)).toBe("");
+  expect(copy.recordedSections("Extension attributes")).toBe(
+    "This observation recorded changes in: Extension attributes.",
+  );
+  expect(historyGerman.recordedSections("Erweiterungsattribute")).toContain(
+    "Erweiterungsattribute",
+  );
 });
