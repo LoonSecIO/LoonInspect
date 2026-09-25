@@ -98,8 +98,8 @@ def refusal(path: str, code: int, raw: bytes) -> AccessFailure:
     if code == 403:
         if not isinstance(body, dict) or "state" not in body:
             # The service's own refusals always carry a state. A bare 403 is whatever else
-            # answers at that address - the 2024 gateway behind the baked default answers
-            # every path with "Missing Authentication Token".
+            # answers at that address - the 2024 gateway at api.loonsec.io (the default before
+            # 2026-09-25, #650) answers every path with "Missing Authentication Token".
             return AccessFailure(
                 "configuration_error",
                 f"{origin} refused the request without an intelligence-service answer (HTTP 403), so "

@@ -2087,10 +2087,11 @@ connection license is transmitted, and activation never enables inventory sharin
 - **"No paid-access service answers at … (HTTP 404)" or "… refused the request
   without an intelligence-service answer (HTTP 403)":** `INTELLIGENCE_ENDPOINT`
   names an address that does not serve the paid routes. A path may be included, the
-  origin mistyped, or the service there not yet deployed with them. During Support's
-  domain transition the baked default answers every path with 403. Set the origin
-  support confirmed (origin only, no path), recreate the container, then activate or
-  Refresh now. An activation secret refused this way was not used.
+  origin mistyped, or the service there not yet deployed with them. An image from before
+  2026-09-25 defaulted to `https://api.loonsec.io`, which answers every path with 403
+  until that name is reclaimed. Set the origin support confirmed (origin only, no path),
+  recreate the container, then activate or Refresh now. An activation secret refused
+  this way was not used.
 - **"The intelligence service did not accept this activation secret (HTTP 401)":**
   the secret was mistyped (copy the whole `loon_act_` value), already activated once,
   expired unused, or revoked. Ask support for a new one; nothing was saved locally.
