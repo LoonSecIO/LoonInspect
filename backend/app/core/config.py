@@ -103,15 +103,18 @@ class Settings(BaseSettings):
 
     user_agent_product_name: str = "LoonSecIO"
 
-    # Where the daily exchange posts. The default is the production collector; tests
-    # and the future api.loonsec.io consolidation point it elsewhere.
     # Default-off v2 paid client; tenant selection and retention must also be enabled.
     intelligence_access: bool = False
-    intelligence_endpoint: str = "https://api.loonsec.io"
+    # The v2 service ORIGIN the paid client dials (the client appends /v2/<path>): production
+    # on its interim estate name, ruled 2026-09-25 (#622) — api.loonsec.io answers 403 from an
+    # older account until that name is reclaimed. The collector below has its own ruling.
+    intelligence_endpoint: str = "https://api.next.loonsec.io"
     # Default-off v2 contribution receipts (#622): a consenting exchange asks for a receipt
     # and withdraws it when consent ends. Needs the same two corpus flags as paid access.
     contribution_receipts: bool = False
 
+    # Where the daily exchange posts. The default is the production collector; tests
+    # and the future api.loonsec.io consolidation point it elsewhere.
     sharing_endpoint: str = "https://api.loonsec.io/v1/exchange"
 
     # Where the Jamf patch catalog is pulled from (app.mdm.patch.jamf_catalog). The

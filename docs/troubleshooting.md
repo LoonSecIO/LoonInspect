@@ -2072,8 +2072,10 @@ connection license is transmitted, and activation never enables inventory sharin
   default. Enable only for a reviewed pilot after Support's deployed IAM/privacy
   checks; this is not a v1.x rollout instruction. Configure `INTELLIGENCE_ENDPOINT`
   as the trusted HTTPS service origin, without a path, credentials or query. The
-  default is `https://api.loonsec.io`; use the operator-confirmed staging/production
-  origin during Support's domain transition. Endpoint redirects are refused.
+  default is `https://api.next.loonsec.io`, the production service on its interim
+  name; set the operator-confirmed staging origin for a pilot against staging.
+  `https://api.loonsec.io` is not yet that service and answers `403` until the name is
+  reclaimed. Endpoint redirects are refused.
 - **Activation:** enter the one-time `loon_act_` secret from support. It is sent
   only with protocol/client version, not inventory or submission identity. The
   returned paid credential is encrypted using this instance's `ENCRYPTION_KEY` and
