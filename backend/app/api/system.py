@@ -10,6 +10,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import participation
 from app.core.ai import AI_SHARE_TIER
 from app.core.audit import AuditAction, audit
 from app.core.auth import require
@@ -90,6 +91,7 @@ async def _sharing_out(db: AsyncSession, row) -> DataSharingOut:
         last_exchange_outcome=last.outcome if last else None,
         last_exchange_reveals_shed=bool(last.reveals_shed) if last else False,
         last_exchange_error=last.error if last else None,
+        participation=participation.summary(row),
     )
 
 
@@ -110,10 +112,18 @@ async def get_data_sharing(db: AsyncSession = Depends(get_db)) -> DataSharingOut
 async def update_data_sharing(payload: DataSharingUpdate, db: AsyncSession = Depends(get_db)) -> DataSharingOut:
     """Persisted even while COMMUNITY_SHARING=false: the env override wins at
     exchange time, but an operator's recorded choice should survive the override
-    being lifted rather than silently resetting."""
-    row = await get_or_create_settings(db)
+    being lifted rather than silently resetting.
+
+    Turning sharing off marks a held contribution receipt for withdrawal in the same
+    transaction (#622): uploads stop here at once, and the scheduler withdraws it."""
+    await get_or_create_settings(db)
+    # Locked, so an exchange finishing now cannot store a receipt this change never sees.
+    row = await participation.locked_row(db)
+    previous_tier = row.tier
     if payload.tier is not None:
         row.tier = payload.tier.value
+    if previous_tier != "off" and row.tier == "off":
+        participation.mark_withdrawal(row)
     if payload.exclude_globs is not None:
         row.exclude_globs = [g.strip() for g in payload.exclude_globs if g.strip()]
     if payload.ai_inference is not None:
@@ -142,9 +152,12 @@ async def update_data_sharing(payload: DataSharingUpdate, db: AsyncSession = Dep
 )
 async def reset_submission_uuid(db: AsyncSession = Depends(get_db)) -> DataSharingOut:
     """The disclosure page promises the pseudonymous identity is resettable; this is
-    that promise. The old UUID's snapshots age out server-side on their own."""
-    row = await get_or_create_settings(db)
+    that promise. The old UUID's snapshots age out server-side on their own; its
+    contribution receipts are withdrawn before the new identity uploads (#622)."""
+    await get_or_create_settings(db)
+    row = await participation.locked_row(db)
     row.submission_uuid = uuid.uuid4()
+    participation.mark_withdrawal(row)
     row.updated_at = datetime.now(UTC)
     await db.commit()
 

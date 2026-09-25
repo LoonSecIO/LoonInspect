@@ -32,6 +32,7 @@ from sqlalchemy import delete, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.catalog.service import rejudge_every_tenant
+from app.core import participation
 from app.core.config import settings as app_settings
 from app.core.content_keys import hw_key, os_key
 from app.core.tenancy import get_tenant_id
@@ -493,8 +494,25 @@ async def run_exchange(
         await db.commit()
         return skipped
 
+    if participation.pending(settings_row) and not await participation.withdraw(db, transport=transport):
+        # Serialize withdrawal before re-consent (Support's participation contract): an
+        # upload now would earn a receipt the late withdrawal could still cancel. Logged
+        # as a failed attempt, so the share log says why nothing left the box today.
+        held = ShareLog(
+            occurred_at=now,
+            tier=settings_row.tier,
+            trigger=trigger,
+            endpoint=app_settings.sharing_endpoint,
+            outcome="failed",
+            error=participation.HELD,
+        )
+        db.add(held)
+        await db.commit()
+        return held
+
     request_body = await build_exchange_request(db, settings_row)
     request_body["reveals"] = await build_reveals(db, settings_row)
+    participation.opt_in(settings_row, request_body)
 
     pointer: CorpusPointer | None = None
     log = ShareLog(
@@ -529,6 +547,10 @@ async def run_exchange(
         log.reveals_shed = result.reveals_shed
         log.reveal_requests = response.get("reveal_requests") if isinstance(response, dict) else None
         pointer = apply_response(settings_row, response if isinstance(response, dict) else {})
+        asked = request_body.get("participation_receipt") is True
+        if asked or (settings_row.tier == "off" and settings_row.participation_receipt is not None):
+            # Before the day's commit, so the receipt and the row that earned it land together.
+            await participation.after_exchange(db, participation.parse(response) if asked else None)
 
     db.add(log)
     # retention-clock: share-log — named in README.md and KNOWN_ISSUES.md §1; check-readme-claims.sh reads this token.
@@ -545,35 +567,51 @@ async def run_exchange(
     # keeps answering and tomorrow's exchange tries again. An unmoved signature does not
     # download at all, which is what makes this affordable daily.
     if pointer is not None:
-        library = await load_epoch_if_new(db, pointer, transport=transport)
-        if app_settings.vuln_tenant_selection:
-            from app.core.vuln_selection import assess_and_select, record_acquisition
-            from app.models.schema import VulnCorpusRelease
-
-            # A successful response authorizes this tenant, even when another tenant
-            # already downloaded these bytes. A refused/absent release grants nothing.
-            if await db.get(VulnCorpusRelease, pointer.signature) is not None:
-                try:
-                    await record_acquisition(db, pointer.signature)
-                    await db.commit()
-                    await assess_and_select(db, pointer.signature)
-                    await db.commit()
-                except Exception:
-                    await db.rollback()
-                    logger.exception(
-                        "Intelligence update could not be assessed; this organization's previous answers remain selected. "
-                        "Check database availability and free storage, then retry Send now "
-                        "(docs/troubleshooting.md §5)."
-                    )
-        elif library is not None:
-            # The join follows the import (#554). Every stored answer on this box is
-            # stamped with the epoch that judged it and is not served under a newer one, so
-            # a new epoch with no re-judge behind it was an hour of *not yet judged* on the
-            # Vulnerabilities page of every organization — the hourly refresh being the only
-            # pass that ran. One pass per organization, here, before the exchange is done;
-            # it logs one line each and never raises.
-            await rejudge_every_tenant(library.epoch_id)
+        delivered = await deliver_corpus(db, pointer, transport=transport)
+        missed = None if delivered else "not_acquired"
+    else:
+        missed = "upload_failed" if log.outcome == "failed" else "no_corpus"
+    # A receipt can fetch what the exchange did not bring, without another upload (#622).
+    await participation.after_delivery(db, missed)
     return log
+
+
+async def deliver_corpus(db: AsyncSession, pointer: CorpusPointer, *, transport: httpx.AsyncBaseTransport | None = None) -> bool:
+    """Import a pointer's epoch and, under tenant selection, grant and select it for this
+    tenant: the exchange's corpus half, and a contribution receipt's (#622). True when the
+    tenant now holds that release. The legacy model has no grant to fail, so it is True."""
+    library = await load_epoch_if_new(db, pointer, transport=transport)
+    if app_settings.vuln_tenant_selection:
+        from app.core.vuln_selection import assess_and_select, record_acquisition
+        from app.models.schema import VulnCorpusRelease
+
+        # A successful response authorizes this tenant, even when another tenant
+        # already downloaded these bytes. A refused/absent release grants nothing.
+        if await db.get(VulnCorpusRelease, pointer.signature) is None:
+            return False
+        try:
+            await record_acquisition(db, pointer.signature)
+            await db.commit()
+            await assess_and_select(db, pointer.signature)
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            logger.exception(
+                "Intelligence update could not be assessed; this organization's previous answers remain selected. "
+                "Check database availability and free storage, then retry Send now "
+                "(docs/troubleshooting.md §5)."
+            )
+            return False
+        return True
+    if library is not None:
+        # The join follows the import (#554). Every stored answer on this box is
+        # stamped with the epoch that judged it and is not served under a newer one, so
+        # a new epoch with no re-judge behind it was an hour of *not yet judged* on the
+        # Vulnerabilities page of every organization — the hourly refresh being the only
+        # pass that ran. One pass per organization, here, before the exchange is done;
+        # it logs one line each and never raises.
+        await rejudge_every_tenant(library.epoch_id)
+    return True
 
 
 async def exchange_due(db: AsyncSession) -> bool:

@@ -213,7 +213,9 @@ class Device(Base):
     building_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     department_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # The finding ledger's "this Mac has been reconciled at least once" (#590), stamped once and never
-    # rewritten, because a Mac reconciled and found clean has no rows to say so (e1c7a4d9b520).
+    # rewritten, because a Mac reconciled and found clean has no rows to say so (e1c7a4d9b520). The
+    # pod's own clock at that first check (#646), not the observation's: the finding rows carry the
+    # Mac's inventory time, this column carries when the pod looked.
     findings_reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     connection: Mapped[MdmConnection | None] = relationship(back_populates="devices")
@@ -830,6 +832,13 @@ class DataSharingSettings(Base):
     # Paid delivery is independent of tier. Never read connection license fields.
     intelligence_credential: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
     intelligence_status: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+
+    # Contribution receipt (#622; Support's participation contract): the newest accepted
+    # contribution's bearer, encrypted like the paid credential and never logged, shown
+    # or written to the share log. Status says whether it is in use or waiting to be
+    # withdrawn, and which service issued it. app.core.participation owns both.
+    participation_receipt: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
+    participation_status: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
 
     # off | keys | reveal — app.schemas.system.SharingTier is the source of truth.
     #

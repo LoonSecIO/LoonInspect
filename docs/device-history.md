@@ -56,7 +56,15 @@ versus outside-collection states; today's collection settings do not rewrite old
 The timeline is paginated at twelve recorded states, ordered by inventory observation time,
 collection time, then stable point ID. It does not pretend every sweep is a new inventory state.
 Latest means the newest recorded state, not a fresh observation of a silent device. Both clocks
-are displayed. Existing inventory tables below the card are labeled latest inventory.
+are displayed: each dot is dated by its collection clock, when LoonInspect recorded the state, and
+the Mac's own report time (*Observed*) is in the dot's tooltip and, beside *Collected*, in the
+selected state's header (#645). The report time does not move when Jamf's record changes without
+a new inventory report, so a Latest dot dated today can carry an *Observed* clock days old; that
+is the silent device, not a stale page. The line runs oldest to newest, left to right; *← Older*
+pages toward earlier states and *Newer →* back toward Latest (#618). Existing inventory tables
+below the card are labeled latest inventory. The page's *Last recorded change* line and its Recent
+changes table are dated by the collection clock the same way, each row's tooltip carrying the
+report time; the Changes page's *Observed* column keeps the report time.
 
 Old spans remain readable without new storage. Going forward, ingestion adds a small
 `device_history_points` row when the span or compact assessment evidence changes; identical
@@ -79,7 +87,11 @@ A first state is a baseline, never “No updates”; an unchanged selected subse
 the whole inventory was unchanged. AI summaries are copied only for the exact source outbox ID
 and displayed as advisory. Reads never invoke inference. AI disabled, pending, incomplete, failed,
 dropped and unavailable outcomes have separate wording. Repeated quiet observations do not
-replace an earlier point's summary with a later observation's “No updates.”
+replace an earlier point's summary with a later observation's “No updates.” “No updates” names
+what the AI compares — apps and their findings, OS version and build, FileVault, SIP, Gatekeeper,
+the firewall, and the extension attributes the Change Log records — and the card adds the ledger
+sections the observation itself recorded changes in, read off the span chain (#644), so a change
+outside that scope never reads as nothing having changed.
 
 ## Retention and upgrading
 

@@ -4,9 +4,11 @@ import { useAuthStore } from "@/features/auth/store";
 import { useLocale } from "@/i18n/LocaleContext";
 import {
   changedValue,
+  dotLabel,
   formatHistoryValue,
   loadHistory,
   loadHistoryPoint,
+  recordedSectionLabels,
   saveHistorySlots,
   type HistoryDetail,
   type HistoryPage,
@@ -22,6 +24,7 @@ export function DeviceHistoryCard({ deviceId }: { deviceId: number }) {
 function HistoryCard({ deviceId }: { deviceId: number }) {
   const { t, locale } = useLocale();
   const copy = t.deviceHistory;
+  const sectionLabels = t.changes.sections;
   const [page, setPage] = useState(1);
   const [selection, setSelection] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
@@ -200,22 +203,9 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
           <p className="text-sm text-muted-foreground">{copy.empty}</p>
         ) : (
           <>
+            {/* The line below reads oldest to newest, left to right, so the control on the
+                left pages toward older states and the one on the right toward newer (#618). */}
             <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-              <button
-                type="button"
-                disabled={page === 1 || saving}
-                className="underline disabled:opacity-40"
-                onClick={() => {
-                  setTimeline(null);
-                  setRevision((r) => r + 1);
-                  setPage((p) => p - 1);
-                  setSelection(null);
-                  setEditing(false);
-                }}
-              >
-                {copy.newer}
-              </button>
-              <span>{copy.recordedStates}</span>
               <button
                 type="button"
                 disabled={!list.value.hasMore || saving}
@@ -229,6 +219,21 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
                 }}
               >
                 {copy.older}
+              </button>
+              <span>{copy.recordedStates}</span>
+              <button
+                type="button"
+                disabled={page === 1 || saving}
+                className="underline disabled:opacity-40"
+                onClick={() => {
+                  setTimeline(null);
+                  setRevision((r) => r + 1);
+                  setPage((p) => p - 1);
+                  setSelection(null);
+                  setEditing(false);
+                }}
+              >
+                {copy.newer}
               </button>
             </div>
             <ol
@@ -253,10 +258,7 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
                       className={`z-10 block h-6 w-6 rounded-full border-2 ${selected === p.id ? "border-primary bg-primary" : "border-muted-foreground bg-card"}`}
                     />
                     <span className="whitespace-nowrap font-mono text-muted-foreground">
-                      {new Date(p.kind === "assessment" ? p.collectedAt : p.observedAt).toLocaleDateString(locale, {
-                        month: "short",
-                        day: "numeric",
-                      })}
+                      {dotLabel(p, locale)}
                     </span>
                     {p.kind === "assessment" && <span>{copy.evaluated}</span>}
                   </button>
@@ -585,6 +587,17 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
                     <p className="text-xs text-muted-foreground">
                       {copy.summaries[summary?.status ?? "unavailable"] ??
                         copy.summaries.unavailable}
+                      {detail.recordedSections?.length ? (
+                        <>
+                          {" "}
+                          {copy.recordedSections(
+                            recordedSectionLabels(
+                              detail.recordedSections,
+                              sectionLabels,
+                            ),
+                          )}
+                        </>
+                      ) : null}
                     </p>
                   ) : null}
                   <Link

@@ -815,7 +815,10 @@ export const de: Translations = {
       },
       changes: {
         heading: "Letzte Änderungen",
-        caption: "Jede aufgezeichnete Änderung, auch die im Flotten-Feed stummgeschalteten Stufen.",
+        caption:
+          "Jede aufgezeichnete Änderung, auch die im Flotten-Feed stummgeschalteten Stufen, datiert nach dem Abruf durch LoonInspect. Die Berichtszeit des Mac steht im Tooltip jeder Zeile und in der Spalte „Beobachtet“ der Änderungsseite.",
+        colCollected: "Abgerufen",
+        observedTitle: (when: string) => `Beobachtet (Berichtszeit des Mac in Jamf): ${when}`,
         all: "Alle Änderungen auf diesem Mac",
         loading: "Änderungen werden geladen…",
         errorLoading: "Die Änderungen dieses Macs konnten nicht geladen werden.",
@@ -1738,8 +1741,8 @@ export const de: Translations = {
   ai: {
     inventorySummary: {
       "title": "Inventar-Zusammenfassungen",
-      "description": "Nur relevante Änderungen senden eine separate SIEM-Zusammenfassung. Ohne Änderungen wird lokal „No updates“ gespeichert, ohne KI-Aufruf oder zusätzliches SIEM-Ereignis. Ausstehende Zusammenfassungen verfallen nach einer Stunde.",
-      "disclosure": "Der ausgewählte gespeicherte Endpunkt erhält App-Namen, Versionen, Befundzahlen, ausgewählte Sicherheitsänderungen und Ihre Vorgabe. Geräteidentität und CVE-Listen bleiben in den deterministischen Nachweisen. Aktivieren Sie zuvor oben die KI-Funktion und die Einwilligung.",
+      "description": "Nur relevante Änderungen senden eine separate SIEM-Zusammenfassung: Apps und ihre Befunde, Betriebssystemversion und Build, FileVault, SIP, Gatekeeper, Firewall und die Erweiterungsattribute, die das Änderungsprotokoll erfasst. Ohne Änderungen wird lokal „No updates“ gespeichert, ohne KI-Aufruf oder zusätzliches SIEM-Ereignis. Ausstehende Zusammenfassungen verfallen nach einer Stunde.",
+      "disclosure": "Der ausgewählte gespeicherte Endpunkt erhält App-Namen, Versionen, Befundzahlen, ausgewählte Sicherheitsänderungen, Namen und Werte geänderter Erweiterungsattribute und Ihre Vorgabe. Stummgeschaltete Definitionen unter Einstellungen → Änderungsprotokoll bleiben dem Endpunkt fern. Geräteidentität und CVE-Listen bleiben in den deterministischen Nachweisen. Aktivieren Sie zuvor oben die KI-Funktion und die Einwilligung.",
       "enable": "Inventar-Zusammenfassungen aktivieren",
       "provider": "Anbieter für Inventar-Zusammenfassungen",
       "compatible": "OpenAI-kompatibel",
