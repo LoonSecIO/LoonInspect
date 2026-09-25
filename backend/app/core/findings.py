@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Mapping, Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy import update as sa_update
@@ -81,11 +81,20 @@ def detected(rows: Iterable[InstalledApp]) -> dict[tuple[str, str], tuple[str, b
 
 
 async def reconcile_device_findings(
-    db: AsyncSession, *, device: Device, rows: Sequence[InstalledApp], observed_at: datetime, device_is_new: bool = False
+    db: AsyncSession,
+    *,
+    device: Device,
+    rows: Sequence[InstalledApp],
+    observed_at: datetime,
+    device_is_new: bool = False,
+    checked_at: datetime | None = None,
 ) -> Mapping[str, int]:
     """This device's ledger, brought level with the answers on `rows`; returns what it closed, by
     reason. Commits nothing. `observed_at` is the observation's inventory clock, collection time as
-    its fallback — what `device_changes` is stamped with (ruling 2)."""
+    its fallback — what `device_changes` is stamped with (ruling 2) — and is what the finding rows
+    carry. `checked_at` is this pod's own clock at the check, now unless a caller says otherwise,
+    and is what the device's first-check marker carries (#646): the marker says when the pod first
+    looked, which is not when the Mac last reported."""
     now = detected(rows)
     # `populate_existing`: the upsert is Core, so the identity map's copy would be pre-reopen.
     mine = select(DeviceFinding).where(DeviceFinding.device_id == device.id).execution_options(populate_existing=True)
@@ -160,7 +169,7 @@ async def reconcile_device_findings(
         marks = {"state": f"findings_{reason}", "device_id": device.id, "reason": reason, "findings": len(ids)}
         logger.info(line, len(ids), device.hostname, reason, NEXT_CHECK[reason], extra=marks)
     if first_ever:  # once per device ever, so an unchanged sweep still issues no ledger statement
-        device.findings_reconciled_at = observed_at
+        device.findings_reconciled_at = checked_at or datetime.now(UTC)
     return {reason: len(ids) for reason, ids in closing.items()}
 
 

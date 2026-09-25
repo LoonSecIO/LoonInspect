@@ -15,6 +15,7 @@ from sqlalchemy.orm import aliased
 from app.ai.adapters import AdapterError, CompletionRequest, complete
 from app.ai.providers import HostReach, Provider
 from app.api.ai import judged_endpoint
+from app.changes.derive import load_policy
 from app.core.ai import AIFeaturesDisabled, AIRefused, ai_features_enabled, require_ai
 from app.core.ai_configs import get_config, saved_config
 from app.core.auth import as_utc
@@ -29,7 +30,17 @@ from app.models.schema import InventorySummarySettings as Settings
 from app.models.schema import InventorySummaryState as State
 from app.observations.history_capture import retain_summary
 from app.summaries.diagnostics import REASONS, safe_exception
-from app.summaries.evidence import PROMPT_VERSION, SYSTEM, InvalidSummary, checked_reply, compact, compare, digest, prompt
+from app.summaries.evidence import (
+    EXTENSION_ATTRIBUTES,
+    PROMPT_VERSION,
+    SYSTEM,
+    InvalidSummary,
+    checked_reply,
+    compact,
+    compare,
+    digest,
+    prompt,
+)
 
 logger = logging.getLogger(__name__)
 EVENT = INVENTORY_SUMMARY_EVENT_TYPE
@@ -97,7 +108,13 @@ async def finish(db, job, status, summary=None, reason=None):
             "evidence": job.evidence,
             "advisory": True,
             "corpusAsOf": job.correlation.get("corpusAsOf", []),
-            "evidenceScope": ["applications", "os_version_build", "disk_encryption", "selected_security_fields"],
+            "evidenceScope": [
+                "applications",
+                "os_version_build",
+                "disk_encryption",
+                "selected_security_fields",
+                "extension_attributes",
+            ],
             ENVELOPE: {**job.correlation.get(ENVELOPE, {}), "time": job.source_at.timestamp()},
         }
 
@@ -124,6 +141,10 @@ async def collect(db):
     if not settings.enabled or not await ai_features_enabled(db):
         await db.commit()
         return
+    # The Change Log policy gates which extension attributes are evidence (#644): a muted
+    # definition, or one the current level would not log, never reaches the facts. Read once
+    # per pass, so the gate costs one query for five hundred snapshots.
+    policy = await load_policy(db)
     # A per-event receipt marker survives out-of-order transaction commits. An integer
     # high-water mark would silently skip a lower ID committed after a higher one.
     events = (
@@ -154,7 +175,7 @@ async def collect(db):
             source_at = datetime.fromisoformat(payload["occurredAt"].replace("Z", "+00:00"))
             if source_at.tzinfo is None:
                 raise ValueError("timezone")
-            current = compact(payload)
+            current = compact(payload, extension_attributes=policy.extension_attribute_summarised)
         except (ValueError, KeyError, TypeError, AttributeError):
             log_drop(event.id, "invalid_observation")
             await count_outcome(db, settings.provider, "dropped", reason="invalid_observation")
@@ -167,10 +188,15 @@ async def collect(db):
             else:
                 evidence = compare(state.facts if state else None, current)
                 if state:
+                    # Apps and extension attributes are lists the observation states whole, so
+                    # the new list replaces the old; a scalar section merges, because a field
+                    # this read did not carry is unknown, not gone.
                     state.facts = {
                         **state.facts,
                         **{
-                            section: values if section == "apps" else {**state.facts.get(section, {}), **values}
+                            section: values
+                            if section in ("apps", EXTENSION_ATTRIBUTES)
+                            else {**state.facts.get(section, {}), **values}
                             for section, values in current.items()
                         },
                     }
@@ -295,7 +321,15 @@ async def work_one(tenant_id, *, transport=None):
                 db,
                 feature="inventory_summary",
                 destination=destination,
-                fields=["app_names", "app_versions", "finding_counts", "posture_changes", "customer_preprompt"],
+                fields=[
+                    "app_names",
+                    "app_versions",
+                    "finding_counts",
+                    "posture_changes",
+                    "extension_attribute_names",
+                    "extension_attribute_values",
+                    "customer_preprompt",
+                ],
             )
             text = prompt(job.evidence, settings.preprompt)
             request = CompletionRequest(

@@ -494,7 +494,9 @@ Optional values are absent, recursively, never JSON null. New vocabulary is prop
 in this unmerged PR; the additive-only rule applies once it ships.
 
 The complete field/type/absence contract, including every nested `evidence` key, is
-[Inventory summary wire contract](inventory-summaries.md#wire-contract). CVE identifiers
+[Inventory summary wire contract](inventory-summaries.md#wire-contract). #644 (2026-09-25)
+added `extension_attributes` to `evidenceScope` and the `extensionAttributes` change section
+additively; a consumer that keyed on the four earlier scope strings sees them unchanged. CVE identifiers
 use the frozen `vulnIDs` spelling and the truncation flag `vulnIDsTruncated`.
 HEC `time` equals the source observation time; `queuedAt` is actual job creation time,
 `sourceEnqueuedAt` is the source outbox enqueue time, and `generatedAt` is completion.

@@ -265,7 +265,7 @@ with empty arrays is a valid peer, and the container treats absent capabilities 
 "nothing today," never as an error.
 
 ```
-POST {SHARING_ENDPOINT}                      default https://api.loonsec.io/v1/exchange
+POST {SHARING_ENDPOINT}                      default https://api.next.loonsec.io/v1/exchange
 Content-Type: application/json
 User-Agent: LoonSecIO/<build-version> exchange
 ```
@@ -566,6 +566,12 @@ service. With it on:
 
 The receipt links to this instance's submission UUID, never to a paid account. It is
 not anonymity. Withdrawal ends receipt eligibility; it does not erase snapshots the
-service already holds. Using a receipt for a download without an upload is the next
-slice, so this build only earns, keeps and withdraws receipts. The step-through is
+service already holds.
+
+The receipt also fetches the corpus when a day's exchange did not bring it: the upload
+failed, the answer named no corpus, or the corpus named was not acquired. The scheduler
+then redeems it at `/v2/contribution/intelligence`. That request carries the receipt
+and `{"contract": "v2", "client_version": …}` and nothing else. It is retried hourly,
+never after the receipt's fixed deadline, and never while sharing is off or a
+withdrawal waits. The step-through is
 [troubleshooting](troubleshooting.md#contribution-receipts-622).

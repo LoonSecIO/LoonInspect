@@ -11,8 +11,13 @@ Consent is local first. Turning sharing off (or resetting the submission UUID) s
 uploads at once and marks the held receipt for withdrawal, and the scheduler withdraws it
 within a tick. An upload waits until that withdrawal is acknowledged, so a withdrawal that
 arrives late can never cancel the receipt a later re-consent earns: the contract's
-serialization rule. Redeeming a receipt for an inventory-free corpus retry is the next
-slice; this one earns, keeps and withdraws them.
+serialization rule.
+
+A held receipt also fetches what an exchange did not bring. When a day's upload fails, or
+its answer carries no corpus, or the corpus it named was not acquired, the scheduler
+redeems the receipt at `/v2/contribution/intelligence` within a tick: no inventory, no
+submission UUID, no paid credential, only the receipt. It stops at the receipt's fixed
+30-day deadline, and never runs while consent is off or a withdrawal is waiting.
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.version import get_app_version
+from app.core.vuln_library import CorpusPointer, corpus_pointer
 from app.models.schema import DataSharingSettings
 
 logger = logging.getLogger(__name__)
@@ -38,6 +44,8 @@ RECEIPT = re.compile(r"loon_rcpt_[A-Za-z0-9_-]{43}")
 # The scheduler ticks every five minutes; an unacknowledged withdrawal is retried at most
 # this often from the tick. Send now always tries at once.
 WITHDRAWAL_RETRY = timedelta(minutes=10)
+# A failed redemption (service down, corpus missing) is retried this often, never faster.
+REDEEM_RETRY = timedelta(hours=1)
 
 HELD = (
     "Upload held: sharing was switched off earlier, and the service that issued this instance's contribution "
@@ -298,5 +306,182 @@ def summary(row: DataSharingSettings) -> dict:
         "withdrawal_requested_at": status.get("withdrawal_requested_at"),
         "last_withdrawal_attempt_at": status.get("last_withdrawal_attempt_at"),
         "withdrawn_at": status.get("withdrawn_at"),
+        "last_redeemed_at": status.get("last_redeemed_at"),
+        "retry_after": status.get("retry_after"),
         "error": status.get("error"),
     }
+
+
+def usable(row: DataSharingSettings) -> bool:
+    """A receipt that may be redeemed now: receipts on, consent on (and not overridden by
+    COMMUNITY_SHARING=false), nothing waiting to be withdrawn, and inside its deadline."""
+    status = row.participation_status or {}
+    if not enabled() or not settings.community_sharing or row.tier == "off":
+        return False
+    if row.participation_receipt is None or status.get("state") != "contributing":
+        return False
+    try:
+        return _stamp(status.get("updates_until")) > datetime.now(UTC)
+    except ValueError:
+        return False
+
+
+async def after_delivery(db: AsyncSession, missed: str | None, *, delay: timedelta = timedelta(0)) -> None:
+    """After a corpus attempt: clear a scheduled redemption when the corpus arrived, or
+    schedule one when it did not and a usable receipt is held. A no-op otherwise."""
+    row = (await db.execute(select(DataSharingSettings))).scalar_one_or_none()
+    if row is None:
+        return
+    if missed is None:
+        if (row.participation_status or {}).get("retry_after") is None:
+            return
+        row = await locked_row(db)
+        status = dict(row.participation_status or {})
+        status.pop("retry_after", None)
+        status.pop("retry_reason", None)
+        row.participation_status = status
+        await db.commit()
+        return
+    if not usable(row):
+        return
+    row = await locked_row(db)
+    if usable(row):
+        row.participation_status = {
+            **(row.participation_status or {}),
+            "retry_after": (datetime.now(UTC) + delay).isoformat(),
+            "retry_reason": missed,
+        }
+    await db.commit()
+
+
+async def redemption_due(db: AsyncSession) -> bool:
+    row = (await db.execute(select(DataSharingSettings))).scalar_one_or_none()
+    if row is None or not usable(row):
+        return False
+    try:
+        return datetime.now(UTC) >= _stamp((row.participation_status or {}).get("retry_after"))
+    except ValueError:
+        return False
+
+
+def _dropped(row: DataSharingSettings, state: str, error: str) -> None:
+    status = dict(row.participation_status or {})
+    status.pop("retry_after", None)
+    status.pop("retry_reason", None)
+    row.participation_receipt = None
+    row.participation_status = {**status, "state": state, "error": error}
+
+
+async def redeem(db: AsyncSession, *, transport: httpx.AsyncBaseTransport | None = None) -> CorpusPointer | None:
+    """One inventory-free corpus request with the held receipt. Returns the corpus pointer
+    to deliver, or None with the reason recorded on the status. Never holds the row lock
+    across the network, and never sends anything but the contract's two fields."""
+    row = await locked_row(db)
+    if not usable(row):
+        await db.commit()
+        return None
+    receipt = row.participation_receipt
+    status = dict(row.participation_status or {})
+    origin = status.get("service") or service_origin()
+    row.participation_status = {**status, "last_redeem_attempt_at": datetime.now(UTC).isoformat()}
+    await db.commit()
+
+    later = (datetime.now(UTC) + REDEEM_RETRY).isoformat()
+    code, answer, sentence = None, None, None
+    if origin is None:
+        sentence = "The receipt's service address is not HTTPS, so the receipt was not sent. Check SHARING_ENDPOINT."
+    else:
+        url = origin.rstrip("/") + "/v2/contribution/intelligence"
+        body = {"contract": "v2", "client_version": get_app_version()}
+        try:
+            async with (
+                httpx.AsyncClient(transport=transport, timeout=10, follow_redirects=False, trust_env=False) as client,
+                client.stream("POST", url, json=body, headers={"Authorization": f"Bearer {receipt}"}) as response,
+            ):
+                raw = bytearray()
+                async for chunk in response.aiter_bytes():
+                    raw.extend(chunk)
+                    if len(raw) > 65536:
+                        break
+                code = response.status_code
+            answer = json.loads(raw) if len(raw) <= 65536 else None
+        except httpx.HTTPError:
+            sentence = (
+                f"Could not reach {origin} to fetch the corpus with the contribution receipt. Check DNS and network "
+                "access; it is retried hourly."
+            )
+        except ValueError:
+            answer = None
+    state = answer.get("state") if isinstance(answer, dict) else None
+
+    row = await locked_row(db)
+    if row.participation_receipt != receipt:
+        # Consent or the receipt changed while this request was out; its answer is stale.
+        await db.commit()
+        return None
+    now = datetime.now(UTC).isoformat()
+    pointer = None
+    if sentence is None and code == 200 and state == "contributing" and isinstance(answer, dict):
+        pointer = corpus_pointer(answer.get("corpus"))
+        try:
+            until = _stamp(answer.get("updates_until")).isoformat()
+        except ValueError:
+            pointer = None
+        if pointer is not None:
+            status = dict(row.participation_status or {})
+            status.pop("retry_after", None)
+            status.pop("retry_reason", None)
+            row.participation_status = {**status, "updates_until": until, "last_redeemed_at": now, "error": None}
+            await db.commit()
+            logger.info("corpus fetched with the contribution receipt", extra={"signature": pointer.signature[:12]})
+            return pointer
+        sentence = f"{origin} answered the receipt without a usable corpus. It is retried hourly; contact support if it repeats."
+    elif sentence is None and code == 401:
+        _dropped(
+            row,
+            "ended",
+            f"{origin} does not recognize the contribution receipt (HTTP 401), so it can no longer fetch the corpus. "
+            "The next accepted exchange earns a new one.",
+        )
+        await db.commit()
+        logger.warning("contribution receipt dropped", extra={"reason": "unknown"})
+        return None
+    elif sentence is None and code == 403 and state == "expired":
+        _dropped(
+            row,
+            "ended",
+            "The contribution receipt reached its 30-day deadline. The next accepted exchange earns a new one; held "
+            "intelligence stays usable.",
+        )
+        await db.commit()
+        logger.info("contribution receipt dropped", extra={"reason": "expired"})
+        return None
+    elif sentence is None and code == 403 and state == "withdrawn":
+        _dropped(
+            row,
+            "withdrawn",
+            f"{origin} reports this contribution's receipts were withdrawn, for example by another copy of this "
+            "instance. Local consent is unchanged; the next accepted exchange earns a new receipt.",
+        )
+        await db.commit()
+        logger.warning("contribution receipt dropped", extra={"reason": "withdrawn"})
+        return None
+    elif sentence is None and code in {404, 403}:
+        sentence = (
+            f"No contribution-receipt service answers at {origin} (HTTP {code}). If that service moved, contact "
+            "support. It is retried hourly."
+        )
+    elif sentence is None and code == 400:
+        sentence = (
+            f"{origin} rejected the receipt request as outside its contract (HTTP 400). Check that this LoonInspect "
+            "build is current."
+        )
+    elif sentence is None:
+        sentence = (
+            f"{origin} could not deliver the corpus with the receipt right now (HTTP {code}); its receipt preview may "
+            "be off, or its store or corpus unavailable. It is retried hourly; held intelligence stays usable."
+        )
+    row.participation_status = {**(row.participation_status or {}), "retry_after": later, "error": sentence}
+    await db.commit()
+    logger.warning("contribution receipt could not fetch the corpus", extra={"detail": sentence})
+    return None

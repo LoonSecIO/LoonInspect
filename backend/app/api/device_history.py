@@ -284,6 +284,14 @@ async def detail(
                 else None,
             }
         )
+    # The ledger sections this observation moved, against the span before it in the ledger's
+    # own chain (#644): what the card can name when the AI comparison had nothing in its scope
+    # to say. Empty for a first span, and for a state the ledger did not open a span for.
+    recorded_sections: list[str] = []
+    if span.previous_id:
+        before_span = await db.get(Span, span.previous_id)
+        previous_digests = (before_span.section_digests or {}) if before_span else {}
+        recorded_sections = [name for name, value in (span.section_digests or {}).items() if previous_digests.get(name) != value]
     settings = await db.scalar(select(InventorySummarySettings))
     status = recorded.summary_status if recorded else "unavailable"
     if status in ("unavailable", "pending", "processing") and (
@@ -305,6 +313,7 @@ async def detail(
             for choice in options.values()
         ],
         "baseline": prior_key is None,
+        "recordedSections": recorded_sections,
         "assessment": recorded.assessment if recorded else None,
         "summary": {
             "status": status,

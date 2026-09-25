@@ -20,7 +20,9 @@ import pytest_asyncio
 from sqlalchemy import delete, select, text
 
 from tests.test_sharing_send_now_db import ADMIN, _signed_in, accounts  # noqa: F401
-from tests.test_vuln_library_db import foreign_tenant  # noqa: F401
+from tests.test_vuln_library import BUNDLE, CORPUS_URL, SIGNATURE
+from tests.test_vuln_library_db import acting_tenant, empty, foreign_tenant  # noqa: F401
+from tests.test_vuln_retention_db import retained  # noqa: F401
 
 pytestmark = [
     pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
@@ -37,12 +39,33 @@ class Service:
 
     def __init__(self, withdraw_status: int = 200) -> None:
         self.withdraw_status = withdraw_status
+        self.exchange_status = 200
+        self.redeem_status = 200
+        self.redeem_state: str | None = None
         self.calls: list[tuple[str, dict, str | None]] = []
         self.minted = 0
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            assert str(request.url) == CORPUS_URL and "authorization" not in request.headers
+            return httpx.Response(200, content=BUNDLE)
         body = json.loads(request.content)
         self.calls.append((request.url.path, body, request.headers.get("authorization")))
+        if request.url.path == "/v1/exchange" and self.exchange_status != 200:
+            return httpx.Response(self.exchange_status, json={"error": "collector unavailable"})
+        if request.url.path == "/v2/contribution/intelligence":
+            if self.redeem_status != 200:
+                return httpx.Response(self.redeem_status, json={"state": self.redeem_state, "error": "no"})
+            return httpx.Response(
+                200,
+                json={
+                    "contract": "v2",
+                    "state": "contributing",
+                    "accepted_at": "2026-09-23T03:00:00Z",
+                    "updates_until": "2999-10-23T03:00:00Z",
+                    "corpus": {"url": CORPUS_URL, "signature": SIGNATURE, "asof": "2026-09-10T20:00:00Z"},
+                },
+            )
         if request.url.path == "/v1/exchange":
             answer: dict = {"contract": "v1"}
             if body.get("participation_receipt") is True:
@@ -66,6 +89,10 @@ class Service:
     @property
     def withdrawals(self) -> list[str | None]:
         return [bearer for path, _, bearer in self.calls if path == "/v2/contribution/withdraw"]
+
+    @property
+    def redemptions(self) -> list[tuple[dict, str | None]]:
+        return [(body, bearer) for path, body, bearer in self.calls if path == "/v2/contribution/intelligence"]
 
 
 @pytest_asyncio.fixture(loop_scope="session")
@@ -240,3 +267,105 @@ async def test_another_tenant_never_sees_the_receipt(db, receipts, foreign_tenan
     await run_exchange(db, transport=httpx.MockTransport(Service()))
     other = await get_or_create_settings(foreign_tenant)
     assert other.participation_receipt is None and (other.participation_status or {}).get("state") is None
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def delivery(db, retained):  # noqa: F811
+    """A retained-release store, left as found: grants and selections go before releases."""
+    from app.models.schema import VulnCorpusAcquisition, VulnCorpusSelection
+
+    yield
+    await db.rollback()
+    await db.execute(delete(VulnCorpusSelection))
+    await db.execute(delete(VulnCorpusAcquisition))
+    await db.commit()
+
+
+async def _earned_then_failed(db, service: Service) -> None:
+    """One accepted exchange that earns RECEIPTS[0], then a day whose upload fails."""
+    from app.core.sharing import run_exchange
+
+    await run_exchange(db, transport=httpx.MockTransport(service))
+    service.exchange_status = 503
+    await db.rollback()
+    failed = await run_exchange(db, transport=httpx.MockTransport(service))
+    assert failed.outcome == "failed"
+
+
+async def test_a_failed_upload_is_fetched_with_the_receipt_alone(db, receipts, delivery):
+    from app.api.system import get_data_sharing
+    from app.core import participation
+    from app.core.sharing import deliver_corpus
+    from app.models.schema import VulnCorpusAcquisition
+
+    service = Service()
+    await _earned_then_failed(db, service)
+    row = await held(db)
+    assert row.participation_status["retry_reason"] == "upload_failed"
+    assert await participation.redemption_due(db)
+    shown = (await get_data_sharing(db)).model_dump(mode="json", by_alias=True)["participation"]
+    assert shown["retryAfter"] and shown["lastRedeemedAt"] is None
+
+    pointer = await participation.redeem(db, transport=httpx.MockTransport(service))
+    assert pointer is not None and pointer.signature == SIGNATURE
+    ((body, bearer),) = service.redemptions
+    # The contract's two fields and the receipt: no inventory, no submission UUID, no paid credential.
+    assert set(body) == {"contract", "client_version"} and bearer == "Bearer " + RECEIPTS[0]
+    assert await deliver_corpus(db, pointer, transport=httpx.MockTransport(service)) is True
+    await participation.after_delivery(db, None)
+
+    acquired = (await db.execute(select(VulnCorpusAcquisition))).scalars().all()
+    assert [a.signature for a in acquired] == [SIGNATURE]
+    row = await held(db)
+    assert "retry_after" not in row.participation_status and row.participation_status["last_redeemed_at"]
+    assert not await participation.redemption_due(db)
+    shown = (await get_data_sharing(db)).model_dump(mode="json", by_alias=True)["participation"]
+    assert shown["lastRedeemedAt"] and shown["retryAfter"] is None
+
+
+async def test_no_redemption_while_consent_is_off_a_withdrawal_waits_or_the_kill_switch_is_on(db, receipts, monkeypatch):
+    from app.core import participation
+
+    service = Service()
+    await _earned_then_failed(db, service)
+    assert await participation.redemption_due(db)
+
+    monkeypatch.setattr(participation.settings, "community_sharing", False)
+    assert not await participation.redemption_due(db)
+    monkeypatch.setattr(participation.settings, "community_sharing", True)
+
+    row = await participation.locked_row(db)
+    participation.mark_withdrawal(row)
+    await db.commit()
+    assert not await participation.redemption_due(db)
+    assert await participation.redeem(db, transport=httpx.MockTransport(service)) is None
+    assert service.redemptions == []
+
+
+async def test_a_withdrawn_generation_drops_the_receipt_and_leaves_consent_alone(db, receipts):
+    from app.core import participation
+
+    service = Service()
+    await _earned_then_failed(db, service)
+    service.redeem_status, service.redeem_state = 403, "withdrawn"
+    assert await participation.redeem(db, transport=httpx.MockTransport(service)) is None
+    row = await held(db)
+    assert row.participation_receipt is None and row.participation_status["state"] == "withdrawn"
+    assert row.tier == "keys"
+    assert RECEIPTS[0] not in row.participation_status["error"]
+
+
+async def test_an_unavailable_service_keeps_the_receipt_and_backs_off_an_hour(db, receipts):
+    from datetime import UTC, datetime, timedelta
+
+    from app.core import participation
+
+    service = Service()
+    await _earned_then_failed(db, service)
+    service.redeem_status = 503
+    assert await participation.redeem(db, transport=httpx.MockTransport(service)) is None
+    row = await held(db)
+    assert row.participation_receipt == RECEIPTS[0] and "HTTP 503" in row.participation_status["error"]
+    retry = datetime.fromisoformat(row.participation_status["retry_after"])
+    assert retry - datetime.now(UTC) > timedelta(minutes=55)
+    assert not await participation.redemption_due(db)

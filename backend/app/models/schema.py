@@ -213,7 +213,9 @@ class Device(Base):
     building_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     department_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # The finding ledger's "this Mac has been reconciled at least once" (#590), stamped once and never
-    # rewritten, because a Mac reconciled and found clean has no rows to say so (e1c7a4d9b520).
+    # rewritten, because a Mac reconciled and found clean has no rows to say so (e1c7a4d9b520). The
+    # pod's own clock at that first check (#646), not the observation's: the finding rows carry the
+    # Mac's inventory time, this column carries when the pod looked.
     findings_reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     connection: Mapped[MdmConnection | None] = relationship(back_populates="devices")

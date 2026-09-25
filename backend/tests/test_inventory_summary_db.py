@@ -563,3 +563,64 @@ async def test_revocation_during_inference_prevents_publication(summary_db, revo
     job = await db.scalar(select(Job).where(Job.source_id == source))
     assert job.reason == ("consent_missing" if revoke == "consent" else "disabled")
     assert await db.scalar(select(EventOutbox.id).where(EventOutbox.event_type == "device.inventory.summary")) is None
+
+
+async def test_extension_attribute_change_is_briefed_and_follows_the_change_log_policy(summary_db):
+    """#644: a value change is evidence; a definition the Change Log mutes is not."""
+    from app.models.schema import ChangePolicy, EventOutbox, InventorySummaryMetric, InventorySummaryState, ShareLog
+    from app.models.schema import InventorySummaryJob as Job
+    from app.summaries.service import collect, work_one
+    from tests.test_inventory_summary import with_ea
+
+    db, tenant = summary_db
+    try:
+        await emit(db, with_ea(snapshot(), ("1", "Device Security EA", [])))
+        await collect(db)
+        state = await db.scalar(select(InventorySummaryState))
+        assert state.summary_status == "baseline"
+        source = await emit(db, with_ea(snapshot(), ("1", "Device Security EA", ["SomeValue"])))
+        await collect(db)
+        job = await db.scalar(select(Job).where(Job.source_id == source))
+        assert job is not None and job.status == "pending"
+        assert job.evidence["changes"] == [
+            {"section": "extensionAttributes", "field": "1", "name": "Device Security EA", "before": [], "after": ["SomeValue"]}
+        ]
+        calls = []
+
+        async def respond(request):
+            calls.append(request.content.decode())
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {"message": {"content": "Device Security EA changed from empty to SomeValue."}, "finish_reason": "stop"}
+                    ]
+                },
+            )
+
+        await work_one(tenant, transport=httpx.MockTransport(respond))
+        await db.rollback()
+        await db.refresh(job)
+        assert job.status == "completed"
+        assert len(calls) == 1 and "Extension attribute Device Security EA: (empty) -> SomeValue." in calls[0]
+        disclosed = await db.scalar(select(ShareLog.payload).where(ShareLog.tier == "ai"))
+        assert "extension_attribute_values" in disclosed["fields"]
+        briefing = await db.scalar(select(EventOutbox.payload).where(EventOutbox.event_type == "device.inventory.summary"))
+        assert briefing["shortSummary"] == "Device Security EA changed from empty to SomeValue."
+        assert "extension_attributes" in briefing["evidenceScope"]
+        assert briefing["evidence"]["changes"][0]["section"] == "extensionAttributes"
+
+        # Muted in the Change Log: the next value change is not evidence — no job, no call.
+        db.add(ChangePolicy(version="v0", overrides={"mutedExtensionAttributes": ["1"]}))
+        await db.commit()
+        muted = await emit(db, with_ea(snapshot(), ("1", "Device Security EA", ["Another"])))
+        await collect(db)
+        assert await db.scalar(select(Job.id).where(Job.source_id == muted)) is None
+        await db.refresh(state)
+        assert (state.summary_status, state.short_summary, state.source_id) == ("no_updates", "No updates", muted)
+        assert state.facts["extensionAttributes"] == {}
+        assert await db.scalar(select(InventorySummaryMetric.count).where(InventorySummaryMetric.status == "no_updates")) == 1
+    finally:
+        await db.rollback()
+        await db.execute(delete(ChangePolicy))
+        await db.commit()

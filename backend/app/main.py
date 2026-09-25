@@ -75,7 +75,7 @@ from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware, content_security_policy_mode
 from app.core.outbox import PURGE_HOUR, PURGE_MINUTE, deliver_pending, fan_out_pending, outbox_tick_lock, purge_delivered_events
 from app.core.runs import purge_runs
-from app.core.sharing import exchange_due, exchange_lock, run_exchange
+from app.core.sharing import deliver_corpus, exchange_due, exchange_lock, run_exchange
 from app.core.tenancy import OPERATIONAL_TENANT_ID
 from app.core.tenant_jobs import operational_tenant_ids, tenant_job
 from app.core.vuln_library import refresh_from_db
@@ -219,6 +219,13 @@ async def sharing_exchange_tick() -> None:
                     await participation.withdraw(db)
                 if await exchange_due(db):
                     await run_exchange(db)
+                if await participation.redemption_due(db):
+                    # What the day's exchange did not bring, fetched with the receipt alone.
+                    pointer = await participation.redeem(db)
+                    if pointer is not None:
+                        delivered = await deliver_corpus(db, pointer)
+                        missed = None if delivered else "not_acquired"
+                        await participation.after_delivery(db, missed, delay=participation.REDEEM_RETRY)
             except Exception:
                 # A failure here must never take the scheduler down with it; the
                 # share log carries the per-attempt record.
