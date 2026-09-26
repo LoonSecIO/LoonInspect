@@ -16,9 +16,12 @@ each column holds:
 - `last_status_at`: when this instance last asked for status; the next ask waits 60 seconds,
   the service's own floor. `retry_at`: the service's Retry-After, honoured before the next
   attempt. `last_error`: the operator's sentence for the last attempt that settled nothing.
-- `withdrawn_at`: when withdrawal settled (the service withdrew the case, or holds nothing under
-  the key). Withdrawal also clears what the administrator wrote here (`public_url`, `text`,
-  `contact`); the app identity stays, to label the case.
+- `withdrawn_at`: when the administrator withdrew the case. It is stored, and what they wrote here
+  (`public_url`, `text`, `contact`) is cleared, before the request leaves, so a lost answer can
+  neither keep those words nor leave the case to be sent. `state` turns `withdrawn` when the
+  service confirms the withdrawal or holds nothing under the key; until then, withdrawing again
+  asks again. A status read that reports the case withdrawn settles it the same way, stamping
+  `withdrawn_at` if it is empty. The app identity stays, to label the case.
 - `excluded_override`: the administrator's explicit one-time override for an app the sharing
   exclusions cover. `permission_at`: when they gave the explicit one-time permission to send,
   after the preview; nothing is sent without it. `submitted_by_account_id`: who sent it, nulled
