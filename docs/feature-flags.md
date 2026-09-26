@@ -25,7 +25,7 @@ lands.
 
 | Switch | Kind | Born in | Default | Read in | Verdict for v2.0.0 | Kill release |
 | --- | --- | --- | --- | --- | --- | --- |
-| `INTELLIGENCE_ACCESS` | v2 preview | #622 | off | `core/intelligence.py` | **promote** at the tag, once #624's deployed checks are recorded | v2.1 |
+| `INTELLIGENCE_ACCESS` | v2 preview | #622 | off | `core/intelligence.py`, `core/submissions.py` (sending only) | **promote** at the tag, once #624's deployed checks are recorded | v2.1 |
 | `CONTRIBUTION_RECEIPTS` | v2 preview | #622 | off | `core/participation.py` | **promote** at the tag | v2.1 |
 | `VULN_TENANT_SELECTION` | v2 preview, serving path | #621 | off | 21 reads in 12 modules | **promote** at the tag; **delete** the legacy singleton-epoch path in v2.1 | v2.1 |
 | `VULN_RELEASE_RETENTION` | v2 preview, storage | #621 | off | `core/intelligence.py`, `core/participation.py`, `core/vuln_library.py` | **promote** with the one above; fold the two into one in v2.1 | v2.1 |
