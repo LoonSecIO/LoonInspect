@@ -468,6 +468,24 @@ the run `jobID`, the token's index settings, and the search you ran.
      and follow the migration-failure step below; do not remove indexes by hand.
    - an Alembic error → the migration on startup failed. Do not downgrade by hand
      ([`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) §6); reportable **F**.
+   - `1 validation error for Settings` whose next lines name `DATABASE_URL` and say
+     *append ?ssl=require* → `DATABASE_MODE=external` needs the URL to ask for TLS
+     (`?ssl=require`, `verify-ca` or `verify-full`). If the lines say *asyncpg spells the
+     TLS parameter `ssl`, not `sslmode`* → the URL used libpq's spelling, which asyncpg
+     does not read. Fix the URL in `.env`, `docker compose up -d`.
+   - *The database role this instance connected as is a superuser* (or *a role with
+     BYPASSRLS*) *, so row-level security would not apply to it* → `DATABASE_URL` names the
+     master or `postgres` user, and the app refuses before any migration. Prepare the
+     application role with `looninspect-db-init` and put its URL in `.env`
+     ([`operations.md`](operations.md) §8).
+   - *The database role this instance connected as cannot create tables in schema public*
+     → the role exists, but `looninspect-db-init` never ran against this database, or ran
+     as a user that could not hand over the schema. Run it as the master user
+     ([`operations.md`](operations.md) §8), then `docker compose up -d`.
+   - `another process is migrating this database; waiting for it to finish before starting`,
+     and it stays there → another app container holds the migration lock. `docker compose
+     ps` shows it; let its migration finish (the `e621c4a8b903` note above says how long a
+     slow one takes). A process that died released the lock with its connection.
 3. **Healthy, signed in, and Settings › Connections says it could not load.**
    `curl $BASE/api/health` is `{"status":"ok"}`, sign-in works, and
    `GET /api/mdm/connections` answers **503** with the sentence *Stored credentials cannot

@@ -257,6 +257,53 @@ jobs:
           [ "$status" = healthy ] || { docker logs smoke; docker logs smoke-db; exit 1; }
           curl -fsS http://localhost:8001/api/health
 
+      # External mode (#654): the same image against a PostgreSQL it does not bundle, over
+      # TLS, as the role looninspect-db-init prepared — and refused, before any migration,
+      # when handed the superuser. A self-signed certificate is enough for `ssl=require`.
+      - name: Smoke test external mode
+        run: |
+          mkdir smoke-tls
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=smoke-tls \
+            -keyout smoke-tls/server.key -out smoke-tls/server.crt 2>/dev/null
+          sudo chown 70:70 smoke-tls/server.key smoke-tls/server.crt && sudo chmod 600 smoke-tls/server.key
+          docker run -d --name smoke-tls --network smoke-net \
+            -e POSTGRES_DB=looninspect -e POSTGRES_USER=master -e POSTGRES_PASSWORD="$PG_SUPERUSER_PASSWORD" \
+            -v "$PWD/smoke-tls:/certs:ro" postgres:17-alpine \
+            -c ssl=on -c ssl_cert_file=/certs/server.crt -c ssl_key_file=/certs/server.key
+          for i in $(seq 1 30); do
+            docker exec smoke-tls pg_isready -U master -d looninspect >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker run --rm --user postgres --network smoke-net \
+            -e PGHOST=smoke-tls -e PGDATABASE=looninspect -e PGUSER=master -e PGPASSWORD="$PG_SUPERUSER_PASSWORD" \
+            -e APP_USER=looninspect_app -e APP_PASSWORD="$PG_APP_PASSWORD" \
+            looninspect-db:ci /usr/local/bin/looninspect-db-init
+          KEY=$(docker run --rm looninspect:ci uv run --frozen --no-dev \
+                  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+          docker run -d --name smoke-external --network smoke-net \
+            -e ENCRYPTION_KEY="$KEY" -e DATABASE_MODE=external \
+            -e DATABASE_URL="postgresql+asyncpg://looninspect_app:${PG_APP_PASSWORD}@smoke-tls:5432/looninspect?ssl=require" \
+            looninspect:ci
+          for i in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' smoke-external)
+            [ "$status" = healthy ] && break
+            [ "$status" = unhealthy ] && break
+            sleep 2
+          done
+          echo "external mode health: $status"
+          [ "$status" = healthy ] || { docker logs smoke-external; docker logs smoke-tls; exit 1; }
+          docker exec smoke-tls psql -U master -d looninspect -tAc \
+            "SELECT ssl FROM pg_stat_ssl s JOIN pg_stat_activity a USING (pid) WHERE a.usename = 'looninspect_app' LIMIT 1" \
+            | grep -qx t || { echo "::error::the app's connection to the external database is not over TLS"; exit 1; }
+          # The superuser is refused in a sentence, before any migration runs.
+          if docker run --rm --network smoke-net -e ENCRYPTION_KEY="$KEY" -e DATABASE_MODE=external \
+               -e DATABASE_URL="postgresql+asyncpg://master:${PG_SUPERUSER_PASSWORD}@smoke-tls:5432/looninspect?ssl=require" \
+               looninspect:ci > superuser.log 2>&1; then
+            echo "::error::the superuser was not refused"; cat superuser.log; exit 1
+          fi
+          grep -q "is a superuser, so row-level security would not apply" superuser.log || {
+            echo "::error::the superuser was refused without its sentence"; cat superuser.log; exit 1; }
+
       # A superuser bypasses row-level security without erroring, so "the policies
       # exist" is not the same claim as "the policies apply". This asserts both: that
       # the role the app connects as cannot bypass them, and that every tenant-scoped

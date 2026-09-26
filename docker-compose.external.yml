@@ -1,0 +1,28 @@
+# The app against a PostgreSQL you run: DATABASE_MODE=external (#654; docs/operations.md §8).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.external.yml up -d --build
+#
+# The bundled `db` service moves under a profile nothing activates, so no Postgres you do
+# not use is started; the app depends on nothing and dials DATABASE_URL, which must ask
+# for TLS (`?ssl=require`, or verify-ca / verify-full with a root certificate). Prepare
+# the application role once, as your server's master user, with the program the hosted
+# pods run — naming `db` on the command line activates its profile for that one command:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.external.yml run --rm --no-deps \
+#     -e PGHOST=<host> -e PGDATABASE=looninspect -e PGUSER=<master> -e PGPASSWORD='<master password>' \
+#     -e APP_USER=looninspect_app -e APP_PASSWORD='<the password DATABASE_URL carries>' \
+#     db looninspect-db-init
+#
+# `!reset` needs Docker Compose 2.24 or newer (`docker compose version`).
+#
+# docker-compose.yml still insists on POSTGRES_PASSWORD and POSTGRES_APP_PASSWORD in .env,
+# because it is read whole before this file overrides it. In external mode the first is
+# never used and may be anything; the second is the application role's password.
+services:
+  db:
+    profiles: ["bundled-only"]
+  app:
+    depends_on: !reset []
+    environment:
+      DATABASE_MODE: external
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env to postgresql+asyncpg://looninspect_app:<password>@<host>:5432/looninspect?ssl=require}

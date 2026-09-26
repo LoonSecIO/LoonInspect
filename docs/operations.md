@@ -715,3 +715,66 @@ The other timed loops are outside that promise. Collections claim their work wit
 row and are safe by the same argument
 ([`ingest-scheduling.md`](ingest-scheduling.md) §5); the rest have not been audited for a
 second process. One process with the scheduler on is still the supported shape.
+
+---
+
+## 8. A PostgreSQL you run (`DATABASE_MODE=external`)
+
+Everything above assumes the bundled `db` service. This is what changes when the database
+is yours (#654), and what does not: `ENCRYPTION_KEY` is still half of every backup (§1),
+migrations still run at startup (§4), and a downgrade still runs from the newer image
+before the swap (§5).
+
+**The role.** The app never connects as your master user. Prepare `looninspect_app` with
+the program the hosted pods run, as the master, once; it is idempotent, and running it
+again after you rotate the role's password teaches the database the new one:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.external.yml run --rm --no-deps \
+  -e PGHOST=db.example.internal -e PGDATABASE=looninspect -e PGUSER=master -e PGPASSWORD='…' \
+  -e APP_USER=looninspect_app -e APP_PASSWORD='…' db looninspect-db-init
+```
+
+```
+application role looninspect_app ready (owns schema public)
+```
+
+**Starting.** `DATABASE_MODE=external` and a `DATABASE_URL` that asks for TLS
+(`?ssl=require`; `verify-ca` and `verify-full` need a root certificate the container can
+read). Before the first migration the app asks the database three things about the role
+it connected as — superuser, `BYPASSRLS`, `CREATE` on schema `public` — and refuses with one
+sentence when any is wrong; [troubleshooting §4](troubleshooting.md#4-it-will-not-start-or-it-starts-and-every-connection-is-unreadable)
+quotes each. `docker-compose.yml` still wants `POSTGRES_PASSWORD` in `.env`; it is unused
+here and may be anything.
+
+**Backup.** `pg_dump` from any host that reaches the server. libpq spells the TLS
+parameter `sslmode`; the app's URL spells it `ssl`:
+
+```bash
+(umask 077 && pg_dump "postgresql://looninspect_app:…@db.example.internal:5432/looninspect?sslmode=require" \
+  | gzip > "looninspect-$(date -u +%Y%m%dT%H%M%SZ).sql.gz")
+```
+
+Verify it as §2 does, and keep the key with it (§1). **Restore** into an empty database the
+role owns, `gunzip -c backup.sql.gz | psql "postgresql://looninspect_app:…?sslmode=require" -v ON_ERROR_STOP=1`;
+the role `looninspect-db-init` prepared owns `public`, so the restored objects are its.
+
+**Upgrade and rollback.** §4 and §5 word for word, with
+`docker compose -f docker-compose.yml -f docker-compose.external.yml` in place of
+`docker compose`, and the two revision commands run against your server:
+`psql "…" -tAc "SELECT version_num FROM alembic_version"` for the database's side.
+
+**Two app containers.** Whichever starts first migrates; the other waits on the migration
+lock and logs `another process is migrating this database; waiting for it to finish before
+starting`, then finds nothing to do. §7 still governs the scheduler.
+
+**What was run.** 2026-09-26, against PostgreSQL 17.11 in a container with TLS on and a
+superuser master, from the image this section shipped in: the role prepared by
+`looninspect-db-init` (the ready line above); the app started `healthy` in external mode
+with `pg_stat_ssl` showing its connection on `TLSv1.3`, logging *external database: the
+application role passed its checks* and then *database ready, migrations applied*; the
+master's URL refused with the superuser sentence before any migration (exit 3); a URL
+without `ssl=` refused at startup as a `Settings` validation error naming `append
+?ssl=require` (exit 1); and two containers started together against an empty database,
+the second logging *another process is migrating this database; waiting for it to finish
+before starting*, both `healthy`, `alembic_version` at head once.
