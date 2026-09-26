@@ -581,6 +581,7 @@ checking in. Every other key is the same value in both.
 | `GET\|POST /api/catalog/lookup` | **Nothing.** See below |
 | `GET /api/catalog?vuln=&band=&order=` | The stored answer as a `WHERE` (#529): `findings` \| `kev` \| `unknown_app` \| `clean`, a band, and the two orders. *Served*, never merely stored — a row judged by an epoch that has moved is `unknown_app` here exactly as it is in a cell — and a filter on an organization nothing answers for is a `409` naming both causes, never an empty list |
 | `GET /api/catalog` | `vulnJudged` (#529): has ANY row of this tenant been judged by the epoch answering now. One `EXISTS`, never a count |
+| `GET /api/catalog` | `corpusRelease` (#623): the signature (64 hex) of the epoch answering now, the only one a served `covered` answer on the page can carry, so the release behind every finding there. Report an incorrect match sends it as `finding_release`. `null` wherever `corpusAsOf` is; REST only, never on the wire |
 | `GET /api/vulnerabilities/status` | `corpusAsOf` alone (#529), under `vuln:read` — what the sidebar reads before any page is open |
 | **Devices** (the device list, #535) | An **Apps with findings** column — *n (k KEV) · m outside* — over `vulnApps` above, and the two URL-carried chips, *With findings* and *On KEV*, that are the filter above. No corpus, no column and no chips |
 | Devices › Applications › **Catalog** | A **Vulnerabilities** column, and the corpus banner above it |

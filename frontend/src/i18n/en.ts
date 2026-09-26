@@ -1371,7 +1371,9 @@ export const en = {
     override: "Send this one case anyway: a one-time override. The exclusion list stays as it is.",
     permission: "I give permission to send this one case only, for internal investigation and improving the intelligence. Publishing a private app's identity needs separate permission. This changes no ongoing consent and earns no updates.",
     send: "Send", close: "Close", state: (word: string) => `Case state: ${word}`, follow: "Follow this case under Settings › Intelligence Access.",
-    failed: "The request failed, and this instance gave no reason. Try again: a repeated Send reaches the same open case, never a second one. If it keeps failing, read docker compose logs app."
+    failed: "The request failed, and this instance gave no reason. Try again: a repeated Send reaches the same open case, never a second one. If it keeps failing, read docker compose logs app.",
+    // Report an incorrect match (#623): one finding of a `covered` build, sent with the release that produced it.
+    reportMatch: "Report an incorrect match", findingLabel: "The finding that does not apply to this build"
   },
   jamfPatch: {
     tabLabel: "Jamf Patch",

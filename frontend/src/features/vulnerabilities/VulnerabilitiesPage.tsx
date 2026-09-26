@@ -13,7 +13,7 @@ import { SearchBox } from "@/features/vulnerabilities/SearchBox";
 import type { AppChip, NumbersRead, PostureRow } from "@/features/vulnerabilities/pageBands";
 import { NUMBER_KEYS, VULN_KEYS, agedList, emptySays, exploreByApp, listQuery, payoffList, planNumbers, readNumbers } from "@/features/vulnerabilities/pageBands";
 import { pageView, type Load } from "@/features/vulnerabilities/pageView";
-import { RequestCoverage } from "@/features/submissions/SubmissionDialog";
+import { ReportMatch, RequestCoverage } from "@/features/submissions/SubmissionDialog";
 import { useIntelligenceStore } from "@/features/system/intelligenceStore";
 import { useLocale } from "@/i18n/LocaleContext";
 import type { Translations } from "@/i18n/en";
@@ -84,10 +84,13 @@ function Bands({ entry, t }: { entry: CatalogEntry; t: Translations }) {
   return <span className="block text-xs text-muted-foreground">{shown.join(" · ")}</span>;
 }
 
+/** A row's submission actions (#623): SYSTEM_WRITE, the v2 preview, and the release its list's answers were judged under. */
+type Acts = { canWrite: boolean; enabled: boolean; release: string | null };
+
 /** One row of *Most exposed* and *Longest exposed*: the count, the Macs, the age and the fix path.
  *  Lifted out of the table body unchanged so the ranked list can put its own row in the same
  *  `<tbody>` — both are six columns, and which one is drawn is `payoffList`'s single decision. */
-function ExposedRow({ entry, t, canWrite, enabled }: { entry: CatalogEntry; t: Translations; canWrite: boolean; enabled: boolean }) {
+function ExposedRow({ entry, t, canWrite, enabled, release }: { entry: CatalogEntry; t: Translations } & Acts) {
   return (
     <tr className="border-b align-top last:border-0">
       <td className="px-4 py-2">
@@ -98,7 +101,8 @@ function ExposedRow({ entry, t, canWrite, enabled }: { entry: CatalogEntry; t: T
             prints beside the count it is about. */}
         <AssessmentCell vuln={entry.vuln} row={entry} t={t} />
         <Bands entry={entry} t={t} />
-        <RequestCoverage entry={entry} canWrite={canWrite} enabled={enabled} t={t} /></td>
+        <RequestCoverage entry={entry} canWrite={canWrite} enabled={enabled} t={t} />
+        <ReportMatch entry={entry} canWrite={canWrite} enabled={enabled} release={release} t={t} /></td>
       <td className="px-4 py-2 tabular-nums">{entry.vuln.assessment === "covered" && entry.vuln.counts.kev > 0 ? entry.vuln.counts.kev : "—"}</td>
       <td className="px-4 py-2 tabular-nums">
         <Link to={`/devices?versionHash=${entry.versionHash}`} className="hover:underline">{entry.deviceCount}</Link></td>
@@ -117,7 +121,7 @@ function ExposedRow({ entry, t, canWrite, enabled }: { entry: CatalogEntry; t: T
  *
  *  Nothing here sums anything (§4g): the section prints each row's own difference, and the
  *  fleet's closure figure is a posture key to rule rather than an aggregate to compute. */
-function PatchableRow({ entry, t }: { entry: CatalogEntry; t: Translations }) {
+function PatchableRow({ entry, t, canWrite, enabled, release }: { entry: CatalogEntry; t: Translations } & Acts) {
   const [line] = describeUpdate(entry.vuln, entry.vulnUpdate, entry);
   const closes = closesCell(line, t.vulnerabilities);
   return (
@@ -127,7 +131,8 @@ function PatchableRow({ entry, t }: { entry: CatalogEntry; t: Translations }) {
         <span className="block font-mono text-xs text-muted-foreground">{entry.bundleId}</span></td>
       {/* Reachable inside the `covered` narrowing alone: the filter serves no other state, and
           the type still refuses to let one print a count (§4a). */}
-      <td className="px-4 py-2 tabular-nums">{entry.vuln.assessment === "covered" ? entry.vuln.counts.total : "—"}</td>
+      <td className="px-4 py-2 tabular-nums">{entry.vuln.assessment === "covered" ? entry.vuln.counts.total : "—"}
+        <ReportMatch entry={entry} canWrite={canWrite} enabled={enabled} release={release} t={t} /></td>
       <td className="px-4 py-2 tabular-nums">
         <Link to={`/devices?versionHash=${entry.versionHash}`} className="hover:underline">{entry.deviceCount}</Link></td>
       <td className="px-4 py-2">{line ? line.version : "—"}
@@ -174,7 +179,8 @@ export function VulnerabilitiesPage() {
   const plansNumbers = useMemo(() => planNumbers(permissions), [permissions]);
   const [numbers, setNumbers] = useState<NumbersRead | null>(null);
   const [numbersFailed, setNumbersFailed] = useState(false);
-  // Request coverage's two gates: SYSTEM_WRITE, as the routes require, and the v2 preview (#623).
+  // The submission actions' two gates: SYSTEM_WRITE, as the routes require, and the v2 preview (#623). A correction
+  // also names the release its list was judged under, so each list below hands on its own `corpusRelease`.
   const canWrite = useHasPermission(PERMISSIONS.SYSTEM_WRITE);
   const offered = useIntelligenceStore((state) => state.enabled);
 
@@ -241,6 +247,7 @@ export function VulnerabilitiesPage() {
 
   const shown = pageView(load, answer);
   const rows = shown.rows && answer !== null ? answer.items : [];
+  const acts: Acts = { canWrite, enabled: offered, release: answer?.corpusRelease ?? null };
   const total = answer?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE));
   // One line for what is happening, written once and placed where the reader is looking: in
@@ -365,7 +372,7 @@ export function VulnerabilitiesPage() {
                   </tr>
                 )}
                 {rows.map((entry) =>
-                  byPayoff ? <PatchableRow key={entry.id} entry={entry} t={t} /> : <ExposedRow key={entry.id} entry={entry} t={t} canWrite={canWrite} enabled={offered} />
+                  byPayoff ? <PatchableRow key={entry.id} entry={entry} t={t} {...acts} /> : <ExposedRow key={entry.id} entry={entry} t={t} {...acts} />
                 )}
               </tbody>
             </table>
@@ -410,7 +417,7 @@ export function VulnerabilitiesPage() {
                   <tbody>
                     {patchableSays !== null && <tr><td className="px-4 py-4 text-muted-foreground" colSpan={7}>{patchableSays}</td></tr>}
                     {(patchableSays === null ? (patchable?.items ?? []) : []).map((entry) => (
-                      <PatchableRow key={entry.id} entry={entry} t={t} />))}
+                      <PatchableRow key={entry.id} entry={entry} t={t} {...acts} release={patchable?.corpusRelease ?? null} />))}
                   </tbody>
                 </table>
               </div></>)}

@@ -80,6 +80,9 @@ export interface CatalogListResponse {
   /** The corpus generation every `vuln` block on `items` came from. `null` means no corpus
    *  is loaded, which is why every row reads `off` — the page says that in words (#251). */
   corpusAsOf: string | null;
+  /** The release (64-hex manifest signature) every `covered` answer on `items` was judged under: what a
+   *  correction names as `finding_release` (#623). `null` whenever `corpusAsOf` is. */
+  corpusRelease: string | null;
   /** Whether ANY row of this tenant has been judged by the epoch that is answering (#529).
    *  `false` with a corpus loaded is the hour after an epoch moves: every row reads
    *  `unknown_app`, so a list of them is honest only as *not yet judged against*. */

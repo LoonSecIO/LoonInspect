@@ -1234,7 +1234,9 @@ export const de: Translations = {
     override: "Diesen einen Fall trotzdem senden: eine einmalige Ausnahme. Die Ausschlussliste bleibt, wie sie ist.",
     permission: "Ich erlaube, nur diesen einen Fall zu senden, zur internen Untersuchung und zur Verbesserung der Sicherheitsinformationen. Für die Veröffentlichung der Identität einer privaten App ist eine gesonderte Erlaubnis nötig. Das ändert keine laufende Einwilligung und begründet keinen Anspruch auf Updates.",
     send: "Senden", close: "Schließen", state: (word: string) => `Stand des Falls: ${word}`, follow: "Diesen Fall unter Einstellungen › Informationszugang verfolgen.",
-    failed: "Die Anfrage ist fehlgeschlagen, und diese Instanz nannte keinen Grund. Versuchen Sie es erneut: Ein wiederholtes Senden erreicht denselben offenen Fall, nie einen zweiten. Schlägt es weiter fehl, lesen Sie docker compose logs app."
+    failed: "Die Anfrage ist fehlgeschlagen, und diese Instanz nannte keinen Grund. Versuchen Sie es erneut: Ein wiederholtes Senden erreicht denselben offenen Fall, nie einen zweiten. Schlägt es weiter fehl, lesen Sie docker compose logs app.",
+    // Falsche Zuordnung melden (#623): ein Fund eines geprüften Builds, gesendet mit dem Release, das ihn ergab.
+    reportMatch: "Falsche Zuordnung melden", findingLabel: "Der Fund, der auf diesen Build nicht zutrifft"
   },
   jamfPatch: {
     tabLabel: "Jamf Patch",
