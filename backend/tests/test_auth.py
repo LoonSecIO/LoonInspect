@@ -68,7 +68,8 @@ def test_the_allowlist_is_the_five_routes_a_signed_out_browser_needs() -> None:
     """Adding to this set is the one change that can expose a route by accident, so the
     set itself is pinned: health for the container probe, status/setup/login for the
     sign-in flow, logout so an expired session can still clear its cookies."""
-    assert {"/api/health", "/api/auth/status", "/api/auth/setup", "/api/auth/login", "/api/auth/logout"} == _PUBLIC_EXACT
+    public = {"/api/health", "/api/auth/status", "/api/auth/setup", "/api/auth/login", "/api/auth/login/mfa", "/api/auth/logout"}
+    assert public == _PUBLIC_EXACT
 
 
 def test_every_registered_api_route_needs_a_session_unless_allowlisted() -> None:

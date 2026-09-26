@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -86,6 +87,10 @@ class Tenant(Base):
     # root | operational. Kept as data rather than inferred from the id so a second
     # operational tenant is a row insert, not a code change.
     kind: Mapped[str] = mapped_column(String(16), default="operational", index=True)
+
+    # off | admins | everyone (#653): who must enrol a second factor. The policy endpoint
+    # and its enforcement follow; `off` is the only value written today.
+    mfa_required: Mapped[str] = mapped_column(String(16), default="off", server_default="off")
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
@@ -1056,6 +1061,14 @@ class AuthIdentity(Base):
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    # TOTP identities (#653): the secret encrypted, never hashed (the server computes the
+    # same code the phone does); recovery codes as argon2id hashes, one removed per use;
+    # when a code confirmed the enrolment; the last accepted step, which makes a code single-use.
+    secret_encrypted: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
+    recovery_codes: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_otp_step: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     account: Mapped[Account] = relationship(back_populates="identities")
 
