@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import uuid as uuidlib
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -41,6 +42,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import delete, event, select, update
 
+from app.core.config import settings
 from app.core.content_keys import app_full_key
 from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
 from app.core.vuln import NO_CORPUS, forget_tenant_tiers, loaded_corpus
@@ -51,6 +53,11 @@ from app.models.schema import (
     InstalledApp,
     JamfPatchTitle,
     MdmConnection,
+    VulnCorpusAcquisition,
+    VulnCorpusRelease,
+    VulnCorpusReleaseRow,
+    VulnCorpusReleaseTitle,
+    VulnCorpusSelection,
     VulnLibraryEpoch,
     VulnLibraryRow,
     VulnLibraryTitle,
@@ -1180,8 +1187,11 @@ def _dates(total: str | None, critical: str | None = None, high: str | None = No
     return {"total": total, "critical": critical, "high": high, "medium": None, "low": None}
 
 
-async def _filtering(db, device) -> str:
-    """This fleet judged against that epoch, and the signature that is then answering."""
+async def _filtering(db, device, *, acquire: bool = False) -> str:
+    """This fleet judged against that epoch, and the signature that is then answering. `acquire` delivers it to this
+    tenant first, which is what the tenant-selection path judges from (#621); its first judge then selects it."""
+    from app.core.vuln_selection import record_acquisition
+
     bundle, signature = _rewritten(
         rows=[
             _row(
@@ -1200,6 +1210,9 @@ async def _filtering(db, device) -> str:
         ]
     )
     assert await load_epoch_if_new(db, _pointer(signature), transport=_serving(bundle)) is not None
+    if acquire:
+        await record_acquisition(db, signature)
+        await db.commit()
     await _judge(db, device)
     return signature
 
@@ -1348,14 +1361,59 @@ async def test_the_status_endpoint_answers_the_same_date_the_rows_are_stamped_wi
     assert (await vulnerability_status(db)).corpus_as_of is None
 
 
-async def test_corpus_release_names_the_epoch_every_finding_on_the_page_came_from(db, fleet, foreign_tenant) -> None:  # noqa: F811
+async def _no_releases(db, other) -> None:
+    """No release delivered to, selected by or retained for either tenant: where the selection suites start and end.
+    A selection names its acquisition and an acquisition its release, so they go in that order."""
+    for session in (db, other):
+        await session.rollback()
+        await session.execute(delete(VulnCorpusSelection))
+        await session.execute(delete(VulnCorpusAcquisition))
+        await session.commit()
+    for model in (VulnCorpusReleaseRow, VulnCorpusReleaseTitle, VulnCorpusRelease):
+        await db.execute(delete(model))
+    await db.commit()
+
+
+@pytest_asyncio.fixture(loop_scope="session", params=["legacy", "selection"])
+async def tenant_selection(request, db, fleet, foreign_tenant, monkeypatch):  # noqa: F811
+    """Both ways an epoch answers a tenant (#621), yielding whether it is the second: the legacy gate, the one epoch
+    the container loaded, earned by sharing; and `VULN_TENANT_SELECTION`, the tenant's own selected release, which is
+    the only mode the Vulnerabilities page offers Report an incorrect match in."""
+    if request.param == "legacy":
+        yield False
+        return
+    monkeypatch.setattr(settings, "vuln_tenant_selection", True)
+    await _no_releases(db, foreign_tenant)
+    try:
+        yield True
+    finally:
+        await _no_releases(db, foreign_tenant)
+        # `fleet`'s teardown asserts the legacy gate is empty, whichever of it and `monkeypatch` goes first.
+        monkeypatch.setattr(settings, "vuln_tenant_selection", False)
+
+
+async def test_corpus_release_names_the_epoch_every_finding_on_the_page_came_from(
+    db,
+    fleet,
+    foreign_tenant,  # noqa: F811
+    tenant_selection,
+) -> None:
     """What Report an incorrect match sends as `finding_release` (#623): the signature of the epoch answering for this
     tenant, the one `served()` lets a `covered` row carry. `null` beside a `null` `corpusAsOf`, and gated per tenant as
-    that stamp is: with one epoch loaded, a tenant whose sharing is off reads `null` while one that shares reads it."""
+    that stamp is: with one epoch loaded, a tenant whose sharing is off reads `null` while one that shares reads it.
+
+    Under `VULN_TENANT_SELECTION`, the mode the page offers the action in (#685), the epoch answering is the release
+    this tenant selected, so that is the one named: not a newer epoch the container holds and this tenant never
+    acquired, and not withdrawn by sharing off, since consent does not revoke an acquired release. A tenant that
+    acquired nothing reads `null` there, however it shares."""
     _, device = fleet
     assert (await _list(db)).corpus_release is None, "nothing loaded, nothing to name"
 
-    signature = await _filtering(db, device)
+    signature = await _filtering(db, device, acquire=tenant_selection)
+    if tenant_selection:
+        # A newer epoch the container holds and never delivered here: holding a release is not selecting it.
+        newer, digest = _rewritten(rows=[_row(key_full=WIRESHARK_BUILD)])
+        assert await load_epoch_if_new(db, _pointer(digest), transport=_serving(newer)) is not None
     page = await _list(db, vuln="findings")
     assert page.model_dump(mode="json", by_alias=True)["corpusRelease"] == signature
     named = _ours(page)
@@ -1370,8 +1428,58 @@ async def test_corpus_release_names_the_epoch_every_finding_on_the_page_came_fro
     finally:
         reset_tenant_id(token)
     ours = await _list(db)
-    assert (ours.corpus_as_of, ours.corpus_release) == (None, None)
-    assert theirs.corpus_as_of is not None and theirs.corpus_release == signature
+    if tenant_selection:
+        assert (ours.corpus_release, theirs.corpus_as_of, theirs.corpus_release) == (signature, None, None)
+    else:
+        assert (ours.corpus_as_of, ours.corpus_release) == (None, None)
+        assert theirs.corpus_as_of is not None and theirs.corpus_release == signature
+
+
+def _epoch_moves_after_the_first_read(monkeypatch, *, first: str, then: str) -> list[str]:
+    """`loaded_epoch_signature()` answering `first` once and `then` ever after, in every module that bound the name: an
+    epoch install and its re-judge committing between two reads of one response, held still (#685). Returns the reads,
+    so a test can count them."""
+    from app.core import vuln_library
+
+    original, reads = vuln_library.loaded_epoch_signature, []
+
+    def moving() -> str:
+        reads.append(then if reads else first)
+        return reads[-1]
+
+    for name, module in list(sys.modules.items()):
+        if name.startswith("app.") and getattr(module, "loaded_epoch_signature", None) is original:
+            monkeypatch.setattr(module, "loaded_epoch_signature", moving)
+    return reads
+
+
+async def test_one_response_answers_from_the_one_epoch_it_read(db, fleet, monkeypatch) -> None:
+    """#685: the list reads the answering epoch ONCE, and its filter, its cells, its update lines and `corpusRelease` all
+    answer from that read. The epoch moves after the first read, and the rows carry both epochs' answers: Wireshark's
+    from the one read first, every other build's from the newer one. So a second read showed in both directions: it
+    served the newer answers as `covered` beside a release that never judged them, which is what a correction then
+    names, and it dropped the very row the filter had picked."""
+    _, device = fleet
+    await _with_titles(db)
+    newer = await _filtering(db, device)
+    older = "e1" * 32  # the epoch that answered a moment earlier: any signature but the loaded one
+    await db.execute(update(AppCatalogEntry).where(AppCatalogEntry.key_full == WIRESHARK_BUILD).values(vuln_signature=older))
+    await db.commit()
+    app_hash = (await _entry(db, WIRESHARK_BUILD)).app_hash
+    reads = _epoch_moves_after_the_first_read(monkeypatch, first=older, then=newer)
+
+    # The Catalog tab, the Vulnerabilities page and the application record: one handler, three asks.
+    for asked in ({}, {"vuln": "findings"}, {"app_hash": app_hash}):
+        reads.clear()
+        page = await _list(db, **asked)
+        answers = {item.key_full: item for item in page.items if item.key_full in OURS}
+        assert page.corpus_release == older
+        assert {key for key, item in answers.items() if item.vuln.assessment == "covered"} == {WIRESHARK_BUILD}, asked
+        wireshark = answers[WIRESHARK_BUILD]
+        assert wireshark.vuln_update is not None, f"{asked}: the update line answers from the same read"
+        if "app_hash" in asked:  # only the record asks for its per-title lines
+            assert TARGET_TITLE_ID in [line.title_id for line in wireshark.vuln_updates]
+        assert reads == [older], f"{asked}: one read of the answering epoch per response"
 
 
 # --- easily patchable (#532) -------------------------------------------------------------
