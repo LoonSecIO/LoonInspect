@@ -58,6 +58,7 @@ from app.api.routes import router as api_router
 from app.api.runs import router as runs_router
 from app.api.settings import router as settings_router
 from app.api.smart_groups import router as smart_groups_router
+from app.api.submissions import router as submissions_router
 from app.api.system import router as system_router
 from app.api.tokens import router as tokens_router
 from app.api.vulnerabilities import router as vulnerabilities_router
@@ -685,6 +686,7 @@ app.include_router(evidence_router)
 app.include_router(vulnerabilities_prompt_router)
 app.include_router(exclusion_ranking_router)
 app.include_router(intelligence_router)
+app.include_router(submissions_router)
 app.include_router(vulnerabilities_router)
 
 

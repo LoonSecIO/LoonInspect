@@ -9,7 +9,7 @@ it was filed.
 Each path is ordered — *check this; if X, then that* — and ends in a fix or in a **named,
 reportable state**. When you reach a reportable state, §8 says what to include.
 
-**What is in here.** The paths run §1–§7 and §10–§20, in the order they were written
+**What is in here.** The paths run §1–§7 and §10–§21, in the order they were written
 rather than in order of likelihood. §0 is what you can read before you start; §8 and §9 are
 about the paths rather than about a symptom, and they sit mid-file because that is where
 they were written — §9 ends by saying the paths continue at §10.
@@ -54,6 +54,8 @@ they were written — §9 ends by saying the paths continue at §10.
 
 - **§20** ["Sign-in asks for a six-digit code, or refuses the one I
   typed"](#20-sign-in-asks-for-a-six-digit-code-or-refuses-the-one-i-typed)
+- **§21** ["Request coverage or Report an incorrect match is refused, or a case never shows a
+  status"](#21-request-coverage-or-report-an-incorrect-match-is-refused-or-a-case-never-shows-a-status)
 
 **The reportable states**, lettered in the order they were written, so they do not run in
 section order and never will — code, tests and the README cite them where they are. When a
@@ -85,6 +87,7 @@ ticket names one, this says which path it came off.
 | **V** | §18 | *being judged against it* more than an hour after the corpus date moved |
 | **W** | §18 | *Longest exposed* is empty while *Most exposed* lists builds |
 | **X** | §20 | No phone, no recovery codes, and no other administrator to remove the second factor |
+| **Y** | §21 | A case's key and the fresh one minted in its place both refused as naming another submission |
 
 ## 0. The four things you can read
 
@@ -2299,3 +2302,31 @@ password, then a six-digit code from the authenticator app, or one recovery code
 **X.** Phone and recovery codes are gone, and no other administrator, break-glass included, can
 remove the factor. Report the account's email (§8); the account keeps its data meanwhile.
 
+
+## 21. "Request coverage or Report an incorrect match is refused, or a case never shows a status"
+
+A case (#623) leaves under a key this instance keeps encrypted and never shows. It reads `pending` until
+the service acknowledges it, and each failure lands on it as one sentence: `lastError` on `GET /api/submissions`,
+`submission case not settled` in `docker compose logs app`. The audit log has `submission.*` for each act.
+
+1. **Refused before anything was stored.** *"…INTELLIGENCE_ACCESS is off here"*: submissions belong to
+   the v2 preview, off by default ([Paid intelligence preview](#paid-intelligence-preview-622)).
+   *"…give permission…"*: confirm the preview. *"…data-sharing exclusion list…"*: the one-time override
+   sends this case only; the list stays. A 403: only an administrator sends, reads or withdraws a case.
+2. ***"…(HTTP 400). It said: …"***: the quoted sentence names the rule a field broke (a URL naming an IP
+   address or a `.local` host, a hidden character in the text). Nothing was stored there: send a
+   corrected case, and withdraw this one to clear it.
+3. ***"…HTTP 503. It said: "Submissions are not enabled…"***: the service has not opened intake; send
+   the same case again once support says it has. ***"…HTTP 503… Try again after … UTC"***: the day's
+   100 new cases, shared by every instance, are spent; send it again after that time, under its key.
+4. ***"…a fresh one (HTTP 409)"***: the key collided, and so did the fresh one minted in its place: **Y**.
+5. ***"…HTTP 429"*** or ***"Asked too soon…"***: a case's status is read once a minute at most, and not
+   before a time the service gave. Wait the seconds named.
+6. ***"No submissions service answers at…"*** or ***"No answer came from…"***: check `INTELLIGENCE_ENDPOINT`
+   (the HTTPS origin support confirmed), DNS, TLS (no proxy is taken from the environment, so an
+   intercepting one fails) and egress to that host. Then send the same case again: the identical request.
+7. **`received`, then nothing**: review is manual (`reviewing`, `needs_information` with the reviewer's
+   `note`, `accepted` but not yet covered, then `declined`, or `published` with `release` and
+   `coverage`). **`expired`**: the service deleted the case 90 days after it closed; ask again in a new one.
+
+**Y.** Random keys do not collide twice. Report the case's `id` and its sentence (§8); nothing was stored there.

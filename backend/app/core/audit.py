@@ -98,6 +98,11 @@ class AuditAction(StrEnum):
     # An administrator's Send now (#408): data left the box because a person asked, not
     # because the schedule came round, so it is on the trail beside the tier it sent under.
     SHARING_EXCHANGE_SENT = "sharing.exchange.sent"
+    # Request coverage / Report an incorrect match (#623): a case sent (once, by the click that made it),
+    # withdrawn, or sent although the data-sharing exclusions hold its app back. Never the case key.
+    SUBMISSION_SENT = "submission.sent"
+    SUBMISSION_WITHDRAWN = "submission.withdrawn"
+    SUBMISSION_EXCLUDED_OVERRIDE = "submission.excluded-override"
 
     TOKEN_CREATED = "token.created"
     TOKEN_REVOKED = "token.revoked"
