@@ -14,6 +14,8 @@ Revision ID: e621c4a8b903
 Revises: d621a30f7b12
 """
 
+# release-note: this rebuilds the installed-apps index as the new image starts, and the instance answers nothing until it finishes, so update in a maintenance window and do not restart the container while it runs. The new index needs free disk beside the old one until the old one is dropped (26 MB at one million installed apps, docs/vulnerability-scale-validation.md); how long it takes on a large table is not measured yet.
+
 from alembic import op
 
 revision = "e621c4a8b903"

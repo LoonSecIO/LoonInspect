@@ -34,11 +34,12 @@ aws cloudformation deploy \
 ```
 
 This org's tokens carry ID-stamped subs, so pass `OidcSubjectPatterns` both
-forms (the Support repo's working role trusts both), main-only:
+forms (the Support repo's working role trusts both), for main and for the `v*`
+tags a published release runs `.github/workflows/release.yml` on:
 
 ```bash
 aws cloudformation deploy ... --parameter-overrides \
-  "OidcSubjectPatterns=repo:LoonSecIO/LoonInspect:ref:refs/heads/main,repo:LoonSecIO@176315697/LoonInspect@1318452984:ref:refs/heads/main"
+  "OidcSubjectPatterns=repo:LoonSecIO/LoonInspect:ref:refs/heads/main,repo:LoonSecIO@176315697/LoonInspect@1318452984:ref:refs/heads/main,repo:LoonSecIO/LoonInspect:ref:refs/tags/v*,repo:LoonSecIO@176315697/LoonInspect@1318452984:ref:refs/tags/v*"
 ```
 
 ## 2. Publish images
@@ -46,8 +47,9 @@ aws cloudformation deploy ... --parameter-overrides \
 Set two **repository variables** (not secrets) in GitHub:
 `AWS_ECR_PUSH_ROLE_ARN` (the stack's `PushRoleArn` output) and `AWS_REGION`.
 Then merge to main — the *Publish images* workflow pushes
-`looninspect:<sha>` and `looninspect-db:<sha>`. The role trusts main only, so
-a dispatch from a feature branch fails at the credentials step by design.
+`looninspect:<sha>` and `looninspect-db:<sha>`, and publishing a release adds its
+version to them. The role trusts main and `v*` tags only, so a dispatch from a
+feature branch fails at the credentials step by design.
 
 ## 3. Pod secrets (per pod)
 

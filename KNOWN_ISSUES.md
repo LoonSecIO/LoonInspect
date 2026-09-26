@@ -253,6 +253,11 @@ dump. Full procedure — including the grep that finds the phrase in that log li
 why `UPDATE alembic_version` is the wrong answer — in
 [docs/operations.md §5](docs/operations.md).
 
+**What retires it.** From `v2.0.0` on, CI refuses a migration that drops or renames what the
+release before it reads ([docs/BRANCHING.md §1.1](docs/BRANCHING.md)). Once an older image also
+starts against a newer revision (not built yet), one step back is an image swap with no
+downgrade, and this section retires after one release has shown it.
+
 *An interrupted upgrade is **not** in this list, and was tested rather than assumed:
 Alembic runs the whole upgrade in one transaction and Postgres has transactional DDL, so
 killing a migration mid-flight leaves zero tables and no `alembic_version`, and the
