@@ -385,7 +385,9 @@ async def login_mfa(
         audit(AuditAction.MFA_CHALLENGE_FAILED, outcome="failure", target_type="account", target_id=account.id)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="That code was not accepted: six digits, a new one every 30 seconds, each good once; a recovery code works too.",
+            detail=(
+                "That code was not accepted: six digits, a new one every 30 seconds, each good once; a recovery code works too."
+            ),
         )
 
     await _clear_failures(db, account.email, ip)
