@@ -18,14 +18,14 @@ from app.core import mfa
 from app.core.auth import MFA_ENROLMENT_REQUIRED
 from app.core.database import session_for_tenant
 from app.core.tenancy import OPERATIONAL_TENANT_ID
-from app.models.schema import Account, AuthIdentity, LoginAttempt, Tenant, UserSession
+from app.models.schema import Account, AccountRole, AuthIdentity, LoginAttempt, Tenant, UserSession
 
 pytestmark = [
     pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
     pytest.mark.asyncio(loop_scope="session"),
 ]
 PASSWORD = "mfa-policy-password"
-ADMIN, OTHER, VIEWER, GLASS = (f"mfa-policy-{who}@example.com" for who in ("admin", "other", "viewer", "glass"))
+ADMIN, OTHER, VIEWER, GLASS, NEW = (f"mfa-policy-{who}@example.com" for who in ("admin", "other", "viewer", "glass", "new"))
 POLICY = "/api/settings/mfa-policy"
 
 
@@ -54,6 +54,11 @@ async def people(tenant_ready):
                 delete(AuthIdentity).where(AuthIdentity.account_id.in_(ids.values()), AuthIdentity.provider == "totp")
             )
             await db.execute(delete(LoginAttempt).where(LoginAttempt.identifier.in_(ids)))
+            # The account a test creates through the API goes, whatever an earlier run left behind.
+            new = (await db.execute(select(Account.id).where(Account.email == NEW))).scalars().all()
+            await db.execute(delete(AccountRole).where(AccountRole.account_id.in_(new)))
+            await db.execute(delete(AuthIdentity).where(AuthIdentity.account_id.in_(new)))
+            await db.execute(delete(Account).where(Account.id.in_(new)))
             await db.commit()
         await _set_policy("off")
         return ids
@@ -164,3 +169,25 @@ async def test_set_the_policy_enrol_through_its_gate_replace_the_codes_and_have_
     # What happens next: the password alone signs in, and the policy asks for a factor again.
     async with _client() as other:
         assert (await _sign_in(other, OTHER)).json()["mfaEnrolmentRequired"] is True
+
+
+async def test_the_accounts_list_says_whose_sign_in_a_confirmed_factor_guards(people):
+    async def enrolled(client: httpx.AsyncClient) -> dict[str, bool]:
+        return {row["email"]: row["mfaEnrolled"] for row in (await client.get("/api/accounts")).json() if row["email"] in people}
+
+    async with _client() as admin, _client() as other:
+        await _sign_in(admin, ADMIN)
+        await _sign_in(other, OTHER)
+        secret = (await other.post("/api/auth/mfa/enrol")).json()["secret"]
+        # Started is not confirmed: the password alone still signs that account in.
+        assert (await enrolled(admin))[OTHER] is False
+        assert (await other.post("/api/auth/mfa/confirm", json={"code": pyotp.TOTP(secret).now()})).status_code == 200
+        assert await enrolled(admin) == {ADMIN: False, OTHER: True, VIEWER: False, GLASS: False}
+        assert (await admin.get(f"/api/accounts/{people[OTHER]}")).json()["mfaEnrolled"] is True
+        assert (await admin.patch(f"/api/accounts/{people[OTHER]}", json={"displayName": OTHER})).json()["mfaEnrolled"] is True
+        # The answer that creates an account reads its identities too, rather than failing to load them.
+        new = {"email": NEW, "displayName": NEW, "password": PASSWORD, "roles": ["viewer"]}
+        created = await admin.post("/api/accounts", json=new)
+        assert (created.status_code, created.json()["mfaEnrolled"]) == (201, False)
+        assert (await admin.delete(f"/api/accounts/{people[OTHER]}/mfa")).status_code == 204
+        assert (await enrolled(admin))[OTHER] is False
