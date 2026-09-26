@@ -268,7 +268,7 @@ def test_a_search_that_is_a_finding_id_is_dropped_and_still_runs() -> None:
     assert interpret(_reply(app="CVE Manager", state="findings")).filters["q"] == "CVE Manager"
     assert interpret(_reply(app="cve-2024-3400", state="findings")).filters["q"] == "cve-2024-3400"
     # Digits included (#684): `findingIdIn` searches a year in Arabic-Indic digits, so this does too.
-    loose = "CVE-٢٠٢٤-0208"
+    loose = "CVE-\u0662\u0660\u0662\u0664-0208"
     assert interpret(_reply(app=loose, state="findings")).filters["q"] == loose
 
 

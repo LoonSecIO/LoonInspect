@@ -435,7 +435,7 @@ def test_only_the_two_licensed_namespaces_construct_and_nothing_else_does() -> N
 # #684's two spellings, each one step from a licensed id: the year in Arabic-Indic digits, and
 # a real id with a newline after it. A `str` pattern's `\d` took the first and `$` the second.
 # Written as escapes so the line says which code points it means.
-LOOSE_IDS = ("CVE-٢٠٢٤-0208", "CVE-2024-0208\n")
+LOOSE_IDS = ("CVE-\u0662\u0660\u0662\u0664-0208", "CVE-2024-0208\n")
 
 
 def test_other_digits_or_a_newline_after_the_id_is_refused_in_the_namespace_sentence() -> None:
@@ -445,7 +445,7 @@ def test_other_digits_or_a_newline_after_the_id_is_refused_in_the_namespace_sent
     fourth = "GHSA-xxxx-yyyy-zzzz"
     with pytest.raises(ValueError) as refused:
         validate_finding_id(fourth)
-    for value in (*LOOSE_IDS, "LoonVD-2026-００００４２", "LoonVD-2026-000042\n"):
+    for value in (*LOOSE_IDS, "LoonVD-2026-\uff10\uff10\uff10\uff10\uff14\uff12", "LoonVD-2026-000042\n"):
         with pytest.raises(ValueError) as direct:
             validate_finding_id(value)
         with pytest.raises(ValueError) as constructed:
