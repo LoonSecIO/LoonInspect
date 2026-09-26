@@ -127,7 +127,8 @@ export function SubmissionCases() {
 
   const mark = (id: string, row: RowAct) => setActs((all) => ({ ...all, [id]: row }));
   function run(id: string, kind: "status" | "withdraw") {
-    mark(id, { busy: true });
+    // An open question stays up, its button disabled, so nothing moves under a second click.
+    setActs((all) => ({ ...all, [id]: { confirming: all[id]?.confirming, busy: true } }));
     void act(kind, id, copy.failed).then((outcome) => {
       if (outcome === null) return; // that case's act is already in flight
       if ("error" in outcome) return mark(id, { error: outcome.error });
