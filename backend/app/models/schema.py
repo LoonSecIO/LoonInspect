@@ -957,6 +957,43 @@ class ShareLog(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class SubmissionCase(Base):
+    """One coverage request or match correction (#623): app.core.submissions sends, reads and
+    withdraws it, and migration e623b1c4d7a9 says what each column holds. `case_key` is encrypted
+    like the contribution receipt and never logged, shown or written to the share log."""
+
+    __tablename__ = "submission_cases"
+    __table_args__ = (CheckConstraint("kind IN ('coverage', 'correction')", name="ck_submission_cases_kind"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    submitted_by_account_id: Mapped[str | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    app_name: Mapped[str] = mapped_column(String(256))
+    bundle_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    platform: Mapped[str] = mapped_column(String(16))
+    versions: Mapped[list] = mapped_column(JSONB)
+    public_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    contact: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    finding: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    finding_release: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    case_key: Mapped[str] = mapped_column(EncryptedString())
+    state: Mapped[str] = mapped_column(String(24), default="pending")
+    received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    release: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    coverage: Mapped[str | None] = mapped_column(Text, nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_status_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    excluded_override: Mapped[bool] = mapped_column(Boolean, default=False)
+    permission_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class FeatureFlag(Base):
     """Admin overrides for features that are otherwise gated behind normal business
     conditions (e.g. a connection's capability flags). A flag being on here forces
