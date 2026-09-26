@@ -68,13 +68,16 @@ describe("the case list on Settings › Intelligence Access (#623)", () => {
     expect([buttons(off, copy.refresh), buttons(off, copy.withdraw)].map((found) => found.length)).toEqual([1, 1]);
     expect(view(ready([]))).toContain(copy.empty);
     expect(view(ready([]))).not.toContain("<li");
+    expect([view({ state: "failed", said: null }), view({ state: "failed", said: "Insufficient permissions" })]).toEqual(
+      [expect.stringContaining(copy.loadFailed), expect.stringContaining(">Insufficient permissions</p>")]);
   });
 
   it("holds Refresh 60 seconds after the last read and until retryAt, counting down, and shows a 429 as the server said it", async () => {
-    expect([15, 60].map((seconds) => refreshWait(one("a", { lastStatusAt: ago(seconds) }), NOW))).toEqual([45, 0]);
+    expect([15, 59.5, 60].map((seconds) => refreshWait(one("a", { lastStatusAt: ago(seconds) }), NOW))).toEqual([45, 1, 0]);
     expect(refreshWait(one("a", { lastStatusAt: ago(90), retryAt: ago(-30) }), NOW)).toBe(30);
     expect(buttons(view(ready([one("a", { lastStatusAt: ago(15) })])), copy.refreshIn(45))[0]).toContain('disabled=""');
     expect(buttons(view(ready([one("a", { lastStatusAt: ago(61) })])), copy.refresh)[0]).not.toContain('disabled=""');
+    expect(buttons(view(ready([one("a")]), { a: { busy: true } }), copy.refresh)[0]).toContain('disabled=""');
     // Asked only where the service can answer: never a case it has not received, one expired there, or one withdrawn.
     expect(STATES.filter((state) => asksStatus(one("a", { state })))).toEqual(["received", "reviewing", "needs_information", "accepted", "published", "declined"]);
     const soon = "Asked too soon: a case's status is read once a minute, and not before a time the service gave. Try again in 37 seconds.";
@@ -100,13 +103,16 @@ describe("the case list on Settings › Intelligence Access (#623)", () => {
     expect(apiRequest).toHaveBeenCalledWith("/submissions/a/withdraw", { method: "POST" });
     const after = replaceCase(cases, answer);
     expect(after).toEqual([answer, cases[1]]);
-    expect(buttons(view(ready(after)), copy.withdraw)).toHaveLength(1);
+    const settled = view(ready(after));
+    expect(buttons(settled, copy.withdraw)).toHaveLength(1);
+    expect(settled).not.toContain("has not confirmed"); // a confirmed withdrawal is only its state word
   });
 
   it("is an administrator's section: absent for a reader without SYSTEM_WRITE, beside the paid panel for one with it", () => {
     vi.mocked(useHasPermission).mockImplementation((permission) => permission === PERMISSIONS.SYSTEM_READ);
     expect(renderToStaticMarkup(<IntelligenceAccessPage />)).not.toContain(copy.title);
     vi.mocked(useHasPermission).mockReturnValue(true);
-    expect(renderToStaticMarkup(<IntelligenceAccessPage />)).toContain(`aria-label="${copy.title}"><h2`);
+    const page = renderToStaticMarkup(<IntelligenceAccessPage />);
+    expect([page.includes(`aria-label="${copy.title}"><h2`), page.includes(copy.loading)]).toEqual([true, true]);
   });
 });
