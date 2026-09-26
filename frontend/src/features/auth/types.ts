@@ -28,6 +28,17 @@ export interface Membership extends TenantRef {
   current: boolean;
 }
 
+/** What the password step answers, as HTTP 202, for an account with a second factor
+ *  (#653): a challenge the second step redeems within five minutes, never a session. */
+export interface MfaChallenge {
+  challenge: string;
+  /** The ways to answer it: "totp" (a six-digit code) and "recovery" (a recovery code). */
+  methods: string[];
+}
+
+/** The password step's two good answers: signed in, or a second step to take first. */
+export type LoginAnswer = { user: AuthUser } | { challenge: MfaChallenge };
+
 /** Mirrors app/core/permissions.py. Hand-maintained: these strings must match the
  *  backend enum values exactly, since a typo here fails *closed* in the UI, silently.
  *  `useHasPermission` is a plain `.includes()` against the permissions the server

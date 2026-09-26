@@ -22,7 +22,7 @@ ends with a reading order through the rest.
 | [`change-log.md`](change-log.md) | v0, 2026-08-22 (#61) | Which differences between two observations become change rows and events, at what level. |
 | [`compliance-evidence.md`](compliance-evidence.md) | built, ruled 2026-09-16 (#219 R5) | The evidence artefact an auditor is handed, and what it may claim. |
 | [`controls.yml`](controls.yml) | version 1 | `BRANCHING.md` §6 made machine-readable; the policy workflow runs from it. |
-| [`feature-flags.md`](feature-flags.md) | first entry, verdicts unruled (#652) | Every switch the product carries, its kind and default, and the verdict each release gave it. |
+| [`feature-flags.md`](feature-flags.md) | verdicts ruled 2026-09-26 (#652) | Every switch the product carries, its kind and default, and the verdict each release gave it. |
 | [`data-sharing.md`](data-sharing.md) | settled | The community exchange: key scheme, consent model, wire contract, share log. |
 | [`diagnosability.md`](diagnosability.md) | ruled, 2026-09-10 (#291) | The design language every new failure path is written in. Read before adding one. |
 | [`ingest-scheduling.md`](ingest-scheduling.md) | implemented, 2026-08-22 (#27) | Collections, the minute tick, the claim, the rate floor — what is read and when. |

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { setUnauthorizedHandler } from "@/config/api";
 import * as authApi from "@/features/auth/api";
-import type { AuthStatus, AuthUser, PermissionName, SetupInput } from "@/features/auth/types";
+import type { AuthStatus, AuthUser, MfaChallenge, PermissionName, SetupInput } from "@/features/auth/types";
 
 interface AuthStore {
   status: AuthStatus;
@@ -12,7 +12,10 @@ interface AuthStore {
    *  /system/version and so is not stale after a login in the same page load. */
   version: string | null;
   bootstrap: () => Promise<void>;
-  login: (email: string, password: string) => Promise<void>;
+  /** Resolves null once signed in, or with the challenge an account with a second factor
+   *  answers first (#653); the store stays signed out until `loginMfa` redeems it. */
+  login: (email: string, password: string) => Promise<MfaChallenge | null>;
+  loginMfa: (challenge: string, code: string) => Promise<void>;
   completeSetup: (input: SetupInput) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -48,7 +51,15 @@ export const useAuthStore = create<AuthStore>((set) => ({
   },
 
   async login(email, password) {
-    set({ status: "authenticated", user: await authApi.login(email, password) });
+    const answer = await authApi.login(email, password);
+    if ("challenge" in answer) return answer.challenge;
+    set({ status: "authenticated", user: answer.user });
+    return null;
+  },
+
+  async loginMfa(challenge, code) {
+    // Exactly what a password-only login sets: the second step ends in the same session.
+    set({ status: "authenticated", user: await authApi.loginMfa(challenge, code) });
   },
 
   async completeSetup(input) {
