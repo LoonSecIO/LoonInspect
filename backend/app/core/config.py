@@ -3,13 +3,18 @@ from __future__ import annotations
 import ipaddress
 import re
 from typing import Literal
+from urllib.parse import parse_qs, urlsplit
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 
 _MAX_SESSION_LIFETIME_SECONDS = 14 * 24 * 60 * 60
+
+# What DATABASE_URL may ask asyncpg for in external mode: `prefer`, `allow` and `disable`
+# all let a connection fall back to plain text, which is the one thing that mode forbids.
+_TLS_MODES = frozenset({"require", "verify-ca", "verify-full"})
 
 
 class Settings(BaseSettings):
@@ -26,11 +31,13 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://looninspect_app@localhost:5432/looninspect"
 
     # bundled   the Postgres service shipped alongside the app in docker-compose.yml.
-    # external  an operator-run database. Stubbed deliberately: the seam is named here
-    #           so the choice is explicit in configuration rather than inferred from
-    #           whatever DATABASE_URL happens to point at, but v0 ships the bundled
-    #           service only and startup refuses the other value rather than half
-    #           supporting it. See #29.
+    # external  a PostgreSQL the operator runs (#654; docs/operations.md §8). Explicit
+    #           rather than inferred from DATABASE_URL, because the two make different
+    #           promises: external asks for TLS on the URL (`?ssl=require` or stricter; a
+    #           database reached over a network is not the compose network) and checks the
+    #           role it connected as before a migration runs (app.core.database.init_db).
+    #           The bundle's sidecar made both true at first boot, so bundled checks
+    #           nothing new. Named the same way since #29, when only bundled shipped.
     database_mode: Literal["bundled", "external"] = "bundled"
 
     cors_origins: list[str] = ["http://localhost:5173"]
@@ -303,15 +310,24 @@ class Settings(BaseSettings):
             f"supported (see #29); got {value.split('://', 1)[0]!r}"
         )
 
-    @field_validator("database_mode")
-    @classmethod
-    def _reject_external_database(cls, value: str) -> str:
-        if value == "bundled":
-            return value
-        raise ValueError(
-            "database_mode='external' is not supported in v0 — only the Postgres "
-            "service bundled in docker-compose.yml is shipped. Leave this at 'bundled'."
-        )
+    @model_validator(mode="after")
+    def _external_asks_for_tls(self) -> Settings:
+        if self.database_mode != "external":
+            return self
+        query = parse_qs(urlsplit(self.database_url).query)
+        if "sslmode" in query:
+            raise ValueError(
+                "DATABASE_URL: asyncpg spells the TLS parameter `ssl`, not `sslmode` — use "
+                "?ssl=require (or verify-ca / verify-full, with a root certificate)"
+            )
+        if (query.get("ssl") or [""])[0] not in _TLS_MODES:
+            raise ValueError(
+                "DATABASE_MODE=external requires DATABASE_URL to ask for TLS: append ?ssl=require "
+                "(or verify-ca / verify-full, with a root certificate) to the URL. A database you run "
+                "is reached over a network the bundle never crosses, and a plain connection hands the "
+                "application role's password to anyone on the path."
+            )
+        return self
 
     @field_validator("log_level")
     @classmethod
