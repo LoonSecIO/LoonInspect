@@ -3,7 +3,9 @@ import { KeyRound, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/config/api";
-import { createAccount, listAccounts, resetPassword, updateAccount } from "@/features/accounts/api";
+import { createAccount, listAccounts, removeSecondFactor, resetPassword, updateAccount } from "@/features/accounts/api";
+import { MfaPolicyControl } from "@/features/accounts/MfaPolicyControl";
+import { sentence } from "@/features/accounts/twoStep";
 import { ROLES, type Account } from "@/features/accounts/types";
 import { useAuthStore } from "@/features/auth/store";
 import { useHasPermission } from "@/features/auth/store";
@@ -33,6 +35,7 @@ export function AccountsPage() {
 
   const [resetFor, setResetFor] = useState<string | null>(null);
   const [resetPw, setResetPw] = useState("");
+  const [removeFor, setRemoveFor] = useState<string | null>(null);
 
   /** The one read of the list, as a promise chain rather than `await`: the first read is
    *  started by the effect below, and an effect body is the one place React asks callers
@@ -160,6 +163,20 @@ export function AccountsPage() {
     }
   }
 
+  async function handleRemoveFactor(account: Account) {
+    setBusyId(account.id);
+    setError(null);
+    try {
+      await removeSecondFactor(account.id);
+      setRemoveFor(null);
+      await refresh();
+    } catch (caught) {
+      setError(sentence(caught, t.accounts.errorRemovingFactor));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <section className="space-y-6">
       <div className="flex items-start justify-between gap-4">
@@ -259,6 +276,8 @@ export function AccountsPage() {
         </form>
       )}
 
+      <MfaPolicyControl />
+
       <div className="overflow-x-auto rounded-lg border bg-card">
         <table className="w-full text-sm">
           <thead className="border-b bg-muted/30 text-left text-muted-foreground">
@@ -350,7 +369,7 @@ export function AccountsPage() {
                   <td className="px-4 py-3">
                     {canWrite && (
                       <div className="flex flex-col items-end gap-2">
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap justify-end gap-2">
                           <Button
                             variant="outline"
                             size="sm"
@@ -360,6 +379,11 @@ export function AccountsPage() {
                             <KeyRound className="mr-1 h-3 w-3" />
                             {t.accounts.resetPassword}
                           </Button>
+                          {account.mfaEnrolled && (
+                            <Button variant="outline" size="sm" disabled={busyId === account.id} onClick={() => setRemoveFor(removeFor === account.id ? null : account.id)}>
+                              {t.accounts.removeFactor}
+                            </Button>
+                          )}
                           <Button
                             variant={account.status === "active" ? "destructive" : "outline"}
                             size="sm"
@@ -371,6 +395,14 @@ export function AccountsPage() {
                           </Button>
                         </div>
 
+                        {removeFor === account.id && (
+                          <div className="flex max-w-md items-center justify-end gap-2">
+                            <span className="text-xs text-muted-foreground">{t.accounts.removeFactorConfirm(account.email)}</span>
+                            <Button variant="destructive" size="sm" disabled={busyId === account.id} onClick={() => handleRemoveFactor(account)}>
+                              {t.accounts.confirm}
+                            </Button>
+                          </div>
+                        )}
                         {resetFor === account.id && (
                           <form
                             onSubmit={(event) => handleReset(event, account)}

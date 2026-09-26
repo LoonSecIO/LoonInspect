@@ -11,6 +11,7 @@ import { useLocale } from "@/i18n/LocaleContext";
 export function MyAccountPage() {
   const { t } = useLocale();
   const user = useAuthStore((state) => state.user);
+  const held = user?.mfaEnrolmentRequired ?? false;
   const version = useBuildVersion();
 
   const [currentPassword, setCurrentPassword] = useState("");
@@ -81,7 +82,7 @@ export function MyAccountPage() {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="max-w-md space-y-4 rounded-lg border bg-card p-4">
+      <form hidden={held} onSubmit={handleSubmit} className="max-w-md space-y-4 rounded-lg border bg-card p-4">
         <h2 className="text-lg font-semibold">{t.myAccount.changePassword}</h2>
 
         <div className="space-y-2">
@@ -144,6 +145,8 @@ export function MyAccountPage() {
         <p className="text-xs text-muted-foreground">{t.myAccount.sessionsHint}</p>
       </form>
 
+      {/* Held by the policy (#653): only set-up answers, so the password form waits and the gate's sentence leads. */}
+      {held && <p role="alert" className="max-w-md rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">{t.myAccount.held}</p>}
       <TwoStepSignIn />
     </section>
   );

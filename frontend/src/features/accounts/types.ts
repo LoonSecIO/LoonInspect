@@ -11,6 +11,8 @@ export interface Account {
   externalSource: string | null;
   createdAt: string;
   lastLoginAt: string | null;
+  /** A confirmed second factor guards this account's sign-in (#653): what "Remove second factor" removes. */
+  mfaEnrolled: boolean;
 }
 
 export interface CreateAccountInput {

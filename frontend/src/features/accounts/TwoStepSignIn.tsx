@@ -4,14 +4,14 @@ import { QRCodeSVG } from "qrcode.react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getMfaStatus } from "@/features/accounts/api";
-import { CLOSED, confirmCode, startSetUp, type Move, type Panel } from "@/features/accounts/twoStep";
+import { CLOSED, confirmCode, renewCodes, startSetUp, type Move, type Panel } from "@/features/accounts/twoStep";
 import type { MfaStatus } from "@/features/accounts/types";
 import type { Translations } from "@/i18n/en";
 import { useLocale, type Locale } from "@/i18n/LocaleContext";
 
 /** What the status read answered. A read that failed is unknown, never "off" (#150). */
 export type StatusRead = { state: "loading" } | { state: "failed" } | { state: "ready"; status: MfaStatus };
-type Handlers = Record<"setUp" | "cancel" | "copyCodes" | "saved", () => void> & {
+type Handlers = Record<"setUp" | "renew" | "cancel" | "copyCodes" | "saved", () => void> & {
   code: (value: string) => void;
   confirm: (event: FormEvent) => void;
 };
@@ -41,6 +41,7 @@ export function TwoStepSignInView({ read, panel, copy, locale, busy = false, cod
       {status?.enrolled && (
         <p className="text-sm"><span className="font-medium">{copy.onSince(since)}</span> {copy.codesLeft(status.recoveryCodesRemaining)}</p>
       )}
+      {status?.enrolled && panel.step === "closed" && <Button variant="outline" onClick={on.renew}>{copy.renew}</Button>}
       {status && !status.enrolled && panel.step === "closed" && (
         <>
           <p className="text-sm text-muted-foreground">{status.pending ? copy.pending : copy.off}</p>
@@ -60,6 +61,18 @@ export function TwoStepSignInView({ read, panel, copy, locale, busy = false, cod
             value={code} onChange={(event) => on.code?.(event.target.value)} />
           <div className="flex gap-2">
             <Button type="submit" disabled={busy}>{busy ? copy.confirming : copy.confirm}</Button>
+            <Button variant="ghost" onClick={on.cancel} disabled={busy}>{copy.cancel}</Button>
+          </div>
+        </form>
+      )}
+
+      {panel.step === "renew" && (
+        <form onSubmit={on.confirm} className="space-y-3">
+          <label htmlFor="renewCode" className="block text-sm font-medium">{copy.renewLabel}</label>
+          <Input id="renewCode" required inputMode="numeric" autoComplete="one-time-code" minLength={6} maxLength={32}
+            value={code} onChange={(event) => on.code?.(event.target.value)} />
+          <div className="flex gap-2">
+            <Button type="submit" disabled={busy}>{busy ? copy.confirming : copy.renewSubmit}</Button>
             <Button variant="ghost" onClick={on.cancel} disabled={busy}>{copy.cancel}</Button>
           </div>
         </form>
@@ -129,10 +142,12 @@ export function TwoStepSignIn() {
 
   const on: Handlers = {
     setUp: () => run(startSetUp(copy.failed)),
+    renew: () => apply({ panel: { step: "renew", error: null }, refresh: false }),
     code: setCode,
     confirm: (event) => {
       event.preventDefault();
       if (panel.step === "scan") run(confirmCode(panel.enrolment, code, copy.failed));
+      if (panel.step === "renew") run(renewCodes(code, copy.failed));
     },
     // Cancelling leaves an unconfirmed set-up on the server; the re-read says so.
     cancel: () => apply({ panel: CLOSED, refresh: true }),

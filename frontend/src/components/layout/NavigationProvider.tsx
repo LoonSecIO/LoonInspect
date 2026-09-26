@@ -30,12 +30,15 @@ export function NavigationProvider({ children }: PropsWithChildren) {
   const loadCorpus = useCorpusStore((state) => state.load);
   const intelligence = useIntelligenceStore((state) => state.answering);
   const loadIntelligence = useIntelligenceStore((state) => state.load);
+  // An account the policy holds is refused every read until it enrols (#653); they wait for that.
+  const held = useAuthStore((state) => state.user?.mfaEnrolmentRequired ?? false);
   // Only an account that may read the answer asks the question (#622).
-  const readsSystem = permissions?.includes(PERMISSIONS.SYSTEM_READ) ?? false;
+  const readsSystem = !held && (permissions?.includes(PERMISSIONS.SYSTEM_READ) ?? false);
   useEffect(() => {
+    if (held) return;
     void load();
     void loadCorpus();
-  }, [load, loadCorpus]);
+  }, [held, load, loadCorpus]);
   useEffect(() => {
     if (readsSystem) void loadIntelligence();
   }, [readsSystem, loadIntelligence]);
