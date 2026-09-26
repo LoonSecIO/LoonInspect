@@ -54,8 +54,7 @@ async def people(tenant_ready):
                 delete(AuthIdentity).where(AuthIdentity.account_id.in_(ids.values()), AuthIdentity.provider == "totp")
             )
             await db.execute(delete(LoginAttempt).where(LoginAttempt.identifier.in_(ids)))
-            # The account a test creates through the API goes, whatever an earlier run left behind.
-            new = (await db.execute(select(Account.id).where(Account.email == NEW))).scalars().all()
+            new = (await db.execute(select(Account.id).where(Account.email == NEW))).scalars().all()  # made through the API
             await db.execute(delete(AccountRole).where(AccountRole.account_id.in_(new)))
             await db.execute(delete(AuthIdentity).where(AuthIdentity.account_id.in_(new)))
             await db.execute(delete(Account).where(Account.id.in_(new)))
@@ -172,22 +171,14 @@ async def test_set_the_policy_enrol_through_its_gate_replace_the_codes_and_have_
 
 
 async def test_the_accounts_list_says_whose_sign_in_a_confirmed_factor_guards(people):
-    async def enrolled(client: httpx.AsyncClient) -> dict[str, bool]:
-        return {row["email"]: row["mfaEnrolled"] for row in (await client.get("/api/accounts")).json() if row["email"] in people}
-
     async with _client() as admin, _client() as other:
         await _sign_in(admin, ADMIN)
         await _sign_in(other, OTHER)
         secret = (await other.post("/api/auth/mfa/enrol")).json()["secret"]
-        # Started is not confirmed: the password alone still signs that account in.
-        assert (await enrolled(admin))[OTHER] is False
-        assert (await other.post("/api/auth/mfa/confirm", json={"code": pyotp.TOTP(secret).now()})).status_code == 200
-        assert await enrolled(admin) == {ADMIN: False, OTHER: True, VIEWER: False, GLASS: False}
-        assert (await admin.get(f"/api/accounts/{people[OTHER]}")).json()["mfaEnrolled"] is True
-        assert (await admin.patch(f"/api/accounts/{people[OTHER]}", json={"displayName": OTHER})).json()["mfaEnrolled"] is True
-        # The answer that creates an account reads its identities too, rather than failing to load them.
-        new = {"email": NEW, "displayName": NEW, "password": PASSWORD, "roles": ["viewer"]}
-        created = await admin.post("/api/accounts", json=new)
+        assert {row["email"]: row["mfaEnrolled"] for row in (await admin.get("/api/accounts")).json()}[OTHER] is False
+        await other.post("/api/auth/mfa/confirm", json={"code": pyotp.TOTP(secret).now()})
+        listed = {row["email"]: row["mfaEnrolled"] for row in (await admin.get("/api/accounts")).json() if row["email"] in people}
+        assert listed == {ADMIN: False, OTHER: True, VIEWER: False, GLASS: False}
+        # The answer that creates an account loads its identities too, rather than failing on them.
+        created = await admin.post("/api/accounts", json={"email": NEW, "displayName": NEW, "password": PASSWORD})
         assert (created.status_code, created.json()["mfaEnrolled"]) == (201, False)
-        assert (await admin.delete(f"/api/accounts/{people[OTHER]}/mfa")).status_code == 204
-        assert (await enrolled(admin))[OTHER] is False

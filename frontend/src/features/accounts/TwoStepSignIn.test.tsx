@@ -5,8 +5,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ApiError, apiRequest } from "@/config/api";
 import { confirmMfa, enrolMfa, getMfaStatus } from "@/features/accounts/api";
 import { TwoStepSignInView, type StatusRead } from "@/features/accounts/TwoStepSignIn";
-import { CLOSED, confirmCode, startSetUp, type Panel } from "@/features/accounts/twoStep";
+import { CLOSED, confirmCode, renewCodes, startSetUp, type Panel } from "@/features/accounts/twoStep";
 import type { MfaStatus } from "@/features/accounts/types";
+import { enrolmentRedirect, MY_ACCOUNT, useAuthStore } from "@/features/auth/store";
+import type { AuthUser } from "@/features/auth/types";
 import { de } from "@/i18n/de";
 import { en } from "@/i18n/en";
 
@@ -102,5 +104,27 @@ describe("two-step sign-in on My Account (#653)", () => {
     // No answer at all: the page's own sentence, and no re-read to prompt.
     vi.mocked(apiRequest).mockRejectedValueOnce(new TypeError("Failed to fetch"));
     expect(await startSetUp("fallback")).toEqual({ panel: { step: "closed", error: "fallback" }, refresh: false });
+  });
+
+  it("holds an account the policy asks on My Account until a confirmed code lets it go, codes still shown", async () => {
+    const held = { id: "a1", roles: ["viewer"], permissions: [], tenants: [], mfaEnrolmentRequired: true } as unknown as AuthUser;
+    useAuthStore.setState({ status: "authenticated", user: held });
+    expect(["/", "/devices", MY_ACCOUNT].map((path) => enrolmentRedirect(held, path))).toEqual([MY_ACCOUNT, MY_ACCOUNT, null]);
+    vi.mocked(apiRequest).mockResolvedValueOnce({ recoveryCodes: codes, confirmedAt }).mockResolvedValueOnce({ ...held, mfaEnrolmentRequired: false });
+    expect((await confirmCode(enrolment, "123456", "fallback")).panel).toEqual({ step: "codes", codes });
+    expect(apiRequest).toHaveBeenLastCalledWith("/auth/me"); // no sign-out: the same session, read again
+    expect(enrolmentRedirect(useAuthStore.getState().user, "/devices")).toBeNull();
+  });
+
+  it("replaces the recovery codes for a fresh code, shown once, and shows a refused code in the server's words", async () => {
+    expect(render(on, CLOSED)).toContain(`>${copy.renew}</button>`);
+    vi.mocked(apiRequest).mockResolvedValueOnce({ recoveryCodes: codes, confirmedAt });
+    expect(await renewCodes("123456", "fallback")).toEqual({ panel: { step: "codes", codes }, refresh: true }); // count re-read
+    expect(apiRequest).toHaveBeenLastCalledWith("/auth/mfa/recovery-codes", { method: "POST", json: { code: "123456" } });
+    const wrong = "That code was not accepted: the current six digits from the authenticator app, each good once.";
+    vi.mocked(apiRequest).mockRejectedValueOnce(new ApiError(401, wrong));
+    const refused = await renewCodes("000000", "fallback");
+    expect(refused).toEqual({ panel: { step: "renew", error: wrong }, refresh: false });
+    expect(render(on, refused.panel)).toContain(`<p role="alert" class="text-sm text-destructive">${wrong}</p>`);
   });
 });

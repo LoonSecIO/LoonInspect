@@ -15,6 +15,8 @@ export interface AuthUser {
    *  One entry on every pod today; the switcher renders only past one. */
   tenant: TenantRef | null;
   tenants: Membership[];
+  /** The tenant's policy asks this account for a second factor it has not set up yet (#653). */
+  mfaEnrolmentRequired: boolean;
 }
 
 export interface TenantRef {

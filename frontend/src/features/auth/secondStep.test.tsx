@@ -13,7 +13,7 @@ import { de } from "@/i18n/de";
 import { en } from "@/i18n/en";
 
 const USER: AuthUser = {
-  id: "a1", email: "mfa@example.com", displayName: "MFA", roles: ["admin"], permissions: [], isBreakGlass: false, tenant: null, tenants: []
+  id: "a1", email: "mfa@example.com", displayName: "MFA", roles: ["admin"], permissions: [], isBreakGlass: false, tenant: null, tenants: [], mfaEnrolmentRequired: false
 };
 const CHALLENGE: MfaChallenge = { challenge: "a1.1790000000.9f86d0", methods: ["totp", "recovery"] };
 const CHALLENGED: SecondStepAction = { type: "challenged", challenge: CHALLENGE };
