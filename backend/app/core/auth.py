@@ -54,6 +54,8 @@ _PUBLIC_EXACT = frozenset(
         "/api/auth/status",
         "/api/auth/setup",
         "/api/auth/login",
+        # The second sign-in step (#653) carries a challenge token, not a session.
+        "/api/auth/login/mfa",
         # Logout stays public so it works with an already-expired session — clearing
         # cookies should never itself require a valid one.
         "/api/auth/logout",

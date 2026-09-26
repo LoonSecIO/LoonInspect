@@ -663,6 +663,7 @@ MFA was explicitly out of scope for v1. The model above doesn't block it: TOTP s
 | Package | Purpose | Note |
 | --- | --- | --- |
 | `argon2-cffi` | Password hashing | Direct, not via `passlib` — passlib is effectively unmaintained |
+| `pyotp` | TOTP (#653) | The secret is an `auth_identities` row, provider `totp`, encrypted with `EncryptedString`; recovery codes are argon2id hashes on the same row |
 | *(none for OIDC yet)* | | `authlib` when Phase "Later" starts |
 
 Everything else — session tokens, CSRF, HMAC, API tokens — is stdlib `secrets` / `hmac` / `hashlib`.
