@@ -1,0 +1,90 @@
+# A published release or prerelease (v2.0.0-rc.1; `releases/latest` skips those) adds its version
+# as a tag on the images Publish images pushed for its commit, by digest (ECR forbids moving a tag,
+# not adding one), then appends its upgrade notes (docs/BRANCHING.md §1.1). The push role trusts v*
+# tags once the maintainer redeploys ops/aws/images.template.yml with them (ops/aws/README.md §1).
+# A release runs its tagged commit's copy of this file: whoever can push a v* tag can assume that role.
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+env:
+  TAG: ${{ github.event.release.tag_name }}
+
+jobs:
+  images:
+    name: Tag the images with the version
+    if: startsWith(github.event.release.tag_name, 'v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: The tag is a version on a commit of main
+        run: |
+          [[ $TAG =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]] || {
+            echo "::error::$TAG is not a version tag (vMAJOR.MINOR.PATCH, or a prerelease such as v2.0.0-rc.1; docs/BRANCHING.md §1.1), so no image was tagged."; exit 1; }
+          sha=$(git rev-parse "$TAG^{commit}")
+          git merge-base --is-ancestor "$sha" origin/main || {
+            echo "::error::$TAG names $sha, which is not on main, so no image was tagged: releases are cut from main (docs/BRANCHING.md §1.1). Delete this release and its tag, and tag a commit on main."; exit 1; }
+          echo "SHA=$sha" >> "$GITHUB_ENV"
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ECR_PUSH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - name: Add the version tag to looninspect and looninspect-db
+        run: |
+          types=(application/vnd.oci.image.index.v1+json application/vnd.docker.distribution.manifest.list.v2+json
+                 application/vnd.oci.image.manifest.v1+json application/vnd.docker.distribution.manifest.v2+json)
+          pick() { jq -j --arg tag "$1" "$2" got.json; }
+          image='.images[]? | select(.imageId.imageTag == $tag)'
+          for repo in looninspect looninspect-db; do
+            aws ecr batch-get-image --repository-name "$repo" --image-ids imageTag="$SHA" imageTag="$TAG" \
+              --accepted-media-types "${types[@]}" --output json > got.json
+            digest=$(pick "$SHA" "$image | .imageId.imageDigest"); tagged=$(pick "$TAG" "$image | .imageId.imageDigest")
+            if [ -z "$digest" ]; then
+              why=$(pick "$SHA" '.failures[]? | select(.imageId.imageTag == $tag) | .failureCode')
+              echo "::error::ECR has no $repo:$SHA ($why), so $TAG has nothing to name. Publish images pushes a commit of main only when it changes the image (Dockerfile, backend/, frontend/, ops/postgres/), or its run failed. Run Publish images with 'Use workflow from' set to the tag $TAG, then re-run this workflow."; exit 1
+            elif [ "$tagged" = "$digest" ]; then
+              echo "::notice::$repo:$TAG already names $digest, the image $SHA built"
+            elif [ -n "$tagged" ]; then
+              echo "::error::$repo:$TAG already names $tagged, not the image $SHA built ($digest), and ECR tags cannot move. Find what pushed it; publish the next version rather than reuse this one."; exit 1
+            else
+              pick "$SHA" "$image | .imageManifest" > manifest.json
+              aws ecr put-image --repository-name "$repo" --image-tag "$TAG" --image-digest "$digest" --image-manifest file://manifest.json \
+                --image-manifest-media-type "$(pick "$SHA" "$image | .imageManifestMediaType")" > /dev/null
+              echo "$repo:$TAG -> $digest, the image $SHA built"
+            fi
+          done
+
+  notes:
+    name: Upgrade notes
+    needs: images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Append the migrations since the previous release to the release body
+        run: |
+          .github/scripts/check_migration_contract.py --notes "$TAG" > notes.md
+          body=$(gh release view "$TAG" --json body --jq .body)
+          body=${body%%<!-- upgrade notes*}
+          printf '%s\n\n%s\n' "${body%"${body##*[![:space:]]}"}" "$(cat notes.md)" > body.md
+          gh release edit "$TAG" --notes-file body.md
