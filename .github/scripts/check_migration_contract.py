@@ -2,10 +2,10 @@
 """No migration since the last release drops or renames what it reads (#655, docs/BRANCHING.md §1.1).
 
 The oracle: the tables and columns backend/app/models/schema.py names at the newest vMAJOR.MINOR.PATCH
-tag reachable from HEAD, read with ast. The subject: every migration added since. What upgrade()
-reaches may not drop_column, drop_table, rename_table or alter_column(new_column_name=) what the
-oracle names, nor run SQL saying DROP TABLE or ALTER TABLE <name> DROP or RENAME (constraints aside).
-Type, nullability and defaults are for review. `--notes vX.Y.Z` prints release.yml's upgrade notes.
+tag reachable from HEAD, read with ast. The subject: every migration added since. What upgrade() reaches
+may not drop_column, drop_table, rename_table or alter_column(new_column_name=) what the oracle names, nor
+run SQL (a literal, module constant or f-string) saying DROP TABLE or ALTER TABLE <name> … DROP or RENAME
+(constraints aside). Type, nullability and defaults are for review. `--notes vX.Y.Z` prints release.yml's upgrade notes.
 """
 
 from __future__ import annotations
@@ -21,8 +21,8 @@ SCHEMA = "backend/app/models/schema.py"
 VERSIONS = "backend/migrations/versions"
 STABLE = re.compile(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)")
 VERBS = {"drop_column": "drops", "drop_table": "drops", "rename_table": "renames", "alter_column": "renames"}
-RAW_SQL = re.compile(r"\bDROP\s+TABLE\b|\bALTER\s+TABLE\s+(IF\s+EXISTS\s+)?(ONLY\s+)?\S+\s+(RENAME|DROP)\s+(?!CONSTRAINT\b)\S+",
-                     re.IGNORECASE)
+RAW_SQL = re.compile(r"\bDROP\s+TABLE\b|\bALTER\s+TABLE\s+(IF\s+EXISTS\s+)?(ONLY\s+)?\S+\s+([^;]*?,\s*)?(RENAME|DROP)\s+"
+                     r"(?!CONSTRAINT\b)\S+", re.IGNORECASE)
 RELEASE_NOTE = re.compile(r"^#\s*release-note:\s*(.+)$", re.MULTILINE)
 
 
@@ -95,8 +95,10 @@ def refusals(migration: str, source: str, tables: dict[str, set[str]], release: 
     for fn in reached.values():
         docstring = fn.body[0].value if isinstance(fn.body[0], ast.Expr) else None
         for node in ast.walk(fn):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str) and node is not docstring:
-                if sql := RAW_SQL.search(node.value):
+            text = ("{}".join(v.value for v in node.values if isinstance(v, ast.Constant)) if isinstance(node, ast.JoinedStr)
+                    else consts.get(node.id) if isinstance(node, ast.Name) else getattr(node, "value", None))
+            if isinstance(text, str) and node is not docstring:
+                if sql := RAW_SQL.search(text):
                     found.append((node.lineno, f"{migration} runs SQL that says {sql.group(0)!r}, whose target this check "
                                   "cannot read: use op.drop_column, op.drop_table, op.rename_table or "
                                   f"op.alter_column(new_column_name=) so it can be held against {release}'s models."))
@@ -116,7 +118,7 @@ def refusals(migration: str, source: str, tables: dict[str, set[str]], release: 
                 what = f"column {table}.{column}" if column else f"table {table}"
                 found.append((node.lineno, f"{migration} {VERBS[verb]} {what}, which {release} still reads (its models name "
                               f"it), so stepping back to {release} would break: {fix} (docs/BRANCHING.md §1.1)."))
-    return found
+    return list(dict.fromkeys(found))  # an f-string and its literal pieces can say the same thing
 
 
 def upgrade_notes(tag: str) -> str:

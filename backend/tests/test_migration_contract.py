@@ -23,13 +23,12 @@ class Widget(Base):
     colour: Mapped[str] = mapped_column("color", String(16))
     parts: Mapped[list[Part]] = relationship()
 """
-# Adds, drops only a table the release never had, renames only an index and a constraint,
-# and contracts only in downgrade().
-EXPAND = """
+# Adds, drops only a table the release never had, renames only an index and a constraint, contracts only in downgrade().
+EXPAND = """# release-note: plan a window
 def upgrade():
     op.add_column("widgets", sa.Column("size", sa.Integer(), nullable=True))
     op.drop_table("gadgets")
-    op.execute("ALTER INDEX ix_a RENAME TO ix_b; ALTER TABLE widgets RENAME CONSTRAINT ck_a TO ck_b")
+    op.execute(f"ALTER INDEX ix_a RENAME TO ix_b; ALTER TABLE {TABLE} ADD CHECK (size > 0), RENAME CONSTRAINT ck_a TO ck_b")
 
 
 def downgrade():
@@ -51,6 +50,8 @@ def test_the_oracle_is_what_sqlalchemy_says_the_models_are():
         ('op.rename_table(old_table_name="widgets", new_table_name="things")', "renames table widgets"),
         ("_helper()", "drops table widgets"),
         ('op.execute("ALTER TABLE widgets DROP color")', "runs SQL that says 'ALTER TABLE widgets DROP color'"),
+        ('op.execute(f"ALTER TABLE {name} ADD size int, DROP color")', "says 'ALTER TABLE {} ADD size int, DROP color'"),
+        ("op.execute(SQL)\nSQL = 'ALTER TABLE widgets RENAME color TO hue'", "says 'ALTER TABLE widgets RENAME color'"),
         ('for name in ("color",): op.drop_column("widgets", name)', "not a string literal"),
     ],
 )
@@ -64,6 +65,7 @@ def test_each_contraction_is_refused_with_its_sentence(statement, sentence):
 def test_the_script_fails_a_contracting_migration_and_passes_an_expanding_one(tmp_path):
     env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
     env |= {f"GIT_{who}_{what}": "t@t.invalid" for who in ("AUTHOR", "COMMITTER") for what in ("NAME", "EMAIL")}
+    script = tmp_path / ".github" / "scripts" / SCRIPT.name
 
     def git(*args: str) -> None:
         subprocess.run(["git", *args], cwd=tmp_path, env=env, check=True)
@@ -73,7 +75,6 @@ def test_the_script_fails_a_contracting_migration_and_passes_an_expanding_one(tm
         (tmp_path / path).write_text(text)
         for args in (("add", "."), ("commit", "-qm", path)):
             git(*args)
-        script = tmp_path / ".github" / "scripts" / SCRIPT.name
         return subprocess.run([sys.executable, script], cwd=tmp_path, env=env, capture_output=True, text=True)
 
     git("init", "-q")
@@ -82,6 +83,9 @@ def test_the_script_fails_a_contracting_migration_and_passes_an_expanding_one(tm
     git("tag", "v1.0.0")
     passed = commit_and_check(f"{contract.VERSIONS}/b1_expand.py", EXPAND)
     assert passed.returncode == 0, passed.stdout + passed.stderr
+    git("tag", "v1.1.0-rc.1")  # a prerelease: its notes, and the check below, still count from v1.0.0
+    notes = subprocess.check_output([sys.executable, script, "--notes", "v1.1.0-rc.1"], cwd=tmp_path, env=env, text=True)
+    assert "**Before you update:**\n- `b1`: plan a window\n\n1 migration(s) since v1.0.0 run" in notes, notes
 
     failed = commit_and_check(f"{contract.VERSIONS}/c2_contract.py", 'def upgrade():\n    op.drop_column("widgets", "color")\n')
     assert failed.returncode == 1

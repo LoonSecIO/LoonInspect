@@ -166,9 +166,8 @@ jobs:
           export ENCRYPTION_KEY="$(uv run --frozen python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
           uv run --frozen pytest -q
 
-      # docs/BRANCHING.md §1.1 (#655); runs when the tests failed too, so a red job has both.
       - name: Migration contract
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() }}  # after failed tests too, so a red job shows both (docs/BRANCHING.md §1.1, #655)
         run: ../.github/scripts/check_migration_contract.py
 
   image:

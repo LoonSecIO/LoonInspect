@@ -1,6 +1,6 @@
 # A published release or prerelease (v2.0.0-rc.1; `releases/latest` skips those) adds its version
 # as a tag on the images Publish images pushed for its commit, by digest (ECR forbids moving a tag,
-# not adding one), then appends its upgrade notes (docs/BRANCHING.md §1.1). The push role trusts v*
+# not adding one), and appends its upgrade notes (docs/BRANCHING.md §1.1). The push role trusts v*
 # tags once the maintainer redeploys ops/aws/images.template.yml with them (ops/aws/README.md §1).
 # A release runs its tagged commit's copy of this file: whoever can push a v* tag can assume that role.
 name: Release
@@ -36,7 +36,8 @@ jobs:
             echo "::error::$TAG names $sha, which is not on main, so no image was tagged: releases are cut from main (docs/BRANCHING.md §1.1). Delete this release and its tag, and tag a commit on main."; exit 1; }
           echo "SHA=$sha" >> "$GITHUB_ENV"
 
-      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+      - name: Assume the ECR push role (it trusts v* tags once ops/aws/images.template.yml is redeployed with them, ops/aws/README.md §1)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.AWS_ECR_PUSH_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
@@ -46,36 +47,34 @@ jobs:
         run: |
           types=(application/vnd.oci.image.index.v1+json application/vnd.docker.distribution.manifest.list.v2+json
                  application/vnd.oci.image.manifest.v1+json application/vnd.docker.distribution.manifest.v2+json)
-          pick() { jq -j --arg tag "$1" "$2" got.json; }
-          image='.images[]? | select(.imageId.imageTag == $tag)'
+          # One tag per call: ECR answers one entry per image, so a sha and a version tag on the same image come back as one.
+          get() { aws ecr batch-get-image --repository-name "$repo" --image-ids imageTag="$1" --accepted-media-types "${types[@]}" --output json > "$2"; }
+          pick() { jq -j "$2 // empty" "$1"; }
           for repo in looninspect looninspect-db; do
-            aws ecr batch-get-image --repository-name "$repo" --image-ids imageTag="$SHA" imageTag="$TAG" \
-              --accepted-media-types "${types[@]}" --output json > got.json
-            digest=$(pick "$SHA" "$image | .imageId.imageDigest"); tagged=$(pick "$TAG" "$image | .imageId.imageDigest")
+            get "$SHA" sha.json; get "$TAG" tag.json
+            digest=$(pick sha.json '.images[0].imageId.imageDigest'); tagged=$(pick tag.json '.images[0].imageId.imageDigest')
             if [ -z "$digest" ]; then
-              why=$(pick "$SHA" '.failures[]? | select(.imageId.imageTag == $tag) | .failureCode')
-              echo "::error::ECR has no $repo:$SHA ($why), so $TAG has nothing to name. Publish images pushes a commit of main only when it changes the image (Dockerfile, backend/, frontend/, ops/postgres/), or its run failed. Run Publish images with 'Use workflow from' set to the tag $TAG, then re-run this workflow."; exit 1
+              echo "::error::ECR has no $repo:$SHA ($(pick sha.json '.failures[0].failureCode')), so $TAG has nothing to name. Check the Publish images run for $SHA: if it is still going, re-run this workflow once it succeeds; if it failed, was cancelled (a newer push to main cancels a run still waiting its turn) or never ran (it runs only for a commit that changes Dockerfile, backend/, frontend/ or ops/postgres/), run Publish images with 'Use workflow from' set to the tag $TAG, then re-run this workflow."; exit 1
             elif [ "$tagged" = "$digest" ]; then
               echo "::notice::$repo:$TAG already names $digest, the image $SHA built"
             elif [ -n "$tagged" ]; then
               echo "::error::$repo:$TAG already names $tagged, not the image $SHA built ($digest), and ECR tags cannot move. Find what pushed it; publish the next version rather than reuse this one."; exit 1
             else
-              pick "$SHA" "$image | .imageManifest" > manifest.json
+              pick sha.json '.images[0].imageManifest' > manifest.json
               aws ecr put-image --repository-name "$repo" --image-tag "$TAG" --image-digest "$digest" --image-manifest file://manifest.json \
-                --image-manifest-media-type "$(pick "$SHA" "$image | .imageManifestMediaType")" > /dev/null
+                --image-manifest-media-type "$(pick sha.json '.images[0].imageManifestMediaType')" > /dev/null
               echo "$repo:$TAG -> $digest, the image $SHA built"
             fi
           done
 
   notes:
     name: Upgrade notes
-    needs: images
+    if: startsWith(github.event.release.tag_name, 'v')  # no needs: images, so a failed image step does not skip the notes
     runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
