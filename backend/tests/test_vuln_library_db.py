@@ -47,6 +47,7 @@ from app.core.vuln_library import (
     stored_signature,
 )
 from app.models.schema import DataSharingSettings, Tenant, VulnLibraryEpoch, VulnLibraryRow, VulnLibraryTitle
+from tests.test_vuln_block import LOOSE_IDS
 from tests.test_vuln_library import (
     BUNDLE,
     CORPUS_URL,
@@ -237,6 +238,26 @@ async def test_a_refused_epoch_leaves_the_previous_one_answering(db, empty, capl
     assert await _count(db, VulnLibraryRow) == 3
     after = vuln_block(loaded_corpus(), key_title=WIRESHARK_TITLE, key_full=WIRESHARK_BUILD, as_of=TODAY)
     assert after.model_dump() == good.model_dump()
+
+
+@pytest.mark.parametrize("finding_id", LOOSE_IDS)
+async def test_an_id_outside_the_shape_refuses_the_epoch_in_the_line_an_operator_reads(
+    db, empty, caplog, finding_id: str
+) -> None:
+    """#684 where the operator meets it (troubleshooting §5 step 2, then reportable state I): the
+    epoch carrying the id is not imported, the one before it keeps answering, and the container
+    log names the epoch, the line and the id in §5's words."""
+    await load_epoch_if_new(db, _pointer(), transport=_serving(BUNDLE))
+    loose, signature = _rewritten(rows=[_row(ids=[finding_id])])
+
+    with caplog.at_level("WARNING"):
+        assert await load_epoch_if_new(db, _pointer(signature), transport=_serving(loose)) is None
+
+    refused = f"vulnerability library not updated: epoch 0001's rows line 1 was refused: {finding_id!r} is not one of"
+    assert refused in caplog.text
+    assert "still answers from the epoch it had" in caplog.text
+    assert await stored_signature(db) == SIGNATURE
+    assert await _count(db, VulnLibraryRow) == 3
 
 
 def _corrupt_rows(bundle: bytes) -> bytes:
