@@ -1,5 +1,5 @@
 import { apiRequest } from "@/config/api";
-import type { AuthStatusResponse, AuthUser, SetupInput } from "@/features/auth/types";
+import type { AuthStatusResponse, AuthUser, LoginAnswer, MfaChallenge, SetupInput } from "@/features/auth/types";
 
 export function getAuthStatus(): Promise<AuthStatusResponse> {
   return apiRequest<AuthStatusResponse>("/auth/status");
@@ -9,10 +9,23 @@ export function getCurrentUser(): Promise<AuthUser> {
   return apiRequest<AuthUser>("/auth/me");
 }
 
-export function login(email: string, password: string): Promise<AuthUser> {
-  return apiRequest<AuthUser>("/auth/login", {
+/** The password step. An account with a second factor is answered HTTP 202 with a
+ *  challenge instead of a session (#653); `apiRequest` hands back any 2xx body alike, so
+ *  the body tells the two apart: only a challenge has a `challenge`. */
+export async function login(email: string, password: string): Promise<LoginAnswer> {
+  const body = await apiRequest<AuthUser | MfaChallenge>("/auth/login", {
     method: "POST",
     json: { email, password }
+  });
+  return "challenge" in body ? { challenge: body } : { user: body };
+}
+
+/** The second step: the challenge and a six-digit code or a recovery code. Answers as a
+ *  password-only sign-in does; a refusal is a 401 whose sentence is the server's. */
+export function loginMfa(challenge: string, code: string): Promise<AuthUser> {
+  return apiRequest<AuthUser>("/auth/login/mfa", {
+    method: "POST",
+    json: { challenge, code }
   });
 }
 

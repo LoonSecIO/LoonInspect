@@ -1,10 +1,12 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useReducer, useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router";
 import { BrandIdentity } from "@/components/layout/BrandIdentity";
 import { Button } from "@/components/ui/button";
 import { ExternalLink } from "@/components/ui/external-link";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/config/api";
+import { SecondStepForm } from "@/features/auth/SecondStepForm";
+import { secondStep, secondStepError } from "@/features/auth/secondStep";
 import { useAuthStore } from "@/features/auth/store";
 import { SLACK_CHANNEL, SUPPORT_LINKS } from "@/features/support/links";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -17,11 +19,14 @@ export function LoginPage() {
   const status = useAuthStore((state) => state.status);
   const bootstrap = useAuthStore((state) => state.bootstrap);
   const login = useAuthStore((state) => state.login);
+  const loginMfa = useAuthStore((state) => state.loginMfa);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // null on the password step; after it, the challenge the password earned (#653).
+  const [second, dispatch] = useReducer(secondStep, null);
 
   useEffect(() => {
     if (status === "unknown") void bootstrap();
@@ -38,8 +43,14 @@ export function LoginPage() {
     setError(null);
 
     try {
-      await login(email, password);
-      navigate(from, { replace: true });
+      const challenge = await login(email, password);
+      if (challenge === null) {
+        navigate(from, { replace: true });
+      } else {
+        // A second factor is owed: a challenge, not a session, and the password is not kept.
+        setPassword("");
+        dispatch({ type: "challenged", challenge });
+      }
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 429) {
         setError(t.auth.lockedOut);
@@ -50,6 +61,22 @@ export function LoginPage() {
       } else {
         setError(t.auth.genericError);
       }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleCode(event: FormEvent) {
+    event.preventDefault();
+    if (second === null) return;
+    setSubmitting(true);
+    dispatch({ type: "sent" });
+
+    try {
+      await loginMfa(second.challenge.challenge, second.code);
+      navigate(from, { replace: true });
+    } catch (caught) {
+      dispatch({ type: "refused", error: secondStepError(caught, t.auth) });
     } finally {
       setSubmitting(false);
     }
@@ -70,7 +97,10 @@ export function LoginPage() {
             <p className="text-sm text-muted-foreground">{t.auth.loginDescription}</p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border bg-card p-6">
+          {second && (
+            <SecondStepForm step={second} copy={t.auth} submitting={submitting} dispatch={dispatch} onSubmit={handleCode} />
+          )}
+          {!second && <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border bg-card p-6">
             <div className="space-y-2">
               <label htmlFor="email" className="text-sm font-medium">
                 {t.auth.email}
@@ -80,7 +110,7 @@ export function LoginPage() {
                 type="email"
                 autoComplete="username"
                 required
-                autoFocus
+                autoFocus={email === ""}
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
               />
@@ -95,6 +125,8 @@ export function LoginPage() {
                 type="password"
                 autoComplete="current-password"
                 required
+                // Start over keeps the email, so the password is what is missing then.
+                autoFocus={email !== ""}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
               />
@@ -109,7 +141,7 @@ export function LoginPage() {
             <Button type="submit" className="w-full" disabled={submitting}>
               {submitting ? t.auth.signingIn : t.auth.signIn}
             </Button>
-          </form>
+          </form>}
 
           {/* The locked-out half of #301. Settings › Support sits behind DEVICE_READ
               like every other settings route, so a person with no session cannot reach
