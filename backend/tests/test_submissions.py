@@ -16,6 +16,12 @@ DONE = STATUS | {"closed_at": "2026-10-02T09:30:00Z", "release": "ab" * 32, "cov
 WIRESHARK = {"kind": "correction", "app_name": "Wireshark", "bundle_id": "org.wireshark.Wireshark", "platform": "macos"}
 WORDS = {"versions": ["3.6.2"], "text": "3.6.2 predates the affected code.", "contact": "security@example.com"}
 GONE, ELSEWHERE = (404, {"error": "Unknown or expired case key."}), (404, {"message": "Not Found"})
+URL_RULE = (  # Support's refusal, verbatim (src/exchange/submissions.py at 8690bd3): 387 characters
+    "public_url, when present, must be an https:// address of at most 512 visible ASCII characters (percent-encode anything"
+    " else, and write an internationalized host name in its xn-- form) on a public host name of ASCII letters, digits, hyphens,"
+    " underscores and dots, with a port, if any, from 1 to 65535: no IP address in any form, no .local or .localhost name, and"
+    " no user name or password."
+)
 
 
 @pytest.fixture(autouse=True)
@@ -73,10 +79,14 @@ def test_the_payload_is_exactly_the_contracts_fields_and_carries_no_count():
     [
         ("send", "pending", (202, ACK), "received", None),
         ("send", "pending", (400, {"error": "versions must list 1 to 20 strings."}), "pending", 'It said: "versions'),
+        pytest.param("send", "pending", (400, {"error": URL_RULE}), "pending", f'"{URL_RULE}" Nothing', id="url-rule"),
+        pytest.param("send", "pending", (400, {"error": "x" * 5000}), "pending", f'"{"x" * submissions.SAID}…"', id="cut"),
+        ("send", "pending", (400, {"error": "Two\nlines."}), "pending", "(HTTP 400). Nothing was stored"),
         ("send", "pending", (429, {"message": "Too Many Requests"}), "pending", "HTTP 429. Try again later"),
         ("send", "pending", (503, {"error": "Today's budget is spent."}, {"Retry-After": "120"}), "pending", "Try again after"),
         ("send", "pending", (403, {"message": "Missing Authentication Token"}), "pending", "INTELLIGENCE_ENDPOINT"),
         ("refresh", "received", (200, DONE | {"state": "published"}), "published", None),
+        ("refresh", "received", (200, DONE | {"state": "withdrawn"}), "withdrawn", None),
         ("refresh", "received", (429, {"error": "At most once a minute."}, {"Retry-After": "30"}), "received", "HTTP 429"),
         ("refresh", "received", GONE, "expired", None),
         ("refresh", "received", ELSEWHERE, "received", "INTELLIGENCE_ENDPOINT"),
@@ -95,6 +105,25 @@ async def test_each_answer_lands_on_the_case(act, state, answer, after, says):
     assert (case.retry_at is not None) == (len(answer) > 2) and (case.last_status_at is not None) == (act == "refresh")
     typed = (case.public_url, case.text, case.contact)
     assert typed == (None, None, None) if after == "withdrawn" else all(typed), "withdrawal clears what was written"
+    assert (case.withdrawn_at is not None) == (after == "withdrawn"), "whichever answer brings the withdrawal"
+
+
+async def test_a_lost_withdrawal_answer_keeps_no_words_and_sends_nothing_until_an_answer_settles_it():
+    """The act is stored before the request leaves. The next answer settles it, a status read's or a repeat
+    withdrawal's (the contract answers a repeat with 200), and then nothing leaves again."""
+    withdrawn = (200, DONE | {"state": "withdrawn"})
+    for state, then in (("received", submissions.refresh), ("pending", submissions.withdraw)):
+        stub = Stub(correction(state=state, public_url="https://www.wireshark.org/security/"), "lost", withdrawn)
+        case = await submissions.withdraw(stub, stub.case, transport=httpx.MockTransport(stub))
+        asked, typed = case.withdrawn_at, (case.public_url, case.text, case.contact)
+        assert case.state == state and asked and typed == (None, None, None) and "No answer came" in case.last_error
+        assert [what for what, _ in stub.log] == ["stored", "sent", "stored"], "the act is stored before it leaves"
+        for act in (submissions.send, then, submissions.withdraw, submissions.send):  # only `then` asks
+            case = await act(stub, case, transport=httpx.MockTransport(stub))
+        assert (case.state, case.withdrawn_at, case.last_error, len(stub.requests)) == ("withdrawn", asked, None, 2)
+    stale = Stub(correction(state="withdrawn"))  # withdrawn with its words still here: cleared without a request
+    case = await submissions.withdraw(stale, stale.case, transport=httpx.MockTransport(stale))
+    assert case.withdrawn_at and (case.text, case.contact) == (None, None) and stale.requests == []
 
 
 async def test_a_lost_answer_is_retried_as_the_identical_request():
