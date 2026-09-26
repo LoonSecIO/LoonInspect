@@ -10,7 +10,7 @@ import uuid
 import httpx
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
 from tests.test_sharing_send_now_db import _audit_events, _signed_in
 from tests.test_submissions import ACK, STATUS, Stub, preview_on  # noqa: F401 (autouse here too)
@@ -122,10 +122,39 @@ async def test_nothing_leaves_without_permission_the_preview_or_the_override(adm
     assert listed["enabled"] is False and [c["id"] for c in listed["cases"]] == [sent["id"]] and len(service.requests) == 1
 
 
-async def test_a_second_click_answers_the_same_case(admin):
+async def test_send_never_answers_a_withdrawal_the_service_has_not_confirmed(admin):
+    """A lost withdrawal answer leaves `withdrawnAt` on a live state (§21 step 8), the words already cleared. The
+    same word-less fields then make a new case rather than answer that one, and Withdraw again settles it."""
+    client, service = admin
+    withdrawn = (200, STATUS | {"state": "withdrawn"})
+    for first, version in (((202, ACK), "3.6.2"), ("lost", "3.6.3")):  # received; pending, its send's answer lost too
+        bare = BODY | {"versions": [version], "permission": True}
+        service.answers += [first, "lost", (202, ACK), withdrawn]
+        case = (await client.post("/api/submissions", json=bare)).json()
+        left = (await client.post(f"/api/submissions/{case['id']}/withdraw")).json()
+        assert left["withdrawnAt"] and left["state"] == case["state"] and "No answer came" in left["lastError"]
+        anew = (await client.post("/api/submissions", json=bare)).json()
+        assert anew["id"] != case["id"] and anew["state"] == "received", "Send never answers a case withdrawn here"
+        gone = (await client.post(f"/api/submissions/{case['id']}/withdraw")).json()
+        assert (gone["state"], gone["withdrawnAt"], gone["lastError"]) == ("withdrawn", left["withdrawnAt"], None)
+    assert len(service.requests) == 8, "each case's own send and withdrawals, and nothing else"
+
+
+async def test_a_second_click_answers_the_same_case(admin, db):
+    """Two clicks at once. The sender's account row, held here, stops the first at its first commit (its case
+    names the sender) with the consent row still locked, until the second waits too: on that row or, were there
+    no consent lock, at a case of its own. Only then does the account row go, so the clicks truly overlap."""
     client, service = admin
     service.answers += [(202, ACK), (202, ACK)]
-    first, second = await asyncio.gather(*(client.post("/api/submissions", json=SEND) for _ in range(2)))
+    await db.execute(text("SELECT 1 FROM accounts WHERE email = :email FOR UPDATE"), {"email": EMAIL.format("admin")})
+    clicks = [asyncio.create_task(client.post("/api/submissions", json=SEND)) for _ in range(2)]
+    waiting = text("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'")
+    while not any(click.done() for click in clicks) and await db.scalar(waiting) < 2:
+        await db.execute(text("SELECT pg_stat_clear_snapshot()"))  # else the view is read once per transaction
+        await asyncio.sleep(0.01)
+    assert not any(click.done() for click in clicks), "the two clicks were never in flight together"
+    await db.rollback()
+    first, second = await asyncio.gather(*clicks)
     third = await client.post("/api/submissions", json=SEND)
     assert first.json()["id"] == second.json()["id"] == third.json()["id"] and len(service.requests) == 1
     assert [event["target_id"] for event in _audit_events("submission.sent")].count(first.json()["id"]) == 1

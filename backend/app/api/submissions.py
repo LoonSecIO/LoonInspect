@@ -71,9 +71,10 @@ async def preview(body: SubmissionIn, db: AsyncSession = Depends(get_db)) -> Sub
 async def submit(
     body: SubmissionIn, principal: Principal = Depends(current_principal), db: AsyncSession = Depends(get_db)
 ) -> SubmissionCase:
-    """Store the case under a fresh key and send it; the same fields while it is pending or open answer it
-    instead, sent again with its key unless the service asked for a pause. The consent row lock serializes;
-    `send` holds the case row, so racing clicks dial once, and the audit records the one that created it."""
+    """Store the case under a fresh key and send it; the same fields while it is pending or open, and not
+    withdrawn here, answer it instead, sent again with its key unless the service asked for a pause. The consent
+    row lock serializes; `send` holds the case row, so racing clicks dial once, and the audit records the one
+    that created it. A withdrawal the service has not confirmed is settled by withdrawing again, never by Send."""
     draft, excluded = _draft(body, await locked_settings(db))
     if not body.permission:
         raise HTTPException(422, "Nothing was sent: give permission to send this one case, after reading its preview.")
@@ -81,7 +82,8 @@ async def submit(
         rule = f'{body.bundle_id} matches "{excluded}" on this organization\'s data-sharing exclusion list'
         raise HTTPException(409, f"Nothing was sent: {rule}. This one case needs the one-time override; the list stays.")
     same = (getattr(SubmissionCase, name) == getattr(draft, name) for name in SAME)
-    case = await db.scalar(select(SubmissionCase).where(SubmissionCase.state.in_(OPEN), *same).limit(1))
+    live = SubmissionCase.state.in_(OPEN), SubmissionCase.withdrawn_at.is_(None)  # withdrawn here, confirmed or not: done
+    case = await db.scalar(select(SubmissionCase).where(*live, *same).limit(1))
     created = case is None
     if created:
         case = draft
