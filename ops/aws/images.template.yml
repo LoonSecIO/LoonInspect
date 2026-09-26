@@ -104,6 +104,11 @@ Resources:
                   - ecr:UploadLayerPart
                   - ecr:BatchGetImage
                   - ecr:GetDownloadUrlForLayer
+                  # For publish-images.yml's "already published" check (#673): without
+                  # it the check is refused, reads as not published, and a re-run of a
+                  # published sha fails at the push. backend/tests/test_ops_templates.py
+                  # holds this list to every `aws ecr` call a workflow on this role makes.
+                  - ecr:DescribeImages
                 Resource:
                   - !GetAtt AppRepository.Arn
                   - !GetAtt DbRepository.Arn
