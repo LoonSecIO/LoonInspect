@@ -1387,9 +1387,9 @@ async def tenant_selection(request, db, fleet, foreign_tenant, monkeypatch):  # 
     try:
         yield True
     finally:
-        await _no_releases(db, foreign_tenant)
-        # `fleet`'s teardown asserts the legacy gate is empty, whichever of it and `monkeypatch` goes first.
+        # First: `fleet`'s teardown asserts the legacy gate is empty, whichever of it and `monkeypatch` goes first.
         monkeypatch.setattr(settings, "vuln_tenant_selection", False)
+        await _no_releases(db, foreign_tenant)
 
 
 async def test_corpus_release_names_the_epoch_every_finding_on_the_page_came_from(
