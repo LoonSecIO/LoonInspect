@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import time
 import uuid
@@ -41,6 +42,19 @@ _BACKEND_DIR = Path(__file__).resolve().parents[2]
 # no compose at all.
 _DB_WAIT_TIMEOUT_SECONDS = 60.0
 _DB_WAIT_INTERVAL_SECONDS = 1.0
+
+# The migration mutex (#654). Every process runs `alembic upgrade head` at startup, and two
+# starting together against one database — the shape an external database invites — would
+# race each other's DDL. Session-level, on a connection of its own, the way the outbox tick
+# holds its lock (app.core.outbox.outbox_tick_lock): Postgres drops it with the connection,
+# so a process killed mid-migration leaves nothing to clean up. Signed, because the
+# parameter is a signed bigint.
+MIGRATION_LOCK_KEY = int.from_bytes(hashlib.sha256(b"looninspect.migrations").digest()[:8], "big", signed=True)
+
+_ROLE_FACTS = text(
+    "SELECT rolsuper, rolbypassrls, has_schema_privilege(current_user, 'public', 'CREATE') "
+    "FROM pg_roles WHERE rolname = current_user"
+)
 
 
 @event.listens_for(SyncSession, "after_begin")
@@ -199,6 +213,57 @@ async def _wait_for_database() -> None:
             await asyncio.sleep(_DB_WAIT_INTERVAL_SECONDS)
 
 
+def role_refusal(superuser: bool, bypassrls: bool, can_create: bool) -> str | None:
+    """Why the role this process connected as may not run this instance, or None.
+
+    Asked only in external mode (`DATABASE_MODE=external`): the bundle's sidecar made all
+    three true at first boot (ops/postgres/initdb/10-app-role.sh), while a database somebody
+    else prepared has to be checked before a migration runs as whatever it was handed. A
+    superuser or a BYPASSRLS role leaves every tenant policy attached and enforcing
+    nothing, silently; a role that cannot create in schema public fails the first
+    migration with a permission error that names a table, not the cause.
+    """
+    if superuser or bypassrls:
+        what = "a superuser" if superuser else "a role with BYPASSRLS"
+        return (
+            f"The database role this instance connected as is {what}, so row-level security would "
+            "not apply to it and every tenant isolation policy would be decoration. Connect as the "
+            "application role (NOSUPERUSER NOBYPASSRLS) that ops/postgres/looninspect-db-init "
+            "prepares, never as the master or postgres user; docs/operations.md section 8 has the command."
+        )
+    if not can_create:
+        return (
+            "The database role this instance connected as cannot create tables in schema public, so "
+            "the startup migration cannot run. Run ops/postgres/looninspect-db-init against this "
+            "database as its master user (docs/operations.md section 8): it makes the application role "
+            "the owner of schema public."
+        )
+    return None
+
+
+async def _check_external_role() -> None:
+    async with engine.connect() as connection:
+        facts = (await connection.execute(_ROLE_FACTS)).one()
+    refusal = role_refusal(*facts)
+    if refusal:
+        raise RuntimeError(refusal)
+
+
 async def init_db() -> None:
     await _wait_for_database()
-    await asyncio.to_thread(_run_migrations)
+    if settings.database_mode == "external":
+        await _check_external_role()
+        logger.info("external database: the application role passed its checks")
+    async with engine.connect() as connection:
+        # AUTOCOMMIT so holding the lock does not also hold a snapshot open under the
+        # migration, and unlocked explicitly, never by closing: a closed connection goes
+        # back to the pool with its session-level lock still held (see outbox_tick_lock).
+        await connection.execution_options(isolation_level="AUTOCOMMIT")
+        taken = (await connection.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": MIGRATION_LOCK_KEY})).scalar()
+        if not taken:
+            logger.info("another process is migrating this database; waiting for it to finish before starting")
+            await connection.execute(text("SELECT pg_advisory_lock(:key)"), {"key": MIGRATION_LOCK_KEY})
+        try:
+            await asyncio.to_thread(_run_migrations)
+        finally:
+            await connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": MIGRATION_LOCK_KEY})

@@ -17,6 +17,7 @@ dependencies = [
     "argon2-cffi>=23",
     # Read at request time by the evidence report, which loads docs/baseline-rules.yml (#472).
     "pyyaml>=6.0.3",
+    "pyotp>=2.9",
 ]
 
 [dependency-groups]

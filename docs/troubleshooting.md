@@ -9,7 +9,7 @@ it was filed.
 Each path is ordered — *check this; if X, then that* — and ends in a fix or in a **named,
 reportable state**. When you reach a reportable state, §8 says what to include.
 
-**What is in here.** The paths run §1–§7 and §10–§19, in the order they were written
+**What is in here.** The paths run §1–§7 and §10–§20, in the order they were written
 rather than in order of likelihood. §0 is what you can read before you start; §8 and §9 are
 about the paths rather than about a symptom, and they sit mid-file because that is where
 they were written — §9 ends by saying the paths continue at §10.
@@ -52,6 +52,9 @@ they were written — §9 ends by saying the paths continue at §10.
 
 - **§19** [Device-page update from Jamf](#19-device-page-update-from-jamf)
 
+- **§20** ["Sign-in asks for a six-digit code, or refuses the one I
+  typed"](#20-sign-in-asks-for-a-six-digit-code-or-refuses-the-one-i-typed)
+
 **The reportable states**, lettered in the order they were written, so they do not run in
 section order and never will — code, tests and the README cite them where they are. When a
 ticket names one, this says which path it came off.
@@ -81,6 +84,7 @@ ticket names one, this says which path it came off.
 | **U** | §17 | The baseline rule catalogue will not load, or a sum does not close |
 | **V** | §18 | *being judged against it* more than an hour after the corpus date moved |
 | **W** | §18 | *Longest exposed* is empty while *Most exposed* lists builds |
+| **X** | §20 | No recovery codes remain and the second factor cannot be removed yet |
 
 ## 0. The four things you can read
 
@@ -468,6 +472,24 @@ the run `jobID`, the token's index settings, and the search you ran.
      and follow the migration-failure step below; do not remove indexes by hand.
    - an Alembic error → the migration on startup failed. Do not downgrade by hand
      ([`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) §6); reportable **F**.
+   - `1 validation error for Settings` whose next lines name `DATABASE_URL` and say
+     *append ?ssl=require* → `DATABASE_MODE=external` needs the URL to ask for TLS
+     (`?ssl=require`, `verify-ca` or `verify-full`). If the lines say *asyncpg spells the
+     TLS parameter `ssl`, not `sslmode`* → the URL used libpq's spelling, which asyncpg
+     does not read. Fix the URL in `.env`, `docker compose up -d`.
+   - *The database role this instance connected as is a superuser* (or *a role with
+     BYPASSRLS*) *, so row-level security would not apply to it* → `DATABASE_URL` names the
+     master or `postgres` user, and the app refuses before any migration. Prepare the
+     application role with `looninspect-db-init` and put its URL in `.env`
+     ([`operations.md`](operations.md) §8).
+   - *The database role this instance connected as cannot create tables in schema public*
+     → the role exists, but `looninspect-db-init` never ran against this database, or ran
+     as a user that could not hand over the schema. Run it as the master user
+     ([`operations.md`](operations.md) §8), then `docker compose up -d`.
+   - `another process is migrating this database; waiting for it to finish before starting`,
+     and it stays there → another app container holds the migration lock. `docker compose
+     ps` shows it; let its migration finish (the `e621c4a8b903` note above says how long a
+     slow one takes). A process that died released the lock with its connection.
 3. **Healthy, signed in, and Settings › Connections says it could not load.**
    `curl $BASE/api/health` is `{"status":"ok"}`, sign-in works, and
    `GET /api/mdm/connections` answers **503** with the sentence *Stored credentials cannot
@@ -2245,3 +2267,25 @@ This build earns, stores, redeems and withdraws receipts.
   and it is not anonymity. Withdrawal ends receipt eligibility; it does not erase
   snapshots the service already holds. A download link issued before the withdrawal stays
   usable for up to 15 minutes.
+
+## 20. "Sign-in asks for a six-digit code, or refuses the one I typed"
+
+An account that enrolled a second factor (My Account, #653) signs in in two steps: the
+password, then a six-digit code from the authenticator app, or one recovery code.
+
+1. **The code.** Six digits from the authenticator entry named *LoonInspect*, changing
+   every 30 seconds; one code either side is accepted for a drifting clock, and a code
+   that already signed you in is refused, because a code works once. Wait for the next.
+2. ***The sign-in challenge has expired or is not valid.*** The second step has five
+   minutes from the password step. Start again from the password.
+3. **No phone.** A recovery code, shown once when the factor was confirmed, signs you in
+   in place of the code; each works once, hyphens and case do not matter, and
+   `GET /api/auth/mfa` says how many remain. With none left there is no self-service way
+   back in yet: an administrator's password reset does not remove the factor, so
+   reportable **X** until the administrative removal ships.
+4. ***Too many failed attempts.*** Wrong codes count against the same lockout as wrong
+   passwords, for the same address and client. Wait it out; nothing to reset.
+
+**X.** Report the account's email to the administrator; the removal is a follow-up to
+#653, and the account keeps its data meanwhile.
+

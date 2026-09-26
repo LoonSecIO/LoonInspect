@@ -11,11 +11,15 @@ never attributable — and the patching and vulnerability feeds are built from t
 Sharing and the feeds are two halves of the same exchange: the daily upload *is* the
 feed query, one conversation per tenant per day.
 
-> **v2 decision, not yet implemented (2026-09-20):**
-> [The contribute-or-pay design](vulnerability-service-v2.md) separates consent from
-> update entitlement, retains use of acquired intelligence after expiry, pauses
-> automatic reveals and adds explicit application submissions. The coupling and
-> five-submitter rationale below describe the earlier contract, not v2 policy.
+> **v2 status (2026-09-26):** [the contribute-or-pay design](vulnerability-service-v2.md)
+> separates consent from update entitlement, retains use of acquired intelligence after
+> expiry, pauses automatic reveals and adds explicit application submissions. The paid
+> client and the contribution receipts are built and default-off (#622, the two sections
+> under Cloud notes), tenant-selected releases are built and default-off (#621), and the
+> explicit submissions are not yet built (#623). The coupling and five-submitter
+> rationale below describe the v1 contract every shipped client still speaks; v2
+> supersedes them where those sections say so. [The contributor transition](#the-contributor-transition-v2)
+> says what changes for an instance that shares today, and when.
 
 ## Why sharing is coupled to the feeds
 
@@ -575,3 +579,39 @@ and `{"contract": "v2", "client_version": …}` and nothing else. It is retried 
 never after the receipt's fixed deadline, and never while sharing is off or a
 withdrawal waits. The step-through is
 [troubleshooting](troubleshooting.md#contribution-receipts-622).
+
+### The contributor transition (v2)
+
+What changes for an instance that shares today, and when. Written for the operator who
+reads only this page.
+
+- **Nothing changes until you turn receipts on.** A consenting instance without
+  `CONTRIBUTION_RECEIPTS=true` keeps making the daily exchange it makes today and gets the
+  same reply, corpus link included. The service's receipt routes answer only a client that
+  asks for a receipt; a legacy exchange is never told about them. **No retirement date is
+  set for the legacy exchange.** When one is, it is published here first; the design record
+  commits existing contributors to a 30-day transition ([§8](vulnerability-service-v2.md#8-migration-and-release-boundary)).
+- **When you turn receipts on**, the next consenting exchange asks for a receipt (the
+  literal `"participation_receipt": true` in the request, visible in the share log), and an
+  accepted upload earns one. A receipt is good for exactly 30 days from that upload's
+  acceptance; each later accepted upload earns a fresh one and the instance keeps the
+  newest, so a daily exchanger always holds about 30 days. Those 30 days are the
+  temporary-failure grace of the design record §5: a week of failed uploads costs nothing.
+- **When a day's corpus does not arrive** (the upload failed, the reply named no corpus, or
+  the corpus named was not acquired), the scheduler redeems the receipt at
+  `/v2/contribution/intelligence` and fetches the corpus without uploading again, hourly,
+  never after the receipt's deadline.
+- **When you turn sharing off**, uploads stop at once and the receipt is withdrawn at the
+  service within a scheduler tick; withdrawal invalidates every receipt this instance earned.
+  Held intelligence, assessments and evidence stay usable (tenant selection, #621). Turning
+  sharing back on is a new consent: the next accepted upload earns a new receipt, after the
+  withdrawal has been acknowledged.
+- **What a receipt is not.** Not a paid credential, and never linked to one: the paid route
+  (Settings › Intelligence Access) is separate and needs no sharing, and either route keeps
+  update eligibility on its own (`backend/tests/test_v2_release_gate_db.py`). Not anonymity:
+  the receipt is linkable to this instance's submission UUID.
+- **The 30-day window the design record §8 promises legacy contributors** ("one 30-day
+  transition window for the new receipt mechanism; restarts and reinstalls must not renew
+  it") **is not implemented anywhere yet** (checked in #657, 2026-09-26): the legacy exchange
+  simply continues, so no window is counting. #624 decides whether it becomes a
+  server-side clock, a client-side one, or this page's retirement-notice rule.

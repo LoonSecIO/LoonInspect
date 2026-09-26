@@ -993,8 +993,8 @@ block each other.
 The separate default-off paid client acquires and selects releases through the
 #621 tenant path. It never derives authorization from upload consent or per-MDM
 license fields. Expired paid access stops new delivery, not local assessment of a
-release already acquired by that tenant. Settings > Data sharing now includes
-activation, refresh, credential rotation and local disconnect when the pilot
-flags are enabled. The [operator steps](troubleshooting.md#paid-intelligence-preview-622)
+release already acquired by that tenant. Settings › Intelligence Access (its own page
+since #642; Data sharing links to it) carries activation, refresh, credential rotation
+and local disconnect when the pilot flags are enabled. The [operator steps](troubleshooting.md#paid-intelligence-preview-622)
 explain source freshness versus refresh success and the remaining receipt/privacy
 release gates. Default v1.x consent gating is unchanged outside these flags.

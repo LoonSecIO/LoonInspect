@@ -1,3 +1,8 @@
+"""Sign-in, sign-out, the first-run setup, the tenant switch and the caller's own account.
+
+The password step and the second step (#653) share one lockout per address and client.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -6,10 +11,12 @@ from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import mfa
 from app.core.audit import AuditAction, audit
 from app.core.auth import (
     SESSION_COOKIE,
@@ -45,6 +52,7 @@ from app.schemas.auth import (
     SwitchTenantRequest,
     TenantRef,
 )
+from app.schemas.mfa import MfaChallengeOut, MfaLoginRequest
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -228,7 +236,11 @@ async def setup(
     return _account_out(account)
 
 
-@router.post("/login", response_model=AccountOut)
+@router.post(
+    "/login",
+    response_model=AccountOut,
+    responses={202: {"model": MfaChallengeOut, "description": "The password was accepted and a second factor is required."}},
+)
 async def login(
     payload: LoginRequest,
     request: Request,
@@ -282,6 +294,12 @@ async def login(
 
     await _clear_failures(db, email, ip)
 
+    if mfa.confirmed(account) is not None:
+        # An enrolled account gets a short-lived challenge here, never a session (#653).
+        logger.info("login needs a second factor", extra={"account_id": account.id, "client_ip": ip})
+        challenge = MfaChallengeOut(challenge=mfa.challenge_token(account.id), methods=["totp", "recovery"])
+        return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=challenge.model_dump(by_alias=True))
+
     session, raw_token = await create_session(
         db,
         account,
@@ -315,6 +333,79 @@ async def login(
         target_type="account",
         target_id=account.id,
         auth_method="password",
+        break_glass=account.is_break_glass,
+        roles=sorted({row.role for row in account.roles}),
+    )
+    return _account_out(account, memberships=await memberships_for(db, account))
+
+
+@router.post("/login/mfa", response_model=AccountOut)
+async def login_mfa(
+    payload: MfaLoginRequest,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> AccountOut:
+    """The second sign-in step (#653): the challenge from the password step plus a code or a
+    recovery code. Failures share the password lockout."""
+    ip = _client_ip(request)
+    now = datetime.now(UTC)
+    expired = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="The sign-in challenge has expired or is not valid. Start again from the password step.",
+    )
+    account_id = mfa.challenge_account_id(payload.challenge, now=now)
+    account = await db.get(Account, account_id) if account_id else None
+    identity = mfa.confirmed(account) if account is not None and account.status == "active" else None
+    if account is None or identity is None:
+        raise expired
+
+    attempt = await _get_attempt(db, account.email, ip)
+    locked_until = as_utc(attempt.locked_until) if attempt is not None else None
+    if locked_until is not None and locked_until > now:
+        audit(AuditAction.LOGIN_BLOCKED, outcome="failure", attempted_email=account.email, failure_count=attempt.failure_count)
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many failed attempts. Try again later.")
+
+    method = mfa.METHOD_TOTP
+    step = mfa.verify_code(identity.secret_encrypted or "", payload.code, identity.last_otp_step, now=now)
+    if step is not None:
+        identity.last_otp_step = step
+    elif mfa.consume_recovery_code(identity, payload.code):
+        method = mfa.METHOD_RECOVERY
+        audit(
+            AuditAction.MFA_RECOVERY_CODE_USED,
+            actor=Actor(type="account", id=account.id, label=account.email, tenant_id=account.tenant_id),
+            target_type="account",
+            target_id=account.id,
+            remaining=len(identity.recovery_codes),
+        )
+    else:
+        await _record_failure(db, account.email, ip)
+        logger.warning("second factor refused", extra={"account_id": account.id, "client_ip": ip})
+        audit(AuditAction.MFA_CHALLENGE_FAILED, outcome="failure", target_type="account", target_id=account.id)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=(
+                "That code was not accepted: six digits, a new one every 30 seconds, each good once; a recovery code works too."
+            ),
+        )
+
+    await _clear_failures(db, account.email, ip)
+    session, raw_token = await create_session(
+        db, account, identity_id=identity.id, auth_method=method, ip=ip, user_agent=request.headers.get("user-agent")
+    )
+    account.last_login_at = now
+    identity.last_used_at = now
+    await db.commit()
+    set_session_cookies(response, raw_token, session.csrf_token)
+    emit = logger.warning if account.is_break_glass else logger.info
+    emit("login succeeded", extra={"account_id": account.id, "email": account.email, "client_ip": ip, "auth_method": method})
+    audit(
+        AuditAction.LOGIN_SUCCEEDED,
+        actor=Actor(type="account", id=account.id, label=account.email, tenant_id=account.tenant_id),
+        target_type="account",
+        target_id=account.id,
+        auth_method=method,
         break_glass=account.is_break_glass,
         roles=sorted({row.role for row in account.roles}),
     )

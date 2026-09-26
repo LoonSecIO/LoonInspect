@@ -231,6 +231,33 @@ matching `ETag`/`If-None-Match` earns a real `304` rather than re-sending the bo
 request for a bundle that no longer exists under `/assets/` gets a `404`, not the SPA
 shell as a misleading `200`.
 
+### Running against a PostgreSQL you run
+
+The bundled database is one shape, not the only one (#654). Set `DATABASE_MODE=external`
+and point `DATABASE_URL` at your server, asking for TLS: `?ssl=require`, or `verify-ca` /
+`verify-full` with a root certificate. A URL that could fall back to plain text is refused at
+startup, in a sentence that names the parameter. Prepare the application role once with the
+program the hosted pods run, as your server's master user, then start the app without the
+bundled service:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.external.yml run --rm --no-deps \
+  -e PGHOST=db.example.internal -e PGDATABASE=looninspect -e PGUSER=master -e PGPASSWORD='…' \
+  -e APP_USER=looninspect_app -e APP_PASSWORD='…' db looninspect-db-init
+docker compose -f docker-compose.yml -f docker-compose.external.yml up -d --build
+```
+
+Before it migrates, the app checks the role it connected as: not a superuser, no
+`BYPASSRLS`, able to create in schema `public`. Anything else is refused in a sentence,
+because a superuser bypasses row-level security silently and every tenant policy would be
+decoration ([docs/troubleshooting.md](docs/troubleshooting.md) §4). Two app containers
+starting together against one database take turns on the migration. `docker-compose.yml`
+still asks `.env` for `POSTGRES_PASSWORD`; in external mode it is unused and may be anything.
+The override needs Docker Compose 2.24 or newer. PostgreSQL 17 is what the bundle ships and
+what this was run against.
+[docs/operations.md](docs/operations.md) §8 has backup, restore, upgrade and rollback for
+this shape.
+
 ### 5. Point it at Splunk
 
 Destination URLs default to HTTPS in the UI. A trusted lab SIEM without TLS can use
@@ -260,7 +287,7 @@ walks through both halves, the timeouts, rotating the secret, and how to see it 
 
 ### 7. Back it up before you need to
 
-**[docs/troubleshooting.md](docs/troubleshooting.md)** is where to start when something is not working: sixteen ordered paths — a green test and an empty sweep, a run with zero devices, events not reaching Splunk, a stack that will not start, applications reading *not assessed*, a Jamf Patch table that is empty or has stopped refreshing, Jamf Pro webhooks that never arrive, an update notice that never appears or names a release you do not have, a Changes Prompt bar that is missing or answers *AI search unavailable*, one connection whose every sweep fails because what is stored against it is not a credential, a Settings › AI that is missing or says AI features are off, Settings › AI with no Apple Foundation Models card, a deleted smart group the Changes page says nothing about, a Mac you deleted in Jamf that is still listed or one that vanished from the list, an evidence report that is empty or reads *not reported* throughout, a Posture section missing from the sidebar or a Vulnerabilities page listing nothing — each ending in a fix or a named state to report. **[docs/operations.md](docs/operations.md)** is the operator runbook: what to back up
+**[docs/troubleshooting.md](docs/troubleshooting.md)** is where to start when something is not working: seventeen ordered paths — a green test and an empty sweep, a run with zero devices, events not reaching Splunk, a stack that will not start, applications reading *not assessed*, a Jamf Patch table that is empty or has stopped refreshing, Jamf Pro webhooks that never arrive, an update notice that never appears or names a release you do not have, a Changes Prompt bar that is missing or answers *AI search unavailable*, one connection whose every sweep fails because what is stored against it is not a credential, a Settings › AI that is missing or says AI features are off, Settings › AI with no Apple Foundation Models card, a deleted smart group the Changes page says nothing about, a Mac you deleted in Jamf that is still listed or one that vanished from the list, an evidence report that is empty or reads *not reported* throughout, a Posture section missing from the sidebar or a Vulnerabilities page listing nothing, a sign-in that asks for a six-digit code or refuses the one you typed — each ending in a fix or a named state to report. **[docs/operations.md](docs/operations.md)** is the operator runbook: what to back up
 (the database *and* `ENCRYPTION_KEY` — a dump without the key restores an instance whose
 every MDM connection is permanently unreadable), the `pg_dump` and `psql` commands to do
 it, what a restore does to in-flight outbox rows and the run mutex, how upgrades and
