@@ -21,10 +21,11 @@ export const en = {
   },
   submissionCases: {
     // #623: Settings › Intelligence Access, the organization's cases; the dialog's words are `submissions`.
+    // #687: the list's scope is this organization; "this instance" only where the instance itself acts (what it clears, the answer it gave).
     title: "Coverage requests and match reports",
-    description: "Cases this instance sent with Request coverage or Report an incorrect match, newest first. Private to this organization: only its administrators see them, and the key each case travels under is never shown.",
+    description: "Cases this organization sent with Request coverage or Report an incorrect match, newest first. Private to this organization: only its administrators see them, and the key each case travels under is never shown.",
     notEnabled: "New cases cannot be sent while the v2 preview (INTELLIGENCE_ACCESS) is off here. These can still be refreshed and withdrawn.",
-    loading: "Loading cases…", empty: "No request or report has been made from this instance.",
+    loading: "Loading cases…", empty: "No request or report has been made from this organization.",
     loadFailed: "The cases could not be read, and this instance gave no reason. Reload the page; if it keeps failing, read docker compose logs app.",
     failed: "The request failed, and this instance gave no reason. Try again; if it keeps failing, read docker compose logs app.",
     kinds: { coverage: "Coverage request", correction: "Incorrect match report" },
