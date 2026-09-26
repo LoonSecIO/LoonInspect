@@ -35,8 +35,9 @@ export function secondStep(step: SecondStep | null, action: SecondStepAction): S
 }
 
 /** What the second step says when it is refused. A 401 carries the server's own sentence (a
- *  wrong or spent code, or a challenge past its five minutes), shown as it came because
- *  docs/troubleshooting.md §20 quotes it; a lockout reads as it does on the password step. */
+ *  wrong or spent code, or a challenge past its five minutes), shown as it came, which is the
+ *  wording docs/troubleshooting.md §20 is written against; a lockout reads as it does on the
+ *  password step. Nothing is invented for a refusal that arrives without a sentence. */
 export function secondStepError(caught: unknown, copy: Translations["auth"]): string {
   if (!(caught instanceof ApiError)) return copy.genericError;
   if (caught.status === 429) return copy.lockedOut;
