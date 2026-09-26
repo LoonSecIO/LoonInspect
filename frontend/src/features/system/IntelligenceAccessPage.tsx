@@ -1,6 +1,7 @@
 import { IntelligenceAccess } from "@/features/system/IntelligenceAccess";
 import { PERMISSIONS } from "@/features/auth/types";
 import { useHasPermission } from "@/features/auth/store";
+import { SubmissionCases } from "@/features/submissions/SubmissionCases";
 import { useLocale } from "@/i18n/LocaleContext";
 
 /**
@@ -19,6 +20,9 @@ export function IntelligenceAccessPage() {
         <p className="mt-1 text-sm text-muted-foreground">{t.intelligence.pageDescription}</p>
       </div>
       <IntelligenceAccess canWrite={canWrite} />
+      {/* A sibling, never a child: the panel above stops at one line while the preview is off, and
+          the case list must not, so a withdrawal is never stranded (#623). Its routes need SYSTEM_WRITE. */}
+      {canWrite && <SubmissionCases />}
     </div>
   );
 }

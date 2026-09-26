@@ -21,6 +21,23 @@ export const de: Translations = {
       grace: "Verlängerungsfrist", extended: "Manuelle Verlängerung", expired: "Abgelaufen", revoked: "Widerrufen",
       credential_invalid: "Zugangsschlüssel ungültig oder ersetzt", disconnected: "Bezahlte Updates lokal gestoppt", unknown: "Unbekannt" }
   },
+  submissionCases: {
+    title: "Abdeckungsanfragen und Zuordnungsmeldungen",
+    description: "Fälle, die diese Instanz mit „Abdeckung anfragen“ oder „Falsche Zuordnung melden“ gesendet hat, neueste zuerst. Nur für diese Organisation: Nur ihre Administratoren sehen sie, und der Schlüssel, unter dem ein Fall reist, wird nie angezeigt.",
+    notEnabled: "Neue Fälle können nicht gesendet werden, solange die v2-Vorschau (INTELLIGENCE_ACCESS) hier ausgeschaltet ist. Diese Fälle lassen sich weiter abfragen und zurückziehen.",
+    loading: "Fälle werden geladen…", empty: "Von dieser Instanz wurde noch keine Anfrage und keine Meldung gestellt.",
+    loadFailed: "Die Fälle konnten nicht gelesen werden, und diese Instanz nannte keinen Grund. Laden Sie die Seite neu; schlägt es weiter fehl, lesen Sie docker compose logs app.",
+    failed: "Die Anfrage ist fehlgeschlagen, und diese Instanz nannte keinen Grund. Versuchen Sie es erneut; schlägt es weiter fehl, lesen Sie docker compose logs app.",
+    kinds: { coverage: "Abdeckungsanfrage", correction: "Meldung einer falschen Zuordnung" },
+    states: { pending: "Noch nicht empfangen", received: "Empfangen", reviewing: "In Prüfung", needs_information: "Rückfrage offen",
+      accepted: "Angenommen, noch nicht abgedeckt", published: "Veröffentlicht", declined: "Abgelehnt", withdrawn: "Zurückgezogen", expired: "Abgelaufen, vom Dienst gelöscht" },
+    created: (date: string) => `Erstellt am ${date}`, release: "Im Release", coverage: "Was es abdeckt:",
+    question: "Die prüfende Person fragt:", reason: "Abgelehnt, weil:", note: "Hinweis der prüfenden Person:",
+    unconfirmed: (date: string) => `Hier zurückgezogen am ${date}: Text, URL und Kontakt sind aus dieser Instanz entfernt, und der Fall wird nie wieder gesendet, doch der Dienst hat das nicht bestätigt und hält sie womöglich noch. Ziehen Sie ihn erneut zurück.`,
+    refresh: "Status abfragen", refreshIn: (seconds: number) => `Abfrage in ${seconds} s`,
+    withdraw: "Zurückziehen", confirm: "Diesen Fall zurückziehen", cancel: "Abbrechen",
+    withdrawConfirm: "Der Dienst löscht Text, URL und Kontakt dieses Falls sofort, und diese Instanz entfernt sie ebenfalls. Er bleibt als zurückgezogen aufgeführt."
+  },
   system: {
     updateAvailable: (tag: string) => `LoonInspect ${tag} ist verfügbar`,
     updateAvailableUntagged: "Ein neueres Release von LoonInspect ist verfügbar",
