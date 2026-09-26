@@ -71,7 +71,7 @@ from tests.test_vuln_library import (
     _rewritten,
     _row,
 )
-from tests.test_vuln_library_db import _serving
+from tests.test_vuln_library_db import FOREIGN_TENANT_ID, _serving, foreign_tenant  # noqa: F401
 
 pytestmark = [
     pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
@@ -1346,6 +1346,32 @@ async def test_the_status_endpoint_answers_the_same_date_the_rows_are_stamped_wi
     # why a failed or `null` read may never be reported as "the corpus is off" anywhere.
     await _set_tier(db, "off")
     assert (await vulnerability_status(db)).corpus_as_of is None
+
+
+async def test_corpus_release_names_the_epoch_every_finding_on_the_page_came_from(db, fleet, foreign_tenant) -> None:  # noqa: F811
+    """What Report an incorrect match sends as `finding_release` (#623): the signature of the epoch answering for this
+    tenant, the one `served()` lets a `covered` row carry. `null` beside a `null` `corpusAsOf`, and gated per tenant as
+    that stamp is: with one epoch loaded, a tenant whose sharing is off reads `null` while one that shares reads it."""
+    _, device = fleet
+    assert (await _list(db)).corpus_release is None, "nothing loaded, nothing to name"
+
+    signature = await _filtering(db, device)
+    page = await _list(db, vuln="findings")
+    assert page.model_dump(mode="json", by_alias=True)["corpusRelease"] == signature
+    named = _ours(page)
+    assert set(named) == {WIRESHARK_BUILD, STALE_UNASSESSED_BUILD}
+    stored = select(AppCatalogEntry.vuln_signature).where(AppCatalogEntry.key_full.in_(named))
+    assert set((await db.execute(stored)).scalars()) == {signature}, "the release each finding on the page came from"
+
+    await _set_tier(db, "off")
+    token = set_tenant_id(FOREIGN_TENANT_ID)
+    try:
+        theirs = await _list(foreign_tenant)
+    finally:
+        reset_tenant_id(token)
+    ours = await _list(db)
+    assert (ours.corpus_as_of, ours.corpus_release) == (None, None)
+    assert theirs.corpus_as_of is not None and theirs.corpus_release == signature
 
 
 # --- easily patchable (#532) -------------------------------------------------------------

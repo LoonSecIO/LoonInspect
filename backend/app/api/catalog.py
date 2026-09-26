@@ -278,13 +278,16 @@ async def list_catalog(
     judged = False
     if epoch is not None:
         judged = bool((await db.execute(select(select(AppCatalogEntry.id).where(covered).exists()))).scalar())
+    stamp = corpus_as_of(corpus)
     return CatalogListResponse(
         items=items,
         total=int(total),
         page=page,
         page_size=page_size,
         summary=summary,
-        corpus_as_of=corpus_as_of(corpus),
+        corpus_as_of=stamp,
+        # What Report an incorrect match names (#623): the epoch every `covered` answer here was served under.
+        corpus_release=epoch if stamp is not None else None,
         vuln_judged=judged,
     )
 

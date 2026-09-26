@@ -161,6 +161,10 @@ class CatalogListResponse(_CamelModel):
     # has, and counting `covered` / `unknown_app` / `off` across all of them is a scan of
     # the whole catalog per request. Those counts are #250's, off the join #248 stores.
     corpus_as_of: date | None = None
+    # #623: the release a correction names (Support's `finding_release`), the 64-hex signature of the epoch answering
+    # for this tenant. `served()` admits a `covered` row only while its stored signature is this one, so it produced
+    # every finding on the page. `null` whenever `corpus_as_of` is. REST only: never on the Splunk wire.
+    corpus_release: str | None = None
     # Has ANY row of this tenant been judged by the epoch that is answering (#529)? One
     # indexed `EXISTS`, and deliberately not a count — §4g forbids the fleet-wide tile and
     # this is a boolean, not a number. `false` with a corpus loaded is the hour after an

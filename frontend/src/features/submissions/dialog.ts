@@ -7,7 +7,8 @@ import type { SubmissionCaseOut, SubmissionIn, SubmissionKind, SubmissionPreview
  *  administrator types three optional fields; a preview is kept with the body it was asked for, and an edit drops
  *  it and both one-time boxes. No text rule is checked here: the server's sentence is the rule (troubleshooting §21). */
 export type Named = Pick<SubmissionIn, "kind" | "appName" | "bundleId" | "platform" | "versions" | "finding" | "findingRelease">;
-export type Typed = { publicUrl: string; text: string; contact: string };
+/** The three typed fields, and a correction's pick among the ids its row names (unpicked, the row's first stands). */
+export type Typed = { publicUrl: string; text: string; contact: string; finding?: string };
 export type Shown = { body: SubmissionIn; answer: SubmissionPreviewOut };
 export type Dialog = { typed: Typed; shown: Shown | null; permission: boolean; override: boolean; busy: boolean; error: string | null; sent: SubmissionCaseOut | null };
 export type Move = { type: "typed"; field: keyof Typed; value: string } | { type: "ticked"; box: "permission" | "override"; on: boolean }
@@ -18,8 +19,8 @@ export const HTTPS = /^https:\/\/[!-~]+$/; // backend/app/schemas/submissions.py
 export const TEXT_LIMIT = 2000;
 
 /** An empty field goes as null, which the contract reads as absent. */
-export const bodyOf = (named: Named, typed: Typed): SubmissionIn =>
-  ({ ...named, publicUrl: typed.publicUrl.trim() || null, text: typed.text || null, contact: typed.contact.trim() || null });
+export const bodyOf = (named: Named, typed: Typed): SubmissionIn => ({ ...named, ...(typed.finding ? { finding: typed.finding } : {}),
+  publicUrl: typed.publicUrl.trim() || null, text: typed.text || null, contact: typed.contact.trim() || null });
 
 export function dialog(state: Dialog, move: Move): Dialog {
   switch (move.type) {
@@ -68,3 +69,12 @@ export function caseOf(entry: CatalogEntry, kind: SubmissionKind): Named | null 
 /** Request coverage: an `unknown_app` build, an administrator, and the preview on, whatever the sharing choice. */
 export const coverageFor = (entry: CatalogEntry, canWrite: boolean, enabled: boolean): Named | null =>
   canWrite && enabled && entry.vuln.assessment === "unknown_app" ? caseOf(entry, "coverage") : null;
+
+/** Report an incorrect match: a `covered` build naming a finding, an administrator, the preview on, and the release
+ *  the page's answers were judged under (`corpusRelease`). The dialog picks from the ids the row's answer lists and
+ *  no others, none past its cap; the first stands until another is picked. */
+export function correctionFor(entry: CatalogEntry, canWrite: boolean, enabled: boolean, release: string | null): { named: Named; findings: string[] } | null {
+  const findings = entry.vuln.assessment === "covered" ? entry.vuln.vulnIDs : [];
+  const named = canWrite && enabled && release && findings.length > 0 ? caseOf(entry, "correction") : null;
+  return named && { named: { ...named, finding: findings[0], findingRelease: release }, findings };
+}

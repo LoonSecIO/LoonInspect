@@ -122,6 +122,16 @@ async def test_nothing_leaves_without_permission_the_preview_or_the_override(adm
     assert listed["enabled"] is False and [c["id"] for c in listed["cases"]] == [sent["id"]] and len(service.requests) == 1
 
 
+async def test_a_correction_previews_its_finding_and_the_release_that_produced_it(admin):
+    """Report an incorrect match's body, in the page's own names (frontend `bodyOf`): the payload adds the pair."""
+    client, service = admin
+    release, empty = "4f1c" * 16, {"publicUrl": None, "text": None, "contact": None}
+    body = BODY | empty | {"kind": "correction", "finding": "CVE-2024-0208", "findingRelease": release}
+    payload = (await client.post("/api/submissions/preview", json=body)).json()["payload"]
+    assert (payload["kind"], payload["finding"], payload["finding_release"]) == ("correction", "CVE-2024-0208", release)
+    assert service.requests == []
+
+
 async def test_send_never_answers_a_withdrawal_the_service_has_not_confirmed(admin):
     """A lost withdrawal answer leaves `withdrawnAt` on a live state (§21 step 8), the words already cleared. The
     same word-less fields then make a new case rather than answer that one, and Withdraw again settles it."""
