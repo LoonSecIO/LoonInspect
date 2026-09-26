@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { ApiError, apiRequest } from "@/config/api";
-import { useAuthStore } from "@/features/auth/store";
+import { useAuthStore, useHasPermission } from "@/features/auth/store";
+import { PERMISSIONS } from "@/features/auth/types";
 import { listCatalog } from "@/features/catalog/api";
 import { LatestCell, PatchAnswerCell, Subject } from "@/features/catalog/PatchAnswerCell";
 import type { CatalogBand, CatalogEntry, CatalogListResponse, CatalogVulnFilter } from "@/features/catalog/types";
@@ -12,6 +13,8 @@ import { SearchBox } from "@/features/vulnerabilities/SearchBox";
 import type { AppChip, NumbersRead, PostureRow } from "@/features/vulnerabilities/pageBands";
 import { NUMBER_KEYS, VULN_KEYS, agedList, emptySays, exploreByApp, listQuery, payoffList, planNumbers, readNumbers } from "@/features/vulnerabilities/pageBands";
 import { pageView, type Load } from "@/features/vulnerabilities/pageView";
+import { RequestCoverage } from "@/features/submissions/SubmissionDialog";
+import { useIntelligenceStore } from "@/features/system/intelligenceStore";
 import { useLocale } from "@/i18n/LocaleContext";
 import type { Translations } from "@/i18n/en";
 
@@ -84,7 +87,7 @@ function Bands({ entry, t }: { entry: CatalogEntry; t: Translations }) {
 /** One row of *Most exposed* and *Longest exposed*: the count, the Macs, the age and the fix path.
  *  Lifted out of the table body unchanged so the ranked list can put its own row in the same
  *  `<tbody>` — both are six columns, and which one is drawn is `payoffList`'s single decision. */
-function ExposedRow({ entry, t }: { entry: CatalogEntry; t: Translations }) {
+function ExposedRow({ entry, t, canWrite, enabled }: { entry: CatalogEntry; t: Translations; canWrite: boolean; enabled: boolean }) {
   return (
     <tr className="border-b align-top last:border-0">
       <td className="px-4 py-2">
@@ -94,7 +97,8 @@ function ExposedRow({ entry, t }: { entry: CatalogEntry; t: Translations }) {
         {/* The ONE rendering of the three states here, handed the row so #482's update line
             prints beside the count it is about. */}
         <AssessmentCell vuln={entry.vuln} row={entry} t={t} />
-        <Bands entry={entry} t={t} /></td>
+        <Bands entry={entry} t={t} />
+        <RequestCoverage entry={entry} canWrite={canWrite} enabled={enabled} t={t} /></td>
       <td className="px-4 py-2 tabular-nums">{entry.vuln.assessment === "covered" && entry.vuln.counts.kev > 0 ? entry.vuln.counts.kev : "—"}</td>
       <td className="px-4 py-2 tabular-nums">
         <Link to={`/devices?versionHash=${entry.versionHash}`} className="hover:underline">{entry.deviceCount}</Link></td>
@@ -170,6 +174,9 @@ export function VulnerabilitiesPage() {
   const plansNumbers = useMemo(() => planNumbers(permissions), [permissions]);
   const [numbers, setNumbers] = useState<NumbersRead | null>(null);
   const [numbersFailed, setNumbersFailed] = useState(false);
+  // Request coverage's two gates: SYSTEM_WRITE, as the routes require, and the v2 preview (#623).
+  const canWrite = useHasPermission(PERMISSIONS.SYSTEM_WRITE);
+  const offered = useIntelligenceStore((state) => state.enabled);
 
   // A moved input re-reads, and the page has to read as asking rather than leave the last
   // term's rows standing as this one's. Adjusted during the render that moved it, keyed on
@@ -358,7 +365,7 @@ export function VulnerabilitiesPage() {
                   </tr>
                 )}
                 {rows.map((entry) =>
-                  byPayoff ? <PatchableRow key={entry.id} entry={entry} t={t} /> : <ExposedRow key={entry.id} entry={entry} t={t} />
+                  byPayoff ? <PatchableRow key={entry.id} entry={entry} t={t} /> : <ExposedRow key={entry.id} entry={entry} t={t} canWrite={canWrite} enabled={offered} />
                 )}
               </tbody>
             </table>
