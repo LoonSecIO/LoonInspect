@@ -44,7 +44,8 @@ export function SubmissionCasesView({ read, copy, locale, now, acts = {}, on = {
             return (
               <li key={item.id} className="space-y-1 py-3 text-sm">
                 <p className="break-all">
-                  <span className="font-medium">{item.appName}</span> {[item.bundleId, item.versions.join(", ")].filter(Boolean).join(" · ")}
+                  <span className="font-medium">{item.appName}</span> {item.versions.join(" · ")}
+                  {item.bundleId && <span className="block font-mono text-xs text-muted-foreground">{item.bundleId}</span>}
                 </p>
                 <p className="text-muted-foreground">
                   {[copy.kinds[item.kind], item.finding, copy.created(when(item.createdAt))].filter(Boolean).join(" · ")}
