@@ -33,6 +33,7 @@ STATES = {"received", "reviewing", "needs_information", "accepted", "declined", 
 FIELDS = ("kind", "app_name", "bundle_id", "platform", "versions", "public_url", "text", "contact")
 TYPED = ("public_url", "text", "contact")  # what the administrator wrote; withdrawal clears it here too
 POLL_FLOOR = timedelta(seconds=60)  # the service answers a faster status read with 429
+SAID = 1000  # characters of the service's sentence quoted; its longest, the public_url rule, has 387
 Transport = httpx.AsyncBaseTransport | None
 
 
@@ -105,8 +106,9 @@ async def _post(case: SubmissionCase, route: str, body: dict, transport: Transpo
     except ValueError:
         answer = None
     said = answer.get("error") if isinstance(answer, dict) else None
-    said = f' It said: "{said}"' if isinstance(said, str) and said.isprintable() and 0 < len(said) <= 300 else ""
-    return response.status_code, answer if isinstance(answer, dict) else None, said
+    said = said if isinstance(said, str) and said.isprintable() else ""
+    said = said if len(said) <= SAID else said[:SAID] + "…"  # cut, never dropped: a refusal names its rule first
+    return response.status_code, answer if isinstance(answer, dict) else None, f' It said: "{said}"' if said else ""
 
 
 def _settled(case: SubmissionCase, answer: dict | None, state: str | None = None) -> bool:
@@ -122,7 +124,16 @@ def _settled(case: SubmissionCase, answer: dict | None, state: str | None = None
         return False
     case.state, case.received_at, case.closed_at, case.release = answer["state"], received, closed, release
     (case.coverage, case.note), case.last_error = words, None
+    if case.state == "withdrawn":  # a status read may hear it first: after a lost answer, or on a copied database
+        _forget(case)
     return True
+
+
+def _forget(case: SubmissionCase) -> None:
+    """Withdrawal's local half, whichever answer brings it: the first date stays, what the administrator wrote goes."""
+    case.withdrawn_at = case.withdrawn_at or datetime.now(UTC)
+    for name in TYPED:
+        setattr(case, name, None)
 
 
 async def _locked(db: AsyncSession, case: SubmissionCase) -> SubmissionCase:
@@ -132,11 +143,12 @@ async def _locked(db: AsyncSession, case: SubmissionCase) -> SubmissionCase:
 
 async def send(db: AsyncSession, case: SubmissionCase, *, transport: Transport = None) -> SubmissionCase:
     """Send a pending case, storing its key before it leaves: a retry is the identical request, which gets the
-    original 202. A 409 gets one fresh key, stored before it is sent. The row stays locked meanwhile."""
+    original 202. A 409 gets one fresh key, stored before it is sent. The row stays locked meanwhile. A case
+    withdrawn here is never sent, whether or not the service has confirmed the withdrawal."""
     await db.commit()
     case = await _locked(db, case)
     for fresh in (False, True):
-        if case.state != "pending" or _waiting(case.retry_at):
+        if case.state != "pending" or case.withdrawn_at or _waiting(case.retry_at):
             break
         if not settings.intelligence_access or case.permission_at is None:
             why = "no permission is recorded; confirm the case's preview" if settings.intelligence_access else ""
@@ -176,16 +188,19 @@ async def refresh(db: AsyncSession, case: SubmissionCase, *, transport: Transpor
 
 
 async def withdraw(db: AsyncSession, case: SubmissionCase, *, transport: Transport = None) -> SubmissionCase:
-    """Withdraw the case there, and clear what was written here; the service's own 404 means it holds nothing."""
+    """Withdraw the case there, and clear what was written here. The act is stored before the request leaves,
+    so a lost answer can neither keep the words nor leave the case to be sent, and asking again settles it (a
+    repeat withdrawal is 200). The service's own 404 means it holds nothing under the key."""
+    case = await _locked(db, case)
+    _forget(case)
+    await db.commit()
     case = await _locked(db, case)
     body = {"contract": "v2", "case_key": case.case_key}
     if case.state != "withdrawn" and (reply := await _post(case, "/withdraw", body, transport)):
         code, answer, said = reply
-        if (code == 200 and _settled(case, answer, "withdrawn")) or (code == 404 and said):
-            case.state, case.withdrawn_at, case.last_error = "withdrawn", datetime.now(UTC), None
-            for name in TYPED:
-                setattr(case, name, None)
-        else:
+        if code == 404 and said:
+            case.state, case.last_error = "withdrawn", None
+        elif not (code == 200 and _settled(case, answer, "withdrawn")):
             _refused(case, code, said)
     await db.commit()
     return case
