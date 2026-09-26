@@ -51,6 +51,7 @@ from app.api.feature_flags import router as feature_flags_router
 from app.api.intelligence import router as intelligence_router
 from app.api.inventory_summaries import router as inventory_summaries_router
 from app.api.jamf_patch import router as jamf_patch_router
+from app.api.mfa import router as mfa_router
 from app.api.outbox import router as outbox_router
 from app.api.posture import router as posture_router
 from app.api.routes import router as api_router
@@ -653,6 +654,7 @@ app.add_middleware(RequestContextMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(auth_router)
+app.include_router(mfa_router)
 app.include_router(accounts_router)
 app.include_router(tokens_router)
 app.include_router(api_router)

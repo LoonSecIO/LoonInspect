@@ -297,7 +297,7 @@ async def login(
     if mfa.confirmed(account) is not None:
         # An enrolled account gets a short-lived challenge here, never a session (#653).
         logger.info("login needs a second factor", extra={"account_id": account.id, "client_ip": ip})
-        challenge = MfaChallengeOut(challenge=mfa.challenge_token(account.id), methods=["totp"])
+        challenge = MfaChallengeOut(challenge=mfa.challenge_token(account.id), methods=["totp", "recovery"])
         return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=challenge.model_dump(by_alias=True))
 
     session, raw_token = await create_session(
@@ -346,8 +346,8 @@ async def login_mfa(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> AccountOut:
-    """The second sign-in step (#653): the challenge from the password step plus a code.
-    Failures share the password lockout."""
+    """The second sign-in step (#653): the challenge from the password step plus a code or a
+    recovery code. Failures share the password lockout."""
     ip = _client_ip(request)
     now = datetime.now(UTC)
     expired = HTTPException(
@@ -368,15 +368,27 @@ async def login_mfa(
 
     method = mfa.METHOD_TOTP
     step = mfa.verify_code(identity.secret_encrypted or "", payload.code, identity.last_otp_step, now=now)
-    if step is None:
+    if step is not None:
+        identity.last_otp_step = step
+    elif mfa.consume_recovery_code(identity, payload.code):
+        method = mfa.METHOD_RECOVERY
+        audit(
+            AuditAction.MFA_RECOVERY_CODE_USED,
+            actor=Actor(type="account", id=account.id, label=account.email, tenant_id=account.tenant_id),
+            target_type="account",
+            target_id=account.id,
+            remaining=len(identity.recovery_codes),
+        )
+    else:
         await _record_failure(db, account.email, ip)
         logger.warning("second factor refused", extra={"account_id": account.id, "client_ip": ip})
         audit(AuditAction.MFA_CHALLENGE_FAILED, outcome="failure", target_type="account", target_id=account.id)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="That code was not accepted. Codes are six digits, change every 30 seconds, and work once.",
+            detail=(
+                "That code was not accepted: six digits, a new one every 30 seconds, each good once; a recovery code works too."
+            ),
         )
-    identity.last_otp_step = step
 
     await _clear_failures(db, account.email, ip)
     session, raw_token = await create_session(
