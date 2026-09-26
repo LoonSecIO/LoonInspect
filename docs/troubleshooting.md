@@ -84,7 +84,7 @@ ticket names one, this says which path it came off.
 | **U** | §17 | The baseline rule catalogue will not load, or a sum does not close |
 | **V** | §18 | *being judged against it* more than an hour after the corpus date moved |
 | **W** | §18 | *Longest exposed* is empty while *Most exposed* lists builds |
-| **X** | §20 | No recovery codes remain and the second factor cannot be removed yet |
+| **X** | §20 | No phone, no recovery codes, and no other administrator to remove the second factor |
 
 ## 0. The four things you can read
 
@@ -2280,12 +2280,21 @@ password, then a six-digit code from the authenticator app, or one recovery code
    minutes from the password step. Start again from the password.
 3. **No phone.** A recovery code, shown once when the factor was confirmed, signs you in
    in place of the code; each works once, hyphens and case do not matter, and
-   `GET /api/auth/mfa` says how many remain. With none left there is no self-service way
-   back in yet: an administrator's password reset does not remove the factor, so
-   reportable **X** until the administrative removal ships.
+   `GET /api/auth/mfa` says how many remain; a fresh code from the phone, sent signed in to
+   `POST /api/auth/mfa/recovery-codes`, replaces all ten. With neither phone nor codes, another
+   administrator removes the factor (step 7; a password reset does not), or reportable **X**.
 4. ***Too many failed attempts.*** Wrong codes count against the same lockout as wrong
    passwords, for the same address and client. Wait it out; nothing to reset.
+5. ***Your administrator requires two-step sign-in for this account.*** Every page says so: the
+   policy (`GET /api/settings/mfa-policy`: `admins` or `everyone`) asks this account for a
+   factor, and until a code confirms one only My Account's set-up, `/api/auth/me` and
+   signing out answer. Set it up; that includes the administrator who turned it on.
+6. **The break-glass account is not asked**, by design and under every policy: it is the way
+   in when phones are lost. Its sign-in says `the policy exempts it` in the container log.
+7. **An administrator removed my second factor** (`DELETE /api/accounts/{id}/mfa`, never
+   one's own; `auth.mfa.removed` in the audit log names who). Every session ended, and the
+   old *LoonInspect* entry and recovery codes are dead: sign in with the password, then step 5.
 
-**X.** Report the account's email to the administrator; the removal is a follow-up to
-#653, and the account keeps its data meanwhile.
+**X.** Phone and recovery codes are gone, and no other administrator, break-glass included, can
+remove the factor. Report the account's email (§8); the account keeps its data meanwhile.
 

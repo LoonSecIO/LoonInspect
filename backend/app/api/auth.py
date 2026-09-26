@@ -75,6 +75,7 @@ def _account_out(
     roles: list[str] | None = None,
     acting: uuid.UUID | None = None,
     memberships: list[tuple[Tenant, list[str]]] | None = None,
+    mfa_enrolment_required: bool = False,
 ) -> AccountOut:
     roles = roles if roles is not None else sorted({row.role for row in account.roles})
     effective = permissions if permissions is not None else permissions_for(roles)
@@ -93,6 +94,7 @@ def _account_out(
         is_break_glass=account.is_break_glass,
         tenant=current,
         tenants=tenants,
+        mfa_enrolment_required=mfa_enrolment_required,
     )
 
 
@@ -300,6 +302,11 @@ async def login(
         challenge = MfaChallengeOut(challenge=mfa.challenge_token(account.id), methods=["totp", "recovery"])
         return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=challenge.model_dump(by_alias=True))
 
+    roles = sorted({row.role for row in account.roles})
+    enrolment_required = await mfa.enrolment_required(db, account, roles, account.tenant_id)
+    if account.is_break_glass and await mfa.policy_asks(db, roles, account.tenant_id):
+        logger.info("break-glass sign-in without a second factor: the policy exempts it", extra={"account_id": account.id})
+
     session, raw_token = await create_session(
         db,
         account,
@@ -334,9 +341,9 @@ async def login(
         target_id=account.id,
         auth_method="password",
         break_glass=account.is_break_glass,
-        roles=sorted({row.role for row in account.roles}),
+        roles=roles,
     )
-    return _account_out(account, memberships=await memberships_for(db, account))
+    return _account_out(account, memberships=await memberships_for(db, account), mfa_enrolment_required=enrolment_required)
 
 
 @router.post("/login/mfa", response_model=AccountOut)
@@ -514,6 +521,7 @@ async def me(principal: Principal = Depends(current_principal), db: AsyncSession
         roles=sorted(await membership_roles(db, principal.account, principal.tenant_id) or []),
         acting=principal.tenant_id,
         memberships=await memberships_for(db, principal.account),
+        mfa_enrolment_required=principal.mfa_enrolment_required,
     )
 
 
@@ -569,6 +577,5 @@ async def switch_tenant(
             roles=roles,
         )
     logger.info("tenant switched", extra={"account_id": account.id, "from_tenant": str(left), "to_tenant": str(target)})
-    return _account_out(
-        account, permissions_for(roles), roles=roles, acting=target, memberships=await memberships_for(db, account)
-    )
+    memberships, owed = await memberships_for(db, account), await mfa.enrolment_required(db, account, roles, target)
+    return _account_out(account, roles=roles, acting=target, memberships=memberships, mfa_enrolment_required=owed)

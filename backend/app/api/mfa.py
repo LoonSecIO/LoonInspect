@@ -1,4 +1,4 @@
-"""Enrolling a second factor (#653): status, a fresh secret, and the code that proves it.
+"""Enrolling a second factor (#653): status, a fresh secret, the code that proves it, new recovery codes.
 
 The sign-in half — the challenge the password step returns and the route that redeems
 it — lives in `app.api.auth` beside the lockout it shares. Everything here needs a
@@ -11,12 +11,13 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth import _clear_failures, _client_ip, _get_attempt, _record_failure
 from app.core import mfa
 from app.core.audit import AuditAction, audit
-from app.core.auth import Principal, current_principal
+from app.core.auth import Principal, as_utc, current_principal
 from app.core.database import get_db
 from app.models.schema import AuthIdentity
 from app.schemas.mfa import MfaCodeRequest, MfaConfirmOut, MfaEnrolOut, MfaStatusOut
@@ -99,3 +100,39 @@ async def confirm(
     audit(AuditAction.MFA_ENROLLED, target_type="account", target_id=account.id, email=account.email)
     logger.info("second factor enrolled", extra={"account_id": account.id})
     return MfaConfirmOut(recovery_codes=codes, confirmed_at=now)
+
+
+@router.post("/recovery-codes", response_model=MfaConfirmOut)
+async def regenerate_recovery_codes(
+    payload: MfaCodeRequest,
+    request: Request,
+    principal: Principal = Depends(current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> MfaConfirmOut:
+    """Ten new recovery codes in place of every old one, for a fresh code from the phone, so a
+    session left open cannot mint itself a way back in. Wrong codes share the sign-in lockout."""
+    _session_only(principal)
+    account = principal.account
+    identity = mfa.confirmed(account)
+    if identity is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This account has no second factor. Set one up first.")
+    ip, now = _client_ip(request), datetime.now(UTC)
+    attempt = await _get_attempt(db, account.email, ip)
+    if attempt is not None and attempt.locked_until is not None and as_utc(attempt.locked_until) > now:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many failed attempts. Try again later.")
+    step = mfa.verify_code(identity.secret_encrypted or "", payload.code, identity.last_otp_step, now=now)
+    if step is None:
+        await _record_failure(db, account.email, ip)
+        audit(AuditAction.MFA_CHALLENGE_FAILED, outcome="failure", target_type="account", target_id=account.id)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="That code was not accepted: the current six digits from the authenticator app, each good once.",
+        )
+    codes, hashes = mfa.mint_recovery_codes()
+    identity.last_otp_step = step
+    identity.recovery_codes = hashes
+    await _clear_failures(db, account.email, ip)
+    await db.commit()
+    audit(AuditAction.MFA_RECOVERY_CODES_REGENERATED, target_type="account", target_id=account.id, email=account.email)
+    logger.info("recovery codes regenerated", extra={"account_id": account.id})
+    return MfaConfirmOut(recovery_codes=codes, confirmed_at=identity.confirmed_at)

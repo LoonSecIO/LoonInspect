@@ -1,6 +1,7 @@
 """Tenant settings served as text (#116). Display and evidence context, never thresholds:
 docs/v-never.md refuses invented compliance regimes, and an org's stated policy is how an
-org-backed target could someday be legitimized — that legitimization is its own ruling."""
+org-backed target could someday be legitimized — that legitimization is its own ruling. One setting is
+enforced rather than displayed: who must sign in with a second factor (#653), read by app.core.auth."""
 
 from __future__ import annotations
 
@@ -14,8 +15,8 @@ from app.core.audit import AuditAction, audit
 from app.core.auth import Principal, current_principal, require
 from app.core.database import get_db
 from app.core.permissions import Permission
-from app.models.schema import PatchingPolicy
-from app.schemas.settings import PatchingPolicyOut, PatchingPolicyUpdate
+from app.models.schema import PatchingPolicy, Tenant
+from app.schemas.settings import MfaPolicy, PatchingPolicyOut, PatchingPolicyUpdate
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -64,3 +65,25 @@ async def put_patching_policy(
         cleared=row.statement == "",
     )
     return PatchingPolicyOut.model_validate(row)
+
+
+@router.get("/mfa-policy", response_model=MfaPolicy, dependencies=[Depends(require(Permission.ACCOUNT_READ))])
+async def get_mfa_policy(principal: Principal = Depends(current_principal), db: AsyncSession = Depends(get_db)) -> MfaPolicy:
+    """Who must sign in with a second factor where this session acts; read by whoever reads Accounts."""
+    tenant = await db.get(Tenant, principal.tenant_id)
+    return MfaPolicy(mfa_required=tenant.mfa_required)
+
+
+@router.put("/mfa-policy", response_model=MfaPolicy, dependencies=[Depends(require(Permission.ACCOUNT_WRITE))])
+async def put_mfa_policy(
+    payload: MfaPolicy,
+    principal: Principal = Depends(current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> MfaPolicy:
+    """Administrators only. It applies from each account's next request; nobody is signed out."""
+    tenant = await db.get(Tenant, principal.tenant_id)
+    before = tenant.mfa_required
+    tenant.mfa_required = payload.mfa_required
+    await db.commit()
+    audit(AuditAction.MFA_POLICY_CHANGED, target_type="tenant", target_id=tenant.id, before=before, after=tenant.mfa_required)
+    return MfaPolicy(mfa_required=tenant.mfa_required)

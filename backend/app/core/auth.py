@@ -22,6 +22,7 @@ from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import mfa
 from app.core.audit import AuditAction, audit
 from app.core.config import settings
 from app.core.context import Actor, set_actor
@@ -60,6 +61,13 @@ _PUBLIC_EXACT = frozenset(
         # cookies should never itself require a valid one.
         "/api/auth/logout",
     }
+)
+
+# All a session reaches while the tenant's policy asks its account for a second factor it lacks (#653):
+# who it is, and enrolment (logout is public). Pinned in tests/test_auth.py like the allowlist above.
+_ENROLMENT_EXACT = frozenset({"/api/auth/me", "/api/auth/mfa", "/api/auth/mfa/enrol", "/api/auth/mfa/confirm"})
+MFA_ENROLMENT_REQUIRED = (
+    "Your administrator requires two-step sign-in for this account. Set it up on My Account; nothing else opens until then."
 )
 
 # Webhooks authenticate with their own per-connection credential rather than a session
@@ -112,6 +120,9 @@ class Principal:
     # its account stay home; the index said which, and it is carried here so the
     # property below answers the acting tenant rather than the row's.
     acting_tenant_id: uuid.UUID | None = None
+    # The tenant's policy asks this session's account for a second factor it has not
+    # enrolled (#653); `authenticate` then opens only `_ENROLMENT_EXACT`. Never set on a token.
+    mfa_enrolment_required: bool = False
 
     @property
     def tenant_id(self) -> uuid.UUID:
@@ -433,6 +444,10 @@ async def authenticate(request: Request, response: Response, db: AsyncSession = 
     if principal.auth_method == "session" and request.method not in _SAFE_METHODS:
         _verify_csrf(request, principal.session)
 
+    if principal.mfa_enrolment_required and request.url.path not in _ENROLMENT_EXACT:
+        logger.info("refused until two-step sign-in is set up on My Account", extra={"account_id": principal.account.id})
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=MFA_ENROLMENT_REQUIRED)
+
     request.state.principal = principal
 
     # The acting tenant, now that it is known. Until this line the request has been
@@ -520,6 +535,7 @@ async def _authenticate_session(db: AsyncSession, request: Request, response: Re
         auth_method="session",
         session=session,
         acting_tenant_id=acting if acting != session.tenant_id else None,
+        mfa_enrolment_required=await mfa.enrolment_required(db, account, roles, acting),
     )
 
 
