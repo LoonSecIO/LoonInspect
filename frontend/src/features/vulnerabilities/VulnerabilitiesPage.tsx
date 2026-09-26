@@ -144,6 +144,17 @@ function PatchableRow({ entry, t, canWrite, enabled, release }: { entry: Catalog
   );
 }
 
+/** One list's rows (`ranked`: *Easily patchable*'s) with their submission actions' two gates, SYSTEM_WRITE as the
+ *  routes require and the v2 preview (#623), and the release THIS list's answers were judged under: a list can
+ *  hand on no `corpusRelease` but its own. Exported so the node lane renders the gates with the rows (#686). */
+export function ListRows({ list, ranked, t }: { list: CatalogListResponse; ranked: boolean; t: Translations }) {
+  const canWrite = useHasPermission(PERMISSIONS.SYSTEM_WRITE);
+  const enabled = useIntelligenceStore((state) => state.enabled);
+  const acts: Acts = { canWrite, enabled, release: list.corpusRelease ?? null };
+  return list.items.map((entry) =>
+    ranked ? <PatchableRow key={entry.id} entry={entry} t={t} {...acts} /> : <ExposedRow key={entry.id} entry={entry} t={t} {...acts} />);
+}
+
 export function VulnerabilitiesPage() {
   const { t } = useLocale();
   const copy = t.vulnerabilities;
@@ -179,10 +190,6 @@ export function VulnerabilitiesPage() {
   const plansNumbers = useMemo(() => planNumbers(permissions), [permissions]);
   const [numbers, setNumbers] = useState<NumbersRead | null>(null);
   const [numbersFailed, setNumbersFailed] = useState(false);
-  // The submission actions' two gates: SYSTEM_WRITE, as the routes require, and the v2 preview (#623). A correction
-  // also names the release its list was judged under, so each list below hands on its own `corpusRelease`.
-  const canWrite = useHasPermission(PERMISSIONS.SYSTEM_WRITE);
-  const offered = useIntelligenceStore((state) => state.enabled);
 
   // A moved input re-reads, and the page has to read as asking rather than leave the last
   // term's rows standing as this one's. Adjusted during the render that moved it, keyed on
@@ -247,7 +254,6 @@ export function VulnerabilitiesPage() {
 
   const shown = pageView(load, answer);
   const rows = shown.rows && answer !== null ? answer.items : [];
-  const acts: Acts = { canWrite, enabled: offered, release: answer?.corpusRelease ?? null };
   const total = answer?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE));
   // One line for what is happening, written once and placed where the reader is looking: in
@@ -371,9 +377,7 @@ export function VulnerabilitiesPage() {
                     </td>
                   </tr>
                 )}
-                {rows.map((entry) =>
-                  byPayoff ? <PatchableRow key={entry.id} entry={entry} t={t} {...acts} /> : <ExposedRow key={entry.id} entry={entry} t={t} {...acts} />
-                )}
+                {shown.rows && answer !== null && <ListRows list={answer} ranked={byPayoff} t={t} />}
               </tbody>
             </table>
           </div>
@@ -416,8 +420,7 @@ export function VulnerabilitiesPage() {
                   </tr></thead>
                   <tbody>
                     {patchableSays !== null && <tr><td className="px-4 py-4 text-muted-foreground" colSpan={7}>{patchableSays}</td></tr>}
-                    {(patchableSays === null ? (patchable?.items ?? []) : []).map((entry) => (
-                      <PatchableRow key={entry.id} entry={entry} t={t} {...acts} release={patchable?.corpusRelease ?? null} />))}
+                    {patchableSays === null && patchable !== null && <ListRows list={patchable} ranked t={t} />}
                   </tbody>
                 </table>
               </div></>)}

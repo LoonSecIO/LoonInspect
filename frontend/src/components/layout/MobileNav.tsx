@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Menu, X } from "lucide-react";
 import { NavTree } from "@/components/layout/NavTree";
 import { useNavigation } from "@/components/layout/useNavigation";
 import { BuildVersion } from "@/features/system/BuildVersion";
+import { useModal } from "@/hooks/useModal";
 import { useLocale } from "@/i18n/LocaleContext";
 
 /** Tailwind's `md`, the breakpoint the sidebar returns at (`md:flex` in Sidebar.tsx).
@@ -24,57 +25,26 @@ const buttonClasses =
  * closes it, Escape that closes it, focus moved to the close button on open and back to
  * the menu button on close, and the page's scroll held while it is up. It is portalled
  * to `<body>` because the navbar's `backdrop-blur` makes the header the containing block
- * for anything `fixed` inside it, which would pin the drawer to a 56px strip.
+ * for anything `fixed` inside it, which would pin the drawer to a 56px strip. All but
+ * the backdrop is `useModal`, which the submission dialog shares since #686.
  */
 export function MobileNav() {
   const { t } = useLocale();
   const items = useNavigation();
-  const [open, setOpen] = useState(false);
   const openButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const drawer = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useModal(drawer, openButton, closeButton);
 
   useEffect(() => {
     if (!open) return;
-
-    const trigger = openButton.current;
-    closeButton.current?.focus();
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-      if (event.key === "Tab") {
-        const controls = drawer.current?.querySelectorAll<HTMLElement>(
-          'a[href], button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled])'
-        );
-        if (!controls?.length) return;
-        const first = controls[0];
-        const last = controls[controls.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      }
-    };
     const sidebarReturns = window.matchMedia(SIDEBAR_RETURNS);
     const onViewportChange = (event: MediaQueryListEvent) => {
       if (event.matches) setOpen(false);
     };
-    document.addEventListener("keydown", onKeyDown);
     sidebarReturns.addEventListener("change", onViewportChange);
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener("keydown", onKeyDown);
-      sidebarReturns.removeEventListener("change", onViewportChange);
-      trigger?.focus();
-    };
-  }, [open]);
+    return () => sidebarReturns.removeEventListener("change", onViewportChange);
+  }, [open, setOpen]);
 
   const close = () => setOpen(false);
 
