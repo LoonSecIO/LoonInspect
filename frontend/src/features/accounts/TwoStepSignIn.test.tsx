@@ -110,6 +110,7 @@ describe("two-step sign-in on My Account (#653)", () => {
     const held = { id: "a1", roles: ["viewer"], permissions: [], tenants: [], mfaEnrolmentRequired: true } as unknown as AuthUser;
     useAuthStore.setState({ status: "authenticated", user: held });
     expect(["/", "/devices", MY_ACCOUNT].map((path) => enrolmentRedirect(held, path))).toEqual([MY_ACCOUNT, MY_ACCOUNT, null]);
+    expect(en.myAccount.held).toBe("Your administrator requires two-step sign-in for this account. Set it up on My Account; nothing else opens until then.");
     vi.mocked(apiRequest).mockResolvedValueOnce({ recoveryCodes: codes, confirmedAt }).mockResolvedValueOnce({ ...held, mfaEnrolmentRequired: false });
     expect((await confirmCode(enrolment, "123456", "fallback")).panel).toEqual({ step: "codes", codes });
     expect(apiRequest).toHaveBeenLastCalledWith("/auth/me"); // no sign-out: the same session, read again

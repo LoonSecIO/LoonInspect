@@ -668,7 +668,7 @@ MFA was explicitly out of scope for v1. The model above doesn't block it: TOTP s
 
 TOTP's delivery phase is v2.0.0 (#653): the identity and the second sign-in step, enrolment and recovery codes,
 then the `mfa_required` policy (`off` | `admins` | `everyone`, default `off`, break-glass exempt) with its gate,
-administrative removal and regeneration. The sign-in and My Account pages are its frontend half.
+administrative removal and regeneration. The sign-in, My Account and Accounts pages are its frontend half.
 
 Everything else — session tokens, CSRF, HMAC, API tokens — is stdlib `secrets` / `hmac` / `hashlib`.
 

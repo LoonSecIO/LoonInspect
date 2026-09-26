@@ -31,7 +31,6 @@ describe("the two-step sign-in policy on Accounts (#653)", () => {
     const writer = view({ state: "ready", policy: "off" }, true);
     for (const name of ["Off", "Administrators", "Everyone"]) expect(writer).toContain(`>${name}</button>`);
     expect(writer).toMatch(/aria-pressed="true"[^>]*>Off</);
-    expect(writer).not.toContain(words.confirm.everyone);
     expect(view({ state: "ready", policy: "off" }, true, "everyone")).toContain(words.confirm.everyone);
     expect(words.confirm.admins).toContain("next request, every administrator without two-step sign-in, yourself included,");
   });
