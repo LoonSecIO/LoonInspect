@@ -58,11 +58,11 @@ export const askSend = ({ body, answer }: Shown, override: boolean, fallback: st
     .then((sent): Move => ({ type: "sent", sent }), refused(fallback));
 
 /** The case one catalog row names: that build's own strings, never the other versions the fleet shows; null on
- *  a platform the service does not take. A correction adds its finding and release to it. */
+ *  a platform the service does not take, or a row with no version to name. A correction adds its finding. */
 export function caseOf(entry: CatalogEntry, kind: SubmissionKind): Named | null {
   const platform = SUBMISSION_PLATFORMS.find((name) => name === entry.platform);
-  const versions = entry.shortVersion && entry.shortVersion !== entry.version ? [entry.version, entry.shortVersion] : [entry.version];
-  return platform ? { kind, appName: entry.name, bundleId: entry.bundleId || null, platform, versions } : null;
+  const versions = [...new Set([entry.version, entry.shortVersion].filter((version): version is string => !!version))];
+  return platform && versions.length > 0 ? { kind, appName: entry.name, bundleId: entry.bundleId || null, platform, versions } : null;
 }
 
 /** Request coverage: an `unknown_app` build, an administrator, and the preview on, whatever the sharing choice. */

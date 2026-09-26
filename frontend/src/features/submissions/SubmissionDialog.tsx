@@ -32,7 +32,7 @@ export function SubmissionView({ named, state, copy, dispatch, onPreview, onSend
         <label className="block space-y-1 text-sm"><span>{copy.urlLabel}</span><Input type="url" placeholder="https://" maxLength={512} autoFocus {...field("publicUrl")} /></label>
         {badUrl && <p className="text-sm text-destructive">{copy.urlHttps}</p>}
         <label className="block space-y-1 text-sm"><span>{copy.textLabel}</span>
-          <textarea className="block min-h-24 w-full rounded-md border border-input bg-background px-3 py-2" maxLength={TEXT_LIMIT} {...field("text")} /></label>
+          <textarea className="block min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 disabled:opacity-50" maxLength={TEXT_LIMIT} {...field("text")} /></label>
         <p className="text-right text-xs text-muted-foreground">{copy.counter(typed.text.length, TEXT_LIMIT)}</p>
         <label className="block space-y-1 text-sm"><span>{copy.contactLabel}</span><Input maxLength={256} {...field("contact")} /></label>
         <p id="submission-guidance" className="text-sm text-muted-foreground">{copy.guidance}</p>

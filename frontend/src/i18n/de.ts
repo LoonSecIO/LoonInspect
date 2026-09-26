@@ -1225,7 +1225,7 @@ export const de: Translations = {
   submissions: {
     // #623: Abdeckung anfragen und der Dialog beider Arten. „Falsche Zuordnung melden“ hängt seine Schlüssel unten an.
     notAssessed: "Diese installierte Version wird vom aktuellen Feed nicht geprüft.", requestCoverage: "Abdeckung anfragen", title: { coverage: "Abdeckung anfragen", correction: "Falsche Zuordnung melden" },
-    urlLabel: "Öffentliche Seite zu dieser Anwendung (optional, nur https)", urlHttps: "Verwenden Sie eine Adresse, die mit https:// beginnt und keine Leerzeichen enthält.",
+    urlLabel: "Öffentliche Seite zu dieser Anwendung (optional, nur https)", urlHttps: "Verwenden Sie eine Adresse, die mit https:// beginnt, ohne Leerzeichen und Nicht-ASCII-Zeichen.",
     textLabel: "Was sollte die prüfende Person wissen? (optional)", counter: (used: number, limit: number) => `${used} von ${limit} Zeichen`, contactLabel: "Kontakt für Rückfragen zu diesem Fall (optional)",
     guidance: "Was Sie hier schreiben, verlässt diese Instanz. Lassen Sie Gerätenamen und Seriennummern, Benutzernamen, Dateipfade, Flottenzahlen und Zugangsdaten weg.",
     preview: "Vorschau", previewFirst: "Die Vorschau zeigt genau, was Senden überträgt. Nach jeder Änderung an einem Feld oben ist eine neue Vorschau nötig.",

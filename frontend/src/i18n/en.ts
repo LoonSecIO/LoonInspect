@@ -1362,7 +1362,7 @@ export const en = {
   submissions: {
     // #623: Request coverage, and the dialog both kinds open. Report an incorrect match appends its keys below.
     notAssessed: "This installed version is not assessed by the current feed.", requestCoverage: "Request coverage", title: { coverage: "Request coverage", correction: "Report an incorrect match" },
-    urlLabel: "Public page about this application (optional, https only)", urlHttps: "Use an address that starts with https:// and has no spaces.",
+    urlLabel: "Public page about this application (optional, https only)", urlHttps: "Use an address that starts with https://, with no spaces or non-ASCII characters.",
     textLabel: "What should the reviewer know? (optional)", counter: (used: number, limit: number) => `${used} of ${limit} characters`, contactLabel: "Contact for questions about this case (optional)",
     guidance: "What you write here leaves this instance. Leave out device names and serial numbers, usernames, file paths, fleet counts and credentials.",
     preview: "Preview", previewFirst: "Preview shows exactly what Send transmits. A change to any field above needs a fresh preview.",

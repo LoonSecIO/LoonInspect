@@ -132,9 +132,10 @@ describe("Request coverage on the Vulnerabilities page", () => {
       ["GET /api/submissions", `POST /api/submissions/${CASE.id}/status`, `POST /api/submissions/${CASE.id}/withdraw`]);
   });
 
-  it("is absent for a viewer, with the preview off, on covered and off rows, and on a platform the service does not take", () => {
+  it("is absent for a viewer, with the preview off, on covered and off rows, and where the service could take no case", () => {
     const refused: [CatalogEntry, boolean, boolean][] = [[ROW, false, true], [ROW, true, false], [{ ...ROW, vuln: { assessment: "off" } }, true, true],
-      [{ ...ROW, vuln: { assessment: "covered" } as CatalogEntry["vuln"] }, true, true], [{ ...ROW, platform: "watchos" }, true, true]];
+      [{ ...ROW, vuln: { assessment: "covered" } as CatalogEntry["vuln"] }, true, true], [{ ...ROW, platform: "watchos" }, true, true],
+      [{ ...ROW, version: "", shortVersion: null }, true, true]];
     for (const [entry, canWrite, enabled] of refused) {
       expect(coverageFor(entry, canWrite, enabled)).toBeNull();
       expect(renderToStaticMarkup(<RequestCoverage entry={entry} canWrite={canWrite} enabled={enabled} t={en} />)).toBe("");
