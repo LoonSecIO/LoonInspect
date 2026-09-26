@@ -7,8 +7,8 @@ import { ApiError, apiRequest } from "@/config/api";
 import { useHasPermission } from "@/features/auth/store";
 import { PERMISSIONS } from "@/features/auth/types";
 import type { SubmissionCaseOut } from "@/features/submissions/api";
-import { act, asksStatus, refreshWait, replaceCase } from "@/features/submissions/cases";
-import { SubmissionCasesView, type CasesRead, type RowAct } from "@/features/submissions/SubmissionCases";
+import { act, asksStatus, handlers, refreshWait, replaceCase, type RowAct } from "@/features/submissions/cases";
+import { SubmissionCasesView, type CasesRead } from "@/features/submissions/SubmissionCases";
 import { IntelligenceAccessPage } from "@/features/system/IntelligenceAccessPage";
 import { de } from "@/i18n/de";
 import { en } from "@/i18n/en";
@@ -53,12 +53,13 @@ describe("the case list on Settings › Intelligence Access (#623)", () => {
 
   it("says what the reviewer wrote, the last failure, and a withdrawal the service has not confirmed; never a key", () => {
     const failure = "No answer came from the intelligence service at api.example.org. Check DNS, network access and INTELLIGENCE_ENDPOINT, then try again; the case keeps its key.";
-    const markup = view(ready([one("a", { state: "needs_information", note: "Which build do you run?" }),
+    const markup = view(ready([one("a", { state: "needs_information", note: "Which build do you run?" }), one("d", { state: "expired", withdrawnAt: ago(60) }),
       one("b", { state: "declined", note: "The feed already covers 3.6.2." }), one("c", { lastError: failure, withdrawnAt: ago(60) })]));
     expect(markup).toContain(`${copy.question} Which build do you run?`);
     expect(markup).toContain(`${copy.reason} The feed already covers 3.6.2.`);
     expect(markup).toContain(failure);
-    expect(markup).toContain(copy.unconfirmed(new Date(ago(60)).toLocaleString("en", { dateStyle: "medium", timeStyle: "short" })));
+    // Once: an expired case is deleted there, so a withdrawal is left to confirm on the live one alone.
+    expect(markup.split(copy.unconfirmed(new Date(ago(60)).toLocaleString("en", { dateStyle: "medium", timeStyle: "short" })))).toHaveLength(2);
     expect(markup).not.toMatch(/loon_case_|case_?key/i);
   });
 
@@ -78,7 +79,7 @@ describe("the case list on Settings › Intelligence Access (#623)", () => {
     expect(buttons(view(ready([one("a", { lastStatusAt: ago(15) })])), copy.refreshIn(45))[0]).toContain('disabled=""');
     expect(buttons(view(ready([one("a", { lastStatusAt: ago(61) })])), copy.refresh)[0]).not.toContain('disabled=""');
     expect(buttons(view(ready([one("a")]), { a: { busy: true } }), copy.refresh)[0]).toContain('disabled=""');
-    // Asked only where the service can answer: never a case it has not received, one expired there, or one withdrawn.
+    // Never a case the service has not received or has expired, where the route asks nothing, nor a withdrawn one, which is final.
     expect(STATES.filter((state) => asksStatus(one("a", { state })))).toEqual(["received", "reviewing", "needs_information", "accepted", "published", "declined"]);
     const soon = "Asked too soon: a case's status is read once a minute, and not before a time the service gave. Try again in 37 seconds.";
     vi.mocked(apiRequest).mockRejectedValueOnce(new ApiError(429, soon));
@@ -106,6 +107,17 @@ describe("the case list on Settings › Intelligence Access (#623)", () => {
     const settled = view(ready(after));
     expect(buttons(settled, copy.withdraw)).toHaveLength(1);
     expect(settled).not.toContain("has not confirmed"); // a confirmed withdrawal is only its state word
+  });
+
+  it("wires the row's buttons: asking and cancelling only mark it, and Withdraw's question stays up while it posts once", async () => {
+    let acts: Record<string, RowAct> = { a: { confirming: true } };
+    const settle = vi.fn(), on = handlers((next) => void (acts = next(acts)), copy.failed, settle);
+    vi.mocked(apiRequest).mockResolvedValueOnce(one("a", { state: "withdrawn" })).mockRejectedValueOnce(new ApiError(429, "Asked too soon."));
+    const posting = [on.withdraw("a"), on.withdraw("a")];
+    expect(acts).toEqual({ a: { confirming: true, busy: true } });
+    await Promise.all([...posting, on.refresh("b"), on.ask("c"), on.cancel("d")]);
+    expect([acts, settle.mock.calls]).toEqual([{ a: {}, b: { error: "Asked too soon." }, c: { confirming: true }, d: {} }, [[one("a", { state: "withdrawn" }), expect.any(Number)]]]);
+    expect(vi.mocked(apiRequest).mock.calls.map(([path]) => path)).toEqual(["/submissions/a/withdraw", "/submissions/b/status"]);
   });
 
   it("is an administrator's section: absent for a reader without SYSTEM_WRITE, beside the paid panel for one with it", () => {

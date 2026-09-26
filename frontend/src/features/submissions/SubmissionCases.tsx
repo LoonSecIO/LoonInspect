@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/config/api";
 import { listSubmissions, type SubmissionCaseOut } from "@/features/submissions/api";
-import { act, asksStatus, refreshWait, replaceCase } from "@/features/submissions/cases";
+import { asksStatus, handlers, refreshWait, replaceCase, type Handlers, type RowAct } from "@/features/submissions/cases";
 import type { Translations } from "@/i18n/en";
 import { useLocale, type Locale } from "@/i18n/LocaleContext";
 
@@ -11,9 +11,6 @@ export type CasesRead =
   | { state: "loading" }
   | { state: "failed"; said: string | null }
   | { state: "ready"; enabled: boolean; cases: SubmissionCaseOut[] };
-/** One case's act in flight, its withdrawal question open, or the refusal its last act got. */
-export type RowAct = { busy?: boolean; confirming?: boolean; error?: string };
-type Handlers = Record<"refresh" | "ask" | "withdraw" | "cancel", (id: string) => void>;
 
 interface ViewProps {
   read: CasesRead;
@@ -60,7 +57,8 @@ export function SubmissionCasesView({ read, copy, locale, now, acts = {}, on = {
                 )}
                 {item.note && <p>{`${lead} ${item.note}`}</p>}
                 {item.lastError && <p className="text-destructive">{item.lastError}</p>}
-                {item.withdrawnAt && item.state !== "withdrawn" && <p>{copy.unconfirmed(when(item.withdrawnAt))}</p>}
+                {/* An expired case holds nothing there either: the service deleted it, so no withdrawal is left to confirm. */}
+                {item.withdrawnAt && !["withdrawn", "expired"].includes(item.state) && <p>{copy.unconfirmed(when(item.withdrawnAt))}</p>}
                 <div className="flex flex-wrap gap-2">
                   {asksStatus(item) && (
                     <Button size="sm" variant="outline" disabled={row.busy || wait > 0} onClick={() => on.refresh?.(item.id)}>
@@ -125,23 +123,9 @@ export function SubmissionCases() {
     return () => window.clearInterval(handle);
   }, [waiting]);
 
-  const mark = (id: string, row: RowAct) => setActs((all) => ({ ...all, [id]: row }));
-  function run(id: string, kind: "status" | "withdraw") {
-    // An open question stays up, its button disabled, so nothing moves under a second click.
-    setActs((all) => ({ ...all, [id]: { confirming: all[id]?.confirming, busy: true } }));
-    void act(kind, id, copy.failed).then((outcome) => {
-      if (outcome === null) return; // that case's act is already in flight
-      if ("error" in outcome) return mark(id, { error: outcome.error });
-      mark(id, {});
-      setNow(Date.now());
-      setRead((current) => (current.state === "ready" ? { ...current, cases: replaceCase(current.cases, outcome.item) } : current));
-    });
-  }
-  const on: Handlers = {
-    refresh: (id) => run(id, "status"),
-    ask: (id) => mark(id, { confirming: true }),
-    withdraw: (id) => run(id, "withdraw"),
-    cancel: (id) => mark(id, {})
-  };
+  const on = handlers(setActs, copy.failed, (item, at) => {
+    setNow(at);
+    setRead((current) => (current.state === "ready" ? { ...current, cases: replaceCase(current.cases, item) } : current));
+  });
   return <SubmissionCasesView {...{ read, copy, locale, now, acts, on }} />;
 }
