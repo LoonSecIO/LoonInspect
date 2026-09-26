@@ -2344,12 +2344,13 @@ answered for it): read that log, then repeat the act.
    `pending`, ask for status: one that reads `withdrawn` settles it too. Send is not the fix: it makes a new
    case, and what it carries leaves again.
 9. **The *Request coverage* or *Report an incorrect match* action is not on the row.** Both are for
-   administrators (`SYSTEM_WRITE`), and only while the v2 preview is on: `INTELLIGENCE_ACCESS`, with the two
-   switches that list the Intelligence Access menu entry ([Paid intelligence preview](#paid-intelligence-preview-622)).
+   administrators (`SYSTEM_WRITE`), only while the v2 preview is on (`INTELLIGENCE_ACCESS`, with the two
+   switches that list the Intelligence Access menu entry: [Paid intelligence preview](#paid-intelligence-preview-622)),
+   and only for a build with a version on a platform the service takes: macOS, iOS, iPadOS, tvOS or visionOS.
    *Request coverage* sits under a row that reads *Outside the corpus* (`unknown_app`; the chip of that name
-   lists them) on a platform the service takes: macOS, iOS, iPadOS, tvOS or visionOS, with a version to name.
-   *Report an incorrect match* is on a row with findings when the page names the release that produced them.
-   While the preview is off the menu entry hides, yet the case list stays at `/settings/intelligence-access`,
-   to refresh and withdraw.
+   lists them). *Report an incorrect match* is on a row with findings while the heading reads *Vulnerability
+   corpus as of …*: the page's answer then names the release behind them (`corpusRelease`), which the report
+   sends. While the preview is off the menu entry hides, yet the case list stays at
+   `/settings/intelligence-access`, to refresh and withdraw.
 
 **Y.** Random keys do not collide twice. Report the case's `id` and its sentence (§8); nothing was stored there.
