@@ -1359,6 +1359,20 @@ export const en = {
     detectedNone: "Not tracked by id here. Nothing has recorded this id on a Mac, so there is no first or last detection to show — which is not the same as no Macs: a Mac not inventoried since this container started keeping findings has nothing recorded yet, and an id past a build's cap is never recorded at all.",
     lookupNothing: "No build's answer names this id here. That is not a statement that your fleet is clear of it: a capped list names fewer ids than its build carries, and a build outside the corpus was never assessed at all."
   },
+  submissions: {
+    // #623: Request coverage, and the dialog both kinds open. Report an incorrect match appends its keys below.
+    notAssessed: "This installed version is not assessed by the current feed.", requestCoverage: "Request coverage", title: { coverage: "Request coverage", correction: "Report an incorrect match" },
+    urlLabel: "Public page about this application (optional, https only)", urlHttps: "Use an address that starts with https://, with no spaces or non-ASCII characters.",
+    textLabel: "What should the reviewer know? (optional)", counter: (used: number, limit: number) => `${used} of ${limit} characters`, contactLabel: "Contact for questions about this case (optional)",
+    guidance: "What you write here leaves this instance. Leave out device names and serial numbers, usernames, file paths, fleet counts and credentials.",
+    preview: "Preview", previewFirst: "Preview shows exactly what Send transmits. A change to any field above needs a fresh preview.",
+    caseKey: "Send adds one field, case_key: a key this instance mints for this case and keeps. It is never shown.",
+    excluded: (bundleId: string, pattern: string) => `${bundleId} matches “${pattern}” on this organization's data-sharing exclusion list.`,
+    override: "Send this one case anyway: a one-time override. The exclusion list stays as it is.",
+    permission: "I give permission to send this one case only, for internal investigation and improving the intelligence. Publishing a private app's identity needs separate permission. This changes no ongoing consent and earns no updates.",
+    send: "Send", close: "Close", state: (word: string) => `Case state: ${word}`, follow: "Follow this case under Settings › Intelligence Access.",
+    failed: "The request failed, and this instance gave no reason. Try again: a repeated Send reaches the same open case, never a second one. If it keeps failing, read docker compose logs app."
+  },
   jamfPatch: {
     tabLabel: "Jamf Patch",
     eyebrow: "Devices › Applications",

@@ -1222,6 +1222,20 @@ export const de: Translations = {
     detectedNone: "Hier nicht per ID nachgehalten. Nichts hat diese ID auf einem Mac erfasst, es gibt also keine erste oder letzte Erfassung zu zeigen — was nicht dasselbe ist wie keine Macs: Ein Mac, der seit Anlage des Fundregisters nicht inventarisiert wurde, hat noch nichts erfasst, und eine ID jenseits der Listengrenze eines Builds wird nie erfasst.",
     lookupNothing: "Keine Antwort eines Builds nennt hier diese ID. Das ist keine Aussage darüber, dass Ihre Flotte frei davon wäre: Eine gekürzte Liste nennt weniger IDs, als ihr Build trägt, und ein Build außerhalb des Korpus wurde nie geprüft."
   },
+  submissions: {
+    // #623: Abdeckung anfragen und der Dialog beider Arten. „Falsche Zuordnung melden“ hängt seine Schlüssel unten an.
+    notAssessed: "Diese installierte Version wird vom aktuellen Feed nicht geprüft.", requestCoverage: "Abdeckung anfragen", title: { coverage: "Abdeckung anfragen", correction: "Falsche Zuordnung melden" },
+    urlLabel: "Öffentliche Seite zu dieser Anwendung (optional, nur https)", urlHttps: "Verwenden Sie eine Adresse, die mit https:// beginnt, ohne Leerzeichen und Nicht-ASCII-Zeichen.",
+    textLabel: "Was sollte die prüfende Person wissen? (optional)", counter: (used: number, limit: number) => `${used} von ${limit} Zeichen`, contactLabel: "Kontakt für Rückfragen zu diesem Fall (optional)",
+    guidance: "Was Sie hier schreiben, verlässt diese Instanz. Lassen Sie Gerätenamen und Seriennummern, Benutzernamen, Dateipfade, Flottenzahlen und Zugangsdaten weg.",
+    preview: "Vorschau", previewFirst: "Die Vorschau zeigt genau, was Senden überträgt. Nach jeder Änderung an einem Feld oben ist eine neue Vorschau nötig.",
+    caseKey: "Senden fügt ein Feld hinzu, case_key: einen Schlüssel, den diese Instanz für diesen Fall erzeugt und behält. Er wird nie angezeigt.",
+    excluded: (bundleId: string, pattern: string) => `${bundleId} passt auf „${pattern}“ unter den ausgeschlossenen Bundle-IDs der Datenfreigabe dieser Organisation.`,
+    override: "Diesen einen Fall trotzdem senden: eine einmalige Ausnahme. Die Ausschlussliste bleibt, wie sie ist.",
+    permission: "Ich erlaube, nur diesen einen Fall zu senden, zur internen Untersuchung und zur Verbesserung der Sicherheitsinformationen. Für die Veröffentlichung der Identität einer privaten App ist eine gesonderte Erlaubnis nötig. Das ändert keine laufende Einwilligung und begründet keinen Anspruch auf Updates.",
+    send: "Senden", close: "Schließen", state: (word: string) => `Stand des Falls: ${word}`, follow: "Diesen Fall unter Einstellungen › Informationszugang verfolgen.",
+    failed: "Die Anfrage ist fehlgeschlagen, und diese Instanz nannte keinen Grund. Versuchen Sie es erneut: Ein wiederholtes Senden erreicht denselben offenen Fall, nie einen zweiten. Schlägt es weiter fehl, lesen Sie docker compose logs app."
+  },
   jamfPatch: {
     tabLabel: "Jamf Patch",
     eyebrow: "Geräte › Anwendungen",
