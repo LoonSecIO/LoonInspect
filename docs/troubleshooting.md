@@ -2285,7 +2285,7 @@ password, then a six-digit code from the authenticator app, or one recovery code
    administrator removes the factor (step 7; a password reset does not), or reportable **X**.
 4. ***Too many failed attempts.*** Wrong codes count against the same lockout as wrong
    passwords, for the same address and client. Wait it out; nothing to reset.
-5. ***Your administrator requires two-step sign-in for this account.*** Every page says so: the
+5. ***Your administrator requires two-step sign-in for this account.*** It answers every request: the
    policy (`GET /api/settings/mfa-policy`: `admins` or `everyone`) asks this account for a
    factor, and until a code confirms one only My Account's set-up, `/api/auth/me` and
    signing out answer. Set it up; that includes the administrator who turned it on.
