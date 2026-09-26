@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import secrets
 from datetime import UTC, datetime
 
 import pyotp
+from argon2 import PasswordHasher
 
 from app.core.crypto import get_encryption_key
+from app.core.security import verify_password
 from app.models.schema import Account, AuthIdentity
 
 PROVIDER = "totp"
@@ -21,7 +24,14 @@ STEP_SECONDS = 30
 DIGITS = 6
 # How long the password step's challenge stays redeemable: long enough to open the app.
 CHALLENGE_TTL_SECONDS = 300
+RECOVERY_CODES = 10
 METHOD_TOTP = "password+totp"
+METHOD_RECOVERY = "password+recovery"
+# What a recovery code is spelled from: lowercase, no 0/o or 1/l/i to misread over a call.
+_RECOVERY_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"
+# Hashed like passwords, but not passwords: eleven characters from a 31-letter alphabet is
+# 49 bits, and the policy floor that guards a chosen password does not apply to a minted one.
+_hasher = PasswordHasher()
 
 
 def identity_for(account: Account) -> AuthIdentity | None:
@@ -58,6 +68,28 @@ def verify_code(secret: str, code: str, last_step: int | None, *, now: datetime 
         if hmac.compare_digest(totp.at(step * STEP_SECONDS), digits):
             return step
     return None
+
+
+def mint_recovery_codes() -> tuple[list[str], list[str]]:
+    """Ten codes and their argon2id hashes. The codes are shown once; only the hashes are stored."""
+    codes = ["".join(secrets.choice(_RECOVERY_ALPHABET) for _ in range(10)) for _ in range(RECOVERY_CODES)]
+    codes = [f"{code[:5]}-{code[5:]}" for code in codes]
+    return codes, [_hasher.hash(code) for code in codes]
+
+
+def consume_recovery_code(identity: AuthIdentity, code: str) -> bool:
+    """Spend one recovery code. Hyphens, spaces and case are forgiven; a code works once."""
+    given = code.strip().lower().replace("-", "").replace(" ", "")
+    if len(given) != 10:
+        return False
+    given = f"{given[:5]}-{given[5:]}"
+    remaining = list(identity.recovery_codes or [])
+    for index, stored in enumerate(remaining):
+        if verify_password(stored, given):
+            del remaining[index]
+            identity.recovery_codes = remaining
+            return True
+    return False
 
 
 def _challenge_key() -> bytes:
