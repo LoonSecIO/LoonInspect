@@ -16,6 +16,7 @@ interface AuthStore {
    *  answers first (#653); the store stays signed out until `loginMfa` redeems it. */
   login: (email: string, password: string) => Promise<MfaChallenge | null>;
   loginMfa: (challenge: string, code: string) => Promise<void>;
+  refreshUser: () => Promise<void>;
   completeSetup: (input: SetupInput) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -62,6 +63,10 @@ export const useAuthStore = create<AuthStore>((set) => ({
     set({ status: "authenticated", user: await authApi.loginMfa(challenge, code) });
   },
 
+  async refreshUser() {
+    set({ user: await authApi.getCurrentUser() });
+  },
+
   async completeSetup(input) {
     // Setup signs the new administrator straight in — the server issues the session
     // with the 201, so there's no reason to make them log in again immediately.
@@ -82,6 +87,12 @@ export const useAuthStore = create<AuthStore>((set) => ({
 setUnauthorizedHandler(() => {
   useAuthStore.setState({ status: "unauthenticated", user: null });
 });
+
+export const MY_ACCOUNT = "/settings/my-account";
+/** While the policy holds this account (#653) the server answers only My Account's set-up, so every other page goes there. */
+export function enrolmentRedirect(user: AuthUser | null, pathname: string): string | null {
+  return user?.mfaEnrolmentRequired && pathname !== MY_ACCOUNT ? MY_ACCOUNT : null;
+}
 
 /** Presentational only. Hiding a control the caller can't use is a courtesy; the
  *  server rejects the request regardless of what the UI chose to render. */

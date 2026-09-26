@@ -101,6 +101,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0  # the migration contract step reads the last release's tag and the history since
 
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
@@ -163,6 +165,10 @@ jobs:
         run: |
           export ENCRYPTION_KEY="$(uv run --frozen python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
           uv run --frozen pytest -q
+
+      - name: Migration contract
+        if: ${{ !cancelled() }}  # after failed tests too, so a red job shows both (docs/BRANCHING.md §1.1, #655)
+        run: ../.github/scripts/check_migration_contract.py
 
   image:
     name: Docker image

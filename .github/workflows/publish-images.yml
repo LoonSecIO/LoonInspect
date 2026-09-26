@@ -4,7 +4,7 @@
 # ops/aws/README.md), which keeps "what is running" answerable from the tag.
 #
 # Auth is OIDC, no stored keys: the role comes from ops/aws/images.template.yml
-# and its trust policy is main-branch-only by default. That means dispatching
+# and its trust policy is main (plus v* tags, for release.yml) by default: dispatching
 # this workflow from any other branch will fail at the credentials step by
 # design — merge first, or deliberately widen OidcSubjectPattern and narrow it
 # back after.

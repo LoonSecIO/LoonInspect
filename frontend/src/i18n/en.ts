@@ -404,7 +404,20 @@ export const en = {
     errorLoading: "Could not load accounts.",
     errorCreating: "Could not create the account.",
     errorUpdating: "Could not update the account.",
-    errorResetting: "Could not reset the password."
+    errorResetting: "Could not reset the password.",
+    removeFactor: "Remove second factor", errorRemovingFactor: "Could not remove the second factor.",
+    removeFactorConfirm: (email: string) => `Remove the second factor of ${email}? Every session of that account is signed out.`,
+    mfaPolicy: {
+      title: "Two-step sign-in policy", loading: "Reading the policy…", failed: "Could not change the policy.",
+      description: "Who must type a six-digit code from an authenticator app after the password. Break-glass accounts are never asked.",
+      unreadable: "The policy could not be read, which is not the same as off. Reload the page.",
+      names: { off: "Off", admins: "Administrators", everyone: "Everyone" },
+      confirm: {
+        off: "Turn it off? Nobody is held on My Account any more; accounts that set up two-step sign-in keep signing in with a code.",
+        admins: "Require it of administrators? From their next request, every administrator without two-step sign-in, yourself included, can open only My Account until they set it up.",
+        everyone: "Require it of everyone? From their next request, every account without two-step sign-in, yours included, can open only My Account until it is set up."
+      }
+    }
   },
   myAccount: {
     title: "My Account",
@@ -424,6 +437,8 @@ export const en = {
     errorChanging: "Could not change the password.",
     sessionsHint:
       "Changing your password signs out your other sessions. API tokens keep working — revoke those separately if you need to.",
+    // The enrolment gate's own sentence (#653), word for word, as docs/troubleshooting.md §20 step 5 quotes it.
+    held: "Your administrator requires two-step sign-in for this account. Set it up on My Account; nothing else opens until then.",
     // Two-step sign-in (#653). A refusal shows the server's sentence; `failed` is for an answer that never came.
     twoStep: {
       title: "Two-step sign-in",
@@ -442,7 +457,9 @@ export const en = {
       codesTitle: "Two-step sign-in is on. Save your recovery codes now.",
       codesOnce: "Each code signs you in once without your phone. They are shown only this once and never again, so keep them somewhere safe, such as a password manager.",
       copy: "Copy", copied: "Copied", saved: "I have saved these",
-      copyRefused: "This browser refused to copy. Select the codes above and copy them yourself."
+      copyRefused: "This browser refused to copy. Select the codes above and copy them yourself.",
+      renew: "New recovery codes", renewSubmit: "Replace my codes",
+      renewLabel: "Ten new codes replace every earlier one, used or not. Type the six-digit code your authenticator app shows now"
     }
   },
   support: {

@@ -433,6 +433,13 @@ The backup is the first line because the downgrade path is manual and has to be 
 **Updates** prints, with the latest release's tag filled in, since #407 made the update
 notice about releases rather than about `main`.
 
+**Read the release's upgrade notes before you take it.** Publishing a release appends them to
+its page (the tag under Settings › Support › **Updates** › *Latest release* links there): the
+migrations the update runs at first start and, under *Before you update*, each one that
+needs a maintenance window or free disk. From `v1.0.0` that includes `e621c4a8b903`, which
+rebuilds the installed-apps index while the instance answers nothing
+([`troubleshooting.md`](troubleshooting.md) §4 step 2 says what to expect).
+
 Before and after, the two revisions worth knowing:
 
 ```bash
@@ -494,6 +501,10 @@ is a migration that has to say so in its own docstring.
 ---
 
 ## 5. Rollback
+
+From `v2.0.0` on, a release's migrations leave the schema readable by the release before it
+([`BRANCHING.md`](BRANCHING.md#11-release-planning-milestones-labels-and-tags) §1.1), but an
+older image still crash-loops against a newer database (below): this section is the way back.
 
 ### Do it before you swap the image back
 

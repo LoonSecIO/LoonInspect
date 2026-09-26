@@ -2280,18 +2280,19 @@ password, then a six-digit code from the authenticator app, or one recovery code
    minutes from the password step. Start again from the password.
 3. **No phone.** A recovery code, shown once when the factor was confirmed, signs you in
    in place of the code; each works once, hyphens and case do not matter, and
-   `GET /api/auth/mfa` says how many remain; a fresh code from the phone, sent signed in to
-   `POST /api/auth/mfa/recovery-codes`, replaces all ten. With neither phone nor codes, another
+   My Account says how many remain; its *New recovery codes*, for a fresh code from the phone,
+   replaces all ten. With neither phone nor codes, another
    administrator removes the factor (step 7; a password reset does not), or reportable **X**.
 4. ***Too many failed attempts.*** Wrong codes count against the same lockout as wrong
    passwords, for the same address and client. Wait it out; nothing to reset.
-5. ***Your administrator requires two-step sign-in for this account.*** It answers every request: the
-   policy (`GET /api/settings/mfa-policy`: `admins` or `everyone`) asks this account for a
+5. ***Your administrator requires two-step sign-in for this account.*** Every page opens My
+   Account and says so there: the policy (Settings › Accounts) asks this account for a
    factor, and until a code confirms one only My Account's set-up, `/api/auth/me` and
    signing out answer. Set it up; that includes the administrator who turned it on.
+   Still there once the recovery codes show? Reload the page.
 6. **The break-glass account is not asked**, by design and under every policy: it is the way
    in when phones are lost. Its sign-in says `the policy exempts it` in the container log.
-7. **An administrator removed my second factor** (`DELETE /api/accounts/{id}/mfa`, never
+7. **An administrator removed my second factor** (Accounts › *Remove second factor*, never
    one's own; `auth.mfa.removed` in the audit log names who). Every session ended, and the
    old *LoonInspect* entry and recovery codes are dead: sign in with the password (step 5 if the policy asks).
 

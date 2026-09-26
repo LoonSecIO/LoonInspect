@@ -53,6 +53,7 @@ def _to_out(account: Account) -> AccountSummaryOut:
         external_source=account.external_source,
         created_at=account.created_at,
         last_login_at=account.last_login_at,
+        mfa_enrolled=mfa.confirmed(account) is not None,
     )
 
 
@@ -147,7 +148,7 @@ async def create(
         # arbiter; the loser gets the answer the check would have given it.
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account with that email already exists") from exc
-    await db.refresh(account, ["roles"])
+    await db.refresh(account, ["roles", "identities"])
 
     audit(
         AuditAction.ACCOUNT_CREATED,

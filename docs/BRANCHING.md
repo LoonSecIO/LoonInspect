@@ -77,6 +77,17 @@ A feature flag does not make a breaking schema change safe. There is no standing
 branch or maintenance branch. If a release needs a different branching approach,
 record a maintainer ruling under §9 first.
 
+**Migrations expand in one release and contract in the next** (#655). A migration may add
+to the schema but not drop or rename a table or column the previous release reads: take it
+out of the models in release N and drop it in N+1. CI holds every migration added since the
+newest `vMAJOR.MINOR.PATCH` tag to that tag's models (`.github/scripts/check_migration_contract.py`);
+type, nullability and default changes are for review. The rule starts at v2.0.0, and from
+there one step back is meant to be an image swap with no `alembic downgrade`, which also needs
+the older image to start against a database one release ahead instead of crash-looping, as
+it does today; until then, [`operations.md`](operations.md) §5 is the way back. A migration
+that needs a maintenance window or free disk says so in a `# release-note:` line, and
+`.github/workflows/release.yml` puts those in a published release's upgrade notes.
+
 Bug fixes can ship as `v1.0.x` without waiting for the v2 milestone. Compatible user-facing
 features use a minor release such as `v1.1.0`; milestone membership does not determine
 whether a change is a patch. Review the whole candidate commit, including already-merged
@@ -860,3 +871,4 @@ Appended 2026-09-05, immediately before the flip to public:
 
 | v1.14 | 2026-09-20 | Release planning in §1.1: milestones, immutable release tags, `future` replacing `v5`, and independent v1.x releases; §8.2 marked historical. |
 | v1.15 | 2026-09-25 | §1.1: every release runs a feature-flag gate, with a promote, keep or delete verdict per switch recorded in `docs/feature-flags.md` and the release notes (#652). |
+| v1.16 | 2026-09-26 | §1.1: migrations expand in one release and contract in the next, checked in CI against the last release's models; a published release tags its images and gets its upgrade notes (#655). |

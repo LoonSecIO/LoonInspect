@@ -44,3 +44,12 @@ export function enrolMfa(): Promise<MfaEnrolment> {
 export function confirmMfa(code: string): Promise<MfaConfirmation> {
   return apiRequest<MfaConfirmation>("/auth/mfa/confirm", { method: "POST", json: { code } });
 }
+
+export function regenerateRecoveryCodes(code: string): Promise<MfaConfirmation> {
+  return apiRequest<MfaConfirmation>("/auth/mfa/recovery-codes", { method: "POST", json: { code } });
+}
+
+/** The lost-phone path, never one's own: every session of the account ends, and it signs in with the password. */
+export function removeSecondFactor(id: string): Promise<void> {
+  return apiRequest<void>(`/accounts/${encodeURIComponent(id)}/mfa`, { method: "DELETE" });
+}

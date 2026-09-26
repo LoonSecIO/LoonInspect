@@ -370,7 +370,20 @@ export const de: Translations = {
     errorLoading: "Konten konnten nicht geladen werden.",
     errorCreating: "Das Konto konnte nicht erstellt werden.",
     errorUpdating: "Das Konto konnte nicht aktualisiert werden.",
-    errorResetting: "Das Passwort konnte nicht zurückgesetzt werden."
+    errorResetting: "Das Passwort konnte nicht zurückgesetzt werden.",
+    removeFactor: "Zweiten Faktor entfernen", errorRemovingFactor: "Der zweite Faktor konnte nicht entfernt werden.",
+    removeFactorConfirm: (email: string) => `Den zweiten Faktor von ${email} entfernen? Jede Sitzung dieses Kontos wird abgemeldet.`,
+    mfaPolicy: {
+      title: "Richtlinie für die Anmeldung in zwei Schritten", loading: "Richtlinie wird gelesen…", failed: "Die Richtlinie konnte nicht geändert werden.",
+      description: "Wer nach dem Passwort einen sechsstelligen Code aus einer Authenticator-App eingeben muss. Notfallzugänge werden nie gefragt.",
+      unreadable: "Die Richtlinie konnte nicht gelesen werden – und unbekannt ist nicht dasselbe wie aus. Laden Sie die Seite neu.",
+      names: { off: "Aus", admins: "Administratoren", everyone: "Alle" },
+      confirm: {
+        off: "Ausschalten? Niemand wird mehr auf „Mein Konto“ festgehalten; Konten mit Anmeldung in zwei Schritten melden sich weiter mit einem Code an.",
+        admins: "Für Administratoren verlangen? Ab seiner nächsten Anfrage kann jedes Administratorkonto ohne Anmeldung in zwei Schritten, Ihres eingeschlossen, nur noch „Mein Konto“ öffnen, bis sie eingerichtet ist.",
+        everyone: "Für alle verlangen? Ab seiner nächsten Anfrage kann jedes Konto ohne Anmeldung in zwei Schritten, Ihres eingeschlossen, nur noch „Mein Konto“ öffnen, bis sie eingerichtet ist."
+      }
+    }
   },
   myAccount: {
     title: "Mein Konto",
@@ -390,6 +403,7 @@ export const de: Translations = {
     errorChanging: "Das Passwort konnte nicht geändert werden.",
     sessionsHint:
       "Beim Ändern des Passworts werden Ihre anderen Sitzungen abgemeldet. API-Token bleiben gültig – widerrufen Sie diese bei Bedarf separat.",
+    held: "Ihr Administrator verlangt für dieses Konto die Anmeldung in zwei Schritten. Richten Sie sie unter „Mein Konto“ ein; bis dahin öffnet sich nichts anderes.",
     twoStep: {
       title: "Anmeldung in zwei Schritten",
       loading: "Anmeldung in zwei Schritten wird geprüft…",
@@ -407,7 +421,9 @@ export const de: Translations = {
       codesTitle: "Die Anmeldung in zwei Schritten ist aktiv. Speichern Sie jetzt Ihre Wiederherstellungscodes.",
       codesOnce: "Jeder Code meldet Sie einmal ohne Ihr Telefon an. Die Codes werden nur dieses eine Mal angezeigt und nie wieder – bewahren Sie sie sicher auf, etwa in einem Passwortmanager.",
       copy: "Kopieren", copied: "Kopiert", saved: "Ich habe sie gespeichert",
-      copyRefused: "Dieser Browser hat das Kopieren verweigert. Markieren Sie die Codes oben und kopieren Sie sie selbst."
+      copyRefused: "Dieser Browser hat das Kopieren verweigert. Markieren Sie die Codes oben und kopieren Sie sie selbst.",
+      renew: "Neue Wiederherstellungscodes", renewSubmit: "Meine Codes ersetzen",
+      renewLabel: "Zehn neue Codes ersetzen alle bisherigen, benutzt oder nicht. Geben Sie den sechsstelligen Code ein, den Ihre Authenticator-App gerade anzeigt"
     }
   },
   support: {

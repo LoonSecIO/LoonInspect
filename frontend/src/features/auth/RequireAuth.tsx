@@ -1,12 +1,13 @@
 import { useEffect } from "react";
 import { Navigate, Outlet, useLocation } from "react-router";
-import { useAuthStore } from "@/features/auth/store";
+import { enrolmentRedirect, useAuthStore } from "@/features/auth/store";
 import { useLocale } from "@/i18n/LocaleContext";
 
 export function RequireAuth() {
   const { t } = useLocale();
   const location = useLocation();
   const status = useAuthStore((state) => state.status);
+  const user = useAuthStore((state) => state.user);
   const bootstrap = useAuthStore((state) => state.bootstrap);
 
   useEffect(() => {
@@ -32,6 +33,9 @@ export function RequireAuth() {
     // Carry the attempted path so login can return them where they were headed.
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   }
+
+  const held = enrolmentRedirect(user, location.pathname);
+  if (held) return <Navigate to={held} replace />;
 
   return <Outlet />;
 }

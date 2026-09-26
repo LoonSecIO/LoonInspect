@@ -25,6 +25,8 @@ class AccountSummaryOut(_CamelModel):
     external_source: str | None
     created_at: datetime
     last_login_at: datetime | None
+    # A confirmed second factor guards this account's sign-in (#653): what the Accounts page can remove.
+    mfa_enrolled: bool
 
 
 class AccountCreateRequest(_CamelModel):
