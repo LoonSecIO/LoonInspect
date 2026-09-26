@@ -399,7 +399,7 @@ export const en = {
   },
   myAccount: {
     title: "My Account",
-    description: "Your profile and password.",
+    description: "Your profile, password and two-step sign-in.",
     name: "Name",
     email: "Email",
     roles: "Roles",
@@ -414,7 +414,27 @@ export const en = {
     wrongCurrent: "Your current password is incorrect.",
     errorChanging: "Could not change the password.",
     sessionsHint:
-      "Changing your password signs out your other sessions. API tokens keep working — revoke those separately if you need to."
+      "Changing your password signs out your other sessions. API tokens keep working — revoke those separately if you need to.",
+    // Two-step sign-in (#653). A refusal shows the server's sentence; `failed` is for an answer that never came.
+    twoStep: {
+      title: "Two-step sign-in",
+      loading: "Checking two-step sign-in…",
+      unreadable: "Whether two-step sign-in is on for this account could not be read, which is not the same as off. Reload the page; if it keeps happening, LoonInspect is not answering, and Settings › Support says where to report that.",
+      off: "Off. When it is on, signing in asks for a six-digit code from an authenticator app after your password, so a stolen password alone cannot open this account.",
+      pending: "Off: set-up was started and not finished. Setting up again shows a new QR code; delete any LoonInspect entry the earlier one left in your authenticator app.",
+      onSince: (date: string) => `On since ${date}.`,
+      codesLeft: (count: number) => (count === 1 ? "1 recovery code remaining." : `${count} recovery codes remaining.`),
+      setUp: "Set up", starting: "Starting…", confirm: "Turn on", confirming: "Checking…", cancel: "Cancel",
+      scan: "Scan this QR code with the authenticator app on your phone.",
+      qrTitle: "QR code for your authenticator app",
+      manual: "Cannot scan it? Type this key into the app instead:",
+      codeLabel: "Then type the six-digit code the app shows",
+      failed: "LoonInspect's answer did not arrive or could not be read. Reload the page to see whether two-step sign-in is on, then try again.",
+      codesTitle: "Two-step sign-in is on. Save your recovery codes now.",
+      codesOnce: "Each code signs you in once without your phone. They are shown only this once and never again, so keep them somewhere safe, such as a password manager.",
+      copy: "Copy", copied: "Copied", saved: "I have saved these",
+      copyRefused: "This browser refused to copy. Select the codes above and copy them yourself."
+    }
   },
   support: {
     title: "Support",
