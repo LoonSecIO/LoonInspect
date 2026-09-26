@@ -29,7 +29,7 @@ describe("the two-step sign-in policy on Accounts (#653)", () => {
     expect(reader).not.toContain("<button");
     expect(view({ state: "failed" }, true)).toContain(words.unreadable); // unknown, never "off"
     const writer = view({ state: "ready", policy: "off" }, true);
-    for (const name of ["Off", "Administrators", "Everyone"]) expect(writer).toContain(`>${name}</button>`);
+    expect(writer.match(/>(Off|Administrators|Everyone)<\/\w+>/g)).toEqual([">Off</button>", ">Administrators</button>", ">Everyone</button>"]);
     expect(writer).toMatch(/aria-pressed="true"[^>]*>Off</);
     expect(view({ state: "ready", policy: "off" }, true, "everyone")).toContain(words.confirm.everyone);
     expect(words.confirm.admins).toContain("next request, every administrator without two-step sign-in, yourself included,");
