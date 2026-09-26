@@ -2293,7 +2293,7 @@ password, then a six-digit code from the authenticator app, or one recovery code
    in when phones are lost. Its sign-in says `the policy exempts it` in the container log.
 7. **An administrator removed my second factor** (`DELETE /api/accounts/{id}/mfa`, never
    one's own; `auth.mfa.removed` in the audit log names who). Every session ended, and the
-   old *LoonInspect* entry and recovery codes are dead: sign in with the password, then step 5.
+   old *LoonInspect* entry and recovery codes are dead: sign in with the password (step 5 if the policy asks).
 
 **X.** Phone and recovery codes are gone, and no other administrator, break-glass included, can
 remove the factor. Report the account's email (§8); the account keeps its data meanwhile.
