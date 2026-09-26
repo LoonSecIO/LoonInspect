@@ -16,7 +16,9 @@ first-failure insert is written.
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException, Response
@@ -31,10 +33,12 @@ from app.api.auth import (
 )
 from app.core import auth as auth_module
 from app.core.auth import (
+    _ENROLMENT_EXACT,
     _PROTECTED_NON_API,
     _PUBLIC_EXACT,
     _SAFE_METHODS,
     CSRF_HEADER,
+    MFA_ENROLMENT_REQUIRED,
     Principal,
     _verify_csrf,
     authenticate,
@@ -233,6 +237,18 @@ async def test_a_public_path_is_not_authenticated_at_all(monkeypatch) -> None:
     monkeypatch.setattr(auth_module, "_authenticate_session", never)
     monkeypatch.setattr(auth_module, "_authenticate_bearer", never)
     await authenticate(_request("POST", path="/api/auth/login"), Response(), db=object())
+
+
+async def test_a_session_owing_a_second_factor_reaches_who_it_is_and_enrolment_only(monkeypatch) -> None:
+    """Pinned like the allowlist: a path added here opens without the second factor the policy asks for (#653)."""
+    assert {"/api/auth/me", "/api/auth/mfa", "/api/auth/mfa/enrol", "/api/auth/mfa/confirm"} == _ENROLMENT_EXACT
+    owed = replace(_principal_via(monkeypatch, "session"), mfa_enrolment_required=True)
+    monkeypatch.setattr(auth_module, "_authenticate_session", AsyncMock(return_value=owed))
+    for path in _ENROLMENT_EXACT:
+        await authenticate(_request("GET", path=path), Response(), db=object())
+    with pytest.raises(HTTPException) as refused:
+        await authenticate(_request("GET", path="/api/auth/mfa/recovery-codes"), Response(), db=object())
+    assert refused.value.status_code == 403 and refused.value.detail == MFA_ENROLMENT_REQUIRED
 
 
 async def test_no_credential_is_a_401(monkeypatch) -> None:

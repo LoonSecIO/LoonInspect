@@ -69,6 +69,9 @@ class AccountOut(_CamelModel):
     # Absent on the pre-authentication answers (setup); present on login and /me.
     tenant: TenantRef | None = None
     tenants: list[MembershipOut] = []
+    # The tenant's policy asks this account for a second factor it has not set up (#653).
+    # Until it does, only this answer and the enrolment routes open: the page routes there.
+    mfa_enrolment_required: bool = False
 
 
 class SwitchTenantRequest(_CamelModel):

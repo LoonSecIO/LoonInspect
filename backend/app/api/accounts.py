@@ -4,10 +4,11 @@ import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import mfa
 from app.core.audit import AuditAction, audit
 from app.core.auth import (
     Principal,
@@ -20,7 +21,7 @@ from app.core.bootstrap import create_account
 from app.core.database import get_db
 from app.core.permissions import Permission, Role
 from app.core.security import hash_password
-from app.models.schema import Account, AccountRole, AuthIdentity
+from app.models.schema import Account, AccountRole, AuthIdentity, UserSession
 from app.schemas.accounts import (
     AccountCreateRequest,
     AccountSummaryOut,
@@ -275,3 +276,28 @@ async def reset_password(
         email=account.email,
     )
     logger.warning("password reset by administrator", extra={"account_id": account.id})
+
+
+@router.delete("/{account_id}/mfa", status_code=204, dependencies=[Depends(require(Permission.ACCOUNT_WRITE))])
+async def remove_second_factor(
+    account_id: str,
+    principal: Principal = Depends(current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """The lost-phone path (#653). The account's sessions are revoked, and let go of the factor
+    (`sessions.identity_id` references it), before its row goes; the next sign-in is the password."""
+    account = await _get_or_404(db, account_id)
+    if account.id == principal.account.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You cannot remove your own second factor here. Ask another administrator to remove it.",
+        )
+    identity = mfa.identity_for(account)
+    if identity is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="That account has no second factor to remove.")
+    await revoke_all_sessions(db, account.id)
+    await db.execute(update(UserSession).where(UserSession.identity_id == identity.id).values(identity_id=None))
+    await db.delete(identity)
+    await db.commit()
+    audit(AuditAction.MFA_REMOVED, target_type="account", target_id=account.id, email=account.email)
+    logger.warning("second factor removed by an administrator", extra={"account_id": account.id, "by": principal.account.id})
