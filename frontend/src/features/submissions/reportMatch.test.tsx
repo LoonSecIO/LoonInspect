@@ -16,7 +16,7 @@ const RELEASE = "4f1c".repeat(16); // a manifest signature: 64 lowercase hex
 const IDS = ["CVE-2024-0208", "CVE-2024-0209", "LoonVD-2026-000042"];
 const ROW = { id: 9, name: "Wireshark", bundleId: "org.wireshark.Wireshark", version: "4.2.0", shortVersion: null, platform: "macos",
   vuln: { assessment: "covered", corpusAsOf: "2026-09-20", counts: { total: 17 }, vulnIDs: IDS, vulnIDsTruncated: true } } as unknown as CatalogEntry;
-const NAMED = correctionFor(ROW, true, true, RELEASE)!;
+const NAMED = correctionFor(ROW, true, true, RELEASE)!.named;
 
 const answers: Response[] = [];
 const fetchStub = vi.fn<typeof fetch>(async () => answers.shift() ?? Promise.reject(new TypeError("Failed to fetch")));
@@ -32,8 +32,9 @@ beforeEach(() => { vi.stubGlobal("document", { cookie: "" }); vi.stubGlobal("fet
 afterEach(() => { vi.unstubAllGlobals(); fetchStub.mockClear(); answers.length = 0; });
 
 describe("Report an incorrect match on the Vulnerabilities page", () => {
-  it("is offered on a covered build that names a finding: the row's own build, its first id, and the list's release", () => {
-    expect(NAMED).toEqual({ ...caseOf(ROW, "coverage"), kind: "correction", finding: IDS[0], findingRelease: RELEASE });
+  it("is offered on a covered build that names a finding: the row's own build, its ids to pick from, and the list's release", () => {
+    expect(correctionFor(ROW, true, true, RELEASE)).toEqual(
+      { named: { ...caseOf(ROW, "coverage"), kind: "correction", finding: IDS[0], findingRelease: RELEASE }, findings: IDS });
     expect(action(ROW, true, true, RELEASE)).toMatch(new RegExp(`<button[^>]*>${copy.reportMatch}</button>`));
     expect(action(ROW, true, true, RELEASE, de)).toContain(`>${de.submissions.reportMatch}</button>`);
   });

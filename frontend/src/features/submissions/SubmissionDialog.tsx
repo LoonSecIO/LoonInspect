@@ -4,7 +4,7 @@ import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { CatalogEntry } from "@/features/catalog/types";
-import { askPreview, askSend, bodyOf, canSend, correctionFor, coverageFor, dialog, findingsOf, HTTPS, OPENED, oneAtATime, TEXT_LIMIT, type Dialog, type Move, type Named, type Typed } from "@/features/submissions/dialog";
+import { askPreview, askSend, bodyOf, canSend, correctionFor, coverageFor, dialog, HTTPS, OPENED, oneAtATime, TEXT_LIMIT, type Dialog, type Move, type Named, type Typed } from "@/features/submissions/dialog";
 import type { Translations } from "@/i18n/en";
 
 type Copy = Translations["submissions"];
@@ -95,12 +95,12 @@ export function RequestCoverage({ entry, canWrite, enabled, t }: { entry: Catalo
 /** Report an incorrect match under a `covered` build that names a finding (#623), with the release its answer came from. */
 export function ReportMatch({ entry, canWrite, enabled, release, t }: { entry: CatalogEntry; canWrite: boolean; enabled: boolean; release: string | null; t: Translations }) {
   const [open, setOpen] = useState(false);
-  const named = correctionFor(entry, canWrite, enabled, release);
-  if (named === null) return null;
+  const correction = correctionFor(entry, canWrite, enabled, release);
+  if (correction === null) return null;
   return (
     <div className="mt-1">
       <Button size="sm" variant="outline" onClick={() => setOpen(true)}>{t.submissions.reportMatch}</Button>
-      {open && <SubmissionDialog named={named} findings={findingsOf(entry)} copy={t.submissions} onClose={() => setOpen(false)} />}
+      {open && <SubmissionDialog {...correction} copy={t.submissions} onClose={() => setOpen(false)} />}
     </div>
   );
 }

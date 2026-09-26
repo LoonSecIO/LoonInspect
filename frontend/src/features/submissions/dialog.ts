@@ -70,13 +70,11 @@ export function caseOf(entry: CatalogEntry, kind: SubmissionKind): Named | null 
 export const coverageFor = (entry: CatalogEntry, canWrite: boolean, enabled: boolean): Named | null =>
   canWrite && enabled && entry.vuln.assessment === "unknown_app" ? caseOf(entry, "coverage") : null;
 
-/** The ids a correction may name: those the row's `covered` answer lists, never one past its cap. */
-export const findingsOf = (entry: CatalogEntry): string[] => (entry.vuln.assessment === "covered" ? entry.vuln.vulnIDs : []);
-
 /** Report an incorrect match: a `covered` build naming a finding, an administrator, the preview on, and the release
- *  the page's answers were judged under (`corpusRelease`). The row's first id stands until another is picked. */
-export function correctionFor(entry: CatalogEntry, canWrite: boolean, enabled: boolean, release: string | null): Named | null {
-  const [finding] = findingsOf(entry);
-  const named = canWrite && enabled && release && finding ? caseOf(entry, "correction") : null;
-  return named && { ...named, finding, findingRelease: release };
+ *  the page's answers were judged under (`corpusRelease`). The dialog picks from the ids the row's answer lists and
+ *  no others, none past its cap; the first stands until another is picked. */
+export function correctionFor(entry: CatalogEntry, canWrite: boolean, enabled: boolean, release: string | null): { named: Named; findings: string[] } | null {
+  const findings = entry.vuln.assessment === "covered" ? entry.vuln.vulnIDs : [];
+  const named = canWrite && enabled && release && findings.length > 0 ? caseOf(entry, "correction") : null;
+  return named && { named: { ...named, finding: findings[0], findingRelease: release }, findings };
 }
