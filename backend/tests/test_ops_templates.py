@@ -11,6 +11,11 @@ into a template pins the repository to one account forever.
 pod-data.template.yml (#398), the per-pod stack that outlives every deploy, is pinned
 where drift would lose or expose a pod's data: the database, the secrets, the security
 groups that admit only the pod's own task, and what survives the stack's deletion.
+
+images.template.yml's push role (#673) is held to the workflows that assume it: each
+`aws ecr` call their run steps make needs an action the push policy grants, on the two
+repositories. The template is deployed by hand (ops/aws/README.md §1), so this proves the
+file, not the account.
 """
 
 from __future__ import annotations
@@ -28,6 +33,8 @@ REPO = Path(__file__).resolve().parents[2]
 OPS_AWS = REPO / "ops" / "aws"
 INGRESS = OPS_AWS / "pods-ingress.template.yml"
 POD_DATA = OPS_AWS / "pod-data.template.yml"
+IMAGES = OPS_AWS / "images.template.yml"
+WORKFLOWS = REPO / ".github" / "workflows"
 
 # The pods naming ruling (2026-08-28). ingress-<anything> is PodName's pattern's to refuse.
 RESERVED_POD_NAMES = {
@@ -41,6 +48,10 @@ ESTATE_LITERALS = {
     "an AWS account id": re.compile(r"\d{12}"),
     "a Route 53 hosted zone id": re.compile(r"\bZ[0-9A-Z]{9,}\b"),
 }
+
+# An `aws ecr` verb is its API call in kebab case, and ECR's IAM actions are named after the calls.
+# get-login-password is the exception: a verb of the CLI's own that calls GetAuthorizationToken.
+CLI_VERB_ACTIONS = {"get-login-password": "ecr:GetAuthorizationToken"}
 
 
 class CfnLoader(yaml.SafeLoader):
@@ -257,6 +268,32 @@ def test_pod_data_outputs_are_plain_and_named_for_the_compute_stack(pod_data):
     assert set(outputs) == {*names.split(), "TaskSecurityGroupId", "LogGroupName"}
     assert not any("Export" in o for o in outputs.values()), "outputs are parameters to the compute stack, not Exports"
     assert len(pod_data["Description"]) <= 1024
+
+
+def _ecr_verbs(workflow: Path) -> set[str]:
+    """Every `aws ecr <verb>` in a workflow's run steps, the only place a workflow runs a command."""
+    jobs = yaml.safe_load(workflow.read_text())["jobs"].values()
+    scripts = [step.get("run", "") for job in jobs for step in job.get("steps", [])]
+    return {verb for script in scripts for verb in re.findall(r"\baws\s+ecr\s+([a-z][a-z-]*)", script)}
+
+
+def test_push_policy_grants_every_ecr_call_a_workflow_on_its_role_makes():
+    (policy,) = load(IMAGES)["Resources"]["PushRole"]["Properties"]["Policies"]
+    grants = {}  # each allowed action, and the Resource it is allowed on
+    for statement in policy["PolicyDocument"]["Statement"]:
+        if statement["Effect"] == "Allow":
+            actions = statement["Action"]
+            grants.update(dict.fromkeys([actions] if isinstance(actions, str) else actions, statement["Resource"]))
+    workflows = [p for p in sorted(WORKFLOWS.glob("*.yml")) if "vars.AWS_ECR_PUSH_ROLE_ARN" in p.read_text()]
+    calls = {(workflow.name, verb) for workflow in workflows for verb in _ecr_verbs(workflow)}
+    # Read, not assumed: the calls publish-images.yml and release.yml make today are among those found.
+    assert {("publish-images.yml", "describe-images"), ("release.yml", "batch-get-image"), ("release.yml", "put-image")} <= calls
+    repositories = [{"Fn::GetAtt": ["AppRepository", "Arn"]}, {"Fn::GetAtt": ["DbRepository", "Arn"]}]
+    for workflow, verb in sorted(calls):
+        action = CLI_VERB_ACTIONS.get(verb, "ecr:" + verb.title().replace("-", ""))
+        assert action in grants, f"{workflow} runs `aws ecr {verb}`, which needs {action}; the push policy does not grant it"
+        scope = "*" if action == "ecr:GetAuthorizationToken" else repositories
+        assert grants[action] == scope, f"{action} is granted on {grants[action]}, not {scope}"
 
 
 @pytest.mark.parametrize("path", sorted(OPS_AWS.glob("*.yml")), ids=lambda p: p.name)
