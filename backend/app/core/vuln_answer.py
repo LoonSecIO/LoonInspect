@@ -219,21 +219,37 @@ def counted(counts: object, band: str):
     return case((func.jsonb_typeof(value) == "number", cast(value.astext, Integer)))
 
 
-def stored_corpus(corpus: VulnCorpus, rows: Iterable[HasStoredAnswer]) -> VulnCorpus:
+# What an `epoch=` defaults to, here and in the readers that pass one on: read the answering
+# epoch where it is used, which is what every caller did before #685 and what one that leaves
+# it out still gets. A response that already read it passes that one read instead, because an
+# epoch install and its re-judge can commit between two reads, and a page whose filter, cells
+# and `corpusRelease` came from two of them names a release that never judged some findings.
+READ_HERE = object()
+
+
+def answering_epoch(epoch: str | object | None = READ_HERE) -> str | None:
+    """The signature a stored answer is served under: the caller's own read when it passed one
+    (`None` included, which is *nothing is answering*), and `loaded_epoch_signature()` now
+    when it did not."""
+    return loaded_epoch_signature() if epoch is READ_HERE else epoch  # type: ignore[return-value]
+
+
+def stored_corpus(corpus: VulnCorpus, rows: Iterable[HasStoredAnswer], *, epoch: str | object | None = READ_HERE) -> VulnCorpus:
     """The corpus a caller should hand `vuln_block` for THESE rows.
 
     `corpus` is what the gate answered (`loaded_corpus()` / `earned_corpus`), and it is
     returned untouched when nothing is answering — `off`, one `is None`, no per-row work,
     byte-identical. Otherwise the stamp is the loaded epoch's and every answer is one that
     was judged against that same epoch; anything else is left out, which reads
-    `unknown_app`.
+    `unknown_app`. Which epoch that is, is `epoch`: the catalog list passes the one read its
+    filter and `corpusRelease` came from (#685), and a caller that leaves it out reads it here.
 
     Nothing here reads the database. The rows are ones the caller already has: the device's
     own app rows, the catalog page's own entries, the snapshot's `current_rows`.
     """
     if corpus.as_of is None:
         return corpus
-    signature = loaded_epoch_signature()
+    signature = answering_epoch(epoch)
     answers: dict[str, AssessedBuild] = {}
     for row in rows:
         if not served(row.vuln_assessment, row.vuln_signature, epoch=signature):
@@ -296,13 +312,20 @@ def _total(counts: Mapping[str, object] | None) -> int | None:
     return value if isinstance(value, int) else None
 
 
-def update_effect(row: HasStoredAnswer, *, corpus: VulnCorpus, target: HasStoredTarget | None = None) -> UpdateEffect | None:
+def update_effect(
+    row: HasStoredAnswer,
+    *,
+    corpus: VulnCorpus,
+    target: HasStoredTarget | None = None,
+    epoch: str | object | None = READ_HERE,
+) -> UpdateEffect | None:
     """One row's `UpdateEffect`, or `None` when there is nothing to say — which is the
     common case, and every arm of it is deliberate:
 
     * **nobody is answering** (`off`), or this row's answer came from an epoch that is no
-      longer the one answering: the gate `stored_corpus` applies, for its reason. A
-      difference between two answers is no safer under a stamp that produced neither;
+      longer the one answering: the gate `stored_corpus` applies, for its reason, and under
+      the same `epoch` when the caller hands `stored_corpus` one (#685). A difference
+      between two answers is no safer under a stamp that produced neither;
     * **the installed build is not `covered`.** §4g's three renderings do not collapse;
       this is a line beside findings, not a fourth state and not a way to read a count off
       `off` or `unknown_app`;
@@ -316,7 +339,7 @@ def update_effect(row: HasStoredAnswer, *, corpus: VulnCorpus, target: HasStored
     version = target.vuln_target_version
     if not version or version == row.version:
         return None
-    if not served(row.vuln_assessment, row.vuln_signature, epoch=loaded_epoch_signature()):
+    if not served(row.vuln_assessment, row.vuln_signature, epoch=answering_epoch(epoch)):
         return None
     if target.vuln_target_assessment != VULN_ASSESSMENT_COVERED:
         return UpdateEffect(version=version, assessment=None, closes=None, opens=None, net=None)
