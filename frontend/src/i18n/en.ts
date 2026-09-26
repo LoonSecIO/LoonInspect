@@ -19,6 +19,24 @@ export const en = {
       grace: "Renewal grace", extended: "Staff extension", expired: "Expired", revoked: "Revoked",
       credential_invalid: "Credential invalid or retired", disconnected: "Paid updates stopped locally", unknown: "Unknown" }
   },
+  submissionCases: {
+    // #623: Settings › Intelligence Access, the organization's cases; the dialog's words are `submissions`.
+    title: "Coverage requests and match reports",
+    description: "Cases this instance sent with Request coverage or Report an incorrect match, newest first. Private to this organization: only its administrators see them, and the key each case travels under is never shown.",
+    notEnabled: "New cases cannot be sent while the v2 preview (INTELLIGENCE_ACCESS) is off here. These can still be refreshed and withdrawn.",
+    loading: "Loading cases…", empty: "No request or report has been made from this instance.",
+    loadFailed: "The cases could not be read, and this instance gave no reason. Reload the page; if it keeps failing, read docker compose logs app.",
+    failed: "The request failed, and this instance gave no reason. Try again; if it keeps failing, read docker compose logs app.",
+    kinds: { coverage: "Coverage request", correction: "Incorrect match report" },
+    states: { pending: "Not yet received", received: "Received", reviewing: "In review", needs_information: "Needs information",
+      accepted: "Accepted, not yet covered", published: "Published", declined: "Declined", withdrawn: "Withdrawn", expired: "Expired, deleted by the service" },
+    created: (date: string) => `Created ${date}`, release: "In release", coverage: "What it covers:",
+    question: "The reviewer asks:", reason: "Declined because:", note: "Note from the reviewer:",
+    unconfirmed: (date: string) => `Withdrawn here on ${date}: the text, URL and contact are gone from this instance and it is never sent again, but the service has not confirmed and may still hold them. Withdraw again.`,
+    refresh: "Refresh status", refreshIn: (seconds: number) => `Refresh in ${seconds} s`,
+    withdraw: "Withdraw", confirm: "Withdraw this case", cancel: "Cancel",
+    withdrawConfirm: "The service deletes the text, URL and contact of this case at once, and this instance clears them. It stays listed, as withdrawn."
+  },
   system: {
     // #407: a published release this build does not contain — never a merge to main.
     updateAvailable: (tag: string) => `LoonInspect ${tag} is available`,

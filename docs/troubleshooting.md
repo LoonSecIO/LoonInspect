@@ -2305,25 +2305,34 @@ remove the factor. Report the account's email (§8); the account keeps its data 
 
 ## 21. "Request coverage or Report an incorrect match is refused, or a case never shows a status"
 
-A case (#623) leaves under a key this instance keeps encrypted and never shows. It reads `pending` until
-the service acknowledges it, and each failure lands on it as one sentence: `lastError` on `GET /api/submissions`,
-`submission case not settled` in `docker compose logs app`. The audit log has `submission.*` for each act.
+A case (#623) leaves under a key this instance keeps encrypted and never shows. The dialog behind *Request
+coverage* and *Report an incorrect match*, on Posture › Vulnerabilities, shows each refusal as the server's
+sentence. The case list on Settings › Intelligence Access, for administrators, shows each case's state, the
+reviewer's note and its last failure as one sentence: `state`, `note` and `lastError` on `GET /api/submissions`,
+and `submission case not settled` in `docker compose logs app`. A case reads `pending` (*Not yet received*)
+until the service acknowledges it. The audit log has `submission.*` for each act.
 The sentence is the last act's: a withdrawal's once `withdrawnAt` is set (step 8), else a send's while
-`pending`, else a status read's. Where a step says to repeat the act, repeat that one.
+`pending`, else a status read's. Where a step says to repeat the act, repeat that one: Send in the row's dialog,
+*Refresh status* or *Withdraw* on the case list. A line that ends *read docker compose logs app* means no
+sentence came back from this instance (restarting, unreachable, or [a proxy in front](#a-proxy-in-front-answers-for-itself)
+answered for it): read that log, then repeat the act.
 
 1. **Refused before anything was stored.** *"…INTELLIGENCE_ACCESS is off here"*: submissions belong to
    the v2 preview, off by default ([Paid intelligence preview](#paid-intelligence-preview-622)).
    *"…give permission…"*: confirm the preview. *"…data-sharing exclusion list…"*: the one-time override
    sends this case only; the list stays. A 403: only an administrator sends, reads or withdraws a case.
+   *"String should have at most 64 characters"* (or 256): the row's version, or its name, is longer than a case takes.
 2. ***"…(HTTP 400). It said: …"***: the quoted sentence names the rule a field broke (a URL naming an IP
    address or a `.local` host, a hidden character in the text). Nothing was stored there: send a
-   corrected case, and withdraw this one to clear it.
+   corrected case (the dialog's fields stay locked, so close it and press the row's action again), and
+   withdraw this one on the case list. The dialog's own *Use an address that starts with https://…* is
+   checked before any request: Preview stays off until the URL reads so.
 3. ***"…HTTP 503. It said: "Submissions are not enabled…"***: the service has not opened submissions;
    repeat the act once support says it has. ***"…HTTP 503… Try again after … UTC"***: the day's 100
    new cases, shared by every instance, are spent; repeat the act after that time, under the case's key.
 4. ***"…a fresh one (HTTP 409)"***: the key collided, and so did the fresh one minted in its place: **Y**.
 5. ***"…HTTP 429"*** or ***"Asked too soon…"***: a case's status is read once a minute at most, and not
-   before a time the service gave. Wait the seconds named.
+   before a time the service gave. Wait the seconds named; *Refresh status* counts its wait down.
 6. ***"No submissions service answers at…"*** or ***"No answer came from…"***: check `INTELLIGENCE_ENDPOINT`
    (the HTTPS origin support confirmed), DNS, TLS (no proxy is taken from the environment, so an
    intercepting one fails) and egress to that host. Then repeat the act; a send goes again as the
@@ -2331,9 +2340,20 @@ The sentence is the last act's: a withdrawal's once `withdrawnAt` is set (step 8
 7. **`received`, then nothing**: review is manual (`reviewing`, `needs_information` with the reviewer's
    `note`, `accepted` but not yet covered, then `declined`, or `published` with `release` and
    `coverage`). **`expired`**: the service deleted the case 90 days after it closed; ask again in a new one.
-8. **`withdrawnAt` set while `state` is not `withdrawn`**: no answer has confirmed the withdrawal. The text,
-   URL and contact are gone here and the case is never sent again, but the service may still hold them.
-   Withdraw again (the service answers a repeat with 200), or, once past `pending`, ask for status: one
-   that reads `withdrawn` settles it too. Send is not the fix: it makes a new case, and what it carries leaves again.
+8. **`withdrawnAt` set while `state` is neither `withdrawn` nor `expired`** (the list's *Withdrawn here on …*):
+   no answer has confirmed the withdrawal. The text, URL and contact are gone here and the case is never sent
+   again, but the service may still hold them. Withdraw again (the service answers a repeat with 200), or, once
+   past `pending`, ask for status: one that reads `withdrawn` or `expired` settles it too. Send is not the fix:
+   it makes a new case, and what it carries leaves again.
+9. **The *Request coverage* or *Report an incorrect match* action is not on the row.** Both are on
+   Posture › Vulnerabilities only: the Catalog tab, a device's page, an application's record and the Lookup
+   page show the same words without either. Both are for administrators (`SYSTEM_WRITE`), only while the v2
+   preview is on (`INTELLIGENCE_ACCESS`, `VULN_RELEASE_RETENTION` and `VULN_TENANT_SELECTION`, the three that
+   list the Intelligence Access menu entry: [Paid intelligence preview](#paid-intelligence-preview-622)),
+   and only for a build with a version on a platform the service takes: macOS, iOS, iPadOS, tvOS or visionOS.
+   *Request coverage* is on a row that page's *Outside the corpus* chip lists (`unknown_app`). *Report an
+   incorrect match* is on a row with findings while the heading reads *Vulnerability corpus as of …*: the page's
+   answer then names the release behind them (`corpusRelease`), which the report sends. While the preview is
+   off the menu entry hides, yet the case list stays at `/settings/intelligence-access`, to refresh and withdraw.
 
 **Y.** Random keys do not collide twice. Report the case's `id` and its sentence (§8); nothing was stored there.
