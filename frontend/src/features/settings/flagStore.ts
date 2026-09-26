@@ -55,23 +55,38 @@ interface FeatureFlagStore {
   apply: (updated: FeatureFlag) => void;
 }
 
-export const useFeatureFlagStore = create<FeatureFlagStore>((set) => ({
-  read: "loading",
-  enabled: new Set<string>(),
+export const useFeatureFlagStore = create<FeatureFlagStore>((set) => {
+  // Each listing owns its overlay of PATCH answers received while it was in flight.
+  // A later load replaces it, so neither old listings nor their failures can win.
+  let pending: Map<string, FeatureFlag> | null = null;
 
-  async load() {
-    set({ read: "loading" });
-    try {
-      set({ enabled: enabledKeys(await listFeatureFlags()), read: "read" });
-    } catch {
-      set({ enabled: new Set<string>(), read: "failed" });
+  return {
+    read: "loading",
+    enabled: new Set<string>(),
+
+    async load() {
+      const confirmed = new Map<string, FeatureFlag>();
+      pending = confirmed;
+      set({ read: "loading" });
+      try {
+        let enabled = enabledKeys(await listFeatureFlags());
+        if (pending !== confirmed) return;
+        for (const updated of confirmed.values()) enabled = withFlag(enabled, updated);
+        pending = null;
+        set({ enabled, read: "read" });
+      } catch {
+        if (pending !== confirmed) return;
+        pending = null;
+        set({ enabled: new Set<string>(), read: "failed" });
+      }
+    },
+
+    apply(updated) {
+      pending?.set(updated.key, updated);
+      set((state) => ({ enabled: withFlag(state.enabled, updated) }));
     }
-  },
-
-  apply(updated) {
-    set((state) => ({ enabled: withFlag(state.enabled, updated) }));
-  }
-}));
+  };
+});
 
 /** The gate one surface asks about one flag. */
 export function useFlagGate(flag: string): FlagGate {
