@@ -1,5 +1,5 @@
-"""TOTP (#653) without a database: the code window, the replay rule, and the challenge the
-password step hands back."""
+"""TOTP (#653) without a database: the code window, the replay rule, recovery codes, and the
+challenge the password step hands back."""
 
 from __future__ import annotations
 
@@ -37,6 +37,24 @@ def test_a_step_at_or_before_the_last_accepted_one_is_refused():
     assert mfa.verify_code(secret, totp.at(STEP * 30), STEP, now=NOW) is None
     assert mfa.verify_code(secret, totp.at((STEP - 1) * 30), STEP, now=NOW) is None
     assert mfa.verify_code(secret, totp.at((STEP + 1) * 30), STEP, now=NOW) == STEP + 1
+
+
+class Row:
+    def __init__(self, codes: list[str]) -> None:
+        self.recovery_codes = codes
+
+
+def test_recovery_codes_are_ten_distinct_and_each_is_spent_once():
+    codes, hashes = mfa.mint_recovery_codes()
+    assert len(codes) == 10 and len(set(codes)) == 10
+    assert all(len(code) == 11 and code[5] == "-" and code.islower() for code in codes)
+    assert all(not stored.startswith(code[:5]) for stored, code in zip(hashes, codes, strict=True))
+    row = Row(hashes)
+    assert mfa.consume_recovery_code(row, codes[3].upper().replace("-", " ")) is True
+    assert len(row.recovery_codes) == 9
+    assert mfa.consume_recovery_code(row, codes[3]) is False
+    assert mfa.consume_recovery_code(row, "nope") is False
+    assert mfa.consume_recovery_code(Row([]), codes[0]) is False
 
 
 def test_the_challenge_names_its_account_until_it_expires_and_never_when_touched(encryption_key):

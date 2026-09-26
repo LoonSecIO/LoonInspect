@@ -84,7 +84,7 @@ ticket names one, this says which path it came off.
 | **U** | §17 | The baseline rule catalogue will not load, or a sum does not close |
 | **V** | §18 | *being judged against it* more than an hour after the corpus date moved |
 | **W** | §18 | *Longest exposed* is empty while *Most exposed* lists builds |
-| **X** | §20 | The phone is gone and the second factor cannot be removed yet |
+| **X** | §20 | No recovery codes remain and the second factor cannot be removed yet |
 
 ## 0. The four things you can read
 
@@ -2278,9 +2278,11 @@ password, then a six-digit code from the authenticator app, or one recovery code
    that already signed you in is refused, because a code works once. Wait for the next.
 2. ***The sign-in challenge has expired or is not valid.*** The second step has five
    minutes from the password step. Start again from the password.
-3. **No phone.** There is no self-service way back in yet: recovery codes and the
-   administrative removal are the follow-ups to #653, and an administrator's password
-   reset does not remove the factor. Reportable **X**.
+3. **No phone.** A recovery code, shown once when the factor was confirmed, signs you in
+   in place of the code; each works once, hyphens and case do not matter, and
+   `GET /api/auth/mfa` says how many remain. With none left there is no self-service way
+   back in yet: an administrator's password reset does not remove the factor, so
+   reportable **X** until the administrative removal ships.
 4. ***Too many failed attempts.*** Wrong codes count against the same lockout as wrong
    passwords, for the same address and client. Wait it out; nothing to reset.
 

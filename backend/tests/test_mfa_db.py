@@ -75,7 +75,7 @@ async def test_the_password_earns_a_challenge_and_only_a_fresh_code_redeems_it(e
     async with _client() as client:
         step_one = await _password_step(client)
         assert step_one.status_code == 202 and "loon_session" not in client.cookies
-        assert step_one.json()["methods"] == ["totp"]
+        assert step_one.json()["methods"] == ["totp", "recovery"]
         challenge = step_one.json()["challenge"]
         code = totp.now()
         signed = await client.post("/api/auth/login/mfa", json={"challenge": challenge, "code": code})
@@ -88,7 +88,7 @@ async def test_the_password_earns_a_challenge_and_only_a_fresh_code_redeems_it(e
         challenge = (await _password_step(client)).json()["challenge"]
         # The code that just signed in is spent, and so is any older step.
         replayed = await client.post("/api/auth/login/mfa", json={"challenge": challenge, "code": code})
-        assert replayed.status_code == 401 and "work once" in replayed.json()["detail"]
+        assert replayed.status_code == 401 and "good once" in replayed.json()["detail"]
         # The next step's code is not: one step ahead is inside the window.
         ahead = totp.at(int(time.time()) + 30)
         assert (await client.post("/api/auth/login/mfa", json={"challenge": challenge, "code": ahead})).status_code == 200
