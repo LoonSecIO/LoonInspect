@@ -37,6 +37,13 @@ const view = (read: CasesRead, acts: Record<string, RowAct> = {}, t = en) => ren
 const buttons = (markup: string, label: string) => markup.match(new RegExp(`<button[^>]*>${label}</button>`, "g")) ?? [];
 // What a sentence reads as in the markup, which escapes text.
 const html = (text: string) => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#x27;");
+// A click in the node lane, which has no DOM: every enabled button labelled `label` in the view's element tree.
+function press(node: unknown, label: string): void {
+  const props = (node as { props?: { children?: unknown; disabled?: boolean; onClick?: () => void } } | null)?.props;
+  if (Array.isArray(node)) node.forEach((each) => press(each, label));
+  else if (props && props.children !== label) press(props.children, label);
+  else if (props && !props.disabled) props.onClick?.();
+}
 
 describe("the case list on Settings › Intelligence Access (#623)", () => {
   it("names every state in its own word, and a release with its coverage on a published case only", () => {
@@ -58,8 +65,7 @@ describe("the case list on Settings › Intelligence Access (#623)", () => {
     expect(markup).toContain(`${copy.question} Which build do you run?`);
     expect(markup).toContain(`${copy.reason} The feed already covers 3.6.2.`);
     expect(markup).toContain(failure);
-    // Once: an expired case is deleted there, so a withdrawal is left to confirm on the live one alone.
-    expect(markup.split(copy.unconfirmed(new Date(ago(60)).toLocaleString("en", { dateStyle: "medium", timeStyle: "short" })))).toHaveLength(2);
+    expect(markup.split(copy.unconfirmed(new Date(ago(60)).toLocaleString("en", { dateStyle: "medium", timeStyle: "short" })))).toHaveLength(2); // once: never on the expired "d"
     expect(markup).not.toMatch(/loon_case_|case_?key/i);
   });
 
@@ -118,6 +124,10 @@ describe("the case list on Settings › Intelligence Access (#623)", () => {
     await Promise.all([...posting, on.refresh("b"), on.ask("c"), on.cancel("d")]);
     expect([acts, settle.mock.calls]).toEqual([{ a: {}, b: { error: "Asked too soon." }, c: { confirming: true }, d: {} }, [[one("a", { state: "withdrawn" }), expect.any(Number)]]]);
     expect(vi.mocked(apiRequest).mock.calls.map(([path]) => path)).toEqual(["/submissions/a/withdraw", "/submissions/b/status"]);
+    const spies = { refresh: vi.fn(), ask: vi.fn(), withdraw: vi.fn(), cancel: vi.fn() };
+    for (const [label, confirming] of [[copy.refresh, false], [copy.withdraw, false], [copy.confirm, true], [copy.cancel, true]] as const)
+      press(SubmissionCasesView({ read: ready([one("a")]), copy, locale: "en", now: NOW, acts: { a: { confirming } }, on: spies }), label);
+    expect(Object.values(spies).map((spy) => spy.mock.calls)).toEqual([[["a"]], [["a"]], [["a"]], [["a"]]]); // Withdraw only asks
   });
 
   it("is an administrator's section: absent for a reader without SYSTEM_WRITE, beside the paid panel for one with it", () => {

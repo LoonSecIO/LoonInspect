@@ -7,19 +7,9 @@ import type { Translations } from "@/i18n/en";
 import { useLocale, type Locale } from "@/i18n/LocaleContext";
 
 /** What the list read answered. A failed read keeps the server's sentence, if one came. */
-export type CasesRead =
-  | { state: "loading" }
-  | { state: "failed"; said: string | null }
-  | { state: "ready"; enabled: boolean; cases: SubmissionCaseOut[] };
+export type CasesRead = { state: "loading" } | { state: "failed"; said: string | null } | { state: "ready"; enabled: boolean; cases: SubmissionCaseOut[] };
 
-interface ViewProps {
-  read: CasesRead;
-  copy: Translations["submissionCases"];
-  locale: Locale;
-  now: number;
-  acts?: Record<string, RowAct>;
-  on?: Partial<Handlers>;
-}
+type ViewProps = { read: CasesRead; copy: Translations["submissionCases"]; locale: Locale; now: number; acts?: Record<string, RowAct>; on?: Partial<Handlers> };
 
 /** This organization's cases for one read and the acts in flight; stateless, so the node lane renders it. */
 export function SubmissionCasesView({ read, copy, locale, now, acts = {}, on = {} }: ViewProps) {
