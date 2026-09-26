@@ -1,12 +1,8 @@
 """Evidence for the v2 release gate (#624), runnable on the database lane (#657).
 
-Each test's docstring names the #624 or #622 acceptance bullet it evidences. Bullets that
-existing tests already cover are cited in the pull request body rather than duplicated
-here. Nothing in this file changes behaviour: a failure is a finding for #624.
-
-The walk runs the real migration scripts, from v1.0.0's Alembic head to today's, inside a
-scratch schema on the shared test database, so it needs no second database and leaves
-nothing behind: the whole walk is one transaction that the test rolls back.
+Each test's docstring names the #624 or #622 bullet it evidences; bullets existing tests
+cover are cited in the pull request body. Nothing here changes behaviour. The walk runs the
+real migration scripts inside a scratch schema, in one transaction the test rolls back.
 """
 
 from __future__ import annotations
@@ -47,7 +43,7 @@ pytestmark = [
 BACKEND = Path(__file__).resolve().parents[1]
 V1_HEAD = "f526e8b3d901"  # v1.0.0's Alembic head (git show v1.0.0:backend/migrations/versions)
 INDEX_REWRITE = "e621c4a8b903"  # #637: the installed_apps index rewrite that needs a window
-SCHEMA = "v2_release_walk"
+SCHEMA = f"v2_release_walk_{os.getpid()}"  # per process, so two runs on one database do not collide
 EPOCH_SIGNATURE = "5" * 64
 BUILD_KEY = "v1:" + "6" * 64
 TITLE_KEY = "v1:" + "7" * 64
@@ -73,8 +69,7 @@ def _act(connection, tenant: uuid.UUID) -> None:
 
 
 def _seed_v1(connection) -> None:
-    """A v1.0.0-shaped instance: two operational tenants, one at tier off with a dormant
-    licence key on its connection, one at keys, both holding the installed corpus."""
+    """Two v1 tenants: tier off with a dormant licence key, and keys; both hold the corpus."""
     now = datetime(2026, 9, 20, 16, tzinfo=UTC)
     for tenant, tier in ((OFF_TENANT, "off"), (KEYS_TENANT, "keys")):
         connection.execute(
@@ -218,8 +213,9 @@ async def test_the_v1_0_0_to_head_walk_enables_nothing_and_keeps_every_answer(db
             counts = {"total": 17, "kev": 0, "critical": 1, "high": 6, "medium": 8, "low": 2}
             expected = ("covered", counts, ["CVE-2024-0001"], False, EPOCH_SIGNATURE)
             assert all((a[0], json.loads(a[1]), json.loads(a[2]), a[3], a[4]) == expected for a in answers)
-        # The installed projection was retained as a release, without inventing a manifest.
+        # The installed projection was retained as a release, without inventing a manifest, and stays the active library.
         assert connection.execute(text("SELECT signature, manifest FROM vuln_corpus_releases")).all() == [(EPOCH_SIGNATURE, None)]
+        assert connection.scalar(text("SELECT signature FROM vuln_library_epoch")) == EPOCH_SIGNATURE
         indexes = set(
             connection.scalars(
                 text("SELECT indexname FROM pg_indexes WHERE schemaname = :schema AND tablename = 'installed_apps'"),
@@ -250,9 +246,7 @@ LIVE_LICENCE = "LIC-DORMANT-CONNECTION-KEY-NEVER-SENT"
 
 
 class BothRoutes:
-    """The Support service with every route one tenant can use: the exchange (with a
-    receipt and the corpus on the reply), paid activation and refresh, and receipt
-    redemption. Records every call so the tests can read what left the box."""
+    """Every Support route one tenant can use, recording each call so the test reads what left."""
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict, str | None]] = []
@@ -278,16 +272,10 @@ class BothRoutes:
                 return httpx.Response(code, json={"state": state, "error": "no"})
             return httpx.Response(200, json=answer(corpus=corpus))
         if request.url.path == "/v2/contribution/intelligence":
-            return httpx.Response(
-                200,
-                json={
-                    "contract": "v2",
-                    "state": "contributing",
-                    "accepted_at": ACCEPTED,
-                    "updates_until": UNTIL,
-                    "corpus": corpus,
-                },
-            )
+            block = {"contract": "v2", "state": "contributing", "accepted_at": ACCEPTED, "updates_until": UNTIL}
+            return httpx.Response(200, json={**block, "corpus": corpus})
+        if request.url.path == "/v2/contribution/withdraw":
+            return httpx.Response(200, json={"contract": "v2", "state": "withdrawn"})
         raise AssertionError(f"unexpected call to {request.url}")
 
     def to(self, path: str) -> list[tuple[dict, str | None]]:
@@ -296,8 +284,7 @@ class BothRoutes:
 
 @pytest_asyncio.fixture(loop_scope="session")
 async def both_routes(db, retained, monkeypatch):  # noqa: F811 — fixture
-    """A consenting tenant with the paid preview and receipts on, a connection holding a
-    licence key nothing may read, and the exchange, paid and receipt routes all at ORIGIN."""
+    """A consenting tenant, both previews on, a licence key nothing may read, every route at ORIGIN."""
     for flag in FLAGS:
         monkeypatch.setattr(settings, flag, True)
     monkeypatch.setattr(settings, "sharing_endpoint", ORIGIN + "/v1/exchange")
@@ -367,11 +354,9 @@ async def test_paid_and_contribution_routes_coexist_without_linking_or_leaking(d
     ((redemption, redemption_bearer),) = service.to("/v2/contribution/intelligence")
     # The anonymous exchange carries the submission UUID and no credential of either kind.
     assert upload_bearer is None and upload["submission"] == submission
-    # Activation carries the one-use secret and nothing that names this instance.
     assert activation_bearer is None and set(activation) == {"contract", "client_version", "activation_secret"}
     # The paid request carries the paid credential and the documented fields, never the receipt or the UUID.
     assert paid_bearer == f"Bearer {KEY}" and set(paid) == {"contract", "client_version", "channel"}
-    # The receipt request carries the receipt and the two contract fields, never the paid credential.
     assert redemption_bearer == f"Bearer {RECEIPT}" and set(redemption) == {"contract", "client_version"}
     for path, body, bearer in service.calls:
         recorded = json.dumps(body) + (bearer or "")
@@ -397,3 +382,19 @@ async def test_paid_and_contribution_routes_coexist_without_linking_or_leaking(d
     again = await participation.redeem(db, transport=transport)
     assert again is not None and again.signature == SIGNATURE
     assert len(service.to("/v2/contribution/intelligence")) == 2
+
+    # And the other way: sharing turned off withdraws the receipt, while paid access keeps refreshing.
+    service.paid = (200, "paid")
+    row = await participation.locked_row(db)
+    row.tier = "off"
+    participation.mark_withdrawal(row)
+    await db.commit()
+    assert await participation.withdraw(db, transport=transport)
+    ((withdrawal, withdrawal_bearer),) = service.to("/v2/contribution/withdraw")
+    assert withdrawal_bearer == f"Bearer {RECEIPT}" and set(withdrawal) == {"contract", "client_version"}
+    assert KEY not in json.dumps(withdrawal)
+    row = await get_or_create_settings(db)
+    assert row.participation_receipt is None and row.tier == "off"
+    paid_again = await intelligence.refresh(db, transport=transport)
+    assert paid_again["state"] == "paid" and paid_again["selectedCorpus"] == SIGNATURE
+    assert service.to("/v2/intelligence")[-1][1] == f"Bearer {KEY}"
