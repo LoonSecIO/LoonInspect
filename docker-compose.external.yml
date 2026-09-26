@@ -13,6 +13,8 @@
 #     -e APP_USER=looninspect_app -e APP_PASSWORD='<the password DATABASE_URL carries>' \
 #     db looninspect-db-init
 #
+# `!reset` needs Docker Compose 2.24 or newer (`docker compose version`).
+#
 # docker-compose.yml still insists on POSTGRES_PASSWORD and POSTGRES_APP_PASSWORD in .env,
 # because it is read whole before this file overrides it. In external mode the first is
 # never used and may be anything; the second is the application role's password.

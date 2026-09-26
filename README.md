@@ -253,7 +253,8 @@ because a superuser bypasses row-level security silently and every tenant policy
 decoration ([docs/troubleshooting.md](docs/troubleshooting.md) §4). Two app containers
 starting together against one database take turns on the migration. `docker-compose.yml`
 still asks `.env` for `POSTGRES_PASSWORD`; in external mode it is unused and may be anything.
-PostgreSQL 17 is what the bundle ships and what this was run against.
+The override needs Docker Compose 2.24 or newer. PostgreSQL 17 is what the bundle ships and
+what this was run against.
 [docs/operations.md](docs/operations.md) §8 has backup, restore, upgrade and rollback for
 this shape.
 
