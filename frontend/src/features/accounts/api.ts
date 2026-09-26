@@ -1,5 +1,5 @@
 import { apiRequest } from "@/config/api";
-import type { Account, CreateAccountInput, UpdateAccountInput } from "@/features/accounts/types";
+import type { Account, CreateAccountInput, MfaConfirmation, MfaEnrolment, MfaStatus, UpdateAccountInput } from "@/features/accounts/types";
 
 export function listAccounts(): Promise<Account[]> {
   return apiRequest<Account[]>("/accounts");
@@ -28,4 +28,19 @@ export function changeOwnPassword(currentPassword: string, newPassword: string):
     method: "POST",
     json: { currentPassword, newPassword }
   });
+}
+
+/** Two-step sign-in (#653): whether this account has a second factor, and its recovery codes left. */
+export function getMfaStatus(): Promise<MfaStatus> {
+  return apiRequest<MfaStatus>("/auth/mfa");
+}
+
+/** A fresh secret, shown once. A browser session only (a bearer token is refused); 409 once confirmed. */
+export function enrolMfa(): Promise<MfaEnrolment> {
+  return apiRequest<MfaEnrolment>("/auth/mfa/enrol", { method: "POST" });
+}
+
+/** The code that proves the phone holds the secret; answers with the recovery codes, once. */
+export function confirmMfa(code: string): Promise<MfaConfirmation> {
+  return apiRequest<MfaConfirmation>("/auth/mfa/confirm", { method: "POST", json: { code } });
 }

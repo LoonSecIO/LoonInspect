@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/config/api";
 import { changeOwnPassword } from "@/features/accounts/api";
+import { TwoStepSignIn } from "@/features/accounts/TwoStepSignIn";
 import { useAuthStore } from "@/features/auth/store";
 import { useBuildVersion } from "@/features/system/useBuildVersion";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -142,6 +143,8 @@ export function MyAccountPage() {
             silently break someone's macOS client or CI job, so tokens survive it. */}
         <p className="text-xs text-muted-foreground">{t.myAccount.sessionsHint}</p>
       </form>
+
+      <TwoStepSignIn />
     </section>
   );
 }
