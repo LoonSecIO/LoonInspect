@@ -588,7 +588,7 @@ The existing `features/auth/index.ts` stub already has the right shape (`AuthSta
 | **4** ✅ | API tokens + management UI | Unblocks the macOS client |
 | **5** ✅ | Account management: create/disable, role assignment, password reset and self-change | RBAC was unusable without it — four roles and no way to grant any of them |
 | **6** ✅ | TLS modes (`off` / `self-signed` / `provided`), proxy-header trust | Phase 1 made HTTPS load-bearing; see below |
-| **Later** | OIDC/Okta, SCIM, TOTP → WebAuthn | Additive by construction if §3.1 holds |
+| **Later** | OIDC/Okta, SCIM, WebAuthn (TOTP shipped in v2.0.0: §9) | Additive by construction if §3.1 holds |
 | **Deferred** ✅ | Webhook header auth (§4.7) | Was deferred out of the phase train; since shipped as #14 |
 
 ### Phase 5 notes — account management
@@ -665,6 +665,10 @@ MFA was explicitly out of scope for v1. The model above doesn't block it: TOTP s
 | `argon2-cffi` | Password hashing | Direct, not via `passlib` — passlib is effectively unmaintained |
 | `pyotp` | TOTP (#653) | The secret is an `auth_identities` row, provider `totp`, encrypted with `EncryptedString`; recovery codes are argon2id hashes on the same row |
 | *(none for OIDC yet)* | | `authlib` when Phase "Later" starts |
+
+TOTP's delivery phase is v2.0.0 (#653): the identity and the second sign-in step, enrolment and recovery codes,
+then the `mfa_required` policy (`off` | `admins` | `everyone`, default `off`, break-glass exempt) with its gate,
+administrative removal and regeneration. The sign-in and My Account pages are its frontend half.
 
 Everything else — session tokens, CSRF, HMAC, API tokens — is stdlib `secrets` / `hmac` / `hashlib`.
 

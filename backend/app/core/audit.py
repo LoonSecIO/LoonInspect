@@ -44,6 +44,9 @@ class AuditAction(StrEnum):
     MFA_ENROLLED = "auth.mfa.enrolled"
     MFA_CHALLENGE_FAILED = "auth.mfa.challenge.failed"
     MFA_RECOVERY_CODE_USED = "auth.mfa.recovery-code.used"
+    MFA_RECOVERY_CODES_REGENERATED = "auth.mfa.recovery-codes.regenerated"
+    # The actor is the administrator; the target, the account whose second factor went (#653).
+    MFA_REMOVED = "auth.mfa.removed"
     # A switch lands in two trails, the tenant left and the tenant entered (#36).
     TENANT_SWITCHED = "auth.tenant.switched"
     SETUP_COMPLETED = "auth.setup.completed"
@@ -67,6 +70,8 @@ class AuditAction(StrEnum):
 
     CHANGE_POLICY_UPDATED = "change-policy.updated"
     PATCHING_POLICY_UPDATED = "patching-policy.updated"
+    # Who must hold a second factor (#653), before and after.
+    MFA_POLICY_CHANGED = "settings.mfa_policy.changed"
 
     FEATURE_FLAG_UPDATED = "feature-flag.updated"
 

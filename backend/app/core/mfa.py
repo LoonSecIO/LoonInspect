@@ -2,6 +2,7 @@
 
 A second factor is a second `auth_identities` row, provider `totp`: the secret encrypted at
 rest, recovery codes as argon2id hashes, when a code confirmed it, the last accepted step.
+The tenant's `Policy` says whose sign-in must end in one.
 """
 
 from __future__ import annotations
@@ -9,14 +10,19 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+import uuid
+from collections.abc import Collection
 from datetime import UTC, datetime
+from typing import Literal
 
 import pyotp
 from argon2 import PasswordHasher
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import get_encryption_key
+from app.core.permissions import Role
 from app.core.security import verify_password
-from app.models.schema import Account, AuthIdentity
+from app.models.schema import Account, AuthIdentity, Tenant
 
 PROVIDER = "totp"
 ISSUER = "LoonInspect"
@@ -27,6 +33,8 @@ CHALLENGE_TTL_SECONDS = 300
 RECOVERY_CODES = 10
 METHOD_TOTP = "password+totp"
 METHOD_RECOVERY = "password+recovery"
+# `tenants.mfa_required`: who must hold a second factor. Break-glass accounts are exempt from all three.
+Policy = Literal["off", "admins", "everyone"]
 # What a recovery code is spelled from: lowercase, no 0/o or 1/l/i to misread over a call.
 _RECOVERY_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"
 # Hashed like passwords, but not passwords: eleven characters from a 31-letter alphabet is
@@ -43,6 +51,20 @@ def confirmed(account: Account) -> AuthIdentity | None:
     does not change how the account signs in."""
     identity = identity_for(account)
     return identity if identity is not None and identity.confirmed_at is not None else None
+
+
+async def policy_asks(db: AsyncSession, roles: Collection[str], tenant_id: uuid.UUID) -> bool:
+    """Whether `tenant_id`'s policy asks holders of `roles` for a second factor (`tenants` is outside RLS)."""
+    tenant = await db.get(Tenant, tenant_id)
+    policy = tenant.mfa_required if tenant is not None else "off"
+    return policy == "everyone" or (policy == "admins" and Role.admin.value in roles)
+
+
+async def enrolment_required(db: AsyncSession, account: Account, roles: Collection[str], tenant_id: uuid.UUID) -> bool:
+    """The gate's question: the policy asks and nothing confirmed answers. Break-glass is the way back in, so exempt."""
+    if account.is_break_glass or confirmed(account) is not None:
+        return False
+    return await policy_asks(db, roles, tenant_id)
 
 
 def mint_secret() -> str:
