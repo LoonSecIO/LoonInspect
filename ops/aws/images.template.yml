@@ -18,14 +18,14 @@ Parameters:
 
   OidcSubjectPatterns:
     Type: CommaDelimitedList
-    Default: repo:LoonSecIO/LoonInspect:ref:refs/heads/main
+    Default: repo:LoonSecIO/LoonInspect:ref:refs/heads/main,repo:LoonSecIO/LoonInspect:ref:refs/tags/v*
     Description: >-
-      The sub claim patterns this role trusts — main-branch-only, so images
-      publish after merge, never from a PR head. A list because this org's
+      The sub claim patterns this role trusts — main, so images publish after
+      merge, never from a PR head, and v* tags for release.yml. A list because this org's
       tokens carry ID-stamped subs (repo:LoonSecIO@<orgid>/LoonInspect@<repoid>:...)
       — the Support repo's working role trusts both the plain and the stamped
-      form, and this role does the same. Pass both forms at deploy time; widen
-      past refs/heads/main only deliberately, and narrow it back.
+      form, and this role does the same. Pass both forms of both at deploy time
+      (ops/aws/README.md §1); widen past these only deliberately, and narrow it back.
 
 Resources:
   # Both repositories are tag-immutable: a pushed tag can never be repointed,
