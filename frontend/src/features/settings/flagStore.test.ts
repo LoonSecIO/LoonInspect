@@ -16,6 +16,64 @@ beforeEach(() => {
 });
 
 describe("the flag set", () => {
+  it.each([true, false])("preserves a confirmed toggle to %s over an older listing", async (enabled) => {
+    let answer!: (flags: FeatureFlag[]) => void;
+    listFeatureFlags.mockReturnValue(new Promise<FeatureFlag[]>((resolve) => { answer = resolve; }));
+    const loading = store().load();
+    store().apply(flag(AI, enabled));
+    answer([flag(AI, !enabled), flag("other", true)]);
+    await loading;
+
+    expect(store().read).toBe("read");
+    expect(store().enabled.has(AI)).toBe(enabled);
+    expect(store().enabled.has("other")).toBe(true);
+
+    // A later listing is authoritative again; patches are only overlaid on older reads.
+    listFeatureFlags.mockResolvedValue([flag(AI, !enabled)]);
+    await store().load();
+    expect(store().enabled.has(AI)).toBe(!enabled);
+  });
+
+  it.each([false, true])("ignores a superseded read, including failure: %s", async (fails) => {
+    let answer!: (flags: FeatureFlag[]) => void;
+    let reject!: (error: Error) => void;
+    listFeatureFlags.mockReturnValueOnce(new Promise<FeatureFlag[]>((resolve, fail) => {
+      answer = resolve;
+      reject = fail;
+    }));
+    const older = store().load();
+    listFeatureFlags.mockResolvedValueOnce([flag(AI, true)]);
+    await store().load();
+    if (fails) reject(new Error("old session failed"));
+    else answer([flag(AI, false)]);
+    await older;
+    expect(store().read).toBe("read");
+    expect(store().enabled.has(AI)).toBe(true);
+  });
+
+  it("keeps the latest confirmed toggle for each flag during a read", async () => {
+    let answer!: (flags: FeatureFlag[]) => void;
+    listFeatureFlags.mockReturnValue(new Promise<FeatureFlag[]>((resolve) => { answer = resolve; }));
+    const loading = store().load();
+    store().apply(flag(AI, true));
+    store().apply(flag("other", true));
+    store().apply(flag(AI, false));
+    answer([flag(AI, true), flag("other", false)]);
+    await loading;
+    expect([...store().enabled]).toEqual(["other"]);
+  });
+
+  it("a confirmed toggle cannot turn a failed full listing into a successful read", async () => {
+    let reject!: (error: Error) => void;
+    listFeatureFlags.mockReturnValue(new Promise<FeatureFlag[]>((_, fail) => { reject = fail; }));
+    const loading = store().load();
+    store().apply(flag(AI, true));
+    reject(new Error("listing failed"));
+    await loading;
+    expect(store().read).toBe("failed");
+    expect([...store().enabled]).toEqual([]);
+  });
+
   it("a confirmed toggle lands in the set, in both directions", async () => {
     listFeatureFlags.mockResolvedValue([flag(AI, false), flag("other", true)]);
     await store().load();
