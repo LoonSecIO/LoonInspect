@@ -84,6 +84,19 @@ work, before tagging it: a milestone is not a filter that removes other changes 
 `main`. Keep changes safe to ship incrementally instead of merging incomplete work
 and assuming a later patch release can omit it.
 
+**Every release runs a feature-flag gate** (ruled 2026-09-25). A flag is a switch that
+turns a feature area or a preview on or off: an environment setting with a boolean
+default in `backend/app/core/config.py`, or a registry key under Settings › Feature
+Flags. Before a release is tagged, every flag gets one of three verdicts, recorded in
+the release notes and in `docs/feature-flags.md`: **promote** (the default flips on and
+the flag is scheduled for removal), **keep** (with the reason it stays and the release
+it is expected to die in), or **delete** (the code path behind it goes with it). Flags
+exist to land unfinished work safely, not to ship two products, so their number is
+meant to fall across releases. A hazard knob such as `SECURE_COOKIES` and a deployment
+switch such as `SCHEDULER_ENABLED` are configuration, not flags: the gate lists them so
+the inventory is complete, and their verdict is always keep. The first gate is the
+v2.0.0 one, #652.
+
 The [v2.0.0 milestone](https://github.com/LoonSecIO/LoonInspect/milestone/1) tracks
 contribute-or-pay vulnerability access, bounded MFA, supported external PostgreSQL,
 and the update lifecycle. Scrubber #617 and #618 are independent v1.x work, not v2
@@ -846,3 +859,4 @@ Appended 2026-09-05, immediately before the flip to public:
 | v1.13 | 2026-09-10 | Step 3 done (#19): BR-01, BR-02, BR-05, CM-01, CM-04 and CM-03's path half `block` and `active`, BR-03, CM-02, PR-01 `warn` and `active`, all in the `Policy` check reading the new `controls.yml` register (§7, §8); `dependabot/` exempt from BR-01 and CM-01 by ruling; the `Policy` context added to `main.json` |
 
 | v1.14 | 2026-09-20 | Release planning in §1.1: milestones, immutable release tags, `future` replacing `v5`, and independent v1.x releases; §8.2 marked historical. |
+| v1.15 | 2026-09-25 | §1.1: every release runs a feature-flag gate, with a promote, keep or delete verdict per switch recorded in `docs/feature-flags.md` and the release notes (#652). |
