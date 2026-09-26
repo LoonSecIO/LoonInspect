@@ -79,6 +79,13 @@ describe("the case list on Settings › Intelligence Access (#623)", () => {
       [expect.stringContaining(copy.loadFailed), expect.stringContaining(">Insufficient permissions</p>")]);
   });
 
+  it("says whose cases these are, in both languages: this organization's, never the instance's (#687)", () => {
+    // GET /api/submissions answers the reading organization's cases alone, and one pod can hold several organizations.
+    const scope = [en, de].map(({ submissionCases: { description, empty } }) =>
+      [description, empty].map((line) => [/this organization|diese[r]? Organisation/.test(line), /instance|Instanz/.test(line)]));
+    expect(scope).toEqual([[[true, false], [true, false]], [[true, false], [true, false]]]);
+  });
+
   it("holds Refresh 60 seconds after the last read and until retryAt, counting down, and shows a 429 as the server said it", async () => {
     expect([15, 59.5, 60].map((seconds) => refreshWait(one("a", { lastStatusAt: ago(seconds) }), NOW))).toEqual([45, 1, 0]);
     expect(refreshWait(one("a", { lastStatusAt: ago(90), retryAt: ago(-30) }), NOW)).toBe(30);

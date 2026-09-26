@@ -17,7 +17,7 @@ from app.core.auth import require
 from app.core.database import get_db, get_vuln_read_db
 from app.core.permissions import Permission
 from app.core.vuln import VulnCorpus
-from app.core.vuln_answer import counted, served, stored_corpus
+from app.core.vuln_answer import READ_HERE, counted, served, stored_corpus
 from app.core.vuln_library import earned_corpus, loaded_epoch_signature
 from app.core.vuln_read import NO_ANSWER, assess, corpus_as_of, seen_here_days, today, update_line
 from app.core.vuln_targets import load_title_updates
@@ -98,6 +98,7 @@ def _assessed_entry_out(
     as_of: date,
     seen_here: Mapping[str, int] | None = None,
     updates: list[VulnTitleUpdateOut] | None = None,
+    epoch: str | object | None = READ_HERE,
 ) -> CatalogEntryAssessedOut:
     """The same row, plus the corpus's answer for **this exact build** (#251).
 
@@ -105,7 +106,7 @@ def _assessed_entry_out(
     the answer stored on the row itself (#381). The corpus is a required argument rather
     than a default so a row built anywhere carries a real answer; one that quietly defaulted
     to `off` while a corpus was loaded would be a lie in the one column that exists to
-    prevent them.
+    prevent them. `epoch` is the one `corpus` was stored under (#685), for the update line.
     """
     out = CatalogEntryAssessedOut.model_validate(entry)
     _stamp(out, devices, refs, entry)
@@ -113,7 +114,7 @@ def _assessed_entry_out(
     # And what updating this build would do to that answer (#482) — off the same row, by
     # the same seam. The Catalog page does not paint it yet; the application record reads
     # this endpoint scoped to one `appHash` and does.
-    out.vuln_update = update_line(entry, corpus=corpus)
+    out.vuln_update = update_line(entry, corpus=corpus, epoch=epoch)
     out.vuln_updates = updates or []
     # *Seen here* (#591), from the ONE grouped ledger query the caller ran for the whole page: a `.get` and not a
     # query, so no row grows a statement of its own. Absent where the ledger holds no open row for the build — a dash.
@@ -163,6 +164,9 @@ async def list_catalog(
 
     # One corpus object for the whole response, so every row's `corpusAsOf`, the header
     # stamp and the filter below are the same fact rather than three reads of a moving one.
+    # And ONE read of the epoch, handed to everything below that serves a stored answer:
+    # an install and its re-judge can commit between two reads, and a second one served
+    # the newer epoch's findings under the release `corpusRelease` names (#685).
     corpus, as_of = await earned_corpus(db), today()
     epoch = loaded_epoch_signature()
     covered = served(AppCatalogEntry.vuln_assessment, AppCatalogEntry.vuln_signature, epoch=epoch)
@@ -229,7 +233,7 @@ async def list_catalog(
     # The answers themselves are the ones stored on these very rows (#381) — the join ran
     # once per distinct build at judge time — so this reads no database and does no lookup;
     # under `NO_CORPUS` it does no per-row work at all.
-    stored = stored_corpus(corpus, entries)
+    stored = stored_corpus(corpus, entries, epoch=epoch)
     # One grouped ledger read for the page's builds (#591) — the rule `vuln_read` states: never one per row — and only
     # where a surface draws the number: every vulnerability-narrowed list (the Vulnerabilities page asks with one of the
     # five filters, never `all`), and one application's record, which draws it the moment the held sibling line lands and
@@ -237,7 +241,7 @@ async def list_catalog(
     # vulnerability column, so it skips this read even with the open-build index in place (#600).
     draws_seen_here = filtered or app_hash is not None
     seen_here = await seen_here_days(db, [entry.key_full for entry in entries], as_of=as_of) if draws_seen_here else None
-    targets = await load_title_updates(db, entries, corpus=stored) if app_hash is not None else {}
+    targets = await load_title_updates(db, entries, corpus=stored, epoch=epoch) if app_hash is not None else {}
     items = [
         _assessed_entry_out(
             entry,
@@ -247,6 +251,7 @@ async def list_catalog(
             as_of=as_of,
             seen_here=seen_here,
             updates=targets.get((entry.platform, entry.version_hash)),
+            epoch=epoch,
         )
         for entry, row in zip(entries, page_rows, strict=True)
     ]
