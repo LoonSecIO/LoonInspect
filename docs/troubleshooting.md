@@ -2313,15 +2313,19 @@ and `submission case not settled` in `docker compose logs app`. A case reads `pe
 until the service acknowledges it. The audit log has `submission.*` for each act.
 The sentence is the last act's: a withdrawal's once `withdrawnAt` is set (step 8), else a send's while
 `pending`, else a status read's. Where a step says to repeat the act, repeat that one: Send in the row's dialog,
-*Refresh status* or *Withdraw* on the case list. A line that ends *read docker compose logs app* means no
-sentence came back from this instance (restarting, unreachable, or [a proxy in front](#a-proxy-in-front-answers-for-itself)
-answered for it): read that log, then repeat the act.
+*Refresh status* or *Withdraw* on the case list. A repeated Send reaches the same `pending` case only when every
+field is the same, the optional URL, text and contact included. The dialog opens with those three empty, so a
+Send with a different URL, text or contact makes a second case; on the case list, withdraw the one you do not
+want. A line that ends *read docker compose logs app* means no sentence came back from this instance
+(restarting, unreachable, or [a proxy in front](#a-proxy-in-front-answers-for-itself) answered for it): read
+that log, then repeat the act.
 
 1. **Refused before anything was stored.** *"…INTELLIGENCE_ACCESS is off here"*: submissions belong to
    the v2 preview, off by default ([Paid intelligence preview](#paid-intelligence-preview-622)).
    *"…give permission…"*: confirm the preview. *"…data-sharing exclusion list…"*: the one-time override
    sends this case only; the list stays. A 403: only an administrator sends, reads or withdraws a case.
-   *"String should have at most 64 characters"* (or 256): the row's version, or its name, is longer than a case takes.
+   *"String should have at most 64 characters"* (or 256): the row's version, or its name or its bundle
+   identifier, is longer than a case takes.
 2. ***"…(HTTP 400). It said: …"***: the quoted sentence names the rule a field broke (a URL naming an IP
    address or a `.local` host, a hidden character in the text). Nothing was stored there: send a
    corrected case (the dialog's fields stay locked, so close it and press the row's action again), and
