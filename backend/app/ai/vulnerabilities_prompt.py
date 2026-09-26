@@ -95,16 +95,17 @@ _GENERIC = frozenset(
      "low", "severity", "patch", "update", "mac", "macs", "device", "devices", "corpus"}
 )  # fmt: skip
 # A value that IS a finding id. The two namespaces §5 mints, mirroring `_ALLOWED_ID`
-# (`app.core.vuln`) term for term as the page's own `FINDING_ID` does — written out rather than
-# imported so this module stays stdlib-only (S1), and pinned to that regex's source by a test so
-# a widened namespace cannot drift away from it.
-_FINDING_ID = re.compile(r"^(CVE-\d{4}-\d{4,}|LoonVD-\d{4}-\d{6})$")
+# (`app.core.vuln`) term for term, `re.ASCII` and `fullmatch` included, as the page's own
+# `FINDING_ID` does — written out rather than imported so this module stays stdlib-only (S1),
+# and pinned to that regex by a test so a widened namespace, or a digit from another script
+# (#684), cannot drift away from it.
+_FINDING_ID = re.compile(r"^(CVE-\d{4}-\d{4,}|LoonVD-\d{4}-\d{6})$", re.ASCII)
 
 
 def is_finding_id(value: str) -> bool:
     """Whether a Search value is a finding id rather than an app. The page never searches one
     (`findingIdIn`): an id routes to its own page and the lists run unfiltered."""
-    return _FINDING_ID.match(value.strip()) is not None
+    return _FINDING_ID.fullmatch(value.strip()) is not None
 
 
 # The instructions, static and versioned here (threat-model P2). Slot 1's measured shape — the

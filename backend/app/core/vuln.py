@@ -85,7 +85,12 @@ LOCAL_PREFIX = "LOCAL-"
 # message, and nothing else is licensed — a `GHSA-`/`OSV-` id from a public source must
 # not mint a fourth namespace on the wire, so it is refused here rather than passed
 # through verbatim.
-_ALLOWED_ID = re.compile(r"^(CVE-\d{4}-\d{4,}|LoonVD-\d{4}-\d{6})$")
+#
+# Checked with `fullmatch` under `re.ASCII`, because the pattern alone is looser than the
+# shape it writes (#684): in a `str` pattern `\d` is any script's decimal digit, and `$`
+# also matches before a final newline. The text stays the page's `FINDING_ID`, which JS
+# already reads this way, and the AI lever's `_FINDING_ID` mirrors text and flag alike.
+_ALLOWED_ID = re.compile(r"^(CVE-\d{4}-\d{4,}|LoonVD-\d{4}-\d{6})$", re.ASCII)
 
 # `-1` means never (§4c). Minted at the HEC-shaping seam and nowhere upstream: the
 # canonical payload keeps `None`, so a warehouse destination can still render SQL `NULL`.
@@ -106,7 +111,7 @@ def validate_finding_id(value: str) -> str:
         raise ValueError(
             f"{value!r} uses the reserved LOCAL- namespace, which nothing LoonInspect ships mints (docs/vulnerabilities.md §5)"
         )
-    if not _ALLOWED_ID.match(value):
+    if not _ALLOWED_ID.fullmatch(value):
         raise ValueError(
             f"{value!r} is not one of the namespaces §5 licenses for a constructed finding — "
             "CVE-YYYY-NNNN… or LoonVD-YYYY-NNNNNN (docs/vulnerabilities.md §5)"

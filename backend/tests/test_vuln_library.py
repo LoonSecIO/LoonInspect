@@ -48,6 +48,7 @@ from app.core.vuln_library import (
     download_bundle,
     read_bundle,
 )
+from tests.test_vuln_block import LOOSE_IDS
 
 EPOCH = Path(__file__).parent / "fixtures" / "epochs" / "0001"
 BUNDLE = (EPOCH / "epoch-0001.tar.gz").read_bytes()
@@ -341,6 +342,22 @@ def test_a_row_the_wire_would_refuse_at_enqueue_is_refused_at_import(overrides: 
         read_bundle(bundle, signature=signature)
     assert refused.value.state == "epoch_malformed", because
     assert "rows line 1" in str(refused.value)
+
+
+@pytest.mark.parametrize("finding_id", LOOSE_IDS)
+def test_an_id_in_other_digits_or_with_a_newline_after_it_refuses_the_epoch(finding_id: str) -> None:
+    """#684, at the import §5 has the validator guard. The row is otherwise whole — one id, a
+    total of one — so the id is the only thing refused: the epoch whole, as `epoch_malformed`,
+    in the sentence a fourth namespace's row gets, with only the id in it changed."""
+    fourth, refusals = "GHSA-xxxx-yyyy-zzzz", {}
+    for value in (fourth, finding_id):
+        bundle, signature = _rewritten(rows=[_row(ids=[value])])
+        with pytest.raises(CorpusRefused) as refused:
+            read_bundle(bundle, signature=signature)
+        assert refused.value.state == "epoch_malformed"
+        refusals[value] = str(refused.value)
+    assert refusals[finding_id].startswith(f"epoch 0001's rows line 1 was refused: {finding_id!r} is not one of")
+    assert refusals[finding_id] == refusals[fourth].replace(repr(fourth), repr(finding_id))
 
 
 def test_an_object_that_matches_its_digest_and_is_not_text_is_a_named_refusal() -> None:
