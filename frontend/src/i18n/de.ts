@@ -374,7 +374,7 @@ export const de: Translations = {
   },
   myAccount: {
     title: "Mein Konto",
-    description: "Ihr Profil und Passwort.",
+    description: "Ihr Profil, Ihr Passwort und die Anmeldung in zwei Schritten.",
     name: "Name",
     email: "E-Mail",
     roles: "Rollen",
@@ -389,7 +389,26 @@ export const de: Translations = {
     wrongCurrent: "Ihr aktuelles Passwort ist falsch.",
     errorChanging: "Das Passwort konnte nicht geändert werden.",
     sessionsHint:
-      "Beim Ändern des Passworts werden Ihre anderen Sitzungen abgemeldet. API-Token bleiben gültig – widerrufen Sie diese bei Bedarf separat."
+      "Beim Ändern des Passworts werden Ihre anderen Sitzungen abgemeldet. API-Token bleiben gültig – widerrufen Sie diese bei Bedarf separat.",
+    twoStep: {
+      title: "Anmeldung in zwei Schritten",
+      loading: "Anmeldung in zwei Schritten wird geprüft…",
+      unreadable: "Ob die Anmeldung in zwei Schritten für dieses Konto aktiv ist, konnte nicht gelesen werden – und unbekannt ist nicht dasselbe wie aus. Laden Sie die Seite neu; tritt es weiterhin auf, antwortet LoonInspect nicht, und unter Einstellungen › Support steht, wo Sie das melden.",
+      off: "Aus. Eingeschaltet fragt die Anmeldung nach dem Passwort einen sechsstelligen Code aus einer Authenticator-App ab, sodass ein gestohlenes Passwort allein dieses Konto nicht öffnet.",
+      pending: "Aus: Die Einrichtung wurde begonnen und nicht abgeschlossen. Eine neue Einrichtung zeigt einen neuen QR-Code; löschen Sie einen LoonInspect-Eintrag, den die frühere in Ihrer Authenticator-App hinterlassen hat.",
+      onSince: (date: string) => `Aktiv seit ${date}.`,
+      codesLeft: (count: number) => (count === 1 ? "1 Wiederherstellungscode übrig." : `${count} Wiederherstellungscodes übrig.`),
+      setUp: "Einrichten", starting: "Wird gestartet…", confirm: "Einschalten", confirming: "Wird geprüft…", cancel: "Abbrechen",
+      scan: "Scannen Sie diesen QR-Code mit der Authenticator-App auf Ihrem Telefon.",
+      qrTitle: "QR-Code für Ihre Authenticator-App",
+      manual: "Scannen klappt nicht? Geben Sie stattdessen diesen Schlüssel in der App ein:",
+      codeLabel: "Geben Sie dann den sechsstelligen Code ein, den die App anzeigt",
+      failed: "Die Antwort von LoonInspect kam nicht an oder war nicht lesbar. Laden Sie die Seite neu, um zu sehen, ob die Anmeldung in zwei Schritten aktiv ist, und versuchen Sie es dann erneut.",
+      codesTitle: "Die Anmeldung in zwei Schritten ist aktiv. Speichern Sie jetzt Ihre Wiederherstellungscodes.",
+      codesOnce: "Jeder Code meldet Sie einmal ohne Ihr Telefon an. Die Codes werden nur dieses eine Mal angezeigt und nie wieder – bewahren Sie sie sicher auf, etwa in einem Passwortmanager.",
+      copy: "Kopieren", copied: "Kopiert", saved: "Ich habe sie gespeichert",
+      copyRefused: "Dieser Browser hat das Kopieren verweigert. Markieren Sie die Codes oben und kopieren Sie sie selbst."
+    }
   },
   support: {
     title: "Support",
