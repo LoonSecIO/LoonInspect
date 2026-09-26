@@ -49,6 +49,7 @@ from app.core.vuln import (
     VulnFinding,
     loaded_corpus,
     mint_hec_sentinels,
+    validate_finding_id,
     vuln_block,
 )
 from app.core.wire import ENVELOPE, envelope
@@ -429,6 +430,27 @@ def test_only_the_two_licensed_namespaces_construct_and_nothing_else_does() -> N
     ):
         with pytest.raises(ValueError, match="namespace"):
             VulnFinding(id=refused, published=date(2026, 1, 1))
+
+
+# #684's two spellings, each one step from a licensed id: the year in Arabic-Indic digits, and
+# a real id with a newline after it. A `str` pattern's `\d` took the first and `$` the second.
+# Written as escapes so the line says which code points it means.
+LOOSE_IDS = ("CVE-٢٠٢٤-0208", "CVE-2024-0208\n")
+
+
+def test_other_digits_or_a_newline_after_the_id_is_refused_in_the_namespace_sentence() -> None:
+    """#684: §5's shape is ASCII digits and nothing after them, and the one validator now means
+    it — in both namespaces, fullwidth digits included. Refused at construction in the sentence a
+    fourth namespace meets, with only the id in it changed."""
+    fourth = "GHSA-xxxx-yyyy-zzzz"
+    with pytest.raises(ValueError) as refused:
+        validate_finding_id(fourth)
+    for value in (*LOOSE_IDS, "LoonVD-2026-００００４２", "LoonVD-2026-000042\n"):
+        with pytest.raises(ValueError) as direct:
+            validate_finding_id(value)
+        with pytest.raises(ValueError) as constructed:
+            VulnFinding(id=value, published=date(2026, 1, 1))
+        assert str(direct.value) == str(constructed.value) == str(refused.value).replace(repr(fourth), repr(value))
 
 
 def test_no_id_the_wire_carries_is_ever_a_local_id(raw: dict, run) -> None:  # noqa: F811

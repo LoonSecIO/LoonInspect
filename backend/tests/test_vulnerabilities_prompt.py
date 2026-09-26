@@ -267,15 +267,18 @@ def test_a_search_that_is_a_finding_id_is_dropped_and_still_runs() -> None:
     # other way round.
     assert interpret(_reply(app="CVE Manager", state="findings")).filters["q"] == "CVE Manager"
     assert interpret(_reply(app="cve-2024-3400", state="findings")).filters["q"] == "cve-2024-3400"
+    # Digits included (#684): `findingIdIn` searches a year in Arabic-Indic digits, so this does too.
+    loose = "CVE-٢٠٢٤-0208"
+    assert interpret(_reply(app=loose, state="findings")).filters["q"] == loose
 
 
 def test_the_finding_id_shape_is_the_one_shape_section_five_licenses() -> None:
     """Written out rather than imported, so it is pinned to its source (`docs/vulnerabilities.md`
-    §5, "one shape … one validator"): widen a namespace there and this fails rather than drifts."""
-    source = (_ROOT / "backend" / "app" / "core" / "vuln.py").read_text()
-    match = re.search(r"_ALLOWED_ID = re\.compile\(r\"([^\"]+)\"\)", source)
-    assert match, "_ALLOWED_ID is no longer a literal regex in app/core/vuln.py; move this pin with it"
-    assert slot_two._FINDING_ID.pattern == match[1]
+    §5, "one shape … one validator"): widen a namespace there, or let another script's digits
+    back in (#684), and this fails rather than drifts."""
+    from app.core.vuln import _ALLOWED_ID
+
+    assert (slot_two._FINDING_ID.pattern, slot_two._FINDING_ID.flags) == (_ALLOWED_ID.pattern, _ALLOWED_ID.flags)
 
 
 def test_the_module_is_stdlib_only() -> None:
