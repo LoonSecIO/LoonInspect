@@ -2334,8 +2334,8 @@ that log, then repeat the act.
    *"String should have at most 64 characters"* (or 256): the row's version, or its name or its bundle
    identifier, is longer than a case takes.
 2. ***"…(HTTP 400). It said: …"***: the quoted sentence names the rule a field broke (a URL naming an IP
-   address or a `.local` host, a hidden character in the text). Nothing was stored there: send a
-   corrected case (the dialog's fields stay locked, so close it and press the row's action again), and
+   address or a `.local` host; a hidden character is caught here first, step 10). Nothing was stored there:
+   send a corrected case (the dialog's fields stay locked, so close it and press the row's action again), and
    withdraw this one on the case list. The dialog's own *Use an address that starts with https://…* is
    checked before any request: Preview stays off until the URL reads so.
 3. ***"…HTTP 503. It said: "Submissions are not enabled…"***: the service has not opened submissions;
@@ -2369,5 +2369,17 @@ that log, then repeat the act.
    off the menu entry hides, yet the case list stays at `/settings/intelligence-access`, to refresh and withdraw.
    With the preview on and `INTELLIGENCE_SUBMISSIONS` off, the entry and the case list stay, and the list says
    *New cases cannot be sent…*.
+10. ***"…has U+200B at character 12, which a case cannot carry…"*** (any code point, any place), under a
+    field of the dialog while *Preview* stays off, or as Preview's or Send's refusal: that field holds a
+    hidden character, and nothing has left this instance. A case carries no format character but the joiners
+    U+200C (inside Persian and other words) and U+200D (inside emoji sequences), no unpaired surrogate, no
+    line or paragraph separator, and no control character but newline and tab, which `text` alone keeps; the
+    service refuses the same. Such a character usually comes with pasted words: a zero-width space (U+200B),
+    a direction mark (U+200E, U+202E) or a soft hyphen (U+00AD). In `text` or `contact`, delete it: the place
+    counts characters from 1, an emoji as one, and retyping the words around it works too. *Preview* comes
+    back once no field names one. In `app_name` or `bundle_id` (*"…It comes from the inventory…"*), the
+    character is in the build's name or bundle identifier as the inventory reports it, which the dialog cannot
+    change, so no case can name that build. *"…is blank…"*: a request made outside the dialog sent a field of
+    only spaces, tabs or line breaks; the dialog leaves such a field out.
 
 **Y.** Random keys do not collide twice. Report the case's `id` and its sentence (§8); nothing was stored there.

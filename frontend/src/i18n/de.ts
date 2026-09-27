@@ -1253,7 +1253,12 @@ export const de: Translations = {
     send: "Senden", close: "Schließen", state: (word: string) => `Stand des Falls: ${word}`, follow: "Diesen Fall unter Einstellungen › Informationszugang verfolgen.",
     failed: "Die Anfrage ist fehlgeschlagen, und diese Instanz nannte keinen Grund. Versuchen Sie es erneut: Ein wiederholtes Senden erreicht denselben offenen Fall, nie einen zweiten. Schlägt es weiter fehl, lesen Sie docker compose logs app.",
     // Falsche Zuordnung melden (#623): ein Fund eines geprüften Builds, gesendet mit dem Release, das ihn ergab.
-    reportMatch: "Falsche Zuordnung melden", findingLabel: "Der Fund, der auf diesen Build nicht zutrifft"
+    reportMatch: "Falsche Zuordnung melden", findingLabel: "Der Fund, der auf diesen Build nicht zutrifft",
+    // Die Textregel (#623; Support #17, Entscheidung 6, entschieden am 2026-09-27), vor der Vorschau geprüft.
+    hiddenCharacter: (field: string, code: string, at: number) =>
+      `${field} enthält an Stelle ${at} das Zeichen ${code}, das ein Fall nicht übertragen kann: kein Formatzeichen außer den Verbindern U+200C und U+200D, ` +
+      `kein unpaariges Surrogat, kein Zeilen- oder Absatztrenner und kein Steuerzeichen${field === "text" ? " außer Zeilenumbruch und Tabulator" : ""}. ` +
+      (field === "text" || field === "contact" ? "Löschen Sie es, dann öffnen Sie die Vorschau." : "Es stammt aus dem Inventar, daher kann dieser Build nicht gesendet werden.")
   },
   jamfPatch: {
     tabLabel: "Jamf Patch",

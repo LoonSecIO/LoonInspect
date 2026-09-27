@@ -1392,7 +1392,13 @@ export const en = {
     send: "Send", close: "Close", state: (word: string) => `Case state: ${word}`, follow: "Follow this case under Settings › Intelligence Access.",
     failed: "The request failed, and this instance gave no reason. Try again: a repeated Send reaches the same open case, never a second one. If it keeps failing, read docker compose logs app.",
     // Report an incorrect match (#623): one finding of a `covered` build, sent with the release that produced it.
-    reportMatch: "Report an incorrect match", findingLabel: "The finding that does not apply to this build"
+    reportMatch: "Report an incorrect match", findingLabel: "The finding that does not apply to this build",
+    // The text rule (#623; Support #17 decision 6, ruled 2026-09-27), checked before Preview: word for word the sentence
+    // backend/app/schemas/submissions.py answers, so the dialog says the same whichever side finds the character.
+    hiddenCharacter: (field: string, code: string, at: number) =>
+      `${field} has ${code} at character ${at}, which a case cannot carry: no format character but the joiners U+200C and U+200D, ` +
+      `no unpaired surrogate, no line or paragraph separator, and no control character${field === "text" ? " but newline and tab" : ""}. ` +
+      (field === "text" || field === "contact" ? "Delete it, then preview." : "It comes from the inventory, so this build cannot be sent.")
   },
   jamfPatch: {
     tabLabel: "Jamf Patch",

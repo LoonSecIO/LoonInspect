@@ -13,6 +13,7 @@ import pytest_asyncio
 from sqlalchemy import delete, select, text
 
 from tests.test_sharing_send_now_db import _audit_events, _signed_in
+from tests.test_submission_text_rule import CASES
 from tests.test_submissions import ACK, STATUS, Stub, preview_on  # noqa: F401 (autouse here too)
 from tests.test_vuln_library_db import foreign_tenant  # noqa: F401
 
@@ -160,6 +161,27 @@ async def test_a_correction_previews_its_finding_and_the_release_that_produced_i
     payload = (await client.post("/api/submissions/preview", json=body)).json()["payload"]
     assert (payload["kind"], payload["finding"], payload["finding_release"]) == ("correction", "CVE-2024-0208", release)
     assert service.requests == []
+
+
+async def test_the_text_rule_refuses_before_anything_is_stored_or_sent(admin):
+    """Preview and Send answer 422 in the sentence naming the field, the code point and its place, an unpaired
+    surrogate too, as the JSON escape a client sends; nothing is stored or sent. The joiners, newline and tab pass."""
+    from app.schemas.submissions import text_refusal
+
+    client, service = admin
+    lone, json_type = "ab\ud800cd", {"content-type": "application/json"}
+    for path in ("/preview", ""):
+        refused = await client.post("/api/submissions" + path, content=json.dumps(SEND | {"text": lone}), headers=json_type)
+        expected = [{"type": "text_rule", "loc": ["body", "text"], "msg": text_refusal("text", lone)}]
+        assert (refused.status_code, refused.json()) == (422, {"detail": expected}), "U+D800 at character 3"
+    hidden = (await client.post("/api/submissions", json=SEND | {"contact": "security\u200b@example.com"})).json()
+    assert hidden["detail"][0]["msg"].startswith("contact has U+200B at character 9, which a case cannot carry:")
+    assert service.requests == [] and (await client.get("/api/submissions")).json()["cases"] == []
+    kept = [case for case in CASES if case["refused"] is None]
+    words = {"text": "\n".join(case["value"] for case in kept if case["field"] == "text")}
+    words["contact"] = next(case["value"] for case in kept if case["field"] == "contact")
+    payload = (await client.post("/api/submissions/preview", json=BODY | words)).json()["payload"]
+    assert (payload["text"], payload["contact"]) == (words["text"], words["contact"]) and service.requests == []
 
 
 async def test_send_never_answers_a_withdrawal_the_service_has_not_confirmed(admin):

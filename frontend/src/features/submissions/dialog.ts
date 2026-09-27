@@ -5,7 +5,7 @@ import type { SubmissionCaseOut, SubmissionIn, SubmissionKind, SubmissionPreview
 
 /** The submission dialog (#623) as data, so the node lane walks every move. The row names the case, the
  *  administrator types three optional fields; a preview is kept with the body it was asked for, and an edit drops
- *  it and both one-time boxes. No text rule is checked here: the server's sentence is the rule (troubleshooting §21). */
+ *  it and both one-time boxes. The text rule is checked here as the server checks it (`hiddenIn`, troubleshooting §21). */
 export type Named = Pick<SubmissionIn, "kind" | "appName" | "bundleId" | "platform" | "versions" | "finding" | "findingRelease">;
 /** The three typed fields, and a correction's pick among the ids its row names (unpicked, the row's first stands). */
 export type Typed = { publicUrl: string; text: string; contact: string; finding?: string };
@@ -18,9 +18,31 @@ export const OPENED: Dialog = { typed: { publicUrl: "", text: "", contact: "" },
 export const HTTPS = /^https:\/\/[!-~]+$/; // backend/app/schemas/submissions.py's `Url`
 export const TEXT_LIMIT = 2000;
 
-/** An empty field goes as null, which the contract reads as absent. */
+/** An empty or blank field goes as null, which the contract reads as absent; text that is not blank goes as typed. */
 export const bodyOf = (named: Named, typed: Typed): SubmissionIn => ({ ...named, ...(typed.finding ? { finding: typed.finding } : {}),
-  publicUrl: typed.publicUrl.trim() || null, text: typed.text || null, contact: typed.contact.trim() || null });
+  publicUrl: typed.publicUrl.trim() || null, text: typed.text.trim() ? typed.text : null, contact: typed.contact.trim() || null });
+
+/** Support's "text" as Kyle ruled Support #17's decision 6 on 2026-09-27, the rule backend/app/schemas/submissions.py
+ *  checks too (textRule.cases.json holds both to one table): no format character but the joiners U+200C and U+200D,
+ *  no unpaired surrogate, no line or paragraph separator, and no control character; `text` alone keeps newline and
+ *  tab. A hit names the first hidden character by code point and place, counting characters from 1 (an emoji is one). */
+export type TextField = "app_name" | "bundle_id" | "text" | "contact";
+export type Hidden = { field: TextField; code: string; at: number };
+const HIDDEN = /[\p{Cf}\p{Cs}\p{Zl}\p{Zp}\p{Cc}]/u;
+export function hiddenIn(field: TextField, value: string | null | undefined): Hidden | null {
+  const kept = field === "text" ? "\u200c\u200d\n\t" : "\u200c\u200d";
+  let at = 0;
+  for (const char of value ?? "") { // by code point, so an emoji is one and an unpaired surrogate is itself
+    at += 1;
+    if (HIDDEN.test(char) && !kept.includes(char)) return { field, code: `U+${(char.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`, at };
+  }
+  return null;
+}
+
+/** Each of the body's text fields that holds a hidden character, named as the contract names it: Preview waits for none. */
+export const hiddenInBody = (body: SubmissionIn): Hidden[] =>
+  ([["app_name", body.appName], ["bundle_id", body.bundleId], ["text", body.text], ["contact", body.contact]] as const)
+    .map(([field, value]) => hiddenIn(field, value)).filter((hit): hit is Hidden => hit !== null);
 
 export function dialog(state: Dialog, move: Move): Dialog {
   switch (move.type) {

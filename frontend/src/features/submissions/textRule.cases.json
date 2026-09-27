@@ -1,0 +1,25 @@
+{
+  "about": "The text rule of Support's docs/contracts/submissions.md, as Kyle ruled Support #17 decision 6 on 2026-09-27, and the cases both sides answer alike: backend/tests/test_submission_text_rule.py reads this file, frontend/src/features/submissions/submissions.test.tsx reads it. `refused` names the first hidden character by code point and place, counting characters from 1; `said`, where present, is the whole sentence, the same from the server and on the page.",
+  "cases": [
+    {"field": "text", "value": "Seen on \ud83d\udc69\u200d\ud83d\udcbb Macs", "refused": null, "why": "a ZWJ emoji sequence: U+200D is text"},
+    {"field": "app_name", "value": "\ud83c\udff3\ufe0f\u200d\ud83c\udf08 Pride", "refused": null, "why": "a ZWJ sequence with U+FE0F (a mark, not a format character), in a name"},
+    {"field": "text", "value": "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645", "refused": null, "why": "Persian, with U+200C inside a word"},
+    {"field": "contact", "value": "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645 <a@example.com>", "refused": null, "why": "the joiners are text in every text field"},
+    {"field": "text", "value": "Line one\nline two\tindented", "refused": null, "why": "newline and tab, in text"},
+    {"field": "contact", "value": "Kyle\u00a0P. \uf8ff", "refused": null, "why": "a no-break space (a space, Zs) and private use (Apple's logo) are text"},
+    {"field": "text", "value": "Wireshark\u200b 3.6.2", "refused": "U+200B at character 10", "said": "text has U+200B at character 10, which a case cannot carry: no format character but the joiners U+200C and U+200D, no unpaired surrogate, no line or paragraph separator, and no control character but newline and tab. Delete it, then preview.", "why": "zero-width space"},
+    {"field": "text", "value": "\ud83d\ude00 \u202eevil", "refused": "U+202E at character 3", "why": "right-to-left override; the emoji before it is one character"},
+    {"field": "text", "value": "one\u2028two", "refused": "U+2028 at character 4", "why": "line separator"},
+    {"field": "text", "value": "one\u2029two", "refused": "U+2029 at character 4", "why": "paragraph separator"},
+    {"field": "text", "value": "ab\ud800cd", "refused": "U+D800 at character 3", "why": "an unpaired surrogate, as a JSON escape delivers it"},
+    {"field": "bundle_id", "value": "org.example\udc00", "refused": "U+DC00 at character 12", "said": "bundle_id has U+DC00 at character 12, which a case cannot carry: no format character but the joiners U+200C and U+200D, no unpaired surrogate, no line or paragraph separator, and no control character. It comes from the inventory, so this build cannot be sent.", "why": "an unpaired low surrogate"},
+    {"field": "text", "value": "bell\u0007", "refused": "U+0007 at character 5", "why": "a control character"},
+    {"field": "text", "value": "windows\r\nline", "refused": "U+000D at character 8", "why": "carriage return: of the controls, text keeps newline and tab only"},
+    {"field": "contact", "value": "a@example.com\n", "refused": "U+000A at character 14", "said": "contact has U+000A at character 14, which a case cannot carry: no format character but the joiners U+200C and U+200D, no unpaired surrogate, no line or paragraph separator, and no control character. Delete it, then preview.", "why": "newline outside text"},
+    {"field": "contact", "value": "a\tb@example.com", "refused": "U+0009 at character 2", "why": "tab outside text"},
+    {"field": "app_name", "value": "\u200eWhatsApp", "refused": "U+200E at character 1", "said": "app_name has U+200E at character 1, which a case cannot carry: no format character but the joiners U+200C and U+200D, no unpaired surrogate, no line or paragraph separator, and no control character. It comes from the inventory, so this build cannot be sent.", "why": "a left-to-right mark leading a name"},
+    {"field": "text", "value": "soft\u00adhyphen", "refused": "U+00AD at character 5", "why": "soft hyphen, a format character"},
+    {"field": "text", "value": "\ud83c\udff4\udb40\udc67\udb40\udc62\udb40\udc65\udb40\udc6e\udb40\udc67\udb40\udc7f", "refused": "U+E0067 at character 2", "why": "tag characters, even inside a flag sequence"},
+    {"field": "text", "value": "\ufeffBOM", "refused": "U+FEFF at character 1", "why": "zero-width no-break space"}
+  ]
+}
