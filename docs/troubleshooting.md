@@ -1233,6 +1233,26 @@ the hour after a failure; `docker compose restart app` makes it ask now.
    the checkout the image was built from.
 3. **The banner went away and the release did not.** Dismissing hides it for the browser
    session only. The Needs Attention row on the Overview and the Updates block still say it.
+4. **An install that pulls its images** (`docker-compose.pull.yml` in `COMPOSE_FILE`, in the
+   `.env` beside `docker-compose.yml`) runs the release that `LOONINSPECT_VERSION` names there,
+   whatever is checked out:
+   - The notice stayed after the Updates block's steps → their build line has nothing to build
+     on this install. Set `LOONINSPECT_VERSION` in `.env` to the release's tag, then
+     `docker compose pull && docker compose up -d`.
+   - `docker compose pull` stops at `not found` (some Docker versions say `manifest unknown`) →
+     no image carries that tag. `v1.0.0` and earlier have none; the tag is spelled the way the
+     Releases page spells it, `v` included; and a release's images arrive a few minutes after
+     it is published. Correct `LOONINSPECT_VERSION` and pull again.
+   - It stops at `denied` → the registry will not show you that image: a name edited in a
+     compose file, or a package the project has not made public. `docker compose config
+     --images` prints both names; they are `ghcr.io/loonsecio/looninspect` and
+     `ghcr.io/loonsecio/looninspect-db`, the tag after the colon. With those names and a tag the
+     Releases page lists, the refusal is the project's: report it (§8) with the tag and the
+     pull's output. Meanwhile build the same tag from source: delete the `COMPOSE_FILE` line
+     from `.env`, then `GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build`;
+     the volumes are the same.
+   - `required variable LOONINSPECT_VERSION is missing a value` → `.env` has no
+     `LOONINSPECT_VERSION` line. Add it, with the tag.
 
 **N.** The Updates block says a release is available while `git merge-base --is-ancestor`
 says this build contains it; or its sentence names a state this instance is not in.

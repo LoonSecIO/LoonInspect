@@ -64,7 +64,10 @@ numbers likewise do not identify product releases.
 
 **Tags identify shipped code.** Create a `vMAJOR.MINOR.PATCH` tag at the tested commit
 when cutting a release, then publish the GitHub Release with validation and known
-limitations. Do not create a future release tag for planning or move a published tag.
+limitations. Publishing it copies the images `main` built for that commit to
+`ghcr.io/loonsecio/looninspect` and `looninspect-db` under the tag, never as `latest`
+(`.github/workflows/release.yml`, #655), and a prerelease's the same way. Do not create a
+future release tag for planning or move a published tag.
 `v1.0.0` is the first stable release. Runtime date-plus-SHA build stamps identify the
 image and its source; they are not release assignments. The current update checker
 compares commit ancestry against the latest published stable release, not against the
@@ -872,3 +875,4 @@ Appended 2026-09-05, immediately before the flip to public:
 | v1.14 | 2026-09-20 | Release planning in §1.1: milestones, immutable release tags, `future` replacing `v5`, and independent v1.x releases; §8.2 marked historical. |
 | v1.15 | 2026-09-25 | §1.1: every release runs a feature-flag gate, with a promote, keep or delete verdict per switch recorded in `docs/feature-flags.md` and the release notes (#652). |
 | v1.16 | 2026-09-26 | §1.1: migrations expand in one release and contract in the next, checked in CI against the last release's models; a published release tags its images and gets its upgrade notes (#655). |
+| v1.17 | 2026-09-27 | §1.1: publishing a release also copies its commit's two images to `ghcr.io/loonsecio` under the tag, never as `latest` (#655). |

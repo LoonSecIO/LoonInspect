@@ -10,7 +10,8 @@
 # back after.
 #
 # ci.yml stays the correctness gate (build + smoke on every PR); this workflow
-# only publishes what main already proved.
+# only publishes what main already proved. Nothing here pushes to ghcr.io: a
+# release's images go there from release.yml, copied from these, never rebuilt.
 name: Publish images
 
 on:
@@ -95,6 +96,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # GIT_SHA only labels the image (ops/postgres/Dockerfile): release.yml copies both images
+      # to ghcr.io as they are, so the database says which commit built it as the app does.
       - name: Build and push database sidecar image
         if: steps.exists.outputs.published == 'false'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -103,3 +106,5 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.ecr.outputs.registry }}/looninspect-db:${{ github.sha }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}

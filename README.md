@@ -122,8 +122,9 @@ is what stops 40k devices fitting in ten minutes. See [docs/app-catalog.md](docs
 LoonInspect is deployed as two containers: the application — one image carrying both the
 React frontend and the FastAPI backend — and a Postgres alongside it. `docker compose up
 --build` builds natively for your machine, Apple Silicon included. The images CI builds are
-multi-arch (`linux/amd64` + `linux/arm64`) for the hosted pods, but there is no public image
-registry yet — build from source, as below.
+multi-arch (`linux/amd64` + `linux/arm64`), and from v2.0.0 each release publishes them as
+`ghcr.io/loonsecio/looninspect` and `ghcr.io/loonsecio/looninspect-db` under its tag, so step 4
+can pull a release instead of building it.
 Both are in the bundle; nothing external is required, and the database port is never
 published to the host.
 
@@ -158,6 +159,9 @@ Generate an `ENCRYPTION_KEY` and add it to `.env` (used to encrypt MDM connectio
 ```bash
 python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
+
+A host with no Python `cryptography` (one that only pulls the images has no reason to carry it)
+makes the same kind of key with `openssl rand -base64 32 | tr '+/' '-_'`.
 
 Then set the two database passwords, which are also required. Hex rather than base64:
 these end up inside a connection URL, where a `@` or `/` truncates the string instead of
@@ -218,6 +222,23 @@ GIT_SHA=$(git rev-parse --short HEAD) docker compose up --build
 ```
 
 This builds the frontend, bundles it into the FastAPI image, and starts the app at <http://localhost:8001>. API docs are at <http://localhost:8001/docs>.
+
+**Or pull a release instead of building it** (v2.0.0 and later). `docker-compose.pull.yml`
+names the two published images in place of both builds. Check out the release's tag, so the
+compose files are the ones that go with its images, then put the tag in `.env` beside the file
+list, which makes every later `docker compose` command read the override too:
+
+```bash
+git checkout v2.0.0
+printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.pull.yml\nLOONINSPECT_VERSION=v2.0.0\n' >> .env
+docker compose pull
+docker compose up -d
+```
+
+No `latest` is published: the release `.env` names is the one that runs until you change it.
+On Windows, `;` separates the files; with the external database below, `COMPOSE_FILE` is
+`docker-compose.yml:docker-compose.external.yml:docker-compose.pull.yml`. A pull that stops at
+`not found` or `denied` is [docs/troubleshooting.md](docs/troubleshooting.md) §10 step 4.
 
 > **Note:** the container logs and `docker ps` will show the address as `0.0.0.0:8001` — that's the server listening on all interfaces, not a URL you can open. Use `http://localhost:8001` (or `127.0.0.1:8001`) in your browser instead; some browsers will refuse to navigate to `0.0.0.0` directly.
 
@@ -306,6 +327,11 @@ first, and read [docs/operations.md §4–5](docs/operations.md) before rolling 
 downgrade has to be run from the newer image, and swapping the image back first
 crash-loops. Settings › Support › **Updates** prints the steps with the latest release's
 tag filled in.
+
+An install that pulls (`docker-compose.pull.yml` in `COMPOSE_FILE`) takes the same dump and
+checkout, then changes `LOONINSPECT_VERSION` in `.env` to the new tag and runs
+`docker compose pull && docker compose up -d`. The Updates block's build line changes nothing
+there: with the override in force there is nothing to build, so the old version keeps running.
 
 The container now runs as a non-root user (`looninspect`, uid 10001) rather than
 as root. A data volume created by an earlier version is owned by root, and the
@@ -415,8 +441,8 @@ itself.
 
 Builds are named `YYYY.MM.DD+<sha>` — the date answers "how old is this?", the sha
 answers "exactly what code?". A local build following the command above gets the short
-sha; images built by CI carry the full 40-character one. Three ways to read it, in the
-order you'll reach for them:
+sha; images built by CI, a pulled release's among them, carry the full 40-character one.
+Three ways to read it, in the order you'll reach for them:
 
 **In the app.** The sidebar footer carries it on every page — but the sidebar is hidden
 below 768px and can be switched off, so **Settings → My Account** shows the same value
