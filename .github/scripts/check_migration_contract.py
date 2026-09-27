@@ -131,7 +131,7 @@ def refusals(migration: str, source: str, tables: dict[str, set[str]], release: 
 
 def recorded_stamp(source: str) -> str | None:
     """The MIN_READABLE_RELEASE a migration declares at module level, which its upgrade() writes to schema_release."""
-    return next((s.value.value for s in ast.parse(source).body if _target(s) == STAMP
+    return next((str(s.value.value) for s in ast.parse(source).body if _target(s) == STAMP
                  and isinstance(getattr(s, "value", None), ast.Constant)), None)
 
 
@@ -141,7 +141,7 @@ def stamp_refusal(stamps: list[tuple[str, str]], count: int, release: str) -> st
     if not stamps:
         return (f"{count} migration(s) added since {release} declare no {STAMP}, so a database they upgrade keeps an older "
                 f"release's stamp, and that release's image would start on a schema this check holds only to {release}'s "
-                f'models: declare {STAMP} = "{release}" in one of them and write it (docs/BRANCHING.md §1.1).')
+                f'models: declare {STAMP} = "{release}" in one of them and write it in its upgrade() (docs/BRANCHING.md §1.1).')
     migration, value = stamps[-1]
     if _key(value) is None or _key(value) < _key(release):
         return (f"{migration} declares {STAMP} = {value!r}, but this check holds the migrations since {release} only to "
@@ -183,7 +183,7 @@ def main(argv: list[str]) -> int:
              for line, sentence in refusals(Path(path).name, sources[path], tables, release)]
     stamps = [(Path(path).name, value) for path in migrations if (value := recorded_stamp(sources[path])) is not None]
     untrue = stamp_refusal(stamps, len(migrations), release) if migrations else None
-    raised = not untrue and stamps and _key(stamps[-1][1]) > _key(release)
+    raised = not untrue and bool(stamps) and _key(stamps[-1][1]) > _key(release)
     for path, line, sentence in found:  # a raised stamp turns each contraction into a note: the older image refuses
         print(f"::{'notice' if raised else 'error'} file={path},line={line}::{sentence}")
     if untrue:
