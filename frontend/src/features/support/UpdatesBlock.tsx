@@ -105,7 +105,7 @@ export function UpdatesBlock() {
           </p>
         )}
         <p className="max-w-3xl text-sm text-muted-foreground">
-          {tu.rollback} <ExternalLink href={SUPPORT_LINKS.upgradeDocs}>{tu.rollbackLink}</ExternalLink>
+          {tu.rollback} <ExternalLink href={SUPPORT_LINKS.rollbackDocs}>{tu.rollbackLink}</ExternalLink>
         </p>
         <p className="max-w-3xl text-xs text-muted-foreground">{tu.selfHostedOnly}</p>
       </div>
