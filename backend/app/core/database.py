@@ -231,9 +231,8 @@ async def _starts_on_a_newer_schema(connection: AsyncConnection) -> bool:
         f"Start an image of {stamp} or later (the release that upgraded this database, or a newer one), or restore "
         "the backup taken before that upgrade beside this image (docs/operations.md section 5)."
     )
-    logger.error(refusal)
-    # From None: chained, the traceback would carry Alembic's, the 11,431-character line of KNOWN_ISSUES §6.
-    raise RuntimeError(refusal) from None
+    logger.error(refusal)  # a line of its own: the traceback uvicorn logs next is one line of some 12,000 characters
+    raise RuntimeError(refusal) from None  # and it need not carry Alembic's error as well (KNOWN_ISSUES §6)
 
 
 async def _wait_for_database() -> None:
