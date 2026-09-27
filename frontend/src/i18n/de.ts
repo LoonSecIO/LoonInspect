@@ -543,11 +543,12 @@ export const de: Translations = {
       } as Record<string, string>,
       stepsHeading: "Eine Docker-Compose-Installation aktualisieren",
       stepsIntro:
-        "Auf dem Host, im Verzeichnis mit docker-compose.yml. Die erste Zeile ist die Sicherung: Ein Downgrade ist Handarbeit, und dieser Dump ist der dokumentierte Weg zurück.",
+        "Auf dem Host, im Verzeichnis mit docker-compose.yml. Die erste Zeile ist die Sicherung: Startet das ältere Image nicht auf der aktualisierten Datenbank, ist dieser Dump ein Weg zurück.",
       tagPlaceholder: "Ersetzen Sie <tag> durch das zu installierende Release aus der Liste der Releases.",
       releasesPage: "Releases",
-      rollback: "Vor einem Zurückrollen die Schritte für Upgrade und Rollback lesen: Das Downgrade läuft aus dem neueren Image, und wer zuerst das Image zurücktauscht, landet in einer Absturzschleife.",
-      rollbackLink: "Upgrade und Rollback, Schritt für Schritt",
+      rollback:
+        "Ab v2.0.0 ist der Weg ein Release zurück ein Image-Tausch: das ältere Release auf demselben Volume starten, ohne Downgrade. Wer weiter zurück will, als das neuere Release zulässt, oder zurück zu v1.x, führt zuerst das Downgrade aus dem neueren Image aus.",
+      rollbackLink: "Rollback, Schritt für Schritt",
       selfHostedOnly: "Diese Schritte gelten für eine Installation, die Sie selbst mit Docker Compose betreiben."
     }
   },

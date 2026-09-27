@@ -374,6 +374,14 @@ claim guard ghcr \
    && grep -q 'image: ghcr.io/loonsecio/looninspect:' docker-compose.pull.yml \
    && grep -q 'image: ghcr.io/loonsecio/looninspect-db:' docker-compose.pull.yml"
 
+# The README says docker-compose.yml lists every setting the app reads, which was false for
+# 33 of 53 until #707. It holds while the file keeps its list of what it leaves out and the
+# test holding both lists to config.py still runs.
+claim guard compose-list \
+  'lists every setting the app reads' \
+  "grep -q '# Not passed, on purpose:' docker-compose.yml \
+   && grep -q 'def test_every_setting_is_passed_at_its_default_or_listed_as_not_passed' backend/tests/test_compose_settings.py"
+
 # A guard, not an anchor, because the mistake it catches only exists while the sentence
 # does: a README that stops counting the paths has no count left to be wrong about.
 claim guard path-count \

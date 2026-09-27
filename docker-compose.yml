@@ -46,12 +46,19 @@ services:
     ports:
       - "8001:8001"
     environment:
+      # Every setting the app reads (backend/app/core/config.py) is passed here. Past the
+      # database and the key, each runs at config.py's default until .env sets it: put
+      # NAME=value there and run `docker compose up -d`. The few not passed, and why, close
+      # this block; backend/tests/test_compose_settings.py holds both lists to config.py.
       DATABASE_URL: postgresql+asyncpg://looninspect_app:${POSTGRES_APP_PASSWORD}@db:5432/looninspect
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env — see backend/.env.example}
+      # Legacy: while no destination exists, a start makes this URL a generic webhook
+      # destination; Settings › Destinations holds them all (docs/splunk-setup.md).
       SIEM_WEBHOOK_URL: ${SIEM_WEBHOOK_URL:-}
       # Optional non-interactive bootstrap: set both to skip the first-run claim-token
       # wizard and have this admin created automatically on first boot. Leave unset to
       # use the wizard instead (the claim token is printed to `docker compose logs`).
+      # See README "Accounts and roles".
       INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
       # off | self-signed | provided. See README "Is everything encrypted?".
@@ -62,7 +69,7 @@ services:
       TLS_KEY_PATH: ${TLS_KEY_PATH:-./data/certs/server.key}
       # Whose X-Forwarded-For is believed. Set to your reverse proxy's address (or "*"
       # when nothing but the proxy can reach this port) so the audit log records real
-      # client IPs instead of the proxy's.
+      # client IPs instead of the proxy's. See README "Is everything encrypted?".
       FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
       # Seconds an idle connection stays open. Behind a reverse proxy or load balancer,
       # set it above the proxy's idle timeout (an AWS ALB's is 60 by default), or the
@@ -70,25 +77,42 @@ services:
       KEEP_ALIVE_TIMEOUT_SECONDS: ${KEEP_ALIVE_TIMEOUT_SECONDS:-5}
       # Leave on unless you are deliberately serving plain HTTP on a non-localhost
       # hostname — Secure cookies are dropped by browsers over HTTP, which breaks
-      # sign-in silently.
+      # sign-in silently. Same README section.
       SECURE_COOKIES: ${SECURE_COOKIES:-true}
+      # Sign-in idle timeout in seconds: 0 never idles out, anything else is 60 to 1209600
+      # (fourteen days). See docs/auth-design.md §4.1.
+      SESSION_LIFETIME_SECONDS: ${SESSION_LIFETIME_SECONDS:-3600}
       # Lets a connection's Jamf URL be plain http. Off by default: the token
       # exchange carries the client secret in the request body. Only turn this on
-      # for a lab Jamf Pro whose traffic you accept in clear.
+      # for a lab Jamf Pro whose traffic you accept in clear (docs/auth-design.md §5.1).
       ALLOW_INSECURE_MDM_BASE_URL: ${ALLOW_INSECURE_MDM_BASE_URL:-false}
       # Legacy default; each destination can explicitly allow or refuse HTTP in the UI.
-      # Off by default: HTTP exposes credentials and events without encryption.
+      # Off by default: HTTP exposes credentials and events without encryption. This and
+      # the allowlist below: docs/splunk-setup.md §3.
       ALLOW_INSECURE_DESTINATION_URL: ${ALLOW_INSECURE_DESTINATION_URL:-false}
       # JSON exact-host allowlist; *.internal, localhost, 127.0.0.1 and ::1 stay allowed.
       DESTINATION_ALLOWED_HOSTS: ${DESTINATION_ALLOWED_HOSTS:-[]}
       # Daily check against GitHub for a newer published release, surfaced as a banner
       # to signed-in operators. Set false to disable the outbound call entirely
       # (air-gapped instances can also just leave it on — the banner stays silent, and
-      # Settings › Support says why the check could not answer).
+      # Settings › Support says why the check could not answer). README "Update
+      # notifications" has this and UPDATE_CHECK_URL below.
       UPDATE_CHECK: ${UPDATE_CHECK:-true}
       # Hard kill switch for community data sharing — false wins over any tier chosen
       # in the UI. See docs/data-sharing.md and the README's "Community data sharing".
       COMMUNITY_SHARING: ${COMMUNITY_SHARING:-true}
+      # Where the daily exchange posts, path included: the container appends nothing
+      # (docs/data-sharing.md).
+      SHARING_ENDPOINT: ${SHARING_ENDPOINT:-https://api.next.loonsec.io/v1/exchange}
+      # The v2 preview, every switch off by default (docs/feature-flags.md). Paid access needs
+      # the first three and dials INTELLIGENCE_ENDPOINT, an origin with no path
+      # (docs/troubleshooting.md "Paid intelligence preview"); contribution receipts need the
+      # two corpus switches (docs/troubleshooting.md "Contribution receipts").
+      INTELLIGENCE_ACCESS: ${INTELLIGENCE_ACCESS:-false}
+      VULN_TENANT_SELECTION: ${VULN_TENANT_SELECTION:-false}
+      VULN_RELEASE_RETENTION: ${VULN_RELEASE_RETENTION:-false}
+      INTELLIGENCE_ENDPOINT: ${INTELLIGENCE_ENDPOINT:-https://api.next.loonsec.io}
+      CONTRIBUTION_RECEIPTS: ${CONTRIBUTION_RECEIPTS:-false}
       # Request coverage and Report an incorrect match (Posture › Vulnerabilities), which each
       # send one case to the intelligence service. Off by default, and offered only where the
       # v2 paid-access preview is on as well; a case already sent can still be refreshed and
@@ -98,11 +122,56 @@ services:
       # policy, `off` sends none and keeps the other headers, anything else is sent
       # verbatim and replaces the policy rather than extending it.
       CONTENT_SECURITY_POLICY: ${CONTENT_SECURITY_POLICY:-}
+      # The other response headers, same README section: false sends none of them, CSP
+      # included. HSTS goes out only while HSTS_MAX_AGE, in seconds, is above 0.
+      SECURITY_HEADERS: ${SECURITY_HEADERS:-true}
+      HSTS_MAX_AGE: ${HSTS_MAX_AGE:-0}
       # Alternate provider for the update check: the base of a GitHub-shaped repository
       # API answering /releases/latest and /compare/<tag>...<sha>; empty uses this
       # repository's on GitHub. Exists for the future api.loonsec.io endpoint and for
       # testing against a mock.
       UPDATE_CHECK_URL: ${UPDATE_CHECK_URL:-}
+      # SCHEDULER_ENABLED=false makes this container web-only: it serves the pages and the
+      # API and runs nothing on a clock (docs/operations.md §7). SYNC_* is when a new Jamf
+      # connection's daily sweep runs, and SYNC_TIMEZONE is the nightly purges' zone as well;
+      # a sweep that exists keeps its own time, set under Settings › Connections
+      # (docs/ingest-scheduling.md §3.2).
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
+      SYNC_HOUR: ${SYNC_HOUR:-1}
+      SYNC_MINUTE: ${SYNC_MINUTE:-0}
+      SYNC_TIMEZONE: ${SYNC_TIMEZONE:-America/Chicago}
+      # A run with no heartbeat for this many seconds is taken over as dead, and a sweep fails
+      # once more devices fail than the larger of the count and the percentage of devices
+      # attempted so far (docs/runs.md §2 and §7).
+      RUN_STALE_AFTER_SECONDS: ${RUN_STALE_AFTER_SECONDS:-300}
+      SWEEP_FAILURE_MAX_ABSOLUTE: ${SWEEP_FAILURE_MAX_ABSOLUTE:-25}
+      SWEEP_FAILURE_MAX_PERCENT: ${SWEEP_FAILURE_MAX_PERCENT:-1.0}
+      # The largest request body sent to a destination, in bytes: Splunk HEC, then the other
+      # three types. Lower one below its receiver's body limit when deliveries fail with HTTP
+      # 413 (docs/splunk-setup.md §6).
+      SPLUNK_HEC_MAX_REQUEST_BYTES: ${SPLUNK_HEC_MAX_REQUEST_BYTES:-900000}
+      RECORD_FANOUT_MAX_REQUEST_BYTES: ${RECORD_FANOUT_MAX_REQUEST_BYTES:-900000}
+      # Days kept, 1 to 3650 (KNOWN_ISSUES.md §1): outbox events, a dead-lettered delivery's
+      # event, runs with their log lines and closed alert latches, the audit log's daily files.
+      EVENT_OUTBOX_RETENTION_DAYS: ${EVENT_OUTBOX_RETENTION_DAYS:-7}
+      DEAD_LETTER_RETENTION_DAYS: ${DEAD_LETTER_RETENTION_DAYS:-30}
+      RUN_RETENTION_DAYS: ${RUN_RETENTION_DAYS:-30}
+      AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-30}
+      # The container log (docs/auth-design.md §6): DEBUG, INFO, WARNING, ERROR or CRITICAL,
+      # and auto (JSON here), json or console. docs/troubleshooting.md reads it at INFO.
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-auto}
+      # Where the hourly Jamf Patch catalog sync reads, Jamf's public patch server by default
+      # (docs/troubleshooting.md §6).
+      JAMF_PATCH_BASE_URL: ${JAMF_PATCH_BASE_URL:-https://jamf-patch.jamfcloud.com/v1}
+      # Not passed, on purpose:
+      #   APP_NAME                 the product's name in the API docs and the log
+      #   AUDIT_LOG_PATH           a path in the container that must stay on the data volume
+      #   CORS_ORIGINS             the Vite dev server's origin; this image serves one origin
+      #   DATABASE_MODE            docker-compose.external.yml sets it; here it is bundled
+      #   DEBUG                    developer mode: it writes every SQL statement to the log
+      #   HOST, PORT               where the app listens in the container; `ports:` publishes it
+      #   USER_AGENT_PRODUCT_NAME  LoonSec's services match on it; a Jamf connection sets its own
     # The host as seen from inside the container, for the AI test box (#319): Docker
     # Desktop resolves `host.docker.internal` on its own; Docker Engine on Linux only
     # does so with this mapping, and there it lands on the bridge address, where the

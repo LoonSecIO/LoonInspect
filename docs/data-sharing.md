@@ -282,7 +282,7 @@ User-Agent: LoonSecIO/<build-version> exchange
 `SHARING_ENDPOINT` is the whole address, path included: the container posts to it exactly
 as set and appends nothing, so a value that stops at the host posts to that host's root,
 not to a collector. The default is the production collector. The shipped
-`docker-compose.yml` does not pass the variable through; a hosted pod sets it through
+`docker-compose.yml` passes it from `.env` (#707); a hosted pod sets it through
 its `SharingEndpoint` template parameter, which accepts only
 `https://<host>/v1/exchange`. Every share-log row records the address the run used, and a
 failed exchange's reason names its host ([`troubleshooting.md`](troubleshooting.md) §5,

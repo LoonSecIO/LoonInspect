@@ -20,6 +20,11 @@ Known limits — the sizes, the growth rates and the failure modes — are in
 from the checkout, which needs no name at all; the `docker` forms are for when there is
 no checkout to stand in.
 
+**Settings.** `docker-compose.yml` is the full list: every setting the app reads is under
+the app service's `environment:` at its default, and the few it does not pass are named at
+the end of that block with the reason. A `NAME=value` line in `.env` changes one, and
+`docker compose up -d` recreates the container with it.
+
 ---
 
 ## 1. What has to be backed up
@@ -425,8 +430,10 @@ GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build
 docker compose logs -f app
 ```
 
-The backup is the first line because the downgrade path is manual and has to be walked
-*before* the old image goes back, not after — §5.
+The backup is the first line because not every way back is an image swap. From `v2.0.0` on,
+one step back is; going back to a `v1.x` image, or past the release the stamp names, is a
+downgrade run from the newer image *before* the older one goes back, or a restore of this
+dump — §5.
 
 `git pull` upgrades to `main`, which is staging. To install a release instead, put
 `git fetch --tags && git checkout <tag>` in its place: that is the line Settings › Support ›
@@ -526,6 +533,12 @@ notes say so. Put that release or a later one back, or restore the pre-upgrade d
 older image (recovery 3 below). The stamp speaks for the schema only: for what the newer build
 wrote into it, read *A downgrade does not un-write what the newer image wrote* below. Going back
 to a `v1.x` image, which predates the stamp, or past the release the stamp names, is the downgrade.
+
+A sideways database reads as newer too: one migrated by a branch build, or by a prerelease whose
+migration was later reverted, is at a revision the image does not carry, so it starts without
+migrating whenever the stamp allows, on a schema no release made; to put it back on a release's
+schema, run the downgrade below from the build that migrated it, or restore a dump taken before
+that build ran.
 
 ### Do it before you swap the image back
 
@@ -754,8 +767,9 @@ second process. One process with the scheduler on is still the supported shape.
 
 Everything above assumes the bundled `db` service. This is what changes when the database
 is yours (#654), and what does not: `ENCRYPTION_KEY` is still half of every backup (§1),
-migrations still run at startup (§4), and a downgrade still runs from the newer image
-before the swap (§5).
+migrations still run at startup (§4), and going back is still §5's: one step back from
+`v2.0.0` on is an image swap, and going back to `v1.x` or past the stamp is a downgrade run
+from the newer image before the swap.
 
 **The role.** The app never connects as your master user. Prepare `looninspect_app` with
 the program the hosted pods run, as the master, once; it is idempotent, and running it

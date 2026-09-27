@@ -166,7 +166,8 @@ async def test_a_correction_previews_its_finding_and_the_release_that_produced_i
 
 async def test_the_text_rule_refuses_before_anything_is_stored_or_sent(admin):
     """Preview and Send answer 422 in the sentence naming the field, the code point and its place, an unpaired
-    surrogate too, as the JSON escape a client sends; nothing is stored or sent. The joiners, newline and tab pass."""
+    surrogate too, as the JSON escape a client sends, and in the blank sentence for joiners with nothing else; nothing
+    is stored or sent. The joiners inside words, newline and tab pass."""
     from app.schemas.submissions import text_refusal
 
     client, service = admin
@@ -177,6 +178,11 @@ async def test_the_text_rule_refuses_before_anything_is_stored_or_sent(admin):
         assert (refused.status_code, refused.json()) == (422, {"detail": expected}), "U+D800 at character 3"
     hidden = (await client.post("/api/submissions", json=SEND | {"contact": "security\u200b@example.com"})).json()
     assert hidden["detail"][0]["msg"].startswith("contact has U+200B at character 9, which a case cannot carry:")
+    joiner = next(case["value"] for case in CASES if case["refused"] == "blank" and case["field"] == "contact")
+    for path in ("/preview", ""):  # a joiner between spaces is blank (Support #27), not text
+        blank = await client.post("/api/submissions" + path, json=SEND | {"contact": joiner})
+        expected = [{"type": "text_rule", "loc": ["body", "contact"], "msg": text_refusal("contact", joiner)}]
+        assert (blank.status_code, blank.json()) == (422, {"detail": expected})
     assert service.requests == [] and (await client.get("/api/submissions")).json()["cases"] == []
     kept = [case for case in CASES if case["refused"] is None]
     words = {"text": "\n".join(case["value"] for case in kept if case["field"] == "text")}
