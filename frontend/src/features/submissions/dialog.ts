@@ -5,7 +5,7 @@ import type { SubmissionCaseOut, SubmissionIn, SubmissionKind, SubmissionPreview
 
 /** The submission dialog (#623) as data, so the node lane walks every move. The row names the case, the
  *  administrator types three optional fields; a preview is kept with the body it was asked for, and an edit drops
- *  it and both one-time boxes. The text rule is checked here as the server checks it (`hiddenIn`, troubleshooting §21). */
+ *  it and both one-time boxes. The text rule is checked here as the server checks it (`hiddenIn`, `blank`, troubleshooting §21). */
 export type Named = Pick<SubmissionIn, "kind" | "appName" | "bundleId" | "platform" | "versions" | "finding" | "findingRelease">;
 /** The three typed fields, and a correction's pick among the ids its row names (unpicked, the row's first stands). */
 export type Typed = { publicUrl: string; text: string; contact: string; finding?: string };
@@ -18,9 +18,15 @@ export const OPENED: Dialog = { typed: { publicUrl: "", text: "", contact: "" },
 export const HTTPS = /^https:\/\/[!-~]+$/; // backend/app/schemas/submissions.py's `Url`
 export const TEXT_LIMIT = 2000;
 
+/** The two joiners the text rule keeps, ZWNJ (U+200C) and ZWJ (U+200D): text inside a word or an emoji, nothing alone. */
+const JOINERS = String.fromCodePoint(0x200c, 0x200d);
+/** Blank as the text rule counts it (Support #27): nothing left once the joiners and whitespace go. The server judges it
+ *  after any hidden character, as the table's test does; for what passes that, both sides count the same whitespace. */
+export const blank = (value: string): boolean => [...value].filter((char) => !JOINERS.includes(char)).join("").trim() === "";
+
 /** An empty or blank field goes as null, which the contract reads as absent; text that is not blank goes as typed. */
 export const bodyOf = (named: Named, typed: Typed): SubmissionIn => ({ ...named, ...(typed.finding ? { finding: typed.finding } : {}),
-  publicUrl: typed.publicUrl.trim() || null, text: typed.text.trim() ? typed.text : null, contact: typed.contact.trim() || null });
+  publicUrl: typed.publicUrl.trim() || null, text: blank(typed.text) ? null : typed.text, contact: blank(typed.contact) ? null : typed.contact.trim() });
 
 /** Support's "text" as Kyle ruled Support #17's decision 6 on 2026-09-27, the rule backend/app/schemas/submissions.py
  *  checks too (textRule.cases.json holds both to one table): no format character but the joiners U+200C and U+200D,
@@ -30,7 +36,7 @@ export type TextField = "app_name" | "bundle_id" | "text" | "contact";
 export type Hidden = { field: TextField; code: string; at: number };
 const HIDDEN = /[\p{Cf}\p{Cs}\p{Zl}\p{Zp}\p{Cc}]/u;
 export function hiddenIn(field: TextField, value: string | null | undefined): Hidden | null {
-  const kept = field === "text" ? "\u200c\u200d\n\t" : "\u200c\u200d";
+  const kept = field === "text" ? `${JOINERS}\n\t` : JOINERS;
   let at = 0;
   for (const char of value ?? "") { // by code point: a plain emoji is one, never two UTF-16 units; a lone surrogate is one
     at += 1;
