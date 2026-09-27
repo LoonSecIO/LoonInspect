@@ -52,10 +52,13 @@ services:
       # this block; backend/tests/test_compose_settings.py holds both lists to config.py.
       DATABASE_URL: postgresql+asyncpg://looninspect_app:${POSTGRES_APP_PASSWORD}@db:5432/looninspect
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env — see backend/.env.example}
+      # Legacy: while no destination exists, a start makes this URL a generic webhook
+      # destination; Settings › Destinations holds them all (docs/splunk-setup.md).
       SIEM_WEBHOOK_URL: ${SIEM_WEBHOOK_URL:-}
       # Optional non-interactive bootstrap: set both to skip the first-run claim-token
       # wizard and have this admin created automatically on first boot. Leave unset to
       # use the wizard instead (the claim token is printed to `docker compose logs`).
+      # See README "Accounts and roles".
       INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
       # off | self-signed | provided. See README "Is everything encrypted?".
@@ -66,7 +69,7 @@ services:
       TLS_KEY_PATH: ${TLS_KEY_PATH:-./data/certs/server.key}
       # Whose X-Forwarded-For is believed. Set to your reverse proxy's address (or "*"
       # when nothing but the proxy can reach this port) so the audit log records real
-      # client IPs instead of the proxy's.
+      # client IPs instead of the proxy's. See README "Is everything encrypted?".
       FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
       # Seconds an idle connection stays open. Behind a reverse proxy or load balancer,
       # set it above the proxy's idle timeout (an AWS ALB's is 60 by default), or the
@@ -74,24 +77,26 @@ services:
       KEEP_ALIVE_TIMEOUT_SECONDS: ${KEEP_ALIVE_TIMEOUT_SECONDS:-5}
       # Leave on unless you are deliberately serving plain HTTP on a non-localhost
       # hostname — Secure cookies are dropped by browsers over HTTP, which breaks
-      # sign-in silently.
+      # sign-in silently. Same README section.
       SECURE_COOKIES: ${SECURE_COOKIES:-true}
       # Sign-in idle timeout in seconds: 0 never idles out, anything else is 60 to 1209600
       # (fourteen days). See docs/auth-design.md §4.1.
       SESSION_LIFETIME_SECONDS: ${SESSION_LIFETIME_SECONDS:-3600}
       # Lets a connection's Jamf URL be plain http. Off by default: the token
       # exchange carries the client secret in the request body. Only turn this on
-      # for a lab Jamf Pro whose traffic you accept in clear.
+      # for a lab Jamf Pro whose traffic you accept in clear (docs/auth-design.md §5.1).
       ALLOW_INSECURE_MDM_BASE_URL: ${ALLOW_INSECURE_MDM_BASE_URL:-false}
       # Legacy default; each destination can explicitly allow or refuse HTTP in the UI.
-      # Off by default: HTTP exposes credentials and events without encryption.
+      # Off by default: HTTP exposes credentials and events without encryption. This and
+      # the allowlist below: docs/splunk-setup.md §3.
       ALLOW_INSECURE_DESTINATION_URL: ${ALLOW_INSECURE_DESTINATION_URL:-false}
       # JSON exact-host allowlist; *.internal, localhost, 127.0.0.1 and ::1 stay allowed.
       DESTINATION_ALLOWED_HOSTS: ${DESTINATION_ALLOWED_HOSTS:-[]}
       # Daily check against GitHub for a newer published release, surfaced as a banner
       # to signed-in operators. Set false to disable the outbound call entirely
       # (air-gapped instances can also just leave it on — the banner stays silent, and
-      # Settings › Support says why the check could not answer).
+      # Settings › Support says why the check could not answer). README "Update
+      # notifications" has this and UPDATE_CHECK_URL below.
       UPDATE_CHECK: ${UPDATE_CHECK:-true}
       # Hard kill switch for community data sharing — false wins over any tier chosen
       # in the UI. See docs/data-sharing.md and the README's "Community data sharing".
