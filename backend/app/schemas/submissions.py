@@ -2,14 +2,49 @@
 
 from __future__ import annotations
 
+import unicodedata
 import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StringConstraints, ValidationInfo
 from pydantic.alias_generators import to_camel
+from pydantic_core import PydanticCustomError
 
-Line = Annotated[str, StringConstraints(min_length=1, max_length=256)]
+# Support's "text" (docs/contracts/submissions.md) as Kyle ruled Support #17's decision 6 on 2026-09-27: not blank, no
+# format character but the joiners (ZWNJ inside Persian words, ZWJ inside emoji sequences), no unpaired surrogate, no
+# line or paragraph separator, no control character; `text` alone keeps newline and tab. The dialog checks the same
+# (frontend/src/features/submissions/dialog.ts), and frontend/src/features/submissions/textRule.cases.json is the
+# table both sides are tested against.
+HIDDEN = frozenset({"Cf", "Cs", "Zl", "Zp", "Cc"})
+
+
+def text_refusal(field: str, value: str) -> str | None:
+    """The sentence refusing `value` as `field`, the dialog's word for word, or None. It names the first hidden
+    character by code point and place, counting code points from 1 (a plain emoji is one)."""
+    kept = "\u200c\u200d" + ("\n\t" if field == "text" else "")
+    for at, char in enumerate(value, 1):
+        if unicodedata.category(char) in HIDDEN and char not in kept:
+            controls = "control character but newline and tab" if field == "text" else "control character"
+            typed = field in ("text", "contact")  # the administrator writes these; the inventory names the build
+            fix = "Delete it, then preview." if typed else "It comes from the inventory, so this build cannot be sent."
+            return (
+                f"{field} has U+{ord(char):04X} at character {at}, which a case cannot carry: no format character but the"
+                f" joiners U+200C and U+200D, no unpaired surrogate, no line or paragraph separator, and no {controls}. {fix}"
+            )
+    if value.strip():
+        return None
+    return f"{field} is blank: it holds only spaces, tabs or line breaks, and a case takes no blank text."
+
+
+def _text(value: object, info: ValidationInfo) -> object:
+    """Before the length check, which calls an unpaired surrogate raw data it cannot parse and names no field."""
+    if isinstance(value, str) and (said := text_refusal(str(info.field_name), value)):
+        raise PydanticCustomError("text_rule", said)
+    return value
+
+
+Line = Annotated[str, StringConstraints(min_length=1, max_length=256), BeforeValidator(_text)]
 Version = Annotated[str, StringConstraints(min_length=1, max_length=64)]
 Url = Annotated[str, StringConstraints(max_length=512, pattern=r"^https://[!-~]+$")]
 Finding = Annotated[str, StringConstraints(max_length=32, pattern=r"^(CVE-[0-9]{4}-[0-9]{4,}|LoonVD-[0-9]{4}-[0-9]{6})$")]
@@ -30,7 +65,7 @@ class SubmissionIn(Camel):
     platform: Literal["macos", "ios", "ipados", "tvos", "visionos"]
     versions: Annotated[list[Version], Field(min_length=1, max_length=20)]
     public_url: Url | None = None
-    text: Annotated[str, StringConstraints(min_length=1, max_length=2000)] | None = None
+    text: Annotated[str, StringConstraints(min_length=1, max_length=2000), BeforeValidator(_text)] | None = None
     contact: Line | None = None
     finding: Finding | None = None
     finding_release: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")] | None = None

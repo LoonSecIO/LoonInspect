@@ -4,7 +4,8 @@ import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { CatalogEntry } from "@/features/catalog/types";
-import { askPreview, askSend, bodyOf, canSend, correctionFor, coverageFor, dialog, HTTPS, OPENED, oneAtATime, TEXT_LIMIT, type Dialog, type Move, type Named, type Typed } from "@/features/submissions/dialog";
+import { askPreview, askSend, bodyOf, canSend, correctionFor, coverageFor, dialog, hiddenInBody, HTTPS, OPENED, oneAtATime, TEXT_LIMIT, type Dialog, type Move, type Named,
+  type TextField, type Typed } from "@/features/submissions/dialog";
 import { useModal } from "@/hooks/useModal";
 import type { Translations } from "@/i18n/en";
 
@@ -23,6 +24,10 @@ export function SubmissionView({ named, findings = [], state, copy, dispatch, on
   const { typed, shown, sent, busy } = state;
   const body = bodyOf(named, typed);
   const badUrl = !!body.publicUrl && !HTTPS.test(body.publicUrl);
+  // The text rule's sentence under the field it names, the server's own words; Preview waits until there is none.
+  const hidden = hiddenInBody(body);
+  const hint = (...fields: TextField[]) => hidden.filter((hit) => fields.includes(hit.field))
+    .map((hit) => <p key={hit.field} className="text-sm text-destructive">{copy.hiddenCharacter(hit.field, hit.code, hit.at)}</p>);
   const locked = busy || sent !== null;
   const field = (name: keyof Typed) => ({ value: typed[name], disabled: locked, "aria-describedby": "submission-guidance",
     onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => dispatch({ type: "typed", field: name, value: event.target.value }) });
@@ -32,6 +37,7 @@ export function SubmissionView({ named, findings = [], state, copy, dispatch, on
       <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="submission-title" className="w-full max-w-2xl space-y-4 rounded-lg border bg-background p-6 shadow-lg">
         <h2 id="submission-title" className="text-lg font-semibold">{copy.title[named.kind]}</h2>
         <p className="text-sm">{named.appName} {named.versions.join(" · ")}<span className="block font-mono text-xs text-muted-foreground">{named.bundleId}</span></p>
+        {hint("app_name", "bundle_id")}
         {/* A correction names one finding, picked from the row's ids alone; a pick is an edit, so it drops the preview. */}
         {named.kind === "correction" && (findings.length > 1
           ? <label className="block space-y-1 text-sm"><span>{copy.findingLabel}</span>
@@ -44,9 +50,11 @@ export function SubmissionView({ named, findings = [], state, copy, dispatch, on
         <label className="block space-y-1 text-sm"><span>{copy.textLabel}</span>
           <textarea className="block min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 disabled:opacity-50" maxLength={TEXT_LIMIT} {...field("text")} /></label>
         <p className="text-right text-xs text-muted-foreground">{copy.counter(typed.text.length, TEXT_LIMIT)}</p>
+        {hint("text")}
         <label className="block space-y-1 text-sm"><span>{copy.contactLabel}</span><Input maxLength={256} {...field("contact")} /></label>
+        {hint("contact")}
         <p id="submission-guidance" className="text-sm text-muted-foreground">{copy.guidance}</p>
-        <Button variant="outline" size="sm" disabled={locked || badUrl} onClick={onPreview}>{copy.preview}</Button>
+        <Button variant="outline" size="sm" disabled={locked || badUrl || hidden.length > 0} onClick={onPreview}>{copy.preview}</Button>
         {shown === null ? <p className="text-sm text-muted-foreground">{copy.previewFirst}</p> : <>
           <pre className="max-h-64 overflow-auto rounded-md bg-muted p-3 font-mono text-xs">{JSON.stringify(shown.answer.payload, null, 2)}</pre>
           <p className="text-xs text-muted-foreground">{copy.caseKey}</p></>}
