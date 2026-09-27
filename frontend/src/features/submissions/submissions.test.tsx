@@ -8,8 +8,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import type { CatalogEntry } from "@/features/catalog/types";
 import { listSubmissions, submissionStatus, withdrawSubmission, type SubmissionCaseOut } from "@/features/submissions/api";
-import { askPreview, askSend, bodyOf, canSend, coverageFor, dialog, hiddenIn, OPENED, oneAtATime, type Dialog, type Move, type Named, type Shown,
-  type TextField } from "@/features/submissions/dialog";
+import { askPreview, askSend, blank, bodyOf, canSend, coverageFor, dialog, hiddenIn, OPENED, oneAtATime, type Dialog, type Move, type Named,
+  type Shown, type TextField } from "@/features/submissions/dialog";
 import { RequestCoverage, SubmissionView } from "@/features/submissions/SubmissionDialog";
 import { de } from "@/i18n/de";
 import { en } from "@/i18n/en";
@@ -131,7 +131,8 @@ describe("the text rule", () => {
   it("answers every case the server answers, alike, in the server's own sentence", () => {
     for (const { field, value, refused, said } of TABLE.cases) {
       const hit = hiddenIn(field as TextField, value);
-      expect(hit && `${hit.code} at character ${hit.at}`, JSON.stringify(value)).toBe(refused);
+      // In the server's order: a hidden character first, then blank (joiners and whitespace alone, Support #27).
+      expect(hit ? `${hit.code} at character ${hit.at}` : blank(value) ? "blank" : null, JSON.stringify(value)).toBe(refused);
       const sentence = hit ? copy.hiddenCharacter(field, hit.code, hit.at) : null;
       expect(sentence === null || sentence.startsWith(`${field} has ${refused}, which a case cannot carry: `)).toBe(true);
       if (said) expect(sentence).toBe(said);
@@ -155,6 +156,11 @@ describe("the text rule", () => {
   it("sends a blank text as no text, as it does a blank address or contact; other text goes as typed", () => {
     expect(bodyOf(NAMED, { publicUrl: " ", text: " \n\t ", contact: " " })).toMatchObject({ publicUrl: null, text: null, contact: null });
     expect(bodyOf(NAMED, { ...OPENED.typed, text: " Seen on every Mac.\n" }).text).toBe(" Seen on every Mac.\n");
+    // Joiners with nothing but whitespace are blank too, the table's own cases; a joiner inside words goes as typed.
+    for (const text of pick("blank", "text")) expect(bodyOf(NAMED, { ...OPENED.typed, text }).text).toBeNull();
+    for (const contact of pick("blank", "contact")) expect(bodyOf(NAMED, { ...OPENED.typed, contact }).contact).toBeNull();
+    const joined = `a${String.fromCodePoint(0x200d)}b`;
+    expect(bodyOf(NAMED, { ...OPENED.typed, text: joined, contact: joined })).toMatchObject({ text: joined, contact: joined });
   });
 });
 
