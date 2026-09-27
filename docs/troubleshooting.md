@@ -2234,6 +2234,33 @@ This build earns, stores, redeems and withdraws receipts.
   `ENCRYPTION_KEY` on the consent row. It never appears in the share log, a log line, a
   support bundle or the browser. `GET /api/system/data-sharing` reports its presence,
   dates and withdrawal progress under `participation`.
+- **Where to read it.** Settings › Intelligence Access shows the receipt in its
+  *Community contribution* panel, beside *Paid access*: whether one is held (never the
+  receipt), its state in words, when the contribution was accepted, *Updates authorized
+  until*, the last and next fetch with the receipt, the withdrawal's progress while it
+  waits, and the last error sentence (`participation.error`). The panel needs receipts,
+  not the paid preview, but the sidebar lists the page only where the paid preview is on
+  too; otherwise open `/settings/intelligence-access`. The panel is absent where receipts
+  are off, unless a receipt is still held or a withdrawal still waits.
+  - ***No receipt yet* after an exchange:** press Send now on Data sharing and read the
+    payload of the row it shows (a `sent` row in the share log from after receipts were
+    turned on serves too). Without `"participation_receipt": true` this instance did not
+    ask: receipts are off here (the panel then says so), or `SHARING_ENDPOINT` is not an
+    `https://` address free of a user name and password. With it, the service accepted
+    the upload without issuing a receipt; its receipts may be off, so contact support. A
+    `contribution receipt ignored` line in the container log means it sent one this build
+    could not read (below).
+  - ***Held, not in use*:** the receipt is inside its 30 days, and the line above the
+    panel's list names what stops it: receipts off in this instance's configuration, or
+    `COMMUNITY_SHARING=false`. It fetches nothing until that changes; a withdrawal still
+    completes.
+  - ***Past its deadline*:** the held receipt's 30 days are over, so it fetches nothing,
+    and no accepted exchange has earned a newer one since. Data sharing's *Last exchange*
+    says whether uploads are failing; when they are sent, the *No receipt yet* step
+    applies.
+  - ***Next fetch with the receipt* reads *None scheduled*** after an exchange that
+    brought the corpus, and whenever the receipt cannot be used: a withdrawal waiting, its
+    deadline passed, receipts or sharing off, or `COMMUNITY_SHARING=false`.
 - **Turning sharing off, or resetting the submission UUID,** stops uploads at once and
   marks the receipt `withdrawal_pending`. The scheduler sends the withdrawal within one
   tick, then retries every ten minutes until the service acknowledges it. `withdrawn`
@@ -2243,8 +2270,8 @@ This build earns, stores, redeems and withdraws receipts.
 - **"Upload held: sharing was switched off earlier…"** appears as a failed share-log row
   with no payload; nothing left the box. Sharing was turned back on before the service
   acknowledged the earlier withdrawal. The withdrawal must land first, or it could cancel
-  the receipt the new upload earns. The status's `participation.error`, and the container
-  log's `contribution withdrawal not acknowledged` line, give the reason:
+  the receipt the new upload earns. The panel's last error sentence (`participation.error`),
+  and the container log's `contribution withdrawal not acknowledged` line, give the reason:
   - **HTTP 503:** the service's receipt preview is off or its store is unavailable. Retry
     later.
   - **HTTP 404 or a bare 403:** no receipt service answers at the address that issued
@@ -2262,10 +2289,18 @@ This build earns, stores, redeems and withdraws receipts.
     deadline.
   - It never runs while sharing is off, `COMMUNITY_SHARING=false`, or a withdrawal is
     waiting.
-  - The status shows `lastRedeemedAt` and `retryAfter`.
+  - The panel shows the last and the next redemption as *Last fetched with the receipt*
+    and *Next fetch with the receipt* (`lastRedeemedAt` and `retryAfter` on the status).
   - `contribution receipt could not fetch the corpus` in the container log carries the
     same reasons as the withdrawal (HTTP 503, 404 or a bare 403, "Could not reach", 400)
     and changes nothing held.
+- **Paid access beside a receipt.** Both can be present, and neither turns the other on
+  or off: activating paid access never changes sharing, switching sharing off withdraws
+  the receipt and leaves paid access in place, and *Stop paid updates locally* leaves the
+  receipt. Each keeps refreshing on its own schedule: paid access once a day, the receipt
+  only after an exchange that did not bring the corpus. Each selects the release it
+  brings, so *Selected corpus* under *Paid access* is whichever arrived last. No request
+  carries both the paid credential and the receipt.
 - **`contribution receipt dropped`:** the service no longer honours the receipt. The
   reason is one of:
   - `unknown` (HTTP 401);
@@ -2410,8 +2445,8 @@ that log, then repeat the act.
    *"String should have at most 64 characters"* (or 256): the row's version, or its name or its bundle
    identifier, is longer than a case takes.
 2. ***"…(HTTP 400). It said: …"***: the quoted sentence names the rule a field broke (a URL naming an IP
-   address or a `.local` host, a hidden character in the text). Nothing was stored there: send a
-   corrected case (the dialog's fields stay locked, so close it and press the row's action again), and
+   address or a `.local` host; a hidden character is caught here first, step 10). Nothing was stored there:
+   send a corrected case (the dialog's fields stay locked, so close it and press the row's action again), and
    withdraw this one on the case list. The dialog's own *Use an address that starts with https://…* is
    checked before any request: Preview stays off until the URL reads so.
 3. ***"…HTTP 503. It said: "Submissions are not enabled…"***: the service has not opened submissions;
@@ -2445,5 +2480,17 @@ that log, then repeat the act.
    off the menu entry hides, yet the case list stays at `/settings/intelligence-access`, to refresh and withdraw.
    With the preview on and `INTELLIGENCE_SUBMISSIONS` off, the entry and the case list stay, and the list says
    *New cases cannot be sent…*.
+10. ***"…has U+200B at character 12, which a case cannot carry…"*** (any code point, any place), under a
+    field of the dialog while *Preview* stays off, or as Preview's or Send's refusal: that field holds a
+    hidden character, and nothing has left this instance. A case carries no format character but the joiners
+    U+200C (inside Persian and other words) and U+200D (inside emoji sequences), no unpaired surrogate, no
+    line or paragraph separator, and no control character, though `text` may carry newline and tab; the
+    service refuses the same. Such a character usually comes with pasted words: a zero-width space (U+200B),
+    a direction mark or override (U+200E, U+202E) or a soft hyphen (U+00AD). In `text` or `contact`, delete
+    it: the place counts code points from 1 (a plain emoji is one), and retyping the words around it works too.
+    *Preview* comes back once no field names one. In `app_name` or `bundle_id` (*"…It comes from the
+    inventory…"*), the character is in the build's name or bundle identifier as the inventory reports it,
+    which the dialog cannot change, so no case can name that build. *"…is blank…"*: a request made outside
+    the dialog sent a field of only spaces, tabs or line breaks; the dialog leaves such a field out.
 
 **Y.** Random keys do not collide twice. Report the case's `id` and its sentence (§8); nothing was stored there.

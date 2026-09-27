@@ -393,6 +393,7 @@ and is never reused.
 | PR-07 | Every required status check passes before merge is available | `ruleset` | block | active |
 | PR-08 | Agent-authored changes are read in full by a human before merge | `review` | manual | proposed |
 | PR-09 | An `inspect-NNNN/` pull request body closes its issue with `Closes #NNNN` | `ci` | block | proposed |
+| PR-10 | No migration since the last release drops or renames a table or column that release reads | `ci` | block | active — the backend job's `Migration contract` step (§1.1, #671) |
 
 PR-08 has no automated form and is deliberately listed anyway. Recording it as a
 control means its absence is a known gap rather than an oversight, and it
@@ -592,6 +593,12 @@ cd backend  && uv run --frozen pytest
 ```bash
 # if any file under backend/app/models changed, require a new file under
 # backend/migrations/versions in the same diff
+```
+
+**PR-10** — no migration contracts what the last release reads
+
+```bash
+.github/scripts/check_migration_contract.py   # the backend job's `Migration contract` step; needs the release tags
 ```
 
 **SP-01** — findings document exists for the branch
@@ -891,4 +898,5 @@ Appended 2026-09-05, immediately before the flip to public:
 | v1.15 | 2026-09-25 | §1.1: every release runs a feature-flag gate, with a promote, keep or delete verdict per switch recorded in `docs/feature-flags.md` and the release notes (#652). |
 | v1.16 | 2026-09-26 | §1.1: migrations expand in one release and contract in the next, checked in CI against the last release's models; a published release tags its images and gets its upgrade notes (#655). |
 | v1.17 | 2026-09-27 | §1.1, §8.1: `v*` tags are the repository admin role's to create, move or delete, by the `release-tags` ruleset `apply-repo-config.sh` applies before the images template trusts them (#672). |
-| v1.18 | 2026-09-27 | §1.1: the schema records the oldest release that can read it, CI keeps that stamp truthful, and `RELEASE` is set before a tag, so from v2.0.0 on one step back is an image swap (#672). |
+| v1.18 | 2026-09-27 | PR-10 (§6.3, §7) and its `controls.yml` entry: the migration contract check of §1.1 (#671), `block` and `active` in the backend job. |
+| v1.19 | 2026-09-27 | §1.1: the schema records the oldest release that can read it, CI keeps that stamp truthful, and `RELEASE` is set before a tag, so from v2.0.0 on one step back is an image swap (#672). |

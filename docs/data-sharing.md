@@ -11,12 +11,13 @@ never attributable — and the patching and vulnerability feeds are built from t
 Sharing and the feeds are two halves of the same exchange: the daily upload *is* the
 feed query, one conversation per tenant per day.
 
-> **v2 status (2026-09-26):** [the contribute-or-pay design](vulnerability-service-v2.md)
+> **v2 status (2026-09-27):** [the contribute-or-pay design](vulnerability-service-v2.md)
 > separates consent from update entitlement, retains use of acquired intelligence after
 > expiry, pauses automatic reveals and adds explicit application submissions. The paid
 > client and the contribution receipts are built and default-off (#622, the two sections
-> under Cloud notes), tenant-selected releases are built and default-off (#621), and the
-> explicit submissions are not yet built (#623). The coupling and five-submitter
+> under Cloud notes), tenant-selected releases are built and default-off (#621), the
+> explicit submissions are built behind their own switch, which v2.0.0 ships off (#623,
+> #692), and this container answers no reveal request (#624). The coupling and five-submitter
 > rationale below describe the v1 contract every shipped client still speaks; v2
 > supersedes them where those sections say so. [The contributor transition](#the-contributor-transition-v2)
 > says what changes for an instance that shares today, and when.
