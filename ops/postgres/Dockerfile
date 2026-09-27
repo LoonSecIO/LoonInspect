@@ -32,3 +32,13 @@ COPY initdb/ /docker-entrypoint-initdb.d/
 
 # The managed path: idempotent, and run on every start rather than once.
 COPY --chmod=0755 looninspect-db-init /usr/local/bin/looninspect-db-init
+
+# What the image is and which commit built it, read the way the app image's are (`docker
+# inspect`), because a release's database is pulled from ghcr.io too (#655). GIT_SHA comes
+# from publish-images.yml; a build without it says "unknown". Labels add no layer.
+ARG GIT_SHA
+LABEL org.opencontainers.image.revision="${GIT_SHA:-unknown}"
+LABEL org.opencontainers.image.title="LoonInspect database"
+LABEL org.opencontainers.image.source="https://github.com/LoonSecIO/LoonInspect"
+LABEL org.opencontainers.image.url="https://github.com/LoonSecIO/LoonInspect"
+LABEL org.opencontainers.image.documentation="https://github.com/LoonSecIO/LoonInspect/blob/main/README.md"

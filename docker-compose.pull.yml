@@ -1,0 +1,22 @@
+# A release's published images in place of a build (#655; README "4. Build and run").
+#
+#   git fetch --tags && git checkout v2.0.0
+#   printf '\nCOMPOSE_FILE=docker-compose.yml:docker-compose.pull.yml\nLOONINSPECT_VERSION=v2.0.0\n' >> .env
+#   docker compose pull
+#   docker compose up -d
+#
+# Each release from v2.0.0 on is at ghcr.io/loonsecio under its own tag and nothing else: there
+# is no `latest` to drift to, so what runs is the release .env names until you change it.
+# COMPOSE_FILE in .env is what makes every later `docker compose` command read this file too;
+# without it, a plain `docker compose up -d` builds from source instead. Upgrading is the next
+# tag's checkout and the same tag in LOONINSPECT_VERSION, dump first (README "Upgrading an
+# existing install"). With the external database, COMPOSE_FILE is
+# docker-compose.yml:docker-compose.external.yml:docker-compose.pull.yml. On Windows, `;`
+# separates the files. `!reset` needs Docker Compose 2.24 or newer (`docker compose version`).
+services:
+  db:
+    image: ghcr.io/loonsecio/looninspect-db:${LOONINSPECT_VERSION:?set LOONINSPECT_VERSION in .env to the release tag to run, such as v2.0.0}
+    build: !reset null
+  app:
+    image: ghcr.io/loonsecio/looninspect:${LOONINSPECT_VERSION:?set LOONINSPECT_VERSION in .env to the release tag to run, such as v2.0.0}
+    build: !reset null

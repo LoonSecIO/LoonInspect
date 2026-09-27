@@ -1,9 +1,11 @@
 # A published release or prerelease (v2.0.0-rc.1; `releases/latest` skips those) adds its version
 # as a tag on the images Publish images pushed for its commit, by digest (ECR forbids moving a tag,
-# not adding one), and appends its upgrade notes (docs/BRANCHING.md §1.1). The push role trusts v*
-# tags once the maintainer redeploys ops/aws/images.template.yml with them (ops/aws/README.md §1).
-# A release runs its tagged commit's copy of this file: whoever can push a v* tag can assume that
-# role, so .github/rulesets/release-tags.json leaves pushing one to the repository admin role (#672).
+# not adding one), copies those images to ghcr.io/loonsecio under the version, and appends its
+# upgrade notes (docs/BRANCHING.md §1.1). The push role trusts v* tags once the maintainer
+# redeploys ops/aws/images.template.yml with them (ops/aws/README.md §1). A release runs its tagged
+# commit's copy of this file: whoever can push a v* tag can assume that role, so
+# .github/rulesets/release-tags.json leaves pushing one to the repository admin role (#672), and a
+# release of a commit from before #655 puts nothing on ghcr.io.
 name: Release
 
 on:
@@ -23,12 +25,15 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    outputs:
+      sha: ${{ steps.version.outputs.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: The tag is a version on a commit of main that names its release
+        id: version
         run: |
           [[ $TAG =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]] || {
             echo "::error::$TAG is not a version tag (vMAJOR.MINOR.PATCH, or a prerelease such as v2.0.0-rc.1; docs/BRANCHING.md §1.1), so no image was tagged."; exit 1; }
@@ -38,7 +43,7 @@ jobs:
           release=$(git show "$sha:backend/app/core/version.py" | sed -n 's/^RELEASE = "\(.*\)"$/\1/p')
           [ "$release" = "${TAG%%-*}" ] || {
             echo "::error::$TAG's commit says RELEASE = \"$release\" in backend/app/core/version.py, not ${TAG%%-*}, so no image was tagged: that line is how an image knows its release when it decides whether it can start on a newer database (docs/BRANCHING.md §1.1). Delete this release and its tag, set RELEASE in a pull request, and tag that commit."; exit 1; }
-          echo "SHA=$sha" >> "$GITHUB_ENV"
+          echo "SHA=$sha" >> "$GITHUB_ENV"; echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
       - name: Assume the ECR push role (it trusts v* tags once ops/aws/images.template.yml is redeployed with them, ops/aws/README.md §1)
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
@@ -69,6 +74,61 @@ jobs:
                 --image-manifest-media-type "$(pick sha.json '.images[0].imageManifestMediaType')" > /dev/null
               echo "$repo:$TAG -> $digest, the image $SHA built"
             fi
+          done
+
+  ghcr:
+    # The public copy (#655): the images main built for this commit, under the version and never
+    # as `latest`, so a pull names the release it gets (docker-compose.pull.yml). Copied, not
+    # rebuilt: every platform's manifest, layer and provenance is the one ECR holds. The version
+    # exists only from this moment, so it is an annotation on the new index, beside the source
+    # and revision the image configs carry as labels. No other job holds packages: write.
+    name: Copy the images to ghcr.io
+    needs: images
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      packages: write
+    env:
+      SHA: ${{ needs.images.outputs.sha }}
+    steps:
+      - name: Assume the ECR push role, to read the images
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ECR_PUSH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+        id: ecr
+
+      - name: Sign in to ghcr.io with this job's token
+        env:
+          TOKEN: ${{ github.token }}
+        run: printf '%s' "$TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Copy looninspect and looninspect-db under the version
+        env:
+          ECR: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -o pipefail
+          # What an index names: the images a copy keeps, and a different push would not.
+          manifests() { docker buildx imagetools inspect --raw "$1" | jq -c '[.manifests[]?.digest] | sort'; }
+          for repo in looninspect looninspect-db; do
+            src=$ECR/$repo:$TAG dst=ghcr.io/loonsecio/$repo:$TAG
+            want=$(manifests "$src") || {
+              echo "::error::Could not read $repo:$TAG back from ECR, where the job before this one tagged it; the lines above say why. Re-run this job."; exit 1; }
+            if have=$(manifests "$dst" 2>/dev/null); then
+              [ "$have" = "$want" ] && { echo "::notice::$dst already names the images $SHA built"; continue; }
+              echo "::error::$dst already names other images than the ones $SHA built, and a published version never moves. Find what pushed it; publish the next version rather than reuse this one."; exit 1
+            fi
+            docker buildx imagetools create --tag "$dst" \
+              --annotation "index:org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+              --annotation "index:org.opencontainers.image.revision=$SHA" \
+              --annotation "index:org.opencontainers.image.version=$TAG" "$src" || {
+              echo "::error::ghcr.io refused $dst; the lines above say why. 'denied' means this repository may not write that package: if it exists, its settings' Manage Actions access must give LoonSecIO/LoonInspect the Write role (the first push from this job grants that); if it does not, the organization's package settings must let members create packages. Anything else, re-run this job."; exit 1; }
+            [ "$(manifests "$dst")" = "$want" ] || {
+              echo "::error::$dst was pushed and does not name the images $SHA built. Re-run this job; if it says so again, compare the two with docker buildx imagetools inspect --raw."; exit 1; }
+            echo "$dst -> the images $SHA built"
           done
 
   notes:

@@ -64,7 +64,10 @@ numbers likewise do not identify product releases.
 
 **Tags identify shipped code.** Create a `vMAJOR.MINOR.PATCH` tag at the tested commit
 when cutting a release, then publish the GitHub Release with validation and known
-limitations. Do not create a future release tag for planning or move a published tag.
+limitations. Publishing it copies the images `main` built for that commit to
+`ghcr.io/loonsecio/looninspect` and `looninspect-db` under the tag, never as `latest`
+(`.github/workflows/release.yml`, #655), and a prerelease's the same way. Do not create a
+future release tag for planning or move a published tag.
 Only the repository admin role can create, move or delete a `v*` tag (the `release-tags`
 ruleset, §8.1), because the role that pushes images trusts a workflow run on one (#672).
 `v1.0.0` is the first stable release. Runtime date-plus-SHA build stamps identify the
@@ -900,3 +903,4 @@ Appended 2026-09-05, immediately before the flip to public:
 | v1.17 | 2026-09-27 | §1.1, §8.1: `v*` tags are the repository admin role's to create, move or delete, by the `release-tags` ruleset `apply-repo-config.sh` applies before the images template trusts them (#672). |
 | v1.18 | 2026-09-27 | PR-10 (§6.3, §7) and its `controls.yml` entry: the migration contract check of §1.1 (#671), `block` and `active` in the backend job. |
 | v1.19 | 2026-09-27 | §1.1: the schema records the oldest release that can read it, CI keeps that stamp truthful, and `RELEASE` is set before a tag, so from v2.0.0 on one step back is an image swap (#672). |
+| v1.20 | 2026-09-27 | §1.1: publishing a release also copies its commit's two images to `ghcr.io/loonsecio` under the tag, never as `latest` (#655). |

@@ -63,8 +63,9 @@ want, and X being easy to discover does not weaken it.
 
 ## Supported versions
 
-Pre-1.0, the supported version is the tip of `main` — there is no public image registry
-yet, so the image you run is the one you built from it.
+Pre-1.0, the supported version is the tip of `main`, and the image you run is the one you
+built from it. From v2.0.0 a release is also published as images at `ghcr.io/loonsecio`,
+under its tag only (the README's step 4).
 Fixes are not backported.
 
 ## Deployment notes worth reading first

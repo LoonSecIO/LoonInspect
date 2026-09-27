@@ -362,6 +362,18 @@ claim guard hardened-base \
   'hardened base|hardened image|distroless|chainguard' \
   "grep -rqiE 'distroless|chainguard' Dockerfile"
 
+# Until #655 the README said there was no public image registry, so a sentence telling a
+# stranger to pull from one is this table's class of claim. It is true while release.yml's
+# token may write packages and copies the images there, and the override the README's
+# commands name pulls the same two names.
+claim guard ghcr \
+  'ghcr\.io/loonsecio' \
+  "grep -qE '^ +packages: write\$' .github/workflows/release.yml \
+   && grep -q 'imagetools create --tag \"\$dst\"' .github/workflows/release.yml \
+   && grep -q 'dst=ghcr.io/loonsecio/\$repo:\$TAG' .github/workflows/release.yml \
+   && grep -q 'image: ghcr.io/loonsecio/looninspect:' docker-compose.pull.yml \
+   && grep -q 'image: ghcr.io/loonsecio/looninspect-db:' docker-compose.pull.yml"
+
 # A guard, not an anchor, because the mistake it catches only exists while the sentence
 # does: a README that stops counting the paths has no count left to be wrong about.
 claim guard path-count \
