@@ -19,7 +19,7 @@ from alembic.util import CommandError
 from sqlalchemy import text
 
 from app.core import database
-from app.core.version import RELEASE
+from app.core.version import RELEASE, get_app_version
 
 needs_db = [
     pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
@@ -27,6 +27,7 @@ needs_db = [
 ]
 
 AHEAD = "ffff06720001"
+DOCS = database._BACKEND_DIR.parent / "docs"
 NEWER = """import sqlalchemy as sa
 from alembic import op
 
@@ -47,6 +48,11 @@ def downgrade():
 
 def _stamp(release: str) -> str:
     return f"op.execute(\"UPDATE schema_release SET min_readable_release = '{release}'\")"
+
+
+def _quoted_in(phrase: str, *documents: str) -> bool:
+    """docs/diagnosability.md rule 4: the words ship with their step-through, so rewording one fails here."""
+    return all(phrase in " ".join((DOCS / name).read_text().split()) for name in documents)
 
 
 def test_this_images_release_is_one_a_stamp_compares_with():
@@ -94,11 +100,10 @@ async def test_an_image_at_or_above_the_stamp_starts_without_migrating(newer, re
     await upgrade(_stamp(recorded), _stamp(stamp))
     with caplog.at_level(logging.WARNING, logger=database.__name__):
         await database.init_db()
-    assert (
-        f"(its schema is at revision {AHEAD}, which this image does not carry), which recorded that {recorded} or later "
-        "can read it; this image is v2.0.0 (build "
-    ) in caplog.text
-    assert "so it starts without migrating" in caplog.text
+    line = caplog.text.replace(f"(build {get_app_version()})", "(build …)")
+    phrase = f"which recorded that {recorded} or later can read it; this image is v2.0.0 (build …), so it starts without"
+    assert f"(its schema is at revision {AHEAD}, which this image does not carry), {phrase}" in line
+    assert _quoted_in(phrase.replace(recorded, "v2.0.0"), "operations.md")
     async with database.engine.connect() as connection:
         assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == AHEAD
 
@@ -111,7 +116,9 @@ async def test_an_image_below_the_stamp_refuses_with_a_sentence_naming_both(newe
     with pytest.raises(RuntimeError) as refused, caplog.at_level(logging.ERROR, logger=database.__name__):
         await database.init_db()
     sentence = str(refused.value)
-    assert "which recorded that only v2.1.0 or later can read it; this image is v2.0.0 (build " in sentence
+    phrase = "which recorded that only v2.1.0 or later can read it; this image is v2.0.0 (build …), so it will not start on it"
+    assert phrase in sentence.replace(f"(build {get_app_version()})", "(build …)")
+    assert _quoted_in(phrase, "troubleshooting.md", "operations.md")
     assert "Start an image of v2.1.0 or later" in sentence and "restore the backup taken before that upgrade" in sentence
     # Logged as a line of its own, and raised without Alembic's traceback chained to it.
     assert sentence in caplog.text and refused.value.__suppress_context__

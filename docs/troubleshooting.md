@@ -475,6 +475,14 @@ the run `jobID`, the token's index settings, and the search you ran.
      and follow the migration-failure step below; do not remove indexes by hand.
    - an Alembic error → the migration on startup failed. Do not downgrade by hand
      ([`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) §6); reportable **F**.
+   - *This database was upgraded by a newer release … which recorded that only v2.1.0 or later
+     can read it; this image is v2.0.0 (build …), so it will not start on it* → the image is
+     older than the database, and the release that upgraded it recorded that this one cannot
+     read what it left. The sentence names both releases, what the database needs and what is
+     running, so there is nothing to look up. Put an image of the named release or a later one
+     back (`git checkout` its tag, `docker compose up -d --build`), or restore the dump taken
+     before that upgrade beside this image ([`operations.md`](operations.md) §5). Do not edit
+     `schema_release` or `alembic_version` to make it start: the stamp is right.
    - `1 validation error for Settings` whose next lines name `DATABASE_URL` and say
      *append ?ssl=require* → `DATABASE_MODE=external` needs the URL to ask for TLS
      (`?ssl=require`, `verify-ca` or `verify-full`). If the lines say *asyncpg spells the
