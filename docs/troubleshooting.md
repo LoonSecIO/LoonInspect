@@ -2285,6 +2285,17 @@ This build earns, stores, redeems and withdraws receipts.
   - ***Next fetch with the receipt* reads *None scheduled*** after an exchange that
     brought the corpus, and whenever the receipt cannot be used: a withdrawal waiting, its
     deadline passed, receipts or sharing off, or `COMMUNITY_SHARING=false`.
+  - ***The contribution receipt's state could not be read. Reload the page; if it keeps
+    failing, read docker compose logs app.*** in place of the panel: it reads the same
+    status as Settings › Data Sharing, and that read failed without a reason. A refusal
+    that gives one, such as *Insufficient permissions*, shows that sentence instead.
+    Still there after a reload:
+    `docker compose logs app --since 30m | grep '"/api/system/data-sharing"'`. No line
+    from the reload means the read never reached the app: it was restarting or
+    unreachable, or [a proxy in front](#a-proxy-in-front-answers-for-itself) answered for
+    it. A `"status_code": 200` means its answer never reached the page, so look at what
+    sits between. A `"status_code"` of 500 or more is the app failing the read: report
+    those lines (§8).
 - **Turning sharing off, or resetting the submission UUID,** stops uploads at once and
   marks the receipt `withdrawal_pending`. The scheduler sends the withdrawal within one
   tick, then retries every ten minutes until the service acknowledges it. `withdrawn`
@@ -2294,8 +2305,9 @@ This build earns, stores, redeems and withdraws receipts.
 - **"Upload held: sharing was switched off earlier…"** appears as a failed share-log row
   with no payload; nothing left the box. Sharing was turned back on before the service
   acknowledged the earlier withdrawal. The withdrawal must land first, or it could cancel
-  the receipt the new upload earns. The panel's last error sentence (`participation.error`),
-  and the container log's `contribution withdrawal not acknowledged` line, give the reason:
+  the receipt the new upload earns. The *Community contribution* panel it names shows the
+  reason as its last error sentence (`participation.error`), and so does the container
+  log's `contribution withdrawal not acknowledged` line:
   - **HTTP 503:** the service's receipt preview is off or its store is unavailable. Retry
     later.
   - **HTTP 404 or a bare 403:** no receipt service answers at the address that issued
