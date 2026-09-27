@@ -209,6 +209,8 @@ async def status(db: AsyncSession) -> dict:
     saved = row.intelligence_status or {}
     return {
         "enabled": enabled(),
+        # INTELLIGENCE_SUBMISSIONS (#692): the page's two submission actions need it besides `enabled`, never inside it.
+        "submissions": settings.intelligence_submissions,
         "credentialPresent": bool(row.intelligence_credential),
         "state": saved.get("state", "not_activated"),
         "updatesUntil": saved.get("updates_until"),

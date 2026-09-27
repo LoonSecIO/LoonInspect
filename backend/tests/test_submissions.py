@@ -28,6 +28,7 @@ URL_RULE = (  # Support's refusal, verbatim (src/exchange/submissions.py at 8690
 def preview_on(monkeypatch):
     monkeypatch.setattr(submissions.settings, "intelligence_endpoint", "https://service.example")
     monkeypatch.setattr(submissions.settings, "intelligence_access", True)
+    monkeypatch.setattr(submissions.settings, "intelligence_submissions", True)
 
 
 def correction(**changes) -> SubmissionCase:
@@ -151,4 +152,13 @@ async def test_nothing_leaves_without_permission_or_with_the_preview_off(monkeyp
     stub = Stub(correction(permission_at=None))
     assert "no permission" in (await submissions.send(stub, stub.case)).last_error
     monkeypatch.setattr(submissions.settings, "intelligence_access", False)
-    assert "INTELLIGENCE_ACCESS" in (await submissions.send(stub, stub.case)).last_error and stub.requests == []
+    assert "INTELLIGENCE_ACCESS is off here" in (await submissions.send(stub, stub.case)).last_error and stub.requests == []
+
+
+async def test_nothing_leaves_with_its_own_switch_off_though_the_preview_is_on(monkeypatch):
+    """#692: INTELLIGENCE_SUBMISSIONS stops a permitted case with paid access on, in the sentence the routes say."""
+    monkeypatch.setattr(submissions.settings, "intelligence_submissions", False)
+    stub = Stub(correction())
+    said = "Nothing was sent: submissions have their own switch, and INTELLIGENCE_SUBMISSIONS is off here."
+    assert (submissions.switched_off(), (await submissions.send(stub, stub.case)).last_error) == (said, said)
+    assert stub.case.state == "pending" and stub.requests == []

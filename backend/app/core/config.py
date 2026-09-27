@@ -119,6 +119,10 @@ class Settings(BaseSettings):
     # Default-off v2 contribution receipts (#622): a consenting exchange asks for a receipt
     # and withdraws it when consent ends. Needs the same two corpus flags as paid access.
     contribution_receipts: bool = False
+    # Default-off coverage requests and match corrections (#692): previewing and sending a case
+    # need it as well as paid access, and it stays off at v2.0.0 where paid access is on (ruled
+    # 2026-09-27). A case's list, status and withdrawal never read it.
+    intelligence_submissions: bool = False
 
     # Where the daily exchange posts. The default is the production collector on its interim
     # estate name (ruled 2026-09-25 with the origin above; the 2026-09-18 ruling had kept the

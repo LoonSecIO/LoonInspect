@@ -1,7 +1,7 @@
 """Request coverage and Report an incorrect match (#623; docs/troubleshooting.md §21). Every route needs
 SYSTEM_WRITE, as Send now does: view permission is not permission to disclose. Previewing and sending are
-refused while INTELLIGENCE_ACCESS is off; reading, status and withdrawal are not, as stopping paid updates
-is not, so the switch never strands a withdrawal. No answer carries a case key."""
+refused while INTELLIGENCE_ACCESS or INTELLIGENCE_SUBMISSIONS (#692) is off; reading, status and withdrawal
+are not, as stopping paid updates is not, so neither switch strands a withdrawal. No answer carries a case key."""
 
 from __future__ import annotations
 
@@ -17,12 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditAction, audit
 from app.core.auth import Principal, current_principal, require
-from app.core.config import settings
 from app.core.database import get_db
 from app.core.intelligence import locked_settings
 from app.core.permissions import Permission
 from app.core.sharing import get_or_create_settings
-from app.core.submissions import POLL_FLOOR, mint_case_key, payload_for, refresh, send, withdraw
+from app.core.submissions import POLL_FLOOR, mint_case_key, payload_for, refresh, send, switched_off, withdraw
 from app.models.schema import DataSharingSettings, SubmissionCase
 from app.schemas.submissions import SubmissionCaseOut, SubmissionCasesOut, SubmissionIn, SubmissionPreviewOut
 
@@ -34,8 +33,8 @@ SAME = ("kind", "app_name", "bundle_id", "platform", "versions", "public_url", "
 
 def _draft(body: SubmissionIn, row: DataSharingSettings) -> tuple[SubmissionCase, str | None]:
     """The case the body describes, and the exclusion pattern its bundle identifier matches, as the exchange does."""
-    if not settings.intelligence_access:
-        raise HTTPException(409, "Nothing was sent: submissions belong to the v2 preview, and INTELLIGENCE_ACCESS is off here.")
+    if off := switched_off():
+        raise HTTPException(409, off)
     named = (body.finding, body.finding_release)
     if not (all(named) if body.kind == "correction" else not any(named)):
         raise HTTPException(422, "A correction names the finding and the release that produced it; a coverage request, neither.")
@@ -57,7 +56,7 @@ async def _case(db: AsyncSession, case_id: uuid.UUID) -> SubmissionCase:
 @router.get("", response_model=SubmissionCasesOut)
 async def cases(db: AsyncSession = Depends(get_db)) -> SubmissionCasesOut:
     rows = await db.scalars(select(SubmissionCase).order_by(SubmissionCase.created_at.desc(), SubmissionCase.id.desc()))
-    return SubmissionCasesOut(enabled=settings.intelligence_access, cases=[SubmissionCaseOut.model_validate(r) for r in rows])
+    return SubmissionCasesOut(enabled=switched_off() is None, cases=[SubmissionCaseOut.model_validate(r) for r in rows])
 
 
 @router.post("/preview", response_model=SubmissionPreviewOut)
