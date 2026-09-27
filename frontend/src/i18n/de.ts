@@ -55,7 +55,7 @@ export const de: Translations = {
       tierHeading: "Teilnahme",
       tierReveal: "Teilen und verbreitete Titel offenlegen (empfohlen)",
       tierRevealHelp:
-        "Täglich pseudonyme Inventarschlüssel und Installationszahlen. Diese Stufe kann Anfragen nach App-Namen im Klartext beantworten; schützen Sie interne Anwendungen durch Ausschlüsse. Automatische Anfragen bleiben im v2-Dienst pausiert.",
+        "Täglich pseudonyme Inventarschlüssel und Installationszahlen, dazu Ihre Einwilligung, Anfragen nach App-Namen im Klartext zu beantworten. Diese Anfragen sind pausiert: Dieser Build beantwortet keine, und eine gespeicherte Auswahl allein nimmt sie nie wieder auf. Schützen Sie interne Anwendungen durch Ausschlüsse.",
       tierKeys: "Nur Schlüssel teilen",
       tierKeysHelp:
         "Täglich anonyme Inventarschlüssel mit Installationszahlen. Anfragen nach App-Namen werden nie beantwortet — es wird ausschließlich Verbreitungssignal beigetragen.",
@@ -68,7 +68,7 @@ export const de: Translations = {
       disclosureNever:
         "Nie geteilt: Gerätekennungen, Seriennummern, Hostnamen, Benutzernamen, Dateipfade, Extension Attributes, Verbindungs- oder Tenant-Namen, Konten, Zugangsdaten oder Audit-Historie. LoonSec speichert auf diesem Pfad keine Quell-IP-Adressen.",
       disclosureReveals:
-        "Die Offenlegungsstufe kann App-Namen auf Dienstanfrage senden. Die vorgeschlagene Schwelle von fünf Beitragenden ist kein nachgewiesener Datenschutz und kein Beleg unabhängiger Kunden. Nutzen Sie ausschließlich Schlüssel und Ausschlüsse, wenn Namen privat bleiben müssen.",
+        "Der Austausch sendet keine App-Namen. Anfragen nach Namen im Klartext sind pausiert, weil die vorgeschlagene Schwelle von fünf Beitragenden weder ein nachgewiesener Datenschutz noch ein Beleg unabhängiger Kunden ist, und dieser Build beantwortet auf keiner Stufe eine davon.",
       disclosurePseudonym:
         "Übermittlungen sind pseudonym, nicht anonym: Snapshots dieses Tenants sind über die Übermittlungs-ID miteinander verknüpfbar (so ersetzen erneute Übermittlungen ältere, statt doppelt gezählt zu werden). Die ID ist zufällig, an nichts gebunden und unten zurücksetzbar.",
       previewHeading: "Genau das, was gesendet würde",

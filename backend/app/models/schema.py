@@ -877,7 +877,8 @@ class DataSharingSettings(Base):
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Title keys the server asked to have revealed, carried to the NEXT exchange —
-    # the reveal-lag the contract specifies. Only ever populated on the reveal tier.
+    # the reveal-lag the contract specifies. Reveals are paused (#624): nothing fills it
+    # now, and each exchange empties what an older build queued at the reveal tier.
     pending_reveal_keys: Mapped[list] = mapped_column(JSONB, default=list)
 
     # AI-inference consent (INSPECT-0112), deliberately on this row and not a feature
