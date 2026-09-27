@@ -2110,7 +2110,10 @@ connection license is transmitted, and activation never enables inventory sharin
 
 - The panel appears only with `INTELLIGENCE_ACCESS=true`,
   `VULN_RELEASE_RETENTION=true` and `VULN_TENANT_SELECTION=true`. All remain off by
-  default. Enable only for a reviewed pilot after Support's deployed IAM/privacy
+  default. *Request coverage* and *Report an incorrect match* need a fourth,
+  `INTELLIGENCE_SUBMISSIONS=true`, off by default even where those three are on
+  ([§21](#21-request-coverage-or-report-an-incorrect-match-is-refused-or-a-case-never-shows-a-status)
+  steps 1 and 9). Enable only for a reviewed pilot after Support's deployed IAM/privacy
   checks; this is not a v1.x rollout instruction. Configure `INTELLIGENCE_ENDPOINT`
   as the trusted HTTPS service origin, without a path, credentials or query. The
   default is `https://api.next.loonsec.io`, the production service on its interim
@@ -2322,6 +2325,10 @@ that log, then repeat the act.
 
 1. **Refused before anything was stored.** *"…INTELLIGENCE_ACCESS is off here"*: submissions belong to
    the v2 preview, off by default ([Paid intelligence preview](#paid-intelligence-preview-622)).
+   *"…INTELLIGENCE_SUBMISSIONS is off here"*: sending cases has its own switch, off by default even where
+   the preview is on. Where this instance should send them, set `INTELLIGENCE_SUBMISSIONS=true` in the
+   `.env` beside `docker-compose.yml`, recreate the container (`docker compose up -d`) and reload the page,
+   then repeat the act.
    *"…give permission…"*: confirm the preview. *"…data-sharing exclusion list…"*: the one-time override
    sends this case only; the list stays. A 403: only an administrator sends, reads or withdraws a case.
    *"String should have at most 64 characters"* (or 256): the row's version, or its name or its bundle
@@ -2353,11 +2360,14 @@ that log, then repeat the act.
    Posture › Vulnerabilities only: the Catalog tab, a device's page, an application's record and the Lookup
    page show the same words without either. Both are for administrators (`SYSTEM_WRITE`), only while the v2
    preview is on (`INTELLIGENCE_ACCESS`, `VULN_RELEASE_RETENTION` and `VULN_TENANT_SELECTION`, the three that
-   list the Intelligence Access menu entry: [Paid intelligence preview](#paid-intelligence-preview-622)),
+   list the Intelligence Access menu entry: [Paid intelligence preview](#paid-intelligence-preview-622))
+   together with a fourth switch, `INTELLIGENCE_SUBMISSIONS`, off by default (step 1),
    and only for a build with a version on a platform the service takes: macOS, iOS, iPadOS, tvOS or visionOS.
    *Request coverage* is on a row that page's *Outside the corpus* chip lists (`unknown_app`). *Report an
    incorrect match* is on a row with findings while the heading reads *Vulnerability corpus as of …*: the page's
    answer then names the release behind them (`corpusRelease`), which the report sends. While the preview is
    off the menu entry hides, yet the case list stays at `/settings/intelligence-access`, to refresh and withdraw.
+   With the preview on and `INTELLIGENCE_SUBMISSIONS` off, the entry and the case list stay, and the list says
+   *New cases cannot be sent…*.
 
 **Y.** Random keys do not collide twice. Report the case's `id` and its sentence (§8); nothing was stored there.

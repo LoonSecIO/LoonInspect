@@ -3,7 +3,8 @@
 A case's key is its idempotency key, status capability and withdrawal capability at once: minted before
 the first request, stored encrypted like a contribution receipt, sent only in a request body, never logged
 or shown, and never joined by a credential, receipt or submission UUID. Sending belongs to the v2 preview
-INTELLIGENCE_ACCESS gates; status and withdrawal do not, so switching it off never strands a withdrawal.
+INTELLIGENCE_ACCESS gates and needs INTELLIGENCE_SUBMISSIONS, its own switch, too (#692); status and
+withdrawal need neither, so switching either off never strands a withdrawal.
 Outcomes land on the case (`state`, `last_error`), quoting the service's one bounded sentence.
 """
 
@@ -35,6 +36,15 @@ TYPED = ("public_url", "text", "contact")  # what the administrator wrote; withd
 POLL_FLOOR = timedelta(seconds=60)  # the service answers a faster status read with 429
 SAID = 1000  # characters of the service's sentence quoted; its longest, the public_url rule, has 387
 Transport = httpx.AsyncBaseTransport | None
+
+
+def switched_off() -> str | None:
+    """Why no new case may be previewed or sent here, naming the switch that is off; None while both are on."""
+    if not settings.intelligence_access:
+        return "Nothing was sent: submissions belong to the v2 preview, and INTELLIGENCE_ACCESS is off here."
+    if not settings.intelligence_submissions:
+        return "Nothing was sent: submissions have their own switch, and INTELLIGENCE_SUBMISSIONS is off here."
+    return None
 
 
 def mint_case_key() -> str:
@@ -150,9 +160,8 @@ async def send(db: AsyncSession, case: SubmissionCase, *, transport: Transport =
     for fresh in (False, True):
         if case.state != "pending" or case.withdrawn_at or _waiting(case.retry_at):
             break
-        if not settings.intelligence_access or case.permission_at is None:
-            why = "no permission is recorded; confirm the case's preview" if settings.intelligence_access else ""
-            _failed(case, f"Nothing was sent: {why or 'INTELLIGENCE_ACCESS, the v2 preview switch, is off'}.")
+        if (off := switched_off()) or case.permission_at is None:
+            _failed(case, off or "Nothing was sent: no permission is recorded; confirm the case's preview.")
             break
         if (reply := await _post(case, "", payload_for(case), transport)) is None:
             break

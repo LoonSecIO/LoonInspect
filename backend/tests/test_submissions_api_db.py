@@ -122,6 +122,36 @@ async def test_nothing_leaves_without_permission_the_preview_or_the_override(adm
     assert listed["enabled"] is False and [c["id"] for c in listed["cases"]] == [sent["id"]] and len(service.requests) == 1
 
 
+async def test_its_own_switch_stops_preview_and_send_and_never_the_list_status_or_withdrawal(admin, monkeypatch):
+    """#692: paid access on, INTELLIGENCE_SUBMISSIONS off. Preview and send refuse in the sentence naming the switch; a
+    case sent before still lists, reads its status and withdraws. The intelligence status reports the switch beside
+    `enabled`, never inside it; switched back on, a new case can be sent."""
+    from app.core.config import settings
+
+    client, service = admin
+    withdrawn = STATUS | {"state": "withdrawn", "closed_at": "2026-09-27T00:00:00Z"}
+    service.answers += [(202, ACK), (200, STATUS | {"state": "reviewing"}), (200, withdrawn)]
+    case = (await client.post("/api/submissions", json=SEND)).json()
+    for preview in ("vuln_tenant_selection", "vuln_release_retention"):  # all of `enabled` on, so it has something to lose
+        monkeypatch.setattr(settings, preview, True)
+    monkeypatch.setattr(settings, "intelligence_submissions", False)
+    said = "Nothing was sent: submissions have their own switch, and INTELLIGENCE_SUBMISSIONS is off here."
+    for path, body in (("/preview", BODY), ("", SEND | {"text": "A new case."})):
+        off = await client.post("/api/submissions" + path, json=body)
+        assert (off.status_code, off.json()["detail"]) == (409, said)
+    listed = (await client.get("/api/submissions")).json()
+    assert listed["enabled"] is False and [c["id"] for c in listed["cases"]] == [case["id"]]
+    assert (await client.post(f"/api/submissions/{case['id']}/status")).json()["state"] == "reviewing"
+    assert (await client.post(f"/api/submissions/{case['id']}/withdraw")).json()["state"] == "withdrawn"
+    assert len(service.requests) == 3, "the send before, then the status read and the withdrawal"
+    reported = [(await client.get("/api/system/intelligence")).json()]
+    monkeypatch.setattr(settings, "intelligence_submissions", True)
+    reported.append((await client.get("/api/system/intelligence")).json())
+    assert [(answer["enabled"], answer["submissions"]) for answer in reported] == [(True, False), (True, True)]
+    assert (await client.get("/api/submissions")).json()["enabled"] is True
+    assert (await client.post("/api/submissions/preview", json=BODY)).status_code == 200
+
+
 async def test_a_correction_previews_its_finding_and_the_release_that_produced_it(admin):
     """Report an incorrect match's body, in the page's own names (frontend `bodyOf`): the payload adds the pair."""
     client, service = admin

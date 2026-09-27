@@ -89,6 +89,11 @@ services:
       # Hard kill switch for community data sharing — false wins over any tier chosen
       # in the UI. See docs/data-sharing.md and the README's "Community data sharing".
       COMMUNITY_SHARING: ${COMMUNITY_SHARING:-true}
+      # Request coverage and Report an incorrect match (Posture › Vulnerabilities), which each
+      # send one case to the intelligence service. Off by default, and offered only where the
+      # v2 paid-access preview is on as well; a case already sent can still be refreshed and
+      # withdrawn with it off. See docs/troubleshooting.md §21.
+      INTELLIGENCE_SUBMISSIONS: ${INTELLIGENCE_SUBMISSIONS:-false}
       # Content-Security-Policy (README "Response headers"): empty is the app's own
       # policy, `off` sends none and keeps the other headers, anything else is sent
       # verbatim and replaces the policy rather than extending it.

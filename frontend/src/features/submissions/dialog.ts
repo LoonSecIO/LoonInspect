@@ -66,11 +66,12 @@ export function caseOf(entry: CatalogEntry, kind: SubmissionKind): Named | null 
   return platform && versions.length > 0 ? { kind, appName: entry.name, bundleId: entry.bundleId || null, platform, versions } : null;
 }
 
-/** Request coverage: an `unknown_app` build, an administrator, and the preview on, whatever the sharing choice. */
+/** Request coverage: an `unknown_app` build, an administrator, and `enabled`: the preview on and INTELLIGENCE_SUBMISSIONS
+ *  with it (#692), as the page reads both. Whatever the sharing choice. */
 export const coverageFor = (entry: CatalogEntry, canWrite: boolean, enabled: boolean): Named | null =>
   canWrite && enabled && entry.vuln.assessment === "unknown_app" ? caseOf(entry, "coverage") : null;
 
-/** Report an incorrect match: a `covered` build naming a finding, an administrator, the preview on, and the release
+/** Report an incorrect match: a `covered` build naming a finding, an administrator, `enabled` as above, and the release
  *  the page's answers were judged under (`corpusRelease`). The dialog picks from the ids the row's answer lists and
  *  no others, none past its cap; the first stands until another is picked. */
 export function correctionFor(entry: CatalogEntry, canWrite: boolean, enabled: boolean, release: string | null): { named: Named; findings: string[] } | null {

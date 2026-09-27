@@ -71,5 +71,5 @@ class SubmissionCaseOut(Camel):
 
 
 class SubmissionCasesOut(Camel):
-    enabled: bool  # whether this instance may send a new case (INTELLIGENCE_ACCESS)
+    enabled: bool  # whether this instance may send a new case (INTELLIGENCE_ACCESS and INTELLIGENCE_SUBMISSIONS)
     cases: list[SubmissionCaseOut]

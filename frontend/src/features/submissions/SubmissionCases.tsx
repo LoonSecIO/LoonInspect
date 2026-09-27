@@ -79,8 +79,8 @@ export function SubmissionCasesView({ read, copy, locale, now, acts = {}, on = {
 /**
  * Settings › Intelligence Access: this organization's coverage requests and match reports (#623). Every
  * submissions route needs SYSTEM_WRITE, so the page renders this for administrators only, beside the paid
- * panel and never inside it: the list, Refresh and Withdraw stay open while INTELLIGENCE_ACCESS is off, so
- * the switch never strands a withdrawal.
+ * panel and never inside it: the list, Refresh and Withdraw stay open while INTELLIGENCE_ACCESS or
+ * INTELLIGENCE_SUBMISSIONS (#692) is off, so neither switch strands a withdrawal.
  */
 export function SubmissionCases() {
   const { t, locale } = useLocale();

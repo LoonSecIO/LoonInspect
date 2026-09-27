@@ -72,6 +72,9 @@ describe("the case list on Settings › Intelligence Access (#623)", () => {
   it("still lists with the preview off, saying new cases cannot be sent, and says an empty list in one line", () => {
     const off = view(ready([one("a")], false));
     expect(off).toContain(copy.notEnabled);
+    // `enabled` is false while either switch is off (#692), so the line names both, in both languages.
+    expect([en, de].map(({ submissionCases: { notEnabled } }) => ["INTELLIGENCE_ACCESS", "INTELLIGENCE_SUBMISSIONS"]
+      .map((name) => notEnabled.includes(name)))).toEqual([[true, true], [true, true]]);
     expect([buttons(off, copy.refresh), buttons(off, copy.withdraw)].map((found) => found.length)).toEqual([1, 1]);
     expect(view(ready([]))).toContain(copy.empty);
     expect(view(ready([]))).not.toContain("<li");
