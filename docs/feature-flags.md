@@ -1,6 +1,7 @@
 # Feature flags: the register
 
-Status: **verdicts ruled 2026-09-26 (#652), and the #692 row on 2026-09-27**. Every release runs a flag
+Status: **verdicts ruled 2026-09-26 (#652) and 2026-09-27 (#692), with the #692 row's kill
+condition per Kyle's instruction of 2026-09-27**. Every release runs a flag
 gate: each switch below gets one of three verdicts, **promote** (the default flips on and
 the flag is scheduled for removal), **keep** (with the reason and the release it is expected
 to die in), or **delete** (the code path behind it goes with it), recorded here and in the
@@ -28,7 +29,7 @@ pull request lands.
 | --- | --- | --- | --- | --- | --- | --- |
 | `INTELLIGENCE_ACCESS` | v2 preview | #622 | off | `core/intelligence.py`, `core/submissions.py` (previewing and sending only) | **promote** at the tag, once #624's deployed checks are recorded | v2.1 |
 | `CONTRIBUTION_RECEIPTS` | v2 preview | #622 | off | `core/participation.py` | **promote** at the tag | v2.1 |
-| `INTELLIGENCE_SUBMISSIONS` | opt-in switch | #692 | off | `core/submissions.py` (previewing and sending only), `core/intelligence.py` (reported beside `enabled`, never folded into it) | **keep off** at the tag (Kyle, 2026-09-27): an instance with paid access on sends no coverage request or correction until this is set | none planned |
+| `INTELLIGENCE_SUBMISSIONS` | opt-in switch | #692 | off | `core/submissions.py` (previewing and sending only), `core/intelligence.py` (reported beside `enabled`, never folded into it) | **keep off** at the tag (Kyle, 2026-09-27): an instance with paid access on sends no coverage request or correction until this is set. Then, per Kyle's instruction of 2026-09-27, **promote** once prod Support has `SubmissionsEnabled` and #624's walk of a submission through to publication has passed, both after v2.0.0 | one release after that promote |
 | `VULN_TENANT_SELECTION` | v2 preview, serving path | #621 | off | 21 reads in 12 modules | **promote** at the tag; **delete** the legacy singleton-epoch path in v2.1 | v2.1 |
 | `VULN_RELEASE_RETENTION` | v2 preview, storage | #621 | off | `core/intelligence.py`, `core/participation.py`, `core/vuln_library.py` | **promote** with the one above; fold the two into one in v2.1 | v2.1 |
 | `COMMUNITY_SHARING` | kill switch | data-sharing.md | on | `core/sharing.py`, `core/participation.py`, `api/system.py` | keep, permanent: the air-gapped operator's hard stop | never |
@@ -61,3 +62,4 @@ pull request lands.
 | 2026-09-26 | First entry: the sixteen switches at `f06c4ea` with recommended verdicts (#652, #658). |
 | 2026-09-26 | The v2.0.0 verdicts as ruled on #652 ("accept all"): every recommendation became its row's verdict, `DATABASE_MODE` became a mode kept for good now that #662 made `external` real, and the two area overrides carry their reasons as v2.1 delete questions. No default flipped: the four promote pull requests wait for #624's deployed checks. |
 | 2026-09-27 | `INTELLIGENCE_SUBMISSIONS` added (#692): Request coverage and Report an incorrect match get their own switch, off by default and kept off at the tag, as Kyle ruled ("I would prefer for the primary pod to not have it enabled out of the gate"). |
+| 2026-09-27 | `INTELLIGENCE_SUBMISSIONS`'s kill condition, per Kyle's instruction of 2026-09-27: its default flips on once prod Support has `SubmissionsEnabled` and #624's walk of a submission through to publication has passed, and the switch goes one release later. v2.0.0 still ships it off; that walk and LoonVD-Internal #36 come after the tag. |
