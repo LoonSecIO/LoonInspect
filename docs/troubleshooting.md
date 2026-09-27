@@ -2226,6 +2226,32 @@ This build earns, stores, redeems and withdraws receipts.
   `ENCRYPTION_KEY` on the consent row. It never appears in the share log, a log line, a
   support bundle or the browser. `GET /api/system/data-sharing` reports its presence,
   dates and withdrawal progress under `participation`.
+- **Where to read it.** Settings › Intelligence Access shows the receipt in its
+  *Community contribution* panel, beside *Paid access*: whether one is held (never the
+  receipt), its state in words, when the contribution was accepted, *Updates authorized
+  until*, the last and next fetch with the receipt, the withdrawal's progress while it
+  waits, and the last error sentence (`participation.error`). The panel needs receipts,
+  not the paid preview, but the sidebar lists the page only where the paid preview is on
+  too; otherwise open `/settings/intelligence-access`. The panel is absent where receipts
+  are off, unless a receipt is still held or a withdrawal still waits.
+  - ***No receipt yet* after an exchange:** read the payload of the newest `sent` row in
+    the share log, or press Send now on Data sharing, which shows the row it wrote. Without
+    `"participation_receipt": true` this instance did not ask: `SHARING_ENDPOINT` must be
+    an `https://` address with no user name or password in it. With it, the service
+    accepted the upload without issuing a receipt; its receipts may be off, so contact
+    support. A `contribution receipt ignored` line in the container log means it sent one
+    this build could not read (below).
+  - ***Held, not in use*:** the receipt is inside its 30 days, and the line above the
+    panel's list names what stops it: receipts off in this instance's configuration, or
+    `COMMUNITY_SHARING=false`. It fetches nothing until that changes; a withdrawal still
+    completes.
+  - ***Past its deadline*:** the held receipt's 30 days are over, so it fetches nothing,
+    and no accepted exchange has earned a newer one since. Data sharing's *Last exchange*
+    says whether uploads are failing; when they are sent, the *No receipt yet* step
+    applies.
+  - ***Next fetch with the receipt* reads *None scheduled*** after an exchange that
+    brought the corpus, and whenever the receipt cannot be used: a withdrawal waiting, its
+    deadline passed, receipts or sharing off, or `COMMUNITY_SHARING=false`.
 - **Turning sharing off, or resetting the submission UUID,** stops uploads at once and
   marks the receipt `withdrawal_pending`. The scheduler sends the withdrawal within one
   tick, then retries every ten minutes until the service acknowledges it. `withdrawn`
@@ -2235,8 +2261,8 @@ This build earns, stores, redeems and withdraws receipts.
 - **"Upload held: sharing was switched off earlier…"** appears as a failed share-log row
   with no payload; nothing left the box. Sharing was turned back on before the service
   acknowledged the earlier withdrawal. The withdrawal must land first, or it could cancel
-  the receipt the new upload earns. The status's `participation.error`, and the container
-  log's `contribution withdrawal not acknowledged` line, give the reason:
+  the receipt the new upload earns. The panel's last error sentence (`participation.error`),
+  and the container log's `contribution withdrawal not acknowledged` line, give the reason:
   - **HTTP 503:** the service's receipt preview is off or its store is unavailable. Retry
     later.
   - **HTTP 404 or a bare 403:** no receipt service answers at the address that issued
@@ -2254,10 +2280,18 @@ This build earns, stores, redeems and withdraws receipts.
     deadline.
   - It never runs while sharing is off, `COMMUNITY_SHARING=false`, or a withdrawal is
     waiting.
-  - The status shows `lastRedeemedAt` and `retryAfter`.
+  - The panel shows the last and the next redemption as *Last fetched with the receipt*
+    and *Next fetch with the receipt* (`lastRedeemedAt` and `retryAfter` on the status).
   - `contribution receipt could not fetch the corpus` in the container log carries the
     same reasons as the withdrawal (HTTP 503, 404 or a bare 403, "Could not reach", 400)
     and changes nothing held.
+- **Paid access beside a receipt.** Both can be present, and neither turns the other on
+  or off: activating paid access never changes sharing, switching sharing off withdraws
+  the receipt and leaves paid access in place, and *Stop paid updates locally* leaves the
+  receipt. Each keeps refreshing on its own schedule: paid access once a day, the receipt
+  only after an exchange that did not bring the corpus. Each selects the release it
+  brings, so *Selected corpus* under *Paid access* is whichever arrived last. No request
+  carries both the paid credential and the receipt.
 - **`contribution receipt dropped`:** the service no longer honours the receipt. The
   reason is one of:
   - `unknown` (HTTP 401);
