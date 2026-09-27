@@ -64,10 +64,15 @@ def test_a_setup_request_that_omits_the_choice_does_not_share() -> None:
 # --- apply_response ---------------------------------------------------------------
 
 
-def test_reveal_requests_are_stored_for_the_next_exchange() -> None:
+def test_reveal_requests_are_never_stored_while_reveals_are_paused() -> None:
+    """#624: "Suppress/clear pending reveal replies in v2". A stored request would be
+    answered in plaintext by the next exchange, so none is stored, at the `reveal` tier
+    either; one an older build queued is dropped; and the tier stays what was chosen."""
     row = _row("reveal")
-    apply_response(row, {"reveal_requests": ["v1:aa", "v1:bb"]})
-    assert row.pending_reveal_keys == ["v1:aa", "v1:bb"]
+    row.pending_reveal_keys = ["v1:aa"]
+    apply_response(row, {"reveal_requests": ["v1:bb", "v1:cc"]})
+    assert row.pending_reveal_keys == []
+    assert row.tier == "reveal"
 
 
 def test_keys_tier_never_stores_requests() -> None:
