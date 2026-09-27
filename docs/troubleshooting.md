@@ -2234,13 +2234,14 @@ This build earns, stores, redeems and withdraws receipts.
   not the paid preview, but the sidebar lists the page only where the paid preview is on
   too; otherwise open `/settings/intelligence-access`. The panel is absent where receipts
   are off, unless a receipt is still held or a withdrawal still waits.
-  - ***No receipt yet* after an exchange:** read the payload of the newest `sent` row in
-    the share log, or press Send now on Data sharing, which shows the row it wrote. Without
-    `"participation_receipt": true` this instance did not ask: `SHARING_ENDPOINT` must be
-    an `https://` address with no user name or password in it. With it, the service
-    accepted the upload without issuing a receipt; its receipts may be off, so contact
-    support. A `contribution receipt ignored` line in the container log means it sent one
-    this build could not read (below).
+  - ***No receipt yet* after an exchange:** press Send now on Data sharing and read the
+    payload of the row it shows (a `sent` row in the share log from after receipts were
+    turned on serves too). Without `"participation_receipt": true` this instance did not
+    ask: receipts are off here (the panel then says so), or `SHARING_ENDPOINT` is not an
+    `https://` address free of a user name and password. With it, the service accepted
+    the upload without issuing a receipt; its receipts may be off, so contact support. A
+    `contribution receipt ignored` line in the container log means it sent one this build
+    could not read (below).
   - ***Held, not in use*:** the receipt is inside its 30 days, and the line above the
     panel's list names what stops it: receipts off in this instance's configuration, or
     `COMMUNITY_SHARING=false`. It fetches nothing until that changes; a withdrawal still

@@ -33,7 +33,7 @@ export const de: Translations = {
         none: "Der nächste zustimmende Austausch, den der Dienst annimmt, erwirbt eine, sofern der Dienst Quittungen ausstellt.",
         contributing: "Vom neuesten angenommenen Upload erworben. An einem Tag, an dem der Austausch den Korpus nicht bringt, holt die Quittung ihn ohne erneuten Upload.",
         idle: "Noch innerhalb ihrer 30 Tage, doch sie holt nichts, bis sich die oben genannte Einstellung ändert.",
-        lapsed: "Ihre 30 Tage sind vorbei, daher holt sie nichts mehr. Der nächste angenommene Austausch erwirbt eine neue.",
+        lapsed: "Ihre 30 Tage sind vorbei, daher holt sie nichts, bis ein angenommener Austausch eine neue erwirbt.",
         withdrawal_pending: "Die Freigabe wurde ausgeschaltet oder die Übermittlungsidentität zurückgesetzt. Die Quittung wird nicht mehr verwendet, und Uploads werden zurückgehalten, bis der Dienst das Zurückziehen bestätigt; es wird alle zehn Minuten wiederholt.",
         withdrawn: "Der Dienst erkennt die Quittungen, die diese Instanz erworben hat, nicht mehr an. Bei eingeschalteter Freigabe erwirbt der nächste angenommene Austausch eine neue.",
         ended: "Der Dienst erkennt die Quittung nicht mehr an: Ihre 30 Tage sind vorbei, oder der Dienst kannte sie nicht. Bei eingeschalteter Freigabe erwirbt der nächste angenommene Austausch eine neue.",
