@@ -440,6 +440,13 @@ needs a maintenance window or free disk. From `v1.0.0` that includes `e621c4a8b9
 rebuilds the installed-apps index while the instance answers nothing
 ([`troubleshooting.md`](troubleshooting.md) §4 step 2 says what to expect).
 
+**Reveals stop at the upgrade, not before.** A build without #624 (v1.0.0 included), at the
+`reveal` tier, still answers a reveal request a service sends with the plaintext name,
+bundle ID and versions of each title asked about; LoonSec's service sends none. A build
+with #624 answers none and drops any it had queued. To stop an older build before you
+upgrade, choose **Share keys only** under Settings → Data Sharing
+([`data-sharing.md`](data-sharing.md#the-contributor-transition-v2)).
+
 Before and after, the two revisions worth knowing:
 
 ```bash
