@@ -20,7 +20,8 @@ export const TEXT_LIMIT = 2000;
 
 /** The two joiners the text rule keeps, ZWNJ (U+200C) and ZWJ (U+200D): text inside a word or an emoji, nothing alone. */
 const JOINERS = String.fromCodePoint(0x200c, 0x200d);
-/** Blank as the text rule counts it (Support #27), and as the server does: nothing left once the joiners and whitespace go. */
+/** Blank as the text rule counts it (Support #27): nothing left once the joiners and whitespace go. The server judges it
+ *  after any hidden character, as the table's test does; for what passes that, both sides count the same whitespace. */
 export const blank = (value: string): boolean => [...value].filter((char) => !JOINERS.includes(char)).join("").trim() === "";
 
 /** An empty or blank field goes as null, which the contract reads as absent; text that is not blank goes as typed. */
