@@ -6,11 +6,12 @@ import asyncio
 import json
 import os
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select, text, update
 
 from tests.test_sharing_send_now_db import _audit_events, _signed_in
 from tests.test_submission_text_rule import CASES
@@ -242,9 +243,60 @@ async def test_another_tenants_cases_are_out_of_reach(admin, foreign_tenant):  #
     await foreign_tenant.commit()
     try:
         assert (await client.get("/api/submissions")).json()["cases"] == []
+        assert (await client.get("/api/system/intelligence")).json()["casesToWithdraw"] is False, "theirs lists nothing here"
         for act in ("status", "withdraw"):
             assert (await client.post(f"/api/submissions/{theirs.id}/{act}")).status_code == 404
         assert service.requests == []
     finally:
         await foreign_tenant.execute(delete(SubmissionCase))
         await foreign_tenant.commit()
+
+
+async def test_what_lists_settings_intelligence_access(admin, db, monkeypatch):
+    """#706: beside `enabled`, still the paid preview alone, the intelligence status answers `receipts`
+    (CONTRIBUTION_RECEIPTS with the two corpus flags) and `casesToWithdraw`: a case neither withdrawn nor expired, nor
+    closed over 90 days ago, answered to an administrator only. The auditor holds SYSTEM_READ, never a case, so reads
+    it false."""
+    from app.core.config import settings
+    from app.models.schema import SubmissionCase
+
+    client, service = admin
+    auditor = await _client("auditor")
+
+    async def reads(reader: httpx.AsyncClient = client) -> tuple[bool, bool, bool]:
+        answer = (await reader.get("/api/system/intelligence")).json()
+        return answer["enabled"], answer["receipts"], answer["casesToWithdraw"]
+
+    try:
+        monkeypatch.setattr(settings, "contribution_receipts", True)
+        assert await reads() == (False, False, False), "neither route without the two corpus flags"
+        for corpus in ("vuln_tenant_selection", "vuln_release_retention"):
+            monkeypatch.setattr(settings, corpus, True)
+        assert await reads() == (True, True, False), "both routes"
+        monkeypatch.setattr(settings, "contribution_receipts", False)
+        assert await reads() == (True, False, False), "the paid preview alone"
+        monkeypatch.setattr(settings, "intelligence_access", False)
+        monkeypatch.setattr(settings, "contribution_receipts", True)
+        assert await reads() == (False, True, False), "receipts alone, and `enabled` does not follow them"
+        monkeypatch.setattr(settings, "contribution_receipts", False)
+        assert await reads() == (False, False, False), "both off"
+        monkeypatch.setattr(settings, "intelligence_access", True)
+        service.answers.append((202, ACK))
+        assert (await client.post("/api/submissions", json=SEND)).json()["state"] == "received"
+        monkeypatch.setattr(settings, "intelligence_access", False)
+        assert (await reads(), await reads(auditor)) == ((False, False, True), (False, False, False))
+        # The service deletes a case 90 days after it closes (`KEPT`), so one closed longer ago holds nothing there.
+        now = datetime.now(UTC)
+        for state, closed_days_ago, listed in (
+            ("published", None, True),
+            ("published", 89, True),
+            ("declined", 91, False),
+            ("expired", None, False),
+            ("withdrawn", None, False),
+        ):
+            closed = None if closed_days_ago is None else now - timedelta(days=closed_days_ago)
+            await db.execute(update(SubmissionCase).values(state=state, closed_at=closed))
+            await db.commit()
+            assert (await reads())[2] is listed, (state, closed_days_ago)
+    finally:
+        await auditor.aclose()

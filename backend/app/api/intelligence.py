@@ -6,10 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import intelligence
 from app.core.audit import AuditAction, audit
-from app.core.auth import require
+from app.core.auth import Principal, current_principal, require
 from app.core.database import get_db
 from app.core.permissions import Permission
 from app.core.sharing import exchange_lock
+from app.core.submissions import withdrawable
 from app.core.tenancy import get_tenant_id
 
 router = APIRouter(prefix="/api/system/intelligence", tags=["system"])
@@ -20,8 +21,13 @@ class Activation(BaseModel):
 
 
 @router.get("", dependencies=[Depends(require(Permission.SYSTEM_READ))])
-async def access_status(db: AsyncSession = Depends(get_db)) -> dict:
-    return await intelligence.status(db)
+async def access_status(principal: Principal = Depends(current_principal), db: AsyncSession = Depends(get_db)) -> dict:
+    """The panel's state, and what lists Settings > Intelligence Access (#706): `enabled`, the paid preview;
+    `receipts`; or `casesToWithdraw`. Only an administrator withdraws a case (every submissions route needs
+    SYSTEM_WRITE), so for any other reader that one is false and nothing is asked."""
+    answer = await intelligence.status(db)
+    answer["casesToWithdraw"] = Permission.SYSTEM_WRITE in principal.permissions and await withdrawable(db)
+    return answer
 
 
 @router.post("/activate", dependencies=[Depends(require(Permission.SYSTEM_WRITE))])

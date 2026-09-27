@@ -140,11 +140,12 @@ describe("visibleNavigation", () => {
     expect(both?.children?.map((child) => child.labelKey)).toEqual(["vulnerabilities", "compliance"]);
   });
 
-  describe("Settings › Intelligence Access (#622)", () => {
-    /** What `intelligenceStore` hands the tree when the instance offers the preview. */
+  describe("Settings › Intelligence Access (#622, #706)", () => {
+    /** What `intelligenceStore` hands the tree when the page has something for this reader: the paid preview,
+     *  contribution receipts, or a case to withdraw (its own tests pin which answers those are). */
     const OFFERED: ReadonlySet<string> = new Set(["intelligenceAccess"]);
 
-    it("is listed only where the instance offers it, right after Data Sharing", () => {
+    it("is listed only where the store says the page answers, right after Data Sharing", () => {
       expect(settingsChildren(visibleNavigation(EVERYTHING, NO_FLAGS))).not.toContain("intelligenceAccess");
       const children = settingsChildren(visibleNavigation(EVERYTHING, NO_FLAGS, OFFERED)) ?? [];
       expect(children[children.indexOf("dataSharing") + 1]).toBe("intelligenceAccess");

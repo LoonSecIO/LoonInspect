@@ -2139,9 +2139,16 @@ the account lacks `device:sync` or the device has no supported Jamf connection.
 ## Paid intelligence preview (#622)
 
 Settings > Intelligence Access separates paid update access from upload consent. The
-entry is listed only where the instance offers the preview (and only for accounts that
-can read system settings); Data sharing links to it. Activation and rotation are explicit administrator actions; no MDM
-connection license is transmitted, and activation never enables inventory sharing.
+sidebar lists it, for accounts that can read system settings, where the instance offers
+this preview or [contribution receipts](#contribution-receipts-622), and, for
+administrators, while this organization holds a case (a coverage request or match
+report) neither withdrawn nor expired, nor closed over 90 days ago
+([§21](#21-request-coverage-or-report-an-incorrect-match-is-refused-or-a-case-never-shows-a-status)
+step 9); Data sharing links to it where the preview or receipts are on. Otherwise, or
+after a failed read (below), the entry hides and the page still opens at
+`/settings/intelligence-access`. Activation and rotation are explicit administrator
+actions; no MDM connection license is transmitted, and activation never enables
+inventory sharing.
 
 - The panel appears only with `INTELLIGENCE_ACCESS=true`,
   `VULN_RELEASE_RETENTION=true` and `VULN_TENANT_SELECTION=true`. All remain off by
@@ -2218,6 +2225,16 @@ connection license is transmitted, and activation never enables inventory sharin
   log (`docker compose logs app`), with `operation` (`activate`, `rotate` or
   `refresh`), `reason` and the same sentence. Error text never quotes upstream bodies
   or bearer/capability values.
+- **"Intelligence access could not be loaded. Reload or contact support.":** the paid
+  panel's read of `GET /api/system/intelligence` failed, and this sentence stands in its
+  place. The sidebar entry needs the same read, so it hides too once a reload fails, and
+  the page stays at `/settings/intelligence-access`. Still there after a reload:
+  `docker compose logs app --since 30m | grep '"/api/system/intelligence"'`. No line
+  from the reload means the read never reached the app: it was restarting or
+  unreachable, or [a proxy in front](#a-proxy-in-front-answers-for-itself) answered for
+  it. A `"status_code": 200` means its answer never reached the page, so look at what
+  sits between. A `"status_code"` of 500 or more is the app failing the read: report
+  those lines (§8).
 - **"The paid corpus could not be downloaded, verified or stored":** the container
   log's `vulnerability library` warning just before it names why (§5). Fix that, then
   Refresh now. **"The intelligence update could not be assessed":** check database
@@ -2266,9 +2283,10 @@ This build earns, stores, redeems and withdraws receipts.
   receipt), its state in words, when the contribution was accepted, *Updates authorized
   until*, the last and next fetch with the receipt, the withdrawal's progress while it
   waits, and the last error sentence (`participation.error`). The panel needs receipts,
-  not the paid preview, but the sidebar lists the page only where the paid preview is on
-  too; otherwise open `/settings/intelligence-access`. The panel is absent where receipts
-  are off, unless a receipt is still held or a withdrawal still waits.
+  not the paid preview, and the sidebar lists the page wherever receipts are on
+  ([the whole rule](#paid-intelligence-preview-622)). The panel is absent where receipts
+  are off, unless a receipt is still held or a withdrawal still waits. Those two do not
+  list the page, so where nothing else does, open `/settings/intelligence-access`.
   - ***No receipt yet* after an exchange:** press Send now on Data sharing and read the
     payload of the row it shows (a `sent` row in the share log from after receipts were
     turned on serves too). Without `"participation_receipt": true` this instance did not
@@ -2509,14 +2527,19 @@ that log, then repeat the act.
 9. **The *Request coverage* or *Report an incorrect match* action is not on the row.** Both are on
    Posture › Vulnerabilities only: the Catalog tab, a device's page, an application's record and the Lookup
    page show the same words without either. Both are for administrators (`SYSTEM_WRITE`), only while the v2
-   preview is on (`INTELLIGENCE_ACCESS`, `VULN_RELEASE_RETENTION` and `VULN_TENANT_SELECTION`, the three that
-   list the Intelligence Access menu entry: [Paid intelligence preview](#paid-intelligence-preview-622))
+   preview is on (`INTELLIGENCE_ACCESS`, `VULN_RELEASE_RETENTION` and `VULN_TENANT_SELECTION`:
+   [Paid intelligence preview](#paid-intelligence-preview-622))
    together with a fourth switch, `INTELLIGENCE_SUBMISSIONS`, off by default (step 1),
    and only for a build with a version on a platform the service takes: macOS, iOS, iPadOS, tvOS or visionOS.
    *Request coverage* is on a row that page's *Outside the corpus* chip lists (`unknown_app`). *Report an
    incorrect match* is on a row with findings while the heading reads *Vulnerability corpus as of …*: the page's
    answer then names the release behind them (`corpusRelease`), which the report sends. While the preview is
-   off the menu entry hides, yet the case list stays at `/settings/intelligence-access`, to refresh and withdraw.
+   off the case list stays on Settings › Intelligence Access, to refresh and withdraw, and the sidebar keeps the
+   entry for administrators while a case is neither withdrawn nor expired, nor closed (`closedAt`) over 90 days
+   ago (`casesToWithdraw` on `GET /api/system/intelligence`), or where contribution receipts are on; with
+   neither, the entry hides and the list stays at `/settings/intelligence-access`. The service deletes a case 90
+   days after it closes (step 7), so once a case expired or closed that long ago a withdrawal has nothing left to
+   delete there, and the nightly cleanup clears what was written on it here (step 11).
    With the preview on and `INTELLIGENCE_SUBMISSIONS` off, the entry and the case list stay, and the list says
    *New cases cannot be sent…*.
 10. ***"…has U+200B at character 12, which a case cannot carry…"*** (any code point, any place), under a
