@@ -178,5 +178,7 @@ def test_the_panels_words_ship_with_their_step_through():
     assert participation.HELD.startswith("Upload held: sharing was switched off earlier")
     assert '"Upload held: sharing was switched off earlier…"' in step
 
-    failed = "The contribution receipt's state could not be read. Reload the page; if it keeps failing, read docker compose logs app."
+    failed = (
+        "The contribution receipt's state could not be read. Reload the page; if it keeps failing, read docker compose logs app."
+    )
     assert f'loadFailed: "{failed}"' in page and f"***{failed}***" in step
