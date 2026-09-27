@@ -7,7 +7,7 @@ export const de: Translations = {
     title: "Zugang zu Sicherheitsinformationen", description: "Bezahlter Zugang funktioniert ohne Inventarfreigabe. Die Aktivierung ändert Ihre Freigabeentscheidung nicht.",
     pageDescription: "Wie diese Instanz Sicherheitsinformationen aktuell hält. Bezahlter Zugang und Community-Freigabe sind getrennte Wege; keiner schaltet den anderen ein oder aus, und gespeicherte Informationen bleiben nach Updateende nutzbar.",
     paidTitle: "Bezahlter Zugang",
-    notEnabled: "Der Zugang zu Sicherheitsinformationen ist in der Konfiguration dieser Instanz nicht aktiviert.",
+    notEnabled: "Der bezahlte Zugang ist in der Konfiguration dieser Instanz nicht aktiviert.",
     movedPointer: "Der bezahlte Zugang hat eine eigene Seite:",
     state: "Zuletzt gemeldeter Zugang", credential: "Gespeicherter Zugangsschlüssel", present: "Vorhanden (ausgeblendet)", none: "Nicht verfügbar",
     until: "Updates autorisiert bis", attempt: "Letzter Updateversuch", refresh: "Letzte abgeschlossene bezahlte Aktualisierung",
@@ -19,7 +19,33 @@ export const de: Translations = {
     loadFailed: "Der Zugang konnte nicht geladen werden. Neu laden oder Support kontaktieren.", failed: "Der Vorgang ist fehlgeschlagen. Erneut versuchen oder Support kontaktieren.",
     states: { not_activated: "Nicht aktiviert", paid: "Bezahlt", trial: "Testzeitraum", cancelled: "Gekündigt; bezahlte Laufzeit besteht",
       grace: "Verlängerungsfrist", extended: "Manuelle Verlängerung", expired: "Abgelaufen", revoked: "Widerrufen",
-      credential_invalid: "Zugangsschlüssel ungültig oder ersetzt", disconnected: "Bezahlte Updates lokal gestoppt", unknown: "Unbekannt" }
+      credential_invalid: "Zugangsschlüssel ungültig oder ersetzt", disconnected: "Bezahlte Updates lokal gestoppt", unknown: "Unbekannt" },
+    contribution: {
+      title: "Community-Beitrag",
+      description: "Ein zustimmender täglicher Austausch erwirbt eine Beitragsquittung, gültig für 30 Tage nach dem Upload, den der Dienst angenommen hat. Die Quittung bleibt verschlüsselt auf dieser Instanz und wird nie angezeigt.",
+      receipt: "Beitragsquittung", held: "Vorhanden (nie angezeigt)", notHeld: "Nicht vorhanden", state: "Status",
+      accepted: "Beitrag angenommen", lastFetched: "Zuletzt mit der Quittung abgerufen", nextFetch: "Nächster Abruf mit der Quittung",
+      notYet: "Noch nicht", noneScheduled: "Keiner geplant",
+      withdrawalRequested: "Zurückziehen angefordert", withdrawalAttempt: "Letzter Versuch zum Zurückziehen", withdrawnAt: "Zurückgezogen am",
+      states: { none: "Noch keine Quittung", contributing: "Beitrag aktiv", idle: "Vorhanden, nicht in Gebrauch", lapsed: "Frist abgelaufen",
+        withdrawal_pending: "Zurückziehen wartet auf den Dienst", withdrawn: "Zurückgezogen", ended: "Beendet", unknown: "Unbekannt" },
+      explained: {
+        none: "Der nächste zustimmende Austausch, den der Dienst annimmt, erwirbt eine, sofern der Dienst Quittungen ausstellt.",
+        contributing: "Vom neuesten angenommenen Upload erworben. An einem Tag, an dem der Austausch den Korpus nicht bringt, holt die Quittung ihn ohne erneuten Upload.",
+        idle: "Noch innerhalb ihrer 30 Tage, doch sie holt nichts, bis sich die oben genannte Einstellung ändert.",
+        lapsed: "Ihre 30 Tage sind vorbei, daher holt sie nichts, bis ein angenommener Austausch eine neue erwirbt.",
+        withdrawal_pending: "Die Freigabe wurde ausgeschaltet oder die Übermittlungsidentität zurückgesetzt. Die Quittung wird nicht mehr verwendet, und Uploads werden zurückgehalten, bis der Dienst das Zurückziehen bestätigt; es wird alle zehn Minuten wiederholt.",
+        withdrawn: "Der Dienst erkennt die Quittungen, die diese Instanz erworben hat, nicht mehr an. Bei eingeschalteter Freigabe erwirbt der nächste angenommene Austausch eine neue.",
+        ended: "Der Dienst erkennt die Quittung nicht mehr an: Ihre 30 Tage sind vorbei, oder der Dienst kannte sie nicht. Bei eingeschalteter Freigabe erwirbt der nächste angenommene Austausch eine neue.",
+        unknown: "Der Status nennt einen Zustand, den diese Seite nicht kennt."
+      },
+      receiptsOff: "Quittungen sind in der Konfiguration dieser Instanz aus: Sie brauchen CONTRIBUTION_RECEIPTS, VULN_TENANT_SELECTION und VULN_RELEASE_RETENTION, alle auf true. Bis dahin holt diese Quittung nichts; ein wartendes Zurückziehen wird trotzdem abgeschlossen, und das Ausschalten der Freigabe zieht sie weiterhin zurück.",
+      envOverride: "COMMUNITY_SHARING=false ist in der Umgebung gesetzt, daher holt diese Quittung nichts, bis die Einstellung entfernt ist.",
+      disclosure: "Abruf und Zurückziehen mit der Quittung senden nur die Quittung und die Protokoll-/Clientversion: kein Inventar, keine Übermittlungsidentität, keinen bezahlten Zugangsschlüssel.",
+      both: "Bezahlter Zugang und eine Beitragsquittung können gleichzeitig bestehen, und keiner schaltet den anderen ein oder aus: Die Aktivierung des bezahlten Zugangs ändert die Freigabe nie, das Ausschalten der Freigabe zieht die Quittung zurück und lässt den bezahlten Zugang bestehen, und das lokale Stoppen bezahlter Updates lässt die Quittung bestehen.",
+      whichRefreshes: "Bestehen beide, halten beide den Korpus aktuell, jeder nach eigenem Zeitplan. Der bezahlte Zugang fragt einmal täglich mit seinem Zugangsschlüssel; der tägliche Austausch bringt den Korpus mit seinem Upload, und die Quittung fragt nur nach einem Austausch, der ihn nicht gebracht hat. Jeder wählt das Release aus, das er bringt, daher ist das zuletzt eingetroffene ausgewählt.",
+      loadFailed: "Der Zustand der Beitragsquittung konnte nicht gelesen werden. Laden Sie die Seite neu; schlägt es weiter fehl, lesen Sie docker compose logs app."
+    }
   },
   submissionCases: {
     title: "Abdeckungsanfragen und Zuordnungsmeldungen",
