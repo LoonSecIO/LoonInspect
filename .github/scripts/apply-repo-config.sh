@@ -87,7 +87,7 @@ apply_ruleset main main.json "BR-06, BR-07, MG-02, MG-03, PR-07 and AG-03 stay u
 # push one can assume that role, and a release runs its tagged commit's
 # release.yml. Only the repository admin role creates, moves or deletes one.
 # The file names v*/**/* beside v* because a ruleset's * stops at a slash and
-# the role's does not. Run this before deploying that template with v* subjects.
+# IAM's does not. Run this before deploying that template with v* subjects.
 step "Ruleset on v* release tags (#672)"
 apply_ruleset release-tags release-tags.json "v* tags stay open to anyone with write access; keep them out of the ECR push role's trust until then"
 
