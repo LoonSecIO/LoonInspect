@@ -47,11 +47,13 @@ WITHDRAWAL_RETRY = timedelta(minutes=10)
 # A failed redemption (service down, corpus missing) is retried this often, never faster.
 REDEEM_RETRY = timedelta(hours=1)
 
+# The held upload's share-log sentence, read on Data Sharing. It names the panel that says why in
+# words, and keeps the field for API readers (#705).
 HELD = (
     "Upload held: sharing was switched off earlier, and the service that issued this instance's contribution "
     "receipt has not yet acknowledged withdrawing it. Nothing left this instance. The withdrawal is retried first "
-    "on every attempt, and the Data sharing status (participation.error) says why it has not landed. See "
-    'docs/troubleshooting.md, "Contribution receipts".'
+    "on every attempt, and Settings › Intelligence Access › Community contribution says why it has not landed "
+    '(participation.error on GET /api/system/data-sharing). See docs/troubleshooting.md, "Contribution receipts".'
 )
 
 
