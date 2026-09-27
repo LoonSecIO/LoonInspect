@@ -75,9 +75,9 @@ jobs:
   ghcr:
     # The public copy (#655): the images main built for this commit, under the version and never
     # as `latest`, so a pull names the release it gets (docker-compose.pull.yml). Copied, not
-    # rebuilt: every platform's manifest and layers are the ones ECR holds and the pods ran. The
-    # version exists only from this moment, so it is an annotation on the new index, beside the
-    # source and revision the image configs carry as labels. No other job holds packages: write.
+    # rebuilt: every platform's manifest, layer and provenance is the one ECR holds. The version
+    # exists only from this moment, so it is an annotation on the new index, beside the source
+    # and revision the image configs carry as labels. No other job holds packages: write.
     name: Copy the images to ghcr.io
     needs: images
     runs-on: ubuntu-latest
