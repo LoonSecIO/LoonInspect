@@ -26,11 +26,12 @@ export const en = {
       accepted: "Contribution accepted", lastFetched: "Last fetched with the receipt", nextFetch: "Next fetch with the receipt",
       notYet: "Not yet", noneScheduled: "None scheduled",
       withdrawalRequested: "Withdrawal requested", withdrawalAttempt: "Last withdrawal attempt", withdrawnAt: "Withdrawn on",
-      states: { none: "No receipt yet", contributing: "Contributing", lapsed: "Past its deadline",
+      states: { none: "No receipt yet", contributing: "Contributing", idle: "Held, not in use", lapsed: "Past its deadline",
         withdrawal_pending: "Withdrawal waiting for the service", withdrawn: "Withdrawn", ended: "Ended", unknown: "Unknown" },
       explained: {
         none: "The next consenting exchange the service accepts earns one, where the service issues receipts.",
         contributing: "Earned by the newest accepted upload. On a day the exchange does not bring the corpus, the receipt fetches it without another upload.",
+        idle: "Still inside its 30 days, but it fetches nothing until the setting named above changes.",
         lapsed: "Its 30 days are over, so it fetches nothing. The next accepted exchange earns a new one.",
         withdrawal_pending: "Sharing was switched off, or the submission identity was reset. The receipt is no longer used, and uploads are held until the service acknowledges the withdrawal; it is retried every ten minutes.",
         withdrawn: "The service no longer honours the receipts this instance earned. With sharing on, the next accepted exchange earns a new one.",

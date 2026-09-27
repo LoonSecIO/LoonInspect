@@ -27,11 +27,12 @@ export const de: Translations = {
       accepted: "Beitrag angenommen", lastFetched: "Zuletzt mit der Quittung abgerufen", nextFetch: "Nächster Abruf mit der Quittung",
       notYet: "Noch nicht", noneScheduled: "Keiner geplant",
       withdrawalRequested: "Zurückziehen angefordert", withdrawalAttempt: "Letzter Versuch zum Zurückziehen", withdrawnAt: "Zurückgezogen am",
-      states: { none: "Noch keine Quittung", contributing: "Beitrag aktiv", lapsed: "Frist abgelaufen",
+      states: { none: "Noch keine Quittung", contributing: "Beitrag aktiv", idle: "Vorhanden, nicht in Gebrauch", lapsed: "Frist abgelaufen",
         withdrawal_pending: "Zurückziehen wartet auf den Dienst", withdrawn: "Zurückgezogen", ended: "Beendet", unknown: "Unbekannt" },
       explained: {
         none: "Der nächste zustimmende Austausch, den der Dienst annimmt, erwirbt eine, sofern der Dienst Quittungen ausstellt.",
         contributing: "Vom neuesten angenommenen Upload erworben. An einem Tag, an dem der Austausch den Korpus nicht bringt, holt die Quittung ihn ohne erneuten Upload.",
+        idle: "Noch innerhalb ihrer 30 Tage, doch sie holt nichts, bis sich die oben genannte Einstellung ändert.",
         lapsed: "Ihre 30 Tage sind vorbei, daher holt sie nichts mehr. Der nächste angenommene Austausch erwirbt eine neue.",
         withdrawal_pending: "Die Freigabe wurde ausgeschaltet oder die Übermittlungsidentität zurückgesetzt. Die Quittung wird nicht mehr verwendet, und Uploads werden zurückgehalten, bis der Dienst das Zurückziehen bestätigt; es wird alle zehn Minuten wiederholt.",
         withdrawn: "Der Dienst erkennt die Quittungen, die diese Instanz erworben hat, nicht mehr an. Bei eingeschalteter Freigabe erwirbt der nächste angenommene Austausch eine neue.",

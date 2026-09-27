@@ -29,19 +29,21 @@ const words = en.intelligence.contribution;
 const STATES: [ReceiptState, Participation][] = [
   ["none", receipt({ receiptPresent: false, state: "none", acceptedAt: null, updatesUntil: null })],
   ["contributing", HELD],
+  ["idle", receipt({ enabled: false })],
   ["lapsed", receipt({ updatesUntil: at(-1) })],
   ["withdrawal_pending", receipt({ state: "withdrawal_pending", withdrawalRequestedAt: at(-2), lastWithdrawalAttemptAt: at(-1) })],
   ["withdrawn", receipt({ receiptPresent: false, state: "withdrawn", withdrawnAt: at(-1) })],
   ["ended", receipt({ receiptPresent: false, state: "ended" })],
   ["unknown", receipt({ state: "suspended" })]
 ];
+const sample = (state: ReceiptState) => STATES.find(([key]) => key === state)![1];
 
 describe("the community contribution panel on Settings › Intelligence Access (#622)", () => {
-  it("names every state in its own words, in both languages, a receipt past its deadline included", () => {
+  it("names every state in its own words, in both languages, a stored receipt that fetches nothing included", () => {
     for (const t of [en, de]) {
       const copy = t.intelligence.contribution;
       for (const [state, each] of STATES) {
-        expect(receiptState(each, NOW)).toBe(state);
+        expect(receiptState(each, { envDisabled: false }, NOW)).toBe(state);
         const markup = view(ready(each), t);
         expect(markup).toContain(`<span class="font-medium">${html(copy.states[state])}</span>`);
         expect(markup).toContain(html(copy.explained[state]));
@@ -58,7 +60,7 @@ describe("the community contribution panel on Settings › Intelligence Access (
       expect(row(markup, t.intelligence.contribution.receipt)).toBe(html(t.intelligence.contribution.held));
       expect(markup).not.toContain("loon_rcpt_");
     }
-    expect(row(view(ready(STATES[0][1])), words.receipt)).toBe(words.notHeld);
+    expect(row(view(ready(sample("none"))), words.receipt)).toBe(words.notHeld);
   });
 
   it("is absent where receipts are off and nothing is held or waiting, and says so where something still is", () => {
@@ -85,13 +87,16 @@ describe("the community contribution panel on Settings › Intelligence Access (
     const unusable: [Participation, { tier?: SharingTier; envDisabled?: boolean }][] = [[due, { envDisabled: true }], [due, { tier: "off" }],
       [receipt({ ...due, updatesUntil: at(-1) }), {}], [receipt({ ...due, state: "withdrawal_pending" }), {}], [receipt({ ...due, state: "withdrawn" }), {}]];
     for (const [each, sharing] of unusable) expect(row(view(ready(each, sharing)), words.nextFetch)).toBe(words.noneScheduled);
-    expect(view(ready(due, { envDisabled: true }))).toContain(html(words.envOverride));
+    // COMMUNITY_SHARING=false leaves the receipt held and idle, and the line above the list says why.
+    const overridden = view(ready(due, { envDisabled: true }));
+    expect([overridden.includes(html(words.envOverride)), overridden.includes(`>${html(words.states.idle)}</span>`)]).toEqual([true, true]);
     expect(view(ready(due))).not.toContain(html(words.envOverride));
   });
 
   it("shows the authorization date only for a receipt still stored as in force, a passed one included", () => {
     const until = at(24 * 20);
-    expect(row(view(ready(receipt({ updatesUntil: until }))), en.intelligence.until)).toBe(html(when(until)));
+    for (const each of [receipt({ updatesUntil: until }), receipt({ enabled: false, updatesUntil: until })])
+      expect(row(view(ready(each)), en.intelligence.until)).toBe(html(when(until)));
     expect(row(view(ready(receipt({ updatesUntil: at(-1) }))), en.intelligence.until)).toBe(html(when(at(-1))));
     for (const state of ["withdrawal_pending", "withdrawn", "ended"])
       expect(row(view(ready(receipt({ state, updatesUntil: until }))), en.intelligence.until)).toBe(en.intelligence.none);
@@ -104,7 +109,7 @@ describe("the community contribution panel on Settings › Intelligence Access (
     expect([row(markup, words.withdrawalRequested), row(markup, words.withdrawalAttempt)]).toEqual([html(when(at(-2))), words.notYet]);
     expect(view(ready(HELD))).not.toContain(words.withdrawalRequested);
     expect(view(ready(HELD))).not.toContain('role="alert"');
-    expect(row(view(ready(STATES[4][1])), words.withdrawnAt)).toBe(html(when(at(-1))));
+    expect(row(view(ready(sample("withdrawn"))), words.withdrawnAt)).toBe(html(when(at(-1))));
   });
 
   it("says both routes can be present, which one refreshes, and what the receipt sends, in both languages", () => {

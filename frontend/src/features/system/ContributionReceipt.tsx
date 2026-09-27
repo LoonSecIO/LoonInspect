@@ -22,7 +22,7 @@ export function ContributionReceiptView({ read, copy, locale }: ViewProps) {
   const { sharing, now } = read;
   const receipt = sharing.participation;
   if (!receiptShown(receipt)) return null;
-  const state = receiptState(receipt, now);
+  const state = receiptState(receipt, sharing, now);
   const when = (at: string | null, absent: string = copy.none) =>
     at ? new Date(at).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" }) : absent;
   return (
@@ -30,14 +30,14 @@ export function ContributionReceiptView({ read, copy, locale }: ViewProps) {
       <h2 className="font-semibold">{words.title}</h2>
       <p className="text-sm text-muted-foreground">{words.description}</p>
       {!receipt.enabled && <p className="text-sm">{words.receiptsOff}</p>}
-      {receipt.enabled && sharing.envDisabled && state === "contributing" && <p className="text-sm">{words.envOverride}</p>}
+      {receipt.enabled && sharing.envDisabled && state === "idle" && <p className="text-sm">{words.envOverride}</p>}
       <dl className="grid grid-cols-2 gap-2 text-sm">
         <dt>{words.receipt}</dt><dd>{receipt.receiptPresent ? words.held : words.notHeld}</dd>
         <dt>{words.state}</dt>
         <dd><span className="font-medium">{words.states[state]}</span><span className="block text-muted-foreground">{words.explained[state]}</span></dd>
         <dt>{words.accepted}</dt><dd>{when(receipt.acceptedAt)}</dd>
         {/* A receipt withdrawn or ended keeps its old date in the status; only one still stored as in force shows it. */}
-        <dt>{copy.until}</dt><dd>{when(state === "contributing" || state === "lapsed" ? receipt.updatesUntil : null)}</dd>
+        <dt>{copy.until}</dt><dd>{when(["contributing", "idle", "lapsed"].includes(state) ? receipt.updatesUntil : null)}</dd>
         <dt>{words.lastFetched}</dt><dd>{when(receipt.lastRedeemedAt, words.notYet)}</dd>
         <dt>{words.nextFetch}</dt><dd>{when(nextFetch(sharing, receipt, state), words.noneScheduled)}</dd>
         {state === "withdrawal_pending" && <>
