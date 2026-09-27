@@ -20,6 +20,11 @@ Known limits — the sizes, the growth rates and the failure modes — are in
 from the checkout, which needs no name at all; the `docker` forms are for when there is
 no checkout to stand in.
 
+**Settings.** `docker-compose.yml` is the full list: every setting the app reads is under
+the app service's `environment:` at its default, and the few it does not pass are named at
+the end of that block with the reason. A `NAME=value` line in `.env` changes one, and
+`docker compose up -d` recreates the container with it.
+
 ---
 
 ## 1. What has to be backed up
