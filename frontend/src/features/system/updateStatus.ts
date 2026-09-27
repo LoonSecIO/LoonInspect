@@ -49,8 +49,8 @@ export const TAG_PLACEHOLDER = "<tag>";
 
 /**
  * The upgrade for a Docker Compose install, in the order `docs/operations.md` §4 runs it:
- * the dump first, because the downgrade is manual and this dump is the documented way
- * back (KNOWN_ISSUES.md) — owner-only, with the umask inside a subshell so it ends with the
+ * the dump first, because it is a way back when the older image cannot start on the upgraded
+ * database (§5) — owner-only, with the umask inside a subshell so it ends with the
  * dump: left in force, it would make the files the checkout writes owner-only too, and the
  * image build copies those modes in, where the non-root app cannot read them
  * (`docs/operations.md` §2); then the release tag, not `git pull` of main — the notice is

@@ -581,11 +581,12 @@ export const en = {
       } as Record<string, string>,
       stepsHeading: "Updating a Docker Compose install",
       stepsIntro:
-        "On the host, in the directory with docker-compose.yml. The first line is the backup: a downgrade is manual, and this dump is the documented way back.",
+        "On the host, in the directory with docker-compose.yml. The first line is the backup: if the older image cannot start on the upgraded database, this dump is a way back.",
       tagPlaceholder: "Replace <tag> with the release to install, from the list of releases.",
       releasesPage: "Releases",
-      rollback: "Before rolling one back, read the upgrade and rollback steps: the downgrade runs from the newer image, and swapping the image back first crash-loops.",
-      rollbackLink: "Upgrade and rollback, step by step",
+      rollback:
+        "From v2.0.0 on, going back one release is an image swap: start the older release on the same volume, with no downgrade. Going back further than the newer release allows, or to v1.x, needs the downgrade, run from the newer image first.",
+      rollbackLink: "Rollback, step by step",
       selfHostedOnly: "These steps are for an install you run yourself with Docker Compose."
     }
   },
