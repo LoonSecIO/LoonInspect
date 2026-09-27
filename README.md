@@ -317,7 +317,7 @@ walks through both halves, the timeouts, rotating the secret, and how to see it 
 (the database *and* `ENCRYPTION_KEY` — a dump without the key restores an instance whose
 every MDM connection is permanently unreadable), the `pg_dump` and `psql` commands to do
 it, what a restore does to in-flight outbox rows and the run mutex, how upgrades and
-rollbacks actually behave, and how to read the one failure that crash-loops. Every
+rollbacks actually behave, and how to read an older image that will not start. Every
 command in it was run against a throwaway stack and the real output is printed beside it.
 
 **[KNOWN_ISSUES.md](KNOWN_ISSUES.md)** is the measured limits list — what grows without
@@ -328,10 +328,10 @@ before sizing the database volume.
 
 Migrations run unattended at startup, so `docker compose up -d --build` on a newer
 release's tag (`git fetch --tags && git checkout <tag>`) *is* the upgrade. Take a dump
-first, and read [docs/operations.md §4–5](docs/operations.md) before rolling one back: the
-downgrade has to be run from the newer image, and swapping the image back first
-crash-loops. Settings › Support › **Updates** prints the steps with the latest release's
-tag filled in.
+first, and read [docs/operations.md §4–5](docs/operations.md) before rolling one back: from
+`v2.0.0` on, one step back is an image swap, but going back to a `v1.x` image, or further
+than the newer release allows, needs the downgrade run from the newer image first.
+Settings › Support › **Updates** prints the steps with the latest release's tag filled in.
 
 An install that pulls (`docker-compose.pull.yml` in `COMPOSE_FILE`) takes the same dump and
 checkout, then changes `LOONINSPECT_VERSION` in `.env` to the new tag and runs

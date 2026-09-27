@@ -57,9 +57,9 @@ export const SUPPORT_LINKS = {
   slackChannel: MACADMINS_CHANNEL,
   /** Every published release, for the reader who needs a tag the check has not named (#407). */
   releases: `${GITHUB}/releases`,
-  /** The upgrade and the rollback, step by step, with real output beside each command.
-   *  Named by section: the rollback's order is the part that costs something when missed. */
-  upgradeDocs: `${GITHUB}/blob/main/docs/operations.md#4-upgrade`
+  /** The rollback, step by step, with real output beside each command. Named by section: which
+   *  way back applies, an image swap or the downgrade, is the part that costs something when missed. */
+  rollbackDocs: `${GITHUB}/blob/main/docs/operations.md#5-rollback`
 } as const;
 
 /** What the copy button puts on the clipboard, or null when there is nothing worth

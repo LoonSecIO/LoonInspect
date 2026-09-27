@@ -2,6 +2,7 @@
 
 import json
 import logging
+from pathlib import Path
 
 import httpx
 import pytest
@@ -160,3 +161,24 @@ def test_the_summary_never_carries_the_receipt_or_the_service(receipts_on):
     assert summary["enabled"] is True and summary["receipt_present"] is True and summary["state"] == "contributing"
     assert RECEIPT not in json.dumps(summary) and "service" not in summary
     assert participation.summary(DataSharingSettings(participation_status={}))["state"] == "none"
+
+
+def test_the_panels_words_ship_with_their_step_through():
+    """docs/diagnosability.md rule 4, for the Community contribution panel (#705). The held upload's sentence
+    names the panel by the words the page shows, and keeps the field for API readers; the panel's failed-read
+    sentence is quoted word for word under "Contribution receipts", beside what to check."""
+    root = Path(__file__).resolve().parents[2]
+    page = (root / "frontend" / "src" / "i18n" / "en.ts").read_text()
+    section = (root / "docs" / "troubleshooting.md").read_text().split("\n## Contribution receipts (#622)\n", 1)[1]
+    step = " ".join(section.split("\n## ", 1)[0].split())
+
+    assert 'intelligenceAccess: "Intelligence Access"' in page and 'title: "Community contribution"' in page
+    assert "Settings › Intelligence Access › Community contribution says why" in participation.HELD
+    assert "(participation.error on GET /api/system/data-sharing)" in participation.HELD
+    assert participation.HELD.startswith("Upload held: sharing was switched off earlier")
+    assert '"Upload held: sharing was switched off earlier…"' in step
+
+    failed = (
+        "The contribution receipt's state could not be read. Reload the page; if it keeps failing, read docker compose logs app."
+    )
+    assert f'loadFailed: "{failed}"' in page and f"***{failed}***" in step
