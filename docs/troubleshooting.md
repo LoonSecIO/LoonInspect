@@ -475,6 +475,14 @@ the run `jobID`, the token's index settings, and the search you ran.
      and follow the migration-failure step below; do not remove indexes by hand.
    - an Alembic error → the migration on startup failed. Do not downgrade by hand
      ([`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) §6); reportable **F**.
+   - *This database was upgraded by a newer release … which recorded that only v2.1.0 or later
+     can read it; this image is v2.0.0 (build …), so it will not start on it* → the image is
+     older than the database, and the release that upgraded it recorded that this one cannot
+     read what it left. The sentence names both releases, what the database needs and what is
+     running, so there is nothing to look up. Put an image of the named release or a later one
+     back (`git checkout` its tag, `docker compose up -d --build`), or restore the dump taken
+     before that upgrade beside this image ([`operations.md`](operations.md) §5). Do not edit
+     `schema_release` or `alembic_version` to make it start: the stamp is right.
    - `1 validation error for Settings` whose next lines name `DATABASE_URL` and say
      *append ?ssl=require* → `DATABASE_MODE=external` needs the URL to ask for TLS
      (`?ssl=require`, `verify-ca` or `verify-full`). If the lines say *asyncpg spells the
@@ -2508,5 +2516,17 @@ that log, then repeat the act.
     inventory…"*), the character is in the build's name or bundle identifier as the inventory reports it,
     which the dialog cannot change, so no case can name that build. *"…is blank…"*: a request made outside
     the dialog sent a field of only spaces, tabs or line breaks; the dialog leaves such a field out.
+11. **A case's URL, text and contact are gone (`null` on `GET /api/submissions`), and the case is still
+    listed.** This instance keeps what was written on a case no longer than the service does: 90 days after
+    the case closed (`closedAt`, once it reads *Declined* or *Published*), or once it reads *Expired, deleted
+    by the service*, the nightly cleanup clears those three here. The app, versions, state, dates, `release`,
+    `coverage` and the reviewer's note stay, so the case list, which never shows the three, looks the same.
+    `docker compose logs app` has one line a night for each organization, *cleared the URL, text and contact
+    of submission cases closed over 90 days ago or expired*, with its `count`. *submission cleanup failed for
+    this tenant…* means that night cleared nothing: check `docker compose ps db`; the next night tries again.
+    The clock runs from a closing this instance has read, and nothing asks the service on its own, so a case
+    that closed while nobody pressed *Refresh status* keeps its words here until someone does: press it on a
+    case whose answer is long overdue. One the service has already deleted then reads *Expired…*, and its
+    words go the next night.
 
 **Y.** Random keys do not collide twice. Report the case's `id` and its sentence (§8); nothing was stored there.

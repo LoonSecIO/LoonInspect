@@ -21,7 +21,8 @@ record: outbox events after 7 days (`event_outbox_retention_days`, or 30 under
 lines after 30 (`run_retention_days`), the closed alert latches that ride that same
 setting, the audit log by daily file rotation keeping `audit_retention_days` files, the
 share log of what left the box after 90 days, terminal inventory summary jobs and cached
-prose after 8 days (including while summaries are disabled), summary metric counters (25 hours), and expired or revoked sessions a day after
+prose after 8 days (including while summaries are disabled), summary metric counters (25 hours), the URL, text and
+contact written on a coverage request or match report 90 days after its case closes, and expired or revoked sessions a day after
 they die. The change log is not one of them. Nothing deletes a `device_changes` row,
 ever, and there is no setting that would.
 
@@ -253,10 +254,13 @@ dump. Full procedure — including the grep that finds the phrase in that log li
 why `UPDATE alembic_version` is the wrong answer — in
 [docs/operations.md §5](docs/operations.md).
 
-**What retires it.** From `v2.0.0` on, CI refuses a migration that drops or renames what the
-release before it reads ([docs/BRANCHING.md §1.1](docs/BRANCHING.md)). Once an older image also
-starts against a newer revision (not built yet), one step back is an image swap with no
-downgrade, and this section retires after one release has shown it.
+**What retires it.** `v2.0.0`. Its migrations record the oldest release that can read the schema
+they leave, CI keeps that stamp truthful ([docs/BRANCHING.md §1.1](docs/BRANCHING.md)), and an
+image that finds a revision it does not carry reads it: at or above the stamp, the image starts
+without migrating; below it, the image refuses with a sentence naming both releases
+([docs/troubleshooting.md](docs/troubleshooting.md) §4). So from `v2.0.0` on, one step back is an
+image swap with no downgrade. What remains here is a step back to a `v1.x` image, which predates
+the stamp and crash-loops as above.
 
 *An interrupted upgrade is **not** in this list, and was tested rather than assumed:
 Alembic runs the whole upgrade in one transaction and Postgres has transactional DDL, so

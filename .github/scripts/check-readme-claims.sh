@@ -198,6 +198,7 @@ RETENTION_CLOCKS=(
   'sessions|\bsessions\b'
   'summary-jobs|summary jobs'
   'summary-metrics|summary metric counters'
+  'submission-content|coverage request or match report'
 )
 
 # file:Model of every statement-level delete that is not a clock.

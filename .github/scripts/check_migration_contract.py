@@ -5,7 +5,9 @@ The oracle: the tables and columns backend/app/models/schema.py names at the new
 tag reachable from HEAD, read with ast. The subject: every migration added since. What upgrade() reaches
 may not drop_column, drop_table, rename_table or alter_column(new_column_name=) what the oracle names, nor
 run SQL (a literal, module constant or f-string) saying DROP TABLE or ALTER TABLE <name> … DROP or RENAME
-(constraints aside). Type, nullability and defaults are for review. `--notes vX.Y.Z` prints release.yml's upgrade notes.
+(constraints aside), unless the stamp they leave is raised past it (#672): the last MIN_READABLE_RELEASE they declare,
+which a database they upgrade holds in schema_release, may not name an older release, nor that one once they contract.
+Type, nullability and defaults are for review. `--notes vX.Y.Z` prints release.yml's upgrade notes.
 """
 
 from __future__ import annotations
@@ -24,16 +26,21 @@ VERBS = {"drop_column": "drops", "drop_table": "drops", "rename_table": "renames
 RAW_SQL = re.compile(r"\bDROP\s+TABLE\b|\bALTER\s+TABLE\s+(IF\s+EXISTS\s+)?(ONLY\s+)?\S+\s+([^;]*?,\s*)?(RENAME|DROP)\s+"
                      r"(?!CONSTRAINT\b)\S+", re.IGNORECASE)
 RELEASE_NOTE = re.compile(r"^#\s*release-note:\s*(.+)$", re.MULTILINE)
+STAMP = "MIN_READABLE_RELEASE"
 
 
 def _git(*args: str) -> str:
     return subprocess.run(["git", *args], check=True, capture_output=True, text=True, cwd=ROOT).stdout
 
 
+def _key(tag: str | None) -> tuple[int, ...] | None:
+    return tuple(int(n) for n in tag[1:].split(".")) if tag and STABLE.fullmatch(tag) else None
+
+
 def previous_release(ref: str, exclude: str | None = None) -> str | None:
     """The newest vMAJOR.MINOR.PATCH tag reachable from `ref`, other than `exclude`. A prerelease is not a release."""
     tags = [t for t in _git("tag", "--merged", ref, "--list", "v*").split() if STABLE.fullmatch(t) and t != exclude]
-    return max(tags, key=lambda t: tuple(int(n) for n in t[1:].split(".")), default=None)
+    return max(tags, key=_key, default=None)
 
 
 def added_migrations(since: str, ref: str) -> list[str]:
@@ -117,8 +124,30 @@ def refusals(migration: str, source: str, tables: dict[str, set[str]], release: 
                        else "take it out of the models in this release and drop it in the next")
                 what = f"column {table}.{column}" if column else f"table {table}"
                 found.append((node.lineno, f"{migration} {VERBS[verb]} {what}, which {release} still reads (its models name "
-                              f"it), so stepping back to {release} would break: {fix} (docs/BRANCHING.md §1.1)."))
+                              f"it), so stepping back to {release} would break: {fix}, or declare a {STAMP} above {release} "
+                              "so that its image refuses this schema (docs/BRANCHING.md §1.1)."))
     return list(dict.fromkeys(found))  # an f-string and its literal pieces can say the same thing
+
+
+def recorded_stamp(source: str) -> str | None:
+    """The MIN_READABLE_RELEASE a migration declares at module level, which its upgrade() writes to schema_release."""
+    return next((str(s.value.value) for s in ast.parse(source).body if _target(s) == STAMP
+                 and isinstance(getattr(s, "value", None), ast.Constant)), None)
+
+
+def stamp_refusal(stamps: list[tuple[str, str]], count: int, release: str) -> str | None:
+    """Why the stamp that `count` migrations since `release` leave is untrue, or None. `stamps`: (migration, value) for
+    each that declares one, in landing order; the last is what their database holds, all an older image reads."""
+    if not stamps:
+        return (f"{count} migration(s) added since {release} declare no {STAMP}, so a database they upgrade keeps an older "
+                f"release's stamp, and that release's image would start on a schema this check holds only to {release}'s "
+                f'models: declare {STAMP} = "{release}" in one of them and write it in its upgrade() (docs/BRANCHING.md §1.1).')
+    migration, value = stamps[-1]
+    if _key(value) is None or _key(value) < _key(release):
+        return (f"{migration} declares {STAMP} = {value!r}, but this check holds the migrations since {release} only to "
+                f'{release}\'s models, so no older release is known to read their schema: declare "{release}", or a later '
+                f"vMAJOR.MINOR.PATCH once they drop or rename what {release} reads (docs/BRANCHING.md §1.1).")
+    return None
 
 
 def upgrade_notes(tag: str) -> str:
@@ -149,13 +178,24 @@ def main(argv: list[str]) -> int:
               "migrations to: fetch the tags (actions/checkout with fetch-depth: 0) and run it again.")
         return 1
     tables, migrations = oracle(_git("show", f"{release}:{SCHEMA}")), added_migrations(release, "HEAD")
+    sources = {path: _git("show", f"HEAD:{path}") for path in migrations}
     found = [(path, line, sentence) for path in migrations
-             for line, sentence in refusals(Path(path).name, _git("show", f"HEAD:{path}"), tables, release)]
-    for path, line, sentence in found:
-        print(f"::error file={path},line={line}::{sentence}")
+             for line, sentence in refusals(Path(path).name, sources[path], tables, release)]
+    declared = [(path, value) for path in migrations if (value := recorded_stamp(sources[path])) is not None]
+    stamps = [(Path(path).name, value) for path, value in declared]
+    untrue = stamp_refusal(stamps, len(migrations), release) if migrations else None
+    raised = not untrue and bool(stamps) and _key(stamps[-1][1]) > _key(release)
+    if raised and not RELEASE_NOTE.search(sources[declared[-1][0]]):
+        untrue = (f"{stamps[-1][0]} declares {STAMP} = {stamps[-1][1]!r}, above {release}, so stepping back to {release} is "
+                  "a restore, not an image swap: say so in a `# release-note:` line (docs/BRANCHING.md §1.1).")
+    for path, line, sentence in found:  # a raised stamp turns each contraction into a note: the older image refuses
+        print(f"::{'notice' if raised else 'error'} file={path},line={line}::{sentence}")
+    if untrue:
+        print(f"::error::{untrue}")
     print(f"{len(migrations)} migration(s) added since {release}, held against the {len(tables)} tables its models name: "
-          + (f"{len(found)} refused." if found else "none drops or renames what it reads."))
-    return 1 if found else 0
+          + (f"{STAMP} is {stamps[-1][1]}, so {release}'s image refuses this schema." if raised
+             else f"{len(found)} refused." if found else "none drops or renames what it reads."))
+    return 1 if (found and not raised) or untrue else 0
 
 
 if __name__ == "__main__":

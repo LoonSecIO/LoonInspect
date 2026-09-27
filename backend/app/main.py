@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate
@@ -78,6 +79,7 @@ from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddlew
 from app.core.outbox import PURGE_HOUR, PURGE_MINUTE, deliver_pending, fan_out_pending, outbox_tick_lock, purge_delivered_events
 from app.core.runs import purge_runs
 from app.core.sharing import deliver_corpus, exchange_due, exchange_lock, run_exchange
+from app.core.submissions import forget_closed
 from app.core.tenancy import OPERATIONAL_TENANT_ID
 from app.core.tenant_jobs import operational_tenant_ids, tenant_job
 from app.core.vuln_library import refresh_from_db
@@ -369,8 +371,13 @@ async def run_cleanup() -> None:
     open" — so without a purge the table would grow for the life of the pod. Giving them
     a retention setting of their own would be one more knob an operator has to have an
     opinion about, for a row that is run history in the same sense a finished run is.
+
+    A submission case's URL, text and contact ride the same night on the service's own clock (#623): 90 days
+    after the case closed, or once it expired. Theirs is a step of its own, so neither purge's failure keeps the
+    other from running.
     """
     for tenant_id in await operational_tenant_ids():
+        await _forget_closed_cases(tenant_id)
         async with tenant_job(tenant_id) as db:
             try:
                 purged = await purge_runs(db, settings.run_retention_days)
@@ -393,6 +400,24 @@ async def run_cleanup() -> None:
                 "purged closed alerts",
                 extra={"tenant_id": str(tenant_id), "count": closed_alerts},
             )
+
+
+async def _forget_closed_cases(tenant_id: uuid.UUID) -> None:
+    """One line a night per tenant, with the count and never a case's words (docs/troubleshooting.md §21)."""
+    async with tenant_job(tenant_id) as db:
+        try:
+            cleared = await forget_closed(db)
+        except Exception:
+            logger.exception(
+                "submission cleanup failed for this tenant; no case's URL, text or contact was cleared tonight, and the "
+                "next night tries again; check the database container is healthy (docker compose ps db)",
+                extra={"tenant_id": str(tenant_id)},
+            )
+            return
+    logger.info(
+        "cleared the URL, text and contact of submission cases closed over 90 days ago or expired",
+        extra={"tenant_id": str(tenant_id), "count": cleared},
+    )
 
 
 @asynccontextmanager
@@ -423,8 +448,8 @@ async def lifespan(app: FastAPI):
     )
 
     validate_encryption_key()
-    await init_db()
-    logger.info("database ready, migrations applied")
+    ready = "migrations applied" if await init_db() else "at a newer release's schema, nothing migrated"
+    logger.info(f"database ready, {ready}")
 
     # Before anything else touches the database: every other table's row-level
     # security compares against a tenant id, and these are the rows that make one
