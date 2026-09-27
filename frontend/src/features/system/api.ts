@@ -49,6 +49,26 @@ export interface DataSharingSettings {
   lastExchangeError: string | null;
   /** AI-inference consent (#112): whether any byte may leave the pod for inference. */
   aiInference: boolean;
+  /** The contribution receipt (#622): presence, dates and progress, never the receipt. */
+  participation?: Participation | null;
+}
+
+/** `participation` on the Data sharing status, as `ParticipationOut` (backend/app/schemas/system.py) names it. */
+export interface Participation {
+  /** CONTRIBUTION_RECEIPTS, VULN_TENANT_SELECTION and VULN_RELEASE_RETENTION, all on. */
+  enabled: boolean;
+  receiptPresent: boolean;
+  /** none | contributing | withdrawal_pending | withdrawn | ended */
+  state: string;
+  acceptedAt: string | null;
+  updatesUntil: string | null;
+  withdrawalRequestedAt: string | null;
+  lastWithdrawalAttemptAt: string | null;
+  withdrawnAt: string | null;
+  /** When the receipt alone last fetched the corpus, and when the next such fetch is due (#641). */
+  lastRedeemedAt: string | null;
+  retryAfter: string | null;
+  error: string | null;
 }
 
 /** One share-log row, in the NDJSON download's field names (#408). */
