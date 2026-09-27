@@ -481,6 +481,9 @@ async def run_exchange(
     settings_row = await get_or_create_settings(db)
     if settings_row.tier == "off":
         return None
+    # Reveals are paused (#624): the body below keeps the builder's `"reveals": []`, and a
+    # request an older build queued is dropped first, so every row this run writes drops it.
+    settings_row.pending_reveal_keys = []
 
     now = datetime.now(UTC)
 
@@ -515,9 +518,6 @@ async def run_exchange(
         return held
 
     request_body = await build_exchange_request(db, settings_row)
-    # Reveals are paused (#624): the body keeps the builder's `"reveals": []`, and a request
-    # an older build queued is dropped before the post, so a failed exchange drops it too.
-    settings_row.pending_reveal_keys = []
     participation.opt_in(settings_row, request_body)
 
     pointer: CorpusPointer | None = None

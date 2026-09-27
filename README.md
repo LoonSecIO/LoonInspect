@@ -515,14 +515,12 @@ exchange. Once a day, a sharing instance sends per-tenant **content-hash keys** 
 applications with aggregated install counts (plus OS tuples; the hardware tuple is
 reserved and ships empty) — never per-device rows, and
 never device identifiers, serials, hostnames, user names, file paths, or anything from
-the accounts and credential tables. App *names* cross the wire only when the instance
-answers an explicit request for a title already seen at 5+ independent contributors —
-the server's published policy — and only in the default tier; internal, company-specific
-apps are never revealed. The stronger guarantee isn't the count, which a client cannot
-verify: it's that a request can only *name* an app whose plaintext the requester already
-holds, so a genuinely private title is unaddressable regardless of how many contributors
-share it. The full design — including exactly what the k-threshold does and doesn't
-guarantee — is in [docs/data-sharing.md](docs/data-sharing.md).
+the accounts and credential tables. App *names* are not part of the exchange. The reveal
+protocol — the instance answering a service's request for a title seen at 5+ contributors
+with its plaintext name — is paused while that threshold is unproven, and this build
+answers no such request at any tier. The full design — including what the k-threshold did
+and did not guarantee, and what an older build still answers — is in
+[docs/data-sharing.md](docs/data-sharing.md).
 
 The choice is presented during first-run setup and lives under **Settings → Data
 Sharing** afterwards, alongside a button that renders the literal next payload from

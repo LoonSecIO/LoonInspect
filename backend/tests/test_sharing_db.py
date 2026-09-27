@@ -300,10 +300,11 @@ async def test_no_reveal_leaves_and_a_queued_request_is_dropped(db, clean, monke
     assert row.pending_reveal_keys == [] and row.tier == "reveal"
 
 
-async def test_a_failed_exchange_drops_a_queued_request_too(db, clean, monkeypatch) -> None:
-    """The request is dropped before the post, so a day that fails drops it as well. With no
-    reveals left to shed, a `413` is an ordinary failure: every attempt carries the same
-    reveal-less body and the row claims no shed (docs/data-sharing.md, the `413` rule)."""
+async def test_a_failed_or_skipped_exchange_drops_a_queued_request_too(db, clean, monkeypatch) -> None:
+    """The request is dropped before anything else, so a day that fails, or that the
+    environment override skips, drops it as well. With no reveals left to shed, a `413` is
+    an ordinary failure: every attempt carries the same reveal-less body and the row claims
+    no shed (docs/data-sharing.md, the `413` rule)."""
     import json
 
     from app.core import sharing
@@ -327,6 +328,14 @@ async def test_a_failed_exchange_drops_a_queued_request_too(db, clean, monkeypat
     (log,) = await _exchange_rows(db)
     assert (log.outcome, log.reveals_shed, log.payload["reveals"]) == ("failed", False, [])
     await db.rollback()  # read the row back from the database, not from this session's memory
+    row = await get_or_create_settings(db)
+    assert row.pending_reveal_keys == [] and row.tier == "reveal"
+
+    row.pending_reveal_keys = ["v1:aa"]
+    await db.commit()
+    monkeypatch.setattr(app_settings, "community_sharing", False)
+    assert (await run_exchange(db)).outcome == "skipped_env"
+    await db.rollback()
     row = await get_or_create_settings(db)
     assert row.pending_reveal_keys == [] and row.tier == "reveal"
 
