@@ -218,10 +218,12 @@ async def withdraw(db: AsyncSession, case: SubmissionCase, *, transport: Transpo
 
 
 async def withdrawable(db: AsyncSession) -> bool:
-    """Whether this organization holds a case neither withdrawn nor expired, which the service may still hold words
-    of: one EXISTS, scoped to the tenant by row-level security and served by `ix_submission_cases_tenant_id`. It
-    lists Settings > Intelligence Access for an administrator with every other route to the page off (#706)."""
-    return bool(await db.scalar(select(exists().where(SubmissionCase.state.not_in(("withdrawn", "expired"))))))
+    """Whether this organization holds a case the service may still hold words of: neither withdrawn nor expired,
+    nor closed longer ago than the service keeps a case (KEPT, `forget_closed`'s clock). One EXISTS, scoped to the
+    tenant by row-level security and served by `ix_submission_cases_tenant_id`. It lists Settings > Intelligence
+    Access for an administrator with every other route to the page off (#706)."""
+    kept = or_(SubmissionCase.closed_at.is_(None), SubmissionCase.closed_at >= datetime.now(UTC) - KEPT)
+    return bool(await db.scalar(select(exists().where(SubmissionCase.state.not_in(("withdrawn", "expired")), kept))))
 
 
 async def forget_closed(db: AsyncSession) -> int:

@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -247,8 +248,9 @@ async def test_another_tenants_cases_are_out_of_reach(admin, foreign_tenant):  #
 
 async def test_what_lists_settings_intelligence_access(admin, db, monkeypatch):
     """#706: beside `enabled`, still the paid preview alone, the intelligence status answers `receipts`
-    (CONTRIBUTION_RECEIPTS with the two corpus flags) and `casesToWithdraw`: a case neither withdrawn nor expired,
-    answered to an administrator only. The auditor holds SYSTEM_READ, never a case, so reads it false."""
+    (CONTRIBUTION_RECEIPTS with the two corpus flags) and `casesToWithdraw`: a case neither withdrawn nor expired, nor
+    closed over 90 days ago, answered to an administrator only. The auditor holds SYSTEM_READ, never a case, so reads
+    it false."""
     from app.core.config import settings
     from app.models.schema import SubmissionCase
 
@@ -277,9 +279,18 @@ async def test_what_lists_settings_intelligence_access(admin, db, monkeypatch):
         assert (await client.post("/api/submissions", json=SEND)).json()["state"] == "received"
         monkeypatch.setattr(settings, "intelligence_access", False)
         assert (await reads(), await reads(auditor)) == ((False, False, True), (False, False, False))
-        for state, listed in (("published", True), ("expired", False), ("withdrawn", False)):
-            await db.execute(update(SubmissionCase).values(state=state))
+        # The service deletes a case 90 days after it closes (`KEPT`), so one closed longer ago holds nothing there.
+        now = datetime.now(UTC)
+        for state, closed_days_ago, listed in (
+            ("published", None, True),
+            ("published", 89, True),
+            ("declined", 91, False),
+            ("expired", None, False),
+            ("withdrawn", None, False),
+        ):
+            closed = None if closed_days_ago is None else now - timedelta(days=closed_days_ago)
+            await db.execute(update(SubmissionCase).values(state=state, closed_at=closed))
             await db.commit()
-            assert (await reads())[2] is listed, state
+            assert (await reads())[2] is listed, (state, closed_days_ago)
     finally:
         await auditor.aclose()
