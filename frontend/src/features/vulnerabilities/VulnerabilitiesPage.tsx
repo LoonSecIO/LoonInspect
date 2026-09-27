@@ -84,7 +84,8 @@ function Bands({ entry, t }: { entry: CatalogEntry; t: Translations }) {
   return <span className="block text-xs text-muted-foreground">{shown.join(" · ")}</span>;
 }
 
-/** A row's submission actions (#623): SYSTEM_WRITE, the v2 preview, and the release its list's answers were judged under. */
+/** A row's submission actions (#623): SYSTEM_WRITE, the v2 preview with INTELLIGENCE_SUBMISSIONS (#692) as `enabled`,
+ *  and the release its list's answers were judged under. */
 type Acts = { canWrite: boolean; enabled: boolean; release: string | null };
 
 /** One row of *Most exposed* and *Longest exposed*: the count, the Macs, the age and the fix path.
@@ -145,11 +146,12 @@ function PatchableRow({ entry, t, canWrite, enabled, release }: { entry: Catalog
 }
 
 /** One list's rows (`ranked`: *Easily patchable*'s) with their submission actions' two gates, SYSTEM_WRITE as the
- *  routes require and the v2 preview (#623), and the release THIS list's answers were judged under: a list can
- *  hand on no `corpusRelease` but its own. Exported so the node lane renders the gates with the rows (#686). */
+ *  routes require and the v2 preview (#623) with its own submissions switch (#692), and the release THIS list's
+ *  answers were judged under: a list can hand on no `corpusRelease` but its own. Exported so the node lane renders
+ *  the gates with the rows (#686). */
 export function ListRows({ list, ranked, t }: { list: CatalogListResponse; ranked: boolean; t: Translations }) {
   const canWrite = useHasPermission(PERMISSIONS.SYSTEM_WRITE);
-  const enabled = useIntelligenceStore((state) => state.enabled);
+  const enabled = useIntelligenceStore((state) => state.enabled && state.submissions);
   const acts: Acts = { canWrite, enabled, release: list.corpusRelease ?? null };
   return list.items.map((entry) =>
     ranked ? <PatchableRow key={entry.id} entry={entry} t={t} {...acts} /> : <ExposedRow key={entry.id} entry={entry} t={t} {...acts} />);

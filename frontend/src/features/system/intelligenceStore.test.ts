@@ -6,7 +6,7 @@ vi.mock("@/config/api", () => ({ apiRequest: vi.fn(), setUnauthorizedHandler: vi
 
 afterEach(() => {
   vi.clearAllMocks();
-  useIntelligenceStore.setState({ enabled: false, answering: new Set() });
+  useIntelligenceStore.setState({ enabled: false, submissions: false, answering: new Set() });
 });
 
 describe("intelligenceStore (#622)", () => {
@@ -24,9 +24,24 @@ describe("intelligenceStore (#622)", () => {
   });
 
   it("a refused or failed read hides the entry rather than guessing", async () => {
+    useIntelligenceStore.setState({ submissions: true });
     vi.mocked(apiRequest).mockRejectedValue(new Error("403"));
     await useIntelligenceStore.getState().load();
     expect(useIntelligenceStore.getState().enabled).toBe(false);
+    expect(useIntelligenceStore.getState().submissions).toBe(false);
     expect(useIntelligenceStore.getState().answering.size).toBe(0);
+  });
+
+  it("holds INTELLIGENCE_SUBMISSIONS apart from the preview, as the instance reports it, and absent as off (#692)", async () => {
+    const read = async (status: object) => {
+      vi.mocked(apiRequest).mockResolvedValue(status);
+      await useIntelligenceStore.getState().load();
+      const { enabled, submissions, answering } = useIntelligenceStore.getState();
+      return [enabled, submissions, answering.size];
+    };
+    expect(await read({ enabled: true, submissions: false })).toEqual([true, false, 1]);
+    expect(await read({ enabled: true, submissions: true })).toEqual([true, true, 1]);
+    expect(await read({ enabled: true })).toEqual([true, false, 1]);
+    expect(await read({ enabled: false, submissions: true })).toEqual([false, true, 0]);
   });
 });

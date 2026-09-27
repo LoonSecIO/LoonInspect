@@ -24,7 +24,7 @@ export const de: Translations = {
   submissionCases: {
     title: "Abdeckungsanfragen und Zuordnungsmeldungen",
     description: "Fälle, die diese Organisation mit „Abdeckung anfragen“ oder „Falsche Zuordnung melden“ gesendet hat, neueste zuerst. Nur für diese Organisation: Nur ihre Administratoren sehen sie, und der Schlüssel, unter dem ein Fall reist, wird nie angezeigt.",
-    notEnabled: "Neue Fälle können nicht gesendet werden, solange die v2-Vorschau (INTELLIGENCE_ACCESS) hier ausgeschaltet ist. Diese Fälle lassen sich weiter abfragen und zurückziehen.",
+    notEnabled: "Neue Fälle können nicht gesendet werden, solange die v2-Vorschau (INTELLIGENCE_ACCESS) oder der Schalter für Einreichungen (INTELLIGENCE_SUBMISSIONS) hier ausgeschaltet ist. Diese Fälle lassen sich weiter abfragen und zurückziehen.",
     loading: "Fälle werden geladen…", empty: "Von dieser Organisation wurde noch keine Anfrage und keine Meldung gestellt.",
     loadFailed: "Die Fälle konnten nicht gelesen werden, und diese Instanz nannte keinen Grund. Laden Sie die Seite neu; schlägt es weiter fehl, lesen Sie docker compose logs app.",
     failed: "Die Anfrage ist fehlgeschlagen, und diese Instanz nannte keinen Grund. Versuchen Sie es erneut; schlägt es weiter fehl, lesen Sie docker compose logs app.",

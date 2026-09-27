@@ -1,8 +1,8 @@
 import { apiRequest } from "@/config/api";
 
 /** The five submission routes (#623, backend/app/api/submissions.py), each behind SYSTEM_WRITE. Preview and
- *  send are refused while INTELLIGENCE_ACCESS is off; the list, status and withdrawal never are. No answer
- *  carries the case key: this instance mints it on Send and keeps it. */
+ *  send are refused while INTELLIGENCE_ACCESS or INTELLIGENCE_SUBMISSIONS (#692) is off; the list, status and
+ *  withdrawal never are. No answer carries the case key: this instance mints it on Send and keeps it. */
 export const SUBMISSION_PLATFORMS = ["macos", "ios", "ipados", "tvos", "visionos"] as const;
 export type SubmissionPlatform = (typeof SUBMISSION_PLATFORMS)[number];
 export type SubmissionKind = "coverage" | "correction";
@@ -29,7 +29,7 @@ export interface SubmissionCaseOut {
   excludedOverride: boolean; permissionAt: string | null;
 }
 
-/** `enabled`: whether this instance may send a new case (INTELLIGENCE_ACCESS). */
+/** `enabled`: whether this instance may send a new case (INTELLIGENCE_ACCESS and INTELLIGENCE_SUBMISSIONS). */
 export interface SubmissionCasesOut { enabled: boolean; cases: SubmissionCaseOut[] }
 
 const POST = { method: "POST" } as const;

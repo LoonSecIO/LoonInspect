@@ -15,6 +15,9 @@ export const INTELLIGENCE_ACCESS = "intelligenceAccess";
 
 interface IntelligenceStore {
   enabled: boolean;
+  /** INTELLIGENCE_SUBMISSIONS as the instance reports it (#692). The row actions need both it and `enabled`; it never
+   *  lists the Settings entry, and an answer without it reads as off. */
+  submissions: boolean;
   /** `visibleNavigation`'s data gate, held as state so a selector never builds a new Set. */
   answering: ReadonlySet<string>;
   load: () => Promise<void>;
@@ -25,14 +28,16 @@ const OFFERED: ReadonlySet<string> = new Set([INTELLIGENCE_ACCESS]);
 
 export const useIntelligenceStore = create<IntelligenceStore>((set) => ({
   enabled: false,
+  submissions: false,
   answering: NONE,
 
   async load() {
     try {
-      const status = await apiRequest<{ enabled: boolean }>("/system/intelligence");
-      set(status.enabled ? { enabled: true, answering: OFFERED } : { enabled: false, answering: NONE });
+      const status = await apiRequest<{ enabled: boolean; submissions?: boolean }>("/system/intelligence");
+      const submissions = status.submissions === true;
+      set(status.enabled ? { enabled: true, submissions, answering: OFFERED } : { enabled: false, submissions, answering: NONE });
     } catch {
-      set({ enabled: false, answering: NONE });
+      set({ enabled: false, submissions: false, answering: NONE });
     }
   }
 }));

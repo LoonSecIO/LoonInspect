@@ -1,7 +1,7 @@
 /** The submission actions in the Vulnerabilities rows (#623, #686): Request coverage and Report an incorrect match sit
- *  in their rows for an administrator while the v2 preview is on and nowhere else, and each list hands its rows its
- *  OWN release. Node lane (#285): the page's two gates are read where the page reads them, stubbed at their sources
- *  as SubmissionCases.test.tsx stubs the permission. */
+ *  in their rows for an administrator while the v2 preview and INTELLIGENCE_SUBMISSIONS (#692) are on and nowhere else,
+ *  and each list hands its rows its OWN release. Node lane (#285): the page's two gates are read where the page reads
+ *  them, stubbed at their sources as SubmissionCases.test.tsx stubs the permission. */
 
 import { describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
@@ -12,11 +12,12 @@ import type { CatalogEntry, CatalogListResponse } from "@/features/catalog/types
 import { ListRows } from "@/features/vulnerabilities/VulnerabilitiesPage";
 import { en } from "@/i18n/en";
 
-const reader = vi.hoisted(() => ({ grants: [] as string[], preview: false }));
+const reader = vi.hoisted(() => ({ grants: [] as string[], preview: false, submissions: true }));
 vi.mock("@/features/auth/store", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/features/auth/store")>()),
   useHasPermission: (permission: string) => reader.grants.includes(permission) }));
 vi.mock("@/features/system/intelligenceStore", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/features/system/intelligenceStore")>()),
-  useIntelligenceStore: <T,>(select: (state: { enabled: boolean }) => T) => select({ enabled: reader.preview }) }));
+  useIntelligenceStore: <T,>(select: (state: { enabled: boolean; submissions: boolean }) => T) =>
+    select({ enabled: reader.preview, submissions: reader.submissions }) }));
 
 const copy = en.submissions;
 const ADMIN: string[] = [PERMISSIONS.SYSTEM_READ, PERMISSIONS.SYSTEM_WRITE];
@@ -34,15 +35,16 @@ const COVERED: CatalogEntry = { ...BUILD, id: 2, name: "Firefox", vuln: { assess
 const list = (items: CatalogEntry[], corpusRelease: string | null): CatalogListResponse =>
   ({ items, total: items.length, page: 1, pageSize: 10, summary: null, corpusAsOf: "2026-09-20", corpusRelease, vulnJudged: true });
 
-/** One list as the page draws it, for this reader; `ranked` is *Easily patchable*'s. */
-function drawn(listed: CatalogListResponse, ranked: boolean, grants: string[], preview: boolean) {
-  Object.assign(reader, { grants, preview });
+/** One list as the page draws it, for this reader; `ranked` is *Easily patchable*'s. `submissions` is
+ *  INTELLIGENCE_SUBMISSIONS as the status reports it, on unless a test turns it off. */
+function drawn(listed: CatalogListResponse, ranked: boolean, grants: string[], preview: boolean, submissions = true) {
+  Object.assign(reader, { grants, preview, submissions });
   return renderToStaticMarkup(<MemoryRouter><table><tbody><ListRows list={listed} ranked={ranked} t={en} /></tbody></table></MemoryRouter>);
 }
 const offered = (markup: string) => ({ coverage: markup.split(`>${copy.requestCoverage}</button>`).length - 1, report: markup.split(`>${copy.reportMatch}</button>`).length - 1 });
 /** What the list hands each row, read off the elements it returns: this lane has no DOM to open a dialog in. */
-function handed(listed: CatalogListResponse, ranked: boolean, grants: string[], preview: boolean) {
-  Object.assign(reader, { grants, preview });
+function handed(listed: CatalogListResponse, ranked: boolean, grants: string[], preview: boolean, submissions = true) {
+  Object.assign(reader, { grants, preview, submissions });
   return (ListRows({ list: listed, ranked, t: en }) as ReactElement<{ canWrite: boolean; enabled: boolean; release: string | null }>[])
     .map(({ props: { canWrite, enabled, release } }) => ({ canWrite, enabled, release }));
 }
@@ -62,6 +64,18 @@ describe("the submission actions in the Vulnerabilities rows", () => {
       }
       expect(handed(list([COVERED], PATCHABLE), true, grants, preview)).toEqual([{ canWrite: grants === ADMIN, enabled: preview, release: PATCHABLE }]);
     }
+  });
+
+  it("are absent with the preview on while INTELLIGENCE_SUBMISSIONS is off, from rows that are still drawn, and back with both on (#692)", () => {
+    for (const ranked of [false, true]) {
+      const markup = drawn(list([UNKNOWN, COVERED], MOST_EXPOSED), ranked, ADMIN, true, false);
+      expect([markup.includes(">Wireshark 4.2.0</a>"), markup.includes(">Firefox 4.2.0</a>")]).toEqual([true, true]);
+      expect(offered(markup)).toEqual({ coverage: 0, report: 0 });
+    }
+    expect(handed(list([COVERED], PATCHABLE), true, ADMIN, true, false)).toEqual([{ canWrite: true, enabled: false, release: PATCHABLE }]);
+    expect(offered(drawn(list([UNKNOWN, COVERED], MOST_EXPOSED), false, ADMIN, false, true))).toEqual({ coverage: 0, report: 0 });
+    expect(offered(drawn(list([UNKNOWN, COVERED], MOST_EXPOSED), false, ADMIN, true, true))).toEqual({ coverage: 1, report: 1 });
+    expect(offered(drawn(list([COVERED], PATCHABLE), true, ADMIN, true, true))).toEqual({ coverage: 0, report: 1 });
   });
 
   it("name the release of the list they sit in, so Easily patchable hands on its own and a list without one offers no report", () => {
