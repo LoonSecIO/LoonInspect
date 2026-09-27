@@ -28,13 +28,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: The tag is a version on a commit of main
+      - name: The tag is a version on a commit of main that names its release
         run: |
           [[ $TAG =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]] || {
             echo "::error::$TAG is not a version tag (vMAJOR.MINOR.PATCH, or a prerelease such as v2.0.0-rc.1; docs/BRANCHING.md §1.1), so no image was tagged."; exit 1; }
           sha=$(git rev-parse "$TAG^{commit}")
           git merge-base --is-ancestor "$sha" origin/main || {
             echo "::error::$TAG names $sha, which is not on main, so no image was tagged: releases are cut from main (docs/BRANCHING.md §1.1). Delete this release and its tag, and tag a commit on main."; exit 1; }
+          release=$(git show "$sha:backend/app/core/version.py" | sed -n 's/^RELEASE = "\(.*\)"$/\1/p')
+          [ "$release" = "${TAG%%-*}" ] || {
+            echo "::error::$TAG's commit says RELEASE = \"$release\" in backend/app/core/version.py, not ${TAG%%-*}, so no image was tagged: that line is how an image knows its release when it decides whether it can start on a newer database (docs/BRANCHING.md §1.1). Delete this release and its tag, set RELEASE in a pull request, and tag that commit."; exit 1; }
           echo "SHA=$sha" >> "$GITHUB_ENV"
 
       - name: Assume the ECR push role (it trusts v* tags once ops/aws/images.template.yml is redeployed with them, ops/aws/README.md §1)

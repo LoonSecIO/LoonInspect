@@ -13,6 +13,13 @@ _BUILD_INFO_PATH = Path(__file__).resolve().parents[1] / "build_info.json"
 # fallback is a sentinel rather than a plausible-looking date.
 _DEV_VERSION = "0.0.0-dev+local"
 
+# The release this tree is: the newest vMAJOR.MINOR.PATCH it contains (#672). An image is built from
+# a commit before any tag names it, and the stamp above carries that commit, not a release, so the
+# tree says it: the pull request that prepares a release sets this before the tag, and release.yml
+# refuses to tag the images of a tag that disagrees. init_db compares it with a newer database's
+# min_readable_release (docs/operations.md §5).
+RELEASE = "v1.0.0"
+
 
 @lru_cache
 def get_app_version() -> str:

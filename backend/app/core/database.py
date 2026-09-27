@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 import time
 import uuid
 from collections.abc import AsyncGenerator
@@ -10,15 +11,18 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
+from alembic.util import CommandError
 from fastapi import Depends
 from sqlalchemy import event, text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import Session as SyncSession
 
 from app.core.config import settings
 from app.core.tenancy import TENANT_GUC, get_tenant_id
+from app.core.version import RELEASE, get_app_version
 
 logger = logging.getLogger(__name__)
 
@@ -178,13 +182,58 @@ async def ping() -> None:
         await connection.execute(text("SELECT 1"))
 
 
-def _run_migrations() -> None:
-    # Alembic's command API is sync and internally does its own asyncio.run() for the
-    # async engine, so this must run off the main event loop thread (see init_db()).
+def _alembic_config() -> Config:
     config = Config(str(_BACKEND_DIR / "alembic.ini"))
     # Tells migrations/env.py to leave logging alone — see the comment there.
     config.attributes["configure_logger"] = False
-    command.upgrade(config, "head")
+    return config
+
+
+def _run_migrations() -> None:
+    # Alembic's command API is sync and internally does its own asyncio.run() for the
+    # async engine, so this must run off the main event loop thread (see init_db()).
+    command.upgrade(_alembic_config(), "head")
+
+
+def release_key(release: str | None) -> tuple[int, ...] | None:
+    """A vMAJOR.MINOR.PATCH release as numbers to compare, or None for anything else."""
+    return tuple(int(n) for n in release[1:].split(".")) if release and re.fullmatch(r"v\d+\.\d+\.\d+", release) else None
+
+
+async def _starts_on_a_newer_schema(connection: AsyncConnection) -> bool:
+    """Alembic cannot plan from this database's revision (#672): may this image start on it anyway?
+
+    A newer release's migrations record `min_readable_release`, the oldest release whose image reads
+    the schema they leave (.github/scripts/check_migration_contract.py keeps it truthful). This
+    image's RELEASE at or above it: True, and the image starts without migrating. Below it: a refusal
+    naming both. No stamp (a database no stamping release migrated), or no revision this image lacks:
+    False, and Alembic's own refusal stands, as before.
+    """
+    tables = (await connection.execute(text("SELECT to_regclass('alembic_version'), to_regclass('schema_release')"))).one()
+    if None in tables:
+        return False
+    carried = {script.revision for script in ScriptDirectory.from_config(_alembic_config()).walk_revisions()}
+    revisions = (await connection.execute(text("SELECT version_num FROM alembic_version"))).scalars()
+    ahead = next((revision for revision in revisions if revision not in carried), None)
+    stamp = await connection.scalar(text("SELECT min_readable_release FROM schema_release"))
+    if ahead is None or release_key(stamp) is None:
+        return False
+    newer = f"This database was upgraded by a newer release (its schema is at revision {ahead}, which this image does not carry)"
+    image = f"this image is {RELEASE} (build {get_app_version()})"
+    if release_key(RELEASE) >= release_key(stamp):
+        logger.warning(
+            f"{newer}, which recorded that {stamp} or later can read it; {image}, so it starts without migrating. "
+            "The database stays at that revision until an image that carries it starts (docs/operations.md section 5)."
+        )
+        return True
+    refusal = (
+        f"{newer}, which recorded that only {stamp} or later can read it; {image}, so it will not start on it. "
+        f"Start an image of {stamp} or later (the release that upgraded this database, or a newer one), or restore "
+        "the backup taken before that upgrade beside this image (docs/operations.md section 5)."
+    )
+    logger.error(refusal)
+    # From None: chained, the traceback would carry Alembic's, the 11,431-character line of KNOWN_ISSUES §6.
+    raise RuntimeError(refusal) from None
 
 
 async def _wait_for_database() -> None:
@@ -265,5 +314,8 @@ async def init_db() -> None:
             await connection.execute(text("SELECT pg_advisory_lock(:key)"), {"key": MIGRATION_LOCK_KEY})
         try:
             await asyncio.to_thread(_run_migrations)
+        except CommandError:
+            if not await _starts_on_a_newer_schema(connection):
+                raise
         finally:
             await connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": MIGRATION_LOCK_KEY})

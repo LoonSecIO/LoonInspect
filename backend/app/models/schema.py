@@ -2182,3 +2182,16 @@ class DeviceHistoryPreference(Base):
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(primary_key=True)
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True)
     slots: Mapped[list] = mapped_column(JSONB)
+
+
+class SchemaRelease(Base):
+    """The oldest release whose image can read this schema: one row, written only by migrations (#672).
+
+    Global, like `vuln_library_epoch`. `init_db` reads it with plain SQL before migrating, including
+    in images older than the migration that wrote it, so the names never change (docs/operations.md §5).
+    """
+
+    __tablename__ = "schema_release"
+    __table_args__ = (CheckConstraint("id = 1", name="ck_schema_release_single_row"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False, default=1)
+    min_readable_release: Mapped[str] = mapped_column(String(32))
