@@ -5,7 +5,7 @@ export const en = {
     title: "Intelligence access", description: "Paid access works without sharing inventory. Activation never changes your sharing choice.",
     pageDescription: "How this instance keeps vulnerability intelligence current. Paid access and community sharing are separate routes; neither turns the other on or off, and held intelligence stays usable when updates stop.",
     paidTitle: "Paid access",
-    notEnabled: "Intelligence access is not enabled in this instance's configuration.",
+    notEnabled: "Paid access is not enabled in this instance's configuration.",
     movedPointer: "Paid intelligence access has its own page:",
     state: "Last reported access", credential: "Stored credential", present: "Present (redacted)", none: "Not available",
     until: "Updates authorized until", attempt: "Last update attempt", refresh: "Last completed paid refresh",
@@ -17,7 +17,34 @@ export const en = {
     loadFailed: "Intelligence access could not be loaded. Reload or contact support.", failed: "The access operation failed. Retry or contact support.",
     states: { not_activated: "Not activated", paid: "Paid", trial: "Trial", cancelled: "Cancelled; paid term remains",
       grace: "Renewal grace", extended: "Staff extension", expired: "Expired", revoked: "Revoked",
-      credential_invalid: "Credential invalid or retired", disconnected: "Paid updates stopped locally", unknown: "Unknown" }
+      credential_invalid: "Credential invalid or retired", disconnected: "Paid updates stopped locally", unknown: "Unknown" },
+    // #622: the contribution route beside paid access. Presence, dates and progress; never the receipt itself.
+    contribution: {
+      title: "Community contribution",
+      description: "A consenting daily exchange earns a contribution receipt, good for 30 days after the upload the service accepted. The receipt stays encrypted on this instance and is never shown.",
+      receipt: "Contribution receipt", held: "Held (never shown)", notHeld: "Not held", state: "State",
+      accepted: "Contribution accepted", lastFetched: "Last fetched with the receipt", nextFetch: "Next fetch with the receipt",
+      notYet: "Not yet", noneScheduled: "None scheduled",
+      withdrawalRequested: "Withdrawal requested", withdrawalAttempt: "Last withdrawal attempt", withdrawnAt: "Withdrawn on",
+      states: { none: "No receipt yet", contributing: "Contributing", idle: "Held, not in use", lapsed: "Past its deadline",
+        withdrawal_pending: "Withdrawal waiting for the service", withdrawn: "Withdrawn", ended: "Ended", unknown: "Unknown" },
+      explained: {
+        none: "The next consenting exchange the service accepts earns one, where the service issues receipts.",
+        contributing: "Earned by the newest accepted upload. On a day the exchange does not bring the corpus, the receipt fetches it without another upload.",
+        idle: "Still inside its 30 days, but it fetches nothing until the setting named above changes.",
+        lapsed: "Its 30 days are over, so it fetches nothing until an accepted exchange earns a new one.",
+        withdrawal_pending: "Sharing was switched off, or the submission identity was reset. The receipt is no longer used, and uploads are held until the service acknowledges the withdrawal; it is retried every ten minutes.",
+        withdrawn: "The service no longer honours the receipts this instance earned. With sharing on, the next accepted exchange earns a new one.",
+        ended: "The service no longer honours the receipt: its 30 days passed, or the service did not recognize it. With sharing on, the next accepted exchange earns a new one.",
+        unknown: "The status names a state this page does not know."
+      },
+      receiptsOff: "Receipts are off in this instance's configuration: they need CONTRIBUTION_RECEIPTS, VULN_TENANT_SELECTION and VULN_RELEASE_RETENTION all set to true. Until then this receipt fetches nothing, but a waiting withdrawal still completes, and switching sharing off still withdraws it.",
+      envOverride: "COMMUNITY_SHARING=false is set in the environment, so this receipt fetches nothing until that setting is removed.",
+      disclosure: "Fetching or withdrawing with the receipt sends only the receipt and the protocol/client version: no inventory, no submission identity, no paid credential.",
+      both: "Paid access and a contribution receipt can both be present, and neither turns the other on or off: activating paid access never changes sharing, switching sharing off withdraws the receipt and leaves paid access in place, and stopping paid updates locally leaves the receipt in place.",
+      whichRefreshes: "When both are present, both keep the corpus current, each on its own schedule. Paid access asks once a day with its credential; the day's exchange brings the corpus with its upload, and the receipt asks only after an exchange that did not bring it. Each selects the release it brings, so the selected corpus is whichever arrived last.",
+      loadFailed: "The contribution receipt's state could not be read. Reload the page; if it keeps failing, read docker compose logs app."
+    }
   },
   submissionCases: {
     // #623: Settings › Intelligence Access, the organization's cases; the dialog's words are `submissions`.
