@@ -99,7 +99,7 @@ async def test_an_image_at_or_above_the_stamp_starts_without_migrating(newer, re
     upgrade, stamp = newer
     await upgrade(_stamp(recorded), _stamp(stamp))
     with caplog.at_level(logging.WARNING, logger=database.__name__):
-        await database.init_db()
+        assert await database.init_db() is False
     line = caplog.text.replace(f"(build {get_app_version()})", "(build …)")
     phrase = f"which recorded that {recorded} or later can read it; this image is v2.0.0 (build …), so it starts without"
     assert f"(its schema is at revision {AHEAD}, which this image does not carry), {phrase}" in line

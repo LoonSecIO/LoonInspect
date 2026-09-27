@@ -298,7 +298,8 @@ async def _check_external_role() -> None:
         raise RuntimeError(refusal)
 
 
-async def init_db() -> None:
+async def init_db() -> bool:
+    """Migrate to head; False when this image started on a newer release's schema instead (#672)."""
     await _wait_for_database()
     if settings.database_mode == "external":
         await _check_external_role()
@@ -317,5 +318,7 @@ async def init_db() -> None:
         except CommandError:
             if not await _starts_on_a_newer_schema(connection):
                 raise
+            return False
         finally:
             await connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": MIGRATION_LOCK_KEY})
+    return True
