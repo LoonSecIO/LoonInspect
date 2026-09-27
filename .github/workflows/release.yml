@@ -2,7 +2,8 @@
 # as a tag on the images Publish images pushed for its commit, by digest (ECR forbids moving a tag,
 # not adding one), and appends its upgrade notes (docs/BRANCHING.md §1.1). The push role trusts v*
 # tags once the maintainer redeploys ops/aws/images.template.yml with them (ops/aws/README.md §1).
-# A release runs its tagged commit's copy of this file: whoever can push a v* tag can assume that role.
+# A release runs its tagged commit's copy of this file: whoever can push a v* tag can assume that
+# role, so .github/rulesets/release-tags.json leaves pushing one to the repository admin role (#672).
 name: Release
 
 on:
