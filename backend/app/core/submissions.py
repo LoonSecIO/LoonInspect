@@ -2,9 +2,9 @@
 
 A case's key is its idempotency key, status capability and withdrawal capability at once: minted before
 the first request, stored encrypted like a contribution receipt, sent only in a request body, never logged
-or shown, and never joined by a credential, receipt or submission UUID. Sending needs the v2 preview
-INTELLIGENCE_ACCESS gates and INTELLIGENCE_SUBMISSIONS, its own switch (#692); status and withdrawal need
-neither, so switching one off never strands a withdrawal.
+or shown, and never joined by a credential, receipt or submission UUID. Sending belongs to the v2 preview
+INTELLIGENCE_ACCESS gates and needs INTELLIGENCE_SUBMISSIONS, its own switch, too (#692); status and
+withdrawal need neither, so switching either off never strands a withdrawal.
 Outcomes land on the case (`state`, `last_error`), quoting the service's one bounded sentence.
 """
 
