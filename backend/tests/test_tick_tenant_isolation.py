@@ -29,6 +29,7 @@ from app import main
 # Sorted by slug in the real loop; here simply first and second.
 TENANT_A = uuidlib.UUID("00000000-0000-0000-0000-0000000004a6")
 TENANT_B = uuidlib.UUID("00000000-0000-0000-0000-0000000004b6")
+CLEARED = "cleared the URL, text and contact of submission cases closed over 90 days ago or expired"
 
 
 @pytest.fixture
@@ -66,6 +67,16 @@ def _dies_for_a(seen: list[uuidlib.UUID], result: int = 0) -> Callable[..., Any]
         seen.append(db)
         if db == TENANT_A:
             raise RuntimeError("this tenant's row is unusable")
+        return result
+
+    return collaborator
+
+
+def _counts(seen: list[uuidlib.UUID], result: int = 0) -> Callable[..., Any]:
+    """A collaborator that records whose pass called it and never raises."""
+
+    async def collaborator(db: uuidlib.UUID, *args: Any) -> int:
+        seen.append(db)
         return result
 
     return collaborator
@@ -119,16 +130,40 @@ async def test_the_run_cleanup_purges_for_the_next_tenant(
 ) -> None:
     runs: list[uuidlib.UUID] = []
     alerts: list[uuidlib.UUID] = []
+    cases: list[uuidlib.UUID] = []
     monkeypatch.setattr(main, "purge_runs", _dies_for_a(runs, result=2))
     monkeypatch.setattr(main, "purge_closed_alerts", _dies_for_a(alerts, result=1))
+    monkeypatch.setattr(main, "forget_closed", _counts(cases))
 
     with caplog.at_level(logging.INFO, logger="app.main"):
         await main.run_cleanup()
 
     assert runs == [TENANT_A, TENANT_B]
     assert alerts == [TENANT_B]  # A never got past its runs
+    assert cases == [TENANT_A, TENANT_B]  # a step of its own: A's failed purge skips none of it
     assert _failure(caplog).getMessage().startswith("run cleanup failed for this tenant")
     assert [r.getMessage() for r in caplog.records if r.levelno == logging.INFO] == [
+        CLEARED,
+        CLEARED,  # one line a night per tenant, a zero included
         "purged old runs",
         "purged closed alerts",
     ]
+
+
+async def test_the_submission_clock_clears_for_the_next_tenant(
+    two_tenants: None, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    cases: list[uuidlib.UUID] = []
+    runs: list[uuidlib.UUID] = []
+    monkeypatch.setattr(main, "forget_closed", _dies_for_a(cases, result=3))
+    monkeypatch.setattr(main, "purge_runs", _counts(runs))
+    monkeypatch.setattr(main, "purge_closed_alerts", _counts([]))
+
+    with caplog.at_level(logging.INFO, logger="app.main"):
+        await main.run_cleanup()
+
+    assert cases == [TENANT_A, TENANT_B]
+    assert runs == [TENANT_A, TENANT_B]  # A's runs are purged all the same
+    assert _failure(caplog).getMessage().startswith("submission cleanup failed for this tenant")
+    [done] = [r for r in caplog.records if r.getMessage() == CLEARED]
+    assert (done.tenant_id, done.count) == (str(TENANT_B), 3)

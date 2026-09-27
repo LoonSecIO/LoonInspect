@@ -2449,5 +2449,17 @@ that log, then repeat the act.
     inventory…"*), the character is in the build's name or bundle identifier as the inventory reports it,
     which the dialog cannot change, so no case can name that build. *"…is blank…"*: a request made outside
     the dialog sent a field of only spaces, tabs or line breaks; the dialog leaves such a field out.
+11. **A case's URL, text and contact are gone (`null` on `GET /api/submissions`), and the case is still
+    listed.** This instance keeps what was written on a case no longer than the service does: 90 days after
+    the case closed (`closedAt`, once it reads *Declined* or *Published*), or once it reads *Expired, deleted
+    by the service*, the nightly cleanup clears those three here. The app, versions, state, dates, `release`,
+    `coverage` and the reviewer's note stay, so the case list, which never shows the three, looks the same.
+    `docker compose logs app` has one line a night for each organization, *cleared the URL, text and contact
+    of submission cases closed over 90 days ago or expired*, with its `count`. *submission cleanup failed for
+    this tenant…* means that night cleared nothing: check `docker compose ps db`; the next night tries again.
+    The clock runs from a closing this instance has read, and nothing asks the service on its own, so a case
+    that closed while nobody pressed *Refresh status* keeps its words here until someone does: press it on a
+    case whose answer is long overdue. One the service has already deleted then reads *Expired…*, and its
+    words go the next night.
 
 **Y.** Random keys do not collide twice. Report the case's `id` and its sentence (§8); nothing was stored there.
