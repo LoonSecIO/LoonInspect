@@ -81,7 +81,7 @@ export const de: Translations = {
       tierHeading: "Teilnahme",
       tierReveal: "Teilen und verbreitete Titel offenlegen (empfohlen)",
       tierRevealHelp:
-        "Täglich pseudonyme Inventarschlüssel und Installationszahlen. Diese Stufe kann Anfragen nach App-Namen im Klartext beantworten; schützen Sie interne Anwendungen durch Ausschlüsse. Automatische Anfragen bleiben im v2-Dienst pausiert.",
+        "Täglich pseudonyme Inventarschlüssel und Installationszahlen, dazu Ihre Einwilligung, Anfragen nach App-Namen im Klartext zu beantworten. Diese Anfragen sind pausiert: Dieser Build beantwortet keine, und eine gespeicherte Auswahl allein nimmt sie nie wieder auf. Schützen Sie interne Anwendungen durch Ausschlüsse.",
       tierKeys: "Nur Schlüssel teilen",
       tierKeysHelp:
         "Täglich anonyme Inventarschlüssel mit Installationszahlen. Anfragen nach App-Namen werden nie beantwortet — es wird ausschließlich Verbreitungssignal beigetragen.",
@@ -94,7 +94,7 @@ export const de: Translations = {
       disclosureNever:
         "Nie geteilt: Gerätekennungen, Seriennummern, Hostnamen, Benutzernamen, Dateipfade, Extension Attributes, Verbindungs- oder Tenant-Namen, Konten, Zugangsdaten oder Audit-Historie. LoonSec speichert auf diesem Pfad keine Quell-IP-Adressen.",
       disclosureReveals:
-        "Die Offenlegungsstufe kann App-Namen auf Dienstanfrage senden. Die vorgeschlagene Schwelle von fünf Beitragenden ist kein nachgewiesener Datenschutz und kein Beleg unabhängiger Kunden. Nutzen Sie ausschließlich Schlüssel und Ausschlüsse, wenn Namen privat bleiben müssen.",
+        "Der Austausch sendet keine App-Namen. Anfragen nach Namen im Klartext sind pausiert, weil die vorgeschlagene Schwelle von fünf Beitragenden weder ein nachgewiesener Datenschutz noch ein Beleg unabhängiger Kunden ist, und dieser Build beantwortet auf keiner Stufe eine davon.",
       disclosurePseudonym:
         "Übermittlungen sind pseudonym, nicht anonym: Snapshots dieses Tenants sind über die Übermittlungs-ID miteinander verknüpfbar (so ersetzen erneute Übermittlungen ältere, statt doppelt gezählt zu werden). Die ID ist zufällig, an nichts gebunden und unten zurücksetzbar.",
       previewHeading: "Genau das, was gesendet würde",
@@ -1279,7 +1279,12 @@ export const de: Translations = {
     send: "Senden", close: "Schließen", state: (word: string) => `Stand des Falls: ${word}`, follow: "Diesen Fall unter Einstellungen › Informationszugang verfolgen.",
     failed: "Die Anfrage ist fehlgeschlagen, und diese Instanz nannte keinen Grund. Versuchen Sie es erneut: Ein wiederholtes Senden erreicht denselben offenen Fall, nie einen zweiten. Schlägt es weiter fehl, lesen Sie docker compose logs app.",
     // Falsche Zuordnung melden (#623): ein Fund eines geprüften Builds, gesendet mit dem Release, das ihn ergab.
-    reportMatch: "Falsche Zuordnung melden", findingLabel: "Der Fund, der auf diesen Build nicht zutrifft"
+    reportMatch: "Falsche Zuordnung melden", findingLabel: "Der Fund, der auf diesen Build nicht zutrifft",
+    // Die Textregel (#623; Support #17, Entscheidung 6, entschieden am 2026-09-27), vor der Vorschau geprüft.
+    hiddenCharacter: (field: string, code: string, at: number) =>
+      `${field} enthält an Stelle ${at} das Zeichen ${code}, das ein Fall nicht übertragen kann: kein Formatzeichen außer den Verbindern U+200C und U+200D, ` +
+      `kein unpaariges Surrogat, kein Zeilen- oder Absatztrenner und kein Steuerzeichen${field === "text" ? " außer Zeilenumbruch und Tabulator" : ""}. ` +
+      (field === "text" || field === "contact" ? "Löschen Sie es, dann öffnen Sie die Vorschau." : "Es stammt aus dem Inventar, daher kann dieser Build nicht gesendet werden.")
   },
   jamfPatch: {
     tabLabel: "Jamf Patch",

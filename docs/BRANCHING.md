@@ -65,6 +65,8 @@ numbers likewise do not identify product releases.
 **Tags identify shipped code.** Create a `vMAJOR.MINOR.PATCH` tag at the tested commit
 when cutting a release, then publish the GitHub Release with validation and known
 limitations. Do not create a future release tag for planning or move a published tag.
+Only the repository admin role can create, move or delete a `v*` tag (the `release-tags`
+ruleset, §8.1), because the role that pushes images trusts a workflow run on one (#672).
 `v1.0.0` is the first stable release. Runtime date-plus-SHA build stamps identify the
 image and its source; they are not release assignments. The current update checker
 compares commit ancestry against the latest published stable release, not against the
@@ -659,7 +661,8 @@ The configuration in step 1 is version-controlled rather than clicked in, so it
 is reviewable and reproducible:
 
 - `.github/rulesets/main.json` — the ruleset definition for `main`.
-- `.github/scripts/apply-repo-config.sh` — applies it, plus the plain repository
+- `.github/rulesets/release-tags.json` — the ruleset for `v*` tags (§1.1).
+- `.github/scripts/apply-repo-config.sh` — applies both, plus the plain repository
   settings, idempotently. `--dry-run` shows what would change.
 
 **Unblocked at the flip, 2026-09-05.** While the repository was private on the free
@@ -678,6 +681,14 @@ executes the fork's code on this repository's runners; and GitHub's non-provider
 patterns are requested alongside provider scanning (the API accepted the request on
 flip day and read the setting back as disabled — unresolved, and TruffleHog covers
 that class in the meantime).
+
+The `release-tags` ruleset is a third (#672). The ECR push role in
+`ops/aws/images.template.yml` trusts a workflow run on any `v*` tag, and a release runs its
+tagged commit's `release.yml`, so only the repository admin role creates, moves or deletes
+a `v*` tag; the file names `refs/tags/v*/**/*` beside `refs/tags/v*` because a ruleset's
+`*` stops at a slash and IAM's does not. It takes effect when the script is next run, and
+that run comes before the template is deployed with the `v*` subjects
+(`ops/aws/README.md` §1), so nobody else can push a `v*` tag by the time the role trusts one.
 
 The `PR body` context (PR-02) joined `main.json` on 2026-09-07, and the `Policy` context
 (step 3) on 2026-09-10. Like every change to the required contexts each takes effect when
@@ -872,3 +883,4 @@ Appended 2026-09-05, immediately before the flip to public:
 | v1.14 | 2026-09-20 | Release planning in §1.1: milestones, immutable release tags, `future` replacing `v5`, and independent v1.x releases; §8.2 marked historical. |
 | v1.15 | 2026-09-25 | §1.1: every release runs a feature-flag gate, with a promote, keep or delete verdict per switch recorded in `docs/feature-flags.md` and the release notes (#652). |
 | v1.16 | 2026-09-26 | §1.1: migrations expand in one release and contract in the next, checked in CI against the last release's models; a published release tags its images and gets its upgrade notes (#655). |
+| v1.17 | 2026-09-27 | §1.1, §8.1: `v*` tags are the repository admin role's to create, move or delete, by the `release-tags` ruleset `apply-repo-config.sh` applies before the images template trusts them (#672). |

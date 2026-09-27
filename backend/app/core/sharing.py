@@ -117,9 +117,9 @@ def _excluded(bundle_id: str, globs: list[str]) -> bool:
 
 async def build_exchange_request(db: AsyncSession, settings_row: DataSharingSettings) -> dict:
     """The v1 exchange request body, aggregated in SQL: distinct tuples with counts,
-    never per-device rows. `reveals` is always empty here — answers to reveal
-    requests are assembled by the exchange job (`build_reveals`, below), because they
-    depend on the previous response, which a preview does not have.
+    never per-device rows. `reveals` is always empty, and while automatic reveals are
+    paused (docs/vulnerability-service-v2.md §8, #624) the exchange sends it that way
+    too, so the preview is the literal next body there as well.
 
     Every snapshot row names its platform (#231). The cloud corpus tables are partitioned
     by platform (Kyle, R4), so the content key alone cannot route a row to a table — and a
@@ -240,8 +240,9 @@ async def build_exchange_request(db: AsyncSession, settings_row: DataSharingSett
 # --- The daily exchange -----------------------------------------------------------
 #
 # One conversation per tenant per day (docs/data-sharing.md): the snapshot above goes
-# up, whatever the server currently implements comes back. Reveal requests are stored
-# and answered in the NEXT exchange; a collector answering {} is a valid peer.
+# up, whatever the server currently implements comes back; a collector answering {} is a
+# valid peer. Reveal requests are paused (#624): the share log records one, and nothing
+# here stores or answers it.
 
 logger = logging.getLogger(__name__)
 
@@ -259,7 +260,11 @@ TRIGGER_MANUAL = "manual"
 
 async def build_reveals(db: AsyncSession, settings_row: DataSharingSettings) -> list[dict]:
     """Answers to the previous response's requests — plaintext for the title keys the
-    server asked about, version tuples included. Empty unless the tier permits."""
+    server asked about, version tuples included. Empty unless the tier permits.
+
+    Paused (docs/vulnerability-service-v2.md §8, #624): `run_exchange` does not call this.
+    It stays, with its exclusion test, as the implementation path the design preserves;
+    resuming it takes a container release, never a saved tier or a server's request."""
     pending = list(settings_row.pending_reveal_keys or [])
     if settings_row.tier != "reveal" or not pending:
         return []
@@ -326,12 +331,11 @@ def apply_response(settings_row: DataSharingSettings, response: dict) -> CorpusP
         remember_tier(settings_row)
         return None
 
-    requests = response.get("reveal_requests")
-    if settings_row.tier == "reveal" and isinstance(requests, list):
-        settings_row.pending_reveal_keys = [k for k in requests if isinstance(k, str)][:1000]
-    else:
-        # Answered (or tier forbids answering); either way yesterday's asks are done.
-        settings_row.pending_reveal_keys = []
+    # Automatic reveals are paused (docs/vulnerability-service-v2.md §8, #624): a request is
+    # never stored to be answered, at either tier, and whatever an older build queued is
+    # dropped. The share log still records the server's list (`run_exchange`), so an ask
+    # stays visible beside the empty `reveals` this container sent.
+    settings_row.pending_reveal_keys = []
 
     # response["verdicts"] is deliberately untouched: reserved in the v1 contract,
     # schema unsettled, activated server-side post-V0. Parsing it here would freeze
@@ -477,6 +481,9 @@ async def run_exchange(
     settings_row = await get_or_create_settings(db)
     if settings_row.tier == "off":
         return None
+    # Reveals are paused (#624): the body below keeps the builder's `"reveals": []`, and a
+    # request an older build queued is dropped first, so every row this run writes drops it.
+    settings_row.pending_reveal_keys = []
 
     now = datetime.now(UTC)
 
@@ -511,7 +518,6 @@ async def run_exchange(
         return held
 
     request_body = await build_exchange_request(db, settings_row)
-    request_body["reveals"] = await build_reveals(db, settings_row)
     participation.opt_in(settings_row, request_body)
 
     pointer: CorpusPointer | None = None

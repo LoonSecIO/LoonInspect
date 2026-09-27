@@ -84,7 +84,7 @@ export const en = {
       tierHeading: "Participation",
       tierReveal: "Share, and reveal common titles (recommended)",
       tierRevealHelp:
-        "Daily pseudonymous inventory keys and install counts. This tier can answer requests for plaintext app names; use exclusions to protect internal applications. Automatic reveal requests remain paused in the v2 service.",
+        "Daily pseudonymous inventory keys and install counts, and your consent to answer requests for plaintext app names. Those requests are paused: this build answers none, and a saved choice alone never restarts them. Use exclusions to protect internal applications.",
       tierKeys: "Share keys only",
       tierKeysHelp:
         "Daily anonymous inventory keys with install counts. Never answers requests for app names — contributes prevalence signal only.",
@@ -97,7 +97,7 @@ export const en = {
       disclosureNever:
         "Never shared: device identifiers, serial numbers, hostnames, user names, file paths, extension attributes, connection or tenant names, accounts, credentials, or audit history. LoonSec does not store source IP addresses on this path.",
       disclosureReveals:
-        "The reveal tier can send app names in response to service requests. The proposed five-contributor threshold is not a proven privacy safeguard or proof of independent customers. Use keys-only sharing and exclusions when names must stay private.",
+        "The exchange sends no app names. Requests for plaintext names are paused, because the proposed five-contributor threshold is neither a proven privacy safeguard nor proof of independent customers, and this build answers none at any tier.",
       disclosurePseudonym:
         "Submissions are pseudonymous, not anonymous: snapshots from this tenant are linkable to each other through the submission ID (that is how re-submissions replace older ones instead of double-counting). The ID is random, tied to nothing, and resettable below.",
       previewHeading: "Exactly what would be sent",
@@ -1419,7 +1419,13 @@ export const en = {
     send: "Send", close: "Close", state: (word: string) => `Case state: ${word}`, follow: "Follow this case under Settings › Intelligence Access.",
     failed: "The request failed, and this instance gave no reason. Try again: a repeated Send reaches the same open case, never a second one. If it keeps failing, read docker compose logs app.",
     // Report an incorrect match (#623): one finding of a `covered` build, sent with the release that produced it.
-    reportMatch: "Report an incorrect match", findingLabel: "The finding that does not apply to this build"
+    reportMatch: "Report an incorrect match", findingLabel: "The finding that does not apply to this build",
+    // The text rule (#623; Support #17 decision 6, ruled 2026-09-27), checked before Preview: word for word the sentence
+    // backend/app/schemas/submissions.py answers, so the dialog says the same whichever side finds the character.
+    hiddenCharacter: (field: string, code: string, at: number) =>
+      `${field} has ${code} at character ${at}, which a case cannot carry: no format character but the joiners U+200C and U+200D, ` +
+      `no unpaired surrogate, no line or paragraph separator, and no control character${field === "text" ? " but newline and tab" : ""}. ` +
+      (field === "text" || field === "contact" ? "Delete it, then preview." : "It comes from the inventory, so this build cannot be sent.")
   },
   jamfPatch: {
     tabLabel: "Jamf Patch",

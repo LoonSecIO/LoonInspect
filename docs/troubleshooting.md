@@ -2313,6 +2313,9 @@ This build earns, stores, redeems and withdraws receipts.
 
 An account that enrolled a second factor (My Account, #653) signs in in two steps: the
 password, then a six-digit code from the authenticator app, or one recovery code.
+Setting one up and replacing its recovery codes, under *Two-step sign-in* on My Account, are
+steps 8–14. Each refusal is quoted as it reads: the server's own sentence, or the page's where
+the step says so.
 
 1. **The code.** Six digits from the authenticator entry named *LoonInspect*, changing
    every 30 seconds; one code either side is accepted for a drifting clock, and a code
@@ -2330,12 +2333,77 @@ password, then a six-digit code from the authenticator app, or one recovery code
    Account and says so there: the policy (Settings › Accounts) asks this account for a
    factor, and until a code confirms one only My Account's set-up, `/api/auth/me` and
    signing out answer. Set it up; that includes the administrator who turned it on.
-   Still there once the recovery codes show? Reload the page.
+   Still there once the recovery codes show? Save them, then reload the page.
 6. **The break-glass account is not asked**, by design and under every policy: it is the way
    in when phones are lost. Its sign-in says `the policy exempts it` in the container log.
 7. **An administrator removed my second factor** (Accounts › *Remove second factor*, never
    one's own; `auth.mfa.removed` in the audit log names who). Every session ended, and the
    old *LoonInspect* entry and recovery codes are dead: sign in with the password (step 5 if the policy asks).
+8. ***Whether two-step sign-in is on for this account could not be read, which is not the same
+   as off. Reload the page; if it keeps happening, LoonInspect is not answering, and
+   Settings › Support says where to report that.*** The page's own sentence: the status read had
+   no answer it could use, so the section offers neither *Set up* nor *New recovery codes*. Save
+   any recovery codes still showing below it (step 12), then reload; the sign-in page instead
+   means the session had ended, so sign in and come back. Still there while other pages answer:
+   `docker compose logs app --since 30m | grep /api/auth/mfa`. No line from the reload means the
+   read never reached the app, and a `"status_code": 200` means its answer never reached the
+   page: either way, look at what sits between ([a proxy in front](#a-proxy-in-front-answers-for-itself)).
+   A `"status_code"` of 500 or more: report those lines (§8).
+9. ***That code was not accepted. Scan the QR code again, check the phone's clock, and type the
+   current code.*** *Turn on* refused the code and keeps the QR code up; wrong codes here do not
+   count toward step 4's lockout. Check, in order:
+   - the code showing now, not one about to change;
+   - the clocks: the phone's set to automatic time, and the server's, which
+     `docker compose exec -T app date -u` prints in UTC, within half a minute of it. Further
+     apart refuses some codes and a minute apart refuses every one, at sign-in too (step 1):
+     set the clock of the machine the container runs on;
+   - the entry: only the one this QR code made works, and an earlier set-up here left one that
+     looks the same. Scan again, use the newest entry, and delete the stale ones. A key typed in
+     by hand goes in as time-based, six digits, every 30 seconds;
+   - still refused: *Set up* was pressed again in another tab or window, which replaced this QR
+     code. *Cancel*, *Set up*, delete the old entry and scan the new QR code.
+10. ***A second factor is already enrolled on this account. Remove it before enrolling
+    another.*** (*Set up*) or ***There is no enrolment waiting for a code. Start one first.***
+    (*Turn on*). The panel closes and the status is read again: set-up was finished after this
+    page read it, in another tab or window, or by a *Turn on* whose answer was lost (step 11).
+    The section reads *On since …*, and sign-in now asks for the code. Its recovery codes were
+    shown once where it finished, or never: without them, *New recovery codes* now (step 3).
+    You cannot remove your own factor (Accounts answers *You cannot remove your own second
+    factor here. Ask another administrator to remove it.*): for a new phone, another
+    administrator removes it (step 7), then *Set up*. If nobody you know set it up,
+    `auth.mfa.enrolled` in the audit log has when and from which address: change your password,
+    which signs out every other session, then have the factor removed. If the section reads
+    *Off* instead, *Set up* again.
+11. ***Not authenticated*** or ***LoonInspect's answer did not arrive or could not be read.
+    Reload the page to see whether two-step sign-in is on, then try again.***, under any form.
+    The first is the server's: this browser's session ended (signed out in another tab, idle
+    past the session lifetime, an hour unless changed, or ended by a password change in another
+    session or by an administrator). A reload shows the sign-in page; a set-up it cut short
+    starts again with a new QR code, so delete the old entry. The second is the page's own: no
+    answer came, or one without a sentence. The app was restarting,
+    [a proxy in front](#a-proxy-in-front-answers-for-itself) answered for it, or the app failed:
+    a `"status_code"` of 500 or more on its `/api/auth/mfa/…` line in
+    `docker compose logs app --since 30m`, to report (§8). The request may have landed anyway:
+    *On since …* after the reload means a *Turn on* went through unseen, and a
+    *Replace my codes* whose answer was lost may have ended the old codes. Either way,
+    *New recovery codes* now, with the next code.
+12. **The recovery codes** show once, under *Two-step sign-in is on. Save your recovery codes
+    now.* *I have saved these*, leaving the page or a reload drops them for good: save them
+    before any reload a step here asks for. ***This browser refused to copy. Select the codes
+    above and copy them yourself.*** is the page's own: the usual cause is a page served over
+    plain HTTP at an address other than `localhost`, where browsers do not let a page copy.
+    Select them by hand. Never saved: *New recovery codes* (step 3).
+13. ***That code was not accepted: the current six digits from the authenticator app, each good
+    once.*** *Replace my codes* refused the code. A recovery code does not work here, and a code
+    already used, the one that just signed you in included, is spent: wait for the next. Step
+    9's clocks apply. Each wrong code counts toward step 4's lockout, and this form shows its
+    ***Too many failed attempts. Try again later.*** as well. ***This account has no second
+    factor. Set one up first.***: no factor is on, so there are no codes to replace; reload, and
+    the section offers *Set up*.
+14. ***Two-factor enrolment requires a signed-in browser session***: an API token asked.
+    `POST /api/auth/mfa/enrol`, `/confirm` and `/recovery-codes` (setting up, turning on and
+    replacing recovery codes) answer only a signed-in browser, by design: a leaked token must not
+    add a factor its owner does not hold. Sign in in a browser and use My Account.
 
 **X.** Phone and recovery codes are gone, and no other administrator, break-glass included, can
 remove the factor. Report the account's email (§8); the account keeps its data meanwhile.
@@ -2369,8 +2437,8 @@ that log, then repeat the act.
    *"String should have at most 64 characters"* (or 256): the row's version, or its name or its bundle
    identifier, is longer than a case takes.
 2. ***"…(HTTP 400). It said: …"***: the quoted sentence names the rule a field broke (a URL naming an IP
-   address or a `.local` host, a hidden character in the text). Nothing was stored there: send a
-   corrected case (the dialog's fields stay locked, so close it and press the row's action again), and
+   address or a `.local` host; a hidden character is caught here first, step 10). Nothing was stored there:
+   send a corrected case (the dialog's fields stay locked, so close it and press the row's action again), and
    withdraw this one on the case list. The dialog's own *Use an address that starts with https://…* is
    checked before any request: Preview stays off until the URL reads so.
 3. ***"…HTTP 503. It said: "Submissions are not enabled…"***: the service has not opened submissions;
@@ -2404,5 +2472,17 @@ that log, then repeat the act.
    off the menu entry hides, yet the case list stays at `/settings/intelligence-access`, to refresh and withdraw.
    With the preview on and `INTELLIGENCE_SUBMISSIONS` off, the entry and the case list stay, and the list says
    *New cases cannot be sent…*.
+10. ***"…has U+200B at character 12, which a case cannot carry…"*** (any code point, any place), under a
+    field of the dialog while *Preview* stays off, or as Preview's or Send's refusal: that field holds a
+    hidden character, and nothing has left this instance. A case carries no format character but the joiners
+    U+200C (inside Persian and other words) and U+200D (inside emoji sequences), no unpaired surrogate, no
+    line or paragraph separator, and no control character, though `text` may carry newline and tab; the
+    service refuses the same. Such a character usually comes with pasted words: a zero-width space (U+200B),
+    a direction mark or override (U+200E, U+202E) or a soft hyphen (U+00AD). In `text` or `contact`, delete
+    it: the place counts code points from 1 (a plain emoji is one), and retyping the words around it works too.
+    *Preview* comes back once no field names one. In `app_name` or `bundle_id` (*"…It comes from the
+    inventory…"*), the character is in the build's name or bundle identifier as the inventory reports it,
+    which the dialog cannot change, so no case can name that build. *"…is blank…"*: a request made outside
+    the dialog sent a field of only spaces, tabs or line breaks; the dialog leaves such a field out.
 
 **Y.** Random keys do not collide twice. Report the case's `id` and its sentence (§8); nothing was stored there.
