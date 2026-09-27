@@ -119,7 +119,10 @@ curl -s -b jar $BASE/api/posture                                # last night's p
 database). This is where the app speaks before there is a run to write to. A scheduled
 pass that could not finish says so here and nowhere else: `outbox tick failed`,
 `outbox cleanup failed` and `run cleanup failed` each name what was not done, when it is
-tried again, and what to check.
+tried again, and what to check. The paths below quote it at the default `LOG_LEVEL=INFO`:
+with `LOG_LEVEL` set to `WARNING` or above in `.env`, informational lines such as
+`scheduler started` are never written, so an empty `grep` for one answers nothing until
+the level is back at `INFO`.
 
 **The run log.** One line per milestone: `run started`, `devices processed`,
 `group definitions observed`, `run finished`, and warnings such as `throttled by Jamf;
@@ -707,11 +710,11 @@ and step 2 ends with how to tell that apart from a broken exchange.
    published corpus itself has not moved, which is reportable state **I**.
 6. **Settings › Data Sharing says the last exchange *failed*.** The reason is printed
    beneath *Last exchange*. It names the host the container dialled — `api.next.loonsec.io`
-   unless a hosted pod's template set `SHARING_ENDPOINT` — and ends with how many times
-   the run tried. **Send now**, in the same page's *Exactly what would be sent* box, runs
-   an exchange on demand and shows the row it wrote, so each check below can be proved
-   fixed in a click instead of a day. To see who answers at that address from inside the
-   container — it sends `{}`, nothing of the fleet:
+   unless `SHARING_ENDPOINT` is set, in `.env` or a hosted pod's template — and ends with
+   how many times the run tried. **Send now**, in the same page's *Exactly what would be
+   sent* box, runs an exchange on demand and shows the row it wrote, so each check below
+   can be proved fixed in a click instead of a day. To see who answers at that address
+   from inside the container — it sends `{}`, nothing of the fleet:
 
    ```bash
    docker compose exec app python -c 'import sys, urllib.request as u, urllib.error as e
@@ -720,8 +723,8 @@ and step 2 ends with how to tell that apart from a broken exchange.
    ```
 
    The collector answers that with `400 {"error": "unsupported contract"}`; any other
-   answer is not the collector. The address at the end of the command is the default: a
-   pod whose template set `SHARING_ENDPOINT` probes that value instead, whole — the
+   answer is not the collector. The address at the end of the command is the default: an
+   instance with `SHARING_ENDPOINT` set probes that value instead, whole — the
    container posts to it exactly as set and adds no path.
    - `The collector at api.loonsec.io answered 403 Forbidden: {"message":"Missing
      Authentication Token"}` → that name is not the collector yet: until LoonSec reclaims
@@ -731,7 +734,7 @@ and step 2 ends with how to tell that apart from a broken exchange.
      update the image. Nothing is lost: each day's snapshot replaces the last in full, and
      the first exchange at the right address reads `sent`. From `api.next.loonsec.io` the
      same line is reportable state **M**. From any other host, a `403` or `404` means
-     there is no collector at that path: check the pod's `SHARING_ENDPOINT`.
+     there is no collector at that path: check `SHARING_ENDPOINT`.
    - `Could not connect to <host>: …` → the container could not reach the host at all,
      and the text after the colon says how. `Name or service not known` is DNS — `docker
      compose exec app getent hosts <host>` prints nothing when the container cannot
@@ -964,9 +967,9 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
    this step:
    - `The Jamf patch catalog cannot be refreshed: JAMF_PATCH_BASE_URL is set to …` → this
      container was started with that variable holding something that is not an address.
-     It is **not** part of the shipped `docker-compose.yml`, so it is set only where
-     somebody set it: check the environment the container is started with. Remove it to
-     use the default (`https://jamf-patch.jamfcloud.com/v1`) or correct it, then
+     On the shipped stack it comes from the `.env` beside `docker-compose.yml`; anywhere
+     else, from the environment the container is started with. Remove it to use the
+     default (`https://jamf-patch.jamfcloud.com/v1`) or correct it, then
      `docker compose up -d`. Nothing was written in the meantime — whatever catalog the
      container already had still answers.
    - `"message": "request failed"` with `"path": "/api/jamf-patch/sync"` (the press you

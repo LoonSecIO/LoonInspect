@@ -181,6 +181,11 @@ are read once, when the database volume is first created.
 
 A SIEM webhook URL is optional for a first run. Jamf Pro connections aren't configured via `.env` — add them from the app itself once it's running, at `/api/mdm/connections` or the Settings page.
 
+Everything else is optional and already at its default: `docker-compose.yml`
+lists every setting the app reads under the app service's `environment:`, each under a
+comment naming the page that explains it, and ends that block with the few it does not
+pass and why. To change one, add `NAME=value` to `.env` and run `docker compose up -d`.
+
 ### 3. Create the Jamf Pro API Role and client
 
 Do this in Jamf Pro before adding the connection, at **Settings → System → API roles and

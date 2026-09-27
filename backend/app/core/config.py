@@ -4,8 +4,9 @@ import ipaddress
 import re
 from typing import Literal
 from urllib.parse import parse_qs, urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import field_validator, model_validator
+from pydantic import ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
@@ -137,9 +138,9 @@ class Settings(BaseSettings):
     # configuration, and the catalog may one day arrive by the vulnerability epoch's
     # reserved `catalog` section instead of being pulled at all (LoonVD-Internal's
     # sharedAssets/contract/epoch.md, the published format docs/vulnerabilities.md
-    # points at). Deliberately not plumbed through docker-compose.yml: nothing about
-    # the shipped stack wants it moved, and a second source will be chosen by which
-    # CatalogSource is in use, not by editing this URL. A value that is not an address
+    # points at). docker-compose.yml passes it like every other setting (#707), but a
+    # second source will be chosen by which CatalogSource is in use, not by editing
+    # this URL. A value that is not an address
     # is refused with a sentence that names this variable, not a traceback
     # (app/mdm/patch/jamf_catalog.py, docs/troubleshooting.md section 6).
     jamf_patch_base_url: str = "https://jamf-patch.jamfcloud.com/v1"
@@ -173,6 +174,10 @@ class Settings(BaseSettings):
     # safe for the outbox — #467's per-tenant advisory lock refuses the second — and
     # docs/operations.md §7 is which loops that covers and which it does not.
     scheduler_enabled: bool = True
+    # When a new Jamf connection's default sweep runs (app.mdm.collections), and the zone
+    # of the scheduler's own nightly jobs. Checked here since #707 put them in .env's reach:
+    # a zone the scheduler cannot load stopped the app at import with a traceback naming no
+    # variable, and an hour or minute out of range surfaced as a 500 on adding a connection.
     sync_hour: int = 1
     sync_minute: int = 0
     sync_timezone: str = "America/Chicago"
@@ -431,6 +436,26 @@ class Settings(BaseSettings):
             "must be shorter than the app's keep-alive, or the proxy reuses a connection the "
             "app already closed and answers 502."
         )
+
+    @field_validator("sync_hour", "sync_minute")
+    @classmethod
+    def _validate_sync_time(cls, value: int, info: ValidationInfo) -> int:
+        top = 23 if info.field_name == "sync_hour" else 59
+        if 0 <= value <= top:
+            return value
+        raise ValueError(f"{str(info.field_name).upper()} must be between 0 and {top}")
+
+    @field_validator("sync_timezone")
+    @classmethod
+    def _validate_sync_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise ValueError(
+                f"SYNC_TIMEZONE must be a time zone name as the tz database spells it, such as America/Chicago "
+                f"or UTC; {value!r} is not one"
+            ) from None
+        return value
 
     @property
     def resolved_log_format(self) -> str:
