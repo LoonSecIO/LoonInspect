@@ -3,8 +3,9 @@
 # not adding one), copies those images to ghcr.io/loonsecio under the version, and appends its
 # upgrade notes (docs/BRANCHING.md §1.1). The push role trusts v* tags once the maintainer
 # redeploys ops/aws/images.template.yml with them (ops/aws/README.md §1). A release runs its tagged
-# commit's copy of this file: whoever can push a v* tag can assume that role, and a release of a
-# commit from before #655 puts nothing on ghcr.io.
+# commit's copy of this file: whoever can push a v* tag can assume that role, so
+# .github/rulesets/release-tags.json leaves pushing one to the repository admin role (#672), and a
+# release of a commit from before #655 puts nothing on ghcr.io.
 name: Release
 
 on:

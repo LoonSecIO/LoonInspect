@@ -57,7 +57,7 @@ export const en = {
       tierHeading: "Participation",
       tierReveal: "Share, and reveal common titles (recommended)",
       tierRevealHelp:
-        "Daily pseudonymous inventory keys and install counts. This tier can answer requests for plaintext app names; use exclusions to protect internal applications. Automatic reveal requests remain paused in the v2 service.",
+        "Daily pseudonymous inventory keys and install counts, and your consent to answer requests for plaintext app names. Those requests are paused: this build answers none, and a saved choice alone never restarts them. Use exclusions to protect internal applications.",
       tierKeys: "Share keys only",
       tierKeysHelp:
         "Daily anonymous inventory keys with install counts. Never answers requests for app names — contributes prevalence signal only.",
@@ -70,7 +70,7 @@ export const en = {
       disclosureNever:
         "Never shared: device identifiers, serial numbers, hostnames, user names, file paths, extension attributes, connection or tenant names, accounts, credentials, or audit history. LoonSec does not store source IP addresses on this path.",
       disclosureReveals:
-        "The reveal tier can send app names in response to service requests. The proposed five-contributor threshold is not a proven privacy safeguard or proof of independent customers. Use keys-only sharing and exclusions when names must stay private.",
+        "The exchange sends no app names. Requests for plaintext names are paused, because the proposed five-contributor threshold is neither a proven privacy safeguard nor proof of independent customers, and this build answers none at any tier.",
       disclosurePseudonym:
         "Submissions are pseudonymous, not anonymous: snapshots from this tenant are linkable to each other through the submission ID (that is how re-submissions replace older ones instead of double-counting). The ID is random, tied to nothing, and resettable below.",
       previewHeading: "Exactly what would be sent",

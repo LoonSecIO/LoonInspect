@@ -5,8 +5,8 @@ test_sharing.py. What needs one is the property those tests cannot see: what the
 share-log row ends up saying. A failed exchange must still land a row, because the
 row is what consumes the day — an upstream answering 200 with a non-JSON body used
 to raise past `db.add` entirely, so `exchange_due` said yes again on the next tick
-and the once-a-day exchange became a crash loop. And a 413 day must land a row that
-admits the reveals never left, because the payload column alone claims they did.
+and the once-a-day exchange became a crash loop. And since #624 no exchange answers a
+reveal request: the row shows what was asked beside the empty `reveals` that left.
 Gated on RUN_DB_TESTS like the other database-backed suites.
 """
 
@@ -235,46 +235,109 @@ async def test_a_200_that_is_not_json_is_logged_and_consumes_the_day(db, clean, 
     assert row.reveals_shed is False
 
 
-async def test_a_413_day_records_that_the_reveals_never_left(db, clean, monkeypatch) -> None:
-    """The row is the tenant's proof of "exactly what left the box". On a 413 the
-    payload column is a superset of the body the server accepted — the reveals in it
-    were shed and resent as [] — so the row has to carry the marker or it reads as an
-    ordinary reveal day (INSPECT-0083)."""
+async def test_no_reveal_leaves_and_a_queued_request_is_dropped(db, clean, monkeypatch) -> None:
+    """#624: "Suppress/clear pending reveal replies in v2". An instance upgraded with a request
+    an older build queued, and a service that asks again: two exchanges, neither carrying a
+    reveal. The queued request is dropped, the new ask is recorded and never stored, and the
+    `reveal` tier still uploads its keys and counts under the tier the operator chose."""
     import json
+    import uuid as uuidlib
 
     from app.core import sharing
     from app.core.config import settings as app_settings
-    from app.core.sharing import run_exchange
+    from app.core.sharing import get_or_create_settings, run_exchange
+    from app.models.schema import Device, InstalledApp
 
     monkeypatch.setattr(sharing, "_RETRY_DELAYS", (0, 0, 0))
     monkeypatch.setattr(app_settings, "community_sharing", True)
 
-    reveals = [{"title": "v1:aa", "app_name": "Some Common Tool", "versions": []}]
-
-    async def fake_reveals(_db, _row) -> list[dict]:
-        # The fixture tenant has no pending reveal requests to answer, and the shed
-        # path only exists for a body that has reveals to give up.
-        return reveals
-
-    monkeypatch.setattr(sharing, "build_reveals", fake_reveals)
+    suffix = uuidlib.uuid4().hex[:8]
+    title, name = f"v1:paused{suffix}", f"Paused Payroll {suffix}"
+    device = Device(mdm_provider="jamf", external_id=f"paused-{suffix}", serial_number=f"SER{suffix}", hostname=f"h-{suffix}")
+    db.add(device)
+    await db.commit()
+    db.add(
+        InstalledApp(
+            device_id=device.id,
+            name=name,
+            # Matched by no exclusion another suite might hold, so only the pause keeps `name` home.
+            bundle_id=f"io.example.paused{suffix}",
+            version="1.0",
+            app_hash=uuidlib.uuid4().hex,
+            version_hash=uuidlib.uuid4().hex,
+            key_title=title,
+            key_full=title,
+        )
+    )
+    # Queued by an older build, which would have answered it with `name` in plaintext.
+    (await get_or_create_settings(db)).pending_reveal_keys = [title]
+    await db.commit()
 
     sent: list[dict] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        body = json.loads(request.content)
-        sent.append(body)
-        if body["reveals"]:
-            return httpx.Response(413)
-        return httpx.Response(200, json={"contract": "v1"})
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={"contract": "v1", "reveal_requests": [title]})
+
+    device_id = device.id  # the rollback below expires `device`
+    try:
+        for _ in range(2):
+            await run_exchange(db, transport=httpx.MockTransport(handler))
+    finally:
+        await db.rollback()
+        await db.execute(delete(InstalledApp).where(InstalledApp.device_id == device_id))
+        await db.execute(delete(Device).where(Device.id == device_id))
+        await db.commit()
+
+    assert len(sent) == 2
+    for body in sent:
+        assert body["reveals"] == [] and name not in json.dumps(body)
+        assert body["tier"] == "reveal" and title in {app["title"] for app in body["snapshot"]["apps"]}
+    # The ask is on the record, beside the empty answer that left, and nothing was shed.
+    rows = [(r.outcome, r.payload["reveals"], r.reveals_shed, r.reveal_requests) for r in await _exchange_rows(db)]
+    assert rows == [("sent", [], False, [title])] * 2
+    row = await get_or_create_settings(db)
+    assert row.pending_reveal_keys == [] and row.tier == "reveal"
+
+
+async def test_a_failed_or_skipped_exchange_drops_a_queued_request_too(db, clean, monkeypatch) -> None:
+    """The request is dropped before anything else, so a day that fails, or that the
+    environment override skips, drops it as well. With no reveals left to shed, a `413` is
+    an ordinary failure: every attempt carries the same reveal-less body and the row claims
+    no shed (docs/data-sharing.md, the `413` rule)."""
+    import json
+
+    from app.core import sharing
+    from app.core.config import settings as app_settings
+    from app.core.sharing import get_or_create_settings, run_exchange
+
+    monkeypatch.setattr(sharing, "_RETRY_DELAYS", (0, 0, 0))
+    monkeypatch.setattr(app_settings, "community_sharing", True)
+    (await get_or_create_settings(db)).pending_reveal_keys = ["v1:aa"]
+    await db.commit()
+
+    sent: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(413)
 
     await run_exchange(db, transport=httpx.MockTransport(handler))
 
-    (row,) = await _exchange_rows(db)
-    assert row.outcome == "sent"
-    assert row.reveals_shed is True
-    # Both halves of the auditor's question: what was offered, and what was accepted.
-    assert row.payload["reveals"] == reveals
-    assert [b["reveals"] for b in sent] == [reveals, []]
+    assert [body["reveals"] for body in sent] == [[], [], [], []]
+    (log,) = await _exchange_rows(db)
+    assert (log.outcome, log.reveals_shed, log.payload["reveals"]) == ("failed", False, [])
+    await db.rollback()  # read the row back from the database, not from this session's memory
+    row = await get_or_create_settings(db)
+    assert row.pending_reveal_keys == [] and row.tier == "reveal"
+
+    row.pending_reveal_keys = ["v1:aa"]
+    await db.commit()
+    monkeypatch.setattr(app_settings, "community_sharing", False)
+    assert (await run_exchange(db)).outcome == "skipped_env"
+    await db.rollback()
+    row = await get_or_create_settings(db)
+    assert row.pending_reveal_keys == [] and row.tier == "reveal"
 
 
 async def test_an_ordinary_day_leaves_the_marker_false(db, clean, monkeypatch) -> None:

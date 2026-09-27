@@ -146,6 +146,8 @@ tables. The ingest endpoint's side of the bargain: source IPs are not persisted.
 until the policy is validated. Five UUIDs prove neither independent organizations
 nor safe disclosure; explicit submissions have their own permission
 ([v2 design §7](vulnerability-service-v2.md#7-deliberate-submission-and-correction)).
+Since #624 this container stores and answers no reveal request, at either tier; what an
+older build still answers is in [the contributor transition](#the-contributor-transition-v2).
 The following remains the historical protocol description.
 
 **Reveals.** Plaintext (app_name, bundle_id, and that title's version tuples) is sent
@@ -180,7 +182,9 @@ and the disclosure page says exactly that.
 
 For v2, this enum governs **uploads only**, not intelligence access. The receives
 column below describes the existing implementation. See
-[v2 state and ownership](vulnerability-service-v2.md#3-ownership-and-state).
+[v2 state and ownership](vulnerability-service-v2.md#3-ownership-and-state). The
+*answers reveals* column is the v1 meaning: since #624 no tier answers one, and `reveal`
+stays the consent the operator recorded, reported as `tier`, uploading what `keys` uploads.
 
 Three tiers, one enum, tenant-scoped in the schema from day one (V0's single
 operational tenant renders it as one switch):
@@ -303,8 +307,8 @@ thing that distinguishes an exchange from an update check.
     "os":       [ { "key": "v1:…", "count": 380, "platform": "macos" }, … ],
     "hardware": [ { "key": "v1:…", "count": 380, "platform": "macos" }, … ]
   },
-  "reveals": [                            // answers to a PRIOR response's requests;
-    {                                     // [] always, when tier is "keys"
+  "reveals": [                            // [] always since #624 (reveals paused); an older
+    {                                     //   build at "reveal" answers a PRIOR response's requests
       "title": "v1:…",
       "app_name": "Some Common Tool",
       "bundle_id": "com.vendor.tool",
@@ -319,7 +323,7 @@ thing that distinguishes an exchange from an update check.
 // response — every field optional; container no-ops on anything absent or unknown
 {
   "contract": "v1",
-  "reveal_requests": [ "v1:…", … ],       // title keys; answered in TOMORROW's request
+  "reveal_requests": [ "v1:…", … ],       // title keys; logged, never answered since #624
   "corpus": {                              // the vulnerability library: where it is,
     "signature": "6054bbb4…",              //   and whether it moved (sha256 of the
     "asof": "2026-09-10T20:00:00Z",        //   epoch's manifest — EQUALITY only)
@@ -425,9 +429,11 @@ Semantics the server may rely on:
 - **Idempotent replacement.** A request fully supersedes the previous snapshot for its
   `submission`. Aggregation is sum-over-latest; UUIDs unseen for N days age out (the
   ingest store's TTL is the natural mechanism).
-- **Reveals lag by one exchange.** Requested in one exchange, answered in the next —
-  ordinarily tomorrow's, sooner if an administrator sends one in between. No extra round
-  trip, no server-side session state.
+- **Reveals are paused; an older build answers one an exchange late.** Since #624 a container
+  stores no request and answers none: every body carries `"reveals": []`, and a request an
+  older build queued is dropped at the next exchange. An older build at `reveal` answers
+  in the exchange after the request — ordinarily tomorrow's, sooner if an administrator
+  sends one in between. No extra round trip, no server-side session state.
 - **Scheduling is jittered.** Each container derives a stable minute-of-day offset from
   its submission UUID; operators choose coarse windows only. Peak converges to average
   by construction. A Send now is the one unjittered request, and it is a person's click,
@@ -442,7 +448,7 @@ Semantics the server may rely on:
   from there on, retried until the delays are exhausted and then logged as failed. The
   load-bearing consequence for the server: **it must never `413` a reveal-less
   snapshot** — the container has nothing further to give up, so that is a day lost, not
-  a day degraded.
+  a day degraded. Since #624 every body is reveal-less, so every `413` is that lost day.
 - Unknown request fields must be ignored by the server; unknown response fields are
   ignored by the container. Contract changes bump the version string.
 
@@ -496,6 +502,10 @@ pruned on write.
   the assembled body rather than the shed one: an auditor asking "what did this instance
   offer, and what did it actually send?" needs both halves, and one boolean beside the
   full payload carries them where a rewritten payload would silently lose the first.
+  A container since #624 sends no reveals, so every row it writes reads false.
+- **The response's request list** (`revealRequests` in the download) is what the service
+  asked for, recorded whether or not it was answered. Since #624 none is: a list there
+  beside a payload whose `reveals` is `[]` is an ask this instance declined.
 - The payload column is plain JSONB, not `EncryptedString` — the data has already left;
   the log's value is that it is inspectable, and pretending it is secret would be
   theater.
@@ -585,12 +595,31 @@ withdrawal waits. The step-through is
 What changes for an instance that shares today, and when. Written for the operator who
 reads only this page.
 
-- **Nothing changes until you turn receipts on.** A consenting instance without
+- **Reveals stop with this build.** A container since #624 stores no reveal request and
+  answers none, at either tier: every exchange sends `"reveals": []`, and a request an
+  older build queued is dropped at the next exchange, whatever its outcome. The `reveal`
+  tier stays as you set it, shown under Settings → Data Sharing and reported as `tier`, and
+  uploads what `keys` uploads. **The limit, until you upgrade:** an older build (v1.0.0
+  included) at `reveal` still answers a reveal request a service sends, in its next
+  exchange, with the plaintext app name and bundle ID of each title asked about and its
+  versions with install counts, excluded bundle IDs left out. LoonSec's service sends no
+  reveal requests, so an older build exchanging with it has none to answer, and each
+  share-log row's payload shows `reveals` staying `[]`. To stop it without upgrading, choose
+  **Share keys only**: at `keys` an older build answers nothing and drops what it queued.
+  Turning sharing off stops it too.
+- **Nothing else changes until you turn receipts on.** A consenting instance without
   `CONTRIBUTION_RECEIPTS=true` keeps making the daily exchange it makes today and gets the
   same reply, corpus link included. The service's receipt routes answer only a client that
-  asks for a receipt; a legacy exchange is never told about them. **No retirement date is
-  set for the legacy exchange.** When one is, it is published here first; the design record
-  commits existing contributors to a 30-day transition ([§8](vulnerability-service-v2.md#8-migration-and-release-boundary)).
+  asks for a receipt; a legacy exchange is never told about them.
+- **The legacy exchange has no retirement date, and no transition window is counting.** The
+  30-day transition the design record promises existing contributors
+  ([§8](vulnerability-service-v2.md#8-migration-and-release-boundary)) is a notice, not a
+  clock (decided 2026-09-27, #624). Until a date is published, an existing contributor
+  keeps everything it has: its tier, exclusions and submission UUID, the intelligence and
+  evidence it holds, and the daily exchange with its corpus link, receipts or not. When
+  LoonSec sets a date, this section names it first, at least 30 days before it takes
+  effect. Nothing counts on the instance, so a restart, reinstall or restore has no window
+  to renew or lose.
 - **When you turn receipts on**, the next consenting exchange asks for a receipt (the
   literal `"participation_receipt": true` in the request, visible in the share log), and an
   accepted upload earns one. A receipt is good for exactly 30 days from that upload's
@@ -610,8 +639,3 @@ reads only this page.
   (Settings › Intelligence Access) is separate and needs no sharing, and either route keeps
   update eligibility on its own (`backend/tests/test_v2_release_gate_db.py`). Not anonymity:
   the receipt is linkable to this instance's submission UUID.
-- **The 30-day window the design record §8 promises legacy contributors** ("one 30-day
-  transition window for the new receipt mechanism; restarts and reinstalls must not renew
-  it") **is not implemented anywhere yet** (checked in #657, 2026-09-26): the legacy exchange
-  simply continues, so no window is counting. #624 decides whether it becomes a
-  server-side clock, a client-side one, or this page's retirement-notice rule.
