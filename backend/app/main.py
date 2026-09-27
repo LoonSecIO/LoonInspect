@@ -448,8 +448,8 @@ async def lifespan(app: FastAPI):
     )
 
     validate_encryption_key()
-    await init_db()
-    logger.info("database ready, migrations applied")
+    ready = "migrations applied" if await init_db() else "at a newer release's schema, nothing migrated"
+    logger.info(f"database ready, {ready}")
 
     # Before anything else touches the database: every other table's row-level
     # security compares against a tenant id, and these are the rows that make one

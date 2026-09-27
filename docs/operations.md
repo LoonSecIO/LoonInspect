@@ -509,9 +509,23 @@ is a migration that has to say so in its own docstring.
 
 ## 5. Rollback
 
-From `v2.0.0` on, a release's migrations leave the schema readable by the release before it
-([`BRANCHING.md`](BRANCHING.md#11-release-planning-milestones-labels-and-tags) §1.1), but an
-older image still crash-loops against a newer database (below): this section is the way back.
+**From `v2.0.0` on, one step back is an image swap.** A release's migrations leave the schema
+readable by the release before it and record, in `schema_release`, the oldest release that can
+read it ([`BRANCHING.md`](BRANCHING.md#11-release-planning-milestones-labels-and-tags) §1.1). An
+image that finds a revision it does not carry reads that stamp instead of migrating. So when the
+release you go back to is `v2.0.0` or later, check out its tag and start it on the same volume
+(`docker compose up -d --build`, as in §4), with no `downgrade`. `docker compose logs app` says
+*…which recorded that v2.0.0 or later can read it; this image is v2.0.0 (build …), so it starts
+without migrating*. The database stays at the newer revision, so putting the newer image back
+later migrates nothing.
+
+If the stamp names a later release than the one you put back, the image refuses instead:
+*…which recorded that only v2.1.0 or later can read it; this image is v2.0.0 (build …), so it will
+not start on it*. That release dropped or renamed something older code reads, and its upgrade
+notes say so. Put that release or a later one back, or restore the pre-upgrade dump beside the
+older image (recovery 3 below). The stamp speaks for the schema only: for what the newer build
+wrote into it, read *A downgrade does not un-write what the newer image wrote* below. Going back
+to a `v1.x` image, which predates the stamp, or past the release the stamp names, is the downgrade.
 
 ### Do it before you swap the image back
 
@@ -593,7 +607,7 @@ spellings, which is why this hazard runs one way only.
 
 ### If you swap the image back first, it crash-loops
 
-This is the failure that costs an evening: an image *older*
+This is the failure that costs an evening: a `v1.x` image *older*
 than the database it boots against — `docker compose up -d` after a `git checkout` of
 the previous tag, with the volume untouched. Alembic finds a `version_num` no script in
 the image knows about, refuses to plan, and startup fails; `restart: unless-stopped`

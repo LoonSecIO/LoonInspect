@@ -83,12 +83,19 @@ record a maintainer ruling under §9 first.
 to the schema but not drop or rename a table or column the previous release reads: take it
 out of the models in release N and drop it in N+1. CI holds every migration added since the
 newest `vMAJOR.MINOR.PATCH` tag to that tag's models (`.github/scripts/check_migration_contract.py`);
-type, nullability and default changes are for review. The rule starts at v2.0.0, and from
-there one step back is meant to be an image swap with no `alembic downgrade`, which also needs
-the older image to start against a database one release ahead instead of crash-looping, as
-it does today; until then, [`operations.md`](operations.md) §5 is the way back. A migration
-that needs a maintenance window or free disk says so in a `# release-note:` line, and
-`.github/workflows/release.yml` puts those in a published release's upgrade notes.
+type, nullability and default changes are for review. **The schema also records which releases
+can read it** (#672): one of the migrations since that tag declares `MIN_READABLE_RELEASE = "<the
+tag>"`, which its `upgrade()` writes to `schema_release` and its `downgrade()` puts back
+(`3b88d4b09c50`'s docstring has the statement), and CI refuses a stamp below the tag. A migration
+that has to drop or rename what the tag reads declares a later release, with a `# release-note:`
+saying that the step back is a restore; CI refuses the later release without one. An image knows its own release from `RELEASE` in
+`backend/app/core/version.py`: the pull request that prepares a release sets it, and `release.yml`
+tags no image whose tag disagrees. An image that finds a revision it does not carry starts
+without migrating when its `RELEASE` is at or above the stamp, and refuses with a sentence naming
+both when it is below, so from v2.0.0 on one step back is an image swap with no
+`alembic downgrade` ([`operations.md`](operations.md) §5). A migration that needs a maintenance
+window or free disk says so in a `# release-note:` line, and `.github/workflows/release.yml` puts
+those in a published release's upgrade notes.
 
 Bug fixes can ship as `v1.0.x` without waiting for the v2 milestone. Compatible user-facing
 features use a minor release such as `v1.1.0`; milestone membership does not determine
@@ -892,3 +899,4 @@ Appended 2026-09-05, immediately before the flip to public:
 | v1.16 | 2026-09-26 | §1.1: migrations expand in one release and contract in the next, checked in CI against the last release's models; a published release tags its images and gets its upgrade notes (#655). |
 | v1.17 | 2026-09-27 | §1.1, §8.1: `v*` tags are the repository admin role's to create, move or delete, by the `release-tags` ruleset `apply-repo-config.sh` applies before the images template trusts them (#672). |
 | v1.18 | 2026-09-27 | PR-10 (§6.3, §7) and its `controls.yml` entry: the migration contract check of §1.1 (#671), `block` and `active` in the backend job. |
+| v1.19 | 2026-09-27 | §1.1: the schema records the oldest release that can read it, CI keeps that stamp truthful, and `RELEASE` is set before a tag, so from v2.0.0 on one step back is an image swap (#672). |

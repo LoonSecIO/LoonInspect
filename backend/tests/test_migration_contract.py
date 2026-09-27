@@ -25,6 +25,9 @@ class Widget(Base):
 """
 # Adds, drops only a table the release never had, renames only an index and a constraint, contracts only in downgrade().
 EXPAND = """# release-note: plan a window
+MIN_READABLE_RELEASE = "v1.0.0"
+
+
 def upgrade():
     op.add_column("widgets", sa.Column("size", sa.Integer(), nullable=True))
     op.drop_table("gadgets")
@@ -61,6 +64,21 @@ def test_each_contraction_is_refused_with_its_sentence(statement, sentence):
     assert sentence in refused
 
 
+@pytest.mark.parametrize(
+    ("stamps", "sentence"),
+    [
+        ([], "2 migration(s) added since v1.0.0 declare no MIN_READABLE_RELEASE, so a database they upgrade keeps an older"),
+        ([("b1.py", "v1.0.0"), ("c2.py", "v0.9.0")], "c2.py declares MIN_READABLE_RELEASE = 'v0.9.0', but this check"),
+        ([("b1.py", "1.1")], "no older release is known to read their schema"),
+        ([("b1.py", "v0.9.0"), ("c2.py", "v1.0.0")], None),
+        ([("b1.py", "v1.1.0")], None),
+    ],
+)
+def test_the_stamp_may_not_say_an_older_release_reads_the_schema(stamps, sentence):
+    refused = contract.stamp_refusal(stamps, 2, "v1.0.0")
+    assert refused is None if sentence is None else sentence in refused
+
+
 @pytest.mark.skipif(shutil.which("git") is None, reason="builds a git repository")
 def test_the_script_fails_a_contracting_migration_and_passes_an_expanding_one(tmp_path):
     env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
@@ -87,6 +105,13 @@ def test_the_script_fails_a_contracting_migration_and_passes_an_expanding_one(tm
     notes = subprocess.check_output([sys.executable, script, "--notes", "v1.1.0-rc.1"], cwd=tmp_path, env=env, text=True)
     assert "**Before you update:**\n- `b1`: plan a window\n\n1 migration(s) since v1.0.0 run" in notes, notes
 
-    failed = commit_and_check(f"{contract.VERSIONS}/c2_contract.py", 'def upgrade():\n    op.drop_column("widgets", "color")\n')
+    contraction = 'def upgrade():\n    op.drop_column("widgets", "color")\n'
+    failed = commit_and_check(f"{contract.VERSIONS}/c2_contract.py", contraction)  # the stamp b1 left is still v1.0.0
     assert failed.returncode == 1
     assert "c2_contract.py,line=2::c2_contract.py drops column widgets.color, which v1.0.0 still reads" in failed.stdout
+    raised = f'MIN_READABLE_RELEASE = "v1.1.0"\n{contraction}'
+    unnoted = commit_and_check(f"{contract.VERSIONS}/c2_contract.py", raised)
+    assert unnoted.returncode == 1 and "is a restore, not an image swap: say so in a `# release-note:` line" in unnoted.stdout
+    noted = commit_and_check(f"{contract.VERSIONS}/c2_contract.py", f"# release-note: step back by restoring\n{raised}")
+    assert noted.returncode == 0, noted.stdout
+    assert "::notice file=" in noted.stdout and "MIN_READABLE_RELEASE is v1.1.0, so v1.0.0's image refuses" in noted.stdout
