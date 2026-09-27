@@ -17,6 +17,7 @@ CASES = json.loads(TABLE.read_text())["cases"]
 APP = {"appName": "Wireshark", "bundleId": "org.wireshark.Wireshark", "platform": "macos", "versions": ["3.6.2"]}
 BODY = {"kind": "coverage"} | APP
 ALIAS = {"app_name": "appName", "bundle_id": "bundleId", "text": "text", "contact": "contact"}
+BLANK = "{} is blank: it holds only spaces, tabs, line breaks or the joiners U+200C and U+200D, and a case takes no blank text."
 
 
 def _refusals(field: str, value: str) -> list[tuple]:
@@ -35,7 +36,10 @@ def test_each_case_is_answered_as_the_dialog_answers_it(case):
     if case["refused"] is None:
         assert said is None and _refusals(field, case["value"]) == []
         return
-    assert said.startswith(f"{field} has {case['refused']}, which a case cannot carry: ")
+    if case["refused"] == "blank":  # Support #27: nothing left once whitespace and the two joiners go
+        assert said == BLANK.format(field)
+    else:
+        assert said.startswith(f"{field} has {case['refused']}, which a case cannot carry: ")
     assert said == case.get("said", said)
     assert _refusals(field, case["value"]) == [("text_rule", (ALIAS[field],), said)]
 
@@ -43,11 +47,13 @@ def test_each_case_is_answered_as_the_dialog_answers_it(case):
 def test_the_table_covers_every_text_field_and_both_verdicts():
     assert {case["field"] for case in CASES} == set(ALIAS)
     assert {case["field"] for case in CASES if "said" in case} == set(ALIAS), "one whole sentence per field"
+    assert {case["field"] for case in CASES if case["refused"] == "blank"} == set(ALIAS), "joiners alone are blank anywhere"
     assert {case["refused"] is None for case in CASES} == {True, False}
 
 
 @pytest.mark.parametrize(("field", "value"), [("text", " \n\t "), ("text", ""), ("contact", " "), ("app_name", "\u3000")])
 def test_a_blank_field_is_refused_by_name(field, value):
-    """Not blank, as Support's "text" says; the dialog leaves a blank field out, so only another client meets this."""
-    said = f"{field} is blank: it holds only spaces, tabs or line breaks, and a case takes no blank text."
+    """Not blank, as Support's "text" says; the dialog leaves a blank field out, so only another client meets this.
+    The table's `blank` cases are the joiners alone and with whitespace."""
+    said = BLANK.format(field)
     assert text_refusal(field, value) == said and _refusals(field, value) == [("text_rule", (ALIAS[field],), said)]
