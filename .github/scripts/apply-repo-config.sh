@@ -2,8 +2,8 @@
 #
 # Applies the repository configuration that docs/BRANCHING.md §6 specifies as
 # `repo-setting` or `ruleset` enforcement. Idempotent: safe to re-run, and the
-# intended way to reconcile the repository after editing
-# .github/rulesets/main.json.
+# intended way to reconcile the repository after editing a file under
+# .github/rulesets/.
 #
 #   Usage:  .github/scripts/apply-repo-config.sh [--dry-run]
 #
@@ -15,7 +15,7 @@
 set -euo pipefail
 
 REPO="${REPO:-LoonSecIO/LoonInspect}"
-RULESET_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/.github/rulesets/main.json"
+RULESETS="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/.github/rulesets"
 DRY_RUN=false
 [[ "${1:-}" == "--dry-run" ]] && DRY_RUN=true
 
@@ -32,6 +32,29 @@ run() {
     return 0
   fi
   "$@"
+}
+
+# Creates a ruleset from its file under .github/rulesets, or updates the one that
+# already holds its name: the name is the key, so a re-run never adds a copy.
+#   apply_ruleset <name, as the file spells it> <file> <what stays open without it>
+apply_ruleset() {
+  local name=$1 file="$RULESETS/$2" existing answer
+  [[ -f "$file" ]] || { fail "ruleset definition not found at $file"; exit 1; }
+
+  # gh writes the API error body to stdout, so read the exit status rather than
+  # the output to tell "no ruleset yet" apart from "endpoint unavailable".
+  if ! existing=$(gh api "repos/$REPO/rulesets" --jq ".[] | select(.name==\"$name\") | .id" 2>/dev/null); then
+    blocked "rulesets need GitHub Pro/Team on a private repo, or a public repo"
+    blocked "$3"
+  elif [[ -n "$existing" ]]; then
+    answer=$(run gh api -X PUT "repos/$REPO/rulesets/$existing" --input "$file") ||
+      { fail "could not update ruleset $existing from $2${answer:+; GitHub answered $answer}"; exit 1; }
+    ok "updated existing ruleset (id $existing) from $2"
+  else
+    answer=$(run gh api -X POST "repos/$REPO/rulesets" --input "$file") ||
+      { fail "could not create ruleset from $2${answer:+; GitHub answered $answer}"; exit 1; }
+    ok "created ruleset from $2"
+  fi
 }
 
 # --- Repository settings — BR-04, MG-01 ------------------------------------
@@ -57,28 +80,16 @@ fi
 # --- Ruleset on main — BR-06, BR-07, MG-02, MG-03, PR-07, AG-03 ------------
 # Requires GitHub Pro/Team on a private repository, or a public repository.
 step "Ruleset on main (BR-06, BR-07, MG-02, MG-03, PR-07, AG-03)"
+apply_ruleset main main.json "BR-06, BR-07, MG-02, MG-03, PR-07 and AG-03 stay unenforced until then"
 
-[[ -f "$RULESET_FILE" ]] || { fail "ruleset definition not found at $RULESET_FILE"; exit 1; }
-
-# gh writes the API error body to stdout, so read the exit status rather than
-# the output to tell "no ruleset yet" apart from "endpoint unavailable".
-if existing=$(gh api "repos/$REPO/rulesets" --jq '.[] | select(.name=="main") | .id' 2>/dev/null); then
-  rulesets_available=true
-else
-  rulesets_available=false
-  existing=""
-fi
-
-if ! $rulesets_available; then
-  blocked "rulesets need GitHub Pro/Team on a private repo, or a public repo"
-  blocked "BR-06, BR-07, MG-02, MG-03, PR-07 and AG-03 stay unenforced until then"
-elif [[ -n "$existing" ]]; then
-  run gh api -X PUT "repos/$REPO/rulesets/$existing" --input "$RULESET_FILE" >/dev/null
-  ok "updated existing ruleset (id $existing) from $(basename "$RULESET_FILE")"
-else
-  run gh api -X POST "repos/$REPO/rulesets" --input "$RULESET_FILE" >/dev/null
-  ok "created ruleset from $(basename "$RULESET_FILE")"
-fi
+# --- Ruleset on v* tags — #672 ---------------------------------------------
+# The ECR push role (ops/aws/images.template.yml) trusts v* tags, so whoever can
+# push one can assume that role, and a release runs its tagged commit's
+# release.yml. Only the repository admin role creates, moves or deletes one.
+# The file names v*/**/* beside v* because a ruleset's * stops at a slash and
+# the role's does not. Run this before deploying that template with v* subjects.
+step "Ruleset on v* release tags (#672)"
+apply_ruleset release-tags release-tags.json "v* tags stay open to anyone with write access; keep them out of the ECR push role's trust until then"
 
 # --- Secret scanning — CM-03 ----------------------------------------------
 # Free on public repositories; needs Advanced Security on a private one.
