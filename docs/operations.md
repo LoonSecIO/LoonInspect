@@ -523,9 +523,9 @@ If the stamp names a later release than the one you put back, the image refuses 
 *…which recorded that only v2.1.0 or later can read it; this image is v2.0.0 (build …), so it will
 not start on it*. That release dropped or renamed something older code reads, and its upgrade
 notes say so. Put that release or a later one back, or restore the pre-upgrade dump beside the
-older image (recovery 3 below). The stamp speaks for the schema only; what the newer build wrote
-into it is the second subsection below. Going back to a `v1.x` image, which predates the stamp,
-or more than one release back, is the downgrade that follows.
+older image (recovery 3 below). The stamp speaks for the schema only: for what the newer build
+wrote into it, read *A downgrade does not un-write what the newer image wrote* below. Going back
+to a `v1.x` image, which predates the stamp, or more than one release back, is the downgrade.
 
 ### Do it before you swap the image back
 

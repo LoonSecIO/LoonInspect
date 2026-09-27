@@ -109,6 +109,9 @@ def test_the_script_fails_a_contracting_migration_and_passes_an_expanding_one(tm
     failed = commit_and_check(f"{contract.VERSIONS}/c2_contract.py", contraction)  # the stamp b1 left is still v1.0.0
     assert failed.returncode == 1
     assert "c2_contract.py,line=2::c2_contract.py drops column widgets.color, which v1.0.0 still reads" in failed.stdout
-    raised = commit_and_check(f"{contract.VERSIONS}/c2_contract.py", f'MIN_READABLE_RELEASE = "v1.1.0"\n{contraction}')
-    assert raised.returncode == 0, raised.stdout
-    assert "::notice file=" in raised.stdout and "MIN_READABLE_RELEASE is v1.1.0, so v1.0.0's image refuses" in raised.stdout
+    raised = f'MIN_READABLE_RELEASE = "v1.1.0"\n{contraction}'
+    unnoted = commit_and_check(f"{contract.VERSIONS}/c2_contract.py", raised)
+    assert unnoted.returncode == 1 and "is a restore, not an image swap: say so in a `# release-note:` line" in unnoted.stdout
+    noted = commit_and_check(f"{contract.VERSIONS}/c2_contract.py", f"# release-note: step back by restoring\n{raised}")
+    assert noted.returncode == 0, noted.stdout
+    assert "::notice file=" in noted.stdout and "MIN_READABLE_RELEASE is v1.1.0, so v1.0.0's image refuses" in noted.stdout

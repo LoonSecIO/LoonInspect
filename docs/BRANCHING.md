@@ -86,9 +86,9 @@ newest `vMAJOR.MINOR.PATCH` tag to that tag's models (`.github/scripts/check_mig
 type, nullability and default changes are for review. **The schema also records which releases
 can read it** (#672): one of the migrations since that tag declares `MIN_READABLE_RELEASE = "<the
 tag>"`, which its `upgrade()` writes to `schema_release` and its `downgrade()` puts back
-(`3b88d4b09c50` is the pattern), and CI refuses a stamp below the tag. A migration that has to
-drop or rename what the tag reads declares a later release, and a `# release-note:` says that
-step back is a restore. An image knows its own release from `RELEASE` in
+(`3b88d4b09c50`'s docstring has the statement), and CI refuses a stamp below the tag. A migration
+that has to drop or rename what the tag reads declares a later release, with a `# release-note:`
+saying that the step back is a restore; CI refuses the later release without one. An image knows its own release from `RELEASE` in
 `backend/app/core/version.py`: the pull request that prepares a release sets it, and `release.yml`
 tags no image whose tag disagrees. An image that finds a revision it does not carry starts
 without migrating when its `RELEASE` is at or above the stamp, and refuses with a sentence naming

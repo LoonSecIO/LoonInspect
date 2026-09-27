@@ -181,9 +181,13 @@ def main(argv: list[str]) -> int:
     sources = {path: _git("show", f"HEAD:{path}") for path in migrations}
     found = [(path, line, sentence) for path in migrations
              for line, sentence in refusals(Path(path).name, sources[path], tables, release)]
-    stamps = [(Path(path).name, value) for path in migrations if (value := recorded_stamp(sources[path])) is not None]
+    declared = [(path, value) for path in migrations if (value := recorded_stamp(sources[path])) is not None]
+    stamps = [(Path(path).name, value) for path, value in declared]
     untrue = stamp_refusal(stamps, len(migrations), release) if migrations else None
     raised = not untrue and bool(stamps) and _key(stamps[-1][1]) > _key(release)
+    if raised and not RELEASE_NOTE.search(sources[declared[-1][0]]):
+        untrue = (f"{stamps[-1][0]} declares {STAMP} = {stamps[-1][1]!r}, above {release}, so stepping back to {release} is "
+                  "a restore, not an image swap: say so in a `# release-note:` line (docs/BRANCHING.md §1.1).")
     for path, line, sentence in found:  # a raised stamp turns each contraction into a note: the older image refuses
         print(f"::{'notice' if raised else 'error'} file={path},line={line}::{sentence}")
     if untrue:

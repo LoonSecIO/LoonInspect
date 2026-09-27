@@ -6,8 +6,10 @@ migrating (`app.core.database.init_db`): when its own `RELEASE` is at or above t
 starts without migrating, and below it, it refuses with a sentence naming both. So from v2.0.0
 on, one step back is an image swap (docs/operations.md §5).
 
-Every release's migrations record it again the way this one does: a module constant
-`MIN_READABLE_RELEASE = "vX.Y.Z"` that `upgrade()` writes and `downgrade()` puts back.
+Every release's migrations record it again: a module constant `MIN_READABLE_RELEASE = "vX.Y.Z"`,
+which `upgrade()` writes with
+`op.execute(f"UPDATE schema_release SET min_readable_release = '{MIN_READABLE_RELEASE}'")` and
+`downgrade()` puts back with the same statement naming the value before it.
 `.github/scripts/check_migration_contract.py` reads that constant and keeps it truthful: the
 migrations since the last release must record that release or a later one, and a later one once
 they drop or rename what it reads (docs/BRANCHING.md §1.1).
