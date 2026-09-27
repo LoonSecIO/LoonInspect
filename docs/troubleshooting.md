@@ -2327,7 +2327,8 @@ that log, then repeat the act.
    the v2 preview, off by default ([Paid intelligence preview](#paid-intelligence-preview-622)).
    *"…INTELLIGENCE_SUBMISSIONS is off here"*: sending cases has its own switch, off by default even where
    the preview is on. Where this instance should send them, set `INTELLIGENCE_SUBMISSIONS=true` in the
-   `.env` beside `docker-compose.yml`, recreate the container (`docker compose up -d`), then repeat the act.
+   `.env` beside `docker-compose.yml`, recreate the container (`docker compose up -d`) and reload the page,
+   then repeat the act.
    *"…give permission…"*: confirm the preview. *"…data-sharing exclusion list…"*: the one-time override
    sends this case only; the list stays. A 403: only an administrator sends, reads or withdraws a case.
    *"String should have at most 64 characters"* (or 256): the row's version, or its name or its bundle
