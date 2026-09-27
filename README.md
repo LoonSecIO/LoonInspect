@@ -225,12 +225,12 @@ This builds the frontend, bundles it into the FastAPI image, and starts the app 
 
 **Or pull a release instead of building it** (v2.0.0 and later). `docker-compose.pull.yml`
 names the two published images in place of both builds. Check out the release's tag, so the
-compose files are the ones that go with its images, then put the tag in `.env` beside the file
-list, which makes every later `docker compose` command read the override too:
+compose files are the ones that go with its images, then name the tag in `.env` with the file
+list that makes every later `docker compose` command read the override too:
 
 ```bash
-git checkout v2.0.0
-printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.pull.yml\nLOONINSPECT_VERSION=v2.0.0\n' >> .env
+git fetch --tags && git checkout v2.0.0
+printf '\nCOMPOSE_FILE=docker-compose.yml:docker-compose.pull.yml\nLOONINSPECT_VERSION=v2.0.0\n' >> .env
 docker compose pull
 docker compose up -d
 ```

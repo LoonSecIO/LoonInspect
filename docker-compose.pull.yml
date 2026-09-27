@@ -1,7 +1,7 @@
 # A release's published images in place of a build (#655; README "4. Build and run").
 #
-#   git checkout v2.0.0
-#   printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.pull.yml\nLOONINSPECT_VERSION=v2.0.0\n' >> .env
+#   git fetch --tags && git checkout v2.0.0
+#   printf '\nCOMPOSE_FILE=docker-compose.yml:docker-compose.pull.yml\nLOONINSPECT_VERSION=v2.0.0\n' >> .env
 #   docker compose pull
 #   docker compose up -d
 #

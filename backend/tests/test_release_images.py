@@ -72,6 +72,6 @@ def test_the_pull_override_pulls_what_the_release_pushes_and_never_builds():
     for name, service in services.items():
         # With `build` left in, Compose builds from source whenever the pull fails, and the
         # local build then runs under the release's image name.
-        assert service["build"] == "!reset", f"{name} can still build from source"
+        assert service.get("build") == "!reset", f"{name} can still build from source"
         tag = service["image"].split(":", 1)[1]
         assert re.fullmatch(r"\$\{LOONINSPECT_VERSION:\?.+\}", tag), f"{name} pulls {tag}, not the release .env names"
