@@ -2373,13 +2373,13 @@ that log, then repeat the act.
     field of the dialog while *Preview* stays off, or as Preview's or Send's refusal: that field holds a
     hidden character, and nothing has left this instance. A case carries no format character but the joiners
     U+200C (inside Persian and other words) and U+200D (inside emoji sequences), no unpaired surrogate, no
-    line or paragraph separator, and no control character but newline and tab, which `text` alone keeps; the
+    line or paragraph separator, and no control character, though `text` may carry newline and tab; the
     service refuses the same. Such a character usually comes with pasted words: a zero-width space (U+200B),
-    a direction mark (U+200E, U+202E) or a soft hyphen (U+00AD). In `text` or `contact`, delete it: the place
-    counts characters from 1, an emoji as one, and retyping the words around it works too. *Preview* comes
-    back once no field names one. In `app_name` or `bundle_id` (*"…It comes from the inventory…"*), the
-    character is in the build's name or bundle identifier as the inventory reports it, which the dialog cannot
-    change, so no case can name that build. *"…is blank…"*: a request made outside the dialog sent a field of
-    only spaces, tabs or line breaks; the dialog leaves such a field out.
+    a direction mark or override (U+200E, U+202E) or a soft hyphen (U+00AD). In `text` or `contact`, delete
+    it: the place counts code points from 1 (a plain emoji is one), and retyping the words around it works too.
+    *Preview* comes back once no field names one. In `app_name` or `bundle_id` (*"…It comes from the
+    inventory…"*), the character is in the build's name or bundle identifier as the inventory reports it,
+    which the dialog cannot change, so no case can name that build. *"…is blank…"*: a request made outside
+    the dialog sent a field of only spaces, tabs or line breaks; the dialog leaves such a field out.
 
 **Y.** Random keys do not collide twice. Report the case's `id` and its sentence (§8); nothing was stored there.

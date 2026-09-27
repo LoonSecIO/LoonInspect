@@ -21,7 +21,7 @@ HIDDEN = frozenset({"Cf", "Cs", "Zl", "Zp", "Cc"})
 
 def text_refusal(field: str, value: str) -> str | None:
     """The sentence refusing `value` as `field`, the dialog's word for word, or None. It names the first hidden
-    character by code point and place, counting characters from 1 (an emoji is one)."""
+    character by code point and place, counting code points from 1 (a plain emoji is one)."""
     kept = "\u200c\u200d" + ("\n\t" if field == "text" else "")
     for at, char in enumerate(value, 1):
         if unicodedata.category(char) in HIDDEN and char not in kept:

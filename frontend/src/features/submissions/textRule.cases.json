@@ -1,5 +1,5 @@
 {
-  "about": "The text rule of Support's docs/contracts/submissions.md, as Kyle ruled Support #17 decision 6 on 2026-09-27, and the cases both sides answer alike: backend/tests/test_submission_text_rule.py reads this file, frontend/src/features/submissions/submissions.test.tsx reads it. `refused` names the first hidden character by code point and place, counting characters from 1; `said`, where present, is the whole sentence, the same from the server and on the page.",
+  "about": "The text rule of Support's docs/contracts/submissions.md, as Kyle ruled Support #17 decision 6 on 2026-09-27, and the cases both sides answer alike: backend/tests/test_submission_text_rule.py reads this file, frontend/src/features/submissions/submissions.test.tsx reads it. `refused` names the first hidden character by code point and place, counting code points from 1 (a plain emoji is one); `said`, where present, is the whole sentence, the same from the server and on the page.",
   "cases": [
     {"field": "text", "value": "Seen on \ud83d\udc69\u200d\ud83d\udcbb Macs", "refused": null, "why": "a ZWJ emoji sequence: U+200D is text"},
     {"field": "app_name", "value": "\ud83c\udff3\ufe0f\u200d\ud83c\udf08 Pride", "refused": null, "why": "a ZWJ sequence with U+FE0F (a mark, not a format character), in a name"},

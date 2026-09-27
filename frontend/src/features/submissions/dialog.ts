@@ -25,14 +25,14 @@ export const bodyOf = (named: Named, typed: Typed): SubmissionIn => ({ ...named,
 /** Support's "text" as Kyle ruled Support #17's decision 6 on 2026-09-27, the rule backend/app/schemas/submissions.py
  *  checks too (textRule.cases.json holds both to one table): no format character but the joiners U+200C and U+200D,
  *  no unpaired surrogate, no line or paragraph separator, and no control character; `text` alone keeps newline and
- *  tab. A hit names the first hidden character by code point and place, counting characters from 1 (an emoji is one). */
+ *  tab. A hit names the first hidden character by code point and place, counting code points from 1 as Python does. */
 export type TextField = "app_name" | "bundle_id" | "text" | "contact";
 export type Hidden = { field: TextField; code: string; at: number };
 const HIDDEN = /[\p{Cf}\p{Cs}\p{Zl}\p{Zp}\p{Cc}]/u;
 export function hiddenIn(field: TextField, value: string | null | undefined): Hidden | null {
   const kept = field === "text" ? "\u200c\u200d\n\t" : "\u200c\u200d";
   let at = 0;
-  for (const char of value ?? "") { // by code point, so an emoji is one and an unpaired surrogate is itself
+  for (const char of value ?? "") { // by code point: a plain emoji is one, never two UTF-16 units; a lone surrogate is one
     at += 1;
     if (HIDDEN.test(char) && !kept.includes(char)) return { field, code: `U+${(char.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`, at };
   }
