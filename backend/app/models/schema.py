@@ -960,8 +960,9 @@ class ShareLog(Base):
 
 class SubmissionCase(Base):
     """One coverage request or match correction (#623): app.core.submissions sends, reads and
-    withdraws it, and migration e623b1c4d7a9 says what each column holds. `case_key` is encrypted
-    like the contribution receipt and never logged, shown or written to the share log."""
+    withdraws it, and clears what was written on the service's 90-day clock; migration e623b1c4d7a9
+    says what each column holds. `case_key` is encrypted like the contribution receipt and never
+    logged, shown or written to the share log."""
 
     __tablename__ = "submission_cases"
     __table_args__ = (CheckConstraint("kind IN ('coverage', 'correction')", name="ck_submission_cases_kind"),)

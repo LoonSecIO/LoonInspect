@@ -1,16 +1,17 @@
 """Submission cases (#623) under PostgreSQL row-level security: a sent case stays in its tenant with its
-key stored encrypted, while `send`, `refresh` and `withdraw` commit what they learn."""
+key stored encrypted, while `send`, `refresh` and `withdraw` commit what they learn, and the nightly clock
+clears what was written once the service's 90 days are up."""
 
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
-from sqlalchemy import select, text, update
+from sqlalchemy import delete, select, text, update
 
-from tests.test_submissions import ACK, STATUS, WIRESHARK, Stub, preview_on  # noqa: F401 (autouse here too)
+from tests.test_submissions import ACK, STATUS, WIRESHARK, WORDS, Stub, preview_on  # noqa: F401 (autouse here too)
 from tests.test_vuln_library_db import foreign_tenant  # noqa: F401
 
 pytestmark = [
@@ -38,3 +39,49 @@ async def test_a_sent_case_stays_in_its_tenant_with_its_key_stored_encrypted(db,
     assert (case.state, case.text) == ("withdrawn", None) and case.last_status_at and case.withdrawn_at
     await db.delete(case)
     await db.commit()
+
+
+async def test_the_clock_clears_what_was_written_90_days_after_a_case_closed_and_nothing_else(db, foreign_tenant):  # noqa: F811
+    from app.core import submissions
+    from app.models.schema import SubmissionCase
+
+    now = datetime.now(UTC)
+    typed = {"public_url": "https://example.org/wireshark-3.6.2", "text": WORDS["text"], "contact": WORDS["contact"]}
+    kept = ("app_name", "bundle_id", "versions", "state", "received_at", "closed_at", "release", "coverage", "note")
+
+    def case(state: str, closed_days_ago: int | None = None, **changes) -> SubmissionCase:
+        closed = None if closed_days_ago is None else now - timedelta(days=closed_days_ago)
+        heard = {"state": state, "closed_at": closed, "received_at": now - timedelta(days=200), "note": "Seen."}
+        fields = WIRESHARK | WORDS | typed | heard | {"release": "ab" * 32, "coverage": "Both builds."}
+        return SubmissionCase(**(fields | {"case_key": submissions.mint_case_key()} | changes))
+
+    rows = {
+        "declined 91 days ago": case("declined", 91),
+        "published 91 days ago": case("published", 91),
+        "expired": case("expired"),
+        "published 89 days ago": case("published", 89),
+        "open a year": case("reviewing", created_at=now - timedelta(days=365)),
+        "never sent": case("pending", received_at=None),
+    }
+    cleared = {"declined 91 days ago", "published 91 days ago", "expired"}
+    db.add_all(rows.values())
+    await db.commit()
+    foreign_tenant.add(theirs := case("expired"))
+    await foreign_tenant.commit()
+    ids = [row.id for row in [*rows.values(), theirs]]  # read now: a rollback expires them
+    before = {name: [getattr(row, field) for field in kept] for name, row in rows.items()}
+    try:
+        assert await submissions.forget_closed(db) == 3
+        assert await submissions.forget_closed(db) == 0, "a second night finds nothing left to clear"
+        await db.rollback()  # what was committed
+        for name, row in rows.items():
+            await db.refresh(row)
+            assert {field: getattr(row, field) for field in typed} == (dict.fromkeys(typed) if name in cleared else typed), name
+            assert [getattr(row, field) for field in kept] == before[name], name
+        await foreign_tenant.refresh(theirs)
+        assert theirs.text == typed["text"], "another tenant's cases wait for its own night"
+    finally:
+        for session in (db, foreign_tenant):
+            await session.rollback()
+            await session.execute(delete(SubmissionCase).where(SubmissionCase.id.in_(ids)))
+            await session.commit()

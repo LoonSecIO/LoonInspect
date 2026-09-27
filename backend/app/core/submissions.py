@@ -5,7 +5,8 @@ the first request, stored encrypted like a contribution receipt, sent only in a 
 or shown, and never joined by a credential, receipt or submission UUID. Sending belongs to the v2 preview
 INTELLIGENCE_ACCESS gates and needs INTELLIGENCE_SUBMISSIONS, its own switch, too (#692); status and
 withdrawal need neither, so switching either off never strands a withdrawal.
-Outcomes land on the case (`state`, `last_error`), quoting the service's one bounded sentence.
+Outcomes land on the case (`state`, `last_error`), quoting the service's one bounded sentence. What the
+administrator wrote is kept here as long as the service keeps it, and no longer (`forget_closed`).
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -33,6 +34,7 @@ RELEASE = re.compile(r"[0-9a-f]{64}")
 STATES = {"received", "reviewing", "needs_information", "accepted", "declined", "published", "withdrawn"}
 FIELDS = ("kind", "app_name", "bundle_id", "platform", "versions", "public_url", "text", "contact")
 TYPED = ("public_url", "text", "contact")  # what the administrator wrote; withdrawal clears it here too
+KEPT = timedelta(days=90)  # the service deletes content and contact this long after a case closes (#623, 2026-09-23)
 POLL_FLOOR = timedelta(seconds=60)  # the service answers a faster status read with 429
 SAID = 1000  # characters of the service's sentence quoted; its longest, the public_url rule, has 387
 Transport = httpx.AsyncBaseTransport | None
@@ -213,3 +215,21 @@ async def withdraw(db: AsyncSession, case: SubmissionCase, *, transport: Transpo
             _refused(case, code, said)
     await db.commit()
     return case
+
+
+async def forget_closed(db: AsyncSession) -> int:
+    """The service's clock, kept here: what the administrator wrote on a case goes 90 days after the case closed,
+    or once the service answers that it expired. The case keeps its identity, state, dates, release, coverage and
+    note, and stays listed. Nightly, in one tenant's session (`run_cleanup`); commits and returns how many cases it
+    cleared, so a second pass clears none.
+
+    The clock runs from the `closed_at` a status read copied, so a case that closed while nobody asked keeps its
+    words until a status read learns it closed or expired. This asks the service nothing: every instance on the
+    default SYNC_TIMEZONE runs it in the same minute, where a sweep of status reads would spend the throttle all
+    callers share, and each failure would land on a case nobody touched."""
+    past = or_(SubmissionCase.closed_at < datetime.now(UTC) - KEPT, SubmissionCase.state == "expired")
+    held = or_(*(getattr(SubmissionCase, name).is_not(None) for name in TYPED))
+    # retention-clock: submission-content — named in README.md and KNOWN_ISSUES.md §1; check-readme-claims.sh reads this token.
+    result = await db.execute(update(SubmissionCase).where(past, held).values(dict.fromkeys(TYPED)))
+    await db.commit()
+    return result.rowcount or 0
