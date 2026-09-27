@@ -142,7 +142,7 @@ jobs fire in `SYNC_TIMEZONE`, not UTC.
 | `hourly_jamf_patch_sync` | hourly, :00 | Pulls the global Jamf Patch catalog, rebuilds the lookup, then re-judges every tenant's app catalog. |
 | `hourly_session_cleanup` | hourly, :30 | Deletes sessions a day past expiry or revocation. |
 | `outbox_cleanup` | daily, 02:45 | Purges events past retention, held ones included — age is the candidate test, and a delivery still pending or a dead letter inside its own window is what holds an event back. |
-| `run_cleanup` | daily, 02:50 | Purges finished runs, their log lines and closed alert latches past `run_retention_days`. |
+| `run_cleanup` | daily, 02:50 | Purges finished runs, their log lines and closed alert latches past `run_retention_days`, and clears the URL, text and contact of submission cases 90 days after they close or once they expire. |
 
 ## 5. What a pull costs Jamf
 
