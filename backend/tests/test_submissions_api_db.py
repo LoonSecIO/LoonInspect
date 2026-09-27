@@ -260,8 +260,12 @@ async def test_what_lists_settings_intelligence_access(admin, db, monkeypatch):
         return answer["enabled"], answer["receipts"], answer["casesToWithdraw"]
 
     try:
+        monkeypatch.setattr(settings, "contribution_receipts", True)
+        assert await reads() == (False, False, False), "neither route without the two corpus flags"
         for corpus in ("vuln_tenant_selection", "vuln_release_retention"):
             monkeypatch.setattr(settings, corpus, True)
+        assert await reads() == (True, True, False), "both routes"
+        monkeypatch.setattr(settings, "contribution_receipts", False)
         assert await reads() == (True, False, False), "the paid preview alone"
         monkeypatch.setattr(settings, "intelligence_access", False)
         monkeypatch.setattr(settings, "contribution_receipts", True)
