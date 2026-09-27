@@ -2222,10 +2222,10 @@ inventory sharing.
   log (`docker compose logs app`), with `operation` (`activate`, `rotate` or
   `refresh`), `reason` and the same sentence. Error text never quotes upstream bodies
   or bearer/capability values.
-- **"Intelligence access could not be loaded. Reload or contact support.":** in place of
-  the paid panel: its read of `GET /api/system/intelligence` failed. The sidebar entry
-  needs the same read, so it hides too once a reload fails, and the page stays at
-  `/settings/intelligence-access`. Still there after a reload:
+- **"Intelligence access could not be loaded. Reload or contact support.":** the paid
+  panel's read of `GET /api/system/intelligence` failed, and this sentence stands in its
+  place. The sidebar entry needs the same read, so it hides too once a reload fails, and
+  the page stays at `/settings/intelligence-access`. Still there after a reload:
   `docker compose logs app --since 30m | grep '"/api/system/intelligence"'`. No line
   from the reload means the read never reached the app: it was restarting or
   unreachable, or [a proxy in front](#a-proxy-in-front-answers-for-itself) answered for
