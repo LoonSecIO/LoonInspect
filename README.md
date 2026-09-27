@@ -236,9 +236,12 @@ docker compose up -d
 ```
 
 No `latest` is published: the release `.env` names is the one that runs until you change it.
-On Windows, `;` separates the files; with the external database below, `COMPOSE_FILE` is
-`docker-compose.yml:docker-compose.external.yml:docker-compose.pull.yml`. A pull that stops at
-`not found` or `denied` is [docs/troubleshooting.md](docs/troubleshooting.md) §10 step 4.
+The override needs Docker Compose 2.24 or newer (`docker compose version`). On Windows, `;`
+separates the files. With the external database below, `COMPOSE_FILE` is
+`docker-compose.yml:docker-compose.external.yml:docker-compose.pull.yml`, and that section's
+commands go without their `-f` flags: a `-f` replaces the list, so its `up -d --build` would
+build from source. A pull that stops at `not found` or `denied` is
+[docs/troubleshooting.md](docs/troubleshooting.md) §10 step 4.
 
 > **Note:** the container logs and `docker ps` will show the address as `0.0.0.0:8001` — that's the server listening on all interfaces, not a URL you can open. Use `http://localhost:8001` (or `127.0.0.1:8001`) in your browser instead; some browsers will refuse to navigate to `0.0.0.0` directly.
 

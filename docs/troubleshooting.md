@@ -1245,12 +1245,16 @@ the hour after a failure; `docker compose restart app` makes it ask now.
      it is published. Correct `LOONINSPECT_VERSION` and pull again.
    - It stops at `denied` → the registry will not show you that image: a name edited in a
      compose file, or a package the project has not made public. `docker compose config
-     --images` prints both names; they are `ghcr.io/loonsecio/looninspect` and
-     `ghcr.io/loonsecio/looninspect-db`, the tag after the colon. With those names and a tag the
-     Releases page lists, the refusal is the project's: report it (§8) with the tag and the
-     pull's output. Meanwhile build the same tag from source: delete the `COMPOSE_FILE` line
-     from `.env`, then `GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build`;
-     the volumes are the same.
+     --images` prints what it pulls: `ghcr.io/loonsecio/looninspect`, and with the bundled
+     database `ghcr.io/loonsecio/looninspect-db` too (with the external one, the app alone),
+     the tag after the colon. With those names and a tag the Releases page lists, the refusal
+     is the project's: report it (§8) with the tag and the pull's output. Meanwhile build the
+     same tag from source: take `docker-compose.pull.yml` out of the `COMPOSE_FILE` line in
+     `.env` and keep the rest. With the external database the line then reads
+     `docker-compose.yml:docker-compose.external.yml`; deleting the whole line would start the
+     bundled Postgres in place of your server. With the bundled one the line can go. Then
+     `GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build`; the volumes are
+     the same.
    - `required variable LOONINSPECT_VERSION is missing a value` → `.env` has no
      `LOONINSPECT_VERSION` line. Add it, with the tag.
 
