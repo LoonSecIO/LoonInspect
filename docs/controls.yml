@@ -159,6 +159,14 @@ controls:
     severity: block
     enforcement: ci
     status: proposed
+  - id: PR-10
+    title: No migration since the last release drops or renames a table or column that release reads
+    severity: block
+    enforcement: ci
+    status: active
+    # The backend job's `Migration contract` step (#671), not a check of its own: it holds every
+    # migration added since the newest vMAJOR.MINOR.PATCH tag to that tag's models (§1.1).
+    check: ci-backend
 
   # ---- 6.4 merge controls ------------------------------------------------------------
   - { id: MG-01, title: Squash is the only permitted merge method, severity: block, enforcement: repo-setting, status: active }

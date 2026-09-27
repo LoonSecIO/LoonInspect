@@ -2,12 +2,14 @@
  *  fields and for the one-time boxes, a press in flight sends nothing, and a refusal is the server's sentence.
  *  Frontend lane (#285), node only: moves run through the reducer, requests through a stubbed fetch. */
 
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import type { CatalogEntry } from "@/features/catalog/types";
 import { listSubmissions, submissionStatus, withdrawSubmission, type SubmissionCaseOut } from "@/features/submissions/api";
-import { askPreview, askSend, bodyOf, canSend, coverageFor, dialog, OPENED, oneAtATime, type Dialog, type Move, type Shown } from "@/features/submissions/dialog";
+import { askPreview, askSend, bodyOf, canSend, coverageFor, dialog, hiddenIn, OPENED, oneAtATime, type Dialog, type Move, type Named, type Shown,
+  type TextField } from "@/features/submissions/dialog";
 import { RequestCoverage, SubmissionView } from "@/features/submissions/SubmissionDialog";
 import { de } from "@/i18n/de";
 import { en } from "@/i18n/en";
@@ -29,8 +31,8 @@ const request = (call: number) => ({ url: fetchStub.mock.calls[call][0], method:
   body: JSON.parse(String(fetchStub.mock.calls[call][1]?.body ?? "null")) });
 const run = (...moves: Move[]) => moves.reduce(dialog, OPENED);
 const ready = run({ type: "asked" }, { type: "previewed", shown: SHOWN }, { type: "ticked", box: "permission", on: true });
-const view = (state: Dialog, t = en) => renderToStaticMarkup(
-  <MemoryRouter><SubmissionView named={NAMED} state={state} copy={t.submissions} dispatch={() => {}} onPreview={() => {}} onSend={() => {}} onClose={() => {}} /></MemoryRouter>);
+const view = (state: Dialog, t = en, named: Named = NAMED) => renderToStaticMarkup(
+  <MemoryRouter><SubmissionView named={named} state={state} copy={t.submissions} dispatch={() => {}} onPreview={() => {}} onSend={() => {}} onClose={() => {}} /></MemoryRouter>);
 // What a string reads as in the markup, which escapes text.
 const html = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#x27;");
 const button = (markup: string, label: string) => markup.match(new RegExp(`<button[^>]*>${label}</button>`))?.[0] ?? "";
@@ -116,6 +118,43 @@ describe("a refusal", () => {
     for (const t of [en, de]) expect(view(dialog(ready, refused), t)).toContain(`<p role="alert" class="text-sm text-destructive">${html(EXCLUDED)}</p>`);
     expect(await askPreview(SHOWN.body, copy.failed)).toEqual({ type: "refused", error: copy.failed });
     expect(await askPreview(SHOWN.body, de.submissions.failed)).toEqual({ type: "refused", error: de.submissions.failed });
+  });
+});
+
+describe("the text rule", () => {
+  // backend/tests/test_submission_text_rule.py answers the same table, in the same sentence. JSON.parse, not an import:
+  // Vite's JSON reader refuses an unpaired surrogate's escape, which JSON allows and a client can send.
+  type Case = { field: string; value: string; refused: string | null; said?: string };
+  const TABLE: { cases: Case[] } = JSON.parse(readFileSync(new URL("./textRule.cases.json", import.meta.url), "utf8"));
+  const pick = (refused: string | null, field: string) => TABLE.cases.filter((one) => one.refused === refused && one.field === field).map((one) => one.value);
+
+  it("answers every case the server answers, alike, in the server's own sentence", () => {
+    for (const { field, value, refused, said } of TABLE.cases) {
+      const hit = hiddenIn(field as TextField, value);
+      expect(hit && `${hit.code} at character ${hit.at}`, JSON.stringify(value)).toBe(refused);
+      const sentence = hit ? copy.hiddenCharacter(field, hit.code, hit.at) : null;
+      expect(sentence === null || sentence.startsWith(`${field} has ${refused}, which a case cannot carry: `)).toBe(true);
+      if (said) expect(sentence).toBe(said);
+    }
+  });
+
+  it("holds Preview off with the sentence under the field it names, in either language, and lets joiners, newline and tab through", () => {
+    const hidden = run({ type: "typed", field: "text", value: pick("U+200B at character 10", "text")[0] });
+    for (const t of [en, de]) {
+      const markup = view(hidden, t);
+      expect(markup).toContain(`<p class="text-sm text-destructive">${html(t.submissions.hiddenCharacter("text", "U+200B", 10))}</p>`);
+      expect(button(markup, t.submissions.preview)).toContain('disabled=""');
+    }
+    const fine = view(run({ type: "typed", field: "text", value: pick(null, "text").join("\n") }, { type: "typed", field: "contact", value: pick(null, "contact")[0] }));
+    expect(button(fine, copy.preview)).not.toContain('disabled=""');
+    const name = view(OPENED, en, { ...NAMED, appName: pick("U+200E at character 1", "app_name")[0] });
+    expect(name).toContain(html(copy.hiddenCharacter("app_name", "U+200E", 1)));
+    expect(button(name, copy.preview)).toContain('disabled=""');
+  });
+
+  it("sends a blank text as no text, as it does a blank address or contact; other text goes as typed", () => {
+    expect(bodyOf(NAMED, { publicUrl: " ", text: " \n\t ", contact: " " })).toMatchObject({ publicUrl: null, text: null, contact: null });
+    expect(bodyOf(NAMED, { ...OPENED.typed, text: " Seen on every Mac.\n" }).text).toBe(" Seen on every Mac.\n");
   });
 });
 
