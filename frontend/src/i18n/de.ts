@@ -8,7 +8,11 @@ export const de: Translations = {
     pageDescription: "Wie diese Instanz Sicherheitsinformationen aktuell hält. Bezahlter Zugang und Community-Freigabe sind getrennte Wege; keiner schaltet den anderen ein oder aus, und gespeicherte Informationen bleiben nach Updateende nutzbar.",
     paidTitle: "Bezahlter Zugang",
     notEnabled: "Der bezahlte Zugang ist in der Konfiguration dieser Instanz nicht aktiviert.",
-    movedPointer: "Der bezahlte Zugang hat eine eigene Seite:",
+    pointer: {
+      paid: "Der bezahlte Zugang hat eine eigene Seite:",
+      receipts: "Beitragsquittungen, die ein zustimmender Austausch erwirbt, haben eine eigene Seite:",
+      both: "Der bezahlte Zugang und die Beitragsquittungen haben eine eigene Seite:"
+    },
     state: "Zuletzt gemeldeter Zugang", credential: "Gespeicherter Zugangsschlüssel", present: "Vorhanden (ausgeblendet)", none: "Nicht verfügbar",
     until: "Updates autorisiert bis", attempt: "Letzter Updateversuch", refresh: "Letzte abgeschlossene bezahlte Aktualisierung",
     source: "Stand der ausgewählten Quelle", selected: "Ausgewählter Korpus", activation: "Einmaliger Aktivierungsschlüssel",

@@ -19,7 +19,7 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 
 import httpx
-from sqlalchemy import or_, select, update
+from sqlalchemy import exists, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -215,6 +215,13 @@ async def withdraw(db: AsyncSession, case: SubmissionCase, *, transport: Transpo
             _refused(case, code, said)
     await db.commit()
     return case
+
+
+async def withdrawable(db: AsyncSession) -> bool:
+    """Whether this organization holds a case neither withdrawn nor expired, which the service may still hold words
+    of: one EXISTS, scoped to the tenant by row-level security and served by `ix_submission_cases_tenant_id`. It
+    lists Settings > Intelligence Access for an administrator with every other route to the page off (#706)."""
+    return bool(await db.scalar(select(exists().where(SubmissionCase.state.not_in(("withdrawn", "expired"))))))
 
 
 async def forget_closed(db: AsyncSession) -> int:

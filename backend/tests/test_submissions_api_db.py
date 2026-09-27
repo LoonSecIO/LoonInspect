@@ -10,7 +10,7 @@ import uuid
 import httpx
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select, text, update
 
 from tests.test_sharing_send_now_db import _audit_events, _signed_in
 from tests.test_submission_text_rule import CASES
@@ -236,9 +236,46 @@ async def test_another_tenants_cases_are_out_of_reach(admin, foreign_tenant):  #
     await foreign_tenant.commit()
     try:
         assert (await client.get("/api/submissions")).json()["cases"] == []
+        assert (await client.get("/api/system/intelligence")).json()["casesToWithdraw"] is False, "theirs lists nothing here"
         for act in ("status", "withdraw"):
             assert (await client.post(f"/api/submissions/{theirs.id}/{act}")).status_code == 404
         assert service.requests == []
     finally:
         await foreign_tenant.execute(delete(SubmissionCase))
         await foreign_tenant.commit()
+
+
+async def test_what_lists_settings_intelligence_access(admin, db, monkeypatch):
+    """#706: beside `enabled`, still the paid preview alone, the intelligence status answers `receipts`
+    (CONTRIBUTION_RECEIPTS with the two corpus flags) and `casesToWithdraw`: a case neither withdrawn nor expired,
+    answered to an administrator only. The auditor holds SYSTEM_READ, never a case, so reads it false."""
+    from app.core.config import settings
+    from app.models.schema import SubmissionCase
+
+    client, service = admin
+    auditor = await _client("auditor")
+
+    async def reads(reader: httpx.AsyncClient = client) -> tuple[bool, bool, bool]:
+        answer = (await reader.get("/api/system/intelligence")).json()
+        return answer["enabled"], answer["receipts"], answer["casesToWithdraw"]
+
+    try:
+        for corpus in ("vuln_tenant_selection", "vuln_release_retention"):
+            monkeypatch.setattr(settings, corpus, True)
+        assert await reads() == (True, False, False), "the paid preview alone"
+        monkeypatch.setattr(settings, "intelligence_access", False)
+        monkeypatch.setattr(settings, "contribution_receipts", True)
+        assert await reads() == (False, True, False), "receipts alone, and `enabled` does not follow them"
+        monkeypatch.setattr(settings, "contribution_receipts", False)
+        assert await reads() == (False, False, False), "both off"
+        monkeypatch.setattr(settings, "intelligence_access", True)
+        service.answers.append((202, ACK))
+        assert (await client.post("/api/submissions", json=SEND)).json()["state"] == "received"
+        monkeypatch.setattr(settings, "intelligence_access", False)
+        assert (await reads(), await reads(auditor)) == ((False, False, True), (False, False, False))
+        for state, listed in (("published", True), ("expired", False), ("withdrawn", False)):
+            await db.execute(update(SubmissionCase).values(state=state))
+            await db.commit()
+            assert (await reads())[2] is listed, state
+    finally:
+        await auditor.aclose()

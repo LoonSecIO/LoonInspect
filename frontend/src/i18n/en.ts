@@ -6,7 +6,12 @@ export const en = {
     pageDescription: "How this instance keeps vulnerability intelligence current. Paid access and community sharing are separate routes; neither turns the other on or off, and held intelligence stays usable when updates stop.",
     paidTitle: "Paid access",
     notEnabled: "Paid access is not enabled in this instance's configuration.",
-    movedPointer: "Paid intelligence access has its own page:",
+    // Data sharing's link to this page names the routes on here (#706).
+    pointer: {
+      paid: "Paid intelligence access has its own page:",
+      receipts: "Contribution receipts, which a consenting exchange earns, have their own page:",
+      both: "Paid intelligence access and contribution receipts have their own page:"
+    },
     state: "Last reported access", credential: "Stored credential", present: "Present (redacted)", none: "Not available",
     until: "Updates authorized until", attempt: "Last update attempt", refresh: "Last completed paid refresh",
     source: "Selected source as of", selected: "Selected corpus", activation: "One-time activation secret",

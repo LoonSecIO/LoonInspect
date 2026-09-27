@@ -144,9 +144,10 @@ export const navigationItems: NavItem[] = [
         end: false,
         permission: PERMISSIONS.SYSTEM_READ
       },
-      // Listed only where the instance offers it (#622): the rollout switches are
-      // deployment configuration, never a customer toggle, so the entry follows their
-      // verdict as read by `intelligenceStore`, and a failed read hides it.
+      // Listed while the page has something for this reader (#622, #706): the paid preview
+      // or contribution receipts, whose switches are deployment configuration and never a
+      // customer toggle, or a case an administrator can still withdraw. The entry follows
+      // that verdict as read by `intelligenceStore`, and a failed read hides it.
       {
         labelKey: "intelligenceAccess",
         icon: ShieldCheck,

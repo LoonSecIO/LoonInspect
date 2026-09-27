@@ -553,7 +553,9 @@ license terms, not request throttling.
 ### Paid intelligence preview (v2, #622)
 
 The default-off paid client has its own page, Settings › Intelligence Access, listed
-only where the preview is enabled; this page links to it. Payment never enables consent. With tenant selection enabled, expiry and
+where the preview or contribution receipts (below) are enabled, and this page links to it
+there; [troubleshooting](troubleshooting.md#paid-intelligence-preview-622) has the whole
+rule. Payment never enables consent. With tenant selection enabled, expiry and
 withdrawal of upload consent preserve acquired intelligence and assessment evidence.
 The paid wire sends only an activation secret or bearer, protocol/client version
 and stable channel. Existing per-MDM license values are never transmitted. See

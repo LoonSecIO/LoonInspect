@@ -2136,9 +2136,17 @@ the account lacks `device:sync` or the device has no supported Jamf connection.
 ## Paid intelligence preview (#622)
 
 Settings > Intelligence Access separates paid update access from upload consent. The
-entry is listed only where the instance offers the preview (and only for accounts that
-can read system settings); Data sharing links to it. Activation and rotation are explicit administrator actions; no MDM
-connection license is transmitted, and activation never enables inventory sharing.
+sidebar lists it, for accounts that can read system settings, where the instance offers
+this preview or [contribution receipts](#contribution-receipts-622), and, for
+administrators, while this organization holds a case (a coverage request or match
+report) neither withdrawn nor expired
+([§21](#21-request-coverage-or-report-an-incorrect-match-is-refused-or-a-case-never-shows-a-status)
+step 9); Data sharing links to it where the preview or receipts are on. Otherwise, or
+after a failed read, the entry hides and the page still opens at
+`/settings/intelligence-access`, where *Intelligence access could not be loaded* is that
+failed read: reload, then read `docker compose logs app` if it repeats. Activation and
+rotation are explicit administrator actions; no MDM connection license is transmitted,
+and activation never enables inventory sharing.
 
 - The panel appears only with `INTELLIGENCE_ACCESS=true`,
   `VULN_RELEASE_RETENTION=true` and `VULN_TENANT_SELECTION=true`. All remain off by
@@ -2494,14 +2502,17 @@ that log, then repeat the act.
 9. **The *Request coverage* or *Report an incorrect match* action is not on the row.** Both are on
    Posture › Vulnerabilities only: the Catalog tab, a device's page, an application's record and the Lookup
    page show the same words without either. Both are for administrators (`SYSTEM_WRITE`), only while the v2
-   preview is on (`INTELLIGENCE_ACCESS`, `VULN_RELEASE_RETENTION` and `VULN_TENANT_SELECTION`, the three that
-   list the Intelligence Access menu entry: [Paid intelligence preview](#paid-intelligence-preview-622))
+   preview is on (`INTELLIGENCE_ACCESS`, `VULN_RELEASE_RETENTION` and `VULN_TENANT_SELECTION`:
+   [Paid intelligence preview](#paid-intelligence-preview-622))
    together with a fourth switch, `INTELLIGENCE_SUBMISSIONS`, off by default (step 1),
    and only for a build with a version on a platform the service takes: macOS, iOS, iPadOS, tvOS or visionOS.
    *Request coverage* is on a row that page's *Outside the corpus* chip lists (`unknown_app`). *Report an
    incorrect match* is on a row with findings while the heading reads *Vulnerability corpus as of …*: the page's
    answer then names the release behind them (`corpusRelease`), which the report sends. While the preview is
-   off the menu entry hides, yet the case list stays at `/settings/intelligence-access`, to refresh and withdraw.
+   off the case list stays on Settings › Intelligence Access, to refresh and withdraw, and the sidebar keeps the
+   entry for administrators while a case is neither withdrawn nor expired (`casesToWithdraw` on
+   `GET /api/system/intelligence`), or where contribution receipts are on; with neither, the entry hides and the
+   list stays at `/settings/intelligence-access`.
    With the preview on and `INTELLIGENCE_SUBMISSIONS` off, the entry and the case list stay, and the list says
    *New cases cannot be sent…*.
 10. ***"…has U+200B at character 12, which a case cannot carry…"*** (any code point, any place), under a

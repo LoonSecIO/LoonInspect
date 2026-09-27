@@ -11,6 +11,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import participation
 from app.core.config import settings
 from app.core.sharing import get_or_create_settings
 from app.core.version import get_app_version
@@ -211,6 +212,8 @@ async def status(db: AsyncSession) -> dict:
         "enabled": enabled(),
         # INTELLIGENCE_SUBMISSIONS (#692): the page's two submission actions need it besides `enabled`, never inside it.
         "submissions": settings.intelligence_submissions,
+        # Contribution receipts list the page as the paid preview does (#706); `enabled` stays the paid preview alone.
+        "receipts": participation.enabled(),
         "credentialPresent": bool(row.intelligence_credential),
         "state": saved.get("state", "not_activated"),
         "updatesUntil": saved.get("updates_until"),

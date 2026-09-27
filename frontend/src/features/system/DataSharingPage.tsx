@@ -25,14 +25,14 @@ import { endpointHost, sendNowAvailability } from "@/features/system/sendNow";
 import { ApiError } from "@/config/api";
 import { env } from "@/config/env";
 import { useLocale } from "@/i18n/LocaleContext";
-import { useIntelligenceStore } from "@/features/system/intelligenceStore";
+import { sharingPointer, useIntelligenceStore } from "@/features/system/intelligenceStore";
 
 const TIERS: SharingTier[] = ["reveal", "keys", "off"];
 
 export function DataSharingPage() {
   const { t } = useLocale();
   const canWrite = useHasPermission(PERMISSIONS.SYSTEM_WRITE);
-  const intelligenceOffered = useIntelligenceStore((state) => state.enabled);
+  const pointer = useIntelligenceStore((state) => sharingPointer(state.enabled, state.receipts));
 
   const [settings, setSettings] = useState<DataSharingSettings | null>(null);
   const [globsDraft, setGlobsDraft] = useState("");
@@ -239,10 +239,10 @@ export function DataSharingPage() {
         <p className="mt-1 text-sm text-muted-foreground">{t.system.sharing.pageDescription}</p>
       </div>
 
-      {/* Paid access moved to its own page (#622): sharing describes uploads only. */}
-      {intelligenceOffered && (
+      {/* Paid access and the contribution receipt have their own page (#622, #706): sharing describes uploads only. */}
+      {pointer && (
         <p className="text-sm">
-          {t.intelligence.movedPointer}{" "}
+          {t.intelligence.pointer[pointer]}{" "}
           <Link to="/settings/intelligence-access" className="underline underline-offset-4">
             {t.nav.intelligenceAccess}
           </Link>
