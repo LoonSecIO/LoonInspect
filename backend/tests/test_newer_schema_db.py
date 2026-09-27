@@ -138,6 +138,17 @@ async def test_a_database_with_no_stamp_keeps_alembics_refusal(newer):
 
 @needs_db[0]
 @needs_db[1]
+async def test_a_stamp_table_with_no_row_keeps_alembics_refusal(newer):
+    """No migration leaves the table empty, but a hand edit can; an empty table says no more than a missing one."""
+    upgrade, stamp = newer
+    restore = f"op.execute(\"INSERT INTO schema_release (id, min_readable_release) VALUES (1, '{stamp}')\")"
+    await upgrade('op.execute("DELETE FROM schema_release")', restore)
+    with pytest.raises(CommandError, match=f"Can't locate revision identified by '{AHEAD}'"):
+        await database.init_db()
+
+
+@needs_db[0]
+@needs_db[1]
 async def test_alembics_error_on_a_database_this_image_carries_is_not_a_newer_schema(tenant_ready, tmp_path, monkeypatch, caplog):
     """Alembic can refuse a database whose every revision this image carries: here the image has two heads, as a build
     with two migrations off one parent does. That is a failure however the stamp reads, never a newer schema to start on."""
