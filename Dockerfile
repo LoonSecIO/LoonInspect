@@ -3,7 +3,12 @@
 # ---------------------------------------------------------------------------
 # Frontend build
 # ---------------------------------------------------------------------------
-FROM node:22-alpine AS frontend-build
+# Built once, on the machine doing the build, for every platform the image is for: the
+# stage's only output is dist/ (JS, CSS, HTML, fonts, images; no native code), and the
+# COPY --from below puts the same files in each architecture's image. Built per platform,
+# the arm64 half of a multi-arch build ran `npm ci` under QEMU, which crashed there
+# (`qemu: uncaught target signal 4`) and left the build waiting six hours (#714).
+FROM --platform=$BUILDPLATFORM node:22-alpine AS frontend-build
 WORKDIR /app/frontend
 
 # Manifest and lockfile first so the dependency layer is cached independently of

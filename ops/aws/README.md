@@ -49,7 +49,9 @@ Set two **repository variables** (not secrets) in GitHub:
 Then merge to main — the *Publish images* workflow pushes
 `looninspect:<sha>` and `looninspect-db:<sha>`, and publishing a release adds its
 version to them. The role trusts main and `v*` tags only, so a dispatch from a
-feature branch fails at the credentials step by design.
+feature branch fails at the credentials step by design. A run whose build hangs stops at
+45 minutes, saying *The job has exceeded the maximum execution time*:
+[docs/troubleshooting.md](../../docs/troubleshooting.md) §10 step 5.
 
 ## 3. Pod secrets (per pod)
 
