@@ -1273,7 +1273,7 @@ the hour after a failure; `docker compose restart app` makes it ask now.
    a release of it has nothing to copy and step 4's pull stops at `not found`. A run that
    works takes under six minutes and the job stops at 45: the build hung.
    - **Re-run jobs** on the run's page. A run that timed out in *Build and push app image*
-     pushed nothing, so the re-run builds both images; then re-run any *Release* run that
+     published neither image, so the re-run builds both; then re-run any *Release* run that
      failed for want of them, as its error says.
    - The re-run times out too → name the step it hung in. In *Build and push app image*, the
      last line of the form `#N [platform stage step/steps] …` whose `#N` never reaches `DONE`
