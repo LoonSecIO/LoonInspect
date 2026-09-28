@@ -38,7 +38,7 @@ jobs:
   publish:
     name: Build and push to ECR
     runs-on: ubuntu-latest
-    # A run that works takes two to five minutes. One that hangs held GitHub's six-hour
+    # A run that works takes under six minutes. One that hangs held GitHub's six-hour
     # default, and every later push's run waited behind it (#714); this fails it with
     # "The job has exceeded the maximum execution time", which
     # docs/troubleshooting.md §10 step 5 answers.

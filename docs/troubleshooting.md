@@ -1268,10 +1268,10 @@ the hour after a failure; `docker compose restart app` makes it ask now.
      the same.
    - `required variable LOONINSPECT_VERSION is missing a value` → `.env` has no
      `LOONINSPECT_VERSION` line. Add it, with the tag.
-5. **A *Publish images* run says *The job has exceeded the maximum execution time*** (on the
-   run's page, for whoever publishes the releases). That commit has no images, so a release of
-   it has nothing to copy and step 4's pull stops at `not found`. A run that works takes two to
-   five minutes and the job stops at 45: the build hung.
+5. **A *Publish images* run timed out**: its page says *The job has exceeded the maximum
+   execution time* (for whoever publishes the releases). That commit's images are missing, so
+   a release of it has nothing to copy and step 4's pull stops at `not found`. A run that
+   works takes under six minutes and the job stops at 45: the build hung.
    - **Re-run jobs** on the run's page. A run that timed out in *Build and push app image*
      pushed nothing, so the re-run builds both images; then re-run any *Release* run that
      failed for want of them, as its error says.
