@@ -19,6 +19,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import delete, select
 
+from app.core.content_keys import app_full_key
 from app.core.tenancy import reset_tenant_id, set_tenant_id
 from app.core.vuln import NO_CORPUS, forget_tenant_tiers, loaded_corpus
 from app.core.vuln_library import load_epoch_if_new, refresh_from_db
@@ -81,8 +82,6 @@ def _answer(key: str, first: int, stamp: str | None, **counts: int) -> dict:
 
 
 def _key(build: str) -> str:
-    from app.core.content_keys import app_full_key
-
     name, bundle_id, version = BUILDS[build]
     return app_full_key(name, bundle_id, version, None)
 
@@ -214,7 +213,6 @@ async def test_the_list_reads_the_device_counts_once_and_answers_as_it_did(count
     for vuln in VULNS[1:]:
         assert (await ask({"vuln": vuln, "page_size": 500}))[0]["items"], f"vuln={vuln} answers nothing to compare"
 
-    asked = 0
     for vuln, order, variant, (page, page_size) in product(VULNS, ORDERS, VARIANTS, PAGES):
         params = {"vuln": vuln, "order": order, **variant, "page": page, "page_size": page_size}
         if params.get("app_hash"):
@@ -226,5 +224,3 @@ async def test_the_list_reads_the_device_counts_once_and_answers_as_it_did(count
         assert once == before, params
         assert (len(reads), len(walks)) == (1, 2 if params.get("app_hash") else 3), params
         assert ("installed_apps.app_hash = " in reads[0]) == bool(params.get("app_hash")), params
-        asked += 1
-    assert asked == len(VULNS) * len(ORDERS) * len(VARIANTS) * len(PAGES)

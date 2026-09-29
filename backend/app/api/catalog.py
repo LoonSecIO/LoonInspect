@@ -179,12 +179,12 @@ async def list_catalog(
         raise HTTPException(status_code=409, detail=NO_ANSWER)
 
     # The device counts, read ONCE for the request (#726), and below the refusal so a 409 reads
-    # none, as before. The three statements below — the total, the page, the summary — each
-    # joined the grouped subquery, and Postgres walked every install in the tenant for each:
-    # three walks a request whatever the page size, 0.7 s a walk at 14,000 Macs. A MATERIALIZED
-    # CTE is shared only within one statement, so it meant folding the three into one query with
-    # a row to stand on when the page is empty; measured at 14,000 Macs it costs what this does,
-    # and this leaves the three statements as they were. A window count folds only the total.
+    # none, as before. The total, the page and the summary below each joined the grouped
+    # subquery, and Postgres walked every install in the tenant for each: three walks a request
+    # whatever the page size, 0.7 s a walk at 14,000 Macs. A MATERIALIZED CTE is shared only
+    # within one statement, so it meant folding all three into one query, with a row to stand on
+    # when the page is empty; measured at 14,000 Macs it costs what this does, and this leaves
+    # the three statements as they were. A window count folds in only the total: two walks.
     counts = await _device_counts_once(db, app_hash)
     devices = func.coalesce(counts.c.devices, 0)
     stmt = select(AppCatalogEntry, devices.label("devices")).outerjoin(
