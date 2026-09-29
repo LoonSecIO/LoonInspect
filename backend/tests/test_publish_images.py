@@ -156,3 +156,46 @@ def test_neither_image_published_builds_both(tmp_path):
     done, outputs = _run_check(tmp_path, app="not-found", db="not-found")
     assert done.returncode == 0, done.stdout + done.stderr
     assert outputs == {"app": "false", "db": "false"}
+
+
+# --- #694: only a genuine miss reads as not published ----------------------------------------
+
+
+@needs_bash
+def test_a_genuine_miss_still_reads_as_not_published(tmp_path):
+    # Unchanged by #694: ImageNotFoundException is the one failure that means "go ahead".
+    done, outputs = _run_check(tmp_path, app="not-found", db="found")
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert outputs == {"app": "false", "db": "true"}
+
+
+@needs_bash
+@pytest.mark.parametrize("status", ["denied", "throttled"])
+def test_a_refused_check_stops_the_job_instead_of_reading_as_not_published(tmp_path, status):
+    # The bug #694 fixes: before this, any non-zero exit — a missing grant, a throttle —
+    # was silently read the same as "not published", and the job went on to build.
+    done, outputs = _run_check(tmp_path, app=status, db="found")
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "::error::" in done.stdout
+    assert "app" not in outputs, "a refused check must not write an answer, true or false"
+    assert "db" not in outputs, "the job stops at the first refusal; it never asks about the second repository"
+
+
+@needs_bash
+def test_the_refusal_names_the_likely_causes_in_the_operators_words(tmp_path):
+    done, _ = _run_check(tmp_path, app="denied", db="found")
+    message = done.stdout
+    assert "ecr:DescribeImages" in message
+    assert "AWS_REGION" in message
+    assert "throttling" in message
+    assert "docs/troubleshooting.md" in message
+
+
+@needs_bash
+def test_a_refusal_on_the_second_repository_still_leaves_the_firsts_true_answer_written(tmp_path):
+    # Downstream steps never see this (a failed step skips the rest of the job), but the
+    # script itself must fail at exactly the repository that was refused, not before.
+    done, outputs = _run_check(tmp_path, app="found", db="denied")
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert outputs == {"app": "true"}
+    assert "::error::" in done.stdout
