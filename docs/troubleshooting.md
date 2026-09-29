@@ -473,9 +473,11 @@ the run `jobID`, the token's index settings, and the search you ran.
      the installed-app tenant/device index before removing the older tenant-only index.
      It blocks writes during the transactional build, even with the vulnerability
      preview off. Schedule a maintenance window and allow space for both indexes during
-     replacement. Check `docker compose logs db` for storage errors or lock waits; let
-     the build finish rather than repeatedly restarting it. If it fails, keep the logs
-     and follow the migration-failure step below; do not remove indexes by hand.
+     replacement. #624's walks from v1.0.0 timed it at a second or two on 600,000
+     installed apps, and it takes longer on a larger table. Check `docker compose logs db`
+     for storage errors or lock waits; let the build finish rather than repeatedly
+     restarting it. If it fails, keep the logs and follow the migration-failure step
+     below; do not remove indexes by hand.
    - an Alembic error → the migration on startup failed. Do not downgrade by hand
      ([`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) §6); reportable **F**.
    - *This database was upgraded by a newer release … which recorded that only v2.1.0 or later

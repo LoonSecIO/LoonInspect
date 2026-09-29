@@ -1,6 +1,6 @@
 # Contributing
 
-LoonInspect has shipped v1.0.0 and continues to evolve. Contributions are welcome,
+LoonInspect has shipped v2.0.0 and continues to evolve. Contributions are welcome,
 with two things worth knowing up front.
 
 ## Open an issue first

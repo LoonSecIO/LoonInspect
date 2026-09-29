@@ -1,7 +1,8 @@
 # Feature flags: the register
 
 Status: **verdicts ruled 2026-09-26 (#652) and 2026-09-27 (#692), with the #692 row's kill
-condition per Kyle's instruction of 2026-09-27**. Every release runs a flag
+condition per Kyle's instruction of 2026-09-27; copied into the v2.0.0 release notes
+([`releases/v2.0.0.md`](releases/v2.0.0.md)) on 2026-09-29**. Every release runs a flag
 gate: each switch below gets one of three verdicts, **promote** (the default flips on and
 the flag is scheduled for removal), **keep** (with the reason and the release it is expected
 to die in), or **delete** (the code path behind it goes with it), recorded here and in the
@@ -63,3 +64,4 @@ pull request lands.
 | 2026-09-26 | The v2.0.0 verdicts as ruled on #652 ("accept all"): every recommendation became its row's verdict, `DATABASE_MODE` became a mode kept for good now that #662 made `external` real, and the two area overrides carry their reasons as v2.1 delete questions. No default flipped: the four promote pull requests wait for #624's deployed checks. |
 | 2026-09-27 | `INTELLIGENCE_SUBMISSIONS` added (#692): Request coverage and Report an incorrect match get their own switch, off by default and kept off at the tag, as Kyle ruled ("I would prefer for the primary pod to not have it enabled out of the gate"). |
 | 2026-09-27 | `INTELLIGENCE_SUBMISSIONS`'s kill condition, per Kyle's instruction of 2026-09-27: its default flips on once prod Support has `SubmissionsEnabled` and #624's walk of a submission through to publication has passed, and the switch goes one release later. v2.0.0 still ships it off; that walk and LoonVD-Internal #36 come after the tag. |
+| 2026-09-29 | The v2.0.0 gate's first and last steps (#620): the switches listed again at `4b0edb0` (the thirteen `: bool =` settings in `config.py`, `DATABASE_MODE` and the registry's three keys) are the seventeen rows above, so no row was added, and the verdicts are copied into [`releases/v2.0.0.md`](releases/v2.0.0.md), the release's body. No default flipped: the four promote pull requests still wait for #624's deployed checks. |

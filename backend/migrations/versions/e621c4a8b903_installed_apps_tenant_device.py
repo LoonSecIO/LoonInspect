@@ -14,7 +14,7 @@ Revision ID: e621c4a8b903
 Revises: d621a30f7b12
 """
 
-# release-note: this rebuilds the installed-apps index as the new image starts, and the instance answers nothing until it finishes, so update in a maintenance window and do not restart the container while it runs. The new index needs free disk beside the old one until the old one is dropped (26 MB at one million installed apps, docs/vulnerability-scale-validation.md); how long it takes on a large table is not measured yet.
+# release-note: this rebuilds the installed-apps index as the new image starts, and the instance answers nothing until it finishes, so update in a maintenance window and do not restart the container while it runs. On 600,000 installed apps (10,000 devices with 60 each) it took 2.4 s and 1.2 s of wall clock in #624's two timed walks from v1.0.0, about a second of each the tooling's own start-up; it takes longer on a larger table. The new index needs free disk beside the old one until the old one is dropped (4.3 MB at 600,000 installed apps on that walk, 26 MB at one million after the scale run's churn, docs/vulnerability-scale-validation.md).
 
 from alembic import op
 
