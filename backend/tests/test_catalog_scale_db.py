@@ -4,8 +4,10 @@
 RUN_CATALOG_SCALE=1 RUN_DB_TESTS=1 enables it; CATALOG_SCALE_DEVICES chooses 1000/8000/14000.
 Seeds the fleet directly in SQL at about 110 apps a Mac, judges its catalog against a real
 epoch, then times what the Catalog and Vulnerabilities pages ask of `GET /api/catalog`, through
-the API, as #726 measured them: p95 over 20 loads after 2 warm-ups. At 14,000 it prints the
-plan of every statement the Catalog page's request sends that reads installs or pages the list.
+the API, as #726 measured them: p95 over 20 loads after 2 warm-ups. It prints the timings and
+the plan of every statement the Catalog page's request sends that reads installs or pages the
+list, then fails where a page is over its budget. Run each size on a fresh database: a table
+the last run filled and emptied is still as long, and a sequential scan reads all of it.
 This is not an ingest, sweep, concurrent-writer or production throughput benchmark.
 """
 
@@ -42,12 +44,20 @@ pytestmark = [
 CORE, MID, TAIL, RETIRED = 40, 150, 3000, 5
 BUNDLE_PREFIX = "test.catalogscale."
 LOADS, WARMUPS = 20, 2
+# Kyle's budgets of 2026-09-29 (#726), at p95, for the band of 1,000 to 8,000 Macs and up to
+# 14,000: the Catalog is a list page, 1 s; the Vulnerabilities page is a heavy one, 2 s.
+BUDGETS = {"catalog": 1.0, "vulnerabilities": 2.0}
 
 # What the pages send, byte for byte: the Catalog tab's one request (`CatalogPage.tsx`, the page
 # size `ALL_ROWS_PAGE_SIZE`), and the Vulnerabilities page's three, which it sends together.
 CATALOG = "/api/catalog?pageSize=5000&jamf=all&installedOnly=true"
 OLDEST = "/api/catalog?pageSize=10&vuln=findings&order=age"
-VULNERABILITIES = ("/api/catalog?pageSize=10&vuln=findings&order=exposure&page=1", OLDEST, "/api/catalog?pageSize=10&vuln=patchable&order=payoff")
+VULNERABILITIES = (
+    "/api/catalog?pageSize=10&vuln=findings&order=exposure&page=1",
+    OLDEST,
+    "/api/catalog?pageSize=10&vuln=patchable&order=payoff",
+)
+IDENTITY = ("name", "bundle_id", "version", "app_hash", "version_hash", "key_title", "key_full")
 
 
 def _builds() -> list[dict]:
@@ -94,11 +104,27 @@ def _answer(index: int, build: dict) -> dict | None:
     else:
         return None
     published = date(2026, 6, 1) - timedelta(days=37 * ver + 11 * (app % 50) + 400 * tier)
-    stamp = f"{published.isoformat()}T00:00:00Z" if total else None
+    stamp = f"{published.isoformat()}T00:00:00Z"
     counts = {"total": total, "kev": kev, "critical": kev, "high": total - kev, "medium": 0, "low": 0}
-    oldest = {"total": stamp, "critical": stamp if kev else None, "high": stamp if total - kev else None, "medium": None, "low": None}
+    oldest = {band: stamp if counts[band] else None for band in ("total", "critical", "high", "medium", "low")}
     ids = [f"CVE-2025-{10000 + 20 * index + finding}" for finding in range(total)]
     return _row(key_full=build["key_full"], ids=ids, counts=counts, oldest_published=oldest)
+
+
+def _catalog_row(build: dict) -> dict:
+    """The catalog row a sweep and the Jamf pass would have left for a build, as this read needs
+    it: a Jamf title on the core apps, and on every core build behind its newest the target key
+    (#482) the judge looks the newest up by."""
+    core, behind = build["tier"] == 0, build["tier"] == 0 and build["ver"] > 0
+    return {
+        **{name: build[name] for name in IDENTITY},
+        "first_seen_at": NOW - timedelta(days=90),
+        "last_seen_at": NOW,
+        "jamf_title_ids": [f"SCALE{build['app']}"] if core else None,
+        "patch_state": ("behind" if behind else "latest") if core else None,
+        "latest_version": build["newest"] if core else None,
+        "vuln_target_key": app_full_key(build["name"], build["bundle_id"], build["newest"], None) if behind else None,
+    }
 
 
 _MACS = text(
@@ -136,7 +162,8 @@ _INSTALL = text(
         UNION ALL
         -- The long tail: ten draws weighted toward its head. Two draws of one app are two
         -- installs of one build, as two copies of an app on one Mac are.
-        SELECT macs.id, 2, floor(3000 * power(mod(hashtext(macs.n || ':tail:' || k)::bigint + 2147483648, 1000000) / 1e6, 2))::int, 0
+        SELECT macs.id, 2,
+               floor(3000 * power(mod(hashtext(macs.n || ':tail:' || k)::bigint + 2147483648, 1000000) / 1e6, 2))::int, 0
         FROM macs CROSS JOIN generate_series(0, 9) AS k
     )
     INSERT INTO installed_apps (device_id, name, bundle_id, version, app_hash, version_hash, key_title, key_full)
@@ -158,34 +185,19 @@ async def seed(db, connection_id: int, devices: int) -> dict:
     builds = _builds()
     await db.execute(_MACS, {"connection": connection_id, "last": devices - 1})
     installed = [build for build in builds if not build["retired"]]
-    columns = ("tier", "app", "ver", "name", "bundle_id", "version", "app_hash", "version_hash", "key_title", "key_full")
-    await db.execute(_INSTALL, {"connection": connection_id, **{name: [build[name] for build in installed] for name in columns}})
-    await db.execute(
-        insert(AppCatalogEntry),
-        [
-            {
-                **{name: build[name] for name in ("name", "bundle_id", "version", "app_hash", "version_hash", "key_title", "key_full")},
-                "first_seen_at": NOW - timedelta(days=90),
-                "last_seen_at": NOW,
-                "jamf_title_ids": [f"SCALE{build['app']}"] if build["tier"] == 0 else None,
-                "patch_state": ("latest" if build["ver"] == 0 else "behind") if build["tier"] == 0 else None,
-                "latest_version": build["newest"] if build["tier"] == 0 else None,
-                "vuln_target_key": (
-                    app_full_key(build["name"], build["bundle_id"], build["newest"], None) if build["tier"] == 0 and build["ver"] else None
-                ),
-            }
-            for build in builds
-        ],
-    )
+    picked = {name: [build[name] for build in installed] for name in ("tier", "app", "ver", *IDENTITY)}
+    await db.execute(_INSTALL, {"connection": connection_id, **picked})
+    await db.execute(insert(AppCatalogEntry), [_catalog_row(build) for build in builds])
     rows = [row for row in (_answer(index, build) for index, build in enumerate(builds)) if row is not None]
     bundle, signature = _rewritten(rows=rows)
     assert await load_epoch_if_new(db, _pointer(signature), transport=_serving(bundle)) is not None
     judged = await judge_vuln(db, None, now=NOW)
     await db.commit()
-    seeded_ids = select(Device.id).where(Device.mdm_connection_id == connection_id, Device.external_id.like("CATSCALE-%"))
+    seeded = select(Device.id).where(Device.mdm_connection_id == connection_id, Device.external_id.like("CATSCALE-%"))
+    installs = await db.scalar(select(func.count()).select_from(InstalledApp).where(InstalledApp.device_id.in_(seeded)))
     return {
         "devices": devices,
-        "installed_apps": await db.scalar(select(func.count()).select_from(InstalledApp).where(InstalledApp.device_id.in_(seeded_ids))),
+        "installed_apps": installs,
         "catalog_builds": len(builds),
         "assessed_builds": len(rows),
         "judged": judged,
@@ -289,15 +301,18 @@ async def test_catalog_and_vulnerabilities_pages_at_fleet_scale(db, fleet, admin
             ],
         }
         print("CATALOG_SCALE_RESULT=" + json.dumps(report, sort_keys=True), flush=True)
-        if devices == 14000:
-            # Where the time goes, statement by statement: the plans are re-run here, on this
-            # test's own tenant-bound session, so row-level security shapes them as it did the request's.
-            raw = await db.connection()
-            for sql, parameters, _ in statements:
-                if "installed_apps" in sql or "LIMIT" in sql:
-                    plan = (await raw.exec_driver_sql("EXPLAIN (ANALYZE, BUFFERS) " + sql, parameters)).scalars().all()
-                    print("CATALOG_SCALE_PLAN=" + " ".join(sql.split())[:200], *plan, sep="\n", flush=True)
-            await db.rollback()
+        # Where the time goes, statement by statement, at every size: the plan changes with the
+        # fleet. Re-run on this test's own tenant-bound session, so row-level security shapes each
+        # plan as it shaped the request's.
+        raw = await db.connection()
+        for sql, parameters, _ in statements:
+            if "installed_apps" in sql or "LIMIT" in sql:
+                plan = (await raw.exec_driver_sql("EXPLAIN (ANALYZE, BUFFERS) " + sql, parameters)).scalars().all()
+                print("CATALOG_SCALE_PLAN=" + " ".join(sql.split())[:200], *plan, sep="\n", flush=True)
+        await db.rollback()
+        for page, budget in BUDGETS.items():
+            p95 = report["timings"][page]["p95"]
+            assert p95 < budget, f"the {page} page's p95 is {p95} s at {devices} Macs, over its {budget} s budget (#726)"
     finally:
         await db.rollback()
         seeded = select(Device.id).where(Device.mdm_connection_id == connection_id, Device.external_id.like("CATSCALE-%"))
