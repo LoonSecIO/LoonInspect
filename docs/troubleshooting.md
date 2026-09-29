@@ -394,9 +394,12 @@ directly.*
      out**: a container started with `SCHEDULER_ENABLED=false` is web-only — it serves the
      pages and the API and runs no ticks at all, so nothing is ever attempted and neither
      line is ever written. `docker compose logs app | grep "scheduler started"` prints one
-     line per process that runs them, and no line at all is the answer, a setting rather
-     than a fault ([`operations.md` §7](operations.md#7-more-than-one-app-process)). The
-     second reason is the next bullet. Still rising with neither line → reportable **D**,
+     line per process that runs them, at the default `LOG_LEVEL=INFO`; at `WARNING` or
+     above that line is never written either way, so an empty grep answers nothing until
+     the level is back at `INFO` (§0). At `INFO`, read `scheduler_enabled` on the
+     `starting` line instead — a direct value, not an inference from one line's absence
+     ([`operations.md` §7](operations.md#7-more-than-one-app-process)). The second reason
+     is the next bullet. Still rising with neither line → reportable **D**,
      once step 2's rows are *all* enabled: the age is tenant-wide, and a destination
      disabled after its events fanned out holds them pending until it is enabled again,
      pinning the age with no line in either log.
@@ -491,6 +494,12 @@ the run `jobID`, the token's index settings, and the search you ran.
      (`?ssl=require`, `verify-ca` or `verify-full`). If the lines say *asyncpg spells the
      TLS parameter `ssl`, not `sslmode`* → the URL used libpq's spelling, which asyncpg
      does not read. Fix the URL in `.env`, `docker compose up -d`.
+   - `1 validation error for Settings` whose next lines name `SYNC_TIMEZONE` and say *must
+     be a canonical tz database name in Area/Location form* → the shipped image has no
+     `tzdata-legacy` package, so a legacy alias such as `US/Central` or `CST6CDT` is a real
+     tz database name that this image does not load. Both are Central time; its canonical
+     name is `America/Chicago`. Set `SYNC_TIMEZONE` in `.env` to the canonical name for
+     your zone, then `docker compose up -d`.
    - *The database role this instance connected as is a superuser* (or *a role with
      BYPASSRLS*) *, so row-level security would not apply to it* → `DATABASE_URL` names the
      master or `postgres` user, and the app refuses before any migration. Prepare the
@@ -708,8 +717,12 @@ and step 2 ends with how to tell that apart from a broken exchange.
    not in the answer yet. If the date has not moved for several days while the exchange is
    succeeding, step 2's log lines say why; if they say `updated` with an unmoved date, the
    published corpus itself has not moved, which is reportable state **I**.
-6. **Settings › Data Sharing says the last exchange *failed*.** The reason is printed
-   beneath *Last exchange*. It names the host the container dialled — `api.next.loonsec.io`
+6. **Settings › Data Sharing says the last exchange *failed*.** If nothing ran on its
+   clock at all — no exchange, ever, not even a failed one — check `scheduler_enabled` on
+   the `starting` line first (`docker compose logs app | grep starting`):
+   `SCHEDULER_ENABLED=false` makes this container web-only (§3), and **Send now** below is
+   the only way an exchange runs while it is off. The reason is printed beneath *Last
+   exchange*. It names the host the container dialled — `api.next.loonsec.io`
    unless `SHARING_ENDPOINT` is set, in `.env` or a hosted pod's template — and ends with
    how many times the run tried. **Send now**, in the same page's *Exactly what would be
    sent* box, runs an exchange on demand and shows the row it wrote, so each check below
@@ -1069,6 +1082,13 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
      the JDKs, Jamf Connect Login), so the inventory has nothing to match and those Macs read
      absent until LoonInspect reads the attribute itself. Working as built.
 
+7. **The table hasn't moved in over an hour, and nothing above explains it.** The hourly
+   refresh runs on the scheduler; check `scheduler_enabled` on the `starting` line
+   (`docker compose logs app | grep starting`) before reporting anything: a container
+   started with `SCHEDULER_ENABLED=false` is web-only (§3) and runs no hourly sync at all,
+   though **Sync now** (step 1) still refreshes it — the button calls the same work
+   directly rather than through the clock.
+
 **J.** A refresh that reports no error leaves the table saying *No Jamf Patch titles
 synced yet.*, a title Jamf publishes stays missing from the list with *Only titles with
 devices* unticked for more than a day, a press of **Sync now** writes nothing to the
@@ -1205,7 +1225,11 @@ settings. It means one thing: a published release exists that this build does no
 It never appears for a merge to `main`, which is staging, and it never appears while the
 check cannot answer. Its answer, and when it has none its reason, are on **Settings ›
 Support › Updates**, with the steps to update. The check asks once a day, and again within
-the hour after a failure; `docker compose restart app` makes it ask now.
+the hour after a failure; `docker compose restart app` makes it ask now. Unlike the other
+clock-driven sections here, this check does not run on the scheduler: it is asked when a
+page reads it and the answer is cached for that long, so it keeps asking on a container
+started with `SCHEDULER_ENABLED=false` (§3) — `scheduler_enabled` on the `starting` line
+is not the check to make here.
 
 1. **Read the Updates block's sentence**, under *This build*, *Latest release* and *Last checked*:
    - *Up to date: this build contains …* → there is nothing to take. A release published
