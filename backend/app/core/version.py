@@ -18,7 +18,7 @@ _DEV_VERSION = "0.0.0-dev+local"
 # build_info.json names a commit, not a release, so the tree says it: the pull request that prepares a
 # release sets this before the tag, and release.yml refuses to tag the images of a tag that
 # disagrees. init_db compares it with a newer database's min_readable_release (docs/operations.md §5).
-RELEASE = "v1.0.0"
+RELEASE = "v2.0.0"
 
 
 @lru_cache
