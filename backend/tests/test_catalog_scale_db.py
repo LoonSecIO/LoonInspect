@@ -1,7 +1,7 @@
 # ruff: noqa: F811 — pytest injects imported fixtures by name.
 """Opt-in synthetic #726 measurement; run alone on disposable PostgreSQL with -s.
 
-RUN_CATALOG_SCALE=1 RUN_DB_TESTS=1 enables it; CATALOG_SCALE_DEVICES chooses 1000/8000/14000.
+RUN_CATALOG_SCALE=1 RUN_DB_TESTS=1 enables it; CATALOG_SCALE_DEVICES chooses 1000/8000/14000 (100 checks the seed).
 Seeds the fleet directly in SQL at about 110 apps a Mac, judges its catalog against a real
 epoch, then times what the Catalog and Vulnerabilities pages ask of `GET /api/catalog`, through
 the API, as #726 measured them: p95 over 20 loads after 2 warm-ups. It prints the timings and
