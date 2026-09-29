@@ -8,7 +8,8 @@ from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import distinct, func, or_, select
+from sqlalchemy import BigInteger, String, bindparam, column, distinct, func, or_, select
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.catalog.index import lookup_versions
@@ -53,17 +54,31 @@ def _counted(band: str, counts=AppCatalogEntry.vuln_counts):
 def _device_counts(app_hash: str | None = None):
     """version_hash -> distinct devices carrying it now (tenant-scoped by RLS on installed_apps).
 
-    `app_hash` is pushed inside the subquery on purpose (#299). The list joins this on the
-    nullable side of an outer join, where Postgres cannot push the caller's predicate in,
-    and evaluates it once per use — three times a request. Filtering only the outer
-    `AppCatalogEntry` would leave the record page walking every install in the tenant to
-    answer for one app; scoped here, its cost grows with one app's popularity and not
-    with the fleet's app count.
+    `app_hash` is pushed inside the subquery on purpose (#299). Joined on the nullable side of
+    an outer join, Postgres cannot push the caller's predicate in, and evaluates it once per
+    statement that names it. Filtering only the outer `AppCatalogEntry` would leave the
+    record page walking every install in the tenant to answer for one app; scoped here, its
+    cost grows with one app's popularity and not with the fleet's app count. The list reads
+    it once a request rather than once a statement (`_device_counts_once`, #726).
     """
     stmt = select(InstalledApp.version_hash, func.count(distinct(InstalledApp.device_id)).label("devices"))
     if app_hash is not None:
         stmt = stmt.where(InstalledApp.app_hash == app_hash)
     return stmt.group_by(InstalledApp.version_hash).subquery()
+
+
+async def _device_counts_once(db: AsyncSession, app_hash: str | None = None):
+    """`_device_counts`, read once and handed back as rows for a request's statements to join in
+    its place (#726): the same two columns, so every expression on `counts.c.devices` reads the
+    numbers it did. Two arrays in two bound parameters whatever the fleet carries, where a
+    VALUES list would bind two a build and pass the wire protocol's 32,767 at 16,384 builds.
+    """
+    counts = _device_counts(app_hash)
+    rows = (await db.execute(select(counts.c.version_hash, counts.c.devices))).all()
+    hashes = bindparam("counted_version_hashes", [row.version_hash for row in rows], type_=ARRAY(String(32)))
+    devices = bindparam("counted_devices", [row.devices for row in rows], type_=ARRAY(BigInteger))
+    columns = (column("version_hash", String(32)), column("devices", BigInteger))
+    return func.unnest(hashes, devices).table_valued(*columns).render_derived()
 
 
 async def _title_refs(db: AsyncSession, entries: list[AppCatalogEntry]) -> dict[str, CatalogTitleRef]:
@@ -143,25 +158,6 @@ async def list_catalog(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=100, ge=1, le=5000, alias="pageSize"),
 ) -> CatalogListResponse:
-    counts = _device_counts(app_hash)
-    devices = func.coalesce(counts.c.devices, 0)
-    stmt = select(AppCatalogEntry, devices.label("devices")).outerjoin(
-        counts, counts.c.version_hash == AppCatalogEntry.version_hash
-    )
-    if app_hash is not None:
-        stmt = stmt.where(AppCatalogEntry.app_hash == app_hash)
-    if installed_only:
-        stmt = stmt.where(devices > 0)
-    if jamf == "matched":
-        stmt = stmt.where(AppCatalogEntry.jamf_title_ids.is_not(None))
-    elif jamf == "unmatched":
-        stmt = stmt.where(AppCatalogEntry.jamf_title_ids.is_(None))
-    if q:
-        like = f"%{q}%"
-        stmt = stmt.where(
-            or_(AppCatalogEntry.name.ilike(like), AppCatalogEntry.bundle_id.ilike(like), AppCatalogEntry.version.ilike(like))
-        )
-
     # One corpus object for the whole response, so every row's `corpusAsOf`, the header
     # stamp and the filter below are the same fact rather than three reads of a moving one.
     # And ONE read of the epoch, handed to everything below that serves a stored answer:
@@ -181,6 +177,32 @@ async def list_catalog(
     filtered = vuln != "all" or band is not None
     if filtered and corpus.as_of is None:
         raise HTTPException(status_code=409, detail=NO_ANSWER)
+
+    # The device counts, read ONCE for the request (#726), and below the refusal so a 409 reads
+    # none, as before. The three statements below — the total, the page, the summary — each
+    # joined the grouped subquery, and Postgres walked every install in the tenant for each:
+    # three walks a request whatever the page size, 0.7 s a walk at 14,000 Macs. A MATERIALIZED
+    # CTE is shared only within one statement, so it meant folding the three into one query with
+    # a row to stand on when the page is empty; measured at 14,000 Macs it costs what this does,
+    # and this leaves the three statements as they were. A window count folds only the total.
+    counts = await _device_counts_once(db, app_hash)
+    devices = func.coalesce(counts.c.devices, 0)
+    stmt = select(AppCatalogEntry, devices.label("devices")).outerjoin(
+        counts, counts.c.version_hash == AppCatalogEntry.version_hash
+    )
+    if app_hash is not None:
+        stmt = stmt.where(AppCatalogEntry.app_hash == app_hash)
+    if installed_only:
+        stmt = stmt.where(devices > 0)
+    if jamf == "matched":
+        stmt = stmt.where(AppCatalogEntry.jamf_title_ids.is_not(None))
+    elif jamf == "unmatched":
+        stmt = stmt.where(AppCatalogEntry.jamf_title_ids.is_(None))
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(
+            or_(AppCatalogEntry.name.ilike(like), AppCatalogEntry.bundle_id.ilike(like), AppCatalogEntry.version.ilike(like))
+        )
     if vuln == "findings":
         stmt = stmt.where(covered, total_findings > 0)
     elif vuln == "kev":
