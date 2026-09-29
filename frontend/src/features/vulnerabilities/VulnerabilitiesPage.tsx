@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
+import { LoonLoading } from "@/components/icons/LoonLoading";
 import { ApiError, apiRequest } from "@/config/api";
 import { useAuthStore, useHasPermission } from "@/features/auth/store";
 import { PERMISSIONS } from "@/features/auth/types";
@@ -308,7 +309,14 @@ export function VulnerabilitiesPage() {
       {shown.banner && <CorpusBanner corpusAsOf={load === "silent" ? null : (answer?.corpusAsOf ?? null)} t={t} />}
 
       {shown.notJudged && <p className="text-sm text-muted-foreground">{copy.notYetJudged}</p>}
-      {!shown.controls && status !== null && <p className={`text-sm ${statusClass}`}>{status}</p>}
+      {/* Before `shown.controls`, this is always the page's first read, never a refetch —
+          pageView.ts's `controls` only turns on once an answer has arrived. So this is the
+          one spot on this page that draws the beating loon (#720); the table body's own
+          `status` row below is a refetch under a changed filter, and the search box stays
+          mounted through it on purpose (pageView.ts). */}
+      {!shown.controls && status !== null && (
+        <p className={`text-sm ${statusClass}`}>{load === "loading" ? <LoonLoading label={status} /> : status}</p>
+      )}
 
       {shown.controls && (
         <>
@@ -446,7 +454,7 @@ export function VulnerabilitiesPage() {
             <section className="space-y-3 rounded-lg border bg-card p-4">
               <h2 className="text-lg font-medium">{copy.byTheNumbers}</h2>
               {numbersFailed && <p className="text-sm text-muted-foreground">{copy.numbersFailed}</p>}
-              {numbers === null && !numbersFailed && <p className="text-sm text-muted-foreground">{copy.loading}</p>}
+              {numbers === null && !numbersFailed && <p className="text-sm text-muted-foreground"><LoonLoading label={copy.loading} /></p>}
               {numbers?.capturedAt && <p className="text-sm text-muted-foreground">{copy.numbersAsOf(new Date(numbers.capturedAt).toLocaleDateString())}{numbers.runId ? ` · ${copy.numbersRun(numbers.runId)}` : ""}</p>}
               {/* Four columns, seven keys: the ledger's three are absent for their own reason, so they open a row. */}
               {numbers && (

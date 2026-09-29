@@ -107,3 +107,14 @@ body {
 @media(prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0s !important; animation-duration: 0s !important; }
 }
+
+/* The loading loon (components/icons/LoonLoading.tsx): two beats of the checkered back and
+   a rest, 1.8 s a cycle. Lengths are loon.svg user units: the origin is the shoulder, where
+   the line of the back meets the lens's straight edge. The mark fades in after 300 ms so a
+   quick answer never flashes it; the reduced-motion rule above leaves it still. */
+.loon-loading-mark { animation: loon-appear 200ms ease-out 300ms both; }
+.loon-loading-bird { transform-box: view-box; animation: loon-rise 1.8s ease-in-out infinite; }
+.loon-loading-back { transform-box: view-box; transform-origin: 402.23px 436.39px; animation: loon-beat 1.8s ease-in-out infinite; }
+@keyframes loon-appear { from { opacity: 0; } to { opacity: 1; } }
+@keyframes loon-beat { 0%, 58%, 100% { transform: rotate(0deg); } 14%, 42% { transform: rotate(32deg); } 28% { transform: rotate(6deg); } }
+@keyframes loon-rise { 0%, 58%, 100% { transform: translateY(0); } 14%, 42% { transform: translateY(-10px); } 28% { transform: translateY(-5px); } }

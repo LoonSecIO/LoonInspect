@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { LoonLoading } from "@/components/icons/LoonLoading";
 import { listCatalog } from "@/features/catalog/api";
 import { LatestCell, PatchAnswerCell, TitlesCell } from "@/features/catalog/PatchAnswerCell";
 import type { CatalogEntry, CatalogJamfFilter } from "@/features/catalog/types";
@@ -189,7 +190,7 @@ export function CatalogPage() {
             {loading && (
               <tr>
                 <td className="px-4 py-4 text-muted-foreground" colSpan={11}>
-                  {t.catalog.loading}
+                  <LoonLoading label={t.catalog.loading} />
                 </td>
               </tr>
             )}
