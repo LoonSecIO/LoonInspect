@@ -9,6 +9,13 @@ override the README's pull commands read. The copy itself was run against two lo
 registries (#655's pull request); its first real push is a v2.0.0 prerelease. Its guards run
 here too, under bash with a stand-in `docker`, so an edit cannot quietly let a version move.
 
+The `images` job's own "already published?" question (#694) is pinned too: `batch-get-image`
+answers a genuine miss inside its JSON (a 200 with a `failures` entry) rather than by failing
+the call, so a nonzero exit from it is never a miss — it is the question going unanswered,
+the same distinction publish-images.yml's `describe-images` check draws for the other
+workflow. That must stop the job with a sentence in the operator's vocabulary rather than the
+raw AWS error the step used to die on under the runner's default `set -e`.
+
 Pure: no database, no app import; files read from disk, and no registry reached.
 """
 
@@ -18,6 +25,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 from pathlib import Path
 
@@ -155,3 +163,69 @@ def test_the_copy_never_moves_a_version_and_checks_what_it_pushed(tmp_path, case
     assert done.returncode == 1 and "::error::" in done.stdout and words in done.stdout, done.stdout + done.stderr
     # Only the push that was checked and found wrong happened; the second image was never tried.
     assert pushed == (GHCR[:1] if case == "garbled" else [])
+
+
+# --- #694: a refused "is it already there?" question stops the job, in the operator's words -
+
+
+def _tag_step() -> str:
+    (step,) = [s["run"] for s in _release()["jobs"]["images"]["steps"] if s.get("name", "").startswith("Add the version tag")]
+    return step
+
+
+# batch-get-image is the only call this test drives; a call this stub was not told to expect
+# is a bug in the test, not a real AWS answer, so it fails loudly (exit 2) rather than guess.
+FAKE_AWS_BATCH_GET = r"""#!/usr/bin/env bash
+if [ "$1 $2" != "ecr batch-get-image" ]; then
+  echo "test stub: unexpected aws call: $*" >&2
+  exit 2
+fi
+shift 2
+repo="" tag=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --repository-name) repo="$2"; shift 2 ;;
+    --image-ids) tag="${2#imageTag=}"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+status=$(awk -v r="$repo" -v t="$tag" '$1==r && $2==t {print $3}' "$CASES_FILE")
+if [ "$status" = "refused" ]; then
+  echo "An error occurred (AccessDeniedException) when calling the BatchGetImage operation:" \
+       "User is not authorized to perform: ecr:BatchGetImage on resource: $repo" >&2
+  exit 1
+fi
+echo "test stub: no case recorded for $repo:$tag" >&2
+exit 2
+"""
+
+
+@needs_bash_and_jq
+def test_a_refused_batch_get_image_stops_the_job_before_any_tag_is_pushed(tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    aws = bin_dir / "aws"
+    aws.write_text(FAKE_AWS_BATCH_GET)
+    aws.chmod(aws.stat().st_mode | stat.S_IEXEC)
+
+    cases = tmp_path / "cases.txt"
+    # Refused on the very first call this step makes: looninspect's SHA lookup.
+    cases.write_text("looninspect c0ffee refused\n")
+
+    env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "CASES_FILE": str(cases), "SHA": "c0ffee", "TAG": "v2.0.0"}
+    done = subprocess.run(
+        ["bash", "-e", "-c", _tag_step()], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30, check=False
+    )
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "AccessDeniedException" in done.stdout, "the raw AWS error must still reach the log"
+    assert "::error::" in done.stdout
+    assert "ecr:BatchGetImage" in done.stdout
+    assert "AWS_REGION" in done.stdout
+    assert "throttling" in done.stdout
+    assert "docs/troubleshooting.md" in done.stdout
+    # get()'s own redirect creates sha.json's (empty) target before aws even runs, so its
+    # presence proves nothing; tag.json is only written by the *next* get() call, and
+    # manifest.json only once a digest is picked — a refusal on the very first call must
+    # reach neither.
+    assert not (tmp_path / "tag.json").exists(), "the next get() call must never run"
+    assert not (tmp_path / "manifest.json").exists(), "put-image must never be reached"

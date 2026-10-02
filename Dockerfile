@@ -8,6 +8,9 @@
 # COPY --from below puts the same files in each architecture's image. Built per platform,
 # the arm64 half of a multi-arch build ran `npm ci` under QEMU, which crashed there
 # (`qemu: uncaught target signal 4`) and left the build waiting six hours (#714).
+# `--platform=$BUILDPLATFORM` needs BuildKit, which is Docker's default but not guaranteed —
+# the `# syntax` line at the top of this file does not by itself turn it on — so a legacy
+# builder fails here at parse time; docs/troubleshooting.md §4 has the step (#716).
 FROM --platform=$BUILDPLATFORM node:22-alpine AS frontend-build
 WORKDIR /app/frontend
 
