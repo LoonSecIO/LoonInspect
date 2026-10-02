@@ -126,6 +126,33 @@ describe("visibleNavigation", () => {
     });
   });
 
+  describe("Posture \u203a Patch policy (#614, first slice)", () => {
+    const PATCH_POLICY_ON: ReadonlySet<string> = new Set(["patch_policy"]);
+
+    it("is not listed until its flag is on, for any role", () => {
+      for (const permissions of [VIEWER, AUDITOR, EVERYTHING]) {
+        expect(posture(visibleNavigation(permissions, NO_FLAGS, ANSWERING))?.children?.map((child) => child.labelKey)).not.toContain("patchPolicy");
+      }
+      // And a viewer's tree is what it was: the flag off adds no Posture section.
+      expect(paths(visibleNavigation(VIEWER, NO_FLAGS))).toEqual(["/", "/devices", "/settings/my-account"]);
+    });
+
+    it("with the flag on it is listed last, and needs app:read like its route", () => {
+      expect(posture(visibleNavigation(EVERYTHING, PATCH_POLICY_ON, ANSWERING))?.children?.map((child) => child.labelKey)).toEqual([
+        "vulnerabilities",
+        "compliance",
+        "patchPolicy"
+      ]);
+      expect(posture(visibleNavigation([PERMISSIONS.DEVICE_READ], PATCH_POLICY_ON))).toBeUndefined();
+    });
+
+    it("a viewer with no corpus sees it alone, and the section points at it", () => {
+      const section = posture(visibleNavigation(VIEWER, PATCH_POLICY_ON, SILENT));
+      expect(section?.children?.map((child) => child.labelKey)).toEqual(["patchPolicy"]);
+      expect(section?.to).toBe("/posture/patch-policy");
+    });
+  });
+
   it("an auditor on a tenant with no corpus sees Posture \u203a Compliance alone", () => {
     // The case #536 is for: nothing answering and the flag off, so Vulnerabilities is hidden and the section
     // is not — it follows its children, and Compliance needs no corpus to answer for it.

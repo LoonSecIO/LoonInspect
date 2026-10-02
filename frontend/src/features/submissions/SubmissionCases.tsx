@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { LoonLoading } from "@/components/icons/LoonLoading";
 import { ApiError } from "@/config/api";
 import { listSubmissions, type SubmissionCaseOut } from "@/features/submissions/api";
 import { asksStatus, handlers, refreshWait, replaceCase, type Handlers, type RowAct } from "@/features/submissions/cases";
@@ -18,7 +19,7 @@ export function SubmissionCasesView({ read, copy, locale, now, acts = {}, on = {
     <section className="space-y-3 rounded-md border p-4" aria-label={copy.title}>
       <h2 className="font-semibold">{copy.title}</h2>
       <p className="text-sm text-muted-foreground">{copy.description}</p>
-      {read.state === "loading" && <p className="text-sm text-muted-foreground">{copy.loading}</p>}
+      {read.state === "loading" && <p className="text-sm text-muted-foreground"><LoonLoading label={copy.loading} /></p>}
       {read.state === "failed" && <p role="alert" className="text-sm text-destructive">{read.said ?? copy.loadFailed}</p>}
       {read.state === "ready" && !read.enabled && <p className="text-sm">{copy.notEnabled}</p>}
       {read.state === "ready" && read.cases.length === 0 && <p className="text-sm text-muted-foreground">{copy.empty}</p>}

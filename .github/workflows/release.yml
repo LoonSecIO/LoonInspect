@@ -57,7 +57,20 @@ jobs:
           types=(application/vnd.oci.image.index.v1+json application/vnd.docker.distribution.manifest.list.v2+json
                  application/vnd.oci.image.manifest.v1+json application/vnd.docker.distribution.manifest.v2+json)
           # One tag per call: ECR answers one entry per image, so a sha and a version tag on the same image come back as one.
-          get() { aws ecr batch-get-image --repository-name "$repo" --image-ids imageTag="$1" --accepted-media-types "${types[@]}" --output json > "$2"; }
+          # batch-get-image answers a genuine miss inside its JSON (a "failures" entry, exit 0) rather than by failing the
+          # call, so a nonzero exit here is never a miss — it is the question going unanswered: a missing
+          # ecr:BatchGetImage grant, a wrong AWS_REGION, an expired session, or ECR throttling (#694, matching the
+          # describe-images check in publish-images.yml). That must stop the job with a sentence in the operator's
+          # vocabulary rather than the raw AWS error this step would otherwise die on (docs/troubleshooting.md §10).
+          get() {
+            local err
+            if ! err=$(aws ecr batch-get-image --repository-name "$repo" --image-ids imageTag="$1" \
+                         --accepted-media-types "${types[@]}" --output json 2>&1 >"$2"); then
+              echo "$err"
+              echo "::error::Asking ECR for $repo:$1 failed — that is not the same as not published, it is the question going unanswered (see the line above). Check the push role's ecr:BatchGetImage grant on $repo, that AWS_REGION ($AWS_REGION) is where the repository lives, and whether ECR is throttling; docs/troubleshooting.md §10 has the walkthrough."
+              exit 1
+            fi
+          }
           pick() { jq -j "$2 // empty" "$1"; }
           for repo in looninspect looninspect-db; do
             get "$SHA" sha.json; get "$TAG" tag.json
