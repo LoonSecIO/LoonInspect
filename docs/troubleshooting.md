@@ -9,7 +9,7 @@ it was filed.
 Each path is ordered — *check this; if X, then that* — and ends in a fix or in a **named,
 reportable state**. When you reach a reportable state, §8 says what to include.
 
-**What is in here.** The paths run §1–§7 and §10–§21, in the order they were written
+**What is in here.** The paths run §1–§7 and §10–§22, in the order they were written
 rather than in order of likelihood. §0 is what you can read before you start; §8 and §9 are
 about the paths rather than about a symptom, and they sit mid-file because that is where
 they were written — §9 ends by saying the paths continue at §10.
@@ -56,6 +56,8 @@ they were written — §9 ends by saying the paths continue at §10.
   typed"](#20-sign-in-asks-for-a-six-digit-code-or-refuses-the-one-i-typed)
 - **§21** ["Request coverage or Report an incorrect match is refused, or a case never shows a
   status"](#21-request-coverage-or-report-an-incorrect-match-is-refused-or-a-case-never-shows-a-status)
+- **§22** ["Patch policy is not in my sidebar, lists one app, or says its file was
+  refused"](#22-patch-policy-is-not-in-my-sidebar-lists-one-app-or-says-its-file-was-refused)
 
 **The reportable states**, lettered in the order they were written, so they do not run in
 section order and never will — code, tests and the README cite them where they are. When a
@@ -88,6 +90,7 @@ ticket names one, this says which path it came off.
 | **W** | §18 | *Longest exposed* is empty while *Most exposed* lists builds |
 | **X** | §20 | No phone, no recovery codes, and no other administrator to remove the second factor |
 | **Y** | §21 | A case's key and the fresh one minted in its place both refused as naming another submission |
+| **Z** | §22 | A reference replay that shipped with the build is refused after a reload |
 
 ## 0. The four things you can read
 
@@ -2605,3 +2608,53 @@ that log, then repeat the act.
     words go the next night.
 
 **Y.** Random keys do not collide twice. Report the case's `id` and its sentence (§8); nothing was stored there.
+
+## 22. "Patch policy is not in my sidebar, lists one app, or says its file was refused"
+
+Posture › Patch policy (#614, first slice) is a **reference analysis**: one hypothetical Mac that
+follows one Jamf patch title, replayed against public CVE records under each stop of a patch-policy
+slider. It is not this organization's exposure. It reads no inventory, sends nothing, and stores
+nothing; the replay is a file that ships inside the build, the same for every organization. The page
+is at `/posture/patch-policy` and needs **app:read**, which every role holds.
+
+1. **The entry is not in the sidebar.** It is listed only while the **Posture › Patch policy
+   (reference)** flag is on (Settings › Feature Flags, an administrator), and the flag is off by
+   default. The address opens either way, so a link somebody sent works while the entry is hidden.
+   A session reads the flags once, at sign-in: after turning the flag on, reload (§18 step 3).
+2. **Only Wireshark can be picked; every other app reads *No reference replay yet*.** Not a fault.
+   An app is selectable once a replay file for it ships with the build, and today one does. *No
+   reference replay yet* means nobody has replayed that app. It never means the app has no
+   vulnerabilities, and the page prints no count for it.
+3. **The list has only the apps with a replay, under a sentence about Jamf's patch catalog.** The
+   other rows come from the Jamf Patch titles this instance has synced, and the sentence says which
+   of two things happened. *…holds no titles on this instance yet…* → no catalog refresh has
+   finished: that is §6. *…could not be read… a failed read, not an empty catalog* → the list
+   request failed; `GET /api/jamf-patch/titles?pageSize=1` says with what status. A `403` is an
+   account without `app:read`; anything else is §4. The replay itself does not need the catalog and
+   is drawn either way.
+4. **Where the replay would be, the page says *The reference replay for … is not shown, because its
+   file was refused*.** The page checks the file before drawing any of it and refuses it whole, and
+   the next sentence is the reason:
+   - *The file did not load, or what loaded is not a replay* → the browser could not fetch the
+     file's chunk, usually a page left open across an update of the instance. Reload.
+   - *Its kind is …* or *Its schema is …* → the file is another kind of document, or a version of
+     the replay this build does not read.
+   - *It lacks …* → a value the page draws is absent from the file; the sentence names it.
+   - *Its own totals disagree (…)* → the file's counts do not add up, in the file's own key names:
+     for every policy, `never_seen` plus `exposed` is `counts.cves_replayed`; the excluded counts
+     sum to `counts.cves_excluded`; and the per-CVE rows count to the same totals as the headline.
+
+   Reload once. None of the last three can be fixed on the instance, because the file is part of the
+   build and no setting or data of yours is read: the same sentence after a reload is reportable
+   state **Z**, below.
+5. **The numbers differ from another copy of the same analysis.** Compare the **Run** line under
+   *Evidence*: it is the replay's own identifier, and two pages showing the same run show the same
+   numbers. A different run is a different catalog snapshot or window, both printed beside it.
+6. **A date looks a day or two off the vendor's own release notes.** Release dates on this page are
+   the dates Jamf's patch catalog reports, and the page says so; they are not a claim about when the
+   vendor published. *Definitions and clocks, in the file's own words* at the foot of the page states
+   each clock and each counting rule.
+
+**Z.** A reference replay that shipped with the build is refused, and reads the same after a reload.
+Report the refusal sentence as the page words it, the app that was picked, and the build from
+Settings › Support (§8). Nothing of the organization's is involved, so there is no run or log to attach.
