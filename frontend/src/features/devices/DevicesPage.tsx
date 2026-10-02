@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { ApiError } from "@/config/api";
 import { Button } from "@/components/ui/button";
+import { LoonLoading } from "@/components/icons/LoonLoading";
 import { FilterBar } from "@/features/devices/FilterBar";
 import { lookupCatalog } from "@/features/catalog/api";
 import { listDevices } from "@/features/devices/api";
@@ -200,7 +201,7 @@ export function DevicesPage() {
             {loading && (
               <tr>
                 <td className="px-4 py-4 text-muted-foreground" colSpan={columns}>
-                  {t.devices.loading}
+                  <LoonLoading label={t.devices.loading} />
                 </td>
               </tr>
             )}

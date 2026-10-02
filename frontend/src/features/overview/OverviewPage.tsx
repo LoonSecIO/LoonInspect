@@ -1,6 +1,7 @@
 import { InventorySummaryMetrics } from "@/features/ai/InventorySummaries";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
+import { LoonLoading } from "@/components/icons/LoonLoading";
 import { useAuthStore, useHasPermission } from "@/features/auth/store";
 import { PERMISSIONS } from "@/features/auth/types";
 import { listDestinations } from "@/features/destinations/api";
@@ -276,7 +277,11 @@ export function OverviewPage() {
   if (loading) {
     // Deliberately not a dashboard skeleton: a shape that resolves into "you have
     // nothing" is a worse first impression than one line that resolves into a stepper.
-    return <p className="text-sm text-muted-foreground">{t.overview.loading}</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        <LoonLoading label={t.overview.loading} />
+      </p>
+    );
   }
 
   if (failedToLoad) {

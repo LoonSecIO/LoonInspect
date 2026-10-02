@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 import { ExternalLink } from "@/components/ui/external-link";
 import { Button } from "@/components/ui/button";
+import { LoonLoading } from "@/components/icons/LoonLoading";
 import { useAuthStore, useHasPermission } from "@/features/auth/store";
 import { PERMISSIONS } from "@/features/auth/types";
 import { ApiError } from "@/config/api";
@@ -169,7 +170,11 @@ function DevicePageContent() {
   if (!deviceId) return null;
 
   if (current === null) {
-    return <p className="text-sm text-muted-foreground">{td.loading}</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        <LoonLoading label={td.loading} />
+      </p>
+    );
   }
 
   if (current.state === "failed" || device === null) {

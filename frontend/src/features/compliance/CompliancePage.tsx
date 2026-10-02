@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { LoonLoading } from "@/components/icons/LoonLoading";
 import { ApiError } from "@/config/api";
 import { downloadEvidencePage, getEvidenceReport, listFailure, sumFault, type EvidenceReport, type PartName, type ReportWindow, type Span, type Totals } from "@/features/compliance/api";
 import { listConnections } from "@/features/mdm/api";
@@ -113,7 +114,7 @@ export function CompliancePage() {
       {/* Never twice: Download on an already-refused connection answers with the server's same sentence. */}
       {downloadFailed !== null && downloadFailed !== refused && <p className="text-sm text-destructive">{downloadFailed || copy.failed}</p>}
       {refused !== null && <p className="text-sm text-destructive">{refused || copy.failed}</p>}
-      {asking && <p className="text-sm text-muted-foreground">{copy.asking}</p>}
+      {asking && <p className="text-sm text-muted-foreground"><LoonLoading label={copy.asking} /></p>}
       {report && <Rendered report={report} copy={copy} />}
     </section>
   );

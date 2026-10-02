@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
+import { LoonLoading } from "@/components/icons/LoonLoading";
 import { getChangePolicy, listChanges } from "@/features/changes/api";
 import { changeResetLine, emptyTable } from "@/features/changes/changeKinds";
 import { DiffCell } from "@/features/changes/DiffCell";
@@ -452,7 +453,7 @@ export function ChangesPage() {
           <tbody>
             {loading && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={6}>{tc.loading}</td>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={6}><LoonLoading label={tc.loading} /></td>
               </tr>
             )}
             {/* Which empty this is, never one sentence for all of them (`emptyTable`): a

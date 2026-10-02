@@ -167,7 +167,7 @@ describe("the brand files", () => {
   it("the favicons and the in-app mark are loon.svg with detail removed, never redrawn", () => {
     const master = new Set(subpaths(text("public/loon.svg")));
     const masterEyes = new Set(circles(text("public/loon.svg")));
-    for (const file of ["public/favicon.svg", "src/components/icons/LoonLogo.tsx"]) {
+    for (const file of ["public/favicon.svg", "src/components/icons/LoonLogo.tsx", "src/components/icons/LoonLoading.tsx"]) {
       const kept = subpaths(text(file));
       expect(kept.length, file).toBeGreaterThan(0);
       expect(kept.filter((subpath) => !master.has(subpath)), file).toEqual([]);
