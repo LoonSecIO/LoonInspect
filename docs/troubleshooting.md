@@ -1316,6 +1316,16 @@ is not the check to make here.
      emulator crashed there. #714's was
      `#43 [linux/arm64 frontend-build 4/6] RUN npm ci --no-audit --no-fund`. Open an issue
      with that line and the run's link.
+   - **The "already published?" check itself is refused** (#694), before either build runs:
+     *Check whether each image is already published* (or *Release*'s *Add the version tag to
+     looninspect and looninspect-db*) fails with
+     `::error::Checking whether <repo>:<sha> is already published failed …` (or, on
+     *Release*, `::error::Asking ECR for <repo>:<sha> failed …`). That is not a missing
+     image — the line printed just above the sentence is the AWS error the check could not
+     get past. Check the push role's `ecr:DescribeImages` (`ecr:BatchGetImage` on *Release*)
+     grant on the named repository, that the run's region is where the repositories live,
+     and whether ECR is throttling (wait a few minutes and re-run). A genuine miss never
+     reaches this sentence: it reads as not-yet-published and the build or the tag proceeds.
 
 **N.** The Updates block says a release is available while `git merge-base --is-ancestor`
 says this build contains it; or its sentence names a state this instance is not in.

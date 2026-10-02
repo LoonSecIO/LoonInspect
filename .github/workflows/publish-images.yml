@@ -67,17 +67,31 @@ jobs:
       # one still republishes exactly what ECR is missing on its next run, instead of reading
       # the app image's presence as "nothing to do" and skipping the database build forever
       # (#716). Each build step below is gated on its own repository's answer.
+      #
+      # `describe-images` answers "not there" by failing the call (`ImageNotFoundException`,
+      # nonzero exit with no JSON), not by returning an empty result, so a nonzero exit here
+      # is not itself "not published" — it is just as often a missing `ecr:DescribeImages`
+      # grant, a wrong AWS_REGION, an expired session, or ECR throttling. Reading any of
+      # those as "not published" would push into an immutable repository that already holds
+      # the image, and fail with an error naming none of the real causes (#694). Only
+      # `ImageNotFoundException` reads as "not published"; anything else stops the job with
+      # the AWS error and a sentence in the operator's vocabulary
+      # (docs/troubleshooting.md §10).
       - name: Check whether each image is already published
         id: exists
         run: |
           check() {
-            local repo="$1" out="$2"
-            if aws ecr describe-images --repository-name "$repo" \
-                 --image-ids imageTag="$GITHUB_SHA" >/dev/null 2>&1; then
+            local repo="$1" out="$2" err
+            if err=$(aws ecr describe-images --repository-name "$repo" \
+                       --image-ids imageTag="$GITHUB_SHA" 2>&1 >/dev/null); then
               echo "$out=true" >> "$GITHUB_OUTPUT"
               echo "::notice::$repo:$GITHUB_SHA already exists — nothing to do"
-            else
+            elif grep -q 'ImageNotFoundException' <<<"$err"; then
               echo "$out=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "$err"
+              echo "::error::Checking whether $repo:$GITHUB_SHA is already published failed — that is not the same as not published, it is the question going unanswered (see the line above). Check the push role's ecr:DescribeImages grant on $repo, that AWS_REGION ($AWS_REGION) is where the repository lives, and whether ECR is throttling; docs/troubleshooting.md §10 has the walkthrough."
+              exit 1
             fi
           }
           check looninspect app
