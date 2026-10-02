@@ -17,6 +17,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   ShieldHalf,
+  SlidersHorizontal,
   UserCircle,
   UserCog,
   type LucideIcon
@@ -100,6 +101,17 @@ export const navigationItems: NavItem[] = [
         to: "/posture/compliance",
         end: false,
         permission: PERMISSIONS.AUDIT_READ
+      },
+      // Flag-gated and off by default (#614, first slice): a reference replay of a hypothetical Mac,
+      // not this organization's posture, so it is not listed beside the two entries that are until
+      // someone asks for it. `app:read` is the route's own gate (#301).
+      {
+        labelKey: "patchPolicy",
+        icon: SlidersHorizontal,
+        to: "/posture/patch-policy",
+        end: false,
+        permission: PERMISSIONS.APP_READ,
+        flag: "patch_policy"
       }
     ]
   },

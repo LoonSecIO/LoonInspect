@@ -30,6 +30,7 @@ import { CatalogPage } from "@/features/catalog/CatalogPage";
 import { VulnerabilitiesPage } from "@/features/vulnerabilities/VulnerabilitiesPage";
 import { VulnerabilityLookupPage } from "@/features/vulnerabilities/VulnerabilityLookupPage";
 import { CompliancePage } from "@/features/compliance/CompliancePage";
+import { PatchPolicyPage } from "@/features/patchPolicy/PatchPolicyPage";
 import { SupportPage } from "@/features/support/SupportPage";
 import { NotFoundPage } from "@/features/errors/NotFoundPage";
 
@@ -177,6 +178,14 @@ export function AppRoutes() {
             docs/data-access-grain.md. No flag: nothing here waits on a corpus. */}
         <Route element={<RequirePermission permission={PERMISSIONS.AUDIT_READ} />}>
           <Route path="posture/compliance" element={<CompliancePage />} />
+        </Route>
+        {/* The first slice of the Patch Policy Lab (#614): a reference replay of a hypothetical Mac,
+            drawn from a file that ships with the build. APP_READ because the picker reads Jamf's
+            patch catalog, which is gated app:read; every role holds it, and the row still shows a
+            gate (#301). No RequireFlag, as with Vulnerabilities above: the `patch_policy` flag
+            decides what is LISTED, and the address opens either way. */}
+        <Route element={<RequirePermission permission={PERMISSIONS.APP_READ} />}>
+          <Route path="posture/patch-policy" element={<PatchPolicyPage />} />
         </Route>
         {/* Last child on purpose, and inside the shell rather than beside /login: a
             signed-out visitor keeps getting the same sign-in redirect for a typo as
