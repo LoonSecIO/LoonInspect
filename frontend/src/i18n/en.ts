@@ -1,6 +1,8 @@
 import { historyEnglish } from "@/features/devices/historyCopy";
+import { patchPolicyEnglish } from "@/features/patchPolicy/copy";
 export const en = {
   deviceHistory: historyEnglish,
+  patchPolicy: patchPolicyEnglish,
   intelligence: {
     title: "Intelligence access", description: "Paid access works without sharing inventory. Activation never changes your sharing choice.",
     pageDescription: "How this instance keeps vulnerability intelligence current. Paid access and community sharing are separate routes; neither turns the other on or off, and held intelligence stays usable when updates stop.",
@@ -305,6 +307,8 @@ export const en = {
     posture: "Posture",
     vulnerabilities: "Vulnerabilities",
     compliance: "Compliance",
+    // #614. A reference replay, listed only while its flag is on; the page says what it is not.
+    patchPolicy: "Patch policy",
     settings: "Settings",
     connections: "Connections",
     featureFlags: "Feature Flags",
