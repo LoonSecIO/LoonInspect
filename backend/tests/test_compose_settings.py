@@ -150,7 +150,7 @@ def test_an_override_sets_nothing_beyond_its_own_job(override, sets):
     [
         ("SYNC_HOUR", "24", "SYNC_HOUR must be between 0 and 23"),
         ("SYNC_MINUTE", "60", "SYNC_MINUTE must be between 0 and 59"),
-        ("SYNC_TIMEZONE", "Chicago", "SYNC_TIMEZONE must be a time zone name as the tz database spells it"),
+        ("SYNC_TIMEZONE", "Chicago", "SYNC_TIMEZONE must be a canonical tz database name in Area/Location form"),
     ],
 )
 def test_a_schedule_setting_env_can_reach_is_refused_at_startup_by_name(name, value, words):
