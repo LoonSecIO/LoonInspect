@@ -452,8 +452,11 @@ class Settings(BaseSettings):
             ZoneInfo(value)
         except (ZoneInfoNotFoundError, ValueError):
             raise ValueError(
-                f"SYNC_TIMEZONE must be a time zone name as the tz database spells it, such as America/Chicago "
-                f"or UTC; {value!r} is not one"
+                f"SYNC_TIMEZONE must be a canonical tz database name in Area/Location form, "
+                f"such as America/Chicago or UTC; {value!r} did not resolve. The shipped image "
+                f"has no tzdata-legacy package, so a legacy alias such as US/Central or "
+                f"CST6CDT is a real tz database name that is not loaded here — use the "
+                f"canonical Area/Location form"
             ) from None
         return value
 
