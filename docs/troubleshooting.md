@@ -457,6 +457,11 @@ the run `jobID`, the token's index settings, and the search you ran.
 ## 4. "It will not start" (or it starts, and every connection is unreadable)
 
 1. **Which container?** `docker compose ps`.
+   - `docker build` (or `docker compose up --build`) refused with `failed to parse platform :
+     "" is an invalid OS component of ""` → the Dockerfile's `FROM --platform=$BUILDPLATFORM
+     …` line (#715) needs BuildKit, which is Docker's default but is not guaranteed: remove
+     `DOCKER_BUILDKIT=0` from the environment if it is set, or install the buildx plugin
+     (`docker buildx version` should print one rather than refuse). Retry the build.
    - `docker compose up` refused with `set POSTGRES_PASSWORD in .env` (or
      `POSTGRES_APP_PASSWORD`, or `ENCRYPTION_KEY`) → the `.env` beside
      `docker-compose.yml` lacks one of the three required values. Set it
@@ -1299,9 +1304,12 @@ is not the check to make here.
    execution time* (for whoever publishes the releases). That commit's images are missing, so
    a release of it has nothing to copy and step 4's pull stops at `not found`. A run that
    works takes under six minutes and the job stops at 45: the build hung.
-   - **Re-run jobs** on the run's page. A run that timed out in *Build and push app image*
-     published neither image, so the re-run builds both; then re-run any *Release* run that
-     failed for want of them, as its error says.
+   - **Re-run jobs** on the run's page. Each repository is checked and rebuilt on its own
+     (#716): a run that timed out in *Build and push app image* published neither image, so
+     the re-run builds both; a run that timed out later, in *Build and push database sidecar
+     image*, already published the app image, so the re-run pushes only the database one.
+     Either way the re-run publishes exactly what ECR is still missing; then re-run any
+     *Release* run that failed for want of them, as its error says.
    - The re-run times out too → name the step it hung in. In *Build and push app image*, the
      last line of the form `#N [platform stage step/steps] …` whose `#N` never reaches `DONE`
      is that step, and a `qemu: uncaught target signal` line under the same `#N` means the

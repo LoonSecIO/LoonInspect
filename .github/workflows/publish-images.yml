@@ -61,18 +61,27 @@ jobs:
       - uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
         id: ecr
 
-      # Immutable tags make a re-run of an already-published SHA a push error
-      # rather than a no-op; skip cleanly instead so re-runs stay green.
-      - name: Check whether this SHA is already published
+      # Immutable tags make a re-run of an already-published SHA a push error rather than a
+      # no-op; skip cleanly instead so re-runs stay green. Checked once per repository — not
+      # once for both — so a run that pushes the app image and then dies before the database
+      # one still republishes exactly what ECR is missing on its next run, instead of reading
+      # the app image's presence as "nothing to do" and skipping the database build forever
+      # (#716). Each build step below is gated on its own repository's answer.
+      - name: Check whether each image is already published
         id: exists
         run: |
-          if aws ecr describe-images --repository-name looninspect \
-               --image-ids imageTag="$GITHUB_SHA" >/dev/null 2>&1; then
-            echo "published=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::looninspect:$GITHUB_SHA already exists — nothing to do"
-          else
-            echo "published=false" >> "$GITHUB_OUTPUT"
-          fi
+          check() {
+            local repo="$1" out="$2"
+            if aws ecr describe-images --repository-name "$repo" \
+                 --image-ids imageTag="$GITHUB_SHA" >/dev/null 2>&1; then
+              echo "$out=true" >> "$GITHUB_OUTPUT"
+              echo "::notice::$repo:$GITHUB_SHA already exists — nothing to do"
+            else
+              echo "$out=false" >> "$GITHUB_OUTPUT"
+            fi
+          }
+          check looninspect app
+          check looninspect-db db
 
       # The runner is linux/amd64 only; building the linux/arm64 half of the
       # manifest below needs emulation registered first. The image that comes
@@ -80,17 +89,17 @@ jobs:
       # emulated, not anything that runs from it — and the frontend is not
       # emulated at all: the Dockerfile builds it once, natively (#714).
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-        if: steps.exists.outputs.published == 'false'
+        if: steps.exists.outputs.app == 'false' || steps.exists.outputs.db == 'false'
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-        if: steps.exists.outputs.published == 'false'
+        if: steps.exists.outputs.app == 'false' || steps.exists.outputs.db == 'false'
 
       # Multi-arch manifest under one tag: linux/amd64 is what the pod stack's
       # RuntimePlatform (X86_64, see ops/aws/pod.template.yml) actually pulls
       # today; linux/arm64 means anyone who pulls this tag directly on Apple
       # Silicon gets a native image instead of amd64 under emulation.
       - name: Build and push app image
-        if: steps.exists.outputs.published == 'false'
+        if: steps.exists.outputs.app == 'false'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -105,7 +114,7 @@ jobs:
       # GIT_SHA only labels the image (ops/postgres/Dockerfile): release.yml copies both images
       # to ghcr.io as they are, so the database says which commit built it as the app does.
       - name: Build and push database sidecar image
-        if: steps.exists.outputs.published == 'false'
+        if: steps.exists.outputs.db == 'false'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ops/postgres
