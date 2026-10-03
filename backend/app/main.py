@@ -54,6 +54,7 @@ from app.api.inventory_summaries import router as inventory_summaries_router
 from app.api.jamf_patch import router as jamf_patch_router
 from app.api.mfa import router as mfa_router
 from app.api.outbox import router as outbox_router
+from app.api.patch_policy_rules import router as patch_policy_rules_router
 from app.api.posture import router as posture_router
 from app.api.routes import router as api_router
 from app.api.runs import router as runs_router
@@ -710,6 +711,7 @@ app.include_router(evidence_router)
 # declaration order, and that dynamic segment would otherwise swallow GET /prompt as an id.
 app.include_router(vulnerabilities_prompt_router)
 app.include_router(exclusion_ranking_router)
+app.include_router(patch_policy_rules_router)
 app.include_router(intelligence_router)
 app.include_router(submissions_router)
 app.include_router(vulnerabilities_router)

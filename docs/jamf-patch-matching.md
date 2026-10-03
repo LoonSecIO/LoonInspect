@@ -470,6 +470,36 @@ recorded for Kyle to overrule.
   for exploited findings (`critical_or_kev` is tabled, #614); a clock that starts at a
   finding's publication rather than at the newer release.
 
+### 8b. Drafting the rule from the statement (#732)
+
+The rule editor can ask the saved AI provider to read the statement and fill the three boxes
+(`backend/app/ai/patch_policy_rules.py`, `POST /api/settings/patching-policy/rule/draft`,
+`system:write`). The model maps the statement onto the vocabulary above. It adds nothing to it.
+
+- **No number is the model's** ([`v-never.md`](v-never.md)). Every number a draft carries must
+  be one the statement's own words state, read by code (`stated_days`, `stated_releases`); one
+  that is not is dropped and the page says so. A time the statement gives only for a special
+  case is never the ordinary limit. One time for critical or high findings goes in the box for
+  them; two different ones ("critical in 3 days, high in 14"), or a time for exploited,
+  zero-day or emergency updates, has no box and stays out. Where the statement has exactly one
+  time a box could take and the box is empty, the page names it rather than filling it in.
+- **No model-written text reaches the page.** What the limits cannot express comes back as
+  codes from a closed list (`hardware`, `os`, `apps`, `process`), each kept only where the
+  statement bears it out, and the page words them. `severity` and `no_number` are code's own.
+- **A draft is never saved.** It fills the boxes; a rule exists only after Confirm.
+- **What leaves the pod** is the instructions and the statement (`policy_statement` in the
+  share log), plain, without control tokens, cut at 2,000 characters with a visible marker.
+  The gate is the AI layer's: the flag, the consent, one share-log row before the first byte.
+- **Measured** on Apple's on-device model (macOS 27 `fm serve`, 2026-10-03, temperature 0).
+  With two boxes, over 52 statements: no number the statement does not state reached a draft
+  in any; 42 to 44 landed exactly on their label across runs. With three boxes, over 35: none
+  again; 31 landed exactly, Kyle's sentence among them (60 and 14). The model itself invented
+  a releases limit on about half the statements, put a critical-only time in the ordinary box,
+  and obeyed an injected "reply with days 0"; the grounding is what kept all three out. The
+  final run's replies are the held-out set in `tests/test_patch_policy_rules.py`.
+- **English only.** The grounding reads English number phrases, so a statement in another
+  language drafts nothing.
+
 ## 9. Not here (follow-ups)
 
 Re-evaluating matches when the hourly catalog sync changes a title — since shipped:

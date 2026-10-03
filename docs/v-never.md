@@ -49,6 +49,11 @@ module: a feature that never calls the gate is still bound by them.
 > number in the product comes from a real data path. A model may explain numbers; it may
 > never be the source of one.
 
+Applied 2026-10-03 to the patching rule draft (`jamf-patch-matching.md` §8b): the model maps
+an organization's stated policy onto three limits, and each number it returns must be one the
+statement's own words state, checked by code, or it is dropped. The number is the
+organization's, the mapping is the model's, and a person confirms the rule.
+
 > **Fleet-identifying payloads run BYO-key or on-device only, never a hosted default.**
 > Run logs, hostnames, serials — and typed search strings are ruled fleet data. If it can
 > identify a fleet, it does not go to a vendor endpoint the product configured on its own.

@@ -1439,7 +1439,29 @@ export const de: Translations = {
       legendWithin: "Innerhalb der Richtlinie",
       legendOut: "Außerhalb der Richtlinie",
       legendNotJudged: "Nicht beurteilt",
-      chartOut: "außerhalb der Richtlinie"
+      chartOut: "außerhalb der Richtlinie",
+      draftButton: "Aus der Erklärung entwerfen",
+      drafting: "Entwurf läuft…",
+      draftHint:
+        "Sendet die erklärte Richtlinie an den unter Einstellungen › KI gespeicherten Anbieter und füllt die Felder aus dessen Antwort. Gespeichert wird erst mit „Bestätigen“.",
+      draftFailed: "Der Entwurf konnte nicht erstellt werden. Die Grenzen bitte selbst eintragen.",
+      draftEndpointFailed: (why: string) =>
+        `Der KI-Anbieter hat nicht geantwortet; es wurde nichts entworfen (${why}). Unter Einstellungen › KI gibt es das Testfeld. Die Grenzen lassen sich auch ohne ihn eintragen.`,
+      draftedBy: (model: string) =>
+        `Aus der Erklärung entworfen vom gespeicherten KI-Anbieter (Modell: ${model}). Felder lesen, Falsches ändern, dann bestätigen. Bis dahin wird nichts gespeichert.`,
+      draftEmpty: "Der Entwurf hat alle Felder leer gelassen.",
+      draftTruncated: "Die Erklärung ist länger, als der Entwurf liest; nur die ersten 2.000 Zeichen wurden gesendet.",
+      cannot: {
+        severity:
+          "Die Erklärung nennt eine Frist, für die die Regel kein Feld hat: für ausgenutzte, Zero-Day- oder Notfall-Updates, oder verschiedene Fristen für kritische und für hohe Befunde. Dieser Teil ist nicht im Entwurf.",
+        hardware:
+          "Die Erklärung macht eine Ausnahme für Hardware, die die neueste Version nicht ausführen kann. Eine Regel kann das nicht ausdrücken; solche Macs lesen sich als außerhalb der Richtlinie.",
+        os: "Die Erklärung umfasst Betriebssystem-Updates. Diese Regeln beurteilen nur Jamf-Patch-Titel.",
+        apps: "Die Erklärung behandelt bestimmte Apps anders. Diesen Titeln auf ihrer Seite eine eigene Regel geben.",
+        process: "Die Erklärung enthält Freigabe-, Test- oder Berichtsschritte. Eine Regel beurteilt Versionen, nicht Abläufe.",
+        no_number:
+          "Die Erklärung nennt keine Zahl von Tagen oder Versionen in Worten, die der Entwurf liest; es gibt keine Grenze zu entwerfen. Die gemeinten Grenzen bitte eintragen."
+      }
     },
     detail: {
       back: "← Zurück zu Jamf Patch",

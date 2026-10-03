@@ -1586,7 +1586,32 @@ export const en = {
       legendWithin: "Within policy",
       legendOut: "Out of policy",
       legendNotJudged: "Not judged",
-      chartOut: "out of policy"
+      chartOut: "out of policy",
+      // The AI draft: the saved provider reads the statement and fills the two boxes. Every
+      // number is one the statement states, the caveats are these sentences, never the
+      // model's, and nothing is saved until Confirm.
+      draftButton: "Draft from the statement",
+      drafting: "Drafting…",
+      draftHint:
+        "Sends the stated policy to the AI provider saved in Settings › AI and fills the boxes from its answer. Nothing is saved until you press Confirm.",
+      draftFailed: "The draft could not be made. Type the limits yourself.",
+      draftEndpointFailed: (why: string) =>
+        `The AI provider did not answer, so nothing was drafted (${why}). Settings › AI has its test box. The limits can be typed without it.`,
+      draftedBy: (model: string) =>
+        `Drafted from the statement by the saved AI provider (model: ${model}). Read the boxes, change what is wrong, then Confirm. Nothing is saved until you do.`,
+      draftEmpty: "The draft left every box empty.",
+      draftTruncated: "The statement is longer than the draft reads; only its first 2,000 characters were sent.",
+      cannot: {
+        severity:
+          "The statement gives a time the rule has no box for: for exploited, zero-day or emergency updates, or different times for critical and for high findings. That part is not in the draft.",
+        hardware:
+          "The statement makes an exception for hardware that cannot run the newest version. A rule cannot express it; such Macs will read as out of policy.",
+        os: "The statement covers operating system updates. These rules judge Jamf Patch titles only.",
+        apps: "The statement treats particular apps differently. Give those titles their own rule on each title's page.",
+        process: "The statement includes approval, testing or reporting steps. A rule judges versions, not process.",
+        no_number:
+          "The statement states no number of days or versions in words the draft reads, so there is no limit to draft. Type the limits you mean."
+      }
     },
     detail: {
       back: "← Back to Jamf Patch",

@@ -4,10 +4,16 @@ import { Button } from "@/components/ui/button";
 import { ApiError } from "@/config/api";
 import { useHasPermission } from "@/features/auth/store";
 import { PERMISSIONS } from "@/features/auth/types";
-import { getPatchingPolicy, putPatchingPolicy, putPatchingRule } from "@/features/jamfPatch/api";
-import { draftOf, EMPTY_DRAFT, ruleOf, type DraftProblem, type RuleDraft } from "@/features/jamfPatch/policyRules";
+import {
+  draftPatchingRule,
+  getPatchingPolicy,
+  getRuleDraftStatus,
+  putPatchingPolicy,
+  putPatchingRule
+} from "@/features/jamfPatch/api";
+import { draftOf, EMPTY_DRAFT, judges, ruleOf, type DraftProblem, type RuleDraft } from "@/features/jamfPatch/policyRules";
 import { RuleFields, RuleSentences } from "@/features/jamfPatch/RuleFields";
-import type { PatchingPolicy } from "@/features/jamfPatch/types";
+import type { PatchingPolicy, RuleDraftAnswer } from "@/features/jamfPatch/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
 type Loaded = { state: "ready"; policy: PatchingPolicy } | { state: "failed" };
@@ -49,6 +55,26 @@ export function PatchingPolicyStatement({
   const [ruleDraft, setRuleDraft] = useState<RuleDraft>(EMPTY_DRAFT);
   const [ruleProblem, setRuleProblem] = useState<DraftProblem | null>(null);
   const [ruleError, setRuleError] = useState<string | null>(null);
+  // The AI draft: offered only where the three switches are on, and only to someone who
+  // could confirm what comes back. Its answer fills the boxes above and saves nothing.
+  const [canDraft, setCanDraft] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  const [drafted, setDrafted] = useState<RuleDraftAnswer | null>(null);
+
+  useEffect(() => {
+    if (!canEdit) return;
+    let cancelled = false;
+    getRuleDraftStatus()
+      .then((status) => {
+        if (!cancelled) setCanDraft(status.available);
+      })
+      // No button is the right answer to a status that cannot be read: the boxes still work.
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [canEdit]);
+
   useEffect(() => {
     let cancelled = false;
     getPatchingPolicy()
@@ -87,7 +113,26 @@ export function PatchingPolicyStatement({
     setRuleDraft(draftOf(loaded?.state === "ready" ? loaded.policy.rules.default : null));
     setRuleProblem(null);
     setRuleError(null);
+    setDrafted(null);
     setEditingRule(true);
+  }
+
+  async function draftRule() {
+    setDrafting(true);
+    setRuleError(null);
+    setRuleProblem(null);
+    try {
+      const answer = await draftPatchingRule();
+      setDrafted(answer);
+      // The draft goes into the boxes, where it can be read and changed. Confirm is still
+      // the only thing that makes it a rule.
+      if (answer.outcome === "drafted" && answer.rule) setRuleDraft(draftOf(answer.rule));
+    } catch (caught) {
+      setDrafted(null);
+      setRuleError(caught instanceof ApiError && caught.detail ? caught.detail : tr.draftFailed);
+    } finally {
+      setDrafting(false);
+    }
   }
 
   async function saveRule() {
@@ -184,15 +229,53 @@ export function PatchingPolicyStatement({
           {editingRule && (
             <div className="mt-2 space-y-2">
               <p>{tr.defaultIntro}</p>
-              <RuleFields draft={ruleDraft} onChange={setRuleDraft} problem={ruleProblem} disabled={saving} t={t} />
+              <RuleFields draft={ruleDraft} onChange={setRuleDraft} problem={ruleProblem} disabled={saving || drafting} t={t} />
+              {drafted && (
+                <div className="space-y-1 rounded-md border bg-muted/30 p-3">
+                  {drafted.outcome === "drafted" ? (
+                    <>
+                      <p className="font-medium">{tr.draftedBy(drafted.model)}</p>
+                      {drafted.rule && !judges(drafted.rule) && <p>{tr.draftEmpty}</p>}
+                      {drafted.cannot.length > 0 && (
+                        <ul className="list-disc space-y-0.5 pl-5">
+                          {drafted.cannot.map((code) => (
+                            <li key={code}>{tr.cannot[code]}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {drafted.repairs.length > 0 && (
+                        <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">
+                          {drafted.repairs.map((repair) => (
+                            <li key={repair}>{repair}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {drafted.truncated && <p className="text-muted-foreground">{tr.draftTruncated}</p>}
+                    </>
+                  ) : (
+                    <p className="text-destructive">
+                      {/* An endpoint's own failure text is the adapter's, so it is introduced:
+                          the reader needs to know nothing was drafted before reading why. */}
+                      {drafted.outcome === "error" && drafted.error
+                        ? tr.draftEndpointFailed(drafted.error.message)
+                        : (drafted.error?.message ?? tr.draftFailed)}
+                    </p>
+                  )}
+                </div>
+              )}
               {ruleError && <p className="text-destructive">{ruleError}</p>}
-              <div className="flex gap-2">
-                <Button size="sm" disabled={saving} onClick={() => void saveRule()}>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" disabled={saving || drafting} onClick={() => void saveRule()}>
                   {tr.save}
                 </Button>
-                <Button variant="outline" size="sm" disabled={saving} onClick={() => setEditingRule(false)}>
+                <Button variant="outline" size="sm" disabled={saving || drafting} onClick={() => setEditingRule(false)}>
                   {tp.cancel}
                 </Button>
+                {canDraft && policy?.statement && (
+                  <Button variant="outline" size="sm" disabled={saving || drafting} title={tr.draftHint} onClick={() => void draftRule()}>
+                    {drafting ? tr.drafting : tr.draftButton}
+                  </Button>
+                )}
               </div>
             </div>
           )}

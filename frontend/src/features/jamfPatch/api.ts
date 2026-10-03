@@ -5,7 +5,9 @@ import type {
   JamfPatchTitleDetail,
   JamfPatchTitleListResponse,
   PatchRule,
-  PatchingPolicy
+  PatchingPolicy,
+  RuleDraftAnswer,
+  RuleDraftStatus
 } from "@/features/jamfPatch/types";
 
 // Search/sort/filter happen client-side over the full catalog (a few thousand
@@ -61,4 +63,15 @@ export function deletePatchingOverride(titleId: string): Promise<PatchingPolicy>
   return apiRequest<PatchingPolicy>(`/settings/patching-policy/overrides/${encodeURIComponent(titleId)}`, {
     method: "DELETE"
   });
+}
+
+/** Whether a rule can be drafted from the statement: the AI flag, the consent, a saved provider. */
+export function getRuleDraftStatus(): Promise<RuleDraftStatus> {
+  return apiRequest<RuleDraftStatus>("/settings/patching-policy/rule/draft");
+}
+
+/** Draft the rule's limits from the stated policy. Sends the statement to the saved AI
+ *  provider; saves nothing. system:write. */
+export function draftPatchingRule(): Promise<RuleDraftAnswer> {
+  return apiRequest<RuleDraftAnswer>("/settings/patching-policy/rule/draft", { method: "POST", json: {} });
 }

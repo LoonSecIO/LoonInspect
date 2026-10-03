@@ -712,3 +712,20 @@ Validation included a local Apple FM smoke check with invented examples only: Co
 staff/onboarding tools → `likely_in_house`, Thunderbird → `likely_public`, and a generic
 Widget → `uncertain`. This checks request/response usefulness on three examples, not a
 classification accuracy claim or a substitute for operator review.
+
+## Patching rule draft (2026-10-03, #732)
+
+The rule editor on Devices › Applications › Jamf Patch can ask the saved provider to read the
+organization's stated patching policy and fill the editor's three boxes. The contract, the
+grounding and the live measurement are in [`jamf-patch-matching.md`](jamf-patch-matching.md)
+§8b; the model half is `backend/app/ai/patch_policy_rules.py` and the route is
+`backend/app/api/patch_policy_rules.py`.
+
+It differs from slots 1 and 2 in three ways. The input is stored text an admin typed earlier,
+not a question typed now, so the route reads it rather than accepting it in the body. The
+output is **never applied**: a draft fills an editor, and Confirm is a separate audited write.
+And **no model-written text reaches the page**: where slots 1 and 2 render the model's
+`unsupported` note, this slot takes codes from a closed list and words them itself, because
+Apple's on-device model repeated the instructions' own example as its note on statements it
+did not apply to. The gate is `require_ai` with `policy_statement` as the one disclosed field.
+

@@ -94,6 +94,9 @@ class AuditAction(StrEnum):
     # The Vulnerabilities page's AI lever (#534), the same three facts about slot 2.
     AI_VULNERABILITIES_PROMPT = "ai.vulnerabilities-prompt.sent"
     AI_EXCLUSION_RANKING = "ai.exclusion-ranking.sent"
+    # A patching rule drafted from the stated policy. The draft is never saved; confirming
+    # one is `patching-policy.updated`.
+    AI_PATCH_POLICY_RULES = "ai.patch-policy-rules.sent"
     SHARING_UUID_RESET = "sharing.uuid.reset"
     # An administrator's Send now (#408): data left the box because a person asked, not
     # because the schedule came round, so it is on the trail beside the tier it sent under.
