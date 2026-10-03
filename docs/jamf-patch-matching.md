@@ -413,7 +413,7 @@ Re-evaluating matches when the hourly catalog sync changes a title — since shi
 `hourly_jamf_patch_sync` re-judges every tenant's catalog after each sync
 (docs/app-catalog.md §3, item 2). Still follow-ups: change-log entries for "fell behind" /
 "patch available"; device-level titles ("Apple macOS …" — is the device on the latest macOS);
-vulnerability columns (LoonSecIO); fleet findings. From #311: `installedReleasedAt` on the wire
+fleet findings. (The vulnerability column on the title page is built: `docs/vulnerabilities.md` §4g.) From #311: `installedReleasedAt` on the wire
 (the build's own release date — stored as `app_catalog.released_at`, not copied to
 `installed_apps`), `patch.sources` the day a second provider exists, catalog generation on
 `loon:run`. The UI renders what the wire carries since #313 (§6); what it does not yet

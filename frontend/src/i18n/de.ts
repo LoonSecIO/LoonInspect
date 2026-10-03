@@ -1361,9 +1361,33 @@ export const de: Translations = {
       tableVersion: "Version",
       tableReleaseDate: "Veröffentlichungsdatum",
       empty: "Für diesen Titel ist keine Versionshistorie vorhanden.",
+      versionsHeading: "Versionen",
       versionsTitle: "Versionshistorie",
-      versionsTotal: (n: number) => `${n} Version${n === 1 ? "" : "en"}`,
+      versionsShown: (shown: number, total: number) =>
+        shown === total ? `${total} Version${total === 1 ? "" : "en"}` : `${shown} von ${total} Versionen`,
+      hideEmpty: "Versionen mit 0 Geräten ausblenden",
+      hideEmptyHint:
+        "Blendet im Diagramm und in der Tabelle Versionen aus, auf denen kein Gerät dieser Organisation ist. Beim Öffnen eines Titels angehakt, wenn eine seiner Versionen ein Gerät hat.",
+      hiddenWithoutDevices: (hidden: number) => `${hidden} ohne Geräte ausgeblendet`,
+      emptyAllHidden: (total: number) =>
+        `Keine geführte Version ist auf einem Gerät. ${total === 1 ? "Die 1 Version, die Jamf führt, ist" : `Alle ${total} Versionen, die Jamf führt, sind`} durch „Versionen mit 0 Geräten ausblenden“ ausgeblendet.`,
+      chartTitle: "Geräte nach Version",
+      chartEmpty:
+        "Kein Gerät dieser Organisation hat eine App, die diesem Titel zugeordnet ist; es gibt nichts darzustellen.",
+      chartCurrent: "aktuell",
+      chartUnlisted: "von Jamf nicht geführt",
+      chartAriaLabel: (versions: number, devices: number) =>
+        `Balkendiagramm der Geräte nach Version: ${versions} Version${versions === 1 ? "" : "en"}, ${devices} Gerät${devices === 1 ? "" : "e"} mit diesem Titel. Die Tabelle der Versionshistorie darunter führt dieselben Zahlen.`,
+      chartTooltip: (version: string, devices: number, released: string | null, listed: boolean) =>
+        `${version}: ${devices} Gerät${devices === 1 ? "" : "e"}` +
+        (released ? ` · veröffentlicht ${released}` : "") +
+        (listed ? "" : " · von Jamf nicht geführt"),
       tableDeviceCount: "Geräte mit Version",
+      tableVulnerability: "Schwachstellen",
+      vulnerabilityGrain: (date: string) =>
+        `Jede Version wird als eigener Build beantwortet, aus dem Korpus vom ${date}, ob ein Gerät hier sie hat oder nicht. Eine Version, für die der Korpus keine Zeile führt, liest sich als außerhalb des Korpus, nie als sauber.`,
+      vulnerabilityOff:
+        "Keine Schwachstellen-Spalte: für diese Organisation antwortet nichts. Entweder ist in diesem Container kein Korpus geladen, oder das Teilen von Daten ist für diese Organisation aus.",
       deviceSummary: (devices: number, onLatest: number) =>
         devices === 0
           ? "Kein Gerät dieses Mandanten hat eine App, die diesem Titel zugeordnet ist."

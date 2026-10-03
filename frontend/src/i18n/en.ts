@@ -1511,9 +1511,36 @@ export const en = {
       tableVersion: "Version",
       tableReleaseDate: "Release date",
       empty: "No version history recorded for this title.",
+      versionsHeading: "Versions",
       versionsTitle: "Version history",
-      versionsTotal: (n: number) => `${n} version${n === 1 ? "" : "s"}`,
+      versionsShown: (shown: number, total: number) =>
+        shown === total ? `${total} version${total === 1 ? "" : "s"}` : `${shown} of ${total} versions`,
+      // One box over the chart and the table. "0 devices" is the Devices with version
+      // column: devices whose matched app is on that version.
+      hideEmpty: "Hide versions with 0 devices",
+      hideEmptyHint:
+        "Hides versions no device in this organization is on, in the chart and in the table. Ticked when a title is opened if any of its versions has a device.",
+      hiddenWithoutDevices: (hidden: number) => `${hidden} with no devices hidden`,
+      emptyAllHidden: (total: number) =>
+        `No listed version is on a device. ${total === 1 ? "The 1 version Jamf lists is" : `All ${total} versions Jamf lists are`} hidden by "Hide versions with 0 devices".`,
+      chartTitle: "Devices by version",
+      chartEmpty:
+        "No device in this organization has an app matched to this title, so there is nothing to chart.",
+      chartCurrent: "current",
+      chartUnlisted: "not listed by Jamf",
+      chartAriaLabel: (versions: number, devices: number) =>
+        `Bar chart of devices by version: ${versions} version${versions === 1 ? "" : "s"}, ${devices} device${devices === 1 ? "" : "s"} with this title. The version history table below lists the same numbers.`,
+      chartTooltip: (version: string, devices: number, released: string | null, listed: boolean) =>
+        `${version}: ${devices} device${devices === 1 ? "" : "s"}` +
+        (released ? ` · released ${released}` : "") +
+        (listed ? "" : " · not listed by Jamf"),
       tableDeviceCount: "Devices with version",
+      tableVulnerability: "Vulnerability",
+      // Under the table, once, rather than once a row.
+      vulnerabilityGrain: (date: string) =>
+        `Each version is answered as its own build, from the corpus of ${date}, whether or not a device here has it. A version the corpus holds no row for reads as outside it, never as clean.`,
+      vulnerabilityOff:
+        "No Vulnerability column: nothing is answering for this organization. Either no corpus is loaded in this container, or data sharing is off for this organization.",
       deviceSummary: (devices: number, onLatest: number) =>
         devices === 0
           ? "No devices in this tenant have an app matched to this title."
