@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { AppNameLine } from "@/features/jamfPatch/AppNameLine";
@@ -7,16 +7,11 @@ import type { JamfPatchTitleDetail } from "@/features/jamfPatch/types";
 import { ReleaseCalendar } from "@/features/jamfPatch/ReleaseCalendar";
 import { RequirementsSection } from "@/features/jamfPatch/RequirementsSection";
 import { RequirementsTestPanel } from "@/features/jamfPatch/RequirementsTestPanel";
+import { VersionDevicesChart } from "@/features/jamfPatch/VersionDevicesChart";
+import { filterVersionRows, hideEmptyByDefault, versionRows } from "@/features/jamfPatch/versionRows";
+import { AssessmentCell } from "@/features/vulnerabilities/AppAssessment";
+import { formatCorpusDate } from "@/features/vulnerabilities/types";
 import { useLocale } from "@/i18n/LocaleContext";
-
-/** Devices matched to the title whose installed version Jamf has not listed — ahead of the
- *  catalog (a beta) or a build Jamf never recorded. */
-function unlistedDevices(title: JamfPatchTitleDetail): number {
-  const listed = new Set(title.patches.map((patch) => patch.version));
-  return Object.entries(title.versionDeviceCounts)
-    .filter(([version]) => !listed.has(version))
-    .reduce((sum, [, count]) => sum + count, 0);
-}
 
 export function JamfPatchDetailPage() {
   const { t } = useLocale();
@@ -26,6 +21,9 @@ export function JamfPatchDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [versionsExpanded, setVersionsExpanded] = useState(false);
+  // "Hide versions with 0 devices". Null until the reader touches the box, so each title
+  // opens on its own default (`hideEmptyByDefault`) rather than on the last title's choice.
+  const [hideEmptyChoice, setHideEmptyChoice] = useState<boolean | null>(null);
 
   // A different title is a different question, and the page has to say it is asking
   // rather than leave the last title's facts standing under the new name. Adjusted here,
@@ -39,6 +37,7 @@ export function JamfPatchDetailPage() {
     setAsked({ titleId, t });
     setLoading(true);
     setError(null);
+    if (asked.titleId !== titleId) setHideEmptyChoice(null);
   }
 
   useEffect(() => {
@@ -61,6 +60,19 @@ export function JamfPatchDetailPage() {
       cancelled = true;
     };
   }, [titleId, t]);
+
+  // The chart and the table read one list through one filter, so they cannot disagree
+  // about which versions are showing.
+  const rows = useMemo(() => (title ? versionRows(title) : []), [title]);
+  const hideEmpty = hideEmptyChoice ?? hideEmptyByDefault(rows);
+  const shown = useMemo(() => filterVersionRows(rows, hideEmpty), [rows, hideEmpty]);
+  const listedShown = shown.visible.filter((row) => row.listed);
+  const listedTotal = rows.filter((row) => row.listed).length;
+  const unlistedDevices = rows.filter((row) => !row.listed).reduce((sum, row) => sum + row.devices, 0);
+  // The Vulnerability column exists only where a corpus answers for this organization. With
+  // none there is no column of "not assessed" — one sentence under the table says so (#298).
+  const corpusAsOf = title?.corpusAsOf ?? null;
+  const columns = corpusAsOf === null ? 3 : 4;
 
   return (
     <section className="space-y-6">
@@ -90,6 +102,112 @@ export function JamfPatchDetailPage() {
             </p>
           </div>
 
+          {/* The versions come before the catalog's own detail: which versions the fleet is on,
+              and what the corpus says about each, is what the page is opened for. */}
+          <div className="space-y-3 rounded-lg border bg-card p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
+              <h2 className="text-lg font-semibold">
+                {t.jamfPatch.detail.versionsHeading} ({listedTotal})
+              </h2>
+              <label className="flex items-center gap-2 text-sm" title={t.jamfPatch.detail.hideEmptyHint}>
+                <input type="checkbox" checked={hideEmpty} onChange={(e) => setHideEmptyChoice(e.target.checked)} />
+                {t.jamfPatch.detail.hideEmpty}
+              </label>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium">{t.jamfPatch.detail.chartTitle}</h3>
+              <VersionDevicesChart rows={shown.visible} totalDevices={title.deviceCount} />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setVersionsExpanded((current) => !current)}
+              className="flex w-full items-center gap-2 text-left"
+              aria-expanded={versionsExpanded}
+            >
+              {versionsExpanded ? (
+                <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              )}
+              <h3 className="text-sm font-medium">{t.jamfPatch.detail.versionsTitle}</h3>
+            </button>
+
+            {versionsExpanded && (
+              <>
+                <div className="overflow-x-auto rounded-lg border bg-card">
+                  <table className="w-full text-sm">
+                    <thead className="border-b bg-muted/30 text-left text-muted-foreground">
+                      <tr>
+                        <th className="px-4 py-2 font-medium">{t.jamfPatch.detail.tableVersion}</th>
+                        <th className="px-4 py-2 font-medium">{t.jamfPatch.detail.tableReleaseDate}</th>
+                        <th className="px-4 py-2 font-medium">{t.jamfPatch.detail.tableDeviceCount}</th>
+                        {/* Back, and real this time. #298 deleted a stub that rendered dashes
+                            and said a column could not be built at this grain; since #385 a
+                            title carries the app name a Mac reports, so every listed version
+                            has the content key the corpus is compiled on. Each cell is that
+                            build's own answer — never the title's, never the fleet's. */}
+                        {corpusAsOf !== null && (
+                          <th className="px-4 py-2 font-medium">{t.jamfPatch.detail.tableVulnerability}</th>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {listedTotal === 0 && (
+                        <tr>
+                          <td className="px-4 py-4 text-muted-foreground" colSpan={columns}>
+                            {t.jamfPatch.detail.empty}
+                          </td>
+                        </tr>
+                      )}
+                      {listedTotal > 0 && listedShown.length === 0 && (
+                        <tr>
+                          <td className="px-4 py-4 text-muted-foreground" colSpan={columns}>
+                            {t.jamfPatch.detail.emptyAllHidden(listedTotal)}
+                          </td>
+                        </tr>
+                      )}
+                      {listedShown.map((row) => (
+                        <tr key={row.version} className="border-b align-top last:border-0">
+                          <td className="px-4 py-2 font-medium">{row.version}</td>
+                          <td className="px-4 py-2">
+                            {row.releaseDate ? new Date(row.releaseDate).toLocaleDateString() : "—"}
+                          </td>
+                          <td className="px-4 py-2 tabular-nums">{row.devices}</td>
+                          {corpusAsOf !== null && (
+                            <td className="px-4 py-2">
+                              {/* A version the answer does not name reads outside the corpus,
+                                  dated — never a blank a reader could take for clean. */}
+                              <AssessmentCell
+                                vuln={title.versionVulns[row.version] ?? { assessment: "unknown_app", corpusAsOf }}
+                                t={t}
+                              />
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <p className="text-sm text-muted-foreground">
+                  {t.jamfPatch.detail.versionsShown(listedShown.length, listedTotal)}
+                  {listedTotal - listedShown.length > 0 &&
+                    ` · ${t.jamfPatch.detail.hiddenWithoutDevices(listedTotal - listedShown.length)}`}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {corpusAsOf === null
+                    ? t.jamfPatch.detail.vulnerabilityOff
+                    : t.jamfPatch.detail.vulnerabilityGrain(formatCorpusDate(corpusAsOf))}
+                </p>
+              </>
+            )}
+            {unlistedDevices > 0 && (
+              <p className="text-sm text-muted-foreground">{t.jamfPatch.detail.unlistedVersions(unlistedDevices)}</p>
+            )}
+          </div>
+
           <div className="space-y-3 rounded-lg border bg-card p-4">
             <h2 className="text-lg font-semibold">{t.jamfPatch.detail.calendarTitle}</h2>
             <p className="text-sm text-muted-foreground">{t.jamfPatch.detail.calendarDescription}</p>
@@ -108,73 +226,6 @@ export function JamfPatchDetailPage() {
             <RequirementsTestPanel requirements={title.requirements} />
           </div>
 
-          <div className="space-y-3 rounded-lg border bg-card p-4">
-            <button
-              type="button"
-              onClick={() => setVersionsExpanded((current) => !current)}
-              className="flex w-full items-center gap-2 text-left"
-              aria-expanded={versionsExpanded}
-            >
-              {versionsExpanded ? (
-                <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-              )}
-              <h2 className="text-lg font-semibold">
-                {t.jamfPatch.detail.versionsTitle} ({title.patches.length})
-              </h2>
-            </button>
-
-            {versionsExpanded && (
-              <>
-                <div className="overflow-x-auto rounded-lg border bg-card">
-                  <table className="w-full text-sm">
-                    <thead className="border-b bg-muted/30 text-left text-muted-foreground">
-                      <tr>
-                        <th className="px-4 py-2 font-medium">{t.jamfPatch.detail.tableVersion}</th>
-                        <th className="px-4 py-2 font-medium">{t.jamfPatch.detail.tableReleaseDate}</th>
-                        <th className="px-4 py-2 font-medium">{t.jamfPatch.detail.tableDeviceCount}</th>
-                        {/* No vulnerability column (#298). The one that stood here rendered
-                            C — H — M — L — Σ beside four coloured dots, a green one on Low,
-                            under a tooltip naming an integration nobody can enable — a fourth
-                            rendering of "not assessed" that noCollapse.ts could not see, and
-                            pre-contract sediment from before docs/vulnerabilities.md. A real
-                            column cannot be built at this grain either: the corpus is keyed
-                            on the installed app's name (key_full), which a Jamf title's
-                            version row does not carry. The assessment lives on the Catalog
-                            tab and the device page, at the grain it is an answer about. */}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {title.patches.length === 0 && (
-                        <tr>
-                          <td className="px-4 py-4 text-muted-foreground" colSpan={3}>
-                            {t.jamfPatch.detail.empty}
-                          </td>
-                        </tr>
-                      )}
-                      {title.patches.map((patch, index) => (
-                        <tr key={`${patch.version}-${index}`} className="border-b last:border-0">
-                          <td className="px-4 py-2 font-medium">{patch.version}</td>
-                          <td className="px-4 py-2">
-                            {patch.releaseDate ? new Date(patch.releaseDate).toLocaleDateString() : "—"}
-                          </td>
-                          <td className="px-4 py-2 tabular-nums">
-                            {title.versionDeviceCounts[patch.version] ?? 0}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <p className="text-sm text-muted-foreground">{t.jamfPatch.detail.versionsTotal(title.patches.length)}</p>
-                {unlistedDevices(title) > 0 && (
-                  <p className="text-sm text-muted-foreground">{t.jamfPatch.detail.unlistedVersions(unlistedDevices(title))}</p>
-                )}
-              </>
-            )}
-          </div>
         </>
       )}
     </section>

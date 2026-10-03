@@ -12,6 +12,9 @@ from app.core.auth import require
 from app.core.database import get_db
 from app.core.permissions import Permission
 from app.core.posture import patch_pair_counts
+from app.core.vuln_library import earned_corpus
+from app.core.vuln_read import today
+from app.core.vuln_versions import title_version_vulns
 from app.mdm.patch.jamf_catalog import sync_catalog
 from app.mdm.patch.matching import STATE_BEHIND
 from app.models.schema import AppCatalogEntry, AppCatalogTitleMatch, InstalledApp, JamfPatchTitle
@@ -172,4 +175,11 @@ async def get_title(title_id: str, db: AsyncSession = Depends(get_db)) -> JamfPa
         title.id, (0, 0, 0)
     )
     out.version_device_counts = await title_version_counts(db, title.id)
+    # The Vulnerability column: each listed version's own answer, from the corpus this
+    # organization has earned. One corpus object for the stamp and the rows under it.
+    corpus = await earned_corpus(db)
+    out.corpus_as_of = corpus.as_of
+    listed = [str(patch.get("version") or "") for patch in title.patches or [] if isinstance(patch, dict)]
+    listed = [version for version in listed if version]
+    out.version_vulns = await title_version_vulns(db, title.id, listed, corpus=corpus, as_of=today())
     return out

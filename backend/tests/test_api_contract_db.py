@@ -153,6 +153,10 @@ async def test_the_jamf_patch_titles_say_where_each_app_name_came_from(client, d
         detail = await client.get(f"/api/jamf-patch/titles/{prefix}-derived")
         assert detail.status_code == 200, detail.text
         assert detail.json()["appNameSource"] == "kill_apps"
+        # The Vulnerability column's two keys, in the shape nothing-is-answering takes: no
+        # block per version and no date, never a map of `off` rows the page would draw.
+        assert detail.json()["versionVulns"] == {}
+        assert detail.json()["corpusAsOf"] is None
     finally:
         await db.execute(delete(JamfPatchTitle).where(JamfPatchTitle.id.startswith(prefix)))
         await db.commit()

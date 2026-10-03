@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
+
+from app.schemas.payload import VulnEnrichment
 
 
 class JamfPatchTitleOut(BaseModel):
@@ -58,6 +60,12 @@ class JamfPatchTitleDetailOut(JamfPatchTitleOut):
     extension_attributes: list[dict] | None = None
     # Installed version -> distinct devices, for the devices matched to this title.
     version_device_counts: dict[str, int] = {}
+    # Listed version -> the corpus's answer for that build (`app.core.vuln_versions`): the
+    # wire's own `vuln{}` block, as every other REST row carries it. Empty, with
+    # `corpusAsOf` null, when nothing answers for this organization — `off` for the whole
+    # title, said once rather than once a row. Otherwise every listed version has a key.
+    version_vulns: dict[str, VulnEnrichment] = Field(default_factory=dict)
+    corpus_as_of: date | None = None
 
 
 class JamfPatchCoverageOut(BaseModel):

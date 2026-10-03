@@ -1,3 +1,5 @@
+import type { AppVulnerability } from "@/features/vulnerabilities/types";
+
 export interface JamfPatchTitle {
   id: string;
   name: string;
@@ -66,6 +68,10 @@ export interface JamfPatchTitleDetail extends JamfPatchTitle {
   extensionAttributes?: JamfPatchExtensionAttribute[] | null;
   /** Installed version → distinct devices, for the apps matched to this title. */
   versionDeviceCounts: Record<string, number>;
+  /** Listed version → the corpus's answer for that build. Empty, with `corpusAsOf` null,
+   *  when nothing answers for this organization; otherwise every listed version has a key. */
+  versionVulns: Record<string, AppVulnerability>;
+  corpusAsOf: string | null;
 }
 
 /** The org's stated patching policy (#116): typed text read beside the evidence, never a
