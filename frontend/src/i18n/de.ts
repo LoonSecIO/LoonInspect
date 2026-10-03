@@ -1353,6 +1353,31 @@ export const de: Translations = {
       boundary:
         "Die Erklärung ist für die Lesenden und setzt keinen Schwellenwert: nichts wird an ihrem Wortlaut gemessen. Nur eine bestätigte Regel urteilt, und nur in den Zahlen unter „Außerhalb der Richtlinie“."
     },
+    presets: {
+      pick: "Von einer veröffentlichten Anforderung ausgehen:",
+      none: "Keine: Grenzen selbst eintragen",
+      option: (framework: string, document: string) => `${framework}: ${document}`,
+      source: (framework: string, document: string, published: string, section: string) =>
+        `${framework}: ${document} (${published}), ${section}.`,
+      readSource: "Quelle lesen",
+      verifiedOn: (when: string) => `Die Zahlen wurden am ${when} aus dem Text des Herausgebers gelesen.`,
+      changed:
+        "Die Felder sagen nicht mehr, was diese Anforderung sagt; die Regel wird als eigene bestätigt, ohne Quelle.",
+      drawnFrom: "Abgeleitet aus",
+      basisIsNotAVerdict:
+        "Daher stammen die Zahlen der Regel. Das ist keine Aussage über das Schema oder darüber, ob die Organisation es erfüllt.",
+      entries: {
+        "cyber-essentials-3.3": {
+          requires:
+            "Was der Text verlangt: Updates innerhalb von 14 Tagen nach Veröffentlichung, wenn sie Schwachstellen beheben, die der Hersteller als kritisch oder hohes Risiko einstuft, die nach CVSS v3 mit 7 oder höher bewertet sind oder deren Schweregrad der Hersteller nicht nennt. 14 Tage für jedes Update werden empfohlen, aber nicht verlangt.",
+          maps: "Wie die Regel das abbildet: jedes Update bekommt 14 Tage. Eine Regel kann ein Update ohne genannten Schweregrad nicht von einem geringfügigen unterscheiden; die engere Lesart nur für kritisch oder hoch ließe Builds unbeurteilt, die der Text erfasst.",
+          differs:
+            "Wo beide auseinandergehen: der Text verlangt außerdem lizenzierte und unterstützte Software, das Entfernen nicht mehr unterstützter Software und automatische Updates, wo möglich, und er gilt für jedes Gerät und alle Software im Geltungsbereich. Eine Regel beurteilt Jamf-Patch-Titel auf Macs, nach dem Datum, an dem Jamfs Patch-Katalog die neuere Version führt.",
+          notAVerdict:
+            "Von dieser Anforderung auszugehen ist keine Aussage darüber, ob die Organisation das Schema erfüllt. Es hält fest, woher die Zahl der Regel stammt."
+        }
+      }
+    },
     rules: {
       heading: "Bestätigte Regeln",
       confirm: "Regel bestätigen",

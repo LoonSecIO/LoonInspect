@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
@@ -41,6 +41,30 @@ class PatchRule(BaseModel):
         return any(limit is not None for limit in (self.max_days_behind, self.max_releases_behind, self.max_days_behind_severe))
 
 
+class PatchRuleConfirm(PatchRule):
+    """The organization's rule as it is confirmed: the limits, and optionally the published
+    requirement they were drawn from (`app.mdm.patch.policy_presets`). The route refuses a
+    basis the limits do not match."""
+
+    basis: str | None = Field(default=None, max_length=64)
+
+
+class PresetOut(BaseModel):
+    """One published requirement a rule can be started from. Identity, source and the rule;
+    the explanation is the page's own copy, keyed by `id`."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    id: str
+    framework: str
+    document: str
+    published: str
+    section: str
+    url: str
+    verified_on: date
+    rule: PatchRule
+
+
 class PatchRuleOverride(PatchRule):
     """One title's own rule, which replaces the organization's for that title."""
 
@@ -69,6 +93,9 @@ class PatchingRulesOut(BaseModel):
 
     # Null when no organization-wide rule is confirmed.
     default: PatchRule | None = None
+    # The published requirement the organization's rule was confirmed unchanged from, or
+    # null: it was typed, drafted, or changed since. The rule's source, never a verdict.
+    basis: PresetOut | None = None
     overrides: list[PatchRuleOverrideOut] = Field(default_factory=list)
     updated_at: datetime | None = None
     updated_by: str | None = None

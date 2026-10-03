@@ -83,7 +83,7 @@ async def unstated(db):
 async def test_an_unstated_policy_is_an_empty_statement_for_anyone_who_reads_the_page(viewer, unstated) -> None:
     response = await viewer.get("/api/settings/patching-policy")
     assert response.status_code == 200, response.text
-    no_rules = {"default": None, "overrides": [], "updatedAt": None, "updatedBy": None}
+    no_rules = {"default": None, "basis": None, "overrides": [], "updatedAt": None, "updatedBy": None}
     assert response.json() == {"statement": "", "updatedAt": None, "updatedBy": None, "rules": no_rules}
 
 

@@ -9,6 +9,7 @@ displayed: who must sign in with a second factor (#653), read by app.core.auth."
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -20,6 +21,7 @@ from app.core.auth import Principal, current_principal, require
 from app.core.database import get_db
 from app.core.permissions import Permission
 from app.mdm.patch.policy import Rule, Rules
+from app.mdm.patch.policy_presets import PRESETS, Preset, is_basis_of, preset
 from app.models.schema import JamfPatchTitle, PatchingPolicy, Tenant
 from app.schemas.settings import (
     MfaPolicy,
@@ -27,8 +29,10 @@ from app.schemas.settings import (
     PatchingPolicyUpdate,
     PatchingRulesOut,
     PatchRule,
+    PatchRuleConfirm,
     PatchRuleOverride,
     PatchRuleOverrideOut,
+    PresetOut,
 )
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -38,6 +42,27 @@ async def patching_rules(db: AsyncSession) -> Rules:
     """The acting tenant's confirmed rules — empty when none is, which judges nothing."""
     stored = (await db.execute(select(PatchingPolicy.rules))).scalar_one_or_none()
     return Rules.from_stored(stored)
+
+
+def _rule_out(rule: Rule) -> PatchRule:
+    return PatchRule(
+        max_days_behind=rule.max_days_behind,
+        max_releases_behind=rule.max_releases_behind,
+        max_days_behind_severe=rule.max_days_behind_severe,
+    )
+
+
+def _preset_out(entry: Preset) -> PresetOut:
+    return PresetOut(
+        id=entry.id,
+        framework=entry.framework,
+        document=entry.document,
+        published=entry.published,
+        section=entry.section,
+        url=entry.url,
+        verified_on=entry.verified_on,
+        rule=_rule_out(entry.rule),
+    )
 
 
 async def _policy_out(db: AsyncSession, row: PatchingPolicy | None) -> PatchingPolicyOut:
@@ -68,13 +93,10 @@ async def _policy_out(db: AsyncSession, row: PatchingPolicy | None) -> PatchingP
         updated_at=row.updated_at,
         updated_by=row.updated_by,
         rules=PatchingRulesOut(
-            default=None
-            if default is None
-            else PatchRule(
-                max_days_behind=default.max_days_behind,
-                max_releases_behind=default.max_releases_behind,
-                max_days_behind_severe=default.max_days_behind_severe,
-            ),
+            default=None if default is None else _rule_out(default),
+            # Shown only while it still holds: an entry this build does not have, or a rule
+            # that no longer equals the entry's, has no basis to show.
+            basis=_preset_out(basis) if (basis := preset(rules.default_basis)) and is_basis_of(basis.id, default) else None,
             overrides=overrides,
             updated_at=datetime.fromisoformat(updated_at) if isinstance(updated_at, str) else None,
             updated_by=stamp.get("updated_by") if isinstance(stamp.get("updated_by"), str) else None,
@@ -95,6 +117,7 @@ def _store_rules(row: PatchingPolicy, rules: Rules, principal: Principal) -> Non
     does not see."""
     row.rules = {
         "default": rules.default.stored() if rules.default is not None else None,
+        "default_basis": rules.default_basis,
         "overrides": {title_id: rule.stored() for title_id, rule in rules.overrides.items()},
         "updated_at": datetime.now(UTC).isoformat(),
         "updated_by": principal.account.email,
@@ -145,13 +168,25 @@ async def put_patching_policy(
     return await _policy_out(db, row)
 
 
+@router.get(
+    "/patching-policy/presets",
+    response_model=list[PresetOut],
+    dependencies=[Depends(require(Permission.APP_READ))],
+)
+async def list_patching_presets() -> list[PresetOut]:
+    """The published requirements a rule can be started from, each with its source and the
+    rule it maps to. Static, the same for every organization, and read by anyone who reads
+    the page: an auditor following a rule's basis reads the same entry the admin chose."""
+    return [_preset_out(entry) for entry in PRESETS]
+
+
 @router.put(
     "/patching-policy/rule",
     response_model=PatchingPolicyOut,
     dependencies=[Depends(require(Permission.SYSTEM_WRITE))],
 )
 async def put_patching_rule(
-    payload: PatchRule,
+    payload: PatchRuleConfirm,
     principal: Principal = Depends(current_principal),
     db: AsyncSession = Depends(get_db),
 ) -> PatchingPolicyOut:
@@ -165,12 +200,28 @@ async def put_patching_rule(
         max_releases_behind=payload.max_releases_behind,
         max_days_behind_severe=payload.max_days_behind_severe,
     )
-    _store_rules(row, Rules(default=rule if rule.judges else None, overrides=current.overrides), principal)
+    if payload.basis is not None and not is_basis_of(payload.basis, rule):
+        known = preset(payload.basis)
+        if known is None:
+            detail = (
+                f"This build has no published requirement with the id {payload.basis}, so the rule cannot be recorded as "
+                "drawn from it. Confirm the limits without a basis."
+            )
+        else:
+            detail = (
+                f"The limits sent are not the ones {known.framework} ({known.document}, {known.section}) maps to, so the "
+                "rule cannot be recorded as drawn from it. Confirm the limits without a basis, or start again from that "
+                "requirement."
+            )
+        raise HTTPException(status_code=422, detail=detail)
+    confirmed = Rules(default=rule if rule.judges else None, overrides=current.overrides, default_basis=payload.basis)
+    _store_rules(row, confirmed, principal)
     await db.commit()
     await db.refresh(row)
     audit(
         AuditAction.PATCHING_POLICY_UPDATED,
         target_type="patching_policy_rule",
+        basis=payload.basis,
         max_days_behind=rule.max_days_behind,
         max_releases_behind=rule.max_releases_behind,
         max_days_behind_severe=rule.max_days_behind_severe,
@@ -207,7 +258,8 @@ async def put_patching_override(
         max_days_behind_severe=payload.max_days_behind_severe,
         exempt=payload.exempt,
     )
-    _store_rules(row, Rules(default=current.default, overrides={**current.overrides, title_id: rule}), principal)
+    # `replace`, so the organization's rule and its basis ride through a title's change untouched.
+    _store_rules(row, replace(current, overrides={**current.overrides, title_id: rule}), principal)
     await db.commit()
     await db.refresh(row)
     audit(
@@ -239,7 +291,7 @@ async def delete_patching_override(
     if row is None or title_id not in current.overrides:
         return await _policy_out(db, row)
     kept = {other: rule for other, rule in current.overrides.items() if other != title_id}
-    _store_rules(row, Rules(default=current.default, overrides=kept), principal)
+    _store_rules(row, replace(current, overrides=kept), principal)
     await db.commit()
     await db.refresh(row)
     audit(AuditAction.PATCHING_POLICY_UPDATED, target_type="patching_policy_override", target_id=title_id, removed=True)

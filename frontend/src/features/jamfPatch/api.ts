@@ -6,6 +6,7 @@ import type {
   JamfPatchTitleListResponse,
   PatchRule,
   PatchingPolicy,
+  PolicyPreset,
   RuleDraftAnswer,
   RuleDraftStatus
 } from "@/features/jamfPatch/types";
@@ -43,8 +44,13 @@ export function putPatchingPolicy(statement: string): Promise<PatchingPolicy> {
 }
 
 /** Confirm the organization's rule, or clear it with both limits null. system:write, audited. */
-export function putPatchingRule(rule: PatchRule): Promise<PatchingPolicy> {
-  return apiRequest<PatchingPolicy>("/settings/patching-policy/rule", { method: "PUT", json: rule });
+export function putPatchingRule(rule: PatchRule, basis: string | null = null): Promise<PatchingPolicy> {
+  return apiRequest<PatchingPolicy>("/settings/patching-policy/rule", { method: "PUT", json: { ...rule, basis } });
+}
+
+/** The published requirements a rule can be started from, each with its source. */
+export function listPatchingPresets(): Promise<PolicyPreset[]> {
+  return apiRequest<PolicyPreset[]>("/settings/patching-policy/presets");
 }
 
 /** Give one title its own rule: limits, or `exempt` alone. system:write, audited. */

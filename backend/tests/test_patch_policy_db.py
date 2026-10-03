@@ -306,3 +306,39 @@ async def test_with_nothing_answering_the_severe_limit_judges_nothing_and_the_re
     assert (await admin.put(RULE, json={"maxDaysBehind": 200})).status_code == 200
     page = await admin.get(f"/api/jamf-patch/titles?q={BUNDLE_ID}&pageSize=10")
     assert page.json()["severityAnswering"] is None and (await _detail(admin))["policy"]["severityAnswering"] is None
+
+
+# --- a rule started from a published requirement (#736) ------------------------------------
+
+PRESETS = "/api/settings/patching-policy/presets"
+
+
+async def test_the_catalogue_is_read_by_anyone_who_reads_the_page(viewer) -> None:  # noqa: F811
+    response = await viewer.get(PRESETS)
+    assert response.status_code == 200, response.text
+    entries = {entry["id"]: entry for entry in response.json()}
+    essentials = entries["cyber-essentials-3.3"]
+    assert essentials["rule"] == {"maxDaysBehind": 14, "maxReleasesBehind": None, "maxDaysBehindSevere": None}
+    assert essentials["framework"] == "Cyber Essentials" and essentials["verifiedOn"] == "2026-10-03"
+
+
+async def test_a_rule_confirmed_unchanged_records_its_basis_and_a_changed_one_does_not(admin, fleet) -> None:  # noqa: F811
+    confirmed = await admin.put(RULE, json={"maxDaysBehind": 14, "basis": "cyber-essentials-3.3"})
+    assert confirmed.status_code == 200, confirmed.text
+    basis = confirmed.json()["rules"]["basis"]
+    assert (basis["id"], basis["section"]) == ("cyber-essentials-3.3", "Security update management")
+
+    # A title's own rule does not disturb where the organization's came from.
+    assert (await admin.put(OVERRIDE, json={"exempt": True})).status_code == 200
+    assert (await admin.get("/api/settings/patching-policy")).json()["rules"]["basis"]["id"] == "cyber-essentials-3.3"
+
+    # Limits that are not the entry's cannot claim it, and say so; a basis nobody holds likewise.
+    mismatch = await admin.put(RULE, json={"maxDaysBehind": 30, "basis": "cyber-essentials-3.3"})
+    assert mismatch.status_code == 422 and "cannot be recorded as drawn from it" in mismatch.json()["detail"]
+    unknown = await admin.put(RULE, json={"maxDaysBehind": 14, "basis": "pci-dss-4.0.1"})
+    assert unknown.status_code == 422 and "no published requirement with the id pci-dss-4.0.1" in unknown.json()["detail"]
+    assert (await admin.get("/api/settings/patching-policy")).json()["rules"]["basis"]["id"] == "cyber-essentials-3.3"
+
+    # Edited, the rule is the organization's own and the basis is gone.
+    edited = await admin.put(RULE, json={"maxDaysBehind": 30})
+    assert edited.status_code == 200 and edited.json()["rules"]["basis"] is None
