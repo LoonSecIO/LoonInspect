@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -42,6 +43,12 @@ class JamfPatchTitleOut(BaseModel):
     # https://github.com/LoonSecIO/LoonInspect/issues/110's tile is specified to rank by the
     # subtraction, so the honest number has to exist before that tile does.
     devices_behind: int = 0
+    # Distinct devices whose match on this title is out of the organization's confirmed
+    # patching rule (`app.mdm.patch.policy`). **Null is not zero**: null means nothing judges
+    # this title — no rule is confirmed, or the title is exempt — and a zero there would read
+    # as a clean bill nobody issued. `policySource` says which rule judged, or `exempt`.
+    devices_out_of_policy: int | None = None
+    policy_source: Literal["default", "override", "exempt"] | None = None
 
 
 class JamfPatchTitleListResponse(BaseModel):
@@ -52,6 +59,49 @@ class JamfPatchTitleListResponse(BaseModel):
     # The page and page size echoed, as every paged list does (#137).
     page: int
     page_size: int
+    # Whether a corpus is answering for this organization, where a confirmed rule has a
+    # limit for builds with critical or high findings; null where none does. False means
+    # that limit is judging nothing and every build is judged by the ordinary one.
+    severity_answering: bool | None = None
+
+
+class PolicyVersionOut(BaseModel):
+    """One version of the title against the rule that judges it (`policy.Verdict`)."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    state: Literal["within", "out", "not_judged"]
+    # Which limit put it out; `days` when both did.
+    reason: Literal["days", "releases"] | None = None
+    # When it went out of policy by the days limit. Null under the releases limit.
+    since: datetime | None = None
+    # Whole days a newer release has been listed, and listed releases newer than this one.
+    days_behind: int | None = None
+    releases_behind: int | None = None
+    # The days limit this version was judged by: the severe one or the ordinary one.
+    limit_days: int | None = None
+    # Whether the build carries a critical or high finding. Null where the corpus has not
+    # assessed it (it is then judged by the ordinary limit), and wherever the rule has no
+    # severe limit, since nothing was read.
+    severe: bool | None = None
+
+
+class TitlePolicyOut(BaseModel):
+    """The rule judging this title, and every version's verdict under it. Absent from the
+    response entirely when nothing judges the title."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    source: Literal["default", "override"]
+    exempt: bool = False
+    max_days_behind: int | None = None
+    max_releases_behind: int | None = None
+    max_days_behind_severe: int | None = None
+    # Whether a corpus is answering for this organization, where the rule has a severe
+    # limit; null where it has none. False means the severe limit is judging nothing.
+    severity_answering: bool | None = None
+    # Listed versions and the unlisted ones a device is on. Empty for an exempt title.
+    versions: dict[str, PolicyVersionOut] = Field(default_factory=dict)
 
 
 class JamfPatchTitleDetailOut(JamfPatchTitleOut):
@@ -66,6 +116,7 @@ class JamfPatchTitleDetailOut(JamfPatchTitleOut):
     # title, said once rather than once a row. Otherwise every listed version has a key.
     version_vulns: dict[str, VulnEnrichment] = Field(default_factory=dict)
     corpus_as_of: date | None = None
+    policy: TitlePolicyOut | None = None
 
 
 class JamfPatchCoverageOut(BaseModel):

@@ -399,13 +399,76 @@ the coverage numbers, so an auditor reads the stated policy beside the measured 
   needs `app:read` like the page and answers an empty statement when nothing has been
   stated; `PUT` needs `system:write`, strips the text, records who and when, and is audited
   as `patching-policy.updated`. Clearing is an empty statement, never a deleted row.
-- **Display and evidence context, never a threshold.** Nothing on the page is judged
-  against the statement and no number turns red because of it; the page says so beside
-  the text. Fixed-target comparisons still require a ruled policy
-  ([`v-never.md`](v-never.md): no invented compliance regimes; thresholds are code
-  constants). An org-stated policy is how an org-backed target could someday be
-  legitimized — that legitimization is a separate, future ruling, not this feature.
+- **The statement is display and evidence context, never a threshold.** Nothing on the page
+  is judged against its words, and the page says so beside the text. Fixed-target comparisons
+  still require a ruled policy ([`v-never.md`](v-never.md): no invented compliance regimes;
+  thresholds are code constants). An org-stated policy is how an org-backed target is
+  legitimized, and §8a is that legitimization: rules the organization confirms.
 - Served by the API rather than baked into the page, per the macOS-client rule.
+
+### 8a. The rules an organization confirms
+
+Asked for by Kyle on 2026-10-03 (#731): show which versions and devices are not valid under the
+policy, with a rule per app where one is needed. A sentence cannot be evaluated, so the page
+judges against **rules**, and a rule exists only when someone holding `system:write` confirms
+it. Until then nothing is judged and no column is drawn. The defaults below are the builder's,
+recorded for Kyle to overrule.
+
+- **A closed vocabulary, which is exactly what the matcher stores** per (build, title)
+  (`backend/app/mdm/patch/policy.py`):
+  - `maxDaysBehind` — out of policy once a newer release has been listed for more than *N* days.
+    The clock is #68's `first_newer_released_at`, so "within two weeks" is 14.
+  - `maxReleasesBehind` — out of policy when more than *N* listed releases are newer
+    (`releases_missed`); "current or one back" is 1.
+  - `maxDaysBehindSevere` — the same clock with a tighter limit, for a build that carries a
+    critical or high finding. Built 2026-10-03 for Kyle's own statement, *"Patch high's and
+    critical's within 2 weeks, else within 60 days"*: 14 beside 60. It replaces
+    `maxDaysBehind` for a severe build and is never longer than it (refused with words).
+
+  Any limit exceeded is out of policy. Only a build Jamf lists that is `behind` is judged:
+  `latest` and `ahead` are within, and `unknown` is *not judged*, as it is for
+  `patch.pairs_laggard_over_14d`.
+- **What *severe* is.** The corpus's stored answer for that exact build: a `covered` row the
+  answering epoch wrote, with `critical + high > 0` (`vuln_counts`, §4f of
+  [`vulnerabilities.md`](vulnerabilities.md)). It is a fact about the installed build, never
+  about its title, and it is the build's findings today — not whether the newer release
+  closes them, which the stored answer cannot say per finding. **A build the corpus has not
+  assessed is not severe.** It is judged by the ordinary limit, its verdict carries
+  `severe: null`, and the page says the ordinary limit applied because nobody assessed it.
+  With no corpus answering for the organization at all, the severe limit judges nothing and
+  both responses say so (`severityAnswering: false`); the page prints it under the rules. KEV
+  is not part of *severe*: `critical_or_kev` is tabled (#614).
+- **Per-title overrides.** A Jamf Patch title may carry its own rule, which **replaces** the
+  organization's for that title rather than merging with it, or be `exempt`. Exempt is named
+  as not judged and is never counted as within policy. An override is keyed on the Jamf title
+  id, the grain the page and the match rows are at; one app under two titles takes two.
+- **Stored** as one JSONB document on the tenant's `patching_policies` row
+  (`rules`: `default`, `overrides`, and its own `updated_at`/`updated_by`; migration
+  `a4d7e1c9b2f3`). NULL is "no rule confirmed".
+- **Routes.** `GET /api/settings/patching-policy` carries `rules`. `PUT …/patching-policy/rule`
+  confirms or clears the organization's rule; `PUT` and `DELETE
+  …/patching-policy/overrides/{titleId}` set and remove a title's own. All three writes need
+  `system:write` and are audited as `patching-policy.updated` with the limits.
+- **What the API answers.** The title list carries `devicesOutOfPolicy` and `policySource`
+  per title. **Null is not zero**: null means nothing judges the title. The title's own
+  response carries `policy`: the rule in force, where it came from, and a verdict for every
+  listed version and every unlisted version a device is on (`state`, `reason`, `since`,
+  `daysBehind`, `releasesBehind`, and `limitDays` and `severe` — which days limit judged it,
+  and why).
+- **One predicate in two dialects.** `policy.judge` gives a version's verdict in Python;
+  `jamf_patch.out_of_policy` counts devices in SQL. `tests/test_patch_policy_db.py` runs both
+  over one matched fleet and asserts they agree, with and without a corpus answering. For a
+  version a device is on, the page reads *severe* from the same stored rows the count reads
+  (`title_build_severity`), so the two cannot disagree about one Mac; for a version on no
+  Mac it reads the library, as that version's Vulnerability cell does.
+- **On the page.** The list gains an *Out of policy* column once a rule judges something.
+  The title page gains a *Patching policy* card (the rule in force, the title's own rule and
+  its editor), a *Policy* column in the version table, and out-of-policy bars in the *Devices
+  by version* chart, each with the words beside it.
+- **Not built.** A posture key for devices out of policy; out-of-policy on the Splunk wire;
+  a pinned or minimum version per title; separate limits for critical and for high; a limit
+  for exploited findings (`critical_or_kev` is tabled, #614); a clock that starts at a
+  finding's publication rather than at the newer release.
 
 ## 9. Not here (follow-ups)
 

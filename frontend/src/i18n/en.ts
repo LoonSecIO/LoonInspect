@@ -1501,7 +1501,92 @@ export const en = {
       statedBy: (by: string, when: string) => `Stated by ${by}, ${when}`,
       unknownAuthor: "an administrator",
       boundary:
-        "Stated for the reader beside the evidence. It sets no threshold: nothing on this page is judged against it, and no number here turns red because of it."
+        "The statement is for the reader and sets no threshold: nothing is judged against its words. Only a confirmed rule judges, and only in the Out of policy numbers."
+    },
+    // The rules an organization confirms beside its statement: limits from a closed
+    // vocabulary, for the organization and per title. The only thing a build is judged against.
+    rules: {
+      heading: "Confirmed rules",
+      confirm: "Confirm a rule",
+      edit: "Edit the rule",
+      save: "Confirm",
+      saveError: "Could not save the rule.",
+      none: "No rule is confirmed, so nothing on this page is judged against the policy.",
+      noneButOverrides: "No organization-wide rule is confirmed. Only the titles below are judged.",
+      defaultIntro: "A device is out of policy on a title when its installed version is behind and:",
+      sentenceDays: (days: number, others: boolean) =>
+        `a newer release has been listed by Jamf for more than ${days} day${days === 1 ? "" : "s"}${others ? ", for every other build" : ""}`,
+      sentenceSevere: (days: number) =>
+        `a newer release has been listed by Jamf for more than ${days} day${days === 1 ? "" : "s"}, where the installed build carries a critical or high finding in the vulnerability corpus`,
+      sentenceReleases: (releases: number) =>
+        `more than ${releases} newer release${releases === 1 ? " is" : "s are"} listed by Jamf`,
+      fieldDaysBefore: "A newer release has been listed for more than",
+      fieldDaysAfter: "days",
+      fieldSevereBefore: "For builds with a critical or high finding: more than",
+      fieldSevereAfter: "days",
+      fieldReleasesBefore: "More than",
+      fieldReleasesAfter: "newer releases are listed",
+      fieldsHint:
+        "Leave a box empty for no limit. Any limit exceeded is out of policy. Dates and releases are the ones Jamf's patch catalog lists. Critical and high findings are the vulnerability corpus's answer for the installed build; a build the corpus has not assessed is judged by the ordinary days.",
+      problems: {
+        days: "Days must be a whole number from 0 to 3650, or empty for no limit.",
+        severeDays: "Days for builds with a critical or high finding must be a whole number from 0 to 3650, or empty for no limit.",
+        releases: "Releases must be a whole number from 0 to 1000, or empty for no limit.",
+        severeLooser:
+          "The days for builds with a critical or high finding are more than the ordinary days. That limit replaces the ordinary one for those builds, so it has to be the shorter of the two."
+      },
+      severityNotAnswering:
+        "No vulnerability corpus is answering for this organization, so the limit for critical and high findings is judging nothing. Every build is judged by the ordinary limit until one does.",
+      problemEmptyOverride:
+        "A title's own rule needs a limit, or exempt. To judge this title by the organization's rule, cancel and choose that instead.",
+      overridesIntro: (count: number) =>
+        count === 1 ? "1 title has its own rule, which replaces the one above:" : `${count} titles have their own rule, which replaces the one above:`,
+      overrideUnlisted: (id: string) => `Title ${id} (no longer in the catalog)`,
+      exemptShort: "exempt, not judged",
+      limitsShort: (days: number | null, releases: number | null, severeDays: number | null) =>
+        [
+          severeDays === null ? null : `${severeDays} day${severeDays === 1 ? "" : "s"} with a critical or high finding`,
+          days === null ? null : `${days} day${days === 1 ? "" : "s"}`,
+          releases === null ? null : `${releases} release${releases === 1 ? "" : "s"} behind`
+        ]
+          .filter(Boolean)
+          .join(" or "),
+      confirmedBy: (by: string, when: string) => `Rules last confirmed by ${by}, ${when}`,
+      tableOutOfPolicy: "Out of policy",
+      exemptCell: "exempt",
+      ownRuleMark: "own rule",
+      ownRuleHint: "This title has its own rule, which replaces the organization's.",
+      // The title page.
+      titleHeading: "Patching policy",
+      giveOwn: "Give this title its own rule",
+      editOwn: "Edit this title's rule",
+      useDefault: "Use the organization's rule",
+      titleNone: "No rule judges this title: the organization has confirmed none, and the title has none of its own.",
+      titleNoneLink: "The organization's rule is confirmed on the Jamf Patch page.",
+      titleExempt:
+        "This title is exempt. It is not judged, and its devices are not counted as within policy either.",
+      titleDefaultIntro: "Judged by the organization's rule. A device is out of policy when its installed version is behind and:",
+      titleOwnIntro:
+        "This title has its own rule, in place of the organization's. A device is out of policy when its installed version is behind and:",
+      titleOwnEditIntro: "This title's own rule replaces the organization's for this title only.",
+      exemptLabel: "Exempt: do not judge this title",
+      titleSummary: (out: number, devices: number) =>
+        out === 0
+          ? `No device is out of policy (${devices} with this title).`
+          : `${out} of ${devices} device${devices === 1 ? "" : "s"} with this title ${out === 1 ? "is" : "are"} out of policy.`,
+      tablePolicy: "Policy",
+      verdictWithin: "Within policy",
+      verdictNotJudged: "Not judged: Jamf does not list this version",
+      verdictOut: "Out of policy",
+      verdictOutDays: (since: string, days: number, limit: number, severe: boolean) =>
+        `Out of policy since ${since}: a newer release has been listed for ${days} days (limit ${limit}${severe ? ", this build carries a critical or high finding" : ""})`,
+      verdictSeverityUnknown: "· the corpus has not assessed this build, so the ordinary limit applies",
+      verdictOutReleases: (behind: number, limit: number) =>
+        `Out of policy: ${behind} newer release${behind === 1 ? "" : "s"} listed (limit ${limit})`,
+      legendWithin: "Within policy",
+      legendOut: "Out of policy",
+      legendNotJudged: "Not judged",
+      chartOut: "out of policy"
     },
     detail: {
       back: "← Back to Jamf Patch",

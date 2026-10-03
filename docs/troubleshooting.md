@@ -58,6 +58,8 @@ they were written — §9 ends by saying the paths continue at §10.
   status"](#21-request-coverage-or-report-an-incorrect-match-is-refused-or-a-case-never-shows-a-status)
 - **§22** ["Patch policy is not in my sidebar, lists one app, or says its file was
   refused"](#22-patch-policy-is-not-in-my-sidebar-lists-one-app-or-says-its-file-was-refused)
+- **§23** ["Out of policy is missing, or a title is not
+  judged"](#23-out-of-policy-is-missing-or-a-title-is-not-judged)
 
 **The reportable states**, lettered in the order they were written, so they do not run in
 section order and never will — code, tests and the README cite them where they are. When a
@@ -2676,3 +2678,51 @@ is at `/posture/patch-policy` and needs **app:read**, which every role holds.
 **Z.** A reference replay that shipped with the build is refused, and reads the same after a reload.
 Report the refusal sentence as the page words it, the app that was picked, and the build from
 Settings › Support (§8). Nothing of the organization's is involved, so there is no run or log to attach.
+
+## 23. "Out of policy is missing, or a title is not judged"
+
+Devices › Applications › Jamf Patch judges devices against the **confirmed rules** under the
+stated patching policy, and against nothing else. The statement is text for a reader and judges
+nothing ([`jamf-patch-matching.md`](jamf-patch-matching.md) §8). A rule has three limits: a newer
+release listed for more than *N* days; a shorter *N* for a build that carries a critical or high
+finding; and more than *N* newer releases listed. Any one exceeded puts a device out of policy on
+that title. Reading needs **app:read**; confirming a rule or a title's
+own rule needs **system:write**.
+
+1. **There is no *Out of policy* column on the list.** No rule judges any title: *Confirmed rules*
+   reads *No rule is confirmed*. Press **Confirm a rule** there. The button is absent for an account
+   without `system:write`. `GET /api/settings/patching-policy` answers `rules.default: null` and
+   `rules.overrides: []` in this state.
+2. **A row reads `—` under *Out of policy*.** One of three things, and the row says which. *Devices
+   with app* is `0` → no device has an app matched to the title, so there is nobody to judge (§6
+   covers a title that is never matched). Only *titles with their own rule* are listed under
+   *Confirmed rules* and this is not one → no organization-wide rule is confirmed, and this title has
+   none of its own. A row reading **exempt** is a title somebody exempted: it is not judged, and it
+   is not counted as within policy either.
+3. **A title's number differs from *Devices with app* minus *Devices on latest*.** It should. Out of
+   policy counts only devices whose installed version Jamf lists and that are **behind** by more than
+   the rule allows. A device ahead of the catalog (a beta, an auto-updater) is within policy. A
+   device on a version Jamf does not list and that is not ahead reads *Not judged: Jamf does not list
+   this version* on the title's page, and is in neither count.
+4. **A version reads *Out of policy since …* and looks too early or too late.** The date is the
+   release date Jamf's patch catalog gives the first version newer than that one, plus the rule's
+   days. It is the catalog's clock, not the vendor's release notes and not when a device last
+   checked in. The title's *Version history* table has the release dates it was computed from.
+5. **A build I know has critical findings was given the longer limit.** The limit for critical
+   and high findings applies only to a build the vulnerability corpus has assessed. Two readings:
+   - Under *Confirmed rules*, or in the title's *Patching policy* card: *No vulnerability corpus is
+     answering for this organization…* → nothing is assessed, so every build is judged by the
+     ordinary limit. §5 is the path for a corpus that is not answering.
+   - The version's *Policy* cell ends *the corpus has not assessed this build, so the ordinary limit
+     applies* → the corpus is answering and holds no row for this build; its *Vulnerability* cell
+     reads *Outside the corpus*. That is the corpus's edge, not a fault here.
+6. **A title is judged by a rule I did not expect.** The title's page says which under *Patching
+   policy*: *Judged by the organization's rule*, or *This title has its own rule, in place of the
+   organization's*. A title's own rule replaces the organization's whole rule for that title; it
+   does not merge with it. **Use the organization's rule** removes it.
+7. **Saving a title's own rule answers *No Jamf Patch title has the id …*.** The catalog no longer
+   lists that title. Open the title from the Jamf Patch list rather than from a saved address; if
+   the list is empty, that is §6.
+
+A rule exists only after **Confirm**, which the audit log records
+as `patching-policy.updated` with the limits.

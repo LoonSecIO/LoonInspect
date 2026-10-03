@@ -14,6 +14,8 @@ function title(overrides: Partial<JamfPatchTitle> & { id: string; name: string }
     deviceCount: 0,
     devicesOnLatest: 0,
     devicesBehind: 0,
+    devicesOutOfPolicy: null,
+    policySource: null,
     ...overrides
   };
 }
