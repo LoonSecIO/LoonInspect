@@ -3,15 +3,34 @@ import { Link, useParams } from "react-router";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { AppNameLine } from "@/features/jamfPatch/AppNameLine";
 import { getJamfPatchTitle } from "@/features/jamfPatch/api";
-import type { JamfPatchTitleDetail } from "@/features/jamfPatch/types";
+import type { JamfPatchTitleDetail, PolicyVersion } from "@/features/jamfPatch/types";
 import { ReleaseCalendar } from "@/features/jamfPatch/ReleaseCalendar";
 import { RequirementsSection } from "@/features/jamfPatch/RequirementsSection";
 import { RequirementsTestPanel } from "@/features/jamfPatch/RequirementsTestPanel";
+import { TitlePolicyCard } from "@/features/jamfPatch/TitlePolicyCard";
+import { policySentence } from "@/features/jamfPatch/policyRules";
 import { VersionDevicesChart } from "@/features/jamfPatch/VersionDevicesChart";
 import { filterVersionRows, hideEmptyByDefault, versionRows } from "@/features/jamfPatch/versionRows";
 import { AssessmentCell } from "@/features/vulnerabilities/AppAssessment";
 import { formatCorpusDate } from "@/features/vulnerabilities/types";
 import { useLocale } from "@/i18n/LocaleContext";
+
+/** One version's verdict in the table: the status dot with its words, never the dot alone. */
+function PolicyCell({
+  verdict,
+  sentence
+}: {
+  verdict: PolicyVersion | undefined;
+  sentence: (verdict: PolicyVersion) => string;
+}) {
+  if (!verdict) return <span className="text-muted-foreground">—</span>;
+  return (
+    <span className={`inline-flex items-start gap-1.5 ${verdict.state === "not_judged" ? "text-muted-foreground" : ""}`}>
+      {verdict.state === "out" && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#d03b3b]" />}
+      {sentence(verdict)}
+    </span>
+  );
+}
 
 export function JamfPatchDetailPage() {
   const { t } = useLocale();
@@ -24,6 +43,9 @@ export function JamfPatchDetailPage() {
   // "Hide versions with 0 devices". Null until the reader touches the box, so each title
   // opens on its own default (`hideEmptyByDefault`) rather than on the last title's choice.
   const [hideEmptyChoice, setHideEmptyChoice] = useState<boolean | null>(null);
+  // Bumped when this title's patching rule changes: every verdict on the page is the API's,
+  // so a changed rule is a re-read, without the page falling back to "Loading".
+  const [revision, setRevision] = useState(0);
 
   // A different title is a different question, and the page has to say it is asking
   // rather than leave the last title's facts standing under the new name. Adjusted here,
@@ -59,7 +81,7 @@ export function JamfPatchDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [titleId, t]);
+  }, [titleId, t, revision]);
 
   // The chart and the table read one list through one filter, so they cannot disagree
   // about which versions are showing.
@@ -72,7 +94,10 @@ export function JamfPatchDetailPage() {
   // The Vulnerability column exists only where a corpus answers for this organization. With
   // none there is no column of "not assessed" — one sentence under the table says so (#298).
   const corpusAsOf = title?.corpusAsOf ?? null;
-  const columns = corpusAsOf === null ? 3 : 4;
+  // And the Policy column only where a rule judges this title: no rule, or an exempt title,
+  // is said once in the policy card rather than as a column of "not judged".
+  const judged = title?.policy && !title.policy.exempt ? title.policy : null;
+  const columns = 3 + (corpusAsOf === null ? 0 : 1) + (judged === null ? 0 : 1);
 
   return (
     <section className="space-y-6">
@@ -102,8 +127,11 @@ export function JamfPatchDetailPage() {
             </p>
           </div>
 
+          <TitlePolicyCard title={title} onChanged={() => setRevision((current) => current + 1)} />
+
           {/* The versions come before the catalog's own detail: which versions the fleet is on,
-              and what the corpus says about each, is what the page is opened for. */}
+              and which of them the policy and the corpus have something to say about, is what
+              the page is opened for. */}
           <div className="space-y-3 rounded-lg border bg-card p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
               <h2 className="text-lg font-semibold">
@@ -117,7 +145,7 @@ export function JamfPatchDetailPage() {
 
             <div className="space-y-2">
               <h3 className="text-sm font-medium">{t.jamfPatch.detail.chartTitle}</h3>
-              <VersionDevicesChart rows={shown.visible} totalDevices={title.deviceCount} />
+              <VersionDevicesChart rows={shown.visible} totalDevices={title.deviceCount} policy={judged} />
             </div>
 
             <button
@@ -143,6 +171,7 @@ export function JamfPatchDetailPage() {
                         <th className="px-4 py-2 font-medium">{t.jamfPatch.detail.tableVersion}</th>
                         <th className="px-4 py-2 font-medium">{t.jamfPatch.detail.tableReleaseDate}</th>
                         <th className="px-4 py-2 font-medium">{t.jamfPatch.detail.tableDeviceCount}</th>
+                        {judged !== null && <th className="px-4 py-2 font-medium">{t.jamfPatch.rules.tablePolicy}</th>}
                         {/* Back, and real this time. #298 deleted a stub that rendered dashes
                             and said a column could not be built at this grain; since #385 a
                             title carries the app name a Mac reports, so every listed version
@@ -175,6 +204,11 @@ export function JamfPatchDetailPage() {
                             {row.releaseDate ? new Date(row.releaseDate).toLocaleDateString() : "—"}
                           </td>
                           <td className="px-4 py-2 tabular-nums">{row.devices}</td>
+                          {judged !== null && (
+                            <td className="px-4 py-2">
+                              <PolicyCell verdict={judged.versions[row.version]} sentence={(verdict) => policySentence(verdict, judged, t)} />
+                            </td>
+                          )}
                           {corpusAsOf !== null && (
                             <td className="px-4 py-2">
                               {/* A version the answer does not name reads outside the corpus,

@@ -1351,7 +1351,95 @@ export const de: Translations = {
       statedBy: (by: string, when: string) => `Erklärt von ${by}, ${when}`,
       unknownAuthor: "einem Administrator",
       boundary:
-        "Für die Lesenden neben der Evidenz erklärt. Sie setzt keinen Schwellenwert: nichts auf dieser Seite wird daran gemessen, und keine Zahl hier wird deswegen rot."
+        "Die Erklärung ist für die Lesenden und setzt keinen Schwellenwert: nichts wird an ihrem Wortlaut gemessen. Nur eine bestätigte Regel urteilt, und nur in den Zahlen unter „Außerhalb der Richtlinie“."
+    },
+    rules: {
+      heading: "Bestätigte Regeln",
+      confirm: "Regel bestätigen",
+      edit: "Regel bearbeiten",
+      save: "Bestätigen",
+      saveError: "Die Regel konnte nicht gespeichert werden.",
+      none: "Es ist keine Regel bestätigt; nichts auf dieser Seite wird an der Richtlinie gemessen.",
+      noneButOverrides: "Es ist keine organisationsweite Regel bestätigt. Nur die Titel unten werden beurteilt.",
+      defaultIntro:
+        "Ein Gerät ist bei einem Titel außerhalb der Richtlinie, wenn seine installierte Version zurückliegt und:",
+      sentenceDays: (days: number, others: boolean) =>
+        `Jamf seit mehr als ${days} Tag${days === 1 ? "" : "en"} eine neuere Version führt${others ? ", für jeden anderen Build" : ""}`,
+      sentenceSevere: (days: number) =>
+        `Jamf seit mehr als ${days} Tag${days === 1 ? "" : "en"} eine neuere Version führt, wenn der installierte Build im Schwachstellen-Korpus einen kritischen oder hohen Befund trägt`,
+      sentenceReleases: (releases: number) =>
+        `Jamf mehr als ${releases} neuere Version${releases === 1 ? "" : "en"} führt`,
+      fieldDaysBefore: "Eine neuere Version ist seit mehr als",
+      fieldDaysAfter: "Tagen geführt",
+      fieldSevereBefore: "Für Builds mit kritischem oder hohem Befund: seit mehr als",
+      fieldSevereAfter: "Tagen",
+      fieldReleasesBefore: "Mehr als",
+      fieldReleasesAfter: "neuere Versionen sind geführt",
+      fieldsHint:
+        "Ein leeres Feld bedeutet keine Grenze. Jede überschrittene Grenze ist außerhalb der Richtlinie. Daten und Versionen sind die aus Jamfs Patch-Katalog. Kritische und hohe Befunde sind die Antwort des Schwachstellen-Korpus für den installierten Build; ein Build, den der Korpus nicht bewertet hat, wird nach den gewöhnlichen Tagen beurteilt.",
+      problems: {
+        days: "Tage müssen eine ganze Zahl von 0 bis 3650 sein, oder leer für keine Grenze.",
+        severeDays:
+          "Tage für Builds mit kritischem oder hohem Befund müssen eine ganze Zahl von 0 bis 3650 sein, oder leer für keine Grenze.",
+        releases: "Versionen müssen eine ganze Zahl von 0 bis 1000 sein, oder leer für keine Grenze.",
+        severeLooser:
+          "Die Tage für Builds mit kritischem oder hohem Befund sind mehr als die gewöhnlichen Tage. Diese Grenze ersetzt für solche Builds die gewöhnliche und muss daher die kürzere sein."
+      },
+      severityNotAnswering:
+        "Für diese Organisation antwortet kein Schwachstellen-Korpus; die Grenze für kritische und hohe Befunde beurteilt daher nichts. Bis einer antwortet, wird jeder Build nach der gewöhnlichen Grenze beurteilt.",
+      problemEmptyOverride:
+        "Die eigene Regel eines Titels braucht eine Grenze oder die Ausnahme. Um diesen Titel nach der Regel der Organisation zu beurteilen, abbrechen und stattdessen diese wählen.",
+      overridesIntro: (count: number) =>
+        count === 1
+          ? "1 Titel hat eine eigene Regel, die die obige ersetzt:"
+          : `${count} Titel haben eine eigene Regel, die die obige ersetzt:`,
+      overrideUnlisted: (id: string) => `Titel ${id} (nicht mehr im Katalog)`,
+      exemptShort: "ausgenommen, nicht beurteilt",
+      limitsShort: (days: number | null, releases: number | null, severeDays: number | null) =>
+        [
+          severeDays === null ? null : `${severeDays} Tag${severeDays === 1 ? "" : "e"} bei kritischem oder hohem Befund`,
+          days === null ? null : `${days} Tag${days === 1 ? "" : "e"}`,
+          releases === null ? null : `${releases} Version${releases === 1 ? "" : "en"} zurück`
+        ]
+          .filter(Boolean)
+          .join(" oder "),
+      confirmedBy: (by: string, when: string) => `Regeln zuletzt bestätigt von ${by}, ${when}`,
+      tableOutOfPolicy: "Außerhalb der Richtlinie",
+      exemptCell: "ausgenommen",
+      ownRuleMark: "eigene Regel",
+      ownRuleHint: "Dieser Titel hat eine eigene Regel, die die der Organisation ersetzt.",
+      titleHeading: "Patch-Richtlinie",
+      giveOwn: "Diesem Titel eine eigene Regel geben",
+      editOwn: "Regel dieses Titels bearbeiten",
+      useDefault: "Regel der Organisation verwenden",
+      titleNone:
+        "Keine Regel beurteilt diesen Titel: die Organisation hat keine bestätigt, und der Titel hat keine eigene.",
+      titleNoneLink: "Die Regel der Organisation wird auf der Seite Jamf Patch bestätigt.",
+      titleExempt:
+        "Dieser Titel ist ausgenommen. Er wird nicht beurteilt, und seine Geräte zählen auch nicht als innerhalb der Richtlinie.",
+      titleDefaultIntro:
+        "Beurteilt nach der Regel der Organisation. Ein Gerät ist außerhalb der Richtlinie, wenn seine installierte Version zurückliegt und:",
+      titleOwnIntro:
+        "Dieser Titel hat eine eigene Regel anstelle der der Organisation. Ein Gerät ist außerhalb der Richtlinie, wenn seine installierte Version zurückliegt und:",
+      titleOwnEditIntro: "Die eigene Regel dieses Titels ersetzt die der Organisation nur für diesen Titel.",
+      exemptLabel: "Ausnahme: diesen Titel nicht beurteilen",
+      titleSummary: (out: number, devices: number) =>
+        out === 0
+          ? `Kein Gerät ist außerhalb der Richtlinie (${devices} mit diesem Titel).`
+          : `${out} von ${devices} Gerät${devices === 1 ? "" : "en"} mit diesem Titel ${out === 1 ? "ist" : "sind"} außerhalb der Richtlinie.`,
+      tablePolicy: "Richtlinie",
+      verdictWithin: "Innerhalb der Richtlinie",
+      verdictNotJudged: "Nicht beurteilt: Jamf führt diese Version nicht",
+      verdictOut: "Außerhalb der Richtlinie",
+      verdictOutDays: (since: string, days: number, limit: number, severe: boolean) =>
+        `Außerhalb der Richtlinie seit ${since}: eine neuere Version ist seit ${days} Tagen geführt (Grenze ${limit}${severe ? ", dieser Build trägt einen kritischen oder hohen Befund" : ""})`,
+      verdictSeverityUnknown: "· der Korpus hat diesen Build nicht bewertet; es gilt die gewöhnliche Grenze",
+      verdictOutReleases: (behind: number, limit: number) =>
+        `Außerhalb der Richtlinie: ${behind} neuere Version${behind === 1 ? "" : "en"} geführt (Grenze ${limit})`,
+      legendWithin: "Innerhalb der Richtlinie",
+      legendOut: "Außerhalb der Richtlinie",
+      legendNotJudged: "Nicht beurteilt",
+      chartOut: "außerhalb der Richtlinie"
     },
     detail: {
       back: "← Zurück zu Jamf Patch",

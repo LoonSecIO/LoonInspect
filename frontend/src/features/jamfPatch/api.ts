@@ -4,6 +4,7 @@ import type {
   JamfPatchSyncResult,
   JamfPatchTitleDetail,
   JamfPatchTitleListResponse,
+  PatchRule,
   PatchingPolicy
 } from "@/features/jamfPatch/types";
 
@@ -37,4 +38,27 @@ export function getPatchingPolicy(): Promise<PatchingPolicy> {
 /** State it, or clear it with an empty statement. system:write, audited. */
 export function putPatchingPolicy(statement: string): Promise<PatchingPolicy> {
   return apiRequest<PatchingPolicy>("/settings/patching-policy", { method: "PUT", json: { statement } });
+}
+
+/** Confirm the organization's rule, or clear it with both limits null. system:write, audited. */
+export function putPatchingRule(rule: PatchRule): Promise<PatchingPolicy> {
+  return apiRequest<PatchingPolicy>("/settings/patching-policy/rule", { method: "PUT", json: rule });
+}
+
+/** Give one title its own rule: limits, or `exempt` alone. system:write, audited. */
+export function putPatchingOverride(
+  titleId: string,
+  override: Partial<PatchRule> & { exempt?: boolean }
+): Promise<PatchingPolicy> {
+  return apiRequest<PatchingPolicy>(`/settings/patching-policy/overrides/${encodeURIComponent(titleId)}`, {
+    method: "PUT",
+    json: override
+  });
+}
+
+/** Remove a title's own rule, so the organization's judges it again. */
+export function deletePatchingOverride(titleId: string): Promise<PatchingPolicy> {
+  return apiRequest<PatchingPolicy>(`/settings/patching-policy/overrides/${encodeURIComponent(titleId)}`, {
+    method: "DELETE"
+  });
 }

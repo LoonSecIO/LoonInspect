@@ -891,7 +891,8 @@ class DataSharingSettings(Base):
 class PatchingPolicy(Base):
     """One row per tenant: the org's stated patching policy, as typed text (#116). Read
     beside the patch evidence on the Jamf Patch page; created on first write, so an
-    unstated policy is an absent row rather than an empty one. Never a threshold."""
+    unstated policy is an absent row rather than an empty one. The statement is never a
+    threshold; `rules` is, once someone confirms one."""
 
     __tablename__ = "patching_policies"
 
@@ -899,6 +900,11 @@ class PatchingPolicy(Base):
     statement: Mapped[str] = mapped_column(Text, default="", server_default="")
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # The confirmed rules (`app.mdm.patch.policy.Rules`): `{"default": rule | null,
+    # "overrides": {title_id: rule}, "updated_at", "updated_by"}`. NULL until one is
+    # confirmed, and the only thing on this row a build is judged against. Its own who and
+    # when, inside the document, because the pair above is the statement's.
+    rules: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
 
 
 class AIProviderConfig(Base):

@@ -16,6 +16,7 @@ type SortKey =
   | "currentVersion"
   | "deviceCount"
   | "devicesOnLatest"
+  | "devicesOutOfPolicy"
   | "lastModified"
   | "syncedAt";
 type SortDir = "asc" | "desc";
@@ -71,6 +72,9 @@ function sortValue(title: JamfPatchTitle, key: SortKey): string | number {
       return title.deviceCount;
     case "devicesOnLatest":
       return title.devicesOnLatest;
+    case "devicesOutOfPolicy":
+      // Unjudged titles sort below every judged one, a zero included: null is not zero.
+      return title.devicesOutOfPolicy ?? -1;
     case "lastModified":
       return title.lastModified;
     case "syncedAt":
@@ -89,6 +93,7 @@ export function JamfPatchPage() {
 
   const [titles, setTitles] = useState<JamfPatchTitle[]>([]);
   const [total, setTotal] = useState(0);
+  const [severityAnswering, setSeverityAnswering] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -119,6 +124,7 @@ export function JamfPatchPage() {
           if (!live()) return;
           setTitles(response.items);
           setTotal(response.total);
+          setSeverityAnswering(response.severityAnswering);
         })
         .catch(() => {
           if (live()) setError(t.jamfPatch.errorLoading);
@@ -208,6 +214,11 @@ export function JamfPatchPage() {
     }
   })();
 
+  // The Out of policy column exists only where a rule judges something: with none
+  // confirmed there is no column of dashes implying a judgement nobody made.
+  const judged = titles.some((title) => title.policySource !== null);
+  const columns = judged ? 9 : 8;
+
   function sortIndicator(key: SortKey): string {
     if (key !== sortKey) return "";
     return sortDir === "asc" ? " ▲" : " ▼";
@@ -241,7 +252,7 @@ export function JamfPatchPage() {
       {syncError && <p className="text-sm text-destructive">{syncError}</p>}
 
       {/* The org's stated policy, beside the evidence it is read against (#116). */}
-      <PatchingPolicyStatement />
+      <PatchingPolicyStatement onRulesChanged={() => void refresh()} severityAnswering={severityAnswering} />
 
       <div className="flex flex-wrap gap-3">
         <input
@@ -275,6 +286,7 @@ export function JamfPatchPage() {
               {sortableHeader("currentVersion", t.jamfPatch.tableCurrentVersion)}
               {sortableHeader("deviceCount", t.jamfPatch.tableDeviceCount)}
               {sortableHeader("devicesOnLatest", t.jamfPatch.tableDevicesOnLatest)}
+              {judged && sortableHeader("devicesOutOfPolicy", t.jamfPatch.rules.tableOutOfPolicy)}
               {sortableHeader("lastModified", t.jamfPatch.tableLastModified)}
               {sortableHeader("syncedAt", t.jamfPatch.tableSyncedAt)}
             </tr>
@@ -282,14 +294,14 @@ export function JamfPatchPage() {
           <tbody>
             {loading && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={8}>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={columns}>
                   {t.jamfPatch.loading}
                 </td>
               </tr>
             )}
             {!loading && error && (
               <tr>
-                <td className="px-4 py-4 text-destructive" colSpan={8}>
+                <td className="px-4 py-4 text-destructive" colSpan={columns}>
                   {error}
                 </td>
               </tr>
@@ -297,7 +309,7 @@ export function JamfPatchPage() {
             {/* Four empty states, each in its own words (#403, docs/diagnosability.md rule 1). */}
             {!loading && !error && emptyMessage !== null && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={8}>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={columns}>
                   {emptyMessage}
                 </td>
               </tr>
@@ -323,6 +335,23 @@ export function JamfPatchPage() {
                 <td className={`px-4 py-2 tabular-nums ${title.deviceCount === 0 ? "text-muted-foreground" : ""}`}>
                   {title.deviceCount === 0 ? "—" : title.devicesOnLatest}
                 </td>
+                {judged && (
+                  <td className="px-4 py-2 tabular-nums">
+                    {title.policySource === "exempt" ? (
+                      <span className="text-muted-foreground">{t.jamfPatch.rules.exemptCell}</span>
+                    ) : title.devicesOutOfPolicy === null || title.deviceCount === 0 ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5" title={title.policySource === "override" ? t.jamfPatch.rules.ownRuleHint : undefined}>
+                        {title.devicesOutOfPolicy > 0 && <span className="h-2 w-2 shrink-0 rounded-full bg-[#d03b3b]" />}
+                        {title.devicesOutOfPolicy}
+                        {title.policySource === "override" && (
+                          <span className="text-xs text-muted-foreground">{t.jamfPatch.rules.ownRuleMark}</span>
+                        )}
+                      </span>
+                    )}
+                  </td>
+                )}
                 <td className="px-4 py-2">{title.lastModified}</td>
                 <td className="px-4 py-2">{new Date(title.syncedAt).toLocaleString()}</td>
               </tr>
