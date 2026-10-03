@@ -243,3 +243,22 @@ Database tests verify permissions, both switches, local-only endpoints, disclosu
 sending, and no change to saved exclusions. Model influence is limited to an explicitly
 labelled ordering and classification of code-built candidates; applying an exclusion still
 requires a separate operator action through the existing audited PUT.
+
+## Patching rule draft boundary (2026-10-03)
+
+This slot sends the organization's stated patching policy, typed by an administrator, to the
+saved provider, and reads back three integers and a list of codes. It is operator text, like
+slot 1's question, and it is held to the same strip of control and format characters and model
+control tokens (`plain_text`), with a 2,000-character cap that appends a visible marker (P3).
+
+What it adds to the layer's mechanisms is a grounding check, because its output is a number
+that becomes a threshold: an integer is kept only if the statement's own words state it, read
+by code with no model involved; a time stated only for a special case is not taken as the
+ordinary limit; and the box for critical and high findings takes only a time the statement
+gives for them, and only when it gives exactly one. An injected instruction can therefore change which of the statement's own
+numbers lands in a box, and nothing else; it cannot introduce a number. The codes are a closed
+list, each kept only where the statement bears it out, and the page words them, so the model
+has no free-text channel to the page at all. Nothing is saved without a person pressing
+Confirm (P4). `tests/test_patch_policy_rules.py` holds the corpus: Apple's on-device model's
+own replies to 40 statements, the wrong ones included.
+

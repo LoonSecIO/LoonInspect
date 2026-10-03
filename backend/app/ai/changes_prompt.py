@@ -340,16 +340,24 @@ _CONTROL_TOKENS = re.compile(
 )
 
 
+def plain_text(text: str) -> str:
+    """Operator-typed text as it may leave, before any cap: one plain line, without a model's
+    control tokens. The half of ``sanitize_question`` a slot with its own cap shares (the
+    patching rule draft, whose statement is longer than a question and is cut with a marker).
+
+    The tokens come out after ``_plain``, because a zero-width or control character inside a
+    token hides it from the pattern, and ``_plain`` then drops the character and puts the
+    token back together."""
+    return " ".join(_CONTROL_TOKENS.sub(" ", _plain(text)).split())
+
+
 def sanitize_question(text: str) -> str:
     """The question as it may leave: plain, without a model's control tokens, and at most
     ``MAX_QUESTION_CHARS``. Empty means there was nothing to ask.
 
-    The tokens come out after ``_plain`` and before the cap. After, because a zero-width or
-    control character inside a token hides it from the pattern, and ``_plain`` then drops
-    the character and puts the token back together. Before, so the cap counts what leaves
+    The tokens come out before the cap (``plain_text``), so the cap counts what leaves
     rather than what was taken out."""
-    plain = " ".join(_CONTROL_TOKENS.sub(" ", _plain(text)).split())
-    return plain[:MAX_QUESTION_CHARS].rstrip()
+    return plain_text(text)[:MAX_QUESTION_CHARS].rstrip()
 
 
 # --- the way back ----------------------------------------------------------------------

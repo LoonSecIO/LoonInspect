@@ -58,8 +58,8 @@ they were written — §9 ends by saying the paths continue at §10.
   status"](#21-request-coverage-or-report-an-incorrect-match-is-refused-or-a-case-never-shows-a-status)
 - **§22** ["Patch policy is not in my sidebar, lists one app, or says its file was
   refused"](#22-patch-policy-is-not-in-my-sidebar-lists-one-app-or-says-its-file-was-refused)
-- **§23** ["Out of policy is missing, or a title is not
-  judged"](#23-out-of-policy-is-missing-or-a-title-is-not-judged)
+- **§23** ["Out of policy is missing, a title is not judged, or the rule draft fills
+  nothing"](#23-out-of-policy-is-missing-a-title-is-not-judged-or-the-rule-draft-fills-nothing)
 
 **The reportable states**, lettered in the order they were written, so they do not run in
 section order and never will — code, tests and the README cite them where they are. When a
@@ -2679,15 +2679,15 @@ is at `/posture/patch-policy` and needs **app:read**, which every role holds.
 Report the refusal sentence as the page words it, the app that was picked, and the build from
 Settings › Support (§8). Nothing of the organization's is involved, so there is no run or log to attach.
 
-## 23. "Out of policy is missing, or a title is not judged"
+## 23. "Out of policy is missing, a title is not judged, or the rule draft fills nothing"
 
 Devices › Applications › Jamf Patch judges devices against the **confirmed rules** under the
 stated patching policy, and against nothing else. The statement is text for a reader and judges
 nothing ([`jamf-patch-matching.md`](jamf-patch-matching.md) §8). A rule has three limits: a newer
 release listed for more than *N* days; a shorter *N* for a build that carries a critical or high
 finding; and more than *N* newer releases listed. Any one exceeded puts a device out of policy on
-that title. Reading needs **app:read**; confirming a rule or a title's
-own rule needs **system:write**.
+that title. Reading needs **app:read**; confirming a rule, a title's
+own rule, or drafting one needs **system:write**.
 
 1. **There is no *Out of policy* column on the list.** No rule judges any title: *Confirmed rules*
    reads *No rule is confirmed*. Press **Confirm a rule** there. The button is absent for an account
@@ -2723,6 +2723,35 @@ own rule needs **system:write**.
 7. **Saving a title's own rule answers *No Jamf Patch title has the id …*.** The catalog no longer
    lists that title. Open the title from the Jamf Patch list rather than from a saved address; if
    the list is empty, that is §6.
+8. **There is no *Draft from the statement* button.** It is drawn in the rule editor only when all
+   of these hold: the account has `system:write`; a policy is stated; **AI features** is on
+   (Settings › Feature Flags); **AI inference** consent is on (Settings › Data Sharing); and a
+   provider is saved (Settings › AI). `GET /api/settings/patching-policy/rule/draft` answers
+   `reason: flag_off`, `consent_off` or `no_provider` for the first one that is off. §11 and §13 are
+   the same three switches. The two boxes work without it.
+9. **The draft left a box empty, or both.** Read the lines under the boxes. Each is one of these:
+   - *The model proposed N …, which the statement's own words do not state* → the model answered
+     with a number that is not in the statement. The draft keeps only numbers the statement states,
+     so the box is empty. Type the limit you mean.
+   - *…which the statement gives only for critical, high-severity, exploited or emergency updates*
+     → the model put a special case's time in the ordinary box. It is not kept there.
+   - *The statement gives critical and high findings different times* → a rule has one limit for
+     both. Type the one you mean; the shorter is the stricter.
+   - *The statement gives N days for … and that box is empty. Type it if it is the limit you mean*
+     → the draft found the number and will not choose it for you.
+   - *The statement states no number of days or versions in words the draft reads* → the statement
+     has no number, or states it in a phrasing or a language the draft does not read. It reads
+     English, and numbers written as digits or as the words one to twelve, fourteen, fifteen,
+     twenty, thirty, sixty and ninety, before *hours*, *days*, *weeks*, *months*, *quarter* or
+     *year*.
+10. **The draft answers *The stated policy does not read as being about keeping software up to
+   date*.** Either the model judged it so, or the statement has none of the words a patching policy
+   uses (update, patch, version, release, software, app). Nothing was drafted and nothing was saved.
+   Type the limits yourself, or reword the statement and draft again.
+11. **The draft answers *The model's answer was not a rule draft*, or names an endpoint failure.**
+    The provider answered something that is not the two limits, or did not answer. Settings › AI
+    has the provider's own test box; §11 covers an endpoint that cannot be reached. The audit log
+    records each draft as `ai.patch-policy-rules.sent` with its `outcome`.
 
-A rule exists only after **Confirm**, which the audit log records
+Nothing a draft returns is saved. A rule exists only after **Confirm**, which the audit log records
 as `patching-policy.updated` with the limits.

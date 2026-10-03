@@ -146,3 +146,30 @@ export interface PatchingPolicy {
   updatedBy: string | null;
   rules: PatchingRules;
 }
+
+/** What the two limits cannot express about a statement, as codes the page words itself. */
+export type RuleDraftCannot = "severity" | "hardware" | "os" | "apps" | "process" | "no_number";
+
+/** `POST /api/settings/patching-policy/rule/draft`: the rule editor's boxes, drafted from the
+ *  stated policy by the saved AI provider. Never saved by the call; a rule exists only when
+ *  someone confirms it. No model-written text is in it. */
+export interface RuleDraftAnswer {
+  outcome: "drafted" | "invalid" | "error" | "unparseable";
+  rule: PatchRule | null;
+  cannot: RuleDraftCannot[];
+  /** What code changed about the model's reply, each a sentence. */
+  repairs: string[];
+  /** The statement was longer than what is sent, so only its start was read. */
+  truncated: boolean;
+  provider: string;
+  model: string;
+  destination: string;
+  latencyMs: number;
+  error: { kind: string; message: string; status: number | null } | null;
+}
+
+/** Whether the Draft button is drawn, and if not, which switch is why. */
+export interface RuleDraftStatus {
+  available: boolean;
+  reason: "flag_off" | "consent_off" | "no_provider" | null;
+}
