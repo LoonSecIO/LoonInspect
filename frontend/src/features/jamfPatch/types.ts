@@ -47,8 +47,25 @@ export interface PatchRuleOverride extends PatchRule {
   exempt: boolean;
 }
 
+/** One published requirement a rule can be started from (#736): its source, when the
+ *  publisher's text was read, and the rule it maps to. The explanation is the page's own
+ *  copy, keyed by `id`. A starting rule, never a verdict about the scheme. */
+export interface PolicyPreset {
+  id: string;
+  framework: string;
+  document: string;
+  published: string;
+  section: string;
+  url: string;
+  verifiedOn: string;
+  rule: PatchRule;
+}
+
 export interface PatchingRules {
   default: PatchRule | null;
+  /** The published requirement the organization's rule was confirmed unchanged from, or
+   *  null: it was typed, drafted, or changed since. */
+  basis: PolicyPreset | null;
   overrides: PatchRuleOverride[];
   updatedAt: string | null;
   updatedBy: string | null;

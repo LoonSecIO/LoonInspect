@@ -1503,6 +1503,34 @@ export const en = {
       boundary:
         "The statement is for the reader and sets no threshold: nothing is judged against its words. Only a confirmed rule judges, and only in the Out of policy numbers."
     },
+    // Published requirements a rule can be started from (#736). An entry is where a rule
+    // came from, never a verdict: nothing here may say an organization satisfies a scheme,
+    // and `tests/test_patch_policy_presets.py` reads this block to hold that.
+    presets: {
+      pick: "Start from a published requirement:",
+      none: "None: type the limits",
+      option: (framework: string, document: string) => `${framework}: ${document}`,
+      source: (framework: string, document: string, published: string, section: string) =>
+        `${framework}: ${document} (${published}), ${section}.`,
+      readSource: "Read the source",
+      verifiedOn: (when: string) => `The numbers were read from the publisher's text on ${when}.`,
+      changed:
+        "The boxes no longer say what this requirement says, so the rule will be confirmed as your own, with no source recorded.",
+      drawnFrom: "Drawn from",
+      basisIsNotAVerdict:
+        "This is where the rule's numbers came from. It is not a statement about the scheme or about whether the organization satisfies it.",
+      entries: {
+        "cyber-essentials-3.3": {
+          requires:
+            "What the text requires: updates applied within 14 days of release where they fix vulnerabilities the vendor calls critical or high risk, that score 7 or above on CVSS v3, or whose severity the vendor does not state. It recommends 14 days for every update without requiring it.",
+          maps: "How the rule maps it: every update gets 14 days. A rule cannot tell an update of unstated severity from a minor one, so the narrower critical-or-high reading would leave builds unjudged that the text covers.",
+          differs:
+            "Where they part ways: the text also requires software to be licensed and supported, unsupported software removed, and automatic updates on where possible, and it covers every device and all software in scope. A rule judges Jamf Patch titles on Macs, by the date Jamf's patch catalog lists the newer release.",
+          notAVerdict:
+            "Starting from this requirement is not a statement about whether the organization satisfies the scheme. It records where the rule's number came from."
+        }
+      }
+    },
     // The rules an organization confirms beside its statement: limits from a closed
     // vocabulary, for the organization and per title. The only thing a build is judged against.
     rules: {

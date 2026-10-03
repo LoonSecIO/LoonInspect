@@ -2753,5 +2753,12 @@ own rule, or drafting one needs **system:write**.
     has the provider's own test box; §11 covers an endpoint that cannot be reached. The audit log
     records each draft as `ai.patch-policy-rules.sent` with its `outcome`.
 
+12. **A rule shows no *Drawn from …* line although it was started from a published requirement.**
+    The line is kept only while the rule is that requirement's own, limit for limit. A box changed
+    before Confirm, or the rule edited since, makes it the organization's own rule with no source
+    recorded; the editor says so before Confirm (*The boxes no longer say what this requirement
+    says*). Start again from the requirement and confirm it unchanged. Saving through the API with
+    a `basis` the limits do not match answers *…cannot be recorded as drawn from it*.
+
 Nothing a draft returns is saved. A rule exists only after **Confirm**, which the audit log records
 as `patching-policy.updated` with the limits.

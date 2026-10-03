@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { draftOf, judges, policySentence, ruleOf } from "@/features/jamfPatch/policyRules";
+import { draftOf, judges, policySentence, ruleOf, sameRule } from "@/features/jamfPatch/policyRules";
 import { en } from "@/i18n/en";
 
 describe("ruleOf", () => {
@@ -53,6 +53,17 @@ describe("judges", () => {
     expect(judges(none)).toBe(false);
     expect(judges({ ...none, maxDaysBehind: 0 })).toBe(true);
     expect(judges({ ...none, maxDaysBehindSevere: 14 })).toBe(true);
+  });
+});
+
+describe("sameRule", () => {
+  const fourteen = { maxDaysBehind: 14, maxReleasesBehind: null, maxDaysBehindSevere: null };
+
+  it("is true only limit for limit, which is what lets a rule keep its basis", () => {
+    expect(sameRule(fourteen, { ...fourteen })).toBe(true);
+    expect(sameRule(fourteen, { ...fourteen, maxDaysBehind: 30 })).toBe(false);
+    expect(sameRule(fourteen, { ...fourteen, maxReleasesBehind: 1 })).toBe(false);
+    expect(sameRule(fourteen, { ...fourteen, maxDaysBehindSevere: 7 })).toBe(false);
   });
 });
 

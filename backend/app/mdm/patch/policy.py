@@ -124,6 +124,10 @@ class Rules:
 
     default: Rule | None = None
     overrides: Mapping[str, Rule] = field(default_factory=dict)
+    # The published requirement the organization's rule was confirmed unchanged from
+    # (`policy_presets`), as its id, or None. Where the rule came from — never a claim that
+    # anything is met. Read back as stored; the route decides whether it still holds.
+    default_basis: str | None = None
 
     @classmethod
     def from_stored(cls, stored: object) -> Rules:
@@ -136,8 +140,10 @@ class Rules:
             if (rule := rule_from(raw)) is not None
         }
         default = rule_from(stored.get("default"))
+        basis = stored.get("default_basis")
         # `exempt` is a per-title word; an organization that judges nothing has no rule.
-        return cls(default=default if default is not None and default.judges else None, overrides=parsed)
+        default = default if default is not None and default.judges else None
+        return cls(default=default, overrides=parsed, default_basis=basis if isinstance(basis, str) and default else None)
 
     def for_title(self, title_id: str) -> tuple[Rule | None, str | None]:
         """The rule that judges this title, and where it came from — `(None, None)` when

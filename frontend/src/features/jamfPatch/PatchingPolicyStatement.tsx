@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
+import { ExternalLink } from "@/components/ui/external-link";
 import { ApiError } from "@/config/api";
 import { useHasPermission } from "@/features/auth/store";
 import { PERMISSIONS } from "@/features/auth/types";
@@ -8,13 +9,41 @@ import {
   draftPatchingRule,
   getPatchingPolicy,
   getRuleDraftStatus,
+  listPatchingPresets,
   putPatchingPolicy,
   putPatchingRule
 } from "@/features/jamfPatch/api";
-import { draftOf, EMPTY_DRAFT, judges, ruleOf, type DraftProblem, type RuleDraft } from "@/features/jamfPatch/policyRules";
+import {
+  draftOf,
+  EMPTY_DRAFT,
+  judges,
+  ruleOf,
+  sameRule,
+  type DraftProblem,
+  type RuleDraft
+} from "@/features/jamfPatch/policyRules";
 import { RuleFields, RuleSentences } from "@/features/jamfPatch/RuleFields";
-import type { PatchingPolicy, RuleDraftAnswer } from "@/features/jamfPatch/types";
+import type { PatchingPolicy, PolicyPreset, RuleDraftAnswer } from "@/features/jamfPatch/types";
+import type { Translations } from "@/i18n/en";
 import { useLocale } from "@/i18n/LocaleContext";
+
+/** One preset's words, where this build has them: an entry served by a newer backend than
+ *  the page has copy for shows its source and no explanation, rather than another entry's. */
+function presetCopy(t: Translations, id: string) {
+  const entries: Record<string, { requires: string; maps: string; differs: string; notAVerdict: string } | undefined> =
+    t.jamfPatch.presets.entries;
+  return entries[id];
+}
+
+/** A preset's source, as one line with its link: which text, which version, which section. */
+function PresetSource({ preset, t }: { preset: PolicyPreset; t: Translations }) {
+  return (
+    <>
+      {t.jamfPatch.presets.source(preset.framework, preset.document, preset.published, preset.section)}{" "}
+      <ExternalLink href={preset.url}>{t.jamfPatch.presets.readSource}</ExternalLink>
+    </>
+  );
+}
 
 type Loaded = { state: "ready"; policy: PatchingPolicy } | { state: "failed" };
 
@@ -45,6 +74,7 @@ export function PatchingPolicyStatement({
   const { t } = useLocale();
   const tp = t.jamfPatch.policy;
   const tr = t.jamfPatch.rules;
+  const tpre = t.jamfPatch.presets;
   const canEdit = useHasPermission(PERMISSIONS.SYSTEM_WRITE);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [editing, setEditing] = useState(false);
@@ -60,6 +90,25 @@ export function PatchingPolicyStatement({
   const [canDraft, setCanDraft] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const [drafted, setDrafted] = useState<RuleDraftAnswer | null>(null);
+  // The published requirements a rule can be started from (#736), and the one the editor
+  // was opened on or pointed at. Choosing one fills the boxes; it is recorded as the rule's
+  // basis only if the boxes still say what it says when Confirm is pressed.
+  const [presets, setPresets] = useState<PolicyPreset[]>([]);
+  const [chosen, setChosen] = useState<PolicyPreset | null>(null);
+
+  useEffect(() => {
+    if (!canEdit) return;
+    let cancelled = false;
+    listPatchingPresets()
+      .then((entries) => {
+        if (!cancelled) setPresets(entries);
+      })
+      // No list is no picker: the boxes still work.
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [canEdit]);
 
   useEffect(() => {
     if (!canEdit) return;
@@ -114,6 +163,7 @@ export function PatchingPolicyStatement({
     setRuleProblem(null);
     setRuleError(null);
     setDrafted(null);
+    setChosen(loaded?.state === "ready" ? loaded.policy.rules.basis : null);
     setEditingRule(true);
   }
 
@@ -126,7 +176,10 @@ export function PatchingPolicyStatement({
       setDrafted(answer);
       // The draft goes into the boxes, where it can be read and changed. Confirm is still
       // the only thing that makes it a rule.
-      if (answer.outcome === "drafted" && answer.rule) setRuleDraft(draftOf(answer.rule));
+      if (answer.outcome === "drafted" && answer.rule) {
+        setRuleDraft(draftOf(answer.rule));
+        setChosen(null);
+      }
     } catch (caught) {
       setDrafted(null);
       setRuleError(caught instanceof ApiError && caught.detail ? caught.detail : tr.draftFailed);
@@ -145,7 +198,10 @@ export function PatchingPolicyStatement({
     setRuleProblem(null);
     setRuleError(null);
     try {
-      const policy = await putPatchingRule(read.rule);
+      // A basis is claimed only for the requirement's own limits; changed, the rule is the
+      // organization's own, and the route would refuse the claim anyway.
+      const basis = chosen && sameRule(read.rule, chosen.rule) ? chosen.id : null;
+      const policy = await putPatchingRule(read.rule, basis);
       setLoaded({ state: "ready", policy });
       setEditingRule(false);
       onRulesChanged?.();
@@ -222,6 +278,11 @@ export function PatchingPolicyStatement({
               <div className="mt-2">
                 <p>{tr.defaultIntro}</p>
                 <RuleSentences rule={rules.default} t={t} />
+                {rules.basis && (
+                  <p className="mt-2">
+                    {tpre.drawnFrom} <PresetSource preset={rules.basis} t={t} /> {tpre.basisIsNotAVerdict}
+                  </p>
+                )}
               </div>
             ) : (
               <p className="mt-2 text-muted-foreground">{rules.overrides.length > 0 ? tr.noneButOverrides : tr.none}</p>
@@ -229,7 +290,53 @@ export function PatchingPolicyStatement({
           {editingRule && (
             <div className="mt-2 space-y-2">
               <p>{tr.defaultIntro}</p>
+              {presets.length > 0 && (
+                <label className="flex flex-wrap items-center gap-2">
+                  {tpre.pick}
+                  <select
+                    className="rounded-md border border-input bg-background px-2 py-1 text-sm"
+                    value={chosen?.id ?? ""}
+                    disabled={saving || drafting}
+                    onChange={(event) => {
+                      const preset = presets.find((entry) => entry.id === event.target.value) ?? null;
+                      setChosen(preset);
+                      setDrafted(null);
+                      setRuleProblem(null);
+                      if (preset) setRuleDraft(draftOf(preset.rule));
+                    }}
+                  >
+                    <option value="">{tpre.none}</option>
+                    {presets.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {tpre.option(preset.framework, preset.document)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <RuleFields draft={ruleDraft} onChange={setRuleDraft} problem={ruleProblem} disabled={saving || drafting} t={t} />
+              {chosen && (
+                <div className="space-y-1 rounded-md border bg-muted/30 p-3">
+                  <p className="font-medium">
+                    <PresetSource preset={chosen} t={t} />
+                  </p>
+                  {presetCopy(t, chosen.id) && (
+                    <>
+                      <p>{presetCopy(t, chosen.id)?.requires}</p>
+                      <p>{presetCopy(t, chosen.id)?.maps}</p>
+                      <p>{presetCopy(t, chosen.id)?.differs}</p>
+                      <p>{presetCopy(t, chosen.id)?.notAVerdict}</p>
+                    </>
+                  )}
+                  <p className="text-muted-foreground">
+                    {tpre.verifiedOn(new Date(`${chosen.verifiedOn}T12:00:00`).toLocaleDateString())}
+                  </p>
+                  {(() => {
+                    const read = ruleOf(ruleDraft);
+                    return "rule" in read && sameRule(read.rule, chosen.rule) ? null : <p>{tpre.changed}</p>;
+                  })()}
+                </div>
+              )}
               {drafted && (
                 <div className="space-y-1 rounded-md border bg-muted/30 p-3">
                   {drafted.outcome === "drafted" ? (

@@ -56,6 +56,15 @@ export function ruleOf(draft: RuleDraft): { rule: PatchRule } | { problem: Draft
   return { rule: { maxDaysBehind: days, maxReleasesBehind: releases, maxDaysBehindSevere: severeDays } };
 }
 
+/** Whether two rules are the same rule, limit for limit — the test a basis has to pass. */
+export function sameRule(a: PatchRule, b: PatchRule): boolean {
+  return (
+    a.maxDaysBehind === b.maxDaysBehind &&
+    a.maxReleasesBehind === b.maxReleasesBehind &&
+    a.maxDaysBehindSevere === b.maxDaysBehindSevere
+  );
+}
+
 /** Whether a rule can put a build out of policy at all. */
 export function judges(rule: PatchRule | null): boolean {
   return (

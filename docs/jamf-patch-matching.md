@@ -500,6 +500,38 @@ The rule editor can ask the saved AI provider to read the statement and fill the
 - **English only.** The grounding reads English number phrases, so a statement in another
   language drafts nothing.
 
+### 8c. Starting a rule from a published requirement (#736)
+
+Many organizations' patch timeline is a clause of a scheme they are assessed against. The rule
+editor can start from one: *Start from a published requirement* fills the boxes from a
+catalogue entry (`backend/app/mdm/patch/policy_presets.py`, `GET
+/api/settings/patching-policy/presets`) and shows what the text requires, how the rule maps
+it, and where the two part ways.
+
+- **A starting rule, never a verdict.** The 2026-08-31 scope ruling stands: this product
+  evidences what Jamf can observe and attests to no framework. Nothing on the page says an
+  organization meets, passes or satisfies a scheme, and
+  `tests/test_patch_policy_presets.py` reads the page's copy to hold that.
+- **The basis.** A rule confirmed unchanged from an entry records the entry's id
+  (`rules.default_basis`), and the page shows *Drawn from …* with the source link. The
+  route refuses a basis the limits do not match; editing the rule clears it. A title's own
+  rule carries no basis.
+- **An entry ships only when its numbers were read from the publisher's own text.** It
+  records the document, version, date, section, URL and the day it was read. The id carries
+  the document's version, so a revised document is a new entry and an old basis keeps
+  naming the text it was drawn from.
+- **The catalogue today** is one entry. *Cyber Essentials: Requirements for IT
+  Infrastructure* v3.3 (NCSC, April 2026), Security update management, read 2026-10-03:
+  14 days from release for updates that fix critical or high-risk vulnerabilities, score 7
+  or above on CVSS v3, or whose severity the vendor does not state. Mapped to
+  `maxDaysBehind: 14`, not to the severe limit: a rule cannot tell an update of unstated
+  severity from a minor one, and the severe limit would leave those builds unjudged.
+- **Not admitted, and why** (the record is #736): PCI DSS v4.0.1 6.3.3, because the
+  standard could not be read (the document library needs a licence acceptance) and
+  secondary accounts say v4.0.1 narrowed the one-month deadline to critical only; the ASD
+  Essential Eight, unverified and needing application classes a rule does not have; CIS
+  Safeguard 7.4, a monthly cadence rather than a deadline per release.
+
 ## 9. Not here (follow-ups)
 
 Re-evaluating matches when the hourly catalog sync changes a title — since shipped:

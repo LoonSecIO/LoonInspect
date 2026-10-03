@@ -16,7 +16,7 @@ def test_the_statement_is_bounded_and_the_action_is_named() -> None:
         PatchingPolicyUpdate(statement="x" * (STATEMENT_MAX_LENGTH + 1))
     # An unstated policy is an empty statement, not a missing field (#150).
     # And no rule is confirmed: an empty document, present, so a page never has to guess.
-    no_rules = {"default": None, "overrides": [], "updatedAt": None, "updatedBy": None}
+    no_rules = {"default": None, "basis": None, "overrides": [], "updatedAt": None, "updatedBy": None}
     assert PatchingPolicyOut().model_dump(by_alias=True) == {
         "statement": "",
         "updatedAt": None,
