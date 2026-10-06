@@ -21,6 +21,8 @@ import copy
 import difflib
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +32,17 @@ from app.main import app
 
 SNAPSHOT = Path(__file__).parent / "snapshots" / "openapi.json"
 REGENERATE = "UPDATE_SNAPSHOTS=1 uv run --frozen pytest tests/test_openapi_snapshot.py"
+# A pod registers one route a checkout does not: the SPA catch-all, only when the built frontend is in
+# app/static/ (app.main). An interpreter told that directory exists builds the document a pod serves.
+POD_DOCUMENT = """
+import json, pathlib
+import app as package
+static, exists = pathlib.Path(package.__file__).parent / "static", pathlib.Path.exists
+pathlib.Path.exists = lambda path, **kwargs: path == static or exists(path, **kwargs)
+from app.main import app
+assert "/{full_path:path}" in [getattr(route, "path", "") for route in app.routes], "no SPA catch-all registered"
+print(json.dumps(app.openapi()))
+"""
 # A failure lists this many changed places and diff lines, then counts the rest.
 SHOWN_PLACES, SHOWN_DIFF_LINES = 40, 200
 
@@ -117,3 +130,11 @@ def test_the_openapi_document_matches_its_snapshot() -> None:
 
 def test_a_change_of_value_type_is_named_as_a_change_not_formatting() -> None:
     assert changed_places({"a": 1, "b": [True]}, {"a": 1.0, "b": [1]}) == ["~ .a", "~ .b[0]"]
+
+
+def test_the_document_a_pod_serves_is_the_one_pinned_here() -> None:
+    """The served /openapi.json once listed the SPA catch-all, `/{full_path}` (GET and HEAD), which the snapshot
+    could not see: a client generated from what a pod serves got a method for the web app's pages."""
+    pod = subprocess.run([sys.executable, "-c", POD_DOCUMENT], cwd=SNAPSHOT.parents[2], capture_output=True, text=True)
+    assert pod.returncode == 0, pod.stderr[-2000:]
+    assert changed_places(app.openapi(), json.loads(pod.stdout.splitlines()[-1])) == []
