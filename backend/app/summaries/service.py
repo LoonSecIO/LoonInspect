@@ -330,6 +330,7 @@ async def work_one(tenant_id, *, transport=None):
                     "extension_attribute_values",
                     "customer_preprompt",
                 ],
+                model=config.model,
             )
             text = prompt(job.evidence, settings.preprompt)
             request = CompletionRequest(
