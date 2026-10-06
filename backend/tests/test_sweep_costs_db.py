@@ -21,8 +21,8 @@ produce them expensively:
    test here pins the one case where that matters: a census that names the same new
    subject twice has to finish, the way the per-object read let it.
 
-The budget is what those three were cut from: everything one device costs end to end —
-ledger, change log, device and app rows, catalog and Jamf Patch answer, findings,
+Below them, the budget for the whole device: everything one device process costs end to
+end — ledger, change log, device and app rows, catalog and Jamf Patch answer, findings,
 snapshot, history — written out per ledger outcome, and shown to be paid once per device
 whatever the device carries. The two places it still grows with installed apps are
 pinned at today's numbers beside their reasons: findings, not limits.
