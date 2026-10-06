@@ -96,8 +96,8 @@ BODIES: dict[str, dict] = {
     "POST /api/auth/login": {"email": ADMIN2[0], "password": ADMIN2[1]},
     "POST /api/auth/login/mfa": {"challenge": "route-sweep", "code": "000000"},
     "POST /api/auth/change-password": {"currentPassword": "not-the-password", "newPassword": PASSWORD},
-    "POST /api/auth/mfa/confirm": {"code": "000000"},
-    "POST /api/auth/mfa/recovery-codes": {"code": "000000"},
+    "POST /api/auth/mfa/confirm": {"code": "no-digits"},  # never a code: a random secret could accept "000000"
+    "POST /api/auth/mfa/recovery-codes": {"code": "no-digits"},
     "POST /api/accounts": {"email": "route-sweep@sweep.example.com", "displayName": "route sweep", "password": PASSWORD},
     "POST /api/accounts/{account_id}/reset-password": {"newPassword": PASSWORD},
     "POST /api/auth/tokens": {"name": "route sweep"},
