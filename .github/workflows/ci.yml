@@ -157,11 +157,14 @@ jobs:
       # RUN_DB_TESTS opts the tenancy sweep in; without it those tests skip, which is
       # what keeps the suite runnable on a laptop with no database. ENCRYPTION_KEY is
       # a throwaway generated per run — the sweep writes credential columns through
-      # EncryptedString, and nothing here is persisted beyond the job.
+      # EncryptedString, and nothing here is persisted beyond the job. ADMIN_DATABASE_URL is
+      # the superuser, for the migration round trip alone: it creates and drops databases of
+      # its own with it, and migrates them as the application role.
       - name: Test
         env:
           RUN_DB_TESTS: '1'
           DATABASE_URL: postgresql+asyncpg://looninspect_app:looninspect_app@localhost:5432/looninspect_test
+          ADMIN_DATABASE_URL: postgresql+asyncpg://looninspect:looninspect@localhost:5432/looninspect
         run: |
           export ENCRYPTION_KEY="$(uv run --frozen python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
           uv run --frozen pytest -q

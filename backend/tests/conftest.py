@@ -31,9 +31,12 @@ passes every tenancy test by bypassing the policies they exist to prove.
       -c "CREATE ROLE looninspect_app LOGIN PASSWORD 'looninspect_app' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS" \
       -c "CREATE DATABASE looninspect_test OWNER looninspect_app"
 
-    # 3. The lane, from backend/. The suite migrates the empty database itself.
+    # 3. The lane, from backend/. The suite migrates the empty database itself. The
+    #    superuser's URL is for tests/test_migration_round_trip_db.py alone, which creates
+    #    and drops databases of its own with it, and skips without it.
     RUN_DB_TESTS=1 \
     DATABASE_URL=postgresql+asyncpg://looninspect_app:looninspect_app@localhost:5432/looninspect_test \
+    ADMIN_DATABASE_URL=postgresql+asyncpg://looninspect:looninspect@localhost:5432/looninspect \
     ENCRYPTION_KEY="$(openssl rand -base64 32 | tr '+/' '-_')" \
     uv run --frozen pytest -q
 
