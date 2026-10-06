@@ -294,12 +294,11 @@ async def test_the_same_rivals_reclaim_a_sweep_that_stops_beating(db, connection
 
 @pytest.mark.parametrize("kind", ["device_sweep", "catalog"])
 async def test_a_catalog_read_past_the_stale_window_is_not_reclaimed(db, connection, jamf, harness, kind) -> None:
-    """The gap #757 found, asserted closed. Nothing beat before the first device, so a sweep still
-    reading a large or throttled tenant's catalog past `run_stale_after_seconds` was reclaimed by the
-    next acquisition in the tenant and failed at its first device; a catalog run beat only at its end.
-    Here the tenant holds 150 smart groups and every read costs five simulated seconds, one at a time
-    as a throttled tenant's would, so the reads run past twice the stale window, with a rival every
-    simulated minute of them, mid-wave. Every rival joins, and the run succeeds."""
+    """The gap #757 found, asserted closed: nothing beat before the first device, so a sweep reading a
+    large or throttled tenant's catalog past the stale window was reclaimed and failed at its first
+    device, and a catalog run beat only at its end. Here 150 smart groups at five simulated seconds a
+    read, one at a time as under throttling, run past twice the window, with a rival every simulated
+    minute, mid-wave. Every rival joins, and the run succeeds."""
     from app.core.config import settings
     from app.core.runs import _HEARTBEAT_INTERVAL_SECONDS, TRIGGER_SWEEP
     from app.mdm.collections import LOCK_CLASS_FOR_KIND, run_one_collection
