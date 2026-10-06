@@ -47,10 +47,10 @@ ADMIN1 = ("admin-one@sweep.example.com", "sweep-password-one")
 ADMIN2 = ("admin-two@sweep.example.com", "sweep-password-two")
 
 
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
-async def seeded():
+async def two_tenant_rows(*, outbox_events: bool = True) -> dict[str, dict]:
     """Migrated schema, two operational tenants, one admin and one row of everything
-    in each.
+    in each: what `seeded` below hands this file, and what tests/test_route_sweep_db.py
+    reuses without the outbox events, which are this file's to fan out.
 
     Get-or-create throughout rather than blind inserts: CI runs this against a fresh
     database, but a developer re-running it locally must not trip a unique constraint
@@ -59,6 +59,8 @@ async def seeded():
     """
     from app.core.bootstrap import bootstrap_tenants, create_account
     from app.core.database import init_db, session_for_tenant, unscoped_session
+    from app.core.runs import COMPARISON_DELTA, LOCK_DEVICE_SWEEP, STATUS_SUCCEEDED, TRIGGER_MANUAL
+    from app.core.submissions import mint_case_key
     from app.core.tenancy import OPERATIONAL_TENANT_ID
     from app.mdm.collections import ensure_default_collections
     from app.models.schema import (
@@ -70,6 +72,8 @@ async def seeded():
         EventOutbox,
         InstalledApp,
         MdmConnection,
+        Run,
+        SubmissionCase,
         Tenant,
     )
 
@@ -169,6 +173,30 @@ async def seeded():
                 name=f"{label} token",
                 token_hash=uuidlib.uuid4().hex + uuidlib.uuid4().hex,
             )
+            # The two kinds of row a route names that nothing above creates: a finished
+            # run (`/api/runs/{job_id}`) and a submission case (`/api/submissions/{case_id}`).
+            run = await one(
+                db,
+                Run,
+                Run.actor_label == f"{label} sweep run",
+                mdm_connection_id=connection.id,
+                trigger=TRIGGER_MANUAL,
+                comparison=COMPARISON_DELTA,
+                lock_class=LOCK_DEVICE_SWEEP,
+                status=STATUS_SUCCEEDED,
+                window_start=datetime.now(UTC),
+                actor_label=f"{label} sweep run",
+            )
+            case = await one(
+                db,
+                SubmissionCase,
+                SubmissionCase.app_name == f"{label} Sweep App",
+                kind="coverage",
+                app_name=f"{label} Sweep App",
+                platform="macos",
+                versions=["1.0"],
+                case_key=mint_case_key(),
+            )
             # Deliberately NOT get-or-create: the fan-out test needs an un-fanned
             # event, and a previous run's rows are all marked fanned_out.
             event = EventOutbox(
@@ -176,7 +204,8 @@ async def seeded():
                 payload={"tenant_label": label},
                 created_at=datetime.now(UTC),
             )
-            db.add(event)
+            if outbox_events:
+                db.add(event)
             await db.commit()
             ids[label] = {
                 "tenant_id": tenant_id,
@@ -187,9 +216,16 @@ async def seeded():
                 "collection_id": collection.id,
                 "device_id": device.id,
                 "token_id": token.id,
+                "job_id": run.id,
+                "case_id": case.id,
                 "event_id": event.id,
             }
     return ids
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def seeded():
+    return await two_tenant_rows()
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
