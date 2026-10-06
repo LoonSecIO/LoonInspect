@@ -191,6 +191,7 @@ queued time and reason. Original inventory still delivers if a summary fails. Re
 | `unsupported_no_change` | The reply claimed no changes despite changed evidence. Check model choice and customer emphasis. |
 | `invalid_summary` | The reply was empty, too long, multiline or contained markup. Check model choice and output behavior. |
 | `endpoint_refused` | Endpoint safety or key validation refused the saved configuration. Re-save and test it in Settings > AI. |
+| `apple_model_refused` | The Apple card uses only Apple's on-device model, system. pcc is Private Cloud Compute, which runs on Apple's servers, not on this Mac. Save the Apple Foundation Models via Docker Desktop card again from Settings › AI with the model system. |
 | `internal_error` | The summary worker encountered an unexpected error. Check the exception type and stack locations in container logs and report the summary ID. |
 
 posture_snapshot: none

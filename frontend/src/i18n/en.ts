@@ -2316,6 +2316,10 @@ export const en = {
     loadingModels: "Asking…",
     modelsLoaded: (n: number, ms: number) => `${n} model${n === 1 ? "" : "s"} listed by the endpoint in ${ms} ms.`,
     modelNotListed: "The endpoint did not list this model. It may still accept it.",
+    // #738: the server refuses any other model on the Apple card — on Send, on Save, and
+    // wherever a card saved by an older build is dialled.
+    appleModelOnly:
+      "The Apple card uses only Apple's on-device model, system: Send and Save refuse any other. pcc is Private Cloud Compute, which runs on Apple's servers, not on this Mac.",
     reasoningEffort: "Reasoning effort",
     reasoningDefault: "Endpoint default",
     prompt: "Prompt",

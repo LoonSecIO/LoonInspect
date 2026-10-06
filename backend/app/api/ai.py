@@ -44,6 +44,7 @@ from app.ai.providers import (
     Provider,
     ReachNotImplemented,
     Wire,
+    apple_model_refused,
     default_base_url,
     hostname_for,
     presented_host,
@@ -114,6 +115,14 @@ APPLE_FM_TAKES_NO_EFFORT = (
     "Apple's on-device model takes no reasoning effort — fm serve refuses it on the system model. "
     f"Save the {CARD_LABELS[Provider.apple_fm]} card again from Settings › AI; the page sends none."
 )
+# `fm serve` also serves `pcc`, Private Cloud Compute, on Apple's servers (#738). Kyle's ruling,
+# 2026-10-04: refused where it is set, a test or a Save, and where a saved card naming it is
+# dialled (``chosen_config``, the summary worker), before the share-log row; never sent as `system`.
+APPLE_FM_SYSTEM_ONLY = (
+    "The Apple card uses only Apple's on-device model, system. pcc is Private Cloud Compute, which runs on "
+    f"Apple's servers, not on this Mac. Save the {CARD_LABELS[Provider.apple_fm]} card again from Settings › AI "
+    "with the model system."
+)
 
 
 def _bounded_key(api_key: str | None) -> None:
@@ -131,6 +140,13 @@ def _effort_accepted(provider: Provider, reasoning_effort: str | None) -> None:
     or the gate is asked, and so before anything is dialled or disclosed."""
     if provider is Provider.apple_fm and reasoning_effort is not None:
         raise HTTPException(status_code=422, detail=APPLE_FM_TAKES_NO_EFFORT)
+
+
+def _model_accepted(provider: Provider, model: str) -> None:
+    """Apple's card takes Apple's on-device model only (``APPLE_FM_SYSTEM_ONLY``), refused
+    beside the effort's rule and for the same reason: before anything is dialled or disclosed."""
+    if apple_model_refused(provider, model):
+        raise HTTPException(status_code=422, detail=APPLE_FM_SYSTEM_ONLY)
 
 
 async def _flag_or_409(db: AsyncSession, feature: str) -> None:
@@ -294,11 +310,13 @@ async def list_endpoint_models(payload: AIModelsIn, db: AsyncSession = Depends(g
         count=len(models),
         latency_ms=latency_ms,
     )
+    # The Apple card offers what it accepts: `fm serve` lists `pcc` too (``APPLE_FM_SYSTEM_ONLY``).
+    offered = [m for m in models if not apple_model_refused(payload.provider, m.id)]
     return AIModelsOut(
         provider=payload.provider,
         wire=wire,
         destination=destination,
-        models=[AIModelOut(id=m.id, label=m.label) for m in models],
+        models=[AIModelOut(id=m.id, label=m.label) for m in offered],
         latency_ms=latency_ms,
     )
 
@@ -311,6 +329,7 @@ async def list_endpoint_models(payload: AIModelsIn, db: AsyncSession = Depends(g
 async def test_endpoint(payload: AITestIn, db: AsyncSession = Depends(get_db)) -> AITestOut:
     _bounded_key(payload.api_key)
     _effort_accepted(payload.provider, payload.reasoning_effort)
+    _model_accepted(payload.provider, payload.model)
     wire, base_url, destination, host_header = await judged_endpoint(
         payload.provider, payload.host_reach, payload.base_url, carries_key=bool(payload.api_key)
     )
@@ -427,6 +446,7 @@ async def save_provider_config(
     rules are judged against the key the row will hold, not only the one sent."""
     _bounded_key(payload.api_key)
     _effort_accepted(provider, payload.reasoning_effort)
+    _model_accepted(provider, payload.model)
     await _flag_or_409(db, AI_CONFIG_FEATURE)
 
     stored = await saved_config(db, provider)

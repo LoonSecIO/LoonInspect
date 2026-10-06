@@ -13,7 +13,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import aliased
 
 from app.ai.adapters import AdapterError, CompletionRequest, complete
-from app.ai.providers import HostReach, Provider
+from app.ai.providers import HostReach, Provider, apple_model_refused
 from app.api.ai import judged_endpoint
 from app.changes.derive import load_policy
 from app.core.ai import AIFeaturesDisabled, AIRefused, ai_features_enabled, require_ai
@@ -298,6 +298,10 @@ async def work_one(tenant_id, *, transport=None):
         config = await get_config(db, Provider(settings.provider))
         if not config or config_key(settings, config) != job.config_key:
             await finish(db, job, "dropped", reason="configuration_changed")
+            return True
+        # An Apple card an older build saved naming `pcc`: never dialled, no share-log row (#738).
+        if apple_model_refused(Provider(settings.provider), config.model):
+            await finish(db, job, "failed", reason="apple_model_refused")
             return True
         cached = await db.scalar(select(Job.summary).where(Job.cache_key == job.cache_key, Job.status == "completed").limit(1))
         if cached:

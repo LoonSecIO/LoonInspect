@@ -3,6 +3,8 @@
 import traceback
 from pathlib import Path
 
+from app.api.ai import APPLE_FM_SYSTEM_ONLY
+
 REASONS = {
     "expired": "The one-hour deadline elapsed. Check queue age and provider latency on Overview.",
     "capacity": "The summary backlog is full. Check queue age, rate limits and provider capacity.",
@@ -28,6 +30,7 @@ REASONS = {
     "endpoint_refused": (
         "Endpoint safety or key validation refused the saved configuration. Re-save and test it in Settings > AI."
     ),
+    "apple_model_refused": APPLE_FM_SYSTEM_ONLY,
     "internal_error": (
         "The summary worker encountered an unexpected error. Check the exception type and "
         "stack locations in container logs and report the summary ID."

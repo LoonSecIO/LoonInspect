@@ -7,6 +7,7 @@ import { offeredProviders, type DetectionReading } from "@/features/ai/offered";
 import {
   PROVIDER_ORDER,
   REMOVED,
+  appleModelRefused,
   byProvider,
   cardAfterOffer,
   cardEffort,
@@ -427,5 +428,23 @@ describe("the Apple card takes no reasoning effort — fm serve answers 400 to o
     expect(effortToSend("openai_compatible", "")).toBeNull();
     expect(effortToSend("openai_compatible", "none")).toBe("none");
     expect(effortToSend("anthropic", "high")).toBe("high");
+  });
+});
+
+describe("the Apple card uses only Apple's on-device model — pcc runs on Apple's servers (#738)", () => {
+  it("refuses any model but system on the Apple card, as the server does, and none elsewhere", () => {
+    expect(appleModelRefused("apple_fm", "system")).toBe(false);
+    // An empty field has its own line: Save and Send wait until it is filled.
+    expect(appleModelRefused("apple_fm", "")).toBe(false);
+    for (const model of ["pcc", "System", "system "]) expect(appleModelRefused("apple_fm", model)).toBe(true);
+    expect(appleModelRefused("openai_compatible", "pcc")).toBe(false);
+    expect(appleModelRefused("anthropic", "pcc")).toBe(false);
+  });
+
+  it("says so in both languages, naming the model it takes and the one it refuses", () => {
+    for (const words of [en.ai.appleModelOnly, de.ai.appleModelOnly]) {
+      expect(words).toContain("system");
+      expect(words).toContain("pcc");
+    }
   });
 });

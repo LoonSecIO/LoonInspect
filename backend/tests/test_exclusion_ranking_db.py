@@ -132,6 +132,26 @@ async def test_refusals_send_no_inventory(client, db, enabled, monkeypatch, case
     ).scalars().all() == []
 
 
+async def test_an_apple_card_saved_naming_another_model_ranks_nothing(client, db, enabled, fleet, monkeypatch):
+    """`fm serve` passes the local-only gate by address, and `pcc` sends the inventory labels on to
+    Apple's servers (#738). A row an older build saved naming it is refused before the gate."""
+    from app.ai.providers import Provider
+    from app.api.ai import APPLE_FM_SYSTEM_ONLY
+    from app.core.ai_configs import save_config
+
+    await save_config(
+        db, Provider.apple_fm, host_reach="custom", base_url="http://127.0.0.1:1976/v1", model="pcc",
+        reasoning_effort=None, api_key=None, clear_key=False, updated_by=None,
+    )  # fmt: skip
+    monkeypatch.setattr(api, "transport_override", httpx.MockTransport(lambda request: pytest.fail("pcc was dialled")))
+    result = await client.post(URL, json={"provider": "apple_fm", "globs": []})
+    assert result.status_code == 409, result.text
+    assert result.json()["detail"] == APPLE_FM_SYSTEM_ONLY
+    assert (
+        await db.execute(select(ShareLog).where(ShareLog.payload["feature"].astext == "exclusion_ranking"))
+    ).scalars().all() == []
+
+
 async def test_viewer_cannot_send_inventory_for_ranking(accounts):
     viewer = await _signed_in(*VIEWER)
     try:

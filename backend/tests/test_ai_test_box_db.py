@@ -279,6 +279,34 @@ async def test_apple_takes_no_reasoning_effort_and_is_refused_before_the_gate(cl
     assert "reasoning_effort" not in json.loads(endpoint.requests[0].content)
 
 
+SYSTEM_ONLY = (
+    "The Apple card uses only Apple's on-device model, system. pcc is Private Cloud Compute, which runs on Apple's "
+    "servers, not on this Mac. Save the Apple Foundation Models via Docker Desktop card again from Settings › AI "
+    "with the model system."
+)
+
+
+async def test_apple_takes_only_its_on_device_model_and_lists_only_that(client, db, clean, endpoint):
+    """`fm serve` also serves `pcc`, Private Cloud Compute, on Apple's servers, behind the one
+    origin the share log records (#738). A test naming it, or any model but `system`, is refused
+    with the way out before anything is dialled or disclosed; Load models keeps only `system`."""
+    await _switches(db, flag=True, consent=True)
+    apple = {"provider": "apple_fm", "baseUrl": "http://host.docker.internal:1976/v1", "reasoningEffort": None}
+    for model in ("pcc", "qwen3.5:2b-mlx"):
+        refused = await client.post("/api/system/ai/test", json=_body(**apple, model=model))
+        assert refused.status_code == 422, model
+        assert refused.json()["detail"] == SYSTEM_ONLY
+    assert endpoint.requests == []
+    assert await _ai_rows(db) == []
+
+    endpoint.body = {"object": "list", "data": [{"id": "system"}, {"id": "pcc"}]}
+    listed = await client.post("/api/system/ai/models", json={"provider": "apple_fm", "baseUrl": apple["baseUrl"]})
+    assert listed.status_code == 200, listed.text
+    assert [m["id"] for m in listed.json()["models"]] == ["system"]
+    entries = (await client.get("/api/system/ai/providers")).json()["entries"]
+    assert next(e["models"] for e in entries if e["provider"] == "apple_fm") == ["system"]
+
+
 async def test_a_reserved_reach_is_refused_by_name_before_the_gate(client, db, clean, endpoint):
     await _switches(db, flag=True, consent=True)
     response = await client.post("/api/system/ai/test", json=_body(hostReach="orbstack"))
