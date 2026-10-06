@@ -3,8 +3,9 @@ import WebKit
 
 /// The window: one WKWebView on the backend's own UI, a waiting page while the supervisor
 /// starts, a readable failure page with the log folder when it cannot, and the app menu's
-/// Open in Browser, Copy Setup Claim Token, Show Logs in Finder and Quit. Quitting (the menu,
-/// ⌘Q, `osascript -e 'quit app "LoonInspect"'`, logout, SIGTERM) stops the children first.
+/// Open in Browser, Show Logs in Finder and Quit. On a first launch the window's page is handed
+/// this session's setup claim token. Quitting (the menu, ⌘Q, `osascript -e 'quit app
+/// "LoonInspect"'`, logout, SIGTERM) stops the children first.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
     private let supervisor: Supervisor
@@ -79,7 +80,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         // Keeps App Nap from throttling the scheduler while the window is hidden; sleep still wins.
         activity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep,
                                                          reason: "The LoonInspect server is running")
+        handClaimTokenToWindow(port: port)
         webView.load(URLRequest(url: URL(string: "http://127.0.0.1:\(port)/")!))
+    }
+
+    /// The setup claim token, to this window's page and nowhere else. A container-era control, held
+    /// by the shell for now and to be gutted before public release (Kyle, 2026-10-06;
+    /// docs/spike-macos-app.md). WebKit runs the script at document start, in the main frame only,
+    /// and it defines a read-only `window.looninspectSetupClaimToken` only on this backend's origin;
+    /// the setup page then draws no claim field. The shell puts the token in no URL, file, pasteboard
+    /// or log line, and a browser opened with Open in Browser gets none: its setup page asks for it.
+    private func handClaimTokenToWindow(port: Int) {
+        guard let token = supervisor.claimToken(),
+              token.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }) else {
+            supervisor.log.info("no usable setup claim token in this session's backend log; none handed to the window")
+            return
+        }
+        let source = """
+            if (location.origin === "http://127.0.0.1:\(port)") {
+              Object.defineProperty(window, "looninspectSetupClaimToken", { value: "\(token)" });
+            }
+            """
+        webView.configuration.userContentController.addUserScript(
+            WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        supervisor.log.info("setup claim token from this session's backend log handed to the window")
     }
 
     private func fail(_ message: String) {
@@ -126,7 +150,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             item("About LoonInspect", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
             .separator(),
             item("Open in Browser", #selector(openInBrowser), "b"),
-            item("Copy Setup Claim Token", #selector(copyClaimToken)),
             item("Show Logs in Finder", #selector(showLogs)),
             .separator(),
             item("Hide LoonInspect", #selector(NSApplication.hide(_:)), "h"),
@@ -153,27 +176,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
-        case #selector(openInBrowser), #selector(copyClaimToken), #selector(reload): return port != nil && !quitting
+        case #selector(openInBrowser), #selector(reload): return port != nil && !quitting
         default: return true
         }
     }
 
     @objc private func openInBrowser() {
         if let port { NSWorkspace.shared.open(URL(string: "http://127.0.0.1:\(port)/")!) }
-    }
-
-    @objc private func copyClaimToken() {
-        let alert = NSAlert()
-        if let token = supervisor.claimToken() {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(token, forType: .string)
-            alert.messageText = "Setup claim token copied"
-            alert.informativeText = "Paste it into the setup page's claim token field. It is valid until LoonInspect quits."
-        } else {
-            alert.messageText = "No claim token this session"
-            alert.informativeText = "The backend mints one only while no account exists. If an administrator exists, sign in instead."
-        }
-        alert.beginSheetModal(for: window)
     }
 
     @objc private func showLogs() { NSWorkspace.shared.open(supervisor.logDir) }
@@ -270,17 +279,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         // What the window shows, in the log: proof for a --headless-less test that the SPA rendered.
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [self] in
             let probe = "JSON.stringify({title: document.title, path: location.pathname, "
-                + "passwordField: !!document.querySelector('input[type=password]')})"
+                + "passwordField: !!document.querySelector('input[type=password]'), "
+                + "claimField: !!document.getElementById('claimToken'), "
+                + "tokenHanded: typeof window.looninspectSetupClaimToken === 'string'})"
             webView.evaluateJavaScript(probe) { result, error in
                 self.supervisor.log.info("window shows \(result.map { "\($0)" } ?? "nothing: \(String(describing: error))")")
             }
-            supervisor.log.info("setup claim token in this session's backend log: \(supervisor.claimToken() == nil ? "none" : "found")")
             if let path = ProcessInfo.processInfo.environment["LOON_SPIKE_SNAPSHOT"] {
                 webView.takeSnapshot(with: nil) { image, _ in
                     guard let tiff = image?.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?
                         .representation(using: .png, properties: [:]) else { return }
                     try? png.write(to: URL(fileURLWithPath: path))
                     self.supervisor.log.info("snapshot of the window written to \(path)")
+                }
+            }
+            // Test only, as the snapshot is: a file of JavaScript run once in the page as an async
+            // function body, its result logged. The spike's validation drives the setup form with it.
+            if let path = ProcessInfo.processInfo.environment["LOON_SPIKE_WINDOW_SCRIPT"],
+               let body = try? String(contentsOfFile: path, encoding: .utf8) {
+                webView.callAsyncJavaScript(body, in: nil, in: .page) { result in
+                    self.supervisor.log.info("window script: \((try? result.get()).map { "\($0)" } ?? "\(result)")")
                 }
             }
         }

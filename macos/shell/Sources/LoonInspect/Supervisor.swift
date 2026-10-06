@@ -450,7 +450,7 @@ final class Supervisor: @unchecked Sendable {
     /// The first-run claim token this backend logged, if it logged one: app.core.bootstrap
     /// writes it to the log because whoever can read the log may claim the instance, and
     /// whoever runs this app can. Read from this session's part of backend.log only, since a
-    /// restart mints a new token.
+    /// restart mints a new token; the window hands it to its own page and nowhere else.
     func claimToken() -> String? {
         let url = logDir.appendingPathComponent("backend.log")
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }

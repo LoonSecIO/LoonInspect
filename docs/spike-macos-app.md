@@ -17,8 +17,9 @@ Yes, as a packaging job rather than a port. An unsigned `LoonInspect.app` built 
 branch launches on this Mac, creates its database, runs all 73 migrations, and shows the
 first-run setup page (and the sign-in page on every launch after setup) in its own window.
 Quitting, even part-way through the first launch, leaves no process behind and no password in a
-file. The backend and the frontend are unchanged. They run as they do in the image, with
-PostgreSQL 17 beside them as a child process instead of a sidecar container.
+file. The backend is unchanged. The frontend's one change: in the app's window the setup page
+asks for no claim token, because the shell hands it this session's. They run as they do in the
+image, with PostgreSQL 17 beside them as a child process instead of a sidecar container.
 
 | Measure | Result |
 | --- | --- |
@@ -33,17 +34,19 @@ notarization, an update story and the decisions in [Needs Kyle](#needs-kyle).
 
 ## What was built
 
-All of it is under `macos/` ([macos/README.md](../macos/README.md)). Two other files changed:
-the row for this document in [docs/README.md](README.md), which `test_docs_index.py` requires,
-and a `.dockerignore` entry that keeps `macos/` out of the image's build context, since a
+All of it is under `macos/` ([macos/README.md](../macos/README.md)). Four other files changed:
+the row for this document in [docs/README.md](README.md), which `test_docs_index.py` requires;
+a `.dockerignore` entry that keeps `macos/` out of the image's build context, since a
 local `macos/build` holds about 700 MB (downloads, a copy of the frontend with its
-`node_modules`, the bundle and its zip). Nothing under `backend/` or `frontend/` changed.
+`node_modules`, the bundle and its zip); and `frontend/src/features/auth/SetupPage.tsx` with a
+test beside it, for the claim token (see [How it runs](#how-it-runs)). Nothing under `backend/`
+changed.
 
 | Path | Job |
 | --- | --- |
 | `macos/scripts/fetch-runtime.sh` | Downloads two pinned artifacts into `macos/build/downloads` and checks each one's version and sha256. A mismatch, fresh or cached, stops the script. The pins: CPython 3.12.15 from python-build-standalone release 20261003 (`aarch64-apple-darwin-install_only`, the release's SHA256SUMS entry, which equals GitHub's asset digest), and zonky `embedded-postgres-binaries-darwin-arm64v8` 17.11.0 from Maven Central (its published `.sha256`). |
 | `macos/scripts/build-app.sh` | Builds the bundle from the working tree. It copies an allowlist of paths, so a local `backend/.env` never rides along (INSPECT-0175). Then: frontend `npm ci && npm run build`; `uv export --frozen --no-dev --no-emit-project` run inside Docker; `pip install --require-hashes --no-deps --only-binary=:all:` into the bundled Python on the host, so every wheel is a macOS arm64 one; prune; compile bytecode; Postgres; `swift build -c release`; Info.plist; ad-hoc signature; a check that every Mach-O file verifies; sizes. |
-| `macos/shell/` | The Swift shell, a SwiftPM executable with no Xcode project. The window is a `WKWebView`. The app menu has Open in Browser, Copy Setup Claim Token, Show Logs in Finder and Quit. The supervisor starts and stops the children. `--headless` does everything except the window. |
+| `macos/shell/` | The Swift shell, a SwiftPM executable with no Xcode project. The window is a `WKWebView`. The app menu has Open in Browser, Show Logs in Finder and Quit. The supervisor starts and stops the children. `--headless` does everything except the window. |
 | `macos/launcher/loon_backend.py` | The backend's entry point: `app.serve.main()` and a watchdog. If the shell dies, the watchdog sends the backend the SIGTERM a normal quit would have sent and, after the backend's shutdown, sends Postgres the signal `pg_ctl stop -m fast` sends. |
 
 The bundle's `Contents/Resources/backend` is laid out like the image's `/app`: `app/` with the
@@ -148,10 +151,15 @@ go to `~/Downloads`. Both are written; neither was exercised.
 | `UPDATE_CHECK` | `true` | `false` | Its banner tells an operator to pull a new image. How an app updates is an open question (see below). |
 | Everything else | compose's defaults, which equal `config.py`'s | `config.py`'s defaults | pydantic-settings reads `.env` from the working directory, which here is the support directory. Not tried. |
 
-The first administrator is made the container's way: the backend logs a claim token while no
-account exists. The setup page still says to run `docker compose logs app | grep "claim
-token"`, which is wrong inside an app. The menu's Copy Setup Claim Token reads the token from
-this session's part of `backend.log` instead. `INITIAL_ADMIN_*` is not used.
+**The first administrator.** The backend mints and logs a claim token while no account exists,
+as in the container, and `INITIAL_ADMIN_*` is not used. The shell reads this session's token
+from `backend.log` and hands it to its own window and nothing else: a `WKUserScript`, run at
+document start in the main frame only, defines a read-only `window.looninspectSetupClaimToken`
+when the page's origin is `http://127.0.0.1:<port>`. The setup page sends that token and draws
+no claim field and no `docker compose logs` help. No URL, file, pasteboard or shell log line
+carries it. Setup is meant to happen in the app window: a browser opened with Open in Browser
+gets no token and shows the container's page, whose token is in this session's
+`logs/backend.log`.
 
 **Quit.** Quitting from the menu, with ⌘Q, through AppleScript or at logout, or with SIGTERM,
 SIGINT or SIGHUP, stops the backend first: SIGTERM, which uvicorn answers with its graceful
@@ -220,8 +228,9 @@ Did not go as the plan said, and what was done:
   running. Found in testing and fixed by running `terminate:` from the run loop instead.
 - The host's node is v26.8.1, not 22. The frontend built cleanly with it, and the script warns
   whenever node is not 22, as the image and CI use.
-- The setup page's claim-token help names `docker compose logs`. The menu item works around
-  it; a real app needs the page to say something else, which is a frontend change.
+- The setup page's claim-token help names `docker compose logs`, which is wrong inside an app.
+  A menu item that copied the token came first. Now the shell hands the token to its window
+  and the page draws no field there (Kyle, 2026-10-06), the spike's one frontend change.
 - The verifier found the superuser's password left on disk. The first build wrote it to
   `run/initdb.pw` for `initdb --pwfile`, and only a `defer` on the start thread removed it. That
   never ran when a quit ended the process during initdb. Quitting 0.45 to 0.5 s into a first
@@ -290,6 +299,10 @@ What each needs, as far as the spike could see:
 7. **Moving this finding.** The conversion step to `docs/spikes/macos-app.md` (BRANCHING.md
    §3.1), and whether the answer is "implementation" (a fresh `inspect-NNNN/` branch) or
    "documentation".
+8. **The setup claim.** The claim exchange is a container-era AAA control; for the app it is
+   held by the shell for now and needs gutting before public release (Kyle, 2026-10-06).
+   Options: a loopback-only backend mode without a claim, or the shell creating the first
+   account itself.
 
 ## Before it is a product
 
@@ -395,6 +408,5 @@ open macos/build/LoonInspect.app        # or: …/Contents/MacOS/LoonInspect --h
 cat ~/Library/Application\ Support/LoonInspect-Spike/run/port
 ```
 
-The menu's Copy Setup Claim Token copies what the setup page's first field asks for. To start
-over, see
-[macos/README.md](../macos/README.md).
+On a first launch the window's setup page asks only for the administrator's name, email and
+password. To start over, see [macos/README.md](../macos/README.md).
