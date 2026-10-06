@@ -302,13 +302,14 @@ async def test_a_catalog_read_past_the_stale_window_is_not_reclaimed(db, connect
     simulated minute of them, mid-wave. Every rival joins, and the run succeeds."""
     from app.core.config import settings
     from app.core.runs import _HEARTBEAT_INTERVAL_SECONDS, TRIGGER_SWEEP
-    from app.mdm.collections import run_one_collection
+    from app.mdm.collections import LOCK_CLASS_FOR_KIND, run_one_collection
     from app.mdm.jamf.client import _CONCURRENCY
     from app.models.schema import Run
 
     jamf.smart_groups = [{"id": str(n), "name": f"heartbeat group {n}", "siteId": "-1"} for n in range(1, 151)]
     harness.size(100)
-    harness.lock_class, harness.read, harness.next_rival = kind, timedelta(seconds=5), harness.now + timedelta(minutes=1)
+    harness.lock_class, harness.read = LOCK_CLASS_FOR_KIND[kind], timedelta(seconds=5)
+    harness.next_rival = harness.now + timedelta(minutes=1)
     collection = await _sweep_collection(db, connection, kind)
     result = await run_one_collection(db, collection, trigger=TRIGGER_SWEEP)
 
@@ -317,6 +318,8 @@ async def test_a_catalog_read_past_the_stale_window_is_not_reclaimed(db, connect
     await db.refresh(run)
     assert run.status == "succeeded" and not others, run.error
     assert result.ok and result.device_count == (harness.fleet if kind == "device_sweep" else 0), result
+    await db.refresh(collection)
+    assert collection.last_run_status == "ok"
 
     # The reads before the first device outlasted the stale window twice over, every rival during
     # them joined, and the heartbeat each one read was at most one interval and one wave of reads old.

@@ -681,7 +681,7 @@ class JamfClient:
         line rather than failing the device sweep it rides along with.
 
         `between_waves` is awaited after each list page and each wave of detail reads. The
-        caller passes its run's heartbeat: at a thousand groups, or under throttling, this
+        caller passes its run's heartbeat: past a thousand groups, or under throttling, this
         read alone can outlast the stale window, and nothing here may touch the database.
         """
         groups: list[dict] = []
