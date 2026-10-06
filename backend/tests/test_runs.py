@@ -659,6 +659,97 @@ async def test_outside_a_run_the_time_is_now(db) -> None:
     assert run_meta() == {}
 
 
+async def test_the_tick_stamps_its_sweep_at_the_claimed_occurrence_and_a_later_webhook_after_it(
+    db, connection, jamf: FakeJamf
+) -> None:
+    """The `_time` rule end to end, on the outbox rows a destination will be sent.
+
+    The tests above ask `event_time()` directly, inside runs they entered by hand. Here
+    every hop is the scheduler's own: `claim_due` captures `next_due_at` before advancing
+    it, `tick_tenant` hands that occurrence to `run_one_collection`, `acquire` makes it
+    the run's window, and `process_sync` stamps it on each device's events. So this fails
+    if `event_time()` answers now for a sweep, or if the claim stops handing back the
+    occurrence it claimed. Then a webhook for one of those Macs lands after the sweep's
+    stamp, at the Mac's own reportDate.
+    """
+    from app.core.tenancy import OPERATIONAL_TENANT_ID
+    from app.core.tenant_jobs import tenant_job
+    from app.mdm.collections import apply_schedule, tick_tenant
+    from app.mdm.jamf.contract import V0_SECTIONS
+    from app.mdm.service import ingest_webhook
+    from app.models.schema import Collection, EventOutbox, Run
+
+    sweep = Collection(
+        mdm_connection_id=connection.id,
+        name=f"late sweep {uuidlib.uuid4().hex[:8]}",
+        kind="device_sweep",
+        enabled=True,
+        sections=list(V0_SECTIONS),
+        frequency="daily",
+        at_hour=23,
+        at_minute=59,
+        timezone="UTC",
+    )
+    apply_schedule(sweep)
+    # Yesterday's 23:59 occurrence, still unclaimed: the tick reaches it on a later UTC day
+    # than the one it serves, so a shortDate read off the clock cannot pass for one read
+    # off the window.
+    due = (_now() - timedelta(days=1)).replace(hour=23, minute=59, second=0, microsecond=0)
+    sweep.next_due_at = due
+    db.add(sweep)
+    await db.commit()
+
+    # `collections_tick`'s per-tenant body (app.main), in a session of its own: the row is
+    # read back from the table as the scheduler reads it, not handed over from this one.
+    async with tenant_job(OPERATIONAL_TENANT_ID) as tick_db:
+        results = await tick_tenant(tick_db)
+    assert [result.ok for result in results if result.collection_id == sweep.id] == [True]
+    run = (await db.execute(select(Run).where(Run.collection_id == sweep.id))).scalars().one()
+    # The window before the rows, so a failure names its hop: a wrong window is the claim
+    # or the tick, a right window over wrong rows is the stamping.
+    assert (run.trigger, run.window_start) == ("sweep", due)
+
+    async def device_events(job_id: uuidlib.UUID) -> list:
+        query = select(EventOutbox).where(
+            EventOutbox.event_type.in_(("device.inventory", "device.inventory.changed")),
+            EventOutbox.payload["jobID"].astext == str(job_id),
+        )
+        return list((await db.execute(query.order_by(EventOutbox.id))).scalars().all())
+
+    swept = await device_events(run.id)
+    # Both Macs of the fake tenant: a snapshot each and, on a baseline, a delta each.
+    assert sorted(row.event_type for row in swept) == ["device.inventory"] * 2 + ["device.inventory.changed"] * 2
+    for row in swept:
+        # One instant for the whole sweep, in the body and in the envelope that becomes
+        # Splunk's `_time` — the occurrence claimed, however far apart the Macs were reached.
+        assert datetime.fromisoformat(row.payload["occurredAt"]) == due
+        assert row.payload[ENVELOPE]["time"] == due.timestamp()
+        meta = row.payload["deviceMeta"]
+        assert (meta["jobID"], meta["trigger"]) == (str(run.id), "sweep")
+        # The daily grain is the window's day, which is not today.
+        assert meta["shortDate"] == due.strftime("%Y-%m-%d") != _now().strftime("%Y-%m-%d")
+
+    # Then the Mac mini reports again — Slack updated — and half a minute later Jamf Pro's
+    # webhook brings it in.
+    reported = _now().replace(microsecond=0) - timedelta(seconds=30)
+    jamf.real["general"]["reportDate"] = reported.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    slack = next(app for app in jamf.real["applications"] if app["bundleId"] == "com.tinyspeck.slackmacgap")
+    slack["version"] = "4.51.0"
+    hooked = {"webhook": {"webhookEvent": "ComputerInventoryCompleted"}, "event": {"jssID": jamf.real["id"]}}
+    result = await ingest_webhook(db, connection, hooked)
+    assert result is not None and result.outcome == "changed"
+
+    webhook_runs = select(Run).where(Run.mdm_connection_id == connection.id, Run.trigger == "webhook")
+    heard = await device_events((await db.execute(webhook_runs)).scalars().one().id)
+    assert sorted(row.event_type for row in heard) == ["device.inventory", "device.inventory.changed"]
+    swept_time = max(row.payload[ENVELOPE]["time"] for row in swept)
+    for row in heard:
+        # The Mac's own clock — not the sweep's window, not the moment of ingest — so the
+        # index files it strictly after every event the sweep put on the wire.
+        assert datetime.fromisoformat(row.payload["occurredAt"]) == reported
+        assert row.payload[ENVELOPE]["time"] == reported.timestamp() > swept_time
+
+
 # --- the jobID on the wire --------------------------------------------------------------
 
 
