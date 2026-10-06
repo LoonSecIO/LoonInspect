@@ -22,13 +22,13 @@ from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import MetaData, insert, make_url, select, text
+from sqlalchemy import CheckConstraint, MetaData, insert, make_url, select, text
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core import database
 from app.core.config import settings
-from app.core.tenancy import TENANT_GUC
+from app.core.tenancy import OPERATIONAL_TENANT_ID, ROOT_TENANT_ID, ROOT_TENANT_SLUG, TENANT_GUC
 from app.models import schema  # noqa: F401 — registers every model on Base.metadata, as migrations/env.py does
 
 ADMIN_URL = os.environ.get("ADMIN_DATABASE_URL", "")
@@ -59,18 +59,23 @@ SCHEMA = text("""
       FROM pg_type WHERE typnamespace = 'public'::regnamespace AND typtype IN ('e', 'd')
 """)
 TABLES = text("SELECT relname FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind = 'r'")
-# The walk's one tenant, bound for the transaction: row-level security reads it, and a tenant's row takes it as its stamp.
-BIND = text("SELECT set_config(:guc, (SELECT id::text FROM tenants LIMIT 1), true)").bindparams(guc=TENANT_GUC)
+# The operational tenant, bound for the transaction: row-level security reads it, and a tenant's row takes it as its
+# stamp. Every row the walk writes is its, as an install's operational data is (app/core/bootstrap.py).
+BIND = text("SELECT set_config(:guc, :tenant, true)").bindparams(guc=TENANT_GUC, tenant=str(OPERATIONAL_TENANT_ID))
 
 NOW = datetime.now(UTC)
 SAMPLE = {bool: True, int: 1, float: 1.0, Decimal: Decimal(1), bytes: b"x", dict: {}, datetime: NOW, date: NOW.date()}
 UNBOUNDED = 4096  # characters for a string column without a width: more than any VARCHAR the chain declares
 CHOSEN = {
+    "tenants.id": OPERATIONAL_TENANT_ID,
     "vuln_corpus_acquisitions.basis": "delivery",  # what their CHECKs allow
     "submission_cases.kind": "coverage",
     # A list as a destination holds it at head: a9d4c7e1f3b8 and bd51c7a9e402 take their event types out on the way down.
     "destinations.subscribed_events": ["run.failed", "subject.departure", "subject.returned"],
 }
+# The install's other tenant, written beside the first: the management-only root, which owns no other row. A downgrade
+# that takes one tenant from `tenants` meets two, as on every install.
+ROOT = ("tenants", {"id": ROOT_TENANT_ID, "slug": ROOT_TENANT_SLUG, "kind": "root"})
 # Rows a fleet holds that three downgrades cannot step back over: (table, the row written beside its first, what the
 # walk deletes to step past, words the step's error carries, why). A refused downgrade rolls back, so nothing is lost by
 # trying. A step that fails with other words fails its test.
@@ -96,14 +101,18 @@ STEP_PAST = {
         "restores a key without platform; a Mac and an iPad with one Jamf id share it",
     ),
 }
-# Where the models and the migrations disagree, as autogenerate words it. None is marked deliberate, so each is a strict
-# xfail below: declare the index or create it, and its test fails until its line here goes.
+# Where the models and the migrations disagree, as autogenerate words it, and a CHECK only the migrations or only the
+# models name (autogenerate compares none). None is marked deliberate, so each is a strict xfail below: declare it on its
+# model or create it, and its test fails until its line here goes.
 DRIFT = {
     "remove_index ix_app_catalog_vuln_ids": "b8d4f1a6c2e7 creates it; AppCatalogEntry does not declare it",
     "remove_index ix_app_catalog_vuln_served": "a7c21e9f4b83 creates it; AppCatalogEntry does not declare it",
     "remove_index ix_observation_sections_entry_digests": "4a8c1f2e7b93 creates it; ObservationSection does not declare it",
     "remove_index ix_observation_spans_section_digests": "4a8c1f2e7b93 creates it; ObservationSpan does not declare it",
     "add_index ix_devices_platform": "Device.platform says index=True; no migration creates it",
+    "migrations_only_check vuln_library_epoch.ck_vuln_library_epoch_single_row": (
+        "d1f8b6a34e07 creates it; VulnLibraryEpoch does not declare it"
+    ),
 }
 
 
@@ -175,12 +184,15 @@ async def test_upgrade_head_downgrade_base_upgrade_head():
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="session")
-async def stairway() -> dict[str, str | None]:
-    """Each revision in turn on an empty database: up, down, up again, each step held to the schema it should leave."""
+async def stairway() -> tuple[dict[str, str | None], dict[str, frozenset]]:
+    """Each revision in turn on an empty database: up, down, up again, each step held to the schema it should leave.
+    What each revision's steps left wrong, and the schema below each revision: what stepping past it has to leave."""
     found: dict[str, str | None] = {}
+    below: dict[str, frozenset] = {}
     async with _database() as (url, engine), engine.connect() as catalog:
         before = await _schema(catalog)
         for script in SCRIPTS:
+            below[script.revision] = before
             problems = []
             try:
                 await _alembic(url, "upgrade", script.revision)
@@ -194,12 +206,12 @@ async def stairway() -> dict[str, str | None]:
                 found[script.revision] = "; ".join(filter(None, [*problems, f"{type(exc).__name__}: {exc}"]))
                 break  # every revision above it would fail the same way, so they report as not reached
             found[script.revision] = "; ".join(filter(None, problems)) or None
-    return found
+    return found, below
 
 
 def _verdict(found: dict[str, str | None], revision: str, says: str | None = None) -> None:
     if revision not in found:
-        pytest.skip("not reached: the walk stopped at a step that raised")
+        pytest.skip("not reached: the walk stopped at an earlier step")
     if says and found[revision] and says not in found[revision]:
         pytest.fail(f"listed as failing with {says}, it failed otherwise: {found[revision]}")  # no xfail absorbs this
     assert found[revision] is None, found[revision]
@@ -207,7 +219,7 @@ def _verdict(found: dict[str, str | None], revision: str, says: str | None = Non
 
 @pytest.mark.parametrize("revision", _revisions({}))
 async def test_each_downgrade_puts_back_the_schema_its_upgrade_found(stairway, revision):
-    _verdict(stairway, revision)
+    _verdict(stairway[0], revision)
 
 
 def _sample(column, written: dict[str, dict]):
@@ -238,9 +250,7 @@ async def _fill(connection, tables) -> dict[str, dict]:
             row = (await connection.execute(insert(table).values(values).returning(*table.columns))).mappings().one()
         written[table.name] = dict(row)
         if table.name == "tenants":  # every other row is stamped with it, and row-level security checks the stamp
-            await connection.execute(
-                text("SELECT set_config(:guc, :tenant, true)"), {"guc": TENANT_GUC, "tenant": str(row["id"])}
-            )
+            await connection.execute(BIND)
     return written
 
 
@@ -260,19 +270,26 @@ async def _refill(engine) -> None:
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="session")
-async def stepped_back() -> dict[str, str | None]:
-    """Upgrade head and write a row in every table through the models' tables, then each STEP_PAST row beside its
-    table's first; step down to base one revision at a time, refilling after each; upgrade head. What each step said."""
+async def stepped_back(stairway) -> tuple[dict[str, str | None], dict[str, str], list[frozenset]]:
+    """Upgrade head and write a row in every table through the models' tables, then the rows written beside their
+    table's first; step down to base one revision at a time, each step held to the schema the stairway found below its
+    revision and refilled after; upgrade head. What each step said, what it left wrong, and the schema at head, at base
+    and at head again."""
     found: dict[str, str | None] = {}
-    async with _database() as (url, engine):
+    wrong: dict[str, str] = {}
+    _, below = stairway
+    async with _database() as (url, engine), engine.connect() as catalog:
         await _alembic(url, "upgrade", "head")
+        ends = [await _schema(catalog)]
         async with engine.begin() as connection:
             written = await _fill(connection, database.Base.metadata.sorted_tables)
-            for name, beside, *_ in STEP_PAST.values():
+            for name, beside, *_ in [ROOT, *STEP_PAST.values()]:
                 table = database.Base.metadata.tables[name]
                 keys = set(table.primary_key.columns.keys())
                 await connection.execute(insert(table).values({k: v for k, v in written[name].items() if k not in keys} | beside))
         for script in reversed(SCRIPTS):
+            if script.revision not in below:
+                break  # the stairway stopped below it, and says why
             try:
                 await _alembic(url, "downgrade", _back(script))
                 found[script.revision] = None
@@ -285,15 +302,32 @@ async def stepped_back() -> dict[str, str | None]:
                     await connection.execute(BIND)
                     await connection.execute(text(f"DELETE FROM {table} WHERE {where}"))
                 await _alembic(url, "downgrade", _back(script))
+            if problem := _unlike(below[script.revision], await _schema(catalog), "stepping past it"):
+                wrong[script.revision] = problem
+                break  # every step below it would start from the wrong schema
             await _refill(engine)
         else:
+            ends.append(await _schema(catalog))
             await _alembic(url, "upgrade", "head")  # base holds no table, so this climb is the empty one's
-    return found
+            ends.append(await _schema(catalog))
+    return found, wrong, ends
 
 
 @pytest.mark.parametrize("revision", _revisions({revision: why for revision, (*_, why) in STEP_PAST.items()}))
 async def test_each_downgrade_steps_back_over_a_fleets_rows(stepped_back, revision):
-    _verdict(stepped_back, revision, STEP_PAST[revision][3] if revision in STEP_PAST else None)
+    found, wrong, _ = stepped_back
+    if revision in wrong:
+        pytest.fail(wrong[revision])  # no xfail absorbs this: the step was listed for what it raises, not what it leaves
+    _verdict(found, revision, STEP_PAST[revision][3] if revision in STEP_PAST else None)
+
+
+async def test_the_walk_over_rows_leaves_nothing_at_base_and_climbs_back_to_its_head(stepped_back):
+    *_, ends = stepped_back
+    if len(ends) < 3:
+        pytest.skip("not reached: the walk stopped above base")
+    head, base, again = ends
+    assert base == frozenset(), sorted(base)
+    assert again == head, _unlike(head, again, "the climb back")
 
 
 def _word(difference) -> str:
@@ -305,17 +339,22 @@ def _word(difference) -> str:
 
 @pytest_asyncio.fixture(scope="module", loop_scope="session")
 async def drift() -> set[str]:
-    """What `alembic check` compares at head, configured as migrations/env.py configures it, worded."""
+    """What `alembic check` compares at head, configured as migrations/env.py configures it, worded; and each CHECK
+    only the migrations or only the models name."""
     async with _database() as (url, engine):
         await _alembic(url, "upgrade", "head")
         async with engine.connect() as connection:
             found = await connection.run_sync(
                 lambda sync: compare_metadata(MigrationContext.configure(sync), database.Base.metadata)
             )
-    return {_word(difference) for difference in found}
+            built = {name for kind, name, how in await _schema(connection) if kind == "constraint" and how.startswith("CHECK")}
+    tables = database.Base.metadata.tables.values()
+    declared = {f"{t.name}.{c.name}" for t in tables for c in t.constraints if isinstance(c, CheckConstraint)}
+    checks = {f"migrations_only_check {n}" for n in built - declared} | {f"models_only_check {n}" for n in declared - built}
+    return {_word(difference) for difference in found} | checks
 
 
-async def test_autogenerate_finds_nothing_beyond_the_listed_drift(drift):
+async def test_nothing_differs_beyond_the_listed_drift(drift):
     assert drift <= set(DRIFT), sorted(drift - set(DRIFT))
 
 
