@@ -51,7 +51,7 @@ def _counted(band: str, counts=AppCatalogEntry.vuln_counts):
     return counted(counts, band)
 
 
-def _device_counts(app_hash: str | None = None):
+def _device_counts(app_hash: str | None = None, *, collation: str | None = None):
     """version_hash -> distinct devices carrying it now (tenant-scoped by RLS on installed_apps).
 
     `app_hash` is pushed inside the subquery on purpose (#299). Joined on the nullable side of
@@ -59,12 +59,17 @@ def _device_counts(app_hash: str | None = None):
     statement that names it. Filtering only the outer `AppCatalogEntry` would leave the
     record page walking every install in the tenant to answer for one app; scoped here, its
     cost grows with one app's popularity and not with the fleet's app count. The list reads
-    it once a request rather than once a statement (`_device_counts_once`, #726).
+    it once a request rather than once a statement (`_device_counts_once`, #726), and only
+    that read names a `collation`: the lookup and the vulnerability page join this subquery
+    under the column's own, as before.
     """
-    stmt = select(InstalledApp.version_hash, func.count(distinct(InstalledApp.device_id)).label("devices"))
+    build = InstalledApp.version_hash if collation is None else InstalledApp.version_hash.collate(collation)
+    # The SELECT and the GROUP BY name one expression. Grouped by the bare column, the sort
+    # under the aggregate would compare under the locale again, whatever the SELECT said.
+    stmt = select(build.label("version_hash"), func.count(distinct(InstalledApp.device_id)).label("devices"))
     if app_hash is not None:
         stmt = stmt.where(InstalledApp.app_hash == app_hash)
-    return stmt.group_by(InstalledApp.version_hash).subquery()
+    return stmt.group_by(build).subquery()
 
 
 async def _device_counts_once(db: AsyncSession, app_hash: str | None = None):
@@ -72,8 +77,23 @@ async def _device_counts_once(db: AsyncSession, app_hash: str | None = None):
     its place (#726): the same two columns, so every expression on `counts.c.devices` reads the
     numbers it did. Two arrays in two bound parameters whatever the fleet carries, where a
     VALUES list would bind two a build and pass the wire protocol's 32,767 at 16,384 builds.
+
+    Grouped bytewise, under `COLLATE "C"` (#726): a hash has no language, so nothing here wants
+    the locale-aware comparison the column's own collation makes. Grouping needs only equality,
+    and under a deterministic collation, which a database default always is, equality is byte
+    equality: the groups and their counts are the locale read's, and at most their order moves,
+    which nothing reads, since the rows go into arrays joined by equality. The cost is what
+    moves: the sort under the aggregate compares bytes, on abbreviated keys, where the locale
+    read hands every pair that differs to the locale. Serial against serial, that measured 11
+    to 15% faster at 8,000 and 14,000 Macs. The planner caveat: a collated key is an expression,
+    sized from its type (82 bytes for a varchar(32) in a UTF-8 database) where the bare column
+    is sized from its statistics (33). At 8,000 Macs on PostgreSQL 17 defaults that wider sort
+    is what bought two parallel workers where the bare column sorted in one process, so most of
+    the gain there is a plan, and another fleet's shape or settings can take it back. And an
+    index meant to serve this read has to order `version_hash COLLATE "C"`: one in the column's
+    own order cannot.
     """
-    counts = _device_counts(app_hash)
+    counts = _device_counts(app_hash, collation="C")
     rows = (await db.execute(select(counts.c.version_hash, counts.c.devices))).all()
     hashes = bindparam("counted_version_hashes", [row.version_hash for row in rows], type_=ARRAY(String(32)))
     devices = bindparam("counted_devices", [row.devices for row in rows], type_=ARRAY(BigInteger))
