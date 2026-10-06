@@ -69,7 +69,7 @@ async def pair(db):
     finally:
         # Runs and their log lines go with the connections by cascade; the closing events do not.
         await db.rollback()
-        await db.execute(delete(EventOutbox).where(EventOutbox.payload["connectionID"].as_integer().in_(ids)))
+        await db.execute(delete(EventOutbox).where(EventOutbox.payload["connectionID"].astext.in_([str(i) for i in ids])))
         await db.execute(delete(MdmConnection).where(MdmConnection.id.in_(ids)))
         await db.commit()
 
