@@ -4,7 +4,7 @@
 `app.mdm.service._stream_jamf_fleet` calls it once per device, beside a run-log line every
 `_PROGRESS_EVERY` devices. Both exist for the forty-minute pull (docs/runs.md §2 and §5). The FakeJamf
 fleet finishes inside one interval, so the rest of the suite reaches the throttle's early return and,
-with a heartbeat aged by hand, the fence's refusal — never a heartbeat written. Here the scheduled
+with a heartbeat aged by hand, the fence's refusal; none of it is built to write one. Here the scheduled
 path (`run_one_collection`) runs against the real `acquire`, `beat`, reclaim and run log, with three
 stand-ins: the device stream is a stub of 40,000 records, ingest is a stub that spends simulated
 seconds and commits as the real one does, and the run module's clock is the test's. The forty
@@ -194,7 +194,7 @@ async def test_a_forty_minute_sweep_beats_on_cadence_and_is_never_reclaimed(db, 
     assert result.ok and result.device_count == _FLEET, result
 
     # One run, and it succeeded: no rival ever started a second.
-    run = (await db.execute(select(Run).where(Run.mdm_connection_id == connection.id))).scalars().one()
+    run = (await db.execute(select(Run).where(Run.mdm_connection_id == harness.connection_id))).scalars().one()
     await db.refresh(run)
     assert run.status == "succeeded", run.error
     # And it lasted the forty simulated minutes: the clock moved only as the devices did.
