@@ -857,7 +857,7 @@ if static_dir.exists():
     # *else* still gets the same harmless HTML as a typo — main.py's long-standing
     # contract, unchanged outside assets/. GET and HEAD both route here (methods=);
     # FastAPI's own `@app.get` does not register HEAD the way plain Starlette routes do.
-    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
+    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     async def serve_spa(full_path: str, request: Request) -> Response:
         if full_path.startswith("api/") or full_path.startswith("webhooks/"):
             raise HTTPException(status_code=404, detail="Not Found")

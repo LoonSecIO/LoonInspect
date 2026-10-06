@@ -6,7 +6,7 @@ from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -232,7 +232,10 @@ async def send_exchange(db: AsyncSession = Depends(get_db)) -> SendExchangeOut:
 
 @router.get(
     "/share-log",
-    response_class=PlainTextResponse,
+    # Response, not PlainTextResponse: the endpoint builds its own response, so the class only
+    # decides what /openapi.json says, and the 200 below names the media type that is served.
+    response_class=Response,
+    responses={200: {"content": {"application/x-ndjson": {"schema": {"type": "string"}}}}},
     dependencies=[Depends(require(Permission.AUDIT_READ))],
 )
 async def download_share_log(
