@@ -79,6 +79,18 @@ async def test_nothing_leaves_without_a_statement_or_with_a_switch_off(admin, db
     assert endpoint.requests == [] and await _ai_rows(db) == []
 
 
+async def test_an_apple_card_saved_naming_another_model_drafts_nothing(admin, db, clean, endpoint) -> None:  # noqa: F811
+    """A row an older build saved naming `pcc`, Private Cloud Compute (#738): refused with the
+    Save's own sentence before the gate, so the statement never leaves."""
+    from app.api.ai import APPLE_FM_SYSTEM_ONLY
+
+    await _ready(db, admin)
+    await _saved(db, model="pcc")
+    refused = await admin.post(DRAFT, json={})
+    assert refused.status_code == 409 and refused.json()["detail"] == APPLE_FM_SYSTEM_ONLY
+    assert endpoint.requests == [] and await _ai_rows(db) == []
+
+
 async def test_a_draft_fills_the_boxes_from_the_statement_and_saves_no_rule(admin, db, clean, endpoint) -> None:  # noqa: F811
     await _ready(db, admin)
     response = await admin.post(DRAFT, json={})

@@ -23,6 +23,7 @@ import {
 } from "@/features/ai/api";
 import { localDefaultWithheld, offeredProviders, providerDefaults, type DetectionReading } from "@/features/ai/offered";
 import {
+  appleModelRefused,
   byProvider,
   cardAfterOffer,
   cardEffort,
@@ -396,7 +397,10 @@ export function AISettingsPage() {
   const canLoadModels = switchesOn && !loadingModels && baseUrl.trim() !== "";
   // What the endpoint said it serves, once asked; the card's own suggestions until then.
   const suggestions = loaded && !loaded.error ? loaded.models.map((m) => m.id) : (entry?.models ?? []);
-  const modelNotListed = loaded !== null && !loaded.error && model.trim() !== "" && !suggestions.includes(model.trim());
+  // On the Apple card a model it does not list is refused, not maybe accepted, and says so (#738).
+  const appleModelLine = appleModelRefused(provider, model);
+  const modelNotListed =
+    !appleModelLine && loaded !== null && !loaded.error && model.trim() !== "" && !suggestions.includes(model.trim());
   // Saving needs the flag but not the consent: nothing leaves the pod on a save. The
   // server judges the URL and the key rule exactly as Send does. What it saves is the card
   // the page is on, and `followOffer` keeps that one of the cards the row shows — so a Save
@@ -569,6 +573,7 @@ export function AISettingsPage() {
           {loaded && !loaded.error && (
             <p className="text-xs text-muted-foreground">{t.ai.modelsLoaded(loaded.models.length, loaded.latencyMs)}</p>
           )}
+          {appleModelLine && <p className="text-xs text-destructive">{t.ai.appleModelOnly}</p>}
           {modelNotListed && <p className="text-xs text-muted-foreground">{t.ai.modelNotListed}</p>}
         </div>
         {entry && entry.key !== "none" && (

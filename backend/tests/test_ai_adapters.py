@@ -35,6 +35,7 @@ from app.ai.adapters import (
     parse_response,
 )
 from app.ai.providers import (
+    APPLE_FM_MODELS,
     DEFAULTS,
     IMPLEMENTED_REACH,
     WIRE_FOR,
@@ -42,6 +43,7 @@ from app.ai.providers import (
     Provider,
     ReachNotImplemented,
     Wire,
+    apple_model_refused,
     default_base_url,
     hostname_for,
     presented_host,
@@ -395,6 +397,31 @@ def test_every_entry_has_a_wire_and_defaults():
     for provider in Provider:
         assert provider in WIRE_FOR
         assert DEFAULTS[provider].wire is WIRE_FOR[provider]
+
+
+def test_the_apple_card_offers_and_takes_only_the_on_device_model():
+    """`fm serve` also serves `pcc`, Private Cloud Compute, on Apple's servers (#738). The
+    rule is the Apple card's alone, and it compares the model as typed."""
+    assert APPLE_FM_MODELS == ("system",) == (DEFAULTS[Provider.apple_fm].model,)
+    assert not apple_model_refused(Provider.apple_fm, "system")
+    for model in ("pcc", "System", "system ", ""):
+        assert apple_model_refused(Provider.apple_fm, model), model
+    assert not apple_model_refused(Provider.openai_compatible, "pcc")
+    assert not apple_model_refused(Provider.anthropic, "pcc")
+
+
+def test_the_apple_card_sentence_ships_with_its_steps():
+    """docs/diagnosability.md rule 4: rewording the sentence without the documents fails here."""
+    from pathlib import Path
+
+    from app.api.ai import APPLE_FM_SYSTEM_ONLY
+    from app.summaries.diagnostics import REASONS
+
+    docs = Path(__file__).resolve().parents[2] / "docs"
+    opening = "The Apple card uses only Apple's on-device model, system"
+    assert APPLE_FM_SYSTEM_ONLY.startswith(opening) and REASONS["apple_model_refused"] == APPLE_FM_SYSTEM_ONLY
+    assert (docs / "troubleshooting.md").read_text().count(f"*{opening} …*") == 2
+    assert f"| `apple_model_refused` | {APPLE_FM_SYSTEM_ONLY} |" in (docs / "inventory-summaries.md").read_text()
 
 
 def test_the_docker_desktop_card_fills_the_alias():

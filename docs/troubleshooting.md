@@ -1359,6 +1359,10 @@ writes one row to the disclosure log naming the destination and the one field th
      effort …* means the request named one — a script, or a page from an older build; `fm serve`
      refuses any effort on its `system` model. Save the card again from Settings › AI, which
      sends none.
+     *The Apple card uses only Apple's on-device model, system …*, under **Model** or after
+     Send or Save, means the field names another: usually `pcc`, which `fm serve` also lists.
+     That is Private Cloud Compute, which sends the prompt to Apple's servers. An admin saves
+     the card again in Settings › AI with the model `system`.
    - *shown* → reload the Changes page; it reads this once, when it opens.
    - Where the bar would be, *The Prompt bar could not check its settings: …* → the page asked
      and the server failed to answer; the reason follows the colon, and
@@ -1380,6 +1384,12 @@ writes one row to the disclosure log naming the destination and the one field th
    - *HTTP 403* with *Cross-site requests are not allowed* → `fm serve` refuses a request that
      names another host. Keep the Apple card's Base URL on `host.docker.internal`: the app then
      presents `127.0.0.1`, which `fm serve` accepts. Any other address is presented as typed.
+   - *The Apple card uses only Apple's on-device model, system …* → the Apple card was saved
+     naming another model, usually `pcc` (Private Cloud Compute, on Apple's servers), by a build
+     that allowed it. Nothing was sent, and the share log has no row for the question. An admin
+     saves the card again in Settings › AI with the model `system`. The Vulnerabilities
+     lever, the rule draft (§23) and exclusion ranking on Data Sharing answer the same sentence,
+     and an inventory summary records `apple_model_refused`.
    - *no complete reply within 30 s* → something took the connection and did not answer in time.
      The Mac answers one model request at a time for every app on it, so another app using Apple
      Intelligence makes this one wait: ask again. If it never answers, the Base URL reaches
