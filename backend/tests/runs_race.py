@@ -17,7 +17,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core import database
-from app.core.runs import LOCK_WEBHOOK, TRIGGER_MANUAL, TRIGGER_WEBHOOK, acquire
+from app.core.runs import LOCK_WEBHOOK, TRIGGER_MANUAL, TRIGGER_SWEEP, TRIGGER_WEBHOOK, acquire
 from app.core.tenancy import OPERATIONAL_TENANT_ID
 from app.models.schema import MdmConnection, Run
 
@@ -62,8 +62,6 @@ class RacingSession(AsyncSession):
 
 
 _racers = async_sessionmaker(database.engine, class_=RacingSession, expire_on_commit=False)
-# What starts a run of each lock class in the product: a webhook, or a person clicking.
-_TRIGGERS = {LOCK_WEBHOOK: TRIGGER_WEBHOOK}
 
 
 def racer() -> RacingSession:
@@ -83,15 +81,21 @@ class Outcome:
     error: str | None = None
 
 
-async def race(entries: list[tuple[RacingSession, MdmConnection, str]], field: Counter) -> list[Outcome]:
+async def race(entries: list[tuple[RacingSession, MdmConnection, str]], field: Counter, turn: int = 0) -> list[Outcome]:
     """Acquire once per (session, connection, lock class), all at once, each session on its own.
 
     `field` counts every racer for each (connection id, lock class), across both processes when
-    there are two, so a winner knows how many rivals to hold for. A webhook holds for none: the
-    index exempts webhooks, so nothing can queue behind one. Bounded, so a race that wedges fails.
+    there are two, so a winner knows how many rivals to hold for; a webhook holds for none, since
+    the index exempts webhooks. A lock's racers take turns as the tick (`sweep`) and a person
+    clicking (`manual`), the pair Acquisition's docstring names; `turn=1` starts on `manual`, so
+    two processes race each other across triggers too. Bounded, so a race that wedges fails.
     """
+    turns: Counter = Counter()
     for session, connection, lock_class in entries:
-        session.info.update(inserts=0, rivals=0 if lock_class == LOCK_WEBHOOK else field[(connection.id, lock_class)] - 1)
+        key, locked = (connection.id, lock_class), lock_class != LOCK_WEBHOOK
+        turns[key] += 1
+        trigger = (TRIGGER_MANUAL, TRIGGER_SWEEP)[(turn + turns[key]) % 2] if locked else TRIGGER_WEBHOOK
+        session.info.update(inserts=0, rivals=field[key] - 1 if locked else 0, trigger=trigger)
     async with asyncio.timeout(3 * HOLD_SECONDS):
         return list(await asyncio.gather(*(_acquire(*entry) for entry in entries)))
 
@@ -101,7 +105,7 @@ async def _acquire(session: RacingSession, connection: MdmConnection, lock_class
     as a caller does; a loser still holding a row its reclaim re-checked would stall the rest."""
     outcome = Outcome(connection.id, lock_class)
     try:
-        result = await acquire(session, connection, trigger=_TRIGGERS.get(lock_class, TRIGGER_MANUAL), lock_class=lock_class)
+        result = await acquire(session, connection, trigger=session.info["trigger"], lock_class=lock_class)
         outcome.started, outcome.job_id = result.started, str(result.run.id)
         outcome.error = await _unusable(session, connection)
     except Exception as exc:
@@ -118,8 +122,9 @@ async def _unusable(session: RacingSession, connection: MdmConnection) -> str | 
     still loaded (an expired attribute raises under asyncio), and a statement and a commit that
     land — a COMMIT alone would not tell, since Postgres answers an aborted one with ROLLBACK.
     """
-    if session.in_nested_transaction() or session.new or inspect(connection).expired_attributes:
-        return f"left dirty: savepoint={session.in_nested_transaction()} pending={list(session.new)}"
+    expired = sorted(inspect(connection).expired_attributes)
+    if session.in_nested_transaction() or session.new or expired:
+        return f"left dirty: savepoint={session.in_nested_transaction()} pending={list(session.new)} expired={expired}"
     await session.execute(text("SELECT 1"))
     await session.commit()
     return None
@@ -131,7 +136,7 @@ async def _main(racers: list[list], process: int, processes: int) -> list[dict]:
     sessions = [racer() for _ in mine]
     try:
         entries = [(s, await s.get(MdmConnection, cid), lock) for s, (cid, lock) in zip(sessions, mine, strict=True)]
-        return [asdict(outcome) for outcome in await race(entries, Counter(map(tuple, racers)))]
+        return [asdict(outcome) for outcome in await race(entries, Counter(map(tuple, racers)), turn=process)]
     finally:
         for session in sessions:
             await session.close()
