@@ -62,7 +62,7 @@ SCHEMA = text("""
 NOW = datetime.now(UTC)
 SAMPLE = {bool: True, int: 1, float: 1.0, Decimal: Decimal(1), str: "x", bytes: b"x", dict: {}, datetime: NOW, date: NOW.date()}
 CHOSEN = {"vuln_corpus_acquisitions.basis": "delivery", "submission_cases.kind": "coverage"}  # what their CHECKs allow
-# Rows a fleet holds that three downgrades cannot step back over: (table, the row seeded beside its first, what the
+# Rows a fleet holds that three downgrades cannot step back over: (table, the row written beside its first, what the
 # walk deletes to step past, why). A refused downgrade rolls back, so nothing is lost by trying.
 IPAD = ({"platform": "ipados"}, "platform <> 'macos'")
 ASSESSMENT = ({"source_id": None}, "source_id IS NULL")  # a point that assessed held inventory (#621)
@@ -183,32 +183,32 @@ async def test_each_downgrade_puts_back_the_schema_its_upgrade_found(stairway, r
     _verdict(stairway, revision)
 
 
-def _sample(column, seeded: dict[str, dict]):
-    """A value for `column`: the seeded row's key for a foreign key (none to its own table), else one of its type."""
+def _sample(column, written: dict[str, dict]):
+    """A value for `column`: the written row's key for a foreign key (none to its own table), else one of its type."""
     if (chosen := CHOSEN.get(f"{column.table.name}.{column.name}")) is not None:
         return chosen
     if column.foreign_keys:
         target = next(iter(column.foreign_keys)).column
-        return None if target.table is column.table else seeded[target.table.name][target.name]
+        return None if target.table is column.table else written[target.table.name][target.name]
     kind = getattr(column.type, "impl_instance", column.type).python_type  # EncryptedString is a TypeDecorator
     return uuid.uuid4() if kind is uuid.UUID else SAMPLE[kind]
 
 
-async def _seed(engine) -> None:
+async def _fill(engine) -> None:
     """A row in every table the models declare, since the walk down drops or alters each, written through the models'
     tables as the application role; then each STEP_PAST row beside its table's first."""
-    seeded: dict[str, dict] = {}
+    written: dict[str, dict] = {}
     async with engine.begin() as connection:
         for table in database.Base.metadata.sorted_tables:
             row = (await connection.execute(select(table).limit(1))).mappings().first()  # schema_release holds its stamp
             if row is None:
                 values = {
-                    column.name: _sample(column, seeded)
+                    column.name: _sample(column, written)
                     for column in table.columns
                     if column is not table.autoincrement_column and column.default is None and column.server_default is None
                 }
                 row = (await connection.execute(insert(table).values(values).returning(*table.columns))).mappings().one()
-            seeded[table.name] = dict(row)
+            written[table.name] = dict(row)
             if table.name == "tenants":  # every other row is stamped with it, and row-level security checks the stamp
                 await connection.execute(
                     text("SELECT set_config(:guc, :tenant, true)"), {"guc": TENANT_GUC, "tenant": str(row["id"])}
@@ -216,16 +216,16 @@ async def _seed(engine) -> None:
         for name, beside, _, _ in STEP_PAST.values():
             table = database.Base.metadata.tables[name]
             keys = set(table.primary_key.columns.keys())
-            await connection.execute(insert(table).values({k: v for k, v in seeded[name].items() if k not in keys} | beside))
+            await connection.execute(insert(table).values({k: v for k, v in written[name].items() if k not in keys} | beside))
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="session")
 async def stepped_back() -> dict[str, str | None]:
-    """Upgrade head, seed, step down one revision at a time to base, upgrade head: what each step down said."""
+    """Upgrade head, fill every table, step down one revision at a time to base, upgrade head: what each step said."""
     found: dict[str, str | None] = {}
     async with _database() as (url, engine):
         await _alembic(url, "upgrade", "head")
-        await _seed(engine)
+        await _fill(engine)
         for script in reversed(SCRIPTS):
             try:
                 await _alembic(url, "downgrade", _back(script))
