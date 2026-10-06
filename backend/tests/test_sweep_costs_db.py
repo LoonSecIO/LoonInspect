@@ -430,41 +430,41 @@ async def test_the_batch_read_refuses_the_kind_that_is_streamed(db, connection) 
 # One device process is `ingest_computer`, the door sweep, run-now and webhook share: one Jamf
 # record through the ledger, the change log, the device and app rows, the catalog and its Jamf
 # Patch answer, the finding ledger, the snapshot and the history receipt, then a commit. A sweep
-# calls it once per device and does everything else once per sweep. Counted inside real sweeps,
-# per ledger outcome — `new` is a Mac whose builds the fleet already shows, `changed` one app
-# updated — and written out as verb and table, with what each statement is for.
+# calls it once per device and does everything else once per sweep. Counted inside real sweeps, per
+# ledger outcome — `new` a Mac whose builds the fleet already shows, `changed` one app's version bumped
+# (not an install or a removal), `stale` an older report date — as verb and table, with what each is for.
 
-OUTCOMES = ("repeat", "unchanged", "new", "changed")
-DEVICE_STATEMENTS: dict[tuple[str, str], tuple[int, int, int, int]] = {
-    ("SELECT", "set_config"): (1, 1, 1, 1),  # the tenant GUC for row-level security, set per transaction; a device is one
-    ("SELECT", "observation_spans"): (2, 2, 2, 2),  # the current span (the monotonic guard); history capture's re-read
-    ("UPDATE", "observation_spans"): (0, 1, 0, 1),  # a newer report date advances the span; a change closes it
-    ("INSERT", "observation_spans"): (0, 0, 1, 1),  # the span a new head opens,
-    ("INSERT", "observation_sections"): (0, 0, 1, 1),  # the sections the ledger does not hold yet, by digest,
-    ("INSERT", "observation_entries"): (0, 0, 1, 1),  # and their entries, apps among them: a thousand a statement
-    ("SELECT", "change_policies"): (0, 0, 0, 1),  # the change log: the policy,
-    ("SELECT", "observation_sections"): (0, 0, 0, 1),  # the previous applications section
-    ("SELECT", "observation_entries"): (0, 0, 0, 1),  # and its entries, to diff against,
-    ("INSERT", "device_changes"): (0, 0, 0, 1),  # and the kept changes in one multi-row INSERT
-    ("SELECT", "devices"): (1, 1, 1, 1),  # the device row
-    ("INSERT", "devices"): (0, 0, 1, 0),  # a new Mac's row
-    ("UPDATE", "devices"): (1, 1, 1, 1),  # seen now, and the report date when it moved; a new Mac's findings mark
-    ("SELECT", "device_extension_attributes"): (1, 1, 0, 1),  # its EA rows, loaded to diff (#142)
-    ("INSERT", "device_extension_attributes"): (0, 0, 1, 0),  # a new Mac's EA rows, in one multi-row INSERT
-    ("SELECT", "installed_apps"): (2, 2, 1, 2),  # its app rows, loaded to diff; `record_device_apps` reads them again
-    ("INSERT", "installed_apps"): (0, 0, 1, 1),  # rows for the builds it did not carry: a thousand a statement
-    ("DELETE", "installed_apps"): (0, 0, 0, 1),  # the build it no longer carries
-    ("SELECT", "app_catalog"): (1, 1, 1, 1),  # the catalog rows for its builds, by hash: one IN, whatever it carries
-    ("UPDATE", "installed_apps"): (0, 0, 1, 1),  # the Jamf Patch answer copied onto new rows; one if all change the same columns
-    ("SELECT", "device_findings"): (1, 1, 1, 1),  # the finding ledger, to diff (#590)
-    ("INSERT", "event_outbox"): (1, 1, 2, 3),  # the snapshot (#241); the delta when apps moved; the change events
-    ("SELECT", "device_history_points"): (2, 2, 2, 2),  # the receipt by source id, and the prior one
-    ("INSERT", "device_history_points"): (0, 0, 1, 1),  # a receipt, when the span moved
+OUTCOMES = ("repeat", "unchanged", "new", "changed", "stale")
+DEVICE_STATEMENTS: dict[tuple[str, str], tuple[int, int, int, int, int]] = {
+    ("SELECT", "set_config"): (1, 1, 1, 1, 1),  # the tenant GUC for row-level security, set per transaction; a device is one
+    ("SELECT", "observation_spans"): (2, 2, 2, 2, 1),  # the current span (the monotonic guard); history capture's re-read
+    ("UPDATE", "observation_spans"): (0, 1, 0, 1, 0),  # a newer report date advances the span; a change closes it
+    ("INSERT", "observation_spans"): (0, 0, 1, 1, 0),  # the span a new head opens,
+    ("INSERT", "observation_sections"): (0, 0, 1, 1, 0),  # the sections the ledger does not hold yet, by digest,
+    ("INSERT", "observation_entries"): (0, 0, 1, 1, 0),  # and their entries, apps among them: a thousand a statement
+    ("SELECT", "change_policies"): (0, 0, 0, 1, 0),  # the change log: the policy,
+    ("SELECT", "observation_sections"): (0, 0, 0, 1, 0),  # the previous applications section
+    ("SELECT", "observation_entries"): (0, 0, 0, 1, 0),  # and its entries, to diff against,
+    ("INSERT", "device_changes"): (0, 0, 0, 1, 0),  # and the kept changes in one multi-row INSERT
+    ("SELECT", "devices"): (1, 1, 1, 1, 0),  # the device row
+    ("INSERT", "devices"): (0, 0, 1, 0, 0),  # a new Mac's row
+    ("UPDATE", "devices"): (1, 1, 1, 1, 1),  # seen now, and the report date when it moved; a new Mac's findings mark
+    ("SELECT", "device_extension_attributes"): (1, 1, 0, 1, 0),  # its EA rows, loaded to diff (#142)
+    ("INSERT", "device_extension_attributes"): (0, 0, 1, 0, 0),  # a new Mac's EA rows, in one multi-row INSERT
+    ("SELECT", "installed_apps"): (2, 2, 1, 2, 0),  # its app rows, loaded to diff; `record_device_apps` reads them again
+    ("INSERT", "installed_apps"): (0, 0, 1, 1, 0),  # rows for the builds it did not carry: 961 a statement
+    ("DELETE", "installed_apps"): (0, 0, 0, 1, 0),  # the build it no longer carries
+    ("SELECT", "app_catalog"): (1, 1, 1, 1, 0),  # the catalog rows for its builds, by hash: one IN, whatever it carries
+    ("UPDATE", "installed_apps"): (0, 0, 1, 1, 0),  # the Jamf Patch answer copied to new rows; one if all change the same columns
+    ("SELECT", "device_findings"): (1, 1, 1, 1, 0),  # the finding ledger, to diff (#590)
+    ("INSERT", "event_outbox"): (1, 1, 2, 3, 0),  # the snapshot (#241); the delta when apps moved; the change events
+    ("SELECT", "device_history_points"): (2, 2, 2, 2, 0),  # the receipt by source id, and the prior one
+    ("INSERT", "device_history_points"): (0, 0, 1, 1, 0),  # a receipt, when the span moved
 }
-BUDGET = {"repeat": 13, "unchanged": 14, "new": 20, "changed": 27}
-# Paid by the first device to show builds the tenant's catalog has never held, once however many
-# it brings: inserted, their title matches cleared, and judged — and one statement more, the
-# `app_catalog_title_matches` INSERT, when any of them matched a Jamf title.
+BUDGET = {"repeat": 13, "unchanged": 14, "new": 20, "changed": 27, "stale": 3}
+# Paid by the first device to show builds the tenant's catalog has never held, once for up to 838 of
+# them (the INSERT's page, pinned below with the others): inserted, their title matches cleared, and
+# judged — and the `app_catalog_title_matches` INSERT, a thousand a statement, when any matched a title.
 FIRST_SIGHT = Counter({("INSERT", "app_catalog"): 1, ("DELETE", "app_catalog_title_matches"): 1, ("UPDATE", "app_catalog"): 1})
 # What earns each Jamf answer from the two titles `_titled` loads, as (bundle ID, version): no
 # title at all, Google Chrome's current build, and a Slack build two releases behind.
@@ -616,7 +616,7 @@ async def test_each_device_costs_its_outcomes_budget_at_any_fleet_size_and_any_a
 ) -> None:
     """The first Mac carries 320 apps and every other one 80 of them: the design figure
     (docs/app-catalog.md §3a), and four times it. Through a fleet's first sweep, a repeat, a newer
-    report date and an app update, every device costs exactly its outcome's budget, plus a build's
+    report date, an older one and an app update, every device costs exactly its outcome's budget, plus a build's
     first sight on the Mac that shows it first, and its `last_seen_at` on the first Mac to carry it
     once that is due: the 320-app Mac the same as an 80-app one, the tenth the same as the first.
     Ten Macs cost eight budgets more than two."""
@@ -657,10 +657,10 @@ async def test_each_device_costs_its_outcomes_budget_at_any_fleet_size_and_any_a
     _, devices = await _sweep(db, connection, monkeypatch)
     check(devices, ["repeat"] * 10, Counter({("UPDATE", "app_catalog"): 1}))
 
-    for record in jamf.computers:
-        record["general"]["reportDate"] = "2026-08-22T07:15:42.391Z"
+    for index, record in enumerate(jamf.computers):  # a newer report date on half the fleet, an older one on the rest
+        record["general"]["reportDate"] = f"2026-08-{22 if index < 5 else 20}T07:15:42.391Z"
     _, devices = await _sweep(db, connection, monkeypatch)
-    check(devices, ["unchanged"] * 10)
+    check(devices, ["unchanged"] * 5 + ["stale"] * 5)
 
     for record in jamf.computers:
         record["general"]["reportDate"] = "2026-08-23T07:15:42.391Z"
@@ -759,6 +759,7 @@ async def test_found_a_catalog_move_is_re_judged_on_the_device_path_once_per_cha
     try:
         _, devices = await _sweep(db, connection, monkeypatch)
     finally:
+        await db.rollback()
         chrome = await db.get(JamfPatchTitle, "0BC")
         chrome.current_version, chrome.patches, chrome.synced_at = kept
         await db.commit()
@@ -773,27 +774,30 @@ async def test_found_a_catalog_move_is_re_judged_on_the_device_path_once_per_cha
     assert [(outcome, len(sent)) for outcome, sent in devices] == [("repeat", 15 + runs + 214), ("repeat", 13)]
 
 
-async def test_found_past_a_thousand_apps_each_batched_write_costs_a_statement_per_thousand_rows(
+async def test_found_each_batched_write_costs_one_statement_per_page_of_rows(
     db, jamf: FakeJamf, connection, budget_tag, monkeypatch
 ) -> None:
-    """Pinned at today's numbers, not endorsed: the batched writes are a thousand rows a statement.
+    """Pinned at today's numbers, not endorsed: each batched write costs one statement per page of rows.
 
-    The ledger's entries (`_ENTRY_BATCH`, app.observations.ledger) and SQLAlchemy's multi-row
-    INSERT page for the app rows (`process_sync`) and the catalog rows (`record_device_apps`)
-    each split at a thousand, so a first process of 1,200 apps costs 22 where the budget is 20,
-    and the first Mac to show the builds one more again. A repeat costs nothing extra. A Mac that
-    updates all 1,200 at once also splits the change log's rows (`derive_and_record`,
-    app.changes.derive) and their events (`enqueue_events`, app.core.outbox): 35, where `changed`
-    with its first sight is 30. Only the first Mac updates, which keeps that sweep near a second."""
-    apps = _apps(1200, budget_tag)
+    SQLAlchemy sizes a multi-row INSERT's page by the row's columns: 961 app rows (`process_sync`), 838
+    catalog rows (`record_device_apps`), a thousand title matches (`evaluate_entries`, app.catalog.service),
+    change rows (`derive_and_record`, app.changes.derive) and events (`enqueue_events`, app.core.outbox);
+    the ledger's `_ENTRY_BATCH` (app.observations.ledger), a thousand entries across every section it writes.
+    1,200 titled apps cost a new Mac 22 where the budget is 20, and the first Mac to show them 28 (24 below
+    every page); a repeat, nothing extra; that Mac updating all 1,200, 37 where a smaller titled update costs
+    31 (only it updates, to keep the test short). A page's rows are its INSERT's `($n` groups."""
+    await _titled(db)
+    apps = _apps(1200, budget_tag, ("latest",))
     _carry(jamf, apps, apps)
 
     _, devices = await _sweep(db, connection, monkeypatch)
     pages = Counter({("INSERT", "observation_entries"): 1, ("INSERT", "installed_apps"): 1})
-    catalog_page = Counter({("INSERT", "app_catalog"): 1})
-    assert _shapes(devices[0][1]) == _expected("new") + pages + FIRST_SIGHT + catalog_page
+    sight = Counter({("INSERT", "app_catalog"): 1, ("INSERT", "app_catalog_title_matches"): 2})  # page 2; the matches' 2
+    assert _shapes(devices[0][1]) == _expected("new") + pages + FIRST_SIGHT + sight
     assert _shapes(devices[1][1]) == _expected("new") + pages
-    assert [len(sent) for _, sent in devices] == [26, 22]
+    assert [len(sent) for _, sent in devices] == [28, 22]
+    rows = {t: next(s.count("($") for s in devices[0][1] if s.startswith(f"INSERT INTO {t} ")) for _, t in pages + sight}
+    assert rows == {"observation_entries": 1000, "installed_apps": 961, "app_catalog": 838, "app_catalog_title_matches": 1000}
 
     _, devices = await _sweep(db, connection, monkeypatch)
     assert [(outcome, len(sent)) for outcome, sent in devices] == [("repeat", BUDGET["repeat"])] * 2
@@ -803,8 +807,8 @@ async def test_found_past_a_thousand_apps_each_batched_write_costs_a_statement_p
         app["version"] = f"2.{app['version']}"
     _, devices = await _sweep(db, connection, monkeypatch)
     change_log = Counter({("INSERT", "device_changes"): 1, ("INSERT", "event_outbox"): 1})
-    assert _shapes(devices[0][1]) == _expected("changed") + pages + change_log + FIRST_SIGHT + catalog_page
-    assert [(outcome, len(sent)) for outcome, sent in devices] == [("changed", 35), ("repeat", BUDGET["repeat"])]
+    assert _shapes(devices[0][1]) == _expected("changed") + pages + change_log + FIRST_SIGHT + sight
+    assert [(outcome, len(sent)) for outcome, sent in devices] == [("changed", 37), ("repeat", BUDGET["repeat"])]
 
 
 # --- the measurement -----------------------------------------------------------------
