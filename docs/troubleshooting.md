@@ -212,6 +212,7 @@ sweeps nothing ([README §3](../README.md)).
      was rotated in Jamf. Settings › Connections › Edit, re-enter the secret, Sync now.
    - `failed`, and the error mentions **403** → the API Role lacks **Read Computers**.
      Step 3.
+   - `failed`, and the error begins **reclaimed: no heartbeat** → step 7.
    - `failed` with another error → reportable state **A**.
    - `succeeded` with `deviceCount: 0` → step 3.
 3. **The API Role.** In Jamf Pro: Settings → System → API roles and clients → the role
@@ -237,6 +238,21 @@ sweeps nothing ([README §3](../README.md)).
    If a manually triggered connection sync or re-emit fails, its run closes as `failed`
    with the original error and releases the lock immediately. Read that error, correct
    the cause, and retry; there is no heartbeat-staleness wait for a handled failure.
+7. **The panel reads *Failed* and *0 devices, 0 groups*, and under *More details* the error is
+   *reclaimed: no heartbeat within 300s — the process running it stopped*.** Another Run now,
+   tick or webhook found this run's heartbeat older than `RUN_STALE_AFTER_SECONDS` (300 unless
+   `.env` sets it) and closed the run so the connection could sync again. Nothing finished it,
+   so it counts zero whatever it had reached. The sentence assumes the process stopped; check:
+   - The panel has lines after `run failed`, or
+     `docker compose logs app --since 6h | grep 'heartbeat refused'` shows this job id as its
+     `run_id` → the process was still working and went quiet for the whole window. A run beats
+     between devices and through its catalog reads, so one Jamf read with its retries, or one
+     database statement, stalled that long. Run now. Reclaimed again → set
+     `RUN_STALE_AFTER_SECONDS=900` in `.env`, `docker compose up -d`, and Run now; reclaimed at
+     900 as well → reportable state **A**.
+   - Neither → the process did stop: a restart, a deploy, or the container killed for memory.
+     `docker inspect --format '{{.State.StartedAt}}' $(docker compose ps -q app)` is later than
+     the run's `run started` line. The reclaim freed the lock as designed; Run now.
 
 **A.** A device sweep failed with an error that is not 401 or 403. Report the run's
 `jobID`, its `error`, and the panel's lines.
@@ -260,7 +276,8 @@ One symptom, three unrelated causes, and only one of them is a problem.
      ([`ingest-scheduling.md`](ingest-scheduling.md)): a check-in is not an inventory. If
      the events you send are `ComputerAdded` / `ComputerInventoryCompleted` and runs still
      report zero → reportable state **C**.
-   - **`device_sweep`** → step 2.
+   - **`device_sweep`** → step 2. One whose `status` is `failed` and whose error begins
+     *reclaimed* → §1 step 7.
 2. **The selector** → §1 step 4.
 3. **The privileges** → §1 step 3.
 4. Still zero → §1 reportable state **B**.

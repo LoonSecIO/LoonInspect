@@ -64,10 +64,15 @@ row `running` forever and **nothing on that connection can sync again** — wors
 race it replaces, because duplicate load is noisy and self-limiting while permanent
 silence pages nobody.
 
-`heartbeat_at` is written every 15 seconds from the device loop (throttled, so it is one
-small `UPDATE` per interval and not one per device). A run whose heartbeat is older than
+`heartbeat_at` is written at most every 15 seconds, between devices and through the reads
+before the first one: after the aperture and the org-unit catalogs, after each page and each
+wave of the smart-group census, and before the inventory's first page (#757). Before that, a
+large or throttled tenant's catalog could outlast the window and the sweep was reclaimed while
+still reading. A catalog run beats the same way through its own pass. The throttle makes a write
+one per interval and never one per device; each is a transaction of its own (the tenant
+binding, the fenced `UPDATE`, a `COMMIT`). A run whose heartbeat is older than
 `RUN_STALE_AFTER_SECONDS` (default 300 — twenty missed beats, not a slow one) is failed
-by the next acquirer.
+by the next acquirer; [`troubleshooting.md`](troubleshooting.md) §1 step 7 reads its error.
 
 Reclaim happens **on acquisition, not at startup**. Startup was the wrong moment twice
 over: it never fires in a process that stays up for a month, and the blanket sweep it

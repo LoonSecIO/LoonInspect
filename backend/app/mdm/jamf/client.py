@@ -663,7 +663,13 @@ class JamfClient:
             page += 1
         return definitions
 
-    async def fetch_smart_groups(self, client: httpx.AsyncClient, *, page_size: int = _PAGE_SIZE) -> list[dict]:
+    async def fetch_smart_groups(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        page_size: int = _PAGE_SIZE,
+        between_waves: Callable[[], Awaitable[None]] | None = None,
+    ) -> list[dict]:
         """Every smart computer group with its criteria.
 
         The v3 list endpoint returns ids and names; criteria come from the per-group
@@ -673,6 +679,10 @@ class JamfClient:
         refresh. Needs "Read Smart Computer Groups"; a tenant without the privilege
         (or an older Jamf Pro without the v3 endpoint) yields an empty list and a log
         line rather than failing the device sweep it rides along with.
+
+        `between_waves` is awaited after each list page and each wave of detail reads. The
+        caller passes its run's heartbeat: at a thousand groups, or under throttling, this
+        read alone can outlast the stale window, and nothing here may touch the database.
         """
         groups: list[dict] = []
         page = 0
@@ -692,6 +702,8 @@ class JamfClient:
             response.raise_for_status()
             results = response.json().get("results", [])
             groups.extend(item for item in results if isinstance(item, dict))
+            if between_waves is not None:
+                await between_waves()
             if len(results) < page_size:
                 break
             page += 1
@@ -717,6 +729,8 @@ class JamfClient:
             detailed.extend(detail for detail in details if detail is not None)
             self.adaptive.after_wave(self.throttle.throttled_429 > throttled_before)
             start += len(wave)
+            if between_waves is not None:
+                await between_waves()
         return detailed
 
     # --- departments and buildings ----------------------------------------------------

@@ -429,12 +429,19 @@ async def run_jamf_catalog(
             aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)
             connection.last_successful_auth_at = datetime.now(UTC)
             await db.commit()
-            groups = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes)
+            if run is not None:
+                # Through the pass, not only at its end (#757): a census of a thousand groups or more,
+                # or of a throttled tenant, can outlast the stale window, and the reclaim then fails a
+                # catalog run that was still reading. Throttled, so a quick pass writes nothing.
+                await beat(db, run)
+            groups = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes, run=run)
             group_count = len(groups)
             definitions = await _observe_extension_attribute_definitions(
                 db, connection, client, http, aperture_digest, trigger, outcomes
             )
             await _reconcile_departures(db, connection, run, groups=groups, definitions=definitions)
+            if run is not None:
+                await beat(db, run)
             # The catalog class is where the label catalogs belong too: a department
             # renamed between sweeps is visible at the catalog's cadence, without a
             # device read.
@@ -493,13 +500,14 @@ async def _observe_groups(
     aperture_digest: str,
     trigger: str,
     outcomes: Counter[str],
+    run: Run | None = None,
 ) -> list[str]:
     """Observe every smart-group definition; returns the ids the census named (#181).
     `fetch_smart_groups` answers an empty list for a refused read as well as for a tenant
     with no groups — the breaker in `reconcile_census` is what keeps that from reading as
-    every group departing at once."""
+    every group departing at once. The run beats between the read's waves (#757)."""
     observed: list[str] = []
-    raw_groups = await client.fetch_smart_groups(http)
+    raw_groups = await client.fetch_smart_groups(http, between_waves=None if run is None else lambda: beat(db, run))
     # One select for the whole census, not one per group (#569): at 300 groups and the
     # default 25 passes a day, asking per object was 7,500 selects a day for objects that
     # rarely move. `ingest_computer` already hands `record_observation` the span it loaded;
@@ -667,6 +675,12 @@ async def _stream_jamf_fleet(
                 sections=list(sections),
                 selector=selector,
             )
+            # Not only between devices (#757). The reads before the first device (the org-unit
+            # catalogs, a census of one read per smart group, the definition census, the first
+            # inventory page) can keep a large or throttled tenant past the stale window, and the
+            # reclaim then fails the sweep at its first device. So the run beats here, after the
+            # catalogs, between the census's waves and before the loop, at the loop's throttle.
+            await beat(db, run)
 
         # Names before ids. The loop below writes `departmentId` and `buildingId` onto
         # every device it touches, and those are only ever displayed through this
@@ -678,6 +692,7 @@ async def _stream_jamf_fleet(
         await db.commit()
         if run is not None:
             await _log_org_units(db, run, org_units)
+            await beat(db, run)
 
         # Group definitions ride along with the device sweep, and they go *first* (#136).
         # A membership change is judged by `changes.derive._membership_cause` as the
@@ -690,7 +705,7 @@ async def _stream_jamf_fleet(
         # at most one sweep older than the memberships that reference it, which the
         # hourly catalog collection (docs/ingest-scheduling.md §6.2) closes on its own.
         if include_catalog:
-            groups = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes)
+            groups = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes, run=run)
             group_count = len(groups)
             await db.commit()
             if run is not None:
@@ -706,6 +721,8 @@ async def _stream_jamf_fleet(
                 await _log_definition_census(db, run, definitions)
             # And what the two censuses did not name (#181).
             await _reconcile_departures(db, connection, run, groups=groups, definitions=definitions)
+        if run is not None:
+            await beat(db, run)
 
         # Streamed, not collected: a 40,000-device tenant is paged through one record
         # at a time, and each device commits on its own (process_sync), so a failure on
