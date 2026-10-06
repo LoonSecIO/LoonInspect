@@ -61,6 +61,7 @@ ends with a reading order through the rest.
 | [`vulnerability-service-v2.md`](vulnerability-service-v2.md) | built default-off (#621, #622); submissions built, off at v2.0.0 (#623, #692); gate #624 not run (#657, #697) | Contribute-or-pay access, retained tenant corpora, explicit submissions, ownership and release gates. |
 | [`mobile-devices.md`](mobile-devices.md) | scope ruled, 2026-09-01 | v0 is computers only; what mobile would add, and where the boundary is drawn. |
 | [`v-never.md`](v-never.md) | standing | Capabilities this product will not grow, with the reason attached. |
+| [`spike-macos-app.md`](spike-macos-app.md) | spike, 2026-10-06, draft PR only | LoonInspect as an unsigned macOS app with Postgres embedded: what launched, what blocked, size, cold start, what needs the maintainer. |
 
 `README.md` — this index — is the only file in `docs/` not listed above.
 `backend/tests/test_docs_index.py` fails if a document is added without a line here, or if

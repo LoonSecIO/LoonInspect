@@ -1,0 +1,4 @@
+# Everything the scripts download or build: the runtimes, the frontend copy, the bundle.
+/build/
+# SwiftPM's own scratch directory, when the shell is built by hand.
+/shell/.build/
