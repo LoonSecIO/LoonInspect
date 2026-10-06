@@ -6,7 +6,7 @@
  *  drop a late answer for a job the panel has left. The one file in this lane with a DOM (jsdom, opted in on line 1):
  *  effects and `visibilitychange` are what is under test, and server rendering runs neither. */
 
-import { StrictMode } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { RunLogPanel } from "@/features/mdm/RunLogPanel";
@@ -19,6 +19,7 @@ vi.mock("@/i18n/LocaleContext", async () => {
 });
 
 const JOB = "6f1d2c3b-31a0-4c1e-9d2f-0b5e3a524a5e";
+const NEXT = "0b9e7c41-2d5a-4f36-8e1b-7a3c6d2f9e05"; // the job Run now or Re-emit points the panel at next
 const RUN: Run = {
   id: JOB, mdmConnectionId: 1, collectionId: null, trigger: "manual", comparison: "delta", lockClass: "device_sweep",
   status: "running", windowStart: "2026-10-06T09:00:00Z", windowEnd: null, startedAt: "2026-10-06T09:00:00Z",
@@ -34,12 +35,17 @@ const page = (ids: number[], status: Run["status"] = "running", job = JOB): RunL
   complete: status !== "running"
 });
 
-// What the stubbed fetch answers, in order: a page, a page that answers when the test says, a 502, or no answer.
-type Answer = RunLogResponse | Promise<RunLogResponse> | 502 | "unreachable";
+// What the stubbed fetch answers, in order: a page, a page that answers when the test says, a 502, no answer, or
+// silence until the poller gives the request up.
+type Answer = RunLogResponse | Promise<RunLogResponse> | 502 | "unreachable" | "silent";
 const answers: Answer[] = [];
-const fetchStub = vi.fn<typeof fetch>(async () => {
+const fetchStub = vi.fn<typeof fetch>(async (_url, init) => {
   const next = answers.shift();
   if (next === undefined || next === "unreachable") throw new TypeError("Failed to fetch");
+  if (next === "silent") {
+    const signal = init?.signal;
+    return new Promise<Response>((_answer, fail) => signal?.addEventListener("abort", () => fail(signal.reason)));
+  }
   if (next === 502) return { ok: false, status: 502, json: async () => ({ detail: "Bad Gateway" }) } as Response;
   // A bare answer rather than a Response: its body is one promise, so a poll settles inside the act that fired it.
   const body = await next;
@@ -188,9 +194,20 @@ describe("the run-now poller (useRunLog, through RunLogPanel)", () => {
     expect(shown()).toEqual(["line 1", "line 2", "line 3"]);
   });
 
+  it("gives a poll up after 30 seconds without an answer, and asks again from the same place", async () => {
+    // A request that never answers: a server stuck mid-request, or a connection a sleeping laptop left half open.
+    answers.push(page([1, 2]), "silent", page([3], "succeeded"), page([], "succeeded"));
+    await mount();
+    await advance(2000 + 29_999); // the poll sent at 2 s is still out, and no other has gone
+    expect(asked()).toEqual([after(0), after(2)]);
+    await advance(1 + 2000); // given up at 32 s, and asked again by the next tick at the latest
+    expect(asked()).toEqual([after(0), after(2), after(2), after(3)]);
+    expect([shown(), labelled(en.settings.runSucceeded), vi.getTimerCount()])
+      .toEqual([["line 1", "line 2", "line 3"], true, 0]);
+  });
+
   it("drops an answer still out when the panel is pointed at another job", async () => {
     // Run now or Re-emit points the panel at a new job, and a re-emit runs beside a sweep, so their line ids interleave.
-    const NEXT = "0b9e7c41-2d5a-4f36-8e1b-7a3c6d2f9e05";
     let answerLate!: (body: RunLogResponse) => void;
     answers.push(
       new Promise<RunLogResponse>((resolve) => (answerLate = resolve)),
@@ -200,10 +217,50 @@ describe("the run-now poller (useRunLog, through RunLogPanel)", () => {
     view.rerender(<RunLogPanel jobId={NEXT} joined={false} onFinished={(run) => finished(run)} />);
     await advance(0);
     answerLate(page([1500], "succeeded")); // the job just left: a line written after the new job's, and its finish
+    await advance(0);
+    expect(labelled(en.settings.runProcessing)).toBe(true); // the heading is still the new job's, running
     await advance(2 * 2000);
     expect(asked()).toEqual([after(0), after(0, NEXT), after(1002, NEXT), after(1003, NEXT)]);
     expect(shown()).toEqual(["line 1001", "line 1002", "line 1003"]);
     expect(finished.mock.calls).toEqual([[expect.objectContaining({ id: NEXT, status: "succeeded" })]]);
+  });
+
+  it("drops the left job's answer landing between the switch's commit and its effect's teardown", async () => {
+    // Run now and Re-emit switch the job after an await, not in a click, so React paints the switch and tears the left
+    // job's effect down in a later task. act runs both at once, so this test switches outside it, on real timers, and
+    // the left job's answer (its last line, and its finish) lands the moment the new job id is on screen.
+    vi.useRealTimers();
+    let answerLeft!: (body: RunLogResponse) => void;
+    let answerNext!: (body: RunLogResponse) => void;
+    // The left job's poll, still out, then an answer for a poller that reads on past it.
+    answers.push(new Promise<RunLogResponse>((resolve) => (answerLeft = resolve)), page([], "failed"));
+    const toNext = vi.fn<typeof fetch>(async () => {
+      const body = await new Promise<RunLogResponse>((resolve) => (answerNext = resolve));
+      return { ok: true, status: 200, json: async () => body } as Response;
+    });
+    const route: typeof fetch = (url, init) => (String(url).includes(NEXT) ? toNext : fetchStub)(url, init);
+    vi.stubGlobal("fetch", route);
+    let point!: (jobId: string) => void;
+    function Connection({ expose }: { expose: (point: (jobId: string) => void) => void }) {
+      const [jobId, setJobId] = useState(JOB);
+      useEffect(() => expose(setJobId), [expose]);
+      return <RunLogPanel jobId={jobId} joined={false} onFinished={(run) => finished(run)} />;
+    }
+    render(<Connection expose={(set) => (point = set)} />);
+    fireEvent.click(screen.getByText(en.settings.runMoreDetails));
+    const switched = new MutationObserver(() => {
+      if (!document.body.textContent?.includes(NEXT)) return;
+      switched.disconnect();
+      answerLeft(page([1500], "failed"));
+    });
+    switched.observe(document.body, { subtree: true, childList: true, characterData: true });
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", false);
+    point(NEXT);
+    await vi.waitFor(() => expect(toNext).toHaveBeenCalledOnce()); // sent from the new job's effect, after the teardown
+    expect([asked(), shown(), labelled(en.settings.runProcessing), finished.mock.calls])
+      .toEqual([[after(0)], [], true, []]);
+    answerNext(page([1001], "running", NEXT));
+    await vi.waitFor(() => expect(shown()).toEqual(["line 1001"]));
   });
 
   it("drops the answer of an effect torn down mid-poll, as StrictMode's double mount does in development", async () => {

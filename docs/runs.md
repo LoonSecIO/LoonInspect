@@ -662,7 +662,8 @@ the running sweep's log answers that better than an error does
 (`ingest-scheduling.md` §4.2).
 
 The UI (`useRunLog.ts`, behind `RunLogPanel.tsx` and the overview hero) polls every two
-seconds with one request out at a time, and stops on two conditions: the run reaching a
+seconds with one request out at a time (given up after 30 seconds without an answer, and
+asked again), and stops on two conditions: the run reaching a
 terminal status (**not** an empty page — a sweep mid-fleet can be quiet for a minute and
 still be alive) with its log read to the end (a page stops at 500 lines, so a finished
 run is asked again until a page brings nothing new), and the tab becoming hidden

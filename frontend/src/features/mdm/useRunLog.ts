@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getRunLog } from "@/features/mdm/api";
 import type { Run, RunLogLine } from "@/features/mdm/types";
+
+/** How long a poll may stay out before it is given up and the next tick asks again. */
+const POLL_TIMEOUT_MS = 30_000;
 
 /**
  * One poller for one jobID, and the only one in the app (#31, #104).
@@ -24,8 +27,10 @@ import type { Run, RunLogLine } from "@/features/mdm/types";
  *   whole log on every tick for the length of the run.
  * - **One poll is out at a time, and only for the job on screen.** The interval does not
  *   wait for an answer: a server slower than two seconds would be asked twice from one
- *   cursor and both answers appended. An answer that lands after the panel was pointed at
- *   another job is dropped, not written into that job's lines, cursor and finish.
+ *   cursor and both answers appended. A poll still out after 30 seconds is given up, so a
+ *   request that never answers cannot hold the panel still. An answer that lands after
+ *   the panel was pointed at another job is dropped, not written into that job's lines,
+ *   cursor and finish.
  * - **`onFinished` is held in a ref.** Callers write it inline, so a caller re-render
  *   would otherwise rebuild the poll callback, tear the interval down and start a fresh
  *   one — an extra request per parent render, for no change in what is being watched.
@@ -49,13 +54,27 @@ export function useRunLog(
     finishedHandler.current = onFinished;
   });
 
-  // `cancelled` is true once the effect that sent this poll has been torn down: the panel
-  // was pointed at another job or closed, and the answer is dropped whole.
+  // The job on screen, set as React commits the render that switched it. The effect below
+  // is torn down later: unless a click caused the switch, React lets the browser paint it
+  // and runs the old effect's cleanup in a later task, and Run now and Re-emit switch after
+  // an await, not in the click. An answer landing in between would otherwise be written
+  // into the new job.
+  const onScreen = useRef(jobId);
+  useLayoutEffect(() => {
+    onScreen.current = jobId;
+  }, [jobId]);
+
+  // An answer is dropped whole once the panel has left its job, or once the effect that
+  // sent it has been torn down (`cancelled`): the panel was closed, or StrictMode's
+  // development double mount threw that effect away.
   const poll = useCallback(async (cancelled: () => boolean) => {
     try {
       for (;;) {
-        const page = await getRunLog(jobId, cursor.current);
-        if (cancelled()) return true;
+        const giveUp = new AbortController();
+        const timer = window.setTimeout(() => giveUp.abort(), POLL_TIMEOUT_MS);
+        const page = await getRunLog(jobId, cursor.current, giveUp.signal)
+          .finally(() => window.clearTimeout(timer));
+        if (cancelled() || onScreen.current !== jobId) return true;
         setRun(page.run);
         if (page.lines.length > 0) {
           cursor.current = page.lines[page.lines.length - 1].id;
