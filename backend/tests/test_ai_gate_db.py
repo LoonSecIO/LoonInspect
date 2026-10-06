@@ -20,6 +20,7 @@ pytestmark = [
 ]
 
 DESTINATION = "https://inference.example/v1/messages"
+MODEL = "socket-model"
 
 
 async def _reset(db) -> None:
@@ -81,7 +82,7 @@ async def test_flag_defaults_off_and_the_gate_refuses(db, clean) -> None:
     with pytest.raises(AIFeaturesDisabled):
         await require_ai(db, feature="socket-test")
     with pytest.raises(AIFeaturesDisabled):
-        await require_ai(db, feature="socket-test", destination=DESTINATION, fields=["app_name"])
+        await require_ai(db, feature="socket-test", destination=DESTINATION, fields=["app_name"], model=MODEL)
     assert await _ai_rows(db) == []
 
 
@@ -95,14 +96,14 @@ async def test_consent_gates_off_pod_only(db, clean) -> None:
 
     await require_ai(db, feature="socket-test")  # on-pod: passes, logs nothing
     with pytest.raises(AIConsentMissing):
-        await require_ai(db, feature="socket-test", destination=DESTINATION, fields=["app_name"])
+        await require_ai(db, feature="socket-test", destination=DESTINATION, fields=["app_name"], model=MODEL)
     assert await _ai_rows(db) == []
 
 
 async def test_permitted_off_pod_call_writes_one_disclosure_line(db, clean) -> None:
     """Both switches on: the call is permitted and the share log gains exactly one
-    row — feature, destination, and the field names that left, deduplicated and
-    sorted, with no payload contents — visible in the NDJSON download."""
+    row — feature, destination, the model asked for, and the field names that left,
+    deduplicated and sorted, with no payload contents — visible in the NDJSON download."""
     from app.api.system import download_share_log
     from app.core.ai import require_ai
 
@@ -114,19 +115,20 @@ async def test_permitted_off_pod_call_writes_one_disclosure_line(db, clean) -> N
         feature="socket-test",
         destination=DESTINATION,
         fields=["version", "app_name", "app_name"],
+        model=MODEL,
     )
 
     (row,) = await _ai_rows(db)
     assert row.endpoint == DESTINATION
     assert row.outcome == "sent"
-    assert row.payload == {"feature": "socket-test", "fields": ["app_name", "version"]}
+    assert row.payload == {"feature": "socket-test", "fields": ["app_name", "version"], "model": MODEL}
 
     response = await download_share_log(days=90, db=db)
     lines = [json.loads(line) for line in response.body.decode().splitlines()]
     ai_lines = [line for line in lines if line["tier"] == "ai"]
     assert len(ai_lines) == 1
     assert ai_lines[0]["endpoint"] == DESTINATION
-    assert ai_lines[0]["payload"] == {"feature": "socket-test", "fields": ["app_name", "version"]}
+    assert ai_lines[0]["payload"] == {"feature": "socket-test", "fields": ["app_name", "version"], "model": MODEL}
     # Not an exchange, so neither of the exchange's triggers (#408).
     assert ai_lines[0]["trigger"] is None
 
@@ -141,8 +143,37 @@ async def test_off_pod_without_disclosure_is_a_programming_error(db, clean) -> N
     await _consent_on(db)
 
     with pytest.raises(ValueError):
-        await require_ai(db, feature="socket-test", destination=DESTINATION, fields=[])
+        await require_ai(db, feature="socket-test", destination=DESTINATION, fields=[], model=MODEL)
     assert await _ai_rows(db) == []
+
+
+async def test_fields_without_a_model_are_the_same_programming_error(db, clean) -> None:
+    """#739: the destination is an origin, and `fm serve` answers `system` on the Mac and
+    `pcc` on Apple's servers behind one, so a row naming fields names the model asked for.
+    A call leaving it out is refused with every switch on, and nothing is logged."""
+    from app.core.ai import require_ai
+
+    await _flag_on(db)
+    await _consent_on(db)
+
+    for model in (None, ""):
+        with pytest.raises(ValueError, match="must name the model"):
+            await require_ai(db, feature="socket-test", destination=DESTINATION, fields=["app_name"], model=model)
+    assert await _ai_rows(db) == []
+
+
+async def test_the_model_is_recorded_as_asked_and_bounded(db, clean) -> None:
+    """Bounded like every other model string: the row keeps the first MAX_MODEL_ID_CHARS."""
+    from app.ai.adapters import MAX_MODEL_ID_CHARS
+    from app.core.ai import require_ai
+
+    await _flag_on(db)
+    await _consent_on(db)
+
+    long = "m" * (MAX_MODEL_ID_CHARS + 50)
+    await require_ai(db, feature="socket-test", destination=DESTINATION, fields=["app_name"], model=long)
+    (row,) = await _ai_rows(db)
+    assert row.payload["model"] == long[:MAX_MODEL_ID_CHARS]
 
 
 async def test_an_ai_row_is_not_an_exchange_attempt(db, clean) -> None:
@@ -158,7 +189,7 @@ async def test_an_ai_row_is_not_an_exchange_attempt(db, clean) -> None:
 
     await _flag_on(db)
     await _consent_on(db)
-    await require_ai(db, feature="socket-test", destination=DESTINATION, fields=["app_name"])
+    await require_ai(db, feature="socket-test", destination=DESTINATION, fields=["app_name"], model=MODEL)
 
     assert await _last_attempt_at(db) == before_attempt
     after_out = await get_data_sharing(db)

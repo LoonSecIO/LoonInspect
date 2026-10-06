@@ -1,11 +1,11 @@
 """The AI layer's layer-wide rules, read from source (docs/ai-threat-model.md §6).
 
 S1, S2 and S4 are what turn P5 ("model output crosses none of these lines") and P8 ("the
-endpoint is hostile on the way back") from promises into mechanisms. They need no
-builder and no model, so they guard every slot from the first one on. Source is parsed,
-not imported, in the spirit of `tests/test_jamf_privileges.py`: the question is what the
-code contains, and an import inside a function counts as much as one at the top of the
-file.
+endpoint is hostile on the way back") from promises into mechanisms; S5 does the same for
+P6's row, which names the model the wire carries (#739). They need no builder and no
+model, so they guard every slot from the first one on. Source is parsed, not imported, in
+the spirit of `tests/test_jamf_privileges.py`: the question is what the code contains, and
+an import inside a function counts as much as one at the top of the file.
 
 S3, the feature registry, is not here because it is not built. Pure; no database, no
 network.
@@ -299,3 +299,88 @@ def test_s4_the_scan_sees_through_comments_but_not_past_code() -> None:
     assert "react-markdown" not in code
     assert ".innerHTML" in code
     assert _code('const u = "https://example.com";') == 'const u = "https://example.com";'
+
+
+# --- S5. The row names the model the wire carries (#739) -------------------------------------
+
+# The callers that send fleet data today. A scan that misses one of them is broken.
+_GATED = {
+    "app/api/ai.py",
+    "app/api/changes_prompt.py",
+    "app/api/exclusion_ranking.py",
+    "app/api/patch_policy_rules.py",
+    "app/api/vulnerabilities_prompt.py",
+    "app/summaries/service.py",
+}
+
+
+def _own_calls(node: ast.AST, name: str) -> Iterator[ast.Call]:
+    """Calls to `name` (bare or as an attribute) in a function's own body, not in one nested in it."""
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda):
+            continue
+        if isinstance(child, ast.Call) and name in {getattr(child.func, "id", None), getattr(child.func, "attr", None)}:
+            yield child
+        yield from _own_calls(child, name)
+
+
+def _keyword(call: ast.Call, name: str) -> ast.expr | None:
+    return next((keyword.value for keyword in call.keywords if keyword.arg == name), None)
+
+
+def _unnamed_models(tree: ast.Module) -> tuple[int, list[str]]:
+    """How many gate calls name `fields=`, and (by line) each whose `model=` is missing, empty, or not
+    the expression every `CompletionRequest(` in the same function puts on the wire."""
+    named, offences = 0, []
+    for function in ast.walk(tree):
+        if not isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        for gate in _own_calls(function, "require_ai"):
+            if _keyword(gate, "fields") is None:
+                continue
+            named += 1
+            model = _keyword(gate, "model")
+            sent = [_keyword(request, "model") for request in _own_calls(function, "CompletionRequest")]
+            if model is None or (isinstance(model, ast.Constant) and not model.value):
+                offences.append(f"{gate.lineno}: fields and no model")
+            elif not sent or any(wire is None or ast.dump(wire) != ast.dump(model) for wire in sent):
+                offences.append(f"{gate.lineno}: model={ast.unparse(model)} is not what CompletionRequest sends")
+    return named, offences
+
+
+def test_s5_a_row_that_names_fields_names_the_model_the_wire_carries() -> None:
+    found: set[str] = set()
+    offences: dict[str, list[str]] = {}
+    for path in _python_files(_APP):
+        named, wrong = _unnamed_models(_parse(path))
+        if named:
+            found.add(_rel(path))
+        if wrong:
+            offences[_rel(path)] = wrong
+    assert found >= _GATED, f"S5's scan no longer finds {sorted(_GATED - found)}"
+    assert offences == {}, (
+        "S5: a require_ai( naming fields= passes model=, the expression its CompletionRequest( sends — an origin alone "
+        f"cannot tell `system` on the Mac from `pcc` on Apple's servers (docs/ai-threat-model.md P6): {offences}"
+    )
+
+
+def test_s5_the_scan_catches_a_missing_model_and_one_the_wire_does_not_carry() -> None:
+    source = """
+async def missing(db):
+    await require_ai(db, feature="f", destination="d", fields=["a"])
+    CompletionRequest(model=config.model)
+
+async def replied(db):
+    await gate.require_ai(db, feature="f", destination="d", fields=["a"], model=result.model)
+    CompletionRequest(model=config.model)
+
+async def asked(db):
+    await require_ai(db, feature="f", destination="d", fields=["a"], model=config.model)
+    CompletionRequest(model=config.model)
+
+async def listing(db):
+    await require_ai(db, feature="f", destination="d", carries_no_fleet_data=True)
+"""
+    named, offences = _unnamed_models(ast.parse(source))
+    assert named == 3
+    assert [offence.split(":")[0] for offence in offences] == ["3", "7"]
