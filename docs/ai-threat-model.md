@@ -73,11 +73,11 @@ the question"); the audit line `ai.test.sent` carries the outcome. The share log
 
 | File | Pins |
 | --- | --- |
-| `tests/test_ai_gate_db.py` | flag off refuses; consent gates off-pod only; one disclosure row per permitted call; off-pod without disclosure is a programming error; AI rows are not exchanges |
+| `tests/test_ai_gate_db.py` | flag off refuses; consent gates off-pod only; one disclosure row per permitted call, naming the model asked for (#739); off-pod without disclosure, or fields without a model, is a programming error; AI rows are not exchanges |
 | `tests/test_ai_adapters.py` | both request shapes; reasoning kept beside content; budget-exhausted-thinking as its own outcome; parts joined; malformed replies named; the key on the wire and nowhere else; timeout, unreachable, bounded rejections, non-JSON bodies; the URL rule's accepted and refused classes with reasons; the provider table and the reserved reaches |
 | `tests/test_ai_test_box_db.py` | the endpoint through the ASGI client: refusals before the wire; the row committed before the first byte; the key on the wire and not in the reply, the log or the row; Anthropic's wire; reach refused by name; blocked URL refused before the gate; upstream failure reported not raised; auditor refused |
 | `tests/test_ai_host_detect.py` | the detection table and its evidence |
-| `tests/test_ai_structure.py` (2026-09-14) | S1, S2 and S4 of §6, as AST and grep walks over `app/` and the frontend's AI and Prompt files |
+| `tests/test_ai_structure.py` (2026-09-14) | S1, S2, S4 and S5 of §6, as AST and grep walks over `app/` and the frontend's AI and Prompt files |
 | `tests/test_changes_prompt.py` (2026-09-14) | slot 1's vocabulary: the handoff's self-test cases (level now asserted too), the whitelist, unknown keys ignored and named, the guards, the sanitiser, and drift against the page's sections, levels and change kinds |
 | `tests/test_changes_prompt_tokens.py` (2026-09-15, #435) | P3's control tokens in slot 1's question, as a T1-style corpus: every family in every case, tokens among newlines and hidden characters, no strip that joins the pieces around it into a new token, a question of tokens alone refused as empty, the cap counted after the strip, and the live lane's 35 questions byte-identical |
 | `tests/test_changes_prompt_db.py`, `tests/test_ai_configs_db.py` (2026-09-14) | the Prompt endpoints and saved configs through the ASGI client: refusals, the disclosure row, the question in no log or audit row, the key never returned, a viewer allowed, the summary equal to the page's where-clause |
