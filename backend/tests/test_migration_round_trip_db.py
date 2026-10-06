@@ -22,7 +22,7 @@ from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import insert, make_url, select, text
+from sqlalchemy import MetaData, insert, make_url, select, text
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -58,18 +58,43 @@ SCHEMA = text("""
            (SELECT string_agg(enumlabel, ',' ORDER BY enumsortorder) FROM pg_enum WHERE enumtypid = pg_type.oid))
       FROM pg_type WHERE typnamespace = 'public'::regnamespace AND typtype IN ('e', 'd')
 """)
+TABLES = text("SELECT relname FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind = 'r'")
+# The walk's one tenant, bound for the transaction: row-level security reads it, and a tenant's row takes it as its stamp.
+BIND = text("SELECT set_config(:guc, (SELECT id::text FROM tenants LIMIT 1), true)").bindparams(guc=TENANT_GUC)
 
 NOW = datetime.now(UTC)
-SAMPLE = {bool: True, int: 1, float: 1.0, Decimal: Decimal(1), str: "x", bytes: b"x", dict: {}, datetime: NOW, date: NOW.date()}
-CHOSEN = {"vuln_corpus_acquisitions.basis": "delivery", "submission_cases.kind": "coverage"}  # what their CHECKs allow
+SAMPLE = {bool: True, int: 1, float: 1.0, Decimal: Decimal(1), bytes: b"x", dict: {}, datetime: NOW, date: NOW.date()}
+UNBOUNDED = 4096  # characters for a string column without a width: more than any VARCHAR the chain declares
+CHOSEN = {
+    "vuln_corpus_acquisitions.basis": "delivery",  # what their CHECKs allow
+    "submission_cases.kind": "coverage",
+    # A list as a destination holds it at head: a9d4c7e1f3b8 and bd51c7a9e402 take their event types out on the way down.
+    "destinations.subscribed_events": ["run.failed", "subject.departure", "subject.returned"],
+}
 # Rows a fleet holds that three downgrades cannot step back over: (table, the row written beside its first, what the
-# walk deletes to step past, why). A refused downgrade rolls back, so nothing is lost by trying.
+# walk deletes to step past, words the step's error carries, why). A refused downgrade rolls back, so nothing is lost by
+# trying. A step that fails with other words fails its test.
 IPAD = ({"platform": "ipados"}, "platform <> 'macos'")
 ASSESSMENT = ({"source_id": None}, "source_id IS NULL")  # a point that assessed held inventory (#621)
 STEP_PAST = {
-    "c621f4a8e902": ("device_history_points", *ASSESSMENT, "refuses, by design, to drop assessment history"),
-    "c7d2f9a4b6e1": ("app_catalog", *IPAD, "restores a key without platform; a universal app's Mac and iPad rows share it"),
-    "b3c9e7d1a5f2": ("devices", *IPAD, "restores a key without platform; a Mac and an iPad with one Jamf id share it"),
+    "c621f4a8e902": (
+        "device_history_points",
+        *ASSESSMENT,
+        "Assessment history exists",
+        "refuses, by design, to drop assessment history",
+    ),
+    "c7d2f9a4b6e1": (
+        "app_catalog",
+        *IPAD,
+        '"uq_app_catalog_version"',
+        "restores a key without platform; a universal app's Mac and iPad rows share it",
+    ),
+    "b3c9e7d1a5f2": (
+        "devices",
+        *IPAD,
+        '"uq_device_connection_external_id"',
+        "restores a key without platform; a Mac and an iPad with one Jamf id share it",
+    ),
 }
 # Where the models and the migrations disagree, as autogenerate words it. None is marked deliberate, so each is a strict
 # xfail below: declare the index or create it, and its test fails until its line here goes.
@@ -82,14 +107,14 @@ DRIFT = {
 }
 
 
+def _xfail(reason: str):
+    """Strict, and for a failed assertion alone: a test that fails any other way, its fixture included, fails."""
+    return pytest.mark.xfail(strict=True, raises=AssertionError, reason=reason)
+
+
 def _revisions(xfail: dict[str, str]) -> list:
     return [
-        pytest.param(
-            s.revision,
-            id=s.revision,
-            marks=pytest.mark.xfail(strict=True, reason=xfail[s.revision]) if s.revision in xfail else (),
-        )
-        for s in SCRIPTS
+        pytest.param(s.revision, id=s.revision, marks=_xfail(xfail[s.revision]) if s.revision in xfail else ()) for s in SCRIPTS
     ]
 
 
@@ -172,9 +197,11 @@ async def stairway() -> dict[str, str | None]:
     return found
 
 
-def _verdict(found: dict[str, str | None], revision: str) -> None:
+def _verdict(found: dict[str, str | None], revision: str, says: str | None = None) -> None:
     if revision not in found:
         pytest.skip("not reached: the walk stopped at a step that raised")
+    if says and found[revision] and says not in found[revision]:
+        pytest.fail(f"listed as failing with {says}, it failed otherwise: {found[revision]}")  # no xfail absorbs this
     assert found[revision] is None, found[revision]
 
 
@@ -184,48 +211,67 @@ async def test_each_downgrade_puts_back_the_schema_its_upgrade_found(stairway, r
 
 
 def _sample(column, written: dict[str, dict]):
-    """A value for `column`: the written row's key for a foreign key (none to its own table), else one of its type."""
+    """A value for `column`: the written row's key for a foreign key (none to its own table), else one of its type. A
+    string fills its column's width, so a downgrade that narrows the column meets a value it has to empty or convert."""
     if (chosen := CHOSEN.get(f"{column.table.name}.{column.name}")) is not None:
         return chosen
     if column.foreign_keys:
         target = next(iter(column.foreign_keys)).column
         return None if target.table is column.table else written[target.table.name][target.name]
-    kind = getattr(column.type, "impl_instance", column.type).python_type  # EncryptedString is a TypeDecorator
-    return uuid.uuid4() if kind is uuid.UUID else SAMPLE[kind]
+    kind = getattr(column.type, "impl_instance", column.type)  # EncryptedString is a TypeDecorator
+    if kind.python_type is str:
+        return "x" * (getattr(kind, "length", None) or UNBOUNDED)
+    return uuid.uuid4() if kind.python_type is uuid.UUID else SAMPLE[kind.python_type]
 
 
-async def _fill(engine) -> None:
-    """A row in every table the models declare, since the walk down drops or alters each, written through the models'
-    tables as the application role; then each STEP_PAST row beside its table's first."""
+async def _fill(connection, tables) -> dict[str, dict]:
+    """A row in each of `tables` that holds none, written as the application role; each table's first row, by name."""
     written: dict[str, dict] = {}
+    for table in tables:
+        row = (await connection.execute(select(table).limit(1))).mappings().first()  # schema_release holds its stamp
+        if row is None:
+            values = {
+                column.name: _sample(column, written)
+                for column in table.columns
+                if column is not table.autoincrement_column and column.default is None and column.server_default is None
+            }
+            row = (await connection.execute(insert(table).values(values).returning(*table.columns))).mappings().one()
+        written[table.name] = dict(row)
+        if table.name == "tenants":  # every other row is stamped with it, and row-level security checks the stamp
+            await connection.execute(
+                text("SELECT set_config(:guc, :tenant, true)"), {"guc": TENANT_GUC, "tenant": str(row["id"])}
+            )
+    return written
+
+
+async def _refill(engine) -> None:
+    """A row in each table the last step created or emptied, written through the tables as reflected: the step that drops
+    or alters it meets a row, as it would once the application had run at this revision."""
     async with engine.begin() as connection:
-        for table in database.Base.metadata.sorted_tables:
-            row = (await connection.execute(select(table).limit(1))).mappings().first()  # schema_release holds its stamp
-            if row is None:
-                values = {
-                    column.name: _sample(column, written)
-                    for column in table.columns
-                    if column is not table.autoincrement_column and column.default is None and column.server_default is None
-                }
-                row = (await connection.execute(insert(table).values(values).returning(*table.columns))).mappings().one()
-            written[table.name] = dict(row)
-            if table.name == "tenants":  # every other row is stamped with it, and row-level security checks the stamp
-                await connection.execute(
-                    text("SELECT set_config(:guc, :tenant, true)"), {"guc": TENANT_GUC, "tenant": str(row["id"])}
-                )
-        for name, beside, _, _ in STEP_PAST.values():
-            table = database.Base.metadata.tables[name]
-            keys = set(table.primary_key.columns.keys())
-            await connection.execute(insert(table).values({k: v for k, v in written[name].items() if k not in keys} | beside))
+        names = set((await connection.execute(TABLES)).scalars()) - {"alembic_version"}
+        if "tenants" not in names:  # base
+            return
+        await connection.execute(BIND)
+        held = " UNION ALL ".join(f"SELECT '{name}' WHERE NOT EXISTS (SELECT FROM \"{name}\")" for name in names)
+        if empty := (await connection.execute(text(held))).scalars().all():
+            left = MetaData()
+            await connection.run_sync(left.reflect, only=empty)  # and the tables they refer to, whose rows they take
+            await _fill(connection, left.sorted_tables)
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="session")
 async def stepped_back() -> dict[str, str | None]:
-    """Upgrade head, fill every table, step down one revision at a time to base, upgrade head: what each step said."""
+    """Upgrade head and write a row in every table through the models' tables, then each STEP_PAST row beside its
+    table's first; step down to base one revision at a time, refilling after each; upgrade head. What each step said."""
     found: dict[str, str | None] = {}
     async with _database() as (url, engine):
         await _alembic(url, "upgrade", "head")
-        await _fill(engine)
+        async with engine.begin() as connection:
+            written = await _fill(connection, database.Base.metadata.sorted_tables)
+            for name, beside, *_ in STEP_PAST.values():
+                table = database.Base.metadata.tables[name]
+                keys = set(table.primary_key.columns.keys())
+                await connection.execute(insert(table).values({k: v for k, v in written[name].items() if k not in keys} | beside))
         for script in reversed(SCRIPTS):
             try:
                 await _alembic(url, "downgrade", _back(script))
@@ -234,13 +280,12 @@ async def stepped_back() -> dict[str, str | None]:
                 found[script.revision] = f"{type(exc).__name__}: {exc}"
                 if script.revision not in STEP_PAST:
                     break
-                table, _, where, _ = STEP_PAST[script.revision]
+                table, _, where, *_ = STEP_PAST[script.revision]
                 async with engine.begin() as connection:
-                    await connection.execute(
-                        text("SELECT set_config(:guc, (SELECT id::text FROM tenants LIMIT 1), true)"), {"guc": TENANT_GUC}
-                    )
+                    await connection.execute(BIND)
                     await connection.execute(text(f"DELETE FROM {table} WHERE {where}"))
                 await _alembic(url, "downgrade", _back(script))
+            await _refill(engine)
         else:
             await _alembic(url, "upgrade", "head")  # base holds no table, so this climb is the empty one's
     return found
@@ -248,7 +293,7 @@ async def stepped_back() -> dict[str, str | None]:
 
 @pytest.mark.parametrize("revision", _revisions({revision: why for revision, (*_, why) in STEP_PAST.items()}))
 async def test_each_downgrade_steps_back_over_a_fleets_rows(stepped_back, revision):
-    _verdict(stepped_back, revision)
+    _verdict(stepped_back, revision, STEP_PAST[revision][3] if revision in STEP_PAST else None)
 
 
 def _word(difference) -> str:
@@ -274,8 +319,6 @@ async def test_autogenerate_finds_nothing_beyond_the_listed_drift(drift):
     assert drift <= set(DRIFT), sorted(drift - set(DRIFT))
 
 
-@pytest.mark.parametrize(
-    "difference", [pytest.param(d, marks=pytest.mark.xfail(strict=True, reason=why)) for d, why in DRIFT.items()]
-)
+@pytest.mark.parametrize("difference", [pytest.param(d, marks=_xfail(why)) for d, why in DRIFT.items()])
 async def test_the_models_and_the_migrations_agree_on(drift, difference):
     assert difference not in drift
