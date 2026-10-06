@@ -13,8 +13,11 @@ adds, for this module's run, the rows a parameter names that the seed lacks.
   row that points at it, unchanged; and no read carries a string only the other tenant holds. Both
   directions: the operational tenant is where an unbound request lands, so a second tenant asking for
   its ids is the sharper probe.
-- As a tenant against its own ids: never a 5xx, and the request reaches its handler — neither the gate's
-  refusal nor FastAPI's own 422, whose list of fields means this file's body or value is wrong.
+- As a tenant against its own ids: a success, or the designed refusal STOPS lists; and once the lane's
+  writes are done, every row the other tenant holds is as it was, including settings named by a key every
+  tenant shares (a flag, a provider), which no id names for the lane above to ask.
+- Signed in, in every lane: never a 5xx, and the request reaches its handler — neither the gate's refusal
+  nor FastAPI's own 422, whose list of fields means this file's body or value is wrong.
 
 Sessions are minted in their tenant, as tests/test_identity_resolution_db.py mints them, and nothing a
 route sends leaves the process. The own lane acts as the second tenant, which only the tenancy sweep
@@ -39,7 +42,7 @@ import pytest_asyncio
 from fastapi.encoders import jsonable_encoder
 from fastapi.routing import APIRoute, iter_route_contexts
 from pydantic import BaseModel
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
 from app.core.auth import MFA_ENROLMENT_REQUIRED, is_public_path
 from app.main import app
@@ -271,17 +274,18 @@ async def _seed(tenant: dict) -> dict:
             empty = digest("route-sweep", "{}")
             span = ObservationSpan(**subject, **times, contract_version="v0", aperture_digest=empty, head_digest=empty)
             span.section_digests, span.last_trigger, span.serial_number = {}, "sweep", device.serial_number
+            span.label = "route sweep"  # how `_tidy` knows the span is ours: the one found above may be another file's
             db.add(span)
             await db.flush()
         change = (await db.execute(select(DeviceChange).filter_by(span_id=span.id))).scalars().first()
         if change is None:
             at = {"observed_at": now, "collected_at": now, "trigger": "sweep", "policy_version": "v0"}
             change = DeviceChange(**subject, **at, span_id=span.id, section="applications", change="added", level="normal")
-            change.serial_number = device.serial_number
+            change.serial_number, change.entry_label = device.serial_number, "route sweep"
             db.add(change)
             await db.flush()
         await db.commit()
-        return {"span_id": span.id, "subject": device.external_id, "change_id": change.id, "stored": stored}
+        return {"span_id": span.id, "subject": device.external_id, "stored": stored}
 
 
 async def _tidy(rows: dict[str, dict], since: datetime) -> None:
@@ -297,8 +301,8 @@ async def _tidy(rows: dict[str, dict], since: datetime) -> None:
             await db.execute(delete(s.UserSession).where(*mine))
             # The own lane's sign-in counts against the operational tenant, as a failed one.
             await db.execute(delete(s.LoginAttempt).where(s.LoginAttempt.identifier == ADMIN2[0]))
-            await db.execute(delete(s.DeviceChange).where(s.DeviceChange.id == tenant.get("change_id")))
-            await db.execute(delete(s.ObservationSpan).where(s.ObservationSpan.id == tenant.get("span_id")))
+            await db.execute(delete(s.DeviceChange).where(s.DeviceChange.entry_label == "route sweep"))
+            await db.execute(delete(s.ObservationSpan).where(s.ObservationSpan.label == "route sweep"))
             if "stored" in tenant:
                 connection = await db.get(s.MdmConnection, tenant["connection_id"])
                 connection.credentials_encrypted, connection.updated_at = tenant["stored"]
@@ -385,6 +389,16 @@ def _no_5xx(method: str, path: str, response: httpx.Response) -> None:
     assert response.status_code < 500, _said(method, path, response)
 
 
+def _handled(method: str, path: str, response: httpx.Response) -> None:
+    """Never a 5xx, and the request reached its handler: neither the gate's refusal nor FastAPI's own 422,
+    whose list of fields means this file's body or value is wrong, and which would make any lane vacuous."""
+    _no_5xx(method, path, response)
+    answer = response.json() if response.content and response.headers.get("content-type") == "application/json" else None
+    detail = answer.get("detail") if isinstance(answer, dict) else None
+    unreached = detail in GATE if isinstance(detail, str) else response.status_code == 422
+    assert not unreached, f"the request never reached its handler; fix this file's body or value: {_said(method, path, response)}"
+
+
 # --- 1. Signed out: 401 or 404 -----------------------------------------------------------
 
 
@@ -442,6 +456,8 @@ async def test_another_tenants_id_answers_as_an_absent_one(tenants, method, path
     async with _client(tenants[actor]) as client:
         foreign = await _send(client, method, path, route, theirs, {name})
         absent = await _send(client, method, path, route, nobody, {name})
+    for response in (foreign, absent):
+        _handled(method, path, response)
     if where != "body" and required:
         assert foreign.status_code == 404, _said(method, path, foreign)
     said = f"{_said(method, path, foreign)}; for an id nobody holds, {absent.status_code}: {absent.text[:400]}"
@@ -450,11 +466,12 @@ async def test_another_tenants_id_answers_as_an_absent_one(tenants, method, path
 
 
 def _marks(tenants: dict, label: str) -> list[str]:
-    """Strings only `label`'s tenant holds: the seed's names for its rows, and its observation's id."""
-    tenant = tenants[label]
-    email = {"t1": ADMIN1, "t2": ADMIN2}[label][0]
-    ids = (tenant[name] for name in ("account_id", "job_id", "case_id", "span_id"))
-    return [email, f"com.{label}.app", f"{label}SERIAL", tenant["destination_name"], *map(str, ids)]
+    """Strings only `label`'s tenant holds: the seed's names for its rows, and each of its ids that is not a
+    small integer, which any answer could carry (a connection's, a device's, a destination's, a collection's)."""
+    tenant, email = tenants[label], {"t1": ADMIN1, "t2": ADMIN2}[label][0]
+    names = [f"com.{label}.app", f"{label}SERIAL", f"{label}-host", f"{label}-device-1", f"{label} jamf", f"{label}.jamfcloud"]
+    names += [f"{label} token", f"{label} Sweep App", f"{label} sweep run", email, tenant["destination_name"]]
+    return [*names, *(str(tenant[key]) for key in ("tenant_id", "account_id", "token_id", "job_id", "case_id", "span_id"))]
 
 
 @DIRECTIONS
@@ -462,7 +479,7 @@ def _marks(tenants: dict, label: str) -> list[str]:
 async def test_no_read_carries_the_other_tenants_rows(tenants, method, path, route, actor, owner) -> None:
     async with _client(tenants[actor]) as client:
         response = await _send(client, method, path, route, _values(tenants[actor]))
-    _no_5xx(method, path, response)
+    _handled(method, path, response)
     seen = [mark for mark in _marks(tenants, owner) if mark in response.text]
     assert not seen, f"{method} {path} answered {actor} with {owner}'s {seen}"
 
@@ -502,6 +519,25 @@ async def _doomed(tenant: dict, name: str) -> object:
         return row.id
 
 
+async def _fingerprint(tenant: dict) -> dict[str, str | None]:
+    """A digest per table of the rows `tenant` holds, its `tenants` row included, read in its own session; all
+    but the own lane's failed sign-in, which lands in the operational tenant, as every unbound sign-in does."""
+    from app.core.database import Base, session_for_tenant
+
+    where = {t.name: "tenant_id = :tenant" for t in Base.metadata.sorted_tables if "tenant_id" in t.c}
+    where |= {"tenants": "id = :tenant", "login_attempts": f"tenant_id = :tenant AND identifier <> '{ADMIN2[0]}'"}
+    sql = "SELECT md5(string_agg(r::text, ',' ORDER BY r::text)) FROM {} r WHERE {}"
+    async with session_for_tenant(tenant["tenant_id"]) as db:
+        return {name: await db.scalar(text(sql.format(name, w)), {"tenant": tenant["tenant_id"]}) for name, w in where.items()}
+
+
+@pytest_asyncio.fixture(scope="module", loop_scope="session")
+async def untouched(tenants):
+    """Every row the operational tenant holds, before the own lane writes as the second tenant."""
+    return await _fingerprint(tenants["t1"])
+
+
+@pytest.mark.usefixtures("untouched")
 @pytest.mark.parametrize(("method", "path", "route"), _cases("own", ROUTES))
 async def test_a_tenant_never_gets_a_5xx_for_its_own_ids(tenants, method, path, route) -> None:
     mine = tenants["t2"]
@@ -510,10 +546,13 @@ async def test_a_tenant_never_gets_a_5xx_for_its_own_ids(tenants, method, path, 
         values |= {name: await _doomed(mine, name) for where, name, _, _ in _probes(path, route) if where == "path"}
     async with _client(mine) as client:
         response = await _send(client, method, path, route, values, {name for _, name, _, _ in _params(path, route)})
-    _no_5xx(method, path, response)
-    answer = response.json() if response.content and response.headers.get("content-type") == "application/json" else None
-    detail = answer.get("detail") if isinstance(answer, dict) else None
-    unreached = detail in GATE if isinstance(detail, str) else response.status_code == 422
-    assert not unreached, f"the request never reached its handler; fix this file's body or value: {_said(method, path, response)}"
+    _handled(method, path, response)
     refused, listed = response.status_code >= 400, f"{method} {path}" in STOPPED
     assert refused == listed, f"{_said(method, path, response)}: {'listed in' if listed else 'not in'} STOPS"
+
+
+async def test_the_own_lane_moved_nothing_the_other_tenant_holds(tenants, untouched) -> None:
+    """The own lane's writes include settings named by a key every tenant shares (a flag, a provider, a title)
+    or by none (a policy), which no id names for the cross-tenant lane to ask. Runs after it, by file order."""
+    now = await _fingerprint(tenants["t1"])
+    assert now == untouched, f"the own lane changed the operational tenant's {sorted(k for k in now if now[k] != untouched[k])}"
