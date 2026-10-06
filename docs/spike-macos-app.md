@@ -22,10 +22,10 @@ the image, with PostgreSQL 17 beside them as a child process instead of a sideca
 | Measure | Result |
 | --- | --- |
 | Bundle on disk | 217 MB, 7,679 files (81 MB zipped with `ditto -c -k`) |
-| First launch, `open` to `/api/health` 200 | 2.97 s, with initdb and all 73 migrations included |
-| Later launches, `open` to `/api/health` 200 | 1.08 to 1.25 s over three runs |
-| Quit (`osascript -e 'quit app "LoonInspect"'`) to no process left | 0.45 to 0.60 s |
-| Clean build, `rm -rf macos/build` to a signed bundle | 46 s (npm cache and the uv image already local) |
+| First launch, `open` to `/api/health` 200 | 2.76 s, with initdb and all 73 migrations included |
+| Later launches, `open` to `/api/health` 200 | 1.06 to 1.15 s over three runs |
+| Quit (`osascript -e 'quit app "LoonInspect"'`) to no process left | 0.47 to 0.52 s |
+| Clean build, `rm -rf macos/build` to a signed bundle | 41 s (npm cache and the uv image already local) |
 
 Nothing blocked the deliverable. What is left before anyone else can run it is signing,
 notarization, an update story and the decisions in [Needs Kyle](#needs-kyle).
@@ -34,8 +34,9 @@ notarization, an update story and the decisions in [Needs Kyle](#needs-kyle).
 
 All of it is under `macos/` ([macos/README.md](../macos/README.md)). Two other files changed:
 the row for this document in [docs/README.md](README.md), which `test_docs_index.py` requires,
-and one `.dockerignore` line that keeps `macos/` out of the image's build context, since a
-local `macos/build` holds about 300 MB. Nothing under `backend/` or `frontend/` changed.
+and a `.dockerignore` entry that keeps `macos/` out of the image's build context, since a
+local `macos/build` holds about 700 MB (downloads, a copy of the frontend with its
+`node_modules`, the bundle and its zip). Nothing under `backend/` or `frontend/` changed.
 
 | Path | Job |
 | --- | --- |
@@ -45,7 +46,8 @@ local `macos/build` holds about 300 MB. Nothing under `backend/` or `frontend/` 
 | `macos/launcher/loon_backend.py` | The backend's entry point: `app.serve.main()` and a watchdog. If the shell dies, the watchdog sends the backend the SIGTERM a normal quit would have sent. |
 
 The bundle's `Contents/Resources/backend` is laid out like the image's `/app`: `app/` with the
-SPA in `app/static` and a `build_info.json` stamped `2026.10.06+8687cdc`, `migrations/`,
+SPA in `app/static` and a `build_info.json` stamped as the Dockerfile stamps it
+(`2026.10.06+d68492a` for the build measured here), `migrations/`,
 `alembic.ini`, and `docs/baseline-rules.yml`, where `app.baseline.catalogue` looks for it. The
 other directories in `Contents/Resources` are `python/` (the interpreter and the 56 locked
 packages that apply to macOS), `postgres/` (`bin`, `lib`, `share`) and `launcher/`.
@@ -85,7 +87,7 @@ than mint a new key that would leave every stored credential unreadable (KNOWN_I
   container's `en_US.utf8` under musl orders by code point too, because musl has no collation.
 
 The cluster is built as `pgdata.initdb` and renamed only when it is complete, so an
-interrupted first launch leaves nothing that looks like a database. Then come what the image's
+interrupted first launch leaves nothing that looks like a database. Then comes what the image's
 first boot does: the entrypoint's `CREATE DATABASE looninspect`, and the two statements of
 `ops/postgres/initdb/10-app-role.sh`, `CREATE ROLE looninspect_app … NOSUPERUSER NOCREATEDB
 NOCREATEROLE NOBYPASSRLS` and `ALTER SCHEMA public OWNER TO looninspect_app`. They run in
@@ -129,29 +131,30 @@ token"`, which is wrong inside an app. The menu's Copy Setup Claim Token reads t
 this session's part of `backend.log` instead. `INITIAL_ADMIN_*` is not used.
 
 **Quit.** Quitting from the menu, with ⌘Q, through AppleScript or at logout, or with SIGTERM,
-SIGINT or SIGHUP, stops the backend first with SIGTERM, then uvicorn's graceful shutdown;
-after 15 s it sends SIGKILL instead. Then `pg_ctl stop -m fast`, and only after that does the
-app exit. If the shell itself is killed (SIGKILL, a crash), the backend's watchdog stops the
+SIGINT or SIGHUP, stops the backend first: SIGTERM, which uvicorn answers with its graceful
+shutdown, and SIGKILL if that takes more than 15 s. Then `pg_ctl stop -m fast`, and only then
+does the app exit. If the shell itself is killed (SIGKILL, a crash), the backend's watchdog stops the
 backend within about a second. Postgres has no such watchdog: it keeps running until the next
 launch, which stops it first. A second copy of the app refuses to start, says that one is
 already running, and leaves the running one alone.
 
 ## Measurements
 
-From the final clean build, on this Mac. The first launch had no data directory and no
-keychain items; the later launches followed it.
+From the last clean build, of commit `d68492a`, on this Mac, unless marked as an earlier
+build. The first launch had no data directory and no keychain items; the later launches
+followed it.
 
 | What | Number |
 | --- | --- |
-| Downloads | CPython 25.1 MB, zonky jar 62.1 MB (about 4 s here) |
-| Build, clean | 46 s wall; the steps took 4 s (downloads), 6 s (frontend), 10 s (Python and wheels), 1 s (bytecode), 7 s (Postgres), 7 s (Swift), 4 s (signature check), 7 s (zip) |
+| Downloads | CPython 25.1 MB, zonky jar 62.1 MB (2 to 4 s here) |
+| Build, clean | 41 s wall (46 s on the clean build before it); the steps took 2 s (downloads), 6 s (frontend), 9 s (Python and wheels), 1 s (bytecode), 6 s (Postgres), 7 s (Swift), 3 s (signature check), 7 s (zip) |
 | Bundle | 217 MB: Python 136 MB (site-packages 97 MB; `.pyc` files across both, 46 MB); Postgres 70 MB, of which 29 MB is ICU data; backend 7.7 MB, of which the SPA is 1.7 MB; shell 320 KB |
 | Zipped | 81 MB |
-| First launch | 2.97 s from `open` to health 200. The shell's clock: 0.18 s keychain (three items), 1.11 s initdb and role, 0.05 s Postgres start, 1.44 s backend start and 73 migrations and uvicorn bind. The window's page load finishes about 0.25 s after health. Headless: 3.27 s. |
-| Later launches | 1.25, 1.13 and 1.08 s from `open` to health 200; 0.92 s headless |
-| Quit | 0.45 to 0.60 s through AppleScript; 0.39 s on SIGTERM to the windowed app; 0.34 s headless; 0.42 s when quit while still starting |
-| Shell killed with SIGKILL | Backend gone 1.29 s later through the watchdog; the next launch stopped the orphaned Postgres and was healthy in 1.20 s |
-| Memory at rest, setup page shown | Shell 101 MB RSS (WebKit's own processes not counted), backend 188 MB, Postgres 87 MB across 9 processes (shared buffers counted in each) |
+| First launch | 2.76 s from `open` to health 200. The shell's clock, 2.71 s in all: 0.13 s keychain (three items made), 1.12 s initdb and role, 0.06 s Postgres start, 1.25 s backend. Of the backend's time, 0.25 s goes to uvicorn's bind line, 0.68 s more to imports and Alembic's setup, and 0.23 s to the 73 migrations on the empty database. The window's page load finishes about 0.2 s after health. Headless, earlier build: 3.27 s. |
+| Later launches | 1.07, 1.15 and 1.06 s from `open` to health 200; 0.89 s headless |
+| Quit | 0.47 to 0.52 s through AppleScript; 0.43 s on SIGTERM to the windowed app; 0.35 s headless; 0.32 s when quit while still starting |
+| Shell killed with SIGKILL | Backend gone 0.46 s later through the watchdog, which looks once a second (1.29 s on an earlier run). The next launch stopped the orphaned Postgres and started normally. |
+| Memory at rest, setup page shown | Shell 105 MB RSS (WebKit's own processes not counted), backend 188 MB, Postgres 85 MB across 9 processes (shared buffers counted in each) |
 
 ## What worked, what blocked, what surprised
 
@@ -167,7 +170,8 @@ Worked first time:
   Developer ID (hardened runtime, timestamped). `lipo -thin arm64` keeps each slice's signature,
   so Postgres in the bundle still verifies as EDB-signed.
 - Same Postgres minor as today's `postgres:17-alpine` (17.11, read from the test database here).
-- Alembic runs in-process through the socket URL; 73 migrations take about 0.9 s.
+- Alembic runs in-process through the socket URL; the 73 migrations take 0.23 s on an empty
+  database.
 
 Did not go as the plan said, and what was done:
 
@@ -214,8 +218,8 @@ What each needs, as far as the spike could see:
 
 1. **Developer ID signing.** This needs an Apple Developer Program membership and a "Developer
    ID Application" certificate in Kyle's keychain. Then everything is signed inside out, with
-   `--options runtime --timestamp`: each Python Mach-O file (python3.12 and about 60 `.so`) and
-   the shell. EDB's Postgres binaries are already Developer ID signed with hardened runtime;
+   `--options runtime --timestamp`: each Python Mach-O file (python3.12 and 26 extension
+   modules) and the shell. EDB's Postgres binaries are already Developer ID signed with hardened runtime;
    whether notarization accepts another team's signatures inside the bundle is the first thing
    to try. Apple expects nested code in `Contents/Frameworks`, `Contents/Helpers` and similar,
    not `Contents/Resources`, so `python/` and `postgres/` probably move. Entitlements are to be
@@ -280,8 +284,9 @@ None of these needs Kyle's hands, but all of them are work:
 
 Everything here was run on this Mac on 2026-10-06, from the worktree of `spike/macos-app`:
 
-- `rm -rf macos/build && macos/scripts/build-app.sh`: exit 0, with the sizes and times above.
-  An earlier run failed on the unsigned x86_64 slices, which led to the thinning.
+- `rm -rf macos/build && macos/scripts/build-app.sh`, twice: exit 0 both times, with the sizes
+  and times above. An earlier run failed on the unsigned x86_64 slices, which led to the
+  thinning.
 - `shellcheck` (`koalaman/shellcheck:stable` in Docker) on both scripts: clean.
 - `ruff check` and `ruff format --check` (0.16.9, the lockfile's) on `macos/launcher` with
   `backend/pyproject.toml`'s settings: clean.
@@ -332,5 +337,6 @@ open macos/build/LoonInspect.app        # or: …/Contents/MacOS/LoonInspect --h
 cat ~/Library/Application\ Support/LoonInspect-Spike/run/port
 ```
 
-The menu's Copy Setup Claim Token fills the setup page's first field. To start over, see
+The menu's Copy Setup Claim Token copies what the setup page's first field asks for. To start
+over, see
 [macos/README.md](../macos/README.md).

@@ -27,7 +27,7 @@ backend/data
 backend/logs
 
 # The macOS app spike (docs/spike-macos-app.md) never reaches the image, and a local
-# macos/build holds a few hundred megabytes of runtimes and a built bundle.
+# macos/build holds the better part of a gigabyte: runtimes, node_modules, a built bundle.
 macos
 
 # VCS, editors, OS
