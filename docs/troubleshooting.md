@@ -1361,8 +1361,8 @@ writes one row to the disclosure log naming the destination and the one field th
      sends none.
      *The Apple card uses only Apple's on-device model, system …*, under **Model** or after
      Send or Save, means the field names another: usually `pcc`, which `fm serve` also lists.
-     That is Private Cloud Compute, which sends the prompt to Apple's servers. Type `system`
-     and press **Save**.
+     That is Private Cloud Compute, which sends the prompt to Apple's servers. An admin saves
+     the card again in Settings › AI with the model `system`.
    - *shown* → reload the Changes page; it reads this once, when it opens.
    - Where the bar would be, *The Prompt bar could not check its settings: …* → the page asked
      and the server failed to answer; the reason follows the colon, and
@@ -1387,7 +1387,7 @@ writes one row to the disclosure log naming the destination and the one field th
    - *The Apple card uses only Apple's on-device model, system …* → the Apple card was saved
      naming another model, usually `pcc` (Private Cloud Compute, on Apple's servers), by a build
      that allowed it. Nothing was sent, and the share log has no row for the question. An admin
-     sets **Model** to `system` on that card in Settings › AI and saves it. The Vulnerabilities
+     saves the card again in Settings › AI with the model `system`. The Vulnerabilities
      lever, the rule draft (§23) and exclusion ranking on Data Sharing answer the same sentence,
      and an inventory summary records `apple_model_refused`.
    - *no complete reply within 30 s* → something took the connection and did not answer in time.

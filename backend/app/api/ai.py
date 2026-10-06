@@ -120,8 +120,8 @@ APPLE_FM_TAKES_NO_EFFORT = (
 # dialled (``chosen_config``, the summary worker), before the share-log row; never sent as `system`.
 APPLE_FM_SYSTEM_ONLY = (
     "The Apple card uses only Apple's on-device model, system. pcc is Private Cloud Compute, which runs on "
-    f"Apple's servers, not on this Mac. Save the {CARD_LABELS[Provider.apple_fm]} card again from Settings › AI "
-    "with the model system."
+    f"Apple's servers, not on this Mac. An admin saves the {CARD_LABELS[Provider.apple_fm]} card again in "
+    "Settings › AI with the model system."
 )
 
 

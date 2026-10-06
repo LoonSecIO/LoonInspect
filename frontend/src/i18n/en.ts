@@ -2319,7 +2319,7 @@ export const en = {
     // #738: the server refuses any other model on the Apple card — on Send, on Save, and
     // wherever a card saved by an older build is dialled.
     appleModelOnly:
-      "The Apple card uses only Apple's on-device model, system: Send and Save refuse any other. pcc is Private Cloud Compute, which runs on Apple's servers, not on this Mac.",
+      "The Apple card uses only Apple's on-device model, system: Send and Save refuse any other. pcc is Private Cloud Compute, which runs on Apple's servers, not on this Mac. An admin saves the card again with the model system.",
     reasoningEffort: "Reasoning effort",
     reasoningDefault: "Endpoint default",
     prompt: "Prompt",

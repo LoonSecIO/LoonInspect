@@ -2098,7 +2098,7 @@ export const de: Translations = {
     modelsLoaded: (n: number, ms: number) => `${n} Modell${n === 1 ? "" : "e"} vom Endpunkt gelistet, in ${ms} ms.`,
     modelNotListed: "Der Endpunkt hat dieses Modell nicht gelistet. Er akzeptiert es möglicherweise trotzdem.",
     appleModelOnly:
-      "Die Apple-Karte nutzt nur Apples On-Device-Modell, system: „Senden“ und „Speichern“ lehnen jedes andere ab. pcc ist Private Cloud Compute und läuft auf Apples Servern, nicht auf diesem Mac.",
+      "Die Apple-Karte nutzt nur Apples On-Device-Modell, system: „Senden“ und „Speichern“ lehnen jedes andere ab. pcc ist Private Cloud Compute und läuft auf Apples Servern, nicht auf diesem Mac. Eine Administratorin oder ein Administrator speichert die Karte erneut mit dem Modell system.",
     reasoningEffort: "Denkaufwand",
     reasoningDefault: "Standard des Endpunkts",
     prompt: "Prompt",

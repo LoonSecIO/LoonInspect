@@ -281,8 +281,8 @@ async def test_apple_takes_no_reasoning_effort_and_is_refused_before_the_gate(cl
 
 SYSTEM_ONLY = (
     "The Apple card uses only Apple's on-device model, system. pcc is Private Cloud Compute, which runs on Apple's "
-    "servers, not on this Mac. Save the Apple Foundation Models via Docker Desktop card again from Settings › AI "
-    "with the model system."
+    "servers, not on this Mac. An admin saves the Apple Foundation Models via Docker Desktop card again in "
+    "Settings › AI with the model system."
 )
 
 
