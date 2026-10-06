@@ -86,11 +86,12 @@ async def _device_counts_once(db: AsyncSession, app_hash: str | None = None):
     moves: the sort under the aggregate compares bytes, on abbreviated keys, where the locale
     read hands every pair that differs to the locale. Serial against serial, that measured 11
     to 15% faster at 8,000 and 14,000 Macs. The planner caveat: a collated key is an expression,
-    sized from its type (82 bytes for a varchar(32)) where the bare column is sized from its
-    statistics (33). At 8,000 Macs on PostgreSQL 17 defaults that wider sort is what bought two
-    parallel workers where the bare column sorted in one process, so most of the gain there is
-    a plan, and another fleet's shape or settings can take it back. And an index meant to serve
-    this read has to order `version_hash COLLATE "C"`: one in the column's own order cannot.
+    sized from its type (82 bytes for a varchar(32) in a UTF-8 database) where the bare column
+    is sized from its statistics (33). At 8,000 Macs on PostgreSQL 17 defaults that wider sort
+    is what bought two parallel workers where the bare column sorted in one process, so most of
+    the gain there is a plan, and another fleet's shape or settings can take it back. And an
+    index meant to serve this read has to order `version_hash COLLATE "C"`: one in the column's
+    own order cannot.
     """
     counts = _device_counts(app_hash, collation="C")
     rows = (await db.execute(select(counts.c.version_hash, counts.c.devices))).all()
