@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 /** The run-now poller's contract (#31, #104), driven through RunLogPanel with a stubbed fetch and a fake clock. Its rules
- *  break without a visible sign, so each has a test: stop on a terminal status and never on a quiet page; stand down while
- *  the tab is hidden and come back with one request from the held cursor; ask only after the last line id held; keep the
- *  log through a failed poll; call onFinished once. The one file in this lane with a DOM (jsdom, opted in on line 1):
+ *  break without a visible sign, so each has a test: stop on a terminal status once the log is read to its end, and never
+ *  on a quiet page; stand down while the tab is hidden and come back with one request from the held cursor; ask only
+ *  after the last line id held; keep the log through a failed poll; call onFinished once; keep one poll out at a time;
+ *  drop a late answer for a job the panel has left. The one file in this lane with a DOM (jsdom, opted in on line 1):
  *  effects and `visibilitychange` are what is under test, and server rendering runs neither. */
 
+import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { RunLogPanel } from "@/features/mdm/RunLogPanel";
@@ -26,8 +28,8 @@ const RUN: Run = {
 
 /** One answer of GET /runs/{jobId}/log: these line ids, and the run in `status` — complete once it is no longer
  *  running, as backend/app/api/runs.py decides it. */
-const page = (ids: number[], status: Run["status"] = "running"): RunLogResponse => ({
-  run: { ...RUN, status },
+const page = (ids: number[], status: Run["status"] = "running", job = JOB): RunLogResponse => ({
+  run: { ...RUN, id: job, status },
   lines: ids.map((id) => ({ id, ts: "2026-10-06T09:00:00Z", level: "info", message: `line ${id}`, fields: null })),
   complete: status !== "running"
 });
@@ -44,7 +46,7 @@ const fetchStub = vi.fn<typeof fetch>(async () => {
   return { ok: true, status: 200, json: async () => body } as Response;
 });
 const asked = () => fetchStub.mock.calls.map(([url]) => String(url));
-const after = (id: number) => `/api/runs/${JOB}/log?after=${id}`;
+const after = (id: number, job = JOB) => `/api/runs/${job}/log?after=${id}`;
 const finished = vi.fn();
 let hidden = false;
 
@@ -102,15 +104,16 @@ describe("the run-now poller (useRunLog, through RunLogPanel)", () => {
     expect([labelled(en.settings.runProcessing), finished.mock.calls.length, vi.getTimerCount()]).toEqual([true, 0, 1]);
   });
 
-  it("stops on the run's terminal status, and the tab coming back does not start it again", async () => {
-    answers.push(page([1]), page([2, 3], "succeeded"));
+  it("stops on the run's terminal status once its log is read, and the tab coming back does not start it again", async () => {
+    // Every page of a finished run says complete, so the page that brought its last lines is followed by an empty one.
+    answers.push(page([1]), page([2, 3], "succeeded"), page([], "succeeded"));
     await mount();
     await advance(2000);
-    expect([asked(), vi.getTimerCount()]).toEqual([[after(0), after(1)], 0]);
+    expect([asked(), vi.getTimerCount()]).toEqual([[after(0), after(1), after(3)], 0]);
     await advance(60_000);
     await tab("hidden");
     await tab("visible");
-    expect(asked()).toHaveLength(2);
+    expect(asked()).toHaveLength(3);
     expect(shown()).toEqual(["line 1", "line 2", "line 3"]);
     expect(labelled(en.settings.runSucceeded)).toBe(true);
   });
@@ -146,8 +149,8 @@ describe("the run-now poller (useRunLog, through RunLogPanel)", () => {
 
   it("calls onFinished once: not for a poll still out, a parent re-render, or the tab coming back", async () => {
     let answerFirst!: (body: RunLogResponse) => void;
-    // The first answer is held past the next tick, so two answers say finished. The last is a trap: a poller that
-    // starts again after finishing is answered "finished" once more.
+    // The first answer is held past the next tick. The two after it are traps: a poller that asks again while it is
+    // out, or starts again after finishing, is answered "finished" once more.
     const held = new Promise<RunLogResponse>((resolve) => (answerFirst = resolve));
     answers.push(held, page([], "succeeded"), page([], "succeeded"));
     const view = await mount();
@@ -171,5 +174,73 @@ describe("the run-now poller (useRunLog, through RunLogPanel)", () => {
     await advance(4 * 2000);
     expect(asked()).toEqual([after(0), after(940), after(941), after(941), after(1003)]);
     expect(shown()).toEqual(["line 907", "line 912", "line 940", "line 941", "line 958", "line 1003"]);
+  });
+
+  it("keeps one poll out at a time: a slow answer is waited for, not asked for again from the same place", async () => {
+    let answerFirst!: (body: RunLogResponse) => void;
+    answers.push(new Promise<RunLogResponse>((resolve) => (answerFirst = resolve)), page([3]));
+    await mount();
+    await advance(3 * 2000); // the server takes longer than three ticks to answer the first poll
+    expect(asked()).toEqual([after(0)]);
+    answerFirst(page([1, 2]));
+    await advance(2000);
+    expect(asked()).toEqual([after(0), after(2)]);
+    expect(shown()).toEqual(["line 1", "line 2", "line 3"]);
+  });
+
+  it("drops an answer still out when the panel is pointed at another job", async () => {
+    // Run now or Re-emit points the panel at a new job, and a re-emit runs beside a sweep, so their line ids interleave.
+    const NEXT = "0b9e7c41-2d5a-4f36-8e1b-7a3c6d2f9e05";
+    let answerLate!: (body: RunLogResponse) => void;
+    answers.push(
+      new Promise<RunLogResponse>((resolve) => (answerLate = resolve)),
+      page([1001, 1002], "running", NEXT), page([1003], "running", NEXT), page([], "succeeded", NEXT)
+    );
+    const view = await mount();
+    view.rerender(<RunLogPanel jobId={NEXT} joined={false} onFinished={(run) => finished(run)} />);
+    await advance(0);
+    answerLate(page([1500], "succeeded")); // the job just left: a line written after the new job's, and its finish
+    await advance(2 * 2000);
+    expect(asked()).toEqual([after(0), after(0, NEXT), after(1002, NEXT), after(1003, NEXT)]);
+    expect(shown()).toEqual(["line 1001", "line 1002", "line 1003"]);
+    expect(finished.mock.calls).toEqual([[expect.objectContaining({ id: NEXT, status: "succeeded" })]]);
+  });
+
+  it("drops the answer of an effect torn down mid-poll, as StrictMode's double mount does in development", async () => {
+    answers.push(page([1, 2]), page([1, 2]));
+    render(<StrictMode>{panel()}</StrictMode>);
+    fireEvent.click(screen.getByText(en.settings.runMoreDetails));
+    await advance(0);
+    expect([asked(), shown()]).toEqual([[after(0), after(0)], ["line 1", "line 2"]]);
+  });
+
+  it("reads a finished run to its end when the panel is more than a page behind", async () => {
+    answers.push(page([1, 2, 3]));
+    await mount();
+    await tab("hidden");
+    // The run writes 520 more lines and ends while the tab is away. A page stops at 500 lines (_MAX_LINES), and every
+    // page of a finished run says complete.
+    const missed = Array.from({ length: 520 }, (_, i) => i + 4);
+    answers.push(page(missed.slice(0, 500), "succeeded"), page(missed.slice(500), "succeeded"), page([], "succeeded"));
+    await tab("visible");
+    expect(asked()).toEqual([after(0), after(3), after(503), after(523)]);
+    expect([shown().length, shown().at(-1)]).toEqual([523, "line 523"]);
+    expect([finished.mock.calls.length, vi.getTimerCount()]).toEqual([1, 0]);
+  });
+
+  it("finishes reading a finished run after a failed page and a hidden tab", async () => {
+    answers.push(page([1, 2, 3]));
+    await mount();
+    await tab("hidden");
+    // The tab comes back to a finished run (onFinished fires), the next page fails, and the tab goes away again before
+    // the tick that would retry it. Its return must pick the reading up, though the run has already said it finished.
+    const missed = Array.from({ length: 500 }, (_, i) => i + 4);
+    answers.push(page(missed, "succeeded"), 502);
+    await tab("visible");
+    await tab("hidden");
+    answers.push(page([504], "succeeded"), page([], "succeeded"));
+    await tab("visible");
+    expect(asked()).toEqual([after(0), after(3), after(503), after(503), after(504)]);
+    expect([shown().at(-1), finished.mock.calls.length, vi.getTimerCount()]).toEqual(["line 504", 1, 0]);
   });
 });

@@ -178,8 +178,9 @@ export interface RunLogLine {
 export interface RunLogResponse {
   run: Run;
   lines: RunLogLine[];
-  /** The poller stops on this rather than on an empty page — a sweep mid-fleet can
-   *  produce no new lines for a minute and still be running. */
+  /** The run has ended, and every page of it says so. The poller stops once a page with
+   *  this set brings no new lines (a page stops at 500), never on an empty page alone —
+   *  a sweep mid-fleet can produce no new lines for a minute and still be running. */
   complete: boolean;
 }
 
