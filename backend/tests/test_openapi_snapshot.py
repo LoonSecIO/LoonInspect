@@ -7,6 +7,9 @@ from `backend/`, read the snapshot's diff, and commit it with the change:
 
     UPDATE_SNAPSHOTS=1 uv run --frozen pytest tests/test_openapi_snapshot.py
 
+Reviewers run the same command wherever the contract moves (a route, a model, a docstring, a
+FastAPI or Pydantic bump) and again after bringing such a branch up to date with `main`.
+
 Normalised: keys sorted, two-space indent, ASCII; no `servers`; `info.title` (the APP_NAME
 setting) and `info.version` written as their defaults; every `required` list sorted, since a
 field moved within its model is not a contract change.
@@ -55,7 +58,7 @@ def rendered(document: dict[str, Any]) -> str:
 
 
 def changed_places(old: Any, new: Any, at: str = "") -> list[str]:
-    """Where two documents differ, as jq paths: `+` added, `-` removed, `~` changed."""
+    """Where two documents differ, as jq paths: `+` added, `-` removed, `~` changed (a value or its type)."""
     if isinstance(old, dict) and isinstance(new, dict):
         places = []
         for key in sorted(old.keys() | new.keys()):
@@ -69,7 +72,8 @@ def changed_places(old: Any, new: Any, at: str = "") -> list[str]:
         return places
     if isinstance(old, list) and isinstance(new, list) and len(old) == len(new):
         return [place for i, (a, b) in enumerate(zip(old, new, strict=True)) for place in changed_places(a, b, f"{at}[{i}]")]
-    return [] if old == new else [f"~ {at or '.'}"]
+    # Python's == calls 1, 1.0 and True equal; the snapshot's text does not, so a type change is a change.
+    return [] if old == new and type(old) is type(new) else [f"~ {at or '.'}"]
 
 
 def _shown(lines: list[str], limit: int, what: str) -> list[str]:
@@ -109,3 +113,7 @@ def test_the_openapi_document_matches_its_snapshot() -> None:
         ),
         pytrace=False,
     )
+
+
+def test_a_change_of_value_type_is_named_as_a_change_not_formatting() -> None:
+    assert changed_places({"a": 1, "b": [True]}, {"a": 1.0, "b": [1]}) == ["~ .a", "~ .b[0]"]
