@@ -45,15 +45,6 @@ func appendHandle(_ url: URL) throws -> FileHandle {
     return FileHandle(fileDescriptor: fd, closeOnDealloc: true)
 }
 
-/// Writes a file only this user can read, failing rather than replacing one that exists.
-func writePrivate(_ url: URL, _ contents: String) throws {
-    let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
-    guard fd >= 0 else { throw ShellFailure("Could not create \(url.path): \(String(cString: strerror(errno))).") }
-    let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-    handle.write(Data(contents.utf8))
-    try handle.close()
-}
-
 struct ToolResult {
     let status: Int32
     let stdout: String
@@ -61,7 +52,10 @@ struct ToolResult {
 }
 
 /// Runs a short-lived tool to completion: initdb, single-user postgres, pg_ctl, security, ps.
-func runTool(_ path: String, _ arguments: [String], stdin: String? = nil, environment: [String: String]? = nil) throws -> ToolResult {
+/// `stdin` travels on a pipe, never through a file. `start` launches the process, so a caller
+/// can launch it under its own lock and keep hold of it (the supervisor's first-launch tools).
+func runTool(_ path: String, _ arguments: [String], stdin: String? = nil, environment: [String: String]? = nil,
+             start: (Process) throws -> Void = { try $0.run() }) throws -> ToolResult {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: path)
     process.arguments = arguments
@@ -70,7 +64,7 @@ func runTool(_ path: String, _ arguments: [String], stdin: String? = nil, enviro
     process.standardOutput = output
     process.standardError = errors
     process.standardInput = stdin == nil ? FileHandle.nullDevice : input
-    try process.run()
+    try start(process)
     if let stdin {
         input.fileHandleForWriting.write(Data(stdin.utf8))
         try? input.fileHandleForWriting.close()

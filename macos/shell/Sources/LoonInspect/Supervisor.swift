@@ -21,6 +21,8 @@ final class Supervisor: @unchecked Sendable {
     let resources: URL
     let support: URL
     let pgdata: URL
+    /// Where a first launch builds the cluster, renamed to `pgdata` only when it is complete.
+    let unfinishedPgdata: URL
     let runDir: URL
     let logDir: URL
     let log: ShellLog
@@ -32,6 +34,8 @@ final class Supervisor: @unchecked Sendable {
     private var stopping = false
     private var postgres: Process?
     private var backend: Process?
+    /// initdb or a single-user postgres while a first launch runs one, so stop() can end it.
+    private var tool: Process?
     private var instanceLock: Int32 = -1
     private(set) var port: Int?
     private var backendLogStart: UInt64 = 0
@@ -42,6 +46,7 @@ final class Supervisor: @unchecked Sendable {
         support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(Self.supportName, isDirectory: true)
         pgdata = support.appendingPathComponent("pgdata")
+        unfinishedPgdata = support.appendingPathComponent("pgdata.initdb")
         runDir = support.appendingPathComponent("run")
         logDir = support.appendingPathComponent("logs")
         try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true,
@@ -152,19 +157,17 @@ final class Supervisor: @unchecked Sendable {
     /// initdb, then what the image's first boot does before Postgres takes connections: the
     /// docker entrypoint's POSTGRES_DB, and initdb/10-app-role.sh's two statements. zonky's build
     /// ships no psql, so the statements go through single-user mode, which also means nothing can
-    /// connect while they run. The directory is built under another name and renamed when
-    /// complete, so an interrupted first launch leaves nothing a second launch mistakes for a database.
+    /// connect while they run. The cluster is built as `pgdata.initdb` and renamed when complete;
+    /// a quit meanwhile ends the running tool and removes the directory (stop()), and a launch
+    /// after a crash removes it before starting over. No password touches a file: initdb reads
+    /// the superuser's from its stdin, a pipe, and the role's goes to single-user mode the same way.
     private func initializeDatabase(appPassword: String, superuserPassword: String) throws {
         guard appPassword.allSatisfy(\.isHexDigit) else {
             throw ShellFailure("The keychain's postgres-\(Self.appRole) value is not the hex this shell generates; not using it in SQL.")
         }
         let fm = FileManager.default
-        let building = support.appendingPathComponent("pgdata.initdb")
-        let pwfile = runDir.appendingPathComponent("initdb.pw")
+        let building = unfinishedPgdata
         try? fm.removeItem(at: building)
-        try? fm.removeItem(at: pwfile)
-        try writePrivate(pwfile, superuserPassword + "\n")
-        defer { try? fm.removeItem(at: pwfile) }
         let initdbLog = try appendHandle(logDir.appendingPathComponent("initdb.log"))
         defer { try? initdbLog.close() }
 
@@ -175,19 +178,35 @@ final class Supervisor: @unchecked Sendable {
                     + "Its output is in \(logDir.path)/initdb.log; nothing was kept, so the next launch starts over.")
             }
         }
-        try step("initdb", try runTool(bin("initdb"), [
-            "-D", building.path, "-U", Self.superuser, "--pwfile=\(pwfile.path)", "--auth=scram-sha-256",
+        try step("initdb", try runFirstLaunchTool(bin("initdb"), [
+            "-D", building.path, "-U", Self.superuser, "--pwfile=/dev/stdin", "--auth=scram-sha-256",
             "--encoding=UTF8", "--locale=C", "--locale-provider=builtin", "--builtin-locale=C.UTF-8", "--no-instructions",
-        ], environment: baseEnvironment))
+        ], stdin: superuserPassword + "\n"))
         // exit_on_error: single-user mode otherwise exits 0 after an error. log_min_error_statement:
         // a failing CREATE ROLE would otherwise be echoed, password and all, into initdb.log.
         let single = ["--single", "-D", building.path, "-c", "exit_on_error=on", "-c", "log_min_error_statement=panic"]
-        try step("CREATE DATABASE", try runTool(bin("postgres"), single + ["postgres"],
-                                                 stdin: "CREATE DATABASE \(Self.database)\n", environment: baseEnvironment))
+        try step("CREATE DATABASE", try runFirstLaunchTool(bin("postgres"), single + ["postgres"], stdin: "CREATE DATABASE \(Self.database)\n"))
         let roleSQL = "CREATE ROLE \(Self.appRole) LOGIN PASSWORD '\(appPassword)' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS\n"
             + "ALTER SCHEMA public OWNER TO \(Self.appRole)\n"
-        try step("application role", try runTool(bin("postgres"), single + [Self.database], stdin: roleSQL, environment: baseEnvironment))
+        try step("application role", try runFirstLaunchTool(bin("postgres"), single + [Self.database], stdin: roleSQL))
+        // Under the lock: once stop() has begun, the unfinished directory is its to remove.
+        lock.lock()
+        defer { lock.unlock() }
+        if stopping { throw ShellFailure.stopping }
         try fm.moveItem(at: building, to: pgdata)
+    }
+
+    /// One of the first launch's tools, launched under the lock and held as `tool`: none starts
+    /// once stop() has begun, and stop() can end the one that is running.
+    private func runFirstLaunchTool(_ path: String, _ arguments: [String], stdin: String) throws -> ToolResult {
+        defer { lock.lock(); tool = nil; lock.unlock() }
+        return try runTool(path, arguments, stdin: stdin, environment: baseEnvironment) { process in
+            lock.lock()
+            defer { lock.unlock() }
+            if stopping { throw ShellFailure.stopping }
+            try process.run()
+            tool = process
+        }
     }
 
     /// A postmaster.pid whose process is alive and is this data directory's postgres means an
@@ -295,6 +314,12 @@ final class Supervisor: @unchecked Sendable {
         env["ENCRYPTION_KEY"] = secrets.encryptionKey
         env["SECURE_COOKIES"] = "false"
         env["UPDATE_CHECK"] = "false"
+        // Not settings: what the launcher's watchdog needs to stop this Postgres if the shell dies.
+        lock.lock()
+        let postgresPID = postgres?.processIdentifier
+        lock.unlock()
+        env["LOON_SHELL_PGDATA"] = pgdata.path
+        if let postgresPID { env["LOON_SHELL_POSTGRES_PID"] = "\(postgresPID)" }
         let process = Process()
         process.executableURL = resources.appendingPathComponent("python/bin/python3")
         process.arguments = [resources.appendingPathComponent("launcher/loon_backend.py").path]
@@ -361,8 +386,19 @@ final class Supervisor: @unchecked Sendable {
     func stop() {
         lock.lock()
         stopping = true
-        let backend = self.backend, postgres = self.postgres, ownsData = instanceLock >= 0
+        let backend = self.backend, postgres = self.postgres, tool = self.tool, ownsData = instanceLock >= 0
         lock.unlock()
+        // A first launch cut short. initdb answers SIGTERM by removing what it built once its
+        // current step is done; a single-user postgres just exits.
+        if let tool, tool.isRunning {
+            log.info("stopping \(tool.executableURL?.lastPathComponent ?? "a tool") (PID \(tool.processIdentifier)), first launch unfinished")
+            tool.terminate()
+            if !waitForExit(tool, seconds: 15) {
+                log.error("it did not stop within 15 s; killing it")
+                kill(tool.processIdentifier, SIGKILL)
+                _ = waitForExit(tool, seconds: 5)
+            }
+        }
         if let backend, backend.isRunning {
             log.info("stopping the backend (PID \(backend.processIdentifier))")
             backend.terminate()
@@ -384,6 +420,10 @@ final class Supervisor: @unchecked Sendable {
                 _ = waitForExit(postgres, seconds: 10)
             }
             try? FileManager.default.removeItem(at: runDir.appendingPathComponent("port"))
+            if FileManager.default.fileExists(atPath: unfinishedPgdata.path) {
+                try? FileManager.default.removeItem(at: unfinishedPgdata)
+                log.info("removed the unfinished \(unfinishedPgdata.lastPathComponent); the next launch starts the first launch over")
+            }
         }
         lock.lock()
         if instanceLock >= 0 { close(instanceLock); instanceLock = -1 }

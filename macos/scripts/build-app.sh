@@ -19,9 +19,10 @@ build="$macos/build"
 app="$build/LoonInspect.app"
 res="$app/Contents/Resources"
 src="$build/src"
-# The Dockerfile's and CI's uv (0.9.30). `uv export` output is platform-neutral (markers and
+# The Dockerfile's and CI's uv (0.9.30), pinned by the registry's index digest as well, so a
+# re-pushed tag cannot change what runs. `uv export` output is platform-neutral (markers and
 # every wheel's hash), so the image's OS does not matter here.
-UV_IMAGE=${UV_IMAGE:-ghcr.io/astral-sh/uv:0.9.30-python3.12-bookworm-slim}
+UV_IMAGE=${UV_IMAGE:-ghcr.io/astral-sh/uv:0.9.30-python3.12-bookworm-slim@sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261ba1b7147afa78e58}
 
 step() { printf '\n== %s  [%ss]\n' "$*" "$(($(date +%s) - started))"; }
 die() { echo "build-app: $*" >&2; exit 1; }
