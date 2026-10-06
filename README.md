@@ -576,8 +576,8 @@ Settings › AI is a test box, not a feature: one prompt to a model endpoint you
 reply shown as it came back. It exists so the first real AI feature arrives into plumbing
 that already refuses correctly. Two switches gate it, both off out of the box: the
 `ai_features` flag (Settings › Feature Flags) and the AI-inference consent (toggled on the
-page itself). Every send writes one share-log row naming the destination and the single
-field that left, the prompt. Which endpoints are offered depends on where this container runs,
+page itself). Every send writes one share-log row naming the destination, the model asked
+for and the single field that left, the prompt. Which endpoints are offered depends on where this container runs,
 and on what this server already holds settings for. Apple Foundation Models through Apple's
 own `fm serve` on the Mac host (macOS 27; the card is labelled "via Docker Desktop", the one
 runtime this cut implements) is offered where its default can work — under Docker Desktop on

@@ -512,8 +512,16 @@ pruned on write.
   theater.
 
 Permitted off-pod AI inference calls write to the **same log** (one log is the
-point): tier `ai`, the destination as the endpoint, and a payload naming the feature
-and the field-level disclosure of what left — field names only, never contents.
+point): tier `ai`, the destination as the endpoint, and a payload naming the feature,
+the model asked for and the field-level disclosure of what left — field names only,
+never contents: `{"feature", "fields", "model"}`. The endpoint is an origin, and one
+origin can stand for two places: Apple's `fm serve` answers `system` on the Mac and
+`pcc` on Private Cloud Compute, Apple's servers, so `model` is what tells the two apart
+(#739). It is the model LoonInspect put in the request, never the name a reply gives
+back, cut at 200 characters; it makes such a call visible afterwards and does not stop
+one. A model listing asks no model and sends nothing of the fleet, so its row reads
+`fields: []` with no `model`. A row naming fields with no `model` key was written before
+the model was recorded: the model is *not recorded*, which is not an empty one.
 These rows are not exchange attempts; the exchange's scheduling and the
 "last exchange" status ignore them, and their `trigger` is empty.
 

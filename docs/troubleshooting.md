@@ -1063,9 +1063,10 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
    Hosted endpoints, failed DNS, and mixed public/private DNS answers are refused before
    inventory is sent. The selector names the endpoint and model before the request.
    A connection error or malformed classification leaves exclusions unchanged; retry or
-   use the existing candidates directly. The share log records `exclusion_ranking` and
-   field names before sending; the audit log records `ai.exclusion-ranking.sent` with
-   `ranked`, `unparseable`, or `error`. Neither log stores candidate labels or model text.
+   use the existing candidates directly. The share log records `exclusion_ranking`, the
+   model asked for and field names before sending; the audit log records
+   `ai.exclusion-ranking.sent` with `ranked`, `unparseable`, or `error`. Neither log stores
+   candidate labels or model text.
    An **AI estimate** is a suggestion, not proof that an app belongs to your organization.
 
 5. **A title's app name reads *name from the patch definition*, or *No app name*.** Both
@@ -1347,8 +1348,8 @@ The lines under the bar are written by the page from the matching rows, never by
 **Clear**, beside Apply, empties
 every filter, the Prompt box and its answer. The bar appears only while three things are true,
 and Settings › AI names the one that is not, in its line *Changes Prompt bar: …*. Every question
-writes one row to the disclosure log naming the destination and the one field that left,
-`query_text`.
+writes one row to the disclosure log naming the destination, the model asked for and the one
+field that left, `query_text`.
 
 1. **The bar is missing.** Read the *Changes Prompt bar* line on Settings › AI:
    - *hidden — the AI features flag is off* → Settings › Feature Flags, turn **AI features** on,

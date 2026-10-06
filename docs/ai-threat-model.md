@@ -116,8 +116,10 @@ mechanisms that make it hold against §1.
   evidence chain, alerts, the audit log beyond an outcome word. Enforced by the structural
   tests in §6, not by review.
 - **P6. Every egress is gated and disclosed per call.** Flag, consent, one share-log row
-  naming the destination and the field names, committed before the first byte. The field
-  list is derived from the builder (P2), never typed by hand, and a test checks they agree.
+  naming the destination, the model asked for and the field names, committed before the
+  first byte. The field list is derived from the builder (P2), never typed by hand, and a
+  test checks they agree. The model is the one the request carries, never the reply's: one
+  origin can serve `system` on the Mac and `pcc` on Apple's servers (#739).
 - **P7. Bounded, by mechanism.** Total time (`asyncio.timeout`), response size, concurrency,
   prompt length, `max_tokens`, one request per human action, never on the sweep, webhook or
   outbox path.
@@ -161,6 +163,8 @@ Layer-wide, in the repository's existing idiom (the AST walk in
 - **S4. Text only, in the frontend.** `features/ai` never imports a markdown or HTML renderer
   and never uses `dangerouslySetInnerHTML`; the same grep-shaped test the doc suites already
   use for README tables.
+- **S5. The row names the model (#739).** Every `require_ai(` naming `fields=` passes
+  `model=`, the same expression the `CompletionRequest(` in its function sends.
 
 ## 7. Before slot 1
 
